@@ -2,7 +2,7 @@
 
 A collection of skills for AI coding assistants — covering code review, DX/UX analysis, TDD, holistic debugging, and developer productivity.
 
-Everything is packaged as skills following the open [Agent Skills](https://agentskills.io/) format, so they work with Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and more.
+Skills and agents follow the open [Agent Skills](https://agentskills.io/) format and work with Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and more.
 
 ## Install
 
@@ -147,7 +147,7 @@ Commands are invoked with a slash:
 skills/
   confidence/           SKILL.md                        (auto-activated)
   dx/                   SKILL.md + rules/ + templates/  (auto-activated)
-  ux/                   SKILL.md + rules/ + templates/  (auto-activated)
+  ux/                   SKILL.md + rules/ + templates/   (auto-activated)
   holistic-analysis/    SKILL.md                        (auto-activated)
   tdd/                  SKILL.md + rules/               (auto-activated)
   init-claude/          SKILL.md                        (slash command)

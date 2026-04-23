@@ -2,7 +2,7 @@
 
 ## Audience
 
-The skills, commands, and agents in this repository are consumed operationally by agentic frameworks (AI coding agents, copilots, and autonomous developer tools).
+The skills and agents in this repository are consumed operationally by agentic frameworks (AI coding agents, copilots, and autonomous developer tools).
 Every piece of guidance must be written so that an agent can act on it without human interpretation.
 
 When writing or editing content, follow these principles:
