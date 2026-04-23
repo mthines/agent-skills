@@ -25,6 +25,7 @@ Agents live in `agents/` since they require their own model and tool configurati
 ### Auto-activated skills
 - `confidence` — Confidence assessment for plans, code, and bug analysis
 - `dx` — Developer Experience review for CLI tools and shell scripts
+- `review-quality-gate` — Self-check quality gate for review findings before delivery
 - `ux` — UX design review for web and React Native apps
 - `holistic-analysis` — Full execution path analysis for stuck bugs/refactors
 - `tdd` — Test-Driven Development with strict RED-GREEN-REFACTOR cycles

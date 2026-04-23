@@ -47,14 +47,59 @@ If more than ~30 files changed:
 - Focus on source files with the most logic changes (not just line count)
 - Note skipped files in your summary so the user knows
 
-### 1.3 Detect review context
+### 1.3 Synthesize intent
 
-- **Own branch** (no PR, or you're the PR author): you have full context — be direct, fix things in `--fix` mode.
-- **Someone else's PR**: be more conservative. Prefer questions over assertions when you're unsure. Don't assume intent — ask.
+Before reviewing, understand *what the change is trying to accomplish*.
+Produce a 2–3 line intent summary that shapes how you evaluate every finding.
+
+**Sources (use whichever are available):**
+
+```bash
+# PR body and title (comments mode or when PR exists):
+gh pr view --json title,body -q '"\(.title)\n\(.body)"'
+
+# Commit messages:
+git log --oneline origin/main..HEAD
+
+# Branch name:
+git rev-parse --abbrev-ref HEAD
+```
+
+**Output format:**
+
+```
+Intent: This change [verb] [what] so that [why].
+[Optional second line with scope or constraint.]
+```
+
+Example:
+```
+Intent: Replace multi-tier tax rate lookup with flat-rate computation
+to simplify the billing pipeline. Must not regress tax-exempt handling.
+```
+
+If intent is ambiguous (no PR body, generic commit messages, branch named `fix/stuff`), note the uncertainty and review more conservatively — flag things you would otherwise let pass.
+
+### 1.4 Detect review context
+
+- **Own branch** (no PR, or you're the PR author): you have full context — be direct, fix things in fix mode. State findings as facts, not questions.
+- **Someone else's PR**: you lack context the author has. Prefer questions over assertions when uncertain. Never auto-fix — even in fix mode, only report and suggest. Acknowledge what you might be missing. Frame uncertain findings as questions: "Is this intentional?" not "This is wrong."
+
+### 1.5 Identify pre-existing issues
+
+As you review, distinguish between lines that are **in the diff** (new or modified) and lines that are **unchanged** (context lines, prefixed with ` ` in the diff).
+
+- Findings on **changed lines** (`+` prefix) are new issues introduced by this change. These count toward the verdict.
+- Findings on **unchanged lines** (` ` prefix or outside any hunk) are pre-existing issues. Mark them as `[pre-existing]` and collect them separately. They do NOT count toward the verdict — they are informational ("while I was here, I noticed...").
+
+When in doubt about whether a line is new or pre-existing, check `git blame` on the specific line.
 
 ## Step 2: Review
 
-You know how to review code. Focus your attention on what matters most, roughly in this priority:
+You know how to review code.
+Evaluate every finding against the **intent summary** from Step 1.3 — a pattern that looks wrong in isolation may be intentional given the change's goal.
+
+Focus your attention on what matters most, roughly in this priority:
 
 1. **Correctness** — bugs, logic errors, security vulnerabilities, race conditions
 2. **Types and safety** — unnecessary `any`, missing null checks, unsound casts
@@ -68,6 +113,17 @@ You know how to review code. Focus your attention on what matters most, roughly 
 
 - Run lint and type-check if the project has them configured. Report new errors only (ignore pre-existing ones).
 - For tests: **only run tests scoped to changed files** unless the user asks for a full suite. Example: `pnpm test -- src/path/to/changed.test.ts`. If the parent agent already ran tests, note the results rather than re-running.
+
+## Step 2.5: Quality Gate
+
+Before producing output, run the `/review-quality-gate` checklist on every finding.
+This catches false positives, vague suggestions, miscalibrated severity, and linter-duplicate noise.
+
+For each finding, answer the 6 gate questions.
+Drop findings that fail 2+ checks.
+Downgrade severity for findings that fail exactly 1 check.
+
+Do NOT run the gate on pre-existing issues — those are informational and bypass it.
 
 ## Step 3: Output
 
@@ -90,6 +146,14 @@ List non-blocking suggestions for improvement.
 ### Required Changes
 List items that must be addressed before this is ready.
 
+### Pre-existing Issues
+Issues found on unchanged lines.
+These do not affect the verdict — they are informational.
+Omit this section if no pre-existing issues were found.
+
+### Quality Gate
+Include the gate summary from Step 2.5 (reviewed / dropped / downgraded / passed counts).
+
 ### Verdict
 
 The verdict is driven by the **worst finding**, not an average. One blocking issue means "Request changes" regardless of how good everything else is.
@@ -106,6 +170,15 @@ Assign a score (1–10) as a quick signal, but the verdict is what matters:
 **Score: 8/10** — Approve with comments
 Solid implementation with good test coverage. Two non-blocking suggestions around memoization and an unused translation key.
 ```
+
+### Review Confidence
+
+After assembling the verdict, run `/confidence code` to validate your overall review.
+Include the confidence output in this section.
+
+- **90%+**: Deliver the review as-is.
+- **70–89%**: Note the specific concerns the confidence assessment raises. You may be missing context.
+- **Below 70%**: Revisit your findings before delivering. Re-read the changed files in full, check your assumptions against the intent summary, and re-run the quality gate. Do not deliver a low-confidence review without acknowledging the uncertainty.
 
 ## Step 4: Auto-Fix (default, skip with --report)
 
