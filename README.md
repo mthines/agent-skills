@@ -4,23 +4,34 @@ A collection of skills, commands, and agents for AI coding assistants — coveri
 
 Skills follow the open [Agent Skills](https://agentskills.io/) format and work with Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and more.
 
-## Quick Install
+## Install
 
-**Universal** (works with any [Agent Skills](https://agentskills.io)-compatible tool):
+This repo contains three types of content: **skills**, **commands**, and **agents**. The install method determines which you get.
 
-```bash
-npx skills add https://github.com/mthines/agent-skills --all
-```
+### Claude Code (full install — skills + commands + agents)
 
-<details>
-<summary>Claude Code</summary>
+The Claude Code plugin system installs everything:
 
 ```bash
 /plugin marketplace add mthines/agent-skills
 /plugin install mthines-agent-skills@mthines
 ```
 
-</details>
+The plugin manifest (`.claude-plugin/plugin.json`) declares paths for `skills/`, `commands/`, and `agents/`, so all three are available after install.
+
+### Skills only (any tool)
+
+The `npx skills` CLI installs skills from the `skills/` directory. Commands and agents are not included.
+
+```bash
+npx skills add https://github.com/mthines/agent-skills --all
+```
+
+To install a single skill:
+
+```bash
+npx skills add https://github.com/mthines/agent-skills --skill confidence
+```
 
 <details>
 <summary>Gemini CLI</summary>
@@ -58,18 +69,34 @@ git clone https://github.com/mthines/agent-skills.git ~/.agents/skills/mthines-a
 
 </details>
 
-<details>
-<summary>Manual (any tool)</summary>
+### Manual (full install — any tool)
 
-Clone into the cross-client discovery directory:
+Clone into the cross-client discovery directory to get everything:
 
 ```bash
 git clone https://github.com/mthines/agent-skills.git ~/.agents/skills/mthines-agent-skills
 ```
 
-Most tools auto-discover skills from `~/.agents/skills/`.
+Most tools auto-discover skills from `~/.agents/skills/`. For commands and agents, symlink or copy them into your tool's config directory:
 
-</details>
+```bash
+# Claude Code — commands and agents
+ln -sf ~/.agents/skills/mthines-agent-skills/commands/* ~/.claude/commands/
+ln -sf ~/.agents/skills/mthines-agent-skills/agents/* ~/.claude/agents/
+
+# Or copy directly
+cp -r ~/.agents/skills/mthines-agent-skills/commands/* ~/.claude/commands/
+cp -r ~/.agents/skills/mthines-agent-skills/agents/* ~/.claude/agents/
+```
+
+### What installs where
+
+| Method | Skills | Commands | Agents |
+|---|---|---|---|
+| Claude Code plugin | Yes | Yes | Yes |
+| `npx skills add` | Yes | No | No |
+| `git clone` + symlinks | Yes | Yes | Yes |
+| Gemini / Cursor / Copilot / Codex | Yes | No | No |
 
 ## What's Included
 

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "skills": {
+    "confidence": {
+      "source": "mthines/agent-skills",
+      "sourceType": "github",
+      "computedHash": "bfce08e7316262100c7e49dc637205644d6a24fac44dc2480e83c375ae2b75e5"
+    },
+    "dx": {
+      "source": "mthines/agent-skills",
+      "sourceType": "github",
+      "computedHash": "f2090c95b110806ef9c57bfaf46a82485c5f2f3b741e4b750db62c87a8f3845b"
+    },
+    "holistic-analysis": {
+      "source": "mthines/agent-skills",
+      "sourceType": "github",
+      "computedHash": "9c4ab6d3faa468d5e767db1ec58fe8d432d58b589eed57bbe032b86ad5515d11"
+    },
+    "tdd": {
+      "source": "mthines/agent-skills",
+      "sourceType": "github",
+      "computedHash": "301efa3a472f7323c27831b061ade55044315b74a06bfff370b865bb8038645c"
+    },
+    "ux": {
+      "source": "mthines/agent-skills",
+      "sourceType": "github",
+      "computedHash": "2e58e4eccb8e081bb7f923f8db9d0c5052785a69d5d0f5b9bb6807919e3471b8"
+    }
+  }
+}
