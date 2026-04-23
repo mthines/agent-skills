@@ -1,0 +1,41 @@
+# Agent/tool config directories
+.claude
+.adal
+.agents
+.augment
+.bob
+.codebuddy
+.commandcode
+.continue
+.cortex
+.crush
+.factory
+.goose
+.iflow
+.junie
+.kilocode
+.kiro
+.kode
+.mcpjam
+.mux
+.neovate
+.openhands
+.pi
+.pochi
+.qoder
+.qwen
+.roo
+.trae
+.vibe
+.windsurf
+.zencoder
+
+# Dependencies
+node_modules
+
+# Build
+dist
+
+# Environment
+.env*
+.next

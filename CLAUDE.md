@@ -36,7 +36,7 @@ Agents live in `agents/` since they require their own model and tool configurati
 - `review-changes` — Review branch changes or PR (dispatches to reviewer)
 - `implement-suggestion` — Implement fixes from review comments
 
-### Background skills (`user-invocable: false`)
+### Agents
 - `reviewer` — Constructive code reviewer with auto-fix, report, and PR comment modes
 
 ## Prose Rules
