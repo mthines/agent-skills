@@ -1,0 +1,54 @@
+{
+  "$schema": "https://raw.githubusercontent.com/mthines/gw-tools/main/packages/gw-tool/schemas/gw-config.schema.json",
+
+  // ============================================================================
+  // gw Configuration File
+  // ============================================================================
+  // Documentation: https://github.com/mthines/gw-tools
+  // This file is safe to commit to your repository.
+  // All fields are optional.
+  // Supports JSONC: comments (// and /* */) and trailing commas are allowed.
+  // ============================================================================
+
+  "configVersion": 2,
+
+  // Core Settings
+  // ----------------------------------------------------------------------------
+  "defaultBranch": "main",
+  "cleanThreshold": 7,
+
+  // Auto-Copy Files
+  // ----------------------------------------------------------------------------
+  // Files/directories to automatically copy when creating new worktrees.
+  // Useful for environment files, secrets, and local configuration.
+  // "autoCopyFiles": [
+  //   ".env",              // Environment variables
+  //   ".env.local",        // Local overrides
+  //   "config/secrets/",   // Secrets directory
+  //   "node_modules/"      // Dependencies (if not using symlinks)
+  // ],
+
+  // Hooks
+  // ----------------------------------------------------------------------------
+  // Commands to run before/after gw operations.
+  // Available variables: {worktree}, {worktreePath}, {gitRoot}, {branch}
+  // "hooks": {
+  //   "checkout": {
+  //     "pre": [
+  //       "echo 'Creating worktree: {worktree}'"
+  //     ],
+  //     "post": [
+  //       "cd {worktreePath} && npm install",
+  //       "cd {worktreePath} && npm run build"
+  //     ]
+  //   }
+  // },
+
+  // Advanced Options
+  // ----------------------------------------------------------------------------
+  // "autoClean": false,  // Silently clean stale worktrees in background
+  // "updateStrategy": "merge",  // Default: "merge" or "rebase"
+
+  // Internal fields (managed automatically — do not edit):
+  // - configVersion: Schema version for config migrations
+}
