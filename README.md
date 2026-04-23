@@ -1,6 +1,6 @@
 # Agent Skills
 
-A collection of skills for AI coding assistants — covering code review, DX/UX analysis, TDD, holistic debugging, and developer productivity.
+A personal collection of skills for AI coding assistants — covering code review, DX/UX analysis, TDD, holistic debugging, and developer productivity.
 
 Skills and agents follow the open [Agent Skills](https://agentskills.io/) format and work with Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and more.
 
