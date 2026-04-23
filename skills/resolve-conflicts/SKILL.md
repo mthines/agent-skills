@@ -1,6 +1,14 @@
 ---
 name: resolve-conflicts
-description: Analyze and resolve Git merge/rebase conflicts intelligently, showing diffs and asking clarifying questions when needed
+description: >
+  Analyze and resolve Git merge/rebase conflicts intelligently, showing diffs and
+  asking clarifying questions when needed. Invoke with /resolve-conflicts.
+disable-model-invocation: true
+license: MIT
+metadata:
+  author: mthines
+  version: '1.0.0'
+  workflow_type: command
 ---
 
 # Resolve Git Conflicts

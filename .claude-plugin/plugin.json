@@ -8,7 +8,6 @@
   "repository": "https://github.com/mthines/agent-skills",
   "license": "MIT",
   "skills": "./skills/",
-  "commands": "./commands/",
   "agents": "./agents/",
   "keywords": [
     "claude-code",

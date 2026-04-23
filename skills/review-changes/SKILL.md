@@ -1,6 +1,14 @@
 ---
 name: review-changes
-description: Review branch changes or PR for code quality, tests, documentation, and commit hygiene
+description: >
+  Review branch changes or PR for code quality, tests, documentation, and commit
+  hygiene. Dispatches to the reviewer skill. Invoke with /review-changes.
+disable-model-invocation: true
+license: MIT
+metadata:
+  author: mthines
+  version: '1.0.0'
+  workflow_type: command
 ---
 
 Dispatch to the reviewer agent:

@@ -19,27 +19,24 @@ When writing or editing content, follow these principles:
 
 ## Repository Structure
 
-```
-skills/          # Skill definitions (SKILL.md + rules/)
-commands/        # Slash command definitions (.md)
-agents/          # Agent definitions (.md)
-```
+Skills live in `skills/` as standard SKILL.md files.
+Agents live in `agents/` since they require their own model and tool configuration.
 
-### Skills (advisory workflows with rules)
+### Auto-activated skills
 - `confidence` — Confidence assessment for plans, code, and bug analysis
 - `dx` — Developer Experience review for CLI tools and shell scripts
 - `ux` — UX design review for web and React Native apps
 - `holistic-analysis` — Full execution path analysis for stuck bugs/refactors
 - `tdd` — Test-Driven Development with strict RED-GREEN-REFACTOR cycles
 
-### Commands (slash commands)
+### Slash commands (`disable-model-invocation: true`)
 - `init-claude` — Initialize Claude Code configuration for a project
 - `update-claude` — Update CLAUDE.md and rules based on code changes
 - `resolve-conflicts` — Analyze and resolve Git merge/rebase conflicts
-- `review-changes` — Review branch changes or PR (dispatches to reviewer agent)
+- `review-changes` — Review branch changes or PR (dispatches to reviewer)
 - `implement-suggestion` — Implement fixes from review comments
 
-### Agents
+### Background skills (`user-invocable: false`)
 - `reviewer` — Constructive code reviewer with auto-fix, report, and PR comment modes
 
 ## Prose Rules

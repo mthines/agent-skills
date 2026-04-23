@@ -1,6 +1,15 @@
 ---
 name: update-claude
-description: Analyze code changes and update CLAUDE.md and .claude/rules/ documentation to stay in sync with the codebase. Uses git diff analysis to detect what changed and holistic analysis to understand the impact. Triggers on "update claude docs", "sync claude docs", "update-claude", or "/update-claude".
+description: >
+  Analyze code changes and update CLAUDE.md and .claude/rules/ documentation to stay
+  in sync with the codebase. Uses git diff analysis to detect what changed and holistic
+  analysis to understand the impact. Invoke with /update-claude.
+disable-model-invocation: true
+license: MIT
+metadata:
+  author: mthines
+  version: '1.0.0'
+  workflow_type: command
 ---
 
 # Update Claude Documentation

@@ -1,27 +1,12 @@
 # Agent Skills
 
-A collection of skills, commands, and agents for AI coding assistants — covering code review, DX/UX analysis, TDD, holistic debugging, and developer productivity.
+A collection of skills for AI coding assistants — covering code review, DX/UX analysis, TDD, holistic debugging, and developer productivity.
 
-Skills follow the open [Agent Skills](https://agentskills.io/) format and work with Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and more.
+Everything is packaged as skills following the open [Agent Skills](https://agentskills.io/) format, so they work with Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and more.
 
 ## Install
 
-This repo contains three types of content: **skills**, **commands**, and **agents**. The install method determines which you get.
-
-### Claude Code (full install — skills + commands + agents)
-
-The Claude Code plugin system installs everything:
-
-```bash
-/plugin marketplace add mthines/agent-skills
-/plugin install mthines-agent-skills@mthines
-```
-
-The plugin manifest (`.claude-plugin/plugin.json`) declares paths for `skills/`, `commands/`, and `agents/`, so all three are available after install.
-
-### Skills only (any tool)
-
-The `npx skills` CLI installs skills from the `skills/` directory. Commands and agents are not included.
+**Universal** (works with any [Agent Skills](https://agentskills.io)-compatible tool):
 
 ```bash
 npx skills add https://github.com/mthines/agent-skills --all
@@ -32,6 +17,16 @@ To install a single skill:
 ```bash
 npx skills add https://github.com/mthines/agent-skills --skill confidence
 ```
+
+<details>
+<summary>Claude Code</summary>
+
+```bash
+/plugin marketplace add mthines/agent-skills
+/plugin install mthines-agent-skills@mthines
+```
+
+</details>
 
 <details>
 <summary>Gemini CLI</summary>
@@ -69,40 +64,24 @@ git clone https://github.com/mthines/agent-skills.git ~/.agents/skills/mthines-a
 
 </details>
 
-### Manual (full install — any tool)
+<details>
+<summary>Manual (any tool)</summary>
 
-Clone into the cross-client discovery directory to get everything:
+Clone into the cross-client discovery directory:
 
 ```bash
 git clone https://github.com/mthines/agent-skills.git ~/.agents/skills/mthines-agent-skills
 ```
 
-Most tools auto-discover skills from `~/.agents/skills/`. For commands and agents, symlink or copy them into your tool's config directory:
+Most tools auto-discover skills from `~/.agents/skills/`.
 
-```bash
-# Claude Code — commands and agents
-ln -sf ~/.agents/skills/mthines-agent-skills/commands/* ~/.claude/commands/
-ln -sf ~/.agents/skills/mthines-agent-skills/agents/* ~/.claude/agents/
-
-# Or copy directly
-cp -r ~/.agents/skills/mthines-agent-skills/commands/* ~/.claude/commands/
-cp -r ~/.agents/skills/mthines-agent-skills/agents/* ~/.claude/agents/
-```
-
-### What installs where
-
-| Method | Skills | Commands | Agents |
-|---|---|---|---|
-| Claude Code plugin | Yes | Yes | Yes |
-| `npx skills add` | Yes | No | No |
-| `git clone` + symlinks | Yes | Yes | Yes |
-| Gemini / Cursor / Copilot / Codex | Yes | No | No |
+</details>
 
 ## What's Included
 
-### Skills
+### Auto-activated skills
 
-Skills are advisory workflows with detailed rules. They activate automatically when your AI agent detects a matching task.
+These activate automatically when your AI agent detects a matching task.
 
 | Skill | What it does | Use when... |
 |---|---|---|
@@ -112,21 +91,21 @@ Skills are advisory workflows with detailed rules. They activate automatically w
 | **[holistic-analysis](./skills/holistic-analysis/SKILL.md)** | Forces a full execution-path analysis when incremental fixes aren't working. Traces entry-to-exit with structured hypothesis generation. | A bug fix attempt has failed, you're going in circles, or you need to "step back and think." |
 | **[tdd](./skills/tdd/SKILL.md)** | Enforces strict RED-GREEN-REFACTOR cycles. Writes one failing test, implements minimal code to pass, then refactors. | Adding new features test-first, or retrofitting tests onto existing code. |
 
-### Commands
+### Slash commands
 
-Commands are slash commands you invoke directly (e.g., `/init-claude`).
+These are user-invoked only (`disable-model-invocation: true`) — the agent won't load them automatically, you trigger them with `/name`.
 
 | Command | What it does |
 |---|---|
-| **[init-claude](./commands/init-claude.md)** | Analyzes your project and generates a tailored `CLAUDE.md` + `.claude/rules/` setup. Detects tech stack, project size, and conventions automatically. |
-| **[update-claude](./commands/update-claude.md)** | Diffs your branch against main and incrementally updates Claude docs to match code changes. Finds stale references, dead paths, and drift. |
-| **[resolve-conflicts](./commands/resolve-conflicts.md)** | Detects merge/rebase conflicts, shows both sides with context, proposes resolution strategies, and asks clarifying questions for ambiguous cases. |
-| **[review-changes](./commands/review-changes.md)** | Reviews branch changes or a PR for quality, correctness, tests, and commit hygiene. Dispatches to the reviewer agent. |
-| **[implement-suggestion](./commands/implement-suggestion.md)** | Takes review comments or suggestions and implements the fixes — simple ones directly, complex ones with a plan for approval. |
+| **[/init-claude](./skills/init-claude/SKILL.md)** | Analyzes your project and generates a tailored `CLAUDE.md` + `.claude/rules/` setup. Detects tech stack, project size, and conventions automatically. |
+| **[/update-claude](./skills/update-claude/SKILL.md)** | Diffs your branch against main and incrementally updates Claude docs to match code changes. Finds stale references, dead paths, and drift. |
+| **[/resolve-conflicts](./skills/resolve-conflicts/SKILL.md)** | Detects merge/rebase conflicts, shows both sides with context, proposes resolution strategies, and asks clarifying questions for ambiguous cases. |
+| **[/review-changes](./skills/review-changes/SKILL.md)** | Reviews branch changes or a PR for quality, correctness, tests, and commit hygiene. Dispatches to the reviewer skill. |
+| **[/implement-suggestion](./skills/implement-suggestion/SKILL.md)** | Takes review comments or suggestions and implements the fixes — simple ones directly, complex ones with a plan for approval. |
 
 ### Agents
 
-Agents are specialized sub-processes that handle complex multi-step tasks.
+Agents are specialized sub-processes with their own model and tool configuration. They are dispatched by other skills, not invoked directly.
 
 | Agent | What it does |
 |---|---|
@@ -166,20 +145,21 @@ Commands are invoked with a slash:
 
 ```
 skills/
-  confidence/        SKILL.md
-  dx/                SKILL.md + rules/ + templates/
-  ux/                SKILL.md + rules/ + templates/
-  holistic-analysis/ SKILL.md
-  tdd/               SKILL.md + rules/
-commands/
-  init-claude.md
-  update-claude.md
-  resolve-conflicts.md
-  review-changes.md
-  implement-suggestion.md
+  confidence/           SKILL.md                        (auto-activated)
+  dx/                   SKILL.md + rules/ + templates/  (auto-activated)
+  ux/                   SKILL.md + rules/ + templates/  (auto-activated)
+  holistic-analysis/    SKILL.md                        (auto-activated)
+  tdd/                  SKILL.md + rules/               (auto-activated)
+  init-claude/          SKILL.md                        (slash command)
+  update-claude/        SKILL.md                        (slash command)
+  resolve-conflicts/    SKILL.md                        (slash command)
+  review-changes/       SKILL.md                        (slash command)
+  implement-suggestion/ SKILL.md                        (slash command)
 agents/
-  reviewer.md
+  reviewer.md                                           (agent)
 ```
+
+Skills live in `skills/` as standard SKILL.md files, making them installable with `npx skills add`. Agents live in `agents/` since they require their own model and tool configuration.
 
 Each skill has a `SKILL.md` manifest with YAML frontmatter (name, description, metadata) and a Markdown body with instructions. Skills with `rules/` subdirectories contain focused guidance documents that are loaded on demand based on what the code contains.
 

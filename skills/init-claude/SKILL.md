@@ -1,6 +1,15 @@
 ---
 name: init-claude
-description: Initialize Claude Code configuration for a project by analyzing directory structure, detecting tech stack, and generating CLAUDE.md and .claude/ files following official best practices
+description: >
+  Initialize Claude Code configuration for a project by analyzing directory structure,
+  detecting tech stack, and generating CLAUDE.md and .claude/ files following official
+  best practices. Invoke with /init-claude.
+disable-model-invocation: true
+license: MIT
+metadata:
+  author: mthines
+  version: '1.0.0'
+  workflow_type: command
 ---
 
 # Initialize Claude Configuration
