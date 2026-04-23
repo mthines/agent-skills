@@ -1,0 +1,25 @@
+{
+  "name": "mthines-agent-skills",
+  "description": "Agent skills for code review, DX/UX analysis, TDD, holistic analysis, and developer productivity",
+  "version": "1.0.0",
+  "author": {
+    "name": "mthines"
+  },
+  "repository": "https://github.com/mthines/agent-skills",
+  "license": "MIT",
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "plugin",
+    "skills",
+    "agentic",
+    "code-review",
+    "dx",
+    "ux",
+    "tdd",
+    "holistic-analysis",
+    "confidence",
+    "developer",
+    "productivity"
+  ]
+}
