@@ -1,0 +1,289 @@
+# Autonomous Workflow
+
+> Execute complete feature development cycles autonomously using isolated worktrees, layered companion skills, and a CI gate.
+
+## What This Skill Does
+
+This skill enables AI agents to autonomously execute complete feature
+development workflows from requirements to merged PR. It provides a phase-based
+procedure (0–7) where each phase has a gate and optionally invokes companion
+skills based on task signals. **Companions skip silently if not installed** —
+the workflow never blocks on a missing companion.
+
+| Phase | Name                       | Gate                                             |
+| ----- | -------------------------- | ------------------------------------------------ |
+| 0     | Validation                 | User confirmed understanding, mode selected      |
+| 1     | Planning                   | `confidence(plan)` >= 90% (or user-approved)     |
+| 2     | Worktree Setup             | Worktree created, `plan.md` written              |
+| 3     | Implementation             | Code complete, fast checks pass                  |
+| 4     | Testing                    | All tests pass OR user-approved stop             |
+| 5     | Documentation              | Docs reflect changes (incl. `CLAUDE.md`)         |
+| 6     | PR Creation                | Walkthrough shown, draft PR opened               |
+| 7     | CI Gate + Optional Cleanup | CI green OR user-approved stop                   |
+
+---
+
+## Repository Structure
+
+| File / Directory                   | Purpose                                                         |
+| ---------------------------------- | --------------------------------------------------------------- |
+| [`SKILL.md`](./SKILL.md)           | Thin index (entry point loaded by Claude). Lists phases, companions, principles. |
+| [`rules/`](./rules/)               | Detailed procedure files — each phase, plus shared concerns.    |
+| [`rules/companion-skills.md`](./rules/companion-skills.md) | Single-source-of-truth registry for which companion runs at which phase, trigger conditions, and disable instructions. |
+| [`rules/phase-N-*.md`](./rules/)   | One file per phase (0–7) with the procedure, gate, and companion invocations. |
+| [`rules/overview.md`](./rules/overview.md) | High-level workflow narrative.                          |
+| [`rules/artifacts-overview.md`](./rules/artifacts-overview.md) | Artifact pattern (`.agent/{branch}/`).      |
+| [`rules/error-recovery.md`](./rules/error-recovery.md)         | Recovery procedures for common errors.      |
+| [`rules/safety-guardrails.md`](./rules/safety-guardrails.md)   | Validation checkpoints and resource caps.   |
+| [`rules/parallel-coordination.md`](./rules/parallel-coordination.md) | Sub-agent fan-out and multi-agent handoff. |
+| [`templates/`](./templates/)       | Agent template + auto-trigger routing rule.                     |
+| [`references/`](./references/)     | Lazy-loaded examples (full execution trace, error scenarios).   |
+
+`SKILL.md` is intentionally thin — it's the index Claude loads first. The
+phase rules and the companion registry carry the procedural detail.
+
+---
+
+## Installation
+
+### Step 1: Install prerequisites
+
+Install the `gw` CLI:
+
+```bash
+brew install mthines/gw-tools/gw
+```
+
+You also need `gh` (GitHub CLI) for PR creation.
+
+### Step 2: Install the skill + agent
+
+Choose **global** or **per-project**:
+
+#### Option A: Global (personal use, all projects)
+
+```bash
+npx skills add https://github.com/mthines/agent-skills \
+  --skill autonomous-workflow create-plan create-walkthrough confidence \
+          code-quality holistic-analysis tdd ux update-claude \
+          review-changes create-pr ci-auto-fix \
+  --global --yes && \
+mkdir -p ~/.claude/agents && \
+ln -sf ~/.agents/skills/autonomous-workflow/templates/agent.template.md \
+   ~/.claude/agents/autonomous-workflow.md
+```
+
+#### Option B: Per-project (team use, committable)
+
+```bash
+npx skills add https://github.com/mthines/agent-skills \
+  --skill autonomous-workflow create-plan create-walkthrough confidence \
+          code-quality holistic-analysis tdd ux update-claude \
+          review-changes create-pr ci-auto-fix \
+  --yes && \
+mkdir -p .claude/agents .claude/rules && \
+ln -sf .agents/skills/autonomous-workflow/templates/agent.template.md \
+   .claude/agents/autonomous-workflow.md && \
+ln -sf .agents/skills/autonomous-workflow/templates/routing-rule.template.md \
+   .claude/rules/autonomous-workflow-routing.md
+```
+
+To run with fewer companions, omit them from the `--skill` list. See
+[Disabling Companions](#disabling-companions) below.
+
+Then say *"implement X independently"* and the agent takes over.
+
+---
+
+## Companion Skills
+
+Companions are invoked at specific phases based on task signals. The full
+trigger registry is in
+[`rules/companion-skills.md`](./rules/companion-skills.md).
+
+| Phase | Companion              | Required? | What it does                                  |
+| ----- | ---------------------- | --------- | --------------------------------------------- |
+| 1     | `holistic-analysis`    | Optional  | Multi-domain execution-path tracing           |
+| 1     | `code-quality`         | Optional  | Design-quality review (informs the plan)      |
+| 1     | `confidence`           | **Required** | Plan gate (>= 90% to proceed)              |
+| 2     | `create-plan`          | Optional  | Writes `.agent/{branch}/plan.md`              |
+| 3     | `tdd`                  | Optional  | RED-GREEN-REFACTOR for pure logic / business rules |
+| 3     | `ux`                   | Optional  | UI / accessibility review when UI files touched |
+| 3     | `code-quality`         | Optional  | End-of-Phase-3 code-quality pass              |
+| 4     | `confidence`           | Optional  | `bug-analysis` after 3 stuck-loop iterations  |
+| 4     | `holistic-analysis`    | Optional  | Step-back analysis after stuck-loop confidence |
+| 5     | `update-claude`        | Optional  | Self-improving doc loop (keeps `CLAUDE.md` in sync) |
+| 6     | `review-changes`       | Optional  | Pre-PR diff review                            |
+| 6     | `create-walkthrough`   | Optional  | Writes `.agent/{branch}/walkthrough.md`       |
+| 6     | `create-pr`            | Optional  | Narrative PR description + push + watch       |
+| 7     | `ci-auto-fix`          | Optional  | Diagnose + fix failed CI checks               |
+
+**`confidence` at Phase 1 is the only non-removable companion.** Without it,
+the plan gate is gone and the workflow loses its primary safety mechanism.
+
+---
+
+## Disabling Companions
+
+Two ways to disable a companion:
+
+### 1. Edit `rules/companion-skills.md` + remove invocation
+
+Best for permanent project-level customization:
+
+1. Open [`rules/companion-skills.md`](./rules/companion-skills.md).
+2. Delete the row for the companion you want to remove.
+3. Open the relevant `rules/phase-N-*.md` and remove the
+   `Skill("<name>")` invocation block (the file is referenced from each
+   row's "Disable by" link).
+4. Commit. Future runs in this project will skip the companion.
+
+### 2. Skip at install time (omit from `--skill` list)
+
+Best for per-machine or one-off customization. When running
+`npx skills add ...`, simply omit the companion from the `--skill` list:
+
+```bash
+# Install everything except `tdd` and `ux`
+npx skills add https://github.com/mthines/agent-skills \
+  --skill autonomous-workflow create-plan create-walkthrough confidence \
+          code-quality holistic-analysis update-claude \
+          review-changes create-pr ci-auto-fix \
+  --yes
+```
+
+When the workflow tries to invoke the missing companion, Claude will return an
+error and the workflow will log:
+
+> `companion: <name> — not available, continuing`
+
+…and continue without it. This is by design.
+
+The only exception is `confidence` at Phase 1 — if it's missing, the workflow
+stops and asks you to install it before proceeding.
+
+See [`rules/companion-skills.md`](./rules/companion-skills.md) for full
+trigger conditions and per-row disable instructions.
+
+---
+
+## Workflow Modes
+
+### Full Mode (complex changes, 4+ files)
+
+Generates artifacts under `.agent/{branch-name}/`:
+
+- `plan.md` — implementation strategy, decisions, progress log (single
+  source of truth)
+- `walkthrough.md` — final summary generated at Phase 6
+
+### Lite Mode (simple changes, 1-3 files)
+
+No artifact files created. Plan exists only in conversation. Phase 0,
+Phase 2, Phase 5 (`update-claude`), and Phase 6 (`create-pr`) still required.
+
+### Decision Guide
+
+| Complexity | Files Changed | Artifacts | Worktree |
+| ---------- | ------------- | --------- | -------- |
+| Trivial    | 1 file        | No        | Optional |
+| Small      | 2-3 files     | No        | Yes      |
+| Medium     | 4-10 files    | Yes       | Yes      |
+| Large      | 10+ files     | Yes       | Yes      |
+
+---
+
+## Migration Note: `.gw/` → `.agent/`
+
+Earlier versions of this workflow stored artifacts under `.gw/{branch}/`.
+**As of v3.0.0, artifacts live under `.agent/{branch}/`** to align with the
+`~/.agents/skills/` cross-tool discovery convention used by Codex, Cursor,
+OpenCode, and other Agent Skills–compatible clients.
+
+| Old path                          | New path                              |
+| --------------------------------- | ------------------------------------- |
+| `.gw/{branch}/plan.md`            | `.agent/{branch}/plan.md`             |
+| `.gw/{branch}/walkthrough.md`     | `.agent/{branch}/walkthrough.md`      |
+
+Add `.agent/` to your repo's `.gitignore`. Existing `.gw/` directories are
+untouched — only new artifacts land in `.agent/`. Migrate manually with
+`git mv .gw .agent` if desired.
+
+---
+
+## Key Principles
+
+1. **Mode detection FIRST** — Full vs Lite before any other action.
+2. **Phase 0 and Phase 2 are MANDATORY** — never skip validation or worktree.
+3. **`plan.md` is the single source of truth** in Full Mode (generated by
+   `create-plan`).
+4. **Verify after editing** — fast check before continuing.
+5. **Stuck-loop cap = 3** — at iteration 3, run `confidence(bug-analysis)` and
+   escalate.
+6. **Companions skip silently** — never block on a missing companion (except
+   `confidence` at Phase 1).
+7. **Stop and ask when blocked** — don't guess on ambiguity.
+8. **No AI co-author tags** — never add `Co-Authored-By` lines to commits or
+   PRs.
+
+---
+
+## Usage
+
+After installing, trigger autonomous execution with natural language:
+
+```
+"Implement dark mode toggle independently"
+"Add user authentication feature end-to-end"
+"Handle this in isolation — refactor the API client to use retry logic"
+```
+
+You can also invoke explicitly: `@autonomous-workflow implement X`.
+
+---
+
+## When to Use This Skill
+
+**Use when:**
+
+- Complete feature implementation from requirements to PR
+- Autonomous task execution with minimal human intervention
+- Isolated worktree-based development
+- Self-validating implementation with continuous iteration
+
+**Do NOT use for:**
+
+- Interactive coding sessions (use conversational mode)
+- Exploratory research tasks (use the explore agent)
+
+---
+
+## Related Skills
+
+- [`confidence`](../confidence/) — quality gate (plan / code / bug-analysis)
+- [`create-plan`](../create-plan/) — `plan.md` artifact generator
+- [`create-walkthrough`](../create-walkthrough/) — `walkthrough.md` artifact generator
+- [`code-quality`](../code-quality/) — readability and complexity review
+- [`tdd`](../tdd/) — RED-GREEN-REFACTOR enforcement
+- [`ux`](../ux/) — UI / accessibility review
+- [`holistic-analysis`](../holistic-analysis/) — execution-path analysis
+- [`update-claude`](../update-claude/) — keeps `CLAUDE.md` in sync
+- [`review-changes`](../review-changes/) — pre-PR review
+- [`create-pr`](../create-pr/) — narrative PR description + push + watch
+- [`ci-auto-fix`](../ci-auto-fix/) — diagnose and fix failed CI checks
+- [`git-worktree-workflows`](../git-worktree-workflows/) — worktree basics
+
+---
+
+## Need Help?
+
+- Read [`SKILL.md`](./SKILL.md) for the index of phases and companions.
+- Read individual `rules/phase-N-*.md` files for procedures.
+- Read [`rules/companion-skills.md`](./rules/companion-skills.md) to see what
+  runs when, and how to disable any companion.
+- Check the [`references/`](./references/) directory for full execution
+  traces and recovery scenarios.
+
+---
+
+*Part of the [agent-skills collection](../).*
