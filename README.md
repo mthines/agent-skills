@@ -103,7 +103,7 @@ These are user-invoked only (`disable-model-invocation: true`) — the agent won
 | **[/review-changes](./skills/review-changes/SKILL.md)** | Reviews branch changes or a PR for quality, correctness, tests, and commit hygiene. Dispatches to the reviewer skill. |
 | **[/implement-suggestion](./skills/implement-suggestion/SKILL.md)** | Takes review comments or suggestions and implements the fixes — simple ones directly, complex ones with a plan for approval. |
 | **[/create-pr](./skills/create-pr/SKILL.md)** | Generates a narrative PR description, pushes the branch, opens the PR, then watches CI and auto-fixes simple failures (lint, format, lockfiles). Escalates judgment-required failures via `/confidence` rather than guessing. |
-| **[/fix-github-action](./skills/fix-github-action/SKILL.md)** | Diagnoses a failed GitHub Action check, applies a minimal fix, pushes, and iterates until CI passes. Refuses to disable, skip, or weaken checks. |
+| **[/ci-auto-fix](./skills/ci-auto-fix/SKILL.md)** | Diagnoses a failed CI check, applies a minimal fix, pushes, and iterates until CI passes. Provider-agnostic in scope; currently implements the GitHub Actions path. Refuses to disable, skip, or weaken checks. |
 
 ### Agents
 
@@ -158,7 +158,7 @@ skills/
   review-changes/       SKILL.md                        (slash command)
   implement-suggestion/ SKILL.md                        (slash command)
   create-pr/            SKILL.md                        (slash command)
-  fix-github-action/    SKILL.md                        (slash command)
+  ci-auto-fix/          SKILL.md                        (slash command)
 agents/
   reviewer.md                                           (agent)
 ```
