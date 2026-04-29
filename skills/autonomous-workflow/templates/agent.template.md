@@ -21,8 +21,17 @@ run — using isolated Git worktrees.
 Skill(skill: "autonomous-workflow")
 ```
 
-If the skill is unavailable, ask the user to install it:
-`npx skills add https://github.com/mthines/agent-skills --skill autonomous-workflow create-plan create-walkthrough confidence ci-auto-fix --yes`
+If the skill is unavailable, ask the user to install the full companion set:
+
+```bash
+npx skills add https://github.com/mthines/agent-skills \
+  --skill autonomous-workflow create-plan create-walkthrough confidence \
+          code-quality holistic-analysis tdd ux update-claude \
+          review-changes create-pr ci-auto-fix \
+  --yes
+```
+
+A minimal install (`autonomous-workflow create-plan create-walkthrough confidence ci-auto-fix`) also works, but Phase 3 (`tdd`/`ux`/`code-quality`), Phase 5 (`update-claude`), and Phase 6 (`review-changes`/`create-pr`) companions will silently skip — agents will see "not available, continuing" at every companion call-site.
 
 ## Then: Detect workflow mode
 

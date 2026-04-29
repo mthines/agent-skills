@@ -181,8 +181,6 @@ git commit -m "feat(scope): implement <feature-name>
 
 ---
 
----
-
 ## TDD Trigger
 
 This section is the anchor referenced from [`companion-skills.md`](./companion-skills.md#registry).

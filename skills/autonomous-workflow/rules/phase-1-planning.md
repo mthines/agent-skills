@@ -31,8 +31,8 @@ block must already be emitted and the user must have said "proceed".
 | **Lite** | 1-3 files AND simple                  | Brief mental plan only       |
 
 The remainder of this rule covers Full Mode. Lite Mode skips to Phase 2 with a
-short mental plan and no companion invocations except `confidence(plan)` if the
-agent feels uncertain.
+short mental plan. `confidence(plan)` still runs in Lite Mode — it is the only
+non-removable gate in any mode.
 
 ---
 

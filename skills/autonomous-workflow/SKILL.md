@@ -205,6 +205,9 @@ for the full how-to.
 Install all related skills + the agent so Claude auto-triggers on phrases like
 *"independently"*, *"in isolation"*, *"end-to-end"*.
 
+The skill ships with [`install.sh`](./install.sh) which handles the agent +
+routing-rule symlinks for you. Two steps: download skills, then run install.
+
 **Global** (personal use, all projects):
 
 ```bash
@@ -212,10 +215,8 @@ npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow create-plan create-walkthrough confidence \
           code-quality holistic-analysis tdd ux update-claude \
           review-changes create-pr ci-auto-fix \
-  --global --yes && \
-mkdir -p ~/.claude/agents && \
-ln -sf ~/.agents/skills/autonomous-workflow/templates/agent.template.md \
-   ~/.claude/agents/autonomous-workflow.md
+  --global --yes
+bash ~/.agents/skills/autonomous-workflow/install.sh --global
 ```
 
 **Per-project** (team use, committable):
@@ -225,16 +226,13 @@ npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow create-plan create-walkthrough confidence \
           code-quality holistic-analysis tdd ux update-claude \
           review-changes create-pr ci-auto-fix \
-  --yes && \
-mkdir -p .claude/agents .claude/rules && \
-ln -sf .agents/skills/autonomous-workflow/templates/agent.template.md \
-   .claude/agents/autonomous-workflow.md && \
-ln -sf .agents/skills/autonomous-workflow/templates/routing-rule.template.md \
-   .claude/rules/autonomous-workflow-routing.md
+  --yes
+bash .agents/skills/autonomous-workflow/install.sh
 ```
 
 To run with fewer companions, omit them from the `--skill` list. See
-[`rules/companion-skills.md`](./rules/companion-skills.md) for what each does.
+[`rules/companion-skills.md`](./rules/companion-skills.md) for what each does
+and how to disable. Run `bash install.sh --help` for script options.
 
 ---
 

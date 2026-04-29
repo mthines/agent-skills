@@ -58,7 +58,8 @@ You also need `gh` (GitHub CLI) for PR creation.
 
 ### Step 2: Install the skill + agent
 
-Choose **global** or **per-project**:
+The skill ships with [`install.sh`](./install.sh) which handles the agent +
+routing-rule symlinks for you. Two steps: download skills, then run install.
 
 #### Option A: Global (personal use, all projects)
 
@@ -67,10 +68,8 @@ npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow create-plan create-walkthrough confidence \
           code-quality holistic-analysis tdd ux update-claude \
           review-changes create-pr ci-auto-fix \
-  --global --yes && \
-mkdir -p ~/.claude/agents && \
-ln -sf ~/.agents/skills/autonomous-workflow/templates/agent.template.md \
-   ~/.claude/agents/autonomous-workflow.md
+  --global --yes
+bash ~/.agents/skills/autonomous-workflow/install.sh --global
 ```
 
 #### Option B: Per-project (team use, committable)
@@ -80,16 +79,13 @@ npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow create-plan create-walkthrough confidence \
           code-quality holistic-analysis tdd ux update-claude \
           review-changes create-pr ci-auto-fix \
-  --yes && \
-mkdir -p .claude/agents .claude/rules && \
-ln -sf .agents/skills/autonomous-workflow/templates/agent.template.md \
-   .claude/agents/autonomous-workflow.md && \
-ln -sf .agents/skills/autonomous-workflow/templates/routing-rule.template.md \
-   .claude/rules/autonomous-workflow-routing.md
+  --yes
+bash .agents/skills/autonomous-workflow/install.sh
 ```
 
 To run with fewer companions, omit them from the `--skill` list. See
-[Disabling Companions](#disabling-companions) below.
+[Disabling Companions](#disabling-companions) below. Run
+`bash install.sh --help` for script options.
 
 Then say *"implement X independently"* and the agent takes over.
 

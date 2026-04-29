@@ -119,7 +119,7 @@ git commit -m "docs(feature): document dark mode toggle
 - Document theme context API"
 ```
 
-## Claude.md Trigger
+## Claude MD Trigger
 
 ALWAYS invoke `update-claude` at the end of Phase 5. This is the always-on self-improving doc loop — it keeps `CLAUDE.md` and `.claude/rules/` aligned with what the code now does, so future autonomous runs (and other agents working in this repo) start with better context instead of stale guidance.
 
