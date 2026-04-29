@@ -72,10 +72,14 @@ See `rules/green.md`
 
 Write the MINIMUM code to make the failing test pass. No more. Run the test. Confirm it passes. Run the full relevant test suite to check for regressions.
 
+**Even in this phase, apply the basic readability primitives** from the `code-quality` skill while you write: meaningful names, guard clauses for the cases the test forces, no nesting beyond 2 levels. These cost almost nothing during authoring but are expensive to bolt on later. Don't optimize, abstract, or add unrequested features — REFACTOR will handle deeper improvements.
+
 ### REFACTOR Phase
 See `rules/refactor.md`
 
 Evaluate whether refactoring is needed. If yes, refactor while keeping all tests green. If no, move to the next cycle.
+
+**Apply code-quality principles during this phase.** The `code-quality` skill defines what "clean" means in concrete terms — guard clauses, low cognitive complexity, single-responsibility functions, intent-revealing names. Load `code-quality/rules/cognitive-complexity.md`, `code-quality/rules/control-flow.md`, and `code-quality/rules/review-checklist.md` to score each function you wrote and target the highest-load ones for refactoring. The GREEN phase delivers working code; the REFACTOR phase makes it readable.
 
 ---
 
@@ -120,6 +124,17 @@ Follow the project's existing convention. If none exists, use:
 - **describe** block: the unit under test (function, class, component)
 - **it/test** block: `should [expected behavior] when [condition]`
 - Example: `describe('createOrder')` → `it('should reject order when inventory is zero')`
+
+### Code Quality (during GREEN and REFACTOR)
+The `code-quality` skill is the source of truth for what "well-written code" means in this workflow. Key principles to apply:
+
+- **Guard clauses + early returns** instead of nested `if`s — flat code is easier to read and easier to test, because each branch has fewer preconditions to set up.
+- **Cognitive complexity ≤ 15** per function (per SonarSource's scoring). If a function you just wrote feels hard to test (lots of mocks, complex setup), that's the metric warning you that the function is doing too much.
+- **Names that describe intent**, not types or position. `pendingOrders` beats `arr2`.
+- **One responsibility per function**. If you can't name it without "and," split it.
+- **Validate at boundaries, trust internally.** Don't add defensive null checks for impossible states — they hide real bugs.
+
+When in doubt during REFACTOR, load `code-quality/rules/review-checklist.md` and walk the function through it.
 
 ### Anti-Patterns to Avoid
 | Anti-Pattern | Why It's Bad | What to Do Instead |

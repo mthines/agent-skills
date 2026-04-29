@@ -11,16 +11,26 @@ tags:
 
 Evaluate and improve code quality while keeping all tests green.
 
+This phase delegates the *what counts as quality* question to the
+`code-quality` skill. Read `code-quality/SKILL.md` and the relevant rule
+files (especially `cognitive-complexity.md`, `control-flow.md`,
+`naming.md`, and `review-checklist.md`) to ground your refactoring
+decisions in objective criteria — guard clauses, cognitive complexity
+scoring, single-responsibility functions, intent-revealing names — rather
+than personal taste.
+
 ---
 
 ## Decision: Refactor or Skip?
 
 ### Refactor when:
+- Cognitive complexity score is over ~15 (deep nesting, long branching, dense boolean logic — see `code-quality/rules/cognitive-complexity.md`)
+- A function nests beyond 2 levels — apply guard clauses or extract (see `code-quality/rules/control-flow.md`)
 - Clear duplication exists (3+ similar lines of code)
-- Names are unclear or misleading
-- A function does more than one thing
+- Names are unclear or misleading (see `code-quality/rules/naming.md`)
+- A function does more than one thing — name fails the "no `and`" test
 - Test code has duplicated setup that could be a shared fixture
-- Code is hard to read or follow
+- Code is hard to read top-to-bottom in one pass
 
 ### Skip when:
 - Code is already clean and readable
@@ -53,6 +63,35 @@ Each refactoring step should be atomic:
 Never batch multiple refactoring steps into one edit. If a test breaks, you need to know exactly which change caused it.
 
 ### 3. Refactoring Moves (common patterns)
+
+The `code-quality` skill catalogs these in detail; the highlights below are
+the moves that come up most often in TDD's REFACTOR phase.
+
+**Guard clause + early return** — replace nested conditions with a flat
+guarded body. Almost always the highest-value first move because it
+unflattens the function's main intent:
+
+```javascript
+// Before
+function transfer(from, to, amount) {
+  if (from && to) {
+    if (amount > 0) {
+      if (from.balance >= amount) {
+        // do the transfer
+      }
+    }
+  }
+}
+
+// After
+function transfer(from, to, amount) {
+  if (!from || !to) throw new Error('accounts required');
+  if (amount <= 0) throw new Error('amount must be positive');
+  if (from.balance < amount) throw new Error('insufficient funds');
+  // do the transfer
+}
+```
+
 
 **Extract function** — when a block of code has a clear single purpose:
 ```

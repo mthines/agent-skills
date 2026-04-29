@@ -102,6 +102,8 @@ These are user-invoked only (`disable-model-invocation: true`) — the agent won
 | **[/resolve-conflicts](./skills/resolve-conflicts/SKILL.md)** | Detects merge/rebase conflicts, shows both sides with context, proposes resolution strategies, and asks clarifying questions for ambiguous cases. |
 | **[/review-changes](./skills/review-changes/SKILL.md)** | Reviews branch changes or a PR for quality, correctness, tests, and commit hygiene. Dispatches to the reviewer skill. |
 | **[/implement-suggestion](./skills/implement-suggestion/SKILL.md)** | Takes review comments or suggestions and implements the fixes — simple ones directly, complex ones with a plan for approval. |
+| **[/create-pr](./skills/create-pr/SKILL.md)** | Generates a narrative PR description, pushes the branch, opens the PR, then watches CI and auto-fixes simple failures (lint, format, lockfiles). Escalates judgment-required failures via `/confidence` rather than guessing. |
+| **[/fix-github-action](./skills/fix-github-action/SKILL.md)** | Diagnoses a failed GitHub Action check, applies a minimal fix, pushes, and iterates until CI passes. Refuses to disable, skip, or weaken checks. |
 
 ### Agents
 
@@ -155,6 +157,8 @@ skills/
   resolve-conflicts/    SKILL.md                        (slash command)
   review-changes/       SKILL.md                        (slash command)
   implement-suggestion/ SKILL.md                        (slash command)
+  create-pr/            SKILL.md                        (slash command)
+  fix-github-action/    SKILL.md                        (slash command)
 agents/
   reviewer.md                                           (agent)
 ```
@@ -162,6 +166,51 @@ agents/
 Skills live in `skills/` as standard SKILL.md files, making them installable with `npx skills add`. Agents live in `agents/` since they require their own model and tool configuration.
 
 Each skill has a `SKILL.md` manifest with YAML frontmatter (name, description, metadata) and a Markdown body with instructions. Skills with `rules/` subdirectories contain focused guidance documents that are loaded on demand based on what the code contains.
+
+## Local Development
+
+If you're hacking on these skills (rather than just installing them), point your tool's skill directories at this checkout via symlinks. Edits to `skills/<name>/SKILL.md` are then live on the next agent turn — no `npx skills add` reinstall required.
+
+The convention used by this repo is a two-tier symlink chain:
+
+```
+~/.claude/skills/<name>     →  ~/.agents/skills/<name>     →  <this repo>/skills/<name>
+~/.agents/agents/<name>.md  →  <this repo>/agents/<name>.md
+```
+
+The middle layer (`~/.agents/skills/`) is the cross-tool discovery directory used by Codex, Cursor, OpenCode, and other Agent Skills–compatible clients, so the same chain serves every tool you use.
+
+### Add a new skill
+
+```bash
+SKILL=my-skill
+REPO="$HOME/Workspace/mthines/agent-skills.git/main"   # adjust to your checkout
+
+mkdir -p "$REPO/skills/$SKILL"
+$EDITOR "$REPO/skills/$SKILL/SKILL.md"
+
+ln -s "$REPO/skills/$SKILL" "$HOME/.agents/skills/$SKILL"
+ln -s "$HOME/.agents/skills/$SKILL" "$HOME/.claude/skills/$SKILL"
+```
+
+Agents are simpler — one symlink, no Claude-side mirror:
+
+```bash
+ln -s "$REPO/agents/<name>.md" "$HOME/.agents/agents/<name>.md"
+```
+
+### Edit an existing skill
+
+Edit `skills/<name>/SKILL.md` directly in this repo. Avoid editing through the symlinked path under `~/.claude/skills/` — writes propagate correctly, but it becomes ambiguous which checkout you touched if you have multiple worktrees.
+
+### Verify the chain
+
+```bash
+readlink ~/.claude/skills/<name>      # → ~/.agents/skills/<name>
+readlink ~/.agents/skills/<name>      # → <repo>/skills/<name>
+```
+
+Both must resolve. If either is missing, the agent harness won't see the skill.
 
 ## License
 

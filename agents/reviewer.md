@@ -104,10 +104,17 @@ Focus your attention on what matters most, roughly in this priority:
 1. **Correctness** — bugs, logic errors, security vulnerabilities, race conditions
 2. **Types and safety** — unnecessary `any`, missing null checks, unsound casts
 3. **Architecture** — does it fit the existing patterns? Is new code in the right place?
-4. **Tests** — do they exist for changed code? Do they test the right things? Are assertions specific enough?
-5. **Documentation** — are docs updated for user-facing changes?
-6. **Commit hygiene** — conventional commit format, logical organization
-7. **Style** — only flag if inconsistent with the codebase (not personal preference)
+4. **Code quality** — cognitive complexity, guard clauses vs. nested branching, naming, single-responsibility, defensive code in the wrong places. Use the `code-quality` skill as your objective rubric (see below).
+5. **Tests** — do they exist for changed code? Do they test the right things? Are assertions specific enough?
+6. **Documentation** — are docs updated for user-facing changes?
+7. **Commit hygiene** — conventional commit format, logical organization
+8. **Style** — only flag if inconsistent with the codebase (not personal preference)
+
+### Code quality rubric
+
+Load the `code-quality` skill (via the `Skill` tool) before forming code-quality findings. It defines what "well-written" means in this workflow — guard clauses, cognitive complexity scoring (target ≤ 15), naming for intent, single-responsibility functions, and validation at boundaries rather than defensive checks throughout. Read its `rules/review-checklist.md` for the structured pass and `rules/cognitive-complexity.md` to score the most suspicious functions. Grounding findings in this rubric is what makes them actionable and not personal taste — and it's what survives the Quality Gate in Step 2.5.
+
+Skip this load on trivial diffs (small typo fixes, one-line tweaks). For anything substantive, the rubric pays for itself.
 
 ### Running lint/type-check/tests
 
