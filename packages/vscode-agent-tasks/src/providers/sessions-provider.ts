@@ -211,6 +211,12 @@ export class SessionItem extends vscode.TreeItem {
     }
   }
 
+  /** Truncate a possibly-multiline string for tooltip display. */
+  private static snippet(s: string, maxLen = 280): string {
+    const flat = s.replace(/\s+/g, ' ').trim();
+    return flat.length > maxLen ? flat.slice(0, maxLen) + '\u2026' : flat;
+  }
+
   private static buildTooltip(
     session: SessionMetadata,
     timeStr: string,
@@ -218,12 +224,20 @@ export class SessionItem extends vscode.TreeItem {
     branch: string
   ): vscode.MarkdownString {
     const md = new vscode.MarkdownString();
-    md.appendMarkdown(
-      `_Status icon is heuristic — derived from file mtime, not a real signal._\n\n`
-    );
     md.appendMarkdown(`**Last activity:** ${timeStr} · _${status}_\n\n`);
-    md.appendMarkdown(`**Branch:** \`${branch}\`\n\n`);
-    md.appendMarkdown(`**Messages:** ${session.messageCount}\n\n`);
+    md.appendMarkdown(`**Branch:** \`${branch}\` · **Messages:** ${session.messageCount}\n\n`);
+
+    if (session.claudeSummary) {
+      md.appendMarkdown(`**Goal**\n\n${SessionItem.snippet(session.claudeSummary, 400)}\n\n`);
+    }
+    if (session.lastPrompt) {
+      md.appendMarkdown(`**You said**\n\n> ${SessionItem.snippet(session.lastPrompt)}\n\n`);
+    }
+    if (session.lastAssistantText) {
+      md.appendMarkdown(`**Claude replied**\n\n> ${SessionItem.snippet(session.lastAssistantText)}\n\n`);
+    }
+
+    md.appendMarkdown(`---\n\n`);
     md.appendMarkdown(`**Session ID:** \`${session.sessionId}\`\n\n`);
     if (session.cwd) {
       md.appendMarkdown(`**CWD:** \`${session.cwd}\`\n\n`);

@@ -226,6 +226,75 @@ describe('parseSessionFile', () => {
     expect(result?.title?.length).toBe(36);
   });
 
+  it('prefers Claude away_summary "Goal:" extract over first user message', () => {
+    const events: object[] = [
+      userEvent({ message: { content: '<command-message>ranger</command-message>' } }),
+      assistantEvent({ message: { content: 'sure', stop_reason: 'end_turn' } }),
+      {
+        type: 'system',
+        subtype: 'away_summary',
+        sessionId: SAMPLE_SESSION_ID,
+        content:
+          'Goal: fix the ranger bug in apps/api. Just done with TDD; tests green. Next: commit. (disable recaps in /config)',
+      },
+    ];
+    const filePath = writeJsonl('session.jsonl', buildJsonl(events));
+    const result = parseSessionFile(filePath);
+    expect(result?.title.startsWith('fix the ranger bug')).toBe(true);
+    expect(result?.claudeSummary).toContain('fix the ranger bug');
+    expect(result?.claudeSummary).not.toMatch(/^Goal:/);
+    expect(result?.claudeSummary).not.toMatch(/disable recaps/);
+  });
+
+  it('uses LATEST away_summary when multiple are present', () => {
+    const events: object[] = [
+      userEvent(),
+      {
+        type: 'system',
+        subtype: 'away_summary',
+        sessionId: SAMPLE_SESSION_ID,
+        content: 'Goal: old summary',
+      },
+      userEvent({ timestamp: '2026-04-30T12:05:00.000Z' }),
+      {
+        type: 'system',
+        subtype: 'away_summary',
+        sessionId: SAMPLE_SESSION_ID,
+        content: 'Goal: latest summary that should win',
+      },
+    ];
+    const filePath = writeJsonl('session.jsonl', buildJsonl(events));
+    const result = parseSessionFile(filePath);
+    expect(result?.claudeSummary).toBe('latest summary that should win');
+  });
+
+  it('captures latest last-prompt and assistant text for tooltip context', () => {
+    const events: object[] = [
+      userEvent(),
+      assistantEvent({ message: { content: [{ type: 'text', text: 'first reply' }] } }),
+      { type: 'last-prompt', sessionId: SAMPLE_SESSION_ID, lastPrompt: 'most recent prompt' },
+      assistantEvent({
+        timestamp: '2026-04-30T12:10:00.000Z',
+        message: { content: [{ type: 'text', text: 'most recent reply' }] },
+      }),
+    ];
+    const filePath = writeJsonl('session.jsonl', buildJsonl(events));
+    const result = parseSessionFile(filePath);
+    expect(result?.lastPrompt).toBe('most recent prompt');
+    expect(result?.lastAssistantText).toBe('most recent reply');
+  });
+
+  it('falls back to first user message when no away_summary present', () => {
+    const events: object[] = [
+      userEvent({ message: { content: 'just a regular question' } }),
+      assistantEvent({ message: { content: 'reply', stop_reason: 'tool_use' } }),
+    ];
+    const filePath = writeJsonl('session.jsonl', buildJsonl(events));
+    const result = parseSessionFile(filePath);
+    expect(result?.title).toBe('just a regular question');
+    expect(result?.claudeSummary).toBeUndefined();
+  });
+
   it('renders slash-command tag soup as `/name args`', () => {
     const raw =
       '<command-message>ranger</command-message>\n' +

@@ -66,6 +66,23 @@ export interface SessionMetadata {
    * the JSONL events rather than a heuristic on file activity.
    */
   turnEnded: boolean;
+  /**
+   * Cleaned-up extract from the LATEST `system subtype: away_summary` event
+   * (Claude composes this at every turn end). Already stripped of the
+   * "Goal: " prefix and the trailing "(disable recaps in /config)"
+   * parenthetical, and whitespace-collapsed. Undefined if the session
+   * hasn't reached a turn end yet.
+   *
+   * The provider prefers this over the first user message as the tree-item
+   * label because it's an actual claude-generated description of what the
+   * session is about — far more useful for scanning than the user's opening
+   * prompt (which is often template boilerplate or a slash command).
+   */
+  claudeSummary: string | undefined;
+  /** Most recent `last-prompt.lastPrompt` (whatever the user typed last). */
+  lastPrompt: string | undefined;
+  /** First text part from the most recent `assistant` event, if any. */
+  lastAssistantText: string | undefined;
 }
 
 /**
@@ -182,11 +199,33 @@ interface RawEvent {
   isSidechain?: boolean;
   /** `system` events carry subtype (`turn_duration`, `away_summary`, …). */
   subtype?: string;
+  /** `system subtype: away_summary` events carry the recap text here. */
+  content?: string;
+  /** `last-prompt` events carry the most recent prompt here. */
+  lastPrompt?: string;
   message?: {
     content?: string | Array<{ type?: string; text?: string }>;
     /** `assistant` events: `end_turn`, `tool_use`, `max_tokens`, … */
     stop_reason?: string | null;
   };
+}
+
+/**
+ * Strip the boilerplate prefix/suffix from an `away_summary.content` string.
+ *
+ *   "Goal: X. Next: Y. (disable recaps in /config)"
+ *      → "X. Next: Y."
+ *
+ *   "X completed. Next: Y. (disable recaps in /config)"
+ *      → "X completed. Next: Y."
+ */
+function cleanAwaySummary(content: string): string {
+  let s = content.trim();
+  // Trim trailing recap-config nudge in any common form
+  s = s.replace(/\s*\((?:disable )?recaps[^)]*\)\s*$/i, '').trim();
+  // Strip leading "Goal:" / "Goal -" / "Goal —"
+  s = s.replace(/^Goal\s*[:\-—]\s*/i, '').trim();
+  return s;
 }
 
 /**
@@ -346,6 +385,13 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
   let lastEndTurnIdx = -1;
   let lineIdx = 0;
 
+  // Claude-generated context fields. We track the LATEST value of each
+  // because they reflect the current state of the session — older summaries
+  // are stale.
+  let claudeSummary: string | undefined;
+  let lastPrompt: string | undefined;
+  let lastAssistantText: string | undefined;
+
   for (const line of lines) {
     lineIdx++;
     let event: RawEvent;
@@ -367,6 +413,18 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
       continue;
     }
 
+    // Claude-generated session summary, written at every turn end.
+    if (type === 'system' && event.subtype === 'away_summary' && event.content) {
+      claudeSummary = cleanAwaySummary(event.content);
+      continue;
+    }
+
+    // User's most recent prompt (flat event with `lastPrompt` field).
+    if (type === 'last-prompt' && typeof event.lastPrompt === 'string') {
+      lastPrompt = event.lastPrompt.trim() || undefined;
+      continue;
+    }
+
     // Only process user and assistant events for the main data fields
     if (type !== 'user' && type !== 'assistant') {
       // Unknown / other event types → silently skip
@@ -377,8 +435,13 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
     lastEventType = type as 'user' | 'assistant';
 
     if (type === 'user') lastUserIdx = lineIdx;
-    if (type === 'assistant' && event.message?.stop_reason === 'end_turn') {
-      lastEndTurnIdx = lineIdx;
+    if (type === 'assistant') {
+      if (event.message?.stop_reason === 'end_turn') {
+        lastEndTurnIdx = lineIdx;
+      }
+      // Track latest assistant text content for tooltip context.
+      const text = extractContentText(event.message?.content);
+      if (text) lastAssistantText = text;
     }
 
     if (type === 'user') {
@@ -423,10 +486,23 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
   // user event (or there are no user events but there is an end-of-turn).
   const turnEnded = lastEndTurnIdx > lastUserIdx;
 
+  // Title preference (most-meaningful first):
+  //   1. Claude's `away_summary` goal extract (real session description)
+  //   2. The first user message we extracted (cleaned of slash-command markup)
+  //   3. "Untitled session" placeholder
+  let chosenTitle: string;
+  if (claudeSummary) {
+    chosenTitle = truncate(collapseWhitespace(claudeSummary));
+  } else if (title) {
+    chosenTitle = title;
+  } else {
+    chosenTitle = 'Untitled session';
+  }
+
   const data: SessionMetadata = {
     sessionId,
     filePath,
-    title: title ?? 'Untitled session',
+    title: chosenTitle,
     gitBranch,
     cwd,
     firstTimestamp,
@@ -435,6 +511,9 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
     mtime,
     lastEventType,
     turnEnded,
+    claudeSummary,
+    lastPrompt,
+    lastAssistantText,
   };
   parseCache.set(filePath, { mtime, data });
   return data;
