@@ -136,6 +136,14 @@
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "agentTasks.focus",
+        "key": "ctrl+shift+a ctrl+shift+t",
+        "mac": "cmd+shift+a cmd+shift+t",
+        "when": "!editorFocus"
+      }
+    ],
     "configuration": {
       "title": "Agent Tasks",
       "properties": {
