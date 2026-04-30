@@ -30,6 +30,7 @@ src/
     logger.ts                       # `mthines.agent-tasks` OutputChannel wrapper
     worktree-discovery.ts           # Shared worktree discovery helpers (pure Node.js, vitest-testable)
     session-artifact-correlator.ts  # Pure helper — `(worktree, branch, dirs)` → linked artifact file paths
+    process-tree.ts                 # Pure helpers: `parsePsOutput`, `findClaudeDescendant`, `claimPendingAdoption` — no VS Code dep, vitest-testable
   providers/                # TreeDataProviders for sidebar views
     agent-tasks-provider    # Agent tasks explorer view — multi-worktree groups + scope toggle
     sessions-provider       # Sessions panel — Running section + worktree groups + artifact correlation
@@ -60,6 +61,11 @@ src/
 - **Worktree grouping in Sessions** — gw-aware (walks up to find `.gw/config.json`, then enumerates sibling worktrees by `.git` file marker) → falls back to `git worktree list --porcelain` → finally just the workspace path. Multi-worktree always groups; current worktree pinned first and marked `(current)`. Single-worktree shows flat.
 - **Session Watcher** — 50 ms trailing debounce (was 500 ms — kept tight for realtime icon transitions). 15 s visibility-bound refresh tick drives `running → stalled` ageing-out without waiting on file events.
 - **Per-session terminal tracking** — `extension.ts` maintains a `Map<sessionId, vscode.Terminal>` so re-clicking a session focuses its existing tab instead of spawning a duplicate. `onDidCloseTerminal` cleans up. Cross-window is impossible — VS Code's API is window-scoped.
+- **Terminal adoption on click** — when `openSession` finds no tracked terminal for a session, `tryAdoptTerminal` runs the argv fast-path scan across `vscode.window.terminals`:
+  - **Argv fast-path** (`findClaudeDescendant`): one `ps -A -o pid,ppid,command` snapshot; BFS each terminal's shell PID for a descendant whose command contains `claude --resume <sid>`. Succeeds when the extension itself previously spawned the terminal and lost tracking on window reload.
+  - All failures (ps error, no match) fall through silently to spawn. The scan runs only inside `openSession` — never on refresh, watcher tick, or panel render.
+- **Pending-adoption queue** — when the user clicks the `+` new-session button, the spawned terminal is pushed onto `pendingAdoptions: Array<PendingAdoption<vscode.Terminal>>` with the workspace cwd and a `spawnedAt` timestamp. `SessionsProvider.onDidDiscoverSession` fires whenever a new session ID is seen for the first time. `extension.ts` listens and calls `claimPendingAdoption(pendingAdoptions, session.cwd, Date.now(), PENDING_TTL_MS)` — a pure function that evicts stale entries (>60 s) and returns the first exact-cwd-match. On a claim: the terminal is inserted into `sessionTerminals`, `setTerminalOpen` fires, and the terminal is focused. `onDidCloseTerminal` evicts the terminal from the queue if it closes before a session appears.
+- **Documented limitation** — bare `claude` processes typed by the user in external or integrated terminals OUTSIDE the `+` flow cannot be safely adopted. Cwd-match was empirically shown to produce false-positive adoptions (same-cwd sessions in the same worktree adopt each other). Clicking such a session spawns a fresh `claude --resume <id>` terminal. Once spawned and tracked, subsequent clicks focus that terminal correctly.
 - **Parse cache** — `parseSessionFile` is mtime-keyed; unchanged JSONL files skip read+parse on refresh. Bounded by unique session count (tens to hundreds).
 - **Session ↔ artifact correlation** — `findLinkedArtifacts(worktreePath, gitBranch, configuredDirs)` in `lib/session-artifact-correlator.ts` joins a session to its `<worktree>/<dir>/<branchName>/{task,plan,walkthrough}.md` files. The bucket worktree (longest match for `session.cwd`) is the correlation root, paired with `session.gitBranch`. When any artifact exists, the `SessionItem` becomes collapsible (`contextValue = claudeSessionWithArtifacts`), the row-click `command` is dropped (so single-click expands cleanly), and a `$(play)` inline action exposes Resume. `LinkedArtifactItem` children open via `agentTasks.openMarkdown`. The correlation map is rebuilt on every `buildRootItems` and on every `artifactWatcher.onArtifactChanged` event so chevrons appear/disappear live.
 
@@ -88,20 +94,21 @@ All commands, views, settings, and keybindings are defined in `package.json`:
 
 ## Command IDs
 
-| Command | Description |
-|---------|-------------|
-| `agentTasks.refresh` | Refresh Agent Tasks tree |
-| `agentTasks.sort` | Sort picker QuickPick |
-| `agentTasks.focus` | Focus sidebar |
-| `agentTasks.toggleScope` | Toggle `current` / `all` worktrees in the Agent Tasks panel |
-| `agentTasks.openMarkdown` | Internal — open a markdown file path |
-| `agentTasks.openPlan` | Open plan.md for a branch item |
-| `agentTasks.openTask` | Open task.md for a branch item |
-| `agentTasks.openWalkthrough` | Open walkthrough.md for a branch item |
-| `agentTasks.sessions.refresh` | Refresh Sessions tree |
-| `agentTasks.sessions.openSession` | Internal — open or resume a session (registered on SessionItem) |
-| `agentTasks.sessions.toggleScope` | Toggle `current` / `all` worktrees in the Sessions panel |
-| `agentTasks.sessions.find` | Open a QuickPick across every session for this workspace |
+| Command                           | Description                                                                                                                                                                                                                                                                                                                 |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agentTasks.refresh`              | Refresh Agent Tasks tree                                                                                                                                                                                                                                                                                                    |
+| `agentTasks.sort`                 | Sort picker QuickPick                                                                                                                                                                                                                                                                                                       |
+| `agentTasks.focus`                | Focus sidebar                                                                                                                                                                                                                                                                                                               |
+| `agentTasks.toggleScope`          | Toggle `current` / `all` worktrees in the Agent Tasks panel                                                                                                                                                                                                                                                                 |
+| `agentTasks.openMarkdown`         | Internal — open a markdown file path                                                                                                                                                                                                                                                                                        |
+| `agentTasks.openPlan`             | Open plan.md for a branch item                                                                                                                                                                                                                                                                                              |
+| `agentTasks.openTask`             | Open task.md for a branch item                                                                                                                                                                                                                                                                                              |
+| `agentTasks.openWalkthrough`      | Open walkthrough.md for a branch item                                                                                                                                                                                                                                                                                       |
+| `agentTasks.sessions.refresh`     | Refresh Sessions tree                                                                                                                                                                                                                                                                                                       |
+| `agentTasks.sessions.openSession` | Internal — open or resume a session (registered on SessionItem)                                                                                                                                                                                                                                                             |
+| `agentTasks.sessions.toggleScope` | Toggle `current` / `all` worktrees in the Sessions panel                                                                                                                                                                                                                                                                    |
+| `agentTasks.sessions.find`        | Open a QuickPick across every session for this workspace                                                                                                                                                                                                                                                                    |
+| `agentTasks.sessions.newSession`  | Start a new `claude` session in the workspace root CWD. Appears as a `+` icon in the `agentSessionsExplorer` panel title bar (`navigation@0`). Hidden from command palette. Pushes a `PendingAdoption` entry so the first new JSONL in that cwd is automatically linked to the spawned terminal via `onDidDiscoverSession`. |
 
 ## Code Style
 

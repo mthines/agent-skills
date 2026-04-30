@@ -4,12 +4,15 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import * as fs from 'fs';
 import { AgentTasksProvider, WorktreeFlatItem } from './providers/agent-tasks-provider';
+import * as child_process from 'child_process';
 import { ArtifactWatcher } from './watchers/artifact-watcher';
 import { SessionsProvider, SessionItem } from './providers/sessions-provider';
 import { SessionWatcher } from './watchers/session-watcher';
 import { initLogger, log, logError } from './lib/logger';
+import { parsePsOutput, findClaudeDescendant, claimPendingAdoption, type PendingAdoption } from './lib/process-tree';
 import type { SessionMetadata } from './parsers/session-jsonl-parser';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -163,24 +166,19 @@ export function activate(context: vscode.ExtensionContext): void {
     log(`Sessions watcher rebuilt: ${sessionsProvider.sessionDirs.length} dir(s)`);
   });
 
-  const sessionsToggleScopeCmd = vscode.commands.registerCommand(
-    'agentTasks.sessions.toggleScope',
-    async () => {
-      const cfg = vscode.workspace.getConfiguration('agentTasks.sessions');
-      const current = cfg.get<string>('scope', 'all');
-      const next = current === 'current' ? 'all' : 'current';
-      log(`Command: sessions.toggleScope (${current} → ${next})`);
-      await cfg.update('scope', next, vscode.ConfigurationTarget.Global);
-      sessionsProvider.refresh();
-      sessionWatcher.rebuild(sessionsProvider.sessionDirs);
-      vscode.window.setStatusBarMessage(
-        next === 'current'
-          ? 'Sessions: showing current worktree only'
-          : 'Sessions: showing all worktrees',
-        2500
-      );
-    }
-  );
+  const sessionsToggleScopeCmd = vscode.commands.registerCommand('agentTasks.sessions.toggleScope', async () => {
+    const cfg = vscode.workspace.getConfiguration('agentTasks.sessions');
+    const current = cfg.get<string>('scope', 'all');
+    const next = current === 'current' ? 'all' : 'current';
+    log(`Command: sessions.toggleScope (${current} → ${next})`);
+    await cfg.update('scope', next, vscode.ConfigurationTarget.Global);
+    sessionsProvider.refresh();
+    sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+    vscode.window.setStatusBarMessage(
+      next === 'current' ? 'Sessions: showing current worktree only' : 'Sessions: showing all worktrees',
+      2500
+    );
+  });
 
   // Periodic refresh while the Sessions view is visible. Drives state-machine
   // transitions that aren't triggered by a file-watcher event — e.g. a
@@ -214,26 +212,21 @@ export function activate(context: vscode.ExtensionContext): void {
   // Agent Tasks scope toggle
   // -------------------------------------------------------------------------
 
-  const toggleScopeCmd = vscode.commands.registerCommand(
-    'agentTasks.toggleScope',
-    async () => {
-      const cfg = vscode.workspace.getConfiguration('agentTasks');
-      const current = cfg.get<string>('scope', 'all');
-      const next = current === 'current' ? 'all' : 'current';
-      log(`Command: agentTasks.toggleScope (${current} → ${next})`);
+  const toggleScopeCmd = vscode.commands.registerCommand('agentTasks.toggleScope', async () => {
+    const cfg = vscode.workspace.getConfiguration('agentTasks');
+    const current = cfg.get<string>('scope', 'all');
+    const next = current === 'current' ? 'all' : 'current';
+    log(`Command: agentTasks.toggleScope (${current} → ${next})`);
 
-      // Mirror the sessions toggle: use Global for single-folder, workspace
-      // target for multi-root. For simplicity use Global (same as sessions).
-      await cfg.update('scope', next, vscode.ConfigurationTarget.Global);
-      agentTasksProvider.refresh();
-      vscode.window.setStatusBarMessage(
-        next === 'current'
-          ? 'Agent Tasks: showing current worktree only'
-          : 'Agent Tasks: showing all worktrees',
-        2500
-      );
-    }
-  );
+    // Mirror the sessions toggle: use Global for single-folder, workspace
+    // target for multi-root. For simplicity use Global (same as sessions).
+    await cfg.update('scope', next, vscode.ConfigurationTarget.Global);
+    agentTasksProvider.refresh();
+    vscode.window.setStatusBarMessage(
+      next === 'current' ? 'Agent Tasks: showing current worktree only' : 'Agent Tasks: showing all worktrees',
+      2500
+    );
+  });
 
   // React to scope config changes from settings UI (so the user doesn't have
   // to manually refresh after editing settings.json).
@@ -253,7 +246,23 @@ export function activate(context: vscode.ExtensionContext): void {
   // possible — VS Code's extension API is window-scoped.
   const sessionTerminals = new Map<string, vscode.Terminal>();
 
+  // ---------------------------------------------------------------------------
+  // Pending-adoption queue — for the "+" new-session button
+  //
+  // When the user clicks "+" we know exactly which terminal was spawned. The
+  // next new session JSONL that appears in the same cwd is deterministically
+  // linked to that terminal via onDidDiscoverSession. This avoids the
+  // now-deleted cwd-match slow-path that incorrectly adopted the WRONG session
+  // when multiple bare-claude processes shared a cwd.
+  // ---------------------------------------------------------------------------
+
+  const PENDING_TTL_MS = 60_000; // 60 s — generous; claude can take a few seconds to write the first JSONL
+  let pendingAdoptions: Array<PendingAdoption<vscode.Terminal>> = [];
+
   const closeTerminalSub = vscode.window.onDidCloseTerminal((t) => {
+    // Clean up any pending adoption for this terminal.
+    pendingAdoptions = pendingAdoptions.filter((p) => p.terminal !== t);
+
     for (const [sid, term] of sessionTerminals) {
       if (term === t) {
         sessionTerminals.delete(sid);
@@ -264,13 +273,97 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
+  // Subscribe to new sessions discovered by the provider. Attempt to claim a
+  // pending adoption before falling through. This hook fires for every new
+  // session ID that wasn't present on the previous refresh cycle.
+  const discoverySub = sessionsProvider.onDidDiscoverSession((session) => {
+    if (!session.cwd) return;
+    const normalizedCwd = path.resolve(session.cwd);
+    const result = claimPendingAdoption(pendingAdoptions, normalizedCwd, Date.now(), PENDING_TTL_MS);
+    if (!result) return;
+
+    pendingAdoptions = result.remaining;
+    const { terminal } = result;
+    const waited = Date.now() - (pendingAdoptions.find(() => true)?.spawnedAt ?? Date.now());
+    log(
+      `Pending adoption claimed: session ${session.sessionId.slice(0, 8)} ↔ terminal "${terminal.name}" (waited ~${waited}ms)`
+    );
+    sessionTerminals.set(session.sessionId, terminal);
+    sessionsProvider.setTerminalOpen(session.sessionId, true);
+    // Focus the already-open terminal so the user sees their new session.
+    terminal.show(false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Terminal adoption helper (argv fast-path only)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * One-shot process-tree scan using the argv fast-path only.
+   *
+   * Attempts to find a terminal already running `claude --resume <sid>` in
+   * its process tree. This covers sessions that the extension spawned in a
+   * prior window and lost tracking after a window reload.
+   *
+   * The cwd-match slow-path has been removed: it produced false-positive
+   * matches when multiple bare-claude processes shared the same cwd (e.g.
+   * multiple sessions in the same worktree), causing the wrong session to be
+   * adopted. The pending-adoption queue (above) handles the "+" button case
+   * deterministically.
+   *
+   * Returns the matching terminal, or `undefined` on failure or no-match.
+   * All errors are caught and logged; callers always fall through to spawn.
+   */
+  const tryAdoptTerminal = async (
+    sid: string,
+    terminals: readonly vscode.Terminal[]
+  ): Promise<vscode.Terminal | undefined> => {
+    if (terminals.length === 0) return undefined;
+
+    // ---- Snapshot ----
+    let psRaw: string;
+    try {
+      psRaw = child_process.execSync('ps -A -o pid,ppid,command', {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        encoding: 'utf8',
+      });
+    } catch (err) {
+      logError('tryAdoptTerminal: ps failed, falling through to spawn', err);
+      return undefined;
+    }
+    const snapshot = parsePsOutput(psRaw);
+
+    // ---- Resolve shell PIDs ----
+    const shellByTerm = new Map<vscode.Terminal, number>();
+    for (const t of terminals) {
+      let pid: number | undefined;
+      try {
+        pid = await t.processId;
+      } catch {
+        continue;
+      }
+      if (typeof pid === 'number') shellByTerm.set(t, pid);
+    }
+
+    // ---- Fast-path: argv match ----
+    for (const [t, shellPid] of shellByTerm) {
+      const claudePid = findClaudeDescendant(shellPid, sid, snapshot);
+      if (claudePid !== undefined) {
+        log(
+          `tryAdoptTerminal: argv-match adopted terminal (shellPid=${shellPid}, claudePid=${claudePid}, sid=${sid.slice(0, 8)})`
+        );
+        return t;
+      }
+    }
+
+    return undefined;
+  };
+
   // Shared open-session logic used by both the tree-click command and the
   // find QuickPick. Reads the `openWith` setting once, then either resumes
   // or opens the JSONL.
   const openSession = async (session: SessionMetadata): Promise<void> => {
-    const openWith = vscode.workspace
-      .getConfiguration('agentTasks.sessions')
-      .get<string>('openWith', 'resume');
+    const openWith = vscode.workspace.getConfiguration('agentTasks.sessions').get<string>('openWith', 'resume');
 
     const sid = session.sessionId;
     log(`openSession (id=${sid.slice(0, 8)}, mode=${openWith})`);
@@ -284,6 +377,23 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       if (existing) sessionTerminals.delete(sid);
+
+      // Attempt to adopt an existing terminal that is already running
+      // `claude --resume <sid>` (argv fast-path only). Covers sessions
+      // the extension itself spawned in a prior window and lost tracking.
+      //
+      // NOTE: The cwd-match slow-path has been deliberately removed.
+      // Bare `claude` terminals (typed by the user, or started outside the
+      // "+" flow) are NOT adoptable — clicking them spawns a fresh
+      // `--resume` terminal. This is intentional: cwd is not unique across
+      // sessions in the same worktree and produces false-positive adoption.
+      const adopted = await tryAdoptTerminal(sid, vscode.window.terminals);
+      if (adopted) {
+        sessionTerminals.set(sid, adopted);
+        sessionsProvider.setTerminalOpen(sid, true);
+        adopted.show(false);
+        return;
+      }
 
       const branch = session.gitBranch ?? '?';
       const shortId = sid.slice(0, 8);
@@ -366,6 +476,30 @@ export function activate(context: vscode.ExtensionContext): void {
     await openSession(picked.session);
   });
 
+  // Feature 2: + button in panel title bar — start a new Claude session.
+  // Before running `claude`, we push a PendingAdoption entry so that the
+  // next new JSONL to appear in this cwd is deterministically linked to the
+  // spawned terminal (claimed via onDidDiscoverSession).
+  const newSessionCmd = vscode.commands.registerCommand('agentTasks.sessions.newSession', () => {
+    log('Command: sessions.newSession');
+    const rawCwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const cwd = rawCwd ? path.resolve(rawCwd) : undefined;
+    log(`Starting new Claude session (cwd=${cwd ?? '?'})`);
+    const terminal = vscode.window.createTerminal({
+      name: 'Claude · new session',
+      cwd,
+      iconPath: new vscode.ThemeIcon('comment-discussion'),
+    });
+
+    if (cwd) {
+      pendingAdoptions.push({ terminal, cwd, spawnedAt: Date.now() });
+      log(`Pending adoption queued for cwd=${cwd} (queue length: ${pendingAdoptions.length})`);
+    }
+
+    terminal.show();
+    terminal.sendText('claude');
+  });
+
   context.subscriptions.push(
     agentTasksView,
     artifactWatcher,
@@ -388,7 +522,9 @@ export function activate(context: vscode.ExtensionContext): void {
     configSub,
     openSessionCmd,
     findSessionCmd,
-    closeTerminalSub
+    closeTerminalSub,
+    discoverySub,
+    newSessionCmd
   );
 }
 

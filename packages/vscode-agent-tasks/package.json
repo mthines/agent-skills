@@ -126,7 +126,12 @@
       {
         "command": "agentTasks.toggleScope",
         "title": "Toggle Agent Tasks Scope (current / all worktrees)",
-        "icon": "$(filter)",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "agentTasks.sessions.newSession",
+        "title": "New Claude Session",
+        "icon": "$(add)",
         "category": "Agent Tasks"
       }
     ],
@@ -151,6 +156,10 @@
         {
           "command": "agentTasks.sessions.openSession",
           "when": "false"
+        },
+        {
+          "command": "agentTasks.sessions.newSession",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -168,6 +177,11 @@
           "command": "agentTasks.toggleScope",
           "when": "view == agentTasksExplorer",
           "group": "navigation"
+        },
+        {
+          "command": "agentTasks.sessions.newSession",
+          "when": "view == agentSessionsExplorer",
+          "group": "navigation@0"
         },
         {
           "command": "agentTasks.sessions.find",

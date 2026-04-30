@@ -437,6 +437,17 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
   private _onDidChangeTreeData = new vscode.EventEmitter<SessionTreeItem | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
+  /**
+   * Fires once for each session ID that was NOT present on the previous
+   * refresh. Used by `extension.ts` to claim pending adoptions from the
+   * "+" new-session button without polling.
+   */
+  private readonly _onDidDiscoverSession = new vscode.EventEmitter<SessionMetadata>();
+  readonly onDidDiscoverSession: vscode.Event<SessionMetadata> = this._onDidDiscoverSession.event;
+
+  /** Session IDs seen in the last `buildRootItems` call. Used to diff new arrivals. */
+  private _knownSessionIds = new Set<string>();
+
   /** Cache of session dirs being watched — exposed for SessionWatcher rebuild. */
   private _sessionDirs: string[] = [];
 
@@ -658,6 +669,25 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     // avoid showing the same row twice.
     const allSessions: SessionMetadata[] = [];
     for (const sessions of buckets.values()) allSessions.push(...sessions);
+
+    // Fire onDidDiscoverSession for any session ID not seen in the previous
+    // render. This gives extension.ts a precise hook to claim pending adoptions
+    // from the "+" button without polling. We defer into a microtask so the
+    // event fires after the tree view has already consumed `buildRootItems`.
+    const prevKnown = this._knownSessionIds;
+    const nextKnown = new Set(allSessions.map((s) => s.sessionId));
+    this._knownSessionIds = nextKnown;
+    if (prevKnown.size > 0) {
+      // Only fire discovery events once we have an established baseline
+      // (the very first render populates the baseline without emitting events,
+      // to avoid false-positives on extension startup).
+      for (const session of allSessions) {
+        if (!prevKnown.has(session.sessionId)) {
+          void Promise.resolve().then(() => this._onDidDiscoverSession.fire(session));
+        }
+      }
+    }
+
     const running = allSessions
       .filter((s) => this.isRunning(s))
       .sort((a, b) => b.mtime - a.mtime);
