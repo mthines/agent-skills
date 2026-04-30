@@ -68,8 +68,12 @@ Clicking a session does one of two things depending on the `agentTasks.sessions.
 
 | Value | Behavior |
 |-------|----------|
-| `"editor"` (default) | Opens the JSONL transcript file in the VS Code text editor |
-| `"resume"` | Opens a new terminal and runs `claude --resume <session-id>` |
+| `"resume"` (default) | Opens a terminal in the session's original CWD and runs `claude --resume <session-id>` |
+| `"editor"` | Opens the JSONL transcript file in the VS Code text editor |
+
+In **resume** mode the extension tracks which terminal belongs to which session within this VS Code window. Clicking the same session again focuses the existing terminal tab instead of spawning a duplicate. Closing the terminal removes the association, so a subsequent click starts a fresh process.
+
+Cross-window terminal tracking isn't possible — the VS Code extension API is window-scoped. If you've resumed the same session in another VS Code window, clicking here will start a second `claude --resume` against the same JSONL. Claude Code itself handles this gracefully but you'll have two processes appending to the same file.
 
 > **Note:** `resume` mode requires `claude` to be on your `PATH`. If `claude` is not installed or not found, the terminal will show an error — the extension does not validate the command.
 
@@ -87,7 +91,7 @@ As of this release, the extension also activates via `onStartupFinished` so the 
 | `agentTasks.autoOpenWalkthrough` | `true` | Auto-open `walkthrough.md` in Preview when created. |
 | `agentTasks.autoOpenPlan` | `true` | Auto-open `plan.md` in Preview when created. |
 | `agentTasks.openMarkdownInPreview` | `true` | Open artifact files in Markdown Preview mode. |
-| `agentTasks.sessions.openWith` | `"editor"` | What to do when a session is clicked: `"editor"` opens the JSONL file; `"resume"` runs `claude --resume <session-id>` in a new terminal. |
+| `agentTasks.sessions.openWith` | `"resume"` | What to do when a session is clicked: `"resume"` opens a terminal in the session's original CWD and runs `claude --resume <session-id>`; `"editor"` opens the JSONL file instead. |
 | `agentTasks.sessions.scope` | `"all"` | Which worktrees the Sessions panel includes: `"all"` shows every worktree (grouped, current first); `"current"` shows only the current worktree. Toggle quickly via the filter icon in the panel header. |
 
 ### Configurable directories

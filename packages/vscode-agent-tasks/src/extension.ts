@@ -196,6 +196,21 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
+  // Map of sessionId → terminal currently running `claude --resume` for that
+  // session in THIS window. Used so re-clicking a session focuses its existing
+  // terminal tab instead of spawning a duplicate. Cross-window tracking is not
+  // possible — VS Code's extension API is window-scoped.
+  const sessionTerminals = new Map<string, vscode.Terminal>();
+
+  const closeTerminalSub = vscode.window.onDidCloseTerminal((t) => {
+    for (const [sid, term] of sessionTerminals) {
+      if (term === t) {
+        sessionTerminals.delete(sid);
+        break;
+      }
+    }
+  });
+
   const openSessionCmd = vscode.commands.registerCommand(
     'agentTasks.sessions.openSession',
     async (item: SessionItem) => {
@@ -203,20 +218,44 @@ export function activate(context: vscode.ExtensionContext): void {
 
       const openWith = vscode.workspace
         .getConfiguration('agentTasks.sessions')
-        .get<string>('openWith', 'editor');
+        .get<string>('openWith', 'resume');
 
       if (openWith === 'resume') {
-        const terminal = vscode.window.createTerminal('Claude Resume');
+        const sid = item.session.sessionId;
+
+        // If we already have a terminal for this session and it's still alive,
+        // just focus it. exitStatus stays `undefined` while the process is
+        // running and gets set when it exits.
+        const existing = sessionTerminals.get(sid);
+        if (existing && existing.exitStatus === undefined) {
+          existing.show(/* preserveFocus */ false);
+          return;
+        }
+        if (existing) {
+          // Stale entry — terminal exited but onDidCloseTerminal hasn't fired
+          sessionTerminals.delete(sid);
+        }
+
+        const branch = item.session.gitBranch ?? '?';
+        const shortId = sid.slice(0, 8);
+        const cwd =
+          item.session.cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+        const terminal = vscode.window.createTerminal({
+          name: `Claude · ${branch} · ${shortId}`,
+          cwd,
+          iconPath: new vscode.ThemeIcon('comment-discussion'),
+        });
+        sessionTerminals.set(sid, terminal);
         terminal.show();
-        terminal.sendText(`claude --resume ${item.session.sessionId}`);
+        terminal.sendText(`claude --resume ${sid}`);
       } else {
-        // editor (default)
+        // editor — opt-in via setting
         const uri = vscode.Uri.file(item.session.filePath);
         try {
           const doc = await vscode.workspace.openTextDocument(uri);
           await vscode.window.showTextDocument(doc, { preview: false });
         } catch {
-          // File may have been deleted — show a message
           vscode.window.showWarningMessage(`Could not open session file: ${item.session.filePath}`);
         }
       }
@@ -242,7 +281,8 @@ export function activate(context: vscode.ExtensionContext): void {
     visibilitySub,
     tickDisposable,
     configSub,
-    openSessionCmd
+    openSessionCmd,
+    closeTerminalSub
   );
 }
 
