@@ -144,20 +144,31 @@ Agents are specialized sub-processes with their own model and tool configuration
 
 `autonomous-workflow` is the largest skill in this repo. It orchestrates a complete feature development cycle — from a one-line task description to a tested, draft pull request — using isolated Git worktrees and optional companion skills for each phase.
 
-### What it does
+### Architecture: two agents, one workflow
+
+The skill installs **two agents** that share the same workflow knowledge, connected by `plan.md`:
+
+| Agent | Phases | Terminal artifact | Exit gate |
+|---|---|---|---|
+| `autonomous-planner` | 0–2 (validation, planning, worktree + plan.md) | `.agent/{branch}/plan.md` | `confidence(plan) ≥ 90%` (or user-approved override) |
+| `autonomous-executor` | 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
+
+The split is along the Phase 2 → Phase 3 context boundary. High-confidence plans flow through automatically; borderline plans pause for user approval. The design rationale (with verbatim Anthropic citations on context-boundary splits, structured handoff artifacts, and pre-implementation contracts) is in [`skills/autonomous-workflow/references/anthropic-architecture-research.md`](./skills/autonomous-workflow/references/anthropic-architecture-research.md).
+
+### What each phase does
 
 | Phase | Name | What happens | Companion skills (optional unless noted) |
 |---|---|---|---|
 | 0 | Validation | Asks clarifying questions; never starts coding without explicit confirmation. | — |
 | 1 | Planning | Analyzes the codebase (parallel `Explore` sub-agents for complex tasks); designs technical approach. | `holistic-analysis`, `code-quality` (plan), **`confidence` (plan, mandatory gate at 90%)** |
-| 2 | Worktree Setup | Creates an isolated worktree (`gw add`), generates `plan.md` artifact in `.agent/{branch}/`. | `create-plan` (Full Mode) |
+| 2 | Worktree Setup | Creates an isolated worktree (`gw add` or native `git worktree`), generates `plan.md` artifact in `.agent/{branch}/`. | `create-plan` (Full Mode) |
 | 3 | Implementation | Codes per the plan, one change at a time, with fast checks after each edit. | `tdd` (logic), `ux` (UI), `code-quality` (end-of-phase) |
-| 4 | Testing | Iterates on failing tests with a **3-iteration hard limit** per area. | `confidence` (bug-analysis), `holistic-analysis` |
+| 4 | Testing | Iterates on failing tests with a mode-aware cap (3 Lite / 5 Full) per area. At the cap, runs `confidence(bug-analysis)` and auto-replans via `holistic-analysis` once before mandatory user escalation. | `confidence` (bug-analysis), `holistic-analysis` |
 | 5 | Documentation | Updates README, CHANGELOG; keeps `CLAUDE.md` aligned with code changes. | `update-claude` (always) |
 | 6 | PR Creation | Reviews changes, generates `walkthrough.md`, opens draft PR with narrative description. | `review-changes`, `create-walkthrough` (Full Mode), `create-pr` |
 | 7 | CI Gate | Watches CI; auto-fixes failed checks (parallel sub-agents, cap 2 per PR). Optional post-merge cleanup. | `ci-auto-fix` |
 
-The single biggest cost-saver is the **3-iteration stuck-loop limit** at Phase 4 — it prevents agents from burning tokens on hallucinated fixes when their root-cause analysis is wrong. After 3 failed attempts on the same area, `confidence(bug-analysis)` runs and the agent escalates to the user.
+The single biggest cost-saver is the **mode-aware stuck-loop cap** at Phase 4 (3 Lite / 5 Full) — it prevents agents from burning tokens on hallucinated fixes when their root-cause analysis is wrong. At the cap, `confidence(bug-analysis)` runs; if confidence is below 90%, the workflow auto-invokes `holistic-analysis`, regenerates the affected `plan.md` section, and resumes once before escalating to the user.
 
 ### Install
 
