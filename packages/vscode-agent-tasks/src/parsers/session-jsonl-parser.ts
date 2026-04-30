@@ -66,15 +66,18 @@ export type SessionStatus = 'active' | 'recent' | 'idle';
  * under `~/.claude/projects/`.
  *
  * Encoding rule (verified against live files 2026-04-30):
- *   Replace every `/` in the path with `-`.
+ *   Replace every character that is not `[A-Za-z0-9-]` with `-`.
+ *   This collapses `/`, `.`, spaces, and other punctuation into dashes —
+ *   notably `.git` becomes `-git`, and `/.claude` becomes `--claude`.
  *
- * Example: `/Users/mthines/Workspace/mthines/repo.git/main`
- *       →  `-Users-mthines-Workspace-mthines-repo-git-main`
- *
- * Note: No percent-encoding or other substitutions were observed.
+ * Examples:
+ *   `/Users/mthines/Workspace/repo.git/main` → `-Users-mthines-Workspace-repo-git-main`
+ *   `/Users/mthines/.claude`                 → `-Users-mthines--claude`
+ *   `/Users/mthines/Library/Application Support/Code` →
+ *     `-Users-mthines-Library-Application-Support-Code`
  */
 export function encodeWorkspacePath(absolutePath: string): string {
-  return absolutePath.split('/').join('-');
+  return absolutePath.replace(/[^A-Za-z0-9-]/g, '-');
 }
 
 /** Returns `~/.claude/projects` expanded to an absolute path. */

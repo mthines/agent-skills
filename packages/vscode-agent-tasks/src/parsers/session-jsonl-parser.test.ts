@@ -89,6 +89,28 @@ describe('encodeWorkspacePath', () => {
   it('handles path with no slashes (edge case)', () => {
     expect(encodeWorkspacePath('noslash')).toBe('noslash');
   });
+
+  it('replaces dots with dashes (e.g. `.git` → `-git`)', () => {
+    expect(encodeWorkspacePath('/Users/mthines/Workspace/yourstory-ai.git/main')).toBe(
+      '-Users-mthines-Workspace-yourstory-ai-git-main'
+    );
+  });
+
+  it('encodes a leading dot directory (`/.claude` → `--claude`)', () => {
+    expect(encodeWorkspacePath('/Users/mthines/.claude')).toBe('-Users-mthines--claude');
+  });
+
+  it('replaces spaces with dashes', () => {
+    expect(encodeWorkspacePath('/Users/mthines/Library/Application Support/Code')).toBe(
+      '-Users-mthines-Library-Application-Support-Code'
+    );
+  });
+
+  it('preserves existing hyphens in path segments', () => {
+    expect(encodeWorkspacePath('/Users/mthines/Workspace/gw-tools.git/main')).toBe(
+      '-Users-mthines-Workspace-gw-tools-git-main'
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
