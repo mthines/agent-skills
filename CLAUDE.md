@@ -48,6 +48,49 @@ Agents live in `agents/` since they require their own model and tool configurati
 ### Agents
 - `reviewer` — Constructive code reviewer with auto-fix, report, and PR comment modes
 
+## Nx Workspace (VSCode Extension)
+
+The `packages/vscode-agent-tasks/` package uses Nx 22.4 + pnpm 10.13 for build/test/lint/package.
+All Nx versions follow `gw-tools.git` for cross-repo familiarity.
+
+### Key commands
+
+```bash
+# Install dependencies (from repo root)
+pnpm install
+
+# Build
+nx build vscode-agent-tasks
+
+# Test (vitest — parser unit tests only)
+nx test vscode-agent-tasks
+
+# Lint
+nx lint vscode-agent-tasks
+
+# Package (.vsix)
+nx package vscode-agent-tasks
+
+# Development watch mode
+nx dev vscode-agent-tasks
+
+# Release dry-run
+nx release vscode-agent-tasks --configuration=dry-run
+```
+
+### Workspace files
+
+- `nx.json` — Nx config (plugins: `@nx/js/typescript`, `@nx/eslint/plugin`, `@nx/vitest`; release: `projects: ["*"]`)
+- `tsconfig.base.json` — Strict TS 5.9 base (no `paths`, no `customConditions`)
+- `pnpm-workspace.yaml` — `packages: ["packages/*"]`
+- `packages/vscode-agent-tasks/project.json` — Nx targets for the extension
+
+### Adding skills vs. adding packages
+
+Skills (markdown-only) go in `skills/` and require no build step.
+Packages (buildable code) go in `packages/` and follow the Nx pattern.
+Do NOT add a package without updating `tsconfig.json` references and `nx.json` release config.
+
 ## Local Development
 
 The author's machine has this repo wired into Claude Code via a two-tier symlink chain so every edit to `skills/<name>/SKILL.md` is picked up live on the next turn — no `npx skills add` reinstall.
