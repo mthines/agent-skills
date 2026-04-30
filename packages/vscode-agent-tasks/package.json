@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.11.0",
+  "version": "0.19.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -109,6 +109,12 @@
         "command": "agentTasks.sessions.openSession",
         "title": "Open Session",
         "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.sessions.toggleScope",
+        "title": "Toggle Sessions Scope (current / all worktrees)",
+        "icon": "$(filter)",
+        "category": "Agent Tasks"
       }
     ],
     "menus": {
@@ -146,9 +152,14 @@
           "group": "navigation"
         },
         {
+          "command": "agentTasks.sessions.toggleScope",
+          "when": "view == agentSessionsExplorer",
+          "group": "navigation@1"
+        },
+        {
           "command": "agentTasks.sessions.refresh",
           "when": "view == agentSessionsExplorer",
-          "group": "navigation"
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -229,19 +240,38 @@
         },
         "agentTasks.sessions.openWith": {
           "type": "string",
-          "default": "editor",
+          "default": "resume",
           "enum": [
-            "editor",
-            "resume"
+            "resume",
+            "editor"
           ],
           "enumDescriptions": [
-            "Open the session JSONL file in the text editor",
-            "Open a terminal and run 'claude --resume <session-id>'"
+            "Open a terminal in the session's original CWD and run 'claude --resume <session-id>'",
+            "Open the session JSONL transcript file in the text editor"
           ],
           "description": "What to do when a session is clicked in the Sessions panel."
+        },
+        "agentTasks.sessions.scope": {
+          "type": "string",
+          "default": "all",
+          "enum": [
+            "current",
+            "all"
+          ],
+          "enumDescriptions": [
+            "Show only sessions for the current worktree",
+            "Show sessions for the current worktree and all sibling worktrees"
+          ],
+          "description": "Which worktrees the Sessions panel includes. Toggle quickly via the filter icon in the panel header."
         }
       }
-    }
+    },
+    "viewsWelcome": [
+      {
+        "view": "agentSessionsExplorer",
+        "contents": "No Claude Code sessions found for this workspace yet.\n\nStart one in a terminal:\n[Open Terminal](command:workbench.action.terminal.new)\n\nThen run `claude` in your project directory.\n\n_Tip: press Enter on a session to resume it in a terminal. Set `agentTasks.sessions.openWith` to `editor` to open the JSONL transcript instead._"
+      }
+    ]
   },
   "devDependencies": {
     "@types/node": "20.19.9",

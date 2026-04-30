@@ -9,8 +9,11 @@ import { AgentTasksProvider } from './providers/agent-tasks-provider';
 import { ArtifactWatcher } from './watchers/artifact-watcher';
 import { SessionsProvider, SessionItem } from './providers/sessions-provider';
 import { SessionWatcher } from './watchers/session-watcher';
+import { initLogger, log, logError } from './lib/logger';
 
 export function activate(context: vscode.ExtensionContext): void {
+  initLogger(context);
+  log('agent-tasks extension activated');
   // Create the tree data provider
   const agentTasksProvider = new AgentTasksProvider();
 
@@ -119,12 +122,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const sessionWatcher = new SessionWatcher();
 
   sessionWatcher.onSessionChanged(() => {
+    log('Session file changed → refreshing tree');
     sessionsProvider.refresh();
   });
 
   // Rebuild the watcher whenever the workspace folders change
   const workspaceFolderSub = vscode.workspace.onDidChangeWorkspaceFolders(() => {
-    // Refresh provider first so sessionDirs is updated
+    log('Workspace folders changed — refreshing sessions');
     sessionsProvider.refresh();
     sessionWatcher.rebuild(sessionsProvider.sessionDirs);
   });
@@ -134,12 +138,87 @@ export function activate(context: vscode.ExtensionContext): void {
   // the tree view completes its first getChildren call.
   void Promise.resolve().then(() => {
     sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+    log(`Initial sessions watcher attached: ${sessionsProvider.sessionDirs.length} dir(s)`);
   });
 
   const sessionsRefreshCmd = vscode.commands.registerCommand('agentTasks.sessions.refresh', () => {
+    log('Command: sessions.refresh');
     sessionsProvider.refresh();
     // Rebuild watchers in case new worktrees appeared
     sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+    log(`Sessions watcher rebuilt: ${sessionsProvider.sessionDirs.length} dir(s)`);
+  });
+
+  const sessionsToggleScopeCmd = vscode.commands.registerCommand(
+    'agentTasks.sessions.toggleScope',
+    async () => {
+      const cfg = vscode.workspace.getConfiguration('agentTasks.sessions');
+      const current = cfg.get<string>('scope', 'all');
+      const next = current === 'current' ? 'all' : 'current';
+      log(`Command: sessions.toggleScope (${current} → ${next})`);
+      await cfg.update('scope', next, vscode.ConfigurationTarget.Global);
+      sessionsProvider.refresh();
+      sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+      vscode.window.setStatusBarMessage(
+        next === 'current'
+          ? 'Sessions: showing current worktree only'
+          : 'Sessions: showing all worktrees',
+        2500
+      );
+    }
+  );
+
+  // Periodic refresh while the Sessions view is visible. Relative-time labels
+  // (e.g. "1m ago") would otherwise stay stale until the next file write
+  // triggers a watcher event. Tick every 60s, but only when visible to avoid
+  // wasted work in the background.
+  let tickTimer: ReturnType<typeof setInterval> | undefined;
+  const startTick = () => {
+    if (tickTimer) return;
+    tickTimer = setInterval(() => sessionsProvider.refresh(), 60_000);
+  };
+  const stopTick = () => {
+    if (tickTimer) {
+      clearInterval(tickTimer);
+      tickTimer = undefined;
+    }
+  };
+  if (sessionsView.visible) startTick();
+  const visibilitySub = sessionsView.onDidChangeVisibility((e) => {
+    if (e.visible) {
+      sessionsProvider.refresh();
+      startTick();
+    } else {
+      stopTick();
+    }
+  });
+
+  const tickDisposable: vscode.Disposable = { dispose: stopTick };
+
+  // React to scope config changes from settings UI (so the user doesn't have
+  // to manually refresh after editing settings.json).
+  const configSub = vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration('agentTasks.sessions.scope')) {
+      sessionsProvider.refresh();
+      sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+    }
+  });
+
+  // Map of sessionId → terminal currently running `claude --resume` for that
+  // session in THIS window. Used so re-clicking a session focuses its existing
+  // terminal tab instead of spawning a duplicate. Cross-window tracking is not
+  // possible — VS Code's extension API is window-scoped.
+  const sessionTerminals = new Map<string, vscode.Terminal>();
+
+  const closeTerminalSub = vscode.window.onDidCloseTerminal((t) => {
+    for (const [sid, term] of sessionTerminals) {
+      if (term === t) {
+        sessionTerminals.delete(sid);
+        sessionsProvider.setTerminalOpen(sid, false);
+        log(`Terminal closed for session ${sid.slice(0, 8)}`);
+        break;
+      }
+    }
   });
 
   const openSessionCmd = vscode.commands.registerCommand(
@@ -149,20 +228,53 @@ export function activate(context: vscode.ExtensionContext): void {
 
       const openWith = vscode.workspace
         .getConfiguration('agentTasks.sessions')
-        .get<string>('openWith', 'editor');
+        .get<string>('openWith', 'resume');
+
+      const sid = item.session.sessionId;
+      log(`Command: sessions.openSession (id=${sid.slice(0, 8)}, mode=${openWith})`);
 
       if (openWith === 'resume') {
-        const terminal = vscode.window.createTerminal('Claude Resume');
+        // If we already have a terminal for this session and it's still alive,
+        // just focus it. exitStatus stays `undefined` while the process is
+        // running and gets set when it exits.
+        const existing = sessionTerminals.get(sid);
+        if (existing && existing.exitStatus === undefined) {
+          log(`Focusing existing terminal for session ${sid.slice(0, 8)}`);
+          sessionsProvider.setTerminalOpen(sid, true); // idempotent
+          existing.show(/* preserveFocus */ false);
+          return;
+        }
+        if (existing) {
+          // Stale entry — terminal exited but onDidCloseTerminal hasn't fired
+          sessionTerminals.delete(sid);
+        }
+
+        const branch = item.session.gitBranch ?? '?';
+        const shortId = sid.slice(0, 8);
+        const cwd =
+          item.session.cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+        log(`Creating terminal for session ${shortId} (branch=${branch}, cwd=${cwd ?? '?'})`);
+
+        const terminal = vscode.window.createTerminal({
+          name: `Claude · ${branch} · ${shortId}`,
+          cwd,
+          iconPath: new vscode.ThemeIcon('comment-discussion'),
+        });
+        sessionTerminals.set(sid, terminal);
+        // Mark as active immediately so the icon updates without waiting for
+        // claude's first JSONL write.
+        sessionsProvider.setTerminalOpen(sid, true);
         terminal.show();
-        terminal.sendText(`claude --resume ${item.session.sessionId}`);
+        terminal.sendText(`claude --resume ${sid}`);
       } else {
-        // editor (default)
+        // editor — opt-in via setting
         const uri = vscode.Uri.file(item.session.filePath);
         try {
           const doc = await vscode.workspace.openTextDocument(uri);
           await vscode.window.showTextDocument(doc, { preview: false });
-        } catch {
-          // File may have been deleted — show a message
+        } catch (err) {
+          logError(`Failed to open session file ${item.session.filePath}`, err);
           vscode.window.showWarningMessage(`Could not open session file: ${item.session.filePath}`);
         }
       }
@@ -184,7 +296,12 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionWatcher,
     workspaceFolderSub,
     sessionsRefreshCmd,
-    openSessionCmd
+    sessionsToggleScopeCmd,
+    visibilitySub,
+    tickDisposable,
+    configSub,
+    openSessionCmd,
+    closeTerminalSub
   );
 }
 

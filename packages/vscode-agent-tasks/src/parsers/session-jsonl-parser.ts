@@ -25,8 +25,9 @@ export interface SessionMetadata {
   /** Absolute path to the source `.jsonl` file. */
   filePath: string;
   /**
-   * First user message (non-sidechain), truncated to 80 chars.
-   * Falls back to the first 8 chars of the sessionId if no user message found.
+   * First user message (non-sidechain), whitespace-collapsed and truncated to
+   * `MAX_TITLE_LEN` characters. Falls back to "Untitled session" when no user
+   * message has any text content.
    */
   title: string;
   /** `gitBranch` field from the first `user` event, or undefined if absent. */
@@ -66,15 +67,18 @@ export type SessionStatus = 'active' | 'recent' | 'idle';
  * under `~/.claude/projects/`.
  *
  * Encoding rule (verified against live files 2026-04-30):
- *   Replace every `/` in the path with `-`.
+ *   Replace every character that is not `[A-Za-z0-9-]` with `-`.
+ *   This collapses `/`, `.`, spaces, and other punctuation into dashes —
+ *   notably `.git` becomes `-git`, and `/.claude` becomes `--claude`.
  *
- * Example: `/Users/mthines/Workspace/mthines/repo.git/main`
- *       →  `-Users-mthines-Workspace-mthines-repo-git-main`
- *
- * Note: No percent-encoding or other substitutions were observed.
+ * Examples:
+ *   `/Users/mthines/Workspace/repo.git/main` → `-Users-mthines-Workspace-repo-git-main`
+ *   `/Users/mthines/.claude`                 → `-Users-mthines--claude`
+ *   `/Users/mthines/Library/Application Support/Code` →
+ *     `-Users-mthines-Library-Application-Support-Code`
  */
 export function encodeWorkspacePath(absolutePath: string): string {
-  return absolutePath.split('/').join('-');
+  return absolutePath.replace(/[^A-Za-z0-9-]/g, '-');
 }
 
 /** Returns `~/.claude/projects` expanded to an absolute path. */
@@ -130,9 +134,7 @@ interface RawEvent {
  * Extract a plain-text title from a `user` event's `message.content`.
  * Returns undefined if the content yields no non-empty text.
  */
-function extractContentText(
-  content: string | Array<{ type?: string; text?: string }> | undefined
-): string | undefined {
+function extractContentText(content: string | Array<{ type?: string; text?: string }> | undefined): string | undefined {
   if (!content) return undefined;
 
   if (typeof content === 'string') {
@@ -151,8 +153,27 @@ function extractContentText(
   return undefined;
 }
 
+/**
+ * Maximum visible characters for a session title in the tree view label.
+ *
+ * Tuned tight (35) so the muted-grey description (relative time / branch)
+ * has room to render alongside the label even on narrow side panels.
+ * Going wider — 50, 80 — pushed the description off-screen and made the
+ * timestamp invisible.
+ */
+export const MAX_TITLE_LEN = 35;
+
+/**
+ * Collapse all whitespace runs (newlines, tabs, repeated spaces) into single
+ * spaces and trim the result. Keeps single-line tree view labels readable for
+ * messages that originally contained markdown, code fences, or template blocks.
+ */
+function collapseWhitespace(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 /** Truncate a string to maxLen characters, appending `…` if truncated. */
-function truncate(s: string, maxLen = 80): string {
+function truncate(s: string, maxLen = MAX_TITLE_LEN): string {
   if (s.length <= maxLen) return s;
   return s.slice(0, maxLen) + '\u2026'; // …
 }
@@ -160,6 +181,27 @@ function truncate(s: string, maxLen = 80): string {
 // ---------------------------------------------------------------------------
 // Public parsing API
 // ---------------------------------------------------------------------------
+
+/**
+ * In-process cache of parsed sessions, keyed by absolute file path. Stores
+ * the mtime that produced the cached metadata; a `parseSessionFile` call only
+ * re-reads + re-parses when the file's mtime has changed since the cache
+ * entry was written.
+ *
+ * This dramatically speeds up tree refreshes when most sessions on disk are
+ * unchanged (the common case) — without it every refresh would re-read every
+ * JSONL file, including multi-MB ones.
+ *
+ * Bounded in practice by the number of distinct session files the user has
+ * (tens to hundreds). New mtimes overwrite old entries for the same path, so
+ * memory growth is one entry per unique session file.
+ */
+const parseCache = new Map<string, { mtime: number; data: SessionMetadata }>();
+
+/** Reset the parse cache. Exposed mainly for tests. */
+export function clearSessionParseCache(): void {
+  parseCache.clear();
+}
 
 /**
  * Parse a single JSONL session file and return `SessionMetadata`.
@@ -171,6 +213,8 @@ function truncate(s: string, maxLen = 80): string {
  *
  * Unknown event types are silently skipped. Missing fields degrade to
  * `undefined` — nothing throws.
+ *
+ * Uses an mtime-keyed cache; unchanged files skip the read+parse entirely.
  */
 export function parseSessionFile(filePath: string): SessionMetadata | null {
   let raw: string;
@@ -179,6 +223,10 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
   try {
     const stat = fs.statSync(filePath);
     mtime = stat.mtimeMs;
+    const cached = parseCache.get(filePath);
+    if (cached && cached.mtime === mtime) {
+      return cached.data;
+    }
     raw = fs.readFileSync(filePath, 'utf-8');
   } catch {
     return null;
@@ -239,7 +287,7 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
       if (!titleFound && event.isSidechain !== true) {
         const text = extractContentText(event.message?.content);
         if (text) {
-          title = truncate(text, 80);
+          title = truncate(collapseWhitespace(text));
           titleFound = true;
         }
       }
@@ -254,10 +302,10 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
   // We require at least a sessionId to return a result
   if (!sessionId) return null;
 
-  return {
+  const data: SessionMetadata = {
     sessionId,
     filePath,
-    title: title ?? sessionId.slice(0, 8),
+    title: title ?? 'Untitled session',
     gitBranch,
     cwd,
     firstTimestamp,
@@ -265,6 +313,8 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
     messageCount,
     mtime,
   };
+  parseCache.set(filePath, { mtime, data });
+  return data;
 }
 
 /**

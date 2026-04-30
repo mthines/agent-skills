@@ -89,6 +89,28 @@ describe('encodeWorkspacePath', () => {
   it('handles path with no slashes (edge case)', () => {
     expect(encodeWorkspacePath('noslash')).toBe('noslash');
   });
+
+  it('replaces dots with dashes (e.g. `.git` → `-git`)', () => {
+    expect(encodeWorkspacePath('/Users/mthines/Workspace/yourstory-ai.git/main')).toBe(
+      '-Users-mthines-Workspace-yourstory-ai-git-main'
+    );
+  });
+
+  it('encodes a leading dot directory (`/.claude` → `--claude`)', () => {
+    expect(encodeWorkspacePath('/Users/mthines/.claude')).toBe('-Users-mthines--claude');
+  });
+
+  it('replaces spaces with dashes', () => {
+    expect(encodeWorkspacePath('/Users/mthines/Library/Application Support/Code')).toBe(
+      '-Users-mthines-Library-Application-Support-Code'
+    );
+  });
+
+  it('preserves existing hyphens in path segments', () => {
+    expect(encodeWorkspacePath('/Users/mthines/Workspace/gw-tools.git/main')).toBe(
+      '-Users-mthines-Workspace-gw-tools-git-main'
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -183,24 +205,33 @@ describe('parseSessionFile', () => {
     expect(result?.title).toBe('Implement the payments module');
   });
 
-  it('truncates title to 80 chars with ellipsis', () => {
+  it('truncates title to MAX_TITLE_LEN chars with ellipsis', () => {
     const longMessage = 'A'.repeat(100);
     const filePath = writeJsonl(
       'session.jsonl',
       buildJsonl([userEvent({ message: { content: longMessage } })])
     );
     const result = parseSessionFile(filePath);
-    expect(result?.title).toBe('A'.repeat(80) + '\u2026');
-    expect(result?.title?.length).toBe(81);
+    expect(result?.title).toBe('A'.repeat(35) + '\u2026');
+    expect(result?.title?.length).toBe(36);
   });
 
-  it('falls back to sessionId prefix when no user message content found', () => {
+  it('collapses internal whitespace and newlines into single spaces', () => {
+    const filePath = writeJsonl(
+      'session.jsonl',
+      buildJsonl([userEvent({ message: { content: '  Hello\n\n  Claude\t\tworld   ' } })])
+    );
+    const result = parseSessionFile(filePath);
+    expect(result?.title).toBe('Hello Claude world');
+  });
+
+  it('falls back to "Untitled session" when no user message content found', () => {
     const filePath = writeJsonl(
       'session.jsonl',
       buildJsonl([{ type: 'user', sessionId: SAMPLE_SESSION_ID, message: { content: '' } }])
     );
     const result = parseSessionFile(filePath);
-    expect(result?.title).toBe(SAMPLE_SESSION_ID.slice(0, 8));
+    expect(result?.title).toBe('Untitled session');
   });
 
   it('skips isSidechain user events for title extraction', () => {
