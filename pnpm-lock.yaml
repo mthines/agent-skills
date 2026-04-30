@@ -81,6 +81,25 @@ importers:
         specifier: 4.0.9
         version: 4.0.9(@types/node@20.19.9)(@vitest/ui@4.0.9)(jiti@2.4.2)(yaml@2.8.3)
 
+  packages/vscode-agent-tasks:
+    dependencies:
+      tslib:
+        specifier: ^2.3.0
+        version: 2.8.1
+    devDependencies:
+      '@types/node':
+        specifier: 20.19.9
+        version: 20.19.9
+      '@types/vscode':
+        specifier: ^1.85.0
+        version: 1.118.0
+      esbuild:
+        specifier: ^0.25.0
+        version: 0.25.12
+      vitest:
+        specifier: 4.0.9
+        version: 4.0.9(@types/node@20.19.9)(@vitest/ui@4.0.9)(jiti@2.4.2)(yaml@2.8.3)
+
 packages:
 
   '@azu/format-text@1.0.2':
