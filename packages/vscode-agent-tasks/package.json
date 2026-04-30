@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.9.0",
+  "version": "0.11.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -26,7 +26,9 @@
   ],
   "activationEvents": [
     "workspaceContains:.agent",
-    "workspaceContains:.gw"
+    "workspaceContains:.gw",
+    "onStartupFinished",
+    "onView:agentSessionsExplorer"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -46,6 +48,12 @@
           "name": "Agent Tasks",
           "icon": "$(tasklist)",
           "contextualTitle": "Agent Tasks"
+        },
+        {
+          "id": "agentSessionsExplorer",
+          "name": "Sessions",
+          "icon": "$(history)",
+          "contextualTitle": "Claude Sessions"
         }
       ]
     },
@@ -90,6 +98,17 @@
         "command": "agentTasks.openMarkdown",
         "title": "Open Markdown File",
         "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.sessions.refresh",
+        "title": "Refresh Sessions",
+        "icon": "$(refresh)",
+        "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.sessions.openSession",
+        "title": "Open Session",
+        "category": "Agent Tasks"
       }
     ],
     "menus": {
@@ -109,6 +128,10 @@
         {
           "command": "agentTasks.openMarkdown",
           "when": "false"
+        },
+        {
+          "command": "agentTasks.sessions.openSession",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -120,6 +143,11 @@
         {
           "command": "agentTasks.sort",
           "when": "view == agentTasksExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "agentTasks.sessions.refresh",
+          "when": "view == agentSessionsExplorer",
           "group": "navigation"
         }
       ],
@@ -198,6 +226,19 @@
             "Descending (newest/Z-A first)"
           ],
           "description": "Sort order for agent tasks"
+        },
+        "agentTasks.sessions.openWith": {
+          "type": "string",
+          "default": "editor",
+          "enum": [
+            "editor",
+            "resume"
+          ],
+          "enumDescriptions": [
+            "Open the session JSONL file in the text editor",
+            "Open a terminal and run 'claude --resume <session-id>'"
+          ],
+          "description": "What to do when a session is clicked in the Sessions panel."
         }
       }
     }
