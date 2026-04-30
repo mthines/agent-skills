@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.12.0",
+  "version": "0.13.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -109,6 +109,12 @@
         "command": "agentTasks.sessions.openSession",
         "title": "Open Session",
         "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.sessions.toggleScope",
+        "title": "Toggle Sessions Scope (current / all worktrees)",
+        "icon": "$(filter)",
+        "category": "Agent Tasks"
       }
     ],
     "menus": {
@@ -146,9 +152,14 @@
           "group": "navigation"
         },
         {
+          "command": "agentTasks.sessions.toggleScope",
+          "when": "view == agentSessionsExplorer",
+          "group": "navigation@1"
+        },
+        {
           "command": "agentTasks.sessions.refresh",
           "when": "view == agentSessionsExplorer",
-          "group": "navigation"
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -239,9 +250,28 @@
             "Open a terminal and run 'claude --resume <session-id>'"
           ],
           "description": "What to do when a session is clicked in the Sessions panel."
+        },
+        "agentTasks.sessions.scope": {
+          "type": "string",
+          "default": "all",
+          "enum": [
+            "current",
+            "all"
+          ],
+          "enumDescriptions": [
+            "Show only sessions for the current worktree",
+            "Show sessions for the current worktree and all sibling worktrees"
+          ],
+          "description": "Which worktrees the Sessions panel includes. Toggle quickly via the filter icon in the panel header."
         }
       }
-    }
+    },
+    "viewsWelcome": [
+      {
+        "view": "agentSessionsExplorer",
+        "contents": "No Claude Code sessions found for this workspace yet.\n\nStart one in a terminal:\n[Open Terminal](command:workbench.action.terminal.new)\n\nThen run `claude` in your project directory.\n\n_Tip: press Enter on a session to open it, or change `agentTasks.sessions.openWith` to `resume` to continue it in a terminal._"
+      }
+    ]
   },
   "devDependencies": {
     "@types/node": "20.19.9",
