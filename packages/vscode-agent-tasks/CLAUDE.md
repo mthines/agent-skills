@@ -25,11 +25,13 @@ nx release vscode-agent-tasks --configuration=dry-run  # Dry-run release
 
 ```
 src/
-  extension.ts              # Entry point, command registration
+  extension.ts              # Entry point, command registration, terminal tracking
+  lib/
+    logger.ts               # `mthines.agent-tasks` OutputChannel wrapper
   providers/                # TreeDataProviders for sidebar views
     agent-tasks-provider    # Agent tasks explorer view
-    sessions-provider       # Sessions panel — lists Claude Code session history
-  parsers/                  # Parsing utilities (NO VS Code dependency — testable with vitest)
+    sessions-provider       # Sessions panel — Running section + worktree groups
+  parsers/                  # Pure modules — NO VS Code dependency, vitest-testable
     markdown-parser.ts      # Parses task.md, plan.md, walkthrough.md
     session-jsonl-parser.ts # Parses ~/.claude/projects/<encoded-cwd>/*.jsonl files
   watchers/                 # File system watchers
@@ -43,9 +45,14 @@ src/
 - **Agent Tasks** — read from `<dir>/<branch>/` directories (`task.md`, `plan.md`, `walkthrough.md`)
 - **Artifact Watcher** — watches configured dirs for changes, triggers view refresh; auto-opens `walkthrough.md` and `plan.md` on creation; rebuilds watchers when `agentTasks.directories` changes or a configured root appears after activation
 - **Bare-repo indirection** — only for `.gw/`: reads `config.json` to find the default-branch worktree's `.gw/` dir
-- **Sessions** — read from `~/.claude/projects/<encoded-cwd>/` JSONL files; `<encoded-cwd>` replaces every `/` in the absolute workspace path with `-`. Status is a heuristic derived from file mtime (active <2m, recent <1h, idle otherwise)
-- **Session Watcher** — watches the session directories; debounces at 500 ms (vs 150 ms for artifacts) because JSONL files are written continuously during active sessions
-- **Worktree grouping in Sessions** — checks `.gw/config.json` first; falls back to `git worktree list --porcelain`; shows flat list when only one worktree detected
+- **Session encoding** — `~/.claude/projects/<encoded-cwd>/` where `<encoded-cwd>` replaces every non-`[A-Za-z0-9-]` character with `-` (`.git` → `-git`, spaces → `-`, leading `.` → `-`). NOT just slash replacement.
+- **Session run-state** — four real states from JSONL turn analysis combined with mtime: `running` (mid-turn, fresh writes), `needs-input` (last `assistant.stop_reason = end_turn` OR `system subtype = turn_duration` followed last user), `stalled` (mid-turn, no writes 30 s–5 min), `idle`. `deriveRunState(turnEnded, mtime)` is pure in `session-jsonl-parser.ts`; the provider layers terminal-open / closed-after-mtime overrides for definitive signals.
+- **Subdir-aware session discovery** — `findCandidateSessionDirs` prefix-matches `~/.claude/projects/*` against every worktree's encoded path, then `bucketSessionsByWorktree` verifies each session's `cwd` field and assigns to the longest-matching worktree. Catches sessions started from `apps/api/`, `packages/x/`, etc.
+- **Pinned Running section** — `RunningGroupItem` is prepended at the top of the tree whenever any session is `running` or recently `needs-input` (terminal open in this window OR mtime <5 min). Hidden entirely when empty. Sessions also still appear in their worktree group below — this is a shortcut, not a replacement.
+- **Worktree grouping in Sessions** — gw-aware (walks up to find `.gw/config.json`, then enumerates sibling worktrees by `.git` file marker) → falls back to `git worktree list --porcelain` → finally just the workspace path. Multi-worktree always groups; current worktree pinned first and marked `(current)`. Single-worktree shows flat.
+- **Session Watcher** — 50 ms trailing debounce (was 500 ms — kept tight for realtime icon transitions). 15 s visibility-bound refresh tick drives `running → stalled` ageing-out without waiting on file events.
+- **Per-session terminal tracking** — `extension.ts` maintains a `Map<sessionId, vscode.Terminal>` so re-clicking a session focuses its existing tab instead of spawning a duplicate. `onDidCloseTerminal` cleans up. Cross-window is impossible — VS Code's API is window-scoped.
+- **Parse cache** — `parseSessionFile` is mtime-keyed; unchanged JSONL files skip read+parse on refresh. Bounded by unique session count (tens to hundreds).
 
 ## Configuration namespace
 
@@ -57,7 +64,8 @@ All settings use `agentTasks.*` (NOT `gw.*`):
 - `agentTasks.autoOpenWalkthrough` — auto-open `walkthrough.md` on create
 - `agentTasks.autoOpenPlan` — auto-open `plan.md` on create
 - `agentTasks.openMarkdownInPreview` — preview mode
-- `agentTasks.sessions.openWith` — `"editor"` (default) or `"resume"` — what clicking a session does
+- `agentTasks.sessions.openWith` — `"resume"` (default — open terminal in session's `cwd` and run `claude --resume <id>`) or `"editor"` (open the JSONL transcript)
+- `agentTasks.sessions.scope` — `"all"` (default — every worktree, grouped) or `"current"` (just the active worktree). Toggle via filter icon in panel header.
 
 ## Extension Manifest
 
@@ -81,6 +89,8 @@ All commands, views, settings, and keybindings are defined in `package.json`:
 | `agentTasks.openWalkthrough` | Open walkthrough.md for a branch item |
 | `agentTasks.sessions.refresh` | Refresh Sessions tree |
 | `agentTasks.sessions.openSession` | Internal — open or resume a session (registered on SessionItem) |
+| `agentTasks.sessions.toggleScope` | Toggle `current` / `all` worktrees in the Sessions panel |
+| `agentTasks.sessions.find` | Open a QuickPick across every session for this workspace |
 
 ## Code Style
 
@@ -102,6 +112,8 @@ All commands, views, settings, and keybindings are defined in `package.json`:
 - `vscode` import will fail in vitest — isolate parsers from VS Code types
 - The bare-repo `.gw/config.json` indirection only fires when `dirName === '.gw'`
 - Do NOT add ANSI handling, git CLI calls, or QuickPick to the parsers
-- Sessions JSONL format is undocumented and owned by the Claude Code team — all parsing is in `session-jsonl-parser.ts`; unknown events are silently skipped
+- Sessions JSONL format is undocumented and owned by the Claude Code team — all parsing is in `session-jsonl-parser.ts`; unknown events are silently skipped, but specific markers (`assistant.stop_reason`, `system subtype`) ARE used to derive `turnEnded`
 - `vi.spyOn(fs, ...)` does not work with ESM modules in vitest — use real temp directories for parser tests instead of mocking `fs`
-- Session status icons are heuristic (mtime-based) — document this caveat clearly in any user-facing text
+- Run-state is real (JSONL turn analysis), not heuristic. The pure `deriveRunState(turnEnded, mtime)` is the source of truth; provider only OVERRIDES it with terminal-open (force `running`) or close-after-mtime (force `idle`) — never invert the derivation
+- Worktree-relative encoded-path prefix matching for session dirs over-matches sibling worktrees (`foo` matches `foo-bar` directories). Always verify by reading the session's `cwd` field and assigning to the longest matching worktree.
+- VS Code TreeItem `description` is rendered muted/grey and disappears entirely on narrow panels. Keep it short (`5m`, `Apr 17`) — long descriptions get clipped. Branch is in the tooltip.
