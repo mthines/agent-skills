@@ -4,6 +4,7 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import * as fs from 'fs';
 import * as child_process from 'child_process';
 import { AgentTasksProvider } from './providers/agent-tasks-provider';
@@ -14,8 +15,8 @@ import { initLogger, log, logError } from './lib/logger';
 import {
   parsePsOutput,
   findClaudeDescendant,
-  parseLsofCwdOutput,
-  collectClaudeDescendants,
+  claimPendingAdoption,
+  type PendingAdoption,
 } from './lib/process-tree';
 import type { SessionMetadata } from './parsers/session-jsonl-parser';
 
@@ -219,7 +220,23 @@ export function activate(context: vscode.ExtensionContext): void {
   // possible — VS Code's extension API is window-scoped.
   const sessionTerminals = new Map<string, vscode.Terminal>();
 
+  // ---------------------------------------------------------------------------
+  // Pending-adoption queue — for the "+" new-session button
+  //
+  // When the user clicks "+" we know exactly which terminal was spawned. The
+  // next new session JSONL that appears in the same cwd is deterministically
+  // linked to that terminal via onDidDiscoverSession. This avoids the
+  // now-deleted cwd-match slow-path that incorrectly adopted the WRONG session
+  // when multiple bare-claude processes shared a cwd.
+  // ---------------------------------------------------------------------------
+
+  const PENDING_TTL_MS = 60_000; // 60 s — generous; claude can take a few seconds to write the first JSONL
+  let pendingAdoptions: Array<PendingAdoption<vscode.Terminal>> = [];
+
   const closeTerminalSub = vscode.window.onDidCloseTerminal((t) => {
+    // Clean up any pending adoption for this terminal.
+    pendingAdoptions = pendingAdoptions.filter((p) => p.terminal !== t);
+
     for (const [sid, term] of sessionTerminals) {
       if (term === t) {
         sessionTerminals.delete(sid);
@@ -230,29 +247,49 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
+  // Subscribe to new sessions discovered by the provider. Attempt to claim a
+  // pending adoption before falling through. This hook fires for every new
+  // session ID that wasn't present on the previous refresh cycle.
+  const discoverySub = sessionsProvider.onDidDiscoverSession((session) => {
+    if (!session.cwd) return;
+    const normalizedCwd = path.resolve(session.cwd);
+    const result = claimPendingAdoption(pendingAdoptions, normalizedCwd, Date.now(), PENDING_TTL_MS);
+    if (!result) return;
+
+    pendingAdoptions = result.remaining;
+    const { terminal } = result;
+    const waited = Date.now() - (pendingAdoptions.find(() => true)?.spawnedAt ?? Date.now());
+    log(
+      `Pending adoption claimed: session ${session.sessionId.slice(0, 8)} ↔ terminal "${terminal.name}" (waited ~${waited}ms)`
+    );
+    sessionTerminals.set(session.sessionId, terminal);
+    sessionsProvider.setTerminalOpen(session.sessionId, true);
+    // Focus the already-open terminal so the user sees their new session.
+    terminal.show(false);
+  });
+
   // ---------------------------------------------------------------------------
-  // Terminal adoption helper
+  // Terminal adoption helper (argv fast-path only)
   // ---------------------------------------------------------------------------
 
   /**
-   * One-shot process-tree scan. Tries to find a terminal already running
-   * a `claude` process whose cwd matches the session's cwd, or (fast-path)
-   * one whose argv contains `--resume <sid>`.
+   * One-shot process-tree scan using the argv fast-path only.
    *
-   * Strategy:
-   * 1. Fast-path: argv match (`claude --resume <sid>` in command). This covers
-   *    sessions the extension itself spawned in a prior window and lost tracking.
-   * 2. Slow-path: cwd match via `lsof -a -p PIDS -d cwd -Fpn`. Covers bare
-   *    `claude` invocations where the UUID is assigned internally. A uniqueness
-   *    guard fires when multiple terminals have a cwd-matching claude descendant,
-   *    accepting spawn-a-duplicate as the safer fallback.
+   * Attempts to find a terminal already running `claude --resume <sid>` in
+   * its process tree. This covers sessions that the extension spawned in a
+   * prior window and lost tracking after a window reload.
    *
-   * Returns the matching terminal, or `undefined` on any failure or no-match.
+   * The cwd-match slow-path has been removed: it produced false-positive
+   * matches when multiple bare-claude processes shared the same cwd (e.g.
+   * multiple sessions in the same worktree), causing the wrong session to be
+   * adopted. The pending-adoption queue (above) handles the "+" button case
+   * deterministically.
+   *
+   * Returns the matching terminal, or `undefined` on failure or no-match.
    * All errors are caught and logged; callers always fall through to spawn.
    */
   const tryAdoptTerminal = async (
     sid: string,
-    sessionCwd: string | undefined,
     terminals: readonly vscode.Terminal[]
   ): Promise<vscode.Terminal | undefined> => {
     if (terminals.length === 0) return undefined;
@@ -293,62 +330,6 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }
 
-    // ---- Slow-path: cwd match (only when session cwd is known) ----
-    if (!sessionCwd) return undefined;
-
-    // Collect all claude descendants per terminal.
-    const claudeByTerm = new Map<vscode.Terminal, number[]>();
-    const allClaudePids: number[] = [];
-    for (const [t, shellPid] of shellByTerm) {
-      const pids = collectClaudeDescendants(shellPid, snapshot);
-      if (pids.length > 0) {
-        claudeByTerm.set(t, pids);
-        allClaudePids.push(...pids);
-      }
-    }
-    if (allClaudePids.length === 0) return undefined;
-
-    // Single lsof call for the union of all claude PIDs.
-    let lsofRaw: string;
-    try {
-      lsofRaw = child_process.execSync(
-        `lsof -a -p ${allClaudePids.join(',')} -d cwd -Fpn`,
-        { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }
-      );
-    } catch (e: unknown) {
-      // lsof exits non-zero when any listed PID has already exited, but still
-      // emits stdout for live PIDs. Capture stdout regardless of exit code.
-      const err = e as { stdout?: Buffer | string };
-      if (err.stdout) {
-        lsofRaw =
-          typeof err.stdout === 'string' ? err.stdout : err.stdout.toString('utf8');
-      } else {
-        log('tryAdoptTerminal: lsof produced no output, falling through to spawn');
-        return undefined;
-      }
-    }
-    const cwdByPid = parseLsofCwdOutput(lsofRaw);
-
-    // Find terminals whose claude descendants have cwd === sessionCwd.
-    const matches: vscode.Terminal[] = [];
-    for (const [t, pids] of claudeByTerm) {
-      if (pids.some((p) => cwdByPid.get(p) === sessionCwd)) {
-        matches.push(t);
-      }
-    }
-
-    if (matches.length === 1) {
-      log(
-        `tryAdoptTerminal: cwd-match adopted terminal (sessionCwd=${sessionCwd}, sid=${sid.slice(0, 8)})`
-      );
-      return matches[0];
-    }
-
-    if (matches.length > 1) {
-      log(
-        `tryAdoptTerminal: cwd-match ambiguous (${matches.length} terminals match), falling through to spawn`
-      );
-    }
     return undefined;
   };
 
@@ -373,10 +354,16 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       if (existing) sessionTerminals.delete(sid);
 
-      // Attempt to adopt an existing terminal that is already running claude
-      // (argv fast-path: `--resume <sid>`, or cwd slow-path: lsof match).
-      // Runs only on click — never on refresh, watcher tick, or render.
-      const adopted = await tryAdoptTerminal(sid, session.cwd, vscode.window.terminals);
+      // Attempt to adopt an existing terminal that is already running
+      // `claude --resume <sid>` (argv fast-path only). Covers sessions
+      // the extension itself spawned in a prior window and lost tracking.
+      //
+      // NOTE: The cwd-match slow-path has been deliberately removed.
+      // Bare `claude` terminals (typed by the user, or started outside the
+      // "+" flow) are NOT adoptable — clicking them spawns a fresh
+      // `--resume` terminal. This is intentional: cwd is not unique across
+      // sessions in the same worktree and produces false-positive adoption.
+      const adopted = await tryAdoptTerminal(sid, vscode.window.terminals);
       if (adopted) {
         sessionTerminals.set(sid, adopted);
         sessionsProvider.setTerminalOpen(sid, true);
@@ -466,17 +453,27 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   // Feature 2: + button in panel title bar — start a new Claude session.
+  // Before running `claude`, we push a PendingAdoption entry so that the
+  // next new JSONL to appear in this cwd is deterministically linked to the
+  // spawned terminal (claimed via onDidDiscoverSession).
   const newSessionCmd = vscode.commands.registerCommand(
     'agentTasks.sessions.newSession',
     () => {
       log('Command: sessions.newSession');
-      const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const rawCwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const cwd = rawCwd ? path.resolve(rawCwd) : undefined;
       log(`Starting new Claude session (cwd=${cwd ?? '?'})`);
       const terminal = vscode.window.createTerminal({
         name: 'Claude · new session',
         cwd,
         iconPath: new vscode.ThemeIcon('comment-discussion'),
       });
+
+      if (cwd) {
+        pendingAdoptions.push({ terminal, cwd, spawnedAt: Date.now() });
+        log(`Pending adoption queued for cwd=${cwd} (queue length: ${pendingAdoptions.length})`);
+      }
+
       terminal.show();
       terminal.sendText('claude');
     }
@@ -504,6 +501,7 @@ export function activate(context: vscode.ExtensionContext): void {
     openSessionCmd,
     findSessionCmd,
     closeTerminalSub,
+    discoverySub,
     newSessionCmd
   );
 }

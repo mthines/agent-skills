@@ -109,85 +109,55 @@ export function findClaudeDescendant(
   return undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Pending-adoption queue helpers (pure — no VS Code dependency)
+// ---------------------------------------------------------------------------
+
 /**
- * Parse the stdout of `lsof -a -p <pids> -d cwd -Fpn`.
- *
- * The `-F` flag produces field output. Each block starts with a `p` line
- * (PID) followed by one or more field lines. For `-d cwd` there is exactly
- * one `n` line per PID that contains the cwd path.
- *
- * Lines with other prefixes (`f`, `t`, etc.) are silently ignored. A PID
- * with no `n` line is omitted from the result. Malformed `p` lines (non-
- * numeric digit sequence) are also skipped.
- *
- * Returns a Map of PID → cwd string.
+ * A terminal that was spawned by the "+" new-session button and is waiting
+ * for the next new JSONL session that appears in the same cwd to be assigned
+ * to it. VS Code terminal objects are opaque values from the caller's
+ * perspective — this module treats them as `unknown` to stay VS Code–free.
  */
-export function parseLsofCwdOutput(raw: string): Map<number, string> {
-  const result = new Map<number, string>();
-  let currentPid: number | undefined;
+export interface PendingAdoption<T = unknown> {
+  /** The VS Code Terminal object (typed as `T` to avoid VS Code imports). */
+  terminal: T;
+  /** The cwd that was passed to `vscode.window.createTerminal({ cwd })`. */
+  cwd: string;
+  /** `Date.now()` at the time the terminal was spawned. */
+  spawnedAt: number;
+}
 
-  for (const line of raw.split('\n')) {
-    if (!line) continue;
-    const prefix = line[0];
-    const value = line.slice(1);
-
-    if (prefix === 'p') {
-      const pid = parseInt(value, 10);
-      currentPid = isNaN(pid) ? undefined : pid;
-    } else if (prefix === 'n' && currentPid !== undefined) {
-      result.set(currentPid, value);
-      // Reset so a second `n` line (unexpected) doesn't overwrite silently.
-      currentPid = undefined;
-    }
-    // All other prefixes (f, t, etc.) are ignored.
-  }
-
-  return result;
+export interface ClaimResult<T> {
+  /** The terminal to adopt for the new session. */
+  terminal: T;
+  /** The remaining queue after removing the claimed entry. */
+  remaining: Array<PendingAdoption<T>>;
 }
 
 /**
- * BFS from `shellPid`, returning the PIDs of ALL descendants whose command
- * contains `claude` (case-sensitive substring match). Empty array if none.
+ * Try to claim a pending adoption for a newly discovered session.
  *
- * Used by the cwd-match slow-path in `tryAdoptTerminal`. Unlike
- * `findClaudeDescendant`, this function does NOT filter by session ID — the
- * caller correlates against the lsof cwd map.
+ * Rules:
+ *   - Stale entries (`now - spawnedAt > ttlMs`) are evicted regardless.
+ *   - The first non-stale entry whose `cwd` exactly matches `session.cwd`
+ *     is claimed (FIFO order).
+ *   - Returns `null` when no match is found after eviction.
  *
- * A visited Set guards against cycles in malformed snapshots.
- * Returns an empty array when `shellPid` is not in `snapshot`.
+ * Both `session.cwd` and `pending.cwd` must be pre-normalized by the caller
+ * (e.g. via `path.resolve`) to prevent spurious mismatches from trailing
+ * slashes or symlink differences.
  */
-export function collectClaudeDescendants(shellPid: number, snapshot: PsEntry[]): number[] {
-  const shellExists = snapshot.some((e) => e.pid === shellPid);
-  if (!shellExists) return [];
-
-  // Build children map.
-  const children = new Map<number, PsEntry[]>();
-  for (const entry of snapshot) {
-    const list = children.get(entry.ppid);
-    if (list) {
-      list.push(entry);
-    } else {
-      children.set(entry.ppid, [entry]);
-    }
-  }
-
-  const visited = new Set<number>();
-  const queue: number[] = [shellPid];
-  const claudePids: number[] = [];
-
-  while (queue.length > 0) {
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    const current = queue.shift()!;
-    if (visited.has(current)) continue;
-    visited.add(current);
-
-    for (const child of children.get(current) ?? []) {
-      if (child.command.includes('claude')) {
-        claudePids.push(child.pid);
-      }
-      queue.push(child.pid);
-    }
-  }
-
-  return claudePids;
+export function claimPendingAdoption<T>(
+  pending: Array<PendingAdoption<T>>,
+  sessionCwd: string,
+  now: number,
+  ttlMs: number
+): ClaimResult<T> | null {
+  const live = pending.filter((p) => now - p.spawnedAt <= ttlMs);
+  const idx = live.findIndex((p) => p.cwd === sessionCwd);
+  if (idx === -1) return null;
+  const terminal = live[idx].terminal;
+  const remaining = [...live.slice(0, idx), ...live.slice(idx + 1)];
+  return { terminal, remaining };
 }
