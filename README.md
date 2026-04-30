@@ -81,50 +81,56 @@ Most tools auto-discover skills from `~/.agents/skills/`.
 
 ## What's Included
 
+> **About skill loading.** Each skill below is either *agent-invokable* or *slash-command-only*. The distinction matters for your token budget:
+> - **Agent-invokable skills** sit in your model's available-skills list every session — only the short `description` field, not the body. The model can invoke them via `Skill()` when it detects a matching task, without you typing `/name`.
+> - **Slash-command-only skills** (`disable-model-invocation: true` in their frontmatter) are **not in the model's invokable list at all**. They cost nothing in baseline context. They load only when you type `/name` or when another skill calls them via `Skill()` at runtime.
+>
+> In all cases, the skill **body** (`SKILL.md` content + `rules/`) is loaded only on invocation, never automatically.
+
 ### Orchestrators
 
-Coordinate other skills to execute multi-step workflows.
+Coordinate other skills to execute multi-step workflows. Agent-invokable.
 
 | Skill | What it does | Use when... |
 |---|---|---|
 | **[autonomous-workflow](./skills/autonomous-workflow/SKILL.md)** | Phase-based orchestrator (0–7) that handles end-to-end feature development — from validation through tested PR delivery — using isolated Git worktrees. Optionally invokes companions for planning, TDD, UX, code quality, docs, and CI fixing. See [dedicated section](#autonomous-workflow). | "Implement X autonomously", "end-to-end", "in isolation", "in a worktree". |
 
-### Auto-activated skills
+### Agent-invokable skills
 
-These activate automatically when your AI agent detects a matching task.
+The model can invoke these via `Skill()` when it detects a matching task — no slash command required. Their descriptions are in your context every session (~50–150 tokens each).
 
 | Skill | What it does | Use when... |
 |---|---|---|
-| **[code-quality](./skills/code-quality/SKILL.md)** | Authors and reviews code for low cognitive complexity, readability, and maintainability. Applies guard clauses, early returns, single-responsibility, and pragmatic performance choices grounded in Clean Code, Cognitive Complexity, and Knuth's optimization guidance. | Writing, refactoring, or reviewing code — especially during TDD GREEN/REFACTOR or before merging. |
 | **[confidence](./skills/confidence/SKILL.md)** | Rates confidence that work fully solves the stated requirement. Scores across weighted dimensions with auto-fix mode. | Validating a plan before execution, checking code before a PR, or assessing a bug analysis. |
 | **[dx](./skills/dx/SKILL.md)** | Reviews CLI tools, shell scripts, and developer tooling against established guidelines ([clig.dev](https://clig.dev), 12 Factor CLI, Heroku CLI Style Guide). | Building or reviewing a CLI, shell script, Makefile, or any developer-facing tool. |
 | **[holistic-analysis](./skills/holistic-analysis/SKILL.md)** | Forces a full execution-path analysis when incremental fixes aren't working. Traces entry-to-exit with structured hypothesis generation. | A bug fix attempt has failed, you're going in circles, or you need to "step back and think." |
-| **[review-quality-gate](./skills/review-quality-gate/SKILL.md)** | Self-check quality gate for review findings before delivery — filters noise, dedupes, ranks severity. | After running a code review, before posting findings to a PR or chat. |
 | **[tdd](./skills/tdd/SKILL.md)** | Enforces strict RED-GREEN-REFACTOR cycles. Writes one failing test, implements minimal code to pass, then refactors. | Adding new features test-first, or retrofitting tests onto existing code. |
 | **[ux](./skills/ux/SKILL.md)** | Reviews web and React Native UI code for usability, accessibility (WCAG 2.2), and platform compliance (Apple HIG, Material Design 3). | Building or reviewing UI components, checking accessibility, or improving UX copy. |
 
 ### Workflow companions
 
-Internal skills invoked by orchestrators (typically `autonomous-workflow`). Most users won't call these directly, but they're installable on their own if you want to reuse the artifact-generation logic in your own pipelines.
+Slash-command-only. Primarily called by `autonomous-workflow` via `Skill()` at runtime. Installable on their own if you want to reuse the artifact-generation logic in your own pipelines, but most users don't invoke them directly.
 
 | Skill | What it does |
 |---|---|
 | **[create-plan](./skills/create-plan/SKILL.md)** | Generates `.agent/{branch}/plan.md` — the single source of truth for autonomous execution. A new Claude session can resume from this plan alone. |
 | **[create-walkthrough](./skills/create-walkthrough/SKILL.md)** | Generates `.agent/{branch}/walkthrough.md` — the final summary delivered with a PR, summarizing changes, decisions, and how to verify. |
+| **[review-quality-gate](./skills/review-quality-gate/SKILL.md)** | Self-check quality gate for review findings before delivery — filters noise, dedupes, ranks severity. Called by the `reviewer` agent and review skills. |
 
 ### Slash commands
 
-These are user-invoked only (`disable-model-invocation: true`) — the agent won't load them automatically, you trigger them with `/name`.
+User-invoked only — the model can't auto-trigger these. **Zero baseline context cost** (not in the model's available-skills list); they load only when you type `/name` or when another skill calls them via `Skill()` at runtime.
 
 | Command | What it does |
 |---|---|
+| **[/ci-auto-fix](./skills/ci-auto-fix/SKILL.md)** | Diagnoses a failed CI check, applies a minimal fix, pushes, and iterates until CI passes. Provider-agnostic in scope; currently implements the GitHub Actions path. Refuses to disable, skip, or weaken checks. |
+| **[/code-quality](./skills/code-quality/SKILL.md)** | Authors and reviews code for low cognitive complexity, readability, and maintainability. Applies guard clauses, early returns, single-responsibility, and pragmatic performance choices grounded in Clean Code, Cognitive Complexity, and Knuth's optimization guidance. |
+| **[/create-pr](./skills/create-pr/SKILL.md)** | Generates a narrative PR description, pushes the branch, opens the PR, then watches CI and auto-fixes simple failures (lint, format, lockfiles). Escalates judgment-required failures via `/confidence` rather than guessing. |
+| **[/implement-suggestion](./skills/implement-suggestion/SKILL.md)** | Takes review comments or suggestions and implements the fixes — simple ones directly, complex ones with a plan for approval. |
 | **[/init-claude](./skills/init-claude/SKILL.md)** | Analyzes your project and generates a tailored `CLAUDE.md` + `.claude/rules/` setup. Detects tech stack, project size, and conventions automatically. |
-| **[/update-claude](./skills/update-claude/SKILL.md)** | Diffs your branch against main and incrementally updates Claude docs to match code changes. Finds stale references, dead paths, and drift. |
 | **[/resolve-conflicts](./skills/resolve-conflicts/SKILL.md)** | Detects merge/rebase conflicts, shows both sides with context, proposes resolution strategies, and asks clarifying questions for ambiguous cases. |
 | **[/review-changes](./skills/review-changes/SKILL.md)** | Reviews branch changes or a PR for quality, correctness, tests, and commit hygiene. Dispatches to the reviewer skill. |
-| **[/implement-suggestion](./skills/implement-suggestion/SKILL.md)** | Takes review comments or suggestions and implements the fixes — simple ones directly, complex ones with a plan for approval. |
-| **[/create-pr](./skills/create-pr/SKILL.md)** | Generates a narrative PR description, pushes the branch, opens the PR, then watches CI and auto-fixes simple failures (lint, format, lockfiles). Escalates judgment-required failures via `/confidence` rather than guessing. |
-| **[/ci-auto-fix](./skills/ci-auto-fix/SKILL.md)** | Diagnoses a failed CI check, applies a minimal fix, pushes, and iterates until CI passes. Provider-agnostic in scope; currently implements the GitHub Actions path. Refuses to disable, skip, or weaken checks. |
+| **[/update-claude](./skills/update-claude/SKILL.md)** | Diffs your branch against main and incrementally updates Claude docs to match code changes. Finds stale references, dead paths, and drift. |
 
 ### Agents
 
@@ -254,17 +260,17 @@ Commands are invoked with a slash:
 skills/
   autonomous-workflow/   SKILL.md + README.md + CLAUDE.md +
                          rules/ + templates/ + references/ +
-                         install.sh                          (orchestrator)
-  code-quality/          SKILL.md + rules/                   (auto-activated)
-  confidence/            SKILL.md                            (auto-activated)
-  create-plan/           SKILL.md                            (workflow companion)
-  create-walkthrough/    SKILL.md                            (workflow companion)
-  dx/                    SKILL.md + rules/ + templates/      (auto-activated)
-  holistic-analysis/     SKILL.md                            (auto-activated)
-  review-quality-gate/   SKILL.md                            (auto-activated)
-  tdd/                   SKILL.md + rules/                   (auto-activated)
-  ux/                    SKILL.md + rules/ + templates/      (auto-activated)
+                         install.sh                          (orchestrator, agent-invokable)
+  confidence/            SKILL.md                            (agent-invokable)
+  dx/                    SKILL.md + rules/ + templates/      (agent-invokable)
+  holistic-analysis/     SKILL.md                            (agent-invokable)
+  tdd/                   SKILL.md + rules/                   (agent-invokable)
+  ux/                    SKILL.md + rules/ + templates/      (agent-invokable)
+  create-plan/           SKILL.md                            (workflow companion, slash-only)
+  create-walkthrough/    SKILL.md                            (workflow companion, slash-only)
+  review-quality-gate/   SKILL.md                            (workflow companion, slash-only)
   ci-auto-fix/           SKILL.md                            (slash command)
+  code-quality/          SKILL.md + rules/                   (slash command)
   create-pr/             SKILL.md                            (slash command)
   implement-suggestion/  SKILL.md                            (slash command)
   init-claude/           SKILL.md                            (slash command)
