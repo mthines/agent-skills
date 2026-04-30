@@ -1,29 +1,42 @@
 ---
 name: create-pr
 description: >
-  Generate a concise, narrative GitHub pull request description, push the branch,
-  open the PR, then watch CI and auto-fix simple failures (lint, format, lockfiles)
-  before handing back. Escalates judgment-required failures via /confidence rather
-  than guessing. Invoke with /create-pr.
+  Generate a short, narrative GitHub pull request description (≤ 25 lines, hard
+  ceiling 40), push the branch, open the PR, then watch CI and auto-fix simple
+  failures (lint, format, lockfiles) before handing back. Escalates
+  judgment-required failures via /confidence rather than guessing. Invoke with
+  /create-pr.
 disable-model-invocation: true
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: command
 ---
 
 # Generate Pull Request Description
 
-Generate a **concise, narrative** PR description that tells reviewers *why* this change exists and *what* to expect when they open the diff. Avoid verbose feature-by-feature breakdowns — reviewers skim, so respect their time.
+Generate a **short, narrative** PR description that tells reviewers *why* this change exists and *what* to expect when they open the diff. Reviewers skim. If the description is long, they skip it. Respect their time.
+
+## Length budget — the hard rule
+
+A reviewer should read the entire description in **under 30 seconds**. Concretely:
+
+- **Body target: ≤ 25 rendered lines.** Hard ceiling: 40. Tables, checklists, and blank lines all count toward this.
+- **Why: 1–2 sentences.** Not paragraphs.
+- **What changed: 2–4 bullets, one line each.** No sub-bullets, no code blocks inside bullets.
+- **How to verify: ≤ 3 lines.** Prefer a single command over prose.
+- **Notes for reviewers: optional. If present, ≤ 2 sentences.** Move implementation detail into code comments or PR review threads, not the body.
+
+If you can't fit the change inside this budget, the PR is probably too big — flag that to the user instead of expanding the description.
 
 ## Core Principles
 
 1. **Narrative over checklist.** Reads like prose explaining a decision, not a bullet-point manifest of every file touched.
 2. **Why first, then what, then how to verify.** Motivation drives understanding. A reviewer should be able to predict the diff after reading the description.
-3. **Concise by default.** Aim for a description a reviewer reads in under 30 seconds. If it's long, the diff probably should have been split.
-4. **Group by concept, not by file.** Don't enumerate every changed file — describe the *ideas* the change introduces.
-5. **No filler.** Skip empty checklists, stock "Code follows guidelines" boxes, and boilerplate that adds noise without information.
+3. **Group by concept, not by file.** Don't enumerate every changed file — describe the *ideas* the change introduces.
+4. **No filler.** Skip empty checklists, stock "Code follows guidelines" boxes, and boilerplate that adds noise without information.
+5. **One line per bullet.** If a bullet wants a follow-up clause, it's two changes — split or cut the second.
 
 ## Step 1: Gather Information
 
@@ -71,27 +84,24 @@ If you can't answer these from the diff alone, ask the user — don't pad the de
 ```markdown
 ## Why
 
-[1–3 sentences. The motivation: the problem, the goal, or the user-visible outcome.
-Link the issue/ticket if there is one. Don't restate the title.]
+[1–2 sentences. The problem or user-visible outcome. Link the issue if there is one. Don't restate the title.]
 
 ## What changed
 
-- [Conceptual change 1 — what it does and where it lives, one line]
-- [Conceptual change 2]
-- [Conceptual change 3]
-
-[Aim for 2–5 bullets. Group related edits. Don't enumerate files.]
+- [Conceptual change 1 — one line]
+- [Conceptual change 2 — one line]
+- [Conceptual change 3 — one line]
 
 ## How to verify
 
-- [Test/scenario 1]
-- [Test/scenario 2]
+- [Single test command or one scenario, one line]
 
 ## Notes for reviewers
 
-[Optional. Risks, judgment calls, things deliberately out of scope, follow-up PRs.
-Skip this section entirely if there is nothing meaningful to flag.]
+[Optional, ≤ 2 sentences. Skip this section entirely if there's nothing load-bearing to flag.]
 ```
+
+Aim for **2–4 bullets** under "What changed". If you have 6+, the PR is too big or you're enumerating files instead of concepts.
 
 ## Step 4: Write the Title
 
@@ -100,7 +110,19 @@ Skip this section entirely if there is nothing meaningful to flag.]
 - Good: `fix(auth): refresh token when API returns 401`
 - Bad: `Bug fix`, `Various improvements`, `feat: stuff`
 
-## Step 5: Push and Create Draft PR
+## Step 5: Length self-check (before pushing)
+
+Count the rendered lines of the body. If it's over 25, cut. Common cuts:
+
+- **Collapse "Notes for reviewers"** unless it flags a real risk or judgment call. "We chose X because Y" usually belongs in a code comment.
+- **Drop "internal narration"** — explanations of memo deps, useEffect timing, and other implementation detail that a reviewer will read in the diff anyway.
+- **Merge bullets that share a verb.** "Added X. Added Y. Added Z." → one bullet listing the three.
+- **Cut "How to verify" prose** — one command beats three sentences.
+- **Drop sub-bullets entirely.** If a bullet needs a sub-bullet, split it into two top-level bullets or remove the detail.
+
+If you've cut as much as you can and it's still over 40 lines, the PR is too big. Tell the user before pushing.
+
+## Step 6: Push and Create Draft PR
 
 ```bash
 git push                    # tracking already configured by gw add
@@ -115,7 +137,7 @@ EOF
 
 Capture the PR URL/number from the output — the next steps need it.
 
-## Step 6: Wait for CI to Settle
+## Step 7: Wait for CI to Settle
 
 The job isn't done when the PR is created. Block on CI so the user doesn't have to come back to a red PR later.
 
@@ -124,11 +146,11 @@ sleep 10                                # let workflows register
 gh pr checks <pr-number> --watch        # blocks until every check completes; non-zero exit if any failed
 ```
 
-`--watch` waits for queued/running checks and exits with the final aggregate status. If the exit code is 0, jump to Step 9. Otherwise continue.
+`--watch` waits for queued/running checks and exits with the final aggregate status. If the exit code is 0, jump to Step 10. Otherwise continue.
 
-If `gh pr checks` reports no checks at all after a minute, this repo probably doesn't run CI on PRs — also jump to Step 9.
+If `gh pr checks` reports no checks at all after a minute, this repo probably doesn't run CI on PRs — also jump to Step 10.
 
-## Step 7: Triage Failures (delegate log-reading to subagents)
+## Step 8: Triage Failures (delegate log-reading to subagents)
 
 CI logs are huge and most of their content is irrelevant the moment you've classified the failure. Don't pull them into the main thread — fan out one `general-purpose` subagent per failed check. They run in parallel; each returns a short, structured summary.
 
@@ -157,15 +179,15 @@ prompt: |
 
 Use the returned `category` to decide the path:
 
-- `lint-format`, `generated-artifact`, `trivial-type`, `snapshot` → **mechanical**, go to Step 8 auto-fix.
-- `real-test`, `ambiguous-type-or-build`, `infra-or-workflow`, `sensitive` → **judgment**, go to Step 8 escalation.
+- `lint-format`, `generated-artifact`, `trivial-type`, `snapshot` → **mechanical**, go to Step 9 auto-fix.
+- `real-test`, `ambiguous-type-or-build`, `infra-or-workflow`, `sensitive` → **judgment**, go to Step 9 escalation.
 - `unrelated-or-flake` (or `flake_suspected: true`) → re-run failed jobs once before treating it as real:
   ```bash
   gh run rerun <run-id> --failed
   ```
   Then re-watch with `gh pr checks <pr-number> --watch`. At most one rerun per check.
 
-## Step 8: Apply Fixes
+## Step 9: Apply Fixes
 
 **Mechanical failures — delegate the whole fix loop to a subagent.** The `/ci-auto-fix` skill owns the fix-commit-push-rewatch cycle and is loud (it will run linters, push commits, watch CI). That output doesn't belong in the main thread. Spawn one subagent per independent failure (parallel if there are multiple):
 
@@ -207,13 +229,13 @@ Don't wrap the subagent in another loop — it has its own internal iteration ca
 - Push with `--no-verify` or otherwise skip hooks
 - Mark the PR ready-for-review while checks are red
 
-## Step 9: Report
+## Step 10: Report
 
 Short summary:
 
 - Final check status (all green, or which are red and why)
 - What was auto-fixed, one line per fix
-- Anything left for the user (only if Step 8 escalated or hit the cap)
+- Anything left for the user (only if Step 9 escalated or hit the cap)
 
 ## Anti-patterns to Avoid
 
@@ -227,29 +249,48 @@ Short summary:
 
 ## Examples
 
-### Good — feature (lean, narrative)
+### Good — feature (lean, narrative, fits the 25-line budget)
 
 ```markdown
 ## Why
 
-`gw add` was silently auto-cleaning stale worktrees, which made the CLI feel frozen
-on slow filesystems. Users couldn't tell whether it had hung or was working.
+`gw add` silently auto-cleaned stale worktrees, making the CLI feel frozen on slow filesystems. Users couldn't tell whether it had hung or was working.
 
 ## What changed
 
 - Replace background auto-clean with an interactive prompt before deletion
-- Surface the same prompt from `gw list` when stale worktrees are detected
-- Update help text and README to describe the new interactive flow
+- Surface the same prompt from `gw list` when stale worktrees exist
+- Update help text and README to describe the new flow
 
 ## How to verify
 
-- `gw add foo` with stale worktrees present: prompt appears, both Y and N paths work
-- `gw list` shows the prompt only when stale entries exist
-- Existing tests still pass; 7 new tests cover the prompt branches
+- `gw add foo` with stale worktrees: prompt appears; Y/N both behave correctly
+```
 
-## Notes for reviewers
+### Good — feature with template (PR template repos)
 
-Considered a `--no-prompt` flag for scripted use but deferred — no current consumer needs it.
+```markdown
+## Summary
+
+Agent0 emits the same logical dashboard several times as it iterates. Today each emission is its own card with its own "Create" button — picking the right one is guesswork. This PR collapses that into one floating card always reflecting the latest version, with revision history folded into the create dialog so users can flip between revisions and see the rendered dashboard before deploying.
+
+### Overview
+
+| Desc.        | Value                                |
+| ------------ | ------------------------------------ |
+| Preview link | https://example/preview              |
+| Feature flag | `USE_AGENT0_SDK`                     |
+
+## What changed
+
+- Floating ArtifactsList above the prompt input — one card per logical artifact
+- Cross-chain dedup at the data layer so floating list + dialog tabs share one revisions array
+- Revision tabs inside the create dialog with a `Show source` toggle for the YAML diff
+- Removed the standalone revision sidebar (~600 LOC deleted)
+
+## How to verify
+
+- Generate a dashboard in the preview, ask the agent to refine it, confirm the card shows one entry with `v{N}` + `Create dashboard`
 ```
 
 ### Good — bug fix
