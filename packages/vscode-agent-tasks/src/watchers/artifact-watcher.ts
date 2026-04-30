@@ -1,7 +1,7 @@
 /**
  * File system watcher for agent artifact files
  * Watches for changes to task.md, plan.md, and walkthrough.md
- * Auto-opens walkthrough.md when created, refreshes views on changes
+ * Auto-opens walkthrough.md and plan.md when created, refreshes views on changes
  *
  * Uses Node.js fs.watch instead of vscode.workspace.createFileSystemWatcher
  * because artifact dirs may live in the bare repo root which is outside the
@@ -10,6 +10,11 @@
  *
  * On Linux (where fs.watch recursive is unsupported), falls back to
  * VS Code file watchers as a best-effort approach.
+ *
+ * The watcher rebuilds its set of native watchers when:
+ *   - the configured `agentTasks.directories` setting changes
+ *   - a new artifact root (e.g. `.agent/`) appears that didn't exist at activation
+ * This keeps the tree view in sync without requiring a manual refresh.
  */
 
 import * as vscode from 'vscode';
@@ -31,7 +36,12 @@ function getConfiguredDirs(): string[] {
 export class ArtifactWatcher implements vscode.Disposable {
   private fsWatchers: fs.FSWatcher[] = [];
   private vscodeWatchers: vscode.FileSystemWatcher[] = [];
+  /** Disposables tied to the lifetime of the watcher itself, not a single rebuild */
+  private lifetimeDisposables: vscode.Disposable[] = [];
   private knownWalkthroughs = new Set<string>();
+  private knownPlans = new Set<string>();
+  /** Artifact roots covered by the current set of watchers */
+  private watchedRoots = new Set<string>();
   /** Per-file debounce timers so simultaneous changes to different files fire independently */
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Small debounce to coalesce rapid writes to the same file (e.g. editor save) */
@@ -41,29 +51,32 @@ export class ArtifactWatcher implements vscode.Disposable {
   readonly onArtifactChanged = this._onArtifactChanged.event;
 
   constructor() {
-    this.scanExistingWalkthroughs();
+    this.scanExistingArtifacts();
     this.setupWatchers();
+    this.setupConfigListener();
   }
 
-  private scanExistingWalkthroughs(): void {
+  private scanExistingArtifacts(): void {
     const artifactRoots = this.findArtifactRoots();
     for (const artifactRoot of artifactRoots) {
-      this.scanWalkthroughsRecursive(artifactRoot);
+      this.scanArtifactsRecursive(artifactRoot);
     }
   }
 
-  private scanWalkthroughsRecursive(dir: string): void {
+  private scanArtifactsRecursive(dir: string): void {
     try {
       const entries = fs.readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
         if (!entry.isDirectory()) {
           if (entry.name === 'walkthrough.md') {
             this.knownWalkthroughs.add(path.join(dir, entry.name));
+          } else if (entry.name === 'plan.md') {
+            this.knownPlans.add(path.join(dir, entry.name));
           }
           continue;
         }
         if (entry.name === '.git') continue;
-        this.scanWalkthroughsRecursive(path.join(dir, entry.name));
+        this.scanArtifactsRecursive(path.join(dir, entry.name));
       }
     } catch {
       // ignore
@@ -146,8 +159,10 @@ export class ArtifactWatcher implements vscode.Disposable {
   }
 
   private setupWatchers(): void {
+    this.disposeWatchers();
+
     const artifactRoots = this.findArtifactRoots();
-    if (artifactRoots.length === 0) return;
+    this.watchedRoots = new Set(artifactRoots);
 
     const platform = os.platform();
     if (platform === 'darwin' || platform === 'win32') {
@@ -157,6 +172,68 @@ export class ArtifactWatcher implements vscode.Disposable {
     } else {
       this.setupVscodeWatchers();
     }
+
+    // Always watch the workspace root for the configured dir names so
+    // newly-created `.agent/` or `.gw/` directories are picked up without
+    // requiring the user to reload the window or hit refresh.
+    this.setupRootDiscoveryWatcher();
+  }
+
+  /**
+   * Listen for `agentTasks.directories` configuration changes and rebuild
+   * the watcher set so the user's new dir names take effect immediately.
+   */
+  private setupConfigListener(): void {
+    const sub = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('agentTasks.directories')) {
+        this.rebuildWatchers();
+      }
+    });
+    this.lifetimeDisposables.push(sub);
+  }
+
+  /**
+   * Watches the workspace folder for the configured artifact directory names
+   * appearing for the first time. When one shows up, rebuild watchers so the
+   * native recursive watcher attaches to the new root.
+   */
+  private setupRootDiscoveryWatcher(): void {
+    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspacePath) return;
+
+    const base = vscode.Uri.file(workspacePath);
+    const dirs = getConfiguredDirs();
+
+    for (const dirName of dirs) {
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(base, `${dirName}`),
+        false, // don't ignore creates
+        true, // ignore changes (we only care about appearance)
+        false // don't ignore deletes
+      );
+      const onChange = () => {
+        // Rebuild only if the set of artifact roots actually changed —
+        // avoids redundant watcher churn on every save inside `.agent/`.
+        const next = new Set(this.findArtifactRoots());
+        if (!setsEqual(next, this.watchedRoots)) {
+          this.rebuildWatchers();
+        }
+        this._onArtifactChanged.fire('directory');
+      };
+      watcher.onDidCreate(onChange);
+      watcher.onDidDelete(onChange);
+      this.vscodeWatchers.push(watcher);
+    }
+  }
+
+  /**
+   * Rebuilds watchers in place — used when the configured dir names change
+   * or a new artifact root appears after activation.
+   */
+  private rebuildWatchers(): void {
+    this.scanExistingArtifacts();
+    this.setupWatchers();
+    this._onArtifactChanged.fire('directory');
   }
 
   /**
@@ -264,22 +341,31 @@ export class ArtifactWatcher implements vscode.Disposable {
   private onFileCreated(fullPath: string, basename: string): void {
     this._onArtifactChanged.fire(basename);
 
-    // Auto-open walkthrough when created
     if (basename === 'walkthrough.md' && !this.knownWalkthroughs.has(fullPath)) {
       this.knownWalkthroughs.add(fullPath);
       const autoOpen = vscode.workspace.getConfiguration('agentTasks').get<boolean>('autoOpenWalkthrough', true);
       if (autoOpen) {
-        this.openWalkthrough(vscode.Uri.file(fullPath));
+        this.openArtifact(vscode.Uri.file(fullPath), 'Walkthrough');
+      }
+      return;
+    }
+
+    if (basename === 'plan.md' && !this.knownPlans.has(fullPath)) {
+      this.knownPlans.add(fullPath);
+      const autoOpen = vscode.workspace.getConfiguration('agentTasks').get<boolean>('autoOpenPlan', true);
+      if (autoOpen) {
+        this.openArtifact(vscode.Uri.file(fullPath), 'Plan');
       }
     }
   }
 
   private onFileDeleted(fullPath: string, basename: string): void {
     this.knownWalkthroughs.delete(fullPath);
+    this.knownPlans.delete(fullPath);
     this._onArtifactChanged.fire(basename);
   }
 
-  private async openWalkthrough(uri: vscode.Uri): Promise<void> {
+  private async openArtifact(uri: vscode.Uri, label: string): Promise<void> {
     try {
       const usePreview = vscode.workspace
         .getConfiguration('agentTasks')
@@ -293,22 +379,40 @@ export class ArtifactWatcher implements vscode.Disposable {
           viewColumn: vscode.ViewColumn.One,
         });
       }
-      vscode.window.showInformationMessage(`Walkthrough generated: ${path.basename(path.dirname(uri.fsPath))}`);
+      vscode.window.showInformationMessage(`${label} generated: ${path.basename(path.dirname(uri.fsPath))}`);
     } catch {
       // ignore open errors
     }
+  }
+
+  private disposeWatchers(): void {
+    for (const watcher of this.fsWatchers) {
+      watcher.close();
+    }
+    this.fsWatchers = [];
+    for (const watcher of this.vscodeWatchers) {
+      watcher.dispose();
+    }
+    this.vscodeWatchers = [];
   }
 
   dispose(): void {
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer);
     }
-    for (const watcher of this.fsWatchers) {
-      watcher.close();
+    this.disposeWatchers();
+    for (const sub of this.lifetimeDisposables) {
+      sub.dispose();
     }
-    for (const watcher of this.vscodeWatchers) {
-      watcher.dispose();
-    }
+    this.lifetimeDisposables = [];
     this._onArtifactChanged.dispose();
   }
+}
+
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const v of a) {
+    if (!b.has(v)) return false;
+  }
+  return true;
 }

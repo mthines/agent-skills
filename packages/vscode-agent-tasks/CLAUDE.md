@@ -38,7 +38,7 @@ src/
 
 - **Artifact directories** — configured via `agentTasks.directories` (default: `[".agent", ".gw"]`); the extension scans each in order
 - **Agent Tasks** — read from `<dir>/<branch>/` directories (`task.md`, `plan.md`, `walkthrough.md`)
-- **Artifact Watcher** — watches configured dirs for changes, triggers view refresh; auto-opens `walkthrough.md` on creation
+- **Artifact Watcher** — watches configured dirs for changes, triggers view refresh; auto-opens `walkthrough.md` and `plan.md` on creation; rebuilds watchers when `agentTasks.directories` changes or a configured root appears after activation
 - **Bare-repo indirection** — only for `.gw/`: reads `config.json` to find the default-branch worktree's `.gw/` dir
 
 ## Configuration namespace
@@ -48,7 +48,8 @@ All settings use `agentTasks.*` (NOT `gw.*`):
 - `agentTasks.directories` — artifact directory names (array)
 - `agentTasks.sortBy` — sort field (`date`/`name`/`status`)
 - `agentTasks.sortOrder` — sort direction (`asc`/`desc`)
-- `agentTasks.autoOpenWalkthrough` — auto-open on create
+- `agentTasks.autoOpenWalkthrough` — auto-open `walkthrough.md` on create
+- `agentTasks.autoOpenPlan` — auto-open `plan.md` on create
 - `agentTasks.openMarkdownInPreview` — preview mode
 
 ## Extension Manifest

@@ -7,7 +7,7 @@ Visualize autonomous agent workflow artifacts (`plan.md`, `task.md`, `walkthroug
 - **Agent Tasks sidebar** — browse all in-flight and completed agent tasks by branch
 - **Task progress** — see phase, status (in-progress/blocked/completed), and sub-tasks at a glance
 - **Plan viewer** — inspect the plan summary, files to create/modify, and complexity estimate
-- **Walkthrough auto-open** — when a `walkthrough.md` is created, the extension opens it automatically in Markdown Preview
+- **Walkthrough & plan auto-open** — when a `walkthrough.md` or `plan.md` is created, the extension opens it automatically in Markdown Preview (each toggleable)
 - **Configurable directories** — scan `.agent/`, `.gw/`, or any custom directory name
 - **Sort** — sort by date, name, or status; ascending or descending
 
@@ -33,6 +33,7 @@ mthines.agent-tasks
 | `agentTasks.sortBy` | `"date"` | How to sort: `"date"`, `"name"`, or `"status"`. |
 | `agentTasks.sortOrder` | `"desc"` | Sort direction: `"asc"` or `"desc"`. |
 | `agentTasks.autoOpenWalkthrough` | `true` | Auto-open `walkthrough.md` in Preview when created. |
+| `agentTasks.autoOpenPlan` | `true` | Auto-open `plan.md` in Preview when created. |
 | `agentTasks.openMarkdownInPreview` | `true` | Open artifact files in Markdown Preview mode. |
 
 ### Configurable directories
