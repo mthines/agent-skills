@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { parsePsOutput, findClaudeDescendant, type PsEntry } from './process-tree';
+import {
+  parsePsOutput,
+  findClaudeDescendant,
+  parseLsofCwdOutput,
+  collectClaudeDescendants,
+  type PsEntry,
+} from './process-tree';
 
 // ---------------------------------------------------------------------------
 // parsePsOutput — 6 test cases
@@ -130,5 +136,122 @@ describe('findClaudeDescendant', () => {
       { pid: 200, ppid: 100, command: 'claude' },
     ];
     expect(findClaudeDescendant(shellPid, sessionId, snapshot)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseLsofCwdOutput — 6 test cases
+// ---------------------------------------------------------------------------
+
+describe('parseLsofCwdOutput', () => {
+  it('parses a single PID with one cwd line', () => {
+    const raw = 'p1234\nfcwd\nn/Users/alice/projects/my-app';
+    const result = parseLsofCwdOutput(raw);
+    expect(result.size).toBe(1);
+    expect(result.get(1234)).toBe('/Users/alice/projects/my-app');
+  });
+
+  it('parses multiple PIDs each with their own cwd', () => {
+    const raw = [
+      'p100',
+      'fcwd',
+      'n/home/alice/app',
+      'p200',
+      'fcwd',
+      'n/home/bob/other',
+    ].join('\n');
+    const result = parseLsofCwdOutput(raw);
+    expect(result.size).toBe(2);
+    expect(result.get(100)).toBe('/home/alice/app');
+    expect(result.get(200)).toBe('/home/bob/other');
+  });
+
+  it('omits a PID that has no n line', () => {
+    // PID 300 has no n line — should not appear in the map.
+    const raw = 'p300\nfcwd\np400\nfcwd\nn/tmp/work';
+    const result = parseLsofCwdOutput(raw);
+    expect(result.has(300)).toBe(false);
+    expect(result.get(400)).toBe('/tmp/work');
+  });
+
+  it('ignores f, t, and other prefix lines', () => {
+    const raw = 'p999\nf42\ntREG\nn/var/project\ntDEV\nfother';
+    const result = parseLsofCwdOutput(raw);
+    expect(result.get(999)).toBe('/var/project');
+  });
+
+  it('returns an empty map for empty input', () => {
+    expect(parseLsofCwdOutput('').size).toBe(0);
+    expect(parseLsofCwdOutput('\n\n').size).toBe(0);
+  });
+
+  it('skips malformed p lines with non-numeric digits', () => {
+    const raw = 'pabc\nn/should/not/appear\np500\nn/valid/path';
+    const result = parseLsofCwdOutput(raw);
+    expect(result.has(NaN)).toBe(false);
+    expect(result.get(500)).toBe('/valid/path');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// collectClaudeDescendants — 6 test cases
+// ---------------------------------------------------------------------------
+
+describe('collectClaudeDescendants', () => {
+  it('returns the PID of a direct child claude process', () => {
+    const snapshot: PsEntry[] = [
+      { pid: 100, ppid: 1, command: '-zsh' },
+      { pid: 200, ppid: 100, command: 'claude' },
+    ];
+    expect(collectClaudeDescendants(100, snapshot)).toEqual([200]);
+  });
+
+  it('returns only claude PIDs among mixed descendants', () => {
+    const snapshot: PsEntry[] = [
+      { pid: 100, ppid: 1, command: '-zsh' },
+      { pid: 201, ppid: 100, command: 'node server.js' },
+      { pid: 202, ppid: 100, command: 'claude' },
+      { pid: 203, ppid: 100, command: 'bash' },
+    ];
+    expect(collectClaudeDescendants(100, snapshot)).toEqual([202]);
+  });
+
+  it('finds a deep descendant (3 levels deep)', () => {
+    const snapshot: PsEntry[] = [
+      { pid: 100, ppid: 1, command: '-zsh' },
+      { pid: 200, ppid: 100, command: 'bash' },
+      { pid: 300, ppid: 200, command: 'node' },
+      { pid: 400, ppid: 300, command: 'claude -c' },
+    ];
+    expect(collectClaudeDescendants(100, snapshot)).toEqual([400]);
+  });
+
+  it('returns empty array when no claude descendants exist', () => {
+    const snapshot: PsEntry[] = [
+      { pid: 100, ppid: 1, command: '-zsh' },
+      { pid: 200, ppid: 100, command: 'node' },
+    ];
+    expect(collectClaudeDescendants(100, snapshot)).toEqual([]);
+  });
+
+  it('returns empty array when shell PID is not in snapshot', () => {
+    const snapshot: PsEntry[] = [
+      { pid: 999, ppid: 1, command: '-zsh' },
+      { pid: 200, ppid: 999, command: 'claude' },
+    ];
+    expect(collectClaudeDescendants(100, snapshot)).toEqual([]);
+  });
+
+  it('terminates and returns results when snapshot contains a cycle', () => {
+    // pid 300 → ppid 200 → ppid 300 (cycle). Should not infinite-loop.
+    const snapshot: PsEntry[] = [
+      { pid: 100, ppid: 1, command: '-zsh' },
+      { pid: 200, ppid: 100, command: 'bash' },
+      { pid: 300, ppid: 200, command: 'claude' },
+      { pid: 200, ppid: 300, command: 'bash-cycle' }, // creates artificial cycle
+    ];
+    const result = collectClaudeDescendants(100, snapshot);
+    expect(result).toContain(300);
+    // Must terminate — if this test completes, no infinite loop.
   });
 });

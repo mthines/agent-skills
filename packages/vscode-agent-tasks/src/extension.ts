@@ -11,7 +11,12 @@ import { ArtifactWatcher } from './watchers/artifact-watcher';
 import { SessionsProvider, SessionItem } from './providers/sessions-provider';
 import { SessionWatcher } from './watchers/session-watcher';
 import { initLogger, log, logError } from './lib/logger';
-import { parsePsOutput, findClaudeDescendant } from './lib/process-tree';
+import {
+  parsePsOutput,
+  findClaudeDescendant,
+  parseLsofCwdOutput,
+  collectClaudeDescendants,
+} from './lib/process-tree';
 import type { SessionMetadata } from './parsers/session-jsonl-parser';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -231,36 +236,118 @@ export function activate(context: vscode.ExtensionContext): void {
 
   /**
    * One-shot process-tree scan. Tries to find a terminal already running
-   * `claude --resume <sid>` among `vscode.window.terminals`.
+   * a `claude` process whose cwd matches the session's cwd, or (fast-path)
+   * one whose argv contains `--resume <sid>`.
+   *
+   * Strategy:
+   * 1. Fast-path: argv match (`claude --resume <sid>` in command). This covers
+   *    sessions the extension itself spawned in a prior window and lost tracking.
+   * 2. Slow-path: cwd match via `lsof -a -p PIDS -d cwd -Fpn`. Covers bare
+   *    `claude` invocations where the UUID is assigned internally. A uniqueness
+   *    guard fires when multiple terminals have a cwd-matching claude descendant,
+   *    accepting spawn-a-duplicate as the safer fallback.
    *
    * Returns the matching terminal, or `undefined` on any failure or no-match.
    * All errors are caught and logged; callers always fall through to spawn.
    */
   const tryAdoptTerminal = async (
     sid: string,
+    sessionCwd: string | undefined,
     terminals: readonly vscode.Terminal[]
   ): Promise<vscode.Terminal | undefined> => {
+    if (terminals.length === 0) return undefined;
+
+    // ---- Snapshot ----
+    let psRaw: string;
     try {
-      const stdout = child_process.execSync('ps -A -o pid,ppid,command', { encoding: 'utf8' });
-      const snapshot = parsePsOutput(stdout);
-
-      for (const terminal of terminals) {
-        let shellPid: number | undefined;
-        try {
-          shellPid = await terminal.processId;
-        } catch {
-          continue;
-        }
-        if (shellPid === undefined) continue;
-
-        const match = findClaudeDescendant(shellPid, sid, snapshot);
-        if (match !== undefined) {
-          log(`tryAdoptTerminal: adopted terminal (shellPid=${shellPid}, claudePid=${match}, sid=${sid.slice(0, 8)})`);
-          return terminal;
-        }
-      }
+      psRaw = child_process.execSync('ps -A -o pid,ppid,command', {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        encoding: 'utf8',
+      });
     } catch (err) {
-      logError('tryAdoptTerminal: ps scan failed, falling through to spawn', err);
+      logError('tryAdoptTerminal: ps failed, falling through to spawn', err);
+      return undefined;
+    }
+    const snapshot = parsePsOutput(psRaw);
+
+    // ---- Resolve shell PIDs ----
+    const shellByTerm = new Map<vscode.Terminal, number>();
+    for (const t of terminals) {
+      let pid: number | undefined;
+      try {
+        pid = await t.processId;
+      } catch {
+        continue;
+      }
+      if (typeof pid === 'number') shellByTerm.set(t, pid);
+    }
+
+    // ---- Fast-path: argv match ----
+    for (const [t, shellPid] of shellByTerm) {
+      const claudePid = findClaudeDescendant(shellPid, sid, snapshot);
+      if (claudePid !== undefined) {
+        log(
+          `tryAdoptTerminal: argv-match adopted terminal (shellPid=${shellPid}, claudePid=${claudePid}, sid=${sid.slice(0, 8)})`
+        );
+        return t;
+      }
+    }
+
+    // ---- Slow-path: cwd match (only when session cwd is known) ----
+    if (!sessionCwd) return undefined;
+
+    // Collect all claude descendants per terminal.
+    const claudeByTerm = new Map<vscode.Terminal, number[]>();
+    const allClaudePids: number[] = [];
+    for (const [t, shellPid] of shellByTerm) {
+      const pids = collectClaudeDescendants(shellPid, snapshot);
+      if (pids.length > 0) {
+        claudeByTerm.set(t, pids);
+        allClaudePids.push(...pids);
+      }
+    }
+    if (allClaudePids.length === 0) return undefined;
+
+    // Single lsof call for the union of all claude PIDs.
+    let lsofRaw: string;
+    try {
+      lsofRaw = child_process.execSync(
+        `lsof -a -p ${allClaudePids.join(',')} -d cwd -Fpn`,
+        { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' }
+      );
+    } catch (e: unknown) {
+      // lsof exits non-zero when any listed PID has already exited, but still
+      // emits stdout for live PIDs. Capture stdout regardless of exit code.
+      const err = e as { stdout?: Buffer | string };
+      if (err.stdout) {
+        lsofRaw =
+          typeof err.stdout === 'string' ? err.stdout : err.stdout.toString('utf8');
+      } else {
+        log('tryAdoptTerminal: lsof produced no output, falling through to spawn');
+        return undefined;
+      }
+    }
+    const cwdByPid = parseLsofCwdOutput(lsofRaw);
+
+    // Find terminals whose claude descendants have cwd === sessionCwd.
+    const matches: vscode.Terminal[] = [];
+    for (const [t, pids] of claudeByTerm) {
+      if (pids.some((p) => cwdByPid.get(p) === sessionCwd)) {
+        matches.push(t);
+      }
+    }
+
+    if (matches.length === 1) {
+      log(
+        `tryAdoptTerminal: cwd-match adopted terminal (sessionCwd=${sessionCwd}, sid=${sid.slice(0, 8)})`
+      );
+      return matches[0];
+    }
+
+    if (matches.length > 1) {
+      log(
+        `tryAdoptTerminal: cwd-match ambiguous (${matches.length} terminals match), falling through to spawn`
+      );
     }
     return undefined;
   };
@@ -286,10 +373,10 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       if (existing) sessionTerminals.delete(sid);
 
-      // Attempt to adopt an existing terminal that is already running
-      // `claude --resume <sid>` (e.g. one the user opened manually).
+      // Attempt to adopt an existing terminal that is already running claude
+      // (argv fast-path: `--resume <sid>`, or cwd slow-path: lsof match).
       // Runs only on click — never on refresh, watcher tick, or render.
-      const adopted = await tryAdoptTerminal(sid, vscode.window.terminals);
+      const adopted = await tryAdoptTerminal(sid, session.cwd, vscode.window.terminals);
       if (adopted) {
         sessionTerminals.set(sid, adopted);
         sessionsProvider.setTerminalOpen(sid, true);

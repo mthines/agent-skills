@@ -28,7 +28,7 @@ src/
   extension.ts              # Entry point, command registration, terminal tracking
   lib/
     logger.ts               # `mthines.agent-tasks` OutputChannel wrapper
-    process-tree.ts         # Pure helpers: `parsePsOutput`, `findClaudeDescendant` — no VS Code dep, vitest-testable
+    process-tree.ts         # Pure helpers: `parsePsOutput`, `findClaudeDescendant`, `parseLsofCwdOutput`, `collectClaudeDescendants` — no VS Code dep, vitest-testable
   providers/                # TreeDataProviders for sidebar views
     agent-tasks-provider    # Agent tasks explorer view
     sessions-provider       # Sessions panel — Running section + worktree groups
@@ -53,7 +53,13 @@ src/
 - **Worktree grouping in Sessions** — gw-aware (walks up to find `.gw/config.json`, then enumerates sibling worktrees by `.git` file marker) → falls back to `git worktree list --porcelain` → finally just the workspace path. Multi-worktree always groups; current worktree pinned first and marked `(current)`. Single-worktree shows flat.
 - **Session Watcher** — 50 ms trailing debounce (was 500 ms — kept tight for realtime icon transitions). 15 s visibility-bound refresh tick drives `running → stalled` ageing-out without waiting on file events.
 - **Per-session terminal tracking** — `extension.ts` maintains a `Map<sessionId, vscode.Terminal>` so re-clicking a session focuses its existing tab instead of spawning a duplicate. `onDidCloseTerminal` cleans up. Cross-window is impossible — VS Code's API is window-scoped.
-- **Terminal adoption on click** — when `openSession` finds no tracked terminal for a session, `tryAdoptTerminal` runs a one-shot `ps -A -o pid,ppid,command` scan across `vscode.window.terminals`. For each terminal it awaits `terminal.processId` (the shell PID), then calls `findClaudeDescendant` to BFS the process tree for a descendant whose command contains `claude --resume <sid>`. The first match is adopted into `sessionTerminals` and focused; all failures fall through silently to spawn. Sessions started without `--resume <id>` (bare `claude` invocations) are not adoptable in v1. The scan runs only inside `openSession` — never on refresh, watcher tick, or panel render.
+- **Terminal adoption on click** — when `openSession` finds no tracked terminal for a session, `tryAdoptTerminal` runs a two-strategy scan across `vscode.window.terminals`:
+  1. **Argv fast-path** (`findClaudeDescendant`): one `ps -A -o pid,ppid,command` snapshot; BFS each terminal's shell PID for a descendant whose command contains `claude --resume <sid>`. Succeeds when the extension itself previously spawned the terminal and lost tracking on window reload.
+  2. **Cwd slow-path** (`collectClaudeDescendants` + `parseLsofCwdOutput`): collects ALL claude descendants across all terminals, then issues a single `lsof -a -p PIDS -d cwd -Fpn` call. Compares each claude process's cwd against `session.cwd` (exact byte match). **Uniqueness guard**: if exactly one terminal has a cwd-matching claude descendant, adopt it; if zero or more than one, fall through to spawn. Covers bare `claude` invocations where the UUID is assigned internally (most common case).
+  
+  Both strategies are tried in order — argv first, then cwd. All failures (ps error, lsof non-zero, no match, ambiguous match) fall through silently to spawn. The scan runs only inside `openSession` — never on refresh, watcher tick, or panel render.
+  
+  **Documented limitation**: when two or more claude processes share the same cwd (multiple sessions in the same worktree), the uniqueness guard fires and a new `claude --resume` terminal is spawned instead of adopting. Accepted behavior for v2.
 - **Parse cache** — `parseSessionFile` is mtime-keyed; unchanged JSONL files skip read+parse on refresh. Bounded by unique session count (tens to hundreds).
 
 ## Configuration namespace
