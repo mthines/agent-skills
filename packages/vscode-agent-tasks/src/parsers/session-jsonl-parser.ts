@@ -182,6 +182,27 @@ function truncate(s: string, maxLen = MAX_TITLE_LEN): string {
 // ---------------------------------------------------------------------------
 
 /**
+ * In-process cache of parsed sessions, keyed by absolute file path. Stores
+ * the mtime that produced the cached metadata; a `parseSessionFile` call only
+ * re-reads + re-parses when the file's mtime has changed since the cache
+ * entry was written.
+ *
+ * This dramatically speeds up tree refreshes when most sessions on disk are
+ * unchanged (the common case) — without it every refresh would re-read every
+ * JSONL file, including multi-MB ones.
+ *
+ * Bounded in practice by the number of distinct session files the user has
+ * (tens to hundreds). New mtimes overwrite old entries for the same path, so
+ * memory growth is one entry per unique session file.
+ */
+const parseCache = new Map<string, { mtime: number; data: SessionMetadata }>();
+
+/** Reset the parse cache. Exposed mainly for tests. */
+export function clearSessionParseCache(): void {
+  parseCache.clear();
+}
+
+/**
  * Parse a single JSONL session file and return `SessionMetadata`.
  *
  * Returns `null` when:
@@ -191,6 +212,8 @@ function truncate(s: string, maxLen = MAX_TITLE_LEN): string {
  *
  * Unknown event types are silently skipped. Missing fields degrade to
  * `undefined` — nothing throws.
+ *
+ * Uses an mtime-keyed cache; unchanged files skip the read+parse entirely.
  */
 export function parseSessionFile(filePath: string): SessionMetadata | null {
   let raw: string;
@@ -199,6 +222,10 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
   try {
     const stat = fs.statSync(filePath);
     mtime = stat.mtimeMs;
+    const cached = parseCache.get(filePath);
+    if (cached && cached.mtime === mtime) {
+      return cached.data;
+    }
     raw = fs.readFileSync(filePath, 'utf-8');
   } catch {
     return null;
@@ -274,7 +301,7 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
   // We require at least a sessionId to return a result
   if (!sessionId) return null;
 
-  return {
+  const data: SessionMetadata = {
     sessionId,
     filePath,
     title: title ?? 'Untitled session',
@@ -285,6 +312,8 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
     messageCount,
     mtime,
   };
+  parseCache.set(filePath, { mtime, data });
+  return data;
 }
 
 /**

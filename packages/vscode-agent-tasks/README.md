@@ -133,6 +133,12 @@ If you previously used `vscode-gw` (gw Worktrees) with Agent Tasks, the settings
 | `Agent Tasks: Refresh Agent Tasks` | Reload the tree from disk |
 | `Agent Tasks: Sort Agent Tasks` | Interactive sort picker |
 | `Agent Tasks: Focus Agent Tasks Sidebar` | Focus the sidebar panel |
+| `Agent Tasks: Refresh Sessions` | Reload the Sessions panel and rebuild the file watcher |
+| `Agent Tasks: Toggle Sessions Scope` | Switch between current-worktree and all-worktrees views |
+
+## Logging
+
+The extension writes structured timestamped logs to a dedicated output channel — open it via **View → Output → mthines.agent-tasks**. The channel records activation, command invocations, watcher rebuilds, session refresh events, terminal lifecycle (create / focus existing / close), and errors. Useful when reporting issues or sanity-checking why a session doesn't appear.
 
 ## Artifacts recognized
 

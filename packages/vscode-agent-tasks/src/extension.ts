@@ -9,8 +9,11 @@ import { AgentTasksProvider } from './providers/agent-tasks-provider';
 import { ArtifactWatcher } from './watchers/artifact-watcher';
 import { SessionsProvider, SessionItem } from './providers/sessions-provider';
 import { SessionWatcher } from './watchers/session-watcher';
+import { initLogger, log, logError } from './lib/logger';
 
 export function activate(context: vscode.ExtensionContext): void {
+  initLogger(context);
+  log('agent-tasks extension activated');
   // Create the tree data provider
   const agentTasksProvider = new AgentTasksProvider();
 
@@ -119,12 +122,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const sessionWatcher = new SessionWatcher();
 
   sessionWatcher.onSessionChanged(() => {
+    log('Session file changed → refreshing tree');
     sessionsProvider.refresh();
   });
 
   // Rebuild the watcher whenever the workspace folders change
   const workspaceFolderSub = vscode.workspace.onDidChangeWorkspaceFolders(() => {
-    // Refresh provider first so sessionDirs is updated
+    log('Workspace folders changed — refreshing sessions');
     sessionsProvider.refresh();
     sessionWatcher.rebuild(sessionsProvider.sessionDirs);
   });
@@ -134,12 +138,15 @@ export function activate(context: vscode.ExtensionContext): void {
   // the tree view completes its first getChildren call.
   void Promise.resolve().then(() => {
     sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+    log(`Initial sessions watcher attached: ${sessionsProvider.sessionDirs.length} dir(s)`);
   });
 
   const sessionsRefreshCmd = vscode.commands.registerCommand('agentTasks.sessions.refresh', () => {
+    log('Command: sessions.refresh');
     sessionsProvider.refresh();
     // Rebuild watchers in case new worktrees appeared
     sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+    log(`Sessions watcher rebuilt: ${sessionsProvider.sessionDirs.length} dir(s)`);
   });
 
   const sessionsToggleScopeCmd = vscode.commands.registerCommand(
@@ -148,6 +155,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const cfg = vscode.workspace.getConfiguration('agentTasks.sessions');
       const current = cfg.get<string>('scope', 'all');
       const next = current === 'current' ? 'all' : 'current';
+      log(`Command: sessions.toggleScope (${current} → ${next})`);
       await cfg.update('scope', next, vscode.ConfigurationTarget.Global);
       sessionsProvider.refresh();
       sessionWatcher.rebuild(sessionsProvider.sessionDirs);
@@ -206,6 +214,7 @@ export function activate(context: vscode.ExtensionContext): void {
     for (const [sid, term] of sessionTerminals) {
       if (term === t) {
         sessionTerminals.delete(sid);
+        log(`Terminal closed for session ${sid.slice(0, 8)}`);
         break;
       }
     }
@@ -220,14 +229,21 @@ export function activate(context: vscode.ExtensionContext): void {
         .getConfiguration('agentTasks.sessions')
         .get<string>('openWith', 'resume');
 
+      const sid = item.session.sessionId;
+      log(`Command: sessions.openSession (id=${sid.slice(0, 8)}, mode=${openWith})`);
+
       if (openWith === 'resume') {
-        const sid = item.session.sessionId;
+        // Optimistic UI: flip the icon to "active" right now so the panel
+        // feels instant. The watcher will overwrite this with the real mtime
+        // as soon as claude writes its first event.
+        sessionsProvider.touchActive(sid);
 
         // If we already have a terminal for this session and it's still alive,
         // just focus it. exitStatus stays `undefined` while the process is
         // running and gets set when it exits.
         const existing = sessionTerminals.get(sid);
         if (existing && existing.exitStatus === undefined) {
+          log(`Focusing existing terminal for session ${sid.slice(0, 8)}`);
           existing.show(/* preserveFocus */ false);
           return;
         }
@@ -240,6 +256,8 @@ export function activate(context: vscode.ExtensionContext): void {
         const shortId = sid.slice(0, 8);
         const cwd =
           item.session.cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+        log(`Creating terminal for session ${shortId} (branch=${branch}, cwd=${cwd ?? '?'})`);
 
         const terminal = vscode.window.createTerminal({
           name: `Claude · ${branch} · ${shortId}`,
@@ -255,7 +273,8 @@ export function activate(context: vscode.ExtensionContext): void {
         try {
           const doc = await vscode.workspace.openTextDocument(uri);
           await vscode.window.showTextDocument(doc, { preview: false });
-        } catch {
+        } catch (err) {
+          logError(`Failed to open session file ${item.session.filePath}`, err);
           vscode.window.showWarningMessage(`Could not open session file: ${item.session.filePath}`);
         }
       }

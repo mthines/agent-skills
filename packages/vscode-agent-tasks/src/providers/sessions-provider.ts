@@ -132,11 +132,15 @@ export class WorktreeGroupItem extends vscode.TreeItem {
  * up-front in the tooltip so users don't mistake the icon for ground truth.
  */
 export class SessionItem extends vscode.TreeItem {
-  constructor(public readonly session: SessionMetadata, options: { grouped: boolean }) {
+  constructor(
+    public readonly session: SessionMetadata,
+    options: { grouped: boolean; effectiveMtime?: number }
+  ) {
     super(session.title, vscode.TreeItemCollapsibleState.None);
 
-    const status: SessionStatus = getSessionStatus(session.mtime);
-    const timeStr = formatTime(session.mtime);
+    const effectiveMtime = options.effectiveMtime ?? session.mtime;
+    const status: SessionStatus = getSessionStatus(effectiveMtime);
+    const timeStr = formatTime(effectiveMtime);
     const branch = session.gitBranch ?? '?';
 
     this.description = options.grouped ? timeStr : `${branch} · ${timeStr}`;
@@ -418,9 +422,41 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
   /** Cache of session dirs being watched — exposed for SessionWatcher rebuild. */
   private _sessionDirs: string[] = [];
 
+  /**
+   * Optimistic activity timestamps: when the user clicks a session to resume
+   * it, we mark it as just-opened immediately so the icon flips to "active"
+   * without waiting for the file watcher to catch the next claude write.
+   *
+   * The provider treats `max(file mtime, optimistic timestamp)` as the
+   * effective activity time. Once a real file change lands the entry becomes
+   * irrelevant naturally; we also age them out after 5 minutes so a clicked-
+   * then-quit session doesn't lie indefinitely.
+   */
+  private optimisticOpens = new Map<string, number>();
+  private static readonly OPTIMISTIC_TTL_MS = 5 * 60 * 1000;
+
   /** The session directories currently being observed. */
   get sessionDirs(): string[] {
     return this._sessionDirs;
+  }
+
+  /**
+   * Mark a session as just-opened so its icon shows "active" immediately on
+   * click, without waiting for the file watcher. Idempotent.
+   */
+  touchActive(sessionId: string): void {
+    this.optimisticOpens.set(sessionId, Date.now());
+    this.refresh();
+  }
+
+  private effectiveMtime(session: SessionMetadata): number {
+    const optimistic = this.optimisticOpens.get(session.sessionId);
+    if (optimistic === undefined) return session.mtime;
+    if (Date.now() - optimistic > SessionsProvider.OPTIMISTIC_TTL_MS) {
+      this.optimisticOpens.delete(session.sessionId);
+      return session.mtime;
+    }
+    return Math.max(session.mtime, optimistic);
   }
 
   refresh(): void {
@@ -433,7 +469,9 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
 
   async getChildren(element?: SessionTreeItem): Promise<SessionTreeItem[]> {
     if (element instanceof WorktreeGroupItem) {
-      return element.sessions.map((s) => new SessionItem(s, { grouped: true }));
+      return element.sessions.map(
+        (s) => new SessionItem(s, { grouped: true, effectiveMtime: this.effectiveMtime(s) })
+      );
     }
     if (element instanceof SessionItem) {
       return [];
@@ -470,14 +508,18 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     // Single worktree (or scope === 'current') → flat list
     if (worktreePaths.length <= 1) {
       const sessions = buckets.get(worktreePaths[0]) ?? [];
-      return sessions.map((s) => new SessionItem(s, { grouped: false }));
+      return sessions.map(
+        (s) => new SessionItem(s, { grouped: false, effectiveMtime: this.effectiveMtime(s) })
+      );
     }
 
-    // Multi-worktree → grouped, current first, others by most-recent activity
+    // Multi-worktree → grouped, current first, others by most-recent activity.
+    // The "most recent" mtime here uses effectiveMtime so an optimistically-
+    // touched session lifts its group's sort order too.
     const groups: Array<{ wt: string; sessions: SessionMetadata[]; mtime: number }> = [];
     for (const wt of worktreePaths) {
       const sessions = buckets.get(wt) ?? [];
-      const mtime = sessions[0]?.mtime ?? 0;
+      const mtime = sessions.reduce((max, s) => Math.max(max, this.effectiveMtime(s)), 0);
       groups.push({ wt, sessions, mtime });
     }
 
