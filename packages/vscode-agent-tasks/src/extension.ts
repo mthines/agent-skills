@@ -197,12 +197,40 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const tickDisposable: vscode.Disposable = { dispose: stopTick };
 
+  // -------------------------------------------------------------------------
+  // Agent Tasks scope toggle
+  // -------------------------------------------------------------------------
+
+  const toggleScopeCmd = vscode.commands.registerCommand(
+    'agentTasks.toggleScope',
+    async () => {
+      const cfg = vscode.workspace.getConfiguration('agentTasks');
+      const current = cfg.get<string>('scope', 'all');
+      const next = current === 'current' ? 'all' : 'current';
+      log(`Command: agentTasks.toggleScope (${current} → ${next})`);
+
+      // Mirror the sessions toggle: use Global for single-folder, workspace
+      // target for multi-root. For simplicity use Global (same as sessions).
+      await cfg.update('scope', next, vscode.ConfigurationTarget.Global);
+      agentTasksProvider.refresh();
+      vscode.window.setStatusBarMessage(
+        next === 'current'
+          ? 'Agent Tasks: showing current worktree only'
+          : 'Agent Tasks: showing all worktrees',
+        2500
+      );
+    }
+  );
+
   // React to scope config changes from settings UI (so the user doesn't have
   // to manually refresh after editing settings.json).
   const configSub = vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('agentTasks.sessions.scope')) {
       sessionsProvider.refresh();
       sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+    }
+    if (e.affectsConfiguration('agentTasks.scope')) {
+      agentTasksProvider.refresh();
     }
   });
 
@@ -335,6 +363,7 @@ export function activate(context: vscode.ExtensionContext): void {
     openPlanCmd,
     openTaskCmd,
     openWalkthroughCmd,
+    toggleScopeCmd,
     // Sessions panel
     sessionsView,
     sessionWatcher,

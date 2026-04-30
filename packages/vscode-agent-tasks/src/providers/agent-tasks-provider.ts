@@ -1,12 +1,26 @@
 /**
- * TreeDataProvider for displaying agent task progress from artifact directories
- * Supports configurable directories (default: .agent, .gw) via agentTasks.directories setting
+ * TreeDataProvider for displaying agent task progress from artifact directories.
+ *
+ * Supports configurable directories (default: `.agent`, `.gw`) via the
+ * `agentTasks.directories` setting.
+ *
+ * Tree structure:
+ *   - Single worktree → flat list of AgentBranchItems
+ *   - Multiple worktrees → WorktreeArtifactGroupItems (current first,
+ *     marked), each containing AgentBranchItems
+ *
+ * Scope toggle (`agentTasks.scope`):
+ *   - `"all"` (default) — show artifacts from every worktree, grouped
+ *   - `"current"` — show only the current worktree, flat list
  */
 
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { parseTaskMd, parsePlanMd, ParsedTask, ParsedPlan, TaskItem } from '../parsers/markdown-parser';
+import { discoverWorktreePaths } from '../lib/worktree-discovery';
+
+export type AgentTasksScope = 'current' | 'all';
 
 /**
  * Returns the configured artifact directory names, falling back to the defaults
@@ -17,7 +31,86 @@ function getConfiguredDirs(): string[] {
   return cfg.length > 0 ? cfg : ['.agent', '.gw'];
 }
 
-// -- Tree Item Types --
+// ---------------------------------------------------------------------------
+// Tree item: WorktreeArtifactGroupItem
+// ---------------------------------------------------------------------------
+
+/**
+ * A collapsible group node representing one worktree in the Agent Tasks panel.
+ *
+ * Visual treatment mirrors WorktreeGroupItem in sessions-provider.ts:
+ *   - current worktree → `circle-filled` (charts.blue), expanded by default,
+ *     description `(current) · N branches`
+ *   - other worktrees  → `git-branch` (default color), collapsed,
+ *     description `N branches`
+ *
+ * Label is the last 1–2 path segments joined with `/`.
+ * Full path lives in the tooltip.
+ */
+export class WorktreeArtifactGroupItem extends vscode.TreeItem {
+  constructor(
+    public readonly worktreePath: string,
+    public readonly branchCount: number,
+    public readonly isCurrent: boolean
+  ) {
+    const segments = worktreePath.split(path.sep).filter(Boolean);
+    const label =
+      segments.length >= 2
+        ? segments.slice(-2).join('/')
+        : segments[segments.length - 1] ?? worktreePath;
+
+    super(
+      label,
+      isCurrent
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.Collapsed
+    );
+
+    this.iconPath = isCurrent
+      ? new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('charts.blue'))
+      : new vscode.ThemeIcon('git-branch');
+
+    const countLabel = `${branchCount} branch${branchCount !== 1 ? 'es' : ''}`;
+    this.description = isCurrent ? `(current) · ${countLabel}` : countLabel;
+
+    const md = new vscode.MarkdownString();
+    if (isCurrent) md.appendMarkdown(`**Current worktree**\n\n`);
+    md.appendMarkdown(`\`${worktreePath}\`\n\n${countLabel}`);
+    this.tooltip = md;
+
+    this.contextValue = isCurrent ? 'agentWorktreeGroupCurrent' : 'agentWorktreeGroup';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tree item: EmptyScopeItem
+// ---------------------------------------------------------------------------
+
+/**
+ * Placeholder shown when `agentTasks.scope` is `"current"` but the current
+ * worktree has no artifacts while other worktrees do.
+ *
+ * A silent empty panel looks broken — this makes the filter state legible
+ * and actionable.
+ */
+export class EmptyScopeItem extends vscode.TreeItem {
+  constructor(otherWorktreeCount: number) {
+    super('No artifacts in this worktree', vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('info');
+    const noun = otherWorktreeCount === 1 ? 'worktree' : 'worktrees';
+    this.description = `${otherWorktreeCount} in other ${noun} — switch filter`;
+    this.tooltip = new vscode.MarkdownString(
+      `The current worktree has no agent task artifacts.\n\n` +
+        `**${otherWorktreeCount}** other ${noun} have artifacts. ` +
+        `Use the filter icon in the panel header to switch to \`all\`.`
+    );
+    this.contextValue = 'agentTasksEmptyScope';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Existing tree item types
+// ---------------------------------------------------------------------------
 
 export class AgentBranchItem extends vscode.TreeItem {
   constructor(
@@ -242,6 +335,8 @@ export class BlockerItem extends vscode.TreeItem {
 }
 
 type AgentTaskTreeItem =
+  | WorktreeArtifactGroupItem
+  | EmptyScopeItem
   | AgentBranchItem
   | TaskGroupItem
   | TaskCheckboxItem
@@ -251,99 +346,166 @@ type AgentTaskTreeItem =
   | DecisionItem
   | BlockerItem;
 
-// -- Provider --
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+interface BranchItemWithMeta {
+  item: AgentBranchItem;
+  mtime: number;
+  name: string;
+  hasWalkthrough: boolean;
+  hasInProgress: boolean;
+  /** The worktree path this branch belongs to. */
+  worktreePath: string;
+}
+
+/**
+ * Scan a worktree for all artifact directories under each configured dir name.
+ * Returns branch items for that worktree.
+ */
+function collectBranchesForWorktree(
+  worktreePath: string,
+  configuredDirs: string[]
+): BranchItemWithMeta[] {
+  const results: BranchItemWithMeta[] = [];
+
+  for (const dirName of configuredDirs) {
+    const artifactRoot = path.join(worktreePath, dirName);
+    try {
+      if (!fs.existsSync(artifactRoot) || !fs.statSync(artifactRoot).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+
+    const branchRelPaths = findBranchDirs(artifactRoot);
+    for (const relPath of branchRelPaths) {
+      const branchDir = path.join(artifactRoot, relPath);
+      const taskPath = path.join(branchDir, 'task.md');
+      const planPath = path.join(branchDir, 'plan.md');
+      const walkthroughPath = path.join(branchDir, 'walkthrough.md');
+
+      const hasTaskFile = fs.existsSync(taskPath);
+      const hasPlanFile = fs.existsSync(planPath);
+      if (!hasTaskFile && !hasPlanFile) continue;
+
+      let task: ParsedTask | undefined;
+      let plan: ParsedPlan | undefined;
+      let latestMtime = 0;
+
+      if (hasTaskFile) {
+        try {
+          task = parseTaskMd(fs.readFileSync(taskPath, 'utf-8'));
+          latestMtime = Math.max(latestMtime, fs.statSync(taskPath).mtimeMs);
+        } catch {
+          // ignore parse errors
+        }
+      }
+
+      if (hasPlanFile) {
+        try {
+          plan = parsePlanMd(fs.readFileSync(planPath, 'utf-8'));
+          latestMtime = Math.max(latestMtime, fs.statSync(planPath).mtimeMs);
+        } catch {
+          // ignore parse errors
+        }
+      }
+
+      const hasWalkthrough = fs.existsSync(walkthroughPath);
+      if (hasWalkthrough) {
+        try {
+          latestMtime = Math.max(latestMtime, fs.statSync(walkthroughPath).mtimeMs);
+        } catch {
+          // ignore stat errors
+        }
+      }
+
+      const hasInProgress = task?.taskSections.some((s) => s.items.some((t) => t.inProgress)) ?? false;
+
+      results.push({
+        item: new AgentBranchItem(relPath, branchDir, task, plan, hasWalkthrough),
+        mtime: latestMtime,
+        name: relPath.toLowerCase(),
+        hasWalkthrough,
+        hasInProgress,
+        worktreePath,
+      });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Recursively find directories containing `task.md`, `plan.md`, or
+ * `walkthrough.md`. Returns relative paths from `dir`.
+ */
+function findBranchDirs(dir: string, relativePath = ''): string[] {
+  const results: string[] = [];
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+    // Check if this directory itself has artifacts
+    const hasArtifact = entries.some(
+      (e) => !e.isDirectory() && (e.name === 'task.md' || e.name === 'plan.md' || e.name === 'walkthrough.md')
+    );
+    if (hasArtifact && relativePath) {
+      results.push(relativePath);
+    }
+
+    // Recurse into subdirectories
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name === '.git' || entry.name === 'config.json') continue;
+      const childRelative = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+      results.push(...findBranchDirs(path.join(dir, entry.name), childRelative));
+    }
+  } catch {
+    // directory unreadable
+  }
+  return results;
+}
+
+/**
+ * Sort branch items by the configured sort settings.
+ */
+function sortBranchItems(items: BranchItemWithMeta[]): BranchItemWithMeta[] {
+  const config = vscode.workspace.getConfiguration('agentTasks');
+  const sortBy = config.get<string>('sortBy', 'date');
+  const sortOrder = config.get<string>('sortOrder', 'desc');
+  const isAsc = sortOrder === 'asc';
+
+  return [...items].sort((a, b) => {
+    let result = 0;
+    switch (sortBy) {
+      case 'name':
+        result = a.name.localeCompare(b.name);
+        break;
+      case 'status': {
+        const statusA = a.hasInProgress ? 2 : a.hasWalkthrough ? 0 : 1;
+        const statusB = b.hasInProgress ? 2 : b.hasWalkthrough ? 0 : 1;
+        result = statusB - statusA;
+        break;
+      }
+      case 'date':
+      default:
+        result = b.mtime - a.mtime;
+        break;
+    }
+    return isAsc ? -result : result;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
 
 export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<AgentTaskTreeItem | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  private artifactRoots: string[];
-
-  constructor() {
-    this.artifactRoots = this.findArtifactRoots();
-  }
-
   refresh(): void {
-    this.artifactRoots = this.findArtifactRoots();
     this._onDidChangeTreeData.fire();
-  }
-
-  /**
-   * Find ALL artifact directories relevant to the current workspace.
-   * Iterates over configured directory names (default: ['.agent', '.gw']).
-   * For each name:
-   *   1. Walk up from workspace root to find matching directories.
-   *   2. If name is '.gw', also read config.json to find the default branch
-   *      worktree and check for a .gw/ inside it.
-   * Results are deduplicated by realpath.
-   */
-  private findArtifactRoots(): string[] {
-    const dirs = getConfiguredDirs();
-    const roots: string[] = [];
-    const seen = new Set<string>();
-
-    for (const dirName of dirs) {
-      this.collectRoots(dirName, roots, seen);
-      if (dirName === '.gw') {
-        this.addDefaultWorktreeRoot(roots, seen);
-      }
-    }
-
-    return roots;
-  }
-
-  /**
-   * Walk up from workspace root (up to 5 levels) collecting directories
-   * matching dirName. Results are added to roots, deduped by seen.
-   */
-  private collectRoots(dirName: string, roots: string[], seen: Set<string>): void {
-    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    if (!workspacePath) return;
-
-    let dir = workspacePath;
-    for (let i = 0; i < 5; i++) {
-      const artifactPath = path.join(dir, dirName);
-      if (fs.existsSync(artifactPath) && fs.statSync(artifactPath).isDirectory()) {
-        const real = fs.realpathSync(artifactPath);
-        if (!seen.has(real)) {
-          seen.add(real);
-          roots.push(artifactPath);
-        }
-      }
-      const parent = path.dirname(dir);
-      if (parent === dir) break;
-      dir = parent;
-    }
-  }
-
-  /**
-   * Read .gw/config.json to find the default branch, resolve its worktree
-   * path, and add its .gw/ directory to roots if it exists and isn't
-   * already included.
-   * Only called when dirName === '.gw' (gw-specific bare-repo convention).
-   */
-  private addDefaultWorktreeRoot(roots: string[], seen: Set<string>): void {
-    for (const artifactRoot of roots) {
-      const configPath = path.join(artifactRoot, 'config.json');
-      try {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-        const repoRoot: string | undefined = config.root;
-        const defaultBranch: string | undefined = config.defaultBranch;
-        if (!repoRoot || !defaultBranch) continue;
-
-        const defaultWorktreeGw = path.join(repoRoot, defaultBranch, '.gw');
-        if (fs.existsSync(defaultWorktreeGw) && fs.statSync(defaultWorktreeGw).isDirectory()) {
-          const real = fs.realpathSync(defaultWorktreeGw);
-          if (!seen.has(real)) {
-            seen.add(real);
-            roots.push(defaultWorktreeGw);
-          }
-        }
-        return; // config found, done
-      } catch {
-        // config.json missing or invalid, try next root
-      }
-    }
   }
 
   getTreeItem(element: AgentTaskTreeItem): vscode.TreeItem {
@@ -351,13 +513,14 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
   }
 
   async getChildren(element?: AgentTaskTreeItem): Promise<AgentTaskTreeItem[]> {
-    if (this.artifactRoots.length === 0) {
-      return [];
+    // Root level: list worktree groups or branch directories
+    if (!element) {
+      return this.getRootItems();
     }
 
-    // Root level: list branch directories
-    if (!element) {
-      return this.getBranchItems();
+    // Worktree group level: list branches for that worktree
+    if (element instanceof WorktreeArtifactGroupItem) {
+      return this.getBranchItemsForWorktree(element.worktreePath);
     }
 
     // Branch level: show task groups, plan, decisions, blockers
@@ -367,7 +530,7 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
 
     // Tasks summary level: show task groups (Current, Completed, Upcoming)
     if (element instanceof TasksSummaryItem) {
-      return this.getTasksSummaryChildren(element);
+      return element.sectionGroups;
     }
 
     // Group level: show individual task items
@@ -388,151 +551,96 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
     return [];
   }
 
-  /**
-   * Recursively find directories containing task.md, plan.md, or walkthrough.md.
-   * Returns paths relative to artifactRoot for each leaf directory with artifacts.
-   */
-  private findBranchDirs(dir: string, relativePath = ''): string[] {
-    const results: string[] = [];
-    try {
-      const entries = fs.readdirSync(dir, { withFileTypes: true });
+  private getRootItems(): AgentTaskTreeItem[] {
+    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspacePath) return [];
 
-      // Check if this directory itself has artifacts
-      const hasArtifact = entries.some(
-        (e) => !e.isDirectory() && (e.name === 'task.md' || e.name === 'plan.md' || e.name === 'walkthrough.md')
-      );
-      if (hasArtifact && relativePath) {
-        results.push(relativePath);
+    const scope = vscode.workspace
+      .getConfiguration('agentTasks')
+      .get<AgentTasksScope>('scope', 'all');
+
+    const allWorktrees = discoverWorktreePaths(workspacePath);
+
+    // Identify the current worktree as the longest worktree path containing
+    // the workspace path. Falls back to workspacePath.
+    const sortedByLength = [...allWorktrees].sort((a, b) => b.length - a.length);
+    const currentWorktree =
+      sortedByLength.find(
+        (wt) => workspacePath === wt || workspacePath.startsWith(wt + path.sep)
+      ) ?? workspacePath;
+
+    if (scope === 'current') {
+      // Flat list for current worktree only
+      const branches = this.getBranchItemsForWorktree(currentWorktree);
+
+      // Empty-state: current has nothing but other worktrees do
+      if (branches.length === 0 && allWorktrees.length > 1) {
+        const configuredDirs = getConfiguredDirs();
+        const otherCount = allWorktrees
+          .filter((wt) => wt !== currentWorktree)
+          .filter((wt) => collectBranchesForWorktree(wt, configuredDirs).length > 0).length;
+        if (otherCount > 0) {
+          return [new EmptyScopeItem(otherCount)];
+        }
       }
-
-      // Recurse into subdirectories
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        if (entry.name === '.git' || entry.name === 'config.json') continue;
-        const childRelative = relativePath ? `${relativePath}/${entry.name}` : entry.name;
-        results.push(...this.findBranchDirs(path.join(dir, entry.name), childRelative));
-      }
-    } catch {
-      // directory unreadable
-    }
-    return results;
-  }
-
-  private getBranchItems(): AgentBranchItem[] {
-    if (this.artifactRoots.length === 0) return [];
-
-    interface BranchItemWithMeta {
-      item: AgentBranchItem;
-      mtime: number;
-      name: string;
-      hasWalkthrough: boolean;
-      hasInProgress: boolean;
+      return branches;
     }
 
-    // Collect branches from all artifact roots, deduplicating by relPath
-    // (prefer the entry with the most recent mtime when duplicates exist)
-    const itemsByRelPath = new Map<string, BranchItemWithMeta>();
+    // scope === 'all': single-worktree stays flat; multi-worktree gets groups
 
-    for (const artifactRoot of this.artifactRoots) {
-      const branchRelPaths = this.findBranchDirs(artifactRoot);
-
-      for (const relPath of branchRelPaths) {
-        const branchDir = path.join(artifactRoot, relPath);
-        const taskPath = path.join(branchDir, 'task.md');
-        const planPath = path.join(branchDir, 'plan.md');
-        const walkthroughPath = path.join(branchDir, 'walkthrough.md');
-
-        const hasTaskFile = fs.existsSync(taskPath);
-        const hasPlanFile = fs.existsSync(planPath);
-        if (!hasTaskFile && !hasPlanFile) {
-          continue;
-        }
-
-        let task: ParsedTask | undefined;
-        let plan: ParsedPlan | undefined;
-        let latestMtime = 0;
-
-        if (hasTaskFile) {
-          try {
-            task = parseTaskMd(fs.readFileSync(taskPath, 'utf-8'));
-            const stat = fs.statSync(taskPath);
-            latestMtime = Math.max(latestMtime, stat.mtimeMs);
-          } catch {
-            // ignore parse errors
-          }
-        }
-
-        if (hasPlanFile) {
-          try {
-            plan = parsePlanMd(fs.readFileSync(planPath, 'utf-8'));
-            const stat = fs.statSync(planPath);
-            latestMtime = Math.max(latestMtime, stat.mtimeMs);
-          } catch {
-            // ignore parse errors
-          }
-        }
-
-        const hasWalkthrough = fs.existsSync(walkthroughPath);
-        if (hasWalkthrough) {
-          try {
-            const stat = fs.statSync(walkthroughPath);
-            latestMtime = Math.max(latestMtime, stat.mtimeMs);
-          } catch {
-            // ignore stat errors
-          }
-        }
-
-        const hasInProgress = task?.taskSections.some((s) => s.items.some((t) => t.inProgress)) ?? false;
-
-        const candidate: BranchItemWithMeta = {
-          item: new AgentBranchItem(relPath, branchDir, task, plan, hasWalkthrough),
-          mtime: latestMtime,
-          name: relPath.toLowerCase(),
-          hasWalkthrough,
-          hasInProgress,
-        };
-
-        // Deduplicate: keep the entry with the most recent mtime
-        const existing = itemsByRelPath.get(relPath);
-        if (!existing || candidate.mtime > existing.mtime) {
-          itemsByRelPath.set(relPath, candidate);
-        }
-      }
+    if (allWorktrees.length <= 1) {
+      // Single worktree — flat list, no group wrapper
+      return this.getBranchItemsForWorktree(currentWorktree);
     }
 
-    const items = Array.from(itemsByRelPath.values());
+    // Multi-worktree: group by worktree, current first
+    const configuredDirs = getConfiguredDirs();
+    const groups: Array<{ wt: string; branches: BranchItemWithMeta[]; mtime: number }> = [];
 
-    // Get sort settings from configuration
-    const config = vscode.workspace.getConfiguration('agentTasks');
-    const sortBy = config.get<string>('sortBy', 'date');
-    const sortOrder = config.get<string>('sortOrder', 'desc');
-    const isAsc = sortOrder === 'asc';
+    for (const wt of allWorktrees) {
+      const branches = collectBranchesForWorktree(wt, configuredDirs);
+      const mtime = branches.reduce((max, b) => Math.max(max, b.mtime), 0);
+      groups.push({ wt, branches, mtime });
+    }
 
-    // Sort based on settings
-    items.sort((a, b) => {
-      let result = 0;
+    // Show current worktree even when empty; hide others when empty
+    const visibleGroups = groups.filter((g) => g.wt === currentWorktree || g.branches.length > 0);
 
-      switch (sortBy) {
-        case 'name':
-          result = a.name.localeCompare(b.name);
-          break;
-        case 'status': {
-          // Status priority: in-progress > active (not completed) > completed
-          const statusA = a.hasInProgress ? 2 : a.hasWalkthrough ? 0 : 1;
-          const statusB = b.hasInProgress ? 2 : b.hasWalkthrough ? 0 : 1;
-          result = statusB - statusA; // Higher priority first by default (desc)
-          break;
-        }
-        case 'date':
-        default:
-          result = b.mtime - a.mtime; // Newer first by default (desc)
-          break;
-      }
-
-      return isAsc ? -result : result;
+    visibleGroups.sort((a, b) => {
+      if (a.wt === currentWorktree) return -1;
+      if (b.wt === currentWorktree) return 1;
+      return b.mtime - a.mtime;
     });
 
-    return items.map((i) => i.item);
+    return visibleGroups.map(
+      (g) => new WorktreeArtifactGroupItem(g.wt, g.branches.length, g.wt === currentWorktree)
+    );
+  }
+
+  /**
+   * Return the sorted branch items for a single worktree, deduplicated by
+   * `(worktreePath, relPath)` across all configured artifact directories.
+   * Keeping the worktree in the key prevents collision when two worktrees
+   * both write `.agent/feat/x/plan.md`.
+   */
+  private getBranchItemsForWorktree(worktreePath: string): AgentBranchItem[] {
+    const configuredDirs = getConfiguredDirs();
+
+    // Collect and deduplicate by (worktreePath, relPath) — same branch name
+    // in different artifact dirs within the same worktree prefers the entry
+    // with the most recent mtime.
+    const itemsByKey = new Map<string, BranchItemWithMeta>();
+    const candidates = collectBranchesForWorktree(worktreePath, configuredDirs);
+
+    for (const candidate of candidates) {
+      const key = `${candidate.worktreePath}::${candidate.item.branchName}`;
+      const existing = itemsByKey.get(key);
+      if (!existing || candidate.mtime > existing.mtime) {
+        itemsByKey.set(key, candidate);
+      }
+    }
+
+    return sortBranchItems(Array.from(itemsByKey.values())).map((i) => i.item);
   }
 
   private taskItemToCheckbox(t: TaskItem, taskFilePath: string): TaskCheckboxItem {
@@ -601,10 +709,6 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
     }
 
     return children;
-  }
-
-  private getTasksSummaryChildren(summary: TasksSummaryItem): AgentTaskTreeItem[] {
-    return summary.sectionGroups;
   }
 
   private getPlanChildren(plan: ParsedPlan): AgentTaskTreeItem[] {
