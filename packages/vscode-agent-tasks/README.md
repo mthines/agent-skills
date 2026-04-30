@@ -62,6 +62,10 @@ Use the **filter icon** in the Sessions panel header (or the command **Toggle Se
 
 The choice is persisted in `agentTasks.sessions.scope`.
 
+### Searching
+
+Use the **search icon** in the Sessions panel header (or the command **Find Session…**) to open a QuickPick across **every** session for this workspace — regardless of the scope filter. Type to fuzzy-match against the message title, branch, or CWD; press Enter to open the picked session via the same `openWith` setting (resume by default).
+
 ### Click behavior
 
 Clicking a session does one of two things depending on the `agentTasks.sessions.openWith` setting:
@@ -135,6 +139,7 @@ If you previously used `vscode-gw` (gw Worktrees) with Agent Tasks, the settings
 | `Agent Tasks: Focus Agent Tasks Sidebar` | Focus the sidebar panel |
 | `Agent Tasks: Refresh Sessions` | Reload the Sessions panel and rebuild the file watcher |
 | `Agent Tasks: Toggle Sessions Scope` | Switch between current-worktree and all-worktrees views |
+| `Agent Tasks: Find Session…` | Fuzzy-search every session for this workspace and open the picked one |
 
 ## Logging
 

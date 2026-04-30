@@ -489,6 +489,28 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     return element;
   }
 
+  /**
+   * Return every session visible from the current workspace, regardless of
+   * the `agentTasks.sessions.scope` setting. Used by the find command — when
+   * the user is searching, they want to reach any session, not just the ones
+   * currently rendered in the tree.
+   *
+   * Sessions are flattened across all worktrees and sorted newest-first.
+   */
+  getAllSessions(): SessionMetadata[] {
+    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspacePath) return [];
+
+    const worktreePaths = discoverWorktreePaths(workspacePath);
+    const candidateDirs = findCandidateSessionDirs(worktreePaths);
+    const buckets = bucketSessionsByWorktree(worktreePaths, candidateDirs);
+
+    const all: SessionMetadata[] = [];
+    for (const sessions of buckets.values()) all.push(...sessions);
+    all.sort((a, b) => b.mtime - a.mtime);
+    return all;
+  }
+
   async getChildren(element?: SessionTreeItem): Promise<SessionTreeItem[]> {
     if (element instanceof WorktreeGroupItem) {
       return element.sessions.map(

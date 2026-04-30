@@ -10,6 +10,7 @@ import { ArtifactWatcher } from './watchers/artifact-watcher';
 import { SessionsProvider, SessionItem } from './providers/sessions-provider';
 import { SessionWatcher } from './watchers/session-watcher';
 import { initLogger, log, logError } from './lib/logger';
+import type { SessionMetadata } from './parsers/session-jsonl-parser';
 
 export function activate(context: vscode.ExtensionContext): void {
   initLogger(context);
@@ -221,65 +222,107 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
+  // Shared open-session logic used by both the tree-click command and the
+  // find QuickPick. Reads the `openWith` setting once, then either resumes
+  // or opens the JSONL.
+  const openSession = async (session: SessionMetadata): Promise<void> => {
+    const openWith = vscode.workspace
+      .getConfiguration('agentTasks.sessions')
+      .get<string>('openWith', 'resume');
+
+    const sid = session.sessionId;
+    log(`openSession (id=${sid.slice(0, 8)}, mode=${openWith})`);
+
+    if (openWith === 'resume') {
+      const existing = sessionTerminals.get(sid);
+      if (existing && existing.exitStatus === undefined) {
+        log(`Focusing existing terminal for session ${sid.slice(0, 8)}`);
+        sessionsProvider.setTerminalOpen(sid, true);
+        existing.show(false);
+        return;
+      }
+      if (existing) sessionTerminals.delete(sid);
+
+      const branch = session.gitBranch ?? '?';
+      const shortId = sid.slice(0, 8);
+      const cwd = session.cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+      log(`Creating terminal for session ${shortId} (branch=${branch}, cwd=${cwd ?? '?'})`);
+
+      const terminal = vscode.window.createTerminal({
+        name: `Claude · ${branch} · ${shortId}`,
+        cwd,
+        iconPath: new vscode.ThemeIcon('comment-discussion'),
+      });
+      sessionTerminals.set(sid, terminal);
+      sessionsProvider.setTerminalOpen(sid, true);
+      terminal.show();
+      terminal.sendText(`claude --resume ${sid}`);
+    } else {
+      const uri = vscode.Uri.file(session.filePath);
+      try {
+        const doc = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(doc, { preview: false });
+      } catch (err) {
+        logError(`Failed to open session file ${session.filePath}`, err);
+        vscode.window.showWarningMessage(`Could not open session file: ${session.filePath}`);
+      }
+    }
+  };
+
   const openSessionCmd = vscode.commands.registerCommand(
     'agentTasks.sessions.openSession',
     async (item: SessionItem) => {
       if (!item?.session?.filePath) return;
-
-      const openWith = vscode.workspace
-        .getConfiguration('agentTasks.sessions')
-        .get<string>('openWith', 'resume');
-
-      const sid = item.session.sessionId;
-      log(`Command: sessions.openSession (id=${sid.slice(0, 8)}, mode=${openWith})`);
-
-      if (openWith === 'resume') {
-        // If we already have a terminal for this session and it's still alive,
-        // just focus it. exitStatus stays `undefined` while the process is
-        // running and gets set when it exits.
-        const existing = sessionTerminals.get(sid);
-        if (existing && existing.exitStatus === undefined) {
-          log(`Focusing existing terminal for session ${sid.slice(0, 8)}`);
-          sessionsProvider.setTerminalOpen(sid, true); // idempotent
-          existing.show(/* preserveFocus */ false);
-          return;
-        }
-        if (existing) {
-          // Stale entry — terminal exited but onDidCloseTerminal hasn't fired
-          sessionTerminals.delete(sid);
-        }
-
-        const branch = item.session.gitBranch ?? '?';
-        const shortId = sid.slice(0, 8);
-        const cwd =
-          item.session.cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-
-        log(`Creating terminal for session ${shortId} (branch=${branch}, cwd=${cwd ?? '?'})`);
-
-        const terminal = vscode.window.createTerminal({
-          name: `Claude · ${branch} · ${shortId}`,
-          cwd,
-          iconPath: new vscode.ThemeIcon('comment-discussion'),
-        });
-        sessionTerminals.set(sid, terminal);
-        // Mark as active immediately so the icon updates without waiting for
-        // claude's first JSONL write.
-        sessionsProvider.setTerminalOpen(sid, true);
-        terminal.show();
-        terminal.sendText(`claude --resume ${sid}`);
-      } else {
-        // editor — opt-in via setting
-        const uri = vscode.Uri.file(item.session.filePath);
-        try {
-          const doc = await vscode.workspace.openTextDocument(uri);
-          await vscode.window.showTextDocument(doc, { preview: false });
-        } catch (err) {
-          logError(`Failed to open session file ${item.session.filePath}`, err);
-          vscode.window.showWarningMessage(`Could not open session file: ${item.session.filePath}`);
-        }
-      }
+      await openSession(item.session);
     }
   );
+
+  const findSessionCmd = vscode.commands.registerCommand('agentTasks.sessions.find', async () => {
+    log('Command: sessions.find');
+    const sessions = sessionsProvider.getAllSessions();
+    if (sessions.length === 0) {
+      vscode.window.showInformationMessage('No Claude Code sessions found for this workspace.');
+      return;
+    }
+
+    interface FindItem extends vscode.QuickPickItem {
+      session: SessionMetadata;
+    }
+
+    const items: FindItem[] = sessions.map((s) => {
+      const ageMs = Date.now() - s.mtime;
+      const seconds = Math.floor(ageMs / 1000);
+      const minutes = Math.floor(seconds / 60);
+      const hours = Math.floor(minutes / 60);
+      const days = Math.floor(hours / 24);
+      let when: string;
+      if (seconds < 60) when = 'now';
+      else if (minutes < 60) when = `${minutes}m`;
+      else if (hours < 24) when = `${hours}h`;
+      else if (days < 7) when = `${days}d`;
+      else {
+        const d = new Date(s.mtime);
+        when = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      }
+      const branch = s.gitBranch ?? '?';
+      const cwdShort = s.cwd ? s.cwd.replace(/^.+\/([^/]+\/[^/]+)$/, '$1') : '';
+      return {
+        label: s.title,
+        description: when,
+        detail: cwdShort ? `${branch} · ${cwdShort}` : branch,
+        session: s,
+      };
+    });
+
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder: `Search ${sessions.length} sessions by message…`,
+      matchOnDescription: true,
+      matchOnDetail: true,
+    });
+    if (!picked) return;
+    await openSession(picked.session);
+  });
 
   context.subscriptions.push(
     agentTasksView,
@@ -301,6 +344,7 @@ export function activate(context: vscode.ExtensionContext): void {
     tickDisposable,
     configSub,
     openSessionCmd,
+    findSessionCmd,
     closeTerminalSub
   );
 }
