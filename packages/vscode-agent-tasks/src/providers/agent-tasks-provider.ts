@@ -8,6 +8,8 @@
  *   - Single worktree → flat list of AgentBranchItems
  *   - Multiple worktrees → WorktreeArtifactGroupItems (current first,
  *     marked), each containing AgentBranchItems
+ *   - Multiple worktrees with exactly 1 branch → WorktreeFlatItem (skips
+ *     the redundant branch level; Tasks/Plan/Walkthrough shown directly)
  *
  * Scope toggle (`agentTasks.scope`):
  *   - `"all"` (default) — show artifacts from every worktree, grouped
@@ -109,6 +111,41 @@ export class EmptyScopeItem extends vscode.TreeItem {
 }
 
 // ---------------------------------------------------------------------------
+// Shared branch icon + description helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the icon for a branch based on its artifact state.
+ * Used by both AgentBranchItem and WorktreeFlatItem so the flattened
+ * worktree node inherits the same visual signal as its single branch.
+ */
+function getBranchIcon(hasWalkthrough: boolean, task: ParsedTask | undefined): vscode.ThemeIcon {
+  if (hasWalkthrough) {
+    // Completed branches use dimmer icon (no color = default gray)
+    return new vscode.ThemeIcon('pass-filled');
+  }
+  if (task?.blockers && task.blockers.length > 0) {
+    return new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow'));
+  }
+  return new vscode.ThemeIcon('rocket', new vscode.ThemeColor('charts.blue'));
+}
+
+/**
+ * Returns the short description string for a branch based on its artifact state.
+ * Used by both AgentBranchItem and WorktreeFlatItem.
+ */
+function getBranchDescription(hasWalkthrough: boolean, task: ParsedTask | undefined): string {
+  if (hasWalkthrough) return 'completed';
+  if (task?.phase && task.phaseName) {
+    return `Phase ${task.phase} · ${task.phaseName}`;
+  }
+  if (task?.blockers && task.blockers.length > 0) {
+    return `${task.blockers.length} blocker${task.blockers.length !== 1 ? 's' : ''}`;
+  }
+  return '';
+}
+
+// ---------------------------------------------------------------------------
 // Existing tree item types
 // ---------------------------------------------------------------------------
 
@@ -123,19 +160,11 @@ export class AgentBranchItem extends vscode.TreeItem {
     super(branchName, vscode.TreeItemCollapsibleState.Collapsed);
 
     this.contextValue = hasWalkthrough ? 'agentBranchCompleted' : 'agentBranch';
-    this.description = this.getDescription();
+    this.description = getBranchDescription(hasWalkthrough, task);
     this.tooltip = this.getTooltip();
-    this.iconPath = this.getIcon();
+    this.iconPath = getBranchIcon(hasWalkthrough, task);
 
     // No command — clicking expands/collapses. Child items open files.
-  }
-
-  private getDescription(): string {
-    if (this.hasWalkthrough) return 'completed';
-    if (this.task?.phase && this.task.phaseName) {
-      return `Phase ${this.task.phase} · ${this.task.phaseName}`;
-    }
-    return '';
   }
 
   private getTooltip(): vscode.MarkdownString {
@@ -152,16 +181,69 @@ export class AgentBranchItem extends vscode.TreeItem {
     }
     return md;
   }
+}
 
-  private getIcon(): vscode.ThemeIcon {
-    if (this.hasWalkthrough) {
-      // Completed branches use dimmer icon (no color = default gray)
-      return new vscode.ThemeIcon('pass-filled');
+// ---------------------------------------------------------------------------
+// Tree item: WorktreeFlatItem
+// ---------------------------------------------------------------------------
+
+/**
+ * A flattened worktree node used when a worktree contains exactly 1 branch.
+ *
+ * Instead of the user having to expand the worktree group and then the branch,
+ * the worktree node IS the branch — expanding it shows Tasks/Plan/Walkthrough
+ * directly. The branch's icon and description are inherited so the worktree
+ * row carries the same visual signal (rocket/pass/warning) as its single branch.
+ *
+ * Label: last 1–2 path segments (same as WorktreeArtifactGroupItem)
+ * Icon:  derived from branch state (getBranchIcon)
+ * Description: composed from current-worktree status + branch state
+ * Context value: `agentWorktreeFlat` / `agentWorktreeFlatCompleted`
+ *   → drives the same inline Open Plan / Open Walkthrough actions as AgentBranchItem
+ */
+export class WorktreeFlatItem extends vscode.TreeItem {
+  /** The single AgentBranchItem whose children this node delegates to. */
+  public readonly branch: AgentBranchItem;
+
+  constructor(
+    public readonly worktreePath: string,
+    public readonly isCurrent: boolean,
+    branch: AgentBranchItem
+  ) {
+    const segments = worktreePath.split(path.sep).filter(Boolean);
+    const label =
+      segments.length >= 2
+        ? segments.slice(-2).join('/')
+        : segments[segments.length - 1] ?? worktreePath;
+
+    super(
+      label,
+      isCurrent
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.Collapsed
+    );
+
+    this.branch = branch;
+
+    // Icon mirrors the branch state, not the static worktree icon
+    this.iconPath = getBranchIcon(branch.hasWalkthrough, branch.task);
+
+    // Description: compose (current) prefix with branch state description
+    const branchDesc = getBranchDescription(branch.hasWalkthrough, branch.task);
+    if (isCurrent) {
+      this.description = branchDesc ? `(current) · ${branchDesc}` : '(current)';
+    } else {
+      this.description = branchDesc || undefined;
     }
-    if (this.task?.blockers && this.task.blockers.length > 0) {
-      return new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow'));
-    }
-    return new vscode.ThemeIcon('rocket', new vscode.ThemeColor('charts.blue'));
+
+    // Context value drives the inline Open Plan / Open Walkthrough actions
+    this.contextValue = branch.hasWalkthrough ? 'agentWorktreeFlatCompleted' : 'agentWorktreeFlat';
+
+    const md = new vscode.MarkdownString();
+    if (isCurrent) md.appendMarkdown(`**Current worktree** (1 branch)\n\n`);
+    md.appendMarkdown(`\`${worktreePath}\`\n\n**Branch:** \`${branch.branchName}\``);
+    if (branchDesc) md.appendMarkdown(`\n\n${branchDesc}`);
+    this.tooltip = md;
   }
 }
 
@@ -336,6 +418,7 @@ export class BlockerItem extends vscode.TreeItem {
 
 type AgentTaskTreeItem =
   | WorktreeArtifactGroupItem
+  | WorktreeFlatItem
   | EmptyScopeItem
   | AgentBranchItem
   | TaskGroupItem
@@ -518,6 +601,11 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
       return this.getRootItems();
     }
 
+    // Flattened worktree node (1-branch case): delegate directly to branch children
+    if (element instanceof WorktreeFlatItem) {
+      return this.getBranchChildren(element.branch);
+    }
+
     // Worktree group level: list branches for that worktree
     if (element instanceof WorktreeArtifactGroupItem) {
       return this.getBranchItemsForWorktree(element.worktreePath);
@@ -612,9 +700,15 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
       return b.mtime - a.mtime;
     });
 
-    return visibleGroups.map(
-      (g) => new WorktreeArtifactGroupItem(g.wt, g.branches.length, g.wt === currentWorktree)
-    );
+    return visibleGroups.map((g) => {
+      const isCurrent = g.wt === currentWorktree;
+      // 1-branch case: flatten — skip the redundant AgentBranchItem level
+      if (g.branches.length === 1) {
+        const sorted = sortBranchItems(g.branches);
+        return new WorktreeFlatItem(g.wt, isCurrent, sorted[0].item);
+      }
+      return new WorktreeArtifactGroupItem(g.wt, g.branches.length, isCurrent);
+    });
   }
 
   /**

@@ -5,7 +5,7 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
-import { AgentTasksProvider } from './providers/agent-tasks-provider';
+import { AgentTasksProvider, WorktreeFlatItem } from './providers/agent-tasks-provider';
 import { ArtifactWatcher } from './watchers/artifact-watcher';
 import { SessionsProvider, SessionItem } from './providers/sessions-provider';
 import { SessionWatcher } from './watchers/session-watcher';
@@ -85,22 +85,26 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   const openPlanCmd = vscode.commands.registerCommand('agentTasks.openPlan', async (item) => {
-    if (item?.artifactDir) {
-      const planPath = require('path').join(item.artifactDir, 'plan.md');
+    // WorktreeFlatItem wraps the branch — delegate to its artifactDir
+    const resolved = item instanceof WorktreeFlatItem ? item.branch : item;
+    if (resolved?.artifactDir) {
+      const planPath = require('path').join(resolved.artifactDir, 'plan.md');
       await vscode.commands.executeCommand('agentTasks.openMarkdown', planPath);
     }
   });
 
   const openTaskCmd = vscode.commands.registerCommand('agentTasks.openTask', async (item) => {
-    if (item?.artifactDir) {
-      const taskPath = require('path').join(item.artifactDir, 'task.md');
+    const resolved = item instanceof WorktreeFlatItem ? item.branch : item;
+    if (resolved?.artifactDir) {
+      const taskPath = require('path').join(resolved.artifactDir, 'task.md');
       await vscode.commands.executeCommand('agentTasks.openMarkdown', taskPath);
     }
   });
 
   const openWalkthroughCmd = vscode.commands.registerCommand('agentTasks.openWalkthrough', async (item) => {
-    if (item?.artifactDir) {
-      const wtPath = require('path').join(item.artifactDir, 'walkthrough.md');
+    const resolved = item instanceof WorktreeFlatItem ? item.branch : item;
+    if (resolved?.artifactDir) {
+      const wtPath = require('path').join(resolved.artifactDir, 'walkthrough.md');
       await vscode.commands.executeCommand('agentTasks.openMarkdown', wtPath);
     }
   });
