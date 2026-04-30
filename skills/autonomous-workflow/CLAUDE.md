@@ -250,9 +250,11 @@ When changing the cap numbers, update **all** of:
 - `rules/companion-skills.md` (`## Stuck-Loop Protocol`)
 - `rules/error-recovery.md`
 - `rules/overview.md`
-- `SKILL.md` Core Principles
-- `README.md` Migration Note
-- `templates/agent.template.md`
+- `SKILL.md` Core Principles + companion table (Phase 4 `confidence` trigger)
+- `README.md` Key Principles + companion table (Phase 4 `confidence` trigger)
+- `templates/planner.template.md` — Stuck-Loop Reminder section
+- `templates/executor.template.md` — Stuck-Loop Reminder section
+- `templates/agent.template.md` — DEPRECATED but update for consistency
 - `references/iterative-refinement.md` — the worked stuck-loop example
   referenced from phase-4 must reflect the canonical limits (the "Different
   rule for stuck-loop iteration" callout under "When to Stop Iterating").
@@ -341,12 +343,15 @@ When editing this skill, do not break these — they're load-bearing:
 4. If the change affects companion behavior, update `rules/companion-skills.md`
    in the same PR.
 
-### Editing the system prompt (in `templates/agent.template.md`)
+### Editing the agent templates
 
-The template is what gets symlinked into `~/.claude/agents/autonomous-workflow.md`
-by `install.sh`. It's the entry point Claude Code uses when the user says
-"implement X independently." Keep it lean — it should reference `SKILL.md`
-and `rules/companion-skills.md` rather than duplicate their content.
+`planner.template.md` and `executor.template.md` are what get symlinked into
+`~/.claude/agents/` as `autonomous-planner.md` and `autonomous-executor.md`
+by `install.sh`. Keep both lean — they should reference `SKILL.md` and
+`rules/companion-skills.md` rather than duplicate their content.
+
+The deprecated `agent.template.md` (single-agent) is still present for backward
+compat but is **not** linked by `install.sh`. Do not add new behavior there.
 
 ### Testing changes end-to-end
 

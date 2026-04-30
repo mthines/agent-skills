@@ -110,7 +110,7 @@ Choose:
 - stop — abandon
 ```
 
-The planner **STOPS** and waits for the user's choice. `refine` re-enters Phase 1 research; `proceed` falls through to the high-confidence handoff message (with the lower score logged); `stop` removes the worktree (Phase 7 cleanup) or leaves it for manual inspection.
+The planner **STOPS** and waits for the user's choice. `refine` re-enters Phase 1 research for **up to 2 more iterations** (matching the planner template's pre-escalation retry budget); if still below 90% after those, the planner escalates again with the same below-gate message — no infinite refine loop. `proceed` falls through to the high-confidence handoff message (with the lower score logged); `stop` removes the worktree (Phase 7 cleanup) or leaves it for manual inspection.
 
 ---
 

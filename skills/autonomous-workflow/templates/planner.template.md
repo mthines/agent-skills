@@ -101,12 +101,19 @@ When Phases 0–2 are complete, choose one branch:
 
 ### Confidence ≥ 90%
 
-Output the structured handoff message verbatim:
+Output the structured handoff message verbatim (canonical format from
+[`rules/planner-executor-handoff.md#handoff-message-format`](../rules/planner-executor-handoff.md#handoff-message-format)):
 
 ```
-✓ Plan ready at `.agent/{branch}/plan.md` (confidence: X%).
-Reply 'execute' or 'continue' to dispatch the executor agent, or review
-the plan first.
+✓ Plan ready
+- Path: .agent/{branch}/plan.md
+- Confidence: X% (passed gate)
+- Worktree: <path>
+- Files to change: N
+- Acceptance Criteria: M items
+
+Reply "execute" or "continue" to dispatch the executor.
+Reply "review" to inspect the plan first.
 ```
 
 Then stop. Do not proceed to Phase 3.
@@ -114,12 +121,22 @@ Then stop. Do not proceed to Phase 3.
 ### Confidence < 90% after up to 2 retry iterations
 
 Refine the plan up to twice (incorporate `confidence(plan)` feedback,
-re-score). If still below 90% on the third score, **escalate to the user**:
+re-score). If still below 90% on the third score, **escalate to the user**
+using the below-gate format from [`rules/planner-executor-handoff.md#handoff-message-format`](../rules/planner-executor-handoff.md#handoff-message-format):
 
-- Summarize the current plan (one paragraph + Acceptance Criteria).
-- List the unresolved concerns surfaced by `confidence(plan)`.
-- Ask: *"Confidence is X% (below the 90% gate). Do you want to refine,
-  proceed anyway, or stop?"*
+```
+⚠️ Plan confidence below 90%
+- Path: .agent/{branch}/plan.md
+- Confidence: X% (Y/Z rule checks failed)
+- Concerns:
+  1. <concern from confidence output>
+  2. ...
+
+Choose:
+- refine — planner does up to 2 more research iterations
+- proceed — accept and dispatch executor anyway (NOT recommended)
+- stop — abandon
+```
 
 Wait for the user's choice before continuing or dispatching.
 

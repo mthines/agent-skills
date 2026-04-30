@@ -36,14 +36,15 @@ Use this section as the lookup table when proposing new agent flavors, splits, o
 > — [Anthropic — Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents)
 
 **Mapping in autonomous-workflow:**
-The skill ships both a monolithic agent AND a split planner/executor pair.
-Users default to the monolithic flavor; the split is opt-in for context-isolation benefits.
-This mirrors Anthropic's "start simple" prescription — the cost of the split is paid only when the user explicitly opts in.
+As of v3.3, the skill installs the split planner/executor pair by default.
+The original monolithic agent (`agent.template.md`) is deprecated and retained only for backward compatibility with existing installs.
 
-| Flavor | Default? | When to choose |
+The "start simple" prescription is honored in the *design* of the split: the boundary is at Phase 2 → Phase 3, exactly one context boundary, not a five-role pipeline. The deprecated monolithic agent was the v1/v2 incarnation of this principle; v3.3 chose the split because empirical evidence showed that the planner's exploration history measurably crowds out the executor's working context even on medium-complexity tasks.
+
+| Agent | Status | When used |
 |---|---|---|
-| Monolithic | Yes | Most tasks; one context window covers Phase 0 → Phase 7 |
-| Planner + Executor | No (opt-in) | Long-horizon tasks where the planner's exploration history would otherwise crowd out the executor's working memory |
+| `autonomous-planner` + `autonomous-executor` | Default (v3.3+) | All new installs |
+| `agent.template.md` (monolithic) | Deprecated | Existing installs only — backward compat |
 
 ### 2.2 Multi-agent costs 3-10× more tokens
 
@@ -82,12 +83,10 @@ That's why Phase 0 lives WITH the planner, not as a separate clarifier agent.
 > — [Anthropic — When to use multi-agent systems (and when not to)](https://claude.com/blog/building-multi-agent-systems-when-and-how-to-use-them)
 
 **Mapping in autonomous-workflow:**
-The skill has exactly TWO agent flavors:
+As of v3.3 the skill uses exactly ONE architecture: Planner + Executor (two agents, one boundary).
+The deprecated monolithic single-agent template still exists for backward compat, but is not the default.
 
-1. Monolithic (one agent runs all phases).
-2. Planner + Executor (two agents, one boundary).
-
-It does NOT have five (clarifier → planner → implementer → tester → reviewer as separate agents).
+It does NOT have five roles (clarifier → planner → implementer → tester → reviewer as separate agents).
 The companion skills (`tdd`, `ux`, `code-quality`, `confidence`, `update-claude`, `review-changes`, `create-plan`, `create-walkthrough`, `create-pr`, `ci-auto-fix`) are advisory companions called by `Skill()`, not coordinator agents.
 A skill is a tool the agent reaches for — it does not own a context window of its own.
 
@@ -102,13 +101,13 @@ The harness-design post describes a Planner/Generator/Evaluator triad: the plann
 
 | Anthropic role | autonomous-workflow analog |
 |---|---|
-| Planner | Planner agent (or monolithic agent during Phase 1) |
-| Generator | Executor agent (or monolithic agent during Phase 3) |
+| Planner | Planner agent (phases 0–2) |
+| Generator | Executor agent (phases 3–7) |
 | Evaluator | `confidence` skill — invoked in plan, code-review, and bug-analysis modes |
 | Sprint contract | Acceptance Criteria section in `plan.md` |
 
 The triad is realized without spawning three coordinator agents.
-Planner and Generator share an agent boundary; Evaluator is an on-demand skill.
+Planner and Generator are separate agents with a clean context boundary; Evaluator is an on-demand skill.
 
 ### 2.6 Validation lives downstream (with the evaluator), not upstream
 
@@ -174,7 +173,7 @@ This contains the blast radius of any planner mistake.
 
 | Subagent use | Purpose served |
 |---|---|
-| Planner agent (split flavor) | The planner's research-heavy context never reaches the executor |
+| Planner agent (phases 0–2) | The planner's research-heavy context never reaches the executor |
 | Phase 1 parallel `Explore` subagents | Fan out across the codebase without polluting the planner's main context |
 | Phase 7 `ci-auto-fix` per-job subagent | Each failing CI job gets its own retry budget and context |
 
@@ -200,8 +199,7 @@ Tool budgets are not just suggestions in the prompt; they are enforced by the ag
 > — [Anthropic — Building agents with the Claude Agent SDK](https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk)
 
 **Mapping in autonomous-workflow:**
-Phase 0 (validation) is mandatory in both the monolithic and split flavors.
-The agent stops to clarify before any planning, regardless of complexity.
+Phase 0 (validation) is mandatory. The planner agent stops to clarify before any planning, regardless of complexity.
 The phase reads the codebase, surfaces clarifying questions, and proposes an approach — then waits for user confirmation before proceeding.
 
 This is a fixed gate, not an adaptive heuristic.
@@ -236,7 +234,7 @@ A verifier evaluates outputs against a contract without needing the full history
 **Mapping in autonomous-workflow:**
 This is exactly why `confidence` is a separate skill, not a method on the planner agent.
 It evaluates `plan.md` from cold — without the planner's exploration history.
-That cold read is what makes the score useful: if `confidence(plan)` cannot reconstruct the plan's intent from `plan.md` alone, the plan is not ready for the executor (who will also be reading it cold in the split flavor).
+That cold read is what makes the score useful: if `confidence(plan)` cannot reconstruct the plan's intent from `plan.md` alone, the plan is not ready for the executor (who will also be reading it cold).
 
 The same property holds for `review-changes` (cold-reads the diff) and `confidence(bug-analysis)` (cold-reads a stuck-loop description).
 
@@ -261,7 +259,7 @@ When proposing changes, check this section first — if a proposal reintroduces 
 **Why rejected:**
 Phase 0 clarification and Phase 1 planning share the same context (user intent + codebase exploration).
 Splitting them would pay the multi-agent token tax (§2.2) without buying any context isolation.
-Phase 0 lives inside the planner agent (or the monolithic agent), not in a dedicated clarifier.
+Phase 0 lives inside the planner agent, not in a dedicated clarifier.
 
 ### 3.2 Five-role sequential pipeline — REJECTED
 
@@ -270,7 +268,7 @@ Phase 0 lives inside the planner agent (or the monolithic agent), not in a dedic
 
 **Why rejected:**
 A clarifier → planner → implementer → tester → reviewer pipeline is the canonical anti-pattern Anthropic names.
-autonomous-workflow keeps the agent count to one (monolithic) or two (planner + executor), with all other roles realized as advisory skills.
+autonomous-workflow keeps the agent count to two (planner + executor), with all other roles realized as advisory skills. The deprecated monolithic template (`agent.template.md`) is backward-compat only.
 
 ### 3.3 A "code reviewer agent" parallel to the executor — REJECTED
 
@@ -279,7 +277,7 @@ autonomous-workflow keeps the agent count to one (monolithic) or two (planner + 
 
 **Why rejected:**
 A reviewer that runs *in parallel* with the executor cannot preserve context — both agents need overlapping access to the same diff.
-`review-changes` is a Skill called by the executor (or the monolithic agent) at Phase 6, not a separate coordinator agent.
+`review-changes` is a Skill called by the executor agent at Phase 6, not a separate coordinator agent.
 The skill cold-reads the diff, which gives it the verifier independence Anthropic recommends (§2.13) without paying the parallel-agent coordination cost.
 
 ### 3.4 Detailed technical implementation in the plan — REJECTED
@@ -322,7 +320,7 @@ This is distinct from quality-driven self-refinement, which has no fixed cap (se
 ### 4.3 Always-on `update-claude`
 
 Most agent frameworks treat documentation updates as discretionary.
-autonomous-workflow runs `update-claude` as a Phase 5 step in the Full flavor.
+autonomous-workflow runs `update-claude` as a Phase 5 step in Full Mode (and Lite Mode).
 The reasoning: docs that drift silently become invisible; running the loop unconditionally prevents drift.
 The skill is silent-skip — if there's nothing to update, it returns clean — so the cost is bounded.
 

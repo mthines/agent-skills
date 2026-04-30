@@ -20,7 +20,7 @@ Continuation phrases that should dispatch the executor when a plan already exist
 Do NOT auto-trigger for:
 
 - Simple questions, explanations, or code reviews
-- Single-file edits or quick fixes (< 3 files)
+- Single-file edits or quick fixes (1–2 files). Tasks touching 3 files still auto-trigger; mode detection inside the workflow will pick Lite Mode for them.
 - Interactive/collaborative coding where the user is actively guiding
 - Exploratory research or investigation
 - Tasks where the user explicitly says "here" or "in this session"

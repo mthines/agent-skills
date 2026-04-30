@@ -51,19 +51,18 @@ See each `phase-N-*.md` rule for full gate details.
 
 ## Stuck-Loop Limit (Phase 4)
 
-**Hard cap: 3 iterations on the same failing area.**
+**Mode-aware cap: 3 iterations (Lite Mode) / 5 iterations (Full Mode) on the same failing area.**
 
-| Iteration | Action                                                                                  |
-| --------- | --------------------------------------------------------------------------------------- |
-| 1         | Read error, fix likely cause, re-run.                                                   |
-| 2         | Re-read error in light of attempt 1, adjust mental model, re-run.                       |
-| 3         | Stop. Run `Skill("confidence", "bug-analysis")`. Summarize attempts. Escalate to user.  |
+| Mode      | Cap | At cap                                                                                  |
+| --------- | --- | --------------------------------------------------------------------------------------- |
+| Lite Mode | 3   | Stop. Run `Skill("confidence", "bug-analysis")`. Auto-replan or escalate to user.       |
+| Full Mode | 5   | Stop. Run `Skill("confidence", "bug-analysis")`. Auto-replan or escalate to user.       |
 
-The 3-iteration cap is the single biggest cost-saver in the workflow. More
-than 3 attempts on the same failing area almost always means the mental model
+The mode-aware cap is the single biggest cost-saver in the workflow. More
+than the cap on the same failing area almost always means the mental model
 is wrong — continuing burns tokens without converging.
 
-See [companion-skills.md#stuck-loop-protocol](./companion-skills.md#stuck-loop-protocol).
+See [companion-skills.md#stuck-loop-protocol-phase-4](./companion-skills.md#stuck-loop-protocol-phase-4) for the full auto-replan protocol.
 
 ---
 
