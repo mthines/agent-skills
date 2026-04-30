@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.34.0",
+  "version": "0.35.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -44,16 +44,16 @@
     "views": {
       "agentTasks": [
         {
-          "id": "agentTasksExplorer",
-          "name": "Agent Tasks",
-          "icon": "$(tasklist)",
-          "contextualTitle": "Agent Tasks"
-        },
-        {
           "id": "agentSessionsExplorer",
           "name": "Sessions",
           "icon": "$(history)",
           "contextualTitle": "Claude Sessions"
+        },
+        {
+          "id": "agentTasksExplorer",
+          "name": "Agent Tasks",
+          "icon": "$(tasklist)",
+          "contextualTitle": "Agent Tasks"
         }
       ]
     },
@@ -124,6 +124,11 @@
         "category": "Agent Tasks"
       },
       {
+        "command": "agentTasks.toggleScope",
+        "title": "Toggle Agent Tasks Scope (current / all worktrees)",
+        "icon": "$(filter)"
+      },
+      {
         "command": "agentTasks.sessions.newSession",
         "title": "New Claude Session",
         "icon": "$(add)",
@@ -169,6 +174,11 @@
           "group": "navigation"
         },
         {
+          "command": "agentTasks.toggleScope",
+          "when": "view == agentTasksExplorer",
+          "group": "navigation"
+        },
+        {
           "command": "agentTasks.sessions.newSession",
           "when": "view == agentSessionsExplorer",
           "group": "navigation@0"
@@ -192,12 +202,17 @@
       "view/item/context": [
         {
           "command": "agentTasks.openPlan",
-          "when": "view == agentTasksExplorer && viewItem == agentBranch",
+          "when": "view == agentTasksExplorer && (viewItem == agentBranch || viewItem == agentWorktreeFlat)",
           "group": "inline@1"
         },
         {
           "command": "agentTasks.openWalkthrough",
-          "when": "view == agentTasksExplorer && viewItem == agentBranchCompleted",
+          "when": "view == agentTasksExplorer && (viewItem == agentBranchCompleted || viewItem == agentWorktreeFlatCompleted)",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentTasks.sessions.openSession",
+          "when": "view == agentSessionsExplorer && viewItem == claudeSessionWithArtifacts",
           "group": "inline@1"
         },
         {
@@ -308,6 +323,19 @@
             "Show sessions for the current worktree and all sibling worktrees"
           ],
           "description": "Which worktrees the Sessions panel includes. Toggle quickly via the filter icon in the panel header."
+        },
+        "agentTasks.scope": {
+          "type": "string",
+          "default": "all",
+          "enum": [
+            "current",
+            "all"
+          ],
+          "enumDescriptions": [
+            "Show only agent task artifacts for the current worktree",
+            "Show agent task artifacts for all sibling worktrees, grouped by worktree"
+          ],
+          "description": "Which worktrees the Agent Tasks panel includes. Toggle quickly via the filter icon in the panel header."
         }
       }
     },

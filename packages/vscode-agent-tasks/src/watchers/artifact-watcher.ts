@@ -21,6 +21,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { discoverWorktreePaths } from '../lib/worktree-discovery';
 
 const ARTIFACT_FILES = new Set(['task.md', 'plan.md', 'walkthrough.md']);
 
@@ -85,11 +86,17 @@ export class ArtifactWatcher implements vscode.Disposable {
 
   /**
    * Find ALL artifact directories relevant to the current workspace.
-   * Iterates over configured directory names (default: ['.agent', '.gw']).
+   *
+   * Iterates over configured directory names (default: `['.agent', '.gw']`).
    * For each name:
-   *   1. Walk up from workspace root to find matching directories.
-   *   2. If name is '.gw', also read config.json to find the default branch
-   *      worktree and check for a .gw/ inside it.
+   *   1. Walk up from the workspace root to find matching directories.
+   *   2. If name is `.gw`, also read `config.json` to find the default branch
+   *      worktree and check for a `.gw/` inside it.
+   *   3. Enumerate `<worktreePath>/<dirName>/` for every sibling worktree
+   *      returned by `discoverWorktreePaths()` so that artifacts created by
+   *      the planner in a sibling worktree (e.g. `.agent/feat/x/plan.md`)
+   *      are watched and trigger `autoOpenPlan`.
+   *
    * Results are deduplicated by realpath.
    */
   private findArtifactRoots(): string[] {
@@ -100,11 +107,8 @@ export class ArtifactWatcher implements vscode.Disposable {
     const roots: string[] = [];
     const seen = new Set<string>();
 
-    for (const dirName of dirs) {
-      // Walk up from workspace collecting directories with this name
-      let dir = workspacePath;
-      for (let i = 0; i < 5; i++) {
-        const artifactPath = path.join(dir, dirName);
+    const addRoot = (artifactPath: string) => {
+      try {
         if (fs.existsSync(artifactPath) && fs.statSync(artifactPath).isDirectory()) {
           const real = fs.realpathSync(artifactPath);
           if (!seen.has(real)) {
@@ -112,6 +116,16 @@ export class ArtifactWatcher implements vscode.Disposable {
             roots.push(artifactPath);
           }
         }
+      } catch {
+        // ignore stat/realpath errors
+      }
+    };
+
+    for (const dirName of dirs) {
+      // Walk up from workspace collecting directories with this name
+      let dir = workspacePath;
+      for (let i = 0; i < 5; i++) {
+        addRoot(path.join(dir, dirName));
         const parent = path.dirname(dir);
         if (parent === dir) break;
         dir = parent;
@@ -126,20 +140,27 @@ export class ArtifactWatcher implements vscode.Disposable {
             const repoRoot: string | undefined = config.root;
             const defaultBranch: string | undefined = config.defaultBranch;
             if (!repoRoot || !defaultBranch) continue;
-
-            const defaultWorktreeGw = path.join(repoRoot, defaultBranch, '.gw');
-            if (fs.existsSync(defaultWorktreeGw) && fs.statSync(defaultWorktreeGw).isDirectory()) {
-              const real = fs.realpathSync(defaultWorktreeGw);
-              if (!seen.has(real)) {
-                seen.add(real);
-                roots.push(defaultWorktreeGw);
-              }
-            }
+            addRoot(path.join(repoRoot, defaultBranch, '.gw'));
             break;
           } catch {
             // config.json missing or invalid
           }
         }
+      }
+
+      // Also watch configured artifact dirs inside every sibling worktree so
+      // that `plan.md` / `walkthrough.md` created by a planner agent in a
+      // sibling worktree triggers `autoOpenPlan` in this window.
+      // `discoverWorktreePaths` is cached-free and fast (single git call).
+      try {
+        const worktreePaths = discoverWorktreePaths(workspacePath);
+        for (const wt of worktreePaths) {
+          // Skip the current workspace — already handled by the walk-up above
+          if (wt === workspacePath) continue;
+          addRoot(path.join(wt, dirName));
+        }
+      } catch {
+        // discovery failure is non-fatal
       }
     }
 

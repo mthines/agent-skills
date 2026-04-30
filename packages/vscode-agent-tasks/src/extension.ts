@@ -6,18 +6,13 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { AgentTasksProvider, WorktreeFlatItem } from './providers/agent-tasks-provider';
 import * as child_process from 'child_process';
-import { AgentTasksProvider } from './providers/agent-tasks-provider';
 import { ArtifactWatcher } from './watchers/artifact-watcher';
 import { SessionsProvider, SessionItem } from './providers/sessions-provider';
 import { SessionWatcher } from './watchers/session-watcher';
 import { initLogger, log, logError } from './lib/logger';
-import {
-  parsePsOutput,
-  findClaudeDescendant,
-  claimPendingAdoption,
-  type PendingAdoption,
-} from './lib/process-tree';
+import { parsePsOutput, findClaudeDescendant, claimPendingAdoption, type PendingAdoption } from './lib/process-tree';
 import type { SessionMetadata } from './parsers/session-jsonl-parser';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -32,7 +27,9 @@ export function activate(context: vscode.ExtensionContext): void {
     showCollapseAll: true,
   });
 
-  // Create the file watcher and wire it to the provider
+  // Create the file watcher. The Sessions panel also subscribes to it below
+  // (after `sessionsProvider` is declared) so artifact create/delete updates
+  // both trees — the Agent Tasks rows AND the Sessions correlation chevrons.
   const artifactWatcher = new ArtifactWatcher();
   artifactWatcher.onArtifactChanged(() => {
     agentTasksProvider.refresh();
@@ -93,22 +90,26 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   const openPlanCmd = vscode.commands.registerCommand('agentTasks.openPlan', async (item) => {
-    if (item?.artifactDir) {
-      const planPath = require('path').join(item.artifactDir, 'plan.md');
+    // WorktreeFlatItem wraps the branch — delegate to its artifactDir
+    const resolved = item instanceof WorktreeFlatItem ? item.branch : item;
+    if (resolved?.artifactDir) {
+      const planPath = require('path').join(resolved.artifactDir, 'plan.md');
       await vscode.commands.executeCommand('agentTasks.openMarkdown', planPath);
     }
   });
 
   const openTaskCmd = vscode.commands.registerCommand('agentTasks.openTask', async (item) => {
-    if (item?.artifactDir) {
-      const taskPath = require('path').join(item.artifactDir, 'task.md');
+    const resolved = item instanceof WorktreeFlatItem ? item.branch : item;
+    if (resolved?.artifactDir) {
+      const taskPath = require('path').join(resolved.artifactDir, 'task.md');
       await vscode.commands.executeCommand('agentTasks.openMarkdown', taskPath);
     }
   });
 
   const openWalkthroughCmd = vscode.commands.registerCommand('agentTasks.openWalkthrough', async (item) => {
-    if (item?.artifactDir) {
-      const wtPath = require('path').join(item.artifactDir, 'walkthrough.md');
+    const resolved = item instanceof WorktreeFlatItem ? item.branch : item;
+    if (resolved?.artifactDir) {
+      const wtPath = require('path').join(resolved.artifactDir, 'walkthrough.md');
       await vscode.commands.executeCommand('agentTasks.openMarkdown', wtPath);
     }
   });
@@ -122,6 +123,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const sessionsView = vscode.window.createTreeView('agentSessionsExplorer', {
     treeDataProvider: sessionsProvider,
     showCollapseAll: true,
+  });
+
+  // Sessions panel correlates each session with its `(worktree, gitBranch)`
+  // artifact dir. Refresh on artifact create/delete so chevrons and child
+  // rows appear/disappear without waiting for a session-level event.
+  artifactWatcher.onArtifactChanged(() => {
+    sessionsProvider.refresh();
   });
 
   // Start watching the session dirs that the provider discovered on first render.
@@ -158,24 +166,19 @@ export function activate(context: vscode.ExtensionContext): void {
     log(`Sessions watcher rebuilt: ${sessionsProvider.sessionDirs.length} dir(s)`);
   });
 
-  const sessionsToggleScopeCmd = vscode.commands.registerCommand(
-    'agentTasks.sessions.toggleScope',
-    async () => {
-      const cfg = vscode.workspace.getConfiguration('agentTasks.sessions');
-      const current = cfg.get<string>('scope', 'all');
-      const next = current === 'current' ? 'all' : 'current';
-      log(`Command: sessions.toggleScope (${current} → ${next})`);
-      await cfg.update('scope', next, vscode.ConfigurationTarget.Global);
-      sessionsProvider.refresh();
-      sessionWatcher.rebuild(sessionsProvider.sessionDirs);
-      vscode.window.setStatusBarMessage(
-        next === 'current'
-          ? 'Sessions: showing current worktree only'
-          : 'Sessions: showing all worktrees',
-        2500
-      );
-    }
-  );
+  const sessionsToggleScopeCmd = vscode.commands.registerCommand('agentTasks.sessions.toggleScope', async () => {
+    const cfg = vscode.workspace.getConfiguration('agentTasks.sessions');
+    const current = cfg.get<string>('scope', 'all');
+    const next = current === 'current' ? 'all' : 'current';
+    log(`Command: sessions.toggleScope (${current} → ${next})`);
+    await cfg.update('scope', next, vscode.ConfigurationTarget.Global);
+    sessionsProvider.refresh();
+    sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+    vscode.window.setStatusBarMessage(
+      next === 'current' ? 'Sessions: showing current worktree only' : 'Sessions: showing all worktrees',
+      2500
+    );
+  });
 
   // Periodic refresh while the Sessions view is visible. Drives state-machine
   // transitions that aren't triggered by a file-watcher event — e.g. a
@@ -205,12 +208,35 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const tickDisposable: vscode.Disposable = { dispose: stopTick };
 
+  // -------------------------------------------------------------------------
+  // Agent Tasks scope toggle
+  // -------------------------------------------------------------------------
+
+  const toggleScopeCmd = vscode.commands.registerCommand('agentTasks.toggleScope', async () => {
+    const cfg = vscode.workspace.getConfiguration('agentTasks');
+    const current = cfg.get<string>('scope', 'all');
+    const next = current === 'current' ? 'all' : 'current';
+    log(`Command: agentTasks.toggleScope (${current} → ${next})`);
+
+    // Mirror the sessions toggle: use Global for single-folder, workspace
+    // target for multi-root. For simplicity use Global (same as sessions).
+    await cfg.update('scope', next, vscode.ConfigurationTarget.Global);
+    agentTasksProvider.refresh();
+    vscode.window.setStatusBarMessage(
+      next === 'current' ? 'Agent Tasks: showing current worktree only' : 'Agent Tasks: showing all worktrees',
+      2500
+    );
+  });
+
   // React to scope config changes from settings UI (so the user doesn't have
   // to manually refresh after editing settings.json).
   const configSub = vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration('agentTasks.sessions.scope')) {
       sessionsProvider.refresh();
       sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+    }
+    if (e.affectsConfiguration('agentTasks.scope')) {
+      agentTasksProvider.refresh();
     }
   });
 
@@ -337,9 +363,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // find QuickPick. Reads the `openWith` setting once, then either resumes
   // or opens the JSONL.
   const openSession = async (session: SessionMetadata): Promise<void> => {
-    const openWith = vscode.workspace
-      .getConfiguration('agentTasks.sessions')
-      .get<string>('openWith', 'resume');
+    const openWith = vscode.workspace.getConfiguration('agentTasks.sessions').get<string>('openWith', 'resume');
 
     const sid = session.sessionId;
     log(`openSession (id=${sid.slice(0, 8)}, mode=${openWith})`);
@@ -456,28 +480,25 @@ export function activate(context: vscode.ExtensionContext): void {
   // Before running `claude`, we push a PendingAdoption entry so that the
   // next new JSONL to appear in this cwd is deterministically linked to the
   // spawned terminal (claimed via onDidDiscoverSession).
-  const newSessionCmd = vscode.commands.registerCommand(
-    'agentTasks.sessions.newSession',
-    () => {
-      log('Command: sessions.newSession');
-      const rawCwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      const cwd = rawCwd ? path.resolve(rawCwd) : undefined;
-      log(`Starting new Claude session (cwd=${cwd ?? '?'})`);
-      const terminal = vscode.window.createTerminal({
-        name: 'Claude · new session',
-        cwd,
-        iconPath: new vscode.ThemeIcon('comment-discussion'),
-      });
+  const newSessionCmd = vscode.commands.registerCommand('agentTasks.sessions.newSession', () => {
+    log('Command: sessions.newSession');
+    const rawCwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const cwd = rawCwd ? path.resolve(rawCwd) : undefined;
+    log(`Starting new Claude session (cwd=${cwd ?? '?'})`);
+    const terminal = vscode.window.createTerminal({
+      name: 'Claude · new session',
+      cwd,
+      iconPath: new vscode.ThemeIcon('comment-discussion'),
+    });
 
-      if (cwd) {
-        pendingAdoptions.push({ terminal, cwd, spawnedAt: Date.now() });
-        log(`Pending adoption queued for cwd=${cwd} (queue length: ${pendingAdoptions.length})`);
-      }
-
-      terminal.show();
-      terminal.sendText('claude');
+    if (cwd) {
+      pendingAdoptions.push({ terminal, cwd, spawnedAt: Date.now() });
+      log(`Pending adoption queued for cwd=${cwd} (queue length: ${pendingAdoptions.length})`);
     }
-  );
+
+    terminal.show();
+    terminal.sendText('claude');
+  });
 
   context.subscriptions.push(
     agentTasksView,
@@ -489,6 +510,7 @@ export function activate(context: vscode.ExtensionContext): void {
     openPlanCmd,
     openTaskCmd,
     openWalkthroughCmd,
+    toggleScopeCmd,
     // Sessions panel
     sessionsView,
     sessionWatcher,
