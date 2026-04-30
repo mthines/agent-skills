@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.29.0",
+  "version": "0.30.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -121,6 +121,12 @@
         "title": "Find Session…",
         "icon": "$(search)",
         "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.toggleScope",
+        "title": "Toggle Agent Tasks Scope (current / all worktrees)",
+        "icon": "$(filter)",
+        "category": "Agent Tasks"
       }
     ],
     "menus": {
@@ -154,6 +160,11 @@
         },
         {
           "command": "agentTasks.sort",
+          "when": "view == agentTasksExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "agentTasks.toggleScope",
           "when": "view == agentTasksExplorer",
           "group": "navigation"
         },
@@ -277,6 +288,19 @@
             "Show sessions for the current worktree and all sibling worktrees"
           ],
           "description": "Which worktrees the Sessions panel includes. Toggle quickly via the filter icon in the panel header."
+        },
+        "agentTasks.scope": {
+          "type": "string",
+          "default": "all",
+          "enum": [
+            "current",
+            "all"
+          ],
+          "enumDescriptions": [
+            "Show only agent task artifacts for the current worktree",
+            "Show agent task artifacts for all sibling worktrees, grouped by worktree"
+          ],
+          "description": "Which worktrees the Agent Tasks panel includes. Toggle quickly via the filter icon in the panel header."
         }
       }
     },
