@@ -1,0 +1,201 @@
+{
+  "name": "agent-tasks",
+  "displayName": "Agent Tasks",
+  "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
+  "version": "0.1.1",
+  "publisher": "mthines",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mthines/agent-skills.git",
+    "directory": "packages/vscode-agent-tasks"
+  },
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "agent",
+    "workflow",
+    "tasks",
+    "plan",
+    "autonomous"
+  ],
+  "activationEvents": [
+    "workspaceContains:.agent",
+    "workspaceContains:.gw"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentTasks",
+          "title": "Agent Tasks",
+          "icon": "$(tasklist)"
+        }
+      ]
+    },
+    "views": {
+      "agentTasks": [
+        {
+          "id": "agentTasksExplorer",
+          "name": "Agent Tasks",
+          "icon": "$(tasklist)",
+          "contextualTitle": "Agent Tasks"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "agentTasks.refresh",
+        "title": "Refresh Agent Tasks",
+        "icon": "$(refresh)",
+        "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.openPlan",
+        "title": "Open Plan",
+        "icon": "$(notebook)",
+        "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.openTask",
+        "title": "Open Task File",
+        "icon": "$(tasklist)",
+        "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.openWalkthrough",
+        "title": "Open Walkthrough",
+        "icon": "$(book)",
+        "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.sort",
+        "title": "Sort Agent Tasks",
+        "icon": "$(list-ordered)",
+        "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.focus",
+        "title": "Focus Agent Tasks Sidebar",
+        "icon": "$(tasklist)",
+        "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.openMarkdown",
+        "title": "Open Markdown File",
+        "category": "Agent Tasks"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "agentTasks.openPlan",
+          "when": "false"
+        },
+        {
+          "command": "agentTasks.openTask",
+          "when": "false"
+        },
+        {
+          "command": "agentTasks.openWalkthrough",
+          "when": "false"
+        },
+        {
+          "command": "agentTasks.openMarkdown",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "agentTasks.refresh",
+          "when": "view == agentTasksExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "agentTasks.sort",
+          "when": "view == agentTasksExplorer",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "agentTasks.openPlan",
+          "when": "view == agentTasksExplorer && viewItem == agentBranch",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentTasks.openWalkthrough",
+          "when": "view == agentTasksExplorer && viewItem == agentBranchCompleted",
+          "group": "inline@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Agent Tasks",
+      "properties": {
+        "agentTasks.directories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [".agent", ".gw"],
+          "scope": "resource",
+          "description": "Directories (relative to workspace and ancestors) to scan for agent task artifacts (plan.md, task.md, walkthrough.md). Order = priority. Empty array falls back to the defaults ['.agent', '.gw']."
+        },
+        "agentTasks.autoOpenWalkthrough": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically open walkthrough.md when it is created"
+        },
+        "agentTasks.openMarkdownInPreview": {
+          "type": "boolean",
+          "default": true,
+          "description": "Open task.md, plan.md, and walkthrough.md in Markdown preview mode instead of the text editor"
+        },
+        "agentTasks.sortBy": {
+          "type": "string",
+          "default": "date",
+          "enum": [
+            "date",
+            "name",
+            "status"
+          ],
+          "enumDescriptions": [
+            "Sort by modification date",
+            "Sort by branch name",
+            "Sort by workflow status (in-progress first)"
+          ],
+          "description": "How to sort agent tasks in the sidebar"
+        },
+        "agentTasks.sortOrder": {
+          "type": "string",
+          "default": "desc",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "enumDescriptions": [
+            "Ascending (oldest/A-Z first)",
+            "Descending (newest/Z-A first)"
+          ],
+          "description": "Sort order for agent tasks"
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/node": "20.19.9",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.25.0",
+    "vitest": "4.0.9"
+  },
+  "dependencies": {
+    "tslib": "^2.3.0"
+  }
+}
