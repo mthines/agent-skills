@@ -210,41 +210,34 @@ for the full how-to.
 
 ## Templates
 
-The skill ships **two agent flavors**:
+The skill installs **two agents** that share one workflow, connected by `plan.md`:
 
-| Flavor                | Files                                                                                                              | Best for                                                |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
-| **Monolithic** (legacy) | [agent.template.md](./templates/agent.template.md)                                                              | Simple cases, single-context tasks                      |
-| **Split (recommended)** | [planner.template.md](./templates/planner.template.md) + [executor.template.md](./templates/executor.template.md) | Complex tasks, clean context boundaries, user checkpoints on borderline plans |
+| Agent                  | Phases | Terminal artifact                              | Exit gate                                          |
+| ---------------------- | ------ | ---------------------------------------------- | -------------------------------------------------- |
+| `autonomous-planner`   | 0–2    | `.agent/{branch}/plan.md`                      | `confidence(plan) ≥ 90%` (or user-approved)        |
+| `autonomous-executor`  | 3–7    | `.agent/{branch}/walkthrough.md` + draft PR    | Walkthrough shown inline, Phase 7 CI gate run      |
 
-The split flavor follows Anthropic's "context boundary" principle (see
-[`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md)).
-Each agent owns one terminal artifact:
-
-| Agent                  | Terminal artifact            | Exit gate                                          |
-| ---------------------- | ---------------------------- | -------------------------------------------------- |
-| `autonomous-planner`   | `.agent/{branch}/plan.md`    | `confidence(plan) ≥ 90%` (or user-approved)        |
-| `autonomous-executor`  | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
-
-See [`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md)
-for the handoff contract and message format.
+The split is along the Phase 2 → Phase 3 context boundary, mediated by
+`plan.md`. The handoff is gated: high-confidence plans flow through
+automatically; borderline plans pause for user approval. The design rationale
+(with verbatim Anthropic citations) lives in
+[`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md);
+the full handoff contract is in
+[`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md).
 
 | Template                                                         | Purpose                                  |
 | ---------------------------------------------------------------- | ---------------------------------------- |
-| [agent.template.md](./templates/agent.template.md)               | Monolithic agent (single-agent flavor)   |
-| [planner.template.md](./templates/planner.template.md)           | Split flavor — planner half (phases 0-2) |
-| [executor.template.md](./templates/executor.template.md)         | Split flavor — executor half (phases 3-7)|
+| [planner.template.md](./templates/planner.template.md)           | Planner agent definition (phases 0-2)    |
+| [executor.template.md](./templates/executor.template.md)         | Executor agent definition (phases 3-7)   |
 | [routing-rule.template.md](./templates/routing-rule.template.md) | Auto-trigger rule for `.claude/rules/`   |
 
 ---
 
 ## Auto-Trigger Setup (Recommended)
 
-Install all related skills + the agent so Claude auto-triggers on phrases like
-*"independently"*, *"in isolation"*, *"end-to-end"*.
-
-The skill ships with [`install.sh`](./install.sh) which handles the agent +
-routing-rule symlinks for you. Two steps: download skills, then run install.
+Install the skill + companions so Claude auto-triggers on phrases like
+*"implement X independently"*, *"in isolation"*, *"end-to-end"*. Two steps:
+download skills, then run [`install.sh`](./install.sh).
 
 **Global** (personal use, all projects):
 
@@ -267,6 +260,11 @@ npx skills add https://github.com/mthines/agent-skills \
   --yes
 bash .agents/skills/autonomous-workflow/install.sh
 ```
+
+After the script runs, two agents are linked into your `.claude/agents/`
+directory: `autonomous-planner.md` and `autonomous-executor.md`. The routing
+rule dispatches the planner first; once `plan.md` is gated, the executor
+takes over.
 
 To run with fewer companions, omit them from the `--skill` list. See
 [`rules/companion-skills.md`](./rules/companion-skills.md) for what each does

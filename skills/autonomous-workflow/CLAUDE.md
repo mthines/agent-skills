@@ -90,14 +90,18 @@ skills/autonomous-workflow/
 │   ├── parallel-coordination.md# Sub-agent fan-out and multi-agent handoff.
 │   ├── safety-guardrails.md    # Hard limits, validation checkpoints.
 │   ├── smart-worktree-detection.md # Fuzzy-match task to existing worktree.
+│   ├── planner-executor-handoff.md # Handoff contract between planner and executor.
 │   └── _template.md            # Boilerplate for new rule files.
 ├── templates/
-│   ├── agent.template.md       # Claude Code agent definition (linked into ~/.claude/agents/).
+│   ├── planner.template.md     # autonomous-planner agent (phases 0-2). Linked by install.sh.
+│   ├── executor.template.md    # autonomous-executor agent (phases 3-7). Linked by install.sh.
+│   ├── agent.template.md       # DEPRECATED — kept for backward compat only. Not linked.
 │   └── routing-rule.template.md# Auto-routing rule (linked into ~/.claude/rules/).
 └── references/
-    ├── autonomous-workflow-complete.md   # Full end-to-end walked example.
-    ├── error-recovery-scenarios.md       # Concrete error → recovery transcripts.
-    └── iterative-refinement.md           # Worked example of stuck-loop recovery.
+    ├── autonomous-workflow-complete.md      # Full end-to-end walked example.
+    ├── error-recovery-scenarios.md          # Concrete error → recovery transcripts.
+    ├── iterative-refinement.md              # Worked example of stuck-loop recovery.
+    └── anthropic-architecture-research.md   # Verbatim Anthropic citations + design mapping.
 ```
 
 The split between `SKILL.md` (lean index, always in context), `rules/` (loaded
@@ -390,9 +394,8 @@ end-user-facing; this file is contributor-facing.
   is missing (auto-copy, pre/post-checkout hooks, smart cleanup,
   shell-integrated `gw cd`). The workflow is now usable in repos that
   haven't adopted `gw`.
-- **v3.3** — Two-agent split (recommended flavor) alongside the monolithic
-  agent (preserved for simple cases). The split is along the
-  Phase 2 → Phase 3 context boundary, mediated by `plan.md`:
+- **v3.3** — Split into two agents (planner + executor) connected by
+  `plan.md`. The split is along the Phase 2 → Phase 3 context boundary:
   - **`autonomous-planner`** — runs phases 0-2 (validation, planning,
     worktree + plan.md generation). Tool budget excludes Edit/Write on
     production code. Terminal deliverable: `.agent/{branch}/plan.md`,
@@ -408,11 +411,12 @@ end-user-facing; this file is contributor-facing.
     is done. This pattern matches Anthropic's "structured handoff
     artifacts" recommendation; full citations are in
     `references/anthropic-architecture-research.md`.
-  - **Compatibility** — both flavors honor the same phase rules and
-    companion-skills.md registry. The split is an architectural lever,
-    not a behavior change. `install.sh` accepts `--split` (recommended),
-    `--monolithic` (default, legacy), and `--split-only` (split agents
-    only, skip the monolithic alias).
+  - The agents share `companion-skills.md` and the phase rules — the split
+    is an architectural lever, not a behavior change.
+  - `templates/agent.template.md` (the original single-agent template) is
+    preserved as a backward-compat artifact for users with existing
+    installs, but is no longer linked by `install.sh`. New installs use
+    `planner.template.md` + `executor.template.md`.
 
 - **v3.2** — Quality refinements based on field-alignment review:
   - **Multi-signal `confidence(plan)` gate.** The `confidence` skill's `plan`

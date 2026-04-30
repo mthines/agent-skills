@@ -9,10 +9,9 @@ tags:
 
 # Phase 3: Implementation
 
-## Receiving Planner Handoff (split-agent flavor)
+## Receiving Planner Handoff
 
-If you're running as the **autonomous-executor agent**, this is your entry
-phase. Before starting Step 1 of implementation:
+This is the executor's entry phase. Before starting Step 1 of implementation:
 
 1. Verify you're inside the worktree (`pwd && git branch --show-current`).
 2. Read `plan.md` end-to-end:
@@ -28,9 +27,6 @@ phase. Before starting Step 1 of implementation:
    ```markdown
    - [TIMESTAMP] Phase 3: executor took over (plan confidence Y%)
    ```
-
-If you're running as the **monolithic agent**, plan.md is already in your
-session context — skip the handoff verification and proceed.
 
 See [`planner-executor-handoff.md`](./planner-executor-handoff.md) for the
 full handoff contract.

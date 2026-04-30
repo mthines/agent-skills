@@ -1,3 +1,17 @@
+<!--
+DEPRECATED — kept for backward compatibility only.
+
+The autonomous-workflow now installs two agents (autonomous-planner +
+autonomous-executor) by default. This single-agent template is no longer
+linked by install.sh. It still works for users with existing installs, but
+new installs should use planner.template.md + executor.template.md.
+
+See:
+- skills/autonomous-workflow/rules/planner-executor-handoff.md
+- skills/autonomous-workflow/templates/planner.template.md
+- skills/autonomous-workflow/templates/executor.template.md
+-->
+
 ---
 name: autonomous-workflow
 description: >

@@ -68,7 +68,7 @@ You'll be warned once at the start of Phase 2 about the features you're missing
 `gw cd`). See [`rules/prerequisites.md#fallback-to-native-git-worktree`](./rules/prerequisites.md#fallback-to-native-git-worktree)
 for the full feature comparison.
 
-### Step 2: Install the skill + agent
+### Step 2: Install the skill + agents
 
 The skill ships with [`install.sh`](./install.sh) which handles the agent +
 routing-rule symlinks for you. Two steps: download skills, then run install.
@@ -99,7 +99,19 @@ To run with fewer companions, omit them from the `--skill` list. See
 [Disabling Companions](#disabling-companions) below. Run
 `bash install.sh --help` for script options.
 
-Then say *"implement X independently"* and the agent takes over.
+Then say *"implement X independently"* — the routing rule dispatches the
+planner first; once `plan.md` is gated, the executor takes over.
+
+#### What `install.sh` sets up
+
+Two agents linked into your `.claude/agents/` directory:
+
+| Agent | Phases | Terminal artifact | Exit gate |
+|---|---|---|---|
+| `autonomous-planner` | 0–2 (validation, planning, worktree + plan.md) | `.agent/{branch}/plan.md` | `confidence(plan) ≥ 90%` (or user-approved override) |
+| `autonomous-executor` | 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
+
+See [`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md) for the full handoff contract and [`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md) for the design rationale (with verbatim Anthropic citations).
 
 ---
 

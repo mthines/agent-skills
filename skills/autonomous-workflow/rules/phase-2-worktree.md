@@ -267,15 +267,13 @@ The log is the durable trail a fresh Claude session uses to resume mid-flight.
 
 ---
 
-## Planner Handoff (split-agent flavor)
+## Planner Handoff
 
-If you're running as the **autonomous-planner agent**, Phase 2 is the last
-phase you execute. After `plan.md` is written and the confidence gate runs:
+Phase 2 is the last phase the planner runs. After `plan.md` is written and
+the confidence gate has cleared:
 
-- **Confidence ≥ 90%**: output the auto-handoff message (see [`planner-executor-handoff.md#handoff-message-format`](./planner-executor-handoff.md#handoff-message-format)) and STOP. Wait for the user (or main session) to dispatch the executor.
-- **Confidence < 90%**: output the user-approval message and STOP.
-
-If you're running as the **monolithic agent**, continue to Phase 3 directly.
+- **Confidence ≥ 90%**: emit the auto-handoff message (see [`planner-executor-handoff.md#handoff-message-format`](./planner-executor-handoff.md#handoff-message-format)) and STOP. Wait for the user (or main session) to dispatch the executor.
+- **Confidence < 90%** (after up to 2 retries): emit the user-approval message and STOP.
 
 ---
 

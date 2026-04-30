@@ -7,19 +7,18 @@ tags:
   - handoff
   - confidence
   - phase-boundary
-  - split-agent
 ---
 
 # Planner ↔ Executor Handoff
 
 ## Overview
 
-The autonomous-workflow ships in two flavors:
+The autonomous-workflow runs as two agents connected by a single artifact:
 
-- **Monolithic agent** (legacy, [`templates/agent.template.md`](../templates/agent.template.md)) — a single agent runs all 8 phases (0–7) in one continuous session.
-- **Split agents** (recommended, [`templates/planner.template.md`](../templates/planner.template.md) + [`templates/executor.template.md`](../templates/executor.template.md)) — the **planner agent** runs phases 0–2, the **executor agent** runs phases 3–7.
+- **Planner agent** ([`templates/planner.template.md`](../templates/planner.template.md)) — runs phases 0–2 (validation, planning, worktree + `plan.md` generation).
+- **Executor agent** ([`templates/executor.template.md`](../templates/executor.template.md)) — runs phases 3–7 (implementation, testing, docs, PR, CI).
 
-The split is justified by Anthropic's "context boundary" principle — separating exploration-heavy work (Phase 0–2) from execution-heavy work (Phase 3–7) keeps each agent's context window focused and avoids polluting implementation decisions with planning dead-ends. See [`references/anthropic-architecture-research.md`](../references/anthropic-architecture-research.md) for the underlying research.
+This split follows Anthropic's "context boundary" principle — separating exploration-heavy work (Phase 0–2) from execution-heavy work (Phase 3–7) keeps each agent's context window focused and avoids polluting implementation decisions with planning dead-ends. See [`references/anthropic-architecture-research.md`](../references/anthropic-architecture-research.md) for the underlying research.
 
 The handoff happens at the **Phase 2 → Phase 3 boundary**, mediated by `plan.md` and gated by `confidence(plan) ≥ 90%`.
 
@@ -190,26 +189,6 @@ If the executor discovers mid-implementation that the plan is fundamentally flaw
 
 ---
 
-## Compatibility with monolithic agent
-
-Both flavors honor:
-
-- The same phase rules (`phase-0` through `phase-7`)
-- The same companion-skills.md registry
-- The same `plan.md` artifact contract
-
-The split is an **architectural lever**, not a behavior change. The user can install:
-
-| Install combination                  | Effect                                                                       |
-| ------------------------------------ | ---------------------------------------------------------------------------- |
-| Monolithic agent only                | Single-session runs (legacy, simplest)                                       |
-| Split pair only                      | Two-session runs (recommended for cost / quality)                            |
-| Both                                 | User picks per task — `/autonomous-workflow` (monolithic) vs `/autonomous-planner` + `/autonomous-executor` (split) |
-
-The phase rules themselves are flavor-agnostic — they describe the work, not which agent does it. The flavor-specific bits live in this file and at the top/bottom of `phase-1`, `phase-2`, and `phase-3` rules (small subsections marked `(split-agent flavor)`).
-
----
-
 ## References
 
 - Phase rules updated for handoff:
@@ -219,6 +198,5 @@ The phase rules themselves are flavor-agnostic — they describe the work, not w
 - Companion registry: [companion-skills.md](./companion-skills.md)
 - Architecture research: [`references/anthropic-architecture-research.md`](../references/anthropic-architecture-research.md)
 - Templates:
-  - [`templates/agent.template.md`](../templates/agent.template.md) — monolithic
-  - [`templates/planner.template.md`](../templates/planner.template.md) — split planner
-  - [`templates/executor.template.md`](../templates/executor.template.md) — split executor
+  - [`templates/planner.template.md`](../templates/planner.template.md) — planner agent
+  - [`templates/executor.template.md`](../templates/executor.template.md) — executor agent

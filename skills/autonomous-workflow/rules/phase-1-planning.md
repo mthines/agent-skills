@@ -261,15 +261,11 @@ explicitly approves a lower score.**
 
 ---
 
-## Planner-Executor Handoff (split-agent flavor)
+## Planner-Executor Handoff
 
-This phase ends with the confidence gate. In the **monolithic agent**, the
-same agent then runs Phase 2. In the **split-agent flavor**, this is the last
-phase the **planner agent** runs before transitioning to Phase 2 (worktree
-setup + plan.md generation, still on the planner side).
-
-The actual handoff to the **executor agent** happens at the end of Phase 2 —
-see [`planner-executor-handoff.md`](./planner-executor-handoff.md) for the
+This phase ends with the confidence gate. After `plan.md` is gated, the
+planner agent stops at the end of Phase 2 and hands off to the executor — see
+[`planner-executor-handoff.md`](./planner-executor-handoff.md) for the
 contract and message format.
 
 ---
