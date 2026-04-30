@@ -214,6 +214,7 @@ export function activate(context: vscode.ExtensionContext): void {
     for (const [sid, term] of sessionTerminals) {
       if (term === t) {
         sessionTerminals.delete(sid);
+        sessionsProvider.setTerminalOpen(sid, false);
         log(`Terminal closed for session ${sid.slice(0, 8)}`);
         break;
       }
@@ -233,17 +234,13 @@ export function activate(context: vscode.ExtensionContext): void {
       log(`Command: sessions.openSession (id=${sid.slice(0, 8)}, mode=${openWith})`);
 
       if (openWith === 'resume') {
-        // Optimistic UI: flip the icon to "active" right now so the panel
-        // feels instant. The watcher will overwrite this with the real mtime
-        // as soon as claude writes its first event.
-        sessionsProvider.touchActive(sid);
-
         // If we already have a terminal for this session and it's still alive,
         // just focus it. exitStatus stays `undefined` while the process is
         // running and gets set when it exits.
         const existing = sessionTerminals.get(sid);
         if (existing && existing.exitStatus === undefined) {
           log(`Focusing existing terminal for session ${sid.slice(0, 8)}`);
+          sessionsProvider.setTerminalOpen(sid, true); // idempotent
           existing.show(/* preserveFocus */ false);
           return;
         }
@@ -265,6 +262,9 @@ export function activate(context: vscode.ExtensionContext): void {
           iconPath: new vscode.ThemeIcon('comment-discussion'),
         });
         sessionTerminals.set(sid, terminal);
+        // Mark as active immediately so the icon updates without waiting for
+        // claude's first JSONL write.
+        sessionsProvider.setTerminalOpen(sid, true);
         terminal.show();
         terminal.sendText(`claude --resume ${sid}`);
       } else {

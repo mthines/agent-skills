@@ -124,28 +124,29 @@ export class WorktreeGroupItem extends vscode.TreeItem {
 /**
  * A leaf node representing one Claude Code session.
  *
- * Description rules:
- *   - inside a WorktreeGroupItem → just relative time (branch is implied)
- *   - flat (single worktree)     → "branch · time"
+ * Layout:
+ *   - Label: `<time> · <message>` — time is INSIDE the label so it survives
+ *     narrow panels. The message text is what gets truncated when there's no
+ *     room, not the timestamp.
+ *   - Description: branch when flat (single worktree); empty when grouped
+ *     (branch is implicit from the parent group).
  *
- * Status is a heuristic from file mtime (see `getSessionStatus`) — disclosed
- * up-front in the tooltip so users don't mistake the icon for ground truth.
+ * Status is computed by the provider so it can layer terminal-open / closed
+ * signals on top of the raw mtime heuristic.
  */
 export class SessionItem extends vscode.TreeItem {
   constructor(
     public readonly session: SessionMetadata,
-    options: { grouped: boolean; effectiveMtime?: number }
+    options: { grouped: boolean; status: SessionStatus }
   ) {
-    super(session.title, vscode.TreeItemCollapsibleState.None);
-
-    const effectiveMtime = options.effectiveMtime ?? session.mtime;
-    const status: SessionStatus = getSessionStatus(effectiveMtime);
-    const timeStr = formatTime(effectiveMtime);
+    const timeStr = formatTime(session.mtime);
     const branch = session.gitBranch ?? '?';
 
-    this.description = options.grouped ? timeStr : `${branch} · ${timeStr}`;
-    this.iconPath = SessionItem.iconForStatus(status);
-    this.tooltip = SessionItem.buildTooltip(session, timeStr, status, branch);
+    super(`${timeStr} · ${session.title}`, vscode.TreeItemCollapsibleState.None);
+
+    this.description = options.grouped ? '' : branch;
+    this.iconPath = SessionItem.iconForStatus(options.status);
+    this.tooltip = SessionItem.buildTooltip(session, timeStr, options.status, branch);
     this.contextValue = 'claudeSession';
 
     // Command fires on click — handled in extension.ts
@@ -423,17 +424,21 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
   private _sessionDirs: string[] = [];
 
   /**
-   * Optimistic activity timestamps: when the user clicks a session to resume
-   * it, we mark it as just-opened immediately so the icon flips to "active"
-   * without waiting for the file watcher to catch the next claude write.
-   *
-   * The provider treats `max(file mtime, optimistic timestamp)` as the
-   * effective activity time. Once a real file change lands the entry becomes
-   * irrelevant naturally; we also age them out after 5 minutes so a clicked-
-   * then-quit session doesn't lie indefinitely.
+   * Sessions whose `claude --resume` terminal is currently open in THIS
+   * window. Forces the status icon to "active" regardless of mtime — a
+   * stronger signal than the file-watcher heuristic. Updated by the click
+   * handler and `onDidCloseTerminal` listener in extension.ts.
    */
-  private optimisticOpens = new Map<string, number>();
-  private static readonly OPTIMISTIC_TTL_MS = 5 * 60 * 1000;
+  private openTerminalSessions = new Set<string>();
+
+  /**
+   * Timestamp of the most recent close-of-our-terminal for a session. When
+   * the close is more recent than the file mtime, we cap the status at
+   * `recent` so a freshly-closed session can't keep showing as `active`
+   * just because its JSONL was written seconds before close. Allows the
+   * panel to react instantly to terminal close.
+   */
+  private terminalClosedAt = new Map<string, number>();
 
   /** The session directories currently being observed. */
   get sessionDirs(): string[] {
@@ -441,22 +446,38 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
   }
 
   /**
-   * Mark a session as just-opened so its icon shows "active" immediately on
-   * click, without waiting for the file watcher. Idempotent.
+   * Tell the provider that a `claude --resume` terminal for this session has
+   * just been opened (`open=true`) or closed (`open=false`) in this window.
+   * Refreshes the tree so the status icon updates immediately.
    */
-  touchActive(sessionId: string): void {
-    this.optimisticOpens.set(sessionId, Date.now());
+  setTerminalOpen(sessionId: string, open: boolean): void {
+    if (open) {
+      this.openTerminalSessions.add(sessionId);
+      this.terminalClosedAt.delete(sessionId);
+    } else {
+      this.openTerminalSessions.delete(sessionId);
+      this.terminalClosedAt.set(sessionId, Date.now());
+    }
     this.refresh();
   }
 
-  private effectiveMtime(session: SessionMetadata): number {
-    const optimistic = this.optimisticOpens.get(session.sessionId);
-    if (optimistic === undefined) return session.mtime;
-    if (Date.now() - optimistic > SessionsProvider.OPTIMISTIC_TTL_MS) {
-      this.optimisticOpens.delete(session.sessionId);
-      return session.mtime;
+  /**
+   * Compute the effective status for a session, layering UI-known signals on
+   * top of the mtime heuristic:
+   *   1. Terminal open in this window         → `active` (definite)
+   *   2. Terminal was closed after last mtime → cap at `recent` (we ended it)
+   *   3. Otherwise                            → plain mtime heuristic
+   */
+  computeStatus(session: SessionMetadata): SessionStatus {
+    if (this.openTerminalSessions.has(session.sessionId)) return 'active';
+
+    const closedAt = this.terminalClosedAt.get(session.sessionId);
+    if (closedAt !== undefined && closedAt > session.mtime) {
+      const heuristic = getSessionStatus(session.mtime);
+      return heuristic === 'active' ? 'recent' : heuristic;
     }
-    return Math.max(session.mtime, optimistic);
+
+    return getSessionStatus(session.mtime);
   }
 
   refresh(): void {
@@ -470,7 +491,7 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
   async getChildren(element?: SessionTreeItem): Promise<SessionTreeItem[]> {
     if (element instanceof WorktreeGroupItem) {
       return element.sessions.map(
-        (s) => new SessionItem(s, { grouped: true, effectiveMtime: this.effectiveMtime(s) })
+        (s) => new SessionItem(s, { grouped: true, status: this.computeStatus(s) })
       );
     }
     if (element instanceof SessionItem) {
@@ -509,17 +530,21 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     if (worktreePaths.length <= 1) {
       const sessions = buckets.get(worktreePaths[0]) ?? [];
       return sessions.map(
-        (s) => new SessionItem(s, { grouped: false, effectiveMtime: this.effectiveMtime(s) })
+        (s) => new SessionItem(s, { grouped: false, status: this.computeStatus(s) })
       );
     }
 
     // Multi-worktree → grouped, current first, others by most-recent activity.
-    // The "most recent" mtime here uses effectiveMtime so an optimistically-
-    // touched session lifts its group's sort order too.
+    // Sessions whose terminal is currently open count as "now" for sort
+    // purposes so they bubble up to the top of their worktree group.
     const groups: Array<{ wt: string; sessions: SessionMetadata[]; mtime: number }> = [];
+    const now = Date.now();
     for (const wt of worktreePaths) {
       const sessions = buckets.get(wt) ?? [];
-      const mtime = sessions.reduce((max, s) => Math.max(max, this.effectiveMtime(s)), 0);
+      const mtime = sessions.reduce((max, s) => {
+        const effective = this.openTerminalSessions.has(s.sessionId) ? now : s.mtime;
+        return Math.max(max, effective);
+      }, 0);
       groups.push({ wt, sessions, mtime });
     }
 
