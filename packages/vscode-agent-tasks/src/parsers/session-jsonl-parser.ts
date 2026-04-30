@@ -134,9 +134,7 @@ interface RawEvent {
  * Extract a plain-text title from a `user` event's `message.content`.
  * Returns undefined if the content yields no non-empty text.
  */
-function extractContentText(
-  content: string | Array<{ type?: string; text?: string }> | undefined
-): string | undefined {
+function extractContentText(content: string | Array<{ type?: string; text?: string }> | undefined): string | undefined {
   if (!content) return undefined;
 
   if (typeof content === 'string') {
@@ -157,10 +155,13 @@ function extractContentText(
 
 /**
  * Maximum visible characters for a session title in the tree view label.
- * Tuned for a typical narrow VS Code sidebar (~30–40 chars visible per row),
- * leaving room for the description (`relative time` / `branch · time`).
+ *
+ * Tuned tight (35) so the muted-grey description (relative time / branch)
+ * has room to render alongside the label even on narrow side panels.
+ * Going wider — 50, 80 — pushed the description off-screen and made the
+ * timestamp invisible.
  */
-export const MAX_TITLE_LEN = 50;
+export const MAX_TITLE_LEN = 35;
 
 /**
  * Collapse all whitespace runs (newlines, tabs, repeated spaces) into single

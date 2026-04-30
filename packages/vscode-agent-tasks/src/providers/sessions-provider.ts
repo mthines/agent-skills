@@ -125,11 +125,10 @@ export class WorktreeGroupItem extends vscode.TreeItem {
  * A leaf node representing one Claude Code session.
  *
  * Layout:
- *   - Label: `<time> · <message>` — time is INSIDE the label so it survives
- *     narrow panels. The message text is what gets truncated when there's no
- *     room, not the timestamp.
- *   - Description: branch when flat (single worktree); empty when grouped
- *     (branch is implicit from the parent group).
+ *   - Label: the message text only (truncated short — see MAX_TITLE_LEN).
+ *   - Description: relative time when grouped (branch is implicit); `branch ·
+ *     time` when flat. VS Code renders the description in muted/grey so the
+ *     timestamp visually subordinates to the message.
  *
  * Status is computed by the provider so it can layer terminal-open / closed
  * signals on top of the raw mtime heuristic.
@@ -139,12 +138,12 @@ export class SessionItem extends vscode.TreeItem {
     public readonly session: SessionMetadata,
     options: { grouped: boolean; status: SessionStatus }
   ) {
+    super(session.title, vscode.TreeItemCollapsibleState.None);
+
     const timeStr = formatTime(session.mtime);
     const branch = session.gitBranch ?? '?';
 
-    super(`${timeStr} · ${session.title}`, vscode.TreeItemCollapsibleState.None);
-
-    this.description = options.grouped ? '' : branch;
+    this.description = options.grouped ? timeStr : `${branch} · ${timeStr}`;
     this.iconPath = SessionItem.iconForStatus(options.status);
     this.tooltip = SessionItem.buildTooltip(session, timeStr, options.status, branch);
     this.contextValue = 'claudeSession';

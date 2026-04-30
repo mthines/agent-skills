@@ -212,8 +212,8 @@ describe('parseSessionFile', () => {
       buildJsonl([userEvent({ message: { content: longMessage } })])
     );
     const result = parseSessionFile(filePath);
-    expect(result?.title).toBe('A'.repeat(50) + '\u2026');
-    expect(result?.title?.length).toBe(51);
+    expect(result?.title).toBe('A'.repeat(35) + '\u2026');
+    expect(result?.title?.length).toBe(36);
   });
 
   it('collapses internal whitespace and newlines into single spaces', () => {
