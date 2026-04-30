@@ -44,16 +44,16 @@
     "views": {
       "agentTasks": [
         {
-          "id": "agentTasksExplorer",
-          "name": "Agent Tasks",
-          "icon": "$(tasklist)",
-          "contextualTitle": "Agent Tasks"
-        },
-        {
           "id": "agentSessionsExplorer",
           "name": "Sessions",
           "icon": "$(history)",
           "contextualTitle": "Claude Sessions"
+        },
+        {
+          "id": "agentTasksExplorer",
+          "name": "Agent Tasks",
+          "icon": "$(tasklist)",
+          "contextualTitle": "Agent Tasks"
         }
       ]
     },
