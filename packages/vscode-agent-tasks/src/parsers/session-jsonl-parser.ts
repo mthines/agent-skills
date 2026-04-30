@@ -42,21 +42,68 @@ export interface SessionMetadata {
   messageCount: number;
   /** File mtime in milliseconds (from `fs.statSync`). */
   mtime: number;
+  /**
+   * `type` of the last `user`/`assistant` event seen. Lets the provider
+   * distinguish "claude is responding" (`assistant` was last) from "waiting
+   * for the user's next prompt" (`user` was last) when a session is running.
+   * Undefined if no qualifying event was found.
+   */
+  lastEventType: 'user' | 'assistant' | undefined;
+  /**
+   * True iff the session reached an end-of-turn state with no later user
+   * input — i.e. either:
+   *   - the last `assistant` event has `stop_reason: end_turn`, OR
+   *   - the last `system subtype: turn_duration` event came after the last
+   *     `user` event.
+   *
+   * Combined with mtime in the provider this distinguishes:
+   *   - `running` (mid-turn, fresh mtime → claude is responding)
+   *   - `needs-input` (turn ended, user hasn't replied yet)
+   *   - `stalled` (mid-turn, stale mtime → claude died)
+   *   - `idle` (old, nothing happening)
+   *
+   * This is dramatically more stable than mtime alone — real signal from
+   * the JSONL events rather than a heuristic on file activity.
+   */
+  turnEnded: boolean;
+  /**
+   * Cleaned-up extract from the LATEST `system subtype: away_summary` event
+   * (Claude composes this at every turn end). Already stripped of the
+   * "Goal: " prefix and the trailing "(disable recaps in /config)"
+   * parenthetical, and whitespace-collapsed. Undefined if the session
+   * hasn't reached a turn end yet.
+   *
+   * The provider prefers this over the first user message as the tree-item
+   * label because it's an actual claude-generated description of what the
+   * session is about — far more useful for scanning than the user's opening
+   * prompt (which is often template boilerplate or a slash command).
+   */
+  claudeSummary: string | undefined;
+  /** Most recent `last-prompt.lastPrompt` (whatever the user typed last). */
+  lastPrompt: string | undefined;
+  /** First text part from the most recent `assistant` event, if any. */
+  lastAssistantText: string | undefined;
 }
 
 /**
- * Heuristic status derived from file mtime.
+ * Run-state of a session combining JSONL turn analysis with file mtime.
  *
- * HEURISTIC: Claude Code does not write terminal markers or heartbeat records.
- * The only available signal is the file mtime. Classifications:
- *   - active  — mtime within the last 2 minutes (Claude likely still writing)
- *   - recent  — mtime within the last 1 hour
- *   - idle    — older than 1 hour
+ * Derived in the provider (`deriveRunState`) from:
+ *   - `SessionMetadata.turnEnded` (real signal: last `assistant.stop_reason`
+ *     was `end_turn` or last system `turn_duration` followed the last user)
+ *   - `SessionMetadata.mtime` (file activity)
+ *   - terminal-open state in this VS Code window
  *
- * This WILL misclassify paused sessions and very fast sessions. Accepted
- * limitation for v1.
+ * States:
+ *   - `running`     — claude is actively responding (mid-turn + fresh mtime)
+ *   - `needs-input` — claude finished, waiting for the user's next prompt
+ *   - `stalled`     — mid-turn but no recent writes (claude likely died)
+ *   - `idle`        — old, nothing happening
+ *
+ * Replaces the old mtime-only heuristic ('active' | 'recent' | 'idle') with
+ * stable JSONL-derived signals.
  */
-export type SessionStatus = 'active' | 'recent' | 'idle';
+export type SessionStatus = 'running' | 'needs-input' | 'stalled' | 'idle';
 
 // ---------------------------------------------------------------------------
 // Utility: path encoding
@@ -98,19 +145,44 @@ export function getSessionsDir(workspacePath: string): string {
 // Utility: status classification
 // ---------------------------------------------------------------------------
 
-const ACTIVE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
-const RECENT_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+/** mtime within this window means claude is plausibly still writing */
+export const RUNNING_THRESHOLD_MS = 30 * 1000; // 30 seconds
+/** mtime within this window with mid-turn signal means claude died */
+export const STALLED_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+/** mtime within this window keeps a needs-input state visible */
+export const NEEDS_INPUT_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 /**
- * Classify a session by its file mtime.
+ * Pure helper. Combines the parser's `turnEnded` signal (real JSONL semantics)
+ * with file mtime to derive a stable run-state. The provider layers terminal-
+ * open / closed-after-mtime overrides on top.
+ */
+export function deriveRunState(
+  turnEnded: boolean,
+  mtimeMs: number,
+  now = Date.now()
+): SessionStatus {
+  const age = now - mtimeMs;
+
+  if (turnEnded) {
+    if (age < NEEDS_INPUT_TTL_MS) return 'needs-input';
+    return 'idle';
+  }
+
+  // Mid-turn (JSONL says claude was working)
+  if (age < RUNNING_THRESHOLD_MS) return 'running';
+  if (age < STALLED_THRESHOLD_MS) return 'stalled';
+  return 'idle';
+}
+
+/**
+ * Backwards-compat shim used by older test code that classified by mtime
+ * alone. Treats the absence of a `turnEnded` signal as mid-turn.
  *
- * HEURISTIC — see `SessionStatus` type for caveats.
+ * @deprecated prefer `deriveRunState(turnEnded, mtime)`.
  */
 export function getSessionStatus(mtimeMs: number): SessionStatus {
-  const age = Date.now() - mtimeMs;
-  if (age < ACTIVE_THRESHOLD_MS) return 'active';
-  if (age < RECENT_THRESHOLD_MS) return 'recent';
-  return 'idle';
+  return deriveRunState(false, mtimeMs);
 }
 
 // ---------------------------------------------------------------------------
@@ -125,32 +197,92 @@ interface RawEvent {
   cwd?: string;
   timestamp?: string;
   isSidechain?: boolean;
+  /** `system` events carry subtype (`turn_duration`, `away_summary`, …). */
+  subtype?: string;
+  /** `system subtype: away_summary` events carry the recap text here. */
+  content?: string;
+  /** `last-prompt` events carry the most recent prompt here. */
+  lastPrompt?: string;
   message?: {
     content?: string | Array<{ type?: string; text?: string }>;
+    /** `assistant` events: `end_turn`, `tool_use`, `max_tokens`, … */
+    stop_reason?: string | null;
   };
+}
+
+/**
+ * Strip the boilerplate prefix/suffix from an `away_summary.content` string.
+ *
+ *   "Goal: X. Next: Y. (disable recaps in /config)"
+ *      → "X. Next: Y."
+ *
+ *   "X completed. Next: Y. (disable recaps in /config)"
+ *      → "X completed. Next: Y."
+ */
+function cleanAwaySummary(content: string): string {
+  let s = content.trim();
+  // Trim trailing recap-config nudge in any common form
+  s = s.replace(/\s*\((?:disable )?recaps[^)]*\)\s*$/i, '').trim();
+  // Strip leading "Goal:" / "Goal -" / "Goal —"
+  s = s.replace(/^Goal\s*[:\-—]\s*/i, '').trim();
+  return s;
+}
+
+/**
+ * Strip Claude Code's internal slash-command and template markup from a raw
+ * user-message string and return a clean human-facing title.
+ *
+ * Slash commands arrive in the JSONL as XML-ish tag soup, e.g.:
+ *   <command-message>ranger</command-message>
+ *   <command-name>/ranger</command-name>
+ *   <command-args>context info</command-args>
+ *   <local-command-caveat>...</local-command-caveat>
+ *
+ * The user actually typed `/ranger context info`. Show that. For non-command
+ * messages with stray tags (e.g. `<ide_opened_file>...`, `<attachment>...`),
+ * just strip the tags and keep the text.
+ */
+function cleanCommandMarkup(text: string): string {
+  // Slash-command pattern — synthesise `/NAME [args]` from the tags.
+  const cmdName = /<command-name>\s*([^<]+?)\s*<\/command-name>/.exec(text)?.[1];
+  const cmdMessage = /<command-message>\s*([^<]+?)\s*<\/command-message>/.exec(text)?.[1];
+  const cmdArgs = /<command-args>([\s\S]*?)<\/command-args>/.exec(text)?.[1]?.trim();
+
+  if (cmdName || cmdMessage) {
+    const raw = cmdName ?? cmdMessage ?? '';
+    const name = raw.startsWith('/') ? raw : `/${raw}`;
+    return cmdArgs ? `${name} ${cmdArgs}` : name;
+  }
+
+  // Generic markup strip for non-slash-command tag soup
+  return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 /**
  * Extract a plain-text title from a `user` event's `message.content`.
  * Returns undefined if the content yields no non-empty text.
+ *
+ * Strips Claude Code internal markup (slash-command wrappers, IDE-context
+ * tags, attachments) — what the user actually typed wins.
  */
 function extractContentText(content: string | Array<{ type?: string; text?: string }> | undefined): string | undefined {
   if (!content) return undefined;
 
+  let raw: string | undefined;
   if (typeof content === 'string') {
-    return content.trim() || undefined;
-  }
-
-  // Array of content parts — find the first `text` part with non-empty text
-  if (Array.isArray(content)) {
+    raw = content;
+  } else if (Array.isArray(content)) {
     for (const part of content) {
       if (part?.type === 'text' && typeof part.text === 'string' && part.text.trim()) {
-        return part.text.trim();
+        raw = part.text;
+        break;
       }
     }
   }
 
-  return undefined;
+  if (!raw) return undefined;
+  const cleaned = cleanCommandMarkup(raw);
+  return cleaned || undefined;
 }
 
 /**
@@ -244,8 +376,24 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
   let lastTimestamp: string | undefined;
   let messageCount = 0;
   let titleFound = false;
+  let lastEventType: 'user' | 'assistant' | undefined;
+
+  // Turn-state markers (line indices). We compute turnEnded at the end by
+  // comparing the index of the last end-of-turn marker to the last user
+  // event — turn ended iff the end-of-turn marker came AFTER the last user.
+  let lastUserIdx = -1;
+  let lastEndTurnIdx = -1;
+  let lineIdx = 0;
+
+  // Claude-generated context fields. We track the LATEST value of each
+  // because they reflect the current state of the session — older summaries
+  // are stale.
+  let claudeSummary: string | undefined;
+  let lastPrompt: string | undefined;
+  let lastAssistantText: string | undefined;
 
   for (const line of lines) {
+    lineIdx++;
     let event: RawEvent;
     try {
       event = JSON.parse(line) as RawEvent;
@@ -256,6 +404,27 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
 
     const type = event.type;
 
+    // Track end-of-turn markers from non-user/assistant events too. The
+    // canonical end-of-turn pattern in real Claude Code JSONL is:
+    //   assistant (stop_reason=end_turn) → system (subtype=turn_duration)
+    // We accept either marker as "turn ended at this line".
+    if (type === 'system' && event.subtype === 'turn_duration') {
+      lastEndTurnIdx = lineIdx;
+      continue;
+    }
+
+    // Claude-generated session summary, written at every turn end.
+    if (type === 'system' && event.subtype === 'away_summary' && event.content) {
+      claudeSummary = cleanAwaySummary(event.content);
+      continue;
+    }
+
+    // User's most recent prompt (flat event with `lastPrompt` field).
+    if (type === 'last-prompt' && typeof event.lastPrompt === 'string') {
+      lastPrompt = event.lastPrompt.trim() || undefined;
+      continue;
+    }
+
     // Only process user and assistant events for the main data fields
     if (type !== 'user' && type !== 'assistant') {
       // Unknown / other event types → silently skip
@@ -263,6 +432,17 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
     }
 
     messageCount++;
+    lastEventType = type as 'user' | 'assistant';
+
+    if (type === 'user') lastUserIdx = lineIdx;
+    if (type === 'assistant') {
+      if (event.message?.stop_reason === 'end_turn') {
+        lastEndTurnIdx = lineIdx;
+      }
+      // Track latest assistant text content for tooltip context.
+      const text = extractContentText(event.message?.content);
+      if (text) lastAssistantText = text;
+    }
 
     if (type === 'user') {
       // Set sessionId from first user event that has one
@@ -302,16 +482,38 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
   // We require at least a sessionId to return a result
   if (!sessionId) return null;
 
+  // turnEnded iff the most recent end-of-turn marker followed the most recent
+  // user event (or there are no user events but there is an end-of-turn).
+  const turnEnded = lastEndTurnIdx > lastUserIdx;
+
+  // Title preference (most-meaningful first):
+  //   1. Claude's `away_summary` goal extract (real session description)
+  //   2. The first user message we extracted (cleaned of slash-command markup)
+  //   3. "Untitled session" placeholder
+  let chosenTitle: string;
+  if (claudeSummary) {
+    chosenTitle = truncate(collapseWhitespace(claudeSummary));
+  } else if (title) {
+    chosenTitle = title;
+  } else {
+    chosenTitle = 'Untitled session';
+  }
+
   const data: SessionMetadata = {
     sessionId,
     filePath,
-    title: title ?? 'Untitled session',
+    title: chosenTitle,
     gitBranch,
     cwd,
     firstTimestamp,
     lastTimestamp,
     messageCount,
     mtime,
+    lastEventType,
+    turnEnded,
+    claudeSummary,
+    lastPrompt,
+    lastAssistantText,
   };
   parseCache.set(filePath, { mtime, data });
   return data;

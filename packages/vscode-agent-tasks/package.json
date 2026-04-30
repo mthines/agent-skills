@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.20.0",
+  "version": "0.26.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -115,6 +115,12 @@
         "title": "Toggle Sessions Scope (current / all worktrees)",
         "icon": "$(filter)",
         "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.sessions.find",
+        "title": "Find Session…",
+        "icon": "$(search)",
+        "category": "Agent Tasks"
       }
     ],
     "menus": {
@@ -152,14 +158,19 @@
           "group": "navigation"
         },
         {
-          "command": "agentTasks.sessions.toggleScope",
+          "command": "agentTasks.sessions.find",
           "when": "view == agentSessionsExplorer",
           "group": "navigation@1"
         },
         {
-          "command": "agentTasks.sessions.refresh",
+          "command": "agentTasks.sessions.toggleScope",
           "when": "view == agentSessionsExplorer",
           "group": "navigation@2"
+        },
+        {
+          "command": "agentTasks.sessions.refresh",
+          "when": "view == agentSessionsExplorer",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
@@ -191,7 +202,10 @@
           "items": {
             "type": "string"
           },
-          "default": [".agent", ".gw"],
+          "default": [
+            ".agent",
+            ".gw"
+          ],
           "scope": "resource",
           "description": "Directories (relative to workspace and ancestors) to scan for agent task artifacts (plan.md, task.md, walkthrough.md). Order = priority. Empty array falls back to the defaults ['.agent', '.gw']."
         },

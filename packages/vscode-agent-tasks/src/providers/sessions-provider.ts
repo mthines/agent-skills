@@ -26,9 +26,9 @@ import * as child_process from 'child_process';
 import {
   SessionMetadata,
   SessionStatus,
+  deriveRunState,
   encodeWorkspacePath,
   getClaudeProjectsDir,
-  getSessionStatus,
   parseSessionsInDir,
 } from '../parsers/session-jsonl-parser';
 
@@ -65,6 +65,34 @@ function formatTime(mtimeMs: number, now = Date.now()): string {
 
   const d = new Date(mtimeMs);
   return `${MONTH_NAMES[d.getMonth()]} ${d.getDate()}`;
+}
+
+// ---------------------------------------------------------------------------
+// Tree item: RunningGroupItem
+// ---------------------------------------------------------------------------
+
+/**
+ * A pinned section at the top of the Sessions tree showing every session
+ * the extension considers "running":
+ *   - the session's `claude --resume` terminal is open in this VS Code
+ *     window (definite signal), OR
+ *   - the JSONL file's mtime is within the last 2 minutes (heuristic for
+ *     sessions running in another VS Code window or a standalone terminal).
+ *
+ * The section is hidden entirely when no sessions match — the goal is a
+ * zero-noise overview when nothing's running, and an instant "where are my
+ * agents?" answer when something is.
+ */
+export class RunningGroupItem extends vscode.TreeItem {
+  constructor(public readonly sessions: SessionMetadata[]) {
+    super(`Running (${sessions.length})`, vscode.TreeItemCollapsibleState.Expanded);
+    this.iconPath = new vscode.ThemeIcon('broadcast', new vscode.ThemeColor('charts.red'));
+    this.tooltip = new vscode.MarkdownString(
+      `${sessions.length} active session${sessions.length === 1 ? '' : 's'} — ` +
+        `terminal open in this window, or recent JSONL activity from another source.`
+    );
+    this.contextValue = 'claudeRunningGroup';
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -161,20 +189,32 @@ export class SessionItem extends vscode.TreeItem {
   /**
    * Status icons differ in BOTH shape AND luminance so the distinction
    * survives color-blindness and dark/light theme changes (WCAG 1.4.1).
-   *   - active → blue pulse  (likely still writing)
-   *   - recent → blue clock  (ended within the last hour)
-   *   - idle   → gray history (older)
+   *   - running     → blue pulse        (claude is mid-turn, writing)
+   *   - needs-input → green comment-discussion (claude waiting for you)
+   *   - stalled     → yellow warning    (mid-turn but no recent writes)
+   *   - idle        → gray history      (old, nothing happening)
    */
   private static iconForStatus(status: SessionStatus): vscode.ThemeIcon {
     switch (status) {
-      case 'active':
+      case 'running':
         return new vscode.ThemeIcon('pulse', new vscode.ThemeColor('charts.blue'));
-      case 'recent':
-        return new vscode.ThemeIcon('clock', new vscode.ThemeColor('charts.blue'));
+      case 'needs-input':
+        return new vscode.ThemeIcon(
+          'comment-discussion',
+          new vscode.ThemeColor('charts.green')
+        );
+      case 'stalled':
+        return new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow'));
       case 'idle':
       default:
         return new vscode.ThemeIcon('history');
     }
+  }
+
+  /** Truncate a possibly-multiline string for tooltip display. */
+  private static snippet(s: string, maxLen = 280): string {
+    const flat = s.replace(/\s+/g, ' ').trim();
+    return flat.length > maxLen ? flat.slice(0, maxLen) + '\u2026' : flat;
   }
 
   private static buildTooltip(
@@ -184,12 +224,20 @@ export class SessionItem extends vscode.TreeItem {
     branch: string
   ): vscode.MarkdownString {
     const md = new vscode.MarkdownString();
-    md.appendMarkdown(
-      `_Status icon is heuristic — derived from file mtime, not a real signal._\n\n`
-    );
     md.appendMarkdown(`**Last activity:** ${timeStr} · _${status}_\n\n`);
-    md.appendMarkdown(`**Branch:** \`${branch}\`\n\n`);
-    md.appendMarkdown(`**Messages:** ${session.messageCount}\n\n`);
+    md.appendMarkdown(`**Branch:** \`${branch}\` · **Messages:** ${session.messageCount}\n\n`);
+
+    if (session.claudeSummary) {
+      md.appendMarkdown(`**Goal**\n\n${SessionItem.snippet(session.claudeSummary, 400)}\n\n`);
+    }
+    if (session.lastPrompt) {
+      md.appendMarkdown(`**You said**\n\n> ${SessionItem.snippet(session.lastPrompt)}\n\n`);
+    }
+    if (session.lastAssistantText) {
+      md.appendMarkdown(`**Claude replied**\n\n> ${SessionItem.snippet(session.lastAssistantText)}\n\n`);
+    }
+
+    md.appendMarkdown(`---\n\n`);
     md.appendMarkdown(`**Session ID:** \`${session.sessionId}\`\n\n`);
     if (session.cwd) {
       md.appendMarkdown(`**CWD:** \`${session.cwd}\`\n\n`);
@@ -203,7 +251,7 @@ export class SessionItem extends vscode.TreeItem {
 // Union type for provider elements
 // ---------------------------------------------------------------------------
 
-type SessionTreeItem = WorktreeGroupItem | SessionItem;
+type SessionTreeItem = RunningGroupItem | WorktreeGroupItem | SessionItem;
 
 // ---------------------------------------------------------------------------
 // Worktree discovery helpers
@@ -469,16 +517,46 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
    *   2. Terminal was closed after last mtime → cap at `recent` (we ended it)
    *   3. Otherwise                            → plain mtime heuristic
    */
+  /**
+   * Compute the effective status for a session, layering UI-known signals
+   * on top of the JSONL-derived `deriveRunState`:
+   *   1. Terminal open in this window     → `running` (definite)
+   *   2. We closed the terminal post-mtime → `idle`   (we ended it)
+   *   3. Otherwise                         → `deriveRunState(turnEnded, mtime)`
+   */
   computeStatus(session: SessionMetadata): SessionStatus {
-    if (this.openTerminalSessions.has(session.sessionId)) return 'active';
+    if (this.openTerminalSessions.has(session.sessionId)) return 'running';
 
+    // Tolerance covers a JSONL flush during terminal shutdown — claude can
+    // write one last byte AFTER we've torn down the terminal, which would
+    // otherwise leave the session looking running for up to 5 minutes.
     const closedAt = this.terminalClosedAt.get(session.sessionId);
-    if (closedAt !== undefined && closedAt > session.mtime) {
-      const heuristic = getSessionStatus(session.mtime);
-      return heuristic === 'active' ? 'recent' : heuristic;
+    const CLOSE_TOLERANCE_MS = 2_000;
+    if (closedAt !== undefined && closedAt + CLOSE_TOLERANCE_MS > session.mtime) {
+      return 'idle';
     }
 
-    return getSessionStatus(session.mtime);
+    return deriveRunState(session.turnEnded, session.mtime);
+  }
+
+  /**
+   * Whether a session counts as "alive" for the pinned overview section.
+   * Includes:
+   *   - `running` (claude is mid-turn, still writing)
+   *   - `needs-input` only when very fresh (<5 min) — claude finished a
+   *     response and the user is plausibly about to reply. Older sessions
+   *     in needs-input are noise (user walked away days ago).
+   *   - terminal open in this window forces inclusion regardless.
+   */
+  isRunning(session: SessionMetadata): boolean {
+    if (this.openTerminalSessions.has(session.sessionId)) return true;
+
+    const status = this.computeStatus(session);
+    if (status === 'running') return true;
+    if (status === 'needs-input' && Date.now() - session.mtime < 5 * 60 * 1000) {
+      return true;
+    }
+    return false;
   }
 
   refresh(): void {
@@ -489,7 +567,34 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     return element;
   }
 
+  /**
+   * Return every session visible from the current workspace, regardless of
+   * the `agentTasks.sessions.scope` setting. Used by the find command — when
+   * the user is searching, they want to reach any session, not just the ones
+   * currently rendered in the tree.
+   *
+   * Sessions are flattened across all worktrees and sorted newest-first.
+   */
+  getAllSessions(): SessionMetadata[] {
+    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspacePath) return [];
+
+    const worktreePaths = discoverWorktreePaths(workspacePath);
+    const candidateDirs = findCandidateSessionDirs(worktreePaths);
+    const buckets = bucketSessionsByWorktree(worktreePaths, candidateDirs);
+
+    const all: SessionMetadata[] = [];
+    for (const sessions of buckets.values()) all.push(...sessions);
+    all.sort((a, b) => b.mtime - a.mtime);
+    return all;
+  }
+
   async getChildren(element?: SessionTreeItem): Promise<SessionTreeItem[]> {
+    if (element instanceof RunningGroupItem) {
+      return element.sessions.map(
+        (s) => new SessionItem(s, { status: this.computeStatus(s) })
+      );
+    }
     if (element instanceof WorktreeGroupItem) {
       return element.sessions.map(
         (s) => new SessionItem(s, { status: this.computeStatus(s) })
@@ -527,29 +632,44 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
 
     const buckets = bucketSessionsByWorktree(worktreePaths, candidateDirs);
 
-    // Single worktree (or scope === 'current') → flat list
+    // Collect every session across worktrees once so we can build the pinned
+    // "Running" section. Running sessions are MOVED to the section, not
+    // duplicated — they're filtered out of their worktree group below to
+    // avoid showing the same row twice.
+    const allSessions: SessionMetadata[] = [];
+    for (const sessions of buckets.values()) allSessions.push(...sessions);
+    const running = allSessions
+      .filter((s) => this.isRunning(s))
+      .sort((a, b) => b.mtime - a.mtime);
+    const runningIds = new Set(running.map((s) => s.sessionId));
+
+    const items: SessionTreeItem[] = [];
+    if (running.length > 0) {
+      items.push(new RunningGroupItem(running));
+    }
+
+    // Single worktree (or scope === 'current') → flat list (running already
+    // surfaced in the section above, so exclude them here).
     if (worktreePaths.length <= 1) {
-      const sessions = buckets.get(worktreePaths[0]) ?? [];
-      return sessions.map(
-        (s) => new SessionItem(s, { status: this.computeStatus(s) })
+      const sessions = (buckets.get(worktreePaths[0]) ?? []).filter(
+        (s) => !runningIds.has(s.sessionId)
       );
+      items.push(
+        ...sessions.map((s) => new SessionItem(s, { status: this.computeStatus(s) }))
+      );
+      return items;
     }
 
     // Multi-worktree → grouped, current first, others by most-recent activity.
-    // Sessions whose terminal is currently open count as "now" for sort
-    // purposes so they bubble up to the top of their worktree group.
+    // Running sessions are excluded from their worktree group because they
+    // already appear in the pinned section.
     const groups: Array<{ wt: string; sessions: SessionMetadata[]; mtime: number }> = [];
-    const now = Date.now();
     for (const wt of worktreePaths) {
-      const sessions = buckets.get(wt) ?? [];
-      const mtime = sessions.reduce((max, s) => {
-        const effective = this.openTerminalSessions.has(s.sessionId) ? now : s.mtime;
-        return Math.max(max, effective);
-      }, 0);
+      const sessions = (buckets.get(wt) ?? []).filter((s) => !runningIds.has(s.sessionId));
+      const mtime = sessions.reduce((max, s) => Math.max(max, s.mtime), 0);
       groups.push({ wt, sessions, mtime });
     }
 
-    // Drop empty non-current groups so we don't show 10 collapsed empty siblings
     const visibleGroups = groups.filter((g) => g.wt === currentWorktree || g.sessions.length > 0);
 
     visibleGroups.sort((a, b) => {
@@ -558,8 +678,12 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
       return b.mtime - a.mtime;
     });
 
-    return visibleGroups.map(
-      (g) => new WorktreeGroupItem(g.wt, g.sessions, g.wt === currentWorktree)
+    items.push(
+      ...visibleGroups.map(
+        (g) => new WorktreeGroupItem(g.wt, g.sessions, g.wt === currentWorktree)
+      )
     );
+
+    return items;
   }
 }

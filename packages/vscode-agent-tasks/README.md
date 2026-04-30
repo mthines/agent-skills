@@ -35,18 +35,23 @@ The **Sessions** panel (below the Agent Tasks view in the same activity-bar cont
 Sessions are read from `~/.claude/projects/<encoded-cwd>/` — where `<encoded-cwd>` is your absolute workspace path with every non-alphanumeric character replaced by `-`. For example `/Users/you/myrepo.git/main` becomes `-Users-you-myrepo-git-main`.
 
 Each session entry shows:
-- **Label** — the first user message, whitespace-collapsed and truncated to ~50 characters
-- **Description** — relative time when grouped by worktree; `branch · time` when flat
-- **Icon** — reflects a heuristic status based on the file's last-modified time:
-  - Blue pulse — **active** (file written within the last 2 minutes)
-  - Blue clock — **recent** (file written within the last hour)
-  - Gray history — **idle** (older than 1 hour)
+- **Label** — the first user message, whitespace-collapsed and truncated
+- **Description** — relative time (`now / 5m / 3h / 2d / Apr 17`)
+- **Icon** — reflects a real run-state derived from JSONL turn analysis combined with file mtime:
+  - **🔵 Blue pulse — `running`**: claude is mid-turn (last `assistant.stop_reason ≠ end_turn` or a follow-up `user` event after a turn end), AND the file was written in the last 30 seconds.
+  - **🟢 Green chat-bubble — `needs-input`**: claude finished a turn (last `assistant.stop_reason = end_turn` OR a `system subtype = turn_duration` event followed the last user input). Waiting for your reply.
+  - **🟡 Yellow warning — `stalled`**: mid-turn JSONL state, but no writes for 30 s – 5 min. Claude likely died mid-response.
+  - **⚪️ Gray history — `idle`**: nothing relevant in the last hour.
 
-Relative time switches to absolute (`Apr 23`) for sessions older than 7 days, and the panel auto-refreshes every 60 seconds while visible so labels don't go stale.
+These states come from real JSONL semantics, not just file activity, so they're stable across paused sessions, slow-tool calls, and external editor saves.
 
-> **Note:** The status icon is a heuristic derived from file mtime, not a real signal from Claude Code. A paused session that last wrote 90 seconds ago will show as "active" even if Claude has stopped.
+The panel auto-refreshes every 15 seconds while visible (and immediately on JSONL writes via a 50 ms-debounced file watcher) so transitions between states feel realtime.
 
-Hover over a session for a tooltip with: heuristic disclosure, last activity, branch, message count, session ID, CWD, and file path.
+Hover over a session for a tooltip with last activity, branch, message count, session ID, CWD, and file path.
+
+### Running section
+
+When at least one Claude session is currently active — either with a `claude --resume` terminal open in this VS Code window, or with JSONL activity in the last 2 minutes (covering other windows / external terminals) — a pinned **Running (N)** section appears at the top of the panel. Click any item to focus its terminal (same window) or open a fresh resume terminal (cross-window). The section is hidden entirely when nothing is running, so the panel stays uncluttered. Sessions still appear in their worktree group below — Running is a shortcut, not a replacement.
 
 ### Worktree grouping
 
@@ -61,6 +66,10 @@ Use the **filter icon** in the Sessions panel header (or the command **Toggle Se
 - **Current worktree only** — flat list of just this worktree's sessions
 
 The choice is persisted in `agentTasks.sessions.scope`.
+
+### Searching
+
+Use the **search icon** in the Sessions panel header (or the command **Find Session…**) to open a QuickPick across **every** session for this workspace — regardless of the scope filter. Type to fuzzy-match against the message title, branch, or CWD; press Enter to open the picked session via the same `openWith` setting (resume by default).
 
 ### Click behavior
 
@@ -135,6 +144,7 @@ If you previously used `vscode-gw` (gw Worktrees) with Agent Tasks, the settings
 | `Agent Tasks: Focus Agent Tasks Sidebar` | Focus the sidebar panel |
 | `Agent Tasks: Refresh Sessions` | Reload the Sessions panel and rebuild the file watcher |
 | `Agent Tasks: Toggle Sessions Scope` | Switch between current-worktree and all-worktrees views |
+| `Agent Tasks: Find Session…` | Fuzzy-search every session for this workspace and open the picked one |
 
 ## Logging
 

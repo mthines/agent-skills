@@ -29,11 +29,12 @@ export class SessionWatcher implements vscode.Disposable {
   private vscodeWatchers: vscode.FileSystemWatcher[] = [];
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /**
-   * Trailing debounce window. 150 ms is short enough that an icon flip from
-   * `idle` → `active` feels instant after the first JSONL write, while still
-   * coalescing the burst of writes Claude does at the start of a turn.
+   * Trailing debounce window. 50 ms is short enough that the panel feels
+   * realtime — running → needs-input transitions appear within ~tens of
+   * milliseconds of claude's last JSONL write — while still coalescing the
+   * tight burst of writes claude does within a single tool call.
    */
-  private static readonly DEBOUNCE_MS = 150;
+  private static readonly DEBOUNCE_MS = 50;
 
   private _onSessionChanged = new vscode.EventEmitter<void>();
   /** Fires (debounced) when any watched JSONL file changes. */
