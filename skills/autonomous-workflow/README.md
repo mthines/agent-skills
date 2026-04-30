@@ -2,6 +2,8 @@
 
 > Execute complete feature development cycles autonomously using isolated worktrees, layered companion skills, and a CI gate.
 
+> **📦 VS Code extension available.** Install [**Agent Tasks**](https://marketplace.visualstudio.com/items?itemName=mthines.agent-tasks) from the Marketplace to visualize `plan.md`, `task.md`, and `walkthrough.md` artifacts directly in your VS Code sidebar — see in-progress phases, completed task checkboxes, decisions, and blockers at a glance. Defaults to scanning `.agent/` (with `.gw/` as fallback), configurable via `agentTasks.directories`. Source lives in [`packages/vscode-agent-tasks/`](../../packages/vscode-agent-tasks/).
+
 ## What This Skill Does
 
 This skill enables AI agents to autonomously execute complete feature
