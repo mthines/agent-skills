@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.27.0",
+  "version": "0.28.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -121,6 +121,12 @@
         "title": "Find Session…",
         "icon": "$(search)",
         "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.sessions.newSession",
+        "title": "New Claude Session",
+        "icon": "$(add)",
+        "category": "Agent Tasks"
       }
     ],
     "menus": {
@@ -144,6 +150,10 @@
         {
           "command": "agentTasks.sessions.openSession",
           "when": "false"
+        },
+        {
+          "command": "agentTasks.sessions.newSession",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -156,6 +166,11 @@
           "command": "agentTasks.sort",
           "when": "view == agentTasksExplorer",
           "group": "navigation"
+        },
+        {
+          "command": "agentTasks.sessions.newSession",
+          "when": "view == agentSessionsExplorer",
+          "group": "navigation@0"
         },
         {
           "command": "agentTasks.sessions.find",
