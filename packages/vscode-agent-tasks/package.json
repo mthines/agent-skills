@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.32.0",
+  "version": "0.34.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -107,7 +107,8 @@
       },
       {
         "command": "agentTasks.sessions.openSession",
-        "title": "Open Session",
+        "title": "Resume Session",
+        "icon": "$(play)",
         "category": "Agent Tasks"
       },
       {
@@ -198,6 +199,16 @@
           "command": "agentTasks.openWalkthrough",
           "when": "view == agentTasksExplorer && viewItem == agentBranchCompleted",
           "group": "inline@1"
+        },
+        {
+          "command": "agentTasks.sessions.openSession",
+          "when": "view == agentSessionsExplorer && viewItem =~ /^claudeSession/",
+          "group": "inline@1"
+        },
+        {
+          "command": "agentTasks.sessions.openSession",
+          "when": "view == agentSessionsExplorer && viewItem =~ /^claudeSession/",
+          "group": "navigation@1"
         }
       ]
     },
@@ -207,6 +218,11 @@
         "key": "ctrl+shift+a ctrl+shift+t",
         "mac": "cmd+shift+a cmd+shift+t",
         "when": "!editorFocus"
+      },
+      {
+        "command": "agentTasks.sessions.openSession",
+        "key": "enter",
+        "when": "focusedView == 'agentSessionsExplorer' && viewItem =~ /^claudeSession/"
       }
     ],
     "configuration": {
