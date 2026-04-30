@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.32.0",
+  "version": "0.33.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -187,12 +187,12 @@
       "view/item/context": [
         {
           "command": "agentTasks.openPlan",
-          "when": "view == agentTasksExplorer && viewItem == agentBranch",
+          "when": "view == agentTasksExplorer && (viewItem == agentBranch || viewItem == agentWorktreeFlat)",
           "group": "inline@1"
         },
         {
           "command": "agentTasks.openWalkthrough",
-          "when": "view == agentTasksExplorer && viewItem == agentBranchCompleted",
+          "when": "view == agentTasksExplorer && (viewItem == agentBranchCompleted || viewItem == agentWorktreeFlatCompleted)",
           "group": "inline@1"
         }
       ]
