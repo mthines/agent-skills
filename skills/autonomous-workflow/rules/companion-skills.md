@@ -35,9 +35,9 @@ When invoking, log one line in the conversation and the `plan.md` Progress Log:
 | `tdd`                | 3     | Pure logic / business rules / "test-driven" requested                   | —                     | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#tdd-trigger) |
 | `ux`                 | 3     | Files touched include `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, RN screens | —                     | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#ux-trigger)  |
 | `code-quality`       | 3     | Once at end of Phase 3 (not per-file — TDD owns inner loop)             | `code`                | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#code-quality-trigger) |
-| `confidence`         | 4     | After 3 iterations on same failing test/area                            | `bug-analysis`        | Adjust threshold in [`phase-4-testing.md`](./phase-4-testing.md#stuck-loop-detection)       |
-| `holistic-analysis`  | 4     | After Phase 4 confidence runs and user asks for retry                   | —                     | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#stuck-recovery)            |
-| `update-claude`      | 5     | Always (self-improving doc loop — keeps CLAUDE.md aligned)              | —                     | Remove invocation in [`phase-5-documentation.md`](./phase-5-documentation.md#claude-md-trigger) |
+| `confidence`         | 4     | At iteration cap on same failing area (3 in Lite Mode, 5 in Full Mode) — automatic | `bug-analysis`        | Adjust cap or threshold in [`phase-4-testing.md`](./phase-4-testing.md#stuck-loop-detection) |
+| `holistic-analysis`  | 4     | Auto: when `confidence(bug-analysis) < 90%` (one-shot per area). User-driven: when user picks `try different approach` after escalation | — | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#stuck-recovery)            |
+| `update-claude`      | 5     | Always (self-improving doc loop — keeps CLAUDE.md aligned)              | —                     | Remove invocation in [`phase-5-documentation.md`](./phase-5-documentation.md#claude-md-trigger). Skip per-task by user override or skip-condition match (see [`phase-5-documentation.md#when-to-skip-update-claude`](./phase-5-documentation.md#when-to-skip-update-claude)). |
 | `review-changes`     | 6     | Always before push                                                      | —                     | Remove invocation in [`phase-6-pr-creation.md`](./phase-6-pr-creation.md#pre-push-review)   |
 | `create-walkthrough` | 6     | Full Mode only                                                          | —                     | Switch task to Lite Mode                                                 |
 | `create-pr`          | 6     | Always (handles description + push + open + watch)                      | —                     | Remove invocation in [`phase-6-pr-creation.md`](./phase-6-pr-creation.md#pr-creation) (replace with manual `gh pr create`) |
@@ -50,14 +50,38 @@ When invoking, log one line in the conversation and the `plan.md` Progress Log:
 The single biggest cost-saver in the workflow — prevents the agent from
 burning tokens on hallucinated fixes when root-cause analysis is wrong.
 
+The cap is **mode-aware**: 3 iterations for Lite Mode, 5 for Full Mode. When the
+cap is hit, an **auto-replan protocol** fires — confidence gate first, then
+conditional holistic-analysis + plan.md regeneration, with a one-shot guard
+that prevents infinite recovery loops. User escalation is the final, mandatory
+step if recovery fails.
+
 ```
+iteration_cap = 3 if Lite Mode else 5
 iterations_on_same_area = 0
+auto_replan_used = False
+
+# Per-iteration lightweight self-check (NOT a full confidence call — too token-expensive)
+before each iteration N >= 2:
+    self-check: "Is this attempt meaningfully different from N-1?"
+    self-check: "Have I considered why the previous fix didn't work?"
+    if either answer is "no":
+        bias toward replanning — skip ahead to cap-hit branch below
 
 while not all_tests_pass:
     iterations_on_same_area += 1
 
-    if iterations_on_same_area == 3:
-        Skill("confidence", "bug-analysis")
+    if iterations_on_same_area == iteration_cap:
+        score = Skill("confidence", "bug-analysis")
+
+        if score < 90% and not auto_replan_used:
+            Skill("holistic-analysis")
+            Update affected sections of plan.md.
+            iterations_on_same_area = 0
+            auto_replan_used = True
+            continue   # resume Phase 4 ONCE more
+
+        # Either score >= 90%, or auto-replan already used — escalate.
         Present findings + summary of attempts to user.
         Ask: continue / try different approach / stop.
         Exit loop based on user response.
@@ -65,14 +89,17 @@ while not all_tests_pass:
     fix → run tests → if pass: break
 ```
 
-After confidence runs, if the user asks to retry with a fresh analysis, invoke
-`Skill("holistic-analysis")` to step back and re-trace the execution path
-end-to-end before attempting again.
+`holistic-analysis` runs **automatically** when confidence is below 90% at the
+cap. It also runs again **on user request** if the user picks
+`try different approach` from the mandatory escalation menu. The
+`auto_replan_used` flag is the one-shot guard — without it, repeated
+`bug-analysis → holistic → replan → fail` cycles could loop indefinitely.
 
-**Why 3 iterations?** Three attempts on the same failing area is enough to
-distinguish "I'm close, one more fix" from "my mental model is wrong." More
-than three almost always means the latter — and continuing burns tokens
-without converging.
+**Why mode-aware caps (3 vs 5)?** Lite Mode tasks are simpler and should
+converge fast — a tight cap is correct. Full Mode tasks are more complex and
+may benefit from one extra attempt before mandatory escalation. Either way,
+"more than the cap" almost always means the mental model is wrong, which is
+why the auto-replan fires before more iterations are spent.
 
 ---
 

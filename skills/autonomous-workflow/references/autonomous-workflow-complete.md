@@ -150,7 +150,23 @@ Documentation:
 - JSDoc: API documentation
 ```
 
-**✅ Plan validated - proceeding to worktree setup**
+### Confidence Gate (Mandatory)
+
+```
+Skill("confidence", "plan")
+→ 94% — passed gate (≥ 90% required)
+
+Strengths:
+- Requirements fully captured from Phase 0 dialogue
+- File-by-file change list aligned with discovered patterns
+- Testing strategy covers context logic + UI interactions
+- Risks (hydration flash) identified with mitigation
+
+Concerns:
+- Manual visual validation noted as out-of-scope for automation
+```
+
+**✅ Plan validated (94%, gate ≥ 90%) - proceeding to worktree setup**
 
 ---
 
@@ -184,12 +200,24 @@ $ pnpm build
 $ gw sync feat/dark-mode-toggle
 ✓ Synced: .env.local
 ✓ Synced: .env.test
+```
 
-# Create artifact files INSIDE the worktree (Full Mode)
-$ mkdir -p .agent/feat-dark-mode-toggle
-# Populate plan.md with content prepared in Phase 1
-# (written to disk here, not on main branch)
-✓ Artifact created: .agent/feat-dark-mode-toggle/plan.md
+### Generate plan.md artifact (Full Mode)
+
+```
+Skill("create-plan")
+→ Wrote .agent/feat-dark-mode-toggle/plan.md
+→ Captured: Phase 0 dialogue, requirements, file-change list,
+            testing strategy, risks, verification commands
+→ Initialized Progress Log
+```
+
+**Progress Log entries:**
+
+```markdown
+- [2026-04-29T10:12:04Z] Phase 2: worktree created (gw add feat/dark-mode-toggle)
+- [2026-04-29T10:12:31Z] Phase 2: deps installed, build verified
+- [2026-04-29T10:12:48Z] Phase 2: create-plan() — invoked (.agent/feat-dark-mode-toggle/plan.md written)
 ```
 
 **✅ Environment ready, artifacts populated - proceeding to implementation**
@@ -779,6 +807,22 @@ $ git add CHANGELOG.md
 $ git commit -m "docs(changelog): add dark mode feature entry"
 ```
 
+### Self-Improving Doc Loop
+
+```
+Skill("update-claude")
+→ Scanned changes for new conventions worth promoting
+→ Suggested: "Theme context pattern (provider + useTheme hook) — promote to CLAUDE.md?"
+→ Accepted: appended snippet under "## Patterns" in CLAUDE.md
+→ No drift detected in existing rules
+```
+
+**Progress Log entry:**
+
+```markdown
+- [2026-04-29T10:38:15Z] Phase 5: update-claude() — CLAUDE.md updated with ThemeContext pattern
+```
+
 **✅ Documentation complete - proceeding to PR creation**
 
 ---
@@ -810,100 +854,75 @@ $ pnpm lint
 ✓
 ```
 
-### Push to Remote
-
-```bash
-$ git push -u origin feat/dark-mode-toggle
-Enumerating objects: 43, done.
-Counting objects: 100% (43/43), done.
-To github.com:user/nextjs-app.git
- * [new branch]      feat/dark-mode-toggle -> feat/dark-mode-toggle
-✓ Pushed successfully
-```
-
-### Create Draft PR
-
-```bash
-$ gh pr create --draft \
-  --title "feat(ui): add dark mode toggle" \
-  --body "$(cat <<'EOF'
-## Summary
-
-Implements dark mode toggle with theme persistence and system preference support.
-
-## Changes
-
-- Added `ThemeContext` for global theme state management
-- Created `ThemeToggle` component with sun/moon icons
-- Integrated toggle into navigation bar
-- Configured Tailwind CSS for dark mode support
-- Persists user preference to localStorage
-- Respects system color scheme preference by default
-
-## Implementation Details
-
-### New Files
-- `src/contexts/ThemeContext.tsx`: Theme state management with React Context
-  - `ThemeProvider`: Wraps app with theme context
-  - `useTheme`: Hook to access/modify theme
-  - Handles localStorage persistence
-  - Detects system preference
-
-- `src/components/ThemeToggle.tsx`: Toggle button UI component
-  - Sun/moon icon based on current theme
-  - Accessible button with aria-label
-  - Smooth transitions with Tailwind
-
-### Modified Files
-- `src/app/layout.tsx`: Added ThemeProvider wrapper
-- `src/components/Navbar.tsx`: Integrated ThemeToggle component
-- `tailwind.config.js`: Enabled class-based dark mode
-- `README.md`: Usage documentation
-- `CHANGELOG.md`: Feature entry
-
-## Testing
-
-- [x] 6 new unit tests for ThemeContext (100% coverage)
-- [x] 3 new component tests for ThemeToggle (100% coverage)
-- [x] All existing tests pass (51/51)
-- [x] Manual testing completed:
-  - ✓ Toggle switches theme
-  - ✓ Theme persists across page reloads
-  - ✓ System preference detected on first load
-  - ✓ Dark mode applies to all components
-  - ✓ No flash of incorrect theme
-
-## Test Coverage
+### Review Changes (Self-Review)
 
 ```
-
-| File                           | % Stmts | % Branch | % Funcs | % Lines |
-| ------------------------------ | ------- | -------- | ------- | ------- |
-| src/contexts/ThemeContext.tsx  | 100.00  | 100.00   | 100.00  | 100.00  |
-| src/components/ThemeToggle.tsx | 100.00  | 100.00   | 100.00  | 100.00  |
-
+Skill("review-changes")
+→ Analyzed 8 commits across 5 new files / 3 modified files
+→ Coverage: 100% on new code, no regressions in existing tests
+→ Consistency: matches shadcn/ui patterns and existing context layout
+→ No blocking findings; 2 advisory notes captured for the walkthrough
 ```
 
-## Screenshots
+### Generate Walkthrough Artifact
 
-_Will add screenshots in review_
+```
+Skill("create-walkthrough")
+→ Wrote .agent/feat-dark-mode-toggle/walkthrough.md
+→ Captured: change narrative, testing summary, screenshots placeholder,
+            review-changes advisory notes
+```
 
-## Breaking Changes
+### Create PR
 
-None. This is a new feature with no changes to existing APIs.
+```
+Skill("create-pr")
+→ Pushed feat/dark-mode-toggle to origin
+→ Title: "feat(ui): add dark mode toggle"
+→ Body sourced from walkthrough.md (no AI attribution lines —
+  the user owns the PR)
+→ Draft PR opened: https://github.com/user/nextjs-app/pull/123
+```
 
-## Related Issues
+**Progress Log entries:**
 
-Closes #42
+```markdown
+- [2026-04-29T10:42:01Z] Phase 6: review-changes() — no blocking findings
+- [2026-04-29T10:42:18Z] Phase 6: create-walkthrough() — walkthrough.md written
+- [2026-04-29T10:42:44Z] Phase 6: create-pr() — draft PR #123 opened
+```
+
+> **Fallback (only if `create-pr` is unavailable):** push manually with
+> `git push -u origin feat/dark-mode-toggle` and open the PR with
+> `gh pr create --draft --title "..." --body "$(cat <<'EOF' ... EOF)"`.
+> Never include AI attribution lines (`Co-Authored-By`, "Generated with
+> ...", etc.) in the title or body — the user owns the PR.
 
 ---
 
-🤖 Generated with autonomous workflow skill
-EOF
-)"
+## Phase 7: CI Gate
 
-✓ Draft PR created: https://github.com/user/nextjs-app/pull/123
+### Watch CI and Auto-Fix
+
 ```
+Skill("ci-auto-fix")
+→ Polled GitHub Actions for PR #123
+→ All checks green: build (12s), test (38s), lint (4s), typecheck (9s)
+→ No fixes needed
+```
+
+If a check had failed, `ci-auto-fix` would have fanned out a sub-agent per
+failed job (capped at 2 handoffs per PR), each with its own retry budget.
+
+**Progress Log entry:**
+
+```markdown
+- [2026-04-29T10:46:09Z] Phase 7: ci-auto-fix() — all checks green, no fixes needed
+```
+
+**✅ CI green - workflow complete**
+
+---
 
 ### Completion Report
 
@@ -962,11 +981,12 @@ After PR is merged, run: `gw remove feat/dark-mode-toggle`
 **Validation checkpoints passed:**
 
 - ✅ Phase 0: Requirements validated
-- ✅ Phase 1: Plan validated
-- ✅ Phase 2: Environment validated
+- ✅ Phase 1: Plan validated by `confidence(plan)` (94%, gate ≥ 90%)
+- ✅ Phase 2: Environment validated, `create-plan` invoked
 - ✅ Phase 3: Implementation self-reviewed
 - ✅ Phase 4: Tests passing (1 iteration)
-- ✅ Phase 5: Documentation validated
-- ✅ Phase 6: Pre-flight checks passed
+- ✅ Phase 5: Documentation validated, `update-claude` invoked
+- ✅ Phase 6: `review-changes` + `create-walkthrough` + `create-pr` invoked
+- ✅ Phase 7: `ci-auto-fix` invoked — all checks green
 
 **Result:** Complete, production-ready feature delivered autonomously!

@@ -11,7 +11,7 @@ description: >
 license: MIT
 metadata:
   author: mthines
-  version: '3.0.0'
+  version: '3.2.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -37,10 +37,23 @@ companions skip silently if not installed.
 
 ### Step 1: Detect Workflow Mode (MANDATORY)
 
-| Mode     | Criteria                              | Artifacts |
-| -------- | ------------------------------------- | --------- |
-| **Full** | 4+ files OR complex/architectural     | Required  |
-| **Lite** | 1-3 files AND simple/straightforward  | None      |
+**Complexity is the primary signal. File count is the tie-breaker.** Walk these
+questions in order — the first `yes` selects Full Mode:
+
+| # | Question                                                                                  | If yes →     | If no →     |
+| - | ----------------------------------------------------------------------------------------- | ------------ | ----------- |
+| 1 | Is this task architectural / cross-cutting / does it require significant design decisions? | **Full Mode** | go to next  |
+| 2 | Does the task involve unfamiliar code or domains the agent hasn't worked in before?       | **Full Mode** | go to next  |
+| 3 | Is the change touching 4+ files OR 2+ packages?                                           | **Full Mode** | **Lite Mode** |
+
+| Mode     | Artifacts |
+| -------- | --------- |
+| **Full** | Required  |
+| **Lite** | None      |
+
+The first two questions ground the decision in complexity rather than raw file
+count (one large monolithic change can exceed four trivial edits in scope).
+Question 3 is the file-count tie-breaker — only fires when complexity is low.
 
 **When in doubt, choose Full.** Output mode selection in this exact format:
 

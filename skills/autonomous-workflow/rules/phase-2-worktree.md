@@ -275,8 +275,8 @@ The log is the durable trail a fresh Claude session uses to resume mid-flight.
 gw add feat/my-feature                  # Create worktree
 gw add feat/my-feature --from develop   # From a different source branch
 gw cd feat/my-feature                   # Navigate to worktree
-gw list                                 # List worktrees
-gw status                               # Check current status
+gw list                                 # List worktrees (state of all worktrees)
+git status                              # Check current working-tree status (inside worktree)
 gw sync feat/my-feature                 # Sync config files
 gw remove feat/my-feature               # Remove worktree (Phase 7)
 ```

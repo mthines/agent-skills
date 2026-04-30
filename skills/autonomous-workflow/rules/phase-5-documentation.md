@@ -153,6 +153,40 @@ git add CLAUDE.md .claude/rules/
 git commit -m "docs(claude): sync agent guidance with feature changes"
 ```
 
+### When to Skip update-claude
+
+**Default: always run.** This subsection is an opt-out escape hatch, not a
+default change. The self-improving doc loop runs unless one of the conditions
+below applies. Skipping is logged in `plan.md` (Full Mode) or in-conversation
+(Lite Mode) — there is no silent skip.
+
+| # | Skip condition                                                                                              | Concrete example                                                                                  |
+| - | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| 1 | User explicitly says "skip docs" or "no doc update" during Phase 0 or Phase 5                               | User in Phase 0: "Skip the docs step, I'll handle CLAUDE.md myself."                              |
+| 2 | Task touched 0 files outside of `package.json` / lockfile changes (pure dependency bump)                    | Bump `zod` from 3.22 to 3.23. Only `package.json` and `package-lock.json` changed.                |
+| 3 | Task touched only test files (no production code or docs change)                                            | Added missing unit tests for an existing function. Only `*.test.ts` files changed.                |
+| 4 | Task is config-only (e.g., `tsconfig.json`, `.gitignore`, CI config) AND no behavior changes                 | Tightened `tsconfig.json` `strict` flag without modifying any source file behavior.               |
+
+If none of the conditions above apply, run `Skill("update-claude")` as normal.
+When in doubt, run it — false positives waste a few seconds; false negatives
+let `CLAUDE.md` drift.
+
+**Logging the skip.** When skipping, append to `plan.md` Progress Log
+(Full Mode) or note in-conversation (Lite Mode):
+
+```markdown
+- [TIMESTAMP] Phase 5: update-claude — skipped (reason: <reason>)
+```
+
+Examples:
+
+```markdown
+- [2026-04-29T15:42:00Z] Phase 5: update-claude — skipped (reason: user override during Phase 0)
+- [2026-04-29T15:42:00Z] Phase 5: update-claude — skipped (reason: pure dependency bump, package.json + lockfile only)
+- [2026-04-29T15:42:00Z] Phase 5: update-claude — skipped (reason: test-only change)
+- [2026-04-29T15:42:00Z] Phase 5: update-claude — skipped (reason: config-only change, no behavior delta)
+```
+
 ## Documentation Checklist
 
 - [ ] Documentation scope identified

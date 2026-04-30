@@ -222,6 +222,9 @@ When changing this number, update **all** of:
 - `SKILL.md` Core Principles
 - `README.md` Migration Note
 - `templates/agent.template.md`
+- `references/iterative-refinement.md` — the worked stuck-loop example
+  referenced from phase-4 must reflect the canonical limit (the "Different
+  rule for stuck-loop iteration" callout under "When to Stop Iterating").
 
 Otherwise the limits drift across surfaces and the agent gets contradictory
 instructions.
@@ -249,7 +252,7 @@ small changes too — they still drift docs).
 
 ## Parallelization
 
-Three places benefit from sub-agent fan-out:
+Two places benefit from sub-agent fan-out:
 
 1. **Phase 1 research** (`Explore` sub-agents per package/concern) — when
    the task is complex, parallel exploration finds context faster than
@@ -360,6 +363,35 @@ end-user-facing; this file is contributor-facing.
   is missing (auto-copy, pre/post-checkout hooks, smart cleanup,
   shell-integrated `gw cd`). The workflow is now usable in repos that
   haven't adopted `gw`.
+- **v3.2** — Quality refinements based on field-alignment review:
+  - **Multi-signal `confidence(plan)` gate.** The `confidence` skill's `plan`
+    mode now combines LLM dimensional scoring with deterministic rule checks
+    (file paths resolve, requirements tagged, timestamps are ISO 8601, etc.).
+    A failed rule caps the gate at 89% regardless of LLM score — catches the
+    "high-confidence-but-hallucinated" failure mode.
+  - **Acceptance Criteria in `plan.md`.** New mandatory section in the
+    `create-plan` template. Phase 4 testing now has explicit pass/fail
+    conditions to gate against (sprint-contract pattern from Anthropic's
+    harness-design guidance).
+  - **Auto-replan on stuck-loop.** Phase 4 stuck-loop detection now
+    auto-invokes `holistic-analysis` when `confidence(bug-analysis) < 90%`,
+    regenerates the affected `plan.md` section, and resumes once. One-shot
+    guard prevents infinite recursion.
+  - **Mode-aware iteration cap.** 3 iterations for Lite, 5 for Full. Lite
+    keeps the tight loop; Full gives well-scoped tasks one extra attempt
+    before mandatory escalation.
+  - **Per-iteration self-reflection (lightweight evaluator-optimizer).**
+    Before each iteration ≥2, the agent runs a brief two-question self-check
+    ("Is this attempt different from the last?" / "Did I understand why my
+    previous fix didn't work?"). If either fails, jump to stuck-loop
+    detection early — no wasted iterations.
+  - **Mode detection: complexity primary, file count tie-breaker.** Three
+    sequential questions in Phase 0 (architectural? unfamiliar? 4+ files?)
+    replace the conflated "4+ files OR complex" criterion. Complexity
+    decides first; file count is the fallback.
+  - **`update-claude` opt-out lever.** Per-task skip conditions documented
+    (pure dependency bumps, test-only changes, config-only changes, user
+    override). Default remains always-on; the skip is logged.
 
 The npm package `@gw-tools/autonomous-workflow-agent` still exists at the
 old location for SDK users who prefer a programmatic import. It will be

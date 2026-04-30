@@ -120,6 +120,18 @@ approved: true
 
 <!-- Type signatures, function signatures, config shapes. Omit section if N/A. -->
 
+## Acceptance Criteria
+
+<!-- Concrete, testable pass/fail conditions. This is what "done" means.
+     Phase 4 testing gates against these. Each criterion must be verifiable —
+     "user can do X", "command Y returns Z", "file W contains line that
+     matches /pattern/". Avoid vague criteria like "looks right" or "works
+     well". -->
+
+- [ ] {Concrete, testable criterion 1}
+- [ ] {Concrete, testable criterion 2}
+- [ ] {...}
+
 ## Implementation Order
 
 <!-- Ordered steps for Phase 3 execution. Each step should be atomic and verifiable.
@@ -186,6 +198,7 @@ After writing plan.md, verify ALL of the following. **Fix any failures immediate
 - [ ] **Decisions**: Every decision includes rejected alternatives and rationale
 - [ ] **Technical Approach**: Specific enough to implement without conversation context
 - [ ] **Patterns to Follow**: References actual files in the codebase
+- [ ] **Acceptance Criteria**: At least one concrete, testable pass/fail condition. Each is verifiable (not "looks right" / "works well").
 - [ ] **Implementation Order**: Numbered, atomic, verifiable steps
 - [ ] **File Changes**: Every file listed with action, path, change description, and reason
 - [ ] **Tests**: Specific test cases (not just "unit tests for X")

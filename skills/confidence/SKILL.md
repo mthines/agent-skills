@@ -2,19 +2,26 @@
 name: confidence
 description: >
   Rate confidence that the current work fully solves the stated requirement.
-  Supports plan validation, code review, and bug analysis modes.
-  Use before committing to autonomous execution, after implementation, or during investigation.
-  Triggers on confidence check, validate plan, rate confidence, or quality gate.
+  Supports plan validation, code review, and bug analysis modes. Plan mode
+  combines LLM judgment with deterministic rule checks (multi-signal gate).
+  Use before committing to autonomous execution, after implementation, or
+  during investigation. Triggers on confidence check, validate plan, rate
+  confidence, or quality gate.
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '2.0.0'
   workflow_type: advisory
 ---
 
 # Confidence Assessment
 
 Rate your confidence that the current work fully solves the stated requirement.
+
+> **Multi-signal evaluation.** A single LLM-confidence number is unreliable as
+> a stand-alone gate (token probability ≠ correctness). This skill combines
+> the LLM's dimensional scoring with **deterministic rule checks** the agent
+> must run alongside. The final score is gated on BOTH passing.
 
 ---
 
@@ -38,11 +45,41 @@ If arguments contain **"fix"** (e.g., `code fix`, `plan fix`), run in **Fix Mode
 
 ### For `plan` mode
 
+**Plan mode is multi-signal: LLM dimensional scoring + deterministic rule checks.** Both must pass for the gate to clear.
+
+#### Step 1 — LLM dimensional scoring
+
 | Dimension        | Weight | What to evaluate                                                                                                 |
 | ---------------- | ------ | ---------------------------------------------------------------------------------------------------------------- |
 | **Completeness** | 40%    | Are ALL Phase 0 requirements captured? All sections populated? Could a new session execute from this plan alone? |
 | **Feasibility**  | 30%    | Is the technical approach sound? Are patterns consistent with the codebase? Are risks identified?                |
 | **No ambiguity** | 30%    | Are implementation steps specific enough to execute without interpretation? Are edge cases addressed?            |
+
+#### Step 2 — Deterministic rule checks (run via Bash)
+
+Every check below MUST pass for plan mode. A single failed rule caps the gate at **89% regardless of LLM score** — the agent must surface the failed rule and either fix the plan or escalate to the user.
+
+| # | Rule check                                                | Verification                                                                                       |
+| - | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| 1 | `plan.md` exists at the expected path                     | `test -f .agent/$(git branch --show-current)/plan.md`                                              |
+| 2 | All required sections present                             | `grep -E '^## (Summary\|Background.*Context\|Requirements\|Decisions\|Technical Approach\|Acceptance Criteria\|Implementation Order\|File Changes\|Tests\|Risks\|Verification\|Progress Log)' plan.md \| wc -l` ≥ 12 |
+| 3 | Acceptance Criteria section is non-empty                  | `awk '/^## Acceptance Criteria/,/^## /' plan.md \| grep -c '^- \|^[0-9]'` ≥ 1                       |
+| 4 | Every file in `## File Changes` resolves OR is `create`   | For each modify/delete row, `git ls-files <path>` returns the path. Create rows skip this check.   |
+| 5 | Every requirement is tagged `[user-stated]` or `[inferred]`| `awk '/^## Requirements/,/^## /' plan.md \| grep -c '\[user-stated\]\|\[inferred\]'` matches the requirement count |
+| 6 | Every decision row has a Rationale column populated       | No empty cells in the Rationale column of the Decisions table                                      |
+| 7 | All timestamps are ISO 8601 with time component           | `grep -oE '\[20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\]' plan.md` matches every Progress Log entry |
+| 8 | Verification commands are non-template                    | "After editing" and "Before PR" lines do not contain `{` or `}` placeholder braces                 |
+
+Run each check, list pass/fail in the output table. **A failing rule is a blocker the gate must surface even if the LLM dimensional score is high.**
+
+#### Step 3 — Combined gate
+
+```
+overall_score = min(weighted_LLM_score, max_allowed_by_rule_checks)
+where max_allowed_by_rule_checks = 100% if all rules pass, else 89%
+```
+
+The intent: a plan that scores 95% on LLM judgment but fails rule check #4 (references a file path that doesn't exist) is capped at 89% — and the gate fails. This catches the failure mode where the model is confident but the plan is grounded in hallucinated paths.
 
 ### For `code` mode
 
@@ -69,16 +106,31 @@ If arguments contain **"fix"** (e.g., `code fix`, `plan fix`), run in **Fix Mode
 ```
 ## Confidence: X%
 
+### LLM dimensional scoring
+
 | Dimension | Score | Notes |
 |-----------|-------|-------|
 | <dim 1>   | X%    | ...   |
 | <dim 2>   | X%    | ...   |
 | <dim 3>   | X%    | ...   |
+
+### Deterministic rule checks (plan mode only — omit for code/bug-analysis)
+
+| # | Rule                | Status      | Evidence                  |
+|---|---------------------|-------------|---------------------------|
+| 1 | <rule description>  | ✓ pass / ✗ fail | <command output snippet> |
+| ... |                   |             |                           |
+
+### Combined gate
+
+- Weighted LLM score: X%
+- Rule checks: <N pass> / <total> (cap: 100% if all pass, else 89%)
+- **Final: X%**
 ```
 
-Calculate the overall score as the weighted average using the weights above.
+Calculate the weighted LLM score as a weighted average using the dimension weights above. For `plan` mode, the **Final** is `min(weighted_LLM_score, rule_check_cap)`. For `code` and `bug-analysis` modes, omit the rule-check section and `Final = weighted_LLM_score`.
 
-**Be honest and critical — do not inflate scores. A low score with clear reasoning is more valuable than a false 95%.**
+**Be honest and critical — do not inflate scores. A low score with clear reasoning is more valuable than a false 95%. A failed rule check is non-negotiable — surface it even if the LLM score is high.**
 
 ---
 

@@ -112,6 +112,12 @@ if [[ ! -f "$SKILL_DIR/templates/agent.template.md" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$SKILL_DIR/templates/routing-rule.template.md" ]]; then
+  echo "error: missing $SKILL_DIR/templates/routing-rule.template.md" >&2
+  echo "the skill directory exists but appears incomplete" >&2
+  exit 1
+fi
+
 mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/rules"
 
 # In development mode, set up the cross-tool discovery symlink chain so

@@ -120,10 +120,23 @@ If the user clarifies or corrects:
 
 After confirmation, before Phase 1, emit the mandatory mode-selection block.
 
-| Mode     | Criteria                              | Artifacts |
-| -------- | ------------------------------------- | --------- |
-| **Full** | 4+ files OR complex / architectural   | Required  |
-| **Lite** | 1-3 files AND simple / straightforward | None      |
+**Mode detection: complexity primary, file count tie-breaker.**
+
+Walk the questions in order. The first two probe complexity (the primary
+signal — file count alone is easy to game; one large monolithic change can
+exceed four trivial edits in scope). The third is the file-count tie-breaker
+that only fires when complexity is low.
+
+| # | Question                                                                                  | If yes →     | If no →     |
+| - | ----------------------------------------------------------------------------------------- | ------------ | ----------- |
+| 1 | Is this task architectural / cross-cutting / does it require significant design decisions? | **Full Mode** | go to next  |
+| 2 | Does the task involve unfamiliar code or domains the agent hasn't worked in before?       | **Full Mode** | go to next  |
+| 3 | Is the change touching 4+ files OR 2+ packages?                                           | **Full Mode** | **Lite Mode** |
+
+| Mode     | Artifacts |
+| -------- | --------- |
+| **Full** | Required  |
+| **Lite** | None      |
 
 **When in doubt, choose Full.** Output exactly:
 
