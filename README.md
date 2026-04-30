@@ -105,6 +105,7 @@ Coordinate other skills to execute multi-step workflows. Agent-invokable.
 | Skill | What it does | Use when... |
 |---|---|---|
 | **[autonomous-workflow](./skills/autonomous-workflow/SKILL.md)** | Phase-based orchestrator (0–7) that handles end-to-end feature development — from validation through tested PR delivery — using isolated Git worktrees. Optionally invokes companions for planning, TDD, UX, code quality, docs, and CI fixing. See [dedicated section](#autonomous-workflow). | "Implement X autonomously", "end-to-end", "in isolation", "in a worktree". |
+| **[batch-linear-tickets](./skills/batch-linear-tickets/SKILL.md)** | Batch orchestrator for Linear tickets. Fans out [`linear-ticket-investigator`](#linear-ticket-investigator) per ticket, correlates findings, gates user approval, then fans out `autonomous-planner` + `autonomous-executor` pairs in isolated worktrees. Requires Linear MCP. | "Solve these tickets", "batch analyze SUP-123 SUP-456", "analyze tickets in this Linear filter". |
 
 ### Agent-invokable skills
 
@@ -150,6 +151,7 @@ Agents are specialized sub-processes with their own model and tool configuration
 | Agent | What it does |
 |---|---|
 | **[reviewer](./agents/reviewer.md)** | Constructive code reviewer with three modes: **fix** (default — auto-fixes simple issues), **report** (`--report` — findings only), and **comments** (`--comments` — proposes line-level GitHub PR review comments). |
+| **[linear-ticket-investigator](./agents/linear-ticket-investigator.md)** | Linear-specific ticket investigator. Reads a single ticket via Linear MCP, searches the codebase using domain context + label inference, returns structured findings with certainty markers and a confidence score. Used by [`batch-linear-tickets`](./skills/batch-linear-tickets/SKILL.md). See [Domain Context](#linear-ticket-investigator) below for plug-in customization. |
 
 ## Autonomous Workflow
 
@@ -249,6 +251,110 @@ The skill depends on two CLI tools (declared as runtime prerequisites, not bundl
 
 Install [**Agent Tasks**](https://marketplace.visualstudio.com/items?itemName=mthines.agent-tasks) from the VS Code Marketplace to visualize `plan.md`, `task.md`, and `walkthrough.md` artifacts in your sidebar — phase progress, decisions, blockers, and completed checkboxes update live as the agent works. Defaults to scanning `.agent/`, with `.gw/` as fallback (configurable via `agentTasks.directories`). Source: [`packages/vscode-agent-tasks/`](./packages/vscode-agent-tasks/).
 
+## linear-ticket-investigator
+
+The [`linear-ticket-investigator`](./agents/linear-ticket-investigator.md) agent reads a single Linear ticket, searches the codebase, and returns a structured proposal with certainty markers and a confidence score.
+The [`batch-linear-tickets`](./skills/batch-linear-tickets/SKILL.md) skill fans it out across many tickets in parallel.
+
+### Prerequisites
+
+| Dependency | Purpose | Required? |
+|-----------|---------|-----------|
+| Linear MCP (`mcp__claude_ai_Linear__*`) | Read tickets, post PR comments | **Yes** |
+| `autonomous-planner` + `autonomous-executor` (from [`autonomous-workflow`](#autonomous-workflow)) | Planning + execution after approval | **Yes** for `batch-linear-tickets` |
+| Project domain-navigator skill | Ground investigation in monorepo structure | Optional but recommended |
+
+### Domain Context (per-project plug-in)
+
+Investigation accuracy depends on grounding the agent in the project's structure.
+The agent looks for context in this order:
+
+1. Top-level `CLAUDE.md` / `AGENTS.md`
+2. Component-specific `CLAUDE.md` / `AGENTS.md` in directories the ticket points at
+3. A project-shipped **domain-navigator skill**, auto-discovered by name and invoked via `Skill()`
+4. Top-level `README.md` (fallback)
+
+Steps 1, 2, and 4 work out of the box.
+Step 3 is the high-leverage customization for monorepos.
+
+#### Naming convention (this is the connection)
+
+The investigator does **not** know your project's name.
+It discovers domain navigators by scanning its available-skills list at runtime for any skill whose name is:
+
+- **exactly `domain-navigator`** — for projects that only need one, or
+- **ending in `-domain-navigator`** — e.g., `dash0-domain-navigator`, `acme-domain-navigator`, `monorepo-domain-navigator`
+
+Any skill matching that pattern is invoked automatically.
+No agent code changes, no registration step.
+If your skill is named anything else (e.g., `domain-context`, `project-map`), the agent will not find it — rename it to match.
+
+#### Starter template
+
+Create `~/.claude/skills/<project>-domain-navigator/SKILL.md` (for personal use) or commit it under `.claude/skills/<project>-domain-navigator/` in the project (for team use):
+
+```markdown
+---
+name: <project>-domain-navigator
+description: >
+  Maps Linear labels and ticket terminology to component directories in <project>.
+  Surfaces cross-component dependencies. Use during investigation or planning.
+user-invocable: true
+---
+
+# <Project> Domain Navigator
+
+## Label → directory map
+
+| Label | Component paths |
+|-------|----------------|
+| ui    | components/ui/, packages/web/ |
+| api   | components/api/, packages/server/api/ |
+| ...   | ... |
+
+## Cross-component dependencies
+
+- `ui` calls `api` via `packages/web/src/client/`
+- `api` reads from `db-migrator` schemas in `packages/db/`
+- ...
+
+## Where the docs live
+
+- Architecture overview: `docs/architecture.md`
+- API contract: `packages/server/api/openapi.yaml`
+- Runbooks: `docs/runbooks/`
+```
+
+That's the entire integration.
+The next time `linear-ticket-investigator` runs in a project that has this skill installed, it will see the matching name in its skills list and invoke it during Step 2.
+
+### Install
+
+```bash
+npx skills add https://github.com/mthines/agent-skills \
+  --skill batch-linear-tickets autonomous-workflow create-plan create-walkthrough \
+          confidence code-quality holistic-analysis tdd ux update-claude \
+          review-changes create-pr ci-auto-fix \
+  --agent claude-code \
+  --yes
+bash ~/.claude/skills/autonomous-workflow/install.sh --global
+```
+
+The agent ships with the skill — no separate install step.
+Symlink it into your agents directory if your tool doesn't auto-discover the `agents/` folder.
+
+### Usage
+
+```
+batch-linear-tickets SUP-123 SUP-456 ENG-789
+```
+
+```
+solve these tickets: SUP-100, SUP-101, SUP-102
+```
+
+The orchestrator fans out investigators, gates on user approval, fans out planners, optionally pauses for plan review, fans out executors, and posts PR links back to each Linear ticket.
+
 ## Usage Examples
 
 Skills activate automatically. Just describe what you need:
@@ -326,6 +432,7 @@ skills/
   autonomous-workflow/   SKILL.md + README.md + CLAUDE.md +
                          rules/ + templates/ + references/ +
                          install.sh                          (orchestrator, agent-invokable)
+  batch-linear-tickets/  SKILL.md + rules/                   (orchestrator, agent-invokable)
   confidence/            SKILL.md                            (agent-invokable)
   dx/                    SKILL.md + rules/ + templates/      (agent-invokable)
   holistic-analysis/     SKILL.md                            (agent-invokable)
@@ -344,6 +451,7 @@ skills/
   update-claude/         SKILL.md                            (slash command)
 agents/
   reviewer.md                                                (agent)
+  linear-ticket-investigator.md                              (agent)
 ```
 
 Skills live in `skills/` as standard SKILL.md files, making them installable with `npx skills add`. Agents live in `agents/` since they require their own model and tool configuration.

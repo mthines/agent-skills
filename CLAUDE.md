@@ -24,6 +24,7 @@ Agents live in `agents/` since they require their own model and tool configurati
 
 ### Agent-invokable skills (model can `Skill()`-invoke without a slash command)
 - `autonomous-workflow` — Phase-based orchestrator (0–7) for end-to-end feature development. **Installs two agents** (`autonomous-planner` for phases 0–2, `autonomous-executor` for phases 3–7) connected by `plan.md`. See [`skills/autonomous-workflow/CLAUDE.md`](./skills/autonomous-workflow/CLAUDE.md) for design intent before editing
+- `batch-linear-tickets` — Batch orchestrator for Linear tickets. Fans out `linear-ticket-investigator` per ticket, correlates findings, gates user approval, then fans out `autonomous-planner` + `autonomous-executor` pairs in worktrees. Requires Linear MCP
 - `confidence` — Confidence assessment for plans, code, and bug analysis. **Plan mode is multi-signal** (LLM dimensional scoring + deterministic rule checks; a failed rule caps the gate at 89% regardless of LLM score)
 - `dx` — Developer Experience review for CLI tools and shell scripts
 - `holistic-analysis` — Full execution path analysis for stuck bugs/refactors
@@ -47,6 +48,7 @@ Agents live in `agents/` since they require their own model and tool configurati
 
 ### Agents
 - `reviewer` — Constructive code reviewer with auto-fix, report, and PR comment modes
+- `linear-ticket-investigator` — Linear-specific ticket investigator. Reads a single ticket via Linear MCP, searches the codebase, returns structured findings with certainty markers and confidence score. Used by `batch-linear-tickets`
 
 ## Nx Workspace (VSCode Extension)
 
