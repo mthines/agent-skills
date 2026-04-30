@@ -1,20 +1,21 @@
 ---
-name: fix-github-action
+name: ci-auto-fix
 description: >
-  Diagnose a failed GitHub Action check, apply a minimal fix, push, and iteratively
-  verify until CI passes. Refuses to disable, skip, or weaken checks. Invoke with
-  /fix-github-action <run-id|pr-url>.
+  Diagnose a failed CI check, apply a minimal fix, push, and iteratively verify
+  until CI passes. Provider-agnostic in scope (currently implements the GitHub
+  Actions path via `gh`). Refuses to disable, skip, or weaken checks. Invoke
+  with /ci-auto-fix <run-id|pr-url>.
 disable-model-invocation: true
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '2.0.0'
   workflow_type: command
 ---
 
-# Fix Failed GitHub Action
+# CI Auto-Fix
 
-Diagnose and fix a failed GitHub Action check, then verify it passes. This command is generic and works with any repository.
+Diagnose and fix a failed CI check, then verify it passes. Generic across repositories; currently implements the GitHub Actions path via `gh`.
 
 ## Input
 

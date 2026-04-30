@@ -167,19 +167,19 @@ Use the returned `category` to decide the path:
 
 ## Step 8: Apply Fixes
 
-**Mechanical failures — delegate the whole fix loop to a subagent.** The `/fix-github-action` skill owns the fix-commit-push-rewatch cycle and is loud (it will run linters, push commits, watch CI). That output doesn't belong in the main thread. Spawn one subagent per independent failure (parallel if there are multiple):
+**Mechanical failures — delegate the whole fix loop to a subagent.** The `/ci-auto-fix` skill owns the fix-commit-push-rewatch cycle and is loud (it will run linters, push commits, watch CI). That output doesn't belong in the main thread. Spawn one subagent per independent failure (parallel if there are multiple):
 
 ```
-description: Run /fix-github-action for <check-name>
+description: Run /ci-auto-fix for <check-name>
 subagent_type: general-purpose
 prompt: |
-  Drive the /fix-github-action workflow end-to-end for this PR.
+  Drive the /ci-auto-fix workflow end-to-end for this PR.
 
   PR: <pr-url>
   Failing check: <check-name>
   Triage summary (from prior subagent): <paste category + suggested_fix + error_excerpt>
 
-  Follow the /fix-github-action skill's instructions. Apply the minimal fix, commit,
+  Follow the /ci-auto-fix skill's instructions. Apply the minimal fix, commit,
   push, and watch until CI completes. Honor its guardrails — no --no-verify, no
   continue-on-error, no disabling checks.
 
@@ -195,10 +195,10 @@ Don't wrap the subagent in another loop — it has its own internal iteration ca
 **Judgment-required failures — keep in the main thread.** `/confidence` reviews *this* conversation's reasoning, so a subagent can't run it. With the triage summary already in hand:
 
 1. Run `/confidence` against the failure summary + the relevant diff slice.
-2. If confidence ≥ 80% on a specific fix → apply it locally yourself, then hand the push-and-rewatch off to a `/fix-github-action` subagent (same template as above).
+2. If confidence ≥ 80% on a specific fix → apply it locally yourself, then hand the push-and-rewatch off to a `/ci-auto-fix` subagent (same template as above).
 3. If confidence < 80% → stop. Report the failing check, the error excerpt from the triage report, what you considered, and why you didn't auto-fix. Leave the PR for the user.
 
-**Cap: 2 `/fix-github-action` subagent handoffs per PR.** Each handoff already burns a full internal retry budget. If CI is still red after that, it's not mechanical — stop and report.
+**Cap: 2 `/ci-auto-fix` subagent handoffs per PR.** Each handoff already burns a full internal retry budget. If CI is still red after that, it's not mechanical — stop and report.
 
 **Hard rules — never do these to make CI green:**
 

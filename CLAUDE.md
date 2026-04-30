@@ -23,12 +23,16 @@ Skills live in `skills/` as standard SKILL.md files.
 Agents live in `agents/` since they require their own model and tool configuration.
 
 ### Auto-activated skills
+- `autonomous-workflow` — Phase-based orchestrator for end-to-end feature development with optional companions (see [`skills/autonomous-workflow/CLAUDE.md`](./skills/autonomous-workflow/CLAUDE.md) for design intent before editing)
 - `confidence` — Confidence assessment for plans, code, and bug analysis
+- `create-plan` — Generates `.agent/{branch}/plan.md` for autonomous-workflow Full Mode
+- `create-walkthrough` — Generates `.agent/{branch}/walkthrough.md` for autonomous-workflow PR delivery
 - `dx` — Developer Experience review for CLI tools and shell scripts
 - `review-quality-gate` — Self-check quality gate for review findings before delivery
 - `ux` — UX design review for web and React Native apps
 - `holistic-analysis` — Full execution path analysis for stuck bugs/refactors
 - `tdd` — Test-Driven Development with strict RED-GREEN-REFACTOR cycles
+- `code-quality` — Code-quality review for readability, complexity, and maintainability
 
 ### Slash commands (`disable-model-invocation: true`)
 - `init-claude` — Initialize Claude Code configuration for a project
@@ -37,7 +41,7 @@ Agents live in `agents/` since they require their own model and tool configurati
 - `review-changes` — Review branch changes or PR (dispatches to reviewer)
 - `implement-suggestion` — Implement fixes from review comments
 - `create-pr` — Generate a narrative PR description, push, then watch CI and auto-fix simple failures (lint, format, lockfiles); escalates judgment-required failures via `/confidence`
-- `fix-github-action` — Diagnose and fix a failed GitHub Action check, iteratively pushing fixes until CI is green
+- `ci-auto-fix` — Diagnose and fix a failed CI check, iteratively pushing fixes until CI is green (currently GitHub Actions via `gh`)
 
 ### Agents
 - `reviewer` — Constructive code reviewer with auto-fix, report, and PR comment modes
