@@ -7,6 +7,8 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import { AgentTasksProvider } from './providers/agent-tasks-provider';
 import { ArtifactWatcher } from './watchers/artifact-watcher';
+import { SessionsProvider, SessionItem } from './providers/sessions-provider';
+import { SessionWatcher } from './watchers/session-watcher';
 
 export function activate(context: vscode.ExtensionContext): void {
   // Create the tree data provider
@@ -99,6 +101,74 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
+  // -------------------------------------------------------------------------
+  // Sessions panel
+  // -------------------------------------------------------------------------
+
+  const sessionsProvider = new SessionsProvider();
+
+  const sessionsView = vscode.window.createTreeView('agentSessionsExplorer', {
+    treeDataProvider: sessionsProvider,
+    showCollapseAll: true,
+  });
+
+  // Start watching the session dirs that the provider discovered on first render.
+  // We need to trigger a first getChildren call to populate sessionDirs; we do
+  // that lazily on the first onSessionChanged subscription by scheduling a
+  // deferred rebuild below.
+  const sessionWatcher = new SessionWatcher();
+
+  sessionWatcher.onSessionChanged(() => {
+    sessionsProvider.refresh();
+  });
+
+  // Rebuild the watcher whenever the workspace folders change
+  const workspaceFolderSub = vscode.workspace.onDidChangeWorkspaceFolders(() => {
+    // Refresh provider first so sessionDirs is updated
+    sessionsProvider.refresh();
+    sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+  });
+
+  // Deferred watcher rebuild: after the first tree render the sessionDirs
+  // will be populated. We schedule this as a micro-task so it fires after
+  // the tree view completes its first getChildren call.
+  void Promise.resolve().then(() => {
+    sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+  });
+
+  const sessionsRefreshCmd = vscode.commands.registerCommand('agentTasks.sessions.refresh', () => {
+    sessionsProvider.refresh();
+    // Rebuild watchers in case new worktrees appeared
+    sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+  });
+
+  const openSessionCmd = vscode.commands.registerCommand(
+    'agentTasks.sessions.openSession',
+    async (item: SessionItem) => {
+      if (!item?.session?.filePath) return;
+
+      const openWith = vscode.workspace
+        .getConfiguration('agentTasks.sessions')
+        .get<string>('openWith', 'editor');
+
+      if (openWith === 'resume') {
+        const terminal = vscode.window.createTerminal('Claude Resume');
+        terminal.show();
+        terminal.sendText(`claude --resume ${item.session.sessionId}`);
+      } else {
+        // editor (default)
+        const uri = vscode.Uri.file(item.session.filePath);
+        try {
+          const doc = await vscode.workspace.openTextDocument(uri);
+          await vscode.window.showTextDocument(doc, { preview: false });
+        } catch {
+          // File may have been deleted — show a message
+          vscode.window.showWarningMessage(`Could not open session file: ${item.session.filePath}`);
+        }
+      }
+    }
+  );
+
   context.subscriptions.push(
     agentTasksView,
     artifactWatcher,
@@ -108,7 +178,13 @@ export function activate(context: vscode.ExtensionContext): void {
     openMarkdownCmd,
     openPlanCmd,
     openTaskCmd,
-    openWalkthroughCmd
+    openWalkthroughCmd,
+    // Sessions panel
+    sessionsView,
+    sessionWatcher,
+    workspaceFolderSub,
+    sessionsRefreshCmd,
+    openSessionCmd
   );
 }
 

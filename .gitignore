@@ -1,6 +1,9 @@
 # Nx
 .nx/
 
+# Agent workflow artifacts
+.agent
+
 # Agent/tool config directories
 .claude
 .adal

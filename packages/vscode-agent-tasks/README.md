@@ -10,6 +10,7 @@ Visualize autonomous agent workflow artifacts (`plan.md`, `task.md`, `walkthroug
 - **Walkthrough & plan auto-open** — when a `walkthrough.md` or `plan.md` is created, the extension opens it automatically in Markdown Preview (each toggleable)
 - **Configurable directories** — scan `.agent/`, `.gw/`, or any custom directory name
 - **Sort** — sort by date, name, or status; ascending or descending
+- **Sessions panel** — view Claude Code session history for the current workspace and sibling worktrees; click to open the transcript or resume the session in a terminal
 
 ## Install
 
@@ -25,6 +26,45 @@ mthines.agent-tasks
 2. Click the **Agent Tasks** icon in the Activity Bar.
 3. Expand a branch entry to see tasks, plan, and walkthrough.
 
+## Sessions
+
+The **Sessions** panel (below the Agent Tasks view in the same activity-bar container) lists Claude Code session history for the current workspace.
+
+### How it works
+
+Sessions are read from `~/.claude/projects/<encoded-cwd>/` — where `<encoded-cwd>` is your absolute workspace path with every `/` replaced by `-`. For example `/Users/you/myrepo` becomes `-Users-you-myrepo`.
+
+Each session entry shows:
+- **Label** — the first user message (up to 80 characters)
+- **Description** — the git branch and a relative timestamp (`5m ago`, `2h ago`, etc.)
+- **Icon** — reflects a heuristic status based on the file's last-modified time:
+  - Blue pulse — **active** (file written within the last 2 minutes)
+  - Blue history — **recent** (file written within the last hour)
+  - Gray history — **idle** (older than 1 hour)
+
+> **Note:** The status icon is a heuristic derived from file mtime, not a real signal from Claude Code. A paused session that last wrote 90 seconds ago will show as "active" even if Claude has stopped.
+
+Hover over a session for a tooltip with: full first message, session ID, message count, last activity timestamp, CWD, and file path.
+
+### Worktree grouping
+
+When your workspace is a gw-managed bare repo, sessions are automatically grouped by worktree. When `.gw/config.json` is present, sibling worktrees are discovered via that config. Otherwise, `git worktree list` is used as a fallback. If only one worktree is detected, sessions are shown flat (no grouping).
+
+### Click behavior
+
+Clicking a session does one of two things depending on the `agentTasks.sessions.openWith` setting:
+
+| Value | Behavior |
+|-------|----------|
+| `"editor"` (default) | Opens the JSONL transcript file in the VS Code text editor |
+| `"resume"` | Opens a new terminal and runs `claude --resume <session-id>` |
+
+> **Note:** `resume` mode requires `claude` to be on your `PATH`. If `claude` is not installed or not found, the terminal will show an error — the extension does not validate the command.
+
+### Activation note
+
+As of this release, the extension also activates via `onStartupFinished` so the Sessions panel works in any workspace — even those without `.agent/` or `.gw/` directories. This means the extension is active in all workspaces. The startup overhead is minimal (~50 ms). If you only want it active in agent-workflow repos, remove `onStartupFinished` from `activationEvents` in a local extension build.
+
 ## Settings
 
 | Setting | Default | Description |
@@ -35,6 +75,7 @@ mthines.agent-tasks
 | `agentTasks.autoOpenWalkthrough` | `true` | Auto-open `walkthrough.md` in Preview when created. |
 | `agentTasks.autoOpenPlan` | `true` | Auto-open `plan.md` in Preview when created. |
 | `agentTasks.openMarkdownInPreview` | `true` | Open artifact files in Markdown Preview mode. |
+| `agentTasks.sessions.openWith` | `"editor"` | What to do when a session is clicked: `"editor"` opens the JSONL file; `"resume"` runs `claude --resume <session-id>` in a new terminal. |
 
 ### Configurable directories
 

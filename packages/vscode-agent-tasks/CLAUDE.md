@@ -25,13 +25,16 @@ nx release vscode-agent-tasks --configuration=dry-run  # Dry-run release
 
 ```
 src/
-  extension.ts           # Entry point, command registration
-  providers/             # TreeDataProviders for sidebar views
-    agent-tasks-provider # Agent tasks explorer view
-  parsers/               # Markdown parsing utilities
-    markdown-parser.ts   # Parses task.md, plan.md, walkthrough.md
-  watchers/              # File system watchers for artifact directories
-    artifact-watcher.ts  # Watches configured dirs for changes
+  extension.ts              # Entry point, command registration
+  providers/                # TreeDataProviders for sidebar views
+    agent-tasks-provider    # Agent tasks explorer view
+    sessions-provider       # Sessions panel — lists Claude Code session history
+  parsers/                  # Parsing utilities (NO VS Code dependency — testable with vitest)
+    markdown-parser.ts      # Parses task.md, plan.md, walkthrough.md
+    session-jsonl-parser.ts # Parses ~/.claude/projects/<encoded-cwd>/*.jsonl files
+  watchers/                 # File system watchers
+    artifact-watcher.ts     # Watches .agent/.gw dirs for artifact changes
+    session-watcher.ts      # Watches ~/.claude/projects/<encoded-cwd>/ for JSONL changes
 ```
 
 ## Key Concepts
@@ -40,6 +43,9 @@ src/
 - **Agent Tasks** — read from `<dir>/<branch>/` directories (`task.md`, `plan.md`, `walkthrough.md`)
 - **Artifact Watcher** — watches configured dirs for changes, triggers view refresh; auto-opens `walkthrough.md` and `plan.md` on creation; rebuilds watchers when `agentTasks.directories` changes or a configured root appears after activation
 - **Bare-repo indirection** — only for `.gw/`: reads `config.json` to find the default-branch worktree's `.gw/` dir
+- **Sessions** — read from `~/.claude/projects/<encoded-cwd>/` JSONL files; `<encoded-cwd>` replaces every `/` in the absolute workspace path with `-`. Status is a heuristic derived from file mtime (active <2m, recent <1h, idle otherwise)
+- **Session Watcher** — watches the session directories; debounces at 500 ms (vs 150 ms for artifacts) because JSONL files are written continuously during active sessions
+- **Worktree grouping in Sessions** — checks `.gw/config.json` first; falls back to `git worktree list --porcelain`; shows flat list when only one worktree detected
 
 ## Configuration namespace
 
@@ -51,27 +57,30 @@ All settings use `agentTasks.*` (NOT `gw.*`):
 - `agentTasks.autoOpenWalkthrough` — auto-open `walkthrough.md` on create
 - `agentTasks.autoOpenPlan` — auto-open `plan.md` on create
 - `agentTasks.openMarkdownInPreview` — preview mode
+- `agentTasks.sessions.openWith` — `"editor"` (default) or `"resume"` — what clicking a session does
 
 ## Extension Manifest
 
 All commands, views, settings, and keybindings are defined in `package.json`:
 
 - Commands: `contributes.commands` (all `agentTasks.*`)
-- Views: `contributes.views` (`agentTasksExplorer` inside `agentTasks` activity bar)
+- Views: `contributes.views` (`agentTasksExplorer` and `agentSessionsExplorer` inside `agentTasks` activity bar)
 - Settings: `contributes.configuration` (`agentTasks.*` namespace)
-- Activation: `workspaceContains:.agent` and `workspaceContains:.gw`
+- Activation: `workspaceContains:.agent`, `workspaceContains:.gw`, `onStartupFinished`, `onView:agentSessionsExplorer`
 
 ## Command IDs
 
 | Command | Description |
 |---------|-------------|
-| `agentTasks.refresh` | Refresh tree |
+| `agentTasks.refresh` | Refresh Agent Tasks tree |
 | `agentTasks.sort` | Sort picker QuickPick |
 | `agentTasks.focus` | Focus sidebar |
 | `agentTasks.openMarkdown` | Internal — open a markdown file path |
 | `agentTasks.openPlan` | Open plan.md for a branch item |
 | `agentTasks.openTask` | Open task.md for a branch item |
 | `agentTasks.openWalkthrough` | Open walkthrough.md for a branch item |
+| `agentTasks.sessions.refresh` | Refresh Sessions tree |
+| `agentTasks.sessions.openSession` | Internal — open or resume a session (registered on SessionItem) |
 
 ## Code Style
 
@@ -93,3 +102,6 @@ All commands, views, settings, and keybindings are defined in `package.json`:
 - `vscode` import will fail in vitest — isolate parsers from VS Code types
 - The bare-repo `.gw/config.json` indirection only fires when `dirName === '.gw'`
 - Do NOT add ANSI handling, git CLI calls, or QuickPick to the parsers
+- Sessions JSONL format is undocumented and owned by the Claude Code team — all parsing is in `session-jsonl-parser.ts`; unknown events are silently skipped
+- `vi.spyOn(fs, ...)` does not work with ESM modules in vitest — use real temp directories for parser tests instead of mocking `fs`
+- Session status icons are heuristic (mtime-based) — document this caveat clearly in any user-facing text
