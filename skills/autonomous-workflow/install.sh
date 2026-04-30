@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install.sh — Install the autonomous-workflow agent + routing rule.
+# install.sh — Install the autonomous-workflow agent(s) + routing rule.
 #
 # This script is shipped alongside the skill. In --global and --project
 # mode it assumes the skill has already been downloaded via `npx skills
@@ -10,28 +10,42 @@
 #   Project:       ./.agents/skills/autonomous-workflow/
 #   Development:   <this clone>/skills/autonomous-workflow/
 #
-# It then symlinks the agent definition and routing rule templates into
-# the matching `.claude/` directory so Claude Code picks them up.
+# It then symlinks the agent definition(s) and routing rule into the
+# matching `.claude/` directory so Claude Code picks them up.
 #
-# Modes:
-#   --project      Per-project install (default). Links into ./.claude/.
-#   --global       Personal install. Links into ~/.claude/.
-#   --development  Local-clone install. Sets up the cross-tool symlink
-#                  chain (~/.agents/skills/<name> → this clone) so edits
-#                  to the cloned skill files are picked up live by every
-#                  Agent Skills-compatible tool, no reinstall needed.
-#                  Use this when you've cloned agent-skills.git and want
-#                  to hack on the autonomous-workflow skill itself.
+# Two agent flavors are supported:
+#   --monolithic (default)  Single agent runs all 8 phases. Simpler. Legacy.
+#   --split                 Two agents — planner (phases 0-2) and executor
+#                           (phases 3-7) — with explicit handoff via
+#                           plan.md. Recommended for complex tasks; matches
+#                           Anthropic's context-boundary principle. Both
+#                           agents are linked when --split is passed; the
+#                           monolithic agent is also linked so users can
+#                           pick per-task. Pass --split-only to skip the
+#                           monolithic agent in --split mode.
+#
+# Location modes:
+#   --project       Per-project install (default). Links into ./.claude/.
+#   --global        Personal install. Links into ~/.claude/.
+#   --development   Local-clone install. Sets up the cross-tool symlink
+#                   chain (~/.agents/skills/<name> → this clone) so edits
+#                   to the cloned skill files are picked up live by every
+#                   Agent Skills-compatible tool, no reinstall needed.
 #
 # Usage:
-#   bash install.sh                 # per-project install (current directory)
-#   bash install.sh --global        # personal install (all projects)
-#   bash install.sh --development   # local-clone install (for skill development)
+#   bash install.sh                          # per-project, monolithic
+#   bash install.sh --global                 # personal, monolithic
+#   bash install.sh --split                  # per-project, split (recommended)
+#   bash install.sh --global --split         # personal, split
+#   bash install.sh --development --split    # local clone, split
+#   bash install.sh --split --split-only     # per-project, split agents only
 #   bash install.sh --help
 
 set -euo pipefail
 
 MODE="project"
+FLAVOR="monolithic"
+SPLIT_ONLY=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -47,6 +61,18 @@ while [[ $# -gt 0 ]]; do
       MODE="development"
       shift
       ;;
+    --monolithic)
+      FLAVOR="monolithic"
+      shift
+      ;;
+    --split)
+      FLAVOR="split"
+      shift
+      ;;
+    --split-only)
+      SPLIT_ONLY=1
+      shift
+      ;;
     -h|--help)
       sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# *//;s/^#//'
       exit 0
@@ -58,6 +84,11 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$FLAVOR" == "monolithic" && "$SPLIT_ONLY" == 1 ]]; then
+  echo "error: --split-only requires --split" >&2
+  exit 1
+fi
 
 case "$MODE" in
   global)
@@ -105,17 +136,25 @@ if [[ ! -d "$SKILL_DIR" ]]; then
   exit 1
 fi
 
-# Sanity-check that the skill has the templates we need to link.
-if [[ ! -f "$SKILL_DIR/templates/agent.template.md" ]]; then
-  echo "error: missing $SKILL_DIR/templates/agent.template.md" >&2
-  echo "the skill directory exists but appears incomplete" >&2
-  exit 1
+# Sanity-check templates exist depending on flavor.
+template_required() {
+  local file="$1"
+  if [[ ! -f "$SKILL_DIR/templates/$file" ]]; then
+    echo "error: missing $SKILL_DIR/templates/$file" >&2
+    echo "the skill directory exists but appears incomplete" >&2
+    exit 1
+  fi
+}
+
+template_required "routing-rule.template.md"
+
+if [[ "$FLAVOR" == "monolithic" ]] || [[ "$FLAVOR" == "split" && "$SPLIT_ONLY" == 0 ]]; then
+  template_required "agent.template.md"
 fi
 
-if [[ ! -f "$SKILL_DIR/templates/routing-rule.template.md" ]]; then
-  echo "error: missing $SKILL_DIR/templates/routing-rule.template.md" >&2
-  echo "the skill directory exists but appears incomplete" >&2
-  exit 1
+if [[ "$FLAVOR" == "split" ]]; then
+  template_required "planner.template.md"
+  template_required "executor.template.md"
 fi
 
 mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/rules"
@@ -126,8 +165,6 @@ mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/rules"
 if [[ "$MODE" == "development" ]]; then
   mkdir -p "$(dirname "$DISCOVERY_DIR")"
 
-  # If the discovery path already exists and isn't a symlink we'd overwrite,
-  # bail rather than clobber a previously-installed skill.
   if [[ -e "$DISCOVERY_DIR" && ! -L "$DISCOVERY_DIR" ]]; then
     echo "error: $DISCOVERY_DIR already exists and is not a symlink" >&2
     echo "remove it manually if you're sure you want to replace it with the dev clone" >&2
@@ -137,7 +174,6 @@ if [[ "$MODE" == "development" ]]; then
   ln -sfn "$SKILL_DIR" "$DISCOVERY_DIR"
   echo "✓ Discovery: $DISCOVERY_DIR → $SKILL_DIR"
 
-  # Mirror into Claude Code's skills dir.
   if [[ -e "$CLAUDE_DIR/skills/autonomous-workflow" && ! -L "$CLAUDE_DIR/skills/autonomous-workflow" ]]; then
     echo "error: $CLAUDE_DIR/skills/autonomous-workflow already exists and is not a symlink" >&2
     exit 1
@@ -147,9 +183,19 @@ if [[ "$MODE" == "development" ]]; then
   echo "✓ Claude skill: $CLAUDE_DIR/skills/autonomous-workflow → $DISCOVERY_DIR"
 fi
 
-# Link the agent definition (all three modes).
-ln -sf "$SKILL_DIR/templates/agent.template.md" "$CLAUDE_DIR/agents/autonomous-workflow.md"
-echo "✓ Agent: $CLAUDE_DIR/agents/autonomous-workflow.md"
+# Link agents based on flavor.
+if [[ "$FLAVOR" == "monolithic" ]] || [[ "$FLAVOR" == "split" && "$SPLIT_ONLY" == 0 ]]; then
+  ln -sf "$SKILL_DIR/templates/agent.template.md" "$CLAUDE_DIR/agents/autonomous-workflow.md"
+  echo "✓ Monolithic agent: $CLAUDE_DIR/agents/autonomous-workflow.md"
+fi
+
+if [[ "$FLAVOR" == "split" ]]; then
+  ln -sf "$SKILL_DIR/templates/planner.template.md" "$CLAUDE_DIR/agents/autonomous-planner.md"
+  echo "✓ Planner agent: $CLAUDE_DIR/agents/autonomous-planner.md"
+
+  ln -sf "$SKILL_DIR/templates/executor.template.md" "$CLAUDE_DIR/agents/autonomous-executor.md"
+  echo "✓ Executor agent: $CLAUDE_DIR/agents/autonomous-executor.md"
+fi
 
 # Link the routing rule. Project + development modes get auto-routing;
 # global mode skips it (most users don't want auto-trigger on every project).
@@ -161,7 +207,16 @@ else
 fi
 
 echo ""
-echo "done. autonomous-workflow is ready ($MODE mode)."
+echo "done. autonomous-workflow is ready ($MODE mode, $FLAVOR flavor)."
+
+if [[ "$FLAVOR" == "split" ]]; then
+  echo ""
+  echo "split-flavor agents installed:"
+  echo "  • autonomous-planner   — phases 0-2, produces plan.md"
+  echo "  • autonomous-executor  — phases 3-7, produces walkthrough.md + draft PR"
+  echo "  Handoff via .agent/{branch}/plan.md, gated on confidence(plan) ≥ 90%."
+  echo "  See: skills/autonomous-workflow/rules/planner-executor-handoff.md"
+fi
 
 if [[ "$MODE" == "development" ]]; then
   echo ""

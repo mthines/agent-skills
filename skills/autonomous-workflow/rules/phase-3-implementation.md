@@ -9,6 +9,32 @@ tags:
 
 # Phase 3: Implementation
 
+## Receiving Planner Handoff (split-agent flavor)
+
+If you're running as the **autonomous-executor agent**, this is your entry
+phase. Before starting Step 1 of implementation:
+
+1. Verify you're inside the worktree (`pwd && git branch --show-current`).
+2. Read `plan.md` end-to-end:
+   ```bash
+   cat .agent/$(git branch --show-current)/plan.md
+   ```
+3. Verify the Acceptance Criteria section is non-empty (these are the
+   contract you'll gate Phase 4 testing against).
+4. **Bail if missing:** if `plan.md` doesn't exist, is malformed, or has no
+   Acceptance Criteria, STOP and tell the user "no plan to execute — run
+   autonomous-planner first."
+5. Log the takeover:
+   ```markdown
+   - [TIMESTAMP] Phase 3: executor took over (plan confidence Y%)
+   ```
+
+If you're running as the **monolithic agent**, plan.md is already in your
+session context — skip the handoff verification and proceed.
+
+See [`planner-executor-handoff.md`](./planner-executor-handoff.md) for the
+full handoff contract.
+
 ## Overview
 
 Incremental implementation with continuous verification. Work in the isolated

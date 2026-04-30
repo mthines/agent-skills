@@ -390,6 +390,30 @@ end-user-facing; this file is contributor-facing.
   is missing (auto-copy, pre/post-checkout hooks, smart cleanup,
   shell-integrated `gw cd`). The workflow is now usable in repos that
   haven't adopted `gw`.
+- **v3.3** — Two-agent split (recommended flavor) alongside the monolithic
+  agent (preserved for simple cases). The split is along the
+  Phase 2 → Phase 3 context boundary, mediated by `plan.md`:
+  - **`autonomous-planner`** — runs phases 0-2 (validation, planning,
+    worktree + plan.md generation). Tool budget excludes Edit/Write on
+    production code. Terminal deliverable: `.agent/{branch}/plan.md`,
+    gated on `confidence(plan) ≥ 90%`.
+  - **`autonomous-executor`** — runs phases 3-7 (implementation, testing,
+    docs, PR, CI). Reads plan.md from cold; bails if missing or invalid
+    rather than re-planning. Terminal deliverable:
+    `.agent/{branch}/walkthrough.md` + draft PR.
+  - **Handoff contract** — see `rules/planner-executor-handoff.md`.
+    Two messages: high-confidence auto-handoff (≥ 90%) and
+    user-approval (< 90%). Each agent has a single, gated, terminal
+    artifact — when the artifact exists and the gate passed, the agent
+    is done. This pattern matches Anthropic's "structured handoff
+    artifacts" recommendation; full citations are in
+    `references/anthropic-architecture-research.md`.
+  - **Compatibility** — both flavors honor the same phase rules and
+    companion-skills.md registry. The split is an architectural lever,
+    not a behavior change. `install.sh` accepts `--split` (recommended),
+    `--monolithic` (default, legacy), and `--split-only` (split agents
+    only, skip the monolithic alias).
+
 - **v3.2** — Quality refinements based on field-alignment review:
   - **Multi-signal `confidence(plan)` gate.** The `confidence` skill's `plan`
     mode now combines LLM dimensional scoring with deterministic rule checks

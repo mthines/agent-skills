@@ -11,7 +11,7 @@ description: >
 license: MIT
 metadata:
   author: mthines
-  version: '3.2.0'
+  version: '3.3.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -210,9 +210,30 @@ for the full how-to.
 
 ## Templates
 
+The skill ships **two agent flavors**:
+
+| Flavor                | Files                                                                                                              | Best for                                                |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| **Monolithic** (legacy) | [agent.template.md](./templates/agent.template.md)                                                              | Simple cases, single-context tasks                      |
+| **Split (recommended)** | [planner.template.md](./templates/planner.template.md) + [executor.template.md](./templates/executor.template.md) | Complex tasks, clean context boundaries, user checkpoints on borderline plans |
+
+The split flavor follows Anthropic's "context boundary" principle (see
+[`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md)).
+Each agent owns one terminal artifact:
+
+| Agent                  | Terminal artifact            | Exit gate                                          |
+| ---------------------- | ---------------------------- | -------------------------------------------------- |
+| `autonomous-planner`   | `.agent/{branch}/plan.md`    | `confidence(plan) ≥ 90%` (or user-approved)        |
+| `autonomous-executor`  | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
+
+See [`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md)
+for the handoff contract and message format.
+
 | Template                                                         | Purpose                                  |
 | ---------------------------------------------------------------- | ---------------------------------------- |
-| [agent.template.md](./templates/agent.template.md)               | Claude Code agent file                   |
+| [agent.template.md](./templates/agent.template.md)               | Monolithic agent (single-agent flavor)   |
+| [planner.template.md](./templates/planner.template.md)           | Split flavor — planner half (phases 0-2) |
+| [executor.template.md](./templates/executor.template.md)         | Split flavor — executor half (phases 3-7)|
 | [routing-rule.template.md](./templates/routing-rule.template.md) | Auto-trigger rule for `.claude/rules/`   |
 
 ---
