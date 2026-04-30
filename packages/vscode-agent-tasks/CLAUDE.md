@@ -27,16 +27,17 @@ nx release vscode-agent-tasks --configuration=dry-run  # Dry-run release
 src/
   extension.ts              # Entry point, command registration, terminal tracking
   lib/
-    logger.ts               # `mthines.agent-tasks` OutputChannel wrapper
-    worktree-discovery.ts   # Shared worktree discovery helpers (pure Node.js, vitest-testable)
+    logger.ts                       # `mthines.agent-tasks` OutputChannel wrapper
+    worktree-discovery.ts           # Shared worktree discovery helpers (pure Node.js, vitest-testable)
+    session-artifact-correlator.ts  # Pure helper — `(worktree, branch, dirs)` → linked artifact file paths
   providers/                # TreeDataProviders for sidebar views
     agent-tasks-provider    # Agent tasks explorer view — multi-worktree groups + scope toggle
-    sessions-provider       # Sessions panel — Running section + worktree groups
+    sessions-provider       # Sessions panel — Running section + worktree groups + artifact correlation
   parsers/                  # Pure modules — NO VS Code dependency, vitest-testable
     markdown-parser.ts      # Parses task.md, plan.md, walkthrough.md
     session-jsonl-parser.ts # Parses ~/.claude/projects/<encoded-cwd>/*.jsonl files
   watchers/                 # File system watchers
-    artifact-watcher.ts     # Watches .agent/.gw dirs for artifact changes (all worktrees)
+    artifact-watcher.ts     # Watches .agent/.gw dirs for artifact changes — refreshes BOTH Agent Tasks AND Sessions trees
     session-watcher.ts      # Watches ~/.claude/projects/<encoded-cwd>/ for JSONL changes
 ```
 
@@ -60,6 +61,7 @@ src/
 - **Session Watcher** — 50 ms trailing debounce (was 500 ms — kept tight for realtime icon transitions). 15 s visibility-bound refresh tick drives `running → stalled` ageing-out without waiting on file events.
 - **Per-session terminal tracking** — `extension.ts` maintains a `Map<sessionId, vscode.Terminal>` so re-clicking a session focuses its existing tab instead of spawning a duplicate. `onDidCloseTerminal` cleans up. Cross-window is impossible — VS Code's API is window-scoped.
 - **Parse cache** — `parseSessionFile` is mtime-keyed; unchanged JSONL files skip read+parse on refresh. Bounded by unique session count (tens to hundreds).
+- **Session ↔ artifact correlation** — `findLinkedArtifacts(worktreePath, gitBranch, configuredDirs)` in `lib/session-artifact-correlator.ts` joins a session to its `<worktree>/<dir>/<branchName>/{task,plan,walkthrough}.md` files. The bucket worktree (longest match for `session.cwd`) is the correlation root, paired with `session.gitBranch`. When any artifact exists, the `SessionItem` becomes collapsible (`contextValue = claudeSessionWithArtifacts`), the row-click `command` is dropped (so single-click expands cleanly), and a `$(play)` inline action exposes Resume. `LinkedArtifactItem` children open via `agentTasks.openMarkdown`. The correlation map is rebuilt on every `buildRootItems` and on every `artifactWatcher.onArtifactChanged` event so chevrons appear/disappear live.
 
 ## Configuration namespace
 

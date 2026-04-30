@@ -24,7 +24,9 @@ export function activate(context: vscode.ExtensionContext): void {
     showCollapseAll: true,
   });
 
-  // Create the file watcher and wire it to the provider
+  // Create the file watcher. The Sessions panel also subscribes to it below
+  // (after `sessionsProvider` is declared) so artifact create/delete updates
+  // both trees — the Agent Tasks rows AND the Sessions correlation chevrons.
   const artifactWatcher = new ArtifactWatcher();
   artifactWatcher.onArtifactChanged(() => {
     agentTasksProvider.refresh();
@@ -118,6 +120,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const sessionsView = vscode.window.createTreeView('agentSessionsExplorer', {
     treeDataProvider: sessionsProvider,
     showCollapseAll: true,
+  });
+
+  // Sessions panel correlates each session with its `(worktree, gitBranch)`
+  // artifact dir. Refresh on artifact create/delete so chevrons and child
+  // rows appear/disappear without waiting for a session-level event.
+  artifactWatcher.onArtifactChanged(() => {
+    sessionsProvider.refresh();
   });
 
   // Start watching the session dirs that the provider discovered on first render.
