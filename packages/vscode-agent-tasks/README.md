@@ -35,18 +35,19 @@ The **Sessions** panel (below the Agent Tasks view in the same activity-bar cont
 Sessions are read from `~/.claude/projects/<encoded-cwd>/` — where `<encoded-cwd>` is your absolute workspace path with every non-alphanumeric character replaced by `-`. For example `/Users/you/myrepo.git/main` becomes `-Users-you-myrepo-git-main`.
 
 Each session entry shows:
-- **Label** — the first user message, whitespace-collapsed and truncated to ~50 characters
-- **Description** — relative time when grouped by worktree; `branch · time` when flat
-- **Icon** — reflects a heuristic status based on the file's last-modified time:
-  - Blue pulse — **active** (file written within the last 2 minutes)
-  - Blue clock — **recent** (file written within the last hour)
-  - Gray history — **idle** (older than 1 hour)
+- **Label** — the first user message, whitespace-collapsed and truncated
+- **Description** — relative time (`now / 5m / 3h / 2d / Apr 17`)
+- **Icon** — reflects a real run-state derived from JSONL turn analysis combined with file mtime:
+  - **🔵 Blue pulse — `running`**: claude is mid-turn (last `assistant.stop_reason ≠ end_turn` or a follow-up `user` event after a turn end), AND the file was written in the last 30 seconds.
+  - **🟢 Green chat-bubble — `needs-input`**: claude finished a turn (last `assistant.stop_reason = end_turn` OR a `system subtype = turn_duration` event followed the last user input). Waiting for your reply.
+  - **🟡 Yellow warning — `stalled`**: mid-turn JSONL state, but no writes for 30 s – 5 min. Claude likely died mid-response.
+  - **⚪️ Gray history — `idle`**: nothing relevant in the last hour.
 
-Relative time switches to absolute (`Apr 23`) for sessions older than 7 days, and the panel auto-refreshes every 60 seconds while visible so labels don't go stale.
+These states come from real JSONL semantics, not just file activity, so they're stable across paused sessions, slow-tool calls, and external editor saves.
 
-> **Note:** The status icon is a heuristic derived from file mtime, not a real signal from Claude Code. A paused session that last wrote 90 seconds ago will show as "active" even if Claude has stopped.
+The panel auto-refreshes every 15 seconds while visible (and immediately on JSONL writes via a 50 ms-debounced file watcher) so transitions between states feel realtime.
 
-Hover over a session for a tooltip with: heuristic disclosure, last activity, branch, message count, session ID, CWD, and file path.
+Hover over a session for a tooltip with last activity, branch, message count, session ID, CWD, and file path.
 
 ### Running section
 

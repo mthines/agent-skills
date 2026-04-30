@@ -169,14 +169,15 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   );
 
-  // Periodic refresh while the Sessions view is visible. Relative-time labels
-  // (e.g. "1m ago") would otherwise stay stale until the next file write
-  // triggers a watcher event. Tick every 60s, but only when visible to avoid
-  // wasted work in the background.
+  // Periodic refresh while the Sessions view is visible. Drives state-machine
+  // transitions that aren't triggered by a file-watcher event — e.g. a
+  // `running` session sliding to `stalled` after no writes for 30s, or
+  // `needs-input` aging out of the Running section. 15s is a good balance
+  // between feeling realtime and not burning cycles on a hidden panel.
   let tickTimer: ReturnType<typeof setInterval> | undefined;
   const startTick = () => {
     if (tickTimer) return;
-    tickTimer = setInterval(() => sessionsProvider.refresh(), 60_000);
+    tickTimer = setInterval(() => sessionsProvider.refresh(), 15_000);
   };
   const stopTick = () => {
     if (tickTimer) {

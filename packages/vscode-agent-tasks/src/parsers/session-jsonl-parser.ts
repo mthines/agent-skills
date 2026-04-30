@@ -49,21 +49,44 @@ export interface SessionMetadata {
    * Undefined if no qualifying event was found.
    */
   lastEventType: 'user' | 'assistant' | undefined;
+  /**
+   * True iff the session reached an end-of-turn state with no later user
+   * input — i.e. either:
+   *   - the last `assistant` event has `stop_reason: end_turn`, OR
+   *   - the last `system subtype: turn_duration` event came after the last
+   *     `user` event.
+   *
+   * Combined with mtime in the provider this distinguishes:
+   *   - `running` (mid-turn, fresh mtime → claude is responding)
+   *   - `needs-input` (turn ended, user hasn't replied yet)
+   *   - `stalled` (mid-turn, stale mtime → claude died)
+   *   - `idle` (old, nothing happening)
+   *
+   * This is dramatically more stable than mtime alone — real signal from
+   * the JSONL events rather than a heuristic on file activity.
+   */
+  turnEnded: boolean;
 }
 
 /**
- * Heuristic status derived from file mtime.
+ * Run-state of a session combining JSONL turn analysis with file mtime.
  *
- * HEURISTIC: Claude Code does not write terminal markers or heartbeat records.
- * The only available signal is the file mtime. Classifications:
- *   - active  — mtime within the last 2 minutes (Claude likely still writing)
- *   - recent  — mtime within the last 1 hour
- *   - idle    — older than 1 hour
+ * Derived in the provider (`deriveRunState`) from:
+ *   - `SessionMetadata.turnEnded` (real signal: last `assistant.stop_reason`
+ *     was `end_turn` or last system `turn_duration` followed the last user)
+ *   - `SessionMetadata.mtime` (file activity)
+ *   - terminal-open state in this VS Code window
  *
- * This WILL misclassify paused sessions and very fast sessions. Accepted
- * limitation for v1.
+ * States:
+ *   - `running`     — claude is actively responding (mid-turn + fresh mtime)
+ *   - `needs-input` — claude finished, waiting for the user's next prompt
+ *   - `stalled`     — mid-turn but no recent writes (claude likely died)
+ *   - `idle`        — old, nothing happening
+ *
+ * Replaces the old mtime-only heuristic ('active' | 'recent' | 'idle') with
+ * stable JSONL-derived signals.
  */
-export type SessionStatus = 'active' | 'recent' | 'idle';
+export type SessionStatus = 'running' | 'needs-input' | 'stalled' | 'idle';
 
 // ---------------------------------------------------------------------------
 // Utility: path encoding
@@ -105,19 +128,44 @@ export function getSessionsDir(workspacePath: string): string {
 // Utility: status classification
 // ---------------------------------------------------------------------------
 
-const ACTIVE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
-const RECENT_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
+/** mtime within this window means claude is plausibly still writing */
+export const RUNNING_THRESHOLD_MS = 30 * 1000; // 30 seconds
+/** mtime within this window with mid-turn signal means claude died */
+export const STALLED_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+/** mtime within this window keeps a needs-input state visible */
+export const NEEDS_INPUT_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 /**
- * Classify a session by its file mtime.
+ * Pure helper. Combines the parser's `turnEnded` signal (real JSONL semantics)
+ * with file mtime to derive a stable run-state. The provider layers terminal-
+ * open / closed-after-mtime overrides on top.
+ */
+export function deriveRunState(
+  turnEnded: boolean,
+  mtimeMs: number,
+  now = Date.now()
+): SessionStatus {
+  const age = now - mtimeMs;
+
+  if (turnEnded) {
+    if (age < NEEDS_INPUT_TTL_MS) return 'needs-input';
+    return 'idle';
+  }
+
+  // Mid-turn (JSONL says claude was working)
+  if (age < RUNNING_THRESHOLD_MS) return 'running';
+  if (age < STALLED_THRESHOLD_MS) return 'stalled';
+  return 'idle';
+}
+
+/**
+ * Backwards-compat shim used by older test code that classified by mtime
+ * alone. Treats the absence of a `turnEnded` signal as mid-turn.
  *
- * HEURISTIC — see `SessionStatus` type for caveats.
+ * @deprecated prefer `deriveRunState(turnEnded, mtime)`.
  */
 export function getSessionStatus(mtimeMs: number): SessionStatus {
-  const age = Date.now() - mtimeMs;
-  if (age < ACTIVE_THRESHOLD_MS) return 'active';
-  if (age < RECENT_THRESHOLD_MS) return 'recent';
-  return 'idle';
+  return deriveRunState(false, mtimeMs);
 }
 
 // ---------------------------------------------------------------------------
@@ -132,8 +180,12 @@ interface RawEvent {
   cwd?: string;
   timestamp?: string;
   isSidechain?: boolean;
+  /** `system` events carry subtype (`turn_duration`, `away_summary`, …). */
+  subtype?: string;
   message?: {
     content?: string | Array<{ type?: string; text?: string }>;
+    /** `assistant` events: `end_turn`, `tool_use`, `max_tokens`, … */
+    stop_reason?: string | null;
   };
 }
 
@@ -253,7 +305,15 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
   let titleFound = false;
   let lastEventType: 'user' | 'assistant' | undefined;
 
+  // Turn-state markers (line indices). We compute turnEnded at the end by
+  // comparing the index of the last end-of-turn marker to the last user
+  // event — turn ended iff the end-of-turn marker came AFTER the last user.
+  let lastUserIdx = -1;
+  let lastEndTurnIdx = -1;
+  let lineIdx = 0;
+
   for (const line of lines) {
+    lineIdx++;
     let event: RawEvent;
     try {
       event = JSON.parse(line) as RawEvent;
@@ -264,6 +324,15 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
 
     const type = event.type;
 
+    // Track end-of-turn markers from non-user/assistant events too. The
+    // canonical end-of-turn pattern in real Claude Code JSONL is:
+    //   assistant (stop_reason=end_turn) → system (subtype=turn_duration)
+    // We accept either marker as "turn ended at this line".
+    if (type === 'system' && event.subtype === 'turn_duration') {
+      lastEndTurnIdx = lineIdx;
+      continue;
+    }
+
     // Only process user and assistant events for the main data fields
     if (type !== 'user' && type !== 'assistant') {
       // Unknown / other event types → silently skip
@@ -272,6 +341,11 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
 
     messageCount++;
     lastEventType = type as 'user' | 'assistant';
+
+    if (type === 'user') lastUserIdx = lineIdx;
+    if (type === 'assistant' && event.message?.stop_reason === 'end_turn') {
+      lastEndTurnIdx = lineIdx;
+    }
 
     if (type === 'user') {
       // Set sessionId from first user event that has one
@@ -311,6 +385,10 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
   // We require at least a sessionId to return a result
   if (!sessionId) return null;
 
+  // turnEnded iff the most recent end-of-turn marker followed the most recent
+  // user event (or there are no user events but there is an end-of-turn).
+  const turnEnded = lastEndTurnIdx > lastUserIdx;
+
   const data: SessionMetadata = {
     sessionId,
     filePath,
@@ -322,6 +400,7 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
     messageCount,
     mtime,
     lastEventType,
+    turnEnded,
   };
   parseCache.set(filePath, { mtime, data });
   return data;

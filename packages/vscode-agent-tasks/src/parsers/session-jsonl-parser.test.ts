@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import {
   encodeWorkspacePath,
-  getSessionStatus,
+  deriveRunState,
   parseSessionFile,
   parseSessionsInDir,
   getClaudeProjectsDir,
@@ -125,27 +125,37 @@ describe('getSessionsDir', () => {
 });
 
 // ---------------------------------------------------------------------------
-// getSessionStatus
+// deriveRunState
 // ---------------------------------------------------------------------------
 
-describe('getSessionStatus', () => {
-  it('returns active within 2 minutes', () => {
-    const mtime = Date.now() - 60 * 1000; // 1 minute ago
-    expect(getSessionStatus(mtime)).toBe('active');
+describe('deriveRunState', () => {
+  it('mid-turn within 30s → running', () => {
+    const mtime = Date.now() - 10 * 1000;
+    expect(deriveRunState(false, mtime)).toBe('running');
   });
 
-  it('returns recent within 1 hour', () => {
-    const mtime = Date.now() - 30 * 60 * 1000; // 30 minutes ago
-    expect(getSessionStatus(mtime)).toBe('recent');
+  it('mid-turn 30s–5min → stalled (claude died)', () => {
+    const mtime = Date.now() - 2 * 60 * 1000;
+    expect(deriveRunState(false, mtime)).toBe('stalled');
   });
 
-  it('returns idle beyond 1 hour', () => {
-    const mtime = Date.now() - 2 * 60 * 60 * 1000; // 2 hours ago
-    expect(getSessionStatus(mtime)).toBe('idle');
+  it('mid-turn beyond 5min → idle', () => {
+    const mtime = Date.now() - 30 * 60 * 1000;
+    expect(deriveRunState(false, mtime)).toBe('idle');
   });
 
-  it('returns active at exactly 0ms age', () => {
-    expect(getSessionStatus(Date.now())).toBe('active');
+  it('turn ended within 1h → needs-input', () => {
+    const mtime = Date.now() - 5 * 60 * 1000;
+    expect(deriveRunState(true, mtime)).toBe('needs-input');
+  });
+
+  it('turn ended beyond 1h → idle', () => {
+    const mtime = Date.now() - 2 * 60 * 60 * 1000;
+    expect(deriveRunState(true, mtime)).toBe('idle');
+  });
+
+  it('mid-turn at exactly now → running', () => {
+    expect(deriveRunState(false, Date.now())).toBe('running');
   });
 });
 
@@ -261,6 +271,52 @@ describe('parseSessionFile', () => {
     const result = parseSessionFile(filePath);
     expect(result?.gitBranch).toBe('main');
     expect(result?.cwd).toBe('/Users/mthines/project');
+  });
+
+  it('marks turnEnded when last assistant has stop_reason=end_turn', () => {
+    const filePath = writeJsonl(
+      'session.jsonl',
+      buildJsonl([
+        userEvent(),
+        assistantEvent({ message: { content: 'reply', stop_reason: 'end_turn' } }),
+      ])
+    );
+    const result = parseSessionFile(filePath);
+    expect(result?.turnEnded).toBe(true);
+  });
+
+  it('marks turnEnded when system turn_duration follows last user', () => {
+    const events: object[] = [
+      userEvent(),
+      assistantEvent({ message: { content: 'mid', stop_reason: 'tool_use' } }),
+      { type: 'system', subtype: 'turn_duration', durationMs: 100, sessionId: SAMPLE_SESSION_ID },
+    ];
+    const filePath = writeJsonl('session.jsonl', buildJsonl(events));
+    const result = parseSessionFile(filePath);
+    expect(result?.turnEnded).toBe(true);
+  });
+
+  it('does NOT mark turnEnded when assistant is last with stop_reason=tool_use', () => {
+    const filePath = writeJsonl(
+      'session.jsonl',
+      buildJsonl([
+        userEvent(),
+        assistantEvent({ message: { content: 'using a tool', stop_reason: 'tool_use' } }),
+      ])
+    );
+    const result = parseSessionFile(filePath);
+    expect(result?.turnEnded).toBe(false);
+  });
+
+  it('does NOT mark turnEnded when user event follows the last end_turn', () => {
+    const events: object[] = [
+      userEvent(),
+      assistantEvent({ message: { content: 'reply', stop_reason: 'end_turn' } }),
+      userEvent({ timestamp: '2026-04-30T12:10:00.000Z', message: { content: 'follow-up' } }),
+    ];
+    const filePath = writeJsonl('session.jsonl', buildJsonl(events));
+    const result = parseSessionFile(filePath);
+    expect(result?.turnEnded).toBe(false);
   });
 
   it('records lastEventType as `assistant` when assistant event is last', () => {

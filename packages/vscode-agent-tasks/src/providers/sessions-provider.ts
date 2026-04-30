@@ -26,9 +26,9 @@ import * as child_process from 'child_process';
 import {
   SessionMetadata,
   SessionStatus,
+  deriveRunState,
   encodeWorkspacePath,
   getClaudeProjectsDir,
-  getSessionStatus,
   parseSessionsInDir,
 } from '../parsers/session-jsonl-parser';
 
@@ -189,16 +189,22 @@ export class SessionItem extends vscode.TreeItem {
   /**
    * Status icons differ in BOTH shape AND luminance so the distinction
    * survives color-blindness and dark/light theme changes (WCAG 1.4.1).
-   *   - active → blue pulse  (likely still writing)
-   *   - recent → blue clock  (ended within the last hour)
-   *   - idle   → gray history (older)
+   *   - running     → blue pulse        (claude is mid-turn, writing)
+   *   - needs-input → green comment-discussion (claude waiting for you)
+   *   - stalled     → yellow warning    (mid-turn but no recent writes)
+   *   - idle        → gray history      (old, nothing happening)
    */
   private static iconForStatus(status: SessionStatus): vscode.ThemeIcon {
     switch (status) {
-      case 'active':
+      case 'running':
         return new vscode.ThemeIcon('pulse', new vscode.ThemeColor('charts.blue'));
-      case 'recent':
-        return new vscode.ThemeIcon('clock', new vscode.ThemeColor('charts.blue'));
+      case 'needs-input':
+        return new vscode.ThemeIcon(
+          'comment-discussion',
+          new vscode.ThemeColor('charts.green')
+        );
+      case 'stalled':
+        return new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow'));
       case 'idle':
       default:
         return new vscode.ThemeIcon('history');
@@ -497,34 +503,40 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
    *   2. Terminal was closed after last mtime → cap at `recent` (we ended it)
    *   3. Otherwise                            → plain mtime heuristic
    */
+  /**
+   * Compute the effective status for a session, layering UI-known signals
+   * on top of the JSONL-derived `deriveRunState`:
+   *   1. Terminal open in this window     → `running` (definite)
+   *   2. We closed the terminal post-mtime → `idle`   (we ended it)
+   *   3. Otherwise                         → `deriveRunState(turnEnded, mtime)`
+   */
   computeStatus(session: SessionMetadata): SessionStatus {
-    if (this.openTerminalSessions.has(session.sessionId)) return 'active';
+    if (this.openTerminalSessions.has(session.sessionId)) return 'running';
 
     const closedAt = this.terminalClosedAt.get(session.sessionId);
-    if (closedAt !== undefined && closedAt > session.mtime) {
-      const heuristic = getSessionStatus(session.mtime);
-      return heuristic === 'active' ? 'recent' : heuristic;
-    }
+    if (closedAt !== undefined && closedAt > session.mtime) return 'idle';
 
-    return getSessionStatus(session.mtime);
+    return deriveRunState(session.turnEnded, session.mtime);
   }
 
   /**
-   * Whether a session counts as "running" for the pinned overview section.
-   *   - terminal open in this VS Code window (definite), OR
-   *   - JSONL mtime within last 2 minutes (heuristic — covers other windows
-   *     and external terminals running `claude`).
-   *
-   * Excludes sessions whose terminal we explicitly closed AFTER the last
-   * mtime — those were ours, we ended them, the JSONL is just stale.
+   * Whether a session counts as "alive" for the pinned overview section.
+   * Includes:
+   *   - `running` (claude is mid-turn, still writing)
+   *   - `needs-input` only when very fresh (<5 min) — claude finished a
+   *     response and the user is plausibly about to reply. Older sessions
+   *     in needs-input are noise (user walked away days ago).
+   *   - terminal open in this window forces inclusion regardless.
    */
   isRunning(session: SessionMetadata): boolean {
     if (this.openTerminalSessions.has(session.sessionId)) return true;
 
-    const closedAt = this.terminalClosedAt.get(session.sessionId);
-    if (closedAt !== undefined && closedAt > session.mtime) return false;
-
-    return Date.now() - session.mtime < 2 * 60 * 1000;
+    const status = this.computeStatus(session);
+    if (status === 'running') return true;
+    if (status === 'needs-input' && Date.now() - session.mtime < 5 * 60 * 1000) {
+      return true;
+    }
+    return false;
   }
 
   refresh(): void {
