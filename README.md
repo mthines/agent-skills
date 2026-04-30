@@ -254,9 +254,41 @@ Commands are invoked with a slash:
 /ci-auto-fix <run-id|pr-url>
 ```
 
+## VSCode Extension
+
+The [`vscode-agent-tasks`](./packages/vscode-agent-tasks/) package is a standalone VS Code extension that visualizes the artifacts produced by `autonomous-workflow` — `plan.md`, `task.md`, and `walkthrough.md` — directly in the VS Code sidebar.
+
+**Install from the Marketplace:**
+
+```
+mthines.agent-tasks
+```
+
+Or search for **Agent Tasks** in the VS Code Extensions panel.
+
+**What it shows:**
+
+- All in-flight and completed agent tasks, grouped by branch
+- Task progress with phase indicators, in-progress markers, and sub-tasks
+- Plan summaries with files-to-create/modify and complexity estimate
+- Walkthrough auto-open when a `walkthrough.md` is created
+
+**Configurable directories** (default: `.agent/` and `.gw/`):
+
+```jsonc
+// .vscode/settings.json
+{
+  "agentTasks.directories": [".agent", ".gw"]
+}
+```
+
+See [`packages/vscode-agent-tasks/README.md`](./packages/vscode-agent-tasks/README.md) for full documentation and [`packages/vscode-agent-tasks/DEVELOPMENT.md`](./packages/vscode-agent-tasks/DEVELOPMENT.md) for build/release notes.
+
 ## Repository Structure
 
 ```
+packages/
+  vscode-agent-tasks/    VS Code extension for artifact visualization     (Marketplace: mthines.agent-tasks)
 skills/
   autonomous-workflow/   SKILL.md + README.md + CLAUDE.md +
                          rules/ + templates/ + references/ +

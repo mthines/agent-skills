@@ -1,3 +1,6 @@
+# Nx
+.nx/
+
 # Agent/tool config directories
 .claude
 .adal

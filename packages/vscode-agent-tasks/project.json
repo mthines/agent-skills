@@ -1,0 +1,93 @@
+{
+  "name": "vscode-agent-tasks",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "packages/vscode-agent-tasks/src",
+  "projectType": "application",
+  "tags": ["vscode-extension"],
+  "targets": {
+    "version": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "./scripts/version.sh",
+        "cwd": "packages/vscode-agent-tasks"
+      },
+      "configurations": {
+        "dry-run": {
+          "command": "./scripts/version.sh --dry-run"
+        }
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/dist"],
+      "dependsOn": ["version"],
+      "options": {
+        "command": "node esbuild.config.mjs",
+        "cwd": "packages/vscode-agent-tasks"
+      }
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node esbuild.config.mjs --watch",
+        "cwd": "packages/vscode-agent-tasks"
+      }
+    },
+    "package": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "outputs": ["{workspaceRoot}/dist/packages/vscode-agent-tasks/*.vsix"],
+      "options": {
+        "commands": [
+          "mkdir -p ../../dist/packages/vscode-agent-tasks",
+          "npx @vscode/vsce package --no-dependencies -o ../../dist/packages/vscode-agent-tasks/"
+        ],
+        "cwd": "packages/vscode-agent-tasks",
+        "parallel": false
+      }
+    },
+    "release": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["package"],
+      "options": {
+        "commands": [
+          "npx @vscode/vsce publish --no-dependencies -i $(ls ../../dist/packages/vscode-agent-tasks/*.vsix | head -1)"
+        ],
+        "cwd": "packages/vscode-agent-tasks",
+        "parallel": false
+      },
+      "configurations": {
+        "ci": {
+          "commands": [
+            "npx @vscode/vsce publish --no-dependencies -i $(ls ../../dist/packages/vscode-agent-tasks/*.vsix | head -1)",
+            "npx ovsx publish $(ls ../../dist/packages/vscode-agent-tasks/*.vsix | head -1) || echo 'Open VSX publish skipped (no OVSX_PAT)'"
+          ]
+        },
+        "dry-run": {
+          "commands": [
+            "echo 'Dry run: would publish' $(ls ../../dist/packages/vscode-agent-tasks/*.vsix | head -1)",
+            "npx @vscode/vsce verify-pat agent-tasks || echo 'PAT verification skipped'"
+          ]
+        }
+      }
+    },
+    "publish": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["release"],
+      "options": {
+        "commands": ["npx ovsx publish $(ls ../../dist/packages/vscode-agent-tasks/*.vsix | head -1)"],
+        "cwd": "packages/vscode-agent-tasks"
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint"
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "vitest run",
+        "cwd": "packages/vscode-agent-tasks"
+      }
+    }
+  }
+}
