@@ -5,11 +5,13 @@
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import * as child_process from 'child_process';
 import { AgentTasksProvider } from './providers/agent-tasks-provider';
 import { ArtifactWatcher } from './watchers/artifact-watcher';
 import { SessionsProvider, SessionItem } from './providers/sessions-provider';
 import { SessionWatcher } from './watchers/session-watcher';
 import { initLogger, log, logError } from './lib/logger';
+import { parsePsOutput, findClaudeDescendant } from './lib/process-tree';
 import type { SessionMetadata } from './parsers/session-jsonl-parser';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -223,6 +225,46 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
 
+  // ---------------------------------------------------------------------------
+  // Terminal adoption helper
+  // ---------------------------------------------------------------------------
+
+  /**
+   * One-shot process-tree scan. Tries to find a terminal already running
+   * `claude --resume <sid>` among `vscode.window.terminals`.
+   *
+   * Returns the matching terminal, or `undefined` on any failure or no-match.
+   * All errors are caught and logged; callers always fall through to spawn.
+   */
+  const tryAdoptTerminal = async (
+    sid: string,
+    terminals: readonly vscode.Terminal[]
+  ): Promise<vscode.Terminal | undefined> => {
+    try {
+      const stdout = child_process.execSync('ps -A -o pid,ppid,command', { encoding: 'utf8' });
+      const snapshot = parsePsOutput(stdout);
+
+      for (const terminal of terminals) {
+        let shellPid: number | undefined;
+        try {
+          shellPid = await terminal.processId;
+        } catch {
+          continue;
+        }
+        if (shellPid === undefined) continue;
+
+        const match = findClaudeDescendant(shellPid, sid, snapshot);
+        if (match !== undefined) {
+          log(`tryAdoptTerminal: adopted terminal (shellPid=${shellPid}, claudePid=${match}, sid=${sid.slice(0, 8)})`);
+          return terminal;
+        }
+      }
+    } catch (err) {
+      logError('tryAdoptTerminal: ps scan failed, falling through to spawn', err);
+    }
+    return undefined;
+  };
+
   // Shared open-session logic used by both the tree-click command and the
   // find QuickPick. Reads the `openWith` setting once, then either resumes
   // or opens the JSONL.
@@ -243,6 +285,17 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       if (existing) sessionTerminals.delete(sid);
+
+      // Attempt to adopt an existing terminal that is already running
+      // `claude --resume <sid>` (e.g. one the user opened manually).
+      // Runs only on click — never on refresh, watcher tick, or render.
+      const adopted = await tryAdoptTerminal(sid, vscode.window.terminals);
+      if (adopted) {
+        sessionTerminals.set(sid, adopted);
+        sessionsProvider.setTerminalOpen(sid, true);
+        adopted.show(false);
+        return;
+      }
 
       const branch = session.gitBranch ?? '?';
       const shortId = sid.slice(0, 8);
@@ -325,6 +378,23 @@ export function activate(context: vscode.ExtensionContext): void {
     await openSession(picked.session);
   });
 
+  // Feature 2: + button in panel title bar — start a new Claude session.
+  const newSessionCmd = vscode.commands.registerCommand(
+    'agentTasks.sessions.newSession',
+    () => {
+      log('Command: sessions.newSession');
+      const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      log(`Starting new Claude session (cwd=${cwd ?? '?'})`);
+      const terminal = vscode.window.createTerminal({
+        name: 'Claude · new session',
+        cwd,
+        iconPath: new vscode.ThemeIcon('comment-discussion'),
+      });
+      terminal.show();
+      terminal.sendText('claude');
+    }
+  );
+
   context.subscriptions.push(
     agentTasksView,
     artifactWatcher,
@@ -346,7 +416,8 @@ export function activate(context: vscode.ExtensionContext): void {
     configSub,
     openSessionCmd,
     findSessionCmd,
-    closeTerminalSub
+    closeTerminalSub,
+    newSessionCmd
   );
 }
 
