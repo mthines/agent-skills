@@ -25,7 +25,7 @@ Gate: CI green OR user-approved stop. Worktree cleanup is optional and never aut
 - **Escalate judgment failures**: real test failures, ambiguous build errors, infra issues — report to user.
 - **Never disable checks to make CI green**: no `--no-verify`, no `continue-on-error`, no skipping suites.
 - **Bound the loop**: hard cap of 2 `ci-auto-fix` handoffs per PR. Each handoff has its own internal retry budget; do not wrap it in another loop.
-- **Cleanup is opt-in**: never `gw remove` an open PR's worktree.
+- **Cleanup is opt-in**: never remove an open PR's worktree (whether via `gw remove` or `git worktree remove`).
 
 ## Procedure
 
@@ -184,21 +184,33 @@ Wait for confirmation. Default is to keep the worktree if the user is silent.
 ### Step 3: Remove Worktree
 
 ```bash
+# With gw (recommended — handles branch + worktree atomically)
 gw remove <branch-name>
+
+# Native git worktree fallback (when gw is not installed)
+REPO_NAME="$(basename "$(git rev-parse --show-toplevel)")"
+BRANCH_SLUG="$(echo "<branch-name>" | tr '/' '-')"
+git worktree remove "../${REPO_NAME}-${BRANCH_SLUG}"
+git branch -d "<branch-name>"
 ```
 
 Validate:
 
-| Check                              | Expected                       |
-| ---------------------------------- | ------------------------------ |
-| `gw list` no longer shows branch   | Yes                            |
-| Worktree directory deleted         | Yes                            |
-| `.agent/{branch-name}/` artifacts  | Removed alongside the worktree |
+| Check                                                     | Expected                       |
+| --------------------------------------------------------- | ------------------------------ |
+| `gw list` (or `git worktree list`) no longer shows branch | Yes                            |
+| Worktree directory deleted                                | Yes                            |
+| `.agent/{branch-name}/` artifacts                         | Removed alongside the worktree |
 
 ### Step 4: Navigate Back to Main
 
 ```bash
+# With gw (shell integration required)
 gw cd main
+
+# Native fallback: cd back to the original repo path
+cd "$(git rev-parse --show-toplevel)"
+# or just `cd ../<repo>` from the worktree
 ```
 
 ### Step 5: Report Cleanup

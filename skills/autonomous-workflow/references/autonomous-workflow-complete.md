@@ -2,6 +2,16 @@
 
 This example demonstrates a full autonomous workflow execution from start to finish.
 
+> **Note on tooling:** This example uses [`gw`](https://github.com/mthines/gw-tools)
+> commands as the happy path because `gw` is the recommended worktree tool and
+> ships with auto-copy of secrets, pre/post-checkout hooks, smart cleanup, and
+> shell-integrated `gw cd`. **`gw` is optional, not required.** If `gw` is not
+> installed, every `gw` command shown here has a native `git worktree`
+> equivalent — see
+> [`rules/prerequisites.md#fallback-to-native-git-worktree`](../rules/prerequisites.md#fallback-to-native-git-worktree)
+> for the full mapping. The only hard-required CLI tool for this workflow is
+> `gh`.
+
 ## Scenario
 
 **User request:** "Implement dark mode toggle for the app"

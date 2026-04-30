@@ -6,6 +6,7 @@ tags:
   - mandatory
   - isolation
   - gw
+  - git-worktree
   - phase-2
 ---
 
@@ -14,14 +15,19 @@ tags:
 ## Overview
 
 This phase is MANDATORY before any code changes. Every autonomous run creates
-an isolated worktree using `gw add`, navigates into it, then writes the
-`plan.md` artifact (Full Mode) inside it.
+an isolated worktree, navigates into it, then writes the `plan.md` artifact
+(Full Mode) inside it.
+
+The worktree can be created with [`gw`](https://github.com/mthines/gw-tools)
+(recommended — adds auto-copy of secrets, pre/post-checkout hooks, smart
+cleanup) or with native `git worktree` if `gw` is not installed. **Both are
+supported. Detect at the start of the phase and choose accordingly.**
 
 > **Two distinct directories — do not confuse them:**
 >
 > | Directory | Owned by | Purpose                                                      |
 > | --------- | -------- | ------------------------------------------------------------ |
-> | `.gw/`    | gw CLI   | gw config (`config.json`, `state.json`) — committed selectively |
+> | `.gw/`    | gw CLI   | gw config (`config.json`, `state.json`) — only if gw is installed |
 > | `.agent/` | this skill | Workflow artifacts (`plan.md`, `walkthrough.md`) — gitignored  |
 >
 > Artifacts always live under `.agent/{branch-name}/`. Never under `.gw/`.
@@ -29,7 +35,7 @@ an isolated worktree using `gw add`, navigates into it, then writes the
 ## Core Principles
 
 - **Isolation is mandatory** — every autonomous execution creates a worktree.
-- **Use `gw add`** — not raw `git worktree add`.
+- **Prefer `gw` if available, fall back to `git worktree` if not.**
 - **Check smart detection first** — see [smart-worktree-detection](./smart-worktree-detection.md).
 - **Verify setup before coding** — build must work in the worktree.
 - **Artifacts go in `.agent/`** — never on the main branch, never in `.gw/`.
@@ -39,7 +45,7 @@ an isolated worktree using `gw add`, navigates into it, then writes the
 - Preserves the user's working state
 - Enables true parallel development
 - Provides clean rollback (just remove the worktree)
-- Follows gw-tools best practices
+- Lets autonomous runs operate without disturbing the user's editor
 
 ## When to Skip (Rare)
 
@@ -53,13 +59,31 @@ Only skip worktree creation if the user explicitly says:
 
 ## Procedure
 
-### Step 0: Smart Detection
+### Step 0: Detect `gw` Availability
 
-Before creating, check whether the current worktree matches the task. See
-[smart-worktree-detection](./smart-worktree-detection.md) for the full
-algorithm.
+```bash
+which gw >/dev/null 2>&1 && echo "gw" || echo "native"
+```
 
-### Step 1: Generate Branch Name
+If the result is `native`, **emit this warning to the user once**, then
+continue with native commands:
+
+> ⚠️ `gw` is not installed. Falling back to native `git worktree`. You're
+> missing auto-copy of secrets/env files, pre/post-checkout hooks, smart
+> cleanup, and shell-integrated `gw cd`. To enable these, install `gw`:
+> <https://github.com/mthines/gw-tools>.
+
+See [prerequisites](./prerequisites.md#fallback-to-native-git-worktree) for
+the full feature comparison and command equivalents.
+
+### Step 1: Smart Detection
+
+Before creating a new worktree, check whether the current worktree matches
+the task. See [smart-worktree-detection](./smart-worktree-detection.md) for
+the full algorithm. The detection logic itself is gw-agnostic — it inspects
+`git worktree list` output regardless of which tool created the worktrees.
+
+### Step 2: Generate Branch Name
 
 Pattern: `<type>/<short-description>`
 
@@ -72,31 +96,83 @@ Pattern: `<type>/<short-description>`
 | `chore/`    | Tooling, dependencies |
 | `test/`     | Adding / fixing tests |
 
-### Step 2: Create Worktree
+### Step 3: Create Worktree
+
+#### With `gw` (recommended)
 
 ```bash
 gw add <branch-name>
 ```
 
-If this fails, see [error-recovery](./error-recovery.md). If `gw` is missing,
-see [prerequisites](./prerequisites.md).
+`gw` will auto-copy configured files (typically `.env`, `.env.local`),
+run pre/post-checkout hooks, and place the worktree at the configured
+path (sibling directory by default).
 
-### Step 3: Navigate to Worktree
+#### With native `git worktree` (fallback)
+
+```bash
+REPO_NAME="$(basename "$(git rev-parse --show-toplevel)")"
+BRANCH_SLUG="$(echo "<branch-name>" | tr '/' '-')"
+WORKTREE_PATH="../${REPO_NAME}-${BRANCH_SLUG}"
+
+git worktree add -b "<branch-name>" "$WORKTREE_PATH"
+```
+
+This mirrors `gw`'s default sibling-directory layout so the placement is
+consistent for users who later install `gw`.
+
+If creation fails, see [error-recovery](./error-recovery.md).
+
+### Step 4: Navigate to Worktree
+
+#### With `gw`
 
 ```bash
 gw cd <branch-name>
 ```
 
+(Requires shell integration — see [prerequisites](./prerequisites.md#shell-integration-for-gw-cd).)
+
+#### Without `gw`
+
+```bash
+cd "$WORKTREE_PATH"
+```
+
 Verify with `pwd` — every subsequent command runs inside the worktree.
 
-### Step 4: Install Dependencies
+### Step 5: Sync Configuration (If Needed)
+
+#### With `gw`
+
+If the user has secrets / env files configured in `.gw/config.json` for
+auto-copy but the new worktree is missing them, run:
+
+```bash
+gw sync <branch-name>
+```
+
+#### Without `gw`
+
+Manually copy any env / secrets files the worktree needs. Ask the user what
+to copy if unclear:
+
+```bash
+cp ../<original-worktree>/.env .
+cp ../<original-worktree>/.env.local .
+```
+
+### Step 6: Install Dependencies
 
 ```bash
 # Use the project's package manager
 pnpm install   # or npm install / yarn install / bun install
 ```
 
-### Step 5: Verify Environment
+When `gw` is installed and a post-checkout hook is configured, this may
+already have happened — check before re-running.
+
+### Step 7: Verify Environment
 
 Run the project's fast check:
 
@@ -110,13 +186,7 @@ cargo check              # Rust projects
 
 If verification fails, fix the environment before continuing.
 
-### Step 6: Sync Configuration (If Needed)
-
-```bash
-gw sync <branch-name>
-```
-
-### Step 7: Ensure `.agent/` is Gitignored
+### Step 8: Ensure `.agent/` is Gitignored
 
 Workflow artifacts are per-developer state and must not be committed. Add
 `.agent/` to the repo's root `.gitignore` if it isn't already:
@@ -136,10 +206,11 @@ if [ ! -f .agent/.gitignore ]; then
 fi
 ```
 
-> **Note on `.gw/`:** the `gw` CLI manages its own `.gw/.gitignore` (created
-> by `gw init` / `gw checkout`) so `config.json` can be committed while
-> `state.json` and per-branch state stay local. That's gw's concern — leave it
-> alone. Workflow artifacts go under `.agent/`, not `.gw/`.
+> **Note on `.gw/`:** if `gw` is installed and the repo is initialized, the
+> `gw` CLI manages its own `.gw/.gitignore` (created by `gw init`) so
+> `config.json` can be committed while `state.json` and per-branch state
+> stay local. That's gw's concern — leave it alone. Workflow artifacts go
+> under `.agent/`, not `.gw/`.
 
 ---
 
@@ -196,7 +267,9 @@ The log is the durable trail a fresh Claude session uses to resume mid-flight.
 
 ---
 
-## gw Commands Reference
+## Command Reference
+
+### With `gw`
 
 ```bash
 gw add feat/my-feature                  # Create worktree
@@ -208,15 +281,27 @@ gw sync feat/my-feature                 # Sync config files
 gw remove feat/my-feature               # Remove worktree (Phase 7)
 ```
 
+### With native `git worktree` (fallback)
+
+```bash
+git worktree add -b feat/foo ../<repo>-feat-foo  # Create worktree + branch
+git worktree list                                # List worktrees
+cd ../<repo>-feat-foo                            # Navigate (manual)
+cp ../<source>/.env .                            # Sync env files (manual)
+git worktree remove ../<repo>-feat-foo           # Remove worktree
+git branch -d feat/foo                           # Then remove the branch
+```
+
 ---
 
 ## Setup Checklist
 
 Before Phase 3 (Implementation):
 
+- [ ] `gw` availability detected; native fallback warning shown if missing
 - [ ] Smart detection completed
 - [ ] Branch name follows conventions
-- [ ] Worktree created with `gw add`
+- [ ] Worktree created (with `gw add` or `git worktree add`)
 - [ ] Currently inside worktree directory (`pwd` verified)
 - [ ] Dependencies installed
 - [ ] Environment fast-check passes
@@ -232,9 +317,19 @@ Before Phase 3 (Implementation):
 
 ### Branch Already Exists
 
+With `gw`:
+
 ```bash
 gw cd <branch-name>          # Navigate to existing
 gw add <branch-name>-v2      # Or create with a different name
+```
+
+Without `gw`:
+
+```bash
+git worktree list            # Check existing worktrees
+cd <existing-path>           # Navigate to existing
+# Or pick a different branch name and re-run Step 3
 ```
 
 ### Dependencies Failed
@@ -246,7 +341,8 @@ pnpm install                 # or your package manager
 
 ### `gw` Not Found
 
-See [prerequisites](./prerequisites.md) for installation.
+Not an error — see [prerequisites](./prerequisites.md#fallback-to-native-git-worktree)
+for the native fallback procedure. The workflow continues without `gw`.
 
 ---
 
@@ -258,5 +354,7 @@ See [prerequisites](./prerequisites.md) for installation.
 - Tool prerequisites: [prerequisites](./prerequisites.md)
 - Error recovery: [error-recovery](./error-recovery.md)
 - Companion registry: [companion-skills](./companion-skills.md)
+- gw-tools (recommended): <https://github.com/mthines/gw-tools>
+- Native git worktree docs: <https://git-scm.com/docs/git-worktree>
 - Related skill: [`create-plan`](../../create-plan/SKILL.md)
 - Related skill: [`git-worktree-workflows`](../../git-worktree-workflows/)

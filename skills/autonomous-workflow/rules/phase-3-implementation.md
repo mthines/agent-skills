@@ -22,13 +22,13 @@ Companions invoked from this phase **skip silently if not installed** — see
 
 Before starting, verify:
 
-| Check                                   | Command                                |
-| --------------------------------------- | -------------------------------------- |
-| Worktree exists                         | `gw list`                              |
-| Currently in the worktree directory     | `pwd`                                  |
-| Dependencies installed                  | per project (`pnpm i`, `go mod tidy`)  |
-| Environment validated                   | type-check or compile passes           |
-| `plan.md` populated (Full Mode)         | `cat .agent/{branch}/plan.md`          |
+| Check                                   | Command                                                |
+| --------------------------------------- | ------------------------------------------------------ |
+| Worktree exists                         | `gw list` (with `gw`) or `git worktree list` (native)  |
+| Currently in the worktree directory     | `pwd`                                                  |
+| Dependencies installed                  | per project (`pnpm i`, `go mod tidy`)                  |
+| Environment validated                   | type-check or compile passes                           |
+| `plan.md` populated (Full Mode)         | `cat .agent/{branch}/plan.md`                          |
 
 If the worktree was not created, **STOP and return to Phase 2.**
 

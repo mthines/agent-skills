@@ -54,12 +54,16 @@ MODE SELECTION:
 
 ### Step 2: Verify Prerequisites
 
-| Tool | Check       | If missing                       |
-| ---- | ----------- | -------------------------------- |
-| `gw` | `which gw`  | Stop, prompt user to install     |
-| `gh` | `which gh`  | Stop, prompt user to install     |
+| Tool | Status      | Check       | If missing                                                  |
+| ---- | ----------- | ----------- | ----------------------------------------------------------- |
+| `gh` | **REQUIRED**| `which gh`  | Stop, prompt user to install                                |
+| `gw` | Recommended | `which gw`  | Continue with native `git worktree` fallback (warn user once)|
 
-See [`rules/prerequisites.md`](./rules/prerequisites.md) for installation.
+`gh` is hard-required for Phase 6 (PR creation) and Phase 7 (CI gate).
+`gw` is recommended — it adds auto-copy of secrets, pre/post-checkout hooks,
+and smart cleanup — but the workflow falls back to native `git worktree` if
+it's not installed. See [`rules/prerequisites.md`](./rules/prerequisites.md)
+for the full feature comparison and installation steps.
 
 ---
 

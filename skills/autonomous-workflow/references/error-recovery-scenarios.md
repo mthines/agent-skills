@@ -2,6 +2,14 @@
 
 Real-world examples of error recovery during autonomous workflow execution.
 
+> **Note on tooling:** Examples below use [`gw`](https://github.com/mthines/gw-tools)
+> commands as the happy path. `gw` is recommended but **optional** — if it's
+> not installed, the workflow falls back to native `git worktree`. See
+> [`rules/prerequisites.md#fallback-to-native-git-worktree`](../rules/prerequisites.md#fallback-to-native-git-worktree)
+> for command equivalents (e.g. `gw add` → `git worktree add -b`,
+> `gw remove` → `git worktree remove` + `git branch -d`,
+> `gw cd` → manual `cd <path>`). The only hard-required CLI tool is `gh`.
+
 ## Scenario 1: Test Failures Requiring Multiple Iterations
 
 ### Context

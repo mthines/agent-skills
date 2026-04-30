@@ -24,12 +24,12 @@ clean recovery.
 | ----- | -------------------------------------------------------------------------------------------------- |
 | 0     | Mode selected (Full / Lite). User confirmed understanding.                                         |
 | 1     | Plan matches requirements. `Skill("confidence", "plan")` >= 90% (mandatory companion).             |
-| 2     | Worktree created with `gw add`. CWD is the worktree. Deps installed. `plan.md` written under `.agent/{branch}/` (Full Mode). |
+| 2     | Worktree created with `gw add` (or native `git worktree add` fallback). CWD is the worktree. Deps installed. `plan.md` written under `.agent/{branch}/` (Full Mode). |
 | 3     | Working in isolated worktree. Build/lint passes after each edit. `code-quality(code)` run at end.  |
 | 4     | All tests pass OR user-approved stop after stuck-loop escalation.                                  |
 | 5     | Docs reflect changes. `Skill("update-claude")` run.                                                |
 | 6     | `Skill("review-changes")` clean. Walkthrough shown. Draft PR opened via `Skill("create-pr")`.      |
-| 7     | CI green OR user-approved stop. Optional `gw remove` after merge.                                  |
+| 7     | CI green OR user-approved stop. Optional `gw remove` (or `git worktree remove` + `git branch -d`) after merge. |
 
 See each `phase-N-*.md` rule for full gate details.
 
@@ -40,7 +40,7 @@ See each `phase-N-*.md` rule for full gate details.
 | After Phase | Ask                                              |
 | ----------- | ------------------------------------------------ |
 | Phase 1     | Can I explain the approach in 2 sentences?       |
-| Phase 2     | Is `gw list` showing the new worktree?           |
+| Phase 2     | Is `git worktree list` showing the new worktree? (or `gw list` if `gw` is installed) |
 | Phase 3     | Does code compile and lint pass?                 |
 | Phase 4     | Are ALL tests passing (or stop user-approved)?   |
 | Phase 5     | Do docs match the implementation?                |
@@ -66,6 +66,16 @@ is wrong — continuing burns tokens without converging.
 See [companion-skills.md#stuck-loop-protocol](./companion-skills.md#stuck-loop-protocol).
 
 ---
+
+## Tool Prerequisites
+
+| Tool   | Status        | Behavior if missing                                                       |
+| ------ | ------------- | ------------------------------------------------------------------------- |
+| `gh`   | **REQUIRED**  | Stop. Phase 6 (PR creation) and Phase 7 (CI gate) cannot proceed.         |
+| `gw`   | Recommended   | Continue with native `git worktree` fallback; emit one-time warning. See [prerequisites#fallback-to-native-git-worktree](./prerequisites.md#fallback-to-native-git-worktree). |
+
+**`gw` is NOT a hard prerequisite.** The workflow falls back to native
+`git worktree` when `gw` is missing. Only `gh` is hard-required.
 
 ## Companion-Skill Safety
 
@@ -174,7 +184,10 @@ git reset --hard HEAD~1
 git reset --hard origin/main
 
 # Remove worktree entirely
-gw remove <branch-name> --force
+gw remove <branch-name> --force                       # with gw
+# or, native fallback:
+git worktree remove "$WORKTREE_PATH" --force \
+  && git branch -D <branch-name>
 ```
 
 ---

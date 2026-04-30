@@ -114,7 +114,7 @@ Phase 6: PR Creation
     | (draft PR delivered, walkthrough.md written)
 Phase 7: CI Gate + Optional Cleanup
     | Watch CI -> Skill("ci-auto-fix") per failed check (parallel, cap 2)
-    | After merge: gw remove (optional)
+    | After merge: gw remove <branch> (or git worktree remove + git branch -d, optional)
 ```
 
 ## When to Use
@@ -130,8 +130,14 @@ Phase 7: CI Gate + Optional Cleanup
 
 - User wants to code alongside you
 - Task is exploratory research
-- Project doesn't use Git or `gw` worktree tooling
+- Project doesn't use Git
 - User says "work in current directory"
+
+**Note on tooling:** The workflow uses [`gw`](https://github.com/mthines/gw-tools)
+when available (recommended for auto-copy of secrets, pre/post-checkout hooks,
+and smart cleanup), but falls back to native `git worktree` when `gw` is not
+installed. The only hard-required CLI tool is `gh`. See
+[prerequisites](./prerequisites.md#fallback-to-native-git-worktree) for details.
 
 ## Workflow Modes
 

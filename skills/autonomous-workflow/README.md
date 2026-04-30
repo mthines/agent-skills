@@ -48,13 +48,25 @@ phase rules and the companion registry carry the procedural detail.
 
 ### Step 1: Install prerequisites
 
-Install the `gw` CLI:
+| Tool | Status      | Why                                                                 |
+| ---- | ----------- | ------------------------------------------------------------------- |
+| `gh` | **REQUIRED**| PR creation (Phase 6) and CI watching (Phase 7)                     |
+| `gw` | Recommended | Worktree management with auto-copy of secrets, pre/post-checkout hooks, smart cleanup, and shell-integrated `gw cd` |
 
 ```bash
+# Required
+brew install gh && gh auth login
+
+# Recommended (optional)
 brew install mthines/gw-tools/gw
 ```
 
-You also need `gh` (GitHub CLI) for PR creation.
+If `gw` is not installed, the workflow falls back to native `git worktree`
+commands using the same sibling-directory layout (`../<repo>-<branch-slug>/`).
+You'll be warned once at the start of Phase 2 about the features you're missing
+(auto-copy of secrets, pre/post-checkout hooks, smart cleanup, shell-integrated
+`gw cd`). See [`rules/prerequisites.md#fallback-to-native-git-worktree`](./rules/prerequisites.md#fallback-to-native-git-worktree)
+for the full feature comparison.
 
 ### Step 2: Install the skill + agent
 

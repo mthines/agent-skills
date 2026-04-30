@@ -20,14 +20,19 @@ gets stuck silently.
 
 ## Worktree Creation Failures
 
-**Error:** `gw add` fails
+**Error:** `gw add` or `git worktree add` fails
 
-| Cause                 | Fix                                    |
-| --------------------- | -------------------------------------- |
-| Branch already exists | Use different name or `gw cd <branch>` |
-| Permission error      | Check directory permissions            |
-| Disk space issue      | Run `gw prune`, free space             |
-| Git error             | Read message, fix underlying issue     |
+| Cause                 | Fix (with `gw`)                        | Fix (native `git worktree`)                                   |
+| --------------------- | -------------------------------------- | ------------------------------------------------------------- |
+| Branch already exists | Use different name or `gw cd <branch>` | `git worktree list` to inspect, then `cd` into the existing path or pick a new branch name |
+| Permission error      | Check directory permissions            | Check directory permissions on `../<repo>-<branch-slug>`      |
+| Disk space issue      | Run `gw prune`, free space             | `git worktree prune`, free space                              |
+| Path collision        | Pick a different branch name           | `git worktree list` shows occupied paths; pick a different branch slug |
+| Git error             | Read message, fix underlying issue     | Read message, fix underlying issue                            |
+
+If `gw` is not installed at all, that is **not** a failure — it's the expected
+native fallback. See
+[prerequisites#fallback-to-native-git-worktree](./prerequisites.md#fallback-to-native-git-worktree).
 
 ---
 
@@ -133,12 +138,12 @@ See [phase-7-ci-gate](./phase-7-ci-gate.md) for details.
 
 ### Hallucinated Commands
 
-| Hallucinated Command | Correct Command           |
-| -------------------- | ------------------------- |
-| `gw create`          | `gw checkout` or `gw add` |
-| `gw switch`          | `gw cd`                   |
-| `gw delete`          | `gw remove`               |
-| `gw new`             | `gw checkout`             |
+| Hallucinated Command | Correct Command (with `gw`) | Correct Command (native `git worktree`)            |
+| -------------------- | --------------------------- | -------------------------------------------------- |
+| `gw create`          | `gw checkout` or `gw add`   | `git worktree add -b <branch> <path>`              |
+| `gw switch`          | `gw cd`                     | `cd <worktree-path>` (manual)                      |
+| `gw delete`          | `gw remove`                 | `git worktree remove <path>` then `git branch -d <branch>` |
+| `gw new`             | `gw checkout`               | `git worktree add -b <branch> <path>`              |
 
 ### Stuck in Loop
 

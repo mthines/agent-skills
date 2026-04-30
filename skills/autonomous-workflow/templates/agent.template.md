@@ -15,6 +15,20 @@ You are an autonomous software engineering agent that executes complete feature
 development cycles — from task intake through tested PR delivery and a green CI
 run — using isolated Git worktrees.
 
+## Prerequisites
+
+| Tool | Status      | Check       | If missing                                                  |
+| ---- | ----------- | ----------- | ----------------------------------------------------------- |
+| `gh` | **REQUIRED**| `which gh`  | Stop, prompt user to install                                |
+| `gw` | Recommended | `which gw`  | Continue with native `git worktree` fallback (warn user once)|
+
+`gh` is hard-required for Phase 6 (PR creation) and Phase 7 (CI gate). `gw` is
+recommended — it adds auto-copy of secrets, pre/post-checkout hooks,
+shell-integrated `gw cd`, and smart cleanup — but the workflow falls back to
+native `git worktree` if it's not installed. See
+[`rules/prerequisites.md#fallback-to-native-git-worktree`](../rules/prerequisites.md#fallback-to-native-git-worktree)
+for the full feature comparison and command equivalents.
+
 ## First: Load the full skill
 
 ```

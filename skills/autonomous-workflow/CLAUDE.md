@@ -72,7 +72,7 @@ skills/autonomous-workflow/
 ├── install.sh                  # Symlinks templates into ~/.claude or ./.claude.
 ├── rules/
 │   ├── companion-skills.md     # Registry of all optional companions + disable links.
-│   ├── prerequisites.md        # gw + gh install instructions.
+│   ├── prerequisites.md        # gh (required) + gw (recommended) install + native fallback.
 │   ├── overview.md             # High-level narrative for orientation.
 │   ├── phase-0-validation.md   # Each phase rule is self-contained — agents
 │   ├── phase-1-planning.md       load on demand. They can include the
@@ -284,6 +284,10 @@ When editing this skill, do not break these — they're load-bearing:
 - **Artifact paths are `.agent/{branch}/`, never `.gw/{branch}/`.** The only
   acceptable mention of `.gw/` is a migration note or "never use this"
   reminder.
+- **`gh` is hard-required; `gw` is optional with a native fallback.** The
+  workflow must never block on a missing `gw` — Phase 2 detects it at Step 0
+  and falls back to native `git worktree` with a one-time warning. The only
+  hard tool prerequisite is `gh` (for Phases 6 and 7).
 - **The system-prompt for the agent template stays lean.** It references
   `SKILL.md` for procedures rather than duplicating them. If the agent
   template grows beyond ~250 lines of system prompt, it's drifting.
@@ -350,6 +354,12 @@ end-user-facing; this file is contributor-facing.
   pattern. `.agent/` artifact directory (was `.gw/`). 3-iteration
   stuck-loop limit (was 20). Phase 7 = CI Gate + Optional Cleanup
   (was just Cleanup). Optional companions skip silently.
+- **v3.1** — `gw` made optional (recommended), with a native `git worktree`
+  fallback. `gh` remains hard-required. Phase 2 detects `gw` at Step 0 and
+  emits a one-time warning when falling back, listing the features the user
+  is missing (auto-copy, pre/post-checkout hooks, smart cleanup,
+  shell-integrated `gw cd`). The workflow is now usable in repos that
+  haven't adopted `gw`.
 
 The npm package `@gw-tools/autonomous-workflow-agent` still exists at the
 old location for SDK users who prefer a programmatic import. It will be

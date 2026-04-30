@@ -27,23 +27,29 @@ Prescriptive guidance - tell the agent what to do, not why.
 ### Basic Usage
 
 ```bash
-# Command example
+# Command example (gw is recommended; native git worktree fallback also supported)
 gw command --flag
 ```
 
 ### GOOD Pattern
 
 ```bash
-# Correct approach
+# With gw (recommended)
 gw add feature/my-task
 cd $(gw path feature/my-task)
+
+# Native git worktree (fallback when gw is not installed)
+REPO_NAME="$(basename "$(git rev-parse --show-toplevel)")"
+git worktree add -b feature/my-task "../${REPO_NAME}-feature-my-task"
+cd "../${REPO_NAME}-feature-my-task"
 ```
 
 ### BAD Pattern
 
 ```bash
 # Incorrect approach - avoid this
-git checkout -b feature/my-task  # Don't use git checkout for worktrees
+git checkout -b feature/my-task  # Don't `git checkout` in the main worktree;
+                                 # always create an isolated worktree.
 ```
 
 ## Decision Table
@@ -65,8 +71,11 @@ git checkout -b feature/my-task  # Don't use git checkout for worktrees
 **Fix**:
 
 ```bash
-# Resolution command
+# Resolution command (with gw)
 gw fix-command
+
+# Native git worktree fallback (when gw not installed)
+git worktree <equivalent-command>
 ```
 
 ### Common Issue 2

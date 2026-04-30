@@ -76,7 +76,7 @@ one agent hands off to another, follow these rules.
 - **Unique worktree names**: prevent conflicts between agents.
 - **Never share branches**: each agent works on its own branch.
 - **Document state for handoff**: clear notes when handing off.
-- **Check before creating**: always run `gw list` first.
+- **Check before creating**: always run `gw list` (or `git worktree list` if `gw` is not installed) first.
 
 ### Worktree Naming Convention
 
@@ -91,18 +91,25 @@ When multiple agents may run in parallel, include a unique identifier:
 | Session ID      | `feat/auth-session-xyz`             |
 
 ```bash
-# With timestamp
+# With timestamp (with gw)
 gw add feat/dark-mode-$(date +%Y%m%d-%H%M%S)
 
-# With agent identifier
+# With agent identifier (with gw)
 gw add feat/dark-mode-agent-${AGENT_ID}
+
+# Native git worktree equivalent
+BRANCH="feat/dark-mode-$(date +%Y%m%d-%H%M%S)"
+REPO_NAME="$(basename "$(git rev-parse --show-toplevel)")"
+BRANCH_SLUG="$(echo "$BRANCH" | tr '/' '-')"
+git worktree add -b "$BRANCH" "../${REPO_NAME}-${BRANCH_SLUG}"
 ```
 
 ### Avoiding Conflicts
 
 ```bash
 # Always check existing worktrees
-gw list
+gw list                  # with gw
+git worktree list        # native (works in both cases)
 
 # Check for similar branches
 git branch --list "*dark-mode*"
@@ -112,7 +119,7 @@ Rules:
 
 1. Never work on the same branch as another worktree.
 2. Use descriptive names to avoid confusion.
-3. Check `gw list` before every `gw add`.
+3. Check `gw list` (or `git worktree list`) before every worktree creation.
 
 ---
 
@@ -160,12 +167,12 @@ Share with the next agent:
 
 ## Receiving Handoff
 
-| Step | Command                          |
-| ---- | -------------------------------- |
-| 1    | `gw cd <branch-name>`            |
-| 2    | Read `.agent/{branch}/plan.md`   |
-| 3    | `git status` and run fast checks |
-| 4    | Resume from documented state     |
+| Step | Command (with `gw`)              | Command (native `git worktree`)                                |
+| ---- | -------------------------------- | -------------------------------------------------------------- |
+| 1    | `gw cd <branch-name>`            | `cd ../<repo>-<branch-slug>` (manual; see `git worktree list`) |
+| 2    | Read `.agent/{branch}/plan.md`   | Same                                                           |
+| 3    | `git status` and run fast checks | Same                                                           |
+| 4    | Resume from documented state     | Same                                                           |
 
 ---
 
@@ -193,7 +200,11 @@ Coordination:
 1. Agent B waits for Agent A to complete.
 2. Agent B branches from Agent A:
    ```bash
+   # With gw
    gw add feat/auth-oauth --from feat/auth-base
+
+   # Native git worktree fallback
+   git worktree add -b feat/auth-oauth ../<repo>-feat-auth-oauth feat/auth-base
    ```
 
 ### Split Task
@@ -216,14 +227,18 @@ Coordination:
 
 ```bash
 # Check who owns the worktree
-gw list
+gw list                  # with gw
+git worktree list        # native (works in both cases)
 
 # If another agent's worktree:
 # - Use a different branch name
 # - Coordinate with that agent
 
 # If orphaned worktree:
-gw remove <conflicting-worktree>
+gw remove <conflicting-worktree>                      # with gw
+# or, native fallback:
+git worktree remove ../<repo>-<branch-slug> \
+  && git branch -D <conflicting-branch>
 ```
 
 ---

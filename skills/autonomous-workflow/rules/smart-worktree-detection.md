@@ -18,7 +18,8 @@ This prevents unnecessary worktree proliferation and respects ongoing work.
 
 ## Core Principles
 
-- **Check before creating**: Always run detection before `gw add`.
+- **Check before creating**: Always run detection before `gw add` (or `git worktree add`).
+- **Tool-agnostic**: Detection inspects `git worktree list`, which works whether or not `gw` is installed.
 - **Fuzzy match keywords**: Match significant words from task to worktree name.
 - **Always prompt on match**: Let user decide to continue or create new.
 - **On main/master**: Always create new worktree without prompting.
@@ -28,11 +29,16 @@ This prevents unnecessary worktree proliferation and respects ongoing work.
 ### Step 1: Get Current Worktree Info
 
 ```bash
-# Get current branch/worktree
-gw list
+# Get current branch/worktree (works regardless of whether gw is installed)
+git worktree list
 git branch --show-current
 pwd
 ```
+
+`git worktree list` is the tool-agnostic source of truth. If `gw` is installed,
+`gw list` provides the same information with extra metadata, but the detection
+logic only needs the path / branch columns that `git worktree list` already
+emits.
 
 Extract:
 
@@ -117,8 +123,14 @@ CURRENT_BRANCH=$(git branch --show-current)
 
 # 2. Check if on protected branch
 if [[ "$CURRENT_BRANCH" =~ ^(main|master|develop)$ ]]; then
-    # Always create new worktree
-    gw add <new-branch>
+    # Always create new worktree (with gw if available, otherwise native)
+    if command -v gw >/dev/null 2>&1; then
+      gw add <new-branch>
+    else
+      REPO_NAME="$(basename "$(git rev-parse --show-toplevel)")"
+      BRANCH_SLUG="$(echo "<new-branch>" | tr '/' '-')"
+      git worktree add -b "<new-branch>" "../${REPO_NAME}-${BRANCH_SLUG}"
+    fi
     exit
 fi
 
