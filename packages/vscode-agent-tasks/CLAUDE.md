@@ -53,6 +53,13 @@ src/
 - **Worktree grouping in Sessions** — gw-aware (walks up to find `.gw/config.json`, then enumerates sibling worktrees by `.git` file marker) → falls back to `git worktree list --porcelain` → finally just the workspace path. Multi-worktree always groups; current worktree pinned first and marked `(current)`. Single-worktree shows flat.
 - **Session Watcher** — 50 ms trailing debounce (was 500 ms — kept tight for realtime icon transitions). 15 s visibility-bound refresh tick drives `running → stalled` ageing-out without waiting on file events.
 - **Per-session terminal tracking** — `extension.ts` maintains a `Map<sessionId, vscode.Terminal>` so re-clicking a session focuses its existing tab instead of spawning a duplicate. `onDidCloseTerminal` cleans up. Cross-window is impossible — VS Code's API is window-scoped.
+- **Open-session paths** — three uniform paths reach any session regardless of tree shape (leaf or collapsible group member):
+  1. Click a leaf `SessionItem` row → fires the item's `.command` → `openSession` (VS Code convention for leaf items).
+  2. Click a `WorktreeGroupItem` row → expands/collapses the group (VS Code convention for collapsible items — no `openSession` fires).
+  3. Hover any session row → click the `▶` inline icon (`$(play)`, `view/item/context inline@1`, `viewItem =~ /^claudeSession/`) → `openSession`.
+  4. Focus any session row → press Enter → fires `agentTasks.sessions.openSession` keybinding (`when: focusedView == 'agentSessionsExplorer' && viewItem =~ /^claudeSession/`).
+  5. Right-click any session row → "Resume Session" in the context menu (`view/item/context navigation@1`, same `when` clause) → `openSession`.
+  The `viewItem =~ /^claudeSession/` regex future-proofs all three affordances against new `SessionItem` subtypes (e.g. `claudeSessionWithArtifacts`).
 - **Terminal adoption on click** — when `openSession` finds no tracked terminal for a session, `tryAdoptTerminal` runs the argv fast-path scan across `vscode.window.terminals`:
   - **Argv fast-path** (`findClaudeDescendant`): one `ps -A -o pid,ppid,command` snapshot; BFS each terminal's shell PID for a descendant whose command contains `claude --resume <sid>`. Succeeds when the extension itself previously spawned the terminal and lost tracking on window reload.
   - All failures (ps error, no match) fall through silently to spawn. The scan runs only inside `openSession` — never on refresh, watcher tick, or panel render.
@@ -80,6 +87,7 @@ All commands, views, settings, and keybindings are defined in `package.json`:
 - Commands: `contributes.commands` (all `agentTasks.*`)
 - Views: `contributes.views` (`agentTasksExplorer` and `agentSessionsExplorer` inside `agentTasks` activity bar)
 - Settings: `contributes.configuration` (`agentTasks.*` namespace)
+- Keybindings: `contributes.keybindings` — focus sidebar chord + Enter-to-open on focused session rows
 - Activation: `workspaceContains:.agent`, `workspaceContains:.gw`, `onStartupFinished`, `onView:agentSessionsExplorer`
 
 ## Command IDs
@@ -94,7 +102,7 @@ All commands, views, settings, and keybindings are defined in `package.json`:
 | `agentTasks.openTask` | Open task.md for a branch item |
 | `agentTasks.openWalkthrough` | Open walkthrough.md for a branch item |
 | `agentTasks.sessions.refresh` | Refresh Sessions tree |
-| `agentTasks.sessions.openSession` | Internal — open or resume a session (registered on SessionItem) |
+| `agentTasks.sessions.openSession` | Resume a session — fires on leaf row click, Enter keybinding, hover `▶` inline icon, and right-click "Resume Session" context menu. Hidden from command palette. |
 | `agentTasks.sessions.toggleScope` | Toggle `current` / `all` worktrees in the Sessions panel |
 | `agentTasks.sessions.find` | Open a QuickPick across every session for this workspace |
 | `agentTasks.sessions.newSession` | Start a new `claude` session in the workspace root CWD. Appears as a `+` icon in the `agentSessionsExplorer` panel title bar (`navigation@0`). Hidden from command palette. Pushes a `PendingAdoption` entry so the first new JSONL in that cwd is automatically linked to the spawned terminal via `onDidDiscoverSession`. |
