@@ -42,6 +42,13 @@ export interface SessionMetadata {
   messageCount: number;
   /** File mtime in milliseconds (from `fs.statSync`). */
   mtime: number;
+  /**
+   * `type` of the last `user`/`assistant` event seen. Lets the provider
+   * distinguish "claude is responding" (`assistant` was last) from "waiting
+   * for the user's next prompt" (`user` was last) when a session is running.
+   * Undefined if no qualifying event was found.
+   */
+  lastEventType: 'user' | 'assistant' | undefined;
 }
 
 /**
@@ -244,6 +251,7 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
   let lastTimestamp: string | undefined;
   let messageCount = 0;
   let titleFound = false;
+  let lastEventType: 'user' | 'assistant' | undefined;
 
   for (const line of lines) {
     let event: RawEvent;
@@ -263,6 +271,7 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
     }
 
     messageCount++;
+    lastEventType = type as 'user' | 'assistant';
 
     if (type === 'user') {
       // Set sessionId from first user event that has one
@@ -312,6 +321,7 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
     lastTimestamp,
     messageCount,
     mtime,
+    lastEventType,
   };
   parseCache.set(filePath, { mtime, data });
   return data;

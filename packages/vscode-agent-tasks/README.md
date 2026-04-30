@@ -48,6 +48,10 @@ Relative time switches to absolute (`Apr 23`) for sessions older than 7 days, an
 
 Hover over a session for a tooltip with: heuristic disclosure, last activity, branch, message count, session ID, CWD, and file path.
 
+### Running section
+
+When at least one Claude session is currently active — either with a `claude --resume` terminal open in this VS Code window, or with JSONL activity in the last 2 minutes (covering other windows / external terminals) — a pinned **Running (N)** section appears at the top of the panel. Click any item to focus its terminal (same window) or open a fresh resume terminal (cross-window). The section is hidden entirely when nothing is running, so the panel stays uncluttered. Sessions still appear in their worktree group below — Running is a shortcut, not a replacement.
+
 ### Worktree grouping
 
 When the workspace is part of a multi-worktree setup (gw-managed or plain git), sessions are grouped by worktree. The current worktree is pinned to the top, marked **(current)**, and expanded by default; other worktrees are collapsed. Discovery priority: `.gw/config.json` (sibling worktrees) → `git worktree list --porcelain` → just the workspace path. Single-worktree workspaces show a flat list.

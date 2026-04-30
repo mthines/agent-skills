@@ -263,6 +263,28 @@ describe('parseSessionFile', () => {
     expect(result?.cwd).toBe('/Users/mthines/project');
   });
 
+  it('records lastEventType as `assistant` when assistant event is last', () => {
+    const filePath = writeJsonl(
+      'session.jsonl',
+      buildJsonl([userEvent(), assistantEvent()])
+    );
+    const result = parseSessionFile(filePath);
+    expect(result?.lastEventType).toBe('assistant');
+  });
+
+  it('records lastEventType as `user` when user event is last', () => {
+    const filePath = writeJsonl(
+      'session.jsonl',
+      buildJsonl([
+        userEvent(),
+        assistantEvent(),
+        userEvent({ timestamp: '2026-04-30T12:05:00.000Z', message: { content: 'follow-up' } }),
+      ])
+    );
+    const result = parseSessionFile(filePath);
+    expect(result?.lastEventType).toBe('user');
+  });
+
   it('handles missing gitBranch gracefully', () => {
     // Build event without gitBranch
     const event: Record<string, unknown> = {

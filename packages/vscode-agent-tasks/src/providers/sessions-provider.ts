@@ -68,6 +68,34 @@ function formatTime(mtimeMs: number, now = Date.now()): string {
 }
 
 // ---------------------------------------------------------------------------
+// Tree item: RunningGroupItem
+// ---------------------------------------------------------------------------
+
+/**
+ * A pinned section at the top of the Sessions tree showing every session
+ * the extension considers "running":
+ *   - the session's `claude --resume` terminal is open in this VS Code
+ *     window (definite signal), OR
+ *   - the JSONL file's mtime is within the last 2 minutes (heuristic for
+ *     sessions running in another VS Code window or a standalone terminal).
+ *
+ * The section is hidden entirely when no sessions match — the goal is a
+ * zero-noise overview when nothing's running, and an instant "where are my
+ * agents?" answer when something is.
+ */
+export class RunningGroupItem extends vscode.TreeItem {
+  constructor(public readonly sessions: SessionMetadata[]) {
+    super(`Running (${sessions.length})`, vscode.TreeItemCollapsibleState.Expanded);
+    this.iconPath = new vscode.ThemeIcon('broadcast', new vscode.ThemeColor('charts.red'));
+    this.tooltip = new vscode.MarkdownString(
+      `${sessions.length} active session${sessions.length === 1 ? '' : 's'} — ` +
+        `terminal open in this window, or recent JSONL activity from another source.`
+    );
+    this.contextValue = 'claudeRunningGroup';
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tree item: WorktreeGroupItem
 // ---------------------------------------------------------------------------
 
@@ -203,7 +231,7 @@ export class SessionItem extends vscode.TreeItem {
 // Union type for provider elements
 // ---------------------------------------------------------------------------
 
-type SessionTreeItem = WorktreeGroupItem | SessionItem;
+type SessionTreeItem = RunningGroupItem | WorktreeGroupItem | SessionItem;
 
 // ---------------------------------------------------------------------------
 // Worktree discovery helpers
@@ -481,6 +509,24 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     return getSessionStatus(session.mtime);
   }
 
+  /**
+   * Whether a session counts as "running" for the pinned overview section.
+   *   - terminal open in this VS Code window (definite), OR
+   *   - JSONL mtime within last 2 minutes (heuristic — covers other windows
+   *     and external terminals running `claude`).
+   *
+   * Excludes sessions whose terminal we explicitly closed AFTER the last
+   * mtime — those were ours, we ended them, the JSONL is just stale.
+   */
+  isRunning(session: SessionMetadata): boolean {
+    if (this.openTerminalSessions.has(session.sessionId)) return true;
+
+    const closedAt = this.terminalClosedAt.get(session.sessionId);
+    if (closedAt !== undefined && closedAt > session.mtime) return false;
+
+    return Date.now() - session.mtime < 2 * 60 * 1000;
+  }
+
   refresh(): void {
     this._onDidChangeTreeData.fire();
   }
@@ -512,6 +558,11 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
   }
 
   async getChildren(element?: SessionTreeItem): Promise<SessionTreeItem[]> {
+    if (element instanceof RunningGroupItem) {
+      return element.sessions.map(
+        (s) => new SessionItem(s, { status: this.computeStatus(s) })
+      );
+    }
     if (element instanceof WorktreeGroupItem) {
       return element.sessions.map(
         (s) => new SessionItem(s, { status: this.computeStatus(s) })
@@ -549,12 +600,28 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
 
     const buckets = bucketSessionsByWorktree(worktreePaths, candidateDirs);
 
+    // Collect every session across worktrees once so we can build the pinned
+    // "Running" section (which transcends worktree grouping). Running sessions
+    // intentionally still appear in their worktree group below — the section
+    // is a shortcut, not a replacement.
+    const allSessions: SessionMetadata[] = [];
+    for (const sessions of buckets.values()) allSessions.push(...sessions);
+    const running = allSessions
+      .filter((s) => this.isRunning(s))
+      .sort((a, b) => b.mtime - a.mtime);
+
+    const items: SessionTreeItem[] = [];
+    if (running.length > 0) {
+      items.push(new RunningGroupItem(running));
+    }
+
     // Single worktree (or scope === 'current') → flat list
     if (worktreePaths.length <= 1) {
       const sessions = buckets.get(worktreePaths[0]) ?? [];
-      return sessions.map(
-        (s) => new SessionItem(s, { status: this.computeStatus(s) })
+      items.push(
+        ...sessions.map((s) => new SessionItem(s, { status: this.computeStatus(s) }))
       );
+      return items;
     }
 
     // Multi-worktree → grouped, current first, others by most-recent activity.
@@ -571,7 +638,6 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
       groups.push({ wt, sessions, mtime });
     }
 
-    // Drop empty non-current groups so we don't show 10 collapsed empty siblings
     const visibleGroups = groups.filter((g) => g.wt === currentWorktree || g.sessions.length > 0);
 
     visibleGroups.sort((a, b) => {
@@ -580,8 +646,12 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
       return b.mtime - a.mtime;
     });
 
-    return visibleGroups.map(
-      (g) => new WorktreeGroupItem(g.wt, g.sessions, g.wt === currentWorktree)
+    items.push(
+      ...visibleGroups.map(
+        (g) => new WorktreeGroupItem(g.wt, g.sessions, g.wt === currentWorktree)
+      )
     );
+
+    return items;
   }
 }
