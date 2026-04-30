@@ -25,8 +25,9 @@ export interface SessionMetadata {
   /** Absolute path to the source `.jsonl` file. */
   filePath: string;
   /**
-   * First user message (non-sidechain), truncated to 80 chars.
-   * Falls back to the first 8 chars of the sessionId if no user message found.
+   * First user message (non-sidechain), whitespace-collapsed and truncated to
+   * `MAX_TITLE_LEN` characters. Falls back to "Untitled session" when no user
+   * message has any text content.
    */
   title: string;
   /** `gitBranch` field from the first `user` event, or undefined if absent. */
@@ -154,8 +155,24 @@ function extractContentText(
   return undefined;
 }
 
+/**
+ * Maximum visible characters for a session title in the tree view label.
+ * Tuned for a typical narrow VS Code sidebar (~30–40 chars visible per row),
+ * leaving room for the description (`relative time` / `branch · time`).
+ */
+export const MAX_TITLE_LEN = 50;
+
+/**
+ * Collapse all whitespace runs (newlines, tabs, repeated spaces) into single
+ * spaces and trim the result. Keeps single-line tree view labels readable for
+ * messages that originally contained markdown, code fences, or template blocks.
+ */
+function collapseWhitespace(s: string): string {
+  return s.replace(/\s+/g, ' ').trim();
+}
+
 /** Truncate a string to maxLen characters, appending `…` if truncated. */
-function truncate(s: string, maxLen = 80): string {
+function truncate(s: string, maxLen = MAX_TITLE_LEN): string {
   if (s.length <= maxLen) return s;
   return s.slice(0, maxLen) + '\u2026'; // …
 }
@@ -242,7 +259,7 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
       if (!titleFound && event.isSidechain !== true) {
         const text = extractContentText(event.message?.content);
         if (text) {
-          title = truncate(text, 80);
+          title = truncate(collapseWhitespace(text));
           titleFound = true;
         }
       }
@@ -260,7 +277,7 @@ export function parseSessionFile(filePath: string): SessionMetadata | null {
   return {
     sessionId,
     filePath,
-    title: title ?? sessionId.slice(0, 8),
+    title: title ?? 'Untitled session',
     gitBranch,
     cwd,
     firstTimestamp,

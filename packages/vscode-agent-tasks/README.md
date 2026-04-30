@@ -32,23 +32,35 @@ The **Sessions** panel (below the Agent Tasks view in the same activity-bar cont
 
 ### How it works
 
-Sessions are read from `~/.claude/projects/<encoded-cwd>/` — where `<encoded-cwd>` is your absolute workspace path with every `/` replaced by `-`. For example `/Users/you/myrepo` becomes `-Users-you-myrepo`.
+Sessions are read from `~/.claude/projects/<encoded-cwd>/` — where `<encoded-cwd>` is your absolute workspace path with every non-alphanumeric character replaced by `-`. For example `/Users/you/myrepo.git/main` becomes `-Users-you-myrepo-git-main`.
 
 Each session entry shows:
-- **Label** — the first user message (up to 80 characters)
-- **Description** — the git branch and a relative timestamp (`5m ago`, `2h ago`, etc.)
+- **Label** — the first user message, whitespace-collapsed and truncated to ~50 characters
+- **Description** — relative time when grouped by worktree; `branch · time` when flat
 - **Icon** — reflects a heuristic status based on the file's last-modified time:
   - Blue pulse — **active** (file written within the last 2 minutes)
-  - Blue history — **recent** (file written within the last hour)
+  - Blue clock — **recent** (file written within the last hour)
   - Gray history — **idle** (older than 1 hour)
+
+Relative time switches to absolute (`Apr 23`) for sessions older than 7 days, and the panel auto-refreshes every 60 seconds while visible so labels don't go stale.
 
 > **Note:** The status icon is a heuristic derived from file mtime, not a real signal from Claude Code. A paused session that last wrote 90 seconds ago will show as "active" even if Claude has stopped.
 
-Hover over a session for a tooltip with: full first message, session ID, message count, last activity timestamp, CWD, and file path.
+Hover over a session for a tooltip with: heuristic disclosure, last activity, branch, message count, session ID, CWD, and file path.
 
 ### Worktree grouping
 
-When your workspace is a gw-managed bare repo, sessions are automatically grouped by worktree. When `.gw/config.json` is present, sibling worktrees are discovered via that config. Otherwise, `git worktree list` is used as a fallback. If only one worktree is detected, sessions are shown flat (no grouping).
+When the workspace is part of a multi-worktree setup (gw-managed or plain git), sessions are grouped by worktree. The current worktree is pinned to the top, marked **(current)**, and expanded by default; other worktrees are collapsed. Discovery priority: `.gw/config.json` (sibling worktrees) → `git worktree list --porcelain` → just the workspace path. Single-worktree workspaces show a flat list.
+
+Sessions launched from sub-directories of a worktree (e.g. `apps/api/` inside `feat/foo/`) are also surfaced and bucketed under their parent worktree by reading the `cwd` field on the session events.
+
+### Filtering
+
+Use the **filter icon** in the Sessions panel header (or the command **Toggle Sessions Scope**) to switch between:
+- **All worktrees** (default) — every worktree's sessions, grouped, current first
+- **Current worktree only** — flat list of just this worktree's sessions
+
+The choice is persisted in `agentTasks.sessions.scope`.
 
 ### Click behavior
 
@@ -76,6 +88,7 @@ As of this release, the extension also activates via `onStartupFinished` so the 
 | `agentTasks.autoOpenPlan` | `true` | Auto-open `plan.md` in Preview when created. |
 | `agentTasks.openMarkdownInPreview` | `true` | Open artifact files in Markdown Preview mode. |
 | `agentTasks.sessions.openWith` | `"editor"` | What to do when a session is clicked: `"editor"` opens the JSONL file; `"resume"` runs `claude --resume <session-id>` in a new terminal. |
+| `agentTasks.sessions.scope` | `"all"` | Which worktrees the Sessions panel includes: `"all"` shows every worktree (grouped, current first); `"current"` shows only the current worktree. Toggle quickly via the filter icon in the panel header. |
 
 ### Configurable directories
 

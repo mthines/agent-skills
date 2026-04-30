@@ -142,6 +142,60 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionWatcher.rebuild(sessionsProvider.sessionDirs);
   });
 
+  const sessionsToggleScopeCmd = vscode.commands.registerCommand(
+    'agentTasks.sessions.toggleScope',
+    async () => {
+      const cfg = vscode.workspace.getConfiguration('agentTasks.sessions');
+      const current = cfg.get<string>('scope', 'all');
+      const next = current === 'current' ? 'all' : 'current';
+      await cfg.update('scope', next, vscode.ConfigurationTarget.Global);
+      sessionsProvider.refresh();
+      sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+      vscode.window.setStatusBarMessage(
+        next === 'current'
+          ? 'Sessions: showing current worktree only'
+          : 'Sessions: showing all worktrees',
+        2500
+      );
+    }
+  );
+
+  // Periodic refresh while the Sessions view is visible. Relative-time labels
+  // (e.g. "1m ago") would otherwise stay stale until the next file write
+  // triggers a watcher event. Tick every 60s, but only when visible to avoid
+  // wasted work in the background.
+  let tickTimer: ReturnType<typeof setInterval> | undefined;
+  const startTick = () => {
+    if (tickTimer) return;
+    tickTimer = setInterval(() => sessionsProvider.refresh(), 60_000);
+  };
+  const stopTick = () => {
+    if (tickTimer) {
+      clearInterval(tickTimer);
+      tickTimer = undefined;
+    }
+  };
+  if (sessionsView.visible) startTick();
+  const visibilitySub = sessionsView.onDidChangeVisibility((e) => {
+    if (e.visible) {
+      sessionsProvider.refresh();
+      startTick();
+    } else {
+      stopTick();
+    }
+  });
+
+  const tickDisposable: vscode.Disposable = { dispose: stopTick };
+
+  // React to scope config changes from settings UI (so the user doesn't have
+  // to manually refresh after editing settings.json).
+  const configSub = vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration('agentTasks.sessions.scope')) {
+      sessionsProvider.refresh();
+      sessionWatcher.rebuild(sessionsProvider.sessionDirs);
+    }
+  });
+
   const openSessionCmd = vscode.commands.registerCommand(
     'agentTasks.sessions.openSession',
     async (item: SessionItem) => {
@@ -184,6 +238,10 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionWatcher,
     workspaceFolderSub,
     sessionsRefreshCmd,
+    sessionsToggleScopeCmd,
+    visibilitySub,
+    tickDisposable,
+    configSub,
     openSessionCmd
   );
 }

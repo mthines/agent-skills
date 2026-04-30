@@ -2,15 +2,21 @@
  * TreeDataProvider for the "Sessions" panel.
  *
  * Surfaces Claude Code session history from `~/.claude/projects/<encoded-cwd>/`
- * for the current workspace and optionally for sibling worktrees when detected
- * via `.gw/config.json` or `git worktree list --porcelain`.
+ * for the current workspace and (optionally) sibling worktrees discovered via
+ * `.gw/config.json` or `git worktree list --porcelain`.
  *
  * Tree structure:
- *   Single worktree → flat list of SessionItems
- *   Multiple worktrees → WorktreeGroupItems (each containing SessionItems)
+ *   - Single worktree → flat list of SessionItems
+ *   - Multiple worktrees → WorktreeGroupItems (current first, marked), each
+ *     containing SessionItems
  *
- * NOTE: This provider depends on the VS Code API and cannot be unit-tested with
- * vitest. Manual smoke-test checklist is in the PR description / walkthrough.
+ * Sessions started from sub-directories of a worktree (e.g. `apps/api/`) are
+ * also surfaced: candidate dirs are matched by encoded prefix, then verified
+ * by the `cwd` field on the session events and bucketed under the longest
+ * matching worktree.
+ *
+ * NOTE: This provider depends on the VS Code API and cannot be unit-tested
+ * with vitest. Manual smoke-test checklist is in the PR description.
  */
 
 import * as vscode from 'vscode';
@@ -20,8 +26,9 @@ import * as child_process from 'child_process';
 import {
   SessionMetadata,
   SessionStatus,
+  encodeWorkspacePath,
+  getClaudeProjectsDir,
   getSessionStatus,
-  getSessionsDir,
   parseSessionsInDir,
 } from '../parsers/session-jsonl-parser';
 
@@ -29,19 +36,35 @@ import {
 // Relative time formatting
 // ---------------------------------------------------------------------------
 
+const MONTH_NAMES = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
 /**
- * Format a millisecond age as a human-readable relative-time string.
- * Uses simple integer rounding — no external libraries.
+ * Format a session mtime as a compact, human-readable timestamp.
+ *
+ * Uses relative time for recent activity ("just now", "5m ago", "3h ago",
+ * "2d ago" up to 7 days), then switches to absolute "MMM D" so old sessions
+ * don't read as "187d ago" — matches the UX writing guidance to use
+ * relative-for-recent and absolute-for-older.
  */
-function relativeTime(ageMs: number): string {
+function formatTime(mtimeMs: number, now = Date.now()): string {
+  const ageMs = now - mtimeMs;
   const seconds = Math.floor(ageMs / 1000);
   if (seconds < 60) return 'just now';
+
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
+
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
+
   const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  if (days < 7) return `${days}d ago`;
+
+  const d = new Date(mtimeMs);
+  return `${MONTH_NAMES[d.getMonth()]} ${d.getDate()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,20 +72,21 @@ function relativeTime(ageMs: number): string {
 // ---------------------------------------------------------------------------
 
 /**
- * A collapsible group node representing one worktree in a multi-worktree
- * workspace.
+ * A collapsible group node representing one worktree.
  *
- * Label is the last two path segments joined with `/` to keep it readable
- * without being excessively long (full path is in the tooltip).
+ * Visual treatment:
+ *   - current worktree → `circle-filled` (charts.blue), expanded by default,
+ *     description "(current) · N"
+ *   - other worktrees  → `git-branch` (default color), collapsed, description "N"
  *
- * Example:
- *   `/Users/mthines/Workspace/mthines/agent-skills.git/main`
- *   → label: `agent-skills.git/main`
+ * Label is the last 1–2 path segments, joined with `/`. Full path lives in the
+ * tooltip.
  */
 export class WorktreeGroupItem extends vscode.TreeItem {
   constructor(
     public readonly worktreePath: string,
-    public readonly sessions: SessionMetadata[]
+    public readonly sessions: SessionMetadata[],
+    public readonly isCurrent: boolean
   ) {
     const segments = worktreePath.split(path.sep).filter(Boolean);
     const label =
@@ -70,13 +94,26 @@ export class WorktreeGroupItem extends vscode.TreeItem {
         ? segments.slice(-2).join('/')
         : segments[segments.length - 1] ?? worktreePath;
 
-    super(label, vscode.TreeItemCollapsibleState.Expanded);
-    this.iconPath = new vscode.ThemeIcon('source-control');
-    this.description = `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`;
-    this.tooltip = new vscode.MarkdownString(
-      `**Worktree:** \`${worktreePath}\`\n\n${sessions.length} session(s)`
+    super(
+      label,
+      isCurrent
+        ? vscode.TreeItemCollapsibleState.Expanded
+        : vscode.TreeItemCollapsibleState.Collapsed
     );
-    this.contextValue = 'claudeWorktreeGroup';
+
+    this.iconPath = isCurrent
+      ? new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('charts.blue'))
+      : new vscode.ThemeIcon('git-branch');
+
+    const countLabel = `${sessions.length} session${sessions.length !== 1 ? 's' : ''}`;
+    this.description = isCurrent ? `(current) · ${countLabel}` : countLabel;
+
+    const md = new vscode.MarkdownString();
+    if (isCurrent) md.appendMarkdown(`**Current worktree**\n\n`);
+    md.appendMarkdown(`\`${worktreePath}\`\n\n${countLabel}`);
+    this.tooltip = md;
+
+    this.contextValue = isCurrent ? 'claudeWorktreeGroupCurrent' : 'claudeWorktreeGroup';
   }
 }
 
@@ -87,26 +124,24 @@ export class WorktreeGroupItem extends vscode.TreeItem {
 /**
  * A leaf node representing one Claude Code session.
  *
- * - Label: first user message truncated to 80 chars
- * - Description: `<branch> · <relative time>`
- * - Icon: varies by mtime-based heuristic status (active/recent/idle)
- * - Tooltip: full title, session ID, message count, last activity, cwd, file path
+ * Description rules:
+ *   - inside a WorktreeGroupItem → just relative time (branch is implied)
+ *   - flat (single worktree)     → "branch · time"
  *
- * HEURISTIC: icon/status is derived from file mtime — see `getSessionStatus`
- * for caveats.
+ * Status is a heuristic from file mtime (see `getSessionStatus`) — disclosed
+ * up-front in the tooltip so users don't mistake the icon for ground truth.
  */
 export class SessionItem extends vscode.TreeItem {
-  constructor(public readonly session: SessionMetadata) {
+  constructor(public readonly session: SessionMetadata, options: { grouped: boolean }) {
     super(session.title, vscode.TreeItemCollapsibleState.None);
 
     const status: SessionStatus = getSessionStatus(session.mtime);
-    const age = Date.now() - session.mtime;
-    const timeStr = relativeTime(age);
+    const timeStr = formatTime(session.mtime);
     const branch = session.gitBranch ?? '?';
 
-    this.description = `${branch} · ${timeStr}`;
+    this.description = options.grouped ? timeStr : `${branch} · ${timeStr}`;
     this.iconPath = SessionItem.iconForStatus(status);
-    this.tooltip = SessionItem.buildTooltip(session, timeStr);
+    this.tooltip = SessionItem.buildTooltip(session, timeStr, status, branch);
     this.contextValue = 'claudeSession';
 
     // Command fires on click — handled in extension.ts
@@ -117,36 +152,43 @@ export class SessionItem extends vscode.TreeItem {
     };
   }
 
+  /**
+   * Status icons differ in BOTH shape AND luminance so the distinction
+   * survives color-blindness and dark/light theme changes (WCAG 1.4.1).
+   *   - active → blue pulse  (likely still writing)
+   *   - recent → blue clock  (ended within the last hour)
+   *   - idle   → gray history (older)
+   */
   private static iconForStatus(status: SessionStatus): vscode.ThemeIcon {
     switch (status) {
       case 'active':
-        // Blue pulse — heuristic: Claude is likely still writing
         return new vscode.ThemeIcon('pulse', new vscode.ThemeColor('charts.blue'));
       case 'recent':
-        // Blue history — heuristic: session ended recently
-        return new vscode.ThemeIcon('history', new vscode.ThemeColor('charts.blue'));
+        return new vscode.ThemeIcon('clock', new vscode.ThemeColor('charts.blue'));
       case 'idle':
       default:
-        // Default (gray) history — session is old
         return new vscode.ThemeIcon('history');
     }
   }
 
-  private static buildTooltip(session: SessionMetadata, timeStr: string): vscode.MarkdownString {
+  private static buildTooltip(
+    session: SessionMetadata,
+    timeStr: string,
+    status: SessionStatus,
+    branch: string
+  ): vscode.MarkdownString {
     const md = new vscode.MarkdownString();
-    md.appendMarkdown(`**${session.title}**\n\n`);
-    md.appendMarkdown(`**Session ID:** \`${session.sessionId}\`\n\n`);
+    md.appendMarkdown(
+      `_Status icon is heuristic — derived from file mtime, not a real signal._\n\n`
+    );
+    md.appendMarkdown(`**Last activity:** ${timeStr} · _${status}_\n\n`);
+    md.appendMarkdown(`**Branch:** \`${branch}\`\n\n`);
     md.appendMarkdown(`**Messages:** ${session.messageCount}\n\n`);
-    if (session.lastTimestamp) {
-      md.appendMarkdown(`**Last activity:** ${session.lastTimestamp} (${timeStr})\n\n`);
-    }
+    md.appendMarkdown(`**Session ID:** \`${session.sessionId}\`\n\n`);
     if (session.cwd) {
       md.appendMarkdown(`**CWD:** \`${session.cwd}\`\n\n`);
     }
-    md.appendMarkdown(`**File:** \`${session.filePath}\`\n\n`);
-    md.appendMarkdown(
-      `\n\n_Status icon is a heuristic based on file mtime and may not reflect actual session state._`
-    );
+    md.appendMarkdown(`**File:** \`${session.filePath}\``);
     return md;
   }
 }
@@ -162,18 +204,19 @@ type SessionTreeItem = WorktreeGroupItem | SessionItem;
 // ---------------------------------------------------------------------------
 
 /**
- * Walk up from `startPath` up to `maxLevels` ancestors looking for a
- * `.gw/config.json` file. Returns the parsed config object or null.
+ * Walk up from `startPath` up to `maxLevels` looking for a `.gw/config.json`.
+ * Returns the directory containing `.gw/` (the gw root) or null. We use the
+ * directory itself rather than any `root` field because real gw configs don't
+ * always store `root`.
  */
-function findGwConfig(startPath: string, maxLevels = 5): { root?: string; defaultBranch?: string } | null {
+function findGwRoot(startPath: string, maxLevels = 5): string | null {
   let dir = startPath;
   for (let i = 0; i < maxLevels; i++) {
     const configPath = path.join(dir, '.gw', 'config.json');
     try {
-      const content = fs.readFileSync(configPath, 'utf-8');
-      return JSON.parse(content) as { root?: string; defaultBranch?: string };
+      if (fs.statSync(configPath).isFile()) return dir;
     } catch {
-      // Not found at this level — try parent
+      // not found, continue
     }
     const parent = path.dirname(dir);
     if (parent === dir) break;
@@ -183,44 +226,50 @@ function findGwConfig(startPath: string, maxLevels = 5): { root?: string; defaul
 }
 
 /**
- * Enumerate worktree paths using `.gw/config.json`.
- *
- * Reads `root` from the config and lists subdirectories that contain a `.git`
- * file (worktree marker, not a directory `.git` which would be the main repo).
+ * Enumerate worktree paths under a gw root by scanning subdirectories that
+ * contain a `.git` *file* (worktree marker) — not a `.git` directory which
+ * would be the bare repo itself. Recurses one level for the `feat/<branch>`
+ * convention.
  */
-function getWorktreePathsFromGwConfig(workspacePath: string): string[] | null {
-  const config = findGwConfig(workspacePath);
-  if (!config?.root) return null;
-
-  const root = config.root;
-  let subdirs: fs.Dirent[];
-  try {
-    subdirs = fs.readdirSync(root, { withFileTypes: true });
-  } catch {
-    return null;
-  }
+function getWorktreePathsFromGw(workspacePath: string): string[] | null {
+  const root = findGwRoot(workspacePath);
+  if (!root) return null;
 
   const paths: string[] = [];
-  for (const entry of subdirs) {
-    if (!entry.isDirectory()) continue;
-    const worktreePath = path.join(root, entry.name);
-    // A git worktree (not the bare repo itself) has a `.git` FILE
-    const gitPath = path.join(worktreePath, '.git');
+  const visit = (dir: string, depth: number): void => {
+    if (depth > 2) return;
+    let entries: fs.Dirent[];
     try {
-      const stat = fs.statSync(gitPath);
-      if (stat.isFile()) {
-        paths.push(worktreePath);
-      }
+      entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
-      // No .git — not a worktree
+      return;
     }
-  }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name === '.gw' || entry.name.startsWith('.')) continue;
+      const sub = path.join(dir, entry.name);
+      const gitPath = path.join(sub, '.git');
+      try {
+        const stat = fs.statSync(gitPath);
+        if (stat.isFile()) {
+          paths.push(sub);
+          continue; // don't recurse into a worktree
+        }
+      } catch {
+        // no .git here; recurse to find nested worktrees (e.g. feat/x)
+      }
+      visit(sub, depth + 1);
+    }
+  };
+
+  visit(root, 0);
   return paths.length > 0 ? paths : null;
 }
 
 /**
- * Enumerate worktree paths via `git worktree list --porcelain`.
- * Returns null if the command fails (not a git repo, git not installed, etc.).
+ * Enumerate worktree paths via `git worktree list --porcelain`. Returns null
+ * if the command fails (not a git repo, git missing, etc.).
  */
 function getWorktreePathsFromGit(workspacePath: string): string[] | null {
   try {
@@ -243,35 +292,32 @@ function getWorktreePathsFromGit(workspacePath: string): string[] | null {
 }
 
 /**
- * Return the deduplicated list of worktree paths for the workspace.
- * Always includes the workspace path itself.
+ * Return the deduplicated list of worktree paths for the workspace. Always
+ * includes the workspace path itself.
  *
  * Priority:
- *   1. `.gw/config.json` if present
+ *   1. gw root + sibling worktrees (gw-aware)
  *   2. `git worktree list --porcelain` fallback
- *   3. Just the workspace path (single-worktree / non-git scenario)
+ *   3. Just the workspace path (single-worktree / non-git)
  */
 function discoverWorktreePaths(workspacePath: string): string[] {
   const seen = new Set<string>();
   const paths: string[] = [];
-
   const add = (p: string) => {
-    const normalised = p.replace(/\/$/, '');
+    const normalised = p.replace(/[/\\]+$/, '');
     if (!seen.has(normalised)) {
       seen.add(normalised);
       paths.push(normalised);
     }
   };
 
-  // Try gw config first
-  const gwPaths = getWorktreePathsFromGwConfig(workspacePath);
+  const gwPaths = getWorktreePathsFromGw(workspacePath);
   if (gwPaths) {
     for (const p of gwPaths) add(p);
-    add(workspacePath); // ensure workspace itself is included
+    add(workspacePath);
     return paths;
   }
 
-  // Fallback to git worktree list
   const gitPaths = getWorktreePathsFromGit(workspacePath);
   if (gitPaths) {
     for (const p of gitPaths) add(p);
@@ -279,14 +325,91 @@ function discoverWorktreePaths(workspacePath: string): string[] {
     return paths;
   }
 
-  // Just the workspace
   add(workspacePath);
   return paths;
 }
 
 // ---------------------------------------------------------------------------
+// Session discovery (subdirectory-aware)
+// ---------------------------------------------------------------------------
+
+/**
+ * Find every `~/.claude/projects/*` directory whose encoded prefix matches at
+ * least one of the worktree paths. Includes both exact matches (the worktree
+ * itself) and prefix matches (subdirectories of the worktree, since
+ * `encodeWorkspacePath` deterministically maps `/<segment>` → `-<segment>`).
+ *
+ * Over-matching by encoded prefix is cheap and is corrected later by the
+ * cwd-based bucketing pass, so siblings with overlapping name prefixes
+ * (e.g. `foo` vs `foo-bar`) don't get cross-attributed.
+ */
+function findCandidateSessionDirs(worktreePaths: string[]): string[] {
+  const projectsDir = getClaudeProjectsDir();
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(projectsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const encodedPrefixes = worktreePaths.map((wt) => encodeWorkspacePath(wt));
+  const out: string[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    for (const encoded of encodedPrefixes) {
+      if (entry.name === encoded || entry.name.startsWith(encoded + '-')) {
+        out.push(path.join(projectsDir, entry.name));
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Parse all sessions from candidate dirs and bucket them by the longest
+ * matching worktree path (using the session's `cwd` field). Sessions whose
+ * `cwd` doesn't fall under any worktree are dropped. Each bucket is sorted
+ * newest-first.
+ */
+function bucketSessionsByWorktree(
+  worktreePaths: string[],
+  candidateDirs: string[]
+): Map<string, SessionMetadata[]> {
+  // Sort by descending path length for longest-prefix match
+  const sortedWts = [...worktreePaths].sort((a, b) => b.length - a.length);
+
+  const buckets = new Map<string, SessionMetadata[]>();
+  for (const wt of worktreePaths) buckets.set(wt, []);
+
+  for (const dir of candidateDirs) {
+    const sessions = parseSessionsInDir(dir);
+    for (const session of sessions) {
+      const cwd = session.cwd;
+      if (!cwd) continue;
+      const match = sortedWts.find(
+        (wt) => cwd === wt || cwd.startsWith(wt + path.sep)
+      );
+      if (match) {
+        const bucket = buckets.get(match);
+        if (bucket) bucket.push(session);
+      }
+    }
+  }
+
+  for (const sessions of buckets.values()) {
+    sessions.sort((a, b) => b.mtime - a.mtime);
+  }
+
+  return buckets;
+}
+
+// ---------------------------------------------------------------------------
 // SessionsProvider
 // ---------------------------------------------------------------------------
+
+export type SessionsScope = 'current' | 'all';
 
 export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<SessionTreeItem | undefined | void>();
@@ -294,12 +417,6 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
 
   /** Cache of session dirs being watched — exposed for SessionWatcher rebuild. */
   private _sessionDirs: string[] = [];
-
-  // No constructor arguments required — provider is initialised lazily on first getChildren call.
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  constructor() {
-    // Intentionally empty — provider state is built lazily in buildRootItems()
-  }
 
   /** The session directories currently being observed. */
   get sessionDirs(): string[] {
@@ -316,60 +433,65 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
 
   async getChildren(element?: SessionTreeItem): Promise<SessionTreeItem[]> {
     if (element instanceof WorktreeGroupItem) {
-      return element.sessions.map((s) => new SessionItem(s));
+      return element.sessions.map((s) => new SessionItem(s, { grouped: true }));
     }
-
     if (element instanceof SessionItem) {
       return [];
     }
-
-    // Root level — build tree
     return this.buildRootItems();
   }
 
-  /**
-   * Build the root-level tree items.
-   *
-   * If only one worktree has sessions, or all sessions come from the same
-   * worktree, show them flat (no WorktreeGroupItem wrapper). Otherwise, group
-   * by worktree.
-   */
   private buildRootItems(): SessionTreeItem[] {
     const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!workspacePath) return [];
 
-    const worktreePaths = discoverWorktreePaths(workspacePath);
+    const scope = vscode.workspace
+      .getConfiguration('agentTasks.sessions')
+      .get<SessionsScope>('scope', 'all');
 
-    // Collect sessions per worktree, track session dirs for watcher
-    const sessionDirs: string[] = [];
-    const groups: Array<{ worktreePath: string; sessions: SessionMetadata[] }> = [];
+    const allWorktrees = discoverWorktreePaths(workspacePath);
 
+    // Identify the current worktree as the longest worktree path that the
+    // workspacePath sits inside. Falls back to workspacePath when nothing else
+    // qualifies (e.g. single-worktree case).
+    const sortedByLength = [...allWorktrees].sort((a, b) => b.length - a.length);
+    const currentWorktree =
+      sortedByLength.find(
+        (wt) => workspacePath === wt || workspacePath.startsWith(wt + path.sep)
+      ) ?? workspacePath;
+
+    const worktreePaths = scope === 'current' ? [currentWorktree] : allWorktrees;
+
+    const candidateDirs = findCandidateSessionDirs(worktreePaths);
+    this._sessionDirs = candidateDirs;
+
+    const buckets = bucketSessionsByWorktree(worktreePaths, candidateDirs);
+
+    // Single worktree (or scope === 'current') → flat list
+    if (worktreePaths.length <= 1) {
+      const sessions = buckets.get(worktreePaths[0]) ?? [];
+      return sessions.map((s) => new SessionItem(s, { grouped: false }));
+    }
+
+    // Multi-worktree → grouped, current first, others by most-recent activity
+    const groups: Array<{ wt: string; sessions: SessionMetadata[]; mtime: number }> = [];
     for (const wt of worktreePaths) {
-      const dir = getSessionsDir(wt);
-      sessionDirs.push(dir);
-      const sessions = parseSessionsInDir(dir);
-      if (sessions.length > 0) {
-        groups.push({ worktreePath: wt, sessions });
-      }
+      const sessions = buckets.get(wt) ?? [];
+      const mtime = sessions[0]?.mtime ?? 0;
+      groups.push({ wt, sessions, mtime });
     }
 
-    // Update cached session dirs (for watcher rebuild)
-    this._sessionDirs = sessionDirs;
+    // Drop empty non-current groups so we don't show 10 collapsed empty siblings
+    const visibleGroups = groups.filter((g) => g.wt === currentWorktree || g.sessions.length > 0);
 
-    // No sessions anywhere
-    if (groups.length === 0) return [];
+    visibleGroups.sort((a, b) => {
+      if (a.wt === currentWorktree) return -1;
+      if (b.wt === currentWorktree) return 1;
+      return b.mtime - a.mtime;
+    });
 
-    // Single worktree OR all sessions from one worktree → show flat
-    if (
-      worktreePaths.length === 1 ||
-      groups.length === 1
-    ) {
-      // Combine all sessions across groups and sort newest-first
-      const allSessions = groups.flatMap((g) => g.sessions).sort((a, b) => b.mtime - a.mtime);
-      return allSessions.map((s) => new SessionItem(s));
-    }
-
-    // Multiple worktrees — show grouped
-    return groups.map((g) => new WorktreeGroupItem(g.worktreePath, g.sessions));
+    return visibleGroups.map(
+      (g) => new WorktreeGroupItem(g.wt, g.sessions, g.wt === currentWorktree)
+    );
   }
 }
