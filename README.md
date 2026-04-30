@@ -245,6 +245,10 @@ The skill depends on two CLI tools (declared as runtime prerequisites, not bundl
 - [`gw`](https://github.com/mthines/gw-tools) — Git worktree manager (`brew install mthines/gw-tools/gw`)
 - [`gh`](https://cli.github.com) — GitHub CLI
 
+### VS Code Extension (optional)
+
+Install [**Agent Tasks**](https://marketplace.visualstudio.com/items?itemName=mthines.agent-tasks) from the VS Code Marketplace to visualize `plan.md`, `task.md`, and `walkthrough.md` artifacts in your sidebar — phase progress, decisions, blockers, and completed checkboxes update live as the agent works. Defaults to scanning `.agent/`, with `.gw/` as fallback (configurable via `agentTasks.directories`). Source: [`packages/vscode-agent-tasks/`](./packages/vscode-agent-tasks/).
+
 ## Usage Examples
 
 Skills activate automatically. Just describe what you need:
