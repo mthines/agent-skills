@@ -190,26 +190,60 @@ interface RawEvent {
 }
 
 /**
+ * Strip Claude Code's internal slash-command and template markup from a raw
+ * user-message string and return a clean human-facing title.
+ *
+ * Slash commands arrive in the JSONL as XML-ish tag soup, e.g.:
+ *   <command-message>ranger</command-message>
+ *   <command-name>/ranger</command-name>
+ *   <command-args>context info</command-args>
+ *   <local-command-caveat>...</local-command-caveat>
+ *
+ * The user actually typed `/ranger context info`. Show that. For non-command
+ * messages with stray tags (e.g. `<ide_opened_file>...`, `<attachment>...`),
+ * just strip the tags and keep the text.
+ */
+function cleanCommandMarkup(text: string): string {
+  // Slash-command pattern — synthesise `/NAME [args]` from the tags.
+  const cmdName = /<command-name>\s*([^<]+?)\s*<\/command-name>/.exec(text)?.[1];
+  const cmdMessage = /<command-message>\s*([^<]+?)\s*<\/command-message>/.exec(text)?.[1];
+  const cmdArgs = /<command-args>([\s\S]*?)<\/command-args>/.exec(text)?.[1]?.trim();
+
+  if (cmdName || cmdMessage) {
+    const raw = cmdName ?? cmdMessage ?? '';
+    const name = raw.startsWith('/') ? raw : `/${raw}`;
+    return cmdArgs ? `${name} ${cmdArgs}` : name;
+  }
+
+  // Generic markup strip for non-slash-command tag soup
+  return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Extract a plain-text title from a `user` event's `message.content`.
  * Returns undefined if the content yields no non-empty text.
+ *
+ * Strips Claude Code internal markup (slash-command wrappers, IDE-context
+ * tags, attachments) — what the user actually typed wins.
  */
 function extractContentText(content: string | Array<{ type?: string; text?: string }> | undefined): string | undefined {
   if (!content) return undefined;
 
+  let raw: string | undefined;
   if (typeof content === 'string') {
-    return content.trim() || undefined;
-  }
-
-  // Array of content parts — find the first `text` part with non-empty text
-  if (Array.isArray(content)) {
+    raw = content;
+  } else if (Array.isArray(content)) {
     for (const part of content) {
       if (part?.type === 'text' && typeof part.text === 'string' && part.text.trim()) {
-        return part.text.trim();
+        raw = part.text;
+        break;
       }
     }
   }
 
-  return undefined;
+  if (!raw) return undefined;
+  const cleaned = cleanCommandMarkup(raw);
+  return cleaned || undefined;
 }
 
 /**

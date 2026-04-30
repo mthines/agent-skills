@@ -226,6 +226,50 @@ describe('parseSessionFile', () => {
     expect(result?.title?.length).toBe(36);
   });
 
+  it('renders slash-command tag soup as `/name args`', () => {
+    const raw =
+      '<command-message>ranger</command-message>\n' +
+      '<command-name>/ranger</command-name>\n' +
+      '<command-args>SUP-123 dashboard issue</command-args>';
+    const filePath = writeJsonl(
+      'session.jsonl',
+      buildJsonl([userEvent({ message: { content: raw } })])
+    );
+    const result = parseSessionFile(filePath);
+    expect(result?.title).toBe('/ranger SUP-123 dashboard issue');
+  });
+
+  it('renders slash-command without args as just `/name`', () => {
+    const raw =
+      '<command-message>ux</command-message>\n<command-name>/ux</command-name>\n<command-args></command-args>';
+    const filePath = writeJsonl(
+      'session.jsonl',
+      buildJsonl([userEvent({ message: { content: raw } })])
+    );
+    const result = parseSessionFile(filePath);
+    expect(result?.title).toBe('/ux');
+  });
+
+  it('infers leading slash when only command-message is present', () => {
+    const raw = '<command-message>review</command-message>';
+    const filePath = writeJsonl(
+      'session.jsonl',
+      buildJsonl([userEvent({ message: { content: raw } })])
+    );
+    const result = parseSessionFile(filePath);
+    expect(result?.title).toBe('/review');
+  });
+
+  it('strips stray XML-like tags from non-command user messages', () => {
+    const raw = '<ide_opened_file>/Users/x/foo.ts</ide_opened_file>Why is this broken?';
+    const filePath = writeJsonl(
+      'session.jsonl',
+      buildJsonl([userEvent({ message: { content: raw } })])
+    );
+    const result = parseSessionFile(filePath);
+    expect(result?.title).toBe('/Users/x/foo.ts Why is this broken?');
+  });
+
   it('collapses internal whitespace and newlines into single spaces', () => {
     const filePath = writeJsonl(
       'session.jsonl',

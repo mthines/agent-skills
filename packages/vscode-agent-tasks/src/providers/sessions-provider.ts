@@ -513,8 +513,14 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
   computeStatus(session: SessionMetadata): SessionStatus {
     if (this.openTerminalSessions.has(session.sessionId)) return 'running';
 
+    // Tolerance covers a JSONL flush during terminal shutdown — claude can
+    // write one last byte AFTER we've torn down the terminal, which would
+    // otherwise leave the session looking running for up to 5 minutes.
     const closedAt = this.terminalClosedAt.get(session.sessionId);
-    if (closedAt !== undefined && closedAt > session.mtime) return 'idle';
+    const CLOSE_TOLERANCE_MS = 2_000;
+    if (closedAt !== undefined && closedAt + CLOSE_TOLERANCE_MS > session.mtime) {
+      return 'idle';
+    }
 
     return deriveRunState(session.turnEnded, session.mtime);
   }
@@ -613,23 +619,27 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     const buckets = bucketSessionsByWorktree(worktreePaths, candidateDirs);
 
     // Collect every session across worktrees once so we can build the pinned
-    // "Running" section (which transcends worktree grouping). Running sessions
-    // intentionally still appear in their worktree group below — the section
-    // is a shortcut, not a replacement.
+    // "Running" section. Running sessions are MOVED to the section, not
+    // duplicated — they're filtered out of their worktree group below to
+    // avoid showing the same row twice.
     const allSessions: SessionMetadata[] = [];
     for (const sessions of buckets.values()) allSessions.push(...sessions);
     const running = allSessions
       .filter((s) => this.isRunning(s))
       .sort((a, b) => b.mtime - a.mtime);
+    const runningIds = new Set(running.map((s) => s.sessionId));
 
     const items: SessionTreeItem[] = [];
     if (running.length > 0) {
       items.push(new RunningGroupItem(running));
     }
 
-    // Single worktree (or scope === 'current') → flat list
+    // Single worktree (or scope === 'current') → flat list (running already
+    // surfaced in the section above, so exclude them here).
     if (worktreePaths.length <= 1) {
-      const sessions = buckets.get(worktreePaths[0]) ?? [];
+      const sessions = (buckets.get(worktreePaths[0]) ?? []).filter(
+        (s) => !runningIds.has(s.sessionId)
+      );
       items.push(
         ...sessions.map((s) => new SessionItem(s, { status: this.computeStatus(s) }))
       );
@@ -637,16 +647,12 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     }
 
     // Multi-worktree → grouped, current first, others by most-recent activity.
-    // Sessions whose terminal is currently open count as "now" for sort
-    // purposes so they bubble up to the top of their worktree group.
+    // Running sessions are excluded from their worktree group because they
+    // already appear in the pinned section.
     const groups: Array<{ wt: string; sessions: SessionMetadata[]; mtime: number }> = [];
-    const now = Date.now();
     for (const wt of worktreePaths) {
-      const sessions = buckets.get(wt) ?? [];
-      const mtime = sessions.reduce((max, s) => {
-        const effective = this.openTerminalSessions.has(s.sessionId) ? now : s.mtime;
-        return Math.max(max, effective);
-      }, 0);
+      const sessions = (buckets.get(wt) ?? []).filter((s) => !runningIds.has(s.sessionId));
+      const mtime = sessions.reduce((max, s) => Math.max(max, s.mtime), 0);
       groups.push({ wt, sessions, mtime });
     }
 
