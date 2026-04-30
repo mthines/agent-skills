@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -240,14 +240,14 @@
         },
         "agentTasks.sessions.openWith": {
           "type": "string",
-          "default": "editor",
+          "default": "resume",
           "enum": [
-            "editor",
-            "resume"
+            "resume",
+            "editor"
           ],
           "enumDescriptions": [
-            "Open the session JSONL file in the text editor",
-            "Open a terminal and run 'claude --resume <session-id>'"
+            "Open a terminal in the session's original CWD and run 'claude --resume <session-id>'",
+            "Open the session JSONL transcript file in the text editor"
           ],
           "description": "What to do when a session is clicked in the Sessions panel."
         },
@@ -269,7 +269,7 @@
     "viewsWelcome": [
       {
         "view": "agentSessionsExplorer",
-        "contents": "No Claude Code sessions found for this workspace yet.\n\nStart one in a terminal:\n[Open Terminal](command:workbench.action.terminal.new)\n\nThen run `claude` in your project directory.\n\n_Tip: press Enter on a session to open it, or change `agentTasks.sessions.openWith` to `resume` to continue it in a terminal._"
+        "contents": "No Claude Code sessions found for this workspace yet.\n\nStart one in a terminal:\n[Open Terminal](command:workbench.action.terminal.new)\n\nThen run `claude` in your project directory.\n\n_Tip: press Enter on a session to resume it in a terminal. Set `agentTasks.sessions.openWith` to `editor` to open the JSONL transcript instead._"
       }
     ]
   },
