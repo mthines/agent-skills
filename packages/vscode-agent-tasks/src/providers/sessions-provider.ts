@@ -44,24 +44,24 @@ const MONTH_NAMES = [
 /**
  * Format a session mtime as a compact, human-readable timestamp.
  *
- * Uses relative time for recent activity ("just now", "5m ago", "3h ago",
- * "2d ago" up to 7 days), then switches to absolute "MMM D" so old sessions
- * don't read as "187d ago" — matches the UX writing guidance to use
- * relative-for-recent and absolute-for-older.
+ * Tight format: `now`, `5m`, `3h`, `2d` for recent activity (≤7 days), then
+ * absolute `MMM D` for older. The `ago` suffix is dropped — implicit from
+ * context in a recency-sorted list and saves 3–4 chars per row, which
+ * matters at sidebar widths.
  */
 function formatTime(mtimeMs: number, now = Date.now()): string {
   const ageMs = now - mtimeMs;
   const seconds = Math.floor(ageMs / 1000);
-  if (seconds < 60) return 'just now';
+  if (seconds < 60) return 'now';
 
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return `${minutes}m`;
 
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return `${hours}h`;
 
   const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d ago`;
+  if (days < 7) return `${days}d`;
 
   const d = new Date(mtimeMs);
   return `${MONTH_NAMES[d.getMonth()]} ${d.getDate()}`;
@@ -125,10 +125,12 @@ export class WorktreeGroupItem extends vscode.TreeItem {
  * A leaf node representing one Claude Code session.
  *
  * Layout:
- *   - Label: the message text only (truncated short — see MAX_TITLE_LEN).
- *   - Description: relative time when grouped (branch is implicit); `branch ·
- *     time` when flat. VS Code renders the description in muted/grey so the
- *     timestamp visually subordinates to the message.
+ *   - Label:       the message text (truncated short — see MAX_TITLE_LEN).
+ *   - Description: just the relative time, always (branch is in the tooltip).
+ *
+ * VS Code renders the description in muted/grey, so the timestamp visually
+ * subordinates to the message. Keeping description short — `5m`, `Apr 17` —
+ * means it survives narrow panels far more often than `branch · time` did.
  *
  * Status is computed by the provider so it can layer terminal-open / closed
  * signals on top of the raw mtime heuristic.
@@ -136,14 +138,14 @@ export class WorktreeGroupItem extends vscode.TreeItem {
 export class SessionItem extends vscode.TreeItem {
   constructor(
     public readonly session: SessionMetadata,
-    options: { grouped: boolean; status: SessionStatus }
+    options: { status: SessionStatus }
   ) {
     super(session.title, vscode.TreeItemCollapsibleState.None);
 
     const timeStr = formatTime(session.mtime);
     const branch = session.gitBranch ?? '?';
 
-    this.description = options.grouped ? timeStr : `${branch} · ${timeStr}`;
+    this.description = timeStr;
     this.iconPath = SessionItem.iconForStatus(options.status);
     this.tooltip = SessionItem.buildTooltip(session, timeStr, options.status, branch);
     this.contextValue = 'claudeSession';
@@ -490,7 +492,7 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
   async getChildren(element?: SessionTreeItem): Promise<SessionTreeItem[]> {
     if (element instanceof WorktreeGroupItem) {
       return element.sessions.map(
-        (s) => new SessionItem(s, { grouped: true, status: this.computeStatus(s) })
+        (s) => new SessionItem(s, { status: this.computeStatus(s) })
       );
     }
     if (element instanceof SessionItem) {
@@ -529,7 +531,7 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     if (worktreePaths.length <= 1) {
       const sessions = buckets.get(worktreePaths[0]) ?? [];
       return sessions.map(
-        (s) => new SessionItem(s, { grouped: false, status: this.computeStatus(s) })
+        (s) => new SessionItem(s, { status: this.computeStatus(s) })
       );
     }
 
