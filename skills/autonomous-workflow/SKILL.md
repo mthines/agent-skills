@@ -246,8 +246,9 @@ npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow create-plan create-walkthrough confidence \
           code-quality holistic-analysis tdd ux update-claude \
           review-changes create-pr ci-auto-fix \
+  --agent claude-code \
   --global --yes
-bash ~/.agents/skills/autonomous-workflow/install.sh --global
+bash ~/.claude/skills/autonomous-workflow/install.sh --global
 ```
 
 **Per-project** (team use, committable):
@@ -257,9 +258,15 @@ npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow create-plan create-walkthrough confidence \
           code-quality holistic-analysis tdd ux update-claude \
           review-changes create-pr ci-auto-fix \
+  --agent claude-code \
   --yes
-bash .agents/skills/autonomous-workflow/install.sh
+bash .claude/skills/autonomous-workflow/install.sh
 ```
+
+> The `--agent claude-code` flag is recommended — it scopes the install to
+> `.claude/skills/` only. Without it the CLI symlinks the skills into every
+> supported AI tool's directory at once (`.codebuddy/`, `.continue/`, `.crush/`,
+> …). Drop it (or use `--agent '*'`) only if you want the universal install.
 
 After the script runs, two agents are linked into your `.claude/agents/`
 directory: `autonomous-planner.md` and `autonomous-executor.md`. The routing

@@ -8,20 +8,31 @@ Skills and agents follow the open [Agent Skills](https://agentskills.io/) format
 
 ## Install
 
-**Universal** (works with any [Agent Skills](https://agentskills.io)-compatible tool):
+> **Tip — keep it tidy.** Always pass `--agent <your-tool>` (e.g. `--agent claude-code`). Without it, `npx skills` symlinks every skill into ~24 different AI-tool directories at once (`.codebuddy/`, `.continue/`, `.crush/`, …). Scoping the install to the tool you actually use keeps your workspace clean and your `git status` short.
+
+**Recommended — Claude Code only:**
+
+```bash
+npx skills add https://github.com/mthines/agent-skills \
+  --skill confidence \
+  --agent claude-code \
+  --yes
+```
+
+To install all skills:
+
+```bash
+npx skills add https://github.com/mthines/agent-skills --all --agent claude-code
+```
+
+**Universal** (works with any [Agent Skills](https://agentskills.io)-compatible tool — only use this if you switch between many tools):
 
 ```bash
 npx skills add https://github.com/mthines/agent-skills --all
 ```
 
-To install a single skill:
-
-```bash
-npx skills add https://github.com/mthines/agent-skills --skill confidence
-```
-
 <details>
-<summary>Claude Code</summary>
+<summary>Claude Code (plugin marketplace)</summary>
 
 ```bash
 /plugin marketplace add mthines/agent-skills
@@ -181,8 +192,9 @@ npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow create-plan create-walkthrough confidence \
           code-quality holistic-analysis tdd ux update-claude \
           review-changes create-pr ci-auto-fix \
+  --agent claude-code \
   --global --yes
-bash ~/.agents/skills/autonomous-workflow/install.sh --global
+bash ~/.claude/skills/autonomous-workflow/install.sh --global
 ```
 
 **Per-project** (team use, committable):
@@ -192,9 +204,15 @@ npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow create-plan create-walkthrough confidence \
           code-quality holistic-analysis tdd ux update-claude \
           review-changes create-pr ci-auto-fix \
+  --agent claude-code \
   --yes
-bash .agents/skills/autonomous-workflow/install.sh
+bash .claude/skills/autonomous-workflow/install.sh
 ```
+
+> The `--agent claude-code` flag scopes the install to `.claude/skills/` only.
+> Without it the CLI symlinks the skills into every supported AI-tool's directory
+> (`.codebuddy/`, `.continue/`, `.crush/`, …) — fine if you switch tools, noisy
+> otherwise. Use `--agent '*'` to opt into the universal install explicitly.
 
 Run `bash install.sh --help` for script options.
 
