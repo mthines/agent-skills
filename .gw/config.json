@@ -15,7 +15,7 @@
   // Core Settings
   // ----------------------------------------------------------------------------
   "defaultBranch": "main",
-  "cleanThreshold": 7,
+  "cleanThreshold": 1,
 
   // Auto-Copy Files
   // ----------------------------------------------------------------------------
@@ -46,7 +46,7 @@
 
   // Advanced Options
   // ----------------------------------------------------------------------------
-  // "autoClean": false,  // Silently clean stale worktrees in background
+  "autoClean": true // Silently clean stale worktrees in background
   // "updateStrategy": "merge",  // Default: "merge" or "rebase"
 
   // Internal fields (managed automatically — do not edit):
