@@ -48,30 +48,38 @@ phase rules and the companion registry carry the procedural detail.
 
 ### Step 1: Install prerequisites
 
-| Tool | Status      | Why                                                                 |
-| ---- | ----------- | ------------------------------------------------------------------- |
-| `gh` | **REQUIRED**| PR creation (Phase 6) and CI watching (Phase 7)                     |
-| `gw` | Recommended | Worktree management with auto-copy of secrets, pre/post-checkout hooks, smart cleanup, and shell-integrated `gw cd` |
+| Tool | Status                       | Why                                                                 |
+| ---- | ---------------------------- | ------------------------------------------------------------------- |
+| `gh` | **Required**                 | PR creation (Phase 6) and CI watching (Phase 7)                     |
+| `gw` | **Recommended** *(optional)* | Worktree management with auto-copy of secrets, pre/post-checkout hooks, smart cleanup, and shell-integrated `gw cd`. The workflow falls back to native `git worktree` if `gw` is absent. |
 
 ```bash
 # Required
 brew install gh && gh auth login
 
-# Recommended (optional)
+# Recommended — gw makes worktree-heavy workflows nicer, but is NOT required
 brew install mthines/gw-tools/gw
 ```
 
-If `gw` is not installed, the workflow falls back to native `git worktree`
-commands using the same sibling-directory layout (`../<repo>-<branch-slug>/`).
-You'll be warned once at the start of Phase 2 about the features you're missing
-(auto-copy of secrets, pre/post-checkout hooks, smart cleanup, shell-integrated
-`gw cd`). See [`rules/prerequisites.md#fallback-to-native-git-worktree`](./rules/prerequisites.md#fallback-to-native-git-worktree)
+`gw` is **not a hard requirement** — if it's not on `PATH`, Phase 2 detects
+that at Step 0 and falls through to native `git worktree` commands using the
+same sibling-directory layout (`../<repo>-<branch-slug>/`). You'll be warned
+once about the features you're missing (auto-copy of secrets, pre/post-checkout
+hooks, smart cleanup, shell-integrated `gw cd`), then the workflow continues
+normally. See [`rules/prerequisites.md#fallback-to-native-git-worktree`](./rules/prerequisites.md#fallback-to-native-git-worktree)
 for the full feature comparison.
 
 ### Step 2: Install the skill + agents
 
 The skill ships with [`install.sh`](./install.sh) which handles the agent +
 routing-rule symlinks for you. Two steps: download skills, then run install.
+
+> **Pass `--agent claude-code`.** Without it, `npx skills` symlinks every skill
+> into ~24 different AI-tool directories at once (`.codebuddy/`, `.continue/`,
+> `.crush/`, `.factory/`, `.goose/`, `.junie/`, `.kilocode/`, …). Scoping the
+> install to the tool you actually use keeps your workspace tidy and your
+> `git status` short. Drop the flag (or use `--agent '*'`) only if you really
+> want the universal install.
 
 #### Option A: Global (personal use, all projects)
 
@@ -80,8 +88,9 @@ npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow create-plan create-walkthrough confidence \
           code-quality holistic-analysis tdd ux update-claude \
           review-changes create-pr ci-auto-fix \
+  --agent claude-code \
   --global --yes
-bash ~/.agents/skills/autonomous-workflow/install.sh --global
+bash ~/.claude/skills/autonomous-workflow/install.sh --global
 ```
 
 #### Option B: Per-project (team use, committable)
@@ -91,8 +100,9 @@ npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow create-plan create-walkthrough confidence \
           code-quality holistic-analysis tdd ux update-claude \
           review-changes create-pr ci-auto-fix \
+  --agent claude-code \
   --yes
-bash .agents/skills/autonomous-workflow/install.sh
+bash .claude/skills/autonomous-workflow/install.sh
 ```
 
 To run with fewer companions, omit them from the `--skill` list. See
@@ -169,6 +179,7 @@ npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow create-plan create-walkthrough confidence \
           code-quality holistic-analysis update-claude \
           review-changes create-pr ci-auto-fix \
+  --agent claude-code \
   --yes
 ```
 

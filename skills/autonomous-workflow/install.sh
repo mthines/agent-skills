@@ -71,11 +71,21 @@ done
 case "$MODE" in
   global)
     CLAUDE_DIR="$HOME/.claude"
-    SKILL_DIR="$HOME/.agents/skills/autonomous-workflow"
+    # Try .claude/skills/ first (--agent claude-code layout),
+    # then fall back to .agents/skills/ (universal layout).
+    if [[ -d "$HOME/.claude/skills/autonomous-workflow" ]]; then
+      SKILL_DIR="$HOME/.claude/skills/autonomous-workflow"
+    else
+      SKILL_DIR="$HOME/.agents/skills/autonomous-workflow"
+    fi
     ;;
   project)
     CLAUDE_DIR="$(pwd)/.claude"
-    SKILL_DIR="$(pwd)/.agents/skills/autonomous-workflow"
+    if [[ -d "$(pwd)/.claude/skills/autonomous-workflow" ]]; then
+      SKILL_DIR="$(pwd)/.claude/skills/autonomous-workflow"
+    else
+      SKILL_DIR="$(pwd)/.agents/skills/autonomous-workflow"
+    fi
     ;;
   development)
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -96,6 +106,7 @@ if [[ ! -d "$SKILL_DIR" ]]; then
       echo "    --skill autonomous-workflow create-plan create-walkthrough confidence \\" >&2
       echo "            code-quality holistic-analysis tdd ux update-claude \\" >&2
       echo "            review-changes create-pr ci-auto-fix \\" >&2
+      echo "    --agent claude-code \\" >&2
       echo "    --global --yes" >&2
       ;;
     project)
@@ -104,6 +115,7 @@ if [[ ! -d "$SKILL_DIR" ]]; then
       echo "    --skill autonomous-workflow create-plan create-walkthrough confidence \\" >&2
       echo "            code-quality holistic-analysis tdd ux update-claude \\" >&2
       echo "            review-changes create-pr ci-auto-fix \\" >&2
+      echo "    --agent claude-code \\" >&2
       echo "    --yes" >&2
       ;;
     development)
