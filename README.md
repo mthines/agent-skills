@@ -105,7 +105,7 @@ Coordinate other skills to execute multi-step workflows. Agent-invokable.
 | Skill | What it does | Use when... |
 |---|---|---|
 | **[autonomous-workflow](./skills/autonomous-workflow/SKILL.md)** | Phase-based orchestrator (0–7) that handles end-to-end feature development — from validation through tested PR delivery — using isolated Git worktrees. Optionally invokes companions for planning, TDD, UX, code quality, docs, and CI fixing. See [dedicated section](#autonomous-workflow). | "Implement X autonomously", "end-to-end", "in isolation", "in a worktree". |
-| **[batch-linear-tickets](./skills/batch-linear-tickets/SKILL.md)** | Batch orchestrator for Linear tickets. Fans out [`linear-ticket-investigator`](#linear-ticket-investigator) per ticket, correlates findings, gates user approval, then fans out `aw-planner` + `aw-executor` pairs in isolated worktrees. Requires Linear MCP. | "Solve these tickets", "batch analyze SUP-123 SUP-456", "analyze tickets in this Linear filter". |
+| **[batch-linear-tickets](./skills/batch-linear-tickets/SKILL.md)** | Batch orchestrator for Linear tickets. Fans out [`linear-ticket-investigator`](#linear-ticket-investigator) per ticket, correlates findings, gates user approval, then fans out `aw-planner` + `aw-executor` pairs (the [`aw-` namespace](#agent-namespace-aw-) from `autonomous-workflow`) in isolated worktrees. Requires Linear MCP. | "Solve these tickets", "batch analyze SUP-123 SUP-456", "analyze tickets in this Linear filter". |
 
 ### Agent-invokable skills
 
@@ -159,7 +159,7 @@ Agents are specialized sub-processes with their own model and tool configuration
 
 ### Architecture: two agents, one workflow
 
-The skill installs **two agents** that share the same workflow knowledge, connected by `plan.md`:
+The skill installs **two agents** that share the same workflow knowledge, connected by `plan.md`. Both use the [`aw-` namespace prefix](#agent-namespace-aw-):
 
 | Agent | Phases | Terminal artifact | Exit gate |
 |---|---|---|---|
@@ -167,6 +167,16 @@ The skill installs **two agents** that share the same workflow knowledge, connec
 | `aw-executor` | 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
 
 The split is along the Phase 2 → Phase 3 context boundary. High-confidence plans flow through automatically; borderline plans pause for user approval. The design rationale (with verbatim Anthropic citations on context-boundary splits, structured handoff artifacts, and pre-implementation contracts) is in [`skills/autonomous-workflow/references/anthropic-architecture-research.md`](./skills/autonomous-workflow/references/anthropic-architecture-research.md).
+
+#### Agent namespace: `aw-`
+
+Both agents share the **`aw-` prefix** — short for "**a**utonomous-**w**orkflow". It's a deliberate namespace, not an abbreviation chosen at random:
+
+- **Grouping** — when you list `~/.claude/agents/`, `aw-planner.md` and `aw-executor.md` sort next to each other, immediately legible as a pair.
+- **Disambiguation** — agents installed by other skills (e.g. `reviewer`, `linear-ticket-investigator`) live in the same directory. The prefix prevents naming collisions and signals at a glance which workflow an agent belongs to.
+- **Predictability** — when this skill grows new agents, expect the same `aw-*` shape (e.g. a hypothetical `aw-rebaser`). If you see `aw-something`, it's part of this skill.
+
+So the first time you encounter `aw-planner` in a routing rule, an agent listing, or an error message, read it as "the autonomous-workflow planner" — not a typo or an unrelated tool.
 
 ### What each phase does
 
@@ -261,7 +271,7 @@ The [`batch-linear-tickets`](./skills/batch-linear-tickets/SKILL.md) skill fans 
 | Dependency | Purpose | Required? |
 |-----------|---------|-----------|
 | Linear MCP (`mcp__claude_ai_Linear__*`) | Read tickets, post PR comments | **Yes** |
-| `aw-planner` + `aw-executor` (from [`autonomous-workflow`](#autonomous-workflow)) | Planning + execution after approval | **Yes** for `batch-linear-tickets` |
+| `aw-planner` + `aw-executor` (from [`autonomous-workflow`](#autonomous-workflow), under the [`aw-` namespace](#agent-namespace-aw-)) | Planning + execution after approval | **Yes** for `batch-linear-tickets` |
 | Project domain-navigator skill | Ground investigation in monorepo structure | Optional but recommended |
 
 ### Domain Context (per-project plug-in)

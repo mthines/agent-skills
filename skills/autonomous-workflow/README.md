@@ -116,12 +116,20 @@ planner first; once `plan.md` is gated, the executor takes over.
 
 #### What `install.sh` sets up
 
-Two agents linked into your `.claude/agents/` directory:
+Two agents linked into your `.claude/agents/` directory under the
+**`aw-` namespace** (short for "autonomous-workflow") so they group together
+and are unmistakable when listed alongside unrelated agents:
 
 | Agent | Phases | Terminal artifact | Exit gate |
 |---|---|---|---|
 | `aw-planner` | 0–2 (validation, planning, worktree + plan.md) | `.agent/{branch}/plan.md` | `confidence(plan) ≥ 90%` (or user-approved override) |
 | `aw-executor` | 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
+
+> **Upgrading from a pre-`aw-` install?** The installer detects legacy
+> `autonomous-planner.md` / `autonomous-executor.md` symlinks pointing at
+> these templates and removes them before linking the new `aw-` names —
+> no manual cleanup needed. Hand-authored files at those paths are left
+> untouched.
 
 See [`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md) for the full handoff contract and [`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md) for the design rationale (with verbatim Anthropic citations).
 

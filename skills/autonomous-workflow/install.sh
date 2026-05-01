@@ -11,7 +11,10 @@
 #   Development:   <this clone>/skills/autonomous-workflow/
 #
 # It then symlinks two agent definitions and the routing rule into the
-# matching `.claude/` directory so Claude Code picks them up:
+# matching `.claude/` directory so Claude Code picks them up. Both agents
+# use the `aw-` namespace prefix (short for "autonomous-workflow") so they
+# group together in `.claude/agents/` and stay distinct from unrelated
+# agents:
 #
 #   • aw-planner   — phases 0-2 (validation, planning,
 #                   worktree + plan.md generation).
@@ -165,7 +168,22 @@ if [[ "$MODE" == "development" ]]; then
   echo "✓ Claude skill: $CLAUDE_DIR/skills/autonomous-workflow → $DISCOVERY_DIR"
 fi
 
-# Link the two agent definitions.
+# Clean up legacy unprefixed names from older installs (pre-aw- namespace).
+# We only remove them when they're symlinks pointing at our templates — never
+# touch hand-authored files.
+for legacy in "autonomous-planner.md:planner.template.md" \
+              "autonomous-executor.md:executor.template.md"; do
+  legacy_name="${legacy%%:*}"
+  legacy_target="${legacy##*:}"
+  legacy_path="$CLAUDE_DIR/agents/$legacy_name"
+  if [[ -L "$legacy_path" ]] && [[ "$(readlink "$legacy_path")" == *"/templates/$legacy_target" ]]; then
+    rm "$legacy_path"
+    echo "✓ Removed legacy:  $legacy_path (renamed to aw- prefix)"
+  fi
+done
+
+# Link the two agent definitions under the `aw-` namespace
+# (short for "autonomous-workflow").
 ln -sf "$SKILL_DIR/templates/planner.template.md" "$CLAUDE_DIR/agents/aw-planner.md"
 echo "✓ Planner agent:  $CLAUDE_DIR/agents/aw-planner.md"
 
@@ -184,7 +202,7 @@ fi
 echo ""
 echo "done. autonomous-workflow is ready ($MODE mode)."
 echo ""
-echo "two agents installed:"
+echo "two agents installed (aw- = autonomous-workflow namespace):"
 echo "  • aw-planner   — phases 0-2, produces .agent/{branch}/plan.md"
 echo "  • aw-executor  — phases 3-7, produces walkthrough.md + draft PR"
 echo "  Handoff via plan.md, gated on confidence(plan) ≥ 90%."

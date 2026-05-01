@@ -1,9 +1,9 @@
 ---
 name: aw-planner
 description: >
-  Phase 0–2 of the autonomous-workflow. Validates the task, plans the
-  approach, creates the worktree, generates plan.md, and gates on confidence
-  before handing off to the aw-executor agent. Use when the user
+  Phase 0–2 of the autonomous-workflow (`aw-` namespace). Validates the task,
+  plans the approach, creates the worktree, generates plan.md, and gates on
+  confidence before handing off to the aw-executor agent. Use when the user
   asks to "plan this autonomously" or before dispatching execution.
 tools:
   - Read

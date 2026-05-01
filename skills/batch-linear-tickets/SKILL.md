@@ -43,7 +43,9 @@ Phase 6: Fan-Out Execution            → aw-executor agents
 Phase 7: Results (main context)       → status table + Linear updates
 ```
 
-The autonomous-workflow is split into two agents connected by `plan.md`:
+The autonomous-workflow is split into two agents — `aw-planner` and
+`aw-executor` (the `aw-` prefix is short for "autonomous-workflow" and
+groups the pair together) — connected by `plan.md`:
 - **aw-planner** runs Phases 0–2 (validate, plan, create worktree, gate on `confidence(plan) ≥ 90%`).
 - **aw-executor** runs Phases 3–7 (implement, test, document, draft PR, watch CI).
 
@@ -58,7 +60,7 @@ Phase 5 of this skill is an **optional, additional human review** for batch cont
 |-----------|---------|-----------|
 | Linear MCP (`mcp__claude_ai_Linear__*`) | Read tickets, post PR comments | **Yes** |
 | `linear-ticket-investigator` agent | Phase 1 fan-out | **Yes** |
-| `aw-planner` + `aw-executor` agents (from [`autonomous-workflow`](../autonomous-workflow/SKILL.md)) | Phases 4 & 6 | **Yes** |
+| `aw-planner` + `aw-executor` agents (from [`autonomous-workflow`](../autonomous-workflow/SKILL.md), under the `aw-` namespace) | Phases 4 & 6 | **Yes** |
 | `gh` CLI | PR creation by the executor | **Yes** |
 | `gw` CLI | Worktree management (planner) | Recommended |
 | Project domain-navigator skill | Step 2 of investigation in monorepos | Optional — see [Customization](#customization) |

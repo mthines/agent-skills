@@ -210,7 +210,10 @@ for the full how-to.
 
 ## Templates
 
-The skill installs **two agents** that share one workflow, connected by `plan.md`:
+The skill installs **two agents** that share one workflow, connected by `plan.md`.
+Both use the **`aw-` namespace prefix** (short for "autonomous-workflow") so
+they group together in `.claude/agents/` and are unmistakable when listed
+alongside unrelated agents:
 
 | Agent          | Phases | Terminal artifact                              | Exit gate                                          |
 | -------------- | ------ | ---------------------------------------------- | -------------------------------------------------- |
@@ -269,9 +272,9 @@ bash .claude/skills/autonomous-workflow/install.sh
 > …). Drop it (or use `--agent '*'`) only if you want the universal install.
 
 After the script runs, two agents are linked into your `.claude/agents/`
-directory: `aw-planner.md` and `aw-executor.md`. The routing
-rule dispatches the planner first; once `plan.md` is gated, the executor
-takes over.
+directory: `aw-planner.md` and `aw-executor.md` (the `aw-` prefix is the
+autonomous-workflow namespace). The routing rule dispatches the planner
+first; once `plan.md` is gated, the executor takes over.
 
 To run with fewer companions, omit them from the `--skill` list. See
 [`rules/companion-skills.md`](./rules/companion-skills.md) for what each does

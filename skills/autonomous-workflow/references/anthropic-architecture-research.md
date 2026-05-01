@@ -43,7 +43,7 @@ The "start simple" prescription is honored in the *design* of the split: the bou
 
 | Agent | Status | When used |
 |---|---|---|
-| `aw-planner` + `aw-executor` | Default (v3.3+) | All new installs |
+| `aw-planner` + `aw-executor` (under the `aw-` namespace) | Default (v3.3+) | All new installs |
 | `agent.template.md` (monolithic) | Deprecated | Existing installs only — backward compat |
 
 ### 2.2 Multi-agent costs 3-10× more tokens

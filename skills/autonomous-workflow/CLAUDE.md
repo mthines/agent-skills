@@ -93,8 +93,8 @@ skills/autonomous-workflow/
 │   ├── planner-executor-handoff.md # Handoff contract between planner and executor.
 │   └── _template.md            # Boilerplate for new rule files.
 ├── templates/
-│   ├── planner.template.md     # aw-planner agent (phases 0-2). Linked by install.sh.
-│   ├── executor.template.md    # aw-executor agent (phases 3-7). Linked by install.sh.
+│   ├── planner.template.md     # aw-planner agent (phases 0-2). Linked by install.sh as aw-planner.md.
+│   ├── executor.template.md    # aw-executor agent (phases 3-7). Linked by install.sh as aw-executor.md.
 │   ├── agent.template.md       # DEPRECATED — kept for backward compat only. Not linked.
 │   └── routing-rule.template.md# Auto-routing rule (linked into ~/.claude/rules/).
 └── references/
@@ -346,9 +346,18 @@ When editing this skill, do not break these — they're load-bearing:
 ### Editing the agent templates
 
 `planner.template.md` and `executor.template.md` are what get symlinked into
-`~/.claude/agents/` as `aw-planner.md` and `aw-executor.md`
-by `install.sh`. Keep both lean — they should reference `SKILL.md` and
+`~/.claude/agents/` as `aw-planner.md` and `aw-executor.md` by `install.sh`
+(the `aw-` prefix is the autonomous-workflow namespace — keeps these two
+agents grouped together and unmistakable when listed alongside unrelated
+agents). Keep both lean — they should reference `SKILL.md` and
 `rules/companion-skills.md` rather than duplicate their content.
+
+The agent **`name:` frontmatter values** must match the symlinked file
+basenames (`aw-planner`, `aw-executor`) — Claude Code dispatches by the
+frontmatter name, and the routing rule references it by the same string.
+If you ever rename the namespace, update all four (frontmatter name,
+install.sh symlink target, routing rule dispatch, and every doc reference)
+in the same PR.
 
 The deprecated `agent.template.md` (single-agent) is still present for backward
 compat but is **not** linked by `install.sh`. Do not add new behavior there.

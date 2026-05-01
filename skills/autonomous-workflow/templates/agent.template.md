@@ -2,8 +2,8 @@
 DEPRECATED — kept for backward compatibility only.
 
 The autonomous-workflow now installs two agents (`aw-planner` +
-`aw-executor`) connected by `plan.md`. This single-agent template is
-no longer linked by `install.sh`.
+`aw-executor`) under the `aw-` namespace, connected by `plan.md`. This
+single-agent template is no longer linked by `install.sh`.
 
 Existing installs that point at this file still work, but new installs
 should use `planner.template.md` + `executor.template.md`.

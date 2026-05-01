@@ -10,6 +10,10 @@ When the user asks to implement something using phrases that signal independent,
 
 Automatically dispatch the autonomous workflow as follows:
 
+> The autonomous-workflow ships two agents under the `aw-` namespace prefix
+> (`aw-` = "autonomous-workflow"): `aw-planner` runs phases 0–2, `aw-executor`
+> runs phases 3–7. They are connected by `plan.md`.
+
 1. Dispatch `aw-planner` first with the user's full request as the prompt.
 2. When the planner finishes and `plan.md` is gated (`confidence(plan) ≥ 90%`), dispatch `aw-executor` with the plan path. If confidence is below 90%, the planner will already have escalated to the user — wait for their decision before dispatching the executor.
 

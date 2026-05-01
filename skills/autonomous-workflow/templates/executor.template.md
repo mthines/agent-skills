@@ -1,9 +1,9 @@
 ---
 name: aw-executor
 description: >
-  Phase 3–7 of the autonomous-workflow. Reads plan.md, implements the changes,
-  iterates on tests, updates docs, opens a draft PR, and watches CI. Use
-  after the aw-planner has produced a gated plan.md.
+  Phase 3–7 of the autonomous-workflow (`aw-` namespace). Reads plan.md,
+  implements the changes, iterates on tests, updates docs, opens a draft PR,
+  and watches CI. Use after the aw-planner has produced a gated plan.md.
 tools:
   - Read
   - Grep
