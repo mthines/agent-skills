@@ -6,7 +6,7 @@ tags:
   - delivery
   - phase-6
   - review-changes
-  - create-walkthrough
+  - aw-create-walkthrough
   - create-pr
 ---
 

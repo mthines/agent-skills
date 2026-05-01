@@ -40,7 +40,7 @@ Phases 0–2 are also the cheapest to redo — no code has been written, no PR e
 
 ## Handoff contract
 
-`plan.md` is the contract. The executor's **only** input is this file plus the worktree it lives in. Required sections (per the [`create-plan`](../../create-plan/SKILL.md) template):
+`plan.md` is the contract. The executor's **only** input is this file plus the worktree it lives in. Required sections (per the [`aw-create-plan`](../../aw-create-plan/SKILL.md) template):
 
 | Section                | Purpose                                                           |
 | ---------------------- | ----------------------------------------------------------------- |
