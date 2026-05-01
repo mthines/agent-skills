@@ -40,7 +40,7 @@ Phases 0–2 are also the cheapest to redo — no code has been written, no PR e
 
 ## Handoff contract
 
-`plan.md` is the contract. The executor's **only** input is this file plus the worktree it lives in. Required sections (per the [`create-plan`](../../create-plan/SKILL.md) template):
+`plan.md` is the contract. The executor's **only** input is this file plus the worktree it lives in. Required sections (per the [`aw-create-plan`](../../aw-create-plan/SKILL.md) template):
 
 | Section                | Purpose                                                           |
 | ---------------------- | ----------------------------------------------------------------- |
@@ -116,7 +116,7 @@ The planner **STOPS** and waits for the user's choice. `refine` re-enters Phase 
 
 ## Receiving handoff (executor entry point)
 
-At the start of Phase 3, the **autonomous-executor agent**:
+At the start of Phase 3, the **aw-executor agent**:
 
 1. **Confirms it's inside the worktree.**
 
@@ -149,7 +149,7 @@ At the start of Phase 3, the **autonomous-executor agent**:
 
 If any of the following holds, the executor STOPS without writing code and tells the user verbatim:
 
-> "no plan to execute, run autonomous-planner first"
+> "no plan to execute, run aw-planner first"
 
 | Condition                       | Detection                                                  |
 | ------------------------------- | ---------------------------------------------------------- |

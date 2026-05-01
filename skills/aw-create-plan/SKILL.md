@@ -1,5 +1,5 @@
 ---
-name: create-plan
+name: aw-create-plan
 description: >
   Create a comprehensive implementation plan artifact (plan.md) in `.agent/{branch}/`
   from the current conversation context. Captures all Phase 0-1 discussion into a

@@ -1,9 +1,9 @@
 ---
-name: autonomous-executor
+name: aw-executor
 description: >
   Phase 3–7 of the autonomous-workflow. Reads plan.md, implements the changes,
   iterates on tests, updates docs, opens a draft PR, and watches CI. Use
-  after the autonomous-planner has produced a gated plan.md.
+  after the aw-planner has produced a gated plan.md.
 tools:
   - Read
   - Grep
@@ -70,7 +70,7 @@ planner first:
   not testable.
 - The plan references a worktree that doesn't exist or doesn't match the
   current branch.
-- `plan.md` is malformed (missing required sections per `create-plan` schema).
+- `plan.md` is malformed (missing required sections per `aw-create-plan` schema).
 
 **Do not try to plan from the prompt yourself.** Hand back to the planner.
 
@@ -101,7 +101,7 @@ Full registry in [`rules/companion-skills.md`](../rules/companion-skills.md).
 | 4     | `holistic-analysis`    | Auto-replan only — `confidence(bug-analysis) < 90%` (one-shot)       | —                |
 | 5     | `update-claude`        | Always (with skip conditions per phase-5 rule)                       | —                |
 | 6     | `review-changes`       | Always before push                                                   | —                |
-| 6     | `create-walkthrough`   | Full Mode only                                                       | —                |
+| 6     | `aw-create-walkthrough` | Full Mode only                                                      | —                |
 | 6     | `create-pr`            | Always                                                               | —                |
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                               | `<run-id\|pr-url>` |
 

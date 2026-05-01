@@ -146,7 +146,7 @@ Be specific. The design feeds `code-quality(plan)` next, then `confidence(plan)`
 ### 2a. Capture Phase 0 context
 
 Transfer ALL Phase 0 discussion into the in-conversation plan draft (the
-`create-plan` skill will write it to disk in Phase 2):
+`aw-create-plan` skill will write it to disk in Phase 2):
 
 - **Background & context** — why this change is needed
 - **Every requirement** — explicit and implicit
@@ -293,4 +293,4 @@ contract and message format.
 - Related skill: [`confidence`](../../confidence/SKILL.md)
 - Related skill: [`code-quality`](../../code-quality/SKILL.md)
 - Related skill: [`holistic-analysis`](../../holistic-analysis/SKILL.md)
-- Related skill: [`create-plan`](../../create-plan/SKILL.md)
+- Related skill: [`aw-create-plan`](../../aw-create-plan/SKILL.md)

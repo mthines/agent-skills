@@ -1,12 +1,12 @@
 ---
-name: review-quality-gate
+name: aw-review-quality-gate
 description: >
   Self-check quality gate for review findings.
   Validates that each finding is actionable, evidence-backed, correctly located,
   not duplicating linter output, and not a false positive.
   Use after generating findings but before delivering them.
   Triggers on: "quality gate findings", "validate findings", "gate my review",
-  "/review-quality-gate".
+  "/aw-review-quality-gate".
 disable-model-invocation: true
 license: MIT
 metadata:

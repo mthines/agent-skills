@@ -123,7 +123,7 @@ Skip this load on trivial diffs (small typo fixes, one-line tweaks). For anythin
 
 ## Step 2.5: Quality Gate
 
-Before producing output, run the `/review-quality-gate` checklist on every finding.
+Before producing output, run the `/aw-review-quality-gate` checklist on every finding.
 This catches false positives, vague suggestions, miscalibrated severity, and linter-duplicate noise.
 
 For each finding, answer the 6 gate questions.

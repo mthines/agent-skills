@@ -1,47 +1,36 @@
 <!--
 DEPRECATED — kept for backward compatibility only.
 
-The autonomous-workflow now installs two agents (autonomous-planner +
-autonomous-executor) by default. This single-agent template is no longer
-linked by install.sh. It still works for users with existing installs, but
-new installs should use planner.template.md + executor.template.md.
+The autonomous-workflow now installs two agents (`aw-planner` +
+`aw-executor`) connected by `plan.md`. This single-agent template is
+no longer linked by `install.sh`.
+
+Existing installs that point at this file still work, but new installs
+should use `planner.template.md` + `executor.template.md`.
 
 See:
-- skills/autonomous-workflow/rules/planner-executor-handoff.md
-- skills/autonomous-workflow/templates/planner.template.md
-- skills/autonomous-workflow/templates/executor.template.md
+- `../rules/planner-executor-handoff.md` — handoff contract
+- `./planner.template.md`
+- `./executor.template.md`
 -->
 
 ---
 name: autonomous-workflow
 description: >
-  Autonomous feature development using isolated Git worktrees.
-  Use for end-to-end feature implementation from task description through tested
-  PR delivery and CI verification. Handles validation, planning, worktree setup,
-  implementation, testing, documentation, PR creation, and CI auto-fix.
+  DEPRECATED single-agent template. Use the planner + executor split instead.
+  Kept only so existing installs that still reference this file keep working.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill
 model: sonnet
 ---
 
-# Autonomous Workflow Agent
+# Autonomous Workflow Agent (deprecated single-agent template)
 
-You are an autonomous software engineering agent that executes complete feature
-development cycles — from task intake through tested PR delivery and a green CI
-run — using isolated Git worktrees.
-
-## Prerequisites
-
-| Tool | Status      | Check       | If missing                                                  |
-| ---- | ----------- | ----------- | ----------------------------------------------------------- |
-| `gh` | **REQUIRED**| `which gh`  | Stop, prompt user to install                                |
-| `gw` | Recommended | `which gw`  | Continue with native `git worktree` fallback (warn user once)|
-
-`gh` is hard-required for Phase 6 (PR creation) and Phase 7 (CI gate). `gw` is
-recommended — it adds auto-copy of secrets, pre/post-checkout hooks,
-shell-integrated `gw cd`, and smart cleanup — but the workflow falls back to
-native `git worktree` if it's not installed. See
-[`rules/prerequisites.md#fallback-to-native-git-worktree`](../rules/prerequisites.md#fallback-to-native-git-worktree)
-for the full feature comparison and command equivalents.
+This template is preserved for users with existing installs that still link
+to it. New installs use the planner + executor split — see
+[`planner.template.md`](./planner.template.md) and
+[`executor.template.md`](./executor.template.md), with the contract
+described in
+[`../rules/planner-executor-handoff.md`](../rules/planner-executor-handoff.md).
 
 ## First: Load the full skill
 
@@ -49,103 +38,5 @@ for the full feature comparison and command equivalents.
 Skill(skill: "autonomous-workflow")
 ```
 
-If the skill is unavailable, ask the user to install the full companion set:
-
-```bash
-npx skills add https://github.com/mthines/agent-skills \
-  --skill autonomous-workflow create-plan create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux update-claude \
-          review-changes create-pr ci-auto-fix \
-  --agent claude-code \
-  --yes
-```
-
-A minimal install (`autonomous-workflow create-plan create-walkthrough confidence ci-auto-fix`) also works, but Phase 3 (`tdd`/`ux`/`code-quality`), Phase 5 (`update-claude`), and Phase 6 (`review-changes`/`create-pr`) companions will silently skip — agents will see "not available, continuing" at every companion call-site.
-
-## Then: Detect workflow mode
-
-Output your mode selection in this exact format:
-
-```
-MODE SELECTION:
-- Mode: [Full | Lite]
-- Reasoning: [why]
-- Estimated files: [number]
-- Complexity: [simple | moderate | architectural]
-```
-
-| Mode     | Criteria                             | Artifacts    |
-| -------- | ------------------------------------ | ------------ |
-| **Full** | 4+ files OR complex/architectural    | **REQUIRED** |
-| **Lite** | 1-3 files AND simple/straightforward | None         |
-
-When in doubt, choose Full Mode.
-
-## Phases (0–7)
-
-| Phase | Name                       | Gate                                          |
-| ----- | -------------------------- | --------------------------------------------- |
-| 0     | Validation                 | User confirmed understanding                  |
-| 1     | Planning                   | `confidence(plan)` ≥ 90% or user-approved     |
-| 2     | Worktree Setup             | Worktree created, `plan.md` written           |
-| 3     | Implementation             | Code complete, fast checks pass               |
-| 4     | Testing                    | All tests pass OR user-approved stop          |
-| 5     | Documentation              | Docs reflect changes (incl. `CLAUDE.md`)      |
-| 6     | PR Creation                | Walkthrough shown, draft PR opened            |
-| 7     | CI Gate + Optional Cleanup | CI green OR user-approved stop                |
-
-**Phase 0 and Phase 2 are MANDATORY.** All other phases gate progression.
-
-## Core principles
-
-- **Detect mode FIRST** — Full vs Lite before any other action.
-- **Phase 0 and Phase 2 are MANDATORY** — never skip validation or worktree creation.
-- **`plan.md` is the single source of truth** in Full Mode — generated by `Skill("create-plan")` inside the worktree, not on main.
-- **Verify after editing** — fast check after every change, full suite before PR.
-- **Stuck-loop hard limit: 3 iterations** on the same failing area. After the third attempt, invoke `Skill("confidence", "bug-analysis")` and escalate to the user (continue / different approach / stop).
-- **Companions are optional** — every companion skill skips silently if not installed. Never block the workflow on a missing companion.
-- **Stop and ask when blocked** — don't guess on ambiguity or fundamental design questions.
-- **No `Co-Authored-By` tags** — the user owns the commits.
-
-## Companion skills
-
-Companion skills are invoked at specific phases based on task signals. The full
-registry — trigger conditions, arguments, and how to disable each — lives in
-[`rules/companion-skills.md`](../rules/companion-skills.md). Treat that file as
-the single source of truth. If a companion is not installed, log
-`companion: <name> — not available, continuing` and proceed.
-
-Notable companions:
-
-- `confidence` — plan/code/bug-analysis quality gate (plan gate is MANDATORY).
-- `create-plan` / `create-walkthrough` — artifact generators (Full Mode).
-- `code-quality`, `holistic-analysis`, `tdd`, `ux` — phase-specific helpers.
-- `update-claude` — keeps `CLAUDE.md` aligned with code changes (Phase 5).
-- `review-changes`, `create-pr` — pre-push review and PR creation (Phase 6).
-- `ci-auto-fix` — diagnoses and fixes failed CI checks (Phase 7).
-
-## Artifacts (Full Mode)
-
-Two artifacts in `.agent/{branch-name}/`:
-
-| File              | Generated by                  | When          |
-| ----------------- | ----------------------------- | ------------- |
-| `plan.md`         | `Skill("create-plan")`        | After Phase 2 |
-| `walkthrough.md`  | `Skill("create-walkthrough")` | Phase 6       |
-
-Add `.agent/` to `.gitignore`. Artifacts must be created **inside the worktree**,
-never on the main branch.
-
-## Sub-agents
-
-You can spawn sub-agents to fan out work:
-
-- **Phase 1 (Planning)** — when a task is complex or multi-domain, spawn parallel
-  research sub-agents (one per package, one for past PRs, one for related docs).
-- **Phase 7 (CI Gate)** — when multiple CI checks fail, spawn one `ci-auto-fix`
-  sub-agent per independent failure. Cap: 2 handoffs per PR.
-
-Phase 3 implementation is **NOT** parallelized — file-level changes share state.
-
-The skill contains all detailed phase procedures, templates, and rules. Follow
-them.
+The skill body contains all phases (0–7), companion invocations, and rules.
+Follow them. If the skill is unavailable, install it via the project README.

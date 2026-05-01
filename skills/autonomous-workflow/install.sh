@@ -13,13 +13,13 @@
 # It then symlinks two agent definitions and the routing rule into the
 # matching `.claude/` directory so Claude Code picks them up:
 #
-#   • autonomous-planner   — phases 0-2 (validation, planning,
-#                            worktree + plan.md generation).
-#                            Terminal artifact: .agent/{branch}/plan.md,
-#                            gated on confidence(plan) ≥ 90%.
-#   • autonomous-executor  — phases 3-7 (implement, test, docs, PR, CI).
-#                            Terminal artifact:
-#                            .agent/{branch}/walkthrough.md + draft PR.
+#   • aw-planner   — phases 0-2 (validation, planning,
+#                   worktree + plan.md generation).
+#                   Terminal artifact: .agent/{branch}/plan.md,
+#                   gated on confidence(plan) ≥ 90%.
+#   • aw-executor  — phases 3-7 (implement, test, docs, PR, CI).
+#                   Terminal artifact:
+#                   .agent/{branch}/walkthrough.md + draft PR.
 #
 # The handoff between them is mediated by plan.md. See
 # rules/planner-executor-handoff.md for the contract.
@@ -103,7 +103,7 @@ if [[ ! -d "$SKILL_DIR" ]]; then
     global)
       echo "install the skill first:" >&2
       echo "  npx skills add https://github.com/mthines/agent-skills \\" >&2
-      echo "    --skill autonomous-workflow create-plan create-walkthrough confidence \\" >&2
+      echo "    --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \\" >&2
       echo "            code-quality holistic-analysis tdd ux update-claude \\" >&2
       echo "            review-changes create-pr ci-auto-fix \\" >&2
       echo "    --agent claude-code \\" >&2
@@ -112,7 +112,7 @@ if [[ ! -d "$SKILL_DIR" ]]; then
     project)
       echo "install the skill first:" >&2
       echo "  npx skills add https://github.com/mthines/agent-skills \\" >&2
-      echo "    --skill autonomous-workflow create-plan create-walkthrough confidence \\" >&2
+      echo "    --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \\" >&2
       echo "            code-quality holistic-analysis tdd ux update-claude \\" >&2
       echo "            review-changes create-pr ci-auto-fix \\" >&2
       echo "    --agent claude-code \\" >&2
@@ -166,11 +166,11 @@ if [[ "$MODE" == "development" ]]; then
 fi
 
 # Link the two agent definitions.
-ln -sf "$SKILL_DIR/templates/planner.template.md" "$CLAUDE_DIR/agents/autonomous-planner.md"
-echo "✓ Planner agent:  $CLAUDE_DIR/agents/autonomous-planner.md"
+ln -sf "$SKILL_DIR/templates/planner.template.md" "$CLAUDE_DIR/agents/aw-planner.md"
+echo "✓ Planner agent:  $CLAUDE_DIR/agents/aw-planner.md"
 
-ln -sf "$SKILL_DIR/templates/executor.template.md" "$CLAUDE_DIR/agents/autonomous-executor.md"
-echo "✓ Executor agent: $CLAUDE_DIR/agents/autonomous-executor.md"
+ln -sf "$SKILL_DIR/templates/executor.template.md" "$CLAUDE_DIR/agents/aw-executor.md"
+echo "✓ Executor agent: $CLAUDE_DIR/agents/aw-executor.md"
 
 # Link the routing rule. Project + development modes get auto-routing;
 # global mode skips it (most users don't want auto-trigger on every project).
@@ -185,8 +185,8 @@ echo ""
 echo "done. autonomous-workflow is ready ($MODE mode)."
 echo ""
 echo "two agents installed:"
-echo "  • autonomous-planner   — phases 0-2, produces .agent/{branch}/plan.md"
-echo "  • autonomous-executor  — phases 3-7, produces walkthrough.md + draft PR"
+echo "  • aw-planner   — phases 0-2, produces .agent/{branch}/plan.md"
+echo "  • aw-executor  — phases 3-7, produces walkthrough.md + draft PR"
 echo "  Handoff via plan.md, gated on confidence(plan) ≥ 90%."
 echo "  See: skills/autonomous-workflow/rules/planner-executor-handoff.md"
 

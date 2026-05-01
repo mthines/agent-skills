@@ -205,7 +205,7 @@ $ gw sync feat/dark-mode-toggle
 ### Generate plan.md artifact (Full Mode)
 
 ```
-Skill("create-plan")
+Skill("aw-create-plan")
 → Wrote .agent/feat-dark-mode-toggle/plan.md
 → Captured: Phase 0 dialogue, requirements, file-change list,
             testing strategy, risks, verification commands
@@ -217,7 +217,7 @@ Skill("create-plan")
 ```markdown
 - [2026-04-29T10:12:04Z] Phase 2: worktree created (gw add feat/dark-mode-toggle)
 - [2026-04-29T10:12:31Z] Phase 2: deps installed, build verified
-- [2026-04-29T10:12:48Z] Phase 2: create-plan() — invoked (.agent/feat-dark-mode-toggle/plan.md written)
+- [2026-04-29T10:12:48Z] Phase 2: aw-create-plan() — invoked (.agent/feat-dark-mode-toggle/plan.md written)
 ```
 
 **✅ Environment ready, artifacts populated - proceeding to implementation**
@@ -867,7 +867,7 @@ Skill("review-changes")
 ### Generate Walkthrough Artifact
 
 ```
-Skill("create-walkthrough")
+Skill("aw-create-walkthrough")
 → Wrote .agent/feat-dark-mode-toggle/walkthrough.md
 → Captured: change narrative, testing summary, screenshots placeholder,
             review-changes advisory notes
@@ -888,7 +888,7 @@ Skill("create-pr")
 
 ```markdown
 - [2026-04-29T10:42:01Z] Phase 6: review-changes() — no blocking findings
-- [2026-04-29T10:42:18Z] Phase 6: create-walkthrough() — walkthrough.md written
+- [2026-04-29T10:42:18Z] Phase 6: aw-create-walkthrough() — walkthrough.md written
 - [2026-04-29T10:42:44Z] Phase 6: create-pr() — draft PR #123 opened
 ```
 
@@ -982,11 +982,11 @@ After PR is merged, run: `gw remove feat/dark-mode-toggle`
 
 - ✅ Phase 0: Requirements validated
 - ✅ Phase 1: Plan validated by `confidence(plan)` (94%, gate ≥ 90%)
-- ✅ Phase 2: Environment validated, `create-plan` invoked
+- ✅ Phase 2: Environment validated, `aw-create-plan` invoked
 - ✅ Phase 3: Implementation self-reviewed
 - ✅ Phase 4: Tests passing (1 iteration)
 - ✅ Phase 5: Documentation validated, `update-claude` invoked
-- ✅ Phase 6: `review-changes` + `create-walkthrough` + `create-pr` invoked
+- ✅ Phase 6: `review-changes` + `aw-create-walkthrough` + `create-pr` invoked
 - ✅ Phase 7: `ci-auto-fix` invoked — all checks green
 
 **Result:** Complete, production-ready feature delivered autonomously!
