@@ -453,6 +453,16 @@ end-user-facing; this file is contributor-facing.
     (pure dependency bumps, test-only changes, config-only changes, user
     override). Default remains always-on; the skip is logged.
 
+- **v3.4** — Workflow-exclusive companions and agents grouped under an `aw-`
+  prefix so they cluster in the harness's `/`-listing. Renamed:
+  `create-plan` → `aw-create-plan`, `create-walkthrough` → `aw-create-walkthrough`,
+  `review-quality-gate` → `aw-review-quality-gate`, `autonomous-planner` →
+  `aw-planner`, `autonomous-executor` → `aw-executor`. The orchestrator
+  itself (`autonomous-workflow`) keeps its full name as the user-facing
+  entry. General-purpose skills used outside the workflow (`confidence`,
+  `ci-auto-fix`, `create-pr`, etc.) are unchanged. Pure rename — no
+  behavior changes.
+
 The npm package `@gw-tools/autonomous-workflow-agent` still exists at the
 old location for SDK users who prefer a programmatic import. It will be
 deprecated in a future release once this v3 skill is stable.
