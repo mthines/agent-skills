@@ -158,7 +158,7 @@ The extension reads:
 - `plan.md` — plan frontmatter, summary, files to create/modify, complexity
 - `walkthrough.md` — post-implementation summary and files-changed table
 
-These are written by the [`autonomous-workflow`](https://github.com/mthines/agent-skills) skill's companion skills (`create-plan`, `create-walkthrough`).
+These are written by the [`autonomous-workflow`](https://github.com/mthines/agent-skills) skill's companion skills (`aw-create-plan`, `aw-create-walkthrough`).
 
 ## Requirements
 

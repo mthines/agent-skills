@@ -10,8 +10,8 @@ When the user asks to implement something using phrases that signal independent,
 
 Automatically dispatch the autonomous workflow as follows:
 
-1. Dispatch `autonomous-planner` first with the user's full request as the prompt.
-2. When the planner finishes and `plan.md` is gated (`confidence(plan) ≥ 90%`), dispatch `autonomous-executor` with the plan path. If confidence is below 90%, the planner will already have escalated to the user — wait for their decision before dispatching the executor.
+1. Dispatch `aw-planner` first with the user's full request as the prompt.
+2. When the planner finishes and `plan.md` is gated (`confidence(plan) ≥ 90%`), dispatch `aw-executor` with the plan path. If confidence is below 90%, the planner will already have escalated to the user — wait for their decision before dispatching the executor.
 
 Continuation phrases that should dispatch the executor when a plan already exists at `.agent/{branch}/plan.md`:
 

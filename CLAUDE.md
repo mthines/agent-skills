@@ -23,8 +23,8 @@ Skills live in `skills/` as standard SKILL.md files.
 Agents live in `agents/` since they require their own model and tool configuration.
 
 ### Agent-invokable skills (model can `Skill()`-invoke without a slash command)
-- `autonomous-workflow` — Phase-based orchestrator (0–7) for end-to-end feature development. **Installs two agents** (`autonomous-planner` for phases 0–2, `autonomous-executor` for phases 3–7) connected by `plan.md`. See [`skills/autonomous-workflow/CLAUDE.md`](./skills/autonomous-workflow/CLAUDE.md) for design intent before editing
-- `batch-linear-tickets` — Batch orchestrator for Linear tickets. Fans out `linear-ticket-investigator` per ticket, correlates findings, gates user approval, then fans out `autonomous-planner` + `autonomous-executor` pairs in worktrees. Requires Linear MCP
+- `autonomous-workflow` — Phase-based orchestrator (0–7) for end-to-end feature development. **Installs two agents** (`aw-planner` for phases 0–2, `aw-executor` for phases 3–7) connected by `plan.md`. See [`skills/autonomous-workflow/CLAUDE.md`](./skills/autonomous-workflow/CLAUDE.md) for design intent before editing
+- `batch-linear-tickets` — Batch orchestrator for Linear tickets. Fans out `linear-ticket-investigator` per ticket, correlates findings, gates user approval, then fans out `aw-planner` + `aw-executor` pairs in worktrees. Requires Linear MCP
 - `confidence` — Confidence assessment for plans, code, and bug analysis. **Plan mode is multi-signal** (LLM dimensional scoring + deterministic rule checks; a failed rule caps the gate at 89% regardless of LLM score)
 - `dx` — Developer Experience review for CLI tools and shell scripts
 - `holistic-analysis` — Full execution path analysis for stuck bugs/refactors
@@ -32,9 +32,9 @@ Agents live in `agents/` since they require their own model and tool configurati
 - `ux` — UX design review for web and React Native apps
 
 ### Workflow companions (`disable-model-invocation: true`, called by orchestrators via `Skill()`)
-- `create-plan` — Generates `.agent/{branch}/plan.md` for autonomous-workflow Full Mode
-- `create-walkthrough` — Generates `.agent/{branch}/walkthrough.md` for autonomous-workflow PR delivery
-- `review-quality-gate` — Self-check quality gate for review findings before delivery
+- `aw-create-plan` — Generates `.agent/{branch}/plan.md` for autonomous-workflow Full Mode
+- `aw-create-walkthrough` — Generates `.agent/{branch}/walkthrough.md` for autonomous-workflow PR delivery
+- `aw-review-quality-gate` — Self-check quality gate for review findings before delivery
 
 ### Slash commands (`disable-model-invocation: true`)
 - `ci-auto-fix` — Diagnose and fix a failed CI check, iteratively pushing fixes until CI is green (currently GitHub Actions via `gh`)

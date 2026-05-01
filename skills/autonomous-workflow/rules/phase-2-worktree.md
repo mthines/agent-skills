@@ -222,7 +222,7 @@ fi
 verified, generate the `plan.md` artifact:
 
 ```
-Skill("create-plan")     # skips silently if not installed
+Skill("aw-create-plan")     # skips silently if not installed
 ```
 
 The skill writes to `.agent/{branch-name}/plan.md`, capturing the full Phase 0
@@ -232,11 +232,11 @@ testing strategy, risks, verification commands).
 Log the invocation in the plan's Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 2: create-plan() — invoked (.agent/{branch}/plan.md written)
-- [TIMESTAMP] Phase 2: create-plan() — not available, continuing without artifact
+- [TIMESTAMP] Phase 2: aw-create-plan() — invoked (.agent/{branch}/plan.md written)
+- [TIMESTAMP] Phase 2: aw-create-plan() — not available, continuing without artifact
 ```
 
-If `create-plan` isn't installed, the workflow continues — but in Full Mode
+If `aw-create-plan` isn't installed, the workflow continues — but in Full Mode
 the user should be warned that no `plan.md` exists for context recovery.
 
 **DO NOT proceed to Phase 3 without a populated `plan.md` (Full Mode).**
@@ -249,7 +249,7 @@ Progress Log section of `plan.md`. Example milestones:
 | Phase | Milestone                          |
 | ----- | ---------------------------------- |
 | 2     | Worktree created, deps installed   |
-| 2     | `create-plan` invoked              |
+| 2     | `aw-create-plan` invoked           |
 | 3     | Each file modified, fast-check run |
 | 3     | `code-quality(code)` at end        |
 | 4     | Each test run + result             |
@@ -366,5 +366,5 @@ for the native fallback procedure. The workflow continues without `gw`.
 - Companion registry: [companion-skills](./companion-skills.md)
 - gw-tools (recommended): <https://github.com/mthines/gw-tools>
 - Native git worktree docs: <https://git-scm.com/docs/git-worktree>
-- Related skill: [`create-plan`](../../create-plan/SKILL.md)
+- Related skill: [`aw-create-plan`](../../aw-create-plan/SKILL.md)
 - Related skill: [`git-worktree-workflows`](../../git-worktree-workflows/)

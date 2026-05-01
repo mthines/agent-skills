@@ -43,7 +43,7 @@ The "start simple" prescription is honored in the *design* of the split: the bou
 
 | Agent | Status | When used |
 |---|---|---|
-| `autonomous-planner` + `autonomous-executor` | Default (v3.3+) | All new installs |
+| `aw-planner` + `aw-executor` | Default (v3.3+) | All new installs |
 | `agent.template.md` (monolithic) | Deprecated | Existing installs only — backward compat |
 
 ### 2.2 Multi-agent costs 3-10× more tokens
@@ -87,7 +87,7 @@ As of v3.3 the skill uses exactly ONE architecture: Planner + Executor (two agen
 The deprecated monolithic single-agent template still exists for backward compat, but is not the default.
 
 It does NOT have five roles (clarifier → planner → implementer → tester → reviewer as separate agents).
-The companion skills (`tdd`, `ux`, `code-quality`, `confidence`, `update-claude`, `review-changes`, `create-plan`, `create-walkthrough`, `create-pr`, `ci-auto-fix`) are advisory companions called by `Skill()`, not coordinator agents.
+The companion skills (`tdd`, `ux`, `code-quality`, `confidence`, `update-claude`, `review-changes`, `aw-create-plan`, `aw-create-walkthrough`, `create-pr`, `ci-auto-fix`) are advisory companions called by `Skill()`, not coordinator agents.
 A skill is a tool the agent reaches for — it does not own a context window of its own.
 
 ### 2.5 Three roles when complexity warrants: Planner, Generator, Evaluator
@@ -217,8 +217,8 @@ The harness-design post advocates context resets backed by structured handoff ar
 
 | Artifact | Hands off | Author | Consumer |
 |---|---|---|---|
-| `plan.md` | Planning context → implementation context | `create-plan` (after Phase 2 worktree setup) | Executor (Phase 3+) |
-| `walkthrough.md` | Implementation context → review context | `create-walkthrough` (Phase 6) | PR reviewer (human) |
+| `plan.md` | Planning context → implementation context | `aw-create-plan` (after Phase 2 worktree setup) | Executor (Phase 3+) |
+| `walkthrough.md` | Implementation context → review context | `aw-create-walkthrough` (Phase 6) | PR reviewer (human) |
 | Progress Log inside `plan.md` | Phase-to-phase within executor | Executor | Executor (next phase) |
 
 These are real files inside the worktree, not in-conversation summaries.

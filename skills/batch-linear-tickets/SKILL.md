@@ -12,8 +12,8 @@ metadata:
   architecture: fan-out/gate/fan-out/gate/fan-out
   agents:
     investigator: linear-ticket-investigator
-    planner: autonomous-planner
-    executor: autonomous-executor
+    planner: aw-planner
+    executor: aw-executor
   phases:
     - intake
     - parallel_investigation
@@ -37,15 +37,15 @@ This skill is a **thin orchestrator** — it coordinates specialized agents and 
 Phase 1: Fan-Out Investigation        → linear-ticket-investigator agents
 Phase 2: Correlation (main context)   → cross-ticket analysis
 Phase 3: Approval Gate (main context) → user picks tickets to proceed
-Phase 4: Fan-Out Planning             → autonomous-planner agents (in worktrees)
+Phase 4: Fan-Out Planning             → aw-planner agents (in worktrees)
 Phase 5: Plan Review Gate (optional)  → user inspects plans before execution
-Phase 6: Fan-Out Execution            → autonomous-executor agents
+Phase 6: Fan-Out Execution            → aw-executor agents
 Phase 7: Results (main context)       → status table + Linear updates
 ```
 
 The autonomous-workflow is split into two agents connected by `plan.md`:
-- **autonomous-planner** runs Phases 0–2 (validate, plan, create worktree, gate on `confidence(plan) ≥ 90%`).
-- **autonomous-executor** runs Phases 3–7 (implement, test, document, draft PR, watch CI).
+- **aw-planner** runs Phases 0–2 (validate, plan, create worktree, gate on `confidence(plan) ≥ 90%`).
+- **aw-executor** runs Phases 3–7 (implement, test, document, draft PR, watch CI).
 
 The planner already runs `confidence(plan)` internally.
 Phase 5 of this skill is an **optional, additional human review** for batch contexts where the user wants to compare plans across tickets before dispatching executors in parallel.
@@ -58,7 +58,7 @@ Phase 5 of this skill is an **optional, additional human review** for batch cont
 |-----------|---------|-----------|
 | Linear MCP (`mcp__claude_ai_Linear__*`) | Read tickets, post PR comments | **Yes** |
 | `linear-ticket-investigator` agent | Phase 1 fan-out | **Yes** |
-| `autonomous-planner` + `autonomous-executor` agents (from [`autonomous-workflow`](../autonomous-workflow/SKILL.md)) | Phases 4 & 6 | **Yes** |
+| `aw-planner` + `aw-executor` agents (from [`autonomous-workflow`](../autonomous-workflow/SKILL.md)) | Phases 4 & 6 | **Yes** |
 | `gh` CLI | PR creation by the executor | **Yes** |
 | `gw` CLI | Worktree management (planner) | Recommended |
 | Project domain-navigator skill | Step 2 of investigation in monorepos | Optional — see [Customization](#customization) |
@@ -73,7 +73,7 @@ Phase 5 of this skill is an **optional, additional human review** for batch cont
 | [batch-approval-ux](./rules/batch-approval-ux.md) | Summary table, approval commands, status values |
 
 > Investigation rules live in `linear-ticket-investigator`.
-> Planning and execution rules live in `autonomous-planner` and `autonomous-executor`.
+> Planning and execution rules live in `aw-planner` and `aw-executor`.
 > This skill only owns batch-level orchestration and the two user-facing gates.
 
 ---
@@ -132,7 +132,7 @@ Approval commands: `all`, `1, 3, 5`, `all including risky`, `review plans`, `non
 
 ## Phase 4: Parallel Planning (Fan-Out)
 
-For each approved ticket (or correlated group), launch an `autonomous-planner` agent using the Agent tool with `subagent_type: "autonomous-planner"` and `isolation: "worktree"`.
+For each approved ticket (or correlated group), launch an `aw-planner` agent using the Agent tool with `subagent_type: "aw-planner"` and `isolation: "worktree"`.
 **Launch ALL approved planners in a single message.**
 
 Each planner receives the full Decision Pack from the investigator — it does not re-investigate, but it will validate, refine, and produce a self-contained `plan.md` gated by `confidence(plan)`.
@@ -194,7 +194,7 @@ Default: dispatch all gated plans without further prompting.
 
 ## Phase 6: Parallel Execution (Fan-Out)
 
-For each plan that cleared the gate (or was force-proceeded by the user), launch an `autonomous-executor` agent using the Agent tool with `subagent_type: "autonomous-executor"` and `isolation: "worktree"` pointing at the **same worktree the planner used**.
+For each plan that cleared the gate (or was force-proceeded by the user), launch an `aw-executor` agent using the Agent tool with `subagent_type: "aw-executor"` and `isolation: "worktree"` pointing at the **same worktree the planner used**.
 **Launch ALL executors in a single message.**
 
 The executor reads `plan.md` directly — it does not need a Decision Pack from this skill.
@@ -262,7 +262,7 @@ See the [`linear-ticket-investigator`](../../agents/linear-ticket-investigator.m
 
 ## Key Principles
 
-1. **Orchestrate, don't investigate or plan or implement** — investigation lives in `linear-ticket-investigator`, planning in `autonomous-planner`, execution in `autonomous-executor`.
+1. **Orchestrate, don't investigate or plan or implement** — investigation lives in `linear-ticket-investigator`, planning in `aw-planner`, execution in `aw-executor`.
    This skill only coordinates and runs user-facing gates.
 2. **Two user gates: approval (Phase 3) and optional plan review (Phase 5)** — both happen in main context where the user is.
    No checkpoint/resume machinery.

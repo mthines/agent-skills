@@ -1,5 +1,5 @@
 ---
-name: create-walkthrough
+name: aw-create-walkthrough
 description: >
   Generate a walkthrough artifact (walkthrough.md) in `.agent/{branch}/` summarizing
   completed work for PR delivery. Gathers information from plan.md, git history, and

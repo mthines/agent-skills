@@ -23,7 +23,7 @@ only after the worktree is created and you have navigated into it:
 ```bash
 # Create AFTER worktree setup (end of Phase 2), inside the worktree
 mkdir -p .agent/{branch-name}
-# Skill("create-plan") writes .agent/{branch-name}/plan.md
+# Skill("aw-create-plan") writes .agent/{branch-name}/plan.md
 ```
 
 **DO NOT create artifact files on the main branch. Always create them inside
@@ -58,8 +58,8 @@ See [overview](./overview.md) for the complete decision flow.
 
 | Artifact        | File                             | Created by                    | When          |
 | --------------- | -------------------------------- | ----------------------------- | ------------- |
-| **Plan**        | `.agent/{branch}/plan.md`        | `Skill("create-plan")`        | After Phase 2 |
-| **Walkthrough** | `.agent/{branch}/walkthrough.md` | `Skill("create-walkthrough")` | Phase 6       |
+| **Plan**        | `.agent/{branch}/plan.md`        | `Skill("aw-create-plan")`        | After Phase 2 |
+| **Walkthrough** | `.agent/{branch}/walkthrough.md` | `Skill("aw-create-walkthrough")` | Phase 6       |
 
 `plan.md` is the single source of truth. A new Claude session should be able
 to execute from it alone.
@@ -132,8 +132,8 @@ When context is compacted or a new session starts, read
   before artifact creation.
 - **Create AFTER Phase 2**: Artifact files go inside the worktree at
   `.agent/{branch}/` (never on main branch).
-- **Use dedicated skills**: `Skill("create-plan")` and
-  `Skill("create-walkthrough")` guarantee format consistency.
+- **Use dedicated skills**: `Skill("aw-create-plan")` and
+  `Skill("aw-create-walkthrough")` guarantee format consistency.
 - **Update Progress Log at milestones**: Append entries at phase transitions,
   companion invocations, and key completions.
 
@@ -141,9 +141,9 @@ When context is compacted or a new session starts, read
 
 - Related skill: [confidence](../../confidence/SKILL.md) — Quality gate for
   plan validation
-- Related skill: [create-plan](../../create-plan/SKILL.md) — Plan artifact
+- Related skill: [aw-create-plan](../../aw-create-plan/SKILL.md) — Plan artifact
   generation
-- Related skill: [create-walkthrough](../../create-walkthrough/SKILL.md) —
+- Related skill: [aw-create-walkthrough](../../aw-create-walkthrough/SKILL.md) —
   Walkthrough artifact generation
 - Related rule: [companion-skills](./companion-skills.md) — invocation
   registry

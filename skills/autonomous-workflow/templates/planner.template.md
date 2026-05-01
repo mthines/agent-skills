@@ -1,9 +1,9 @@
 ---
-name: autonomous-planner
+name: aw-planner
 description: >
   Phase 0–2 of the autonomous-workflow. Validates the task, plans the
   approach, creates the worktree, generates plan.md, and gates on confidence
-  before handing off to the autonomous-executor agent. Use when the user
+  before handing off to the aw-executor agent. Use when the user
   asks to "plan this autonomously" or before dispatching execution.
 tools:
   - Read
@@ -90,7 +90,7 @@ Full registry in [`rules/companion-skills.md`](../rules/companion-skills.md).
 | 1     | `holistic-analysis` | Complex / multi-domain / unfamiliar task         | —         |
 | 1     | `code-quality`      | Always (informs design)                          | `plan`    |
 | 1     | `confidence`        | Always — MANDATORY plan gate                     | `plan`    |
-| 2     | `create-plan`       | Full Mode only                                   | —         |
+| 2     | `aw-create-plan`    | Full Mode only                                   | —         |
 
 `confidence(plan)` cannot be disabled. It is the workflow's primary safety
 mechanism.
@@ -147,7 +147,7 @@ Wait for the user's choice before continuing or dispatching.
 - Create commits, push branches, or open PRs.
 - Watch CI runs.
 
-All of that belongs to the **autonomous-executor**.
+All of that belongs to the **aw-executor**.
 
 ## Tool Budget Rationale
 

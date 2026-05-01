@@ -18,7 +18,7 @@ Hand the work off to the user as a reviewable DRAFT pull request — but only af
 
 1. Pre-flight checks pass (build, lint, tests).
 2. `Skill("review-changes")` catches quality/correctness issues before they go up.
-3. `Skill("create-walkthrough")` (Full Mode) generates `.agent/{branch}/walkthrough.md`.
+3. `Skill("aw-create-walkthrough")` (Full Mode) generates `.agent/{branch}/walkthrough.md`.
 4. `Skill("create-pr")` writes the narrative description, pushes, opens the draft PR, and watches CI initialization.
 5. The walkthrough content is shown inline in the conversation. **The PR is not "delivered" until the user has seen the walkthrough.**
 
@@ -39,7 +39,7 @@ Gate: walkthrough shown in chat, draft PR opened, CI watch started.
 | ---- | ----------------------------------------------------------------------- | --------------- |
 | 1    | Pre-flight checks (clean tree, build, lint, test)                       | Full + Lite     |
 | 2    | `Skill("review-changes")`                                               | Full + Lite     |
-| 3    | `Skill("create-walkthrough")` → `.agent/{branch}/walkthrough.md`        | **Full only**   |
+| 3    | `Skill("aw-create-walkthrough")` → `.agent/{branch}/walkthrough.md`     | **Full only**   |
 | 4    | `Skill("create-pr")` → push, open draft, watch initial CI               | Full + Lite     |
 | 5    | Show `walkthrough.md` content inline in conversation                    | **Full only**   |
 | 6    | Report PR URL + summary, log Progress                                   | Full + Lite     |
@@ -98,7 +98,7 @@ Or, if companion missing:
 **Full Mode only.** Generate `.agent/{branch}/walkthrough.md` to give the reviewer a narrative tour of the change.
 
 ```
-Skill("create-walkthrough")
+Skill("aw-create-walkthrough")
 ```
 
 The skill gathers context from `plan.md`, git history, and test results to produce the walkthrough. It writes to `.agent/{branch}/walkthrough.md` inside the worktree.
@@ -113,7 +113,7 @@ The skill gathers context from `plan.md`, git history, and test results to produ
 Log to Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 6: create-walkthrough — invoked (.agent/{branch}/walkthrough.md generated)
+- [TIMESTAMP] Phase 6: aw-create-walkthrough — invoked (.agent/{branch}/walkthrough.md generated)
 ```
 
 ## PR Creation
@@ -212,7 +212,7 @@ Then move to Phase 7 to watch CI to green.
 
 - [ ] Pre-flight validation passed (clean tree, build, lint, test)
 - [ ] `Skill("review-changes")` invoked, blocking issues resolved
-- [ ] `Skill("create-walkthrough")` invoked (Full Mode)
+- [ ] `Skill("aw-create-walkthrough")` invoked (Full Mode)
 - [ ] `Skill("create-pr")` invoked OR manual fallback executed
 - [ ] PR opened as draft
 - [ ] Walkthrough content shown inline in conversation (Full Mode)
@@ -226,5 +226,5 @@ Then move to Phase 7 to watch CI to green.
 - Related rule: [phase-7-ci-gate](./phase-7-ci-gate.md)
 - Companion registry: [companion-skills.md](./companion-skills.md)
 - Related skill: [review-changes](../../review-changes/SKILL.md)
-- Related skill: [create-walkthrough](../../create-walkthrough/SKILL.md)
+- Related skill: [aw-create-walkthrough](../../aw-create-walkthrough/SKILL.md)
 - Related skill: [create-pr](../../create-pr/SKILL.md)

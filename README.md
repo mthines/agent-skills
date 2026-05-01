@@ -105,7 +105,7 @@ Coordinate other skills to execute multi-step workflows. Agent-invokable.
 | Skill | What it does | Use when... |
 |---|---|---|
 | **[autonomous-workflow](./skills/autonomous-workflow/SKILL.md)** | Phase-based orchestrator (0–7) that handles end-to-end feature development — from validation through tested PR delivery — using isolated Git worktrees. Optionally invokes companions for planning, TDD, UX, code quality, docs, and CI fixing. See [dedicated section](#autonomous-workflow). | "Implement X autonomously", "end-to-end", "in isolation", "in a worktree". |
-| **[batch-linear-tickets](./skills/batch-linear-tickets/SKILL.md)** | Batch orchestrator for Linear tickets. Fans out [`linear-ticket-investigator`](#linear-ticket-investigator) per ticket, correlates findings, gates user approval, then fans out `autonomous-planner` + `autonomous-executor` pairs in isolated worktrees. Requires Linear MCP. | "Solve these tickets", "batch analyze SUP-123 SUP-456", "analyze tickets in this Linear filter". |
+| **[batch-linear-tickets](./skills/batch-linear-tickets/SKILL.md)** | Batch orchestrator for Linear tickets. Fans out [`linear-ticket-investigator`](#linear-ticket-investigator) per ticket, correlates findings, gates user approval, then fans out `aw-planner` + `aw-executor` pairs in isolated worktrees. Requires Linear MCP. | "Solve these tickets", "batch analyze SUP-123 SUP-456", "analyze tickets in this Linear filter". |
 
 ### Agent-invokable skills
 
@@ -125,9 +125,9 @@ Slash-command-only. Primarily called by `autonomous-workflow` via `Skill()` at r
 
 | Skill | What it does |
 |---|---|
-| **[create-plan](./skills/create-plan/SKILL.md)** | Generates `.agent/{branch}/plan.md` — the single source of truth for autonomous execution. A new Claude session can resume from this plan alone. |
-| **[create-walkthrough](./skills/create-walkthrough/SKILL.md)** | Generates `.agent/{branch}/walkthrough.md` — the final summary delivered with a PR, summarizing changes, decisions, and how to verify. |
-| **[review-quality-gate](./skills/review-quality-gate/SKILL.md)** | Self-check quality gate for review findings before delivery — filters noise, dedupes, ranks severity. Called by the `reviewer` agent and review skills. |
+| **[aw-create-plan](./skills/aw-create-plan/SKILL.md)** | Generates `.agent/{branch}/plan.md` — the single source of truth for autonomous execution. A new Claude session can resume from this plan alone. |
+| **[aw-create-walkthrough](./skills/aw-create-walkthrough/SKILL.md)** | Generates `.agent/{branch}/walkthrough.md` — the final summary delivered with a PR, summarizing changes, decisions, and how to verify. |
+| **[aw-review-quality-gate](./skills/aw-review-quality-gate/SKILL.md)** | Self-check quality gate for review findings before delivery — filters noise, dedupes, ranks severity. Called by the `reviewer` agent and review skills. |
 
 ### Slash commands
 
@@ -163,8 +163,8 @@ The skill installs **two agents** that share the same workflow knowledge, connec
 
 | Agent | Phases | Terminal artifact | Exit gate |
 |---|---|---|---|
-| `autonomous-planner` | 0–2 (validation, planning, worktree + plan.md) | `.agent/{branch}/plan.md` | `confidence(plan) ≥ 90%` (or user-approved override) |
-| `autonomous-executor` | 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
+| `aw-planner` | 0–2 (validation, planning, worktree + plan.md) | `.agent/{branch}/plan.md` | `confidence(plan) ≥ 90%` (or user-approved override) |
+| `aw-executor` | 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
 
 The split is along the Phase 2 → Phase 3 context boundary. High-confidence plans flow through automatically; borderline plans pause for user approval. The design rationale (with verbatim Anthropic citations on context-boundary splits, structured handoff artifacts, and pre-implementation contracts) is in [`skills/autonomous-workflow/references/anthropic-architecture-research.md`](./skills/autonomous-workflow/references/anthropic-architecture-research.md).
 
@@ -174,11 +174,11 @@ The split is along the Phase 2 → Phase 3 context boundary. High-confidence pla
 |---|---|---|---|
 | 0 | Validation | Asks clarifying questions; never starts coding without explicit confirmation. | — |
 | 1 | Planning | Analyzes the codebase (parallel `Explore` sub-agents for complex tasks); designs technical approach. | `holistic-analysis`, `code-quality` (plan), **`confidence` (plan, mandatory gate at 90%)** |
-| 2 | Worktree Setup | Creates an isolated worktree (`gw add` or native `git worktree`), generates `plan.md` artifact in `.agent/{branch}/`. | `create-plan` (Full Mode) |
+| 2 | Worktree Setup | Creates an isolated worktree (`gw add` or native `git worktree`), generates `plan.md` artifact in `.agent/{branch}/`. | `aw-create-plan` (Full Mode) |
 | 3 | Implementation | Codes per the plan, one change at a time, with fast checks after each edit. | `tdd` (logic), `ux` (UI), `code-quality` (end-of-phase) |
 | 4 | Testing | Iterates on failing tests with a mode-aware cap (3 Lite / 5 Full) per area. At the cap, runs `confidence(bug-analysis)` and auto-replans via `holistic-analysis` once before mandatory user escalation. | `confidence` (bug-analysis), `holistic-analysis` |
 | 5 | Documentation | Updates README, CHANGELOG; keeps `CLAUDE.md` aligned with code changes. | `update-claude` (always) |
-| 6 | PR Creation | Reviews changes, generates `walkthrough.md`, opens draft PR with narrative description. | `review-changes`, `create-walkthrough` (Full Mode), `create-pr` |
+| 6 | PR Creation | Reviews changes, generates `walkthrough.md`, opens draft PR with narrative description. | `review-changes`, `aw-create-walkthrough` (Full Mode), `create-pr` |
 | 7 | CI Gate | Watches CI; auto-fixes failed checks (parallel sub-agents, cap 2 per PR). Optional post-merge cleanup. | `ci-auto-fix` |
 
 The single biggest cost-saver is the **mode-aware stuck-loop cap** at Phase 4 (3 Lite / 5 Full) — it prevents agents from burning tokens on hallucinated fixes when their root-cause analysis is wrong. At the cap, `confidence(bug-analysis)` runs; if confidence is below 90%, the workflow auto-invokes `holistic-analysis`, regenerates the affected `plan.md` section, and resumes once before escalating to the user.
@@ -191,7 +191,7 @@ The skill ships with [`install.sh`](./skills/autonomous-workflow/install.sh) whi
 
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
-  --skill autonomous-workflow create-plan create-walkthrough confidence \
+  --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
           code-quality holistic-analysis tdd ux update-claude \
           review-changes create-pr ci-auto-fix \
   --agent claude-code \
@@ -203,7 +203,7 @@ bash ~/.claude/skills/autonomous-workflow/install.sh --global
 
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
-  --skill autonomous-workflow create-plan create-walkthrough confidence \
+  --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
           code-quality holistic-analysis tdd ux update-claude \
           review-changes create-pr ci-auto-fix \
   --agent claude-code \
@@ -261,7 +261,7 @@ The [`batch-linear-tickets`](./skills/batch-linear-tickets/SKILL.md) skill fans 
 | Dependency | Purpose | Required? |
 |-----------|---------|-----------|
 | Linear MCP (`mcp__claude_ai_Linear__*`) | Read tickets, post PR comments | **Yes** |
-| `autonomous-planner` + `autonomous-executor` (from [`autonomous-workflow`](#autonomous-workflow)) | Planning + execution after approval | **Yes** for `batch-linear-tickets` |
+| `aw-planner` + `aw-executor` (from [`autonomous-workflow`](#autonomous-workflow)) | Planning + execution after approval | **Yes** for `batch-linear-tickets` |
 | Project domain-navigator skill | Ground investigation in monorepo structure | Optional but recommended |
 
 ### Domain Context (per-project plug-in)
@@ -332,7 +332,7 @@ The next time `linear-ticket-investigator` runs in a project that has this skill
 
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
-  --skill batch-linear-tickets autonomous-workflow create-plan create-walkthrough \
+  --skill batch-linear-tickets autonomous-workflow aw-create-plan aw-create-walkthrough \
           confidence code-quality holistic-analysis tdd ux update-claude \
           review-changes create-pr ci-auto-fix \
   --agent claude-code \
@@ -438,9 +438,9 @@ skills/
   holistic-analysis/     SKILL.md                            (agent-invokable)
   tdd/                   SKILL.md + rules/                   (agent-invokable)
   ux/                    SKILL.md + rules/ + templates/      (agent-invokable)
-  create-plan/           SKILL.md                            (workflow companion, slash-only)
-  create-walkthrough/    SKILL.md                            (workflow companion, slash-only)
-  review-quality-gate/   SKILL.md                            (workflow companion, slash-only)
+  aw-create-plan/        SKILL.md                            (workflow companion, slash-only)
+  aw-create-walkthrough/ SKILL.md                            (workflow companion, slash-only)
+  aw-review-quality-gate/ SKILL.md                           (workflow companion, slash-only)
   ci-auto-fix/           SKILL.md                            (slash command)
   code-quality/          SKILL.md + rules/                   (slash command)
   create-pr/             SKILL.md                            (slash command)
