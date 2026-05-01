@@ -30,6 +30,7 @@ Agents live in `agents/` since they require their own model and tool configurati
 - `holistic-analysis` — Full execution path analysis for stuck bugs/refactors
 - `tdd` — Test-Driven Development with strict RED-GREEN-REFACTOR cycles
 - `ux` — UX design review for web and React Native apps
+- `video-analyser` — Analyse a screen recording for bugs: resolves input from a Linear ticket URL, local path, or direct URL; extracts keyframes with ffmpeg; runs optional Tesseract OCR and Whisper transcription; returns structured findings (errors, UI state, repro steps)
 
 ### Workflow companions (`disable-model-invocation: true`, called by orchestrators via `Skill()`)
 - `aw-create-plan` — Generates `.agent/{branch}/plan.md` for autonomous-workflow Full Mode
