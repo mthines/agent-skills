@@ -28,6 +28,29 @@ const PLUGIN_REF = 'agent-tasks-hooks@agent-skills-plugins';
 const MIN_CLAUDE_MAJOR = 2;
 const MIN_CLAUDE_MINOR = 1;
 
+const ENABLE_BUTTON = 'Turn on live updates';
+const DEFER_BUTTON = 'Not now';
+const DISMISS_BUTTON = "Don't ask again";
+
+const CONSENT_MESSAGE =
+  'See your Claude sessions update live in the Sessions panel — running, ' +
+  'waiting on you, and idle — without polling. Agent Tasks installs a small ' +
+  'Claude Code plugin that emits only the event name, session ID, and folder. ' +
+  'No prompts, no transcripts, nothing leaves your machine.';
+
+/**
+ * Update the `agentTasks.hooks.dormant` context key. The Sessions panel uses
+ * it to surface a welcome view and title-bar action when hooks are off — the
+ * "opt in later" affordance after a user dismisses the consent modal.
+ */
+export async function setHooksDormantContext(dormant: boolean): Promise<void> {
+  await vscode.commands.executeCommand(
+    'setContext',
+    'agentTasks.hooks.dormant',
+    dormant
+  );
+}
+
 /** Candidate paths for the `claude` binary when it's not in VS Code's PATH. */
 const CLAUDE_BINARY_CANDIDATES = [
   'claude',
@@ -121,47 +144,68 @@ export class PluginInstaller {
     const enabled = cfg.get<boolean>('hooks.enabled', true);
     if (!enabled) {
       log('PluginInstaller: hooks.enabled is false — skipping');
+      await setHooksDormantContext(true);
       return;
     }
 
     const consentState = context.globalState.get<string>(CONSENT_GLOBALSTATE_KEY);
     if (consentState === 'never') {
       log('PluginInstaller: consent state is "never" — skipping');
+      await setHooksDormantContext(true);
       return;
     }
 
     // If the sentinel already exists the plugin was installed in a prior session
     if (isSentinelPresent()) {
       log('PluginInstaller: sentinel already present — plugin active');
+      await setHooksDormantContext(false);
       return;
     }
 
-    // Show one-shot consent modal
+    // Show one-shot consent modal — value first, privacy promise second.
     const picked = await vscode.window.showInformationMessage(
-      'Agent Tasks can install a Claude Code plugin that delivers real-time session status updates (sub-second transitions). ' +
-        'The plugin only emits {event, sessionId, cwd, ts} — no prompt or transcript content.',
+      CONSENT_MESSAGE,
       { modal: false },
-      'Enable Hooks',
-      'Not Now',
-      "Don't Ask Again"
+      ENABLE_BUTTON,
+      DEFER_BUTTON,
+      DISMISS_BUTTON
     );
 
-    if (!picked || picked === 'Not Now') {
+    if (!picked || picked === DEFER_BUTTON) {
       log('PluginInstaller: user deferred consent');
       // Don't store anything — show again on next window reload
+      await setHooksDormantContext(true);
       return;
     }
 
-    if (picked === "Don't Ask Again") {
-      log('PluginInstaller: user chose "Don\'t Ask Again"');
+    if (picked === DISMISS_BUTTON) {
+      log('PluginInstaller: user dismissed consent permanently');
       await context.globalState.update(CONSENT_GLOBALSTATE_KEY, 'never');
-      await cfg.update('hooks.enabled', false, vscode.ConfigurationTarget.Global);
+      // Do NOT flip hooks.enabled — the welcome view + title-bar action
+      // surface the opt-in path so users can change their mind later.
+      await setHooksDormantContext(true);
       return;
     }
 
-    // "Enable Hooks" selected — proceed with install
+    // Opt-in selected — proceed with install
     await context.globalState.update(CONSENT_GLOBALSTATE_KEY, 'accepted');
     await this.installPlugin();
+  }
+
+  /**
+   * Re-run consent and install. Invoked by the `agentTasks.hooks.enable`
+   * command (welcome view link, title-bar action, or command palette) after
+   * a previous dismissal. Clears the suppression flag so the consent modal
+   * re-appears next activation if this attempt is itself dismissed.
+   */
+  async reEnable(context: vscode.ExtensionContext): Promise<void> {
+    log('PluginInstaller: re-enabling via user action');
+    await context.globalState.update(CONSENT_GLOBALSTATE_KEY, undefined);
+    const cfg = vscode.workspace.getConfiguration('agentTasks');
+    if (!cfg.get<boolean>('hooks.enabled', true)) {
+      await cfg.update('hooks.enabled', true, vscode.ConfigurationTarget.Global);
+    }
+    await this.ensurePluginInstalled(context);
   }
 
   private async installPlugin(): Promise<void> {
@@ -210,23 +254,31 @@ export class PluginInstaller {
 
       statusItem.hide();
       log('PluginInstaller: plugin installed successfully');
-      void vscode.window.showInformationMessage(
-        'Agent Tasks hooks plugin installed. Session status will now update in real-time.'
+      await setHooksDormantContext(false);
+      const picked = await vscode.window.showInformationMessage(
+        'Live session updates are on. Open the Sessions panel to see them.',
+        'Show Sessions panel'
       );
+      if (picked === 'Show Sessions panel') {
+        void vscode.commands.executeCommand('agentSessionsExplorer.focus');
+      }
     } catch (err) {
       statusItem.hide();
       logError('PluginInstaller: install failed', err);
+      await setHooksDormantContext(true);
 
       const action = await vscode.window.showErrorMessage(
-        `Agent Tasks hooks plugin install failed: ${err instanceof Error ? err.message : String(err)}`,
-        'View Output'
+        "Couldn't turn on live session updates. Check Output → Agent Tasks for details.",
+        'View Output',
+        'Try again'
       );
       if (action === 'View Output') {
-        vscode.commands.executeCommand('workbench.action.output.toggleOutput');
+        void vscode.commands.executeCommand('workbench.action.output.toggleOutput');
+      } else if (action === 'Try again') {
+        void this.installPlugin();
       }
     } finally {
       statusItem.dispose();
-      // Keep context in subscriptions for disposal is not needed for StatusBarItem — just dispose above
     }
   }
 }

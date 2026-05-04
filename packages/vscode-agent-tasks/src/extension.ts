@@ -19,7 +19,12 @@ import { ArtifactWatcher } from './watchers/artifact-watcher';
 import { SessionsProvider, SessionItem } from './providers/sessions-provider';
 import { SessionWatcher } from './watchers/session-watcher';
 import { HookEventWatcher } from './watchers/hook-event-watcher';
-import { PluginInstaller, removeSentinel, isSentinelPresent } from './lib/plugin-installer';
+import {
+  PluginInstaller,
+  removeSentinel,
+  isSentinelPresent,
+  setHooksDormantContext,
+} from './lib/plugin-installer';
 import { initLogger, log, logError } from './lib/logger';
 import { parsePsOutput, findClaudeDescendant, claimPendingAdoption, type PendingAdoption } from './lib/process-tree';
 import type { SessionMetadata } from './parsers/session-jsonl-parser';
@@ -403,6 +408,7 @@ export function activate(context: vscode.ExtensionContext): void {
         void installer.ensurePluginInstalled(context);
       } else {
         removeSentinel();
+        void setHooksDormantContext(true);
         log('agentTasks.hooks.enabled toggled off — sentinel removed');
       }
     }
@@ -673,19 +679,33 @@ export function activate(context: vscode.ExtensionContext): void {
   // providers are already set up when the modal appears).
   // -------------------------------------------------------------------------
   const installer = new PluginInstaller();
+
+  // Seed the dormant context key synchronously so the welcome view and
+  // title-bar action render correctly on the first paint, before the deferred
+  // ensurePluginInstalled() runs.
+  const initialEnabled = vscode.workspace
+    .getConfiguration('agentTasks')
+    .get<boolean>('hooks.enabled', true);
+  void setHooksDormantContext(!initialEnabled || !isSentinelPresent());
+
   void Promise.resolve().then(() => installer.ensurePluginInstalled(context));
 
   // Ensure sentinel reflects the current hooks.enabled setting on startup
   // (handles the case where the extension was disabled while VS Code was closed)
   void Promise.resolve().then(() => {
-    const enabled = vscode.workspace
-      .getConfiguration('agentTasks')
-      .get<boolean>('hooks.enabled', true);
-    if (!enabled && isSentinelPresent()) {
+    if (!initialEnabled && isSentinelPresent()) {
       removeSentinel();
       log('Startup: hooks.enabled is false — removing stale sentinel');
     }
   });
+
+  // Command: re-trigger consent + install. Surfaced via the welcome view link,
+  // the title-bar $(zap) action when hooks are dormant, and the command
+  // palette ("Agent Tasks: Turn on live session updates").
+  const enableHooksCmd = vscode.commands.registerCommand(
+    'agentTasks.hooks.enable',
+    () => installer.reEnable(context)
+  );
 
   context.subscriptions.push(
     agentTasksView,
@@ -715,7 +735,8 @@ export function activate(context: vscode.ExtensionContext): void {
     findSessionCmd,
     closeTerminalSub,
     discoverySub,
-    newSessionCmd
+    newSessionCmd,
+    enableHooksCmd
   );
 }
 

@@ -38,7 +38,7 @@ function isHookEvent(v: unknown): v is HookEvent {
   const obj = v as Record<string, unknown>;
   return (
     typeof obj['event'] === 'string' &&
-    KNOWN_EVENT_NAMES.has(obj['event']) &&
+    KNOWN_EVENT_NAMES.has(obj['event'] as HookEventName) &&
     typeof obj['sessionId'] === 'string' &&
     typeof obj['cwd'] === 'string' &&
     typeof obj['ts'] === 'number'
