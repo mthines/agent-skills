@@ -69,7 +69,7 @@ completely harmless.
 
 - The hook script **always exits 0**. `UserPromptSubmit` and `Stop` hooks can
   block Claude on non-zero exit; this script will never do that.
-- Execution is hard-capped at ~50ms. If reading stdin or writing the event
+- Execution is hard-capped at 40ms. If reading stdin or writing the event
   file takes longer than 40ms, the script skips the write and exits 0.
 - All I/O is wrapped in `try/catch`. Disk full, permission errors, and
   malformed stdin are all handled silently.

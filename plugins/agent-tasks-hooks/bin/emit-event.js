@@ -9,7 +9,7 @@
  * Safety guarantees (see plan.md guardrails):
  *   - Always exits 0. UserPromptSubmit and Stop CAN block Claude on non-zero exit.
  *   - Wraps all I/O in try/catch — silently no-ops on any error.
- *   - Hard-caps execution at ~50ms. Any elapsed time > 40ms → skip write, exit 0.
+ *   - Hard-caps execution at 40ms. Any elapsed time > 40ms → skip write, exit 0.
  *   - Checks for a sentinel file written by the VS Code extension on activation.
  *     If absent, silently no-ops (orphaned-plugin safety).
  *   - Emits ONLY {event, sessionId, cwd, ts} — never prompt or transcript content.
@@ -60,9 +60,10 @@ try {
 // Use synchronous read with a try/catch to stay within the hard cap.
 let rawInput = '';
 try {
-  // On all platforms (macOS, Linux, Windows), Claude Code pipes stdin.
-  // Read up to 64 KB — hook payloads are small JSON objects.
-  const fd = fs.openSync('/dev/stdin', 'r');
+  // Read stdin via file descriptor 0 — works on macOS, Linux, and Windows
+  // (the '/dev/stdin' path does not exist on Windows). Read up to 64 KB —
+  // hook payloads are small JSON objects.
+  const fd = fs.openSync(0, 'r');
   const buf = Buffer.alloc(65536);
   let bytesRead = 0;
   let totalRead = 0;

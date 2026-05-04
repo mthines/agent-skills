@@ -4,7 +4,7 @@
  * Tests validate the four AC4/AC5 acceptance criteria:
  *   AC4a: exits 0 when sentinel is absent (orphaned plugin safety)
  *   AC4b: exits 0 on malformed stdin JSON
- *   AC4c: exits 0 when fs.appendFileSync throws (disk-full scenario)
+ *   AC4c: exits 0 when CLAUDE_PLUGIN_DATA env var is missing
  *   AC5:  emitted event contains only {event, sessionId, cwd, ts}
  *
  * Strategy: the script reads CLAUDE_PLUGIN_DATA from the environment and

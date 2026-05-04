@@ -25,13 +25,13 @@ import { getHookEventsDir } from '../lib/plugin-data-path';
 import type { HookEvent, HookEventName } from '../lib/hook-event-types';
 import { log, logError } from '../lib/logger';
 
-const KNOWN_EVENT_NAMES = new Set<string>([
+const KNOWN_EVENT_NAMES = new Set<HookEventName>([
   'UserPromptSubmit',
   'Stop',
   'Notification',
   'SessionStart',
   'SessionEnd',
-]);
+] satisfies HookEventName[]);
 
 function isHookEvent(v: unknown): v is HookEvent {
   if (typeof v !== 'object' || v === null) return false;
@@ -85,10 +85,6 @@ export class HookEventWatcher implements vscode.Disposable {
 
   private setupNativeWatcher(eventsDir: string): void {
     try {
-      if (!fs.existsSync(eventsDir)) {
-        return;
-      }
-
       const watcher = fs.watch(eventsDir, { recursive: false }, (_eventType, filename) => {
         if (!filename) return;
         if (!filename.endsWith('.ndjson')) return;

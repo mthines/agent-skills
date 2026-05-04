@@ -558,8 +558,19 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     if (status !== undefined) {
       this.hookOverrides.set(event.sessionId, { status, ts: event.ts });
     }
+    this.pruneExpiredHookOverrides();
     // Always refresh — Notification events should still update the panel
     this.refresh();
+  }
+
+  /** Drop hook overrides older than the TTL so the map can't grow unboundedly. */
+  private pruneExpiredHookOverrides(): void {
+    const cutoff = Date.now() - HOOK_OVERRIDE_TTL_MS;
+    for (const [sessionId, state] of this.hookOverrides) {
+      if (state.ts < cutoff) {
+        this.hookOverrides.delete(sessionId);
+      }
+    }
   }
 
   /**
