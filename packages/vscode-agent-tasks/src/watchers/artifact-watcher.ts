@@ -47,6 +47,8 @@ export class ArtifactWatcher implements vscode.Disposable {
   private debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** Small debounce to coalesce rapid writes to the same file (e.g. editor save) */
   private static DEBOUNCE_MS = 150;
+  /** Coalesces rapid worktree-discovery events into a single rebuild check */
+  private worktreeCheckTimer: ReturnType<typeof setTimeout> | undefined;
 
   private _onArtifactChanged = new vscode.EventEmitter<string>();
   readonly onArtifactChanged = this._onArtifactChanged.event;
@@ -198,6 +200,13 @@ export class ArtifactWatcher implements vscode.Disposable {
     // newly-created `.agent/` or `.gw/` directories are picked up without
     // requiring the user to reload the window or hit refresh.
     this.setupRootDiscoveryWatcher();
+
+    // Detect sibling worktrees that didn't exist at activation time (e.g.
+    // created by `git worktree add` from autonomous-workflow) and `.agent`
+    // / `.gw` directories materialising inside them after the fact. Without
+    // this, artifacts written by a planner agent into a freshly-created
+    // worktree would not surface in the panel until manual refresh.
+    this.setupWorktreeDiscoveryWatchers();
   }
 
   /**
@@ -255,6 +264,100 @@ export class ArtifactWatcher implements vscode.Disposable {
     this.scanExistingArtifacts();
     this.setupWatchers();
     this._onArtifactChanged.fire('directory');
+  }
+
+  /**
+   * Watch every parent directory of every known worktree so that NEW
+   * sibling worktrees (created via `git worktree add`, e.g. by an
+   * autonomous-workflow planner) are detected the moment they appear, and
+   * watch each known worktree's root so an `.agent/` or `.gw/` directory
+   * appearing inside it after activation also triggers a rebuild.
+   *
+   * Without this, `findArtifactRoots()` only sees the worktrees that
+   * existed when the watcher was first set up — any artifacts written to
+   * a worktree that was created later would stay invisible until the user
+   * manually refreshed or reloaded the window.
+   *
+   * Uses `fs.watch(..., { recursive: false })` which is supported on
+   * macOS, Linux, and Windows for direct-child events. Errors are
+   * silently ignored — best-effort enrichment, not a hard requirement.
+   */
+  private setupWorktreeDiscoveryWatchers(): void {
+    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!workspacePath) return;
+
+    let worktreePaths: string[];
+    try {
+      worktreePaths = discoverWorktreePaths(workspacePath);
+    } catch {
+      return;
+    }
+
+    const dirs = getConfiguredDirs();
+    const watchedPaths = new Set<string>();
+
+    const addWatch = (target: string, isWorktreeRoot: boolean): void => {
+      if (watchedPaths.has(target)) return;
+      watchedPaths.add(target);
+      try {
+        if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) return;
+      } catch {
+        return;
+      }
+      try {
+        const watcher = fs.watch(target, { recursive: false }, (_eventType, filename) => {
+          if (!filename) {
+            this.scheduleWorktreeCheck();
+            return;
+          }
+          if (isWorktreeRoot && !dirs.includes(filename.toString())) {
+            // Inside a worktree, only react when the artifact dir name appears.
+            return;
+          }
+          this.scheduleWorktreeCheck();
+        });
+        watcher.on('error', () => {
+          // Silently ignore — watcher will stop but extension continues.
+        });
+        this.fsWatchers.push(watcher);
+      } catch {
+        // Path unavailable or platform-unsupported — ignore.
+      }
+    };
+
+    for (const wt of worktreePaths) {
+      // Watch the parent of each worktree so a new sibling appearing
+      // (e.g. `agent-skills.git/feat/<new>`) is observed.
+      addWatch(path.dirname(wt), false);
+      // Watch the worktree's root so a freshly-created `.agent/` or
+      // `.gw/` inside it also rebuilds. The workspace itself is already
+      // covered by `setupRootDiscoveryWatcher`.
+      if (wt !== workspacePath) addWatch(wt, true);
+    }
+  }
+
+  /**
+   * Coalesce rapid create/delete events from the worktree-discovery
+   * watchers (often a burst when `git worktree add` materialises several
+   * files in quick succession) into a single rebuild. The 250 ms window
+   * is short enough to feel instantaneous but long enough to avoid
+   * thrashing watcher state during a single command.
+   */
+  private scheduleWorktreeCheck(): void {
+    if (this.worktreeCheckTimer) clearTimeout(this.worktreeCheckTimer);
+    this.worktreeCheckTimer = setTimeout(() => {
+      this.worktreeCheckTimer = undefined;
+      const next = new Set(this.findArtifactRoots());
+      if (!setsEqual(next, this.watchedRoots)) {
+        this.rebuildWatchers();
+      } else {
+        // Even when the artifact-root set is unchanged, fire a directory
+        // event so providers re-read `discoverWorktreePaths()` — the new
+        // worktree may exist without an artifact dir yet, but the panels
+        // still want to render its placeholder group.
+        this._onArtifactChanged.fire('directory');
+      }
+    }, 250);
   }
 
   /**
@@ -420,6 +523,10 @@ export class ArtifactWatcher implements vscode.Disposable {
   dispose(): void {
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer);
+    }
+    if (this.worktreeCheckTimer) {
+      clearTimeout(this.worktreeCheckTimer);
+      this.worktreeCheckTimer = undefined;
     }
     this.disposeWatchers();
     for (const sub of this.lifetimeDisposables) {
