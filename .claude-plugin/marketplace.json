@@ -1,0 +1,21 @@
+{
+  "name": "agent-skills-plugins",
+  "owner": { "name": "mthines", "email": "mads.thines@dash0.com" },
+  "metadata": {
+    "description": "Claude Code plugins from the agent-skills repository"
+  },
+  "plugins": [
+    {
+      "name": "agent-tasks-hooks",
+      "description": "Emits lifecycle hook events for the Agent Tasks VS Code extension Sessions panel",
+      "version": "0.1.0",
+      "author": { "name": "mthines" },
+      "license": "MIT",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/mthines/agent-skills",
+        "path": "plugins/agent-tasks-hooks"
+      }
+    }
+  ]
+}

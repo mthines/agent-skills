@@ -36,6 +36,7 @@ import {
   findLinkedArtifacts,
   hasLinkedArtifacts,
 } from '../lib/session-artifact-correlator';
+import type { HookEvent, HookEventName } from '../lib/hook-event-types';
 
 // ---------------------------------------------------------------------------
 // Configured artifact directory names (mirrors agent-tasks-provider.ts)
@@ -428,6 +429,43 @@ function bucketSessionsByWorktree(
 }
 
 // ---------------------------------------------------------------------------
+// Hook override types
+// ---------------------------------------------------------------------------
+
+/**
+ * TTL for a hook-driven status override. Long enough that a hook-driven
+ * `needs-input` stays visible until the periodic tick or the next hook event
+ * supersedes it. 5 minutes covers any realistic human response time.
+ */
+const HOOK_OVERRIDE_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Maps a hook event name to the session status it implies.
+ * `Notification` returns `undefined` — it triggers a refresh without a status
+ * change.
+ */
+function hookEventToStatus(eventName: HookEventName): SessionStatus | undefined {
+  switch (eventName) {
+    case 'UserPromptSubmit':
+      return 'running';
+    case 'Stop':
+      return 'needs-input';
+    case 'SessionStart':
+      return 'running';
+    case 'SessionEnd':
+      return 'idle';
+    case 'Notification':
+      return undefined;
+  }
+}
+
+/** The shape stored in `hookOverrides` for each session. */
+interface HookSessionState {
+  status: SessionStatus;
+  ts: number;
+}
+
+// ---------------------------------------------------------------------------
 // SessionsProvider
 // ---------------------------------------------------------------------------
 
@@ -476,6 +514,17 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
    */
   private terminalClosedAt = new Map<string, number>();
 
+  /**
+   * Hook-event overrides keyed by sessionId. Set by `applyHookEvent()` and
+   * consumed by `computeStatus()` as the second-priority tier (after
+   * `openTerminalSessions`, before `terminalClosedAt`).
+   *
+   * Entries expire after `HOOK_OVERRIDE_TTL_MS` (5 minutes) so a stale
+   * hook event doesn't permanently override the JSONL-derived state if
+   * something goes wrong.
+   */
+  private hookOverrides = new Map<string, HookSessionState>();
+
   /** The session directories currently being observed. */
   get sessionDirs(): string[] {
     return this._sessionDirs;
@@ -498,24 +547,65 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
   }
 
   /**
-   * Compute the effective status for a session, layering UI-known signals on
-   * top of the mtime heuristic:
-   *   1. Terminal open in this window         → `active` (definite)
-   *   2. Terminal was closed after last mtime → cap at `recent` (we ended it)
-   *   3. Otherwise                            → plain mtime heuristic
+   * Apply a hook event received from `HookEventWatcher`. Maps the event to a
+   * session status, stores it as an override, and triggers a tree refresh so
+   * the status icon updates immediately — before the JSONL file is written.
+   *
+   * `Notification` events trigger a refresh without updating the status.
    */
+  applyHookEvent(event: HookEvent): void {
+    const status = hookEventToStatus(event.event);
+    if (status !== undefined) {
+      this.hookOverrides.set(event.sessionId, { status, ts: event.ts });
+    }
+    this.pruneExpiredHookOverrides();
+    // Always refresh — Notification events should still update the panel
+    this.refresh();
+  }
+
+  /** Drop hook overrides older than the TTL so the map can't grow unboundedly. */
+  private pruneExpiredHookOverrides(): void {
+    const cutoff = Date.now() - HOOK_OVERRIDE_TTL_MS;
+    for (const [sessionId, state] of this.hookOverrides) {
+      if (state.ts < cutoff) {
+        this.hookOverrides.delete(sessionId);
+      }
+    }
+  }
+
+  /**
+   * Returns true if any session has a hook override with a timestamp within
+   * the last 60 seconds. Used by the adaptive tick in extension.ts to switch
+   * between fast (5s) and slow (30s) polling intervals.
+   */
+  hasRecentHookActivity(): boolean {
+    const threshold = Date.now() - 60_000;
+    for (const state of this.hookOverrides.values()) {
+      if (state.ts > threshold) return true;
+    }
+    return false;
+  }
+
   /**
    * Compute the effective status for a session, layering UI-known signals
    * on top of the JSONL-derived `deriveRunState`:
    *   1. Terminal open in this window     → `running` (definite)
-   *   2. We closed the terminal post-mtime → `idle`   (we ended it)
-   *   3. Otherwise                         → `deriveRunState(turnEnded, mtime)`
+   *   2. Hook override within TTL         → hook-driven status (sub-second)
+   *   3. We closed the terminal post-mtime → `idle`   (we ended it)
+   *   4. Otherwise                         → `deriveRunState(turnEnded, mtime)`
    */
   computeStatus(session: SessionMetadata): SessionStatus {
+    // Tier 1: terminal open in this window — definite signal
     if (this.openTerminalSessions.has(session.sessionId)) return 'running';
 
-    // Tolerance covers a JSONL flush during terminal shutdown — claude can
-    // write one last byte AFTER we've torn down the terminal, which would
+    // Tier 2: hook event override — sub-second signal from the plugin
+    const hookOverride = this.hookOverrides.get(session.sessionId);
+    if (hookOverride !== undefined && Date.now() - hookOverride.ts < HOOK_OVERRIDE_TTL_MS) {
+      return hookOverride.status;
+    }
+
+    // Tier 3: tolerance covers a JSONL flush during terminal shutdown — claude
+    // can write one last byte AFTER we've torn down the terminal, which would
     // otherwise leave the session looking running for up to 5 minutes.
     const closedAt = this.terminalClosedAt.get(session.sessionId);
     const CLOSE_TOLERANCE_MS = 2_000;
@@ -523,6 +613,8 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
       return 'idle';
     }
 
+    // Tier 4: JSONL-derived fallback (remains fully functional when hooks are
+    // not installed or have been disabled)
     return deriveRunState(session.turnEnded, session.mtime);
   }
 

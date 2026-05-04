@@ -1,0 +1,9 @@
+{
+  "name": "agent-tasks-hooks",
+  "version": "0.1.0",
+  "description": "Emits lifecycle hook events for the Agent Tasks VS Code extension Sessions panel",
+  "author": { "name": "mthines" },
+  "repository": "https://github.com/mthines/agent-skills",
+  "license": "MIT",
+  "keywords": ["vscode", "agent-tasks", "sessions", "hooks"]
+}

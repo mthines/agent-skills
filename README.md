@@ -92,7 +92,8 @@ Most tools auto-discover skills from `~/.agents/skills/`.
 
 ## What's Included
 
-> **About skill loading.** Each skill below is either *agent-invokable* or *slash-command-only*. The distinction matters for your token budget:
+> **About skill loading.** Each skill below is either _agent-invokable_ or _slash-command-only_. The distinction matters for your token budget:
+>
 > - **Agent-invokable skills** sit in your model's available-skills list every session — only the short `description` field, not the body. The model can invoke them via `Skill()` when it detects a matching task, without you typing `/name`.
 > - **Slash-command-only skills** (`disable-model-invocation: true` in their frontmatter) are **not in the model's invokable list at all**. They cost nothing in baseline context. They load only when you type `/name` or when another skill calls them via `Skill()` at runtime.
 >
@@ -102,57 +103,65 @@ Most tools auto-discover skills from `~/.agents/skills/`.
 
 Coordinate other skills to execute multi-step workflows. Agent-invokable.
 
-| Skill | What it does | Use when... |
-|---|---|---|
-| **[autonomous-workflow](./skills/autonomous-workflow/SKILL.md)** | Phase-based orchestrator (0–7) that handles end-to-end feature development — from validation through tested PR delivery — using isolated Git worktrees. Optionally invokes companions for planning, TDD, UX, code quality, docs, and CI fixing. See [dedicated section](#autonomous-workflow). | "Implement X autonomously", "end-to-end", "in isolation", "in a worktree". |
+| Skill                                                              | What it does                                                                                                                                                                                                                                                                                                                            | Use when...                                                                                      |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **[autonomous-workflow](./skills/autonomous-workflow/SKILL.md)**   | Phase-based orchestrator (0–7) that handles end-to-end feature development — from validation through tested PR delivery — using isolated Git worktrees. Optionally invokes companions for planning, TDD, UX, code quality, docs, and CI fixing. See [dedicated section](#autonomous-workflow).                                          | "Implement X autonomously", "end-to-end", "in isolation", "in a worktree".                       |
 | **[batch-linear-tickets](./skills/batch-linear-tickets/SKILL.md)** | Batch orchestrator for Linear tickets. Fans out [`linear-ticket-investigator`](#linear-ticket-investigator) per ticket, correlates findings, gates user approval, then fans out `aw-planner` + `aw-executor` pairs (the [`aw-` namespace](#agent-namespace-aw-) from `autonomous-workflow`) in isolated worktrees. Requires Linear MCP. | "Solve these tickets", "batch analyze SUP-123 SUP-456", "analyze tickets in this Linear filter". |
 
 ### Agent-invokable skills
 
 The model can invoke these via `Skill()` when it detects a matching task — no slash command required. Their descriptions are in your context every session (~50–150 tokens each).
 
-| Skill | What it does | Use when... |
-|---|---|---|
-| **[confidence](./skills/confidence/SKILL.md)** | Rates confidence that work fully solves the stated requirement. Scores across weighted dimensions with auto-fix mode. | Validating a plan before execution, checking code before a PR, or assessing a bug analysis. |
-| **[dx](./skills/dx/SKILL.md)** | Reviews CLI tools, shell scripts, and developer tooling against established guidelines ([clig.dev](https://clig.dev), 12 Factor CLI, Heroku CLI Style Guide). | Building or reviewing a CLI, shell script, Makefile, or any developer-facing tool. |
-| **[holistic-analysis](./skills/holistic-analysis/SKILL.md)** | Forces a full execution-path analysis when incremental fixes aren't working. Traces entry-to-exit with structured hypothesis generation. | A bug fix attempt has failed, you're going in circles, or you need to "step back and think." |
-| **[tdd](./skills/tdd/SKILL.md)** | Enforces strict RED-GREEN-REFACTOR cycles. Writes one failing test, implements minimal code to pass, then refactors. | Adding new features test-first, or retrofitting tests onto existing code. |
-| **[ux](./skills/ux/SKILL.md)** | Reviews web and React Native UI code for usability, accessibility (WCAG 2.2), and platform compliance (Apple HIG, Material Design 3). | Building or reviewing UI components, checking accessibility, or improving UX copy. |
-| **[video-analyser](./skills/video-analyser/SKILL.md)** | Analyses a screen recording to extract bugs, errors, UI state, and reproduction steps. Resolves input from a Linear ticket URL, local file path, or direct URL. Extracts keyframes with `ffmpeg` (default: 8 frames at 768 px — Pareto-optimal for legibility vs. token cost). Runs optional Tesseract OCR and Whisper audio transcription. | "Analyse this screen recording for bugs", "what does this video show", "investigate this mp4", or whenever a user pastes a `.mp4`/`.mov` path or Linear ticket URL with a video attachment. |
+| Skill                                                        | What it does                                                                                                                                                                                                                                                                                                                                | Use when...                                                                                                                                                                                 |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **[confidence](./skills/confidence/SKILL.md)**               | Rates confidence that work fully solves the stated requirement. Scores across weighted dimensions with auto-fix mode.                                                                                                                                                                                                                       | Validating a plan before execution, checking code before a PR, or assessing a bug analysis.                                                                                                 |
+| **[dx](./skills/dx/SKILL.md)**                               | Reviews CLI tools, shell scripts, and developer tooling against established guidelines ([clig.dev](https://clig.dev), 12 Factor CLI, Heroku CLI Style Guide).                                                                                                                                                                               | Building or reviewing a CLI, shell script, Makefile, or any developer-facing tool.                                                                                                          |
+| **[holistic-analysis](./skills/holistic-analysis/SKILL.md)** | Forces a full execution-path analysis when incremental fixes aren't working. Traces entry-to-exit with structured hypothesis generation.                                                                                                                                                                                                    | A bug fix attempt has failed, you're going in circles, or you need to "step back and think."                                                                                                |
+| **[tdd](./skills/tdd/SKILL.md)**                             | Enforces strict RED-GREEN-REFACTOR cycles. Writes one failing test, implements minimal code to pass, then refactors.                                                                                                                                                                                                                        | Adding new features test-first, or retrofitting tests onto existing code.                                                                                                                   |
+| **[ux](./skills/ux/SKILL.md)**                               | Reviews web and React Native UI code for usability, accessibility (WCAG 2.2), and platform compliance (Apple HIG, Material Design 3).                                                                                                                                                                                                       | Building or reviewing UI components, checking accessibility, or improving UX copy.                                                                                                          |
+| **[video-analyser](./skills/video-analyser/SKILL.md)**       | Analyses a screen recording to extract bugs, errors, UI state, and reproduction steps. Resolves input from a Linear ticket URL, local file path, or direct URL. Extracts keyframes with `ffmpeg` (default: 8 frames at 768 px — Pareto-optimal for legibility vs. token cost). Runs optional Tesseract OCR and Whisper audio transcription. | "Analyse this screen recording for bugs", "what does this video show", "investigate this mp4", or whenever a user pastes a `.mp4`/`.mov` path or Linear ticket URL with a video attachment. |
 
 ### Workflow companions
 
 Slash-command-only. Primarily called by `autonomous-workflow` via `Skill()` at runtime. Installable on their own if you want to reuse the artifact-generation logic in your own pipelines, but most users don't invoke them directly.
 
-| Skill | What it does |
-|---|---|
-| **[aw-create-plan](./skills/aw-create-plan/SKILL.md)** | Generates `.agent/{branch}/plan.md` — the single source of truth for autonomous execution. A new Claude session can resume from this plan alone. |
-| **[aw-create-walkthrough](./skills/aw-create-walkthrough/SKILL.md)** | Generates `.agent/{branch}/walkthrough.md` — the final summary delivered with a PR, summarizing changes, decisions, and how to verify. |
+| Skill                                                                  | What it does                                                                                                                                            |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **[aw-create-plan](./skills/aw-create-plan/SKILL.md)**                 | Generates `.agent/{branch}/plan.md` — the single source of truth for autonomous execution. A new Claude session can resume from this plan alone.        |
+| **[aw-create-walkthrough](./skills/aw-create-walkthrough/SKILL.md)**   | Generates `.agent/{branch}/walkthrough.md` — the final summary delivered with a PR, summarizing changes, decisions, and how to verify.                  |
 | **[aw-review-quality-gate](./skills/aw-review-quality-gate/SKILL.md)** | Self-check quality gate for review findings before delivery — filters noise, dedupes, ranks severity. Called by the `reviewer` agent and review skills. |
 
 ### Slash commands
 
 User-invoked only — the model can't auto-trigger these. **Zero baseline context cost** (not in the model's available-skills list); they load only when you type `/name` or when another skill calls them via `Skill()` at runtime.
 
-| Command | What it does |
-|---|---|
-| **[/ci-auto-fix](./skills/ci-auto-fix/SKILL.md)** | Diagnoses a failed CI check, applies a minimal fix, pushes, and iterates until CI passes. Provider-agnostic in scope; currently implements the GitHub Actions path. Refuses to disable, skip, or weaken checks. |
-| **[/code-quality](./skills/code-quality/SKILL.md)** | Authors and reviews code for low cognitive complexity, readability, and maintainability. Applies guard clauses, early returns, single-responsibility, and pragmatic performance choices grounded in Clean Code, Cognitive Complexity, and Knuth's optimization guidance. |
-| **[/create-pr](./skills/create-pr/SKILL.md)** | Generates a narrative PR description, pushes the branch, opens the PR, then watches CI and auto-fixes simple failures (lint, format, lockfiles). Escalates judgment-required failures via `/confidence` rather than guessing. |
-| **[/implement-suggestion](./skills/implement-suggestion/SKILL.md)** | Takes review comments or suggestions and implements the fixes — simple ones directly, complex ones with a plan for approval. |
-| **[/init-claude](./skills/init-claude/SKILL.md)** | Analyzes your project and generates a tailored `CLAUDE.md` + `.claude/rules/` setup. Detects tech stack, project size, and conventions automatically. |
-| **[/resolve-conflicts](./skills/resolve-conflicts/SKILL.md)** | Detects merge/rebase conflicts, shows both sides with context, proposes resolution strategies, and asks clarifying questions for ambiguous cases. |
-| **[/review-changes](./skills/review-changes/SKILL.md)** | Reviews branch changes or a PR for quality, correctness, tests, and commit hygiene. Dispatches to the reviewer skill. |
-| **[/update-claude](./skills/update-claude/SKILL.md)** | Diffs your branch against main and incrementally updates Claude docs to match code changes. Finds stale references, dead paths, and drift. |
+| Command                                                             | What it does                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **[/ci-auto-fix](./skills/ci-auto-fix/SKILL.md)**                   | Diagnoses a failed CI check, applies a minimal fix, pushes, and iterates until CI passes. Provider-agnostic in scope; currently implements the GitHub Actions path. Refuses to disable, skip, or weaken checks.                                                          |
+| **[/code-quality](./skills/code-quality/SKILL.md)**                 | Authors and reviews code for low cognitive complexity, readability, and maintainability. Applies guard clauses, early returns, single-responsibility, and pragmatic performance choices grounded in Clean Code, Cognitive Complexity, and Knuth's optimization guidance. |
+| **[/create-pr](./skills/create-pr/SKILL.md)**                       | Generates a narrative PR description, pushes the branch, opens the PR, then watches CI and auto-fixes simple failures (lint, format, lockfiles). Escalates judgment-required failures via `/confidence` rather than guessing.                                            |
+| **[/implement-suggestion](./skills/implement-suggestion/SKILL.md)** | Takes review comments or suggestions and implements the fixes — simple ones directly, complex ones with a plan for approval.                                                                                                                                             |
+| **[/init-claude](./skills/init-claude/SKILL.md)**                   | Analyzes your project and generates a tailored `CLAUDE.md` + `.claude/rules/` setup. Detects tech stack, project size, and conventions automatically.                                                                                                                    |
+| **[/resolve-conflicts](./skills/resolve-conflicts/SKILL.md)**       | Detects merge/rebase conflicts, shows both sides with context, proposes resolution strategies, and asks clarifying questions for ambiguous cases.                                                                                                                        |
+| **[/review-changes](./skills/review-changes/SKILL.md)**             | Reviews branch changes or a PR for quality, correctness, tests, and commit hygiene. Dispatches to the reviewer skill.                                                                                                                                                    |
+| **[/update-claude](./skills/update-claude/SKILL.md)**               | Diffs your branch against main and incrementally updates Claude docs to match code changes. Finds stale references, dead paths, and drift.                                                                                                                               |
 
 ### Agents
 
 Agents are specialized sub-processes with their own model and tool configuration. They are dispatched by other skills, not invoked directly.
 
-| Agent | What it does |
-|---|---|
-| **[reviewer](./agents/reviewer.md)** | Constructive code reviewer with three modes: **fix** (default — auto-fixes simple issues), **report** (`--report` — findings only), and **comments** (`--comments` — proposes line-level GitHub PR review comments). |
+| Agent                                                                    | What it does                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **[reviewer](./agents/reviewer.md)**                                     | Constructive code reviewer with three modes: **fix** (default — auto-fixes simple issues), **report** (`--report` — findings only), and **comments** (`--comments` — proposes line-level GitHub PR review comments).                                                                                                                                                             |
 | **[linear-ticket-investigator](./agents/linear-ticket-investigator.md)** | Linear-specific ticket investigator. Reads a single ticket via Linear MCP, searches the codebase using domain context + label inference, returns structured findings with certainty markers and a confidence score. Used by [`batch-linear-tickets`](./skills/batch-linear-tickets/SKILL.md). See [Domain Context](#linear-ticket-investigator) below for plug-in customization. |
+
+### Claude Code Plugins
+
+Claude Code plugins live in `plugins/` and are distributed via the `.claude-plugin/marketplace.json` at the repo root.
+
+| Plugin                                                         | What it does                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **[agent-tasks-hooks](./plugins/agent-tasks-hooks/README.md)** | Emits privacy-safe NDJSON lifecycle events (`UserPromptSubmit`, `Stop`, `SessionStart`, `SessionEnd`, `Notification`) for the Agent Tasks VS Code extension. Drives sub-second session-state transitions in the Sessions panel. Installed automatically by the extension (with consent) or manually via `claude plugin marketplace add mthines/agent-skills && claude plugin install agent-tasks-hooks@agent-skills-plugins`. |
 
 ## Autonomous Workflow
 
@@ -162,10 +171,10 @@ Agents are specialized sub-processes with their own model and tool configuration
 
 The skill installs **two agents** that share the same workflow knowledge, connected by `plan.md`. Both use the [`aw-` namespace prefix](#agent-namespace-aw-):
 
-| Agent | Phases | Terminal artifact | Exit gate |
-|---|---|---|---|
-| `aw-planner` | 0–2 (validation, planning, worktree + plan.md) | `.agent/{branch}/plan.md` | `confidence(plan) ≥ 90%` (or user-approved override) |
-| `aw-executor` | 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
+| Agent         | Phases                                         | Terminal artifact                           | Exit gate                                            |
+| ------------- | ---------------------------------------------- | ------------------------------------------- | ---------------------------------------------------- |
+| `aw-planner`  | 0–2 (validation, planning, worktree + plan.md) | `.agent/{branch}/plan.md`                   | `confidence(plan) ≥ 90%` (or user-approved override) |
+| `aw-executor` | 3–7 (implement, test, docs, PR, CI)            | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run        |
 
 The split is along the Phase 2 → Phase 3 context boundary. High-confidence plans flow through automatically; borderline plans pause for user approval. The design rationale (with verbatim Anthropic citations on context-boundary splits, structured handoff artifacts, and pre-implementation contracts) is in [`skills/autonomous-workflow/references/anthropic-architecture-research.md`](./skills/autonomous-workflow/references/anthropic-architecture-research.md).
 
@@ -181,16 +190,16 @@ So the first time you encounter `aw-planner` in a routing rule, an agent listing
 
 ### What each phase does
 
-| Phase | Name | What happens | Companion skills (optional unless noted) |
-|---|---|---|---|
-| 0 | Validation | Asks clarifying questions; never starts coding without explicit confirmation. | — |
-| 1 | Planning | Analyzes the codebase (parallel `Explore` sub-agents for complex tasks); designs technical approach. | `holistic-analysis`, `code-quality` (plan), **`confidence` (plan, mandatory gate at 90%)** |
-| 2 | Worktree Setup | Creates an isolated worktree (`gw add` or native `git worktree`), generates `plan.md` artifact in `.agent/{branch}/`. | `aw-create-plan` (Full Mode) |
-| 3 | Implementation | Codes per the plan, one change at a time, with fast checks after each edit. | `tdd` (logic), `ux` (UI), `code-quality` (end-of-phase) |
-| 4 | Testing | Iterates on failing tests with a mode-aware cap (3 Lite / 5 Full) per area. At the cap, runs `confidence(bug-analysis)` and auto-replans via `holistic-analysis` once before mandatory user escalation. | `confidence` (bug-analysis), `holistic-analysis` |
-| 5 | Documentation | Updates README, CHANGELOG; keeps `CLAUDE.md` aligned with code changes. | `update-claude` (always) |
-| 6 | PR Creation | Reviews changes, generates `walkthrough.md`, opens draft PR with narrative description. | `review-changes`, `aw-create-walkthrough` (Full Mode), `create-pr` |
-| 7 | CI Gate | Watches CI; auto-fixes failed checks (parallel sub-agents, cap 2 per PR). Optional post-merge cleanup. | `ci-auto-fix` |
+| Phase | Name           | What happens                                                                                                                                                                                            | Companion skills (optional unless noted)                                                   |
+| ----- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 0     | Validation     | Asks clarifying questions; never starts coding without explicit confirmation.                                                                                                                           | —                                                                                          |
+| 1     | Planning       | Analyzes the codebase (parallel `Explore` sub-agents for complex tasks); designs technical approach.                                                                                                    | `holistic-analysis`, `code-quality` (plan), **`confidence` (plan, mandatory gate at 90%)** |
+| 2     | Worktree Setup | Creates an isolated worktree (`gw add` or native `git worktree`), generates `plan.md` artifact in `.agent/{branch}/`.                                                                                   | `aw-create-plan` (Full Mode)                                                               |
+| 3     | Implementation | Codes per the plan, one change at a time, with fast checks after each edit.                                                                                                                             | `tdd` (logic), `ux` (UI), `code-quality` (end-of-phase)                                    |
+| 4     | Testing        | Iterates on failing tests with a mode-aware cap (3 Lite / 5 Full) per area. At the cap, runs `confidence(bug-analysis)` and auto-replans via `holistic-analysis` once before mandatory user escalation. | `confidence` (bug-analysis), `holistic-analysis`                                           |
+| 5     | Documentation  | Updates README, CHANGELOG; keeps `CLAUDE.md` aligned with code changes.                                                                                                                                 | `update-claude` (always)                                                                   |
+| 6     | PR Creation    | Reviews changes, generates `walkthrough.md`, opens draft PR with narrative description.                                                                                                                 | `review-changes`, `aw-create-walkthrough` (Full Mode), `create-pr`                         |
+| 7     | CI Gate        | Watches CI; auto-fixes failed checks (parallel sub-agents, cap 2 per PR). Optional post-merge cleanup.                                                                                                  | `ci-auto-fix`                                                                              |
 
 The single biggest cost-saver is the **mode-aware stuck-loop cap** at Phase 4 (3 Lite / 5 Full) — it prevents agents from burning tokens on hallucinated fixes when their root-cause analysis is wrong. At the cap, `confidence(bug-analysis)` runs; if confidence is below 90%, the workflow auto-invokes `holistic-analysis`, regenerates the affected `plan.md` section, and resumes once before escalating to the user.
 
@@ -269,11 +278,11 @@ The [`batch-linear-tickets`](./skills/batch-linear-tickets/SKILL.md) skill fans 
 
 ### Prerequisites
 
-| Dependency | Purpose | Required? |
-|-----------|---------|-----------|
-| Linear MCP (`mcp__claude_ai_Linear__*`) | Read tickets, post PR comments | **Yes** |
-| `aw-planner` + `aw-executor` (from [`autonomous-workflow`](#autonomous-workflow), under the [`aw-` namespace](#agent-namespace-aw-)) | Planning + execution after approval | **Yes** for `batch-linear-tickets` |
-| Project domain-navigator skill | Ground investigation in monorepo structure | Optional but recommended |
+| Dependency                                                                                                                           | Purpose                                    | Required?                          |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------ | ---------------------------------- |
+| Linear MCP (`mcp__claude_ai_Linear__*`)                                                                                              | Read tickets, post PR comments             | **Yes**                            |
+| `aw-planner` + `aw-executor` (from [`autonomous-workflow`](#autonomous-workflow), under the [`aw-` namespace](#agent-namespace-aw-)) | Planning + execution after approval        | **Yes** for `batch-linear-tickets` |
+| Project domain-navigator skill                                                                                                       | Ground investigation in monorepo structure | Optional but recommended           |
 
 ### Domain Context (per-project plug-in)
 
@@ -317,11 +326,11 @@ user-invocable: true
 
 ## Label → directory map
 
-| Label | Component paths |
-|-------|----------------|
-| ui    | components/ui/, packages/web/ |
+| Label | Component paths                       |
+| ----- | ------------------------------------- |
+| ui    | components/ui/, packages/web/         |
 | api   | components/api/, packages/server/api/ |
-| ...   | ... |
+| ...   | ...                                   |
 
 ## Cross-component dependencies
 
@@ -373,21 +382,27 @@ Skills activate automatically. Just describe what you need:
 ```
 Implement this feature autonomously / end-to-end / in a worktree
 ```
+
 ```
 Review the DX of my CLI tool
 ```
+
 ```
 Check the accessibility of this component
 ```
+
 ```
 Refactor this for readability / reduce cognitive complexity
 ```
+
 ```
 I've tried fixing this bug three times — step back and analyze holistically
 ```
+
 ```
 Add this feature using TDD
 ```
+
 ```
 Rate your confidence in this implementation
 ```
@@ -428,7 +443,7 @@ Or search for **Agent Tasks** in the VS Code Extensions panel.
 ```jsonc
 // .vscode/settings.json
 {
-  "agentTasks.directories": [".agent", ".gw"]
+  "agentTasks.directories": [".agent", ".gw"],
 }
 ```
 
