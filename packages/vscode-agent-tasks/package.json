@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.36.0",
+  "version": "0.37.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -336,6 +336,11 @@
             "Show agent task artifacts for all sibling worktrees, grouped by worktree"
           ],
           "description": "Which worktrees the Agent Tasks panel includes. Toggle quickly via the filter icon in the panel header."
+        },
+        "agentTasks.hooks.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable the Claude Code plugin hooks for real-time session state updates in the Sessions panel. When enabled, Agent Tasks installs the agent-tasks-hooks plugin (with your consent) which delivers sub-second status transitions. Toggling off removes the sentinel file so the hook script silently no-ops on every subsequent invocation — the plugin stays installed but produces no output."
         }
       }
     },
