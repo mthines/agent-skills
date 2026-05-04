@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.44.0",
+  "version": "0.45.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -151,6 +151,12 @@
         "title": "Delete…",
         "icon": "$(trash)",
         "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.hooks.enable",
+        "title": "Turn on live session updates",
+        "icon": "$(zap)",
+        "category": "Agent Tasks"
       }
     ],
     "menus": {
@@ -207,6 +213,11 @@
           "command": "agentTasks.toggleScope",
           "when": "view == agentTasksExplorer",
           "group": "navigation"
+        },
+        {
+          "command": "agentTasks.hooks.enable",
+          "when": "view == agentSessionsExplorer && agentTasks.hooks.dormant",
+          "group": "navigation@-1"
         },
         {
           "command": "agentTasks.sessions.newSession",
@@ -385,14 +396,20 @@
         "agentTasks.hooks.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable the Claude Code plugin hooks for real-time session state updates in the Sessions panel. When enabled, Agent Tasks installs the agent-tasks-hooks plugin (with your consent) which delivers sub-second status transitions. Toggling off removes the sentinel file so the hook script silently no-ops on every subsequent invocation — the plugin stays installed but produces no output."
+          "markdownDescription": "Show Claude sessions updating live in the Sessions panel. When off, the panel still works but updates lag a few seconds behind. Turn back on with the **Agent Tasks: Turn on live session updates** command."
         }
       }
     },
     "viewsWelcome": [
       {
         "view": "agentSessionsExplorer",
-        "contents": "No Claude Code sessions found for this workspace yet.\n\nStart one in a terminal:\n[Open Terminal](command:workbench.action.terminal.new)\n\nThen run `claude` in your project directory.\n\n_Tip: press Enter on a session to resume it in a terminal. Set `agentTasks.sessions.openWith` to `editor` to open the JSONL transcript instead._"
+        "contents": "Live session updates are off.\n\nTurn them on to see Claude sessions transition between running, waiting, and idle in real time. The plugin emits only the event name, session ID, and folder — nothing leaves your machine.\n\n[Turn on live updates](command:agentTasks.hooks.enable)",
+        "when": "agentTasks.hooks.dormant"
+      },
+      {
+        "view": "agentSessionsExplorer",
+        "contents": "No Claude Code sessions found for this workspace yet.\n\nStart one in a terminal:\n[Open Terminal](command:workbench.action.terminal.new)\n\nThen run `claude` in your project directory.\n\n_Tip: press Enter on a session to resume it in a terminal. Set `agentTasks.sessions.openWith` to `editor` to open the JSONL transcript instead._",
+        "when": "!agentTasks.hooks.dormant"
       }
     ]
   },
