@@ -118,6 +118,7 @@ The model can invoke these via `Skill()` when it detects a matching task — no 
 | **[holistic-analysis](./skills/holistic-analysis/SKILL.md)** | Forces a full execution-path analysis when incremental fixes aren't working. Traces entry-to-exit with structured hypothesis generation. | A bug fix attempt has failed, you're going in circles, or you need to "step back and think." |
 | **[tdd](./skills/tdd/SKILL.md)** | Enforces strict RED-GREEN-REFACTOR cycles. Writes one failing test, implements minimal code to pass, then refactors. | Adding new features test-first, or retrofitting tests onto existing code. |
 | **[ux](./skills/ux/SKILL.md)** | Reviews web and React Native UI code for usability, accessibility (WCAG 2.2), and platform compliance (Apple HIG, Material Design 3). | Building or reviewing UI components, checking accessibility, or improving UX copy. |
+| **[video-analyser](./skills/video-analyser/SKILL.md)** | Analyses a screen recording to extract bugs, errors, UI state, and reproduction steps. Resolves input from a Linear ticket URL, local file path, or direct URL. Extracts keyframes with `ffmpeg` (default: 8 frames at 768 px — Pareto-optimal for legibility vs. token cost). Runs optional Tesseract OCR and Whisper audio transcription. | "Analyse this screen recording for bugs", "what does this video show", "investigate this mp4", or whenever a user pastes a `.mp4`/`.mov` path or Linear ticket URL with a video attachment. |
 
 ### Workflow companions
 
