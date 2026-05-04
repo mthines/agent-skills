@@ -21,6 +21,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { parseTaskMd, parsePlanMd, ParsedTask, ParsedPlan, TaskItem } from '../parsers/markdown-parser';
 import { discoverWorktreePaths } from '../lib/worktree-discovery';
+import { findPlanVersions, PlanVersionInfo } from '../lib/plan-versions';
+
+export type { PlanVersionInfo };
+export { findPlanVersions };
 
 export type AgentTasksScope = 'current' | 'all';
 
@@ -356,14 +360,73 @@ function countItems(items: TaskCheckboxItem[], onlyCompleted: boolean): number {
   return count;
 }
 
+/**
+ * One historical plan snapshot — `.agent/{branch}/plan.v{N}.md` —
+ * surfaced as a leaf under the Plan node so reviewers can compare
+ * iterations. Click opens the snapshot via `agentTasks.openMarkdown`.
+ */
+export class PlanVersionItem extends vscode.TreeItem {
+  constructor(
+    public readonly version: number,
+    public readonly versionFilePath: string,
+    public readonly isLatest: boolean
+  ) {
+    super(`v${version}`, vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon(isLatest ? 'circle-filled' : 'circle-outline');
+    this.description = isLatest ? 'latest' : '';
+    this.tooltip = new vscode.MarkdownString(
+      isLatest
+        ? `**plan.v${version}.md** — current snapshot (≡ \`plan.md\`)`
+        : `**plan.v${version}.md** — earlier iteration`
+    );
+    this.contextValue = 'agentPlanVersion';
+    this.command = {
+      command: 'agentTasks.openMarkdown',
+      title: 'Open Plan Version',
+      arguments: [versionFilePath],
+    };
+  }
+}
+
+/**
+ * Collapsible group node listing every `plan.v*.md` snapshot for a branch.
+ * Only emitted when at least one versioned snapshot exists.
+ *
+ * Collapsed by default so the Plan node stays scannable; users opt in to
+ * the history when they want it.
+ */
+export class PlanVersionsGroupItem extends vscode.TreeItem {
+  constructor(public readonly versions: PlanVersionItem[]) {
+    super('Previous Versions', vscode.TreeItemCollapsibleState.Collapsed);
+    this.iconPath = new vscode.ThemeIcon('history');
+    this.description = `${versions.length}`;
+    this.tooltip = new vscode.MarkdownString(
+      `**${versions.length}** plan snapshot${versions.length === 1 ? '' : 's'} on disk\n\n` +
+        '`plan.md` always points at the latest. Earlier `plan.v*.md` files are immutable history.'
+    );
+    this.contextValue = 'agentPlanVersionsGroup';
+  }
+}
+
 export class PlanSummaryItem extends vscode.TreeItem {
   constructor(
     public readonly plan: ParsedPlan,
-    public readonly planFilePath: string
+    public readonly planFilePath: string,
+    public readonly versions: PlanVersionInfo[] = []
   ) {
     super('Plan', vscode.TreeItemCollapsibleState.Collapsed);
     this.iconPath = new vscode.ThemeIcon('notebook');
-    this.description = plan.complexity || '';
+
+    // Description: complexity + version count when there's history to show
+    const parts: string[] = [];
+    if (plan.complexity) parts.push(plan.complexity);
+    if (versions.length > 0) {
+      const latest = versions[versions.length - 1];
+      parts.push(`v${latest.version}`);
+    }
+    this.description = parts.join(' · ');
+
+    this.contextValue = 'agentPlanFile';
     this.command = {
       command: 'agentTasks.openMarkdown',
       title: 'Open Plan',
@@ -376,6 +439,7 @@ export class WalkthroughSummaryItem extends vscode.TreeItem {
   constructor(public readonly walkthroughFilePath: string) {
     super('Walkthrough', vscode.TreeItemCollapsibleState.None);
     this.iconPath = new vscode.ThemeIcon('book');
+    this.contextValue = 'agentWalkthroughFile';
     this.command = {
       command: 'agentTasks.openMarkdown',
       title: 'Open Walkthrough',
@@ -425,6 +489,8 @@ type AgentTaskTreeItem =
   | TaskCheckboxItem
   | TasksSummaryItem
   | PlanSummaryItem
+  | PlanVersionsGroupItem
+  | PlanVersionItem
   | WalkthroughSummaryItem
   | DecisionItem
   | BlockerItem;
@@ -631,9 +697,14 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
       return element.childItems;
     }
 
-    // Plan level: show file lists
+    // Plan level: show file lists + version history
     if (element instanceof PlanSummaryItem) {
-      return this.getPlanChildren(element.plan);
+      return this.getPlanChildren(element);
+    }
+
+    // Plan versions group: list each historical snapshot
+    if (element instanceof PlanVersionsGroupItem) {
+      return element.versions;
     }
 
     return [];
@@ -793,7 +864,8 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
     // Plan
     if (branch.plan) {
       const planPath = path.join(branch.artifactDir, 'plan.md');
-      children.push(new PlanSummaryItem(branch.plan, planPath));
+      const versions = findPlanVersions(branch.artifactDir);
+      children.push(new PlanSummaryItem(branch.plan, planPath, versions));
     }
 
     // Walkthrough
@@ -805,8 +877,9 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
     return children;
   }
 
-  private getPlanChildren(plan: ParsedPlan): AgentTaskTreeItem[] {
+  private getPlanChildren(planSummary: PlanSummaryItem): AgentTaskTreeItem[] {
     const children: AgentTaskTreeItem[] = [];
+    const plan = planSummary.plan;
 
     if (plan.goal) {
       const goalItem = new vscode.TreeItem(plan.goal, vscode.TreeItemCollapsibleState.None);
@@ -826,6 +899,21 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
       item.description = file.change;
       item.iconPath = new vscode.ThemeIcon('edit', new vscode.ThemeColor('charts.yellow'));
       children.push(item as AgentTaskTreeItem);
+    }
+
+    // Versioned snapshots — only show the group when at least one
+    // `plan.v{N}.md` exists, so older artifact dirs created before
+    // versioning was introduced render unchanged.
+    if (planSummary.versions.length > 0) {
+      const latestVersion = planSummary.versions[planSummary.versions.length - 1].version;
+      const versionItems = planSummary.versions.map(
+        (v) => new PlanVersionItem(v.version, v.filePath, v.version === latestVersion)
+      );
+      // Newest first so the most relevant snapshot is at the top of the
+      // expanded list — mirrors the conventional commit-history reading
+      // order ("what changed most recently?").
+      versionItems.reverse();
+      children.push(new PlanVersionsGroupItem(versionItems));
     }
 
     return children;

@@ -37,7 +37,7 @@ Companions invoked from this phase **skip silently if not installed** — see
 | Focus on ONE failing test at a time             | Don't fix multiple simultaneously — root causes get tangled         |
 | Lightweight per-iteration self-reflection       | Brief self-check before each iteration — NOT a full `confidence` run |
 | Fix root causes, not symptoms                   | A passing test on a wrong fix is worse than a red one               |
-| Auto-replan on low confidence                   | When stuck and confidence < 90%, trigger holistic-analysis + plan.md update |
+| Auto-replan on low confidence                   | When stuck and confidence < 90%, trigger holistic-analysis and re-invoke `aw-create-plan` to produce the next `plan.v{N+1}.md` snapshot |
 | One-shot retry only                             | After auto-replan, Phase 4 may resume at most ONCE before mandatory escalation |
 | Track everything in `plan.md` Progress Log      | Auditable trail of attempts and outcomes                            |
 
@@ -197,7 +197,7 @@ Example with auto-replan triggering on confidence < 90%:
 - [2026-04-29T16:39:00Z] Phase 4: Fix attempt 4 — middleware order, still failing
 - [2026-04-29T16:41:30Z] Phase 4: Cap hit (5) — confidence(bug-analysis) — 62% (root cause unclear)
 - [2026-04-29T16:42:05Z] Phase 4: Auto-replan triggered (confidence < 90%) — holistic-analysis() invoked
-- [2026-04-29T16:44:50Z] Phase 4: plan.md "Auth flow" section regenerated; counter reset; auto_replan_used=True
+- [2026-04-29T16:44:50Z] Phase 4: plan.v2.md created (auto-replan, "Auth flow" rewritten); plan.md updated; counter reset; auto_replan_used=True
 - [2026-04-29T16:48:12Z] Phase 4: Resumed — fix attempt 1 (post-replan), session middleware moved earlier, passing
 ```
 
@@ -267,7 +267,7 @@ when iterations_on_same_area == iteration_cap:
             goto: Mandatory User Escalation (below)
 
         Skill("holistic-analysis")
-        Update affected sections of plan.md with the new mental model.
+        Skill("aw-create-plan")   # writes plan.v{N+1}.md + updates plan.md
         iterations_on_same_area = 0
         auto_replan_used = True
         Resume Phase 4 iteration loop ONCE MORE.
@@ -284,7 +284,7 @@ the next cap hit goes straight to user escalation.
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `confidence("bug-analysis")` installed | Returns confidence score + bug analysis findings                         |
 | `confidence` missing        | Logs `not available, continuing`; treat as confidence < 90% (conservative default)  |
-| `holistic-analysis` installed | Re-traces execution path end-to-end; output drives plan.md regeneration           |
+| `holistic-analysis` installed | Re-traces execution path end-to-end; output feeds the next `aw-create-plan` invocation, which writes `plan.v{N+1}.md` and updates `plan.md` |
 | `holistic-analysis` missing | Logs `not available, continuing`; perform a manual end-to-end trace yourself        |
 
 ### Mandatory User Escalation
@@ -328,7 +328,7 @@ Log every step of the auto-replan protocol in `plan.md` Progress Log:
 - [2026-04-29T16:35:42Z] Phase 4: confidence(bug-analysis) — invoked (74%, suspects provider boundary)
 - [2026-04-29T16:35:55Z] Phase 4: confidence < 90% — auto-replan triggered
 - [2026-04-29T16:36:30Z] Phase 4: holistic-analysis() — re-traced provider chain, identified missing context default
-- [2026-04-29T16:37:05Z] Phase 4: plan.md "Theming" section regenerated; counter reset; auto_replan_used=True
+- [2026-04-29T16:37:05Z] Phase 4: plan.v2.md created (auto-replan); plan.md updated; counter reset; auto_replan_used=True
 - [2026-04-29T16:40:18Z] Phase 4: Resumed iteration — fix attempt 1 (post-replan), still failing through cap
 - [2026-04-29T16:42:00Z] Phase 4: Cap hit again — auto_replan_used guard fires; escalating to user
 ```
@@ -372,8 +372,10 @@ Skill("holistic-analysis")
 ### After Holistic Analysis
 
 1. Reset `iterations_on_same_area = 0` (this is a genuinely new attempt).
-2. **Update affected sections of `plan.md`** with the new mental model — replace
-   the obsolete reasoning, don't just append a paragraph.
+2. **Re-invoke `Skill("aw-create-plan")`** with the new mental model — the
+   skill writes the next `plan.v{N+1}.md` snapshot and overwrites `plan.md`.
+   Replace the obsolete reasoning in the new content; do not just append.
+   Earlier `plan.v*.md` snapshots are preserved untouched as audit trail.
 3. Resume the iteration loop in [Step 3](#step-3-the-iteration-loop) — the
    mode-aware iteration cap applies again to the new area.
 
@@ -387,7 +389,7 @@ approach, or stop.
 
 ```markdown
 - [2026-04-29T16:42:18Z] Phase 4: holistic-analysis() — invoked (user-driven, re-traced provider chain, identified missing context default)
-- [2026-04-29T16:45:50Z] Phase 4: plan.md "Theming" section regenerated — ThemeProvider must mount above StoreProvider; counter reset to 0
+- [2026-04-29T16:45:50Z] Phase 4: plan.v3.md created — ThemeProvider must mount above StoreProvider; plan.md updated; counter reset to 0
 ```
 
 Disable: remove the `Skill("holistic-analysis")` call from this section **and**
@@ -420,7 +422,7 @@ catalogue.
 - [ ] Per-iteration in-loop self-reflection completed after each fix
 - [ ] `confidence(bug-analysis)` invoked automatically when cap hit
 - [ ] `holistic-analysis` invoked automatically when confidence < 90% (auto-replan)
-- [ ] `plan.md` regenerated for affected sections after auto-replan
+- [ ] `plan.v{N+1}.md` snapshot created and `plan.md` updated after auto-replan (via `aw-create-plan`)
 - [ ] One-shot guard respected — auto_replan_used not bypassed
 - [ ] User escalation triggered when confidence >= 90% OR auto-replan exhausted
 - [ ] New tests added for new functionality

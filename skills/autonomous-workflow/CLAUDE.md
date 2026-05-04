@@ -395,6 +395,16 @@ end-user-facing; this file is contributor-facing.
 
 ## History
 
+- **v3.5** — Plan versioning. `aw-create-plan` now writes an immutable
+  `plan.v{N}.md` snapshot on every invocation **and** mirrors it into
+  `plan.md` (the canonical "latest" pointer). Initial creation produces
+  `plan.v1.md` + `plan.md`; user-requested iteration and Phase 4 auto-replan
+  both bump to the next version. Older snapshots are preserved untouched as
+  audit trail. The Phase 4 stuck-loop protocol now re-invokes
+  `aw-create-plan` after `holistic-analysis` instead of surgically editing
+  `plan.md` in place. The VS Code extension surfaces previous versions as
+  expandable children of the Plan node so reviewers can compare iterations.
+
 - **v1.x** — Initial skill in `gw-tools.git`. Monolithic SKILL.md.
 - **v2.x** — Split into phase rules + companion artifacts (`create-plan`,
   `create-walkthrough`, `confidence`). Still in `gw-tools.git`.

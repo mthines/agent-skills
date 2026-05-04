@@ -56,13 +56,49 @@ See [overview](./overview.md) for the complete decision flow.
 
 ## Two-Artifact Pattern
 
-| Artifact        | File                             | Created by                    | When          |
-| --------------- | -------------------------------- | ----------------------------- | ------------- |
-| **Plan**        | `.agent/{branch}/plan.md`        | `Skill("aw-create-plan")`        | After Phase 2 |
-| **Walkthrough** | `.agent/{branch}/walkthrough.md` | `Skill("aw-create-walkthrough")` | Phase 6       |
+| Artifact        | File(s)                                              | Created by                       | When                                                 |
+| --------------- | ---------------------------------------------------- | -------------------------------- | ---------------------------------------------------- |
+| **Plan**        | `.agent/{branch}/plan.md` + `plan.v{N}.md` snapshots | `Skill("aw-create-plan")`        | After Phase 2 — and again on every plan iteration    |
+| **Walkthrough** | `.agent/{branch}/walkthrough.md`                     | `Skill("aw-create-walkthrough")` | Phase 6                                              |
 
-`plan.md` is the single source of truth. A new Claude session should be able
-to execute from it alone.
+`plan.md` is the single source of truth — a new Claude session should be able
+to execute from it alone. Every invocation of `aw-create-plan` writes a new
+immutable `plan.v{N}.md` snapshot **and** overwrites `plan.md` so it always
+points at the latest version. See **Plan Versioning** below.
+
+## Plan Versioning
+
+Every call to `Skill("aw-create-plan")` produces:
+
+| File              | Mutability  | Purpose                                                                  |
+| ----------------- | ----------- | ------------------------------------------------------------------------ |
+| `plan.v{N}.md`    | Immutable   | Snapshot of the plan at iteration `N`. Never edited or deleted.          |
+| `plan.md`         | Overwritten | Pointer to the **latest** plan content. Identical body to newest `plan.v{N}.md`. |
+
+`N` is monotonic — the skill computes it by listing existing `plan.v*.md`
+files and incrementing the highest number (so the first run writes `plan.v1.md`,
+the next `plan.v2.md`, …).
+
+**Iteration triggers — invoke `aw-create-plan` again:**
+
+| Trigger                                      | Result                                  |
+| -------------------------------------------- | --------------------------------------- |
+| Initial plan creation (Phase 2)              | `plan.v1.md` + `plan.md`                |
+| User feedback after the confidence gate      | `plan.v2.md` + `plan.md`                |
+| Phase 4 auto-replan (after holistic-analysis) | `plan.v{N+1}.md` + `plan.md`           |
+| User explicitly asks to regenerate the plan  | `plan.v{N+1}.md` + `plan.md`            |
+
+**Mid-execution Progress Log appends to `plan.md`** (e.g. logging a phase
+transition, a confidence run, or a passed test) **do NOT bump the version** —
+those are journaling, not iteration. Only re-running `aw-create-plan` produces
+a new snapshot.
+
+> **Why versioned snapshots?** Iterative refinement is normal in autonomous
+> work — the plan grows as the user pushes back, as the agent discovers
+> hidden constraints, and as Phase 4 auto-replan kicks in. Snapshotting each
+> iteration preserves the audit trail (initial → user-iteration → auto-replan)
+> without forcing readers to learn the convention: `plan.md` always works,
+> and `plan.v*.md` is there for whoever needs the history.
 
 ## Quality Gate
 
@@ -82,10 +118,14 @@ This is the **only non-removable companion** in the workflow.
 ```
 .agent/
 ├── feat-dark-mode/
-│   ├── plan.md           # Implementation plan + progress log
+│   ├── plan.md           # Always points at the latest plan.v*.md
+│   ├── plan.v1.md        # Initial plan snapshot (immutable)
+│   ├── plan.v2.md        # User-iteration snapshot (immutable)
+│   ├── plan.v3.md        # Phase 4 auto-replan snapshot (immutable)
 │   └── walkthrough.md    # Final summary (created at Phase 6)
 └── fix-auth-bug/
-    └── plan.md
+    ├── plan.md           # ≡ plan.v1.md (only one iteration so far)
+    └── plan.v1.md
 ```
 
 > **Why `.agent/` (singular)?** It aligns with the `~/.agents/skills/`
