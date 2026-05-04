@@ -1,7 +1,9 @@
 {
   "name": "agent-skills-plugins",
   "owner": { "name": "mthines", "email": "mads.thines@dash0.com" },
-  "description": "Claude Code plugins from the agent-skills repository",
+  "metadata": {
+    "description": "Claude Code plugins from the agent-skills repository"
+  },
   "plugins": [
     {
       "name": "agent-tasks-hooks",
