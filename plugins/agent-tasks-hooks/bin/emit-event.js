@@ -60,18 +60,17 @@ try {
 // Use synchronous read with a try/catch to stay within the hard cap.
 let rawInput = '';
 try {
-  // Read stdin via file descriptor 0 — works on macOS, Linux, and Windows
-  // (the '/dev/stdin' path does not exist on Windows). Read up to 64 KB —
-  // hook payloads are small JSON objects.
-  const fd = fs.openSync(0, 'r');
+  // Read directly from fd 0 (stdin is already open) — works on macOS, Linux,
+  // and Windows. The '/dev/stdin' path does not exist on Windows, and
+  // fs.openSync requires a path (not a fd), so we read fd 0 in place.
+  // Read up to 64 KB — hook payloads are small JSON objects.
   const buf = Buffer.alloc(65536);
   let bytesRead = 0;
   let totalRead = 0;
   do {
-    bytesRead = fs.readSync(fd, buf, totalRead, buf.length - totalRead, null);
+    bytesRead = fs.readSync(0, buf, totalRead, buf.length - totalRead, null);
     totalRead += bytesRead;
   } while (bytesRead > 0 && totalRead < buf.length);
-  fs.closeSync(fd);
   rawInput = buf.toString('utf8', 0, totalRead);
 } catch {
   // stdin not available or unreadable — exit cleanly
