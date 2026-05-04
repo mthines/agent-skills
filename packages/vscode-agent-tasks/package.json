@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.39.0",
+  "version": "0.40.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -133,6 +133,24 @@
         "title": "New Claude Session",
         "icon": "$(add)",
         "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.revealInOS",
+        "title": "Reveal in Finder",
+        "icon": "$(folder-opened)",
+        "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.copyPath",
+        "title": "Copy Path",
+        "icon": "$(copy)",
+        "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.deleteArtifacts",
+        "title": "Delete…",
+        "icon": "$(trash)",
+        "category": "Agent Tasks"
       }
     ],
     "menus": {
@@ -159,6 +177,18 @@
         },
         {
           "command": "agentTasks.sessions.newSession",
+          "when": "false"
+        },
+        {
+          "command": "agentTasks.revealInOS",
+          "when": "false"
+        },
+        {
+          "command": "agentTasks.copyPath",
+          "when": "false"
+        },
+        {
+          "command": "agentTasks.deleteArtifacts",
           "when": "false"
         }
       ],
@@ -224,6 +254,21 @@
           "command": "agentTasks.sessions.openSession",
           "when": "view == agentSessionsExplorer && viewItem =~ /^claudeSession/",
           "group": "navigation@1"
+        },
+        {
+          "command": "agentTasks.revealInOS",
+          "when": "view == agentTasksExplorer && viewItem =~ /^(agentBranch|agentWorktreeFlat|agentPlanFile|agentPlanVersion|agentWalkthroughFile)/",
+          "group": "1_navigation@1"
+        },
+        {
+          "command": "agentTasks.copyPath",
+          "when": "view == agentTasksExplorer && viewItem =~ /^(agentBranch|agentWorktreeFlat|agentPlanFile|agentPlanVersion|agentWalkthroughFile)/",
+          "group": "1_navigation@2"
+        },
+        {
+          "command": "agentTasks.deleteArtifacts",
+          "when": "view == agentTasksExplorer && viewItem =~ /^(agentBranch|agentWorktreeFlat|agentPlanVersion|agentWalkthroughFile)/",
+          "group": "9_destructive@1"
         }
       ]
     },
