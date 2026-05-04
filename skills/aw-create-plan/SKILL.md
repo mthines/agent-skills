@@ -1,24 +1,30 @@
 ---
 name: aw-create-plan
 description: >
-  Create a comprehensive implementation plan artifact (plan.md) in `.agent/{branch}/`
-  from the current conversation context. Captures all Phase 0-1 discussion into a
-  structured, self-contained document that enables context recovery and session
-  handoff. Use after planning is complete and confidence gate passes.
-  Triggers on create plan, generate plan, write plan artifact.
+  Create a comprehensive implementation plan artifact (plan.md + versioned
+  plan.vN.md snapshot) in `.agent/{branch}/` from the current conversation
+  context. Captures all Phase 0-1 discussion into a structured, self-contained
+  document that enables context recovery and session handoff. On every
+  invocation, writes the next plan.vN.md snapshot and updates plan.md to match.
+  Use after planning is complete and confidence gate passes — and again on
+  every plan iteration (user-requested refinement or Phase 4 auto-replan).
+  Triggers on create plan, generate plan, write plan artifact, regenerate plan,
+  iterate on plan.
 license: MIT
 disable-model-invocation: true
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '2.0.0'
   workflow_type: advisory
 ---
 
 # Create Plan Artifact
 
-Generate `.agent/{branch-name}/plan.md` — the single source of truth for autonomous execution.
+Generate `.agent/{branch-name}/plan.md` — the single source of truth for autonomous execution — alongside an immutable `plan.vN.md` snapshot of the same content.
 
-**A new Claude session MUST be able to execute from this plan alone without the original conversation.**
+**A new Claude session MUST be able to execute from `plan.md` alone without the original conversation.**
+
+**Every plan iteration produces a new `plan.vN.md` snapshot.** `plan.md` always points at the latest version; `plan.v1.md`, `plan.v2.md`, … are immutable history.
 
 ---
 
@@ -35,23 +41,70 @@ Before invoking this skill:
 
 ## Procedure
 
-### Step 1: Determine file location
+### Step 1: Determine target paths and next version
 
-Run this command to get the artifact path — do NOT guess the branch name:
+Run this command to compute the artifact directory, the next version number,
+and the two files this skill will write — do NOT guess the branch name or the
+version:
 
 ```bash
-BRANCH=$(git branch --show-current) && mkdir -p ".agent/${BRANCH}" && echo ".agent/${BRANCH}/plan.md"
+BRANCH=$(git branch --show-current)
+DIR=".agent/${BRANCH}"
+mkdir -p "${DIR}"
+NEXT=$(ls "${DIR}" 2>/dev/null \
+  | sed -n 's/^plan\.v\([0-9][0-9]*\)\.md$/\1/p' \
+  | sort -n | tail -1)
+NEXT=$(( ${NEXT:-0} + 1 ))
+echo "DIR=${DIR}"
+echo "VERSION=${NEXT}"
+echo "VERSIONED=${DIR}/plan.v${NEXT}.md"
+echo "LATEST=${DIR}/plan.md"
 ```
 
-Use the output as the file path. **Do NOT hardcode or guess the branch name.**
+Three things are determined here:
 
-### Step 2: Write plan.md
+| Output       | Meaning                                                    |
+| ------------ | ---------------------------------------------------------- |
+| `VERSION`    | The next version number (1 on first run, 2 on next, …)     |
+| `VERSIONED`  | The immutable snapshot path: `.agent/{branch}/plan.vN.md`  |
+| `LATEST`     | The canonical "latest" pointer: `.agent/{branch}/plan.md`  |
 
-Create the file at the path from Step 1 using the EXACT template structure below. **Every section is MANDATORY.** Fill each section from the Phase 0-1 conversation context.
+**Do NOT hardcode or guess the branch name or the version number.**
 
-### Step 3: Validate completeness
+### Step 2: Write the versioned snapshot AND the latest pointer
 
-After writing, verify against the checklist at the bottom of this skill. If any item fails, fix it immediately.
+Render the plan content using the EXACT template structure below — **every
+section is MANDATORY** — then write **both** files with **identical content**:
+
+1. Write `${VERSIONED}` (e.g. `.agent/feat-x/plan.v2.md`).
+2. Write `${LATEST}` (`.agent/feat-x/plan.md`).
+
+`plan.md` is a mirror of the newest `plan.vN.md`. Readers (executor agent,
+VS Code extension, fresh sessions) load `plan.md`. Earlier `plan.v*.md` files
+remain on disk as immutable history — never edit or delete them.
+
+> **Rationale.** Versioned snapshots give the user a complete audit trail of
+> how the plan evolved (initial → user feedback → auto-replan → …) without
+> forcing readers to learn a versioning convention; `plan.md` always works.
+
+### Step 3: Append a Progress Log entry referencing this version
+
+In the `## Progress Log` section of the plan content, the entry for *this*
+write must name the version explicitly so the trail is legible:
+
+```markdown
+- [{TIMESTAMP}] Phase 1: plan.v1.md created (initial plan)
+- [{TIMESTAMP}] Phase 1: plan.v2.md created (iteration — user requested broader scope)
+- [{TIMESTAMP}] Phase 4: plan.v3.md created (auto-replan after holistic-analysis)
+```
+
+The same Progress Log lives in **all** versions — newer versions carry the
+full history of older versions plus their own new entry. This keeps each
+`plan.vN.md` file self-contained.
+
+### Step 4: Validate completeness
+
+After writing, verify against the checklist at the bottom of this skill. If any item fails, fix **both** files immediately and keep them in sync.
 
 ---
 
@@ -176,9 +229,10 @@ approved: true
 
 ## Progress Log
 
-<!-- Append-only. Updated at phase transitions and key milestones. -->
+<!-- Append-only. Carries the full history across plan versions. The entry
+     for this write MUST name the version that was just produced. -->
 
-- [{TIMESTAMP}] Phase 1: Plan created
+- [{TIMESTAMP}] Phase 1: plan.v{N}.md created — {reason: initial | user-iteration | auto-replan}
 - [{TIMESTAMP}] Phase 2: Worktree created at {branch}
 ```
 
@@ -186,9 +240,13 @@ approved: true
 
 ## Validation Checklist
 
-After writing plan.md, verify ALL of the following. **Fix any failures immediately.**
+After writing both files, verify ALL of the following. **Fix any failures immediately.**
 
-- [ ] **File location**: Path from `git branch --show-current` — inside the worktree (NOT on main)
+- [ ] **File location**: Both files inside the worktree at `.agent/{branch}/` (NOT on main)
+- [ ] **Two files written**: `plan.vN.md` (immutable snapshot) AND `plan.md` (latest pointer)
+- [ ] **Identical content**: `plan.md` and `plan.vN.md` have byte-identical bodies (the canonical "latest == newest snapshot" invariant)
+- [ ] **Version monotonic**: `N` is exactly one greater than the highest existing `plan.v*.md` (or 1 on first run)
+- [ ] **Older versions untouched**: Pre-existing `plan.v1.md`, `plan.v2.md`, … were not edited or deleted
 - [ ] **Frontmatter complete**: created, branch, task, complexity, status, approved — all filled
 - [ ] **Timestamps**: All timestamps use ISO 8601 with time (`YYYY-MM-DDTHH:MM:SSZ`)
 - [ ] **Summary**: Concise what/why/done definition (2-3 sentences)
@@ -203,8 +261,8 @@ After writing plan.md, verify ALL of the following. **Fix any failures immediate
 - [ ] **File Changes**: Every file listed with action, path, change description, and reason
 - [ ] **Tests**: Specific test cases (not just "unit tests for X")
 - [ ] **Verification commands**: Both after-edit and before-PR commands identified
-- [ ] **Progress Log**: Initialized with Phase 1 entry
-- [ ] **Self-contained**: A new Claude session can execute from this plan alone
+- [ ] **Progress Log**: Carries the full prior history plus a new entry naming `plan.v{N}.md`
+- [ ] **Self-contained**: A new Claude session can execute from `plan.md` alone
 
 ---
 
@@ -218,3 +276,7 @@ After writing plan.md, verify ALL of the following. **Fix any failures immediate
 | No file paths in Patterns            | Reference specific existing files, not abstract descriptions          |
 | Requirements not tagged              | Add `[user-stated]` or `[inferred]` to every requirement              |
 | Timestamps missing time component    | Use `2026-03-07T14:30:00Z` not `2026-03-07`                           |
+| Wrote only `plan.md`, no `plan.vN.md` | Re-run Step 1 to compute `N`, then write the snapshot too           |
+| Wrote `plan.vN.md` but forgot to update `plan.md` | Copy the new snapshot's content over `plan.md`            |
+| Edited an existing `plan.vN.md`      | Restore from git (or re-derive from history); snapshots are immutable |
+| Reused a version number              | Re-run Step 1; older snapshots must never be overwritten              |

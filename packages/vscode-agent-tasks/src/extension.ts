@@ -6,7 +6,14 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { AgentTasksProvider, WorktreeFlatItem } from './providers/agent-tasks-provider';
+import {
+  AgentTasksProvider,
+  AgentBranchItem,
+  PlanSummaryItem,
+  PlanVersionItem,
+  WalkthroughSummaryItem,
+  WorktreeFlatItem,
+} from './providers/agent-tasks-provider';
 import * as child_process from 'child_process';
 import { ArtifactWatcher } from './watchers/artifact-watcher';
 import { SessionsProvider, SessionItem } from './providers/sessions-provider';
@@ -112,6 +119,113 @@ export function activate(context: vscode.ExtensionContext): void {
       const wtPath = require('path').join(resolved.artifactDir, 'walkthrough.md');
       await vscode.commands.executeCommand('agentTasks.openMarkdown', wtPath);
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Right-click context-menu actions on Agent Tasks panel entries
+  //
+  // Resolves the on-disk target (file or directory) for any tree item that
+  // represents real bytes — branch dirs, plan files, walkthrough files,
+  // versioned plan snapshots — so the same set of commands (Reveal in
+  // Finder/Explorer, Copy Path, Delete) works uniformly across every row.
+  // ---------------------------------------------------------------------------
+
+  interface ResolvedTarget {
+    /** Absolute path to the file or directory the action operates on. */
+    fsPath: string;
+    /** Whether the path is a directory (Delete prompts differently for dirs). */
+    isDirectory: boolean;
+    /** Short label used in confirmation prompts and status messages. */
+    label: string;
+  }
+
+  const resolveTarget = (item: unknown): ResolvedTarget | undefined => {
+    if (item instanceof WorktreeFlatItem) {
+      return {
+        fsPath: item.branch.artifactDir,
+        isDirectory: true,
+        label: `branch artifacts for ${item.branch.branchName}`,
+      };
+    }
+    if (item instanceof AgentBranchItem) {
+      return {
+        fsPath: item.artifactDir,
+        isDirectory: true,
+        label: `branch artifacts for ${item.branchName}`,
+      };
+    }
+    if (item instanceof PlanSummaryItem) {
+      return { fsPath: item.planFilePath, isDirectory: false, label: 'plan.md' };
+    }
+    if (item instanceof PlanVersionItem) {
+      return {
+        fsPath: item.versionFilePath,
+        isDirectory: false,
+        label: `plan.v${item.version}.md`,
+      };
+    }
+    if (item instanceof WalkthroughSummaryItem) {
+      return { fsPath: item.walkthroughFilePath, isDirectory: false, label: 'walkthrough.md' };
+    }
+    return undefined;
+  };
+
+  const revealInOSCmd = vscode.commands.registerCommand('agentTasks.revealInOS', async (item) => {
+    const target = resolveTarget(item);
+    if (!target) return;
+    if (!fs.existsSync(target.fsPath)) {
+      vscode.window.showWarningMessage(`Cannot reveal — ${target.label} no longer exists on disk.`);
+      return;
+    }
+    // `revealFileInOS` is the built-in cross-platform reveal command
+    // (Finder on macOS, Explorer on Windows, Files manager on Linux).
+    await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(target.fsPath));
+  });
+
+  const copyPathCmd = vscode.commands.registerCommand('agentTasks.copyPath', async (item) => {
+    const target = resolveTarget(item);
+    if (!target) return;
+    await vscode.env.clipboard.writeText(target.fsPath);
+    vscode.window.setStatusBarMessage(`Copied path: ${target.fsPath}`, 2500);
+  });
+
+  const deleteArtifactsCmd = vscode.commands.registerCommand('agentTasks.deleteArtifacts', async (item) => {
+    const target = resolveTarget(item);
+    if (!target) return;
+    if (!fs.existsSync(target.fsPath)) {
+      vscode.window.showWarningMessage(`${target.label} is already gone.`);
+      agentTasksProvider.refresh();
+      return;
+    }
+
+    // Different prose for directory vs file deletes — directories take a
+    // whole branch's artifact history with them, which is irreversible
+    // unless the user has the worktree under git (and `.agent/` is
+    // typically gitignored). Make that explicit.
+    const detail = target.isDirectory
+      ? `This permanently removes the directory and every artifact inside it (plan.md, plan.v*.md, walkthrough.md, task.md). \`.agent/\` is usually gitignored, so this CANNOT be undone.`
+      : `This permanently removes the file. ${target.label.startsWith('plan.v') ? 'Versioned plan snapshots are intended as immutable history — only delete one if you are certain it is no longer useful.' : 'This cannot be undone.'}`;
+
+    const confirm = await vscode.window.showWarningMessage(
+      `Delete ${target.label}?`,
+      { modal: true, detail },
+      'Delete'
+    );
+    if (confirm !== 'Delete') return;
+
+    try {
+      await vscode.workspace.fs.delete(vscode.Uri.file(target.fsPath), {
+        recursive: target.isDirectory,
+        useTrash: true,
+      });
+      vscode.window.setStatusBarMessage(`Deleted ${target.label}`, 2500);
+    } catch (err) {
+      logError(`deleteArtifacts: failed to delete ${target.fsPath}`, err);
+      vscode.window.showErrorMessage(
+        `Failed to delete ${target.label}: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+    agentTasksProvider.refresh();
   });
 
   // -------------------------------------------------------------------------
@@ -510,6 +624,9 @@ export function activate(context: vscode.ExtensionContext): void {
     openPlanCmd,
     openTaskCmd,
     openWalkthroughCmd,
+    revealInOSCmd,
+    copyPathCmd,
+    deleteArtifactsCmd,
     toggleScopeCmd,
     // Sessions panel
     sessionsView,

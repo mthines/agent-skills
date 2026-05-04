@@ -26,6 +26,14 @@ import { discoverWorktreePaths } from '../lib/worktree-discovery';
 const ARTIFACT_FILES = new Set(['task.md', 'plan.md', 'walkthrough.md']);
 
 /**
+ * Matches versioned plan snapshots — `plan.v1.md`, `plan.v2.md`, … —
+ * written by the `aw-create-plan` skill alongside `plan.md`. Treated as
+ * artifact events for refresh purposes, but never auto-opened (only
+ * `plan.md` triggers `autoOpenPlan`).
+ */
+const PLAN_VERSION_PATTERN = /^plan\.v\d+\.md$/;
+
+/**
  * Returns the configured artifact directory names, falling back to the defaults
  * when the setting is empty or unset.
  */
@@ -374,6 +382,12 @@ export class ArtifactWatcher implements vscode.Disposable {
         if (ARTIFACT_FILES.has(basename)) {
           const fullPath = path.join(artifactRoot, filename);
           this.emitDebounced(fullPath, basename, eventType);
+        } else if (PLAN_VERSION_PATTERN.test(basename)) {
+          // A new or changed `plan.v{N}.md` snapshot — refresh the tree so
+          // the Plan node's "Previous Versions" group reflects on-disk
+          // history. We deliberately do NOT auto-open versioned snapshots:
+          // the user opted in to versioning, not to a popup per iteration.
+          this._onArtifactChanged.fire('plan.version');
         } else {
           // Directory or non-artifact file change — could be a new branch dir
           this._onArtifactChanged.fire('directory');
@@ -397,7 +411,7 @@ export class ArtifactWatcher implements vscode.Disposable {
    * better than no watching at all.
    */
   private setupVscodeWatchers(): void {
-    const patterns = ['**/task.md', '**/plan.md', '**/walkthrough.md'];
+    const patterns = ['**/task.md', '**/plan.md', '**/plan.v*.md', '**/walkthrough.md'];
     const watchBases = this.getWatchBases();
     const dirs = getConfiguredDirs();
 
