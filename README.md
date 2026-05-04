@@ -153,6 +153,14 @@ Agents are specialized sub-processes with their own model and tool configuration
 | **[reviewer](./agents/reviewer.md)** | Constructive code reviewer with three modes: **fix** (default — auto-fixes simple issues), **report** (`--report` — findings only), and **comments** (`--comments` — proposes line-level GitHub PR review comments). |
 | **[linear-ticket-investigator](./agents/linear-ticket-investigator.md)** | Linear-specific ticket investigator. Reads a single ticket via Linear MCP, searches the codebase using domain context + label inference, returns structured findings with certainty markers and a confidence score. Used by [`batch-linear-tickets`](./skills/batch-linear-tickets/SKILL.md). See [Domain Context](#linear-ticket-investigator) below for plug-in customization. |
 
+### Claude Code Plugins
+
+Claude Code plugins live in `plugins/` and are distributed via the `.claude-plugin/marketplace.json` at the repo root.
+
+| Plugin | What it does |
+|---|---|
+| **[agent-tasks-hooks](./plugins/agent-tasks-hooks/README.md)** | Emits privacy-safe NDJSON lifecycle events (`UserPromptSubmit`, `Stop`, `SessionStart`, `SessionEnd`, `Notification`) for the Agent Tasks VS Code extension. Drives sub-second session-state transitions in the Sessions panel. Installed automatically by the extension (with consent) or manually via `claude plugin marketplace add mthines/agent-skills && claude plugin install agent-tasks-hooks@agent-skills-plugins`. |
+
 ## Autonomous Workflow
 
 `autonomous-workflow` is the largest skill in this repo. It orchestrates a complete feature development cycle — from a one-line task description to a tested, draft pull request — using isolated Git worktrees and optional companion skills for each phase.

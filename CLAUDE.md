@@ -80,6 +80,16 @@ nx dev vscode-agent-tasks
 nx release vscode-agent-tasks --configuration=dry-run
 ```
 
+### Key source files (vscode-agent-tasks)
+
+- `src/extension.ts` — activation entry point; wires `HookEventWatcher`, `PluginInstaller`, adaptive tick
+- `src/providers/sessions-provider.ts` — `SessionsProvider`; `computeStatus` has a 4-tier override: terminal-open → hook override → terminal-closed → `deriveRunState`
+- `src/watchers/hook-event-watcher.ts` — watches `~/.claude/plugins/data/agent-tasks-hooks-agent-skills-plugins/events/*.ndjson` for new events
+- `src/lib/hook-event-types.ts` — shared `HookEvent` / `HookEventName` types
+- `src/lib/plugin-data-path.ts` — `getPluginDataDir()`, `getSentinelPath()`, `getHookEventsDir()` path helpers
+- `src/lib/plugin-installer.ts` — `PluginInstaller`; first-run consent modal, version check, CLI install, sentinel write
+- `src/lib/emit-event.test.ts` — vitest unit tests for `plugins/agent-tasks-hooks/bin/emit-event.js` (AC4/AC5)
+
 ### Workspace files
 
 - `nx.json` — Nx config (plugins: `@nx/js/typescript`, `@nx/eslint/plugin`, `@nx/vitest`; release: `projects: ["*"]`)
@@ -87,11 +97,24 @@ nx release vscode-agent-tasks --configuration=dry-run
 - `pnpm-workspace.yaml` — `packages: ["packages/*"]`
 - `packages/vscode-agent-tasks/project.json` — Nx targets for the extension
 
-### Adding skills vs. adding packages
+### Adding plugins vs. adding skills vs. adding packages
+
+Plugins (Claude Code hook scripts + manifest) go in `plugins/<name>/` and require no build step.
+Plugins are distributed via `.claude-plugin/marketplace.json` at the repo root.
+The marketplace name is `agent-skills-plugins`; install via `claude plugin marketplace add mthines/agent-skills`.
 
 Skills (markdown-only) go in `skills/` and require no build step.
 Packages (buildable code) go in `packages/` and follow the Nx pattern.
 Do NOT add a package without updating `tsconfig.json` references and `nx.json` release config.
+
+### Plugin: agent-tasks-hooks
+
+`plugins/agent-tasks-hooks/` — Claude Code lifecycle hook plugin for the Agent Tasks VS Code extension.
+Registers `UserPromptSubmit`, `Stop`, `SessionStart`, `SessionEnd`, `Notification` hooks.
+Emits NDJSON events to `${CLAUDE_PLUGIN_DATA}/events/<sessionId>.ndjson`.
+Hook script is `bin/emit-event.js` (Node.js, always exits 0, 40ms hard cap).
+Sentinel file at `${CLAUDE_PLUGIN_DATA}/sentinel` controls activation.
+Validate with `claude plugin validate plugins/agent-tasks-hooks`.
 
 ## Local Development
 

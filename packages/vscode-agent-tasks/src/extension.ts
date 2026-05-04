@@ -11,6 +11,8 @@ import * as child_process from 'child_process';
 import { ArtifactWatcher } from './watchers/artifact-watcher';
 import { SessionsProvider, SessionItem } from './providers/sessions-provider';
 import { SessionWatcher } from './watchers/session-watcher';
+import { HookEventWatcher } from './watchers/hook-event-watcher';
+import { PluginInstaller, removeSentinel, isSentinelPresent } from './lib/plugin-installer';
 import { initLogger, log, logError } from './lib/logger';
 import { parsePsOutput, findClaudeDescendant, claimPendingAdoption, type PendingAdoption } from './lib/process-tree';
 import type { SessionMetadata } from './parsers/session-jsonl-parser';
@@ -180,22 +182,59 @@ export function activate(context: vscode.ExtensionContext): void {
     );
   });
 
-  // Periodic refresh while the Sessions view is visible. Drives state-machine
-  // transitions that aren't triggered by a file-watcher event — e.g. a
-  // `running` session sliding to `stalled` after no writes for 30s, or
-  // `needs-input` aging out of the Running section. 15s is a good balance
-  // between feeling realtime and not burning cycles on a hidden panel.
-  let tickTimer: ReturnType<typeof setInterval> | undefined;
+  // -------------------------------------------------------------------------
+  // Hook event watcher — drives sub-second session state transitions via
+  // the agent-tasks-hooks Claude Code plugin.
+  // -------------------------------------------------------------------------
+
+  const hookEventWatcher = new HookEventWatcher();
+  hookEventWatcher.onHookEvent((event) => {
+    log(`Hook event: ${event.event} for session ${event.sessionId.slice(0, 8)}`);
+    sessionsProvider.applyHookEvent(event);
+  });
+
+  // -------------------------------------------------------------------------
+  // Adaptive tick — runs faster when hooks indicate active sessions.
+  //
+  // TICK_FAST_MS: used when any session had a hook event in the last 60s.
+  // TICK_SLOW_MS: used when all sessions are idle (no recent hook activity).
+  //
+  // The tick drives state-machine transitions not covered by file-watcher or
+  // hook events: `running → stalled` (no writes for 30s), `needs-input`
+  // aging out of the Running section after TTL.
+  // -------------------------------------------------------------------------
+  const TICK_FAST_MS = 5_000;
+  const TICK_SLOW_MS = 30_000;
+
+  let tickTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const scheduleTick = (intervalMs: number) => {
+    if (tickTimer) {
+      clearTimeout(tickTimer);
+    }
+    tickTimer = setTimeout(() => {
+      tickTimer = undefined;
+      sessionsProvider.refresh();
+      if (sessionsView.visible) {
+        // Choose next interval based on hook activity
+        const nextMs = sessionsProvider.hasRecentHookActivity() ? TICK_FAST_MS : TICK_SLOW_MS;
+        scheduleTick(nextMs);
+      }
+    }, intervalMs);
+  };
+
   const startTick = () => {
     if (tickTimer) return;
-    tickTimer = setInterval(() => sessionsProvider.refresh(), 15_000);
+    scheduleTick(sessionsProvider.hasRecentHookActivity() ? TICK_FAST_MS : TICK_SLOW_MS);
   };
+
   const stopTick = () => {
     if (tickTimer) {
-      clearInterval(tickTimer);
+      clearTimeout(tickTimer);
       tickTimer = undefined;
     }
   };
+
   if (sessionsView.visible) startTick();
   const visibilitySub = sessionsView.onDidChangeVisibility((e) => {
     if (e.visible) {
@@ -237,6 +276,21 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     if (e.affectsConfiguration('agentTasks.scope')) {
       agentTasksProvider.refresh();
+    }
+    // Handle hooks.enabled toggle: write or remove the sentinel file so the
+    // hook script no-ops immediately without needing to uninstall the plugin.
+    if (e.affectsConfiguration('agentTasks.hooks.enabled')) {
+      const enabled = vscode.workspace
+        .getConfiguration('agentTasks')
+        .get<boolean>('hooks.enabled', true);
+      if (enabled) {
+        // Re-enable: show the consent flow so the sentinel gets written
+        const installer = new PluginInstaller();
+        void installer.ensurePluginInstalled(context);
+      } else {
+        removeSentinel();
+        log('agentTasks.hooks.enabled toggled off — sentinel removed');
+      }
     }
   });
 
@@ -500,6 +554,25 @@ export function activate(context: vscode.ExtensionContext): void {
     terminal.sendText('claude');
   });
 
+  // -------------------------------------------------------------------------
+  // Plugin installer — shows consent modal on first activation (deferred so
+  // providers are already set up when the modal appears).
+  // -------------------------------------------------------------------------
+  const installer = new PluginInstaller();
+  void Promise.resolve().then(() => installer.ensurePluginInstalled(context));
+
+  // Ensure sentinel reflects the current hooks.enabled setting on startup
+  // (handles the case where the extension was disabled while VS Code was closed)
+  void Promise.resolve().then(() => {
+    const enabled = vscode.workspace
+      .getConfiguration('agentTasks')
+      .get<boolean>('hooks.enabled', true);
+    if (!enabled && isSentinelPresent()) {
+      removeSentinel();
+      log('Startup: hooks.enabled is false — removing stale sentinel');
+    }
+  });
+
   context.subscriptions.push(
     agentTasksView,
     artifactWatcher,
@@ -514,6 +587,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // Sessions panel
     sessionsView,
     sessionWatcher,
+    hookEventWatcher,
     workspaceFolderSub,
     sessionsRefreshCmd,
     sessionsToggleScopeCmd,
