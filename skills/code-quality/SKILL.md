@@ -5,10 +5,11 @@ description: >
   complexity, readability, and long-term maintainability. Applies guard clauses,
   early returns, clear naming, single-responsibility functions, reuse of
   existing utilities, single source of truth for union-type metadata (one map
-  instead of N parallel maps), small change footprints, and pragmatic
-  performance choices grounded in research from SonarSource (Cognitive
-  Complexity), Robert C. Martin's Clean Code, and Knuth's guidance on
-  optimization. Use this skill whenever writing, refactoring, or reviewing code
+  instead of N parallel maps), schema-first validation with type inference
+  (Zod / Pydantic / valibot — define the schema once, infer the type from it),
+  small change footprints, and pragmatic performance choices grounded in
+  research from SonarSource (Cognitive Complexity), Robert C. Martin's Clean
+  Code, and Knuth's guidance on optimization. Use this skill whenever writing, refactoring, or reviewing code
   — especially during the GREEN and REFACTOR phases of TDD, code reviews, or
   whenever the user asks to "improve quality", "make this readable", "reduce
   complexity", "make this easier to maintain", "deduplicate", "clean this up",
@@ -100,6 +101,9 @@ before adding the variant. See `rules/maintainability.md`.
 | `if/else if` chain dispatching on a value | Lookup table or single source-of-truth record | Data structure beats control flow; easy to extend |
 | Same constant (`MAX_RETRIES`, status strings) duplicated across files | Hoist to one shared module | One concept, one home |
 | Adding a new variant requires editing 4+ files | Consolidate before adding the variant | Shotgun surgery compounds with every variant |
+| Separate `type User = {...}` and `userSchema = z.object({...})` for the same shape | One schema; `type User = z.infer<typeof UserSchema>` | Two declarations drift; one cannot |
+| Re-validating an already-parsed value deep in the stack | Parse once at the boundary; trust the type internally | Validation is a boundary concern, not a per-call concern |
+| Splitting every nested object into its own sub-schema "for cleanliness" | Keep flat unless the sub-shape is reused or has its own boundary | Premature decomposition; over-engineering |
 
 ---
 
@@ -182,7 +186,7 @@ file every time is wasted context.
 | Variable, function, class names | `rules/naming.md` |
 | Comments, docstrings, doc | `rules/comments.md` |
 | Performance concerns or hot paths | `rules/performance.md` |
-| Error handling, validation, defensive code | `rules/error-handling.md` |
+| Error handling, validation, defensive code, schema-first validation, Zod / Pydantic, inferring types from schemas | `rules/error-handling.md` |
 | Reviewing existing code | `rules/review-checklist.md` |
 | Cognitive complexity scoring | `rules/cognitive-complexity.md` |
 | Union types with associated data, parallel maps, duplicated constants, "where should this live", reuse decisions | `rules/maintainability.md` |

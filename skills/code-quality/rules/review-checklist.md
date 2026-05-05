@@ -75,6 +75,20 @@ For each non-trivial function (rough mental score per `cognitive-complexity.md`)
 - [ ] Error messages include what failed and useful context?
 - [ ] `catch` blocks scoped narrowly, catching specific exception types?
 - [ ] No empty `catch` blocks or "log and continue" patterns?
+- [ ] **Schema-first validation at boundaries.** Untrusted input parsed
+      through a schema (Zod, Pydantic, valibot) at the boundary, not
+      hand-rolled `if (typeof x === 'string')` checks scattered through
+      the code?
+- [ ] **Single source of truth for shape and type.** Where a schema
+      exists, is the type inferred from it (`z.infer<typeof Schema>`),
+      or is there a parallel hand-written `type` declaration that will
+      drift?
+- [ ] **No re-validation deep in the stack.** Once parsed at the
+      boundary, internal code trusts the type — no defensive
+      `Schema.parse(value)` calls inside trusted internals.
+- [ ] **Sub-schemas split only with cause.** Nested schemas extracted
+      only when reused, when they have their own boundary, or when a
+      partial slice must be parsed independently — not "for tidiness".
 
 ## Pass 6: Performance (only if relevant)
 

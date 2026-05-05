@@ -136,6 +136,20 @@ Accessors stay trivial: `ORDER_STATUS[status].label`.
 
 If two maps happen to share a key set but model different concepts (e.g., `USER_PERMISSIONS` and `USER_AVATAR_URLS` both keyed by user id), keep them separate — they are different domains that just happen to share an index.
 
+### Schemas as the source of truth for boundary shapes
+
+The same single-source-of-truth principle applies to validated input/output shapes.
+Define one schema (Zod, Pydantic, valibot, ArkType, etc.), then **infer the static type from the schema** rather than declaring both separately.
+A separate `type User` and `userSchema` will drift; one declaration cannot.
+
+```typescript
+export const UserSchema = z.object({ id: z.string().uuid(), email: z.string().email() });
+export type User = z.infer<typeof UserSchema>;
+```
+
+Compose nested schemas (`AddressSchema`, then `UserSchema` referencing it) **only when the sub-shape is genuinely reused or has its own boundary** — otherwise leave the schema flat.
+The full pattern, including when to split sub-schemas and when to keep them inline, lives in `error-handling.md` under "Schema-First Validation".
+
 ### Functions over records
 
 If the value depends on runtime data, replace `STATUS_X` lookup with a function that takes the structured record:
