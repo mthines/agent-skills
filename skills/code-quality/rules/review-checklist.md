@@ -87,7 +87,39 @@ performance concern.
 - [ ] If micro-optimizations exist, are they documented with measurement
       rationale?
 
-## Pass 7: Future-Proofing Smell
+## Pass 7: Maintainability & Reuse
+
+Load `rules/maintainability.md` for the patterns referenced below.
+
+- [ ] **Reuse check.** Did the author write a helper / formatter /
+      validator / constant that already exists in this codebase, the
+      standard library, or an installed dependency? Grep for the domain
+      noun and a synonym before accepting a new helper.
+- [ ] **Single source of truth for union-type data.** If the change adds
+      labels, colours, icons, permissions, or other metadata for a union
+      / enum, is there one record keyed by the union with structured
+      values, or are there parallel maps (`LABELS`, `COLORS`, `ICONS`,
+      `IS_TERMINAL`)? Parallel maps over the same union are a refactor
+      finding regardless of how few values they hold today.
+- [ ] **Change-footprint test.** If the next variant of this concept were
+      added (one more `OrderStatus`, one more role, one more feature
+      flag), how many files would need to change? Anything beyond ~3, or
+      any change the type system cannot enforce, is a maintainability
+      finding.
+- [ ] **Co-location.** Are the type, its metadata, and the operations on
+      it in one module, or scattered across `types/`, `constants/`,
+      `utils/`, and the call sites?
+- [ ] **Shotgun surgery.** Does the same business rule, constant, or
+      schema appear in multiple places that must be kept in sync by
+      hand? Hoist to one shared module or schema.
+- [ ] **Pattern consistency.** Does the new code look like its
+      neighbours? New code that adopts a different style or a parallel
+      utility forces every reader to context-switch.
+- [ ] **Illegal states.** Could the type system make the bug class
+      impossible (discriminated union, branded type, exhaustive `switch`)
+      instead of relying on runtime checks?
+
+## Pass 8: Future-Proofing Smell
 
 - [ ] Any unused parameters / options "for future use"? Delete.
 - [ ] Any abstractions with one concrete implementation? Inline.
@@ -117,6 +149,10 @@ diffs when feasible.
 ### Estimated cognitive complexity scores
 - functionA: ~6 (acceptable)
 - functionB: ~18 (refactor recommended)
+
+### Estimated change footprint
+- Adding a new OrderStatus today: 4 files (parallel maps) — refactor to one record
+- Adding a new role: 1 file (already a single source of truth) — fine
 ```
 
 ## When to Stop
