@@ -3,13 +3,16 @@ name: tdd
 description: >
   Test-Driven Development skill enforcing strict RED-GREEN-REFACTOR cycles.
   Writes one failing test at a time, implements minimal code to pass, then
-  refactors. Uses subagent isolation to prevent tests-by-construction.
+  refactors. Uses subagent isolation to prevent tests-by-construction. Pairs
+  with the `code-quality` skill: invokes `Skill('code-quality')` during the
+  REFACTOR phase to apply the full code-quality rule set against the GREEN
+  output, and cites refactor recipes (R1–R20) by ID when reporting changes.
   Triggers on: "tdd", "write tests", "test this", "add test coverage",
   "test driven", "red green refactor", "/tdd".
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: test-driven-development
   modes:
     - tdd-full
@@ -72,14 +75,14 @@ See `rules/green.md`
 
 Write the MINIMUM code to make the failing test pass. No more. Run the test. Confirm it passes. Run the full relevant test suite to check for regressions.
 
-**Even in this phase, apply the basic readability primitives** from the `code-quality` skill while you write: meaningful names, guard clauses for the cases the test forces, no nesting beyond 2 levels. These cost almost nothing during authoring but are expensive to bolt on later. Don't optimize, abstract, or add unrequested features — REFACTOR will handle deeper improvements.
+**Even in this phase, apply the basic readability primitives** while you write: meaningful names, guard clauses for the cases the test forces, no nesting beyond 2 levels. These cost almost nothing during authoring but are expensive to bolt on later. Don't optimize, abstract, or add unrequested features — REFACTOR will handle deeper improvements via `Skill('code-quality')`.
 
 ### REFACTOR Phase
 See `rules/refactor.md`
 
 Evaluate whether refactoring is needed. If yes, refactor while keeping all tests green. If no, move to the next cycle.
 
-**Apply code-quality principles during this phase.** The `code-quality` skill defines what "clean" means in concrete terms — guard clauses, low cognitive complexity, single-responsibility functions, intent-revealing names. Load `code-quality/rules/cognitive-complexity.md`, `code-quality/rules/control-flow.md`, and `code-quality/rules/review-checklist.md` to score each function you wrote and target the highest-load ones for refactoring. The GREEN phase delivers working code; the REFACTOR phase makes it readable.
+**Invoke `Skill('code-quality')` for this phase.** The `code-quality` skill is the source of truth for what "clean" means — guard clauses, low cognitive complexity, single-responsibility functions, intent-revealing names, single source of truth for union-type metadata, schema-first validation with type inference, total functions, type-driven design, functional core / imperative shell, and the named refactor recipes catalog (R1–R20). Routing through the skill — rather than reading individual rule files — picks up its Review Mode procedure, the structured output contract, and any rules added since this skill was written. Cite recipes by ID in commit messages and PR descriptions (e.g., "R1 Consolidate Parallel Maps", "R10 Total-ise the Function") so reviews are reproducible.
 
 ---
 
@@ -126,15 +129,17 @@ Follow the project's existing convention. If none exists, use:
 - Example: `describe('createOrder')` → `it('should reject order when inventory is zero')`
 
 ### Code Quality (during GREEN and REFACTOR)
-The `code-quality` skill is the source of truth for what "well-written code" means in this workflow. Key principles to apply:
+The `code-quality` skill is the source of truth for what "well-written code" means in this workflow. Apply during GREEN as inline primitives; invoke as a full pass during REFACTOR via `Skill('code-quality')`.
 
-- **Guard clauses + early returns** instead of nested `if`s — flat code is easier to read and easier to test, because each branch has fewer preconditions to set up.
-- **Cognitive complexity ≤ 15** per function (per SonarSource's scoring). If a function you just wrote feels hard to test (lots of mocks, complex setup), that's the metric warning you that the function is doing too much.
+GREEN-phase primitives (apply inline while writing the minimal implementation):
+
+- **Guard clauses + early returns** instead of nested `if`s — flat code is easier to read and easier to test.
+- **Cognitive complexity ≤ 15** per function (SonarSource scoring). If the function feels hard to test (lots of mocks, complex setup), that is the metric warning you the function does too much.
 - **Names that describe intent**, not types or position. `pendingOrders` beats `arr2`.
-- **One responsibility per function**. If you can't name it without "and," split it.
-- **Validate at boundaries, trust internally.** Don't add defensive null checks for impossible states — they hide real bugs.
+- **One responsibility per function** — if you cannot name it without "and", split it.
+- **Validate at boundaries, trust internally.** No defensive null checks for impossible states.
 
-When in doubt during REFACTOR, load `code-quality/rules/review-checklist.md` and walk the function through it.
+For REFACTOR, invoke `Skill('code-quality')` so the skill's Review Mode procedure runs against the GREEN output. The skill returns findings under the High / Medium / Low / Maintainability / Correctness / Testability headings; address each as a separate refactoring move (one change at a time per the "Procedure" below). Cite recipe IDs (R1–R20) in commit messages.
 
 ### Anti-Patterns to Avoid
 | Anti-Pattern | Why It's Bad | What to Do Instead |
