@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.50.0",
+  "version": "0.51.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -397,6 +397,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Show Claude sessions updating live in the Sessions panel. When off, the panel still works but updates lag a few seconds behind. Turn back on with the **Agent Tasks: Turn on live session updates** command."
+        },
+        "agentTasks.sessions.prLinkage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show PR status badges in the Sessions panel. Requires the gh CLI to be installed. When off, no gh subprocess calls are made and all sessions show JSONL-derived status icons."
         }
       }
     },
