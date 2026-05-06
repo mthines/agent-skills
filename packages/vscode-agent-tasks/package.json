@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.55.0",
+  "version": "0.56.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -163,6 +163,18 @@
         "title": "Open PR in Browser",
         "icon": "$(link-external)",
         "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.sessions.openPRForBranch",
+        "title": "Open Pull Request",
+        "icon": "$(git-pull-request)",
+        "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.sessions.createPRForBranch",
+        "title": "Create Pull Request",
+        "icon": "$(git-pull-request-create)",
+        "category": "Agent Tasks"
       }
     ],
     "menus": {
@@ -205,6 +217,14 @@
         },
         {
           "command": "agentTasks.sessions.openPR",
+          "when": "false"
+        },
+        {
+          "command": "agentTasks.sessions.openPRForBranch",
+          "when": "false"
+        },
+        {
+          "command": "agentTasks.sessions.createPRForBranch",
           "when": "false"
         }
       ],
