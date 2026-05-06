@@ -23,6 +23,7 @@ Skills live in `skills/` as standard SKILL.md files.
 Agents live in `agents/` since they require their own model and tool configuration.
 
 ### Agent-invokable skills (model can `Skill()`-invoke without a slash command)
+- `autonomous-workflow` — Phase-based orchestrator (0–7) for end-to-end feature development. **Installs two agents** under the `aw-` namespace (`aw-` = "autonomous-workflow"): `aw-planner` for phases 0–2, `aw-executor` for phases 3–7, connected by `plan.md`. See [`skills/autonomous-workflow/CLAUDE.md`](./skills/autonomous-workflow/CLAUDE.md) for design intent before editing
 - `confidence` — Confidence assessment for plans, code, and bug analysis. **Plan mode is multi-signal** (LLM dimensional scoring + deterministic rule checks; a failed rule caps the gate at 89% regardless of LLM score)
 - `holistic-analysis` — Full execution path analysis for stuck bugs/refactors
 - `tdd` — Test-Driven Development with strict RED-GREEN-REFACTOR cycles
@@ -34,7 +35,6 @@ Agents live in `agents/` since they require their own model and tool configurati
 - `aw-review-quality-gate` — Self-check quality gate for review findings before delivery
 
 ### Slash commands (`disable-model-invocation: true`)
-- `autonomous-workflow` — Phase-based orchestrator (0–7) for end-to-end feature development. **Installs two agents** under the `aw-` namespace (`aw-` = "autonomous-workflow"): `aw-planner` for phases 0–2, `aw-executor` for phases 3–7, connected by `plan.md`. See [`skills/autonomous-workflow/CLAUDE.md`](./skills/autonomous-workflow/CLAUDE.md) for design intent before editing
 - `batch-linear-tickets` — Batch orchestrator for Linear tickets. Fans out `linear-ticket-investigator` per ticket, correlates findings, gates user approval, then fans out `aw-planner` + `aw-executor` pairs (autonomous-workflow namespace) in worktrees. Requires Linear MCP
 - `ci-auto-fix` — Diagnose and fix a failed CI check, iteratively pushing fixes until CI is green (currently GitHub Actions via `gh`)
 - `code-quality` — Code-quality review for readability, complexity, and maintainability

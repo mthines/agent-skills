@@ -101,11 +101,11 @@ Most tools auto-discover skills from `~/.agents/skills/`.
 
 ### Orchestrators
 
-Coordinate other skills to execute multi-step workflows. Slash-command-only — invoke with `/name`.
+Coordinate other skills to execute multi-step workflows. `autonomous-workflow` is agent-invokable; `batch-linear-tickets` is slash-only.
 
-| Command                                                                | What it does                                                                                                                                                                                                                                                                                                                            | Use when...                                                                                      |
+| Skill                                                                  | What it does                                                                                                                                                                                                                                                                                                                            | Use when...                                                                                      |
 | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| **[/autonomous-workflow](./skills/autonomous-workflow/SKILL.md)**      | Phase-based orchestrator (0–7) that handles end-to-end feature development — from validation through tested PR delivery — using isolated Git worktrees. Optionally invokes companions for planning, TDD, UX, code quality, docs, and CI fixing. See [dedicated section](#autonomous-workflow).                                          | "Implement X autonomously", "end-to-end", "in isolation", "in a worktree".                       |
+| **[autonomous-workflow](./skills/autonomous-workflow/SKILL.md)**       | Phase-based orchestrator (0–7) that handles end-to-end feature development — from validation through tested PR delivery — using isolated Git worktrees. Optionally invokes companions for planning, TDD, UX, code quality, docs, and CI fixing. See [dedicated section](#autonomous-workflow).                                          | "Implement X autonomously", "end-to-end", "in isolation", "in a worktree".                       |
 | **[/batch-linear-tickets](./skills/batch-linear-tickets/SKILL.md)**    | Batch orchestrator for Linear tickets. Fans out [`linear-ticket-investigator`](#linear-ticket-investigator) per ticket, correlates findings, gates user approval, then fans out `aw-planner` + `aw-executor` pairs (the [`aw-` namespace](#agent-namespace-aw-) from `autonomous-workflow`) in isolated worktrees. Requires Linear MCP. | "Solve these tickets", "batch analyze SUP-123 SUP-456", "analyze tickets in this Linear filter". |
 
 ### Agent-invokable skills
@@ -382,6 +382,10 @@ The orchestrator fans out investigators, gates on user approval, fans out planne
 Agent-invokable skills activate automatically. Just describe what you need:
 
 ```
+Implement this feature autonomously / end-to-end / in a worktree
+```
+
+```
 Check the accessibility of this component
 ```
 
@@ -400,7 +404,6 @@ Rate your confidence in this implementation
 Everything else is invoked with a slash:
 
 ```
-/autonomous-workflow implement dark mode toggle end-to-end
 /batch-linear-tickets SUP-123 SUP-456
 /dx review my CLI tool
 /profile-optimizer ./trace.json
@@ -452,7 +455,7 @@ packages/
 skills/
   autonomous-workflow/   SKILL.md + README.md + CLAUDE.md +
                          rules/ + templates/ + references/ +
-                         install.sh                          (orchestrator, slash command)
+                         install.sh                          (orchestrator, agent-invokable)
   batch-linear-tickets/  SKILL.md + rules/                   (orchestrator, slash command)
   confidence/            SKILL.md                            (agent-invokable)
   holistic-analysis/     SKILL.md                            (agent-invokable)
