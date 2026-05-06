@@ -613,12 +613,19 @@ export const HOOK_OVERRIDE_TTL_MS = 5 * 60 * 1000;
 /**
  * Pure function. Maps a hook event name to the session status it implies.
  *
- * `Stop` is disambiguated by `isTerminalOpen`:
- *   - terminal open  → `needs-input` (user is watching; claude finished)
- *   - terminal NOT open → `unread` (user wasn't watching)
+ * Conservative `needs-input`: only `Notification` (Claude Code's explicit
+ * "user attention required" signal) produces it. A bare `Stop` is just
+ * "turn ended" and many turns end without actually needing input
+ * (e.g. agent reporting that CI is green). So:
  *
- * `Notification` returns `undefined` — it triggers a refresh without a status
- * change.
+ *   - `Notification`      → `needs-input` (reliable, explicit)
+ *   - `Stop` + terminal closed → `unread`  (user wasn't watching)
+ *   - `Stop` + terminal open   → undefined (no override; lets Tier 1
+ *     keep `running` while terminal is open, or `deriveRunState` return
+ *     `idle` once the terminal closes)
+ *   - `UserPromptSubmit`  → `running` (also clears any prior override)
+ *   - `SessionStart`      → `running`
+ *   - `SessionEnd`        → `idle`
  *
  * Exported for unit tests.
  */
@@ -630,13 +637,13 @@ export function hookEventToStatus(
     case 'UserPromptSubmit':
       return 'running';
     case 'Stop':
-      return isTerminalOpen ? 'needs-input' : 'unread';
+      return isTerminalOpen ? undefined : 'unread';
     case 'SessionStart':
       return 'running';
     case 'SessionEnd':
       return 'idle';
     case 'Notification':
-      return undefined;
+      return 'needs-input';
   }
 }
 
@@ -833,6 +840,22 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
       ) {
         // Stale or duplicate Stop — the user already dismissed this session.
         // Refresh so any other state changes (e.g. TTL expiry) are still visible.
+        this.pruneExpiredHookOverrides();
+        this.refresh();
+        return;
+      }
+
+      // Precedence guard: a Notification → `needs-input` override should
+      // survive a subsequent `Stop` → `unread` for the same session. The
+      // user's pending input request is more important than "agent finished
+      // while you were away". Only `UserPromptSubmit` (the user replying)
+      // clears `needs-input`.
+      const existing = this.hookOverrides.get(event.sessionId);
+      if (
+        status === 'unread' &&
+        existing?.status === 'needs-input' &&
+        Date.now() - existing.ts < HOOK_OVERRIDE_TTL_MS
+      ) {
         this.pruneExpiredHookOverrides();
         this.refresh();
         return;

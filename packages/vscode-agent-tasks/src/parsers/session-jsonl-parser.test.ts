@@ -145,14 +145,14 @@ describe('deriveRunState', () => {
     expect(deriveRunState(false, mtime)).toBe('idle');
   });
 
-  it('turn ended within 1h → needs-input', () => {
-    const mtime = Date.now() - 5 * 60 * 1000;
-    expect(deriveRunState(true, mtime)).toBe('needs-input');
-  });
-
-  it('turn ended beyond 1h → idle', () => {
-    const mtime = Date.now() - 2 * 60 * 60 * 1000;
-    expect(deriveRunState(true, mtime)).toBe('idle');
+  it('turn ended → idle (never needs-input from JSONL alone)', () => {
+    // Stability over signal: turn-end can mean "agent finished a task and
+    // reported CI is green" — not actual user input required. needs-input is
+    // reserved for the explicit Notification hook.
+    const recentMtime = Date.now() - 5 * 60 * 1000;
+    expect(deriveRunState(true, recentMtime)).toBe('idle');
+    const oldMtime = Date.now() - 2 * 60 * 60 * 1000;
+    expect(deriveRunState(true, oldMtime)).toBe('idle');
   });
 
   it('mid-turn at exactly now → running', () => {
