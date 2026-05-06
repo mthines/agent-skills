@@ -41,6 +41,12 @@ import type { HookEvent, HookEventName } from '../lib/hook-event-types';
 import type { PrEnrichment } from '../lib/pr-status-cache';
 import type { PrPoller, BranchTarget } from '../lib/pr-poller';
 import { resolveDisplayStatus, type DisplayStatus } from '../lib/pr-status-reducer';
+import {
+  applySessionFilter,
+  describeFilter,
+  DEFAULT_SESSION_FILTER,
+  type SessionFilter,
+} from '../lib/session-filter';
 
 // ---------------------------------------------------------------------------
 // Configured artifact directory names (mirrors agent-tasks-provider.ts)
@@ -624,6 +630,23 @@ interface HookSessionState {
 
 export type SessionsScope = 'current' | 'all';
 
+/** Read the SessionFilter from VS Code configuration, falling back to defaults. */
+export function readSessionFilter(): SessionFilter {
+  const cfg = vscode.workspace.getConfiguration('agentTasks.sessions.filter');
+  return {
+    hideStaleAfterDays: cfg.get<number>(
+      'hideStaleAfterDays',
+      DEFAULT_SESSION_FILTER.hideStaleAfterDays
+    ),
+    hideIdle: cfg.get<boolean>('hideIdle', DEFAULT_SESSION_FILTER.hideIdle),
+    hidePrMergedClosed: cfg.get<boolean>(
+      'hidePrMergedClosed',
+      DEFAULT_SESSION_FILTER.hidePrMergedClosed
+    ),
+    onlyWithPr: cfg.get<boolean>('onlyWithPr', DEFAULT_SESSION_FILTER.onlyWithPr),
+  };
+}
+
 export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<SessionTreeItem | undefined | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
@@ -987,6 +1010,18 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     return out;
   }
 
+  /**
+   * Last filter status message — updated on every `buildRootItems` and read
+   * by extension.ts to set `TreeView.message`. `undefined` when the filter
+   * is at defaults and nothing was hidden.
+   */
+  private _filterMessage: string | undefined;
+
+  /** Filter status message for the current rendered state. */
+  public getFilterMessage(): string | undefined {
+    return this._filterMessage;
+  }
+
   private buildRootItems(): SessionTreeItem[] {
     const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     if (!workspacePath) return [];
@@ -994,6 +1029,8 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     const scope = vscode.workspace
       .getConfiguration('agentTasks.sessions')
       .get<SessionsScope>('scope', 'all');
+
+    const filter = readSessionFilter();
 
     const allWorktrees = discoverWorktreePaths(workspacePath);
 
@@ -1043,6 +1080,31 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     if (this.prPoller) {
       this.prPoller.setActiveBranches(branchTargets);
     }
+
+    // Apply user visibility filter per bucket. The filter is pure and
+    // per-status; running/needs-input/unread sessions are always-shown so
+    // active work cannot be accidentally hidden. Filter messages are
+    // accumulated and surfaced via TreeView.message by extension.ts.
+    const now = Date.now();
+    let totalHidden = 0;
+    for (const [worktreePath, sessions] of buckets) {
+      const filterable = sessions.map((s) => ({
+        session: s,
+        status: this.computeStatus(s),
+        mtime: s.mtime,
+        prEnrichment:
+          this.prStatusCache && s.gitBranch
+            ? this.prStatusCache.getEnrichment(s.gitBranch)
+            : undefined,
+      }));
+      const filtered = applySessionFilter(filterable, filter, now);
+      totalHidden += filtered.hiddenCount;
+      buckets.set(
+        worktreePath,
+        filtered.visible.map((f) => f.session)
+      );
+    }
+    this._filterMessage = describeFilter(filter, totalHidden);
 
     // Collect every session across worktrees once so we can build the pinned
     // "Running" section. Running sessions are MOVED to the section, not
