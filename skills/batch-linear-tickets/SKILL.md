@@ -5,6 +5,7 @@ description: >
   cross-ticket correlation, confidence validation, and autonomous execution.
   Triggers on: "batch-linear-tickets", "batch analyze", "solve these tickets", "analyze tickets".
 user-invocable: true
+disable-model-invocation: true
 metadata:
   author: mthines
   version: '1.0.0'

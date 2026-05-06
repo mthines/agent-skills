@@ -101,12 +101,12 @@ Most tools auto-discover skills from `~/.agents/skills/`.
 
 ### Orchestrators
 
-Coordinate other skills to execute multi-step workflows. Agent-invokable.
+Coordinate other skills to execute multi-step workflows. `autonomous-workflow` is agent-invokable; `batch-linear-tickets` is slash-only.
 
-| Skill                                                              | What it does                                                                                                                                                                                                                                                                                                                            | Use when...                                                                                      |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| **[autonomous-workflow](./skills/autonomous-workflow/SKILL.md)**   | Phase-based orchestrator (0–7) that handles end-to-end feature development — from validation through tested PR delivery — using isolated Git worktrees. Optionally invokes companions for planning, TDD, UX, code quality, docs, and CI fixing. See [dedicated section](#autonomous-workflow).                                          | "Implement X autonomously", "end-to-end", "in isolation", "in a worktree".                       |
-| **[batch-linear-tickets](./skills/batch-linear-tickets/SKILL.md)** | Batch orchestrator for Linear tickets. Fans out [`linear-ticket-investigator`](#linear-ticket-investigator) per ticket, correlates findings, gates user approval, then fans out `aw-planner` + `aw-executor` pairs (the [`aw-` namespace](#agent-namespace-aw-) from `autonomous-workflow`) in isolated worktrees. Requires Linear MCP. | "Solve these tickets", "batch analyze SUP-123 SUP-456", "analyze tickets in this Linear filter". |
+| Skill                                                                  | What it does                                                                                                                                                                                                                                                                                                                            | Use when...                                                                                      |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **[autonomous-workflow](./skills/autonomous-workflow/SKILL.md)**       | Phase-based orchestrator (0–7) that handles end-to-end feature development — from validation through tested PR delivery — using isolated Git worktrees. Optionally invokes companions for planning, TDD, UX, code quality, docs, and CI fixing. See [dedicated section](#autonomous-workflow).                                          | "Implement X autonomously", "end-to-end", "in isolation", "in a worktree".                       |
+| **[/batch-linear-tickets](./skills/batch-linear-tickets/SKILL.md)**    | Batch orchestrator for Linear tickets. Fans out [`linear-ticket-investigator`](#linear-ticket-investigator) per ticket, correlates findings, gates user approval, then fans out `aw-planner` + `aw-executor` pairs (the [`aw-` namespace](#agent-namespace-aw-) from `autonomous-workflow`) in isolated worktrees. Requires Linear MCP. | "Solve these tickets", "batch analyze SUP-123 SUP-456", "analyze tickets in this Linear filter". |
 
 ### Agent-invokable skills
 
@@ -115,12 +115,9 @@ The model can invoke these via `Skill()` when it detects a matching task — no 
 | Skill                                                        | What it does                                                                                                                                                                                                                                                                                                                                | Use when...                                                                                                                                                                                 |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **[confidence](./skills/confidence/SKILL.md)**               | Rates confidence that work fully solves the stated requirement. Scores across weighted dimensions with auto-fix mode.                                                                                                                                                                                                                       | Validating a plan before execution, checking code before a PR, or assessing a bug analysis.                                                                                                 |
-| **[dx](./skills/dx/SKILL.md)**                               | Reviews CLI tools, shell scripts, and developer tooling against established guidelines ([clig.dev](https://clig.dev), 12 Factor CLI, Heroku CLI Style Guide).                                                                                                                                                                               | Building or reviewing a CLI, shell script, Makefile, or any developer-facing tool.                                                                                                          |
 | **[holistic-analysis](./skills/holistic-analysis/SKILL.md)** | Forces a full execution-path analysis when incremental fixes aren't working. Traces entry-to-exit with structured hypothesis generation.                                                                                                                                                                                                    | A bug fix attempt has failed, you're going in circles, or you need to "step back and think."                                                                                                |
-| **[profile-optimizer](./skills/profile-optimizer/SKILL.md)** | Analyses React DevTools Profiler exports or Chrome DevTools Performance traces. Auto-detects the format, frames the right metric (INP, TBT, LCP, commit duration), extracts ranked hotspots with measured cost, maps each to a file/component, and emits a ranked optimisation plan. Iterates via `confidence(bug-analysis)` — digs deeper if root-cause certainty is below 90%, instead of guessing.                                                                                                                                                          | Handed a `.json` profile, asked "why is this slow?", or asked to optimise a hot path with evidence (not vibes).                                                                            |
 | **[tdd](./skills/tdd/SKILL.md)**                             | Enforces strict RED-GREEN-REFACTOR cycles. Writes one failing test, implements minimal code to pass, then refactors.                                                                                                                                                                                                                        | Adding new features test-first, or retrofitting tests onto existing code.                                                                                                                   |
 | **[ux](./skills/ux/SKILL.md)**                               | Reviews web and React Native UI code for usability, accessibility (WCAG 2.2), and platform compliance (Apple HIG, Material Design 3).                                                                                                                                                                                                       | Building or reviewing UI components, checking accessibility, or improving UX copy.                                                                                                          |
-| **[video-analyser](./skills/video-analyser/SKILL.md)**       | Analyses a screen recording to extract bugs, errors, UI state, and reproduction steps. Resolves input from a Linear ticket URL, local file path, or direct URL. Extracts keyframes with `ffmpeg` (default: 8 frames at 768 px — Pareto-optimal for legibility vs. token cost). Runs optional Tesseract OCR and Whisper audio transcription. | "Analyse this screen recording for bugs", "what does this video show", "investigate this mp4", or whenever a user pastes a `.mp4`/`.mov` path or Linear ticket URL with a video attachment. |
 
 ### Workflow companions
 
@@ -142,11 +139,14 @@ User-invoked only — the model can't auto-trigger these. **Zero baseline contex
 | **[/code-quality](./skills/code-quality/SKILL.md)**                 | Authors and reviews code for low cognitive complexity, readability, and maintainability. Applies guard clauses, early returns, single-responsibility, and pragmatic performance choices grounded in Clean Code, Cognitive Complexity, and Knuth's optimization guidance. |
 | **[/create-pr](./skills/create-pr/SKILL.md)**                       | Generates a narrative PR description, pushes the branch, opens the PR, then watches CI and auto-fixes simple failures (lint, format, lockfiles). Escalates judgment-required failures via `/confidence` rather than guessing.                                            |
 | **[/create-skill](./skills/create-skill/SKILL.md)**                 | Scaffolds new agent skills — or reviews existing ones — against best-practice frontmatter, progressive disclosure, token-aware structure, and this repo's symlink + inventory wiring. Modes: `scaffold` (default), `review`, `upgrade`.                                  |
+| **[/dx](./skills/dx/SKILL.md)**                                     | Reviews CLI tools, shell scripts, and developer tooling against established guidelines ([clig.dev](https://clig.dev), 12 Factor CLI, Heroku CLI Style Guide).                                                                                                            |
 | **[/implement-suggestion](./skills/implement-suggestion/SKILL.md)** | Takes review comments or suggestions and implements the fixes — simple ones directly, complex ones with a plan for approval.                                                                                                                                             |
 | **[/init-claude](./skills/init-claude/SKILL.md)**                   | Analyzes your project and generates a tailored `CLAUDE.md` + `.claude/rules/` setup. Detects tech stack, project size, and conventions automatically.                                                                                                                    |
+| **[/profile-optimizer](./skills/profile-optimizer/SKILL.md)**       | Analyses React DevTools Profiler exports or Chrome DevTools Performance traces. Auto-detects the format, frames the right metric (INP, TBT, LCP, commit duration), extracts ranked hotspots with measured cost, maps each to a file/component, and emits a ranked optimisation plan. Iterates via `confidence(bug-analysis)` — digs deeper if root-cause certainty is below 90%, instead of guessing. |
 | **[/resolve-conflicts](./skills/resolve-conflicts/SKILL.md)**       | Detects merge/rebase conflicts, shows both sides with context, proposes resolution strategies, and asks clarifying questions for ambiguous cases.                                                                                                                        |
 | **[/review-changes](./skills/review-changes/SKILL.md)**             | Reviews branch changes or a PR for quality, correctness, tests, and commit hygiene. Dispatches to the reviewer skill.                                                                                                                                                    |
 | **[/update-claude](./skills/update-claude/SKILL.md)**               | Diffs your branch against main and incrementally updates Claude docs to match code changes. Finds stale references, dead paths, and drift.                                                                                                                               |
+| **[/video-analyser](./skills/video-analyser/SKILL.md)**             | Analyses a screen recording to extract bugs, errors, UI state, and reproduction steps. Resolves input from a Linear ticket URL, local file path, or direct URL. Extracts keyframes with `ffmpeg` (default: 8 frames at 768 px — Pareto-optimal for legibility vs. token cost). Runs optional Tesseract OCR and Whisper audio transcription. |
 
 ### Agents
 
@@ -379,22 +379,14 @@ The orchestrator fans out investigators, gates on user approval, fans out planne
 
 ## Usage Examples
 
-Skills activate automatically. Just describe what you need:
+Agent-invokable skills activate automatically. Just describe what you need:
 
 ```
 Implement this feature autonomously / end-to-end / in a worktree
 ```
 
 ```
-Review the DX of my CLI tool
-```
-
-```
 Check the accessibility of this component
-```
-
-```
-Refactor this for readability / reduce cognitive complexity
 ```
 
 ```
@@ -409,9 +401,13 @@ Add this feature using TDD
 Rate your confidence in this implementation
 ```
 
-Commands are invoked with a slash:
+Everything else is invoked with a slash:
 
 ```
+/batch-linear-tickets SUP-123 SUP-456
+/dx review my CLI tool
+/profile-optimizer ./trace.json
+/video-analyser ./bug-recording.mp4
 /init-claude
 /update-claude
 /resolve-conflicts
@@ -460,12 +456,9 @@ skills/
   autonomous-workflow/   SKILL.md + README.md + CLAUDE.md +
                          rules/ + templates/ + references/ +
                          install.sh                          (orchestrator, agent-invokable)
-  batch-linear-tickets/  SKILL.md + rules/                   (orchestrator, agent-invokable)
+  batch-linear-tickets/  SKILL.md + rules/                   (orchestrator, slash command)
   confidence/            SKILL.md                            (agent-invokable)
-  dx/                    SKILL.md + rules/ + templates/      (agent-invokable)
   holistic-analysis/     SKILL.md                            (agent-invokable)
-  profile-optimizer/     SKILL.md + rules/ + references/ +
-                         templates/                          (agent-invokable)
   tdd/                   SKILL.md + rules/                   (agent-invokable)
   ux/                    SKILL.md + rules/ + templates/      (agent-invokable)
   aw-create-plan/        SKILL.md                            (workflow companion, slash-only)
@@ -476,11 +469,15 @@ skills/
   create-pr/             SKILL.md                            (slash command)
   create-skill/          SKILL.md + rules/ + references/ +
                          templates/                          (slash command)
+  dx/                    SKILL.md + rules/ + templates/      (slash command)
   implement-suggestion/  SKILL.md                            (slash command)
   init-claude/           SKILL.md                            (slash command)
+  profile-optimizer/     SKILL.md + rules/ + references/ +
+                         templates/                          (slash command)
   resolve-conflicts/     SKILL.md                            (slash command)
   review-changes/        SKILL.md                            (slash command)
   update-claude/         SKILL.md                            (slash command)
+  video-analyser/        SKILL.md                            (slash command)
 agents/
   reviewer.md                                                (agent)
   linear-ticket-investigator.md                              (agent)

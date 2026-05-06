@@ -11,6 +11,7 @@ description: >
   "look at this screen capture", "what is happening in this video",
   "analyse this screen capture", "video-analyser", "/video-analyser".
 license: MIT
+disable-model-invocation: true
 metadata:
   author: mthines
   version: '1.0.0'

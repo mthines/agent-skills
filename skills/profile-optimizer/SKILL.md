@@ -13,6 +13,7 @@ description: >
   performance", "optimize from profile", "profile this", "why is this slow",
   "/profile-optimizer".
 license: MIT
+disable-model-invocation: true
 metadata:
   author: mthines
   version: '1.0.0'

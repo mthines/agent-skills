@@ -10,6 +10,7 @@ description: >
   "dx feedback", "review the script", "improve usability", "check error handling",
   "review output", "dx writing", "improve help text", "review flags",
   "make this more intuitive", "dx best practices", "/dx".
+disable-model-invocation: true
 metadata:
   author: mthines
   version: "1.0.0"
