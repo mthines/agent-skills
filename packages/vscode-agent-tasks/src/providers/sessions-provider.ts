@@ -413,6 +413,35 @@ export class LinkedArtifactItem extends vscode.TreeItem {
 }
 
 // ---------------------------------------------------------------------------
+// Tree item: FilterStatusItem
+// ---------------------------------------------------------------------------
+
+/**
+ * A leaf rendered at the very bottom of the Sessions tree when the visibility
+ * filter is hiding any sessions. Clicking it resets the filter to "show all"
+ * so the user has a one-click escape hatch — no settings hunt required.
+ *
+ * Visually subtle: muted icon colour and the count rendered in the (grey)
+ * `description` slot so the row reads as metadata, not work.
+ */
+export class FilterStatusItem extends vscode.TreeItem {
+  constructor(message: string) {
+    super('Show all', vscode.TreeItemCollapsibleState.None);
+    this.description = message;
+    this.iconPath = new vscode.ThemeIcon(
+      'eye',
+      new vscode.ThemeColor('descriptionForeground')
+    );
+    this.tooltip = `${message}\n\nClick to clear all filters and show every session.`;
+    this.contextValue = 'claudeSessionsFilterStatus';
+    this.command = {
+      command: 'agentTasks.sessions.resetFilter',
+      title: 'Show all sessions',
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tree item: PrLinkItem
 // ---------------------------------------------------------------------------
 
@@ -480,7 +509,9 @@ type SessionTreeItem =
   | RunningGroupItem
   | WorktreeGroupItem
   | SessionItem
-  | LinkedArtifactItem;
+  | LinkedArtifactItem
+  | PrLinkItem
+  | FilterStatusItem;
 
 // ---------------------------------------------------------------------------
 // Session discovery (subdirectory-aware)
@@ -951,6 +982,9 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     if (element instanceof PrLinkItem) {
       return [];
     }
+    if (element instanceof FilterStatusItem) {
+      return [];
+    }
     return this.buildRootItems();
   }
 
@@ -1148,6 +1182,7 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
         (s) => !runningIds.has(s.sessionId)
       );
       items.push(...sessions.map((s) => this.makeSessionItem(s)));
+      this.appendFilterStatusItem(items);
       return items;
     }
 
@@ -1175,6 +1210,17 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
       )
     );
 
+    this.appendFilterStatusItem(items);
     return items;
+  }
+
+  /**
+   * If the visibility filter hid anything, append a muted "Show all" footer
+   * row at the very bottom of the tree. Click resets the filter — fastest
+   * possible recovery from "where did my session go?"
+   */
+  private appendFilterStatusItem(items: SessionTreeItem[]): void {
+    if (!this._filterMessage) return;
+    items.push(new FilterStatusItem(this._filterMessage));
   }
 }

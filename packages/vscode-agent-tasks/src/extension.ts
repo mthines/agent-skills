@@ -287,13 +287,6 @@ export function activate(context: vscode.ExtensionContext): void {
     showCollapseAll: true,
   });
 
-  // After every tree refresh, surface the filter's status message at the top
-  // of the panel. This is how users see "Hiding 47 stale sessions" without
-  // having to remember they enabled a filter.
-  const filterMessageSub = sessionsProvider.onDidChangeTreeData(() => {
-    sessionsView.message = sessionsProvider.getFilterMessage();
-  });
-
   // Sessions panel correlates each session with its `(worktree, gitBranch)`
   // artifact dir. Refresh on artifact create/delete so chevrons and child
   // rows appear/disappear without waiting for a session-level event.
@@ -373,9 +366,9 @@ export function activate(context: vscode.ExtensionContext): void {
         },
         {
           id: 'idle',
-          label: '$(circle-outline) Hide idle sessions',
+          label: '$(circle-outline) Hide idle sessions without a PR',
           description: hideIdle ? 'on' : 'off',
-          detail: 'Hide sessions whose computed status is idle.',
+          detail: 'Idle sessions whose branch has an open or merged PR stay visible — only sessions with no PR are hidden.',
           picked: hideIdle,
         },
         {
@@ -932,7 +925,6 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionsToggleScopeCmd,
     sessionsOpenFilterCmd,
     sessionsResetFilterCmd,
-    filterMessageSub,
     visibilitySub,
     tickDisposable,
     configSub,

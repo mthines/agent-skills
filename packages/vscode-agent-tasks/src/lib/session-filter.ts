@@ -94,7 +94,15 @@ export function applySessionFilter<T extends FilterableSession>(
       now - session.mtime > filter.hideStaleAfterDays * DAY_MS
     ) {
       hidden = 'stale';
-    } else if (filter.hideIdle && session.status === 'idle') {
+    } else if (
+      filter.hideIdle &&
+      session.status === 'idle' &&
+      session.prEnrichment?.status !== 'pr'
+    ) {
+      // An idle session that is attached to a known PR is signal, not noise —
+      // it's something the user is iterating on or about to merge. Only hide
+      // idle sessions whose branch has no PR (or whose PR state is still
+      // loading / errored — those will become "pr" on the next poll tick).
       hidden = 'idle';
     } else if (
       filter.hidePrMergedClosed &&

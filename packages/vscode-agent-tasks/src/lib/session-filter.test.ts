@@ -121,6 +121,36 @@ describe('applySessionFilter — hideIdle', () => {
     expect(result.visible[0]?.status).toBe('stalled');
     expect(result.hiddenByReason.idle).toBe(1);
   });
+
+  it('keeps idle sessions whose branch has a known PR', () => {
+    // Idle + has PR = signal (e.g. iterating on a PR), not noise.
+    const sessions = [
+      session('idle', 1),               // no PR → hidden
+      session('idle', 1, prOpen),       // has PR → visible
+      session('idle', 1, prMerged),     // has PR → visible (still visible by hideIdle alone)
+    ];
+    const result = applySessionFilter(
+      sessions,
+      { ...DEFAULT_SESSION_FILTER, hideStaleAfterDays: 0, hideIdle: true },
+      NOW
+    );
+    expect(result.visible).toHaveLength(2);
+    expect(result.hiddenByReason.idle).toBe(1);
+  });
+
+  it('still hides idle sessions whose PR enrichment is loading or no-pr', () => {
+    const sessions = [
+      session('idle', 1, loading),
+      session('idle', 1, noPr),
+    ];
+    const result = applySessionFilter(
+      sessions,
+      { ...DEFAULT_SESSION_FILTER, hideStaleAfterDays: 0, hideIdle: true },
+      NOW
+    );
+    expect(result.visible).toHaveLength(0);
+    expect(result.hiddenByReason.idle).toBe(2);
+  });
 });
 
 describe('applySessionFilter — hidePrMergedClosed', () => {
