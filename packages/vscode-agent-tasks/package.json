@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.58.0",
+  "version": "0.59.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -476,7 +476,7 @@
         "agentTasks.sessions.filter.hideIdle": {
           "type": "boolean",
           "default": false,
-          "description": "Hide sessions whose computed status is `idle`. Useful when you only want to track in-flight or waiting work."
+          "markdownDescription": "Hide idle sessions whose branch has no Pull Request. Idle sessions attached to an open or merged PR stay visible because they typically represent in-flight work, not noise."
         },
         "agentTasks.sessions.filter.hidePrMergedClosed": {
           "type": "boolean",
