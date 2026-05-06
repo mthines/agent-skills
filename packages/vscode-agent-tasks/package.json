@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.59.0",
+  "version": "0.60.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -184,7 +184,7 @@
       },
       {
         "command": "agentTasks.sessions.resetFilter",
-        "title": "Reset Sessions Filter",
+        "title": "Show All Sessions",
         "category": "Agent Tasks"
       }
     ],
@@ -467,26 +467,25 @@
           "default": true,
           "description": "Show PR status badges in the Sessions panel. Requires the gh CLI to be installed. When off, no gh subprocess calls are made and all sessions show JSONL-derived status icons."
         },
-        "agentTasks.sessions.filter.hideStaleAfterDays": {
-          "type": "number",
-          "default": 14,
-          "minimum": 0,
-          "description": "Hide sessions whose last activity is older than N days. 0 disables. Running, needs-input, and unread sessions are NEVER hidden regardless of this setting."
+        "agentTasks.sessions.filter.showOpenPr": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show idle sessions whose branch has an open or draft Pull Request."
         },
-        "agentTasks.sessions.filter.hideIdle": {
+        "agentTasks.sessions.filter.showMergedClosedPr": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Hide idle sessions whose branch has no Pull Request. Idle sessions attached to an open or merged PR stay visible because they typically represent in-flight work, not noise."
+          "description": "Show idle sessions whose Pull Request has been merged or closed."
         },
-        "agentTasks.sessions.filter.hidePrMergedClosed": {
+        "agentTasks.sessions.filter.showIdleNoPr": {
           "type": "boolean",
           "default": false,
-          "description": "Hide sessions whose Pull Request has been merged or closed. Helps clean up the panel after work ships."
+          "description": "Show idle sessions whose branch has no Pull Request."
         },
-        "agentTasks.sessions.filter.onlyWithPr": {
+        "agentTasks.sessions.filter.showStalled": {
           "type": "boolean",
           "default": false,
-          "description": "Hide sessions whose branch has no Pull Request. Sessions still loading their PR status are kept visible to avoid flicker."
+          "description": "Show stalled sessions (mid-turn but no recent writes)."
         }
       }
     },
