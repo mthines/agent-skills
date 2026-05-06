@@ -252,10 +252,11 @@ export class SessionItem extends vscode.TreeItem {
 
     // contextValue encodes both artifact presence and PR state for menu conditions.
     // Format: claudeSession[WithArtifacts][WithPr]
+    // WithPr is set whenever a PR exists for this branch, regardless of the
+    // session's run state — so "Open PR" is available on running/needs-input
+    // sessions too, not just idle sessions whose displayStatus is pr-*.
     const prContextSuffix =
-      this.displayStatus === 'pr-open' || this.displayStatus === 'pr-merged'
-        ? 'WithPr'
-        : '';
+      options.prEnrichment?.status === 'pr' ? 'WithPr' : '';
     this.contextValue = hasLinks
       ? `claudeSessionWithArtifacts${prContextSuffix}`
       : `claudeSession${prContextSuffix}`;

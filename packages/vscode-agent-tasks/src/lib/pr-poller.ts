@@ -33,6 +33,7 @@ export interface BranchTarget {
 export class PrPoller {
   private timer: ReturnType<typeof setInterval> | undefined;
   private activeBranches: BranchTarget[] = [];
+  private readonly seenBranches = new Set<string>();
   private onChanged: (() => void) | undefined;
 
   constructor(
@@ -64,6 +65,21 @@ export class PrPoller {
       .sort((a, b) => b.mtime - a.mtime)
       .slice(0, PR_POLLER_MAX_BRANCHES);
     this.activeBranches = sorted;
+
+    // Eagerly fetch enrichment for any branch we haven't seen before so the
+    // user sees PR status well before the first 90s tick. The cache itself
+    // is rate-limited (60s per branch), so this is cheap on subsequent calls.
+    const fresh = sorted.filter((b) => !this.seenBranches.has(b.branch));
+    if (fresh.length === 0) return;
+    for (const b of fresh) this.seenBranches.add(b.branch);
+    void this.fetchAndNotify(fresh);
+  }
+
+  private async fetchAndNotify(branches: BranchTarget[]): Promise<void> {
+    await Promise.all(
+      branches.map((b) => this.cache.fetchEnrichment(b.branch, b.worktreePath))
+    );
+    this.onChanged?.();
   }
 
   private async poll(): Promise<void> {
