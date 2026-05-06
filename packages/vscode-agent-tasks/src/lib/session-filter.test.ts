@@ -93,18 +93,26 @@ describe('applySessionFilter — defaults', () => {
   });
 });
 
-describe('applySessionFilter — always-show rule', () => {
-  it('never hides running, needs-input, unread regardless of any flag', () => {
+describe('applySessionFilter — showActive', () => {
+  it('shows running, needs-input, unread when showActive=true', () => {
+    const sessions = [s('running'), s('needs-input'), s('unread')];
+    const result = applySessionFilter(sessions, DEFAULT_SESSION_FILTER);
+    expect(result.visible).toHaveLength(3);
+  });
+
+  it('hides running, needs-input, unread when showActive=false', () => {
     const filter: SessionFilter = {
-      showOpenPr: false,
+      showActive: false,
+      showOpenPr: true,
       showMergedClosedPr: false,
       showIdleNoPr: false,
       showStalled: false,
     };
-    const sessions = [s('running'), s('needs-input'), s('unread')];
+    const sessions = [s('running'), s('needs-input'), s('unread'), s('idle', prOpen)];
     const result = applySessionFilter(sessions, filter);
-    expect(result.visible).toHaveLength(3);
-    expect(result.hiddenCount).toBe(0);
+    expect(result.visible).toHaveLength(1);
+    expect(result.visible[0]?.prEnrichment).toBe(prOpen);
+    expect(result.hiddenByCategory.active).toBe(3);
   });
 });
 
@@ -128,6 +136,7 @@ describe('applySessionFilter — single-purpose toggles', () => {
   it('showMergedClosedPr controls only the merged-closed bucket', () => {
     const sessions = [s('idle', prOpen), s('idle', prMerged), s('idle', prClosed)];
     const result = applySessionFilter(sessions, {
+      showActive: true,
       showOpenPr: false,
       showMergedClosedPr: true,
       showIdleNoPr: false,
@@ -140,6 +149,7 @@ describe('applySessionFilter — single-purpose toggles', () => {
   it('showIdleNoPr controls only the idle-no-pr bucket', () => {
     const sessions = [s('idle', prOpen), s('idle'), s('idle', loading)];
     const result = applySessionFilter(sessions, {
+      showActive: true,
       showOpenPr: false,
       showMergedClosedPr: false,
       showIdleNoPr: true,
@@ -151,6 +161,7 @@ describe('applySessionFilter — single-purpose toggles', () => {
   it('showStalled controls only the stalled bucket', () => {
     const sessions = [s('stalled'), s('idle', prOpen), s('idle')];
     const result = applySessionFilter(sessions, {
+      showActive: true,
       showOpenPr: false,
       showMergedClosedPr: false,
       showIdleNoPr: false,
@@ -167,6 +178,7 @@ describe('isFilterActive', () => {
   });
 
   it('returns true when any flag deviates from defaults', () => {
+    expect(isFilterActive({ ...DEFAULT_SESSION_FILTER, showActive: false })).toBe(true);
     expect(isFilterActive({ ...DEFAULT_SESSION_FILTER, showOpenPr: false })).toBe(true);
     expect(isFilterActive({ ...DEFAULT_SESSION_FILTER, showStalled: true })).toBe(true);
     expect(isFilterActive({ ...DEFAULT_SESSION_FILTER, showMergedClosedPr: true })).toBe(true);

@@ -2,18 +2,21 @@
  * Pure session-filter helper. No VS Code imports — vitest-safe.
  *
  * Inclusion model: each filter flag enables a single, mutually exclusive
- * session category. A session is visible iff it is in the always-show set
- * (running, needs-input, unread) OR matches any enabled category.
+ * session category. A session is visible iff its category is enabled.
  *
- * The categories are defined so they cover every (status × pr-state) combo
- * exactly once, which keeps the QuickPick UI honest — every checkbox controls
- * one specific kind of row, never compound semantics.
+ * The categories cover every (status × pr-state) combo exactly once, which
+ * keeps the QuickPick UI honest — every checkbox controls one specific kind
+ * of row, never compound semantics. Even the `active` bucket (running,
+ * needs-input, unread) is a togglable category so the user has full control;
+ * it just defaults on because hiding it is rarely what anyone wants.
  */
 
 import type { SessionStatus } from '../parsers/session-jsonl-parser';
 import type { PrEnrichment } from './pr-status-cache';
 
 export interface SessionFilter {
+  /** Show running, needs-input, and unread sessions. */
+  showActive: boolean;
   /** Show idle sessions whose branch has an open or draft PR. */
   showOpenPr: boolean;
   /** Show idle sessions whose PR has been merged or closed. */
@@ -29,6 +32,7 @@ export interface SessionFilter {
  * sessions that have an open PR. Everything else is opt-in.
  */
 export const DEFAULT_SESSION_FILTER: SessionFilter = {
+  showActive: true,
   showOpenPr: true,
   showMergedClosedPr: false,
   showIdleNoPr: false,
@@ -56,19 +60,19 @@ export interface FilterResult<T extends FilterableSession> {
   hiddenByCategory: Record<Category, number>;
 }
 
-const ALWAYS_SHOW: ReadonlySet<SessionStatus> = new Set<SessionStatus>([
+const ACTIVE_STATUSES: ReadonlySet<SessionStatus> = new Set<SessionStatus>([
   'running',
   'needs-input',
   'unread',
 ]);
 
 /**
- * Categorise a session. Each session resolves to exactly one category — the
- * always-show statuses bucket as `active`; otherwise the PR state determines
- * the bucket; falling through to `stalled` or `idle-no-pr`.
+ * Categorise a session. Each session resolves to exactly one category. The
+ * `active` bucket covers running/needs-input/unread; otherwise PR state
+ * determines the bucket, falling through to `stalled` or `idle-no-pr`.
  */
 export function categorise(session: FilterableSession): Category {
-  if (ALWAYS_SHOW.has(session.status)) return 'active';
+  if (ACTIVE_STATUSES.has(session.status)) return 'active';
   if (session.status === 'stalled') return 'stalled';
 
   // status is now 'idle' (the only remaining SessionStatus).
@@ -84,7 +88,7 @@ export function categorise(session: FilterableSession): Category {
 function isCategoryEnabled(category: Category, filter: SessionFilter): boolean {
   switch (category) {
     case 'active':
-      return true;
+      return filter.showActive;
     case 'open-pr':
       return filter.showOpenPr;
     case 'merged-closed-pr':
@@ -124,6 +128,7 @@ export function applySessionFilter<T extends FilterableSession>(
   }
 
   const hiddenCount =
+    hiddenByCategory.active +
     hiddenByCategory['open-pr'] +
     hiddenByCategory['merged-closed-pr'] +
     hiddenByCategory['idle-no-pr'] +
@@ -135,6 +140,7 @@ export function applySessionFilter<T extends FilterableSession>(
 /** True when the filter differs from the documented defaults. */
 export function isFilterActive(filter: SessionFilter): boolean {
   return (
+    filter.showActive !== DEFAULT_SESSION_FILTER.showActive ||
     filter.showOpenPr !== DEFAULT_SESSION_FILTER.showOpenPr ||
     filter.showMergedClosedPr !== DEFAULT_SESSION_FILTER.showMergedClosedPr ||
     filter.showIdleNoPr !== DEFAULT_SESSION_FILTER.showIdleNoPr ||
@@ -154,6 +160,7 @@ export function describeFilter<T extends FilterableSession>(
   if (result.hiddenCount === 0) return undefined;
 
   const parts: string[] = [];
+  if (result.hiddenByCategory.active > 0) parts.push('active');
   if (result.hiddenByCategory['idle-no-pr'] > 0) parts.push('idle');
   if (result.hiddenByCategory['merged-closed-pr'] > 0) parts.push('merged/closed PRs');
   if (result.hiddenByCategory['open-pr'] > 0) parts.push('open PRs');

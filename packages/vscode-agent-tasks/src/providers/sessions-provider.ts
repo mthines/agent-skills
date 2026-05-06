@@ -665,6 +665,7 @@ export type SessionsScope = 'current' | 'all';
 export function readSessionFilter(): SessionFilter {
   const cfg = vscode.workspace.getConfiguration('agentTasks.sessions.filter');
   return {
+    showActive: cfg.get<boolean>('showActive', DEFAULT_SESSION_FILTER.showActive),
     showOpenPr: cfg.get<boolean>('showOpenPr', DEFAULT_SESSION_FILTER.showOpenPr),
     showMergedClosedPr: cfg.get<boolean>(
       'showMergedClosedPr',

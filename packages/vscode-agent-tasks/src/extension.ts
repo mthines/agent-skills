@@ -19,12 +19,7 @@ import { ArtifactWatcher } from './watchers/artifact-watcher';
 import { SessionsProvider, SessionItem } from './providers/sessions-provider';
 import { SessionWatcher } from './watchers/session-watcher';
 import { HookEventWatcher } from './watchers/hook-event-watcher';
-import {
-  PluginInstaller,
-  removeSentinel,
-  isSentinelPresent,
-  setHooksDormantContext,
-} from './lib/plugin-installer';
+import { PluginInstaller, removeSentinel, isSentinelPresent, setHooksDormantContext } from './lib/plugin-installer';
 import { initLogger, log, logError } from './lib/logger';
 import { parsePsOutput, findClaudeDescendant, claimPendingAdoption, type PendingAdoption } from './lib/process-tree';
 import type { SessionMetadata } from './parsers/session-jsonl-parser';
@@ -252,9 +247,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // ever spawned.
   // -------------------------------------------------------------------------
 
-  const prLinkageEnabled = vscode.workspace
-    .getConfiguration('agentTasks.sessions')
-    .get<boolean>('prLinkage', true);
+  const prLinkageEnabled = vscode.workspace.getConfiguration('agentTasks.sessions').get<boolean>('prLinkage', true);
 
   let prStatusCache: PrStatusCache | null = null;
   let prPoller: PrPoller | null = null;
@@ -266,7 +259,7 @@ export function activate(context: vscode.ExtensionContext): void {
       () => {
         void vscode.window.showInformationMessage(
           'Agent Tasks: Install the gh CLI to see PR status in the Sessions panel. ' +
-          'Once installed, reload VS Code to activate PR linkage.'
+            'Once installed, reload VS Code to activate PR linkage.'
         );
       },
       { log }
@@ -343,75 +336,77 @@ export function activate(context: vscode.ExtensionContext): void {
   });
 
   // "Filter Sessions…" — multi-select QuickPick. Each checkbox controls
-  // exactly one session category (inclusion model). Active sessions
-  // (running, needs-input, unread) are always shown and are not in the list.
-  const sessionsOpenFilterCmd = vscode.commands.registerCommand(
-    'agentTasks.sessions.openFilter',
-    async () => {
-      const cfg = vscode.workspace.getConfiguration('agentTasks.sessions.filter');
-      const showOpenPr = cfg.get<boolean>('showOpenPr', true);
-      const showMergedClosedPr = cfg.get<boolean>('showMergedClosedPr', false);
-      const showIdleNoPr = cfg.get<boolean>('showIdleNoPr', false);
-      const showStalled = cfg.get<boolean>('showStalled', false);
+  // exactly one session category (inclusion model). Even the active bucket
+  // is togglable so the user has full control; it just defaults on.
+  const sessionsOpenFilterCmd = vscode.commands.registerCommand('agentTasks.sessions.openFilter', async () => {
+    const cfg = vscode.workspace.getConfiguration('agentTasks.sessions.filter');
+    const showActive = cfg.get<boolean>('showActive', true);
+    const showOpenPr = cfg.get<boolean>('showOpenPr', true);
+    const showMergedClosedPr = cfg.get<boolean>('showMergedClosedPr', false);
+    const showIdleNoPr = cfg.get<boolean>('showIdleNoPr', false);
+    const showStalled = cfg.get<boolean>('showStalled', false);
 
-      type Item = vscode.QuickPickItem & { id: string };
-      const items: Item[] = [
-        {
-          id: 'openPr',
-          label: '$(git-pull-request) With an open PR',
-          picked: showOpenPr,
-        },
-        {
-          id: 'mergedClosedPr',
-          label: '$(git-merge) With a merged or closed PR',
-          picked: showMergedClosedPr,
-        },
-        {
-          id: 'idleNoPr',
-          label: '$(circle-outline) Idle, no PR',
-          picked: showIdleNoPr,
-        },
-        {
-          id: 'stalled',
-          label: '$(warning) Stalled',
-          picked: showStalled,
-        },
-      ];
+    type Item = vscode.QuickPickItem & { id: string };
+    const items: Item[] = [
+      {
+        id: 'active',
+        label: '$(pulse) Active',
+        picked: showActive,
+      },
+      {
+        id: 'openPr',
+        label: '$(git-pull-request) With an open PR',
+        picked: showOpenPr,
+      },
+      {
+        id: 'mergedClosedPr',
+        label: '$(git-merge) With a merged or closed PR',
+        picked: showMergedClosedPr,
+      },
+      {
+        id: 'idleNoPr',
+        label: '$(circle-outline) Idle, no PR',
+        picked: showIdleNoPr,
+      },
+      {
+        id: 'stalled',
+        label: '$(warning) Stalled',
+        picked: showStalled,
+      },
+    ];
 
-      const picked = await vscode.window.showQuickPick(items, {
-        canPickMany: true,
-        title: 'Show sessions',
-        placeHolder: 'Active sessions (running, waiting for input, unread) are always shown',
-      });
-      if (!picked) return;
+    const picked = await vscode.window.showQuickPick(items, {
+      canPickMany: true,
+      title: 'Show sessions',
+      placeHolder: 'Each row controls one category. Active = running, waiting for input, unread.',
+    });
+    if (!picked) return;
 
-      const ids = new Set(picked.map((p) => p.id));
-      await cfg.update('showOpenPr', ids.has('openPr'), vscode.ConfigurationTarget.Global);
-      await cfg.update('showMergedClosedPr', ids.has('mergedClosedPr'), vscode.ConfigurationTarget.Global);
-      await cfg.update('showIdleNoPr', ids.has('idleNoPr'), vscode.ConfigurationTarget.Global);
-      await cfg.update('showStalled', ids.has('stalled'), vscode.ConfigurationTarget.Global);
-      log(
-        `Command: sessions.openFilter → openPr=${ids.has('openPr')} mergedClosed=${ids.has('mergedClosedPr')} idleNoPr=${ids.has('idleNoPr')} stalled=${ids.has('stalled')}`
-      );
-      sessionsProvider.refresh();
-    }
-  );
+    const ids = new Set(picked.map((p) => p.id));
+    await cfg.update('showActive', ids.has('active'), vscode.ConfigurationTarget.Global);
+    await cfg.update('showOpenPr', ids.has('openPr'), vscode.ConfigurationTarget.Global);
+    await cfg.update('showMergedClosedPr', ids.has('mergedClosedPr'), vscode.ConfigurationTarget.Global);
+    await cfg.update('showIdleNoPr', ids.has('idleNoPr'), vscode.ConfigurationTarget.Global);
+    await cfg.update('showStalled', ids.has('stalled'), vscode.ConfigurationTarget.Global);
+    log(
+      `Command: sessions.openFilter → active=${ids.has('active')} openPr=${ids.has('openPr')} mergedClosed=${ids.has('mergedClosedPr')} idleNoPr=${ids.has('idleNoPr')} stalled=${ids.has('stalled')}`
+    );
+    sessionsProvider.refresh();
+  });
 
   // "Show all" — flip every category on so the user sees the full set.
   // Wired to the muted footer row at the bottom of the tree.
-  const sessionsResetFilterCmd = vscode.commands.registerCommand(
-    'agentTasks.sessions.resetFilter',
-    async () => {
-      const cfg = vscode.workspace.getConfiguration('agentTasks.sessions.filter');
-      await cfg.update('showOpenPr', true, vscode.ConfigurationTarget.Global);
-      await cfg.update('showMergedClosedPr', true, vscode.ConfigurationTarget.Global);
-      await cfg.update('showIdleNoPr', true, vscode.ConfigurationTarget.Global);
-      await cfg.update('showStalled', true, vscode.ConfigurationTarget.Global);
-      log('Command: sessions.resetFilter (Show all)');
-      sessionsProvider.refresh();
-      vscode.window.setStatusBarMessage('Sessions: showing all categories', 2500);
-    }
-  );
+  const sessionsResetFilterCmd = vscode.commands.registerCommand('agentTasks.sessions.resetFilter', async () => {
+    const cfg = vscode.workspace.getConfiguration('agentTasks.sessions.filter');
+    await cfg.update('showActive', true, vscode.ConfigurationTarget.Global);
+    await cfg.update('showOpenPr', true, vscode.ConfigurationTarget.Global);
+    await cfg.update('showMergedClosedPr', true, vscode.ConfigurationTarget.Global);
+    await cfg.update('showIdleNoPr', true, vscode.ConfigurationTarget.Global);
+    await cfg.update('showStalled', true, vscode.ConfigurationTarget.Global);
+    log('Command: sessions.resetFilter (Show all)');
+    sessionsProvider.refresh();
+    vscode.window.setStatusBarMessage('Sessions: showing all categories', 2500);
+  });
 
   // -------------------------------------------------------------------------
   // Hook event watcher — drives sub-second session state transitions via
@@ -510,9 +505,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     // Handle prLinkage toggle: update provider's prStatusCache reference.
     if (e.affectsConfiguration('agentTasks.sessions.prLinkage')) {
-      const enabled = vscode.workspace
-        .getConfiguration('agentTasks.sessions')
-        .get<boolean>('prLinkage', true);
+      const enabled = vscode.workspace.getConfiguration('agentTasks.sessions').get<boolean>('prLinkage', true);
       if (!enabled) {
         sessionsProvider.prStatusCache = null;
         sessionsProvider.prPoller = null;
@@ -527,9 +520,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // Handle hooks.enabled toggle: write or remove the sentinel file so the
     // hook script no-ops immediately without needing to uninstall the plugin.
     if (e.affectsConfiguration('agentTasks.hooks.enabled')) {
-      const enabled = vscode.workspace
-        .getConfiguration('agentTasks')
-        .get<boolean>('hooks.enabled', true);
+      const enabled = vscode.workspace.getConfiguration('agentTasks').get<boolean>('hooks.enabled', true);
       if (enabled) {
         // Re-enable: show the consent flow so the sentinel gets written
         const installer = new PluginInstaller();
@@ -739,15 +730,12 @@ export function activate(context: vscode.ExtensionContext): void {
   // Open PR in browser — shown in the context menu for sessions with a PR
   // (contextValue ends with "WithPr"). Reads the PR URL from the item's
   // cached prEnrichment and opens it in the default browser.
-  const openPRCmd = vscode.commands.registerCommand(
-    'agentTasks.sessions.openPR',
-    (item: SessionItem) => {
-      const pr = item?.prEnrichment;
-      if (pr?.status !== 'pr') return;
-      void vscode.env.openExternal(vscode.Uri.parse(pr.info.url));
-      log(`openPR: ${pr.info.url}`);
-    }
-  );
+  const openPRCmd = vscode.commands.registerCommand('agentTasks.sessions.openPR', (item: SessionItem) => {
+    const pr = item?.prEnrichment;
+    if (pr?.status !== 'pr') return;
+    void vscode.env.openExternal(vscode.Uri.parse(pr.info.url));
+    log(`openPR: ${pr.info.url}`);
+  });
 
   // Variant invoked by the PrLinkItem child rows (Plan/Walkthrough sibling).
   // The argument is a small payload — branch + worktreePath + optional URL —
@@ -868,9 +856,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Seed the dormant context key synchronously so the welcome view and
   // title-bar action render correctly on the first paint, before the deferred
   // ensurePluginInstalled() runs.
-  const initialEnabled = vscode.workspace
-    .getConfiguration('agentTasks')
-    .get<boolean>('hooks.enabled', true);
+  const initialEnabled = vscode.workspace.getConfiguration('agentTasks').get<boolean>('hooks.enabled', true);
   void setHooksDormantContext(!initialEnabled || !isSentinelPresent());
 
   void Promise.resolve().then(() => installer.ensurePluginInstalled(context));
@@ -887,10 +873,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Command: re-trigger consent + install. Surfaced via the welcome view link,
   // the title-bar $(zap) action when hooks are dormant, and the command
   // palette ("Agent Tasks: Turn on live session updates").
-  const enableHooksCmd = vscode.commands.registerCommand(
-    'agentTasks.hooks.enable',
-    () => installer.reEnable(context)
-  );
+  const enableHooksCmd = vscode.commands.registerCommand('agentTasks.hooks.enable', () => installer.reEnable(context));
 
   context.subscriptions.push(
     agentTasksView,
