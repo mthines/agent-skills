@@ -8,14 +8,17 @@
  * URI scheme. SessionItem sets that URI on every leaf row; we look up the
  * status in a Map injected by SessionsProvider on each refresh.
  *
- * Color mapping (uses VS Code theme colours so it adapts to light/dark themes).
- * Only states that require user action are coloured — `running` is neutral
- * grey because the agent is just working and the user has nothing to do.
+ * Colouring: VS Code's FileDecoration.color tints BOTH the badge AND the
+ * row's label text — that bleeds the activity colour onto every word in the
+ * row and makes the panel visually shouty. To get a coloured dot WITHOUT
+ * recolouring the label, we use coloured emoji glyphs as the badge text
+ * (intrinsic colour, no `color` field). The label stays in the theme's
+ * default foreground.
  *
- *   running     → descriptionForeground (neutral grey/white)
- *   needs-input → charts.yellow         (waiting on you — act now)
- *   unread      → charts.blue           (finished while you were away — review)
- *   stalled     → charts.orange         (stuck — investigate)
+ *   running     → ⚪ (white circle)  — agent working, no action needed
+ *   needs-input → 🟡                — waiting on you, act now
+ *   unread      → 🔵                — finished while you were away, review
+ *   stalled     → 🟠                — stuck, investigate
  *
  * Idle sessions get no decoration — that's the default state.
  */
@@ -30,34 +33,16 @@ export function sessionUri(sessionId: string): vscode.Uri {
 }
 
 interface ActivityBadge {
+  /** Single emoji glyph — its colour is intrinsic to the codepoint. */
   badge: string;
-  color: vscode.ThemeColor;
   tooltip: string;
 }
 
 const ACTIVITY: Partial<Record<SessionStatus, ActivityBadge>> = {
-  running: {
-    badge: '●',
-    // Neutral colour — running means the agent is working, not that you
-    // need to do anything. Reserve hot colours for states that demand action.
-    color: new vscode.ThemeColor('descriptionForeground'),
-    tooltip: 'Running',
-  },
-  'needs-input': {
-    badge: '●',
-    color: new vscode.ThemeColor('charts.yellow'),
-    tooltip: 'Waiting for input',
-  },
-  unread: {
-    badge: '●',
-    color: new vscode.ThemeColor('charts.blue'),
-    tooltip: 'Unread',
-  },
-  stalled: {
-    badge: '●',
-    color: new vscode.ThemeColor('charts.orange'),
-    tooltip: 'Stalled',
-  },
+  running: { badge: '⚪', tooltip: 'Running' },
+  'needs-input': { badge: '🟡', tooltip: 'Waiting for input' },
+  unread: { badge: '🔵', tooltip: 'Unread' },
+  stalled: { badge: '🟠', tooltip: 'Stalled' },
 };
 
 export class SessionActivityDecorationProvider
@@ -92,9 +77,10 @@ export class SessionActivityDecorationProvider
     if (!cfg) return undefined;
     return {
       badge: cfg.badge,
-      color: cfg.color,
       tooltip: cfg.tooltip,
       // Don't propagate to parent — only the row itself gets the dot.
+      // Deliberately no `color` — VS Code would tint the row label text
+      // and we want only the badge glyph to carry colour (via emoji).
       propagate: false,
     };
   }
