@@ -14,6 +14,16 @@ tags:
 A function signature is the UI for every caller — including future you and the agent reading this code in six months.
 Bad ergonomics here cost callers forever; good ergonomics make the call site read like prose.
 
+## Contents
+
+- 1. Parameter Order
+- 2. Defaults at the Right Layer
+- 3. Sync vs. Async Consistency
+- 4. Total Functions: Every Input Has a Defined Output
+- 5. Designing the Error Type System
+- 6. Tell, Don't Ask (and Demeter-Light)
+- 7. Reading Order Within a File
+
 ## 1. Parameter Order
 
 Decidable rules:

@@ -14,6 +14,18 @@ safety. The right approach is: validate strictly at system boundaries,
 trust your own code internally, and let unexpected states surface as
 errors instead of being silently swallowed.
 
+## Contents
+
+- Where to Validate
+- Schema-First Validation (Parse, Don't Validate)
+- Fail Fast and Loudly
+- Error Messages
+- Error Types
+- Try/Catch Discipline
+- Null / Undefined Handling
+- Logging
+- Retries
+
 ## Where to Validate
 
 ### At Boundaries (always)

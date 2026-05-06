@@ -12,6 +12,31 @@ tags:
 Named refactors so reviews can cite a recipe by ID instead of describing it from scratch.
 "Apply R1 (Consolidate Parallel Maps)" is faster, more actionable, and less ambiguous than free-form prose.
 
+## Contents
+
+- How to use this catalog
+- R1: Consolidate Parallel Maps
+- R2: Hoist Shared Constant
+- R3: Replace Conditional with Lookup
+- R4: Extract Guarded Function
+- R5: Co-locate Type with Operations
+- R6: Replace Type Declaration with Inferred Type
+- R7: Replace Validation with Schema
+- R8: Push Impurity Outward
+- R9: Inject the Clock / RNG / IDs
+- R10: Total-ise the Function
+- R11: Brand the Primitive
+- R12: Discriminate the Error Union
+- R13: Inline the Premature Sub-Schema
+- R14: Replace Boolean Parameter with Two Functions
+- R15: Lift Illegal State Out of the Type
+- R16: Extract by Abstraction Level
+- R17: Justify or Remove the `any`
+- R18: Make the Operation Idempotent
+- R19: Money to Minor Units
+- R20: Factory over Side-Effecting Import
+- Recipe Index by File
+
 ## How to use this catalog
 
 In review output:

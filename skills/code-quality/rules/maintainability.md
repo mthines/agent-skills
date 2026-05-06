@@ -18,6 +18,15 @@ This rule covers three levers that move that cost the most: reuse, single source
 It sits in deliberate tension with `functions.md` ("avoid premature generalization") and the "DRY vs. clarity" default in `SKILL.md`.
 The resolution is in **When to reuse vs. when to duplicate** below — read it before extracting or consolidating.
 
+## Contents
+
+- 1. Reuse Before Creating
+- 2. Single Source of Truth for Union-Type Data
+- 3. Locality of Change
+- 4. When to Reuse vs. When to Duplicate
+- 5. Quick Maintainability Heuristics
+- What Maintainability Is Not
+
 ## 1. Reuse Before Creating
 
 Before writing a helper, formatter, validator, type, constant, or hook, **search the codebase for one that already exists**.

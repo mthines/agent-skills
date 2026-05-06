@@ -14,6 +14,13 @@ Abstractions earn their keep when they make code easier to understand and easier
 Premature, mis-levelled, or over-generic abstractions make code harder.
 This rule covers the four abstraction decisions that come up while writing code: levels within a function, the type system as a design surface, generics, and type escape hatches.
 
+## Contents
+
+- 1. One Level of Abstraction Per Function
+- 2. Type-Driven Design — Make Illegal States Unrepresentable
+- 3. Generics — Parameterise Behaviour, Not Data Shapes
+- 4. Type Escape Hatches: `any`, `unknown`, and Casts
+
 ## 1. One Level of Abstraction Per Function
 
 A function should mix instructions at one level of detail.

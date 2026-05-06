@@ -14,6 +14,16 @@ Code is easier to understand when it reads top-to-bottom with minimal
 branching. The reader's job is to track "what happens next?" — every level
 of nesting and every long branch makes that harder.
 
+## Contents
+
+- Guard Clauses (the most valuable refactor)
+- Drop `else` After `return` / `throw`
+- Cap Nesting at 2 Levels
+- Replace Long `if/else if` Chains with Lookups
+- Don't Over-Compress with Ternaries
+- Keep Loop Bodies Short
+- Switch Statements
+
 ## Guard Clauses (the most valuable refactor)
 
 A guard clause is a check at the top of a function that exits early if a

@@ -16,6 +16,19 @@ tags:
 Categories of bugs that no general principle catches but that disproportionately ship.
 Each section is short on theory and long on rules — these are the things to enforce, not debate.
 
+## Contents
+
+- 1. Idempotency
+- 2. Money — Never `number`
+- 3. Floats: Equality Needs Epsilon
+- 4. Dates and Time
+- 5. Identifiers
+- 6. Encoding
+- 7. Determinism
+- 8. Pre/Post Conditions, Invariants, Assertions
+- 9. Async and Concurrency
+- 10. Resource Management
+
 ## 1. Idempotency
 
 Any operation that may be retried — HTTP POST, queue handler, RPC, file write, payment — must be safe to invoke twice.

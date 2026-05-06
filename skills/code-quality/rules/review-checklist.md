@@ -13,6 +13,27 @@ Use this when invoked in review mode (refactoring, PR review, or "clean
 this up" requests). Walk through the file methodically; surface findings
 prioritized by impact.
 
+## Contents
+
+- Pre-Read
+- Pass 1: Structure
+- Pass 2: Naming
+- Pass 3: Cognitive Complexity
+- Pass 4: Comments
+- Pass 5: Error Handling
+- Pass 6: Performance (only if relevant)
+- Pass 7: Maintainability & Reuse
+- Pass 8: Abstraction & Type-Driven Design
+- Pass 9: Architecture
+- Pass 10: API Design
+- Pass 11: Correctness Hotspots
+- Pass 12: Testability
+- Pass 13: Collaboration
+- Pass 14: Future-Proofing Smell
+- Output Format
+- When to Stop
+- Tone
+
 ## Pre-Read
 
 Before forming opinions:

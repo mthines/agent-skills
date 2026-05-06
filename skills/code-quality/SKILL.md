@@ -1,43 +1,29 @@
 ---
 name: code-quality
 description: >
-  Code quality skill for writing and reviewing code optimized for low cognitive
-  complexity, readability, and long-term maintainability. Applies guard clauses,
-  early returns, clear naming, single-responsibility functions, single level of
-  abstraction per function, type-driven design (make illegal states
-  unrepresentable, branded primitives, discriminated unions), reuse of existing
-  utilities, single source of truth for union-type metadata (one map instead of
-  N parallel maps), schema-first validation with type inference (Zod /
-  Pydantic / valibot — define the schema once, infer the type from it), total
-  functions and structured error type design, functional core + imperative
-  shell, DTO / domain / persistence separation, dependency injection of clock
-  / RNG / IDs for testability, idempotency for retryable operations, money in
-  minor units, small change footprints, neighbour-pattern symmetry, and
-  pragmatic performance choices. Pairs with the `tdd` skill: when authoring
-  new functions, invoke `tdd` to drive the implementation through
-  RED-GREEN-REFACTOR while applying these rules. Grounded in research from
-  SonarSource (Cognitive Complexity), Robert C. Martin's Clean Code, Knuth's
-  guidance on optimization, Alexis King ("Parse, Don't Validate"), and Gary
-  Bernhardt ("Functional Core, Imperative Shell"). Use this skill whenever writing, refactoring, or reviewing code
-  — especially during the GREEN and REFACTOR phases of TDD, code reviews, or
-  whenever the user asks to "improve quality", "make this readable", "reduce
-  complexity", "make this easier to maintain", "deduplicate", "clean this up",
-  "refactor for clarity", or "/code-quality".
+  Authors and reviews code for low cognitive complexity, readability, and
+  long-term maintainability. Applies guard clauses, early returns,
+  single-responsibility functions, type-driven design (illegal states
+  unrepresentable, branded primitives, discriminated unions), schema-first
+  validation with type inference (Zod / Pydantic), single source of truth
+  for union-type metadata, functional core + imperative shell, total
+  functions, idempotency for retryable ops, money in minor units, and
+  neighbour-pattern symmetry. Pairs with `tdd` for new code (drives
+  RED-GREEN-REFACTOR; rules apply in GREEN/REFACTOR). Use during PR
+  review, after writing new code, the GREEN/REFACTOR phases of TDD, or
+  when asked to "improve quality", "make this readable", "reduce
+  complexity", "deduplicate", "clean this up", or "/code-quality".
+  Citations and research grounding in `references/citations.md`.
 disable-model-invocation: true
 license: MIT
 metadata:
   author: mthines
-  version: '1.2.0'
-  workflow_type: advisory-and-applied
+  version: '1.3.0'
+  workflow_type: advisory
   tags:
     - code-quality
-    - readability
     - cognitive-complexity
-    - clean-code
-    - refactoring
-    - guard-clauses
     - maintainability
-    - reuse
     - single-source-of-truth
     - type-driven-design
     - functional-core
@@ -83,7 +69,10 @@ Cognitive complexity — how hard code is to understand — is the single best
 proxy for long-term maintainability. SonarSource's research showed that
 cyclomatic complexity (path counting) misses what actually hurts humans:
 nesting, broken linear flow, and decisions that compound. So the rules below
-target cognitive load, not theoretical complexity scores.
+target cognitive load, not theoretical complexity scores. Full citations
+(SonarSource, Clean Code, Knuth, Alexis King, Gary Bernhardt) and the
+research grounding for each rule live in
+[`references/citations.md`](./references/citations.md).
 
 When in doubt, the heuristic is: **can a reader understand this function
 top-to-bottom on one pass without backtracking?** If yes, ship it. If they
