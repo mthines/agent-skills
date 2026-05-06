@@ -261,18 +261,25 @@ export function activate(context: vscode.ExtensionContext): void {
 
   if (prLinkageEnabled) {
     const ghExecutor = new SystemGhExecutor();
-    prStatusCache = new PrStatusCache(ghExecutor, () => {
-      void vscode.window.showInformationMessage(
-        'Agent Tasks: Install the gh CLI to see PR status in the Sessions panel. ' +
-        'Once installed, reload VS Code to activate PR linkage.'
-      );
-    });
-    prPoller = new PrPoller(prStatusCache);
+    prStatusCache = new PrStatusCache(
+      ghExecutor,
+      () => {
+        void vscode.window.showInformationMessage(
+          'Agent Tasks: Install the gh CLI to see PR status in the Sessions panel. ' +
+          'Once installed, reload VS Code to activate PR linkage.'
+        );
+      },
+      { log }
+    );
+    prPoller = new PrPoller(prStatusCache, { log });
     prPoller.onPrStatusChanged(() => {
       sessionsProvider.refresh();
     });
     sessionsProvider.prStatusCache = prStatusCache;
     sessionsProvider.prPoller = prPoller;
+    log('PR linkage enabled — polling every 90s, eager fetch on new branches');
+  } else {
+    log('PR linkage disabled via agentTasks.sessions.prLinkage setting');
   }
 
   const sessionsView = vscode.window.createTreeView('agentSessionsExplorer', {
@@ -671,6 +678,46 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   );
 
+  // Variant invoked by the PrLinkItem child rows (Plan/Walkthrough sibling).
+  // The argument is a small payload — branch + worktreePath + optional URL —
+  // so the row can hand off without depending on the parent SessionItem.
+  const openPRForBranchCmd = vscode.commands.registerCommand(
+    'agentTasks.sessions.openPRForBranch',
+    async (arg: { branch: string; worktreePath: string; prUrl?: string }) => {
+      if (arg?.prUrl) {
+        log(`openPRForBranch: ${arg.prUrl}`);
+        void vscode.env.openExternal(vscode.Uri.parse(arg.prUrl));
+        return;
+      }
+      // Fallback: shell out to `gh pr view --web` so we still open the right
+      // PR even if cache enrichment hadn't loaded yet.
+      log(`openPRForBranch: no cached URL, shelling out to gh for branch=${arg.branch}`);
+      const term = vscode.window.createTerminal({
+        name: `Open PR for ${arg.branch}`,
+        cwd: arg.worktreePath,
+      });
+      // Branch names cannot contain shell metacharacters per git's refname
+      // rules, so direct interpolation is safe here.
+      term.sendText(`gh pr view '${arg.branch}' --web && exit`, true);
+      term.show();
+    }
+  );
+
+  // "Create Pull Request" — opens the GitHub PR-creation page for the branch
+  // via `gh pr create --web`. Used when no PR exists yet for the branch.
+  const createPRForBranchCmd = vscode.commands.registerCommand(
+    'agentTasks.sessions.createPRForBranch',
+    async (arg: { branch: string; worktreePath: string }) => {
+      log(`createPRForBranch: branch=${arg.branch} worktree=${arg.worktreePath}`);
+      const term = vscode.window.createTerminal({
+        name: `Create PR for ${arg.branch}`,
+        cwd: arg.worktreePath,
+      });
+      term.sendText(`gh pr create --web && exit`, true);
+      term.show();
+    }
+  );
+
   const findSessionCmd = vscode.commands.registerCommand('agentTasks.sessions.find', async () => {
     log('Command: sessions.find');
     const sessions = sessionsProvider.getAllSessions();
@@ -805,6 +852,8 @@ export function activate(context: vscode.ExtensionContext): void {
     newSessionCmd,
     enableHooksCmd,
     openPRCmd,
+    openPRForBranchCmd,
+    createPRForBranchCmd,
     // PR status cache + poller (optional — null when prLinkage is disabled)
     ...(prStatusCache ? [prStatusCache] : []),
     ...(prPoller ? [prPoller] : [])

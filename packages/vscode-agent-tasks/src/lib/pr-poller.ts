@@ -35,12 +35,14 @@ export class PrPoller {
   private activeBranches: BranchTarget[] = [];
   private readonly seenBranches = new Set<string>();
   private onChanged: (() => void) | undefined;
+  private readonly log: (message: string) => void;
 
   constructor(
     private readonly cache: PrStatusCache,
-    options: { intervalMs?: number } = {}
+    options: { intervalMs?: number; log?: (message: string) => void } = {}
   ) {
     const intervalMs = options.intervalMs ?? PR_POLLER_INTERVAL_MS;
+    this.log = options.log ?? (() => undefined);
     this.timer = setInterval(() => {
       void this.poll();
     }, intervalMs);
@@ -72,6 +74,9 @@ export class PrPoller {
     const fresh = sorted.filter((b) => !this.seenBranches.has(b.branch));
     if (fresh.length === 0) return;
     for (const b of fresh) this.seenBranches.add(b.branch);
+    this.log(
+      `PrPoller: eager fetch for ${fresh.length} new branch(es): ${fresh.map((b) => b.branch).join(', ')}`
+    );
     void this.fetchAndNotify(fresh);
   }
 
@@ -86,6 +91,7 @@ export class PrPoller {
     const branches = this.activeBranches;
     if (branches.length === 0) return;
 
+    this.log(`PrPoller: tick — refreshing ${branches.length} branch(es)`);
     await Promise.all(
       branches.map((b) => this.cache.fetchEnrichment(b.branch, b.worktreePath))
     );
