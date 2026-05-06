@@ -33,13 +33,13 @@ function hookEventToStatus(
     case 'UserPromptSubmit':
       return 'running';
     case 'Stop':
-      return isTerminalOpen ? 'needs-input' : 'unread';
+      return isTerminalOpen ? undefined : 'unread';
     case 'SessionStart':
       return 'running';
     case 'SessionEnd':
       return 'idle';
     case 'Notification':
-      return undefined;
+      return 'needs-input';
   }
 }
 
@@ -59,8 +59,12 @@ describe('hookEventToStatus', () => {
     expect(hookEventToStatus('Stop', false)).toBe('unread');
   });
 
-  it('returns "needs-input" for Stop when terminal IS open', () => {
-    expect(hookEventToStatus('Stop', true)).toBe('needs-input');
+  it('returns undefined for Stop when terminal IS open (no override)', () => {
+    // Stability: a Stop with the user watching is just "turn ended". We let
+    // the row fall through to Tier 1 (terminal open → running) or Tier 4
+    // (deriveRunState → idle once the terminal closes), rather than claim
+    // needs-input.
+    expect(hookEventToStatus('Stop', true)).toBeUndefined();
   });
 
   it('returns "running" for UserPromptSubmit regardless of terminal state', () => {
@@ -76,8 +80,9 @@ describe('hookEventToStatus', () => {
     expect(hookEventToStatus('SessionEnd', false)).toBe('idle');
   });
 
-  it('returns undefined for Notification (no status change)', () => {
-    expect(hookEventToStatus('Notification', false)).toBeUndefined();
+  it('returns "needs-input" for Notification — the explicit attention signal', () => {
+    expect(hookEventToStatus('Notification', false)).toBe('needs-input');
+    expect(hookEventToStatus('Notification', true)).toBe('needs-input');
   });
 });
 
@@ -142,14 +147,11 @@ describe('hook override TTL', () => {
 // ---------------------------------------------------------------------------
 
 describe('Notification hook event', () => {
-  it('returns undefined status so hookOverrides remain unchanged', () => {
-    // When hookEventToStatus returns undefined, the caller must NOT update hookOverrides.
-    // This is the idempotence guarantee: Notification never overwrites a prior status.
-    const result = hookEventToStatus('Notification', false);
-    expect(result).toBeUndefined();
+  it('returns "needs-input" — the only path to needs-input', () => {
+    expect(hookEventToStatus('Notification', false)).toBe('needs-input');
   });
 
-  it('returns undefined regardless of terminal state', () => {
-    expect(hookEventToStatus('Notification', true)).toBeUndefined();
+  it('returns "needs-input" regardless of terminal state', () => {
+    expect(hookEventToStatus('Notification', true)).toBe('needs-input');
   });
 });

@@ -168,6 +168,13 @@ export const NEEDS_INPUT_TTL_MS = 60 * 60 * 1000; // 1 hour
  * Pure helper. Combines the parser's `turnEnded` signal (real JSONL semantics)
  * with file mtime to derive a stable run-state. The provider layers terminal-
  * open / closed-after-mtime overrides on top.
+ *
+ * Stability over signal: `turnEnded` alone never produces `needs-input` —
+ * many turns end without actually requiring user input (e.g. the agent
+ * finishes a task and reports CI is green). `needs-input` is reserved for
+ * the explicit `Notification` hook from Claude Code; without hooks
+ * installed the panel will under-report `needs-input` rather than
+ * over-report it.
  */
 export function deriveRunState(
   turnEnded: boolean,
@@ -177,7 +184,6 @@ export function deriveRunState(
   const age = now - mtimeMs;
 
   if (turnEnded) {
-    if (age < NEEDS_INPUT_TTL_MS) return 'needs-input';
     return 'idle';
   }
 
