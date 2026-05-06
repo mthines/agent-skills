@@ -172,9 +172,9 @@ describe('emit-event.js', () => {
     const line = content.trim();
     const parsed = JSON.parse(line) as Record<string, unknown>;
 
-    // AC5: only allowed fields present
+    // AC5: only allowed fields present (including schemaVersion)
     const keys = Object.keys(parsed);
-    expect(keys.sort()).toEqual(['cwd', 'event', 'sessionId', 'ts'].sort());
+    expect(keys.sort()).toEqual(['cwd', 'event', 'schemaVersion', 'sessionId', 'ts'].sort());
     expect(parsed['event']).toBe('Stop');
     expect(parsed['sessionId']).toBe('my-session-id');
     expect(parsed['cwd']).toBe('/workspace/myproject');
@@ -204,13 +204,47 @@ describe('emit-event.js', () => {
     );
     const parsed = JSON.parse(content.trim()) as Record<string, unknown>;
 
-    // Only four allowed fields
+    // Only five allowed fields (including schemaVersion)
     const keys = Object.keys(parsed);
-    expect(keys.sort()).toEqual(['cwd', 'event', 'sessionId', 'ts'].sort());
+    expect(keys.sort()).toEqual(['cwd', 'event', 'schemaVersion', 'sessionId', 'ts'].sort());
     // Privacy fields must not be present
     expect(parsed['prompt']).toBeUndefined();
     expect(parsed['transcript_path']).toBeUndefined();
     expect(parsed['response']).toBeUndefined();
+  });
+
+  // ---- schemaVersion field ----
+
+  it('emits schemaVersion: 1 field in the event object', async () => {
+    fs.writeFileSync(sentinelPath, '');
+    const result = await runScript(
+      pluginDataDir,
+      makePayload({ hook_event_name: 'UserPromptSubmit', session_id: 'session-schema-test' })
+    );
+    expect(result.exitCode).toBe(0);
+
+    const eventsDir = path.join(pluginDataDir, 'events');
+    const content = fs.readFileSync(path.join(eventsDir, 'session-schema-test.ndjson'), 'utf8');
+    const parsed = JSON.parse(content.trim()) as Record<string, unknown>;
+    expect(parsed['schemaVersion']).toBe(1);
+  });
+
+  it('schemaVersion is a number (not a string)', async () => {
+    fs.writeFileSync(sentinelPath, '');
+    const result = await runScript(
+      pluginDataDir,
+      makePayload({ hook_event_name: 'Stop', session_id: 'session-schema-type-test' })
+    );
+    expect(result.exitCode).toBe(0);
+
+    const eventsDir = path.join(pluginDataDir, 'events');
+    const content = fs.readFileSync(
+      path.join(eventsDir, 'session-schema-type-test.ndjson'),
+      'utf8'
+    );
+    const parsed = JSON.parse(content.trim()) as Record<string, unknown>;
+    expect(typeof parsed['schemaVersion']).toBe('number');
+    expect(parsed['schemaVersion']).toBe(1);
   });
 
   // ---- All five event names ----

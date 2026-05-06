@@ -9,6 +9,7 @@ import {
   parseSessionsInDir,
   getClaudeProjectsDir,
   getSessionsDir,
+  type SessionStatus,
 } from './session-jsonl-parser';
 
 // ---------------------------------------------------------------------------
@@ -156,6 +157,33 @@ describe('deriveRunState', () => {
 
   it('mid-turn at exactly now → running', () => {
     expect(deriveRunState(false, Date.now())).toBe('running');
+  });
+
+  it('deriveRunState never produces "unread" — unread is provider-only', () => {
+    // All possible return values from deriveRunState
+    const mtime = Date.now() - 5 * 60 * 1000;
+    const results = [
+      deriveRunState(false, mtime),
+      deriveRunState(true, mtime),
+      deriveRunState(false, Date.now()),
+      deriveRunState(true, Date.now() - 2 * 60 * 60 * 1000),
+    ];
+    for (const result of results) {
+      expect(result).not.toBe('unread');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SessionStatus type includes 'unread'
+// ---------------------------------------------------------------------------
+
+describe('SessionStatus type', () => {
+  it('includes unread as a valid status', () => {
+    // TypeScript compile-time check: assigning 'unread' to SessionStatus must
+    // not cause a TS error. If it fails, the union doesn't include 'unread'.
+    const status: SessionStatus = 'unread';
+    expect(status).toBe('unread');
   });
 });
 

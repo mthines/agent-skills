@@ -12,7 +12,7 @@
  *   - Hard-caps execution at 40ms. Any elapsed time > 40ms → skip write, exit 0.
  *   - Checks for a sentinel file written by the VS Code extension on activation.
  *     If absent, silently no-ops (orphaned-plugin safety).
- *   - Emits ONLY {event, sessionId, cwd, ts} — never prompt or transcript content.
+ *   - Emits ONLY {schemaVersion, event, sessionId, cwd, ts} — never prompt or transcript content.
  *
  * Rotation: if the target file exceeds 512 KB before a write, rewrites it
  * keeping only the last 100 lines, then appends the new event.
@@ -100,6 +100,7 @@ if (!eventName || !sessionId) {
 }
 
 const event = {
+  schemaVersion: 1,
   event: String(eventName),
   sessionId: String(sessionId),
   cwd: String(cwd),

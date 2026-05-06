@@ -84,13 +84,18 @@ nx release vscode-agent-tasks --configuration=dry-run
 
 ### Key source files (vscode-agent-tasks)
 
-- `src/extension.ts` — activation entry point; wires `HookEventWatcher`, `PluginInstaller`, adaptive tick
-- `src/providers/sessions-provider.ts` — `SessionsProvider`; `computeStatus` has a 4-tier override: terminal-open → hook override → terminal-closed → `deriveRunState`
-- `src/watchers/hook-event-watcher.ts` — watches `~/.claude/plugins/data/agent-tasks-hooks-agent-skills-plugins/events/*.ndjson` for new events
-- `src/lib/hook-event-types.ts` — shared `HookEvent` / `HookEventName` types
+- `src/extension.ts` — activation entry point; wires `HookEventWatcher`, `PluginInstaller`, adaptive tick, `PrStatusCache`, `PrPoller`
+- `src/providers/sessions-provider.ts` — `SessionsProvider`; `computeStatus` has a 5-tier override: terminal-open → hook override → unread TTL → terminal-closed → `deriveRunState`
+- `src/watchers/hook-event-watcher.ts` — watches `~/.claude/plugins/data/agent-tasks-hooks-agent-skills-plugins/events/*.ndjson` for new events; validates `schemaVersion`
+- `src/lib/hook-event-types.ts` — shared `HookEvent` / `HookEventName` types (includes optional `schemaVersion`)
 - `src/lib/plugin-data-path.ts` — `getPluginDataDir()`, `getSentinelPath()`, `getHookEventsDir()` path helpers
 - `src/lib/plugin-installer.ts` — `PluginInstaller`; first-run consent modal, version check, CLI install, sentinel write
-- `src/lib/emit-event.test.ts` — vitest unit tests for `plugins/agent-tasks-hooks/bin/emit-event.js` (AC4/AC5)
+- `src/lib/emit-event.test.ts` — vitest unit tests for `plugins/agent-tasks-hooks/bin/emit-event.js`
+- `src/lib/gh-executor.ts` — `GhExecutor` interface + `SystemGhExecutor` default implementation (injectable for tests)
+- `src/lib/pr-status-cache.ts` — `PrStatusCache`; fetches PR enrichment via `gh pr view`, caches per branch with 60s rate limit, no-flip guarantee
+- `src/lib/pr-status-reducer.ts` — `resolveDisplayStatus()` pure function; combines `SessionStatus` + `PrEnrichment` → `DisplayStatus`
+- `src/lib/pr-poller.ts` — `PrPoller`; polls PR status at 90s cadence, capped at 20 most-recent branches
+- `src/parsers/session-jsonl-parser.ts` — pure JSONL parser; `SessionStatus` union includes `unread`; exports `UNREAD_TTL_MS = 24h`
 
 ### Workspace files
 
@@ -115,8 +120,42 @@ Do NOT add a package without updating `tsconfig.json` references and `nx.json` r
 Registers `UserPromptSubmit`, `Stop`, `SessionStart`, `SessionEnd`, `Notification` hooks.
 Emits NDJSON events to `${CLAUDE_PLUGIN_DATA}/events/<sessionId>.ndjson`.
 Hook script is `bin/emit-event.js` (Node.js, always exits 0, 40ms hard cap).
+Each emitted event includes `schemaVersion: 1` (added in v0.2.0).
+The extension rejects events with a known `schemaVersion` that is not `1`; missing `schemaVersion` is accepted for backwards compatibility.
 Sentinel file at `${CLAUDE_PLUGIN_DATA}/sentinel` controls activation.
 Validate with `claude plugin validate plugins/agent-tasks-hooks`.
+
+### Sessions panel — status model
+
+The Sessions panel uses a four-tier status computation:
+
+1. Terminal open in this window → `running` (definite signal).
+2. Hook override within 5-minute TTL → hook-driven status.
+3. Unread TTL (24h): if hook override is `unread` and `session.mtime > 24h`, downgrade to `idle`.
+4. We closed the terminal post-mtime → `idle` (we ended it).
+5. Fallback → `deriveRunState(turnEnded, mtime)` from JSONL.
+
+Status values: `running` | `needs-input` | `unread` | `stalled` | `idle`.
+Plus PR-derived display-only statuses: `pr-open` | `pr-ci-failing` | `pr-merged` | `pr-closed`.
+
+`unread` is set when a `Stop` hook fires and the session's terminal is NOT open.
+`needs-input` is set when a `Stop` hook fires and the terminal IS open.
+`unread` clears when the user opens the session (`clearUnread` is called in `openSession`).
+
+**Duplicate-Stop guard**: `clearUnread` records a timestamp; subsequent `Stop` events with an older `ts` are discarded so a duplicate hook call cannot re-set the `unread` badge after the user dismissed it.
+
+**Sessions from deleted worktrees**: silently vanish from the panel on the next refresh.
+`~/.claude/projects/` entries for deleted worktrees are not garbage-collected by this extension — Claude Code manages its own project dirs.
+
+### PR linkage
+
+PR status is fetched via `gh pr view --head <branch>` at a 90-second cadence by `PrPoller`.
+Requires the `gh` CLI.
+Controlled by `agentTasks.sessions.prLinkage` (boolean, default `true`).
+When `prLinkage = false`, no `gh` subprocess calls are made.
+When `gh` is not installed, a one-time info notification fires and all sessions show JSONL-derived status.
+`PrStatusCache` implements the no-flip guarantee: a `pr-merged` cache entry is never overwritten by a transient `gh` error.
+PR polling is capped at 20 most-recently-active branches (by mtime) to stay well within GitHub's 5000 req/hour limit.
 
 ## Local Development
 

@@ -96,14 +96,26 @@ export interface SessionMetadata {
  *
  * States:
  *   - `running`     — claude is actively responding (mid-turn + fresh mtime)
- *   - `needs-input` — claude finished, waiting for the user's next prompt
+ *   - `needs-input` — claude finished, terminal is open — user should reply
+ *   - `unread`      — claude finished, terminal NOT open — user wasn't watching
+ *                     (set by provider hook override only; never by deriveRunState)
  *   - `stalled`     — mid-turn but no recent writes (claude likely died)
  *   - `idle`        — old, nothing happening
+ *
+ * NOTE: `unread` is a provider-only state. `deriveRunState()` never produces
+ * it. The provider sets it via hook override when a `Stop` event fires and
+ * the session's terminal is not in `openTerminalSessions`.
  *
  * Replaces the old mtime-only heuristic ('active' | 'recent' | 'idle') with
  * stable JSONL-derived signals.
  */
-export type SessionStatus = 'running' | 'needs-input' | 'stalled' | 'idle';
+export type SessionStatus = 'running' | 'needs-input' | 'unread' | 'stalled' | 'idle';
+
+/**
+ * TTL for the `unread` state. After 24 hours, a session in `unread` state
+ * transitions to `idle` on the next tick — it is no longer actionable.
+ */
+export const UNREAD_TTL_MS = 24 * 60 * 60 * 1000;
 
 // ---------------------------------------------------------------------------
 // Utility: path encoding

@@ -14,6 +14,12 @@ export type HookEventName =
   | 'SessionEnd';
 
 export interface HookEvent {
+  /**
+   * Schema version of the emitted event. Present from plugin v0.2.0.
+   * Optional for backwards compatibility with old events already on disk.
+   * Extension rejects events with a schemaVersion present and !== 1.
+   */
+  schemaVersion?: number;
   /** The lifecycle hook event name. */
   event: HookEventName;
   /** The Claude Code session ID. */

@@ -28,6 +28,9 @@ import {
 import { initLogger, log, logError } from './lib/logger';
 import { parsePsOutput, findClaudeDescendant, claimPendingAdoption, type PendingAdoption } from './lib/process-tree';
 import type { SessionMetadata } from './parsers/session-jsonl-parser';
+import { PrStatusCache } from './lib/pr-status-cache';
+import { SystemGhExecutor } from './lib/gh-executor';
+import { PrPoller } from './lib/pr-poller';
 
 export function activate(context: vscode.ExtensionContext): void {
   initLogger(context);
@@ -241,6 +244,37 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const sessionsProvider = new SessionsProvider();
 
+  // -------------------------------------------------------------------------
+  // PR status cache + poller — wired into the sessions provider when enabled.
+  //
+  // `agentTasks.sessions.prLinkage` (default: true) controls whether gh is
+  // called at all. When false, prStatusCache is null and no gh subprocess is
+  // ever spawned.
+  // -------------------------------------------------------------------------
+
+  const prLinkageEnabled = vscode.workspace
+    .getConfiguration('agentTasks.sessions')
+    .get<boolean>('prLinkage', true);
+
+  let prStatusCache: PrStatusCache | null = null;
+  let prPoller: PrPoller | null = null;
+
+  if (prLinkageEnabled) {
+    const ghExecutor = new SystemGhExecutor();
+    prStatusCache = new PrStatusCache(ghExecutor, () => {
+      void vscode.window.showInformationMessage(
+        'Agent Tasks: Install the gh CLI to see PR status in the Sessions panel. ' +
+        'Once installed, reload VS Code to activate PR linkage.'
+      );
+    });
+    prPoller = new PrPoller(prStatusCache);
+    prPoller.onPrStatusChanged(() => {
+      sessionsProvider.refresh();
+    });
+    sessionsProvider.prStatusCache = prStatusCache;
+    sessionsProvider.prPoller = prPoller;
+  }
+
   const sessionsView = vscode.window.createTreeView('agentSessionsExplorer', {
     treeDataProvider: sessionsProvider,
     showCollapseAll: true,
@@ -396,6 +430,22 @@ export function activate(context: vscode.ExtensionContext): void {
     if (e.affectsConfiguration('agentTasks.scope')) {
       agentTasksProvider.refresh();
     }
+    // Handle prLinkage toggle: update provider's prStatusCache reference.
+    if (e.affectsConfiguration('agentTasks.sessions.prLinkage')) {
+      const enabled = vscode.workspace
+        .getConfiguration('agentTasks.sessions')
+        .get<boolean>('prLinkage', true);
+      if (!enabled) {
+        sessionsProvider.prStatusCache = null;
+        sessionsProvider.prPoller = null;
+        log('agentTasks.sessions.prLinkage toggled off — PR polling disabled');
+      } else if (prStatusCache && prPoller) {
+        sessionsProvider.prStatusCache = prStatusCache;
+        sessionsProvider.prPoller = prPoller;
+        log('agentTasks.sessions.prLinkage toggled on — PR polling re-enabled');
+      }
+      sessionsProvider.refresh();
+    }
     // Handle hooks.enabled toggle: write or remove the sentinel file so the
     // hook script no-ops immediately without needing to uninstall the plugin.
     if (e.affectsConfiguration('agentTasks.hooks.enabled')) {
@@ -542,6 +592,10 @@ export function activate(context: vscode.ExtensionContext): void {
     const sid = session.sessionId;
     log(`openSession (id=${sid.slice(0, 8)}, mode=${openWith})`);
 
+    // Clear the unread state when the user opens a session, regardless of
+    // the open mode. This covers click, Enter, and the find QuickPick.
+    sessionsProvider.clearUnread(sid);
+
     if (openWith === 'resume') {
       const existing = sessionTerminals.get(sid);
       if (existing && existing.exitStatus === undefined) {
@@ -601,6 +655,19 @@ export function activate(context: vscode.ExtensionContext): void {
     async (item: SessionItem) => {
       if (!item?.session?.filePath) return;
       await openSession(item.session);
+    }
+  );
+
+  // Open PR in browser — shown in the context menu for sessions with a PR
+  // (contextValue ends with "WithPr"). Reads the PR URL from the item's
+  // cached prEnrichment and opens it in the default browser.
+  const openPRCmd = vscode.commands.registerCommand(
+    'agentTasks.sessions.openPR',
+    (item: SessionItem) => {
+      const pr = item?.prEnrichment;
+      if (pr?.status !== 'pr') return;
+      void vscode.env.openExternal(vscode.Uri.parse(pr.info.url));
+      log(`openPR: ${pr.info.url}`);
     }
   );
 
@@ -736,7 +803,11 @@ export function activate(context: vscode.ExtensionContext): void {
     closeTerminalSub,
     discoverySub,
     newSessionCmd,
-    enableHooksCmd
+    enableHooksCmd,
+    openPRCmd,
+    // PR status cache + poller (optional — null when prLinkage is disabled)
+    ...(prStatusCache ? [prStatusCache] : []),
+    ...(prPoller ? [prPoller] : [])
   );
 }
 

@@ -36,6 +36,17 @@ const KNOWN_EVENT_NAMES = new Set<HookEventName>([
 function isHookEvent(v: unknown): v is HookEvent {
   if (typeof v !== 'object' || v === null) return false;
   const obj = v as Record<string, unknown>;
+
+  // Schema version guard: reject events with a present schemaVersion !== 1.
+  // Missing schemaVersion is accepted for backwards compatibility with
+  // pre-0.2.0 plugin events still on disk.
+  if (typeof obj['schemaVersion'] === 'number' && obj['schemaVersion'] !== 1) {
+    logError(
+      `HookEventWatcher: unknown schemaVersion ${obj['schemaVersion']}, skipping event`
+    );
+    return false;
+  }
+
   return (
     typeof obj['event'] === 'string' &&
     KNOWN_EVENT_NAMES.has(obj['event'] as HookEventName) &&

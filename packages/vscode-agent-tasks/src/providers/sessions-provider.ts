@@ -25,6 +25,7 @@ import * as fs from 'fs';
 import {
   SessionMetadata,
   SessionStatus,
+  UNREAD_TTL_MS,
   deriveRunState,
   encodeWorkspacePath,
   getClaudeProjectsDir,
@@ -37,6 +38,9 @@ import {
   hasLinkedArtifacts,
 } from '../lib/session-artifact-correlator';
 import type { HookEvent, HookEventName } from '../lib/hook-event-types';
+import type { PrEnrichment } from '../lib/pr-status-cache';
+import type { PrPoller, BranchTarget } from '../lib/pr-poller';
+import { resolveDisplayStatus, type DisplayStatus } from '../lib/pr-status-reducer';
 
 // ---------------------------------------------------------------------------
 // Configured artifact directory names (mirrors agent-tasks-provider.ts)
@@ -198,9 +202,18 @@ export class SessionItem extends vscode.TreeItem {
    */
   public readonly linkedArtifacts: LinkedArtifacts | undefined;
 
+  /** The PR enrichment for this session, if available. */
+  public readonly prEnrichment: PrEnrichment | undefined;
+  /** The resolved display status (may be a PR-derived status). */
+  public readonly displayStatus: DisplayStatus;
+
   constructor(
     public readonly session: SessionMetadata,
-    options: { status: SessionStatus; linkedArtifacts?: LinkedArtifacts }
+    options: {
+      status: SessionStatus;
+      linkedArtifacts?: LinkedArtifacts;
+      prEnrichment?: PrEnrichment;
+    }
   ) {
     const linked = options.linkedArtifacts;
     const hasLinks = !!linked && hasLinkedArtifacts(linked);
@@ -213,25 +226,39 @@ export class SessionItem extends vscode.TreeItem {
     );
 
     this.linkedArtifacts = hasLinks ? linked : undefined;
+    this.prEnrichment = options.prEnrichment;
+    this.displayStatus = resolveDisplayStatus(options.status, options.prEnrichment);
 
     const timeStr = formatTime(session.mtime);
     const branch = session.gitBranch ?? '?';
 
-    this.description = timeStr;
-    this.iconPath = SessionItem.iconForStatus(options.status);
+    // Description: `<branch-truncated> · <time>` — branch gives at-a-glance
+    // context for which worktree the session was started in. Truncated at 25
+    // characters to keep it readable at narrow panel widths. Falls back to
+    // `? · <time>` when gitBranch is undefined.
+    const branchTrunc =
+      branch.length > 25 ? branch.slice(0, 25) + '\u2026' : branch;
+    this.description = `${branchTrunc} · ${timeStr}`;
+
+    this.iconPath = SessionItem.iconForStatus(this.displayStatus);
     this.tooltip = SessionItem.buildTooltip(
       session,
       timeStr,
-      options.status,
+      this.displayStatus,
       branch,
-      this.linkedArtifacts
+      this.linkedArtifacts,
+      options.prEnrichment
     );
 
-    // Two contextValues so menus can distinguish:
-    //   - claudeSession                — leaf, click-to-resume on the row
-    //   - claudeSessionWithArtifacts   — collapsible, inline play icon resumes
-    // The inline action lives in package.json under `view/item/context`.
-    this.contextValue = hasLinks ? 'claudeSessionWithArtifacts' : 'claudeSession';
+    // contextValue encodes both artifact presence and PR state for menu conditions.
+    // Format: claudeSession[WithArtifacts][WithPr]
+    const prContextSuffix =
+      this.displayStatus === 'pr-open' || this.displayStatus === 'pr-merged'
+        ? 'WithPr'
+        : '';
+    this.contextValue = hasLinks
+      ? `claudeSessionWithArtifacts${prContextSuffix}`
+      : `claudeSession${prContextSuffix}`;
 
     // Row-click command is only attached for leaf sessions. For collapsible
     // sessions the row toggles expansion and the inline play icon resumes,
@@ -246,24 +273,47 @@ export class SessionItem extends vscode.TreeItem {
   }
 
   /**
-   * Status icons differ in BOTH shape AND luminance so the distinction
-   * survives color-blindness and dark/light theme changes (WCAG 1.4.1).
-   *   - running     → blue pulse        (claude is mid-turn, writing)
-   *   - needs-input → green comment-discussion (claude waiting for you)
-   *   - stalled     → yellow warning    (mid-turn but no recent writes)
-   *   - idle        → gray history      (old, nothing happening)
+   * Status icons differ in BOTH shape AND color so the distinction survives
+   * color-blindness and dark/light theme changes (WCAG 1.4.1).
+   * Every status uses a distinct glyph — no color-only signals.
+   *
+   *   - running         → pulse (blue)              — claude is mid-turn, writing
+   *   - needs-input     → comment-discussion (yellow) — claude finished, terminal open
+   *   - unread          → circle-filled (blue)       — claude finished, no terminal open
+   *   - stalled         → warning (yellow)            — mid-turn, no recent writes
+   *   - pr-open         → git-pull-request (green)    — session idle, PR open
+   *   - pr-ci-failing   → git-pull-request (red)      — session idle, PR open + CI failing
+   *   - pr-merged       → git-merge (purple)           — session idle, PR merged
+   *   - pr-closed       → git-pull-request-closed (muted) — session idle, PR closed
+   *   - idle            → history (default)            — old, nothing happening
    */
-  private static iconForStatus(status: SessionStatus): vscode.ThemeIcon {
+  static iconForStatus(status: DisplayStatus): vscode.ThemeIcon {
     switch (status) {
       case 'running':
         return new vscode.ThemeIcon('pulse', new vscode.ThemeColor('charts.blue'));
       case 'needs-input':
         return new vscode.ThemeIcon(
           'comment-discussion',
-          new vscode.ThemeColor('charts.green')
+          new vscode.ThemeColor('charts.yellow')
+        );
+      case 'unread':
+        return new vscode.ThemeIcon(
+          'circle-filled',
+          new vscode.ThemeColor('charts.blue')
         );
       case 'stalled':
         return new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow'));
+      case 'pr-open':
+        return new vscode.ThemeIcon('git-pull-request', new vscode.ThemeColor('charts.green'));
+      case 'pr-ci-failing':
+        return new vscode.ThemeIcon('git-pull-request', new vscode.ThemeColor('charts.red'));
+      case 'pr-merged':
+        return new vscode.ThemeIcon('git-merge', new vscode.ThemeColor('charts.purple'));
+      case 'pr-closed':
+        return new vscode.ThemeIcon(
+          'git-pull-request-closed',
+          new vscode.ThemeColor('notebookStatusErrorIcon.foreground')
+        );
       case 'idle':
       default:
         return new vscode.ThemeIcon('history');
@@ -279,9 +329,10 @@ export class SessionItem extends vscode.TreeItem {
   private static buildTooltip(
     session: SessionMetadata,
     timeStr: string,
-    status: SessionStatus,
+    status: DisplayStatus,
     branch: string,
-    linkedArtifacts?: LinkedArtifacts
+    linkedArtifacts?: LinkedArtifacts,
+    prEnrichment?: PrEnrichment
   ): vscode.MarkdownString {
     const md = new vscode.MarkdownString();
     md.appendMarkdown(`**Last activity:** ${timeStr} · _${status}_\n\n`);
@@ -303,6 +354,18 @@ export class SessionItem extends vscode.TreeItem {
       if (linkedArtifacts.planPath) parts.push('plan.md');
       if (linkedArtifacts.walkthroughPath) parts.push('walkthrough.md');
       md.appendMarkdown(`**Linked artifacts:** ${parts.join(' · ')}\n\n`);
+    }
+
+    // PR section — shown when there is a successfully-fetched PR enrichment
+    if (prEnrichment?.status === 'pr') {
+      const { info } = prEnrichment;
+      md.appendMarkdown(`---\n\n`);
+      md.appendMarkdown(`**PR #${info.number}:** [${SessionItem.snippet(info.title, 80)}](${info.url})\n\n`);
+      md.appendMarkdown(`**State:** ${info.state} · **CI:** ${info.ciState}\n\n`);
+      // Failing CI: list which checks failed (if available — gh doesn't always return names)
+      if (info.ciState === 'failing') {
+        md.appendMarkdown(`_CI checks are failing — see PR for details._\n\n`);
+      }
     }
 
     md.appendMarkdown(`---\n\n`);
@@ -436,20 +499,32 @@ function bucketSessionsByWorktree(
  * TTL for a hook-driven status override. Long enough that a hook-driven
  * `needs-input` stays visible until the periodic tick or the next hook event
  * supersedes it. 5 minutes covers any realistic human response time.
+ *
+ * Exported for unit tests.
  */
-const HOOK_OVERRIDE_TTL_MS = 5 * 60 * 1000;
+export const HOOK_OVERRIDE_TTL_MS = 5 * 60 * 1000;
 
 /**
- * Maps a hook event name to the session status it implies.
+ * Pure function. Maps a hook event name to the session status it implies.
+ *
+ * `Stop` is disambiguated by `isTerminalOpen`:
+ *   - terminal open  → `needs-input` (user is watching; claude finished)
+ *   - terminal NOT open → `unread` (user wasn't watching)
+ *
  * `Notification` returns `undefined` — it triggers a refresh without a status
  * change.
+ *
+ * Exported for unit tests.
  */
-function hookEventToStatus(eventName: HookEventName): SessionStatus | undefined {
+export function hookEventToStatus(
+  eventName: HookEventName,
+  isTerminalOpen: boolean
+): SessionStatus | undefined {
   switch (eventName) {
     case 'UserPromptSubmit':
       return 'running';
     case 'Stop':
-      return 'needs-input';
+      return isTerminalOpen ? 'needs-input' : 'unread';
     case 'SessionStart':
       return 'running';
     case 'SessionEnd':
@@ -457,6 +532,23 @@ function hookEventToStatus(eventName: HookEventName): SessionStatus | undefined 
     case 'Notification':
       return undefined;
   }
+}
+
+/**
+ * Pure function. Returns true if a Stop-derived `unread` override should be
+ * discarded because the user already cleared unread AFTER the event's ts.
+ *
+ * This guards against duplicate Stop events re-setting `unread` after the user
+ * has dismissed a session. The rule: if clearUnread was called AFTER the event
+ * was emitted, the event is stale — discard it.
+ *
+ * Exported for unit tests.
+ */
+export function shouldDiscardStopOverride(
+  eventTs: number,
+  clearedAt: number | undefined
+): boolean {
+  return clearedAt !== undefined && clearedAt > eventTs;
 }
 
 /** The shape stored in `hookOverrides` for each session. */
@@ -498,6 +590,19 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
   private sessionLinks = new Map<string, LinkedArtifacts>();
 
   /**
+   * Optional PR status cache. When set, used by `makeSessionItem` to look up
+   * PR enrichment for sessions on a named branch. Set by `extension.ts` after
+   * constructing the provider. `null` means prLinkage is disabled.
+   */
+  prStatusCache: import('../lib/pr-status-cache').PrStatusCache | null = null;
+
+  /**
+   * Optional PR poller. When set, `buildRootItems()` pushes the current active
+   * branches to it so it can poll the correct set on each 90s tick.
+   */
+  prPoller: PrPoller | null = null;
+
+  /**
    * Sessions whose `claude --resume` terminal is currently open in THIS
    * window. Forces the status icon to "active" regardless of mtime — a
    * stronger signal than the file-watcher heuristic. Updated by the click
@@ -524,6 +629,19 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
    * something goes wrong.
    */
   private hookOverrides = new Map<string, HookSessionState>();
+
+  /**
+   * Records when `clearUnread(sessionId)` was last called.
+   * Keyed by sessionId; value is a wall-clock millisecond timestamp.
+   *
+   * Used in `applyHookEvent()` to discard duplicate Stop events that arrive
+   * after the user has already dismissed a session as unread. If a Stop event's
+   * `ts` is before the recorded `clearedAt`, it is a stale or duplicate event
+   * and must be discarded to prevent the unread badge from re-appearing.
+   *
+   * Entries are pruned alongside `hookOverrides` (same 5-minute window).
+   */
+  private unreadClearedAt = new Map<string, number>();
 
   /** The session directories currently being observed. */
   get sessionDirs(): string[] {
@@ -552,23 +670,75 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
    * the status icon updates immediately — before the JSONL file is written.
    *
    * `Notification` events trigger a refresh without updating the status.
+   *
+   * Lost / dropped Stop events: `emit-event.js` exits 0 on any I/O failure,
+   * so a Stop event may be silently lost. In that case the session falls through
+   * to Tier 4 (`deriveRunState`) which returns `needs-input` for sessions with
+   * `turnEnded=true` within 1h — a slight mis-classification (`needs-input`
+   * instead of `unread`) but never a silent failure.
+   *
+   * Terminal-open snapshot: the `isTerminalOpen` check is evaluated at the
+   * moment `applyHookEvent` processes the event (~30ms after fire via the
+   * watcher debounce). The accepted trade-off: in the rare case where the
+   * terminal was closed in that 30ms window, we may classify as `needs-input`
+   * instead of `unread`. This is acceptable — the 30ms window is negligible in
+   * practice.
    */
   applyHookEvent(event: HookEvent): void {
-    const status = hookEventToStatus(event.event);
+    const isTerminalOpen = this.openTerminalSessions.has(event.sessionId);
+    const status = hookEventToStatus(event.event, isTerminalOpen);
+
     if (status !== undefined) {
+      // Duplicate-Stop guard: if `clearUnread` was called for this session
+      // AFTER this event's ts, the event is stale or a duplicate — discard it
+      // to prevent the unread badge from re-appearing after the user dismissed it.
+      if (
+        status === 'unread' &&
+        shouldDiscardStopOverride(event.ts, this.unreadClearedAt.get(event.sessionId))
+      ) {
+        // Stale or duplicate Stop — the user already dismissed this session.
+        // Refresh so any other state changes (e.g. TTL expiry) are still visible.
+        this.pruneExpiredHookOverrides();
+        this.refresh();
+        return;
+      }
+
       this.hookOverrides.set(event.sessionId, { status, ts: event.ts });
     }
+
     this.pruneExpiredHookOverrides();
     // Always refresh — Notification events should still update the panel
     this.refresh();
   }
 
-  /** Drop hook overrides older than the TTL so the map can't grow unboundedly. */
+  /**
+   * Clear the `unread` status for a session. Called by `extension.ts` when the
+   * user opens a session (click, Enter, or Resume).
+   *
+   * Records a `clearedAt` timestamp so that any subsequent duplicate Stop
+   * events with an older `ts` are discarded (idempotence guard).
+   */
+  clearUnread(sessionId: string): void {
+    this.unreadClearedAt.set(sessionId, Date.now());
+    this.hookOverrides.delete(sessionId);
+    this.refresh();
+  }
+
+  /**
+   * Drop hook overrides and unreadClearedAt entries older than the TTL so the
+   * maps can't grow unboundedly. After 5 minutes, any duplicate is harmless
+   * because the original override TTL would have already cleared it.
+   */
   private pruneExpiredHookOverrides(): void {
     const cutoff = Date.now() - HOOK_OVERRIDE_TTL_MS;
     for (const [sessionId, state] of this.hookOverrides) {
       if (state.ts < cutoff) {
         this.hookOverrides.delete(sessionId);
+      }
+    }
+    for (const [sessionId, clearedAt] of this.unreadClearedAt) {
+      if (clearedAt < cutoff) {
+        this.unreadClearedAt.delete(sessionId);
       }
     }
   }
@@ -591,6 +761,7 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
    * on top of the JSONL-derived `deriveRunState`:
    *   1. Terminal open in this window     → `running` (definite)
    *   2. Hook override within TTL         → hook-driven status (sub-second)
+   *   2.5. Unread TTL expiry             → `idle` (24h elapsed since mtime)
    *   3. We closed the terminal post-mtime → `idle`   (we ended it)
    *   4. Otherwise                         → `deriveRunState(turnEnded, mtime)`
    */
@@ -601,6 +772,11 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     // Tier 2: hook event override — sub-second signal from the plugin
     const hookOverride = this.hookOverrides.get(session.sessionId);
     if (hookOverride !== undefined && Date.now() - hookOverride.ts < HOOK_OVERRIDE_TTL_MS) {
+      // Tier 2.5: unread TTL expiry — if the hook override is `unread` but the
+      // session is older than 24 hours (by mtime), downgrade to `idle`.
+      if (hookOverride.status === 'unread' && Date.now() - session.mtime > UNREAD_TTL_MS) {
+        return 'idle';
+      }
       return hookOverride.status;
     }
 
@@ -685,14 +861,21 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
   }
 
   /**
-   * Construct a `SessionItem` with the latest computed status and any cached
-   * linked artifacts. Centralised so both `RunningGroupItem` and
-   * `WorktreeGroupItem` children share identical wiring.
+   * Construct a `SessionItem` with the latest computed status, any cached
+   * linked artifacts, and PR enrichment if available.
+   * Centralised so both `RunningGroupItem` and `WorktreeGroupItem` children
+   * share identical wiring.
    */
   private makeSessionItem(session: SessionMetadata): SessionItem {
+    const prEnrichment =
+      this.prStatusCache && session.gitBranch
+        ? this.prStatusCache.getEnrichment(session.gitBranch)
+        : undefined;
+
     return new SessionItem(session, {
       status: this.computeStatus(session),
       linkedArtifacts: this.sessionLinks.get(session.sessionId),
+      prEnrichment,
     });
   }
 
@@ -745,6 +928,7 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     // that an autonomous-workflow run would have written under.
     this.sessionLinks.clear();
     const artifactDirs = getConfiguredArtifactDirs();
+    const branchTargets: BranchTarget[] = [];
     for (const [worktreePath, sessions] of buckets) {
       for (const session of sessions) {
         if (!session.gitBranch) continue;
@@ -752,7 +936,19 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
         if (hasLinkedArtifacts(links)) {
           this.sessionLinks.set(session.sessionId, links);
         }
+        // Collect branch targets for PR polling
+        branchTargets.push({
+          branch: session.gitBranch,
+          worktreePath,
+          mtime: session.mtime,
+        });
       }
+    }
+
+    // Push the current active branches to the PR poller so it knows what to
+    // fetch on the next 90s tick.
+    if (this.prPoller) {
+      this.prPoller.setActiveBranches(branchTargets);
     }
 
     // Collect every session across worktrees once so we can build the pinned
