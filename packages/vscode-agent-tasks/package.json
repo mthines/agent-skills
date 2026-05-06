@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.67.4",
+  "version": "0.67.5",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -493,7 +493,7 @@
         },
         "agentTasks.sessions.filter.showStalled": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "Show stalled sessions (mid-turn but no recent writes)."
         }
       }
