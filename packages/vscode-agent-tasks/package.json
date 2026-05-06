@@ -408,7 +408,7 @@
       },
       {
         "view": "agentSessionsExplorer",
-        "contents": "No Claude Code sessions found for this workspace yet.\n\nStart one in a terminal:\n[Open Terminal](command:workbench.action.terminal.new)\n\nThen run `claude` in your project directory.\n\n_Tip: press Enter on a session to resume it in a terminal. Set `agentTasks.sessions.openWith` to `editor` to open the JSONL transcript instead._",
+        "contents": "No Claude Code sessions found for this workspace yet.",
         "when": "!agentTasks.hooks.dormant"
       }
     ]
