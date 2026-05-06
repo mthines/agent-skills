@@ -407,6 +407,66 @@ export class LinkedArtifactItem extends vscode.TreeItem {
 }
 
 // ---------------------------------------------------------------------------
+// Tree item: PrLinkItem
+// ---------------------------------------------------------------------------
+
+/**
+ * A leaf node under a `SessionItem` representing the GitHub Pull Request for
+ * the session's branch — or the option to create one. Sibling of `Plan`
+ * and `Walkthrough`. Click to open the PR in the browser, or to open the
+ * GitHub create-PR page when no PR exists.
+ *
+ * Uses `gitBranch` + `worktreePath` to scope the action; the actual PR URL
+ * (when known) comes from the cache. We deliberately render this row even
+ * for `loading` enrichment so the user has a fast path to GitHub during the
+ * brief window before `gh` returns.
+ */
+export class PrLinkItem extends vscode.TreeItem {
+  constructor(
+    public readonly mode: 'open' | 'create' | 'loading',
+    public readonly branch: string,
+    public readonly worktreePath: string,
+    public readonly prUrl: string | undefined
+  ) {
+    const label =
+      mode === 'open'
+        ? 'Open Pull Request'
+        : mode === 'create'
+        ? 'Create Pull Request'
+        : 'Pull Request (loading…)';
+    super(label, vscode.TreeItemCollapsibleState.None);
+
+    this.iconPath = new vscode.ThemeIcon('git-pull-request');
+    this.contextValue =
+      mode === 'open'
+        ? 'claudeSessionPrLink'
+        : mode === 'create'
+        ? 'claudeSessionPrCreate'
+        : 'claudeSessionPrLoading';
+    this.tooltip =
+      mode === 'open'
+        ? prUrl ?? `Open the PR for ${branch}`
+        : mode === 'create'
+        ? `Open GitHub to create a PR for ${branch}`
+        : `Fetching PR status for ${branch}…`;
+
+    if (mode === 'open') {
+      this.command = {
+        command: 'agentTasks.sessions.openPRForBranch',
+        title: 'Open Pull Request',
+        arguments: [{ branch, worktreePath, prUrl }],
+      };
+    } else if (mode === 'create') {
+      this.command = {
+        command: 'agentTasks.sessions.createPRForBranch',
+        title: 'Create Pull Request',
+        arguments: [{ branch, worktreePath }],
+      };
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Union type for provider elements
 // ---------------------------------------------------------------------------
 
@@ -589,6 +649,13 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
    * construction can both reach it. Cleared and rebuilt on every refresh.
    */
   private sessionLinks = new Map<string, LinkedArtifacts>();
+
+  /**
+   * Map of `sessionId → worktreePath` for the bucket worktree this session
+   * was assigned to. Used by `makeArtifactChildren` to scope PR actions to
+   * the right repo. Cleared and rebuilt on every refresh.
+   */
+  private sessionWorktrees = new Map<string, string>();
 
   /**
    * Optional PR status cache. When set, used by `makeSessionItem` to look up
@@ -858,6 +925,9 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     if (element instanceof LinkedArtifactItem) {
       return [];
     }
+    if (element instanceof PrLinkItem) {
+      return [];
+    }
     return this.buildRootItems();
   }
 
@@ -885,15 +955,35 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
    * file present at `<worktree>/<dir>/<branch>/`. Order: task.md, plan.md,
    * walkthrough.md — matches the Agent Tasks panel.
    */
-  private makeArtifactChildren(session: SessionItem): LinkedArtifactItem[] {
+  private makeArtifactChildren(
+    session: SessionItem
+  ): Array<LinkedArtifactItem | PrLinkItem> {
     const links = session.linkedArtifacts;
     if (!links) return [];
-    const out: LinkedArtifactItem[] = [];
+    const out: Array<LinkedArtifactItem | PrLinkItem> = [];
     if (links.taskPath) out.push(new LinkedArtifactItem('Task', 'tasklist', links.taskPath));
     if (links.planPath) out.push(new LinkedArtifactItem('Plan', 'notebook', links.planPath));
     if (links.walkthroughPath) {
       out.push(new LinkedArtifactItem('Walkthrough', 'book', links.walkthroughPath));
     }
+
+    // Append a Pull Request row when we know the branch + worktree, so the
+    // user has a visible, recognisable button next to Plan/Walkthrough rather
+    // than relying on right-click discovery. The row's mode follows the
+    // current PR enrichment state.
+    const branch = session.session.gitBranch;
+    const worktreePath = this.sessionWorktrees.get(session.session.sessionId);
+    if (branch && worktreePath) {
+      const enrichment = session.prEnrichment;
+      if (!enrichment || enrichment.status === 'loading') {
+        out.push(new PrLinkItem('loading', branch, worktreePath, undefined));
+      } else if (enrichment.status === 'pr') {
+        out.push(new PrLinkItem('open', branch, worktreePath, enrichment.info.url));
+      } else if (enrichment.status === 'no-pr' || enrichment.status === 'error') {
+        out.push(new PrLinkItem('create', branch, worktreePath, undefined));
+      }
+    }
+
     return out;
   }
 
@@ -928,11 +1018,13 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     // root — paired with `session.gitBranch` it locates the artifact dir
     // that an autonomous-workflow run would have written under.
     this.sessionLinks.clear();
+    this.sessionWorktrees.clear();
     const artifactDirs = getConfiguredArtifactDirs();
     const branchTargets: BranchTarget[] = [];
     for (const [worktreePath, sessions] of buckets) {
       for (const session of sessions) {
         if (!session.gitBranch) continue;
+        this.sessionWorktrees.set(session.sessionId, worktreePath);
         const links = findLinkedArtifacts(worktreePath, session.gitBranch, artifactDirs);
         if (hasLinkedArtifacts(links)) {
           this.sessionLinks.set(session.sessionId, links);

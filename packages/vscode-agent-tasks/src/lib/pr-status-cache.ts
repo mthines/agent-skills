@@ -52,6 +52,8 @@ interface CacheEntry {
 interface PrStatusCacheOptions {
   /** Minimum milliseconds between re-fetches per branch. Default: 60_000. */
   rateLimitMs?: number;
+  /** Optional diagnostic sink — defaults to no-op so vitest stays silent. */
+  log?: (message: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +126,7 @@ export class PrStatusCache {
   private ghAvailable = true;
   private readonly rateLimitMs: number;
   private ghErrorCount = 0;
+  private readonly log: (message: string) => void;
 
   constructor(
     private readonly gh: GhExecutor,
@@ -132,6 +135,7 @@ export class PrStatusCache {
     options: PrStatusCacheOptions = {}
   ) {
     this.rateLimitMs = options.rateLimitMs ?? 60_000;
+    this.log = options.log ?? (() => undefined);
   }
 
   /** Returns the current cached enrichment for a branch, or 'loading' if unfetched. */
@@ -155,8 +159,12 @@ export class PrStatusCache {
     let exitCode: number;
 
     try {
+      // `gh pr view <branch>` takes the branch as a positional argument.
+      // The `--head` flag does NOT exist on `gh pr view` (it exists on
+      // `gh pr list`). Earlier versions of this code passed `--head` and
+      // every fetch silently failed with "unknown flag".
       const result = await this.gh.exec(
-        ['pr', 'view', '--head', branch, '--json', 'number,title,url,state,isDraft,statusCheckRollup'],
+        ['pr', 'view', branch, '--json', 'number,title,url,state,isDraft,statusCheckRollup'],
         worktreePath
       );
       stdout = result.stdout;
@@ -164,9 +172,13 @@ export class PrStatusCache {
     } catch (err) {
       // Spawn failure — most likely gh not installed (ENOENT)
       const code = (err as NodeJS.ErrnoException).code;
+      const msg = err instanceof Error ? err.message : String(err);
       if (code === 'ENOENT') {
+        this.log(`PrStatusCache: gh not installed (ENOENT) for branch=${branch}`);
         this.ghAvailable = false;
         this.onGhNotAvailable();
+      } else {
+        this.log(`PrStatusCache: spawn failed for branch=${branch}: ${msg}`);
       }
       this.cache.set(branch, {
         enrichment: { status: 'no-pr' },
@@ -176,12 +188,16 @@ export class PrStatusCache {
     }
 
     if (exitCode !== 0) {
-      // Classify the error
+      // Classify the error. `gh pr view <branch>` writes a one-liner to
+      // stderr when no PR exists; GhExecutor merges stdout+stderr into
+      // `stdout`, so we scan both forms here.
       const isNoPr =
+        stdout.includes('no pull requests found for branch') ||
         stdout.includes('no pull requests match') ||
         stdout.includes('no pull request matches');
 
       if (isNoPr) {
+        this.log(`PrStatusCache: no PR for branch=${branch}`);
         this.cache.set(branch, {
           enrichment: { status: 'no-pr' },
           fetchedAtMs: Date.now(),
@@ -192,9 +208,10 @@ export class PrStatusCache {
       // Transient error: preserve last cached result if it was a successful PR fetch.
       // This implements the no-flip guarantee.
       this.ghErrorCount++;
-      if (this.ghErrorCount === 1 || this.ghErrorCount % 10 === 0) {
-        // Log throttled — callers can observe via the output channel
-      }
+      const trimmed = stdout.trim().slice(0, 200);
+      this.log(
+        `PrStatusCache: gh pr view exit=${exitCode} branch=${branch} (errCount=${this.ghErrorCount}) stderr/stdout="${trimmed}"`
+      );
 
       if (existing && existing.enrichment.status === 'pr') {
         // Preserve the last good state — do NOT overwrite with an error
@@ -228,11 +245,16 @@ export class PrStatusCache {
         fetchedAt: new Date().toISOString(),
       };
 
+      this.log(
+        `PrStatusCache: PR #${info.number} (${info.state}, ci=${info.ciState}) for branch=${branch}`
+      );
       this.cache.set(branch, {
         enrichment: { status: 'pr', info },
         fetchedAtMs: Date.now(),
       });
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.log(`PrStatusCache: malformed JSON for branch=${branch}: ${msg}`);
       // Malformed JSON — treat as transient error, preserve last result
       if (existing?.enrichment.status === 'pr') {
         this.cache.set(branch, {
