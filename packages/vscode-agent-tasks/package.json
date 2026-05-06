@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.51.0",
+  "version": "0.53.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -157,6 +157,12 @@
         "title": "Turn on live session updates",
         "icon": "$(zap)",
         "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.sessions.openPR",
+        "title": "Open PR in Browser",
+        "icon": "$(link-external)",
+        "category": "Agent Tasks"
       }
     ],
     "menus": {
@@ -195,6 +201,10 @@
         },
         {
           "command": "agentTasks.deleteArtifacts",
+          "when": "false"
+        },
+        {
+          "command": "agentTasks.sessions.openPR",
           "when": "false"
         }
       ],
@@ -280,6 +290,11 @@
           "command": "agentTasks.deleteArtifacts",
           "when": "view == agentTasksExplorer && viewItem =~ /^(agentBranch|agentWorktreeFlat|agentPlanVersion|agentWalkthroughFile)/",
           "group": "9_destructive@1"
+        },
+        {
+          "command": "agentTasks.sessions.openPR",
+          "when": "view == agentSessionsExplorer && viewItem =~ /WithPr$/",
+          "group": "navigation@2"
         }
       ]
     },
