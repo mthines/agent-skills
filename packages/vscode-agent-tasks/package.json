@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.60.0",
+  "version": "0.61.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -179,7 +179,7 @@
       {
         "command": "agentTasks.sessions.openFilter",
         "title": "Filter Sessions…",
-        "icon": "$(filter-filled)",
+        "icon": "$(list-filter)",
         "category": "Agent Tasks"
       },
       {
@@ -466,6 +466,11 @@
           "type": "boolean",
           "default": true,
           "description": "Show PR status badges in the Sessions panel. Requires the gh CLI to be installed. When off, no gh subprocess calls are made and all sessions show JSONL-derived status icons."
+        },
+        "agentTasks.sessions.filter.showActive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show active sessions: running, waiting for input, or unread."
         },
         "agentTasks.sessions.filter.showOpenPr": {
           "type": "boolean",
