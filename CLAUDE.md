@@ -41,6 +41,7 @@ Agents live in `agents/` since they require their own model and tool configurati
 - `ci-auto-fix` — Diagnose and fix a failed CI check, iteratively pushing fixes until CI is green (currently GitHub Actions via `gh`)
 - `code-quality` — Code-quality review for readability, complexity, and maintainability
 - `create-pr` — Generate a narrative PR description, push, then watch CI and auto-fix simple failures (lint, format, lockfiles); escalates judgment-required failures via `/confidence`
+- `create-skill` — Scaffold or review agent skills (SKILL.md + rules/ + references/ + templates/) against best-practice frontmatter, progressive disclosure, token-aware structure, and the agent-skills.git symlink + inventory wiring. Modes: `scaffold` (default), `review`, `upgrade`
 - `implement-suggestion` — Implement fixes from review comments
 - `init-claude` — Initialize Claude Code configuration for a project
 - `resolve-conflicts` — Analyze and resolve Git merge/rebase conflicts

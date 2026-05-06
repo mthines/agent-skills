@@ -140,6 +140,7 @@ User-invoked only — the model can't auto-trigger these. **Zero baseline contex
 | **[/ci-auto-fix](./skills/ci-auto-fix/SKILL.md)**                   | Diagnoses a failed CI check, applies a minimal fix, pushes, and iterates until CI passes. Provider-agnostic in scope; currently implements the GitHub Actions path. Refuses to disable, skip, or weaken checks.                                                          |
 | **[/code-quality](./skills/code-quality/SKILL.md)**                 | Authors and reviews code for low cognitive complexity, readability, and maintainability. Applies guard clauses, early returns, single-responsibility, and pragmatic performance choices grounded in Clean Code, Cognitive Complexity, and Knuth's optimization guidance. |
 | **[/create-pr](./skills/create-pr/SKILL.md)**                       | Generates a narrative PR description, pushes the branch, opens the PR, then watches CI and auto-fixes simple failures (lint, format, lockfiles). Escalates judgment-required failures via `/confidence` rather than guessing.                                            |
+| **[/create-skill](./skills/create-skill/SKILL.md)**                 | Scaffolds new agent skills — or reviews existing ones — against best-practice frontmatter, progressive disclosure, token-aware structure, and this repo's symlink + inventory wiring. Modes: `scaffold` (default), `review`, `upgrade`.                                  |
 | **[/implement-suggestion](./skills/implement-suggestion/SKILL.md)** | Takes review comments or suggestions and implements the fixes — simple ones directly, complex ones with a plan for approval.                                                                                                                                             |
 | **[/init-claude](./skills/init-claude/SKILL.md)**                   | Analyzes your project and generates a tailored `CLAUDE.md` + `.claude/rules/` setup. Detects tech stack, project size, and conventions automatically.                                                                                                                    |
 | **[/resolve-conflicts](./skills/resolve-conflicts/SKILL.md)**       | Detects merge/rebase conflicts, shows both sides with context, proposes resolution strategies, and asks clarifying questions for ambiguous cases.                                                                                                                        |
@@ -470,6 +471,8 @@ skills/
   ci-auto-fix/           SKILL.md                            (slash command)
   code-quality/          SKILL.md + rules/                   (slash command)
   create-pr/             SKILL.md                            (slash command)
+  create-skill/          SKILL.md + rules/ + references/ +
+                         templates/                          (slash command)
   implement-suggestion/  SKILL.md                            (slash command)
   init-claude/           SKILL.md                            (slash command)
   resolve-conflicts/     SKILL.md                            (slash command)
