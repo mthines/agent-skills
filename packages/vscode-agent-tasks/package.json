@@ -2,7 +2,7 @@
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
   "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md) from the VS Code sidebar",
-  "version": "0.56.0",
+  "version": "0.57.0",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -175,6 +175,17 @@
         "title": "Create Pull Request",
         "icon": "$(git-pull-request-create)",
         "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.sessions.openFilter",
+        "title": "Filter Sessions…",
+        "icon": "$(filter-filled)",
+        "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.sessions.resetFilter",
+        "title": "Reset Sessions Filter",
+        "category": "Agent Tasks"
       }
     ],
     "menus": {
@@ -226,6 +237,14 @@
         {
           "command": "agentTasks.sessions.createPRForBranch",
           "when": "false"
+        },
+        {
+          "command": "agentTasks.sessions.openFilter",
+          "when": "true"
+        },
+        {
+          "command": "agentTasks.sessions.resetFilter",
+          "when": "true"
         }
       ],
       "view/title": [
@@ -265,9 +284,19 @@
           "group": "navigation@2"
         },
         {
-          "command": "agentTasks.sessions.refresh",
+          "command": "agentTasks.sessions.openFilter",
           "when": "view == agentSessionsExplorer",
           "group": "navigation@3"
+        },
+        {
+          "command": "agentTasks.sessions.refresh",
+          "when": "view == agentSessionsExplorer",
+          "group": "navigation@4"
+        },
+        {
+          "command": "agentTasks.sessions.resetFilter",
+          "when": "view == agentSessionsExplorer",
+          "group": "1_filter@1"
         }
       ],
       "view/item/context": [
@@ -437,6 +466,27 @@
           "type": "boolean",
           "default": true,
           "description": "Show PR status badges in the Sessions panel. Requires the gh CLI to be installed. When off, no gh subprocess calls are made and all sessions show JSONL-derived status icons."
+        },
+        "agentTasks.sessions.filter.hideStaleAfterDays": {
+          "type": "number",
+          "default": 14,
+          "minimum": 0,
+          "description": "Hide sessions whose last activity is older than N days. 0 disables. Running, needs-input, and unread sessions are NEVER hidden regardless of this setting."
+        },
+        "agentTasks.sessions.filter.hideIdle": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide sessions whose computed status is `idle`. Useful when you only want to track in-flight or waiting work."
+        },
+        "agentTasks.sessions.filter.hidePrMergedClosed": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide sessions whose Pull Request has been merged or closed. Helps clean up the panel after work ships."
+        },
+        "agentTasks.sessions.filter.onlyWithPr": {
+          "type": "boolean",
+          "default": false,
+          "description": "Hide sessions whose branch has no Pull Request. Sessions still loading their PR status are kept visible to avoid flicker."
         }
       }
     },
