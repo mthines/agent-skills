@@ -107,6 +107,22 @@ const event = {
   ts: Date.now(),
 };
 
+// ---- Extended fields for sub-agent events (schema v2) ----
+// Privacy: allow-list ONLY {subagentType, description, toolUseId} for PreToolUse/Agent.
+// Prompt content in tool_input is explicitly excluded — never forwarded.
+if (eventName === 'PreToolUse' && payload['tool_name'] === 'Agent') {
+  const toolInput = payload['tool_input'] ?? {};
+  event.schemaVersion = 2;
+  event.event = 'SubagentDispatch';
+  event['toolUseId'] = String(payload['tool_use_id'] ?? '');
+  event['subagentType'] = String(toolInput['subagent_type'] ?? '');
+  event['description'] = String(toolInput['description'] ?? '');
+} else if (eventName === 'SubagentStop') {
+  event.schemaVersion = 2;
+  event.event = 'SubagentFinished';
+  event['subagentType'] = String(payload['agent_type'] ?? '');
+}
+
 // ---- Write to per-session NDJSON file ----
 try {
   const eventsDir = path.join(pluginDataDir, 'events');
