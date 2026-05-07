@@ -31,25 +31,54 @@ const KNOWN_EVENT_NAMES = new Set<HookEventName>([
   'Notification',
   'SessionStart',
   'SessionEnd',
+  'SubagentDispatch',
+  'SubagentFinished',
 ] satisfies HookEventName[]);
 
 function isHookEvent(v: unknown): v is HookEvent {
   if (typeof v !== 'object' || v === null) return false;
   const obj = v as Record<string, unknown>;
 
-  // Schema version guard: reject events with a present schemaVersion !== 1.
-  // Missing schemaVersion is accepted for backwards compatibility with
-  // pre-0.2.0 plugin events still on disk.
-  if (typeof obj['schemaVersion'] === 'number' && obj['schemaVersion'] !== 1) {
+  // Schema version guard.
+  // Accept: absent (legacy pre-0.2.0), 1 (v1), 2 (v2).
+  // Reject all other numeric values.
+  const sv = obj['schemaVersion'];
+  if (typeof sv === 'number' && sv !== 1 && sv !== 2) {
     logError(
-      `HookEventWatcher: unknown schemaVersion ${obj['schemaVersion']}, skipping event`
+      `HookEventWatcher: unknown schemaVersion ${sv}, skipping event`
     );
     return false;
   }
 
+  if (
+    typeof obj['event'] !== 'string' ||
+    !KNOWN_EVENT_NAMES.has(obj['event'] as HookEventName)
+  ) {
+    return false;
+  }
+
+  // v2 SubagentDispatch: requires toolUseId, subagentType, description
+  if (obj['event'] === 'SubagentDispatch') {
+    return (
+      typeof obj['sessionId'] === 'string' &&
+      typeof obj['ts'] === 'number' &&
+      typeof obj['toolUseId'] === 'string' &&
+      typeof obj['subagentType'] === 'string' &&
+      typeof obj['description'] === 'string'
+    );
+  }
+
+  // v2 SubagentFinished: requires subagentType (no toolUseId available)
+  if (obj['event'] === 'SubagentFinished') {
+    return (
+      typeof obj['sessionId'] === 'string' &&
+      typeof obj['ts'] === 'number' &&
+      typeof obj['subagentType'] === 'string'
+    );
+  }
+
+  // v1 event: standard fields
   return (
-    typeof obj['event'] === 'string' &&
-    KNOWN_EVENT_NAMES.has(obj['event'] as HookEventName) &&
     typeof obj['sessionId'] === 'string' &&
     typeof obj['cwd'] === 'string' &&
     typeof obj['ts'] === 'number'
