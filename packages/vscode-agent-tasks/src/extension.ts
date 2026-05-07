@@ -757,9 +757,21 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const openSessionCmd = vscode.commands.registerCommand(
     'agentTasks.sessions.openSession',
-    async (item: SessionItem) => {
-      if (!item?.session?.filePath) return;
-      await openSession(item.session);
+    async (item: SessionItem | { sessionId: string }) => {
+      // SessionItem (from tree-click or keyboard Enter) — use the attached session directly.
+      if (item instanceof SessionItem) {
+        if (!item?.session?.filePath) return;
+        await openSession(item.session);
+        return;
+      }
+      // Plain { sessionId } object — dispatched by SubagentItem click to reveal parent terminal.
+      if (item && typeof (item as { sessionId?: unknown }).sessionId === 'string') {
+        const sid = (item as { sessionId: string }).sessionId;
+        const session = sessionsProvider.getAllSessions().find((s) => s.sessionId === sid);
+        if (!session) return;
+        await openSession(session);
+        return;
+      }
     }
   );
 

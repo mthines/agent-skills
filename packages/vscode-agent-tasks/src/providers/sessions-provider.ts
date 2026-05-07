@@ -38,6 +38,12 @@ import {
   hasLinkedArtifacts,
 } from '../lib/session-artifact-correlator';
 import type { HookEvent, HookEventName } from '../lib/hook-event-types';
+import {
+  applySubagentDispatch,
+  applySubagentFinished,
+  computeRollupStatus,
+  type SubagentRecord,
+} from '../lib/subagent-reducer';
 import type { PrEnrichment } from '../lib/pr-status-cache';
 import type { PrPoller, BranchTarget } from '../lib/pr-poller';
 import { resolveDisplayStatus, type DisplayStatus } from '../lib/pr-status-reducer';
@@ -229,14 +235,17 @@ export class SessionItem extends vscode.TreeItem {
       status: SessionStatus;
       linkedArtifacts?: LinkedArtifacts;
       prEnrichment?: PrEnrichment;
+      hasSubagents?: boolean;
     }
   ) {
     const linked = options.linkedArtifacts;
     const hasLinks = !!linked && hasLinkedArtifacts(linked);
+    const hasSubagents = options.hasSubagents ?? false;
+    const isCollapsible = hasLinks || hasSubagents;
 
     super(
       session.title,
-      hasLinks
+      isCollapsible
         ? vscode.TreeItemCollapsibleState.Collapsed
         : vscode.TreeItemCollapsibleState.None
     );
@@ -284,7 +293,7 @@ export class SessionItem extends vscode.TreeItem {
     // Row-click command is only attached for leaf sessions. For collapsible
     // sessions the row toggles expansion and the inline play icon resumes,
     // avoiding the jarring "click expands AND opens a terminal" double-fire.
-    if (!hasLinks) {
+    if (!isCollapsible) {
       this.command = {
         command: 'agentTasks.sessions.openSession',
         title: 'Open Session',
@@ -427,6 +436,59 @@ export class LinkedArtifactItem extends vscode.TreeItem {
 }
 
 // ---------------------------------------------------------------------------
+// Tree item: SubagentItem
+// ---------------------------------------------------------------------------
+
+/**
+ * A leaf node under a `SessionItem` representing one dispatched sub-agent.
+ *
+ * Visual treatment:
+ *   - Running sub-agent → pulse (blue) icon, description "running".
+ *   - Finished sub-agent → check (green) icon, description "done".
+ *
+ * Click action: reveals the parent terminal (not a separate terminal).
+ * A transcript view is out of scope for v1.
+ */
+export class SubagentItem extends vscode.TreeItem {
+  constructor(
+    public readonly record: SubagentRecord,
+    public readonly parentSessionId: string
+  ) {
+    super(record.description, vscode.TreeItemCollapsibleState.None);
+
+    this.description = record.status === 'running' ? 'running' : 'done';
+
+    this.iconPath =
+      record.status === 'running'
+        ? new vscode.ThemeIcon('pulse', new vscode.ThemeColor('charts.blue'))
+        : new vscode.ThemeIcon('check', new vscode.ThemeColor('charts.green'));
+
+    const md = new vscode.MarkdownString();
+    md.appendMarkdown(`**${record.description}**\n\n`);
+    md.appendMarkdown(`Type: \`${record.subagentType}\`\n\n`);
+    md.appendMarkdown(`Status: ${record.status}\n\n`);
+    md.appendMarkdown(`Spawned: ${new Date(record.spawnedAt).toLocaleTimeString()}\n\n`);
+    if (record.finishedAt) {
+      md.appendMarkdown(`Finished: ${new Date(record.finishedAt).toLocaleTimeString()}\n\n`);
+    } else {
+      md.appendMarkdown(`_Still running…_\n\n`);
+    }
+    md.appendMarkdown(`Click to reveal the parent terminal.`);
+    this.tooltip = md;
+
+    this.contextValue =
+      record.status === 'running' ? 'claudeSubagentRunning' : 'claudeSubagentDone';
+
+    // Click reveals the parent session terminal (v1: no per-child terminal)
+    this.command = {
+      command: 'agentTasks.sessions.openSession',
+      title: 'Reveal parent terminal',
+      arguments: [{ sessionId: parentSessionId }],
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tree item: FilterStatusItem
 // ---------------------------------------------------------------------------
 
@@ -541,6 +603,7 @@ type SessionTreeItem =
   | RunningGroupItem
   | WorktreeGroupItem
   | SessionItem
+  | SubagentItem
   | LinkedArtifactItem
   | PrLinkItem
   | FilterStatusItem;
@@ -668,6 +731,11 @@ export function hookEventToStatus(
       return 'idle';
     case 'Notification':
       return 'needs-input';
+    case 'SubagentDispatch':
+    case 'SubagentFinished':
+      // Sub-agent events do not directly set the parent session status.
+      // Parent status roll-up is computed separately in computeStatus Tier 0.
+      return undefined;
   }
 }
 
@@ -809,6 +877,18 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
    */
   private unreadClearedAt = new Map<string, number>();
 
+  /**
+   * Sub-agent records keyed by PARENT session ID.
+   *
+   * Populated by `applyHookEvent` when `SubagentDispatch` and `SubagentFinished`
+   * events arrive. Read by `computeStatus` (Tier 0 roll-up) and `makeSessionChildren`
+   * (sub-agent child rows) when `showSubagents` is true.
+   *
+   * Not pruned on refresh — sub-agent records accumulate for the lifetime of
+   * the extension window (bounded by session count and sub-agent count per session).
+   */
+  private subagentsBySession = new Map<string, SubagentRecord[]>();
+
   /** The session directories currently being observed. */
   get sessionDirs(): string[] {
     return this._sessionDirs;
@@ -851,6 +931,30 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
    * practice.
    */
   applyHookEvent(event: HookEvent): void {
+    // Sub-agent events are handled separately — they update subagentsBySession
+    // rather than the hookOverrides status layer.
+    if (event.event === 'SubagentDispatch') {
+      const existing = this.subagentsBySession.get(event.sessionId) ?? [];
+      this.subagentsBySession.set(
+        event.sessionId,
+        applySubagentDispatch(existing, event)
+      );
+      this.pruneExpiredHookOverrides();
+      this.refresh();
+      return;
+    }
+
+    if (event.event === 'SubagentFinished') {
+      const existing = this.subagentsBySession.get(event.sessionId) ?? [];
+      this.subagentsBySession.set(
+        event.sessionId,
+        applySubagentFinished(existing, event)
+      );
+      this.pruneExpiredHookOverrides();
+      this.refresh();
+      return;
+    }
+
     const isTerminalOpen = this.openTerminalSessions.has(event.sessionId);
     const status = hookEventToStatus(event.event, isTerminalOpen);
 
@@ -941,6 +1045,7 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
   /**
    * Compute the effective status for a session, layering UI-known signals
    * on top of the JSONL-derived `deriveRunState`:
+   *   0. Sub-agent roll-up (showSubagents=true) — any child running → `running`
    *   1. Terminal open in this window     → `running` (definite)
    *   2. Hook override within TTL         → hook-driven status (sub-second)
    *   2.5. Unread TTL expiry             → `idle` (24h elapsed since mtime)
@@ -948,6 +1053,18 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
    *   4. Otherwise                         → `deriveRunState(turnEnded, mtime)`
    */
   computeStatus(session: SessionMetadata): SessionStatus {
+    // Tier 0: sub-agent roll-up — strongest signal when showSubagents is on
+    const showSubagents = vscode.workspace
+      .getConfiguration('agentTasks.sessions')
+      .get<boolean>('showSubagents', false);
+    if (showSubagents) {
+      const records = this.subagentsBySession.get(session.sessionId);
+      if (records && records.length > 0) {
+        const rollup = computeRollupStatus(records);
+        if (rollup === 'running') return 'running';
+      }
+    }
+
     // Tier 1: terminal open in this window — definite signal
     if (this.openTerminalSessions.has(session.sessionId)) return 'running';
 
@@ -1034,7 +1151,10 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
       return element.sessions.map((s) => this.makeSessionItem(s));
     }
     if (element instanceof SessionItem) {
-      return this.makeArtifactChildren(element);
+      return this.makeSessionChildren(element);
+    }
+    if (element instanceof SubagentItem) {
+      return [];
     }
     if (element instanceof LinkedArtifactItem) {
       return [];
@@ -1050,7 +1170,7 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
 
   /**
    * Construct a `SessionItem` with the latest computed status, any cached
-   * linked artifacts, and PR enrichment if available.
+   * linked artifacts, PR enrichment, and sub-agent presence flag.
    * Centralised so both `RunningGroupItem` and `WorktreeGroupItem` children
    * share identical wiring.
    */
@@ -1060,28 +1180,51 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
         ? this.prStatusCache.getEnrichment(session.gitBranch)
         : undefined;
 
+    const showSubagents = vscode.workspace
+      .getConfiguration('agentTasks.sessions')
+      .get<boolean>('showSubagents', false);
+    const subagentRecords = this.subagentsBySession.get(session.sessionId);
+    const hasSubagents = showSubagents && (subagentRecords?.length ?? 0) > 0;
+
     return new SessionItem(session, {
       status: this.computeStatus(session),
       linkedArtifacts: this.sessionLinks.get(session.sessionId),
       prEnrichment,
+      hasSubagents,
     });
   }
 
   /**
-   * Children of a `SessionItem` are one `LinkedArtifactItem` per artifact
-   * file present at `<worktree>/<dir>/<branch>/`. Order: task.md, plan.md,
-   * walkthrough.md — matches the Agent Tasks panel.
+   * Children of a `SessionItem`: sub-agent rows (if `showSubagents` is on),
+   * then artifact rows (task.md, plan.md, walkthrough.md), then the PR row.
+   *
+   * Sub-agents are shown most-recent-first (reverse of FIFO append order).
    */
-  private makeArtifactChildren(
+  private makeSessionChildren(
     session: SessionItem
-  ): Array<LinkedArtifactItem | PrLinkItem> {
+  ): Array<SubagentItem | LinkedArtifactItem | PrLinkItem> {
+    const out: Array<SubagentItem | LinkedArtifactItem | PrLinkItem> = [];
+
+    // Sub-agent children — gated on the showSubagents setting
+    const showSubagents = vscode.workspace
+      .getConfiguration('agentTasks.sessions')
+      .get<boolean>('showSubagents', false);
+    if (showSubagents) {
+      const records = this.subagentsBySession.get(session.session.sessionId) ?? [];
+      // Most recent first (reverse of the FIFO append order)
+      for (const record of [...records].reverse()) {
+        out.push(new SubagentItem(record, session.session.sessionId));
+      }
+    }
+
+    // Linked artifact children (task.md, plan.md, walkthrough.md)
     const links = session.linkedArtifacts;
-    if (!links) return [];
-    const out: Array<LinkedArtifactItem | PrLinkItem> = [];
-    if (links.taskPath) out.push(new LinkedArtifactItem('Task', 'tasklist', links.taskPath));
-    if (links.planPath) out.push(new LinkedArtifactItem('Plan', 'notebook', links.planPath));
-    if (links.walkthroughPath) {
-      out.push(new LinkedArtifactItem('Walkthrough', 'book', links.walkthroughPath));
+    if (links) {
+      if (links.taskPath) out.push(new LinkedArtifactItem('Task', 'tasklist', links.taskPath));
+      if (links.planPath) out.push(new LinkedArtifactItem('Plan', 'notebook', links.planPath));
+      if (links.walkthroughPath) {
+        out.push(new LinkedArtifactItem('Walkthrough', 'book', links.walkthroughPath));
+      }
     }
 
     // Append a Pull Request row when we know the branch + worktree, so the
