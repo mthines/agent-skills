@@ -11,7 +11,7 @@ description: >
 license: MIT
 metadata:
   author: mthines
-  version: '3.6.0'
+  version: '3.7.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -33,25 +33,19 @@ companions skip silently if not installed.
 
 ---
 
-## Special Modes
+## Retrospective Self-Improvement
 
-Diagnose Mode is invoked **after** a workflow run has produced an unsatisfactory
-result. It does not run phases — it analyses the failed session, identifies
-which phase / gate / companion should have caught the problem, and emits a
-concrete proposed change to **this skill itself** so the same failure class
-cannot recur.
+If a workflow run shipped wrong code despite all gates passing — or a
+post-merge bug traces back to a missed check — invoke
+[`/create-skill diagnose autonomous-workflow`](../create-skill/SKILL.md#diagnose-workflow)
+**while the failing session is still in context**.
+The diagnoser reads this skill's [diagnostic surface](./rules/diagnostic-surface.md)
+(phase model, failure taxonomy, existing-guards table, hard invariants) and
+emits a confidence-gated unified-diff proposal against this skill's source.
 
-| Flag             | Use when                                                                    | Output                                                                       |
-| ---------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `--diagnose`     | The workflow shipped wrong code despite all gates passing (or post-merge bug traces back to a missed check) | `.agent/{branch}/diagnose-{ts}.md` with a confidence-gated unified-diff proposal |
-| `--diagnose --apply` | After reviewing the diagnosis, apply the proposed diff to the local skill checkout. **Refused if `confidence(bug-analysis) < 90 %`** and always asks for confirmation | Edited skill files + report                                                  |
-| `--diagnose --pr`    | Share the improvement upstream with `agent-skills.git`. Same confidence gate applies | Draft PR with the diagnosis as description and the diff as the commit        |
-
-Full procedure, taxonomy of failure classes, and report format live in
-[`rules/diagnose-mode.md`](./rules/diagnose-mode.md).
-Run Diagnose Mode **while the failing session is still in context** — that is
-when the agent has the maximum amount of evidence to attribute the failure to
-a specific gate.
+The diagnose capability is owned by `create-skill` so the same procedure works
+across every skill in the repo (`fix-bug`, `batch-linear-tickets`, future
+ones) — they each declare their own diagnostic surface.
 
 ---
 
@@ -209,21 +203,6 @@ Phase 3 implementation is **NOT** parallelized (file-level changes share state).
 | 5     | Update README, CHANGELOG; `Skill("update-claude")` always                                       |
 | 6     | `Skill("review-changes")` → `Skill("aw-create-walkthrough")` → `Skill("create-pr")`             |
 | 7     | Watch CI → `Skill("ci-auto-fix")` per failure (parallel) → after CI green dispatch `reviewer` agent (PR Mode, optional, skips if not installed) → `gw remove` after merge (optional) |
-
-### Diagnose Mode
-
-Retrospective only — does not produce a PR. See
-[`rules/diagnose-mode.md`](./rules/diagnose-mode.md) for the full procedure.
-
-| Step | Action                                                                                                  |
-| ---- | ------------------------------------------------------------------------------------------------------- |
-| 1    | Collect evidence: `plan.md`, `walkthrough.md`, Progress Log, failing diff, user symptom                 |
-| 2    | Classify against the failure taxonomy (F1 or `F-novel`)                                                 |
-| 3    | Walk every phase via the Phase-Attribution Matrix; identify the earliest phase that could have caught it |
-| 4    | Construct exactly **one** proposal — concrete edit + unified diff + validation plan                      |
-| 5    | **Confidence gate** — `Skill("confidence", "bug-analysis")` ≥ 90 %, else `--apply` is refused           |
-| 6    | Write `.agent/{branch}/diagnose-{ts}.md` (or stdout with `--no-write`)                                  |
-| 7    | If `--apply` and gate passed: confirm, then `git apply` against `skills/autonomous-workflow/`. If `--pr`: open upstream PR |
 
 ### Lite Mode
 

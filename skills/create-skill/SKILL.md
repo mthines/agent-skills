@@ -1,22 +1,27 @@
 ---
 name: create-skill
 description: >
-  Scaffold or review agent skills with best-practice frontmatter, progressive
-  disclosure, token-aware structure, optional multi-mode support, and the
-  agent-skills.git symlink + inventory wiring. Walks through requirements,
-  picks single-file vs multi-file layout, generates `SKILL.md` plus optional
-  `rules/`, `references/`, and `templates/`, then runs a quality checklist.
-  Modes: `scaffold` (default — new skill), `review` (audit existing skill),
-  `upgrade` (split a single-file skill into multi-file). Triggers on
-  "create a skill", "scaffold a skill", "make a new skill", "new SKILL.md",
-  "review this skill", "audit my skill", "upgrade this skill",
-  "split this skill", "/create-skill".
+  Scaffold, review, upgrade, or diagnose agent skills against best-practice
+  frontmatter, progressive disclosure, token-aware structure, optional
+  multi-mode support, and the agent-skills.git symlink + inventory wiring.
+  Walks through requirements, picks single-file vs multi-file layout,
+  generates `SKILL.md` plus optional `rules/`, `references/`, and
+  `templates/`, then runs a quality checklist. Diagnose mode performs
+  retrospective self-improvement on any skill that declares a diagnostic
+  surface — emits a confidence-gated unified diff that hardens the target
+  skill against a failure class. Modes: `scaffold` (default — new skill),
+  `review` (audit existing skill), `upgrade` (split a single-file skill
+  into multi-file), `diagnose` (retrospective failure analysis on a target
+  skill). Triggers on "create a skill", "scaffold a skill", "make a new
+  skill", "new SKILL.md", "review this skill", "audit my skill", "upgrade
+  this skill", "split this skill", "diagnose this skill", "why did <skill>
+  miss this", "/create-skill".
 disable-model-invocation: true
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
-  workflow_type: scaffolder-and-advisory
+  version: '1.1.0'
+  workflow_type: scaffolder-advisory-and-diagnoser
   tags:
     - skill-authoring
     - scaffolding
@@ -25,6 +30,8 @@ metadata:
     - token-optimization
     - frontmatter
     - best-practices
+    - diagnose
+    - self-improvement
 ---
 
 # Create Skill
@@ -51,9 +58,11 @@ Parse `$ARGUMENTS` (first token) and detect the mode:
 | `scaffold` | **yes** | Default. "create", "scaffold", "new skill", or no mode argument.         |
 | `review`   |         | "review", "audit", "check this skill", or `$0 == "review"`.              |
 | `upgrade`  |         | "upgrade", "split", "convert to multi-file", or `$0 == "upgrade"`.       |
+| `diagnose` |         | "diagnose", "why did <skill> miss this", or `$0 == "diagnose"`.          |
 
 If the user typed a path or skill name as `$ARGUMENTS`, treat it as the
-target for `review`/`upgrade`; for `scaffold` it is the proposed skill name.
+target for `review`/`upgrade`/`diagnose`; for `scaffold` it is the proposed
+skill name.
 
 State the detected mode and target in one line before continuing. Example:
 
@@ -229,18 +238,53 @@ For `upgrade` mode, take a single-file skill and split it into multi-file:
 
 ---
 
+## Diagnose Workflow
+
+For `diagnose` mode, do not scaffold or review.
+Analyse a session in which **another skill** executed and produced an
+unsatisfactory result, identify which of that skill's gates should have
+caught it, and emit a confidence-gated unified diff that hardens the target
+skill against the same failure class.
+
+The full procedure (seven steps, including the mandatory
+`confidence(bug-analysis) ≥ 90 %` gate before `--apply`), the report format,
+and the hard rules live in [`rules/diagnose-mode.md`](./rules/diagnose-mode.md).
+
+**Invocation:**
+
+```
+/create-skill diagnose <target-skill-name> [--symptom "..."] [--scope <phase|companion>] [--apply] [--pr] [--no-write]
+```
+
+**The target skill declares its own diagnostic surface** in
+`skills/<target>/rules/diagnostic-surface.md` — phase model, failure
+taxonomy, existing-guards table, source root, hard invariants.
+The contract spec is in [`rules/diagnostic-surface.md`](./rules/diagnostic-surface.md);
+the scaffolding template a target drops into its own `rules/` is
+[`templates/diagnostic-surface.template.md`](./templates/diagnostic-surface.template.md).
+
+If the target skill has not declared a surface, Diagnose Mode falls back to
+inferring phases from the target's `SKILL.md` H2 sections and warns the user
+once that fidelity is reduced.
+
+Diagnose Mode never modifies user product code.
+It only proposes changes to the target skill's own source.
+
+---
+
 ## Required Reading by Phase
 
 Load these on demand — do not preload them all.
 
-| Phase | Files                                                                               |
-| ----- | ----------------------------------------------------------------------------------- |
-| 0     | `rules/description-writing.md`, `rules/invocation-control.md`                       |
-| 1     | `rules/structure-decision.md`, `rules/progressive-disclosure.md`                    |
-| 2     | `rules/frontmatter.md`, `rules/description-writing.md`                              |
-| 3     | `rules/token-economics.md`, `rules/anti-patterns.md`, plus templates in `templates/` |
-| 4     | `rules/repository-conventions.md`                                                   |
-| 5     | `rules/quality-checklist.md`                                                        |
+| Phase    | Files                                                                                   |
+| -------- | --------------------------------------------------------------------------------------- |
+| 0        | `rules/description-writing.md`, `rules/invocation-control.md`                           |
+| 1        | `rules/structure-decision.md`, `rules/progressive-disclosure.md`                        |
+| 2        | `rules/frontmatter.md`, `rules/description-writing.md`                                  |
+| 3        | `rules/token-economics.md`, `rules/anti-patterns.md`, plus templates in `templates/`    |
+| 4        | `rules/repository-conventions.md`                                                       |
+| 5        | `rules/quality-checklist.md`                                                            |
+| diagnose | `rules/diagnose-mode.md`, `rules/diagnostic-surface.md`, plus the target's `rules/diagnostic-surface.md` |
 
 Worked examples in `references/skill-archetypes.md` are optional — load only
 when the user asks "what does an X-shaped skill look like?".
@@ -283,7 +327,7 @@ when the user asks "what does an X-shaped skill look like?".
 
 ## Definition of Done
 
-A scaffold run is done when:
+A **scaffold** run is done when:
 
 - [ ] All planned files written and within their line caps.
 - [ ] `name` and `description` validate against the rules in
@@ -293,3 +337,17 @@ A scaffold run is done when:
 - [ ] Phase 5 self-check is `PASS`.
 - [ ] One sentence summary delivered to the user with the install command
       they can run to start using the skill.
+
+A **diagnose** run is done when:
+
+- [ ] Target skill name resolved and source root verified writable.
+- [ ] Diagnostic surface loaded (or fallback warning printed).
+- [ ] Failure classified against the target's taxonomy (or `F-novel` plus a
+      proposed new row).
+- [ ] Phase-attribution table walks every phase in the target's surface.
+- [ ] Exactly one improvement proposal constructed (one diff per report).
+- [ ] `confidence(bug-analysis)` score recorded; `--apply` honored only at
+      ≥ 90 %.
+- [ ] Report written to `.agent/{branch}/diagnose-{target}-{ts}.md` (or
+      stdout with `--no-write`).
+- [ ] If `--apply` ran, user explicitly confirmed before `git apply`.

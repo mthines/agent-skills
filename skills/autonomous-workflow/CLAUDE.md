@@ -91,7 +91,7 @@ skills/autonomous-workflow/
 │   ├── safety-guardrails.md    # Hard limits, validation checkpoints.
 │   ├── smart-worktree-detection.md # Fuzzy-match task to existing worktree.
 │   ├── planner-executor-handoff.md # Handoff contract between planner and executor.
-│   ├── diagnose-mode.md        # `--diagnose` retrospective self-improvement procedure.
+│   ├── diagnostic-surface.md   # Phase model + failure taxonomy + guards table consumed by `/create-skill diagnose autonomous-workflow`.
 │   └── _template.md            # Boilerplate for new rule files.
 ├── templates/
 │   ├── planner.template.md     # aw-planner agent (phases 0-2). Linked by install.sh as aw-planner.md.
@@ -344,62 +344,66 @@ When editing this skill, do not break these — they're load-bearing:
 - **The system-prompt for the agent template stays lean.** It references
   `SKILL.md` for procedures rather than duplicating them. If the agent
   template grows beyond ~250 lines of system prompt, it's drifting.
-- **Diagnose Mode never modifies user product code.** It only ever proposes
-  changes to *this skill's source*. `--apply` and `--pr` require explicit
-  confirmation even in Auto mode — the action is editing a load-bearing
-  orchestrator, not a leaf file.
+- **The diagnostic surface is the contract that makes this skill diagnosable.**
+  Removing or breaking [`rules/diagnostic-surface.md`](./rules/diagnostic-surface.md)
+  silently downgrades `/create-skill diagnose autonomous-workflow` to its
+  fallback (inferred from `SKILL.md` H2 sections) — fidelity drops and the
+  diagnoser cannot reason about hard invariants. Treat the surface like
+  `companion-skills.md`: every change to a phase, gate, taxonomy class, or
+  load-bearing invariant must update the surface in the same PR.
 
 ---
 
-## Diagnose Mode — design intent
+## Diagnose participation — design intent
 
-Diagnose Mode (added in v3.6) is a **retrospective self-improvement loop**.
-It exists because every other gate in this skill is forward-looking: they all
-fire *during* a workflow run. When a workflow run ships incorrect code despite
-all gates passing, there's no built-in mechanism for the skill to learn from
-that — the next session repeats the same failure.
+This skill **does not implement Diagnose Mode** — it implements the
+**diagnostic surface contract** consumed by `/create-skill diagnose`.
+The retrospective self-improvement loop itself (the seven-step procedure,
+the confidence gate, the report format, the apply / PR flow) is owned by
+`create-skill` so the same procedure can target any skill in the repo.
 
-The diagnose flag closes that loop. The agent runs Diagnose Mode **while the
-failing session is still in context**, classifies the failure against a
-taxonomy, walks the phase matrix to find the earliest gate that could have
-caught it, and emits an applyable unified diff against this skill's source.
-The user (or an upstream PR) applies the diff and the skill is permanently
-hardened against that failure class.
+The split landed in v3.7. Before that, `--diagnose` was a flag on this
+skill, with a hardcoded seven-step procedure baked into
+`rules/diagnose-mode.md`. When `fix-bug` and other workflow skills started
+needing the same retrospective capability, the procedure had to either be
+duplicated per-skill or generalized. We chose generalize — the engine moved
+to `create-skill` (which already has authoritative knowledge about skill
+quality), and per-skill knowledge moved into a declared
+`rules/diagnostic-surface.md` per consumer.
 
-Four properties keep Diagnose Mode tractable:
+What this skill still owns:
 
-1. **One proposal per report.** Multi-fix proposals tend to bundle unrelated
-   changes; one-per-report keeps each PR scoped and reviewable.
-2. **Earliest-phase-fix wins.** When multiple phases could have caught the
-   failure, the proposal targets the earliest one — failing fast saves
-   downstream tokens and surfaces issues before code is written.
-3. **Mechanical checks beat judgment checks.** A deterministic rule
-   (file-presence, AST grep, symbol-shadow, import-graph) is preferred
-   over an LLM-judged review step. Mechanical checks are reproducible and
-   cheap to run on every workflow.
-4. **Confidence gate before any source change.** Every proposal is graded
-   by `Skill("confidence", "bug-analysis")` and `--apply` is refused when
-   the score is below 90 %. The agent cannot weaken its own gates without
-   the user in the loop.
+1. **Phase model 0 → 7** — declared in [`rules/diagnostic-surface.md`](./rules/diagnostic-surface.md).
+2. **Failure taxonomy** (F1 + `F-novel`, append-only) — same file.
+3. **Existing-guards-per-phase table** — same file.
+4. **Hard invariants** the diagnoser must not propose to weaken — same file.
+5. **Source root** the diagnoser writes against — `skills/autonomous-workflow/`.
 
-The taxonomy in `rules/diagnose-mode.md` is **append-only** — every novel
-failure mode adds a new row, the row is justified by a diagnosis that
-cleared the confidence gate AND was user-approved at apply time. Over time
-the taxonomy becomes the institutional memory of "how this skill has failed
-before", grounded in evidence rather than prediction.
+What `create-skill` owns:
+
+1. The seven-step procedure (collect → classify → attribute → propose → gate → write → apply / PR).
+2. The output report format.
+3. The `confidence(bug-analysis) ≥ 90 %` gate before `--apply`.
+4. The hard rules: one proposal per report, earliest-phase wins, mechanical > judgment, never weaken gates.
+
+When changing a phase, gate, taxonomy class, or load-bearing invariant in
+this skill, **always update [`rules/diagnostic-surface.md`](./rules/diagnostic-surface.md)
+in the same PR** — otherwise the diagnoser walks a stale matrix and either
+misses real gaps or proposes redundant checks.
 
 ---
 
 ## Confidence-gated autonomous action — design intent
 
-The pattern that v3.6 establishes is broader than Diagnose Mode: **autonomous
-actions that change code or skill source are allowed inside the loop, but
-only behind a confidence gate.** Two instances exist today:
+The pattern v3.6 established remains: **autonomous actions that change code
+or skill source are allowed inside the loop, but only behind a confidence
+gate.** Two instances exist today; in v3.7 the first relocated but the
+contract is unchanged.
 
-| Instance                                | Confidence mode             | Threshold | Action gated                                                      |
-| --------------------------------------- | --------------------------- | --------- | ----------------------------------------------------------------- |
-| Diagnose Mode `--apply`                 | `confidence(bug-analysis)`  | ≥ 90 %    | `git apply` of a proposed change to the workflow's own source     |
-| `test-provenance-guard --fix` in loop   | `confidence(code)`          | ≥ 90 %    | Extract-and-rewrite refactor of production code to fix a test     |
+| Instance                                                   | Confidence mode             | Threshold | Action gated                                                      |
+| ---------------------------------------------------------- | --------------------------- | --------- | ----------------------------------------------------------------- |
+| `/create-skill diagnose <skill> --apply`                  | `confidence(bug-analysis)`  | ≥ 90 %    | `git apply` of a proposed change to the **target skill's** source |
+| `test-provenance-guard --fix` in loop                      | `confidence(code)`          | ≥ 90 %    | Extract-and-rewrite refactor of production code to fix a test     |
 
 Both instances share three contracts:
 
@@ -487,6 +491,23 @@ end-user-facing; this file is contributor-facing.
 
 ## History
 
+- **v3.7** — Diagnose Mode relocated to `create-skill`. The `--diagnose`
+  flag is gone from this skill; the retrospective self-improvement loop is
+  now `/create-skill diagnose autonomous-workflow`. The seven-step
+  procedure, output report format, confidence gate, and apply / PR flow
+  moved into `skills/create-skill/rules/diagnose-mode.md` so the same
+  capability works against any diagnosable skill (fix-bug,
+  batch-linear-tickets, future ones). What stays here is a declared
+  contract — `rules/diagnostic-surface.md` — that the generic engine reads
+  to parameterize itself: phase model, failure taxonomy (F1 + `F-novel`,
+  unchanged, append-only), existing-guards-per-phase table, hard
+  invariants, source root, artifacts. Behavior is preserved end-to-end:
+  `--apply` still gates on `confidence(bug-analysis) ≥ 90 %` plus explicit
+  user confirmation; one proposal per report; earliest-phase-fix wins;
+  diagnose never modifies user product code. For users, the only surface
+  change is the invocation: `/autonomous-workflow --diagnose` becomes
+  `/create-skill diagnose autonomous-workflow`.
+
 - **v3.6** — Self-improvement, gated everywhere. Two coordinated changes:
   - **Diagnose Mode.** New `--diagnose` flag on the orchestrator runs a
     retrospective self-analysis after a workflow run produces wrong code.
@@ -496,11 +517,13 @@ end-user-facing; this file is contributor-facing.
     **gated by `Skill("confidence", "bug-analysis") ≥ 90 %`**; below the
     threshold, `--apply` is refused and the report becomes a discussion
     artifact. `--apply` always asks for confirmation even with the gate
-    passing — Auto mode does not bypass this. Procedure in
-    `rules/diagnose-mode.md`. The failure taxonomy is intentionally seeded
-    with **F1 + `F-novel` only** and grows append-only from real
-    confidence-gated, user-approved diagnoses (no speculative categories).
-    Diagnose Mode never modifies user product code.
+    passing — Auto mode does not bypass this. Procedure originally lived
+    in `rules/diagnose-mode.md`; in v3.7 it was relocated to
+    `skills/create-skill/rules/diagnose-mode.md` (see v3.7 above). The
+    failure taxonomy is intentionally seeded with **F1 + `F-novel` only**
+    and grows append-only from real confidence-gated, user-approved
+    diagnoses (no speculative categories). Diagnose Mode never modifies
+    user product code.
   - **`test-provenance-guard` autofix in the loop, behind a confidence
     gate.** The Phase 4 invocation passes `--fix`, so the guard self-heals
     autonomously when it can — but the skill MUST clear

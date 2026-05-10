@@ -290,31 +290,37 @@ You can also invoke explicitly: `@autonomous-workflow implement X`.
 
 ---
 
-## Diagnose Mode (`--diagnose`)
+## Retrospective Self-Improvement
 
 If the workflow ships incorrect code despite all gates passing — or a
-post-merge bug traces back to a missed check — invoke Diagnose Mode **while
-the failing session is still in context**. It does not run the phases. It
-analyses the failed run, classifies the failure against a taxonomy, walks
-every phase to find the earliest gate that could have caught it, and emits a
-unified diff against **this skill's source** so the same failure class cannot
-recur.
+post-merge bug traces back to a missed check — invoke
+`/create-skill diagnose autonomous-workflow` **while the failing session is
+still in context**. It does not run the phases. It analyses the failed run,
+classifies the failure against this skill's taxonomy, walks every phase to
+find the earliest gate that could have caught it, and emits a unified diff
+against **this skill's source** so the same failure class cannot recur.
 
 ```
-/autonomous-workflow --diagnose
-/autonomous-workflow --diagnose --symptom "tests passed but didn't import the SUT"
-/autonomous-workflow --diagnose --apply        # apply the proposed diff locally (asks first)
-/autonomous-workflow --diagnose --pr           # open a PR upstream against agent-skills.git
+/create-skill diagnose autonomous-workflow
+/create-skill diagnose autonomous-workflow --symptom "tests passed but didn't import the SUT"
+/create-skill diagnose autonomous-workflow --apply        # apply the proposed diff locally (asks first)
+/create-skill diagnose autonomous-workflow --pr           # open a PR upstream against agent-skills.git
 ```
 
-Output lands at `.agent/{branch}/diagnose-{YYYYMMDD-HHMMSS}.md` and is
-self-contained — another user can read the report, run `git apply` on the
-embedded diff, and inherit the improvement without access to the original
+Output lands at `.agent/{branch}/diagnose-autonomous-workflow-{YYYYMMDD-HHMMSS}.md`
+and is self-contained — another user can read the report, run `git apply` on
+the embedded diff, and inherit the improvement without access to the original
 session.
 
-Full procedure, failure taxonomy (F1–F10 + `F-novel`), and report format live
-in [`rules/diagnose-mode.md`](./rules/diagnose-mode.md). Diagnose Mode never
-modifies user product code — it only proposes changes to this skill itself.
+`create-skill` owns the generic procedure (seven steps + confidence gate +
+apply / PR flow); this skill owns its [diagnostic surface](./rules/diagnostic-surface.md)
+(phase model, failure taxonomy, existing-guards table, hard invariants).
+Diagnose Mode never modifies user product code — it only proposes changes
+to this skill's source.
+
+> **Migrating from v3.6:** the old `/autonomous-workflow --diagnose` flag
+> was removed in v3.7. Replace any saved invocations with
+> `/create-skill diagnose autonomous-workflow`. Behavior is unchanged.
 
 ---
 
