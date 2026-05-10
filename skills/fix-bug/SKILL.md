@@ -95,8 +95,10 @@ hypotheses. See [`rules/bug-notes-ledger.md`](./rules/bug-notes-ledger.md).
 |------|---------|-----------|
 | (none) | **yes** | Full pipeline (Phases 0–8). Phase 5 dispatches `aw-planner` + `aw-executor` when confidence >= 90%. |
 | `--analyse-only` | | Read-only analysis. Phases 0–4 run as normal; Phase 5 **always** returns the proposal regardless of confidence; Phases 6–8 are skipped. The analysis primitive `/batch-linear-tickets` calls per ticket. |
+| `--verify-deploy <PR>` | | Re-entry path for deferred Phase 8 verification. Skips Phases 1–7 entirely; recovers the Evidence Record from `.agent/<branch>/bug-notes.md` for the PR's head branch and runs Phase 8 against the already-shipped fix. See [Verify-deploy short-circuit](#verify-deploy-short-circuit) below. |
 
-The flag is detected in Phase 0 step 0a and stripped from `$ARGUMENTS` before classification.
+Flags are mutually exclusive. They are detected in Phase 0 step 0a and stripped from
+`$ARGUMENTS` before any further processing.
 
 ---
 
@@ -150,15 +152,23 @@ The flag is detected in Phase 0 step 0a and stripped from `$ARGUMENTS` before cl
 
 ### Step 0a — Detect mode flag
 
-Scan `$ARGUMENTS` for `--analyse-only` (also accept `--analyze-only`). If present, set
-`ANALYSE_ONLY=true`, remove the flag from the argument string, and state the detected mode in one
-line:
+Scan `$ARGUMENTS` for one of the two mutually-exclusive mode flags:
+
+| Flag | Action |
+|------|--------|
+| `--analyse-only` (or `--analyze-only`) | Set `ANALYSE_ONLY=true`. Continue to step 0b. |
+| `--verify-deploy <PR>` | Set `VERIFY_DEPLOY_MODE=true` and `VERIFY_DEPLOY_PR=<PR>`. Skip steps 0b–0c entirely; follow the [Verify-deploy short-circuit](#verify-deploy-short-circuit) below. |
+
+If both flags are present, fail with `--analyse-only and --verify-deploy are mutually exclusive`.
+Strip the matched flag (and its argument, for `--verify-deploy`) from `$ARGUMENTS` before
+continuing. Print one mode line if any flag was matched:
 
 ```text
 Mode: analyse-only
+Mode: verify-deploy (PR #<N>)
 ```
 
-If absent, do not print a mode line.
+If no flag matched, do not print a mode line and continue to step 0b.
 
 ### Step 0b — Classify input shape
 
@@ -200,6 +210,46 @@ RepairAgent ([ICSE 2025](https://software-lab.org/publications/icse2025_RepairAg
 If the input is free text or empty, ask up to **3 questions** in one message and wait. Suggested
 priority: telemetry/trace availability, when the bug started, expected vs actual behaviour. Do
 not run holistic analysis on free text alone.
+
+### Verify-deploy short-circuit
+
+Triggered when `VERIFY_DEPLOY_MODE=true` from step 0a. The PR has already been merged and
+(presumably) deployed; the user is asking to run Phase 8 against the already-shipped fix. Skip
+Phases 1–7 entirely.
+
+1. **Resolve the PR's head branch and merge commit:**
+
+   ```bash
+   gh pr view <PR> --json headRefName,mergeCommit,labels
+   ```
+
+2. **Locate the bug-notes ledger** at `.agent/<headRefName>/bug-notes.md`. If missing, fail:
+
+   ```text
+   No bug-notes ledger found for PR #<N> at .agent/<branch>/bug-notes.md.
+   /fix-bug --verify-deploy can only verify PRs originally produced by /fix-bug —
+   the ledger is the recovery handle for post-deploy verification.
+   ```
+
+3. **Read the ledger.** Recover the originating telemetry source from the Evidence Record's
+   `Sources` section, the pre-fix baseline from the Phase 8 shape (or recompute via the
+   originating query), and the deploy ID from PR labels or the merge commit's `service.version`
+   annotation.
+
+4. **Validate input was telemetry-sourced.** If the Evidence Record's `Sources` field does not
+   contain a Dash0 / telemetry URL, fail:
+
+   ```text
+   PR #<N> was not opened from a telemetry-sourced bug. /fix-bug --verify-deploy
+   only applies to bugs whose original input was a Dash0 / telemetry URL.
+   ```
+
+5. **Jump to Phase 8 step 8a** (classify shape) with the recovered Evidence Record. Phase 8
+   then proceeds normally — classify, pick a verification mode, and run the chosen mode.
+
+6. **After Phase 8 completes**, append the result to the ledger under
+   `Phase log` and post a comment on the PR (and the originating Linear ticket if the input
+   carried one). Exit.
 
 ---
 
