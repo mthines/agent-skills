@@ -37,6 +37,7 @@ Agents live in `agents/` since they require their own model and tool configurati
 
 ### Slash commands (`disable-model-invocation: true`)
 - `batch-linear-tickets` — Batch orchestrator for Linear tickets. Fans out `linear-ticket-investigator` per ticket, correlates findings, gates user approval, then fans out `aw-planner` + `aw-executor` pairs (autonomous-workflow namespace) in worktrees. Requires Linear MCP
+- `charting` — Selects the right chart type and visualization library for React/Next.js (web) and Expo/React Native (mobile) tasks. Maps intent (comparison, composition, distribution, relationship, evolution, flow, geographic, hierarchical) → chart → library based on platform, dataset size, and design system. Defers cross-cutting visual-design and microcopy concerns to the `ux` skill instead of restating them
 - `ci-auto-fix` — Diagnose and fix a failed CI check, iteratively pushing fixes until CI is green (currently GitHub Actions via `gh`)
 - `code-quality` — Code-quality review for readability, complexity, and maintainability
 - `create-pr` — Generate a narrative PR description, push, then watch CI and auto-fix simple failures (lint, format, lockfiles); escalates judgment-required failures via `/confidence`

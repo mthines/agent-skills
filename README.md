@@ -136,6 +136,7 @@ User-invoked only — the model can't auto-trigger these. **Zero baseline contex
 
 | Command                                                             | What it does                                                                                                                                                                                                                                                             |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **[/charting](./skills/charting/SKILL.md)**                         | Selects the right chart type and visualization library for React/Next.js (web) and Expo/React Native (mobile) tasks. Maps intent (comparison, composition, distribution, relationship, evolution, flow, geographic, hierarchical) → chart → library based on platform, dataset size, and design system. Defers cross-cutting concerns (contrast, touch targets, typography, copy) to the `ux` skill rather than restating them. Links to canonical galleries (data-to-viz, shadcn charts, Tremor, Victory Native XL) instead of duplicating example code. |
 | **[/ci-auto-fix](./skills/ci-auto-fix/SKILL.md)**                   | Diagnoses a failed CI check, applies a minimal fix, pushes, and iterates until CI passes. Provider-agnostic in scope; currently implements the GitHub Actions path. Refuses to disable, skip, or weaken checks.                                                          |
 | **[/code-quality](./skills/code-quality/SKILL.md)**                 | Authors and reviews code for low cognitive complexity, readability, and maintainability. Applies guard clauses, early returns, single-responsibility, and pragmatic performance choices grounded in Clean Code, Cognitive Complexity, and Knuth's optimization guidance. |
 | **[/create-pr](./skills/create-pr/SKILL.md)**                       | Generates a narrative PR description, pushes the branch, opens the PR, then watches CI and auto-fixes simple failures (lint, format, lockfiles). Escalates judgment-required failures via `/confidence` rather than guessing.                                            |
@@ -473,6 +474,7 @@ skills/
   aw-create-plan/        SKILL.md                            (workflow companion, slash-only)
   aw-create-walkthrough/ SKILL.md                            (workflow companion, slash-only)
   aw-review-quality-gate/ SKILL.md                           (workflow companion, slash-only)
+  charting/              SKILL.md + rules/ + references/     (slash command)
   ci-auto-fix/           SKILL.md                            (slash command)
   code-quality/          SKILL.md + rules/                   (slash command)
   create-pr/             SKILL.md                            (slash command)
