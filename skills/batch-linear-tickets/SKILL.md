@@ -1,57 +1,68 @@
 ---
 name: batch-linear-tickets
 description: >
-  Batch-analyze and resolve multiple Linear tickets with parallel investigation,
-  cross-ticket correlation, confidence validation, and autonomous execution.
-  Triggers on: "batch-linear-tickets", "batch analyze", "solve these tickets", "analyze tickets".
+  Batch-analyze and resolve multiple Linear tickets. Fans out
+  /fix-bug --analyse-only per ticket (which itself invokes
+  linear-ticket-investigator + holistic-analysis + confidence),
+  correlates findings across tickets, gates on user approval, then
+  fans out aw-planner + aw-executor for approved tickets using the
+  pre-computed analyses. Posts PR links back to each Linear ticket on
+  completion. This skill is a thin batching wrapper around /fix-bug;
+  per-ticket investigation, analysis, and confidence scoring all live
+  in /fix-bug. Triggers on "batch-linear-tickets", "batch analyze",
+  "solve these tickets", "analyze tickets", "/batch-linear-tickets".
 user-invocable: true
 disable-model-invocation: true
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '2.0.0'
   workflow_type: orchestrator
-  architecture: fan-out/gate/fan-out/gate/fan-out
+  architecture: fan-out-analyse/correlate/gate/fan-out-execute
+  composes:
+    - fix-bug
+    - linear-ticket-investigator
+    - autonomous-workflow
   agents:
     investigator: linear-ticket-investigator
     planner: aw-planner
     executor: aw-executor
   phases:
-    - intake
-    - parallel_investigation
+    - parallel_analysis
     - correlation
     - approval
-    - parallel_planning
-    - plan_review
     - parallel_execution
     - results
-  tags: [batch, tickets, linear, investigation, parallel, multi-agent]
+  tags:
+    - batch
+    - tickets
+    - linear
+    - parallel
+    - multi-agent
+    - fix-bug-wrapper
 ---
 
 # Batch Linear Ticket Resolver
 
-Orchestrate parallel investigation, planning, and implementation of multiple Linear tickets.
-This skill is a **thin orchestrator** — it coordinates specialized agents and handles user-facing gates in the main conversation context.
+Orchestrate parallel analysis and resolution of multiple Linear tickets. This skill is a **thin
+batching wrapper** around `/fix-bug` — per-ticket investigation, analysis, and confidence scoring
+all live in `/fix-bug` (which itself invokes `linear-ticket-investigator` for evidence and
+`holistic-analysis` for root-cause). This skill owns only batch-level concerns: parallel
+fan-out, cross-ticket correlation, user-facing approval gate, and Linear writeback.
 
 ## Architecture
 
-```
-Phase 1: Fan-Out Investigation        → linear-ticket-investigator agents
-Phase 2: Correlation (main context)   → cross-ticket analysis
-Phase 3: Approval Gate (main context) → user picks tickets to proceed
-Phase 4: Fan-Out Planning             → aw-planner agents (in worktrees)
-Phase 5: Plan Review Gate (optional)  → user inspects plans before execution
-Phase 6: Fan-Out Execution            → aw-executor agents
-Phase 7: Results (main context)       → status table + Linear updates
+```text
+Phase 1: Parallel Analysis      → fan out /fix-bug --analyse-only per ticket
+Phase 2: Cross-Ticket Correlation → detect shared root causes, file conflicts, duplicates
+Phase 3: Approval Gate          → user picks tickets to ship
+Phase 4: Parallel Execution     → fan out aw-planner + aw-executor for approved tickets
+Phase 5: Results & Linear Updates → status table + per-ticket PR comments
 ```
 
-The autonomous-workflow is split into two agents — `aw-planner` and
-`aw-executor` (the `aw-` prefix is short for "autonomous-workflow" and
-groups the pair together) — connected by `plan.md`:
-- **aw-planner** runs Phases 0–2 (validate, plan, create worktree, gate on `confidence(plan) ≥ 90%`).
-- **aw-executor** runs Phases 3–7 (implement, test, document, draft PR, watch CI).
-
-The planner already runs `confidence(plan)` internally.
-Phase 5 of this skill is an **optional, additional human review** for batch contexts where the user wants to compare plans across tickets before dispatching executors in parallel.
+`/fix-bug --analyse-only` runs all of `/fix-bug`'s Phases 0–4 (input classification, evidence
+resolution via `linear-ticket-investigator`, source mapping, holistic analysis, confidence gate)
+and stops at the proposal. Phase 4 below dispatches `aw-planner` directly using the analysis from
+Phase 1 — `/fix-bug` is **not** re-invoked, so holistic-analysis runs once per ticket.
 
 ---
 
@@ -60,24 +71,26 @@ Phase 5 of this skill is an **optional, additional human review** for batch cont
 | Dependency | Purpose | Required? |
 |-----------|---------|-----------|
 | Linear MCP (`mcp__claude_ai_Linear__*`) | Read tickets, post PR comments | **Yes** |
-| `linear-ticket-investigator` agent | Phase 1 fan-out | **Yes** |
-| `aw-planner` + `aw-executor` agents (from [`autonomous-workflow`](../autonomous-workflow/SKILL.md), under the `aw-` namespace) | Phases 4 & 6 | **Yes** |
-| `gh` CLI | PR creation by the executor | **Yes** |
+| `/fix-bug` skill | Phase 1 per-ticket analysis primitive | **Yes** |
+| `linear-ticket-investigator` agent | Invoked transitively by `/fix-bug`'s Linear input route | **Yes** |
+| `aw-planner` + `aw-executor` agents (from [`autonomous-workflow`](../autonomous-workflow/SKILL.md)) | Phase 4 dispatch | **Yes** |
+| `gh` CLI | PR creation by `aw-executor` | **Yes** |
 | `gw` CLI | Worktree management (planner) | Recommended |
-| Project domain-navigator skill | Step 2 of investigation in monorepos | Optional — see [Customization](#customization) |
+| Project domain-navigator skill | Investigation accuracy in monorepos | Optional — see [Customization](#customization) |
 
 ---
 
 ## Rules
 
-| Rule | Description |
-|------|-------------|
-| [cross-ticket-correlation](./rules/cross-ticket-correlation.md) | Detect shared root causes, duplicates, conflicts |
-| [batch-approval-ux](./rules/batch-approval-ux.md) | Summary table, approval commands, status values |
+| Rule | When it loads |
+|------|---------------|
+| [cross-ticket-correlation](./rules/cross-ticket-correlation.md) | Phase 2 — detect shared root causes, duplicates, conflicts |
+| [batch-approval-ux](./rules/batch-approval-ux.md) | Phase 3 — summary table format, status values, approval commands |
 
 > Investigation rules live in `linear-ticket-investigator`.
+> Analysis, confidence, and per-ticket fix logic live in `/fix-bug`.
 > Planning and execution rules live in `aw-planner` and `aw-executor`.
-> This skill only owns batch-level orchestration and the two user-facing gates.
+> This skill only owns batch-level fan-out and the user-facing approval gate.
 
 ---
 
@@ -86,7 +99,7 @@ Phase 5 of this skill is an **optional, additional human review** for batch cont
 Parse `$ARGUMENTS` for ticket identifiers.
 
 - If `$ARGUMENTS` contains ticket IDs (e.g., `SUP-123 ENG-456`), use them directly.
-- If `$ARGUMENTS` contains a Linear filter/project URL, extract relevant ticket IDs.
+- If `$ARGUMENTS` contains a Linear filter / project URL, extract the relevant ticket IDs first.
 - If `$ARGUMENTS` is empty, ask the user to provide ticket IDs.
 
 Accept formats: `SUP-123`, `ENG-456`, `123` (bare number), Linear URLs.
@@ -94,21 +107,35 @@ Comma-, space-, or newline-separated.
 
 ---
 
-## Phase 1: Parallel Investigation (Fan-Out)
+## Phase 1: Parallel Analysis (Fan-Out)
 
-Spawn one `linear-ticket-investigator` agent per ticket using the Agent tool with `subagent_type: "linear-ticket-investigator"`.
-**Launch ALL agents in a single message.**
+For each ticket, invoke `/fix-bug --analyse-only` via `Skill()`. **Launch all calls in a single
+message** so they run in parallel.
 
-Each agent's prompt is minimal — the agent definition contains the full investigation methodology:
-
-```
-Investigate Linear ticket {TICKET_ID}.
-
-{Optional context from the user, e.g., "this is in the alerting component"}
+```text
+Skill("fix-bug", "--analyse-only https://linear.app/<workspace>/issue/<TICKET-ID>")
 ```
 
-**Wait for all agents to return** before proceeding.
-If some fail, proceed with what you have and offer to re-run the failed ones.
+Each `/fix-bug` call:
+
+1. Routes the Linear URL through its Phase 1 Linear-input handler, which spawns
+   `linear-ticket-investigator` to extract an Evidence Record from the ticket.
+2. Runs holistic-analysis on the Evidence Record (Phase 3).
+3. Runs `confidence(bug-analysis)` (Phase 4).
+4. Stops at Phase 5 (because of `--analyse-only`) and returns the proposal + confidence score
+   without dispatching `aw-planner`.
+
+**Wait for all calls to return** before proceeding. If some fail, proceed with what you have and
+offer to re-run the failed ones.
+
+Capture per ticket:
+
+- The Evidence Record (from `/fix-bug` output's "Evidence" section).
+- The root cause (from `/fix-bug` output's "Root cause" section).
+- The proposed change.
+- The confidence score and breakdown.
+- The status: `Ready` (>= 90%), `Needs Review` (70–89%), `Needs Info` (information gaps), or
+  `Stopped` (< 70% with no escape hatch).
 
 ---
 
@@ -124,118 +151,87 @@ Group correlated tickets so a single PR can resolve multiple.
 
 ## Phase 3: Approval Gate
 
-Present findings using the format in [batch-approval-ux](./rules/batch-approval-ux.md): summary table, per-ticket details, correlation notes, information gaps, and an approval prompt.
+Present findings using the format in [batch-approval-ux](./rules/batch-approval-ux.md): summary
+table, per-ticket details, correlation notes, information gaps, and an approval prompt.
 
 Tickets with status `Needs Info` cannot be approved until gaps are resolved.
-If the user provides missing info, re-run `linear-ticket-investigator` for those tickets only and re-present.
+If the user provides missing info, re-run `/fix-bug --analyse-only` for those tickets only and
+re-present.
 
-Approval commands: `all`, `1, 3, 5`, `all including risky`, `review plans`, `none`.
+Approval commands: `all`, `1, 3, 5`, `all including risky`, `none`.
 
 ---
 
-## Phase 4: Parallel Planning (Fan-Out)
+## Phase 4: Parallel Execution (Fan-Out)
 
-For each approved ticket (or correlated group), launch an `aw-planner` agent using the Agent tool with `subagent_type: "aw-planner"` and `isolation: "worktree"`.
-**Launch ALL approved planners in a single message.**
+For each approved ticket (or correlated group), dispatch `aw-planner` directly using the analysis
+from Phase 1 — do **not** re-invoke `/fix-bug`. The analysis is already complete; running it
+again would re-run holistic-analysis for nothing.
 
-Each planner receives the full Decision Pack from the investigator — it does not re-investigate, but it will validate, refine, and produce a self-contained `plan.md` gated by `confidence(plan)`.
+Use the Agent tool with `subagent_type: "aw-planner"` and `isolation: "worktree"`. Pass the
+**Bug Fix Pack** from
+[`fix-bug/templates/bug-fix-pack.md`](../fix-bug/templates/bug-fix-pack.md), filled in from the
+Phase 1 analysis. **Launch ALL approved planners in a single message.**
 
-```
-Plan a fix for Linear ticket {TICKET_ID}: {Title}
-
-## Context
-{Full ticket description and relevant comments}
-
-## Investigation Findings
-{Root cause + certainty markers from linear-ticket-investigator}
-
-## Approved Proposal
-- Root cause: ...
-- Proposed fix: ...
-- Affected files: ...
-- Risk: ...
-
-## Correlated Tickets
-{If this PR resolves multiple tickets, list them all with IDs and titles}
-
-## Requirements
-- Branch: fix/{TICKET_ID}
-- The PR description (created later by the executor) must reference Linear ticket(s) with "Fixes {TICKET_ID}"
-```
+For correlated tickets that resolve to a single PR, list all ticket IDs in the pack's
+"Correlated Tickets" addendum so the executor's PR description references each one with
+"Fixes {TICKET_ID}".
 
 Each planner returns one of:
-- **Plan ready** (confidence ≥ 90%) — worktree path + plan.md ready for execution.
+
+- **Plan ready** (confidence ≥ 90%) — worktree + `plan.md` ready for execution.
 - **Below gate** (confidence < 90% after retries) — concerns surfaced for user decision.
 
----
+For below-gate plans, present the planner's concerns and offer:
 
-## Phase 5: Plan Review Gate (Optional)
+- **refine** — re-spawn the planner for another iteration.
+- **proceed** — accept and dispatch the executor anyway (NOT recommended).
+- **stop** — abandon this ticket.
 
-By default, **proceed straight to Phase 6** for any planner that returned "Plan ready".
-This is the fast path.
+For each plan that cleared the gate (or was force-proceeded), dispatch `aw-executor` with
+`subagent_type: "aw-executor"` and `isolation: "worktree"` pointing at the same worktree the
+planner used. **Launch ALL executors in a single message:**
 
-If **any** planner returned "Below gate", or if the user requested `review plans` at approval time, pause here:
-
-```
-## Plans Ready for Review
-
-| # | Ticket | Confidence | Worktree | Action |
-|---|--------|------------|----------|--------|
-| 1 | SUP-123 | 95% (passed gate) | .agent/fix/SUP-123/ | execute |
-| 2 | ENG-456 | 82% (below gate) | .agent/fix/ENG-456/ | review concerns |
+```text
+Execute the plan at .agent/<branch>/plan.md in the current worktree.
 ```
 
-For below-gate plans, list the concerns from the planner and offer:
-- **refine** — re-spawn the planner for another iteration
-- **proceed** — accept and dispatch executor anyway (NOT recommended)
-- **stop** — abandon this ticket
+The executor runs autonomous-workflow Phases 3–7: implement, test, document, open the draft PR,
+watch CI.
 
-For plans that passed the gate, the user can optionally inspect `plan.md` before dispatch.
-Default: dispatch all gated plans without further prompting.
+See [`fix-bug/rules/autonomous-handoff.md`](../fix-bug/rules/autonomous-handoff.md) for the
+single-ticket version of this handoff — the per-ticket dispatch logic is identical.
 
 ---
 
-## Phase 6: Parallel Execution (Fan-Out)
-
-For each plan that cleared the gate (or was force-proceeded by the user), launch an `aw-executor` agent using the Agent tool with `subagent_type: "aw-executor"` and `isolation: "worktree"` pointing at the **same worktree the planner used**.
-**Launch ALL executors in a single message.**
-
-The executor reads `plan.md` directly — it does not need a Decision Pack from this skill.
-A minimal prompt is enough:
-
-```
-Execute the plan at .agent/{branch}/plan.md in the current worktree.
-```
-
-The executor runs Phases 3–7 of autonomous-workflow: implement, test, document, open draft PR, watch CI.
-
----
-
-## Phase 7: Results & Linear Updates
+## Phase 5: Results & Linear Updates
 
 As executors complete, present a final status table:
 
-```
+```markdown
 ## Execution Results
 
 | Ticket | Status | PR | Branch | Notes |
 |--------|--------|----|--------|-------|
-| SUP-123 | Done | #456 | fix/SUP-123 | All tests pass, CI green |
-| ENG-456 | Done | #457 | fix/ENG-456 | Added 3 test cases |
+| SUP-123 | Done | #456 | fix/SUP-123 | Confidence 95%, all tests pass |
+| ENG-456 | Done | #457 | fix/ENG-456 | Confidence 92%, added 3 test cases |
 | SUP-789 | Failed | — | fix/SUP-789 | Stuck-loop in Phase 4 |
 ```
 
-For each successful PR, comment on the Linear ticket with the PR link via `mcp__claude_ai_Linear__save_comment`:
+For each successful PR, comment on the Linear ticket with the PR link via
+`mcp__claude_ai_Linear__save_comment`:
 
-```
+```text
 PR created: {PR_URL}
 Branch: fix/{TICKET_ID}
-Plan confidence: {X%}
+Bug-analysis confidence: {X%}
+Plan confidence: {Y%}
 ```
 
 Ask the user whether to update ticket state (e.g., move to "In Progress").
 
-For failed executions, surface the error and suggested next steps (manual fix, re-plan, more context).
+For failed executions, surface the error and suggested next steps (manual fix, re-plan, more
+context).
 
 ---
 
@@ -243,38 +239,42 @@ For failed executions, surface the error and suggested next steps (manual fix, r
 
 ### Domain Context
 
-`linear-ticket-investigator` uses the project's domain context to ground its search.
-For monorepos, this dramatically improves investigation accuracy.
+`linear-ticket-investigator` (invoked transitively by `/fix-bug`) uses the project's domain
+context to ground its evidence extraction. For monorepos this dramatically improves the accuracy
+of the Affected-Code table.
 
 The agent looks for context in this order:
 
-1. Top-level `CLAUDE.md` / `AGENTS.md`
-2. Component-specific `CLAUDE.md` / `AGENTS.md` in directories the ticket points at
-3. A project-shipped **domain navigator skill** (invoked via `Skill()`)
-4. Top-level `README.md`
+1. Top-level `CLAUDE.md` / `AGENTS.md`.
+2. Component-specific `CLAUDE.md` / `AGENTS.md` in directories the ticket points at.
+3. A project-shipped **domain navigator skill** (invoked via `Skill()`).
+4. Top-level `README.md`.
 
-To add a domain navigator for your project, create a skill named e.g. `<project>-domain-navigator` that:
-- Maps Linear labels (or ticket terminology) to component directories
-- Surfaces cross-component dependencies an outsider wouldn't infer
-- Lists where each domain's docs/runbooks live
+To add a domain navigator for your project, create a skill named e.g. `<project>-domain-navigator`
+that maps ticket terminology to component directories. The investigator picks it up automatically
+as long as it is in the host project's installed skills.
 
-The investigator will pick it up automatically as long as it's in the host project's installed skills.
-See the [`linear-ticket-investigator`](../../agents/linear-ticket-investigator.md) agent file for the exact lookup procedure.
+See the [`linear-ticket-investigator`](../../agents/linear-ticket-investigator.md) agent file for
+the exact lookup procedure.
 
 ---
 
 ## Key Principles
 
-1. **Orchestrate, don't investigate or plan or implement** — investigation lives in `linear-ticket-investigator`, planning in `aw-planner`, execution in `aw-executor`.
-   This skill only coordinates and runs user-facing gates.
-2. **Two user gates: approval (Phase 3) and optional plan review (Phase 5)** — both happen in main context where the user is.
-   No checkpoint/resume machinery.
-3. **Decision Pack to planners, not to executors** — planners need full investigation context to write `plan.md`.
-   Executors just read `plan.md`.
-4. **Parallelize every fan-out** — investigators, planners, and executors all launch in one message each.
-5. **The planner's confidence gate is authoritative** — if it returns "Plan ready", the plan is safe to execute.
-   Phase 5 only intercepts below-gate plans or user-requested review.
-6. **Correlate before planning** — detect shared root causes and conflicts so one plan can resolve multiple tickets.
-7. **Handle partial failures at every phase** — if some agents fail, present what you have and offer to retry.
-8. **User stays in control** — every batch requires explicit approval at Phase 3.
-   Information gaps must be resolved before that approval.
+1. **Thin wrapper, not re-implementation.** Investigation lives in `linear-ticket-investigator`,
+   analysis and confidence in `/fix-bug` (via `holistic-analysis` and `confidence`), planning in
+   `aw-planner`, execution in `aw-executor`. This skill only coordinates and runs the user-facing
+   approval gate.
+2. **Single user gate (Phase 3 approval).** No checkpoint/resume machinery. Below-gate plan
+   surfacing in Phase 4 is per-planner, not a separate batch gate.
+3. **Analyse once, execute once.** Phase 1's `/fix-bug --analyse-only` is the only place
+   holistic-analysis runs per ticket. Phase 4 dispatches `aw-planner` directly using that
+   analysis — `/fix-bug` is not re-invoked.
+4. **Parallelize every fan-out.** Analyses, planners, and executors all launch in one message
+   each.
+5. **Correlate before executing.** Detect shared root causes and conflicts so one plan can
+   resolve multiple tickets.
+6. **Handle partial failures at every phase.** If some agents fail, present what you have and
+   offer to retry.
+7. **User stays in control.** Every batch requires explicit approval at Phase 3. Information gaps
+   must be resolved before approval.

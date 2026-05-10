@@ -16,6 +16,7 @@ tags:
 - [Overview](#overview)
 - [When to Use Artifacts](#when-to-use-artifacts)
 - [Two-Artifact Pattern](#two-artifact-pattern)
+- [Caller-supplied context artefacts](#caller-supplied-context-artefacts)
 - [Plan Versioning](#plan-versioning)
 - [Quality Gate](#quality-gate)
 - [File Location](#file-location)
@@ -79,6 +80,50 @@ See [overview](./overview.md) for the complete decision flow.
 to execute from it alone. Every invocation of `aw-create-plan` writes a new
 immutable `plan.v{N}.md` snapshot **and** overwrites `plan.md` so it always
 points at the latest version. See **Plan Versioning** below.
+
+## Caller-supplied context artefacts
+
+Orchestrators that invoke `aw-planner` (e.g., [`/fix-bug`](../../fix-bug/SKILL.md)
+and other future task-shaped orchestrators) may attach **additional artefacts**
+to the planner pack beyond the two standard ones above. The pattern: the
+orchestrator declares a path to a caller-managed artefact under a
+`## Context artefacts` section in the planner pack, the planner reads it on
+entry and references the path verbatim in `plan.md`, and the executor reads
+it on entry and honours any contracts the artefact declares.
+
+Pattern requirements:
+
+| Requirement | Why |
+|-------------|-----|
+| Artefact lives inside the worktree at `.agent/{branch}/<name>.md` | Same lifetime as `plan.md`; survives compaction; cleaned up by Phase 7 |
+| Append-only discipline | Phases append on exit, never overwrite. The artefact is institutional history, not scratch space |
+| Schema declared by the caller, not by this skill | The orchestrator owns the artefact's meaning; this skill only owns delivery |
+| Path mentioned verbatim in `plan.md` | The executor reads `plan.md` end-to-end at Phase 3 entry — that is how it discovers the artefact |
+
+This skill stays domain-neutral: it does not parse the artefact, gate on its
+contents, or change phase behaviour based on it. The artefact is for the
+caller's bookkeeping (and any agent the caller later spawns to consume it).
+
+### Canonical example: `/fix-bug` bug-notes ledger
+
+`/fix-bug` Phase 6 attaches `.agent/<branch>/bug-notes.md` — a structured
+ledger of the bug's evidence, hypotheses, ruled-out causes, counterexamples
+seen during the executor's CEGIS refinement loop, and the confidence
+trajectory across phases. The planner appends a one-line plan summary on
+exit; the executor appends counterexamples on each refinement round; the
+fresh-context `bug-fix-verifier` agent reads the ledger as evidence at
+Phase 7 verification time.
+
+Schema and lifecycle live in
+[`/fix-bug rules/bug-notes-ledger.md`](../../fix-bug/rules/bug-notes-ledger.md);
+template at
+[`/fix-bug templates/bug-notes.md`](../../fix-bug/templates/bug-notes.md).
+
+If you write a new orchestrator that needs to carry per-task context across
+the planner / executor boundary or beyond, follow the same shape — declare
+the artefact path in your pack's `## Context artefacts` section, document the
+schema in your skill's rules, and let `aw-planner` and `aw-executor` carry it
+through unmodified.
 
 ## Plan Versioning
 

@@ -16,6 +16,7 @@ tags:
 - [Overview](#overview)
 - [Why this boundary](#why-this-boundary)
 - [Handoff contract](#handoff-contract)
+- [Refinement contracts (caller-specified)](#refinement-contracts-caller-specified)
 - [Handoff message format](#handoff-message-format)
 - [Receiving handoff (executor entry point)](#receiving-handoff-executor-entry-point)
 - [What the planner DOES NOT do](#what-the-planner-does-not-do)
@@ -80,6 +81,36 @@ All multi-signal `confidence(plan)` rule checks must pass:
 - Verification commands are concrete (no placeholders)
 
 If any check fails, the gate fails and the planner enters the iterate-or-escalate flow described in [`phase-1-planning.md#confidence-gate`](./phase-1-planning.md#confidence-gate).
+
+---
+
+## Refinement contracts (caller-specified)
+
+Orchestrators that invoke `aw-planner` may attach a **refinement contract** to the planner pack. When present, the planner includes the contract verbatim in `plan.md` and the executor honours it during Phase 3 implementation.
+
+A refinement contract is generic — this skill does not specify what is checked or how the executor refines. The orchestrator owns the semantics; this skill owns delivery. A contract specifies:
+
+| Field | Meaning |
+|-------|---------|
+| **Check** | A command or condition the executor runs after each implementation edit (e.g., a failing reproduction test, a property test, a benchmark threshold). |
+| **On-failure action** | What the executor does when the check fails — typically: capture evidence verbatim, append it to a [caller-supplied context artefact](./artifacts-overview.md#caller-supplied-context-artefacts), and refine the implementation using the captured evidence as concrete input. |
+| **Round cap** | Maximum refinement rounds before escalation (typically 3 — beyond which the executor stops and surfaces the failed evidence rather than guessing). |
+| **Escalation path** | Where the executor returns when the cap is hit — usually `confidence(bug-analysis)` or back to the orchestrator. |
+
+The pattern descends from counterexample-guided synthesis (CEGIS) — the failing input from a check is more valuable feedback than the boolean check result, so refinement should consume the input directly. See [LLM-CEGIS-Repair (AAAI 2025)](https://github.com/pmorvalho/LLM-CEGIS-Repair) for the formal treatment; reports +15-30% on Defects4J vs single-shot generation.
+
+### Canonical example: `/fix-bug` CEGIS contract
+
+`/fix-bug` Phase 6 attaches the following contract to its bug-fix pack:
+
+- **Check**: run the reproduction test (`<repro_command>`) after each implementation edit.
+- **On-failure action**: capture the failing input/output verbatim, append to the bug-notes ledger under `Counterexamples`, refine the patch using the captured input.
+- **Round cap**: 3.
+- **Escalation path**: re-run `Skill("confidence", "bug-analysis fix")` and return to the orchestrator with the failed evidence.
+
+Full contract at [`/fix-bug rules/autonomous-handoff.md`](../../fix-bug/rules/autonomous-handoff.md#step-6c--cegis-refinement-contract).
+
+This skill does not parse the check or evaluate refinement quality — it only carries the contract from planner to executor through `plan.md`. New orchestrators with their own refinement loops (property-based testing, benchmark-driven optimisation, eval-driven iteration) follow the same shape: declare the four fields in your pack, document the loop in your skill's rules, let `aw-planner` and `aw-executor` deliver it unmodified.
 
 ---
 
