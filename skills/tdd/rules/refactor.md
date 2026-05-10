@@ -148,7 +148,25 @@ recipe, read `code-quality/rules/refactor-recipes.md`.
 
 After all refactoring steps, run the complete relevant test suite one final time.
 
-### 5. Report
+### 5. Verify Test Provenance
+
+Before reporting, invoke the `test-provenance-guard` skill to confirm the test you wrote actually exercises the production module — not a private copy of the SUT defined inside the test file.
+
+```
+Skill("test-provenance-guard")
+```
+
+| Property                  | Value                                                                              |
+| ------------------------- | ---------------------------------------------------------------------------------- |
+| Runs in                   | REFACTOR phase, after step 4 (full suite green)                                    |
+| Skips silently if missing | Yes — log one line and continue to step 6                                          |
+| Disable                   | Remove this section if you accept the risk that GREEN may have been a false pass  |
+
+The guard runs a static check (the test file imports the SUT and does not shadow its exported names) plus a mutation check (blanking the production function's body re-runs the test and expects failure). If either check fails, the test was passing by construction — the GREEN phase was a false positive. Treat the guard's output as the source of truth: if it self-heals (extracting inline logic to an export and rewriting callers), accept the patch; if it cannot, revert to RED with the failing repro and try again.
+
+Catching tests-by-construction here — at the moment the test is written — is far cheaper than discovering them in PR review or post-merge.
+
+### 6. Report
 
 Output, citing the recipe IDs applied:
 ```

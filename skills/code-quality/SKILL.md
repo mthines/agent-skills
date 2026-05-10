@@ -49,17 +49,13 @@ The three quality axes this skill targets, in priority order:
 3. **Pragmatic performance** — algorithmic wins by default, micro-optimizations
    only when a profiler points at them.
 
-This skill applies in two modes:
+This skill applies in three modes:
 
-1. **Authoring mode** — when writing new code (e.g., GREEN phase of TDD, new
-   features). Apply principles inline so the first version already meets the
-   bar.
-2. **Review mode** — when refactoring, reviewing PRs, or being asked to
-   "clean this up". Diagnose against the rules and propose targeted changes.
+1. **Plan mode** — invoked with `Skill("code-quality", "plan")`, before any code is written. Reads a `plan.md` (or proposed approach) and the existing codebase, and verifies the plan's structure follows the existing patterns and avoids predictable design-time risks (premature parallel maps, missing branded primitives, untyped error paths, parameter creep, neighbour mismatch). Returns findings only — no code edits. Used by `autonomous-workflow` Phase 1. See [`rules/plan-mode.md`](./rules/plan-mode.md).
+2. **Authoring mode** — when writing new code (e.g., GREEN phase of TDD, new features). Apply principles inline so the first version already meets the bar. Default mode when no argument is passed.
+3. **Review mode** — invoked with `Skill("code-quality", "code")` or `Skill("code-quality", "review")`, after code is written. When refactoring, reviewing PRs, or being asked to "clean this up". Diagnose against the rules and propose targeted changes.
 
-Detect the mode from context. If the user says "review" or "audit" or
-references existing code, use review mode. Otherwise default to authoring
-mode and apply principles silently while you write.
+Detect the mode from the `$ARGUMENTS` first token: `plan` → plan mode; `code` or `review` → review mode; anything else (including no argument) → authoring mode. The legacy convention "user said review or audit" still routes to review mode for ad-hoc invocations.
 
 ---
 

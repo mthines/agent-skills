@@ -17,6 +17,7 @@ tags:
 - [Procedure](#procedure)
 - [Auto Fix](#auto-fix)
 - [Parallel CI Fixes](#parallel-ci-fixes)
+- [Auto Verify](#auto-verify)
 - [Auto Review](#auto-review)
 - [Optional Post-Merge Cleanup](#optional-post-merge-cleanup)
 - [Phase 7 Checklist](#phase-7-checklist)
@@ -169,7 +170,81 @@ Once all checks are green:
 
 Tell the user: PR URL, all checks green, and that the worktree is preserved pending their review/merge.
 
-Then proceed to [Auto Review](#auto-review) before any cleanup.
+Then proceed to [Auto Verify](#auto-verify) before any cleanup.
+
+## Auto Verify
+
+After CI is green and **before** Auto Review, dispatch the `feature-pr-verifier` agent in fresh context to grade the PR against `plan.md`'s Acceptance Criteria, PASS_TO_PASS, diff sanity, and walkthrough integrity. This closes the same self-grading loophole `bug-fix-verifier` closes for bug fixes — Anthropic's harness research is explicit that "agents reliably skew positive when grading their own work."
+
+| Property                  | Value                                                                  |
+| ------------------------- | ---------------------------------------------------------------------- |
+| Runs in Full Mode         | Yes (Lite Mode has no `plan.md` to verify against — skip)              |
+| Runs in Lite Mode         | No                                                                     |
+| Skips silently if missing | Yes — log one line and continue to Auto Review                         |
+| Verdict effect            | Advisory — surfaced inline in chat. The user undrafts the PR.         |
+| Disable                   | Remove this section; Auto Review then becomes the next step after CI green |
+
+### Step 1: Detect the `feature-pr-verifier` agent
+
+Stop at the first hit, in this order:
+
+```bash
+[ -f ".claude/agents/feature-pr-verifier.md" ] && VERIFIER_AVAILABLE=1
+[ -z "$VERIFIER_AVAILABLE" ] && [ -f "$HOME/.agents/agents/feature-pr-verifier.md" ] && VERIFIER_AVAILABLE=1
+[ -z "$VERIFIER_AVAILABLE" ] && [ -f "$HOME/.claude/agents/feature-pr-verifier.md" ] && VERIFIER_AVAILABLE=1
+```
+
+If none of the paths resolve, log and skip to Auto Review:
+
+```markdown
+- [TIMESTAMP] Phase 7: feature-pr-verifier — not available, continuing (install `agents/feature-pr-verifier.md` from agent-skills.git into one of: `.claude/agents/`, `~/.agents/agents/`, `~/.claude/agents/`)
+```
+
+If running in Lite Mode (no `plan.md`), also skip:
+
+```markdown
+- [TIMESTAMP] Phase 7: feature-pr-verifier — skipped (Lite Mode has no plan.md to verify against)
+```
+
+### Step 2: Dispatch the `feature-pr-verifier` sub-agent
+
+Spawn one sub-agent with `subagent_type: feature-pr-verifier` and pass the inputs the agent's contract requires.
+
+```
+description: Verify PR after CI green
+subagent_type: feature-pr-verifier
+prompt: |
+  Verify this feature PR. Inputs:
+
+  - plan.md path: .agent/<branch>/plan.md
+  - walkthrough.md path: .agent/<branch>/walkthrough.md
+  - PR head SHA: <pr_head_sha>
+  - Base SHA: <base_sha>
+  - Project test command: <project_test_command>
+
+  Follow the feature-pr-verifier agent's procedure end-to-end. Run all four
+  checks. Return the verdict block in the exact format specified. Do not
+  propose fixes; do not editorialise; do not request additional inputs.
+```
+
+Do **not** wrap the sub-agent call in a retry loop — the verifier owns its own validation and returns a single terminal verdict.
+
+### Step 3: Surface the verdict
+
+When the sub-agent returns:
+
+```markdown
+- [TIMESTAMP] Phase 7: feature-pr-verifier — verdict: <green|red> (<one-line summary>)
+```
+
+Show the user the verifier's full verdict block (it's terse). Then proceed to [Auto Review](#auto-review) regardless of green or red — the user makes the final call on undrafting:
+
+| Verifier verdict | What to tell the user                                                                                    |
+| ---------------- | -------------------------------------------------------------------------------------------------------- |
+| green            | "Verifier passed all four checks. PR ready for your review and undraft."                                 |
+| red              | "Verifier flagged Check N: <reason>. PR remains in draft. Recommend addressing the finding before undraft." |
+
+Never auto-undraft. The verifier is advisory; the human is the gatekeeper.
 
 ## Auto Review
 
@@ -304,6 +379,7 @@ cd "$(git rev-parse --show-toplevel)"
 - [ ] `ci-auto-fix` invoked per mechanical failure (parallel when independent, cap 2)
 - [ ] Judgment failures escalated to user with full report
 - [ ] CI is green OR user has approved stopping
+- [ ] (Optional, Full Mode) `feature-pr-verifier` agent dispatched after CI green; verdict surfaced or skip logged
 - [ ] (Optional) `reviewer` agent dispatched after CI green; pending review posted or skip logged
 - [ ] (Optional) PR merged → worktree removed with user confirmation
 - [ ] Final status reported to user
@@ -315,4 +391,5 @@ cd "$(git rev-parse --show-toplevel)"
 - Related skill: [ci-auto-fix](../../ci-auto-fix/SKILL.md)
 - Related skill: [create-pr — Step 8 parallel pattern](../../create-pr/SKILL.md)
 - Related agent: [reviewer](../../../agents/reviewer.md) — optional Phase 7 auto-review
+- Related agent: [feature-pr-verifier](../../../agents/feature-pr-verifier.md) — optional Phase 7 auto-verify (Full Mode)
 - Related rule: [git-worktree-workflows cleanup](../../git-worktree-workflows/rules/cleanup.md)

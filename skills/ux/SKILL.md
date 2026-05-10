@@ -56,6 +56,9 @@ Load relevant rule files from `rules/` based on what the code contains:
 | ARIA, accessibility props, screen reader | `rules/accessibility.md` |
 | Platform-specific code, Platform.select | `rules/platform-specific.md` |
 | User-facing text, labels, messages, errors | `rules/ux-writing.md` |
+| Charts, graphs, dashboards, data-viz screens (recharts, chart.js, victory, d3, react-native-svg-charts, visx) | Invoke `Skill("charting")` for chart-type and library selection; review the visual-design subset here |
+
+When the target screen contains data visualization, invoke `Skill("charting")` for the chart-type / library / dataset-size considerations the `charting` skill owns, and keep this review focused on the cross-cutting visual-design and microcopy concerns (contrast, axis labels, legend microcopy, touch targets on interactive marks). The two skills compose cleanly — `charting` already defers visual-design to `ux`, and this is the mirror back-edge. Skip the invocation when the screen has no charts. The skill skips silently if not installed; log one line and continue.
 
 Analyze the code against each loaded rule file. For every finding:
 - Identify the **specific line(s)** in the code

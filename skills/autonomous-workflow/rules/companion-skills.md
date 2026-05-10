@@ -65,8 +65,11 @@ A second class of optional companions exists: **agents** (definitions in `agents
 | Agent      | Phase | Trigger condition                                            | Detection paths                                                                                  | Disable by                                                                                       |
 | ---------- | ----- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
 | `reviewer` | 7     | CI green (after Step 4 Report Success — runs in PR Mode)     | `.claude/agents/reviewer.md`, `~/.agents/agents/reviewer.md`, `~/.claude/agents/reviewer.md`     | Remove invocation in [`phase-7-ci-gate.md`](./phase-7-ci-gate.md#auto-review)                    |
+| `feature-pr-verifier` | 7 | Full Mode AND CI green AND `plan.md` exists (independent green/red verdict before optional undraft) | `.claude/agents/feature-pr-verifier.md`, `~/.agents/agents/feature-pr-verifier.md`, `~/.claude/agents/feature-pr-verifier.md` | Remove invocation in [`phase-7-ci-gate.md`](./phase-7-ci-gate.md#auto-verify) |
 
 The `reviewer` agent's PR Mode posts a **pending** GitHub review — invisible to the PR author until the user submits it from the GitHub UI — so the auto-dispatch never leaks unreviewed comments to the team.
+
+The `feature-pr-verifier` agent runs in fresh context with no access to the planner's or executor's reasoning — only `plan.md`, `walkthrough.md`, the PR diff, and the project test command. It returns a green / red verdict against the four checks (Acceptance-Criteria match, PASS_TO_PASS, diff sanity, walkthrough integrity). The verdict is advisory: only the user undrafts the PR. This is the feature-PR counterpart to `bug-fix-verifier` (which is owned by `/fix-bug`), and serves the same purpose — closing the self-grading loophole Anthropic's harness research warns about.
 
 ---
 

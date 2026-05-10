@@ -178,6 +178,19 @@ Load the `code-quality` skill (via the `Skill` tool) before forming code-quality
 
 Skip this load on trivial diffs (small typo fixes, one-line tweaks). For anything substantive, the rubric pays for itself.
 
+### UX rubric (when the diff touches UI files)
+
+When the diff includes UI files — `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `app/**/*.{ts,tsx}` (Expo / Next App Router screens), or React Native screens — invoke `Skill("ux")` to load the WCAG 2.2 / Apple HIG / Material Design 3 / UX-writing rubric. Without it, UI findings collapse to "code quality" only and accessibility, touch-target, contrast, and microcopy issues silently slip through.
+
+```bash
+# Heuristic: detect UI files in the diff
+git diff --name-only origin/main...HEAD | grep -E '\.(tsx|jsx|vue|svelte)$|/app/.*\.(ts|tsx)$'
+```
+
+If the heuristic returns no matches, skip the load. Skip silently if the `ux` skill is not installed (log one line and proceed). The `ux` skill itself fans out to `Skill("charting")` when the screen contains data visualization — you do not need to invoke `charting` directly.
+
+Compose findings from both rubrics in your output: code-quality findings stay in their existing buckets; UX findings get their own subsection (`### UX & Accessibility`). Severity uses `ux`'s scale (Critical / High / Medium / Low) — do not double-count an issue that both rubrics flag.
+
 ### Running lint/type-check/tests
 
 - Run lint and type-check if the project has them configured. Report new errors only (ignore pre-existing ones).
