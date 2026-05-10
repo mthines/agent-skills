@@ -12,6 +12,17 @@ tags:
 A function is a unit of thought. The smaller and more focused, the easier
 it is to understand, name, test, and reuse.
 
+## Contents
+
+- [The Single-Responsibility Heuristic](#the-single-responsibility-heuristic)
+- [Size Targets](#size-targets)
+- [Parameters](#parameters)
+- [Return Values](#return-values)
+- [Side Effects](#side-effects)
+- [Extract Method: When to Pull Out a Helper](#extract-method-when-to-pull-out-a-helper)
+- [Avoid Premature Generalization](#avoid-premature-generalization)
+- [Functions That Take Functions](#functions-that-take-functions)
+
 ## The Single-Responsibility Heuristic
 
 A function should have *one reason to change*. Practically, you can test

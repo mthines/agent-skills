@@ -14,6 +14,15 @@ Cognitive complexity is SonarSource's metric for how hard code is to
 It penalizes the things that actually exhaust readers: nesting, breaks in
 linear flow, and recursion.
 
+## Contents
+
+- [Why this metric, not cyclomatic](#why-this-metric-not-cyclomatic)
+- [How to score (mentally)](#how-to-score-mentally)
+- [Targets](#targets)
+- [How to bring complexity down](#how-to-bring-complexity-down)
+- [What NOT to do](#what-not-to-do)
+- [Example walkthrough](#example-walkthrough)
+
 ## Why this metric, not cyclomatic
 
 A `switch` with 20 cases has cyclomatic complexity 20 but reads top-to-bottom

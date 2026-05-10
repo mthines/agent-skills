@@ -14,6 +14,16 @@ tags:
 Code is read and changed by other people, including future you.
 This rule covers the practices that keep the collaboration loop fast: matching neighbours, keeping changes reviewable, evolving safely, and working with code you did not write.
 
+## Contents
+
+- [1. Symmetry with Neighbours](#1-symmetry-with-neighbours)
+- [2. PR Scope: One Logical Change Per PR](#2-pr-scope-one-logical-change-per-pr)
+- [3. Migration & Evolution Discipline](#3-migration--evolution-discipline)
+- [4. Working with Legacy Code](#4-working-with-legacy-code)
+- [5. Diff Hygiene](#5-diff-hygiene)
+- [6. Communication in Reviews](#6-communication-in-reviews)
+- [7. Future-Proofing Smell (Cross-Reference)](#7-future-proofing-smell-cross-reference)
+
 ## 1. Symmetry with Neighbours
 
 Before writing a new file in an existing module, **read 2–3 neighbour files** and match their structure.

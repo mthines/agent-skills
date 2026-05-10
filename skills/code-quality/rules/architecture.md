@@ -14,6 +14,16 @@ tags:
 The shape of code at the file and module level determines how easy it is to find things, change things, and test things.
 This rule covers the structural decisions that single-function-level guidance does not reach.
 
+## Contents
+
+- [1. Module Boundaries and Public Surface](#1-module-boundaries-and-public-surface)
+- [2. Dependency Direction](#2-dependency-direction)
+- [3. Functional Core, Imperative Shell](#3-functional-core-imperative-shell)
+- [4. DTO ↔ Domain ↔ Persistence — Three Shapes, One per Boundary](#4-dto--domain--persistence--three-shapes-one-per-boundary)
+- [5. Immutability Defaults](#5-immutability-defaults)
+- [6. State Management Discipline](#6-state-management-discipline)
+- [7. No Side-Effecting Imports](#7-no-side-effecting-imports)
+
 ## 1. Module Boundaries and Public Surface
 
 Each module exposes a small, intentional public surface.

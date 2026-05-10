@@ -13,6 +13,17 @@ Names are the most important readability lever. Code is read 10–100× more
 than it's written; investing 30 seconds on a name saves hours of
 "what was this?" later. A precise name removes the need for a comment.
 
+## Contents
+
+- [Principles](#principles)
+- [Functions: Verbs](#functions-verbs)
+- [Variables: Nouns](#variables-nouns)
+- [Avoid Mental Mapping](#avoid-mental-mapping)
+- [Domain Vocabulary](#domain-vocabulary)
+- [Renaming Is Cheap](#renaming-is-cheap)
+- [Anti-Patterns to Watch For](#anti-patterns-to-watch-for)
+- [When Single-Letter Names Are Fine](#when-single-letter-names-are-fine)
+
 ## Principles
 
 1. **Name by intent, not implementation.** `userIdsToNotify` beats

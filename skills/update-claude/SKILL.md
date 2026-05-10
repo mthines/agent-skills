@@ -1,9 +1,12 @@
 ---
 name: update-claude
 description: >
-  Analyze code changes and update CLAUDE.md and .claude/rules/ documentation to stay
-  in sync with the codebase. Uses git diff analysis to detect what changed and holistic
-  analysis to understand the impact. Invoke with /update-claude.
+  Analyze code changes and update CLAUDE.md, .claude/rules/, and the docs/ tree so
+  all three documentation tiers stay in sync with the codebase. Uses git diff to
+  detect what changed and holistic analysis for impact. Detects drift across tiers
+  (dead @imports, stale narrative, hot-path leakage) and routes new updates by
+  content kind: rules and commands to CLAUDE.md, path-scoped rules to .claude/rules/,
+  rationale and narrative to docs/. Invoke with /update-claude.
 disable-model-invocation: true
 license: MIT
 metadata:
@@ -14,7 +17,16 @@ metadata:
 
 # Update Claude Documentation
 
-Analyze recent code changes and incrementally update CLAUDE.md and `.claude/rules/` files so they accurately reflect the current codebase. This is the counterpart to `/init-claude` — init bootstraps, this command evolves.
+Analyze recent code changes and incrementally update CLAUDE.md, `.claude/rules/`, **and `docs/`** so they accurately reflect the current codebase. This is the counterpart to `/init-claude` — init bootstraps, this command evolves.
+
+This command treats documentation as a tiered system:
+
+| Tier | Location | Audience | Cost |
+|------|----------|----------|------|
+| Hot path | `CLAUDE.md`, `.claude/rules/` | Agent (auto-loaded) | Recurring tokens every turn |
+| Narrative | `docs/` (root + nested) | Humans + agent on demand | One Read tool call when fetched |
+
+Each proposed update gets routed to one tier — see "Content Routing Rubric" in Phase 5b.
 
 ## Argument Parsing
 
@@ -78,18 +90,19 @@ find . -name "CLAUDE.md" -o -name "*.md" -path "*/.claude/rules/*" | head -50
 
 ### 1c. Classify changes by area
 
-Group changed files into documentation areas:
+Group changed files into documentation areas. Each area can hit the hot path (CLAUDE.md / rules) and/or `docs/` — pick by content kind in Phase 5b, not by file pattern alone.
 
-| File Pattern | Documentation Area | Target Doc |
-|-------------|-------------------|------------|
-| `src/api/**`, `routes/**` | API layer | `.claude/rules/api.md` or relevant section in CLAUDE.md |
-| `**/*.test.*`, `**/*.spec.*` | Testing | `.claude/rules/testing.md` |
-| `*.config.*`, `package.json`, `tsconfig.*` | Build/tooling | CLAUDE.md Commands section |
-| `src/components/**` | Frontend | `.claude/rules/frontend.md` or CLAUDE.md Architecture |
-| `migrations/**`, `schema.*` | Database | `.claude/rules/database.md` |
-| `Dockerfile`, `docker-compose.*`, `.github/**` | Infrastructure/CI | CLAUDE.md or `.claude/rules/infra.md` |
-| New top-level directories | Architecture | CLAUDE.md Architecture section |
-| Deleted files/directories | Architecture | Remove stale references from docs |
+| File Pattern | Documentation Area | Hot-path target | `docs/` target |
+|-------------|-------------------|-----------------|-----------------|
+| `src/api/**`, `routes/**` | API layer | `.claude/rules/api.md` | `docs/architecture.md` (rationale only) |
+| `**/*.test.*`, `**/*.spec.*` | Testing | `.claude/rules/testing.md` | `docs/contributing.md` (how to run) |
+| `*.config.*`, `package.json`, `tsconfig.*` | Build/tooling | `CLAUDE.md` Commands | `docs/contributing.md` (env setup) |
+| `src/components/**` | Frontend | `.claude/rules/frontend.md` | `docs/architecture.md` |
+| `migrations/**`, `schema.*` | Database | `.claude/rules/database.md` | `docs/architecture.md` (data model) |
+| `Dockerfile`, `docker-compose.*`, `.github/**` | Infra/CI | `CLAUDE.md` or `.claude/rules/infra.md` | `docs/contributing.md` (local infra) |
+| New top-level directories | Architecture | `CLAUDE.md` Architecture section | `docs/architecture.md` (full narrative) |
+| Deleted files/directories | Architecture | Remove stale references from CLAUDE.md / rules | Remove stale references from `docs/` |
+| `docs/**` itself changed | Documentation | (no hot-path action) | Verify cross-links and `@imports` still resolve |
 
 Also detect:
 - **New patterns introduced**: New frameworks, libraries, or architectural patterns in the diff
@@ -100,19 +113,25 @@ Also detect:
 
 ## Phase 2: Read Current Documentation
 
-Read ALL existing Claude documentation:
+Read ALL existing project documentation — both hot path and narrative:
 
 ```bash
-# Find all Claude doc files
+# Hot path (auto-loaded by Claude)
 find . -name "CLAUDE.md" -not -path "*/node_modules/*" -not -path "*/.git/*"
 find .claude/rules -name "*.md" 2>/dev/null
+
+# Narrative (human-facing, agent-on-demand)
+find docs -name "*.md" 2>/dev/null
+find packages/*/docs apps/*/docs -name "*.md" 2>/dev/null
 ```
 
 Read each file and build a map of what's currently documented:
 - Which paths/areas have dedicated rules files?
 - What sections exist in CLAUDE.md?
 - What commands, patterns, gotchas are documented?
-- What `@imports` exist?
+- What `@imports` exist, and do they resolve?
+- What topics live in `docs/`? Are they referenced from CLAUDE.md?
+- Is any content **duplicated** between CLAUDE.md and `docs/`? (Drift risk — flag for consolidation.)
 
 ---
 
@@ -147,6 +166,23 @@ For each affected area, compare what the docs say vs what the code now does:
 - **Code style claims**: Has the style evolved? New patterns adopted?
 - **Gotchas**: Are documented gotchas still relevant? Are there new ones?
 - **Testing patterns**: Have test conventions changed?
+
+### 3c. `docs/` Drift Checks
+
+The narrative tier drifts more slowly than code, but it drifts. Run these checks against `docs/` (root and nested):
+
+1. **Dead `@import` targets**: every `@docs/...` reference in CLAUDE.md or `.claude/rules/` must resolve to a real file.
+   ```bash
+   grep -rhoE '@docs/[a-zA-Z0-9_/-]+\.md' CLAUDE.md .claude/rules/ 2>/dev/null | sort -u | while read ref; do
+     path="${ref#@}"
+     [ ! -e "$path" ] && echo "DEAD @import: $ref"
+   done
+   ```
+2. **Stale narrative**: does `docs/architecture.md` describe directories or modules that no longer exist? Diff its claims against the current file tree.
+3. **Outdated contributing guide**: `docs/contributing.md` commands should match `package.json` / `Makefile` / equivalent. Detect renames (e.g. `pnpm test` → `bun test`).
+4. **Duplication**: any paragraph that appears verbatim (or near-verbatim) in both CLAUDE.md and `docs/` is a drift risk. Pick a single owner per fact.
+5. **Cross-link rot**: relative links inside `docs/` (`[architecture](./architecture.md)`) — verify they still resolve.
+6. **Hot-path leakage**: scan `docs/` for content that *should* be in the hot path. If a `docs/` file documents a hard rule the agent must obey on every turn ("never edit `dist/` directly"), promote it to CLAUDE.md.
 
 ---
 
@@ -186,15 +222,40 @@ Apply the **"Would removing this cause Claude to make mistakes?"** test to every
 | P2 — Nice to have | Clarifications | Better wording, more specific examples |
 | Skip | Noise | Things Claude would figure out from reading code |
 
-### 5b. Decide where to put each update
+### 5b. Decide where to put each update — Content Routing Rubric
+
+Before placing a change, classify it by **content kind**, not by file pattern. Same rubric as `/init-claude`; reproduced here so this skill stands alone.
+
+| Content kind | Destination | Why |
+|---|---|---|
+| Hard rule ("MUST", "NEVER"), command, gotcha | `CLAUDE.md` (inline) | Auto-loaded; agent acts on it without a round-trip |
+| Decision table, file inventory | `CLAUDE.md` (inline) | Agent hot path; cheap to scan |
+| Path-scoped rule (only `src/api/**`) | `.claude/rules/<topic>.md` | Loaded only when matching files are touched |
+| Architectural rationale ("we picked X because Y") | `docs/architecture.md` | Humans onboard with it; agent reads on demand |
+| Onboarding / dev environment / workflow | `docs/contributing.md` | Reused by new contributors |
+| Conceptual narrative, ADR, design history | `docs/<topic>.md` | Stable, reference-style content |
+| Tutorial / walkthrough | `docs/<topic>.md` | Too verbose for the hot path |
+
+**Routing decision flow per update:**
+
+1. *Is this a rule the agent must obey on every turn?* → CLAUDE.md (inline) or `.claude/rules/` (if path-scoped).
+2. *Is this an explanation, rationale, or onboarding step?* → `docs/`.
+3. *Is this content already in CLAUDE.md AND `docs/`?* → Pick one owner, link from the other.
+4. *Is this a `docs/` file that nobody references?* → Add a `@docs/<file>.md` import in CLAUDE.md (so the agent can find it) and a link in `docs/README.md` (so humans can find it).
+
+**Hot-path budget:** if a CLAUDE.md edit pushes the file past ~150 lines, consider whether the new content is really hot-path material — explanations and history almost always belong in `docs/` instead.
+
+**Placement matrix (legacy view, still useful for area routing):**
 
 | Situation | Action |
 |-----------|--------|
 | Existing CLAUDE.md section covers this area | Edit that section |
 | Existing rules file covers this area | Edit that rules file |
-| New area, project is large (has `.claude/rules/`) | Create new rules file with appropriate `paths:` frontmatter |
-| New area, project is small (no rules dir) | Add section to CLAUDE.md |
-| Information is stale/wrong | Remove or correct it |
+| Existing `docs/` file covers this area | Edit that `docs/` file (and `@import` from CLAUDE.md if not already) |
+| New rule/command/gotcha, project is large | Create new rules file with `paths:` frontmatter |
+| New rule/command/gotcha, project is small | Add section to CLAUDE.md |
+| New rationale/narrative/onboarding step | Add to `docs/` (create the file if needed) and link from CLAUDE.md |
+| Information is stale/wrong | Remove or correct it in whichever file owns it |
 | Rule would only apply to specific file types | Use path-scoped rules file |
 
 ### 5c. Draft the changes
@@ -219,11 +280,13 @@ For each update, prepare the edit:
 ### 5d. Keep it concise
 
 Apply the same principles as init-claude:
-- **50-100 lines** for CLAUDE.md total — if adding content, consider removing something less important
+- **50-100 lines** for CLAUDE.md total — if adding content, consider removing something less important or moving narrative to `docs/`
 - **Under 500 lines** per rules file
 - **One concern per rules file** — don't mix unrelated topics
 - **Only what Claude can't infer** — if it's obvious from the code, don't document it
 - **Use file references, not code snippets** — point to `file:line` instead of pasting code that will go stale
+- **Narrative content belongs in `docs/`** — if you find yourself writing a paragraph of "the reason this works this way is…", that's a `docs/architecture.md` edit, not a CLAUDE.md edit
+- **Link, don't duplicate** — when a fact lives in `docs/`, reference it from CLAUDE.md via `@import` instead of copying the prose
 
 ---
 
@@ -327,7 +390,11 @@ If no CLAUDE.md exists at all, suggest running `/init-claude` first. This comman
 - Do NOT document implementation details that will change — document patterns and principles
 - Do NOT paste code snippets into docs — use file references (`src/auth/middleware.ts:42`)
 - Do NOT add rules "just in case" — every rule should prevent a concrete mistake
-- Do NOT bloat CLAUDE.md beyond 100 lines — if adding content, trim something less important
+- Do NOT bloat CLAUDE.md beyond 100 lines — if adding content, trim something less important or move narrative to `docs/`
 - Do NOT skip the staleness check — removing wrong information is more valuable than adding new information
 - Do NOT document temporary workarounds as permanent patterns
 - Do NOT create rules files for areas that have no recurring patterns yet
+- Do NOT duplicate facts between CLAUDE.md and `docs/` — pick one owner and link from the other; duplicates always drift
+- Do NOT make CLAUDE.md a thin pointer file — if the agent has to Read 3+ docs to do its job, the hot path is broken; promote rules back inline
+- Do NOT write narrative ("we did this because…", "the system grew as…") in CLAUDE.md or `.claude/rules/` — that's `docs/` material
+- Do NOT leave new `docs/` files unreferenced — every `docs/<file>.md` should be discoverable from `docs/README.md` (humans) and `@docs/<file>.md` in CLAUDE.md (agent) when relevant

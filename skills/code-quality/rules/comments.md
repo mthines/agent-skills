@@ -13,6 +13,17 @@ go stale as the code changes, and lull readers into trusting documentation
 that no longer matches reality. A comment must earn its place by saying
 something the code itself cannot.
 
+## Contents
+
+- [When a Comment Earns Its Place](#when-a-comment-earns-its-place)
+- [When to Delete a Comment](#when-to-delete-a-comment)
+- [Docstrings / API Documentation](#docstrings--api-documentation)
+- [Comments in Tests](#comments-in-tests)
+- [Block Comments / Section Headers](#block-comments--section-headers)
+- [Commented-Out Code](#commented-out-code)
+- [TODO / FIXME / HACK](#todo--fixme--hack)
+- [Why-Heavy, Not What-Heavy](#why-heavy-not-what-heavy)
+
 ## When a Comment Earns Its Place
 
 Keep a comment if it captures one of these:

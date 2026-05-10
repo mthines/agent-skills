@@ -16,15 +16,15 @@ errors instead of being silently swallowed.
 
 ## Contents
 
-- Where to Validate
-- Schema-First Validation (Parse, Don't Validate)
-- Fail Fast and Loudly
-- Error Messages
-- Error Types
-- Try/Catch Discipline
-- Null / Undefined Handling
-- Logging
-- Retries
+- [Where to Validate](#where-to-validate)
+- [Schema-First Validation (Parse, Don't Validate)](#schema-first-validation-parse-dont-validate)
+- [Fail Fast and Loudly](#fail-fast-and-loudly)
+- [Error Messages](#error-messages)
+- [Error Types](#error-types)
+- [Try/Catch Discipline](#trycatch-discipline)
+- [Null / Undefined Handling](#null--undefined-handling)
+- [Logging](#logging)
+- [Retries](#retries)
 
 ## Where to Validate
 

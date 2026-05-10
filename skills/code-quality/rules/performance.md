@@ -16,6 +16,16 @@ before optimizing." Most code should be optimized for the human reader;
 the small fraction that drives the system's performance deserves serious
 attention.
 
+## Contents
+
+- [The Two Phases](#the-two-phases)
+- [Common Algorithmic Wins (do these without measuring)](#common-algorithmic-wins-do-these-without-measuring)
+- [Common Micro-Optimizations (skip these unless profiled)](#common-micro-optimizations-skip-these-unless-profiled)
+- [Memory](#memory)
+- [Concurrency](#concurrency)
+- [Readability vs. Performance: The Default](#readability-vs-performance-the-default)
+- [When Performance IS the Feature](#when-performance-is-the-feature)
+
 ## The Two Phases
 
 ### Phase 1: While Writing (default mode)

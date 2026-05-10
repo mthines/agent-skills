@@ -1,0 +1,22 @@
+{
+  "//": "Snippet for eas.json. Merge this into your existing build profiles.",
+  "//e2e": "The e2e profile produces an iOS simulator .app and an Android .apk suitable for Maestro instrumentation. No app-store signing required.",
+  "build": {
+    "e2e": {
+      "developmentClient": false,
+      "distribution": "internal",
+      "channel": "e2e",
+      "ios": {
+        "simulator": true,
+        "buildConfiguration": "Debug"
+      },
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug"
+      },
+      "env": {
+        "EXPO_PUBLIC_E2E": "1"
+      }
+    }
+  }
+}

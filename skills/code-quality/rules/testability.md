@@ -17,6 +17,14 @@ Testability is a leading indicator of maintainability.
 If a function is hard to test, the design is wrong.
 This rule covers the design levers that make tests cheap, and the integration with the `tdd` skill for authoring new code.
 
+## Contents
+
+- [Compose with the `tdd` Skill When Authoring](#compose-with-the-tdd-skill-when-authoring)
+- [Testability as a Quality Signal](#testability-as-a-quality-signal)
+- [Design Levers for Cheap Tests](#design-levers-for-cheap-tests)
+- [What Tests Are Not For](#what-tests-are-not-for)
+- [Working with `tdd`'s RED-GREEN-REFACTOR](#working-with-tdds-red-green-refactor)
+
 ## Compose with the `tdd` Skill When Authoring
 
 When the user is **creating new code** — a new function, a new module, a new behaviour — invoke the [`tdd` skill](../../tdd/SKILL.md) to drive the implementation through a strict RED → GREEN → REFACTOR cycle.

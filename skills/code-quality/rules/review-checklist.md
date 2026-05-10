@@ -15,24 +15,24 @@ prioritized by impact.
 
 ## Contents
 
-- Pre-Read
-- Pass 1: Structure
-- Pass 2: Naming
-- Pass 3: Cognitive Complexity
-- Pass 4: Comments
-- Pass 5: Error Handling
-- Pass 6: Performance (only if relevant)
-- Pass 7: Maintainability & Reuse
-- Pass 8: Abstraction & Type-Driven Design
-- Pass 9: Architecture
-- Pass 10: API Design
-- Pass 11: Correctness Hotspots
-- Pass 12: Testability
-- Pass 13: Collaboration
-- Pass 14: Future-Proofing Smell
-- Output Format
-- When to Stop
-- Tone
+- [Pre-Read](#pre-read)
+- [Pass 1: Structure](#pass-1-structure)
+- [Pass 2: Naming](#pass-2-naming)
+- [Pass 3: Cognitive Complexity](#pass-3-cognitive-complexity)
+- [Pass 4: Comments](#pass-4-comments)
+- [Pass 5: Error Handling](#pass-5-error-handling)
+- [Pass 6: Performance (only if relevant)](#pass-6-performance-only-if-relevant)
+- [Pass 7: Maintainability & Reuse](#pass-7-maintainability--reuse)
+- [Pass 8: Abstraction & Type-Driven Design](#pass-8-abstraction--type-driven-design)
+- [Pass 9: Architecture](#pass-9-architecture)
+- [Pass 10: API Design](#pass-10-api-design)
+- [Pass 11: Correctness Hotspots](#pass-11-correctness-hotspots)
+- [Pass 12: Testability](#pass-12-testability)
+- [Pass 13: Collaboration](#pass-13-collaboration)
+- [Pass 14: Future-Proofing Smell](#pass-14-future-proofing-smell)
+- [Output Format](#output-format)
+- [When to Stop](#when-to-stop)
+- [Tone](#tone)
 
 ## Pre-Read
 

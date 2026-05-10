@@ -1,0 +1,41 @@
+# EAS Workflow — build + Maestro Cloud E2E.
+#
+# Drop this at .eas/workflows/e2e.yml in your repo.
+# Triggers on every PR; the maestro-cloud job depends on the build job
+# via outputs.build_id, so flows always run against the freshly built
+# artefact for that PR.
+#
+# Required secrets:
+#   - EAS access (configured automatically when the repo is linked).
+#   - MAESTRO_API_KEY (added under EAS project secrets).
+
+name: E2E
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  # 1. Build the iOS simulator .app and Android .apk via the e2e profile.
+  build:
+    name: Build (iOS + Android, e2e profile)
+    type: build
+    params:
+      platform: all
+      profile: e2e
+
+  # 2. Run Maestro flows on Maestro Cloud against the build artefact.
+  maestro-cloud:
+    name: Maestro Cloud
+    needs: [build]
+    type: maestro-cloud
+    params:
+      build_id: ${{ needs.build.outputs.build_id }}
+      flow_path: .maestro
+      shards: 2
+      retries: 2
+      record_screen: false
+      # Pin a specific device profile only when a flow needs it.
+      # device_identifier: 'iPhone 15 Pro, iOS 17.4'

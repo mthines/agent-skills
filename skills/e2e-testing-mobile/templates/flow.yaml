@@ -1,0 +1,59 @@
+# Sample Maestro flow.
+#
+# Replace the appId with your app's bundle identifier and adapt the
+# steps to your spec. Keep one user-action per step; group reusable
+# blocks (sign-in, fixture seed) under .maestro/shared/ and pull them
+# in via runFlow.
+#
+# Locator ladder (do not skip rungs):
+#   1. id: <testID>             — primary, source-of-truth selector.
+#   2. text: <visible string>   — only when stable + not localised.
+#   3. accessibilityText: <...> — last resort; consider proposing a
+#                                 testID source diff first.
+
+appId: com.example.fit
+---
+# 1. Cold-launch the app with a clean state.
+- launchApp:
+    clearState: true
+    permissions:
+      notifications: allow
+
+# 2. Sign in via the reusable shared flow.
+- runFlow:
+    file: ../shared/sign-in.yaml
+
+# 3. Land on the home screen.
+- assertVisible:
+    id: 'home-screen'
+
+# 4. Start a workout — primary call to action.
+- tapOn:
+    id: 'start-workout'
+
+# 5. Wait for the timer to render with a smart wait.
+- extendedWaitUntil:
+    visible:
+      id: 'workout-timer'
+    timeout: 5000
+
+# 6. Confirm the timer renders the zero-state value.
+- assertVisible:
+    text: '00:00'
+
+# 7. Background and resume the app to assert process-resume behaviour.
+- pressKey: 'Home'
+- launchApp:
+    clearState: false
+
+# 8. Timer continues counting after resume.
+- assertVisible:
+    id: 'workout-timer'
+- assertNotVisible:
+    text: 'Stale reading'
+
+# 9. End the workout cleanly.
+- tapOn:
+    id: 'end-workout'
+- assertVisible:
+    text: 'Workout saved'
