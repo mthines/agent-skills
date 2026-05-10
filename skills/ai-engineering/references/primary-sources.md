@@ -14,9 +14,11 @@ Provider docs win over blog summaries.
 
 ## Contents
 
-- Anthropic — prompting, caching, thinking, tools, agents
-- OpenAI — prompting, structured outputs, caching, batch
+- Anthropic — prompting, caching, thinking, tools, agents, vision, memory
+- OpenAI — prompting, structured outputs, caching, batch, rate limits
 - Google — Gemini docs (caching, structured outputs, evals)
+- Multimodal — vision, audio, PDF
+- Resilience — rate limits, retries, idempotency
 - Practitioners — Hamel Husain, Eugene Yan, Chip Huyen
 - Research / surveys — CoT regression, few-shot dilemma, JSON schema
 - Safety — OWASP LLM Top 10, prompt-injection cheat sheet
@@ -42,6 +44,11 @@ Provider docs win over blog summaries.
 - [Writing tools for agents](https://www.anthropic.com/engineering/writing-tools-for-agents)
 - [Advanced tool use](https://www.anthropic.com/engineering/advanced-tool-use)
 - [The "think" tool](https://www.anthropic.com/engineering/claude-think-tool)
+- [Vision](https://platform.claude.com/docs/en/build-with-claude/vision)
+- [Memory tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool)
+- [Files API (PDF, DOCX)](https://platform.claude.com/docs/en/build-with-claude/files)
+- [Models overview / pinning](https://platform.claude.com/docs/en/about-claude/models/overview)
+- [Rate limits](https://platform.claude.com/docs/en/api/rate-limits)
 
 ## OpenAI
 
@@ -52,6 +59,10 @@ Provider docs win over blog summaries.
 - [API prompt caching announcement](https://openai.com/index/api-prompt-caching/)
 - [Cookbook — prompt caching 201](https://developers.openai.com/cookbook/examples/prompt_caching_201)
 - [Cookbook — Structured Outputs intro](https://developers.openai.com/cookbook/examples/structured_outputs_intro)
+- [Rate limits](https://developers.openai.com/api/docs/guides/rate-limits)
+- [Model versioning](https://developers.openai.com/api/docs/models/versioning)
+- [Vision](https://developers.openai.com/api/docs/guides/vision)
+- [Realtime API (voice agents)](https://developers.openai.com/api/docs/guides/realtime)
 
 ## Practitioners
 

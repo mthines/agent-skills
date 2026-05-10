@@ -141,6 +141,11 @@ each other's results (rare — usually a workflow design smell).
 
 Source: [Anthropic — Advanced tool use](https://www.anthropic.com/engineering/advanced-tool-use).
 
+For retry, timeout, and idempotency rules around tool calls, load
+[`resilience.md`](./resilience.md).
+For long-running agents that need state across turns or sessions,
+load [`memory-and-state.md`](./memory-and-state.md).
+
 ## Error recovery
 
 When a tool raises:

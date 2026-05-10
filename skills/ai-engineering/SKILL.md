@@ -2,18 +2,20 @@
 name: ai-engineering
 description: >
   Reviews and guides LLM/AI application engineering: prompt writing,
-  system-prompt design, prompt caching and token cost, RAG (chunking,
-  hybrid search, reranking), agent loops and tool design, eval harnesses
-  with LLM-as-judge bias mitigations, testing (mocks, VCR, snapshots,
-  CI cost discipline), safety and prompt-injection defence, and
+  system-prompt design, prompt caching and token cost, multimodal
+  inputs (vision/audio/PDFs), RAG, agent loops and tool design,
+  resilience (rate limits, retries, fallbacks), memory and long-running
+  state, model migration and version pinning, evals, testing (mocks,
+  VCR, snapshots), safety and prompt-injection defence, and
   observability. Synthesises 2025-2026 practices from primary provider
   docs (Anthropic, OpenAI, Google), OWASP LLM Top 10, and practitioners
   (Hamel Husain, Eugene Yan, Chip Huyen). Use when designing prompts,
   structuring system prompts, optimising token cost, building RAG or
-  agents, writing evals or tests, or auditing existing AI code. Triggers
-  on "review my prompt", "design a system prompt", "optimise tokens",
-  "set up RAG", "build an agent", "write evals", "test my prompt",
-  "audit AI code", "/ai-engineering".
+  agents, writing evals or tests, hardening for rate limits and outages,
+  migrating models, or auditing existing AI code. Triggers on "review my
+  prompt", "design a system prompt", "optimise tokens", "set up RAG",
+  "build an agent", "handle rate limits", "migrate to a new model",
+  "write evals", "test my prompt", "audit AI code", "/ai-engineering".
 disable-model-invocation: true
 license: MIT
 metadata:
@@ -24,7 +26,7 @@ metadata:
     - ai-engineering
     - llm
     - prompt-engineering
-    - prompt-caching
+    - multimodal
     - rag
     - agents
     - evals
@@ -36,7 +38,8 @@ metadata:
 # AI Engineering
 
 Prescriptive guidance for building and reviewing LLM/AI applications.
-Nine orthogonal concerns — load only the rules the current task needs.
+Thirteen orthogonal concerns — load only the rules the current task
+needs.
 
 > **This `SKILL.md` is a thin index.** Detailed rules live in
 > `rules/*.md` and load on demand.
@@ -76,8 +79,12 @@ Load **only** the rules listed for the matched area(s).
 | Writing user prompts            | [`rules/prompt-writing.md`](./rules/prompt-writing.md)                             | "improve this prompt", few-shot questions, output format, CoT, structured outputs.    |
 | Designing system prompts        | [`rules/system-prompt-design.md`](./rules/system-prompt-design.md)                 | Persona, tool docs, ordering, refusals, agent stop conditions.                       |
 | Token cost / latency            | [`rules/token-optimization.md`](./rules/token-optimization.md)                     | Prompt caching, model routing, batching, streaming, max_tokens.                      |
+| Multimodal                      | [`rules/multimodal.md`](./rules/multimodal.md)                                     | Image/audio/PDF inputs, vision-vs-OCR, voice agents, image token costs.              |
 | Retrieval-augmented generation  | [`rules/rag.md`](./rules/rag.md)                                                   | Chunking, embeddings, hybrid search, reranking, query rewriting.                     |
 | Agents & tool use               | [`rules/agents-and-tools.md`](./rules/agents-and-tools.md)                         | Tool schemas, agent loops, parallel tool calls, error recovery, workflow vs agent.   |
+| Resilience                      | [`rules/resilience.md`](./rules/resilience.md)                                     | Rate limits (429), retries with jitter, circuit breakers, fallback chains, timeouts, idempotency. |
+| Memory & long-running state     | [`rules/memory-and-state.md`](./rules/memory-and-state.md)                         | Conversation summarisation, structured memory, vector memory, memory tools, compaction. |
+| Model migration & versioning    | [`rules/model-migration.md`](./rules/model-migration.md)                           | Pin snapshots vs aliases, A/B a new model, deprecations, cross-provider migration, rollback. |
 | Evaluation                      | [`rules/evals.md`](./rules/evals.md)                                               | Golden sets, LLM-as-judge, regression CI, error analysis.                            |
 | Testing (engineering)           | [`rules/testing.md`](./rules/testing.md)                                           | Unit/integration tests, mocks, VCR cassettes, snapshot tests, CI cost discipline.    |
 | Safety & guardrails             | [`rules/safety-and-guardrails.md`](./rules/safety-and-guardrails.md)               | Prompt injection, jailbreaks, output validation, PII, scope control.                 |
@@ -102,7 +109,7 @@ inline guidance in `rules/observability-and-versioning.md` and the OTEL
 spec.
 
 If the user does not name an area, ask one batched clarifying question
-listing the nine options before loading rules.
+listing the thirteen options before loading rules.
 
 ---
 
@@ -143,7 +150,9 @@ Do not edit the file in `review` mode unless the user asks for fixes.
    - Whether tool use is in scope.
 3. Load the relevant rule(s) and the matching template:
    - System prompt → [`templates/system-prompt-skeleton.md`](./templates/system-prompt-skeleton.md).
+   - Tool definition → [`templates/tool-description.md`](./templates/tool-description.md).
    - Eval rubric → [`templates/eval-rubric.md`](./templates/eval-rubric.md).
+   - Golden-set seed → [`templates/golden-set.md`](./templates/golden-set.md).
 4. Fill in the template.
    Annotate **why** each section exists (one inline comment per section,
    not a full essay).
@@ -159,8 +168,12 @@ Load on demand — do not preload.
 | Prompt writing            | [`rules/prompt-writing.md`](./rules/prompt-writing.md)                                          |
 | System prompts            | [`rules/system-prompt-design.md`](./rules/system-prompt-design.md)                              |
 | Token cost                | [`rules/token-optimization.md`](./rules/token-optimization.md)                                  |
+| Multimodal                | [`rules/multimodal.md`](./rules/multimodal.md)                                                  |
 | RAG                       | [`rules/rag.md`](./rules/rag.md)                                                                |
 | Agents                    | [`rules/agents-and-tools.md`](./rules/agents-and-tools.md)                                      |
+| Resilience                | [`rules/resilience.md`](./rules/resilience.md)                                                  |
+| Memory & state            | [`rules/memory-and-state.md`](./rules/memory-and-state.md)                                      |
+| Model migration           | [`rules/model-migration.md`](./rules/model-migration.md)                                        |
 | Evals                     | [`rules/evals.md`](./rules/evals.md)                                                            |
 | Testing                   | [`rules/testing.md`](./rules/testing.md)                                                        |
 | Safety                    | [`rules/safety-and-guardrails.md`](./rules/safety-and-guardrails.md)                            |
@@ -168,7 +181,9 @@ Load on demand — do not preload.
 | Source URLs               | [`references/primary-sources.md`](./references/primary-sources.md)                              |
 | Date-flagged changes      | [`references/recent-changes.md`](./references/recent-changes.md)                                |
 | System prompt template    | [`templates/system-prompt-skeleton.md`](./templates/system-prompt-skeleton.md)                  |
+| Tool description template | [`templates/tool-description.md`](./templates/tool-description.md)                              |
 | Eval rubric template      | [`templates/eval-rubric.md`](./templates/eval-rubric.md)                                        |
+| Golden-set template       | [`templates/golden-set.md`](./templates/golden-set.md)                                          |
 
 ---
 
@@ -205,6 +220,16 @@ Load on demand — do not preload.
    Versioned in-repo, diffed in PR, gated by CI evals, A/B released.
    Anonymous prompt edits in production dashboards are a regression
    waiting to happen.
+8. **Pin model snapshots in production.**
+   Aliases auto-upgrade silently — the model that passed evals
+   yesterday is not the model serving traffic today.
+   See `rules/model-migration.md`.
+9. **Plan for the failure modes, not the happy path.**
+   Rate limits, provider outages, and tail latency hit every prod
+   system.
+   Honour `Retry-After`, jitter retries, fall back across models,
+   key destructive tool calls for idempotency.
+   See `rules/resilience.md`.
 
 ---
 
@@ -220,6 +245,14 @@ Load on demand — do not preload.
 - Tool descriptions written for humans — agents pick the wrong tool.
 - Building a multi-agent system before single-agent + workflow exhausts the design space.
 - Toggling extended thinking mid-turn — invalidates the entire cached prefix.
+- Sending full-resolution screenshots — resize to ≤ 1568 px first.
+- Retrying on 429 without honouring `Retry-After` — wastes quota and triggers thundering herds.
+- Pure exponential backoff with no jitter — every client retries at the same instant.
+- Side-effectful tool calls without idempotency keys — retries double-charge.
+- Model aliases (`claude-sonnet-4-7`) in production — auto-upgrade silently.
+- Migrating models without a full golden-set run — regressions ship undetected.
+- Truncating long conversations instead of summarising — drops context the model needs.
+- Cross-user memory leakage — let the model fill in `user_id` and you have a privacy bug.
 
 ---
 

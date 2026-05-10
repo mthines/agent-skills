@@ -158,6 +158,14 @@ When to stream:
 Combine with **cache pre-warming** (`max_tokens: 0` request) for known
 prefixes before user traffic, especially after a deployment.
 
+## Multimodal token costs
+
+Image, audio, and PDF inputs are billed differently and typically cost
+more per "useful unit" than text.
+See [`multimodal.md`](./multimodal.md) for sizing rules and the
+provider-specific token formulas — especially the rule about resizing
+images to ≤ 1568 px before upload.
+
 ## Token counting
 
 Count with the **provider's own tokenizer** during development:

@@ -105,6 +105,15 @@ Two patterns:
 
 Source: [Haystack — HyDE](https://docs.haystack.deepset.ai/docs/hypothetical-document-embeddings-hyde).
 
+For image-heavy or layout-heavy documents (PDFs, scans, screenshots),
+also load [`multimodal.md`](./multimodal.md) before deciding on a
+chunking strategy — vision-vs-OCR and layout-aware extraction are
+covered there.
+
+For "remember facts about the user" rather than "search a corpus",
+load [`memory-and-state.md`](./memory-and-state.md) — that's a
+different problem.
+
 ## 5. Domain-tuned embeddings
 
 Domain-tuned embeddings outperform general-purpose by **20–40%** on

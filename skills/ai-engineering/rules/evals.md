@@ -115,6 +115,12 @@ Avoid 1–10 scales — judge models cluster around 7–8 with high variance.
 A literal eval rubric template lives in
 [`../templates/eval-rubric.md`](../templates/eval-rubric.md).
 
+For a literal scaffold of a golden-set YAML file, see
+[`../templates/golden-set.md`](../templates/golden-set.md).
+For migrating to a new model version (which is when the golden set
+earns its keep), see
+[`model-migration.md`](./model-migration.md).
+
 ## 5. Eval-driven prompt development
 
 Loop:

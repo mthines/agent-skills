@@ -204,6 +204,12 @@ Tooling:
 
 Source: [PromptLayer — Prompt Versioning](https://www.promptlayer.com/glossary/prompt-versioning/).
 
+For full migration rules (pin snapshots vs aliases, deprecation
+handling, cross-provider migration, rollback playbook), load
+[`model-migration.md`](./model-migration.md).
+This rule covers the prompt-versioning side; that rule covers the
+model-versioning side.
+
 ## 6. A/B release new prompt versions
 
 Never flip a prompt globally.
