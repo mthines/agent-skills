@@ -16,13 +16,13 @@ Bad ergonomics here cost callers forever; good ergonomics make the call site rea
 
 ## Contents
 
-- 1. Parameter Order
-- 2. Defaults at the Right Layer
-- 3. Sync vs. Async Consistency
-- 4. Total Functions: Every Input Has a Defined Output
-- 5. Designing the Error Type System
-- 6. Tell, Don't Ask (and Demeter-Light)
-- 7. Reading Order Within a File
+- [1. Parameter Order](#1-parameter-order)
+- [2. Defaults at the Right Layer](#2-defaults-at-the-right-layer)
+- [3. Sync vs. Async Consistency](#3-sync-vs-async-consistency)
+- [4. Total Functions: Every Input Has a Defined Output](#4-total-functions-every-input-has-a-defined-output)
+- [5. Designing the Error Type System](#5-designing-the-error-type-system)
+- [6. Tell, Don't Ask (and Demeter-Light)](#6-tell-dont-ask-and-demeter-light)
+- [7. Reading Order Within a File](#7-reading-order-within-a-file)
 
 ## 1. Parameter Order
 

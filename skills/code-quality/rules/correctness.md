@@ -18,16 +18,16 @@ Each section is short on theory and long on rules — these are the things to en
 
 ## Contents
 
-- 1. Idempotency
-- 2. Money — Never `number`
-- 3. Floats: Equality Needs Epsilon
-- 4. Dates and Time
-- 5. Identifiers
-- 6. Encoding
-- 7. Determinism
-- 8. Pre/Post Conditions, Invariants, Assertions
-- 9. Async and Concurrency
-- 10. Resource Management
+- [1. Idempotency](#1-idempotency)
+- [2. Money — Never `number`](#2-money--never-number)
+- [3. Floats: Equality Needs Epsilon](#3-floats-equality-needs-epsilon)
+- [4. Dates and Time](#4-dates-and-time)
+- [5. Identifiers](#5-identifiers)
+- [6. Encoding](#6-encoding)
+- [7. Determinism](#7-determinism)
+- [8. Pre/Post Conditions, Invariants, Assertions](#8-prepost-conditions-invariants-assertions)
+- [9. Async and Concurrency](#9-async-and-concurrency)
+- [10. Resource Management](#10-resource-management)
 
 ## 1. Idempotency
 

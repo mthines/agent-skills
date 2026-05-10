@@ -20,12 +20,12 @@ The resolution is in **When to reuse vs. when to duplicate** below — read it b
 
 ## Contents
 
-- 1. Reuse Before Creating
-- 2. Single Source of Truth for Union-Type Data
-- 3. Locality of Change
-- 4. When to Reuse vs. When to Duplicate
-- 5. Quick Maintainability Heuristics
-- What Maintainability Is Not
+- [1. Reuse Before Creating](#1-reuse-before-creating)
+- [2. Single Source of Truth for Union-Type Data](#2-single-source-of-truth-for-union-type-data)
+- [3. Locality of Change](#3-locality-of-change)
+- [4. When to Reuse vs. When to Duplicate](#4-when-to-reuse-vs-when-to-duplicate)
+- [5. Quick Maintainability Heuristics](#5-quick-maintainability-heuristics)
+- [What Maintainability Is Not](#what-maintainability-is-not)
 
 ## 1. Reuse Before Creating
 

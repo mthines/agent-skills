@@ -16,13 +16,13 @@ of nesting and every long branch makes that harder.
 
 ## Contents
 
-- Guard Clauses (the most valuable refactor)
-- Drop `else` After `return` / `throw`
-- Cap Nesting at 2 Levels
-- Replace Long `if/else if` Chains with Lookups
-- Don't Over-Compress with Ternaries
-- Keep Loop Bodies Short
-- Switch Statements
+- [Guard Clauses (the most valuable refactor)](#guard-clauses-the-most-valuable-refactor)
+- [Drop `else` After `return` / `throw`](#drop-else-after-return--throw)
+- [Cap Nesting at 2 Levels](#cap-nesting-at-2-levels)
+- [Replace Long `if/else if` Chains with Lookups](#replace-long-ifelse-if-chains-with-lookups)
+- [Don't Over-Compress with Ternaries](#dont-over-compress-with-ternaries)
+- [Keep Loop Bodies Short](#keep-loop-bodies-short)
+- [Switch Statements](#switch-statements)
 
 ## Guard Clauses (the most valuable refactor)
 

@@ -16,10 +16,10 @@ This rule covers the four abstraction decisions that come up while writing code:
 
 ## Contents
 
-- 1. One Level of Abstraction Per Function
-- 2. Type-Driven Design — Make Illegal States Unrepresentable
-- 3. Generics — Parameterise Behaviour, Not Data Shapes
-- 4. Type Escape Hatches: `any`, `unknown`, and Casts
+- [1. One Level of Abstraction Per Function](#1-one-level-of-abstraction-per-function)
+- [2. Type-Driven Design — Make Illegal States Unrepresentable](#2-type-driven-design--make-illegal-states-unrepresentable)
+- [3. Generics — Parameterise Behaviour, Not Data Shapes](#3-generics--parameterise-behaviour-not-data-shapes)
+- [4. Type Escape Hatches: `any`, `unknown`, and Casts](#4-type-escape-hatches-any-unknown-and-casts)
 
 ## 1. One Level of Abstraction Per Function
 
