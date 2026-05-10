@@ -188,55 +188,64 @@ While writing code, apply these in order of impact:
    REFACTOR. Skip the handoff for trivial edits (typos, config tweaks),
    refactors of existing code (no new behaviour), or when the user
    explicitly opts out. See `rules/testability.md` for the integration.
-2. **Match the neighbours** — before writing a new file in an existing
+2. **Compose with the `ux` skill for UI files** — when authoring
+   `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, or React Native screens,
+   invoke the `ux` skill (`Skill('ux')`) for WCAG 2.2, semantic HTML,
+   and platform guidelines (Apple HIG, Material Design 3). Accessibility
+   lives in `ux`. The subset that affects E2E locator stability lives
+   in `rules/testability.md` (UI Testability section). Skip only for
+   non-UI files. When this skill is invoked under `autonomous-workflow`
+   Phase 3, do **not** call `ux` from here — Phase 3 already invokes
+   `ux` once at the right moment.
+3. **Match the neighbours** — before writing a new file in an existing
    module, read 2–3 sibling files and mimic their structure (folder
    layout, error shape, import order, test style, naming convention).
    Outlier code forces every reader to context-switch. See
    `rules/collaboration.md` §1.
-3. **Reuse before creating** — before writing a helper, type, constant,
+4. **Reuse before creating** — before writing a helper, type, constant,
    formatter, or hook, search the codebase for one that already exists.
    Grep the domain noun and a synonym; check neighbour files; check the
    standard library and existing dependencies. A second implementation of
    the same concept is worse than the first. See
    `rules/maintainability.md` §1.
-4. **Naming first** — before writing the body, name the function and its
+5. **Naming first** — before writing the body, name the function and its
    parameters so they describe *what* it does and *what* it returns. If
    you can't name it crisply, the responsibility is unclear; rethink the
    boundary, not the implementation.
-5. **Design the type before the body** — model the inputs and outputs so
+6. **Design the type before the body** — model the inputs and outputs so
    illegal states cannot be represented (discriminated unions, branded
    primitives, total return types, `Result<T, E>` for expected failures).
    The cheapest place to catch a bug is the place the bug cannot exist.
    See `rules/abstraction.md` §2 and `rules/api-design.md` §4–§5.
-6. **Guard clauses up top** — handle errors, edge cases, and early-exit
+7. **Guard clauses up top** — handle errors, edge cases, and early-exit
    conditions at the start of the function. Reserve the indented body for
    the happy path.
-7. **One job per function, one level of abstraction per body** — if you
+8. **One job per function, one level of abstraction per body** — if you
    find yourself writing "and" in a docstring or mixing orchestration
    sentences with low-level mechanics, split. See
    `rules/abstraction.md` §1.
-8. **Limit nesting to 2 levels** — beyond that, extract a helper or
+9. **Limit nesting to 2 levels** — beyond that, extract a helper or
    invert a condition.
-9. **Keep parameter count low (≤3 ideally, ≤5 hard cap)** — past that,
-   group into an object/struct.
-10. **One source of truth for union-type metadata** — when a union has
+10. **Keep parameter count low (≤3 ideally, ≤5 hard cap)** — past that,
+    group into an object/struct.
+11. **One source of truth for union-type metadata** — when a union has
     associated data (labels, colours, icons, flags), use one record keyed
     by the union with structured values, not N parallel maps. Adding a
     variant must be a single edit. See `rules/maintainability.md` §2.
-11. **Push impurity outward** — keep decision logic pure; push I/O, time,
+12. **Push impurity outward** — keep decision logic pure; push I/O, time,
     randomness, and ID generation to the edges. Inject the clock / RNG /
     fetcher; do not call them directly from core logic. See
     `rules/architecture.md` §3 and `rules/correctness.md` §7.
-12. **Defer *generic* abstraction, not reuse** — wait for a third real
+13. **Defer *generic* abstraction, not reuse** — wait for a third real
     use case before extracting a flag-driven generic helper. Always reuse
     utilities that already exist, and always consolidate parallel maps
     over the same union the moment they appear — those are not
     "premature".
 
 Cross-references: `rules/cognitive-complexity.md` and
-`rules/control-flow.md` for 6 and 8; `rules/naming.md` for 4;
-`rules/functions.md` for 7 and 9; `rules/maintainability.md` for 3, 10,
-and 12; `rules/abstraction.md`, `rules/architecture.md`,
+`rules/control-flow.md` for 7 and 9; `rules/naming.md` for 5;
+`rules/functions.md` for 8 and 10; `rules/maintainability.md` for 4, 11,
+and 13; `rules/abstraction.md`, `rules/architecture.md`,
 `rules/api-design.md`, `rules/correctness.md`, `rules/testability.md`,
 `rules/collaboration.md`, and `rules/refactor-recipes.md` for the deeper
 patterns.
@@ -297,7 +306,7 @@ that stack.
 | Module boundaries, public surface, dependency direction, functional core / imperative shell, DTO ↔ domain ↔ persistence, immutability defaults, side-effecting imports | `rules/architecture.md` |
 | Function signatures, parameter ordering, total functions, modeling absence, designing the error type system, tell-don't-ask, file reading order | `rules/api-design.md` |
 | Idempotency, money / decimals / floats, dates and time, identifiers, encoding, determinism, assertions, async / concurrency, resource management | `rules/correctness.md` |
-| Hard-to-test code, dependency injection of clock / RNG / IDs, when to invoke the `tdd` skill | `rules/testability.md` |
+| Hard-to-test code, dependency injection of clock / RNG / IDs, when to invoke the `tdd` skill, UI components locatable by role / label without `data-testid` | `rules/testability.md` |
 | PR scope, neighbour-pattern symmetry, migration & evolution, working with legacy code, diff hygiene | `rules/collaboration.md` |
 | Naming a refactor in review output (R1 Consolidate Parallel Maps, R6 Replace Type Declaration with Inferred Type, etc.) | `rules/refactor-recipes.md` |
 
@@ -308,6 +317,7 @@ a new stack.
 
 | Stack | When the code involves... | Load |
 |---|---|---|
+| **React / Next.js** | Any UI file (`*.tsx`, `*.jsx`, React Native screens) — semantic HTML, ARIA, WCAG 2.2 conformance, focus order, contrast, platform guidelines (Apple HIG, Material Design 3) | `Skill('ux')` (separate skill) |
 | **React** | Splitting components, compound / namespace components (`Component.List.Item`, `Component.useComponent`), slots, RSC boundaries | `rules/stacks/react/components.md` |
 | **React** | Client-side data fetching, server state, query caches, optimistic updates, cache surgery (create/update/delete), query keys, request waterfalls, TanStack Query / React Query / SWR, Next.js App Router prefetch, HydrationBoundary, dehydrate, initialData, per-request QueryClient | `rules/stacks/react/data-fetching.md` |
 | **React** | Autosave forms, debounce + max-wait flush, on-blur / visibility / pagehide triggers, local-first draft buffer (localStorage / IndexedDB), status indicator with ARIA live regions, ETag / `If-Match` conflict detection, offline retry with idempotent PATCH (defers to `/ux` for form fundamentals) | `rules/stacks/react/autosave.md` |
@@ -410,6 +420,17 @@ RED → GREEN → REFACTOR cycle. Apply the rules in this skill silently in
 GREEN; apply them explicitly in REFACTOR. Skip the handoff only for
 trivial edits, refactors of existing code, or when the user opts out.
 See `rules/testability.md`.
+
+### 15. Pair with `ux` for UI files
+When authoring or reviewing files that render UI (`*.tsx`, `*.jsx`,
+`*.vue`, `*.svelte`, React Native screens), invoke the `ux` skill
+(`Skill('ux')`) for the WCAG 2.2, semantic HTML, and platform-guideline
+pass. Accessibility lives in `ux`, not here — this skill defers. Apply
+the locator-stability subset from `rules/testability.md` (UI Testability
+section) so accessible names also serve E2E test stability. Skip only
+for non-UI files or pure refactors that don't touch markup. When
+invoked under `autonomous-workflow` Phase 3, `ux` runs there directly —
+do not double-invoke; rely on the phase-level call.
 
 ---
 

@@ -6,6 +6,9 @@ tags:
   - tdd
   - dependency-injection
   - functional-core
+  - ui-testability
+  - accessible-names
+  - locator-strategy
 ---
 
 # Testability
@@ -145,3 +148,94 @@ When invoked under `tdd`, this skill applies in two phases:
 
 Do not skip REFACTOR.
 GREEN code that ships without REFACTOR accumulates the debt this skill exists to prevent.
+
+## UI Testability — Accessible Names Are Locators
+
+A UI component is testable when an E2E agent can locate it by role and name from the accessibility tree, without a `data-testid` escape hatch.
+The same property that makes a component accessible to a screen reader makes it stable under E2E.
+
+The full locator ladder lives in [`e2e-testing/rules/locator-strategy.md`](../../e2e-testing/rules/locator-strategy.md).
+Accessibility audit details live in the [`ux` skill](../../ux/SKILL.md).
+This rule is the **review-time bridge** — what to flag in a code review so the component is locatable later.
+
+### Flag these patterns
+
+| Symptom                                                          | Fix                                                                       |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Icon-only `<button>` with no `aria-label` and no visible text    | Add `aria-label="Save"` (or visible text). Now `getByRole('button', { name: 'Save' })` works. |
+| `<input>` without an associated `<label>` or `aria-label`        | Add a `<label htmlFor="…">`. Now `getByLabel('Email')` works.            |
+| Repeated cards / rows with no surrounding `<section aria-label>` or heading | Add a heading or `aria-label` on the container so child queries can be scoped. |
+| Custom interactive `<div>` / `<span>` with no `role`             | Replace with the right element (`<button>`, `<a>`) or add `role` + keyboard handlers. |
+| Dynamic / i18n text used as the only locator surface             | Add a `data-testid` in the source diff — see locator-strategy.md.        |
+
+### Correct vs. incorrect — icon button
+
+Wrong:
+
+```tsx
+// ❌ No accessible name. Locator falls off rungs 1–2 of the ladder.
+<button onClick={onCreate}>
+  <PlusIcon />
+</button>
+```
+
+Right:
+
+```tsx
+// ✅ getByRole('button', { name: 'Create project' }) works.
+<button aria-label="Create project" onClick={onCreate}>
+  <PlusIcon />
+</button>
+```
+
+### Correct vs. incorrect — repeated rows
+
+Wrong:
+
+```tsx
+// ❌ No way to scope to "the row for project X" — every row looks the same.
+<ul>
+  {projects.map((p) => (
+    <li key={p.id}>
+      <button>Delete</button>
+    </li>
+  ))}
+</ul>
+```
+
+Right:
+
+```tsx
+// ✅ getByRole('listitem', { name: p.name })
+//    .getByRole('button', { name: 'Delete' }) works.
+<ul>
+  {projects.map((p) => (
+    <li key={p.id} aria-label={p.name}>
+      <button aria-label={`Delete ${p.name}`}>Delete</button>
+    </li>
+  ))}
+</ul>
+```
+
+### When `data-testid` is the right answer
+
+Only after rungs 1–2 of the locator ladder have been considered and rejected for a concrete reason:
+
+- The element has no inherent role and no user-facing name.
+- Multiple identical elements remain ambiguous after an `aria-label` on the container.
+- The text is i18n and changes per locale, breaking text-based locators.
+- The element is canvas-rendered with no DOM presence.
+
+`data-testid` is a **source change**, committed alongside the test that uses it.
+Never patch a test with brittle CSS selectors as a workaround for missing accessible names — fix the source.
+
+### Boundary with the `ux` skill
+
+| Concern                                                                  | Where it lives                |
+| ------------------------------------------------------------------------ | ----------------------------- |
+| WCAG 2.2 conformance, contrast, focus order, full a11y audit             | `ux` skill.                   |
+| Locator stability for E2E (the rule above)                               | This file.                    |
+| Spec-first E2E loop, Healer flow, the locator ladder itself              | `e2e-testing` skill.          |
+
+This rule does not duplicate WCAG.
+It surfaces the subset of accessibility patterns that produce stable E2E locators, so a code review catches them before the Healer has to.

@@ -15,6 +15,8 @@ tags:
 
 A React component is a function whose UI is its return type. The framework-agnostic rules apply directly: `rules/functions.md` (single responsibility, ≤ 3 parameters), `rules/abstraction.md` (one level of abstraction per body), `rules/api-design.md` (signature is the UI), `rules/maintainability.md` (consolidate parallel maps over a union, e.g. status → label/colour/icon). This rule covers the React-specific extensions: when to split a component, how to design a multi-part component's public API, and the deep-namespace compound pattern.
 
+> **Pair with `ux` and `testability.md`.** Components in this stack must clear WCAG 2.2 and use semantic HTML — that pass lives in the [`ux`](../../../../ux/SKILL.md) skill (`Skill('ux')`). The locator-stability subset that affects E2E (accessible names so `getByRole` / `getByLabel` work without `data-testid`) lives in [`../../testability.md`](../../testability.md#ui-testability--accessible-names-are-locators). Under `autonomous-workflow` Phase 3, `ux` is invoked from the phase rule directly — do not double-invoke from this skill.
+
 ## Contents
 
 - 1. When to split a component

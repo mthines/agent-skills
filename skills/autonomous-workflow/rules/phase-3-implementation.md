@@ -263,6 +263,16 @@ Skill("ux")
 | If skill missing               | Log `ux() — not available, continuing`; do a manual a11y scan if confident |
 | Progress Log entry             | `[TIMESTAMP] Phase 3: ux() — invoked` (or `not available, continuing`) |
 
+**Locator stability note.** Accessible names also serve E2E test stability.
+When implementing UI, prefer semantic HTML and accessible names (`getByRole`,
+`getByLabel`) so the locator ladder works without `data-testid`. Reach for
+`data-testid` only when the source genuinely needs it (icon-only controls,
+canvas-rendered elements, ambiguous repeated rows). When you do, commit the
+`data-testid` in the same diff as the consuming code, never as a brittle CSS
+selector workaround in a test. Full criteria:
+[`code-quality/rules/testability.md#ui-testability--accessible-names-are-locators`](../../code-quality/rules/testability.md#ui-testability--accessible-names-are-locators)
+and [`e2e-testing/rules/locator-strategy.md`](../../e2e-testing/rules/locator-strategy.md).
+
 Disable: remove the `Skill("ux")` invocation from this section. Registry:
 [`companion-skills.md`](./companion-skills.md#registry).
 
@@ -299,6 +309,7 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 - [ ] Fast check passes after each edit (max 3 attempts per failure)
 - [ ] TDD invoked if pure logic / business rules
 - [ ] UX invoked if UI files touched
+- [ ] UI components are locatable by role / label without `data-testid`, or any `data-testid` is committed in the source diff alongside its consumer
 - [ ] `code-quality(code)` invoked once at end of phase
 - [ ] Commits are logical, atomic, conventional
 - [ ] No `Co-Authored-By` lines
