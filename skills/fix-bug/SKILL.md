@@ -132,6 +132,7 @@ Flags are mutually exclusive. They are detected in Phase 0 step 0a and stripped 
 | [independent-verification](./rules/independent-verification.md) | Phase 7 — verifier checks (FAIL_TO_PASS, PASS_TO_PASS, diff sanity, repro integrity) |
 | [telemetry-verification](./rules/telemetry-verification.md) | Phase 8 — post-deploy polling of the originating telemetry query |
 | [bug-notes-ledger](./rules/bug-notes-ledger.md) | Cross-cutting — durable artefact written by every phase |
+| [diagnostic-surface](./rules/diagnostic-surface.md) | Consumed by `/create-skill diagnose fix-bug` — phase model, failure taxonomy, existing-guards table, hard invariants |
 
 ## Templates
 
@@ -407,6 +408,17 @@ classification procedure and per-mode operations.
 Default operating mode is **deferred** — emit a follow-up task to be re-invoked once the deploy
 lands (`/fix-bug --verify-deploy <PR>`). The `--inline-verify` flag opts into running
 synchronously when the project auto-deploys on merge.
+
+---
+
+## Retrospective Self-Improvement
+
+If a `/fix-bug` run shipped wrong code despite all three confidence gates passing — or a
+post-merge regression traces back to a missed check — invoke
+[`/create-skill diagnose fix-bug`](../create-skill/SKILL.md#diagnose-workflow) **while the
+failing session is still in context**. The diagnoser reads this skill's
+[diagnostic surface](./rules/diagnostic-surface.md) and emits a confidence-gated diff
+against this skill's source — never against user product code.
 
 ---
 
