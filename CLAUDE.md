@@ -175,7 +175,7 @@ The author's machine has this repo wired into Claude Code via a two-tier symlink
 
 ```
 ~/.claude/skills/<name>     →  ~/.agents/skills/<name>     →  <this repo>/skills/<name>
-~/.agents/agents/<name>.md  →  <this repo>/agents/<name>.md
+~/.claude/agents/<name>.md  →  ~/.agents/agents/<name>.md  →  <this repo>/agents/<name>.md
 ```
 
 The middle layer (`~/.agents/skills/`) is the cross-tool discovery directory used by Codex, Cursor, OpenCode, and other Agent Skills-compatible clients, so a single chain serves every tool.
@@ -183,11 +183,19 @@ The middle layer (`~/.agents/skills/`) is the cross-tool discovery directory use
 ### Add a new skill
 
 1. Create `skills/<name>/SKILL.md` in this repo.
-2. Symlink it into the cross-tool dir: `ln -s "$REPO/skills/<name>" "$HOME/.agents/skills/<name>"`.
-3. Symlink that into Claude's dir: `ln -s "$HOME/.agents/skills/<name>" "$HOME/.claude/skills/<name>"`.
-4. Add an entry to the inventory in `CLAUDE.md` and `README.md`.
+2. Run `scripts/sync-symlinks.sh` to wire up the two-tier chain for every new or missing skill/agent in one pass.
+3. Add an entry to the inventory in `CLAUDE.md` and `README.md`.
 
-For agents, write `agents/<name>.md` in this repo and create one symlink: `ln -s "$REPO/agents/<name>.md" "$HOME/.agents/agents/<name>.md"`.
+For agents, write `agents/<name>.md` in this repo and rerun `scripts/sync-symlinks.sh`.
+
+The sync script is idempotent: it skips entries that are already linked correctly, repairs broken or wrong-target symlinks, and refuses to overwrite real files or directories. Run with `--dry-run` (or `-n`) to preview without applying changes. Manual one-shot equivalents if you prefer:
+
+```bash
+ln -s "$REPO/skills/<name>" "$HOME/.agents/skills/<name>"
+ln -s "$HOME/.agents/skills/<name>" "$HOME/.claude/skills/<name>"
+ln -s "$REPO/agents/<name>.md" "$HOME/.agents/agents/<name>.md"
+ln -s "$HOME/.agents/agents/<name>.md" "$HOME/.claude/agents/<name>.md"
+```
 
 ### Edit an existing skill
 
@@ -198,9 +206,11 @@ Edit the file at `skills/<name>/SKILL.md` in this repo directly — never throug
 ```bash
 readlink ~/.claude/skills/<name>     # → ~/.agents/skills/<name>
 readlink ~/.agents/skills/<name>     # → <repo>/skills/<name>
+readlink ~/.claude/agents/<name>.md  # → ~/.agents/agents/<name>.md   (agents only)
+readlink ~/.agents/agents/<name>.md  # → <repo>/agents/<name>.md      (agents only)
 ```
 
-Both must resolve. If either is missing, the harness will not see the skill.
+All applicable hops must resolve. If any is missing, the harness will not see the skill or agent.
 
 ## Prose Rules
 
