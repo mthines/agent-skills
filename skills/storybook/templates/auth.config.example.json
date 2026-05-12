@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "profiles": {
+    "default": {
+      "match": [
+        "http://localhost:6006/**",
+        "http://127.0.0.1:6006/**"
+      ],
+      "loginUrl": "http://localhost:6006/login",
+      "type": "form",
+      "account": "developer@example.com",
+      "keychainService": "agent-skills.storybook.my-repo.default",
+      "selectors": {
+        "username": "input[name='email']",
+        "password": "input[name='password']",
+        "submit": "button[type='submit']",
+        "success": "[data-testid='storybook-sidebar']"
+      },
+      "storageStatePath": ".agent/storybook/.auth/default.storageState.json"
+    },
+    "admin": {
+      "match": [
+        "https://storybook.example.com/admin/**"
+      ],
+      "loginUrl": "https://storybook.example.com/admin/login",
+      "type": "form",
+      "account": "admin@example.com",
+      "keychainService": "agent-skills.storybook.my-repo.admin",
+      "selectors": {
+        "username": "input#admin-email",
+        "password": "input#admin-password",
+        "submit": "button[data-action='sign-in']",
+        "success": "nav[aria-label='Admin sidebar']"
+      },
+      "storageStatePath": ".agent/storybook/.auth/admin.storageState.json"
+    }
+  }
+}
