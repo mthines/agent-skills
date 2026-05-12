@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Cursor Spotlight</title>
+<style>
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: hsl(220 14% 8%);
+    font-family: system-ui, sans-serif;
+  }
+
+  .spotlight {
+    --x: 50%;
+    --y: 50%;
+    position: relative;
+    overflow: hidden;
+    padding: 1rem 1.5rem;
+    border: 1px solid hsl(220 14% 28%);
+    border-radius: 0.75rem;
+    color: white;
+    font: 600 0.95rem/1 inherit;
+    background:
+      radial-gradient(
+        circle 12rem at var(--x) var(--y),
+        hsl(220 100% 70% / 0.35),
+        transparent 50%
+      ),
+      hsl(220 14% 12%);
+    cursor: pointer;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .spotlight { background: hsl(220 14% 12%); }
+  }
+</style>
+</head>
+<body>
+  <button class="spotlight">Hover me</button>
+
+<script>
+  const el = document.querySelector('.spotlight');
+  let frame = 0;
+  el.addEventListener('pointermove', (event) => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      const rect = el.getBoundingClientRect();
+      el.style.setProperty('--x', `${event.clientX - rect.left}px`);
+      el.style.setProperty('--y', `${event.clientY - rect.top}px`);
+      frame = 0;
+    });
+  });
+</script>
+</body>
+</html>

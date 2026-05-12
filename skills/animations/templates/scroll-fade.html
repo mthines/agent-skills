@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Fade on Scroll</title>
+<style>
+  body {
+    margin: 0;
+    background: hsl(220 14% 8%);
+    color: white;
+    font-family: system-ui, sans-serif;
+  }
+
+  .spacer { height: 80vh; }
+
+  .card {
+    margin: 4rem auto;
+    max-width: 32rem;
+    padding: 2rem;
+    border: 1px solid hsl(220 14% 28%);
+    border-radius: 0.75rem;
+    background: hsl(220 14% 14%);
+    opacity: 0;
+    transform: translateY(16px);
+    transition:
+      opacity 480ms ease-out,
+      transform 480ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .card.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Modern path: pure CSS via view() timeline. */
+  @supports (animation-timeline: view()) {
+    .card {
+      animation: rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 100%;
+      transition: none;
+    }
+    .card.is-visible { /* no-op; timeline handles it */ }
+
+    @keyframes rise {
+      to { opacity: 1; transform: translateY(0); }
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .card,
+    .card.is-visible {
+      transform: none;
+      transition: opacity 160ms linear;
+    }
+
+    /* When the view-timeline path is active, override its keyframes too. */
+    @supports (animation-timeline: view()) {
+      .card {
+        animation: fade linear both;
+        animation-timeline: view();
+        animation-range: entry 0% entry 100%;
+      }
+      @keyframes fade { to { opacity: 1; } }
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="spacer"></div>
+  <article class="card">First card</article>
+  <article class="card">Second card</article>
+  <article class="card">Third card</article>
+  <div class="spacer"></div>
+
+<script>
+  // Fallback for browsers without animation-timeline.
+  if (!CSS.supports('animation-timeline: view()')) {
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('is-visible');
+            io.unobserve(entry.target);
+          }
+        }
+      },
+      { threshold: 0.15 },
+    );
+    document.querySelectorAll('.card').forEach((el) => io.observe(el));
+  }
+</script>
+</body>
+</html>
