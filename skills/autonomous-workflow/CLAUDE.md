@@ -497,6 +497,17 @@ end-user-facing; this file is contributor-facing.
 
 ## History
 
+- **v3.9** — Reviewer self-review sub-mode. Added Rule 0 (authorship pre-check) to `agents/reviewer.md`
+  Mode Detection: `ME=$(gh api user --jq .login)` vs `AUTHOR=$(gh pr view ... --jq .author.login)`.
+  When `ME == AUTHOR`, the run enters **PR (self-review)** sub-mode: Step 4 auto-fix re-enabled,
+  Steps 5.1–5.6 (pending GitHub comments) replaced by Step 5.8 (inline terminal report).
+  `--critical` adversarial findings flow into the inline-report (Must-fix → Critical bucket,
+  Should-fix → High bucket) rather than a separate channel. Cross-review behavior unchanged.
+  Phase 7 Auto Review dispatch prompt and log updated to reflect inline-report deliverable.
+  `agents/templates/reviewer-inline-report.template.md` added to keep reviewer.md under 800 lines.
+  Root cause: Phase 7 always self-authors its PRs (aw-executor opens them), so "pending review"
+  was enforcement theater — comments visible only to the same user who opened the PR.
+
 - **v3.8** — Sub-Agent Resource Discipline. Replaced the "Phase 3 is not
   parallelized" blanket prohibition with "controlled fan-out under per-slice
   scoping" (cap 3 concurrent, file-disjoint slices). Added the

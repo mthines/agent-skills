@@ -254,14 +254,14 @@ Never auto-undraft. The verifier is advisory; the human is the gatekeeper.
 
 ## Auto Review
 
-After CI is green, automatically dispatch the `reviewer` agent in **PR Mode** so the user gets a pending GitHub review they can submit, edit, or discard. **`reviewer` is an optional agent companion**, not a skill — invocation and graceful-skip semantics differ slightly from `Skill()`-based companions.
+After CI is green, automatically dispatch the `reviewer` agent in **PR Mode**. Because Phase 7 PRs are always self-authored (aw-executor opens them), the reviewer enters **PR (self-review)** sub-mode: auto-fix runs and findings are emitted as an inline terminal report (Step 5.8). No pending GitHub comments are posted. **`reviewer` is an optional agent companion**, not a skill — invocation and graceful-skip semantics differ slightly from `Skill()`-based companions.
 
 | Property                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
 | Runs in Full Mode         | Yes                                                                    |
 | Runs in Lite Mode         | Yes                                                                    |
 | Skips silently if missing | Yes — log one line and continue to cleanup step                        |
-| Posts comments live?      | No — `reviewer` posts a **pending** review (only the user sees it)     |
+| Posts comments live?      | No — self-review sub-mode: reviewer auto-fixes and emits inline terminal report (Step 5.8) |
 | Disable                   | Remove this section; CI green becomes the terminal gate                |
 
 ### Step 1: Detect the `reviewer` agent
@@ -289,7 +289,7 @@ Then proceed to [Optional Post-Merge Cleanup](#optional-post-merge-cleanup).
 
 ### Step 2: Dispatch the `reviewer` sub-agent
 
-Spawn one sub-agent with `subagent_type: reviewer` and pass the PR URL. The agent's PR Mode posts a **pending** review on GitHub, which is invisible to the PR author until the user submits it from the GitHub UI — that is the validation gate, so live-comment concerns do not apply.
+Spawn one sub-agent with `subagent_type: reviewer` and pass the PR URL. The reviewer will detect self-authorship via Rule 0 and enter PR (self-review) sub-mode automatically: auto-fix actionable findings, then emit findings as an inline terminal report (Step 5.8).
 
 ```
 description: Auto-review PR after CI green
@@ -297,11 +297,11 @@ subagent_type: reviewer
 prompt: |
   <pr-url> --pr
 
-  Phase 7 of the autonomous-workflow has just turned CI green. Run a full PR
-  review and post your findings as a pending GitHub review. Follow the reviewer
-  agent's PR Mode procedure end-to-end — do not stop at the proposal, do not
-  ask for confirmation before posting (pending reviews are not visible to the
-  PR author until the user submits them).
+  Phase 7 of the autonomous-workflow has just turned CI green on a self-authored
+  PR. Run a full PR review. The reviewer will detect self-authorship via Rule 0
+  (gh api user vs pr author) and enter PR (self-review) sub-mode automatically:
+  auto-fix actionable findings, then emit findings as an inline terminal report
+  (Step 5.8) — do not post pending GitHub comments.
 ```
 
 Do **not** wrap the sub-agent call in a retry loop — `reviewer` owns its own validation.
@@ -311,10 +311,10 @@ Do **not** wrap the sub-agent call in a retry loop — `reviewer` owns its own v
 When the sub-agent returns, log:
 
 ```markdown
-- [TIMESTAMP] Phase 7: reviewer — pending review posted (N findings)
+- [TIMESTAMP] Phase 7: reviewer — self-review complete (N findings; M auto-fixed; inline report above)
 ```
 
-Tell the user: PR URL, that a pending review is now attached, and that they need to open the PR on GitHub to submit, edit, or discard it. Then proceed to [Optional Post-Merge Cleanup](#optional-post-merge-cleanup).
+Tell the user: PR URL, that the reviewer auto-fixed M issues and surfaced N findings inline above, and that they should review the Critical and High items before undrafting. Then proceed to [Optional Post-Merge Cleanup](#optional-post-merge-cleanup).
 
 ## Optional Post-Merge Cleanup
 
@@ -386,7 +386,7 @@ cd "$(git rev-parse --show-toplevel)"
 - [ ] Judgment failures escalated to user with full report
 - [ ] CI is green OR user has approved stopping
 - [ ] (Optional, Full Mode) `feature-pr-verifier` agent dispatched after CI green; verdict surfaced or skip logged
-- [ ] (Optional) `reviewer` agent dispatched after CI green; pending review posted or skip logged
+- [ ] (Optional) `reviewer` agent dispatched after CI green; inline report surfaced or skip logged
 - [ ] (Optional) PR merged → worktree removed with user confirmation
 - [ ] Final status reported to user
 

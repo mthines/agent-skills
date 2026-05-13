@@ -106,7 +106,7 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 6     | `aw-create-walkthrough` | Full Mode only                                                      | —                |
 | 6     | `create-pr`            | Always                                                               | —                |
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                               | `<run-id\|pr-url>` |
-| 7     | `reviewer` *(agent)*   | After CI green — dispatched as `subagent_type: reviewer` in PR Mode  | `<pr-url> --pr`    |
+| 7     | `reviewer` *(agent)*   | After CI green — dispatched as `subagent_type: reviewer` in PR Mode (self-review sub-mode for self-authored PRs: inline report + autofix; cross-review: pending GitHub review) | `<pr-url> --pr`    |
 
 ## Stuck-Loop Reminder
 

@@ -139,7 +139,7 @@ for the full registry, trigger conditions, and **how to disable any companion**.
 | 6     | `aw-create-walkthrough` | Full Mode only                                        | —                |
 | 6     | `create-pr`            | Always                                                 | —                |
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                 | `<run-id\|pr-url>` |
-| 7     | `reviewer` *(agent)*   | After CI green — auto-dispatch in PR Mode              | `<pr-url> --pr`    |
+| 7     | `reviewer` *(agent)*   | After CI green — auto-dispatch in PR Mode (self-review sub-mode for self-authored PRs: inline report + autofix; cross-review: pending GitHub review) | `<pr-url> --pr`    |
 
 ---
 
@@ -203,7 +203,7 @@ Three phases benefit from sub-agent fan-out:
 | 4     | Run tests → iterate (max 3 same area) → `confidence(analysis)` then escalate to user        |
 | 5     | Update README, CHANGELOG; `Skill("update-claude")` always                                       |
 | 6     | `Skill("review-changes")` → `Skill("aw-create-walkthrough")` → `Skill("create-pr")`             |
-| 7     | Watch CI → `Skill("ci-auto-fix")` per failure (parallel) → after CI green dispatch `reviewer` agent (PR Mode, optional, skips if not installed) → `gw remove` after merge (optional) |
+| 7     | Watch CI → `Skill("ci-auto-fix")` per failure (parallel) → after CI green dispatch `reviewer` agent (PR Mode: self-review sub-mode for self-authored PRs emits inline report; optional, skips if not installed) → `gw remove` after merge (optional) |
 
 ### Lite Mode
 
@@ -330,7 +330,7 @@ and how to disable. Run `bash install.sh --help` for script options.
 
 ### Related Agents
 
-- [`reviewer`](../../agents/reviewer.md) — optional Phase 7 auto-review (PR Mode posts a pending GitHub review). Install the agent alongside the skill and the workflow will dispatch it automatically when CI turns green.
+- [`reviewer`](../../agents/reviewer.md) — optional Phase 7 auto-review. PR (self-review) sub-mode (self-authored PRs): auto-fix + inline terminal report. PR (cross-review) sub-mode (someone else's PR): pending GitHub review. Install the agent alongside the skill and the workflow will dispatch it automatically when CI turns green.
 
 ---
 
