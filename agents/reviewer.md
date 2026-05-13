@@ -365,7 +365,7 @@ Include the gate summary from Step 2.5 (reviewed / dropped / downgraded / passed
 
 ### Verdict
 
-In PR Mode the verdict is **advisory only** — the agent never submits a review event; it only writes a recommendation in the pending review body so the user can decide in the GitHub UI. Skip the GitHub Review Event column in PR Mode.
+In PR Mode the verdict is **advisory only** — the agent never submits a review event, and the pending review `body` is always empty (`body: ""`). The verdict + score + rationale are emitted in the agent's terminal response to the user (Step 3), not on the PR; the user reads them locally and decides whether to approve / request changes / comment when submitting from the GitHub UI. Skip the GitHub Review Event column in PR Mode.
 
 The verdict is driven by the **worst blocking finding**, not an average. Default to the most permissive verdict that fits — most PRs should be "Approve" or "Approve with comments". "Request changes" is rare and reserved for genuine harm.
 
@@ -634,27 +634,48 @@ Post all proposed comments (everything that survived the 70% confidence threshol
 
    ⚠️ **Common LLM confusion** — mid-run you may convince yourself that "the GitHub API does not support pending reviews." That conclusion is false. What is true: the API rejects the *literal string* `"PENDING"` as an `event` value. What is *also* true and easy to forget: **omitting the `event` key entirely** is the documented mechanism for creating a pending review. If your reasoning trails toward "pending isn't possible, I'll fall back to COMMENT" — STOP and re-read this rule. Omission is the only correct path. `event: "COMMENT"` posts publicly and bypasses the user's review gate; it is forbidden here.
 2. **Never use `gh pr comment`** or `POST /issues/{n}/comments`. Those create general PR conversation comments, which are visible immediately and are NOT what we want. Only use `POST /repos/.../pulls/{n}/reviews` with `comments[]`.
-3. **Never put per-finding feedback in the review `body`.** The body is a 1–3 line overall summary. Every actionable finding belongs in `comments[]` pinned to a line. If a finding cannot be pinned to a line in the diff, **drop it from the posted review** and list it in your final terminal output so the user can post manually if they want.
+3. **The review `body` must always be empty (`body: ""`).** All actionable feedback goes in `comments[]` pinned to a diff line. Do not put summaries, verdicts, scores, or general notes in `body` — those belong in your terminal output to the user, not in GitHub. If a finding cannot be pinned to a line in the diff, **drop it from the posted review** and list it in your final terminal output so the user can post manually if they want. Rationale: a non-empty body produces a review with a top-level comment that the PR author sees once the user submits, which dilutes the line-level feedback and adds noise.
 4. **If the API call fails, do not fall back to issue comments — or to any submitting `event` value.** Report the failure, list the unposted comments, and stop. Silent fallbacks are how the previous run rejected a fine PR. Specifically, "the omit-event approach didn't seem to work, so I'll send `event: COMMENT` to get something posted" is **not** a recovery path — it bypasses the user's review gate and makes findings immediately visible. Report the error verbatim with the request payload, list the unposted comments, and stop.
 
 #### What goes in the review body
 
-A short overall summary — verdict, score, one-sentence rationale. No bullet lists of findings. Example:
+**Nothing.** The review `body` field MUST be the empty string (`body: ""`).
 
-```
-Score: 8/10 — Approve with comments
+GitHub accepts pending reviews with an empty body and a populated `comments[]` array — verified working. Keeping the body empty means:
 
-Solid fix. Three non-blocking notes inline. Recommended verdict: approve with comments (the user submits from the GitHub UI).
-```
+- The PR author sees only line-pinned, actionable feedback when the user submits the review.
+- No top-level summary noise is added to the PR conversation.
+- The verdict, score, and overall rationale live in your terminal output to the user (Step 3), where they belong — not on the PR.
+
+**Mechanical check before posting** — assert `body == ""` in the JSON payload. If the agent generated a non-empty body, STOP and blank it. The verdict and summary remain in the agent's response to the user; they never reach GitHub.
 
 #### Comment body rules
 
-The comment `body` posted to GitHub must contain ONLY the review feedback text. Do NOT include:
-- The confidence score (e.g., `(90%)`) — local proposal only
-- The category label prefix (e.g., `**issue**`, `**suggestion:**`) — local proposal only
-- The `**Code:**` anchor block — local proposal only
+The comment `body` posted to GitHub MUST start with a [Conventional Comments](https://conventionalcomments.org/) label prefix that matches the category from Step 5.3. Many repos (e.g. dash0) mandate this convention — applying it unconditionally is safe because the prefix is harmless in repos that don't require it and load-bearing in those that do.
 
-The comment body should read like a natural code review comment a colleague would write.
+**Category → prefix mapping** (apply 1:1):
+
+| Step 5.3 category | Body prefix    |
+| ----------------- | -------------- |
+| `praise`          | `praise: `     |
+| `nitpick`         | `nitpick: `    |
+| `suggestion`      | `suggestion: ` |
+| `issue`           | `issue: `      |
+| `question`        | `question: `   |
+
+If the comment is non-blocking, append `**(non-blocking)**` at the end of the first sentence. If blocking, append `**(blocking)**`. Decorations are part of the Conventional Comments spec and help the author triage.
+
+The body MUST NOT include:
+- The confidence score (e.g., `(90%)`) — local proposal only.
+- The `**Code:**` anchor block — local proposal only.
+
+Example posted body:
+
+```
+suggestion: `queryDefinitions` from `useQueryDefinitions` always returns an array — splitting the branches would make the intent clearer. **(non-blocking)**
+```
+
+**Mechanical check before posting** — for each comment in the payload, assert `body` starts with one of the 5 prefixes above. If not, STOP and prepend the prefix derived from the Step 5.3 category. Skipping this check produces comments that violate Conventional Comments conventions used in many repos.
 
 #### Posting
 
@@ -662,23 +683,24 @@ The comment body should read like a natural code review comment a colleague woul
 REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
 COMMIT_SHA=$(gh api repos/$REPO/pulls/$PR_NUMBER --jq '.head.sha')
 
-# Write payload — note: NO "event" key. Its absence is what makes the review pending.
+# Write payload — note: NO "event" key (absence is what makes the review pending),
+# and "body" is the empty string (top-level summary belongs in the agent's terminal output, not on the PR).
 cat > /tmp/review-payload.json <<'JSONEOF'
 {
   "commit_id": "<COMMIT_SHA>",
-  "body": "Score: 8/10 — Approve with comments\n\nThree non-blocking notes inline.",
+  "body": "",
   "comments": [
     {
       "path": "src/foo.ts",
       "line": 42,
       "side": "RIGHT",
-      "body": "Consider using a `Map` instead of a plain object here for better type safety..."
+      "body": "suggestion: Consider using a `Map` instead of a plain object here for better type safety. **(non-blocking)**"
     },
     {
       "path": "src/bar.ts",
       "line": 18,
       "side": "RIGHT",
-      "body": "This error is silently swallowed. If `fetchUser` throws, the caller has no way to..."
+      "body": "issue: This error is silently swallowed. If `fetchUser` throws, the caller has no way to distinguish failure modes. **(blocking)**"
     }
   ]
 }
@@ -715,12 +737,15 @@ gh api -X PUT repos/$REPO/pulls/$PR_NUMBER/reviews/<REVIEW_ID>/dismissals -f mes
 
 #### Reporting
 
-After posting, report concisely:
-- `Posted N pending comments on PR #<n>.`
-- The verified state (must be PENDING)
-- Any comments that were dropped because they couldn't be pinned to a diff line, with the comment body verbatim so the user can paste them manually if useful
-- The direct link: `https://github.com/$REPO/pull/$PR_NUMBER/files` — pending comments appear here
-- A closing one-liner: `Open the PR → Files Changed → review, edit, dismiss as needed, then click "Finish your review" to submit (or discard).`
+After the API call succeeds, report concisely. **Lead with invisibility**, then mechanics:
+
+- `Drafted N pending comments on PR #<n> — invisible to the author until you submit from the GitHub UI.`
+- The verified state (must be `PENDING` — if anything else, treat as accidental submission per the verification block above).
+- Any comments that were dropped because they couldn't be pinned to a diff line, with the comment body verbatim so the user can paste them manually.
+- The direct link: `https://github.com/$REPO/pull/$PR_NUMBER/files` — your pending review appears here, scoped to your account only.
+- Closing one-liner: `Open the PR → Files Changed → review, edit, dismiss as needed, then click "Finish your review" to submit (or discard).`
+
+**Do not use the verb "posted" in your report.** "Posted" reads as "made public" to most users. Use "drafted" or "added to the pending review" instead. This is a communication invariant — failing to follow it produces false-failure perceptions like "the agent posted a comment directly" even when the review is correctly PENDING.
 
 If the API call returns an error, report the full error and the JSON payload. Do not fall back to any other endpoint. Do not retry with a modified `event`.
 
