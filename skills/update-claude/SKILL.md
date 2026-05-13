@@ -1,18 +1,29 @@
 ---
 name: update-claude
 description: >
-  Analyze code changes and update CLAUDE.md, .claude/rules/, and the docs/ tree so
+  Analyzes code changes and updates CLAUDE.md, .claude/rules/, and the docs/ tree so
   all three documentation tiers stay in sync with the codebase. Uses git diff to
   detect what changed and holistic analysis for impact. Detects drift across tiers
-  (dead @imports, stale narrative, hot-path leakage) and routes new updates by
-  content kind: rules and commands to CLAUDE.md, path-scoped rules to .claude/rules/,
-  rationale and narrative to docs/. Invoke with /update-claude.
+  (dead @imports, stale narrative, hot-path leakage) and resolves placement automatically:
+  innermost-ancestor CLAUDE.md for subtree-scoped rules, .claude/rules/ with paths
+  globs for cross-cutting patterns, docs/ for narrative. Supports nested-package and
+  filename-pattern modes. Triggers on "update docs", "sync CLAUDE.md", "refresh rules",
+  "docs drift", "update package docs", "rule for all bindings", "/update-claude".
 disable-model-invocation: true
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: command
+  tags:
+    - documentation
+    - drift-detection
+    - claude-md
+    - docs-routing
+    - branch-diff
+    - hot-path
+    - tiered-docs
+    - staleness-check
 ---
 
 # Update Claude Documentation
@@ -36,7 +47,9 @@ Check `$ARGUMENTS` for options:
 |----------|---------|-------------|
 | `branch` | **yes** | Compare current branch against base branch (main/master) |
 | `recent [N]` | | Analyze the last N commits (default 10) |
-| `paths <glob>` | | Analyze specific paths only |
+| `paths <glob>` | | Analyze specific paths only (still routes updates via the Placement Resolver) |
+| `nested <dir>` | | Route all updates for changes under `<dir>` to `<dir>/CLAUDE.md` (scaffold the file if absent — confirm first) |
+| `pattern <glob>` | | Discovery-driven mode: scan files matching `<glob>` for shared structure and emit a path-scoped rule in `.claude/rules/` |
 | `holistic` | | Run `/holistic-analysis refactor` on each affected area before updating docs |
 | `dry-run` | | Show proposed changes without writing files |
 | `all` | | Full audit of all docs against current codebase |
@@ -46,8 +59,42 @@ Examples:
 - `/update-claude holistic` — same but with deep holistic analysis per area
 - `/update-claude recent 5` — analyze last 5 commits
 - `/update-claude paths src/api/**` — update docs for API layer only
+- `/update-claude nested packages/foo` — update only `packages/foo/CLAUDE.md` (or scaffold it) for changes in that subtree
+- `/update-claude pattern "**/bindings.ts"` — discover patterns across every `bindings.ts` and emit a path-scoped rule
 - `/update-claude all` — full audit, check every doc section against code
 - `/update-claude dry-run` — preview changes without writing
+
+---
+
+## Mode: nested `<dir>`
+
+When `nested <dir>` is passed, route every update for changes under `<dir>` to `<dir>/CLAUDE.md` instead of the root.
+
+1. Verify `<dir>` exists and contains source code (not just docs or assets).
+2. Check whether `<dir>/CLAUDE.md` already exists.
+   - **Exists** — edit it. Do NOT also touch root `CLAUDE.md` for the same content.
+   - **Missing** — ask the user (AskUserQuestion) whether to scaffold one. If yes, create a minimal file using the same template as `/init-claude` Step 5 (Commands / Code Style / Architecture / Gotchas), tier-appropriate.
+3. Run Phase 1 with `paths` scoped to `<dir>/**`.
+4. Run Phases 2–5 with the Placement Resolver forced to prefer `<dir>/CLAUDE.md` over root for hot-path content.
+5. **Migration check** — if root `CLAUDE.md` already contains content that should belong here (a rule that names `<dir>` paths verbatim), propose moving it down and removing the root copy. Innermost wins.
+
+---
+
+## Mode: pattern `<glob>`
+
+When `pattern <glob>` is passed, the skill switches from diff-driven to discovery-driven. Use this when you've noticed a shared shape across many files of the same name (`bindings.ts`, `route.ts`, `*.test.ts`) and want a single path-scoped rule covering them.
+
+1. Resolve the glob to a file list. Hard cap at 50 files — if more, ask the user to narrow before continuing.
+2. Read each matched file (sample, if the corpus is large enough that 50 reads strain the context).
+3. Extract recurring structural features:
+   - Exports (named vs default; types vs values)
+   - File-internal ordering (imports → types → schema → handlers → exports)
+   - Naming conventions (camelCase / PascalCase / specific suffixes)
+   - Recurring imports or dependencies
+   - Common pitfalls visible in the corpus (e.g., every `bindings.ts` re-exports from `./types` — so a new one without that re-export will look wrong)
+4. Check `.claude/rules/` for any existing rule whose `paths:` already covers `<glob>`. If one exists, propose an edit; otherwise propose a new file `.claude/rules/<topic>.md`.
+5. The proposed rule MUST use `paths: ["<glob>"]` (sequence form) and MUST NOT live in root `CLAUDE.md` — that defeats the point of a pattern rule.
+6. Hand off to Phase 5 with `scope: pattern` so the Placement Resolver routes to `.claude/rules/` unconditionally.
 
 ---
 
@@ -77,9 +124,9 @@ git diff --name-only --diff-filter=ACMR HEAD~${N}..HEAD
 git log --oneline -${N}
 ```
 
-**Paths mode**:
+**Paths mode** (quote `${PATHS}` so multi-value globs survive shell-split):
 ```bash
-git diff --name-only --diff-filter=ACMR ${BASE_BRANCH}...HEAD -- ${PATHS}
+git diff --name-only --diff-filter=ACMR "${BASE_BRANCH}...HEAD" -- "${PATHS}"
 ```
 
 **All mode**:
@@ -141,20 +188,37 @@ For each documentation area affected by the changes, check for drift:
 
 ### 3a. Staleness Checks (deterministic, no guessing)
 
-1. **Path references**: Do file paths mentioned in docs still exist?
+1. **Path references**: Do file paths mentioned in docs still exist? The regex accepts any extension and well-known extensionless filenames, then strips an optional `:line` / `:line:col` suffix before the existence check.
    ```bash
-   # Extract paths from docs and verify they exist
-   grep -oE '`[a-zA-Z0-9_./-]+\.(ts|js|py|go|rs|tsx|jsx)`' CLAUDE.md | tr -d '`' | while read f; do
-     [ ! -e "$f" ] && echo "STALE: $f referenced in docs but doesn't exist"
-   done
+   # Extract paths from docs and verify they exist. Covers any extension, plus
+   # extensionless conventions (Makefile, Dockerfile, README, LICENSE, CHANGELOG).
+   grep -ohE '`(([a-zA-Z0-9_./-]+\.[a-zA-Z0-9]+)|(Makefile|Dockerfile|README|LICENSE|CHANGELOG))(:[0-9]+)?(:[0-9]+)?`' CLAUDE.md \
+     | tr -d '`' \
+     | sed -E 's/:[0-9]+(:[0-9]+)?$//' \
+     | sort -u \
+     | while read -r f; do
+         [ -n "$f" ] && [ ! -e "$f" ] && echo "STALE: $f referenced in docs but doesn't exist"
+       done
    ```
 
-2. **Command references**: Do documented commands still work?
+2. **Command references**: Do documented `npm` / `pnpm` / `yarn` / `bun` scripts still exist in `package.json`?
    ```bash
-   # Check if documented npm/pnpm scripts exist in package.json
+   # Skip silently if there is no package.json at the repo root.
+   if [ -f package.json ]; then
+     grep -ohE '`(npm|pnpm|yarn|bun)( run)? [a-zA-Z][a-zA-Z0-9:_-]*`' CLAUDE.md \
+       | tr -d '`' \
+       | awk '{print $NF}' \
+       | sort -u \
+       | while read -r script; do
+           # Match `"script":` with optional whitespace, anchored to the scripts block.
+           if ! grep -qE "\"${script}\"[[:space:]]*:" package.json; then
+             echo "STALE: documented script '${script}' missing from package.json"
+           fi
+         done
+   fi
    ```
 
-3. **Import references**: Do `@import` targets still exist?
+3. **Import references**: Do `@import` targets still exist? See Phase 3c for the generalised dead-import scan.
 
 4. **Rules path globs**: Do `.claude/rules/` path patterns match any current files?
 
@@ -171,12 +235,14 @@ For each affected area, compare what the docs say vs what the code now does:
 
 The narrative tier drifts more slowly than code, but it drifts. Run these checks against `docs/` (root and nested):
 
-1. **Dead `@import` targets**: every `@docs/...` reference in CLAUDE.md or `.claude/rules/` must resolve to a real file.
+1. **Dead `@import` targets**: every `@<path>` reference in CLAUDE.md or `.claude/rules/` must resolve to a real file. The regex matches any relative path (`@docs/...`, `@.claude/rules/...`, `@packages/<pkg>/CLAUDE.md`, etc.) — not only `@docs/`.
    ```bash
-   grep -rhoE '@docs/[a-zA-Z0-9_/-]+\.md' CLAUDE.md .claude/rules/ 2>/dev/null | sort -u | while read ref; do
-     path="${ref#@}"
-     [ ! -e "$path" ] && echo "DEAD @import: $ref"
-   done
+   grep -rhoE '@[A-Za-z0-9_.][A-Za-z0-9_./-]*\.[A-Za-z0-9]+' CLAUDE.md .claude/rules/ 2>/dev/null \
+     | sort -u \
+     | while read -r ref; do
+         path="${ref#@}"
+         [ ! -e "$path" ] && echo "DEAD @import: $ref"
+       done
    ```
 2. **Stale narrative**: does `docs/architecture.md` describe directories or modules that no longer exist? Diff its claims against the current file tree.
 3. **Outdated contributing guide**: `docs/contributing.md` commands should match `package.json` / `Makefile` / equivalent. Detect renames (e.g. `pnpm test` → `bun test`).
@@ -224,17 +290,19 @@ Apply the **"Would removing this cause Claude to make mistakes?"** test to every
 
 ### 5b. Decide where to put each update — Content Routing Rubric
 
-Before placing a change, classify it by **content kind**, not by file pattern. Same rubric as `/init-claude`; reproduced here so this skill stands alone.
+Before placing a change, classify it by **content kind**, not by file pattern. **Same rubric as `/init-claude`** — keep both copies in sync (or extract to a shared file when this rubric becomes load-bearing for a third consumer).
 
 | Content kind | Destination | Why |
 |---|---|---|
 | Hard rule ("MUST", "NEVER"), command, gotcha | `CLAUDE.md` (inline) | Auto-loaded; agent acts on it without a round-trip |
-| Decision table, file inventory | `CLAUDE.md` (inline) | Agent hot path; cheap to scan |
-| Path-scoped rule (only `src/api/**`) | `.claude/rules/<topic>.md` | Loaded only when matching files are touched |
+| Decision table (path → owner, file → command) | `CLAUDE.md` (inline) | Agent hot path; cheap to scan |
+| File inventory ("key source files") | `CLAUDE.md` (inline) | Agent needs it before tool calls; humans skim it too |
+| Path-scoped rule (only relevant for `src/api/**`) | `.claude/rules/<topic>.md` | Loaded only when matching files are touched |
 | Architectural rationale ("we picked X because Y") | `docs/architecture.md` | Humans onboard with it; agent reads on demand |
-| Onboarding / dev environment / workflow | `docs/contributing.md` | Reused by new contributors |
-| Conceptual narrative, ADR, design history | `docs/<topic>.md` | Stable, reference-style content |
-| Tutorial / walkthrough | `docs/<topic>.md` | Too verbose for the hot path |
+| Onboarding / dev environment setup | `docs/contributing.md` | Reused by new contributors; rarely needed mid-task |
+| Tutorial / conceptual walkthrough | `docs/<topic>.md` | Too verbose for CLAUDE.md; stable enough not to drift |
+| Domain glossary, design history, ADRs | `docs/<topic>.md` | Stable reference material; benefits humans equally |
+| API reference (generated) | `docs/api/` | Updated mechanically; not Claude's job |
 
 **Routing decision flow per update:**
 
@@ -245,20 +313,38 @@ Before placing a change, classify it by **content kind**, not by file pattern. S
 
 **Hot-path budget:** if a CLAUDE.md edit pushes the file past ~150 lines, consider whether the new content is really hot-path material — explanations and history almost always belong in `docs/` instead.
 
-**Placement matrix (legacy view, still useful for area routing):**
+### 5c. Placement Resolver — pick the specific file
 
-| Situation | Action |
-|-----------|--------|
-| Existing CLAUDE.md section covers this area | Edit that section |
-| Existing rules file covers this area | Edit that rules file |
-| Existing `docs/` file covers this area | Edit that `docs/` file (and `@import` from CLAUDE.md if not already) |
-| New rule/command/gotcha, project is large | Create new rules file with `paths:` frontmatter |
-| New rule/command/gotcha, project is small | Add section to CLAUDE.md |
-| New rationale/narrative/onboarding step | Add to `docs/` (create the file if needed) and link from CLAUDE.md |
-| Information is stale/wrong | Remove or correct it in whichever file owns it |
-| Rule would only apply to specific file types | Use path-scoped rules file |
+5b decided the *kind* of destination (CLAUDE.md / `.claude/rules/` / `docs/`). This step picks the *specific path* so each rule loads only when relevant — no hot-path pollution.
 
-### 5c. Draft the changes
+**Innermost-wins principle.** Claude Code only loads a nested `CLAUDE.md` when the agent is operating inside that subtree. A rule about `packages/foo/**` placed in `packages/foo/CLAUDE.md` costs zero tokens for someone working in `packages/bar/`. The same rule in root `CLAUDE.md` costs everyone tokens every turn. Always push rules to the innermost ancestor that still covers the scope.
+
+**Step 1 — Determine scope** for each proposed update by inspecting which files it would govern:
+
+| Scope label | Definition |
+|---|---|
+| `repo-wide` | Rule applies anywhere in the repo |
+| `subtree` | All governed files live under a single directory (`packages/foo/**`) |
+| `pattern` | Files matching a name/glob across multiple subtrees (`**/bindings.ts`) |
+| `area` | A small contiguous set of files in one subtree (treat as `subtree`) |
+
+**Step 2 — Pick the destination** using this table:
+
+| Scope | Hot-path (rule / command / gotcha) | Path-scoped rule | Narrative / rationale |
+|---|---|---|---|
+| `repo-wide` | Root `CLAUDE.md` | `.claude/rules/<topic>.md` (no `paths:`) | Root `docs/<topic>.md` |
+| `subtree` with existing `<dir>/CLAUDE.md` | `<dir>/CLAUDE.md` | `<dir>/.claude/rules/<topic>.md` if exists, else root `.claude/rules/<topic>.md` with `paths: ["<dir>/**"]` | `<dir>/docs/<topic>.md` if nested docs exist, else root `docs/` |
+| `subtree` without `<dir>/CLAUDE.md` | Ask the user before scaffolding `<dir>/CLAUDE.md`. If declined → root `.claude/rules/<topic>.md` with `paths: ["<dir>/**"]` | Root `.claude/rules/<topic>.md` with `paths: ["<dir>/**"]` | Root `docs/<topic>.md` + `@import` from nearest CLAUDE.md |
+| `pattern` (cross-subtree) | **Never** root `CLAUDE.md`. Always `.claude/rules/<topic>.md` with `paths: ["<glob>"]` | Same | Root `docs/<topic>.md` |
+
+**Step 3 — Pre-write sanity checks** (each is binary; failing any one blocks the write):
+
+- **Innermost ancestor exists?** If a `CLAUDE.md` lives deeper than your chosen target and still covers the scope, prefer it.
+- **Double coverage?** If the same rule already lives in root *and* a nested `CLAUDE.md`, the nested one wins — propose removing the root copy.
+- **Pattern in root?** If a `pattern`-scoped rule was about to land in root `CLAUDE.md`, reject — move it to `.claude/rules/`. This is the load-bearing invariant; without it the skill regresses to the old root-centric behaviour.
+- **Scaffolding a new file?** Confirm with the user. New `CLAUDE.md` files load on every turn for that subtree thereafter — non-trivial.
+
+### 5d. Draft the changes
 
 For each update, prepare the edit:
 
@@ -277,7 +363,7 @@ For each update, prepare the edit:
   ```
 - **Removals**: Delete stale lines or entire files if fully obsolete
 
-### 5d. Keep it concise
+### 5e. Keep it concise
 
 Apply the same principles as init-claude:
 - **50-100 lines** for CLAUDE.md total — if adding content, consider removing something less important or moving narrative to `docs/`
