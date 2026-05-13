@@ -21,7 +21,7 @@ tags:
 - [Applying the Proposed Change](#applying-the-proposed-change)
 - [Sharing the Improvement Upstream](#sharing-the-improvement-upstream)
 - [Hard Rules](#hard-rules)
-- [Fallback for Skills Without a Diagnostic Surface](#fallback-for-skills-without-a-diagnostic-surface)
+- [Fallback for Skills and Agents Without a Diagnostic Surface](#fallback-for-skills-and-agents-without-a-diagnostic-surface)
 
 ---
 
@@ -75,7 +75,7 @@ Or via `Skill()`:
 Skill("create-skill", "diagnose <target-skill-name>")
 ```
 
-`<target-skill-name>` is the directory name under `skills/` (e.g. `autonomous-workflow`, `fix-bug`).
+`<target-skill-name>` is the directory name under `skills/` (e.g. `autonomous-workflow`, `fix-bug`) **or** the basename of an agent under `agents/` without the `.md` suffix (e.g. `reviewer`, `bug-fix-verifier`). Step 1 disambiguates by checking both locations.
 If omitted, ask the user — do not guess.
 
 ### Optional flags
@@ -112,7 +112,7 @@ Resolve the target's diagnostic surface by trying paths in this fixed order, sto
 
 Resolve the real path with `readlink -f` in case the local checkout uses the cross-tool symlink chain (`~/.claude/skills/...` → `~/.agents/skills/...` → repo). `git apply` always runs from the resolved source root.
 
-If the surface path does not exist at the matched candidate, fall back to inference (see [Fallback](#fallback-for-skills-without-a-diagnostic-surface)) and warn the user once that fidelity is reduced.
+If the surface path does not exist at the matched candidate, fall back to inference (see [Fallback](#fallback-for-skills-and-agents-without-a-diagnostic-surface)) and warn the user once that fidelity is reduced.
 
 The surface gives you the target's:
 
@@ -162,7 +162,7 @@ Construct **one** improvement proposal targeted at the earliest phase where a ti
 The proposal must contain:
 
 - **Type** — one of: new check in an existing rule, new companion / sub-step, new trigger condition, new gate, taxonomy / registry update.
-- **Target file** — full path inside `skills/<target-skill-name>/`.
+- **Target file** — full path inside the resolved source root (`skills/<target-name>/` for skills, `agents/` for agents).
 - **Concrete edit** — before/after blocks with the exact text to add, change, or remove.
 - **Unified diff** — fenced ```diff block in the report, ready to apply with `git apply`.
 - **Mechanical vs. judgment** — is the new check rule-based (deterministic) or LLM-judged? Prefer mechanical when possible.
@@ -308,7 +308,7 @@ The metadata header at the top is parseable enough for any future tooling, and s
 ## 5. Proposed improvement
 
 - Type: <new check | new companion | new trigger | new gate | taxonomy update>
-- Target: <full path inside skills/<target-skill>/>
+- Target: <full path inside the resolved source root — `skills/<target>/` or `agents/`>
 - Mechanical or judgment: <mechanical | judgment>
 - Cost: <tokens / seconds>
 
@@ -352,7 +352,7 @@ The metadata header at the top is parseable enough for any future tooling, and s
 
 ## 8. Sharing
 
-- Apply locally: `cd skills/<target-skill> && git apply <path-to-this-report>` (or use `--apply` if Section 6 permitted it)
+- Apply locally: `cd <source-root> && git apply <path-to-this-report>` where `<source-root>` is `skills/<target>/` for skills or `agents/` for agents (or use `--apply` if Section 6 permitted it)
 - Open a PR: `--pr` flag (also gated on Section 6 ≥ 90 %), or manually with the diff above
 ```
 
@@ -371,11 +371,11 @@ When both preconditions are met:
 
 1. Print the unified diff to the conversation.
 2. Ask for confirmation. Auto mode does not bypass this.
-3. On confirm: extract the diff block from the report and run `git apply` from `skills/<target-skill>/`.
+3. On confirm: extract the diff block from the report and run `git apply` from the resolved source root (`skills/<target-skill>/` for skills, `agents/` for agents).
 4. If `git apply` fails, fall back to manual `Edit` / `Write` based on the Before/After blocks. Treat any difference between the diff and the actual edit as a fresh decision and re-confirm.
 5. Report which files changed.
 
-When the agent operates from a copy of the target skill that is not a checked-out repo (e.g. `~/.claude/skills/<target>/` symlinked to a read-only path), `--apply` resolves the real source via `readlink -f` first.
+When the agent operates from a copy of the target that is not a checked-out repo (e.g. `~/.claude/skills/<target>/` or `~/.claude/agents/<target>.md` symlinked to a read-only path), `--apply` resolves the real source via `readlink -f` first.
 
 ---
 
@@ -407,16 +407,16 @@ The report is intentionally provider-neutral: another agent harness (Codex, Curs
 
 ---
 
-## Fallback for Skills Without a Diagnostic Surface
+## Fallback for Skills and Agents Without a Diagnostic Surface
 
-If the target skill has no `rules/diagnostic-surface.md`, Diagnose Mode degrades gracefully rather than refusing:
+If the target has no `rules/diagnostic-surface.md`, Diagnose Mode degrades gracefully rather than refusing:
 
-1. Read the target's `SKILL.md` end-to-end.
+1. Read the target body end-to-end (`skills/<target>/SKILL.md` for skills, `agents/<target>.md` for agents).
 2. Treat each H2 section that names a phase, step, or stage as a candidate phase row.
 3. Use a minimal taxonomy: `F-novel` only.
 4. Treat every gate / companion mentioned in the body as an existing guard.
-5. Resolve the source root as `skills/<target-skill>/`.
-6. **Print one warning before generating the report**: "No diagnostic surface declared for `<target>` — fidelity is reduced; consider adding `skills/<target>/rules/diagnostic-surface.md` from the template at `skills/create-skill/templates/diagnostic-surface.template.md`."
+5. Resolve the source root from Step 1's match (`skills/<target>/` for skills, `agents/` for agents).
+6. **Print one warning before generating the report**: "No diagnostic surface declared for `<target>` — fidelity is reduced; consider adding `<source-root>/rules/diagnostic-surface.md` (skills) or `agents/<target>/rules/diagnostic-surface.md` (agents) from the template at `skills/create-skill/templates/diagnostic-surface.template.md`."
 
-The fallback is intentionally low-effort — it exists so a brand-new skill can still be diagnosed before its author has had time to declare a surface.
+The fallback is intentionally low-effort — it exists so a brand-new skill or agent can still be diagnosed before its author has had time to declare a surface.
 The right long-term fix is to declare the surface; the report explicitly recommends doing so.

@@ -252,19 +252,21 @@ and the hard rules live in [`rules/diagnose-mode.md`](./rules/diagnose-mode.md).
 /create-skill diagnose <target-skill-name> [--symptom "..."] [--scope <phase|companion>] [--apply] [--pr] [--no-write]
 ```
 
-**The target skill declares its own diagnostic surface** in
-`skills/<target>/rules/diagnostic-surface.md` — phase model, failure
-taxonomy, existing-guards table, source root, hard invariants.
+**The target declares its own diagnostic surface** in
+`skills/<target>/rules/diagnostic-surface.md` (skills) or
+`agents/<target>/rules/diagnostic-surface.md` (agents) — phase model,
+failure taxonomy, existing-guards table, source root, hard invariants.
+Step 1 of Diagnose Mode disambiguates by checking both locations.
 The contract spec is in [`rules/diagnostic-surface.md`](./rules/diagnostic-surface.md);
 the scaffolding template a target drops into its own `rules/` is
 [`templates/diagnostic-surface.template.md`](./templates/diagnostic-surface.template.md).
 
-If the target skill has not declared a surface, Diagnose Mode falls back to
-inferring phases from the target's `SKILL.md` H2 sections and warns the user
-once that fidelity is reduced.
+If the target has not declared a surface, Diagnose Mode falls back to
+inferring phases from the target body's H2 sections (`SKILL.md` for skills,
+`agents/<name>.md` for agents) and warns the user once that fidelity is reduced.
 
 Diagnose Mode never modifies user product code.
-It only proposes changes to the target skill's own source.
+It only proposes changes to the target's own source.
 
 ---
 

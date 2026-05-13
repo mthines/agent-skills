@@ -48,12 +48,21 @@ tags:
 ### 2. Source root
 
 The repo-relative path that `git apply` is executed from when `--apply` runs.
-Almost always `skills/<skill-name>/`.
+For multi-file skills it is `skills/<skill-name>/`.
+For single-file agents under `agents/` it is `agents/` (the agent body `agents/<name>.md` and any sibling files under `agents/<name>/` share the same root so a diff can touch both).
 
 ```markdown
 ## Source root
 
 `skills/<skill-name>/`
+```
+
+For an agent target:
+
+```markdown
+## Source root
+
+`agents/`
 ```
 
 ### 3. Phase model
@@ -156,10 +165,22 @@ Local commands the diagnoser can run after `--apply` to confirm the change did n
 
 ## Where to put the file
 
+For a skill:
+
 ```
 skills/<skill-name>/
 └── rules/
     └── diagnostic-surface.md
+```
+
+For an agent (the agent body stays as the single file `agents/<name>.md`; rules live in a sibling directory):
+
+```
+agents/
+├── <name>.md
+└── <name>/
+    └── rules/
+        └── diagnostic-surface.md
 ```
 
 Always inside `rules/`, always named `diagnostic-surface.md`.
@@ -197,4 +218,4 @@ Removals happen only when the underlying gate or companion is itself removed fro
 - **Pre-populating the failure taxonomy.** Speculation pushes the diagnoser to force-match. **Fix:** seed only with `F-novel`, grow from real diagnoses.
 - **Hiding the source root.** A wrong source root makes `--apply` fail silently or write to the wrong place. **Fix:** state the path explicitly.
 - **Omitting hard invariants.** Without them, the diagnoser may propose relaxing a load-bearing gate. **Fix:** list every gate the skill considers non-negotiable.
-- **Storing the surface outside `rules/`.** The diagnoser looks for an exact path. **Fix:** use `skills/<name>/rules/diagnostic-surface.md`.
+- **Storing the surface outside `rules/`.** The diagnoser looks for an exact path. **Fix:** use `skills/<name>/rules/diagnostic-surface.md` for skills or `agents/<name>/rules/diagnostic-surface.md` for agents.
