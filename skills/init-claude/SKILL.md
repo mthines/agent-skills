@@ -1,18 +1,28 @@
 ---
 name: init-claude
 description: >
-  Initialize Claude Code configuration for a project by analyzing directory structure
+  Initializes Claude Code configuration for a project by analyzing directory structure
   and tech stack, then scaffolding a tiered docs setup: CLAUDE.md and .claude/rules/
   for the agent hot path, plus a docs/ tree (root and nested for monorepos) for
   narrative content humans also use. Routes content by kind: rules and decision
   tables stay inline; rationale, onboarding, and architecture narrative go to docs/.
-  Invoke with /init-claude.
+  Triggers on "bootstrap CLAUDE.md", "set up Claude config", "scaffold .claude",
+  "initialize Claude Code", "/init-claude".
 disable-model-invocation: true
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: command
+  tags:
+    - documentation
+    - claude-md
+    - scaffold
+    - tiered-docs
+    - hot-path
+    - monorepo
+    - bootstrap
+    - project-init
 ---
 
 # Initialize Claude Configuration
@@ -73,12 +83,19 @@ If configuration exists, ask using AskUserQuestion:
 First, determine project complexity to decide configuration approach:
 
 ```bash
-# Count source files (excluding node_modules, vendor, etc.)
+# Count source files (excluding node_modules, vendor, build outputs, caches)
 find . -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.py" -o -name "*.go" -o -name "*.rs" -o -name "*.rb" \) \
-  -not -path "*/node_modules/*" -not -path "*/vendor/*" -not -path "*/.git/*" -not -path "*/dist/*" -not -path "*/build/*" | wc -l
+  -not -path "*/node_modules/*" -not -path "*/vendor/*" -not -path "*/.git/*" \
+  -not -path "*/dist/*" -not -path "*/build/*" -not -path "*/target/*" -not -path "*/out/*" \
+  -not -path "*/.next/*" -not -path "*/.nuxt/*" -not -path "*/.svelte-kit/*" -not -path "*/.turbo/*" \
+  -not -path "*/coverage/*" -not -path "*/__pycache__/*" -not -path "*/.venv/*" -not -path "*/venv/*" | wc -l
 
 # Count directories (depth indicator)
-find . -type d -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/vendor/*" | wc -l
+find . -type d \
+  -not -path "*/node_modules/*" -not -path "*/.git/*" -not -path "*/vendor/*" \
+  -not -path "*/dist/*" -not -path "*/build/*" -not -path "*/target/*" -not -path "*/out/*" \
+  -not -path "*/.next/*" -not -path "*/.nuxt/*" -not -path "*/.svelte-kit/*" -not -path "*/.turbo/*" \
+  -not -path "*/coverage/*" -not -path "*/__pycache__/*" -not -path "*/.venv/*" -not -path "*/venv/*" | wc -l
 
 # Check for multiple languages/packages
 ls packages/ apps/ libs/ services/ 2>/dev/null | wc -l
@@ -211,7 +228,14 @@ Create a **concise** CLAUDE.md (target 50-100 lines). Focus on:
 
 - [Common mistakes to avoid]
 - [Non-obvious behaviors]
+```
 
+### Tier-conditional appendix
+
+The `## Commands`, `## Code Style`, `## Architecture`, and `## Gotchas` sections above apply to every tier.
+Append the following **only for Medium and Large tiers** (Small tier has no `docs/` tree, so the `@imports` would be dead):
+
+```markdown
 ## Documentation
 
 Narrative content lives in `docs/` and is human-friendly. Read on demand.
@@ -239,7 +263,10 @@ For large projects, automatically create path-targeted rules based on detected s
 **code-style.md** - Path-targeted style rules:
 ```markdown
 ---
-paths: src/**/*.{ts,tsx}
+description: TypeScript style rules for the src/ tree
+paths:
+  - "src/**/*.ts"
+  - "src/**/*.tsx"
 ---
 
 # TypeScript Style
@@ -252,7 +279,11 @@ paths: src/**/*.{ts,tsx}
 **testing.md** - Test-specific rules:
 ```markdown
 ---
-paths: **/*.test.{ts,tsx,js}
+description: Conventions for test files
+paths:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.test.js"
 ---
 
 # Testing Guidelines
@@ -265,7 +296,9 @@ paths: **/*.test.{ts,tsx,js}
 **api.md** - API development rules:
 ```markdown
 ---
-paths: src/api/**/*.ts
+description: API route conventions
+paths:
+  - "src/api/**/*.ts"
 ---
 
 # API Development
@@ -275,8 +308,12 @@ paths: src/api/**/*.ts
 - Document with OpenAPI comments
 ```
 
-**security.md** - Security practices:
+**security.md** - Security practices (project-wide, no `paths:`):
 ```markdown
+---
+description: Project-wide security rules
+---
+
 # Security
 
 - Never log sensitive data (tokens, passwords, PII)
@@ -391,10 +428,16 @@ For large projects, create `.claude/settings.json` for team-shared settings:
 
 ## Step 8: Update .gitignore
 
-Add to `.gitignore` if not present:
-```
-# Claude Code local settings
-.claude/settings.local.json
+Append the local-settings entry idempotently (the `grep -q` guard makes the step safe to re-run):
+
+```bash
+if ! grep -qxF ".claude/settings.local.json" .gitignore 2>/dev/null; then
+  {
+    [ -s .gitignore ] && echo ""
+    echo "# Claude Code local settings"
+    echo ".claude/settings.local.json"
+  } >> .gitignore
+fi
 ```
 
 ## Step 9: Summary
