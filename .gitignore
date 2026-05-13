@@ -1,6 +1,10 @@
 # Nx
 .nx/
 
+# Python bytecode (from skills that ship .py scripts)
+__pycache__/
+*.pyc
+
 # Agent workflow artifacts
 .agent
 
