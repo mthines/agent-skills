@@ -38,7 +38,8 @@ Skills that do not declare a surface fall back to the inferred-from-`SKILL.md` p
 Diagnose Mode never modifies anything autonomously.
 It writes one report file and stops.
 Any proposed change to the target skill is **gated through `Skill("confidence", "analysis")`** and **always requires explicit user confirmation** before `--apply` runs `git apply`.
-If the confidence score is below 90 %, `--apply` is **disabled for that report** and the diagnosis becomes a discussion artifact rather than an applyable patch.
+If the confidence score is below 90 %, Diagnose Mode runs up to **two refinement iterations** — re-investigating evidence, web-searching authoritative sources, and refining the proposal — to try to clear the gate before bailing out.
+If the final score (after refinement) is still below 90 %, `--apply` is **disabled for that report** and the diagnosis becomes a discussion artifact rather than an applyable patch.
 
 Run Diagnose Mode while the failing session is still in context — that is when the agent has the maximum amount of evidence (the target skill's plan/walkthrough/log artifacts, tests, user feedback, transcripts) to attribute the failure to a specific gate.
 
@@ -94,25 +95,32 @@ Treat them with the same caution as any other source-modifying action — show t
 
 ## Procedure
 
-Diagnose Mode is seven steps.
+Diagnose Mode is seven steps, plus an optional refinement loop (Step 6.5) when the confidence gate fails.
 Each step has a concrete deliverable.
-The confidence gate at Step 5 is **mandatory** — there is no path to `--apply` that bypasses it.
+The confidence gate at Step 6 is **mandatory** — there is no path to `--apply` that bypasses it.
 
 ### Step 1 — Resolve the diagnostic surface
 
-Locate the target skill's diagnostic surface:
+Diagnose Mode works against **two target kinds**: skills (multi-file directories under `skills/`) and agents (single-file `.md` files under `agents/`, optionally with a sibling `agents/<name>/` directory holding rules).
+Both resolve through the same procedure — only the source-root path differs.
 
-1. Resolve the target skill's source path: `readlink -f skills/<target-skill-name>/`.
-2. Read `skills/<target-skill-name>/rules/diagnostic-surface.md` if it exists.
-3. If it does not exist, fall back to inference (see [Fallback](#fallback-for-skills-without-a-diagnostic-surface)) and warn the user once that fidelity is reduced.
+Resolve the target's diagnostic surface by trying paths in this fixed order, stopping at the first match:
 
-The surface gives you the target skill's:
+1. **Skill candidate** — if `skills/<target-name>/` exists, the target is a skill. Source root: `skills/<target-name>/`. Surface path: `skills/<target-name>/rules/diagnostic-surface.md`.
+2. **Agent candidate** — else if `agents/<target-name>.md` exists, the target is an agent. Source root: `agents/`. Surface path: `agents/<target-name>/rules/diagnostic-surface.md` (the rules directory sits next to the single-file agent body).
+3. **Neither** — refuse and ask the user to clarify; do not guess. Print the two paths checked.
+
+Resolve the real path with `readlink -f` in case the local checkout uses the cross-tool symlink chain (`~/.claude/skills/...` → `~/.agents/skills/...` → repo). `git apply` always runs from the resolved source root.
+
+If the surface path does not exist at the matched candidate, fall back to inference (see [Fallback](#fallback-for-skills-without-a-diagnostic-surface)) and warn the user once that fidelity is reduced.
+
+The surface gives you the target's:
 
 - **Phase model** — list of phases / steps with their gates and rule files.
 - **Failure taxonomy** — known classes (each with an ID like `F1`, `F2`, plus `F-novel`).
 - **Existing-guards-per-phase table** — what already runs at each phase.
-- **Source root** — the path against which `git apply` is executed (`skills/<target-skill-name>/`).
-- **Hard invariants** — gates the target skill marks as load-bearing (the diagnoser is forbidden from proposing relaxations to these without manual user confirmation).
+- **Source root** — the path against which `git apply` is executed (`skills/<target-name>/` for skills, `agents/` for agents). The surface file itself declares this — trust it over the candidate-matching above when they conflict.
+- **Hard invariants** — gates the target marks as load-bearing (the diagnoser is forbidden from proposing relaxations to these without manual user confirmation).
 
 ### Step 2 — Evidence collection
 
@@ -181,10 +189,30 @@ The skill scores how confident it is that the **proposal actually fixes the fail
 | < 75 %  | Proposal is speculative or addresses the wrong root cause             | `--apply` **disabled**; report saved with `status: low-confidence` so it surfaces in audits        |
 
 Record the score and the gate outcome in the report (Section 6 below).
-If the score is below 90 %, **the agent does not offer `--apply`** even if the user passed the flag — it states the score, links to the report, and suggests the user iterate on the proposal manually.
+If the score is below 90 %, **do not finalise the report yet** — proceed to Step 6.5 to attempt to raise confidence through additional investigation before recording the final outcome.
+If after Step 6.5 the final score is still below 90 %, **the agent does not offer `--apply`** even if the user passed the flag — it states the score, links to the report, and suggests the user iterate on the proposal manually.
 
 This is the load-bearing safety check.
 Without it, Diagnose Mode could weaken the target skill's own gates whenever the agent is overconfident in a wrong analysis.
+
+### Step 6.5 — Refinement loop (only if Step 6 returned below 90 %)
+
+When the Step 6 score is below 90 %, run up to **two additional refinement iterations** before finalising the report.
+Each iteration is one round of *re-investigate → web-search → refine proposal → re-score*.
+Stop the loop the moment the score reaches ≥ 90 %, or after the second iteration — whichever comes first.
+
+For each iteration (cap: **2**):
+
+1. **Re-investigate the evidence.** Re-read the target's diagnostic surface, the artifacts from Step 2, and any transcripts you may have summarised away. Look specifically for signals the first pass under-weighted — phases that ran in degraded mode, gates that were satisfied for the wrong reason, false-green tests.
+2. **Authoritative web search.** When the failure mechanism touches a domain you do not have full first-party context on (specific framework idiom, library version semantics, CVE, RFC, vendor behaviour), invoke `WebSearch` and `WebFetch` against authoritative sources (vendor docs, CVE databases, RFCs, project changelogs). Do **not** rely on general intuition or scattered blog posts.
+3. **Refine the proposal.** Adjust Step 5 in light of the new evidence. The improvement may shift to an earlier phase, become more mechanical, change its target file, or split into a tighter scope. If the refinement reveals the failure was misclassified in Step 3, update the failure class first, then redo the proposal.
+4. **Re-run the confidence gate.** Call `Skill("confidence", "analysis")` again with the refined proposal. Record the new score and the delta from the prior iteration.
+
+Record each iteration in the report's Section 6 iteration-history table so the user can see what was tried and why the score did or did not move.
+
+**Do not loop more than twice.**
+Naïve self-refine amplifies bias rather than reducing it past two rounds (see *Pride and Prejudice*, ACL 2024 and SELF-[IN]CORRECT, AAAI); a third pass would compound that risk without adding new evidence.
+If the second iteration still returns below 90 %, accept the final score and proceed to Step 7 with the current proposal — the report becomes a discussion artifact rather than an applyable patch.
 
 ### Step 7 — Write the report
 
@@ -249,7 +277,9 @@ The metadata header at the top is parseable enough for any future tooling, and s
 - Target skill: <target-skill-name>
 - Branch: <branch-name>
 - Failure class: <ID> | F-novel
-- Confidence (Step 6): <score>%
+- Confidence (initial Step 6): <score>%
+- Refinement iterations: <0 | 1 | 2>
+- Confidence (final): <score>%
 - Apply status: permitted | disabled-low-confidence
 
 ## 1. Symptom
@@ -302,9 +332,18 @@ The metadata header at the top is parseable enough for any future tooling, and s
 
 ## 6. Confidence gate result
 
-- Score: <N>%
-- Reasoning: <2–4 sentences from `confidence(analysis)`>
-- Outcome: `--apply` permitted | `--apply` disabled (score below 90 %)
+- Score (initial Step 6): <N>%
+- Refinement iterations run: <0 | 1 | 2>
+- Score (final, after refinement): <N>%
+- Reasoning: <2–4 sentences from the final `confidence(analysis)` call>
+- Outcome: `--apply` permitted | `--apply` disabled (final score below 90 %)
+
+### Iteration history (omit if 0 iterations)
+
+| Iteration | New evidence sources (web fetches, re-read artifacts) | Refined proposal summary | Score |
+| --------- | ----------------------------------------------------- | ------------------------ | ----- |
+| 1         | ...                                                   | ...                      | ...%  |
+| 2         | ...                                                   | ...                      | ...%  |
 
 ## 7. Validation plan
 
@@ -356,7 +395,8 @@ The report is intentionally provider-neutral: another agent harness (Codex, Curs
 
 - **Diagnose Mode never modifies user product code.** It only proposes changes to the target skill's own source.
 - **Diagnose Mode never auto-applies.** `--apply` requires (a) Step 6 confidence ≥ 90 % and (b) explicit user confirmation, in that order. `--pr` requires a successful local apply first. Auto mode does not bypass either check.
-- **No `--apply` without confidence.** If `Skill("confidence", "analysis")` returns < 90 %, `--apply` is refused even if the user passed the flag — the report becomes a discussion artifact.
+- **No `--apply` without confidence.** If `Skill("confidence", "analysis")` returns < 90 % after Step 6.5's refinement loop has had its full two iterations, `--apply` is refused even if the user passed the flag — the report becomes a discussion artifact.
+- **Refinement loop is capped at two iterations.** When Step 6 returns below 90 %, Step 6.5 runs at most two rounds of re-investigation + web search + proposal refinement before accepting the final score. Naïve self-refine loops amplify bias past two iterations (per the ACL 2024 / AAAI research cited in Step 6.5); the agent must not exceed the cap by spawning additional rounds, even if the score is trending upward.
 - **Every diagnosis cites a taxonomy class.** Either an existing row from the target's surface, or `F-novel` plus a proposed new row. New rows are appended to the target's `rules/diagnostic-surface.md` only when a diagnosis clears the confidence gate AND the user approves the apply.
 - **Earliest-phase fix wins.** When multiple phases could have caught the failure, propose the change at the earliest phase — failing fast saves the most tokens.
 - **Mechanical checks beat judgment checks.** A deterministic rule that can be evaluated without an LLM call is always preferred over an LLM-judged review step.

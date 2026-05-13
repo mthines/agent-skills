@@ -343,7 +343,8 @@ A **diagnose** run is done when:
 - [ ] Phase-attribution table walks every phase in the target's surface.
 - [ ] Exactly one improvement proposal constructed (one diff per report).
 - [ ] `confidence(analysis)` score recorded; `--apply` honored only at
-      ≥ 90 %.
+      ≥ 90 % (final score, after Step 6.5's two-iteration refinement loop
+      if the initial score was below the gate).
 - [ ] Report written to `.agent/{branch}/diagnose-{target}.md` (or
       stdout with `--no-write`).
 - [ ] If `--apply` ran, user explicitly confirmed before `git apply`.
