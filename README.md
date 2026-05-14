@@ -152,14 +152,13 @@ User-invoked only — the model can't auto-trigger these. **Zero baseline contex
 | **[/github-actions-author](./skills/github-actions-author/SKILL.md)** | Authors fast, cheap, maintainable GitHub Actions workflows using 2026 best practices for caching (`hashFiles` + `restore-keys`), parallelization (independent jobs, matrix, build-once-fan-out via artifacts), reusability (composite actions for steps, reusable workflows for jobs), security (SHA-pinned third-party actions, `permissions: {}` then per-job grants, OIDC instead of long-lived cloud secrets), scoped triggers + `concurrency` (PR `cancel-in-progress: true`, deploy `false`), and trackable errors (named steps, GitHub-format annotations, `$GITHUB_STEP_SUMMARY`). Two modes: `scaffold` (default) generates the YAML; `review` audits an existing `.github/workflows/*.yml` and returns PASS/WARN/FAIL evidence with a top-3 fixes list. Ships drop-in templates for Node CI, Python CI, reusable workflow (callee + caller), composite action, and OIDC deploy. Complements `/ci-auto-fix` (which fixes failing runs) by authoring sound workflows up front. |
 | **[/fix-bug](./skills/fix-bug/SKILL.md)**                           | v2.1 ships a 10-phase pipeline (intake → **complexity triage** → evidence → preflight → reproduction-lock → analyse → gate → **lane-split handoff** → independent-verify → telemetry-verify) plus a cross-cutting bug-notes ledger that survives compaction. Takes any starting evidence (Dash0 span / log / web event URL with UTC timezone compensation, raw stack trace, error message, code pointer `file:line`, Linear ticket URL via [`linear-ticket-investigator`](#linear-ticket-investigator), screen recording via [`/video-analyser`](./skills/video-analyser/SKILL.md), or free-text symptom). Phase 0 infers a `bugClass`; **Phase 0.5 runs complexity triage on a 14-row signal table** to pick `simple` (lightweight in-skill analysis + fast handoff lane) or `complex` (canonical holistic-analysis + standard lane); conservative default is `complex`. Phase 1.5 runs cheap pre-flight probes which may upgrade triage to `simple`; Phase 2.5 locks a failing reproduction by **delegating to [`/tdd`](./skills/tdd/SKILL.md)**, [`/e2e-testing`](./skills/e2e-testing/SKILL.md), or [`/e2e-testing-mobile`](./skills/e2e-testing-mobile/SKILL.md); Phase 2c runs `git bisect run` for regressions; Phase 3 delegates to [`holistic-analysis`](./skills/holistic-analysis/SKILL.md) on complex bugs or runs a lightweight in-skill analysis on simple ones; Phase 4 gates on `confidence(analysis)`. **At ≥ 92 % Phase 6 dispatches without human confirmation**: fast-lane (simple + non-best-effort repro) routes `/fix-bug` → [`/aw-create-plan`](./skills/aw-create-plan/SKILL.md) → `aw-executor` (no aw-planner); standard-lane routes `aw-planner` → `aw-executor`. Both carry the CEGIS refinement contract (3-round counterexample loop); fast-lane round-3 failure falls back to standard-lane via aw-planner with the captured counterexamples. Phase 7's `bug-fix-verifier` agent grades the PR in fresh context (FAIL_TO_PASS, PASS_TO_PASS, diff sanity, repro integrity), identical for both lanes, and is the only one allowed to undraft. Phase 8 (telemetry inputs only) polls the originating Dash0 query post-deploy. Pass `--analyse-only` to stop at Phase 5 — the read-only primitive `/batch-linear-tickets` calls per ticket; `--force-holistic` skips the fast lane. Diagnosable via `/create-skill diagnose fix-bug` — phase model and hard invariants (only the verifier may undraft; verifier in fresh context; bug-notes ledger append-only; three independent confidence gates **on both lanes**; fast-lane requires ≥ 92 % + non-best-effort repro; fast-lane round-3 fallback is single-shot; CEGIS capped at 3 rounds; telemetry bugs not done until Phase 8) declared in [`rules/diagnostic-surface.md`](./skills/fix-bug/rules/diagnostic-surface.md). Curated [research sources](./skills/fix-bug/references/research-sources.md) (Anthropic, SWE-bench, RepairAgent, CEGIS, bisection, telemetry verification, taxonomies). |
 | **[/implement-suggestion](./skills/implement-suggestion/SKILL.md)** | Takes review comments or suggestions and implements the fixes — simple ones directly, complex ones with a plan for approval.                                                                                                                                             |
-| **[/init-claude](./skills/init-claude/SKILL.md)**                   | Analyzes your project and scaffolds a tiered docs setup: `CLAUDE.md` + `.claude/rules/` for the agent hot path, plus a `docs/` tree (root + nested for monorepos) for narrative content humans also use. Routes each piece of content by kind — rules to the hot path, rationale and onboarding to `docs/`.   |
+| **[/documentation](./skills/documentation/SKILL.md)**               | Authors, audits, and maintains project documentation across every surface: `CLAUDE.md` / `.claude/rules/` for the agent hot path, `AGENTS.md` for cross-tool agents, `README.md` for humans (standard-readme spec, above-the-fold rule, badge hygiene), and `docs/` trees structured by the Diátaxis framework. Four modes: `init` bootstraps a tiered docs setup from scratch (small / medium / large tiers by complexity); `update` (default when `CLAUDE.md` already exists) detects drift via deterministic checks (dead `@imports`, removed files, renamed scripts, stale narrative, hot-path leakage) and refreshes only what changed via a **Placement Resolver** that pushes rules to the innermost-ancestor destination (subtree rules to `<dir>/CLAUDE.md`, cross-cutting patterns to `.claude/rules/<topic>.md` with `paths:` globs — never root); `readme` writes or audits a README; `audit` produces a read-only doc-health report across every surface. Two targeted update sub-modes: `nested <dir>` for package-level CLAUDE.md and `pattern <glob>` for discovery-driven rules covering files matching a name or directory glob (`**/bindings.ts`, `**/urlState/**`). Replaces the previous separate `init-claude` and `update-claude` skills — same machinery, broader scope, single discovery surface. |
 | **[/optimize-mock-data](./skills/optimize-mock-data/SKILL.md)**     | Optimizes a directory of structurally-related JSON / JSONL mock fixtures by inferring a shared schema, detecting structural drift between files, normalizing formatting and key order, and optionally shrinking verbose payloads while preserving shape. Three modes — `analyze` (default, read-only report), `normalize` (rewrites files in place with 2-space / LF / trailing-newline canonical form, optionally fills missing keys with `null`), and `shrink` (truncates string fields above a configurable budget with a `…(truncated, was N chars)` marker; refuses to touch `*Id`, `hash`, discriminator tags, or strings that look parseable like URLs / JSON-in-string / base64 / PEM). Ships four stdlib-only Python scripts: [`shape.py`](./skills/optimize-mock-data/scripts/shape.py) (deterministic fingerprint), [`diff-shapes.py`](./skills/optimize-mock-data/scripts/diff-shapes.py) (cluster + drift report with HIGH/MED/LOW severity), [`normalize.py`](./skills/optimize-mock-data/scripts/normalize.py) (canonical formatting with round-trip safety), [`shrink.py`](./skills/optimize-mock-data/scripts/shrink.py) (idempotent truncation). Round-trip safety check on every rewrite — refuses to write if the result doesn't re-parse to the same Python object. Use when fixture files have grown inconsistent (mixed tabs / 2-space, reordered keys, fields in some files but not others, megabyte-sized payloads), when adding a new mock that must match an existing set, or when preparing fixtures for a storage-cost-sensitive context. |
 | **[/profile-optimizer](./skills/profile-optimizer/SKILL.md)**       | Analyses React DevTools Profiler exports or Chrome DevTools Performance traces. Auto-detects the format, frames the right metric (INP, TBT, LCP, commit duration), extracts ranked hotspots with measured cost, maps each to a file/component, and emits a ranked optimisation plan. Iterates via `confidence(analysis)` — digs deeper if root-cause certainty is below 90%, instead of guessing. |
 | **[/playwright-trace-analyzer](./skills/playwright-trace-analyzer/SKILL.md)** | Analyses Playwright `trace.zip` files (or downloads them straight from a GitHub Actions run URL via `gh run download`). Auto-detects the input, extracts the action timeline, network waterfall, and console errors, names the race behind a flake, and emits a ranked fix plan. Confidence-gated via `confidence(analysis)`. |
 | **[/resolve-conflicts](./skills/resolve-conflicts/SKILL.md)**       | Detects merge/rebase conflicts, shows both sides with context, proposes resolution strategies, and asks clarifying questions for ambiguous cases.                                                                                                                        |
 | **[/review-changes](./skills/review-changes/SKILL.md)**             | Reviews branch changes or a PR for quality, correctness, tests, and commit hygiene. Dispatches to the reviewer skill.                                                                                                                                                    |
 | **[/storybook](./skills/storybook/SKILL.md)**                       | Scaffolds and tests Storybook stories for React (web) and React Native / Expo. Generates three artefacts per component: a visual regression `*.stories.tsx` with variants grouped into one snapshot (Chromatic / Loki–optimized), a `Playground` story whose `args` and `argTypes` mirror the component's prop types, and an interaction test `*.test.stories.tsx` under a `/Tests` namespace with awaited `userEvent` / `expect` and the role → label → text → testId locator ladder. Phase 0 preflight detects platform (`@storybook/react-vite`, `@storybook/nextjs(-vite)`, or `@storybook/react-native(-web)`) and halts and asks if Storybook is not installed. Opt-in **multi-profile auth flow** — selectors + account + keychain service live in `.agent/storybook/auth.config.json` (safe to commit), secrets live in the **OS keychain** (macOS `security`, Linux `secret-tool`, Windows Credential Manager), and reusable `storageState.json` is cached under gitignored `.agent/storybook/.auth/`. Sub-commands `auth list / add / remove / test`. Iteration loop runs the Playwright CLI against the live Storybook URL; visual evidence delegates to the [`reviewer`](./agents/reviewer.md) agent (PR Mode screenshots) and the [`screen-recorder`](./skills/screen-recorder/SKILL.md) skill (multi-frame interactions). |
-| **[/update-claude](./skills/update-claude/SKILL.md)**               | Diffs your branch against main and incrementally updates `CLAUDE.md`, `.claude/rules/`, **and `docs/`** to match code changes. A Placement Resolver routes each rule to the innermost-ancestor destination that still covers its scope (subtree-scoped rules don't pollute root). Two targeted modes: `nested <dir>` for package-level CLAUDE.md and `pattern <glob>` to emit one rule covering every file matching a name across the repo. |
 | **[/video-analyser](./skills/video-analyser/SKILL.md)**             | Analyses a screen recording to extract bugs, errors, UI state, and reproduction steps. Resolves input from a Linear ticket URL, local file path, or direct URL. Extracts keyframes with `ffmpeg` (default: 8 frames at 768 px — Pareto-optimal for legibility vs. token cost). Runs optional Tesseract OCR and Whisper audio transcription. |
 
 ### Agents
@@ -215,7 +214,7 @@ So the first time you encounter `aw-planner` in a routing rule, an agent listing
 | 2     | Worktree Setup | Creates an isolated worktree (`gw add` or native `git worktree`), generates `plan.md` artifact in `.agent/{branch}/`.                                                                                   | `aw-create-plan` (Full Mode)                                                               |
 | 3     | Implementation | Codes per the plan, one change at a time, with fast checks after each edit.                                                                                                                             | `tdd` (logic), `ux` (UI), `code-quality` (end-of-phase)                                    |
 | 4     | Testing        | Iterates on failing tests with a mode-aware cap (3 Lite / 5 Full) per area. At the cap, runs `confidence(analysis)` and auto-replans via `holistic-analysis` once before mandatory user escalation. | `confidence` (analysis), `holistic-analysis`                                           |
-| 5     | Documentation  | Updates README, CHANGELOG; keeps `CLAUDE.md` aligned with code changes.                                                                                                                                 | `update-claude` (always)                                                                   |
+| 5     | Documentation  | Updates README, CHANGELOG, and `docs/`; keeps `CLAUDE.md` aligned with code changes.                                                                                                                    | `documentation update` (always)                                                            |
 | 6     | PR Creation    | Reviews changes, generates `walkthrough.md`, opens draft PR with narrative description.                                                                                                                 | `review-changes`, `aw-create-walkthrough` (Full Mode), `create-pr`                         |
 | 7     | CI Gate        | Watches CI; auto-fixes failed checks (parallel sub-agents, cap 2 per PR). Optional post-merge cleanup.                                                                                                  | `ci-auto-fix`                                                                              |
 
@@ -230,7 +229,7 @@ The skill ships with [`install.sh`](./skills/autonomous-workflow/install.sh) whi
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux update-claude \
+          code-quality holistic-analysis tdd ux documentation \
           review-changes create-pr ci-auto-fix \
   --agent claude-code \
   --global --yes
@@ -242,7 +241,7 @@ bash ~/.claude/skills/autonomous-workflow/install.sh --global
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux update-claude \
+          code-quality holistic-analysis tdd ux documentation \
           review-changes create-pr ci-auto-fix \
   --agent claude-code \
   --yes
@@ -270,7 +269,7 @@ The agent picks up via the routing rule, runs Phase 0 validation (asks clarifyin
 
 ### Customizing
 
-Companion skills (`tdd`, `ux`, `code-quality`, `update-claude`, `ci-auto-fix`, etc.) **skip silently if not installed**. To run a leaner workflow, omit them from the `--skill` list at install time. The only non-removable companion is `confidence` at Phase 1 — it's the load-bearing safety gate.
+Companion skills (`tdd`, `ux`, `code-quality`, `documentation`, `ci-auto-fix`, etc.) **skip silently if not installed**. To run a leaner workflow, omit them from the `--skill` list at install time. The only non-removable companion is `confidence` at Phase 1 — it's the load-bearing safety gate.
 
 For full customization (disabling individual companions, adjusting thresholds, modifying phase rules), see:
 
@@ -372,7 +371,8 @@ The next time `linear-ticket-investigator` runs in a project that has this skill
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
   --skill batch-linear-tickets autonomous-workflow aw-create-plan aw-create-walkthrough \
-          confidence code-quality holistic-analysis tdd ux update-claude \
+          confidence code-quality holistic-analysis tdd ux documentation \
+
           review-changes create-pr ci-auto-fix \
   --agent claude-code \
   --yes
@@ -426,8 +426,10 @@ Everything else is invoked with a slash:
 /dx review my CLI tool
 /profile-optimizer ./trace.json
 /video-analyser ./bug-recording.mp4
-/init-claude
-/update-claude
+/documentation init
+/documentation update
+/documentation readme
+/documentation audit
 /resolve-conflicts
 /review-changes --comments 42
 /implement-suggestion <paste review comment>
@@ -505,7 +507,8 @@ skills/
   github-actions-author/ SKILL.md + rules/ + references/ +
                          templates/                          (slash command)
   implement-suggestion/  SKILL.md                            (slash command)
-  init-claude/           SKILL.md                            (slash command)
+  documentation/         SKILL.md + rules/ + references/ +
+                         templates/                          (slash command)
   optimize-mock-data/    SKILL.md + rules/ + scripts/ +
                          references/                         (slash command, applied)
   profile-optimizer/     SKILL.md + rules/ + references/ +
@@ -517,7 +520,6 @@ skills/
   screen-recorder/       SKILL.md + rules/ + templates/      (agent-invokable, applied)
   storybook/             SKILL.md + rules/ + references/ +
                          templates/                          (slash command)
-  update-claude/         SKILL.md                            (slash command)
   video-analyser/        SKILL.md                            (slash command)
 agents/
   reviewer.md                                                (agent)

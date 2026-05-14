@@ -95,7 +95,7 @@ As of v3.3 the skill uses exactly ONE architecture: Planner + Executor (two agen
 The deprecated monolithic single-agent template still exists for backward compat, but is not the default.
 
 It does NOT have five roles (clarifier → planner → implementer → tester → reviewer as separate agents).
-The companion skills (`tdd`, `ux`, `code-quality`, `confidence`, `update-claude`, `review-changes`, `aw-create-plan`, `aw-create-walkthrough`, `create-pr`, `ci-auto-fix`) are advisory companions called by `Skill()`, not coordinator agents.
+The companion skills (`tdd`, `ux`, `code-quality`, `confidence`, `documentation`, `review-changes`, `aw-create-plan`, `aw-create-walkthrough`, `create-pr`, `ci-auto-fix`) are advisory companions called by `Skill()`, not coordinator agents.
 A skill is a tool the agent reaches for — it does not own a context window of its own.
 
 ### 2.5 Three roles when complexity warrants: Planner, Generator, Evaluator
@@ -325,10 +325,10 @@ autonomous-workflow's choice sits at the tight end of the field range.
 The reasoning: most stuck loops past iteration 3 indicate a wrong mental model, not a hard problem; better to escalate (run `confidence(analysis)`) than to keep retrying.
 This is distinct from quality-driven self-refinement, which has no fixed cap (see [`iterative-refinement.md`](./iterative-refinement.md)).
 
-### 4.3 Always-on `update-claude`
+### 4.3 Always-on `documentation update`
 
 Most agent frameworks treat documentation updates as discretionary.
-autonomous-workflow runs `update-claude` as a Phase 5 step in Full Mode (and Lite Mode).
+autonomous-workflow runs `documentation update` as a Phase 5 step in Full Mode (and Lite Mode).
 The reasoning: docs that drift silently become invisible; running the loop unconditionally prevents drift.
 The skill is silent-skip — if there's nothing to update, it returns clean — so the cost is bounded.
 

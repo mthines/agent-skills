@@ -36,8 +36,8 @@ my-skill/
 └── SKILL.md
 ```
 
-Used by: `init-claude`, `update-claude`, `create-pr`, `holistic-analysis`,
-`confidence`. Best for sequential workflows the user invokes by slash.
+Used by: `create-pr`, `holistic-analysis`, `confidence`. Best for sequential
+workflows the user invokes by slash.
 
 ### B — Single-file with templates
 

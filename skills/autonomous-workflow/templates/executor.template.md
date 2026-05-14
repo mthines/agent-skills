@@ -101,7 +101,7 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 3     | `code-quality`         | Once at end of Phase 3 (not per-file)                                | `code`           |
 | 4     | `confidence`           | At iteration cap on same failing area (auto-replan trigger)          | `analysis`   |
 | 4     | `holistic-analysis`    | Auto-replan only — `confidence(analysis) < 90%` (one-shot)       | —                |
-| 5     | `update-claude`        | Always (with skip conditions per phase-5 rule)                       | —                |
+| 5     | `documentation`        | Always (with skip conditions per phase-5 rule)                       | `update`         |
 | 6     | `review-changes`       | Always before push                                                   | —                |
 | 6     | `aw-create-walkthrough` | Full Mode only                                                      | —                |
 | 6     | `create-pr`            | Always                                                               | —                |

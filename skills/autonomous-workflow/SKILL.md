@@ -134,7 +134,7 @@ for the full registry, trigger conditions, and **how to disable any companion**.
 | 4     | `test-provenance-guard` | After Step 5 — any new `*.test.*` / `*.unit.*` / `*.spec.*` file written | `--diff --base $(git merge-base HEAD main) --fix` *(autofix gated by `confidence(code) ≥ 90 %`)* |
 | 4     | `confidence`           | At iteration cap (3 Lite / 5 Full) on same failing area | `analysis`   |
 | 4     | `holistic-analysis`    | After confidence at Phase 4 if user asks for retry     | —                |
-| 5     | `update-claude`        | Always (self-improving doc loop)                       | —                |
+| 5     | `documentation`        | Always (self-improving doc loop — updates `CLAUDE.md`, `README.md`, `docs/`) | `update`         |
 | 6     | `review-changes`       | Always before push                                     | —                |
 | 6     | `aw-create-walkthrough` | Full Mode only                                        | —                |
 | 6     | `create-pr`            | Always                                                 | —                |
@@ -201,13 +201,13 @@ Three phases benefit from sub-agent fan-out:
 | 2     | `gw add`, `gw cd`, install deps, `Skill("aw-create-plan")` inside worktree                      |
 | 3     | Code per `plan.md` → companions per task type (`tdd`, `ux`) → fast-check after each edit; `code-quality(code)` once at end |
 | 4     | Run tests → iterate (max 3 same area) → `confidence(analysis)` then escalate to user        |
-| 5     | Update README, CHANGELOG; `Skill("update-claude")` always                                       |
+| 5     | `Skill("documentation", "update")` always — refreshes `CLAUDE.md`, `.claude/rules/`, `README.md`, `docs/`, `CHANGELOG.md` |
 | 6     | `Skill("review-changes")` → `Skill("aw-create-walkthrough")` → `Skill("create-pr")`             |
 | 7     | Watch CI → `Skill("ci-auto-fix")` per failure (parallel) → after CI green dispatch `reviewer` agent (PR Mode: self-review sub-mode for self-authored PRs emits inline report; optional, skips if not installed) → `gw remove` after merge (optional) |
 
 ### Lite Mode
 
-Skip artifacts and most companions. Phase 0, Phase 2, Phase 5 (`update-claude`), and Phase 6 (`create-pr`) still required.
+Skip artifacts and most companions. Phase 0, Phase 2, Phase 5 (`documentation update`), and Phase 6 (`create-pr`) still required.
 
 | Phase | Action                                          |
 | ----- | ----------------------------------------------- |
@@ -217,7 +217,7 @@ Skip artifacts and most companions. Phase 0, Phase 2, Phase 5 (`update-claude`),
 | 2     | `gw add fix/bug-name`                           |
 | 3     | Code, commit                                    |
 | 4     | Test, fix failures (3-iteration limit applies)  |
-| 5     | `Skill("update-claude")`                        |
+| 5     | `Skill("documentation", "update")`              |
 | 6     | `Skill("create-pr")`                            |
 | 7     | Watch CI, `ci-auto-fix` if needed, then auto-dispatch `reviewer` agent (skips if not installed) |
 
@@ -271,7 +271,7 @@ download skills, then run [`install.sh`](./install.sh).
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux update-claude \
+          code-quality holistic-analysis tdd ux documentation \
           review-changes create-pr ci-auto-fix \
   --agent claude-code \
   --global --yes
@@ -283,7 +283,7 @@ bash ~/.claude/skills/autonomous-workflow/install.sh --global
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux update-claude \
+          code-quality holistic-analysis tdd ux documentation \
           review-changes create-pr ci-auto-fix \
   --agent claude-code \
   --yes
@@ -323,7 +323,7 @@ and how to disable. Run `bash install.sh --help` for script options.
 - [`tdd`](../tdd/SKILL.md) — RED-GREEN-REFACTOR enforcement
 - [`ux`](../ux/SKILL.md) — UI / accessibility review
 - [`holistic-analysis`](../holistic-analysis/SKILL.md) — execution-path analysis for complex tasks
-- [`update-claude`](../update-claude/SKILL.md) — keeps `CLAUDE.md` in sync with code changes
+- [`documentation`](../documentation/SKILL.md) — keeps `CLAUDE.md`, `.claude/rules/`, `README.md`, and `docs/` in sync with code changes
 - [`review-changes`](../review-changes/SKILL.md) — pre-PR review
 - [`create-pr`](../create-pr/SKILL.md) — narrative PR description + push + watch
 - [`ci-auto-fix`](../ci-auto-fix/SKILL.md) — diagnose and fix failed CI checks
