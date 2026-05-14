@@ -53,11 +53,12 @@ Parse `$ARGUMENTS` as `<mode> <path> [flags]` where `<mode>` is one of
 (starts with `/`, `./`, or `~`) treat it as `<path>` and default
 `<mode>` to `analyze`.
 
-| Mode        | Default | Trigger                                                                | Side effect           |
-| ----------- | ------- | ---------------------------------------------------------------------- | --------------------- |
-| `analyze`   | **yes** | `analyze`, `audit`, `check`, `report`, or first arg is a path          | Read-only report      |
-| `normalize` |         | `normalize`, `fix`, `format`, `reorder`                                | Rewrites files        |
-| `shrink`    |         | `shrink`, `trim`, `compact`, `slim`                                    | Rewrites files        |
+| Mode        | Default | Trigger                                                                | Side effect                       |
+| ----------- | ------- | ---------------------------------------------------------------------- | --------------------------------- |
+| `analyze`   | **yes** | `analyze`, `audit`, `check`, `report`, or first arg is a path          | Read-only report                  |
+| `normalize` |         | `normalize`, `fix`, `format`, `reorder`                                | Rewrites files                    |
+| `shrink`    |         | `shrink`, `shorten`, `truncate-strings`                                | Rewrites files (string truncation) |
+| `trim`      |         | `trim`, `trim-arrays`, `cardinality`, `reduce-arrays`, `compact`, `slim` | Rewrites files (array entry reduction; never modifies strings) |
 
 State the detected mode, target path, and file count in one line
 before continuing:
@@ -141,6 +142,7 @@ report format and severity rubric. The exact format used in
 | `analyze`   | **Stop after Phase 2.** Emit the drift report. Do not write files.                                                |
 | `normalize` | Run [`scripts/normalize.py`](./scripts/normalize.py) per file: 2-space indent, sorted keys (configurable), trailing newline, LF line endings. Optional `--fill-missing null` adds missing-but-expected keys as `null`. |
 | `shrink`    | Run [`scripts/shrink.py`](./scripts/shrink.py) per file: truncates string fields above the threshold per [`rules/shrink-policy.md`](./rules/shrink-policy.md). **Refuses to shrink fields named `id`, `hash`, `actionId`, `threadId`, `userId`, or anything matching `*Id$`.** |
+| `trim`      | Run [`scripts/trim.py`](./scripts/trim.py) per file: caps the length of arrays of data points (`webEvents`, `logRecords`, `dataPoints`, `series`, `attributes`, `catalog`, …) nested inside `artifacts.*` subtrees, preserving order. **Strict allowlist of parent keys — no default fallback, so structural arrays (`panels`, `widgets`, `queries`) stay intact.** **Never modifies any string under any condition — `content` and every other string field round-trip byte-identical.** Preserves source indentation. See [`rules/trim-policy.md`](./rules/trim-policy.md). |
 
 After every write, re-parse the file to verify it is still valid JSON
 and re-run Phase 1 against the corpus. If post-rewrite drift is worse
@@ -157,7 +159,7 @@ Load on demand — do not preload.
 | ----- | ---------------------------------------------------------------------------------- |
 | 1     | [`rules/shape-extraction.md`](./rules/shape-extraction.md)                         |
 | 2     | [`rules/drift-detection.md`](./rules/drift-detection.md)                           |
-| 3     | [`rules/shrink-policy.md`](./rules/shrink-policy.md) (shrink mode only)            |
+| 3     | [`rules/shrink-policy.md`](./rules/shrink-policy.md) (shrink mode only), [`rules/trim-policy.md`](./rules/trim-policy.md) (trim mode only) |
 
 Worked output examples in
 [`references/example-report.md`](./references/example-report.md) are
@@ -178,6 +180,7 @@ non-zero on shape-validation failure. Run them from the repo root.
 | [`scripts/diff-shapes.py`](./scripts/diff-shapes.py)         | Cluster files by fingerprint and report drift.              |
 | [`scripts/normalize.py`](./scripts/normalize.py)             | Rewrite a file with canonical formatting + key order.       |
 | [`scripts/shrink.py`](./scripts/shrink.py)                   | Truncate verbose string fields above a configurable budget. |
+| [`scripts/trim.py`](./scripts/trim.py)                       | Cap arrays of data points inside `artifacts.*` subtrees. Never modifies strings. |
 
 Invocation pattern (run from the repo root, scripts are relative to
 this skill directory):
@@ -188,6 +191,7 @@ python3 "$SKILL_DIR/scripts/shape.py" path/to/mock.json
 python3 "$SKILL_DIR/scripts/diff-shapes.py" path/to/mocks/
 python3 "$SKILL_DIR/scripts/normalize.py" --in-place path/to/mock.json
 python3 "$SKILL_DIR/scripts/shrink.py" --max-string 200 --in-place path/to/mock.json
+python3 "$SKILL_DIR/scripts/trim.py" --in-place path/to/mock.json
 ```
 
 ---
@@ -220,6 +224,17 @@ python3 "$SKILL_DIR/scripts/shrink.py" --max-string 200 --in-place path/to/mock.
 - Treating a `.jsonl` file as a single JSON document. JSONL is
   newline-delimited; each line is a separate fingerprint.
 - Inferring a schema from one file. Need ≥ 2 to detect drift.
+- Trimming arrays outside `artifacts.*`. Top-level conversation
+  arrays (`$.messages`, `$.thread.*`) are off-limits to `trim`.
+  **`trim` only descends into `artifacts.*` subtrees.**
+- Trimming a structural array (`panels`, `widgets`, `queries`).
+  Those describe the dashboard's shape, not data points. The
+  allowlist is strict by design — do not add a `default` fallback
+  budget that would catch them.
+- Modifying any string inside `trim`. The mode is array-cardinality
+  only. `content`, panel descriptions, tool arguments — every
+  string round-trips byte-identical. Use `shrink` if string
+  truncation is wanted.
 
 ---
 
@@ -233,3 +248,14 @@ python3 "$SKILL_DIR/scripts/shrink.py" --max-string 200 --in-place path/to/mock.
       post-rewrite drift ≤ pre-rewrite drift.
 - [ ] Final one-line summary: `N files / M clusters / K drift sites
       (severity HIGH/MED/LOW)`.
+
+---
+
+## Diagnosable
+
+This skill declares a diagnostic surface at
+[`rules/diagnostic-surface.md`](./rules/diagnostic-surface.md) — phase
+model, failure taxonomy (F-novel-seeded), existing-guards table, and
+hard invariants. Run `/create-skill diagnose optimize-mock-data` after
+a failed or unsatisfactory run to get a confidence-gated unified diff
+that hardens the skill against the same failure class.
