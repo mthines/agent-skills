@@ -35,9 +35,8 @@ runs the **six-target auto-update loop** governed by
 - Per-write `confidence(analysis) ≥ 90 %` gate.
 - Post-write verification via `/memory` / `InstructionsLoaded` hook and `lychee` link check.
 
-Gate: `Skill("documentation", "update", "--auto")` returns
-`outcome: "applied"` or `outcome: "skipped"` with a logged reason. Any
-other outcome blocks Phase 6.
+Gate: `Skill("documentation", "update --auto")` returns `outcome: "applied"` or `outcome: "skipped"` with a logged reason.
+Any other outcome blocks Phase 6.
 
 ## Core Principles
 

@@ -38,12 +38,8 @@ metadata:
 
 # Documentation
 
-Author, audit, and maintain project documentation across every surface that
-matters: the **agent hot path** (`CLAUDE.md`, `AGENTS.md`, `.claude/rules/`), the
-**human entry point** (`README.md`), and the **narrative tier** (`docs/`).
-This is the single home for "make our docs good" work — bootstrapping a new
-project, refreshing docs after a sprint, writing a README that converts
-readers into users, or auditing the whole estate for drift.
+Author, audit, and maintain project documentation across every surface that matters: the **agent hot path** (`CLAUDE.md`, `AGENTS.md`, `.claude/rules/`), the **human entry point** (`README.md`), and the **narrative tier** (`docs/`).
+This is the single home for "make our docs good" work — bootstrapping a new project, refreshing docs after a sprint, writing a README that converts readers into users, or auditing the whole estate for drift.
 
 > **This `SKILL.md` is a thin index.** Detailed authoring rules live in
 > `rules/*.md` and load on demand. Worked examples are in
@@ -54,7 +50,8 @@ readers into users, or auditing the whole estate for drift.
 
 ## Mode Detection
 
-Parse `$ARGUMENTS` (first token) and route to one of four modes:
+Parse `$ARGUMENTS` (first token) and route to one of four modes.
+A second token of `--auto` is a cross-cutting modifier (see below).
 
 | Mode      | Default | Trigger                                                                                |
 | --------- | ------- | -------------------------------------------------------------------------------------- |
@@ -62,6 +59,10 @@ Parse `$ARGUMENTS` (first token) and route to one of four modes:
 | `update`  | **yes** | Default when a `CLAUDE.md` already exists. "update", "sync", "refresh", "drift".       |
 | `readme`  |         | "readme", "write a README", "audit the README", or `$ARGUMENTS == "readme"`.          |
 | `audit`   |         | "audit", "review the docs", "doc health check", or `$ARGUMENTS == "audit"`.            |
+
+**`--auto` modifier** — append to any mode token to enable the autonomous-workflow guardrails.
+Always passed by `autonomous-workflow` Phase 5 as `Skill("documentation", "update --auto")`.
+When `--auto` is present, also load [`auto-update-loop.md`](./rules/auto-update-loop.md) before executing the mode's phases.
 
 Disambiguation rule when no mode token is passed:
 
@@ -80,8 +81,8 @@ Target: this repo
 
 ## Shared Foundations (every mode loads these)
 
-Regardless of mode, every run is governed by three rule files. Load them
-once on first need; do not reload them per phase.
+Regardless of mode, every run is governed by three rule files.
+Load them once on first need; do not reload them per phase.
 
 | File                                    | What it gives you                                                                              |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------- |
@@ -98,20 +99,15 @@ Then add the rule files specific to the mode:
 | `readme` | [`readme.md`](./rules/readme.md)                                                                                          |
 | `audit`  | All of the above, plus [`maintenance.md`](./rules/maintenance.md) for CI lint stack guidance.                             |
 
-When invoked from a non-interactive caller (`autonomous-workflow` Phase 5,
-`fix-bug` Phase 5) — passed as `--auto` or detected via the absence of an
-interactive session — also load
-[`auto-update-loop.md`](./rules/auto-update-loop.md). That rule adds four
-non-negotiable gates (hot-path budget, recurrence threshold ≥ 2,
-removed-rules ledger, optional ablation) plus the JSON run-summary contract
-the caller logs.
+When invoked from a non-interactive caller (`autonomous-workflow` Phase 5) — passed as `--auto` — also load [`auto-update-loop.md`](./rules/auto-update-loop.md).
+That rule adds four non-negotiable gates (hot-path budget, recurrence threshold ≥ 2, removed-rules ledger, optional ablation) plus the JSON run-summary contract the caller logs.
 
 ---
 
 ## Mode: `init` — bootstrap docs from scratch
 
-Use when a project has no Claude configuration and (optionally) no
-documentation. Produces a tiered setup sized to the project's complexity.
+Use when a project has no Claude configuration and (optionally) no documentation.
+Produces a tiered setup sized to the project's complexity.
 
 ### Phases
 
@@ -148,9 +144,8 @@ documentation. Produces a tiered setup sized to the project's complexity.
 
 ## Mode: `update` — sync docs with the codebase
 
-Use after work has landed on a branch. Detects drift, applies targeted
-fixes, and pushes new rules to the innermost-ancestor destination so the
-hot path does not bloat over time.
+Use after work has landed on a branch.
+Detects drift, applies targeted fixes, and pushes new rules to the innermost-ancestor destination so the hot path does not bloat over time.
 
 ### Argument parsing
 
@@ -194,8 +189,8 @@ hot path does not bloat over time.
 
 ## Mode: `readme` — write or audit a README
 
-Use when the README is the asset under work. Two sub-modes detected from
-context:
+Use when the README is the asset under work.
+Two sub-modes detected from context:
 
 - **No README exists or user says "write a README"** → scaffold mode.
 - **README exists and user says "audit / review / improve"** → audit mode.
@@ -223,8 +218,8 @@ context:
 
 ## Mode: `audit` — comprehensive documentation health check
 
-Read-only by default. Produces a structured report covering every doc
-surface.
+Read-only by default.
+Produces a structured report covering every doc surface.
 
 ### Phases
 
@@ -237,8 +232,7 @@ surface.
 4. **CI lint coverage** — see [`rules/maintenance.md`](./rules/maintenance.md) for the recommended `markdownlint` / Vale / alex / lychee stack.
 5. **Prioritized report.** P0 (stale / wrong) → P1 (missing high-value content) → P2 (polish).
 
-If the user asks to apply fixes, route to `update` mode with the audit
-findings as the input.
+If the user asks to apply fixes, route to `update` mode with the audit findings as the input.
 
 ---
 
@@ -333,9 +327,8 @@ Claude Code reads `CLAUDE.md`, not `AGENTS.md` directly.
 Two interop options:
 
 - **Symlink** — `ln -s CLAUDE.md AGENTS.md` (simplest; one source of truth).
-- **`@import`** — keep both files but have `CLAUDE.md` start with
-  `@AGENTS.md` and put shared content in `AGENTS.md`.
+- **`@import`** — keep both files but have `CLAUDE.md` start with `@AGENTS.md` and put shared content in `AGENTS.md`.
 
-For mixed-tool teams, prefer the symlink. For Claude-Code-first teams
-with cross-tool readers as secondary, prefer the `@import`. See
-[`rules/claude-md.md`](./rules/claude-md.md) §6 for the trade-offs.
+For mixed-tool teams, prefer the symlink.
+For Claude-Code-first teams with cross-tool readers as secondary, prefer the `@import`.
+See [`rules/claude-md.md`](./rules/claude-md.md) §6 for the trade-offs.

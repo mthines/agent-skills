@@ -76,10 +76,10 @@ Narrative content lives in `docs/`. Read on demand.
 @docs/contributing.md
 ```
 
-Why both inline rules and `@docs/` imports? Inline rules auto-load — the
-agent acts on them with zero round-trips. `@imports` give the agent a
-fallback path to richer narrative when it needs context. Humans get a
-real `docs/` tree they can read in any editor.
+Why both inline rules and `@docs/` imports?
+Inline rules auto-load — the agent acts on them with zero round-trips.
+`@imports` also load **eagerly at session start** (depth ≤ 5, per Anthropic's memory docs) — they are NOT demand-loaded and DO add to the hot-path token cost.
+Use `@imports` only for content the agent needs at the start of most turns; move rarely-needed narrative to `docs/` without any `@import`.
 
 ## 3. What to Include vs. Exclude
 

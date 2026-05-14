@@ -1,14 +1,11 @@
 # Auto-Update Loop (Called from Autonomous Workflows)
 
-When this skill is invoked from a non-interactive workflow (`autonomous-workflow`
-Phase 5, `fix-bug` Phase 5, etc.) the guardrails differ from a user-initiated
-`/documentation update`. A user can review every proposed change; an
-autonomous run cannot. The rules below prevent the four failure modes that
-ruin auto-updated docs: stale-rule re-assertion, hot-path bloat, one-off
-generalization, and documentation of behaviour Claude already exhibits.
+When this skill is invoked from a non-interactive workflow (`autonomous-workflow` Phase 5, etc.) the guardrails differ from a user-initiated `/documentation update`.
+A user can review every proposed change; an autonomous run cannot.
+The rules below prevent the four failure modes that ruin auto-updated docs: stale-rule re-assertion, hot-path bloat, one-off generalization, and documentation of behaviour Claude already exhibits.
 
-This file is loaded when the caller passes `mode=auto` (e.g.
-`Skill("documentation", "update --auto")`).
+This file is loaded when the caller passes `--auto` as a flag after the mode token (e.g. `Skill("documentation", "update --auto")`).
+The skill parses `$ARGUMENTS` as `update` (mode) + `--auto` (flag); `--auto` triggers loading this file.
 
 ## 1. The Six Targets
 
@@ -31,22 +28,20 @@ run can break any of them on request; an auto run cannot.
 
 ### 2.1 Hot-path budget
 
-Root `CLAUDE.md` line count **must stay under 200**. If a proposed edit
-pushes it over:
+Root `CLAUDE.md` line count **must stay under 200**.
+If a proposed edit pushes it over:
 
 1. Promote narrative to `docs/`.
 2. Move path-scoped rules to `.claude/rules/` with `paths:` globs.
 3. Move subtree rules to `<dir>/CLAUDE.md`.
 
-If after three placement attempts the file still exceeds 200, fail the
-phase with a `HOT_PATH_OVERFLOW` reason. Do not silently truncate.
+If after three placement attempts the file still exceeds 200, fail the phase with a `HOT_PATH_OVERFLOW` reason.
+Do not silently truncate.
 
 ### 2.2 Recurrence threshold
 
-A proposed rule applies only after the pattern has been observed **N ≥ 2
-times** across the current task plus history. Single-occurrence patterns
-get logged to `.agent/docs/proposed-rules.jsonl` (append-only) instead of
-written.
+A proposed rule applies only after the pattern has been observed **N ≥ 2 times** across the current task plus history.
+Single-occurrence patterns get logged to `.agent/docs/proposed-rules.jsonl` (append-only) instead of written.
 
 Why: a one-off correction in PR #42 becomes a permanent rule everyone
 pays tokens for forever. Recurrence guards against turning incidents into
@@ -55,9 +50,7 @@ canon.
 Skip the threshold only when:
 
 - The user explicitly says "remember this for next time".
-- The pattern is a hard correctness invariant (e.g. "Never edit
-  migrations after merge") — flag with `severity: critical` in the
-  proposal payload.
+- The pattern is a hard correctness invariant (e.g. "Never edit migrations after merge") — flag with `severity: critical` in the proposal payload.
 
 ### 2.3 Removed-rules ledger
 
@@ -108,6 +101,11 @@ this — confidence at *the doc write specifically* is a separate signal.
 
 ```
 [from autonomous-workflow Phase 5]
+        |
+        v
+0. Ensure .agent/ is gitignored (required before writing ledger files).
+   Run: grep -q '\.agent' .gitignore 2>/dev/null || printf '\n# Agent workflow artifacts\n.agent/\n' >> .gitignore
+   If .gitignore is absent, create .agent/.gitignore with content: *\n!.gitignore
         |
         v
 1. Diff branch vs base; classify changes by area.
