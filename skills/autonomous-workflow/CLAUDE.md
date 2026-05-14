@@ -289,14 +289,14 @@ are produced and which companions run.
 | Mode     | Criteria                              | Artifacts | Companions                                   |
 | -------- | ------------------------------------- | --------- | -------------------------------------------- |
 | **Full** | 4+ files OR complex / architectural   | Required  | All applicable                               |
-| **Lite** | 1-3 files AND simple / straightforward| None      | Phase 0, Phase 2, Phase 5 update-claude, Phase 6 create-pr only |
+| **Lite** | 1-3 files AND simple / straightforward| None      | Phase 0, Phase 2, Phase 5 documentation update, Phase 6 create-pr only |
 
 When in doubt, choose Full. Lite is for genuinely small changes — not for
 "the user said it's small."
 
-Phase 0 and Phase 2 are mandatory regardless of mode. Phase 5 `update-claude`
-runs in both modes (the self-improving doc loop is cheap and matters for
-small changes too — they still drift docs).
+Phase 0 and Phase 2 are mandatory regardless of mode. Phase 5
+`documentation update` runs in both modes (the self-improving doc loop is
+cheap and matters for small changes too — they still drift docs).
 
 ---
 
@@ -640,7 +640,7 @@ end-user-facing; this file is contributor-facing.
     sequential questions in Phase 0 (architectural? unfamiliar? 4+ files?)
     replace the conflated "4+ files OR complex" criterion. Complexity
     decides first; file count is the fallback.
-  - **`update-claude` opt-out lever.** Per-task skip conditions documented
+  - **`documentation update` opt-out lever.** Per-task skip conditions documented
     (pure dependency bumps, test-only changes, config-only changes, user
     override). Default remains always-on; the skip is logged.
 

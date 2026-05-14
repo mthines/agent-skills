@@ -88,7 +88,7 @@ routing-rule symlinks for you. Two steps: download skills, then run install.
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux update-claude \
+          code-quality holistic-analysis tdd ux documentation \
           review-changes create-pr ci-auto-fix \
   --agent claude-code \
   --global --yes
@@ -100,7 +100,7 @@ bash ~/.claude/skills/autonomous-workflow/install.sh --global
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux update-claude \
+          code-quality holistic-analysis tdd ux documentation \
           review-changes create-pr ci-auto-fix \
   --agent claude-code \
   --yes
@@ -152,7 +152,7 @@ trigger registry is in
 | 3     | `code-quality`         | Optional  | End-of-Phase-3 code-quality pass              |
 | 4     | `confidence`           | Optional  | `analysis` at iteration cap (3 Lite / 5 Full) |
 | 4     | `holistic-analysis`    | Optional  | Step-back analysis after stuck-loop confidence |
-| 5     | `update-claude`        | Optional  | Self-improving doc loop (keeps `CLAUDE.md` in sync) |
+| 5     | `documentation update` | Optional  | Self-improving doc loop (keeps `CLAUDE.md`, `README.md`, and `docs/` in sync) |
 | 6     | `review-changes`       | Optional  | Pre-PR diff review                            |
 | 6     | `aw-create-walkthrough` | Optional  | Writes `.agent/{branch}/walkthrough.md`      |
 | 6     | `create-pr`            | Optional  | Narrative PR description + push + watch       |
@@ -194,7 +194,7 @@ Best for per-machine or one-off customization. When running
 # Install everything except `tdd` and `ux`
 npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis update-claude \
+          code-quality holistic-analysis documentation \
           review-changes create-pr ci-auto-fix \
   --agent claude-code \
   --yes
@@ -228,7 +228,7 @@ Generates artifacts under `.agent/{branch-name}/`:
 ### Lite Mode (simple changes, 1-3 files)
 
 No artifact files created. Plan exists only in conversation. Phase 0,
-Phase 2, Phase 5 (`update-claude`), and Phase 6 (`create-pr`) still required.
+Phase 2, Phase 5 (`documentation update`), and Phase 6 (`create-pr`) still required.
 
 ### Decision Guide
 
@@ -349,7 +349,7 @@ to this skill's source.
 - [`tdd`](../tdd/) — RED-GREEN-REFACTOR enforcement
 - [`ux`](../ux/) — UI / accessibility review
 - [`holistic-analysis`](../holistic-analysis/) — execution-path analysis
-- [`update-claude`](../update-claude/) — keeps `CLAUDE.md` in sync
+- [`documentation`](../documentation/) — keeps `CLAUDE.md`, `README.md`, and `docs/` in sync
 - [`review-changes`](../review-changes/) — pre-PR review
 - [`create-pr`](../create-pr/) — narrative PR description + push + watch
 - [`ci-auto-fix`](../ci-auto-fix/) — diagnose and fix failed CI checks

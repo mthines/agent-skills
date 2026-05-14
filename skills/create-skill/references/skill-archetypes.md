@@ -97,8 +97,7 @@ description makes it clear.
 
 ## A3 — Slash command (sequential workflow)
 
-**Examples in this repo:** `create-pr`, `init-claude`, `update-claude`,
-`resolve-conflicts`, `ci-auto-fix`.
+**Examples in this repo:** `create-pr`, `resolve-conflicts`, `ci-auto-fix`.
 
 **Shape:**
 
@@ -207,7 +206,7 @@ review PRs) lives in companion skills. The orchestrator decides *when*.
 
 ## A6 — Scaffolder (generates new artefacts)
 
-**Examples in this repo:** `init-claude`, `create-skill` (this skill).
+**Examples in this repo:** `documentation` (init mode), `create-skill` (this skill).
 
 **Shape:**
 

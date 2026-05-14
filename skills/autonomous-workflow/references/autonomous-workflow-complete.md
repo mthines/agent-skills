@@ -823,7 +823,7 @@ $ git commit -m "docs(changelog): add dark mode feature entry"
 ### Self-Improving Doc Loop
 
 ```
-Skill("update-claude")
+Skill("documentation", "update")
 → Scanned changes for new conventions worth promoting
 → Suggested: "Theme context pattern (provider + useTheme hook) — promote to CLAUDE.md?"
 → Accepted: appended snippet under "## Patterns" in CLAUDE.md
@@ -833,7 +833,7 @@ Skill("update-claude")
 **Progress Log entry:**
 
 ```markdown
-- [2026-04-29T10:38:15Z] Phase 5: update-claude() — CLAUDE.md updated with ThemeContext pattern
+- [2026-04-29T10:38:15Z] Phase 5: documentation(update) — CLAUDE.md updated with ThemeContext pattern
 ```
 
 **✅ Documentation complete - proceeding to PR creation**
@@ -998,7 +998,7 @@ After PR is merged, run: `gw remove feat/dark-mode-toggle`
 - ✅ Phase 2: Environment validated, `aw-create-plan` invoked
 - ✅ Phase 3: Implementation self-reviewed
 - ✅ Phase 4: Tests passing (1 iteration)
-- ✅ Phase 5: Documentation validated, `update-claude` invoked
+- ✅ Phase 5: Documentation validated, `documentation update` invoked
 - ✅ Phase 6: `review-changes` + `aw-create-walkthrough` + `create-pr` invoked
 - ✅ Phase 7: `ci-auto-fix` invoked — all checks green
 
