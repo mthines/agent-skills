@@ -171,6 +171,35 @@ approved: true
 <!-- Architecture, data flow, integration points. Specific enough for a new session
      to implement without the original conversation. -->
 
+### Architecture Diagram
+
+<!-- **Optional — include only for complex flows.** Mermaid only (renders in VS
+     Code Markdown preview and GitHub). Include this subsection when the task
+     touches:
+
+     - 3+ components or packages, OR
+     - A state machine or data-flow change, OR
+     - A before/after migration / architectural refactor.
+
+     Pick the right diagram kind:
+     - `flowchart` for data flow or control flow
+     - `sequenceDiagram` for cross-component call sequences
+     - `stateDiagram-v2` for state transitions
+
+     **Omit this subsection entirely for simple single-file changes** — boxes
+     and arrows on trivial tasks burn tokens without aiding review.
+
+     Example shape:
+
+     ```mermaid
+     flowchart LR
+       A[Planner] -->|plan.md| B[Executor]
+       B --> C{tests pass?}
+       C -->|yes| D[PR]
+       C -->|no| E[stuck-loop]
+     ```
+-->
+
 ### Patterns to Follow
 
 <!-- Existing codebase patterns to match. Reference specific files as examples. -->
@@ -266,6 +295,7 @@ After writing both files, verify ALL of the following. **Fix any failures immedi
 - [ ] **Out of Scope**: At least considered (can be "None discussed")
 - [ ] **Decisions**: Every decision includes rejected alternatives and rationale
 - [ ] **Technical Approach**: Specific enough to implement without conversation context
+- [ ] **Architecture Diagram (conditional)**: For multi-component / state-flow / migration tasks, a Mermaid `flowchart` / `sequenceDiagram` / `stateDiagram-v2` is included under `## Technical Approach`; for simple single-file changes, the subsection is omitted.
 - [ ] **Patterns to Follow**: References actual files in the codebase
 - [ ] **Acceptance Criteria**: At least one concrete, testable pass/fail condition. Each is verifiable (not "looks right" / "works well").
 - [ ] **Implementation Order**: Numbered, atomic, verifiable steps
