@@ -10,14 +10,18 @@ description: >
   morphs (list to cards, collapsing nav, grid to detail), React
   state (Motion, AnimatePresence), advanced effects (Liquid Glass,
   glow, 3D tilt), external engines (Lottie, Rive), React Three
-  Fiber, and prefers-reduced-motion. Use when building transitions,
-  hover effects, fades, staggers, list-to-card morphs, route
-  changes, glass, Lottie / Rive assets, 3D scenes, when an
-  animation feels janky, or when deciding what feedback an
-  interaction should have. Triggers on "animate this", "fade in",
-  "hover effect", "liquid glass", "lottie", "rive", "ideal
-  feedback", "natural animation for", "how should X feel",
-  "/animations".
+  Fiber, prefers-reduced-motion, AND perceived performance
+  (skeleton loaders, optimistic UI, loader floor, progressive
+  loading, predictive prefetch, stale-while-revalidate). Use when
+  building transitions, hover effects, fades, staggers,
+  list-to-card morphs, route changes, glass, Lottie / Rive assets,
+  3D scenes, when an animation feels janky, when deciding what
+  feedback an interaction should have, or when the app needs to
+  feel snappier without actually getting faster. Triggers on
+  "animate this", "fade in", "hover effect", "liquid glass",
+  "lottie", "rive", "ideal feedback", "natural animation for",
+  "how should X feel", "skeleton loader", "perceived performance",
+  "feel faster", "optimistic UI", "/animations".
 disable-model-invocation: true
 license: MIT
 metadata:
@@ -37,6 +41,9 @@ metadata:
     - view-transitions
     - interaction-feedback
     - microinteractions
+    - perceived-performance
+    - skeleton-loaders
+    - optimistic-ui
 ---
 
 # Animations
@@ -146,6 +153,7 @@ For any animation task — author or review — walk these phases:
 | Phase | Name                  | Rule file                                                                       | Gate                                                                                                       |
 | ----- | --------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | A     | Brainstorm feedback (when entry is "what?") | [`rules/interaction-feedback.md`](./rules/interaction-feedback.md) | If the user describes an *interaction* (verb), the five brainstorm questions are answered and the catalog row selected before moving to Phase 0. If the user describes an *animation primitive* (e.g. "fade in"), skip Phase A. |
+| B     | Manage perceived performance (when there's a wait) | [`rules/perceived-performance.md`](./rules/perceived-performance.md) | If the animation surrounds an async wait — fetch, route change, route load, image decode, optimistic mutation — the wait-duration ladder is consulted (p75-measured, not local-dev "felt fast"), the right pattern is chosen (no loader, skeleton, spinner, progress bar, or async-out), the 200 ms loader floor and sub-200 ms skip are in place, and skeletons match the final content shape. Skip Phase B if there is no wait. |
 | 0     | Choose the property    | [`rules/safe-properties.md`](./rules/safe-properties.md)                        | Animated property is `transform`, `opacity`, or `filter`. If not, justify with a layout-thrash measurement. |
 | 1     | Choose the pattern     | [`rules/patterns.md`](./rules/patterns.md)                                      | Pattern (fade, stagger, slide, scale) matches the user signal.                                              |
 | 2     | Reach for modern CSS   | [`rules/modern-css.md`](./rules/modern-css.md)                                  | If the need is "entry from hidden", "height auto", "DOM swap", or "scroll-tied", a CSS-only path exists.    |
@@ -170,6 +178,7 @@ Load on demand — do not preload.
 | Phase | Files                                                                                                                                                |
 | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A     | [`rules/interaction-feedback.md`](./rules/interaction-feedback.md)                                                                                   |
+| B     | [`rules/perceived-performance.md`](./rules/perceived-performance.md)                                                                                 |
 | 0     | [`rules/safe-properties.md`](./rules/safe-properties.md)                                                                                             |
 | 1     | [`rules/patterns.md`](./rules/patterns.md)                                                                                                           |
 | 2     | [`rules/modern-css.md`](./rules/modern-css.md)                                                                                                       |
@@ -215,6 +224,15 @@ Load on demand — do not preload.
    the verb, the reversibility, the initiator, the spatial source, the
    affordance load. Skipping straight to "fade or slide?" loses the
    reasoning that makes the choice defensible.
+9. **Cheat the eye when you can't beat the clock.** Real latency is
+   physics; perceived latency is design. Acknowledge input under
+   100 ms (Doherty Threshold), draw the shape of the answer before
+   it arrives (skeleton loaders that *match* the final layout),
+   apply reversible changes optimistically, floor sub-200 ms loaders
+   (or skip them entirely), and prefetch on intent. The same 1.2 s
+   request reads as snappy or broken depending on what happens in
+   the gap. See
+   [`rules/perceived-performance.md`](./rules/perceived-performance.md).
 
 ---
 
@@ -248,6 +266,19 @@ Load on demand — do not preload.
 - Asymmetric open/close that uses different *shapes* (modal opens with
   scale, closes with slide) — pick one shape, run it in reverse, and
   make the exit ~30 % faster.
+- Spinner that flashes for under 200 ms on a fast network — reads as a
+  glitch, not as speed. Use the loader floor + sub-200 ms skip in
+  [`perceived-performance.md`](./rules/perceived-performance.md).
+- Skeleton that doesn't match the final content shape (three text bars
+  as the placeholder for a card grid) — the swap causes layout shift
+  and reads as the page relaunching
+  ([`perceived-performance.md`](./rules/perceived-performance.md)).
+- Optimistic UI without a rollback animation — the state pops on click,
+  silently snaps back on server rejection, and the user blames themselves
+  ([`perceived-performance.md`](./rules/perceived-performance.md)).
+- Atomic image loading with no dominant-colour or blurhash placeholder —
+  blank box, then full image slams in and shifts the layout
+  ([`perceived-performance.md`](./rules/perceived-performance.md)).
 
 ---
 
