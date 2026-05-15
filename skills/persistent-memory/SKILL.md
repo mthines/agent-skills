@@ -16,7 +16,7 @@ description: >
   (Mem0 / Letta / Zep). Triggers on "remember this", "save to
   memory", "recall memory", "load memory", "what do you remember
   about", "consolidate memory", "forget that", "/persistent-memory".
-disable-model-invocation: false
+disable-model-invocation: true
 license: MIT
 metadata:
   author: mthines
@@ -165,8 +165,20 @@ entry counts and last-updated timestamps. No writes.
 
 ## Integration With Other Skills
 
-Two patterns are documented; default is pointer-based (explicit and
-inspectable). See [`rules/integration-with-skills.md`](./rules/integration-with-skills.md)
+This skill is **slash-only** (`disable-model-invocation: true`) — its
+description does not load into every session. Two ways to actually
+invoke it:
+
+1. **Explicit** — the user types `/persistent-memory write parenting`
+   or `/persistent-memory read parenting`.
+2. **Runtime, from a host skill** — the host skill's `SKILL.md`
+   contains a one-line pointer block that calls
+   `Skill("persistent-memory", "read <scope>")` when the host runs.
+
+The second form is the canonical integration. Runtime `Skill()` calls
+work regardless of `disable-model-invocation` — the skill only needs to
+exist in `~/.claude/skills/`. See
+[`rules/integration-with-skills.md`](./rules/integration-with-skills.md)
 for the full contract and the literal snippet at
 [`templates/pointer-snippet.md`](./templates/pointer-snippet.md).
 
