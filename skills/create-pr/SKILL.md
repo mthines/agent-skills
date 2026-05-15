@@ -6,13 +6,18 @@ description: >
   failures (lint, format, lockfiles) before handing back. With --split,
   analyses the branch diff and breaks it into 2–4 focused, dependency-ordered
   draft PRs after user approval, so reviewers don't have to digest a sprawling
-  change in one sitting. Escalates judgment-required failures via /confidence
-  rather than guessing. Invoke with /create-pr or /create-pr --split.
+  change in one sitting. With --review, posts an "@claude review" comment after
+  PR creation so Claude's GitHub App performs a fresh-session code review,
+  waits up to 10 minutes for the review to land, then dispatches
+  /implement-suggestion to auto-apply actionable feedback — runs in parallel
+  with the CI watch + auto-fix loop. Escalates judgment-required failures via
+  /confidence rather than guessing. Invoke with /create-pr, /create-pr --split,
+  or /create-pr --review.
 disable-model-invocation: true
 license: MIT
 metadata:
   author: mthines
-  version: '1.2.0'
+  version: '1.3.0'
   workflow_type: command
 ---
 
@@ -25,15 +30,18 @@ Respect their time.
 
 ## Modes
 
-Parse `$ARGUMENTS`:
+Parse `$ARGUMENTS`. `--split` selects an alternate workflow; `--review` is an **additive flag** that composes with the default workflow.
 
-| Mode      | Trigger                                              | Behaviour                                                                                                                                                  |
-| --------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default` | No flag                                              | One PR for the whole branch. Follow Steps 1–10 below.                                                                                                      |
-| `split`   | `--split`, `-s`, or first positional token `split`   | Analyse the branch diff, propose 2–4 dependency-ordered draft PRs (hard cap 5), execute only after user approval. Jump to the **Split Mode** section after reading Core Principles. |
+| Mode / Flag | Trigger                                                                                  | Behaviour                                                                                                                                                                                                |
+| ----------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default`   | No flag                                                                                  | One PR for the whole branch. Follow Steps 1–10 below.                                                                                                                                                    |
+| `split`     | `--split`, `-s`, or first positional token `split`                                       | Analyse the branch diff, propose 2–4 dependency-ordered draft PRs (hard cap 5), execute only after user approval. Jump to the **Split Mode** section after reading Core Principles.                       |
+| `review`    | `--review`, `-r`, or phrase `with claude review` / `claude review` anywhere in arguments | After Step 6, post `@claude review` on the PR, dispatch a background subagent that waits for Claude's review and runs `/implement-suggestion`, then continue with Steps 7+ in parallel. See **Review Mode**. |
 
 In split mode, skip Step 5's "PR too big" trim — the split *is* the response to that signal.
 Each resulting sub-PR must still pass it on its own.
+
+`--review` is **incompatible with `--split`** in v1. If both flags are present, print one line — `--review is not supported with --split.` — and exit before any work.
 
 ## Length budget — the hard rule
 
@@ -154,6 +162,25 @@ EOF
 
 Capture the PR URL/number from the output — the next steps need it.
 
+## Step 6.5: Trigger Claude Review (only if `--review` was passed)
+
+Skip this step entirely unless `--review` is set. If it is, follow the full procedure in [`rules/review-mode.md`](./rules/review-mode.md) — load it now.
+
+The compressed flow:
+
+1. Run the precondition check: confirm Claude's GitHub App is installed on the repo (`gh api /repos/<owner>/<repo>/installation`). If not installed, print one line and skip to Step 7.
+2. Record a UTC timestamp, then post `@claude review` exactly once via `gh pr comment <pr-url> --body "@claude review"`.
+3. Dispatch a `general-purpose` subagent with `run_in_background: true` that polls the PR for ~10 minutes for Claude's review, then invokes `Skill('implement-suggestion', '<pr-url>')` to apply the actionable feedback.
+4. **Continue to Step 7 in the main thread immediately** — do not block on the subagent. The user will be notified when it finishes.
+
+The background review path and the main-thread CI watch (Steps 7–9) push to the same branch in parallel. Each downstream skill handles pull-rebase internally; do not add explicit serialisation.
+
+Print one line before continuing:
+
+```
+Dispatched background review subagent (PR: <pr-url>). Continuing with CI watch.
+```
+
 ## Step 7: Wait for CI to Settle
 
 The job isn't done when the PR is created. Block on CI so the user doesn't have to come back to a red PR later.
@@ -253,6 +280,8 @@ Short summary:
 - Final check status (all green, or which are red and why)
 - What was auto-fixed, one line per fix
 - Anything left for the user (only if Step 9 escalated or hit the cap)
+
+**If `--review` was passed**, also wait for the background review subagent (Step 6.5) to complete — you will be notified — and append its result. Use the report shape in [`rules/review-mode.md`](./rules/review-mode.md) under "Step 10 update": one block for CI, one block for the Claude review pass, and the final head commit SHA so the user can see the latest state at a glance.
 
 ## Split Mode (`--split`)
 
