@@ -2,15 +2,16 @@
 name: implement-suggestion
 description: >
   Implements review-comment suggestions across one or more PRs. Multi-PR mode
-  (default when $ARGUMENTS contains PR URLs) per PR: resolves a worktree,
-  fetches every actionable comment, validates each through /critical +
-  /confidence, builds a structured suggestion-pack, and dispatches a worker
-  subagent to apply / commit / push to the existing branch — fast-lane for
-  mechanical edits, standard-lane via aw-planner for architectural changes.
-  Free-text mode applies a single pasted suggestion in the current directory.
-  Triggers on "implement suggestion", "apply review comments",
-  "address PR feedback", "implement reviewer feedback", "fix PR comments",
-  "/implement-suggestion".
+  (default when $ARGUMENTS contains PR URLs; empty $ARGUMENTS auto-detects the
+  active PR) per PR: resolves a worktree, fetches every actionable comment
+  from both human teammates AND AI code-review bots (claude[bot],
+  coderabbitai[bot], …), validates each through /critical + /confidence,
+  builds a structured suggestion-pack, and dispatches a worker subagent to
+  apply / commit / push to the existing branch — fast-lane for mechanical
+  edits, standard-lane via aw-planner for architectural changes. Free-text
+  mode applies a single pasted suggestion in the current directory. Triggers
+  on "implement suggestion", "apply review comments", "address PR feedback",
+  "implement reviewer feedback", "fix PR comments", "/implement-suggestion".
 disable-model-invocation: true
 license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(gw *) Read Edit Write Glob Grep Skill
@@ -137,8 +138,11 @@ gh api repos/<owner>/<repo>/pulls/<n>/comments
 gh api repos/<owner>/<repo>/issues/<n>/comments
 ```
 
-Build one ledger per PR. Exclude resolved threads. Honor `commentFilter` from
-Phase 0 if present.
+Build one ledger per PR. Include comments from **both human teammates and
+AI code-review bots** (`claude[bot]`, `coderabbitai[bot]`, etc.) — only the
+current user's own comments and noise bots (`dependabot`, `github-actions`)
+are filtered. Exclude resolved threads. Honor `commentFilter` from Phase 0
+if present.
 
 ### Phase 3 — Classify
 

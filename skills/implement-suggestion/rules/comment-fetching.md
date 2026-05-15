@@ -117,9 +117,46 @@ self-notes, not suggestions to themselves.
 Surface a count of filtered comments in the Phase 7 report so the user can
 spot mis-filtering.
 
-## Bot comments
+## Author inclusion — humans AND AI reviewers
 
-Drop comments authored by accounts whose `author.type == "Bot"` (GitHub Actions, dependabot, etc.) unless they propose a suggestion block. CI-bot comments rarely contain actionable human feedback.
+Process comments from **both** human teammates **and** AI / bot reviewers
+(`claude[bot]`, `coderabbitai[bot]`, `sourcery-ai[bot]`, `sweep-ai[bot]`,
+human reviewers — all included). The classification + validation gates in
+Phases 3–4 decide what is actually actionable; the fetch layer must not
+pre-filter by author type or the worker never sees the reviewer's feedback.
+
+Concretely:
+
+| Author kind                                                                                   | Treatment              |
+| --------------------------------------------------------------------------------------------- | ---------------------- |
+| Human teammate                                                                                | **Include**            |
+| AI code-review bot — `claude[bot]`, `coderabbitai[bot]`, `sourcery-ai[bot]`, `sweep-ai[bot]`  | **Include**            |
+| The current user (`gh auth status` login)                                                     | **Exclude** by default — self-notes, not feedback. Surface count in Phase 7. |
+| Noise bots — `dependabot[bot]`, `renovate[bot]`                                               | **Exclude** unless the body contains a fenced `suggestion` block          |
+| CI summary bots — `github-actions[bot]`                                                       | **Exclude** unless the body contains a fenced `suggestion` block          |
+
+The split between "AI reviewer" and "noise bot" is by **login allowlist**,
+not by `author.type`. Both groups have `author.type == "Bot"` on GitHub,
+but only the AI-reviewer group produces feedback worth gating through
+`/critical` + `/confidence`. The allowlist is conservative — if a new AI
+reviewer launches, add it explicitly rather than flipping to "all bots".
+
+Surface counts in the Phase 7 report:
+
+```
+Comments fetched (n):
+  - human teammates:   <n>
+  - AI reviewers:      <n>   (claude[bot], coderabbitai[bot], …)
+  - self-filtered:     <n>
+  - noise-filtered:    <n>   (dependabot, github-actions, …)
+  - resolved-filtered: <n>
+```
+
+If the user wants to **exclude** AI-reviewer comments for a specific run,
+they pass an explicit comment-permalink — `commentFilter` then scopes the
+run to one comment regardless of author. The default policy is "include
+both" because the skill's purpose is to act on every actionable suggestion
+on the PR, whoever wrote it.
 
 ## Per-PR ledger output
 
