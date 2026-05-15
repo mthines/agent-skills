@@ -24,9 +24,10 @@ Fires when the diff touches UI files (web JSX/TSX/Vue/Svelte, React Native scree
 - [ ] Error messages explain WHAT failed AND what the user can do next — no bare "Something went wrong" or raw exception text.
 - [ ] Empty states have illustration / icon + one-line context + primary CTA (not a blank screen).
 - [ ] Motion / transitions are gated on `@media (prefers-reduced-motion: reduce)` (web) or `AccessibilityInfo.isReduceMotionEnabled()` (RN).
+- [ ] No dark patterns: Accept/Reject buttons in consent UI have equal visual weight; non-essential opt-ins default to OFF; cancellation is symmetric to sign-up (FTC Click-to-Cancel); no fake urgency / scarcity / social-proof; no confirmshaming; total cost (incl. shipping, taxes, fees) shown before payment step; AI surfaces disclose AI involvement and surface uncertainty.
 
 ## Severity hints
 
-- **Must-fix**: touch target below platform minimum; contrast below WCAG AA; missing form label; missing accessible name on interactive non-native element; color as sole carrier of meaning.
+- **Must-fix**: touch target below platform minimum; contrast below WCAG AA; missing form label; missing accessible name on interactive non-native element; color as sole carrier of meaning; **any dark pattern** (asymmetric consent, pre-checked non-essential opt-in, roach-motel cancellation, fake urgency/scarcity, drip pricing, confirmshaming, forced continuity without pre-charge notice, undisclosed AI).
 - **Should-fix**: missing loading state on async action; missing error state; focus invisible on keyboard; nav exceeding item limits; no `prefers-reduced-motion` branch on a non-trivial animation.
 - **Nice-to-have**: microcopy improvements; body text exactly at minimum (could go larger); empty state without illustration.

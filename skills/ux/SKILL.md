@@ -13,9 +13,9 @@ disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.2.0'
   workflow_type: advisory
-  tags: [ux, accessibility, design, react-native, expo, web, wcag, usability, ux-writing]
+  tags: [ux, accessibility, design, react-native, expo, web, wcag, usability, ux-writing, dark-patterns, deceptive-design, consent-ui]
 ---
 
 # UX Review Skill
@@ -56,6 +56,7 @@ Load relevant rule files from `rules/` based on what the code contains:
 | ARIA, accessibility props, screen reader | `rules/accessibility.md` |
 | Platform-specific code, Platform.select | `rules/platform-specific.md` |
 | User-facing text, labels, messages, errors | `rules/ux-writing.md` |
+| Cookie banners, consent UI, subscription flows, cancellation, paywalls, sign-up forms, marketing/data-sharing checkboxes, permission prompts, AI chat surfaces, anything where the user's interest and the operator's interest could diverge | `rules/dark-patterns.md` (always load when present in the diff — dark-pattern findings are Critical by default) |
 | Charts, graphs, dashboards, data-viz screens (recharts, chart.js, victory, d3, react-native-svg-charts, visx) | Invoke `Skill("charting")` for chart-type and library selection; review the visual-design subset here |
 
 When the target screen contains data visualization, invoke `Skill("charting")` for the chart-type / library / dataset-size considerations the `charting` skill owns, and keep this review focused on the cross-cutting visual-design and microcopy concerns (contrast, axis labels, legend microcopy, touch targets on interactive marks). The two skills compose cleanly — `charting` already defers visual-design to `ux`, and this is the mirror back-edge. Skip the invocation when the screen has no charts. The skill skips silently if not installed; log one line and continue.
@@ -149,3 +150,4 @@ These are always in context. Detailed rules are in `rules/` files.
 6. **Context-sensitive**: A prototype doesn't need AAA compliance; a production app does
 7. **Don't over-report**: 5 high-impact findings beat 50 nitpicks
 8. **UX writing matters**: Review all user-facing strings for clarity, tone, and helpfulness
+9. **Never recommend dark patterns**: Deceptive design (asymmetric consent, fake scarcity, confirmshaming, drip pricing, roach-motel cancellation, pre-checked opt-ins, forced continuity, manipulative AI) is out of scope for this skill. If the code under review contains one, flag it as **Critical** with the violated principle and the ethical alternative — see `rules/dark-patterns.md`. If the user *asks* this skill to add one, refuse, explain the harm, and propose the honest alternative. This rule overrides default helpfulness.
