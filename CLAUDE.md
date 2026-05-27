@@ -38,6 +38,7 @@ Agents live in `agents/` since they require their own model and tool configurati
 - `tdd` — Test-Driven Development with strict RED-GREEN-REFACTOR cycles
 - `test-provenance-guard` — Detects tests that pass by construction (private copy of the SUT instead of an import) via static + mutation checks; self-heals by extracting inline logic, rewiring callers, and rewriting the test. Runs autonomously inside `autonomous-workflow` Phase 4
 - `ux` — UX, accessibility, microcopy, and dark-pattern review for web and React Native apps (WCAG 2.2, Apple HIG, Material Design 3). Never recommends a dark pattern. See [`skills/ux/SKILL.md`](./skills/ux/SKILL.md).
+- `video-analyser` — Analyse a screen recording for bugs: resolves input from a Linear ticket URL, local path, or direct URL; extracts keyframes with ffmpeg; runs optional Tesseract OCR and Whisper transcription; returns structured findings (errors, UI state, repro steps). See [`skills/video-analyser/SKILL.md`](./skills/video-analyser/SKILL.md).
 - `visual-design` — Guides and reviews the visual design and brand identity of UI components for web and React Native — named style directions (minimal, swiss, editorial, brutalist, neo-brutalist, glass, soft-UI, terminal, playful, retro), color systems, typography pairing, visual hierarchy, signature details. Owns the generative, brand-aware side; defers WCAG contrast math, size minimums, and dark-mode mechanics back to `/ux`. Modes: `guide` (default), `review`, `direction`. See [`skills/visual-design/SKILL.md`](./skills/visual-design/SKILL.md).
 
 ### Workflow companions (`disable-model-invocation: true`, called by orchestrators via `Skill()`)
@@ -68,7 +69,6 @@ Agents live in `agents/` since they require their own model and tool configurati
 - `resolve-conflicts` — Analyze and resolve Git merge/rebase conflicts
 - `review-changes` — Review branch changes or PR (dispatches to reviewer)
 - `screen-recorder` — Records short cropped videos of UI sections via Playwright + ffmpeg to validate multi-frame interactions. Called by `animations`, `ux`, `reviewer`. See [`skills/screen-recorder/SKILL.md`](./skills/screen-recorder/SKILL.md).
-- `video-analyser` — Analyse a screen recording for bugs: resolves input from a Linear ticket URL, local path, or direct URL; extracts keyframes with ffmpeg; runs optional Tesseract OCR and Whisper transcription; returns structured findings (errors, UI state, repro steps)
 
 ### Agents
 

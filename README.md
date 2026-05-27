@@ -153,7 +153,7 @@ Decide whether a plan, fix, or analysis is sound before you commit to it.
 |-------|--------------|------|
 | **[/profile-optimizer](./skills/profile-optimizer/SKILL.md)** | Analyses React DevTools Profiler exports or Chrome Performance traces. Maps hotspots to source. Iterates via `confidence(analysis)` until ≥ 90%. | `/` |
 | **[/playwright-trace-analyzer](./skills/playwright-trace-analyzer/SKILL.md)** | Analyses Playwright `trace.zip` (or downloads from a GitHub Actions run URL). Names the race behind a flake, emits a ranked fix plan. | `/` |
-| **[/video-analyser](./skills/video-analyser/SKILL.md)** | Analyses a screen recording for bugs. Resolves input from a Linear ticket URL, local path, or direct URL. Optional Tesseract OCR and Whisper transcription. | `/` |
+| **[video-analyser](./skills/video-analyser/SKILL.md)** | Analyses a screen recording for bugs. Resolves input from a Linear ticket URL, local path, or direct URL. Optional Tesseract OCR and Whisper transcription. | `auto` |
 | **[rum-tracking](./skills/rum-tracking/SKILL.md)** | Guides product analytics and RUM event tracking for web (React/Next.js) and mobile (React Native/Expo). Decides what to track, what's noise, what's PII; covers OTel semantic conventions, tracking plans, GDPR/CCPA compliance, and clean implement / audit / remove workflows. | `auto` |
 
 ### Docs, meta-skills & memory
@@ -332,6 +332,7 @@ Check the accessibility of this component
 I've tried fixing this bug three times — step back and analyze holistically
 Add this feature using TDD
 Rate your confidence in this implementation
+Analyse this screen recording for bugs
 ```
 
 Slash commands are typed explicitly.
@@ -341,7 +342,6 @@ Slash commands are typed explicitly.
 /fix-bug https://app.dash0.com/.../trace?spanId=...
 /dx review my CLI tool
 /profile-optimizer ./trace.json
-/video-analyser ./bug-recording.mp4
 /documentation init
 /documentation update
 /documentation readme
