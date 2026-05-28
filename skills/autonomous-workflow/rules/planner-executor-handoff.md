@@ -20,6 +20,7 @@ tags:
 - [Handoff message format](#handoff-message-format)
 - [Edit-driven iteration loop](#edit-driven-iteration-loop)
 - [Receiving handoff (executor entry point)](#receiving-handoff-executor-entry-point)
+- [Direct Lite dispatch (--lite flag)](#direct-lite-dispatch---lite-flag)
 - [What the planner DOES NOT do](#what-the-planner-does-not-do)
 - [What the executor DOES NOT do](#what-the-executor-does-not-do)
 - [References](#references)
@@ -260,6 +261,63 @@ If any of the following holds, the executor STOPS without writing code and tells
 | `plan.md` malformed             | Cannot find expected section headers (`## Acceptance Criteria`, `## Implementation Order`) |
 | Acceptance Criteria empty       | Section exists but has no bullets                          |
 | Wrong worktree                  | Branch name doesn't match `.agent/{branch}/` path          |
+
+---
+
+## Direct Lite dispatch (--lite flag)
+
+**Anchor:** `direct-lite-dispatch---lite-flag`
+
+The executor accepts a `--lite` flag in its invocation prompt for direct
+dispatch *without* the planner having run. This is the **only** way the
+executor runs without `plan.md` — implicit context fallback is forbidden,
+and the bail-out in [`templates/executor.template.md`](../templates/executor.template.md)
+("Bail-Out Conditions (Strict mode only)") remains in place for any
+invocation that does not include the flag.
+
+When to use it:
+
+- The user has explicitly opted out of planning for an ad-hoc, low-stakes
+  task and is dispatching `aw-executor` directly.
+- The intent fits in 3–5 testable bullets that the executor can derive
+  from the invocation prompt and confirm inline with the user.
+
+When **not** to use it:
+
+- The task touches 4+ files or 2+ packages, or is architectural — Strict
+  Mode through the planner exists exactly for these.
+- The user has not deliberately opted out — never set `--lite` to "skip
+  the bail-out" when `plan.md` is missing. That's the implicit-fallback
+  failure mode the flag was designed to prevent.
+
+What changes in Lite dispatch:
+
+- The handoff messages above do not apply — there is no planner→executor
+  handoff message because there was no planner run.
+- Phase 4 still gates against an Acceptance-Criteria list, but the list
+  is derived from the invocation prompt and surfaced back to the user
+  inline before code is written (see
+  [`templates/executor.template.md`](../templates/executor.template.md)
+  → "Lite mode entry").
+- `.agent/{branch}/` artifacts are **not** created: no `plan.md`, no
+  `plan.v{N}.md`, no `walkthrough.md`. The progress log lives only in the
+  executor's transcript.
+- Diagnose Mode evidence is thinner — see
+  [`./diagnostic-surface.md#artifacts`](./diagnostic-surface.md#artifacts).
+
+What stays unchanged in Lite dispatch:
+
+- Worktree isolation (Phase 2 worktree-presence check still runs).
+- Sub-Agent Resource Discipline on any Phase 3 fan-out.
+- Stuck-loop caps (3 in Lite Mode framing — match the orchestrator's Lite Mode cap).
+- No AI co-author tags on commits or PRs.
+- Phase 5 documentation update, Phase 6 `create-pr`, Phase 7 CI gate.
+- Reviewer agent dispatch on Phase 7 green (when installed).
+
+If you find yourself reaching for `--lite` repeatedly, prefer
+`/autonomous-workflow` Lite Mode instead — it runs the same plan-less
+path but through the orchestrator, which adds Phase 0 validation and Phase
+5 documentation upkeep that direct Lite dispatch skips.
 
 ---
 

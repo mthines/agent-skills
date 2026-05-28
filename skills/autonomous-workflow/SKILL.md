@@ -12,7 +12,7 @@ disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines
-  version: '3.8.0'
+  version: '3.10.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -251,6 +251,14 @@ automatically; borderline plans pause for user approval. The design rationale
 [`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md);
 the full handoff contract is in
 [`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md).
+
+> **Direct Lite dispatch.** `aw-executor` accepts `--lite` in its
+> invocation prompt for ad-hoc dispatch without the planner. Lite derives
+> an Acceptance-Criteria list from the prompt, confirms it inline, and
+> runs Phase 3–7 without `plan.md` / `walkthrough.md`. This is an
+> explicit opt-in; the executor **never** silently falls back to
+> context-driven execution when `plan.md` is missing. See
+> [`rules/planner-executor-handoff.md#direct-lite-dispatch---lite-flag`](./rules/planner-executor-handoff.md#direct-lite-dispatch---lite-flag).
 
 | Template                                                         | Purpose                                  |
 | ---------------------------------------------------------------- | ---------------------------------------- |

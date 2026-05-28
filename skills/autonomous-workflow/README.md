@@ -133,6 +133,34 @@ and are unmistakable when listed alongside unrelated agents:
 
 See [`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md) for the full handoff contract and [`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md) for the design rationale (with verbatim Anthropic citations).
 
+#### Direct Lite dispatch (`aw-executor --lite`)
+
+`aw-executor` accepts a `--lite` flag in its invocation prompt for ad-hoc
+dispatch without the planner. Lite mode derives an Acceptance-Criteria
+list from the invocation prompt, confirms it back to you inline before
+writing any code, and runs Phases 3–7 without `plan.md` / `walkthrough.md`.
+
+| Mode                 | Trigger                       | Source of intent                       | Artifacts                       |
+| -------------------- | ----------------------------- | -------------------------------------- | ------------------------------- |
+| **Strict** (default) | No `--lite` in prompt         | `.agent/{branch}/plan.md` (must exist) | `walkthrough.md` + draft PR     |
+| **Lite** (opt-in)    | `--lite` in invocation prompt | The invocation prompt itself           | Draft PR only                   |
+
+Strict is the default — it preserves the Phase 4 Acceptance-Criteria
+contract, the `confidence(plan)` audit trail, and fresh-session
+resumability. Use `--lite` only when you have deliberately opted out of
+planning for an ad-hoc task that fits in 3–5 testable bullets.
+
+The executor **never silently falls back to Lite when `plan.md` is
+missing** — that path is reserved for explicit `--lite` dispatch.
+Forgetting to run the planner first still bails out with "run the planner
+first" so you can notice the mismatch rather than have the executor paper
+over it. If you find yourself reaching for `--lite` regularly, prefer
+`/autonomous-workflow` Lite Mode instead — it runs the same plan-less
+path through the orchestrator with Phase 0 validation and Phase 5
+documentation upkeep.
+
+Full contract: [`rules/planner-executor-handoff.md#direct-lite-dispatch---lite-flag`](./rules/planner-executor-handoff.md#direct-lite-dispatch---lite-flag).
+
 ---
 
 ## Companion Skills

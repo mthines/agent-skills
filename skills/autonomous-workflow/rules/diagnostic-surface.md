@@ -80,20 +80,26 @@ The diagnoser must not propose to relax any of these without explicit user confi
 - **The system-prompt for the agent template stays lean.** It references `SKILL.md` rather than duplicating procedures.
 - **Stuck-loop caps (3 Lite / 5 Full) are load-bearing.** Changing them requires updating every coupled surface listed in [`CLAUDE.md`](../CLAUDE.md#the-mode-aware-stuck-loop-cap-3--5-and-auto-replan).
 - **Sub-Agent Resource Discipline is non-relaxable.** Sub-agents MUST run scoped/path-narrowed validation commands only. Whole-project `tsc`, `lint`, `build`, and `test` commands are reserved for the orchestrator at Phase 4 Step 6 and Phase 6 pre-PR. A diagnoser must never propose removing this constraint or widening it to allow whole-project commands in sub-agents.
+- **`--lite` is the only path to executor-without-plan.** The executor never silently falls back to context-driven execution when `plan.md` is missing — the Strict-mode bail-out is preserved for any invocation that does not include `--lite` in the prompt. A diagnoser must never propose removing the bail-out, making the fallback implicit, or weakening the requirement that Lite dispatch confirm an Acceptance-Criteria list with the user before Phase 3.
 
 ---
 
 ## Artifacts
 
-| File pattern                                  | Produced by                       | When                                |
-| --------------------------------------------- | --------------------------------- | ----------------------------------- |
-| `.agent/{branch}/plan.md`                     | `aw-create-plan`                  | After Phase 2 (Full Mode)           |
-| `.agent/{branch}/plan.v{N}.md`                | `aw-create-plan`                  | Every plan iteration (audit trail)  |
-| `.agent/{branch}/walkthrough.md`              | `aw-create-walkthrough`           | Phase 6 (Full Mode)                 |
-| Progress Log inside `plan.md`                 | Workflow itself                   | Per companion invocation            |
-| Draft PR + commit history                     | `create-pr`                       | Phase 6                             |
+| File pattern                                  | Produced by                       | When                                                                  |
+| --------------------------------------------- | --------------------------------- | --------------------------------------------------------------------- |
+| `.agent/{branch}/plan.md`                     | `aw-create-plan`                  | After Phase 2 (Full Mode; **not produced** under direct `aw-executor --lite` dispatch) |
+| `.agent/{branch}/plan.v{N}.md`                | `aw-create-plan`                  | Every plan iteration (audit trail)                                    |
+| `.agent/{branch}/walkthrough.md`              | `aw-create-walkthrough`           | Phase 6 (Full Mode; **not produced** under `aw-executor --lite`)      |
+| Progress Log inside `plan.md`                 | Workflow itself                   | Per companion invocation                                              |
+| Draft PR + commit history                     | `create-pr`                       | Phase 6                                                               |
 
-Lite Mode runs produce no `plan.md` / `walkthrough.md` — diagnoses against Lite runs have a thinner evidence trail and the report should call that out as a contributing factor.
+Lite Mode runs (orchestrator Lite Mode **or** direct `aw-executor --lite`)
+produce no `plan.md` / `walkthrough.md` — diagnoses against Lite runs have
+a thinner evidence trail and the report should call that out as a
+contributing factor. Direct `--lite` dispatch is thinner still: no Phase 0
+validation transcript and no Phase 5 documentation invocation log exist in
+the orchestrator's session because there was no orchestrator session.
 
 ---
 

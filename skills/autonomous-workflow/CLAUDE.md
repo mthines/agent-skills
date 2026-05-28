@@ -497,6 +497,31 @@ end-user-facing; this file is contributor-facing.
 
 ## History
 
+- **v3.10** — `--lite` opt-in flag on `aw-executor`. The executor now
+  accepts `--lite` in its invocation prompt as an explicit opt-out from
+  the artifact-backed planner→executor handoff. Lite dispatch derives an
+  Acceptance-Criteria list from the invocation prompt, surfaces it back
+  to the user for confirmation, and runs Phases 3–7 without `plan.md`,
+  `plan.v{N}.md`, or `walkthrough.md`. All other invariants stay intact
+  (worktree isolation, Sub-Agent Resource Discipline, stuck-loop caps,
+  no AI co-author tags, Phase 5/6/7 still run). The **default behavior
+  is unchanged**: missing `plan.md` without `--lite` still bails out with
+  "run the planner first". Added a new hard invariant in
+  `rules/diagnostic-surface.md` forbidding implicit context fallback —
+  the diagnoser must never propose removing the bail-out or making the
+  Lite path implicit. Root cause: direct executor dispatch without going
+  through `/autonomous-workflow` Lite Mode was a real UX paper-cut, but
+  a silent fallback would have made Full Mode atrophy over time
+  (executor "just works" → planner becomes optional in practice). The
+  flag gives users the convenience case while keeping Strict the default
+  and forcing every Lite dispatch through a deliberate, user-confirmed
+  AC list. Coupled surfaces updated: `templates/executor.template.md`
+  (Invocation Modes section + Lite mode entry + bail-out scoped to
+  Strict), `rules/planner-executor-handoff.md` (Direct Lite dispatch
+  section), `rules/diagnostic-surface.md` (new hard invariant +
+  Artifacts table notes), `SKILL.md` (Lite dispatch callout under
+  Templates), `README.md` (user-facing description).
+
 - **v3.9** — Reviewer self-review sub-mode. Added Rule 0 (authorship pre-check) to `agents/reviewer.md`
   Mode Detection: `ME=$(gh api user --jq .login)` vs `AUTHOR=$(gh pr view ... --jq .author.login)`.
   When `ME == AUTHOR`, the run enters **PR (self-review)** sub-mode: Step 4 auto-fix re-enabled,
