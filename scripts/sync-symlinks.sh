@@ -2,8 +2,12 @@
 # Wire every skill in skills/ and every agent in agents/ into the
 # two-tier symlink chain described in CLAUDE.md:
 #
-#   ~/.claude/skills/<name>     →  ~/.agents/skills/<name>     →  <repo>/skills/<name>
+#   ~/.claude/skills/<name>     →  ~/.agents/skills/<name>     →  <repo>/skills/<category>/<name>
 #   ~/.claude/agents/<name>.md  →  ~/.agents/agents/<name>.md  →  <repo>/agents/<name>.md
+#
+# Skills are discovered recursively under skills/ — any directory
+# containing a SKILL.md is treated as a skill, so flat layouts and
+# nested category layouts both work.
 #
 # Safe to re-run. Skips entries that are already linked correctly,
 # repairs broken or wrong-target symlinks, refuses to touch real
@@ -136,13 +140,16 @@ ensure_dir "$CLAUDE_AGENTS_DIR"
 declare -a entries=()
 max_name=4   # "NAME"
 
-for skill_path in "$REPO_ROOT"/skills/*/; do
-  [[ -d "$skill_path" ]] || continue
+# Walk skills/ recursively: any directory containing a SKILL.md is a skill.
+# Supports both flat (skills/<name>/SKILL.md) and nested category layouts
+# (skills/<category>/<name>/SKILL.md). Depth is capped to keep walks cheap;
+# the `skills` CLI itself caps at depth 5.
+while IFS= read -r -d '' skill_md; do
+  skill_path="$(dirname "$skill_md")"
   name="$(basename "$skill_path")"
-  skill_path="${skill_path%/}"
   entries+=("skill	$name	$skill_path")
   (( ${#name} > max_name )) && max_name=${#name}
-done
+done < <(find "$REPO_ROOT/skills" -mindepth 1 -maxdepth 5 -type f -name SKILL.md -print0 2>/dev/null)
 
 for agent_path in "$REPO_ROOT"/agents/*.md; do
   [[ -f "$agent_path" ]] || continue

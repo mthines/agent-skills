@@ -22,7 +22,7 @@ tags:
 ---
 
 This file declares the contract `/create-skill diagnose reviewer` reads to parameterize the generic Diagnose Mode procedure for this agent.
-The contract spec lives at [`skills/create-skill/rules/diagnostic-surface.md`](../../../skills/create-skill/rules/diagnostic-surface.md).
+The contract spec lives at [`skills/authoring/create-skill/rules/diagnostic-surface.md`](../../../skills/authoring/create-skill/rules/diagnostic-surface.md).
 
 The reviewer is an **agent**, not a skill — its source is a single file at `agents/reviewer.md`.
 A proposed diff against the reviewer almost always targets that file (occasionally this surface, or a future rule under `agents/reviewer/rules/`).
@@ -54,7 +54,7 @@ The diagnoser walks every row, even when a mode skips a step (e.g. Fix Mode skip
 | 1.3   | Intent synthesis                  | [reviewer.md § Step 1.3](../reviewer.md)                                                   | 2–3 line intent summary written from PR body / commit messages / branch name; ambiguity flagged           |
 | 1.4   | Review-context detection          | [reviewer.md § Step 1.4](../reviewer.md)                                                   | Own-branch vs someone-else's-PR resolved; never auto-fix on someone else's PR                              |
 | 1.5   | Pre-existing-issue separation     | [reviewer.md § Step 1.5](../reviewer.md)                                                   | Findings on context lines marked `[pre-existing]`; do not count toward verdict                             |
-| 1.6   | Lens loading (`--with`)           | [reviewer.md § Step 1.6](../reviewer.md), [review-lens-contract.md](../../../skills/create-skill/rules/review-lens-contract.md) | Max 3 lenses; `lens-version: 1`; dedupe against auto-loaded; `applies-to` glob honoured                    |
+| 1.6   | Lens loading (`--with`)           | [reviewer.md § Step 1.6](../reviewer.md), [review-lens-contract.md](../../../skills/authoring/create-skill/rules/review-lens-contract.md) | Max 3 lenses; `lens-version: 1`; dedupe against auto-loaded; `applies-to` glob honoured                    |
 | 2     | Review (multi-rubric)             | [reviewer.md § Step 2](../reviewer.md)                                                     | `code-quality` rubric loaded for substantive diffs; `ux` rubric on UI files; lens checklists walked         |
 | 2.5   | Quality Gate                      | [reviewer.md § Step 2.5](../reviewer.md), `aw-review-quality-gate`                          | Every non-pre-existing finding answers 6 gate questions; drop on 2+ fails, downgrade on 1                  |
 | 2.7   | Adversarial Pre-Mortem            | [reviewer.md § Step 2.7](../reviewer.md), `Skill("critical", "code")`                       | Runs on `--critical` OR auto-engage heuristic; emits Must / Should / Nice + mandatory steelman             |

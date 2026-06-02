@@ -1,0 +1,341 @@
+---
+name: autonomous-workflow
+description: >
+  Execute complete feature development cycles autonomously — from task intake
+  through tested PR delivery — using isolated Git worktrees. Phase-based
+  workflow (0–7) with optional companion skills for planning, quality gates,
+  TDD, UX, code quality, docs, and CI verification. Companions skip silently
+  if not installed. Triggers on "implement autonomously", "end-to-end", "in
+  isolation", "in a worktree", or independent feature work. Invoke with
+  /autonomous-workflow.
+disable-model-invocation: false
+license: MIT
+metadata:
+  author: mthines
+  version: '3.8.0'
+  workflow_type: orchestrator
+  tags:
+    - autonomous
+    - workflow
+    - worktree
+    - feature-development
+    - pr
+---
+
+# Autonomous Workflow
+
+Phase-based autonomous feature development. Each phase has a gate that must pass
+before continuing. Phases optionally invoke companion skills based on the task —
+companions skip silently if not installed.
+
+> **Source of truth.** This `SKILL.md` is a thin index. Detailed procedures
+> live in `rules/*.md` and load on demand. Companion-skill triggers and
+> disable instructions live in [`rules/companion-skills.md`](./rules/companion-skills.md).
+
+---
+
+## Retrospective Self-Improvement
+
+If a workflow run shipped wrong code despite all gates passing — or a
+post-merge bug traces back to a missed check — invoke
+[`/create-skill diagnose autonomous-workflow`](../../authoring/create-skill/SKILL.md#diagnose-workflow)
+**while the failing session is still in context**.
+The diagnoser reads this skill's [diagnostic surface](./rules/diagnostic-surface.md)
+(phase model, failure taxonomy, existing-guards table, hard invariants) and
+emits a confidence-gated unified-diff proposal against this skill's source.
+
+The diagnose capability is owned by `create-skill` so the same procedure works
+across every skill in the repo (`fix-bug`, `batch-linear-tickets`, future
+ones) — they each declare their own diagnostic surface.
+
+---
+
+## CRITICAL: Before Starting Any Work
+
+### Step 1: Detect Workflow Mode (MANDATORY)
+
+**Complexity is the primary signal. File count is the tie-breaker.** Walk these
+questions in order — the first `yes` selects Full Mode:
+
+| # | Question                                                                                  | If yes →     | If no →     |
+| - | ----------------------------------------------------------------------------------------- | ------------ | ----------- |
+| 1 | Is this task architectural / cross-cutting / does it require significant design decisions? | **Full Mode** | go to next  |
+| 2 | Does the task involve unfamiliar code or domains the agent hasn't worked in before?       | **Full Mode** | go to next  |
+| 3 | Is the change touching 4+ files OR 2+ packages?                                           | **Full Mode** | **Lite Mode** |
+
+| Mode     | Artifacts |
+| -------- | --------- |
+| **Full** | Required  |
+| **Lite** | None      |
+
+The first two questions ground the decision in complexity rather than raw file
+count (one large monolithic change can exceed four trivial edits in scope).
+Question 3 is the file-count tie-breaker — only fires when complexity is low.
+
+**When in doubt, choose Full.** Output mode selection in this exact format:
+
+```
+MODE SELECTION:
+- Mode: [Full | Lite]
+- Reasoning: [why]
+- Estimated files: [number]
+- Complexity: [simple | moderate | architectural]
+```
+
+### Step 2: Verify Prerequisites
+
+| Tool | Status      | Check       | If missing                                                  |
+| ---- | ----------- | ----------- | ----------------------------------------------------------- |
+| `gh` | **REQUIRED**| `which gh`  | Stop, prompt user to install                                |
+| `gw` | Recommended | `which gw`  | Continue with native `git worktree` fallback (warn user once)|
+
+`gh` is hard-required for Phase 6 (PR creation) and Phase 7 (CI gate).
+`gw` is recommended — it adds auto-copy of secrets, pre/post-checkout hooks,
+and smart cleanup — but the workflow falls back to native `git worktree` if
+it's not installed. See [`rules/prerequisites.md`](./rules/prerequisites.md)
+for the full feature comparison and installation steps.
+
+---
+
+## Workflow Phases
+
+| Phase | Name                       | Rule file                                                      | Gate                                          |
+| ----- | -------------------------- | -------------------------------------------------------------- | --------------------------------------------- |
+| 0     | Validation                 | [phase-0-validation.md](./rules/phase-0-validation.md)         | User confirmed understanding                  |
+| 1     | Planning                   | [phase-1-planning.md](./rules/phase-1-planning.md)             | `confidence(plan)` ≥ 90% or user-approved     |
+| 2     | Worktree Setup             | [phase-2-worktree.md](./rules/phase-2-worktree.md)             | Worktree created, `plan.md` written           |
+| 3     | Implementation             | [phase-3-implementation.md](./rules/phase-3-implementation.md) | Code complete, fast checks pass               |
+| 4     | Testing                    | [phase-4-testing.md](./rules/phase-4-testing.md)               | All tests pass OR user-approved stop          |
+| 5     | Documentation              | [phase-5-documentation.md](./rules/phase-5-documentation.md)   | Docs reflect changes (incl. `CLAUDE.md`)      |
+| 6     | PR Creation                | [phase-6-pr-creation.md](./rules/phase-6-pr-creation.md)       | Walkthrough shown, draft PR opened            |
+| 7     | CI Gate + Optional Cleanup | [phase-7-ci-gate.md](./rules/phase-7-ci-gate.md)               | CI green OR user-approved stop                |
+
+**Phase 0 and Phase 2 are MANDATORY.** All others gate progression to the next.
+
+---
+
+## Companion Skills
+
+Optional companions are invoked at specific phases based on task signals.
+**All companions skip silently if not installed** — the workflow continues
+without them. See [`rules/companion-skills.md`](./rules/companion-skills.md)
+for the full registry, trigger conditions, and **how to disable any companion**.
+
+| Phase | Companion              | Trigger                                                | Args             |
+| ----- | ---------------------- | ------------------------------------------------------ | ---------------- |
+| 1     | `holistic-analysis`    | Complex / multi-domain / unfamiliar task               | —                |
+| 1     | `code-quality`         | Always (informs design)                                | `plan`           |
+| 1     | `critical`             | Opt-in only (user passed `--critical` to the workflow). Single adversarial pre-mortem pass between `code-quality(plan)` and `confidence(plan)`. Findings flow into `aw-create-plan` as plan defects (must-fix) and considered-alternatives notes (steelman). Advisory — does not gate. | `plan` |
+| 1     | `confidence`           | Always (plan gate, MANDATORY)                          | `plan`           |
+| 2     | `aw-create-plan`       | Full Mode only                                         | —                |
+| 3     | `tdd`                  | Pure logic / business rules / "test-driven"            | —                |
+| 3     | `ux`                   | UI files touched (`*.tsx`, `*.jsx`, `*.vue`, RN)       | —                |
+| 3     | `code-quality`         | Once at end of Phase 3 (not per-file)                  | `code`           |
+| 4     | `test-provenance-guard` | After Step 5 — any new `*.test.*` / `*.unit.*` / `*.spec.*` file written | `--diff --base $(git merge-base HEAD main) --fix` *(autofix gated by `confidence(code) ≥ 90 %`)* |
+| 4     | `confidence`           | At iteration cap (3 Lite / 5 Full) on same failing area | `analysis`   |
+| 4     | `holistic-analysis`    | After confidence at Phase 4 if user asks for retry     | —                |
+| 5     | `documentation`        | Always (self-improving doc loop — updates `CLAUDE.md`, `README.md`, `docs/`) | `update`         |
+| 6     | `review-changes`       | Always before push                                     | —                |
+| 6     | `aw-create-walkthrough` | Full Mode only                                        | —                |
+| 6     | `create-pr`            | Always                                                 | —                |
+| 7     | `ci-auto-fix`          | CI run completes with status `failure`                 | `<run-id\|pr-url>` |
+| 7     | `reviewer` *(agent)*   | After CI green — auto-dispatch in PR Mode (self-review sub-mode for self-authored PRs: inline report + autofix; cross-review: pending GitHub review) | `<pr-url> --pr`    |
+
+---
+
+## Core Principles
+
+1. **Detect mode FIRST** — Full vs Lite before any other action.
+2. **Phase 0 and Phase 2 are MANDATORY** — no skipping validation or worktree.
+3. **`plan.md` is the single source of truth** in Full Mode — generated by `Skill("aw-create-plan")`.
+4. **Verify after editing** — fast check before continuing.
+5. **Stuck-loop has a mode-aware limit**: 3 iterations (Lite) / 5 iterations (Full) on the same failing area triggers `Skill("confidence", "analysis")` and auto-replan or escalation.
+6. **Companions are optional** — never block on a missing companion.
+7. **Stop and ask when blocked** — don't guess on ambiguity.
+8. **No AI co-author tags** — never add `Co-Authored-By` lines to commits or PRs.
+
+---
+
+## Artifact System (Full Mode)
+
+Two artifacts in `.agent/{branch-name}/`, each generated by a dedicated skill:
+
+| File(s)                                | Generated by                     | When                                              |
+| -------------------------------------- | -------------------------------- | ------------------------------------------------- |
+| `plan.md` + `plan.v{N}.md` snapshots   | `Skill("aw-create-plan")`        | After Phase 2 — and on every plan iteration       |
+| `walkthrough.md`                       | `Skill("aw-create-walkthrough")` | Phase 6                                           |
+
+`plan.md` always points at the latest version. Each call to `aw-create-plan`
+also writes an immutable `plan.v{N}.md` snapshot (`plan.v1.md` on the first
+run, `plan.v2.md` on the next, …) so iteration history is preserved. See
+[`rules/artifacts-overview.md#plan-versioning`](./rules/artifacts-overview.md#plan-versioning).
+
+Add `.agent/` to `.gitignore`. Files are grouped by branch for easy browsing.
+
+> The directory is named `.agent/` (singular) to align with the `~/.agents/skills/`
+> cross-tool discovery convention used by Codex, Cursor, OpenCode, and other
+> Agent Skills–compatible clients. The agent identity is implicit in artifact
+> frontmatter; the directory itself is a per-project agent workspace.
+
+---
+
+## Parallelization
+
+Three phases benefit from sub-agent fan-out:
+
+- **Phase 1 (Planning)** — when the task is complex/multi-domain, spawn parallel `Explore` sub-agents during research (one per package, one for past PRs, one for related docs). See [phase-1-planning.md](./rules/phase-1-planning.md#parallel-research).
+- **Phase 3 (Implementation)** — when the task decomposes into file-disjoint slices, fan out up to **3 concurrent sub-agents** (hard cap, RAM-bounded). Each sub-agent MUST embed the Sub-Agent Resource Discipline line — scoped commands only, no whole-project `tsc`/`lint`/`test`/`build`. See [parallel-coordination.md#sub-agent-resource-discipline](./rules/parallel-coordination.md#sub-agent-resource-discipline).
+- **Phase 7 (CI Gate)** — when multiple CI checks fail, spawn one `ci-auto-fix` sub-agent per independent failure. Cap: 2 handoffs per PR. See [phase-7-ci-gate.md](./rules/phase-7-ci-gate.md#parallel-ci-fixes).
+
+---
+
+## Quick Reference
+
+### Full Mode
+
+| Phase | Action                                                                                          |
+| ----- | ----------------------------------------------------------------------------------------------- |
+| Setup | MODE SELECTION + prerequisite check                                                             |
+| 0     | Ask clarifying questions, get explicit "proceed"                                                |
+| 1     | Analyze codebase (parallel `Explore` if complex), design with `code-quality(plan)`, `confidence(plan)` gate |
+| 2     | `gw add`, `gw cd`, install deps, `Skill("aw-create-plan")` inside worktree                      |
+| 3     | Code per `plan.md` → companions per task type (`tdd`, `ux`) → fast-check after each edit; `code-quality(code)` once at end |
+| 4     | Run tests → iterate (max 3 same area) → `confidence(analysis)` then escalate to user        |
+| 5     | `Skill("documentation", "update")` always — refreshes `CLAUDE.md`, `.claude/rules/`, `README.md`, `docs/`, `CHANGELOG.md` |
+| 6     | `Skill("review-changes")` → `Skill("aw-create-walkthrough")` → `Skill("create-pr")`             |
+| 7     | Watch CI → `Skill("ci-auto-fix")` per failure (parallel) → after CI green dispatch `reviewer` agent (PR Mode: self-review sub-mode for self-authored PRs emits inline report; optional, skips if not installed) → `gw remove` after merge (optional) |
+
+### Lite Mode
+
+Skip artifacts and most companions. Phase 0, Phase 2, Phase 5 (`documentation update`), and Phase 6 (`create-pr`) still required.
+
+| Phase | Action                                          |
+| ----- | ----------------------------------------------- |
+| Setup | MODE SELECTION                                  |
+| 0     | Quick clarification                             |
+| 1     | Brief mental plan (no `plan.md`)                |
+| 2     | `gw add fix/bug-name`                           |
+| 3     | Code, commit                                    |
+| 4     | Test, fix failures (3-iteration limit applies)  |
+| 5     | `Skill("documentation", "update")`              |
+| 6     | `Skill("create-pr")`                            |
+| 7     | Watch CI, `ci-auto-fix` if needed, then auto-dispatch `reviewer` agent (skips if not installed) |
+
+---
+
+## Customization
+
+Disable companions by editing [`rules/companion-skills.md`](./rules/companion-skills.md)
+(single source of truth for which skills run when) or by removing the
+invocation block from the relevant phase rule. See [`README.md`](./README.md#disabling-companions)
+for the full how-to.
+
+---
+
+## Templates
+
+The skill installs **two agents** that share one workflow, connected by `plan.md`.
+Both use the **`aw-` namespace prefix** (short for "autonomous-workflow") so
+they group together in `.claude/agents/` and are unmistakable when listed
+alongside unrelated agents:
+
+| Agent          | Phases | Terminal artifact                              | Exit gate                                          |
+| -------------- | ------ | ---------------------------------------------- | -------------------------------------------------- |
+| `aw-planner`   | 0–2    | `.agent/{branch}/plan.md`                      | `confidence(plan) ≥ 90%` (or user-approved)        |
+| `aw-executor`  | 3–7    | `.agent/{branch}/walkthrough.md` + draft PR    | Walkthrough shown inline, Phase 7 CI gate run      |
+
+The split is along the Phase 2 → Phase 3 context boundary, mediated by
+`plan.md`. The handoff is gated: high-confidence plans flow through
+automatically; borderline plans pause for user approval. The design rationale
+(with verbatim Anthropic citations) lives in
+[`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md);
+the full handoff contract is in
+[`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md).
+
+| Template                                                         | Purpose                                  |
+| ---------------------------------------------------------------- | ---------------------------------------- |
+| [planner.template.md](./templates/planner.template.md)           | Planner agent definition (phases 0-2)    |
+| [executor.template.md](./templates/executor.template.md)         | Executor agent definition (phases 3-7)   |
+| [routing-rule.template.md](./templates/routing-rule.template.md) | Auto-trigger rule for `.claude/rules/`   |
+
+---
+
+## Auto-Trigger Setup (Recommended)
+
+Install the skill + companions so Claude auto-triggers on phrases like
+*"implement X independently"*, *"in isolation"*, *"end-to-end"*. Two steps:
+download skills, then run [`install.sh`](./install.sh).
+
+**Global** (personal use, all projects):
+
+```bash
+npx skills add https://github.com/mthines/agent-skills \
+  --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
+          code-quality holistic-analysis tdd ux documentation \
+          review-changes create-pr ci-auto-fix \
+  --agent claude-code \
+  --global --yes
+bash ~/.claude/skills/autonomous-workflow/install.sh --global
+```
+
+**Per-project** (team use, committable):
+
+```bash
+npx skills add https://github.com/mthines/agent-skills \
+  --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
+          code-quality holistic-analysis tdd ux documentation \
+          review-changes create-pr ci-auto-fix \
+  --agent claude-code \
+  --yes
+bash .claude/skills/autonomous-workflow/install.sh
+```
+
+> **Want the optional Phase 7 auto-review?** Install the `reviewer` agent
+> alongside the skill. Today the easiest path is to clone the agent
+> definition into your agents directory (`agents/reviewer.md`); the
+> workflow detects it at `.claude/agents/reviewer.md`,
+> `~/.agents/agents/reviewer.md`, or `~/.claude/agents/reviewer.md` and
+> dispatches it automatically when CI turns green. Skip the install and
+> Phase 7 logs `reviewer — not available, continuing` and proceeds.
+
+> The `--agent claude-code` flag is recommended — it scopes the install to
+> `.claude/skills/` only. Without it the CLI symlinks the skills into every
+> supported AI tool's directory at once (`.codebuddy/`, `.continue/`, `.crush/`,
+> …). Drop it (or use `--agent '*'`) only if you want the universal install.
+
+After the script runs, two agents are linked into your `.claude/agents/`
+directory: `aw-planner.md` and `aw-executor.md` (the `aw-` prefix is the
+autonomous-workflow namespace). The routing rule dispatches the planner
+first; once `plan.md` is gated, the executor takes over.
+
+To run with fewer companions, omit them from the `--skill` list. See
+[`rules/companion-skills.md`](./rules/companion-skills.md) for what each does
+and how to disable. Run `bash install.sh --help` for script options.
+
+---
+
+## Related Skills
+
+- [`confidence`](../../quality/confidence/SKILL.md) — quality gate (plan, code, analysis)
+- [`aw-create-plan`](../aw-create-plan/SKILL.md) — `plan.md` artifact generator
+- [`aw-create-walkthrough`](../aw-create-walkthrough/SKILL.md) — `walkthrough.md` artifact generator
+- [`code-quality`](../../quality/code-quality/SKILL.md) — readability and complexity review
+- [`tdd`](../../quality/tdd/SKILL.md) — RED-GREEN-REFACTOR enforcement
+- [`ux`](../../design/ux/SKILL.md) — UI / accessibility review
+- [`holistic-analysis`](../../analysis/holistic-analysis/SKILL.md) — execution-path analysis for complex tasks
+- [`documentation`](../../authoring/documentation/SKILL.md) — keeps `CLAUDE.md`, `.claude/rules/`, `README.md`, and `docs/` in sync with code changes
+- [`review-changes`](../../quality/review-changes/SKILL.md) — pre-PR review
+- [`create-pr`](../../delivery/create-pr/SKILL.md) — narrative PR description + push + watch
+- [`ci-auto-fix`](../../delivery/ci-auto-fix/SKILL.md) — diagnose and fix failed CI checks
+
+### Related Agents
+
+- [`reviewer`](../../../agents/reviewer.md) — optional Phase 7 auto-review. PR (self-review) sub-mode (self-authored PRs): auto-fix + inline terminal report. PR (cross-review) sub-mode (someone else's PR): pending GitHub review. Install the agent alongside the skill and the workflow will dispatch it automatically when CI turns green.
+
+---
+
+## Research Sources
+
+- [Addy Osmani's LLM Workflow](https://addyosmani.com/blog/ai-coding-workflow/) — fast feedback loops
+- [Claude Code Worktree Support](https://code.claude.com/docs/en/common-workflows) — worktree practices
+- Full Anthropic architecture citations: [`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md)

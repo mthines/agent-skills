@@ -87,7 +87,7 @@ Announce auto-engagement in one line: `Auto-engaging --critical: <reason>.` The 
 - Unknown `lens-version` → reject with the file name and version surfaced; do NOT degrade silently.
 - Skills already auto-loaded (`code-quality`, `ux`, `critical`) are deduped — `--with code-quality` is a no-op.
 
-Full contract spec: [`skills/create-skill/rules/review-lens-contract.md`](../skills/create-skill/rules/review-lens-contract.md). Author template: [`skills/create-skill/templates/lens.md`](../skills/create-skill/templates/lens.md).
+Full contract spec: [`skills/authoring/create-skill/rules/review-lens-contract.md`](../skills/authoring/create-skill/rules/review-lens-contract.md). Author template: [`skills/authoring/create-skill/templates/lens.md`](../skills/authoring/create-skill/templates/lens.md).
 
 ### Parsing a PR reference
 
@@ -285,7 +285,7 @@ git diff origin/main...HEAD -U0 | grep -E \
 
 Required inputs to the `Skill()` call: `url` (preview deploy URL — extract from PR comments, otherwise ask), `selector` (extract a `data-testid` from the diff via `git diff origin/main...HEAD | grep -oE 'data-testid="[^"]+"' | head -1`), `interaction` (the closest recipe from the change type), `out-format: mp4` (GitHub previews `.mp4` inline; `.webm` is download-only), `caller: reviewer`, `context.pr: <number>`.
 
-Skip silently if the `screen-recorder` skill is not installed, if no preview deploy URL is available, or if no stable handle exists in the diff (do not record against brittle selectors). Surface the returned `RECORDING_PATH=` under a new `### Motion evidence` subsection in Step 3. The PR comment attachment itself happens after the pending review is filed — see Step 5.7. Full handshake in [`screen-recorder` rules/integrations.md](../skills/screen-recorder/rules/integrations.md).
+Skip silently if the `screen-recorder` skill is not installed, if no preview deploy URL is available, or if no stable handle exists in the diff (do not record against brittle selectors). Surface the returned `RECORDING_PATH=` under a new `### Motion evidence` subsection in Step 3. The PR comment attachment itself happens after the pending review is filed — see Step 5.7. Full handshake in [`screen-recorder` rules/integrations.md](../skills/analysis/screen-recorder/rules/integrations.md).
 
 **Auth-leak consent prompt.** The `screen-recorder` skill's preflight will halt and prompt you when (a) the URL is not `localhost:*` (every preview deploy URL meets this), AND (b) `.browser/auth-state.json` exists in the repo. The prompt warns that the clip captures the authenticated session and will be embedded in a public PR comment. Pass the prompt through to the user verbatim and wait for explicit `y` before proceeding — do not auto-approve. If the user declines, drop motion evidence for this review and continue without it.
 
