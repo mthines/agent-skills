@@ -1,27 +1,25 @@
 ---
-title: Phases 3–5 — Root-cause synthesis, fix drafting, selector-validity gate
+title: Phases 3–5 — Root-cause synthesis, fix drafting, selector-existence check
 impact: HIGH
 tags:
   - root-cause
-  - confidence
   - playwright-test-healer
   - fix-patterns
-  - selector-validity
+  - selector-existence
 ---
 
-# Phases 3–5 — Root-cause synthesis, fix drafting, selector-validity gate
+# Phases 3–5 — Root-cause synthesis, fix drafting, selector-existence check
 
-Every fix carries **four** citations before it is committed:
+Every fix carries **three** citations before it is committed:
 
 1. A span-side signature (from Phase 1 — historical evidence).
 2. A trace-side hotspot (from Phase 2 — local reproduction).
-3. `Skill('confidence', 'analysis')` ≥ 90 % (this file, Phase 4).
-4. `Skill('confidence', 'code')` ≥ 90 % + selector existence verified ([`fix-validation.md`](./fix-validation.md), Phase 5 sub-step).
+3. Selector existence verified (from Phase 5 — [`fix-validation.md`](./fix-validation.md)).
 
 No citations, no fix.
-Two confidence calls exist because diagnosis and diff are independently wrong-able.
+The skill validates fixes empirically — selectors must resolve before commit, and the test must pass three consecutive local runs after commit (Phase 6).
 
-## Phase 4 — Confidence-gated RCA
+## Phase 4 — Root-cause synthesis
 
 For each dossier from Phase 3, produce one root-cause hypothesis.
 A hypothesis is a sentence in this exact shape:
@@ -43,26 +41,15 @@ in pre-load state), fixable by an explicit `await
 expect(option).toBeVisible({ timeout: 5000 })` wait before the click.
 ```
 
-### Score the hypothesis
+The hypothesis must:
 
-Call the confidence skill in `analysis` mode:
+- Name a specific cause in code terms (a selector, a wait condition, a state-management call) — not a vague "test is slow".
+- Cite both layers (span signature **and** trace hotspot). One layer is not enough.
+- Map to a named pattern from the catalogue below (P1–P6) **or** be flagged `novel` and handed back to the user.
 
-```text
-Skill('confidence', 'analysis')
-```
+A hypothesis that does not meet these requirements is `recommendation-only` — write it to the report and move on. Do not draft a fix.
 
-Apply this gate:
-
-| Score | Action |
-|-------|--------|
-| ≥ 90% | Promote to fix candidate. |
-| 70–89% | Iterate once: re-read the trace, expand the failing action's `before` / `after` DOM snapshots, correlate with the network log. Re-score. |
-| < 70% | Demote to `inconclusive` and surface the gap to the user. **Do not edit code on a < 70% hypothesis.** |
-
-Iterate at most twice per dossier.
-If still below 90% after two passes, mark the dossier `requires-human-judgment` and continue with the next test.
-
-## Phase 5 — Fix drafting + selector-validity gate (stabilize only)
+## Phase 5 — Fix drafting + selector-existence check (stabilize only)
 
 **Skip this phase entirely in `optimize` mode.**
 Optimize mode produces recommendations, not edits — jump from Phase 4 directly to the report.
@@ -74,10 +61,11 @@ The healer agent's principles are non-negotiable.
 Phase 5 has **three sub-steps**:
 
 1. **Draft** the diff per the fix-pattern catalogue below.
-2. **Validate** the draft against [`fix-validation.md`](./fix-validation.md) — `Skill('confidence', 'code')` ≥ 90 % **and** every new locator proven to resolve (static + live where ambiguous).
-3. **Commit locally only after validation passes.** Do not push — pushing is Phase 7's single deliberate action after Phase 6 ratifies the fix locally.
+2. **Verify selectors** per [`fix-validation.md`](./fix-validation.md) — every new locator must resolve against source (static grep) or the live app (`locator.count() ≥ 1`).
+3. **Commit locally only after every new locator is verified.** Do not push — pushing is Phase 7's single deliberate action after Phase 6 ratifies the fix locally.
 
-If the validation step refuses the draft, discard it and re-enter Phase 4 with the refusal evidence — see [`fix-validation.md`](./fix-validation.md) Step 4.
+If a new locator does not resolve in either check, the diff is hallucinated.
+Discard it, attach the refusal evidence to the dossier, and re-enter Phase 4 with that evidence — see [`fix-validation.md`](./fix-validation.md) Step 4.
 Do not retry blindly with a different selector.
 
 ### Fix-pattern catalogue
@@ -162,7 +150,7 @@ Suggested next step: <concrete diagnostic, e.g. "re-run with --trace=on">.
 ### Editing rules
 
 1. **One test, one commit.** Each fix is a separate commit so Phase 6's local 3-pass gate and Phase 7's CI ratification can attribute regression risk per test.
-2. **Commit only after the selector-validity gate passes.** See [`fix-validation.md`](./fix-validation.md). A draft that fails the gate is discarded, not committed and "tested in CI".
+2. **Commit only after every new locator is verified.** See [`fix-validation.md`](./fix-validation.md). A draft with a hallucinated locator is discarded, not committed and "tested in CI".
 3. **Edit the test, not the framework.** Helpers in `tests/e2e/src/lib/` are fair game when the dossier shows the bug originates there.
 4. **No product-code edits without explicit user OK.** If the trace points to product code, write the proposed change to the report under `Recommendations` and stop — do not silently mutate `src/` or `components/`.
 5. **Mirror the repo style.** Read at least one neighbouring spec before editing — locator helpers, `expect.poll`, and assertion patterns vary across teams. Conformance matters more than novelty.
@@ -170,7 +158,7 @@ Suggested next step: <concrete diagnostic, e.g. "re-run with --trace=on">.
 
 ### Per-test commit message
 
-Commit message format records **both** confidence scores and the selector check — the gate's evidence travels with the commit so reviewers (and the Phase 7 CI verdict) can audit it.
+Commit message records the evidence and the selector check, so reviewers (and the Phase 7 CI verdict) can audit what was changed and why.
 
 ```text
 fix(e2e): <test.name>
@@ -178,19 +166,17 @@ fix(e2e): <test.name>
 Pattern: P<N> — <name>
 Span signature: failure_rate=<X>%, attempts=<N>, error=<class>
 Trace hotspot:  <action> dur=<ms> @ <file>:<line>
-Confidence (analysis): <score>%
-Confidence (code):     <score>%
-Selector check:        static=<verified|n/a> live=<verified|n/a>
+Selector check: static=<verified|n/a> live=<verified|n/a>
 
 <one-sentence reason>.
 ```
 
 ### Gate
 
-Phase 5 is complete when every promoted dossier has either:
+Phase 5 is complete when every dossier has either:
 
-- A locally-committed fix on the branch that passed the [`fix-validation.md`](./fix-validation.md) gate (Step 1 + Step 2 / Step 3), **or**
-- A `requires-human-judgment` entry in the report (gate refused twice, or Phase 4 confidence stuck below threshold), **or**
+- A locally-committed fix on the branch whose new locators all passed the [`fix-validation.md`](./fix-validation.md) check (static and / or live), **or**
+- A `requires-human-judgment` entry in the report (selector-existence check refused twice in a row, or the hypothesis remained `novel` and unmapped to a pattern), **or**
 - A `recommendation-only` entry citing product-code evidence.
 
 Move to [`local-iteration.md`](./local-iteration.md) Phase 6 for the local 3-consecutive-pass gate.
@@ -250,8 +236,8 @@ Each recommendation cites estimated `ms saved` based on measured trace data.
 
 Phase 4 + the optimize catalogue is complete when every queued test has:
 
-- A signed dossier with `Skill('confidence', 'analysis')` ≥ 90%, **or**
-- A demoted `requires-human-judgment` entry.
+- A dossier mapped to one of the optimize patterns (O1–O6), **or**
+- A `requires-human-judgment` entry (no pattern fits the trace evidence).
 
-Then jump straight to Phase 7 — the report.
-**Do not** edit, commit, push, or invoke Phase 6.
+Then jump straight to Phase 8 — the report.
+**Do not** edit, commit, push, or invoke Phases 5–7.

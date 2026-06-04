@@ -5,17 +5,17 @@ description: >
   loop, then ratifies with a single CI run. Pulls Dash0 spans
   (`git.pull_request_link`) as the historical baseline, then captures every
   iteration's evidence locally with `--trace=on` (same OTel exporter, same
-  trace schema). Double-gates each fix before commit — confidence ≥ 90 %
-  on the root cause AND on the diff — plus a static + live selector-
-  existence check that refuses hallucinated locators. Commits only after 3
-  consecutive local passes; pushes once and watches one CI run. Modes:
-  `stabilize` (default) heals flaky / failing tests; `optimize` is
-  report-only and ranks slow-action wins by measured ms saved. Refuses
-  `.skip`, `.fixme`, `waitForTimeout`, or any check-weakening edit. Use
-  when a PR has flaky or failing E2E tests or when you want to find slow
-  tests worth tightening. Triggers on "stabilize this PR", "fix flaky e2e",
-  "heal playwright on PR", "ui-e2e is failing", "self-heal e2e", "optimize
-  e2e", "/e2e-pr-stabilizer".
+  trace schema). Validation is empirical, not predictive: before commit,
+  every new locator must resolve against source (static grep) or the live
+  app (`locator.count()`); after commit, the fixed test must pass three
+  consecutive local runs before the single push. Modes: `stabilize`
+  (default) heals flaky / failing tests; `optimize` is report-only and
+  ranks slow-action wins by measured ms saved. Refuses `.skip`, `.fixme`,
+  `waitForTimeout`, or any check-weakening edit. Use when a PR has flaky
+  or failing E2E tests or when you want to find slow tests worth
+  tightening. Triggers on "stabilize this PR", "fix flaky e2e", "heal
+  playwright on PR", "ui-e2e is failing", "self-heal e2e", "optimize e2e",
+  "/e2e-pr-stabilizer".
 disable-model-invocation: true
 license: MIT
 argument-hint: '[stabilize|optimize] [pr-url|pr-number]'
@@ -56,8 +56,7 @@ This skill never proposes a fix without a measurement to point at, and never com
 | Source | Role |
 |--------|------|
 | [`playwright-test-healer`](../../../agents/playwright-test-healer.md) agent | Test-debugging methodology — how to fix a Playwright test correctly. |
-| [`/playwright-trace-analyzer`](../../analysis/playwright-trace-analyzer/SKILL.md) | Per-run `trace.zip` extraction, hotspot ranking, confidence-gated RCA. |
-| [`/confidence`](../../quality/confidence/SKILL.md) | Used **twice** per fix: once on the analysis (RCA), once on the code diff (selector-validity gate). |
+| [`/playwright-trace-analyzer`](../../analysis/playwright-trace-analyzer/SKILL.md) | Per-run `trace.zip` extraction, hotspot ranking. |
 | [`/ci-auto-fix`](../../delivery/ci-auto-fix/SKILL.md) | Reused only for Phase 7's single push + watch — the iteration loop no longer lives here. |
 | Dash0 MCP server (`dash0-dev` or `dash0-prod`) | Historical evidence — failure recurrence, retry counts, span-level evidence across CI runs. |
 | Local Playwright runner | Primary evidence source — trace.zip per run, OTel spans to Dash0 (`ci.is_ci=false`), and the live app for selector verification. |
@@ -104,8 +103,8 @@ Phases 5, 6, and 7 are skipped in `optimize` mode (the `Modes` column says so ex
 | 1 | Pull historical telemetry | both | [`rules/telemetry-driven-analysis.md`](./rules/telemetry-driven-analysis.md) | Dash0 spans for this PR fetched and grouped by test name; failure recurrence + retry counts measured (stabilize) **or** action `dur` distribution measured (optimize). |
 | 2 | Local reproduction + trace capture | both | [`rules/local-iteration.md`](./rules/local-iteration.md) | Each queued test run locally with `--trace=on`; trace.zip + (where available) fresh Dash0 spans tagged `ci.is_ci=false` captured. |
 | 3 | Correlate spans ↔ traces | both | [`rules/root-cause-and-fix.md`](./rules/root-cause-and-fix.md) | Each queued test has a span-side signature **and** a trace-side hotspot. |
-| 4 | Confidence-gated RCA | both | [`rules/root-cause-and-fix.md`](./rules/root-cause-and-fix.md) | `Skill('confidence', 'analysis')` ≥ 90 % for every candidate; otherwise dig deeper or hand back to the user. |
-| 5 | Draft fix + selector-validity gate | **stabilize only** | [`rules/root-cause-and-fix.md`](./rules/root-cause-and-fix.md), [`rules/fix-validation.md`](./rules/fix-validation.md), [`rules/guard-rails.md`](./rules/guard-rails.md) | Diff drafted; `Skill('confidence', 'code')` ≥ 90 % **and** every new locator proven to resolve against the source / live app. Below the gate → re-enter Phase 4 with the evidence, do not commit. |
+| 4 | Root-cause synthesis | both | [`rules/root-cause-and-fix.md`](./rules/root-cause-and-fix.md) | A single, evidence-anchored hypothesis per candidate, citing the span signature and the trace hotspot. Speculative hypotheses become `recommendation-only` entries, not fixes. |
+| 5 | Draft fix + selector-existence check | **stabilize only** | [`rules/root-cause-and-fix.md`](./rules/root-cause-and-fix.md), [`rules/fix-validation.md`](./rules/fix-validation.md), [`rules/guard-rails.md`](./rules/guard-rails.md) | Diff drafted; every new locator proven to resolve against source (static grep) **or** the live app (`locator.count() ≥ 1`). A locator that fails both checks is hallucinated — discard the diff and re-enter Phase 4 with that evidence. |
 | 6 | Local verification — 3 consecutive passes | **stabilize only** | [`rules/local-iteration.md`](./rules/local-iteration.md) | Fixed test runs locally ≥ 3 times with `--trace=on` and passes **3 times in a row**. A single failure or flake within the streak resets the counter. Maximum 10 attempts per test before escalating. |
 | 7 | CI ratification — one push, one watch | **stabilize only** | [`rules/verification-loop.md`](./rules/verification-loop.md) | All passing fixes committed and pushed in a single push event; the resulting CI run is watched to conclusion and its telemetry compared against the Phase 1 baseline. |
 | 8 | Report | both | [`templates/stabilization-report.md`](./templates/stabilization-report.md) | Stabilize: report with before / after numbers + local-pass log + CI verdict + residual risk. Optimize: recommendations-only report ranked by measured wall-clock impact. |
@@ -149,10 +148,9 @@ Do **not** re-implement.
    Spans tell you *which tests fail and how often across runs* (historical and local).
    Traces tell you *why one specific run failed*.
    A fix is only credible when both layers agree.
-4. **Two confidence gates per fix.**
-   `Skill('confidence', 'analysis')` ≥ 90 % on the root cause before drafting the diff.
-   `Skill('confidence', 'code')` ≥ 90 % on the diff before commit.
-   Two gates exist because a sound diagnosis can still produce a hallucinated selector — see [`rules/fix-validation.md`](./rules/fix-validation.md).
+4. **Validate empirically, not predictively.**
+   Confidence in a fix comes from running it, not from scoring it on paper.
+   The two gates the skill enforces are both deterministic: selectors must exist (verifiable against source or live app), and the fixed test must pass three consecutive local runs (verifiable from exit codes).
 5. **Selectors must exist before they are used.**
    Every new locator in a draft fix is verified against the component source (static) and, when ambiguous, the running app (live).
    The skill never commits a fix that names an element that does not exist.
@@ -200,8 +198,8 @@ Once invoked, the skill drives end-to-end:
 1. Resolves the mode and the PR.
 2. Queries the Dash0 MCP for E2E spans filtered to this PR (`git.pull_request_link`) — historical baseline.
 3. **Reproduces locally** with `--trace=on`, capturing trace.zip and (where the local OTel reporter is wired) fresh spans.
-4. Correlates and produces a confidence-gated finding set.
-5. **stabilize:** drafts each fix, runs the selector-validity gate (`Skill('confidence','code')` ≥ 90 % + selector exists), then commits locally.
+4. Correlates and produces an evidence-anchored finding set.
+5. **stabilize:** drafts each fix, verifies every new locator resolves against source or the live app, then commits locally.
 6. **stabilize:** runs the fixed test locally until it passes 3 times in a row (per fix).
 7. **stabilize:** pushes once; watches the CI run; compares fresh telemetry to baseline.
 8. Emits the report — stabilization (before / after + local-pass log + CI verdict) or optimization (recommendations).
@@ -215,12 +213,12 @@ Once invoked, the skill drives end-to-end:
 - [ ] Mode (`stabilize` | `optimize`) and PR target resolved and printed.
 - [ ] Historical telemetry pulled from the Dash0 MCP using the documented filter set, grouped by test name.
 - [ ] Each queued test reproduced locally with `--trace=on`; trace artifacts captured per run.
-- [ ] Each candidate has a span-side signature, a trace-side hotspot, and `Skill('confidence', 'analysis')` ≥ 90 %.
+- [ ] Each candidate has a span-side signature and a trace-side hotspot.
 - [ ] Report written using the template, with the mode stated and findings ranked by measured impact.
 
 ### `stabilize` only
 
-- [ ] Every applied fix passed the selector-validity gate (`Skill('confidence', 'code')` ≥ 90 % **and** new locators verified against source / live app).
+- [ ] Every new locator in every applied fix was verified against the component source or via a live `locator.count() ≥ 1` probe.
 - [ ] Every applied fix passed 3 consecutive local runs with `--trace=on` and no failures or flakes within the streak.
 - [ ] Fixes committed locally, pushed in one push, CI run watched to conclusion.
 - [ ] Fresh telemetry pulled and compared to baseline — failures eliminated, retry counts reduced.

@@ -167,7 +167,7 @@ node <skill_dir>/scripts/trace-summary.mjs <unpacked-trace-dir>
 ```
 
 Then map the failing action's `location.file:line` to the test file referenced by the span.
-The two should agree — if they do not, mark the dossier `evidence-disagrees` and demote confidence accordingly.
+The two should agree — if they do not, mark the dossier `evidence-disagrees` and either gather more evidence (re-run locally to capture a fresh trace) or downgrade to `recommendation-only` rather than committing a fix.
 
 ### Gate
 

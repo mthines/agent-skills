@@ -36,10 +36,8 @@ Every entry below is a hard refusal: the skill never emits these edits and never
 - Pushing a fix **without** re-pulling telemetry post-CI-run for the comparison against baseline.
 - Closing the loop based on a single passing local run — three consecutive passes is the gate, not one.
 - Closing the loop based on a single passing CI run when the baseline showed a < 100 % failure rate (a flake can pass once by chance).
-- Marking a fix `confident` when `Skill('confidence', 'analysis')` returned < 90 %.
-- Marking a fix shippable when `Skill('confidence', 'code')` returned < 90 % and the selector was not verified against source or live app — that is the failure mode this skill exists to prevent.
-- Committing a fix whose new locator(s) the static + live selector checks could not find.
-- Re-drafting a fix after a selector-validity refusal without re-entering Phase 4 — repeated drafts without a new diagnosis just hallucinate different selectors.
+- Committing a fix whose new locator(s) the static + live selector-existence checks could not find — see [`fix-validation.md`](./fix-validation.md).
+- Re-drafting a fix after a selector-existence refusal without re-entering Phase 4 — repeated drafts without a new diagnosis just hallucinate different selectors.
 - Editing product code (`src/`, `components/`, `apps/`) when the trace evidence points there — that becomes a recommendation, never an autonomous change.
 - Running parallel iterations — local Phase 6 runs are sequential per test; Phase 7 is a single push and watch.
 
