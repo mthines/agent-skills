@@ -20,6 +20,7 @@ This agent is **cross-review only**. For own-work review (own branch, own PR), u
 This agent's body is intentionally small. The pipeline lives in rule files:
 
 - `agents/shared/rules/rubric-composition.md` — load + dedupe + consolidate code-quality / ux / critical / lenses.
+- `agents/shared/rules/holistic-review.md` — default-on intent-match + system-fit pass via `Skill("holistic-analysis", "review")`.
 - `agents/shared/rules/finding-grounding.md` — grep claimed symbols; drop on miss.
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ 80.
 - `agents/shared/rules/comment-shape.md` — ≤ 240 chars, ≤ 2 sentences, no headings or bullets.
@@ -48,6 +49,7 @@ Detect from the raw arguments:
 | `--publish` | Authorization token (path 1 in `authorization-gate.md`) |
 | `--critical` | Force adversarial pre-mortem via `Skill("critical", "code")` |
 | `--no-critical` | Suppress auto-engage of `critical` |
+| `--no-holistic` | Skip the default-on holistic review step (Step 2.4) |
 | `--with a,b,c` | Up to 3 additional review lenses |
 
 Parse the PR reference:
@@ -150,11 +152,47 @@ Run the pipeline as defined in `agents/shared/rules/rubric-composition.md`:
 4. Load `--with` lenses (max 3).
 5. Walk each rubric against the diff. Each rubric emits raw findings.
 
-Findings are merged in load order, then passed through the gates below in strict left-to-right order. Each gate is a drop point; no retries.
+After rubric findings are collected, the pipeline runs through these gates in strict order. Each gate is a drop point; no retries.
+
+```
+rubrics produce raw findings
+  → 2.4 holistic-review.md         (Skill("holistic-analysis", "review") — default on)
+  → 2.5 rubric-composition § Consolidation (dedupe + per-file cap 5 + total cap 20)
+  → 2.6 finding-grounding.md       (every backticked symbol grep-resolves)
+  → 2.7 per-comment-confidence.md  (Skill("confidence", "code") ≥ 80)
+  → 2.8 comment-shape.md           (≤ 240 chars, ≤ 2 sentences, no structure)
+  → 2.9 conventional-comments.md   (prefix + decoration)
+```
+
+### 2.4 Holistic review (default ON)
+
+See `agents/shared/rules/holistic-review.md`. Runs after rubric composition and before dedupe so holistic findings can collide-and-win against line-level findings on the same `(file, line)`.
+
+Catches the two classes the line-level rubrics cannot see — intent mismatch and system fit.
+
+Skip when `--no-holistic` was passed in Step 0 OR when the trivial-skip heuristic fires (whitespace-only, dependency bumps, test-only changes, < 10 lines and no high-stakes path). Otherwise invoke:
+
+```
+Skill("holistic-analysis", "review")
+  intent_summary: <from Step 1.3>
+  diff: <full unified diff>
+  changed_files: <derived from /tmp/pr-files.json>
+  caller: "pr-reviewer"
+```
+
+The skill returns 0–3 structured findings. Map each to a Conventional-Comments category per the table in `holistic-review.md`:
+
+- `intent-mismatch` → `issue` (blocker)
+- `system-fit` (any severity) → **`question`** — cross-review respects the asymmetry where the agent has less context than the PR author
+- `scope-creep` → `question`
+
+Mapped findings feed into the same finding stream as the rubric output, then pass through 2.5 (dedupe + consolidate) and the rest of the downstream gates.
 
 ### 2.5 Dedupe + consolidate
 
 See `agents/shared/rules/rubric-composition.md § Consolidation`. Per-file cap **5**; total cap **20**; priority-sorted (`issue > suggestion > question > nitpick > praise`).
+
+Holistic findings (from Step 2.4) participate in dedupe: when a holistic finding and a line-level finding collide on the same `(file, line)`, the holistic claim wins (broader context).
 
 ### 2.6 Finding grounding
 

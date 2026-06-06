@@ -49,7 +49,8 @@ The companion agent `reviewer` handles own-work (Fix Mode, Report Mode, Self-Rev
 | 1.5 | Pre-existing-issue separation | [pr-reviewer.md § Step 1.5](../pr-reviewer.md) | Context-line findings tagged `[pre-existing]`; excluded from verdict |
 | 1.6 | Lens loading | [shared/rules/rubric-composition.md](../../shared/rules/rubric-composition.md), [review-lens-contract.md](../../../skills/authoring/create-skill/rules/review-lens-contract.md) | Max 3 lenses; `lens-version: 1`; dedupe against auto-loaded |
 | 2 | Review (multi-rubric) | [shared/rules/rubric-composition.md](../../shared/rules/rubric-composition.md) | `code-quality` always; `ux` on UI globs; `critical` on auto-engage / `--critical`; lenses |
-| 2.5 | Dedupe + consolidate | [shared/rules/rubric-composition.md § Consolidation](../../shared/rules/rubric-composition.md) | Per-file cap 5; total cap 20; priority-sorted |
+| 2.4 | Holistic review (default ON) | [shared/rules/holistic-review.md](../../shared/rules/holistic-review.md), `Skill("holistic-analysis", "review")` | Runs unless `--no-holistic` OR trivial-skip; emits 0–3 findings mapped to `issue` (intent-mismatch) / `question` (system-fit, scope-creep) |
+| 2.5 | Dedupe + consolidate | [shared/rules/rubric-composition.md § Consolidation](../../shared/rules/rubric-composition.md) | Per-file cap 5; total cap 20; priority-sorted; holistic claim wins on `(file, line)` collision |
 | 2.6 | Finding grounding | [shared/rules/finding-grounding.md](../../shared/rules/finding-grounding.md) | Every backticked symbol grep-confirmed in changed file |
 | 2.7 | Per-comment confidence | [shared/rules/per-comment-confidence.md](../../shared/rules/per-comment-confidence.md) | `Skill("confidence", "code")` ≥ 80; min(accurate, actionable, helpful) |
 | 2.8 | Comment shape | [shared/rules/comment-shape.md](../../shared/rules/comment-shape.md) | ≤ 240 chars, ≤ 2 sentences, no headings, no bullets |
@@ -76,7 +77,8 @@ There is no Auto-Fix phase. There is no Self-Review phase. Both belong to `revie
 | 1.5 | Context-line tagging via diff prefix inspection | Finding on a moved line counted as new when same logic existed on deleted line |
 | 1.6 | Max 3, lens-version validation, dedupe, applies-to glob | Lens > 80 lines warned but loaded; missing `lens.md` silently skipped |
 | 2 | Skill loading order; auto-engage heuristics for `critical` | Auto-engage regex misses `prisma/migrations`; UX heuristic misses Svelte 5 `.svelte.ts` |
-| 2.5 | Per-file cap 5, total cap 20, priority-sorted | LLM dedupes inline despite the rule; cap drops not surfaced |
+| 2.4 | Default-on holistic call; trivial-skip heuristic (whitespace / dep-bumps / test-only / < 10 lines + no high-stakes); 3-finding cap; pr-reviewer maps `system-fit` to `question` | Holistic skipped on a non-trivial diff that the heuristic incorrectly marked trivial; holistic finding overrides a line-level finding on the same `(file, line)` when the line-level was actually correct; framing leaks: `system-fit` posted as `issue` instead of `question` |
+| 2.5 | Per-file cap 5, total cap 20, priority-sorted; holistic claim wins on collision | LLM dedupes inline despite the rule; cap drops not surfaced; holistic-vs-line-level collision resolved wrongly |
 | 2.6 | Backticked-token grep, allowlist for keywords / built-ins | Hallucinated multi-word phrase passes (not backticked); allowlist over-eager |
 | 2.7 | `Skill("confidence", "code")` ≥ 80; min of 3 sub-scores | Confidence skill not yet wired for per-comment input shape |
 | 2.8 | Mechanical pre-emit: length, sentences, structure | Trim heuristic breaks the comment's point; drop reported but easy to miss |
@@ -100,6 +102,8 @@ The matrix is not exhaustive — when a real failure exposes a guard not listed 
 | `F-comment-unfounded` | Comment correctness | Body names a backticked symbol absent from the changed file | 2.6 |
 | `F-confidence-self-graded` | Scoring loop | Per-comment confidence assigned by LLM directly rather than via `Skill("confidence", "code")` | 2.7 |
 | `F-rubric-uncoordinated` | Multi-rubric collision | Two rubrics produce conflicting fixes on the same line; no consolidation step ran | 2.5 |
+| `F-holistic-skipped-on-non-trivial` | Default-on bypass | Holistic review skipped on a non-trivial diff (false-positive trivial-skip heuristic, or unannounced `--no-holistic`) | 2.4 |
+| `F-system-fit-framed-as-issue` | Cross-review framing | `pr-reviewer` posted a `system-fit` finding as `issue:` instead of `question:` — violates the cross-review framing rule | 2.4 → 2.9 |
 | `F-self-pr-routed-to-cross-reviewer` | Wrong-agent | `pr-reviewer` invoked on user's own PR; should have refused | 0.5 |
 | `F-event-fallback` | Anti-pattern fallback | On API failure, agent sends `event: COMMENT` or any submitting event | 5 |
 | `F-line-out-of-hunk` | Diff geometry | Proposed `(file, line)` falls outside any RIGHT-side hunk; payload rejected entirely | 3.5 |
@@ -131,6 +135,8 @@ The diagnoser must not propose to relax any of these without explicit user confi
 - **Maximum 3 lenses per `--with` invocation.**
 - **Pre-existing issues do not count toward the verdict.**
 - **Every backticked symbol in a comment body MUST grep-resolve against the changed file.** `finding-grounding.md` is the load-bearing false-positive control.
+- **Holistic review is default ON.** Skipping requires either `--no-holistic` (announced in the run line) or a trivial-skip condition (whitespace / dep-bumps / test-only / < 10 lines + no high-stakes path). Silent skip on a non-trivial diff is a guard failure.
+- **`system-fit` findings in `pr-reviewer` MUST be framed as `question:`, not `issue:`.** The cross-review agent has less context than the PR author; the framing asymmetry is non-negotiable. `intent-mismatch` remains `issue:` because by definition the diff does not do what the PR claims.
 
 ---
 

@@ -51,7 +51,8 @@ The companion agent `pr-reviewer` handles cross-review on someone else's PR; its
 | 1.5 | Pre-existing-issue separation | [reviewer.md § Step 1.5](../reviewer.md) | Context-line findings tagged `[pre-existing]`; excluded from verdict |
 | 1.6 | Lens loading | [shared/rules/rubric-composition.md](../../shared/rules/rubric-composition.md) | Max 3 lenses; `lens-version: 1`; dedupe |
 | 2 | Review (multi-rubric) | [shared/rules/rubric-composition.md](../../shared/rules/rubric-composition.md) | `code-quality` always; `ux` on UI globs; `critical` on auto-engage / `--critical`; lenses |
-| 2.5 | Dedupe + consolidate | [shared/rules/rubric-composition.md § Consolidation](../../shared/rules/rubric-composition.md) | Per-file cap 10; no total cap |
+| 2.4 | Holistic review (default ON) | [shared/rules/holistic-review.md](../../shared/rules/holistic-review.md), `Skill("holistic-analysis", "review")` | Runs unless `--no-holistic` OR trivial-skip; emits 0–3 findings mapped to `issue` / `suggestion` / `nitpick` (reviewer asserts; cross-review questions) |
+| 2.5 | Dedupe + consolidate | [shared/rules/rubric-composition.md § Consolidation](../../shared/rules/rubric-composition.md) | Per-file cap 10; no total cap; holistic claim wins on `(file, line)` collision |
 | 2.6 | Finding grounding | [shared/rules/finding-grounding.md](../../shared/rules/finding-grounding.md) | Backticked symbols grep-confirmed in changed file |
 | 2.7 | Per-comment confidence | [shared/rules/per-comment-confidence.md](../../shared/rules/per-comment-confidence.md) | `Skill("confidence", "code")` ≥ 80 |
 | 2.8 | Comment shape | [shared/rules/comment-shape.md](../../shared/rules/comment-shape.md) | ≤ 240 chars, ≤ 2 sentences, no structure |
@@ -83,7 +84,8 @@ A PR reference + cross-author triggers redirect to `pr-reviewer` at Step 0.6; th
 | 1.5 | Diff prefix inspection (` ` = context, `+` = added, `-` = deleted) | Finding on moved line counted as new |
 | 1.6 | Max 3, lens-version, dedupe, applies-to glob | Lens > 80 lines warned but loaded |
 | 2 | Skill load order; auto-engage heuristics for `critical` | Auto-engage regex doesn't match `prisma/migrations` |
-| 2.5 | Per-file cap 10; priority-sorted | LLM dedupes inline despite the rule; cap drops not surfaced |
+| 2.4 | Default-on holistic call; trivial-skip heuristic (whitespace / dep-bumps / test-only / < 10 lines + no high-stakes); 3-finding cap; reviewer maps `system-fit` (major) → `issue`, `system-fit` (minor) → `suggestion` | Holistic skipped on a non-trivial diff that the heuristic incorrectly marked trivial; holistic finding overrides a line-level finding on the same `(file, line)` when the line-level was actually correct |
+| 2.5 | Per-file cap 10; priority-sorted; holistic claim wins on collision | LLM dedupes inline despite the rule; cap drops not surfaced; holistic-vs-line-level collision resolved wrongly |
 | 2.6 | Backticked-token grep + allowlist | Hallucinated multi-word phrase passes (not backticked) |
 | 2.7 | `Skill("confidence", "code")` ≥ 80; min of 3 sub-scores | Confidence skill input shape not yet finalized |
 | 2.8 | Mechanical pre-emit: length, sentences, structure | Trim heuristic breaks the comment's point |
@@ -106,6 +108,7 @@ A PR reference + cross-author triggers redirect to `pr-reviewer` at Step 0.6; th
 | `F-comment-unfounded` | Comment correctness | Card body names a backticked symbol absent from changed file | 2.6 |
 | `F-confidence-self-graded` | Scoring loop | Per-comment confidence assigned by LLM directly | 2.7 |
 | `F-rubric-uncoordinated` | Multi-rubric collision | Conflicting fixes on same line; consolidation step did not run | 2.5 |
+| `F-holistic-skipped-on-non-trivial` | Default-on bypass | Holistic review skipped on a non-trivial diff (false-positive trivial-skip heuristic, or unannounced `--no-holistic`) | 2.4 |
 | `F-novel` | Novel mode | Does not match any existing row | — |
 
 The taxonomy is **append-only**. New classes are added after confidence-gated diagnoses surface them.
@@ -126,6 +129,7 @@ The taxonomy is **append-only**. New classes are added after confidence-gated di
 - **Maximum 3 lenses per `--with` invocation.**
 - **Pre-existing issues do not count toward the verdict.**
 - **Auto-fix regressions revert the auto-fix.** Never leave the working tree in a broken state.
+- **Holistic review is default ON.** Skipping requires either `--no-holistic` (announced in the run line) or a trivial-skip condition (whitespace / dep-bumps / test-only / < 10 lines + no high-stakes path). Silent skip on a non-trivial diff is a guard failure.
 
 ---
 

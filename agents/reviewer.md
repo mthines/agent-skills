@@ -20,6 +20,7 @@ This agent **never writes to GitHub**. If invoked on a PR authored by someone el
 The pipeline lives in rule files; the body is intentionally small. Read each rule once at the step that owns it.
 
 - `agents/shared/rules/rubric-composition.md` — load + dedupe + consolidate code-quality / ux / critical / lenses.
+- `agents/shared/rules/holistic-review.md` — default-on intent-match + system-fit pass via `Skill("holistic-analysis", "review")`.
 - `agents/shared/rules/finding-grounding.md` — grep claimed symbols; drop on miss.
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ 80.
 - `agents/shared/rules/comment-shape.md` — ≤ 240 chars, ≤ 2 sentences, no headings or bullets.
@@ -40,6 +41,7 @@ Examine the **raw arguments** verbatim. Do not paraphrase. Detect:
 | `--report` | Force Report Mode — no auto-fix |
 | `--critical` | Force adversarial pre-mortem via `Skill("critical", "code")` |
 | `--no-critical` | Suppress auto-engage of `critical` |
+| `--no-holistic` | Skip the default-on holistic review step (Step 2.4) |
 | `--with a,b,c` | Up to 3 additional review lenses |
 | PR URL or `#<n>` | Treat as a PR reference; route through Step 0.6 |
 
@@ -143,17 +145,54 @@ See `agents/shared/rules/rubric-composition.md` for the lens-loading contract.
 
 ## Step 2: Review
 
-Run the full shared pipeline:
+Run the full shared pipeline. Each gate is hard; no retries; drop is final within a run.
 
-1. Load rubrics in order (`agents/shared/rules/rubric-composition.md`): `code-quality` → `ux` → `critical` → lenses.
-2. Walk each rubric against the diff; collect raw findings.
-3. Dedupe + consolidate (per-file cap 10; priority-sorted).
-4. Run `finding-grounding.md` — drop comments naming unfounded symbols.
-5. Run `per-comment-confidence.md` — drop comments with `Skill("confidence", "code")` < 80.
-6. Run `comment-shape.md` — drop / trim comments violating the shape caps.
-7. Run `conventional-comments.md` — prepend prefix; append decoration.
+```
+rubrics produce raw findings
+  → 2.4 holistic-review.md         (Skill("holistic-analysis", "review") — default on)
+  → 2.5 rubric-composition § Consolidation (dedupe + per-file cap 10)
+  → 2.6 finding-grounding.md       (every backticked symbol grep-resolves)
+  → 2.7 per-comment-confidence.md  (Skill("confidence", "code") ≥ 80)
+  → 2.8 comment-shape.md           (≤ 240 chars, ≤ 2 sentences, no structure)
+  → 2.9 conventional-comments.md   (prefix + decoration)
+```
 
-Each gate is hard. No retries. Drop is final within a run.
+### 2.0 Load rubrics
+
+In order (`agents/shared/rules/rubric-composition.md`): `code-quality` → `ux` → `critical` → lenses.
+
+### 2.1 Walk rubrics against the diff
+
+Each rubric emits raw findings.
+
+### 2.4 Holistic review (default ON)
+
+See `agents/shared/rules/holistic-review.md`. Runs after rubric findings are collected and before dedupe so holistic findings can collide-and-win against line-level findings on the same `(file, line)`.
+
+Catches what the line-level rubrics cannot see — intent mismatch and system fit (a function change that looks clean in isolation but is wrong given how the changed code is used in the wider system).
+
+Skip when `--no-holistic` was passed in Step 0 OR when the trivial-skip heuristic fires (whitespace-only, dependency bumps, test-only changes, < 10 lines and no high-stakes path). Otherwise invoke:
+
+```
+Skill("holistic-analysis", "review")
+  intent_summary: <from Step 1.3>
+  diff: <full unified diff>
+  changed_files: <derived from git diff or /tmp/pr-files.json>
+  caller: "reviewer"
+```
+
+The skill returns 0–3 structured findings. In `reviewer` (own work, you are the author), map to:
+
+- `intent-mismatch` → `issue` (blocker)
+- `system-fit` (major severity) → `issue` (blocker)
+- `system-fit` (minor severity) → `suggestion`
+- `scope-creep` → `nitpick`
+
+Holistic findings flow through 2.5–2.9 like any other rubric output.
+
+### Remaining gates
+
+2.5 dedupe → 2.6 grounding → 2.7 confidence → 2.8 shape → 2.9 Conventional Comments. See the linked shared rules.
 
 ---
 
