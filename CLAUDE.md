@@ -85,7 +85,8 @@ Type markers: `auto` = model-invokable via `Skill()`; `/` = slash command only; 
 
 ### Agents
 
-- `reviewer` — code reviewer with auto-fix / report / PR-comment modes. `--with <skill>` adds review lenses (`ai-engineering`, `animations`, `charting`, `dx`, `holistic-analysis`, `ux`)
+- `reviewer` — own-work code reviewer (own branch or own PR). Three sub-modes: Fix (auto-fix simple + plan complex), Report (`--report`, propose only), Self-Review (own PR, auto-fix + inline terminal report). Never writes to GitHub — redirects to `pr-reviewer` on a cross-author PR. Imports shared rules under `agents/shared/rules/`
+- `pr-reviewer` — cross-review reviewer for someone else's PR. Authors short, grounded, confidence-gated inline comments and (with `--publish` or an explicit authorization phrase) posts them as a PENDING review invisible to the author until you submit from the GitHub UI. Refuses on your own PR (points to `reviewer`). Imports shared rules under `agents/shared/rules/`; owns auth gate + posting mechanics + line validity under `agents/pr-reviewer/rules/`
 - `linear-ticket-investigator` — reads a Linear ticket, returns Evidence Record for `/fix-bug` Phase 2. No analysis / fix / confidence (those live in `/fix-bug`)
 - `bug-fix-verifier` — independent verifier for `/fix-bug` PRs. FAIL_TO_PASS, PASS_TO_PASS, diff sanity, repro integrity. Only agent allowed to undraft
 - `feature-pr-verifier` — feature-PR counterpart for `/autonomous-workflow` Full Mode. Acceptance criteria, pass-to-pass, diff sanity, walkthrough integrity

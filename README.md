@@ -183,7 +183,8 @@ Agents are specialized sub-processes with their own model and tool configuration
 
 | Agent | What it does |
 |-------|--------------|
-| **[reviewer](./agents/reviewer.md)** | Code reviewer with three modes: `fix` (auto-fix), `report` (findings only), `comments` (PR review comments). Orthogonal `--with <skill>` flag loads up to 3 additional review lenses (`ai-engineering`, `animations`, `charting`, `dx`, `holistic-analysis`, `ux`). |
+| **[reviewer](./agents/reviewer.md)** | Own-work code reviewer (own branch or own PR). Three sub-modes: Fix (auto-fix simple + plan complex), Report (`--report`, propose only), Self-Review (own PR, auto-fix + inline terminal report). Never writes to GitHub — redirects to `pr-reviewer` on a cross-author PR. Orthogonal `--with <skill>` loads up to 3 additional lenses. |
+| **[pr-reviewer](./agents/pr-reviewer.md)** | Cross-review reviewer for someone else's PR. Authors short, grounded, confidence-gated inline comments (≤ 240 chars, ≤ 2 sentences, `Skill("confidence")` ≥ 80) and (with `--publish` or an explicit authorization phrase) posts them as a PENDING review invisible to the author until you submit from the GitHub UI. Refuses on your own PR (points to `reviewer`). |
 | **[linear-ticket-investigator](./agents/linear-ticket-investigator.md)** | Reads a Linear ticket, returns an Evidence Record matching `/fix-bug` Phase 2. Customizable via a per-project [domain navigator](#linear-ticket-investigator-per-project-plug-in). |
 | **[bug-fix-verifier](./agents/bug-fix-verifier.md)** | Independent fresh-context verifier for `/fix-bug` PRs. Runs FAIL_TO_PASS, PASS_TO_PASS, diff sanity, repro integrity. Only agent allowed to undraft. |
 | **[feature-pr-verifier](./agents/feature-pr-verifier.md)** | Feature-PR counterpart to `bug-fix-verifier`. Verifies acceptance criteria, pass-to-pass, walkthrough integrity for `autonomous-workflow` Full Mode. |
@@ -361,7 +362,7 @@ Default scan paths are `.agent/` and `.gw/`. Configure via `agentTasks.directori
 
 ```
 skills/                   39 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
-agents/                   4 agents (reviewer, linear-ticket-investigator, bug-fix-verifier, feature-pr-verifier)
+agents/                   5 agents (reviewer, pr-reviewer, linear-ticket-investigator, bug-fix-verifier, feature-pr-verifier)
 plugins/                  1 Claude Code plugin (agent-tasks-hooks)
 packages/                 VS Code extension (vscode-agent-tasks)
 .claude-plugin/           marketplace.json — plugin distribution manifest
