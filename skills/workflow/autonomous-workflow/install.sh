@@ -10,12 +10,15 @@
 #   Project:       ./.agents/skills/autonomous-workflow/
 #   Development:   <this clone>/skills/autonomous-workflow/
 #
-# It then symlinks two agent definitions and the routing rule into the
-# matching `.claude/` directory so Claude Code picks them up. Both agents
+# It then symlinks the agent definitions and the routing rule into the
+# matching `.claude/` directory so Claude Code picks them up. All agents
 # use the `aw-` namespace prefix (short for "autonomous-workflow") so they
 # group together in `.claude/agents/` and stay distinct from unrelated
 # agents:
 #
+#   • aw           — opt-in dispatcher: detects tier (Micro/Lite/Full),
+#                   routes single-pass vs planner/executor split, and owns
+#                   the self-improvement lessons loop for every tier.
 #   • aw-planner   — phases 0-2 (validation, planning,
 #                   worktree + plan.md generation).
 #                   Terminal artifact: .agent/{branch}/plan.md,
@@ -138,6 +141,7 @@ template_required() {
   fi
 }
 
+template_required "dispatcher.template.md"
 template_required "planner.template.md"
 template_required "executor.template.md"
 template_required "routing-rule.template.md"
@@ -182,8 +186,11 @@ for legacy in "autonomous-planner.md:planner.template.md" \
   fi
 done
 
-# Link the two agent definitions under the `aw-` namespace
+# Link the agent definitions under the `aw-` namespace
 # (short for "autonomous-workflow").
+ln -sf "$SKILL_DIR/templates/dispatcher.template.md" "$CLAUDE_DIR/agents/aw.md"
+echo "✓ Dispatcher:     $CLAUDE_DIR/agents/aw.md (opt-in entry point; tier routing + self-improvement loop)"
+
 ln -sf "$SKILL_DIR/templates/planner.template.md" "$CLAUDE_DIR/agents/aw-planner.md"
 echo "✓ Planner agent:  $CLAUDE_DIR/agents/aw-planner.md"
 
@@ -202,10 +209,11 @@ fi
 echo ""
 echo "done. autonomous-workflow is ready ($MODE mode)."
 echo ""
-echo "two agents installed (aw- = autonomous-workflow namespace):"
-echo "  • aw-planner   — phases 0-2, produces .agent/{branch}/plan.md"
-echo "  • aw-executor  — phases 3-7, produces walkthrough.md + draft PR"
-echo "  Handoff via plan.md, gated on confidence(plan) ≥ 90%."
+echo "three agents installed (aw- = autonomous-workflow namespace):"
+echo "  • aw           — opt-in dispatcher; detects tier (Micro/Lite/Full) + owns the lessons loop"
+echo "  • aw-planner   — phases 0-2, produces .agent/{branch}/plan.md (Full tier)"
+echo "  • aw-executor  — phases 3-7, produces walkthrough.md + draft PR (Full tier)"
+echo "  Micro/Lite run single-pass via aw; Full hands off planner → executor (gated on confidence(plan) ≥ 90%)."
 echo "  See: skills/workflow/autonomous-workflow/rules/planner-executor-handoff.md"
 
 if [[ "$MODE" == "development" ]]; then

@@ -138,23 +138,27 @@ that only fires when complexity is low.
 
 | # | Question                                                                                  | If yes →     | If no →     |
 | - | ----------------------------------------------------------------------------------------- | ------------ | ----------- |
-| 1 | Is this task architectural / cross-cutting / does it require significant design decisions? | **Full Mode** | go to next  |
-| 2 | Does the task involve unfamiliar code or domains the agent hasn't worked in before?       | **Full Mode** | go to next  |
-| 3 | Is the change touching 4+ files OR 2+ packages?                                           | **Full Mode** | **Lite Mode** |
+| 1 | Is this task architectural / cross-cutting / does it require significant design decisions? | **Full**     | go to next  |
+| 2 | Does the task involve unfamiliar code or domains the agent hasn't worked in before?       | **Full**     | go to next  |
+| 3 | Is the change touching 4+ files OR 2+ packages?                                           | **Full**     | go to next  |
+| 4 | Is the change 2–3 files, OR any non-trivial logic change?                                 | **Lite**     | **Micro**   |
 
-| Mode     | Artifacts |
-| -------- | --------- |
-| **Full** | Required  |
-| **Lite** | None      |
+| Tier     | Artifacts | Planning             |
+| -------- | --------- | -------------------- |
+| **Full** | Required  | planner → `plan.md`  |
+| **Lite** | None      | brief mental plan    |
+| **Micro**| None      | none (1-file mechanical: typo / copy / version-or-config bump) |
 
-**When in doubt, choose Full.** Output exactly:
+**Micro** runs the Lite phase path with planning and quality companions skipped.
+**Phase 0 and Phase 2 stay mandatory in every tier.** When in doubt, choose the
+heavier tier. Output exactly:
 
 ```
 MODE SELECTION:
-- Mode: [Full | Lite]
+- Tier: [Micro | Lite | Full]
 - Reasoning: [why]
 - Estimated files: [number]
-- Complexity: [simple | moderate | architectural]
+- Complexity: [trivial | simple | moderate | architectural]
 ```
 
 > **Do NOT create artifact files in Phase 0.** Artifacts (`plan.md`,
@@ -209,7 +213,7 @@ Before leaving Phase 0:
 - [ ] Acceptance criteria defined
 - [ ] Technical approach validated
 - [ ] User gave explicit "proceed" signal
-- [ ] **MODE SELECTION block emitted (Full or Lite)**
+- [ ] **MODE SELECTION block emitted (Micro, Lite, or Full)**
 - [ ] Branch name decided (artifact creation deferred to Phase 2)
 
 **If any checkbox is unchecked, DO NOT proceed to Phase 1.**

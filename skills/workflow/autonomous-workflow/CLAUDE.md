@@ -100,6 +100,7 @@ skills/workflow/autonomous-workflow/
 │   ├── self-improvement-loop.md # Episodic-lessons fast tier (persistent-memory aw-lessons) + promotion to diagnose. Read Phase 1; write Phase 4/7.
 │   └── _template.md            # Boilerplate for new rule files.
 ├── templates/
+│   ├── dispatcher.template.md  # aw dispatcher agent (opt-in entry; tier routing + universal loop). Linked by install.sh as aw.md.
 │   ├── planner.template.md     # aw-planner agent (phases 0-2). Linked by install.sh as aw-planner.md.
 │   ├── executor.template.md    # aw-executor agent (phases 3-7). Linked by install.sh as aw-executor.md.
 │   ├── agent.template.md       # DEPRECATED — kept for backward compat only. Not linked.
@@ -288,18 +289,27 @@ instructions.
 
 ---
 
-## Mode detection (Full vs. Lite)
+## Tier detection (Micro / Lite / Full) and the `aw` dispatcher
 
-Every task starts with mode detection. The decision changes which artifacts
-are produced and which companions run.
+Every task starts with tier detection. The decision changes which artifacts are
+produced, which companions run, and whether the planner→executor split is used.
 
-| Mode     | Criteria                              | Artifacts | Companions                                   |
-| -------- | ------------------------------------- | --------- | -------------------------------------------- |
-| **Full** | 4+ files OR complex / architectural   | Required  | All applicable                               |
-| **Lite** | 1-3 files AND simple / straightforward| None      | Phase 0, Phase 2, Phase 5 documentation update, Phase 6 create-pr only |
+| Tier      | Criteria                                      | Artifacts | Who runs it             | Companions                                   |
+| --------- | --------------------------------------------- | --------- | ----------------------- | -------------------------------------------- |
+| **Full**  | 4+ files OR complex / architectural / unfamiliar | Required  | planner → executor (split) | All applicable                            |
+| **Lite**  | 2–3 files AND simple                          | None      | single-pass             | Phase 0/2, Phase 5 docs, Phase 6 create-pr   |
+| **Micro** | 1 file, purely mechanical (typo/copy/bump)    | None      | single-pass             | none (docs only if drift)                    |
 
-When in doubt, choose Full. Lite is for genuinely small changes — not for
-"the user said it's small."
+When in doubt, choose the heavier tier. Micro/Lite are for genuinely small
+changes — not for "the user said it's small." **Phase 0 and Phase 2 are
+mandatory in every tier**, Micro included.
+
+The **`aw` dispatcher** (`templates/dispatcher.template.md`) is the opt-in,
+single entry point that owns this decision: it reads `aw-lessons`, detects the
+tier, and routes (single-pass for Micro/Lite, the split for Full). It replaced
+the old "routing rule dispatches the planner first" behavior, which sent Lite
+tasks — that have no `plan.md` — to the planner anyway. See the design-intent
+section below.
 
 Phase 0 and Phase 2 are mandatory regardless of mode. Phase 5
 `documentation update` runs in both modes (the self-improving doc loop is
@@ -364,6 +374,10 @@ When editing this skill, do not break these — they're load-bearing:
   `lint`, `build`, and `test` commands are forbidden inside sub-agents and
   reserved for orchestrator-only boundaries (Phase 4 Step 6, Phase 6 pre-PR).
   See [`rules/parallel-coordination.md#sub-agent-resource-discipline`](./rules/parallel-coordination.md#sub-agent-resource-discipline).
+- **`aw` is a thin, opt-in router.** It detects the tier and routes (single-pass
+  for Micro/Lite, planner→executor for Full) and owns the universal lessons loop.
+  It must not accrue domain knowledge, must not force Full on light tasks, and
+  must not silently wrap casual edits. The planner/executor split is Full-only.
 - **Episodic lessons are advisory-only.** An `aw-lessons` lesson biases the plan
   but never silently changes a gate, skips a phase, or alters a cap. The only
   path from a lesson to changed behavior is a confidence-gated, user-approved
@@ -447,6 +461,45 @@ discipline that governs every other companion.
 
 ---
 
+## Adaptive dispatch (the `aw` agent) — design intent
+
+v3.11 added a third agent, **`aw`** — a thin, opt-in dispatcher — to resolve two
+tensions at once:
+
+1. **One entry point, but not always-heavy.** Developers wanted a single thing
+   to invoke. But "always run the planner/executor" is the wrong answer: the
+   research is explicit that *always-planning wastes compute and degrades
+   long-horizon performance* (Learning When to Plan, arXiv 2509.03581), and
+   single-threaded continuity beats the multi-agent handoff for simple/sequential
+   work (Cognition's context-engineering argument; single-agent ≥ multi-agent
+   under equal token budgets). So `aw` is **adaptive**: it detects the tier and
+   only pays the planner→executor handoff cost on **Full**, where context
+   isolation + a resumable `plan.md` actually earn it.
+2. **Universal self-improvement without universal planning.** The fast-tier
+   lessons loop only helped tasks that ran the planner/executor phases. Hoisting
+   the loop's intake-read and exit-write to the dispatcher makes **every tier**
+   contribute and benefit — even a Micro typo fix — which is the actual goal
+   ("more stable agents after more runs"). Planning depth and learning coverage
+   are now decoupled.
+
+Design rules that keep this from rotting:
+
+- **`aw` stays thin.** It routes and owns the loop. It must not accrue
+  planning/coding domain knowledge — that lives in the skill, companions, and
+  the planner/executor. If the dispatcher template grows past ~200 lines of
+  system prompt, it is drifting toward a god-agent (`create-skill` anti-pattern
+  S1).
+- **Opt-in, not a wrapper.** `aw` runs because the user phrased autonomous work
+  or invoked `@aw`. It must not intercept casual single-file edits, questions,
+  or interactive coding. The routing rule's exclusion list enforces this.
+- **The split is Full-only.** Do not collapse planner+executor into `aw` for
+  Full (loses the documented context-isolation win), and do not route Micro/Lite
+  through the split (pure handoff overhead). The two specialist agents remain
+  the Full-tier realization; `aw` is the router + Micro/Lite single-pass runner.
+- **Micro reuses the Lite phase path.** Micro is a routing tier, not a fourth
+  set of phase rules — it follows Lite's phase behavior with planning and quality
+  companions skipped. This keeps the phase rules from needing a third column.
+
 ## Confidence-gated autonomous action — design intent
 
 The pattern v3.6 established remains: **autonomous actions that change code
@@ -495,12 +548,14 @@ autonomy and going rogue.
 
 ### Editing the agent templates
 
-`planner.template.md` and `executor.template.md` are what get symlinked into
-`~/.claude/agents/` as `aw-planner.md` and `aw-executor.md` by `install.sh`
-(the `aw-` prefix is the autonomous-workflow namespace — keeps these two
-agents grouped together and unmistakable when listed alongside unrelated
-agents). Keep both lean — they should reference `SKILL.md` and
-`rules/companion-skills.md` rather than duplicate their content.
+`dispatcher.template.md`, `planner.template.md`, and `executor.template.md` are
+what get symlinked into `~/.claude/agents/` as `aw.md`, `aw-planner.md`, and
+`aw-executor.md` by `install.sh` (the `aw-` prefix is the autonomous-workflow
+namespace — keeps the agents grouped together and unmistakable when listed
+alongside unrelated agents). Keep all three lean — they should reference
+`SKILL.md` and `rules/companion-skills.md` rather than duplicate their content.
+The dispatcher especially must stay thin (router + loop only; ~200-line system
+prompt ceiling).
 
 The agent **`name:` frontmatter values** must match the symlinked file
 basenames (`aw-planner`, `aw-executor`) — Claude Code dispatches by the
@@ -544,6 +599,26 @@ end-user-facing; this file is contributor-facing.
 ---
 
 ## History
+
+- **v3.12** — Adaptive dispatch + universal loop. Added a third agent, **`aw`**
+  (`templates/dispatcher.template.md`, linked as `aw.md`) — a thin, opt-in
+  dispatcher that reads `aw-lessons`, detects the tier, and routes. Added a
+  **Micro** tier (1-file mechanical: skip planning + quality companions) below
+  Lite/Full, so mode detection is now 3-tier (`Micro | Lite | Full`); Micro
+  reuses the Lite phase path. The planner→executor split is now **Full-only** —
+  Micro/Lite run single-pass in `aw`'s context (research: always-planning wastes
+  compute and degrades long-horizon tasks; single-threaded continuity wins for
+  simple/sequential work). The self-improvement loop's intake-read and exit-write
+  are **hoisted to the dispatcher** so every tier contributes/benefits (phase-level
+  reads/writes become the Full-tier specialization) — planning depth and learning
+  coverage decoupled. Routing rule now dispatches `aw` instead of "planner first"
+  (fixing the Lite-has-no-plan.md impedance mismatch). `aw` is **opt-in**: invoked
+  via a trigger phrase or `@aw`, never a wrapper on casual edits. Coupled surfaces
+  updated: `install.sh` (links `aw.md` + 3-agent summary), `routing-rule.template.md`,
+  `SKILL.md` (3-tier detection + dispatcher in Templates + version 3.12.0),
+  `phase-0-validation.md` (3-tier MODE SELECTION), this file, `README.md`,
+  `diagnostic-surface.md`, and the root inventory. Research: Learning When to Plan
+  (arXiv 2509.03581); Cognition vs Anthropic on single-vs-multi-agent.
 
 - **v3.11** — Two-tier self-improvement. Added a **fast tier** of episodic
   lessons on top of the existing `diagnose` slow tier. New

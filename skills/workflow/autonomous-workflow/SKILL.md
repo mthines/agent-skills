@@ -12,7 +12,7 @@ disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines
-  version: '3.11.0'
+  version: '3.12.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -44,6 +44,11 @@ workflow reads accumulated lessons before planning (Phase 1) and writes new ones
 when it gets stuck (Phase 4) or finishes (Phase 7), in the committed
 `aw-lessons` scope. Lessons are **advisory** — they bias the plan, never
 silently change a gate. Skips silently if `persistent-memory` is not installed.
+**When invoked through the `aw` dispatcher, the read/write is hoisted to the
+dispatcher** (intake + exit) so **every tier** — Micro, Lite, and Full — both
+benefits from and contributes lessons; the phase-level reads/writes are the
+Full-tier specialization. This is how self-improvement stays universal without
+forcing planning on simple tasks.
 
 **Slow tier — retrospective diagnosis.** When a run shipped wrong code despite
 all gates passing — or a post-merge bug traces back to a missed check, or a
@@ -73,14 +78,20 @@ questions in order — the first `yes` selects Full Mode:
 
 | # | Question                                                                                  | If yes →     | If no →     |
 | - | ----------------------------------------------------------------------------------------- | ------------ | ----------- |
-| 1 | Is this task architectural / cross-cutting / does it require significant design decisions? | **Full Mode** | go to next  |
-| 2 | Does the task involve unfamiliar code or domains the agent hasn't worked in before?       | **Full Mode** | go to next  |
-| 3 | Is the change touching 4+ files OR 2+ packages?                                           | **Full Mode** | **Lite Mode** |
+| 1 | Is this task architectural / cross-cutting / does it require significant design decisions? | **Full**     | go to next  |
+| 2 | Does the task involve unfamiliar code or domains the agent hasn't worked in before?       | **Full**     | go to next  |
+| 3 | Is the change touching 4+ files OR 2+ packages?                                           | **Full**     | go to next  |
+| 4 | Is the change 2–3 files, OR any non-trivial logic change?                                 | **Lite**     | **Micro**   |
 
-| Mode     | Artifacts |
-| -------- | --------- |
-| **Full** | Required  |
-| **Lite** | None      |
+| Tier      | Files / shape                                  | Artifacts | Planning            | Companions      |
+| --------- | ---------------------------------------------- | --------- | ------------------- | --------------- |
+| **Full**  | complex / 4+ files / unfamiliar                | Required  | planner → `plan.md` | all applicable  |
+| **Lite**  | 2–3 files, simple logic                        | None      | brief mental plan   | per signal      |
+| **Micro** | 1 file, purely mechanical (typo, copy, bump)   | None      | none (skip planning)| none (docs if drift) |
+
+**Micro** follows the same phase path as Lite but skips planning and all quality
+companions — it is the "skip planning when it's trivial" tier. **Phase 0 and
+Phase 2 stay mandatory in every tier**, including Micro.
 
 The first two questions ground the decision in complexity rather than raw file
 count (one large monolithic change can exceed four trivial edits in scope).
@@ -90,10 +101,10 @@ Question 3 is the file-count tie-breaker — only fires when complexity is low.
 
 ```
 MODE SELECTION:
-- Mode: [Full | Lite]
+- Tier: [Micro | Lite | Full]
 - Reasoning: [why]
 - Estimated files: [number]
-- Complexity: [simple | moderate | architectural]
+- Complexity: [trivial | simple | moderate | architectural]
 ```
 
 ### Step 2: Verify Prerequisites
@@ -252,18 +263,23 @@ for the full how-to.
 
 ## Templates
 
-The skill installs **two agents** that share one workflow, connected by `plan.md`.
-Both use the **`aw-` namespace prefix** (short for "autonomous-workflow") so
-they group together in `.claude/agents/` and are unmistakable when listed
-alongside unrelated agents:
+The skill installs **three agents** under the **`aw-` namespace prefix** (short
+for "autonomous-workflow") so they group together in `.claude/agents/` and are
+unmistakable when listed alongside unrelated agents:
 
-| Agent          | Phases | Terminal artifact                              | Exit gate                                          |
-| -------------- | ------ | ---------------------------------------------- | -------------------------------------------------- |
-| `aw-planner`   | 0–2    | `.agent/{branch}/plan.md`                      | `confidence(plan) ≥ 90%` (or user-approved)        |
-| `aw-executor`  | 3–7    | `.agent/{branch}/walkthrough.md` + draft PR    | Walkthrough shown inline, Phase 7 CI gate run      |
+| Agent          | Role | Terminal artifact                              | Exit gate                                          |
+| -------------- | ---- | ---------------------------------------------- | -------------------------------------------------- |
+| `aw`           | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes single-pass vs the split, owns the self-improvement loop for every tier. | — (delegates) | Task routed + exit lesson written |
+| `aw-planner`   | Full-tier, phases 0–2 | `.agent/{branch}/plan.md`                      | `confidence(plan) ≥ 90%` (or user-approved)        |
+| `aw-executor`  | Full-tier, phases 3–7 | `.agent/{branch}/walkthrough.md` + draft PR    | Walkthrough shown inline, Phase 7 CI gate run      |
 
-The split is along the Phase 2 → Phase 3 context boundary, mediated by
-`plan.md`. The handoff is gated: high-confidence plans flow through
+**`aw` is the single entry point developers opt into** (a trigger phrase or
+`@aw`). It is adaptive, not always-heavy: Micro/Lite run single-pass in `aw`'s
+own context; **Full** hands off to the planner→executor split. The split is
+along the Phase 2 → Phase 3 context boundary, mediated by `plan.md`, and is
+reserved for Full because its context-isolation + resumable-artifact benefits
+only pay for complex/long tasks (always-planning wastes compute and degrades
+long-horizon performance — see `references/anthropic-architecture-research.md`). The handoff is gated: high-confidence plans flow through
 automatically; borderline plans pause for user approval. The design rationale
 (with verbatim Anthropic citations) lives in
 [`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md);
@@ -272,6 +288,7 @@ the full handoff contract is in
 
 | Template                                                         | Purpose                                  |
 | ---------------------------------------------------------------- | ---------------------------------------- |
+| [dispatcher.template.md](./templates/dispatcher.template.md)     | `aw` dispatcher agent (tier routing + loop) |
 | [planner.template.md](./templates/planner.template.md)           | Planner agent definition (phases 0-2)    |
 | [executor.template.md](./templates/executor.template.md)         | Executor agent definition (phases 3-7)   |
 | [routing-rule.template.md](./templates/routing-rule.template.md) | Auto-trigger rule for `.claude/rules/`   |
@@ -321,10 +338,11 @@ bash .claude/skills/autonomous-workflow/install.sh
 > supported AI tool's directory at once (`.codebuddy/`, `.continue/`, `.crush/`,
 > …). Drop it (or use `--agent '*'`) only if you want the universal install.
 
-After the script runs, two agents are linked into your `.claude/agents/`
-directory: `aw-planner.md` and `aw-executor.md` (the `aw-` prefix is the
-autonomous-workflow namespace). The routing rule dispatches the planner
-first; once `plan.md` is gated, the executor takes over.
+After the script runs, three agents are linked into your `.claude/agents/`
+directory: `aw.md` (the opt-in dispatcher), `aw-planner.md`, and
+`aw-executor.md` (the `aw-` prefix is the autonomous-workflow namespace). The
+routing rule dispatches `aw`, which detects the tier and routes — Micro/Lite
+single-pass, or planner→executor for Full.
 
 To run with fewer companions, omit them from the `--skill` list. See
 [`rules/companion-skills.md`](./rules/companion-skills.md) for what each does

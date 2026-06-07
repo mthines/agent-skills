@@ -8,14 +8,25 @@ When the user asks to implement something using phrases that signal independent,
 - "take care of this", "handle this without me"
 - "ship this", "land this", "all the way to a PR", "through CI"
 
-Automatically dispatch the autonomous workflow as follows:
+Dispatch the **`aw` dispatcher** with the user's full request as the prompt:
 
-> The autonomous-workflow ships two agents under the `aw-` namespace prefix
-> (`aw-` = "autonomous-workflow"): `aw-planner` runs phases 0–2, `aw-executor`
-> runs phases 3–7. They are connected by `plan.md`.
+> The autonomous-workflow ships three agents under the `aw-` namespace prefix
+> (`aw-` = "autonomous-workflow"): **`aw`** is the dispatcher — it reads
+> accumulated lessons, detects the tier (Micro / Lite / Full), and routes.
+> `aw-planner` (phases 0–2) and `aw-executor` (phases 3–7), connected by
+> `plan.md`, are the **Full-tier** realization that `aw` hands off to.
 
-1. Dispatch `aw-planner` first with the user's full request as the prompt.
-2. When the planner finishes and `plan.md` is gated (`confidence(plan) ≥ 90%`), dispatch `aw-executor` with the plan path. If confidence is below 90%, the planner will already have escalated to the user — wait for their decision before dispatching the executor.
+```
+Task(subagent_type="aw", prompt=<user's full request>)
+```
+
+`aw` decides the rest: Micro/Lite run single-pass in its own context; Full hands
+off to `aw-planner` → `aw-executor`. This replaces the old "dispatch the planner
+first" rule — routing through `aw` fixes the case where a Lite task (which has
+no `plan.md`) was sent to the planner anyway.
+
+You may also dispatch `aw-planner` / `aw-executor` directly when you already know
+the task is Full and want to skip tier detection.
 
 Continuation phrases that should dispatch the executor when a plan already exists at `.agent/{branch}/plan.md`:
 
@@ -24,9 +35,9 @@ Continuation phrases that should dispatch the executor when a plan already exist
 Do NOT auto-trigger for:
 
 - Simple questions, explanations, or code reviews
-- Single-file edits or quick fixes (1–2 files). Tasks touching 3 files still auto-trigger; mode detection inside the workflow will pick Lite Mode for them.
+- Single-file edits or quick fixes (1–2 files) **during interactive work**. Tasks touching 3 files still auto-trigger; `aw`'s tier detection picks Lite (or Micro for a 1-file mechanical change) for them. A dev who *explicitly* invokes `@aw` on a quick fix opts into the Micro tier — that is fine; this exclusion is only about not hijacking casual edits.
 - Interactive/collaborative coding where the user is actively guiding
 - Exploratory research or investigation
 - Tasks where the user explicitly says "here" or "in this session"
 
-The user has opted into this behavior by installing this rule. If unsure whether the task qualifies, prefer triggering — the planner's Phase 0 validation will ask clarifying questions before doing any work.
+The user has opted into this behavior by installing this rule. If unsure whether the task qualifies, prefer triggering — `aw`'s Phase 0 validation will ask clarifying questions before doing any work, at whatever tier it picks.

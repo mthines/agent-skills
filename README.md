@@ -101,7 +101,7 @@ Coordinate other skills to ship complete changes.
 
 | Skill | What it does | Type |
 |-------|--------------|------|
-| **[autonomous-workflow](./skills/workflow/autonomous-workflow/SKILL.md)** | Phase-based orchestrator (0–7): task → plan → worktree → code → test → docs → draft PR → CI gate. Two-tier self-improvement: episodic `aw-lessons` (read Phase 1 / write Phase 4·7) promotes to gated `diagnose` at `seen_count ≥ 3`. See [featured section](#featured-autonomous-workflow). | `auto` |
+| **[autonomous-workflow](./skills/workflow/autonomous-workflow/SKILL.md)** | Phase-based orchestrator (0–7): task → plan → worktree → code → test → docs → draft PR → CI gate. Opt-in `aw` dispatcher routes by tier (Micro/Lite single-pass, Full → planner/executor split). Universal two-tier self-improvement: episodic `aw-lessons` promotes to gated `diagnose` at `seen_count ≥ 3`. See [featured section](#featured-autonomous-workflow). | `auto` |
 | **[fix-bug](./skills/workflow/fix-bug/SKILL.md)** | 10-phase bug pipeline: intake → triage → evidence → repro-lock → analyse → gate → handoff → verify → telemetry. Lane-split: fast for simple, standard for complex. Self-improves via `fix-bug-lessons` (read Phase 0.5 / write Phase 5·7·8) + promotion to `diagnose`. | `/` |
 | **[batch-linear-tickets](./skills/workflow/batch-linear-tickets/SKILL.md)** | Fan out `/fix-bug --analyse-only` across many Linear tickets, gate user approval, then dispatch planners and executors in parallel. Requires Linear MCP. Self-improves via `batch-lessons` (classification + correlation) and inherits `aw-lessons` via the fan-out. | `/` |
 | **[implement-suggestion](./skills/workflow/implement-suggestion/SKILL.md)** | Apply reviewer suggestions across one or more PRs. Reads humans and AI bots (`claude[bot]`, `coderabbit`, `sourcery`), validates each via `/critical` + `/confidence`, applies in the existing branch. | `/` |
@@ -201,16 +201,17 @@ Plugins live in `plugins/` and ship via [`.claude-plugin/marketplace.json`](./.c
 
 `autonomous-workflow` orchestrates a complete feature cycle — from a one-line task to a tested draft PR — using isolated Git worktrees.
 
-### Two agents, one workflow
+### Three agents, one workflow
 
-The skill installs **two agents** that share workflow knowledge, connected by `plan.md`:
+The skill installs an opt-in **dispatcher** plus the two specialist agents it routes to for complex work, connected by `plan.md`:
 
-| Agent | Phases | Exit gate |
-|-------|--------|-----------|
-| `aw-planner`  | 0–2 (validate, plan, worktree + `plan.md`) | `confidence(plan) ≥ 90%` |
-| `aw-executor` | 3–7 (implement, test, docs, PR, CI) | CI green, walkthrough delivered |
+| Agent | Role | Exit gate |
+|-------|------|-----------|
+| `aw`          | Opt-in dispatcher: reads lessons, detects tier (Micro/Lite/Full), routes single-pass vs the split, owns the self-improvement loop for every tier | Task routed + exit lesson written |
+| `aw-planner`  | Full tier, 0–2 (validate, plan, worktree + `plan.md`) | `confidence(plan) ≥ 90%` |
+| `aw-executor` | Full tier, 3–7 (implement, test, docs, PR, CI) | CI green, walkthrough delivered |
 
-Both share the **`aw-`** prefix ("autonomous-workflow"): deliberate namespace so the pair groups together in `~/.claude/agents/` and disambiguates from agents installed by other skills.
+All share the **`aw-`** prefix ("autonomous-workflow"): deliberate namespace so they group together in `~/.claude/agents/` and disambiguate from agents installed by other skills. `aw` is adaptive — it only invokes the planner→executor split for **Full** tasks; Micro/Lite run single-pass.
 
 ### Phases
 

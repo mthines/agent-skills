@@ -112,19 +112,25 @@ To run with fewer companions, omit them from the `--skill` list. See
 [Disabling Companions](#disabling-companions) below. Run
 `bash install.sh --help` for script options.
 
-Then say *"implement X independently"* — the routing rule dispatches the
-planner first; once `plan.md` is gated, the executor takes over.
+Then say *"implement X independently"* (or invoke `@aw`) — the routing rule
+dispatches the **`aw` dispatcher**, which detects the tier and routes: Micro/Lite
+run single-pass; Full hands off to the planner→executor split.
 
 #### What `install.sh` sets up
 
-Two agents linked into your `.claude/agents/` directory under the
+Three agents linked into your `.claude/agents/` directory under the
 **`aw-` namespace** (short for "autonomous-workflow") so they group together
 and are unmistakable when listed alongside unrelated agents:
 
-| Agent | Phases | Terminal artifact | Exit gate |
+| Agent | Role | Terminal artifact | Exit gate |
 |---|---|---|---|
-| `aw-planner` | 0–2 (validation, planning, worktree + plan.md) | `.agent/{branch}/plan.md` | `confidence(plan) ≥ 90%` (or user-approved override) |
-| `aw-executor` | 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
+| `aw` | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes, owns the self-improvement loop for every tier. | — (delegates) | Task routed + exit lesson written |
+| `aw-planner` | Full tier, phases 0–2 (validation, planning, worktree + plan.md) | `.agent/{branch}/plan.md` | `confidence(plan) ≥ 90%` (or user-approved override) |
+| `aw-executor` | Full tier, phases 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
+
+`aw` is **adaptive and opt-in**: it only pays the planner→executor handoff cost
+on Full tasks (where context isolation + a resumable `plan.md` earn it), and runs
+Micro/Lite single-pass. It is invoked deliberately, not as a wrapper on every prompt.
 
 > **Upgrading from a pre-`aw-` install?** The installer detects legacy
 > `autonomous-planner.md` / `autonomous-executor.md` symlinks pointing at
@@ -219,29 +225,38 @@ trigger conditions and per-row disable instructions.
 
 ---
 
-## Workflow Modes
+## Workflow Tiers
 
-### Full Mode (complex changes, 4+ files)
+The `aw` dispatcher picks one of three tiers (when in doubt, the heavier one).
 
-Generates artifacts under `.agent/{branch-name}/`:
+### Full (complex changes, 4+ files / unfamiliar)
+
+Planner → `plan.md` → executor (the split). Generates artifacts under
+`.agent/{branch-name}/`:
 
 - `plan.md` — implementation strategy, decisions, progress log (single
   source of truth)
 - `walkthrough.md` — final summary generated at Phase 6
 
-### Lite Mode (simple changes, 1-3 files)
+### Lite (simple changes, 2-3 files)
 
-No artifact files created. Plan exists only in conversation. Phase 0,
-Phase 2, Phase 5 (`documentation update`), and Phase 6 (`create-pr`) still required.
+Single-pass (no planner/executor split). No artifact files; plan exists only in
+conversation. Phase 0, Phase 2, Phase 5 (`documentation update`), and Phase 6
+(`create-pr`) still required.
+
+### Micro (1-file mechanical: typo / copy / version-or-config bump)
+
+Single-pass, planning and quality companions skipped. Phase 0 (quick confirm),
+Phase 2 (worktree), and Phase 6 (`create-pr`) still required; docs only if they
+drift. The "skip planning when it's trivial" tier.
 
 ### Decision Guide
 
-| Complexity | Files Changed | Artifacts | Worktree |
-| ---------- | ------------- | --------- | -------- |
-| Trivial    | 1 file        | No        | Optional |
-| Small      | 2-3 files     | No        | Yes      |
-| Medium     | 4-10 files    | Yes       | Yes      |
-| Large      | 10+ files     | Yes       | Yes      |
+| Tier   | Files / shape                     | Artifacts | Planner split | Worktree |
+| ------ | --------------------------------- | --------- | ------------- | -------- |
+| Micro  | 1 file, mechanical                | No        | No (single-pass) | Yes   |
+| Lite   | 2-3 files, simple logic           | No        | No (single-pass) | Yes   |
+| Full   | 4+ files OR complex / unfamiliar  | Yes       | Yes           | Yes      |
 
 ---
 

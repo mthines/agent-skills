@@ -26,7 +26,9 @@ tags:
 
 ## Overview
 
-The autonomous-workflow runs as two agents connected by a single artifact:
+In the **Full tier**, the autonomous-workflow runs as two agents connected by a
+single artifact (the `aw` dispatcher routes Full tasks here; Micro/Lite run
+single-pass and never reach this handoff):
 
 - **Planner agent** ([`templates/planner.template.md`](../templates/planner.template.md)) — runs phases 0–2 (validation, planning, worktree + `plan.md` generation).
 - **Executor agent** ([`templates/executor.template.md`](../templates/executor.template.md)) — runs phases 3–7 (implementation, testing, docs, PR, CI).
