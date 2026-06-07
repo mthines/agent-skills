@@ -55,7 +55,7 @@ This skill never proposes a fix without a measurement to point at, and never com
 
 | Source | Role |
 |--------|------|
-| [`playwright-test-healer`](../../../agents/playwright-test-healer.md) agent | Test-debugging methodology — how to fix a Playwright test correctly. |
+| [Playwright Healer agent](https://playwright.dev/docs/test-agents) — external; one of the [Playwright Test Agents](https://playwright.dev/docs/test-agents) on the [Playwright MCP server](https://github.com/microsoft/playwright-mcp) | Test-debugging methodology — how to fix a Playwright test correctly. |
 | [`/playwright-trace-analyzer`](../../analysis/playwright-trace-analyzer/SKILL.md) | Per-run `trace.zip` extraction, hotspot ranking. |
 | [`/ci-auto-fix`](../../delivery/ci-auto-fix/SKILL.md) | Reused only for Phase 7's single push + watch — the iteration loop no longer lives here. |
 | Dash0 MCP server (`dash0-dev` or `dash0-prod`) | Historical evidence — failure recurrence, retry counts, span-level evidence across CI runs. |
@@ -63,6 +63,14 @@ This skill never proposes a fix without a measurement to point at, and never com
 | GitHub Actions (one call) | Final CI ratification at Phase 7. |
 
 This skill is the orchestrator over those.
+
+> **External dependency — the Playwright Healer agent.** The healer methodology
+> this skill drives fixes through is **not** an agent in this repo; it is
+> Playwright's own **healer** ([Playwright Test Agents](https://playwright.dev/docs/test-agents):
+> planner / generator / healer) running on the
+> [Playwright MCP server](https://github.com/microsoft/playwright-mcp). Set it up
+> with `npx playwright init-agents --loop=claude` (Playwright ≥ 1.56). References
+> to `playwright-test-healer` point there.
 It does not duplicate their content — each phase delegates.
 
 ---

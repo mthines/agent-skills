@@ -55,7 +55,7 @@ A hypothesis that does not meet these requirements is `recommendation-only` — 
 Optimize mode produces recommendations, not edits — jump from Phase 4 directly to the report.
 See the "Optimize-mode finding catalogue" section below for what to put *in* those recommendations.
 
-Drive code edits through the [`playwright-test-healer`](../../../agents/playwright-test-healer.md) methodology.
+Drive code edits through the [`playwright-test-healer`](https://playwright.dev/docs/test-agents) methodology.
 The healer agent's principles are non-negotiable.
 
 Phase 5 has **three sub-steps**:
@@ -102,7 +102,7 @@ Prefer an `.and(page.locator(...))` chain or an accessible-name disambiguation.
 **Trace evidence:** `click` or `goto` waited > 10 s while a request to `/api/...` was still pending; the request never resolved before the action timeout.
 
 **Fix:** either (a) await the relevant response before triggering the action, or (b) mock / pre-warm the endpoint at the test-setup boundary.
-**Do not** add a blanket `page.waitForLoadState('networkidle')` — the [`playwright-test-healer`](../../../agents/playwright-test-healer.md) agent explicitly forbids it.
+**Do not** add a blanket `page.waitForLoadState('networkidle')` — the [`playwright-test-healer`](https://playwright.dev/docs/test-agents) agent explicitly forbids it.
 
 ```typescript
 // before

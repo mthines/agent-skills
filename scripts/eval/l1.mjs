@@ -17,15 +17,12 @@ const s = new Suite("L1 deterministic contract checks");
 // NO NEW breakage: known pre-existing breaks live in the baseline below (a ratchet —
 // burn the list down over time; never add to it for new work).
 {
-  // Known pre-existing breaks. The gate catches NEW breakage; burn this list down,
-  // never add to it for new work. The remaining entries are links to the
-  // `playwright-test-healer` AGENT, which does not exist in agents/ — a genuinely
-  // MISSING artifact (the e2e-pr-stabilizer skill depends on it), not a stale path.
-  // Resolve by creating the agent, pointing at its real home, or rewording the refs.
-  const BASELINE = new Set([
-    "skills/testing/e2e-pr-stabilizer/SKILL.md::../../../agents/playwright-test-healer.md",
-    "skills/testing/e2e-pr-stabilizer/rules/root-cause-and-fix.md::../../../agents/playwright-test-healer.md",
-  ]);
+  // Known pre-existing breaks, kept so the gate catches NEW breakage without
+  // failing on history. Currently EMPTY — all pre-existing breaks have been
+  // resolved (from-to-morphs→state-choreography, the fix-bug verifier anchor, and
+  // playwright-test-healer now points at the external Playwright Test Agents docs).
+  // Keep it empty: fix new breaks, don't baseline them.
+  const BASELINE = new Set([]);
   // linksOutsideFences: skip ``` fenced blocks (examples) and obvious placeholders.
   function realLinks(file) {
     const out = [];

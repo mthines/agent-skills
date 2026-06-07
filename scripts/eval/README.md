@@ -83,11 +83,11 @@ floor (or switch to 0%-regression-vs-baseline) and gate hard.
 To require them: Settings → Branches → branch protection → "Require status
 checks" → pick **evals · L1** (and **evals · L2** once the secret is set).
 
-### Burning down the L1 baseline
+### The L1 baseline
 
-`l1.mjs` keeps a small `BASELINE` of pre-existing broken links so the gate
-catches *new* breakage without failing on history. As of now it holds only the
-`playwright-test-healer` **agent** references in `e2e-pr-stabilizer` — a missing
-artifact (the agent doesn't exist in `agents/`), not a stale path. Resolve by
-creating the agent, pointing at its real home, or rewording the refs; then
-remove it from `BASELINE`.
+`l1.mjs` keeps a `BASELINE` set of known pre-existing broken links so the gate
+catches *new* breakage without failing on history. It is currently **empty** —
+all internal links resolve. Keep it that way: fix new breaks, don't baseline
+them. (The three original entries were resolved: `from-to-morphs.md` →
+`state-choreography.md`; the fix-bug verifier anchor → `#verifier-checks`; and
+`playwright-test-healer` → the external [Playwright Test Agents](https://playwright.dev/docs/test-agents) docs.)
