@@ -8,7 +8,8 @@ How Anthropic's published guidance on agent architecture maps to concrete design
 - [2. Key principles with quotes and design mapping](#2-key-principles-with-quotes-and-design-mapping)
 - [3. What the autonomous-workflow does NOT do (and why)](#3-what-the-autonomous-workflow-does-not-do-and-why)
 - [4. Open questions and divergences](#4-open-questions-and-divergences)
-- [5. References](#5-references)
+- [5. Empirical evidence on plan artifacts](#5-empirical-evidence-on-plan-artifacts)
+- [6. References](#6-references)
 
 ---
 
@@ -352,7 +353,65 @@ Both are evaluator-role gates Anthropic's harness-design post explicitly endorse
 
 ---
 
-## 5. References
+## 5. Empirical evidence on plan artifacts
+
+§§2–4 map autonomous-workflow to Anthropic's *engineering guidance* — practitioner posts, not controlled studies.
+This section records the **academic and benchmark evidence** for (and against) the plan-artifact design, tiered by strength, so the *why* is grounded in data rather than authority.
+When a future change touches plan structure, mode detection, or the confidence gate, check it against this section — not just the practitioner quotes above.
+
+**Caveat on sourcing.**
+The figures below were gathered via web search and several primary PDFs could not be fetched at gather time.
+Treat exact percentages as indicative and re-verify against the cited source before quoting them as load-bearing.
+Claims that are practitioner-reported rather than peer-reviewed are marked inline.
+
+### 5.1 Explicit planning helps — but mainly on long-horizon / complex tasks (rigorous)
+
+| Finding | Effect | Source |
+| --- | --- | --- |
+| As-needed decomposition (ADaPT) vs ReAct | +27 to +33 pts absolute (ALFWorld / WebShop / TextCraft) | arXiv:2311.05772 (NAACL Findings 2024) |
+| Adding a dynamic plan to a base executor (Plan-and-Act) | +34 pts on WebArena-Lite | arXiv:2503.09572 |
+| Iterative replan / reflect (Reflexion) | +20–22 pts on ALFWorld / HotPotQA | arXiv:2303.11366 (NeurIPS 2023) |
+| Prompt-level planning on *simple* math (Plan-and-Solve vs Zero-shot-CoT) | only ~+2.9 pts on GSM8K; negative in some reproductions | arXiv:2305.04091 / 2312.06867 |
+
+**Design mapping.**
+This is the empirical backbone of the **Full vs. Lite mode split**: planning earns its tokens on complex / multi-file work and is neutral-to-harmful on small tasks.
+The skeptical line (Kambhampati / PlanBench, arXiv:2206.10498, arXiv:2402.01817) adds that bare LLMs plan poorly unaided (~35 % on clean Blocksworld) and self-verify badly — the gains come from the *decomposition + verification scaffold*, which is exactly what `confidence(plan)` + Acceptance Criteria + the stuck-loop replan provide.
+Keep the gate; do not rely on the planner's unaided judgment.
+
+### 5.2 Externalizing the plan to a file — strong mechanism, no direct A/B (mixed)
+
+The problem externalization solves is well-measured:
+
+- Long-context degradation: *Lost in the Middle* (arXiv:2307.03172); NoLiMa — 11 of 13 models below 50 % of baseline at 32K (arXiv:2502.05167); RULER's effective-vs-claimed context gap (arXiv:2404.06654).
+- *The Illusion of Diminishing Returns* (arXiv:2509.09677): long-task failures are execution errors that compound via **self-conditioning** — prior errors already in context beget more errors. A clean external plan isolates execution from that history.
+
+External-memory architectures improve agent performance in controlled studies: Reflexion (+20–22 pts), Voyager's skill library (up to 15.3× faster milestones, arXiv:2305.16291), MemGPT (arXiv:2310.08560).
+Letta's filesystem-as-memory beat a specialized memory system on LoCoMo (74.0 % vs 68.5 %) — practitioner benchmark.
+
+**The honest gap.**
+No rigorous A/B isolates "plan in a file" vs. "plan in the conversation" for coding.
+The file's clearest, evidence-backed payoff is the case it was built for: **cross-session / post-compaction resumption**, where in-context state simply does not survive.
+Anthropic's own multi-agent system does exactly this — *"saving its plan to Memory … if the context window exceeds 200,000 tokens it will be truncated and it is important to retain the plan"* (practitioner).
+For a task that finishes inside one un-compacted window, the file's marginal benefit over in-context planning is unproven — which is why Lite Mode writes no file.
+
+### 5.3 Over-detailed plans hurt — the case for the Core / Extended tiering (rigorous)
+
+- *The Danger of Overthinking* (arXiv:2502.08235): across 4,018 SWE-bench-Verified trajectories, higher overthinking correlates with *lower* success; selecting lower-overthinking solutions improved performance ~30 % and cut cost ~43 %.
+- *Inverse Scaling in Test-Time Compute* (arXiv:2507.14417): extending reasoning length can *reduce* accuracy on constructed tasks.
+- Static, exhaustive plans underperform adaptive replanning (ADaPT, Plan-and-Act); decomposition depth plateaus fast (ADaPT: gains from depth 2→3, little beyond) and net-hurts on tasks the model already handles (a task-list tool dropped one suite 52/60 → 45/60 — practitioner).
+
+**Design mapping.**
+This is why the [`aw-create-plan`](../../aw-create-plan/SKILL.md) template is **two-tier**: a small always-on **Core** (the parts with measured value — Acceptance Criteria as the sprint contract, Decisions a cold session would otherwise re-derive, File Changes to bound scope, Verification as the done-check) plus **Extended** sections emitted only when an `Include when` trigger holds.
+It is also why the plan stops at file paths / decisions / acceptance criteria and leaves function bodies to the executor (§2.8), and why the plan is revisable rather than a frozen upfront spec.
+
+### 5.4 What is NOT evidence-backed
+
+- That a *full structured spec* beats a *lean* one for agent task success — no head-to-head exists. The widely-cited spec-driven-development "50 % error reduction" traces to an unrelated TDD study, not SDD; do not cite it.
+- The `plan.v{N}.md` snapshot / versioning is an audit-trail and review-UX feature. It is reasonable governance, but there is no evidence it improves task success — do not justify it on performance grounds.
+
+---
+
+## 6. References
 
 - [Anthropic — Building Effective Agents](https://www.anthropic.com/engineering/building-effective-agents) — Start simple; a single well-tooled agent goes further than developers expect.
 - [Anthropic — Harness design for long-running apps](https://www.anthropic.com/engineering/harness-design-long-running-apps) — Planner/Generator/Evaluator triad with structured handoff artifacts and sprint contracts.
@@ -361,3 +420,16 @@ Both are evaluator-role gates Anthropic's harness-design post explicitly endorse
 - [Anthropic — Building agents with the Claude Agent SDK](https://www.anthropic.com/engineering/building-agents-with-the-claude-agent-sdk) — Pause to clarify under uncertainty; clarification frequency scales with task complexity.
 - [Claude Code — Subagents](https://code.claude.com/docs/en/sub-agents) — Subagents preserve context, enforce constraints, and specialize behavior; each gets its own context window, system prompt, tools, and permissions.
 - [Claude Code — Agent Skills](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview) — Skills are advisory tools called by an agent, not coordinator agents themselves.
+
+### Empirical research (§5)
+
+- ADaPT: As-Needed Decomposition and Planning with Language Models — arXiv:2311.05772 (NAACL Findings 2024).
+- Plan-and-Act: Improving Planning of Agents for Long-Horizon Tasks — arXiv:2503.09572.
+- Reflexion: Language Agents with Verbal Reinforcement Learning — arXiv:2303.11366 (NeurIPS 2023).
+- Plan-and-Solve Prompting — arXiv:2305.04091 (ACL 2023); reproduction table in Progressive Rectification Prompting — arXiv:2312.06867.
+- PlanBench — arXiv:2206.10498 (NeurIPS D&B 2023); LLMs Can't Plan, But Can Help Planning in LLM-Modulo Frameworks — arXiv:2402.01817 (ICML 2024).
+- Lost in the Middle — arXiv:2307.03172 (TACL 2024); NoLiMa — arXiv:2502.05167; RULER — arXiv:2404.06654.
+- The Illusion of Diminishing Returns (long-horizon execution, self-conditioning) — arXiv:2509.09677.
+- Voyager — arXiv:2305.16291 (NeurIPS 2023); MemGPT — arXiv:2310.08560.
+- The Danger of Overthinking (agentic, SWE-bench Verified) — arXiv:2502.08235; Inverse Scaling in Test-Time Compute — arXiv:2507.14417.
+- Anthropic — How we built our multi-agent research system (plan-to-Memory across 200K truncation) — https://www.anthropic.com/engineering/multi-agent-research-system.

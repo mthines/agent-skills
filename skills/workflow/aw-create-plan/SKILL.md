@@ -73,11 +73,28 @@ Three things are determined here:
 
 ### Step 2: Write the versioned snapshot AND the latest pointer
 
-Render the plan content using the EXACT template structure below — **every
-section is MANDATORY** — then write **both** files with **identical content**:
+Render the plan content using the template structure below, then write **both**
+files with **identical content**:
 
 1. Write `${VERSIONED}` (e.g. `.agent/feat-x/plan.v2.md`).
 2. Write `${LATEST}` (`.agent/feat-x/plan.md`).
+
+**The template has two tiers — emit them differently:**
+
+| Tier         | Sections                                                                                          | Rule                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **Core**     | TL;DR, Requirements, Decisions, Acceptance Criteria, Implementation Order, File Changes, Verification, Progress Log | **Always emit.** These are what the executor reads cold and the `confidence(plan)` gate checks. |
+| **Extended** | Background & Context, Technical Approach, Patterns to Follow, Edge Cases, API / Interfaces, Tests, Dependencies, Risks | **Emit only when the section's `Include when` trigger holds.** Omit the whole section otherwise — do not write an empty heading or "N/A". |
+
+**Why two tiers.** Forcing every section on every task is the
+over-detailed-upfront-plan failure mode: the empirical evidence is that
+reasoning/planning length has a point of diminishing — then *negative* —
+returns, and that as-needed decomposition beats fixed maximal decomposition
+(see [`../autonomous-workflow/references/anthropic-architecture-research.md`](../autonomous-workflow/references/anthropic-architecture-research.md#5-empirical-evidence-on-plan-artifacts)).
+The Core tier carries the parts with measured value (the sprint-contract
+Acceptance Criteria, the decisions a cold session would otherwise re-derive,
+the scope-bounding File Changes, the done-check Verification). The Extended
+tier earns its tokens only when the task is complex enough to need it.
 
 `plan.md` is a mirror of the newest `plan.vN.md`. Readers (executor agent,
 VS Code extension, fresh sessions) load `plan.md`. Earlier `plan.v*.md` files
@@ -146,9 +163,13 @@ approved: true
 
 ## Background & Context
 
-<!-- Why is this needed? What problem does it solve? Include history and motivation
-     from Phase 0 discussion. Write so a reader with zero prior context understands
-     the full "why". -->
+<!-- EXTENDED — Include when: the "why" is NOT already obvious from the TL;DR, OR
+     the task touches an unfamiliar domain / historical context a cold reader needs.
+     For a self-evident change, omit this section entirely — the TL;DR carries the why.
+
+     When included: why is this needed? What problem does it solve? Include history
+     and motivation from Phase 0 discussion. Write so a reader with zero prior
+     context understands the full "why". -->
 
 ## Requirements
 
@@ -173,8 +194,14 @@ approved: true
 
 ## Technical Approach
 
-<!-- Architecture, data flow, integration points. Specific enough for a new session
-     to implement without the original conversation. -->
+<!-- EXTENDED — Include when: the task is architectural or spans 3+ components /
+     packages, OR the approach is non-obvious from the Decisions + Implementation
+     Order. For a localized change whose approach is self-evident, omit this section.
+
+     Keep it high-level: architecture, data flow, integration points — NOT function
+     bodies or inline error handling. Pinning granular implementation detail upfront
+     is what makes planner mistakes cascade into the executor; leave those to the
+     executor at implementation time. -->
 
 ### Architecture Diagram
 
@@ -207,16 +234,22 @@ approved: true
 
 ### Patterns to Follow
 
-<!-- Existing codebase patterns to match. Reference specific files as examples. -->
+<!-- EXTENDED — Include when: the change must match a non-obvious existing
+     convention a cold session would otherwise miss. Reference specific files as
+     examples. Omit when the executor can infer conventions from the files it edits. -->
 
 ### Edge Cases
+
+<!-- EXTENDED — Include when: there are non-trivial edge / error cases the
+     Acceptance Criteria do not already pin down. Omit for straightforward changes. -->
 
 | Edge Case | Handling |
 | --------- | -------- |
 
 ### API / Interfaces
 
-<!-- Type signatures, function signatures, config shapes. Omit section if N/A. -->
+<!-- EXTENDED — Include when: the task defines or changes a public interface, type
+     signature, or config shape that the executor must implement exactly. Omit if N/A. -->
 
 ## Acceptance Criteria
 
@@ -248,7 +281,11 @@ approved: true
 
 ## Tests
 
-<!-- Specific test cases, not categories. Each row is a concrete test. -->
+<!-- EXTENDED — Include when: test design is non-obvious beyond what the Acceptance
+     Criteria + Verification commands already imply (e.g. specific fixtures, edge-case
+     cases, or a non-default test strategy). Omit when the Acceptance Criteria already
+     define what "tested" means. Specific test cases, not categories — each row is a
+     concrete test. -->
 
 | Type        | Test Case      | File   | Validates  |
 | ----------- | -------------- | ------ | ---------- |
@@ -258,9 +295,15 @@ approved: true
 
 ## Dependencies
 
-<!-- "None" or list with versions. Mark new additions with [new]. -->
+<!-- EXTENDED — Include when: the task adds, removes, or upgrades a dependency.
+     List with versions; mark new additions with [new]. Omit when no dependency
+     changes — do not write "None". -->
 
 ## Risks
+
+<!-- EXTENDED — Include when: complexity is HIGH, the change is a migration, or any
+     operation is irreversible / hard to roll back. Omit for low-risk localized
+     changes. -->
 
 | Risk | Likelihood | Impact | Mitigation |
 | ---- | ---------- | ------ | ---------- |
@@ -295,20 +338,31 @@ After writing both files, verify ALL of the following. **Fix any failures immedi
 - [ ] **Frontmatter complete**: created, version, branch, task, complexity, status, approved — all filled
 - [ ] **Version field**: `version:` is present in frontmatter and is a positive integer; on a fresh plan it is `1`; on every re-write of `plan.md` it is exactly one greater than the previous value
 - [ ] **Timestamps**: All timestamps use ISO 8601 with time (`YYYY-MM-DDTHH:MM:SSZ`)
+**Core sections — ALWAYS present:**
+
 - [ ] **TL;DR**: 3-5 sentences covering what / why / approach (HOW) / done. Frames the section as the human-review surface. Direction can be agreed/disagreed in under 60 seconds.
-- [ ] **Background & Context**: Full motivation — a stranger understands the "why"
 - [ ] **Requirements**: Every requirement tagged `[user-stated]` or `[inferred]`
-- [ ] **Out of Scope**: At least considered (can be "None discussed")
 - [ ] **Decisions**: Every decision includes rejected alternatives and rationale
-- [ ] **Technical Approach**: Specific enough to implement without conversation context
-- [ ] **Architecture Diagram (conditional)**: For multi-component / state-flow / migration tasks, a Mermaid `flowchart` / `sequenceDiagram` / `stateDiagram-v2` is included under `## Technical Approach`; for simple single-file changes, the subsection is omitted.
-- [ ] **Patterns to Follow**: References actual files in the codebase
 - [ ] **Acceptance Criteria**: At least one concrete, testable pass/fail condition. Each is verifiable (not "looks right" / "works well").
 - [ ] **Implementation Order**: Numbered, atomic, verifiable steps
 - [ ] **File Changes**: Every file listed with action, path, change description, and reason
-- [ ] **Tests**: Specific test cases (not just "unit tests for X")
 - [ ] **Verification commands**: Both after-edit and before-PR commands identified
 - [ ] **Progress Log**: Carries the full prior history plus a new entry naming `plan.v{N}.md`
+
+**Extended sections — validate ONLY if the section is present** (each is omitted when its `Include when` trigger does not hold; an omitted Extended section is not a failure):
+
+- [ ] **Background & Context**: if present, a stranger understands the full "why"
+- [ ] **Technical Approach**: if present, specific enough to implement without conversation context, and stays high-level (no pinned function bodies)
+- [ ] **Architecture Diagram**: if the task is multi-component / state-flow / migration, a Mermaid `flowchart` / `sequenceDiagram` / `stateDiagram-v2` is included under `## Technical Approach`
+- [ ] **Patterns to Follow**: if present, references actual files in the codebase
+- [ ] **Edge Cases**: if present, each has a concrete handling
+- [ ] **API / Interfaces**: if present, signatures / config shapes are concrete
+- [ ] **Tests**: if present, specific test cases (not just "unit tests for X")
+- [ ] **Dependencies**: present only when a dependency changed; versions listed, new ones marked `[new]`
+- [ ] **Risks**: if present, each has likelihood / impact / mitigation
+
+**Always:**
+
 - [ ] **Self-contained**: A new Claude session can execute from `plan.md` alone
 
 ---
@@ -317,7 +371,8 @@ After writing both files, verify ALL of the following. **Fix any failures immedi
 
 | Failure                              | Fix                                                                   |
 | ------------------------------------ | --------------------------------------------------------------------- |
-| Sparse sections ("TBD", "see above") | Fill from conversation context — every section must be self-contained |
+| Sparse sections ("TBD", "see above") | Fill from conversation context — every section you DO emit must be self-contained |
+| Empty Extended heading or "N/A" body | Omit the Extended section entirely — Extended sections are include-or-omit, never stubbed |
 | Missing decisions rationale          | Add "Alternatives Rejected" and "Rationale" for each decision         |
 | Vague implementation steps           | Make each step atomic: "Add X to file Y" not "implement feature"      |
 | No file paths in Patterns            | Reference specific existing files, not abstract descriptions          |

@@ -70,7 +70,9 @@ planner first:
   not testable.
 - The plan references a worktree that doesn't exist or doesn't match the
   current branch.
-- `plan.md` is malformed (missing required sections per `aw-create-plan` schema).
+- `plan.md` is malformed (missing a **Core** section per the `aw-create-plan`
+  schema). Extended sections are include-when-needed — their absence is
+  intentional, NOT malformed; never bail on a missing Extended section.
 
 **Do not try to plan from the prompt yourself.** Hand back to the planner.
 

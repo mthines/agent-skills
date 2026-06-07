@@ -53,28 +53,37 @@ Phases 0–2 are also the cheapest to redo — no code has been written, no PR e
 
 ## Handoff contract
 
-`plan.md` is the contract. The executor's **only** input is this file plus the worktree it lives in. Required sections (per the [`aw-create-plan`](../../aw-create-plan/SKILL.md) template):
+`plan.md` is the contract. The executor's **only** input is this file plus the worktree it lives in. The [`aw-create-plan`](../../aw-create-plan/SKILL.md) template is two-tier: **Core** sections are always present; **Extended** sections appear only when their `Include when` trigger holds. The executor must not bail because an Extended section is absent — its omission is intentional.
+
+**Core sections — always present:**
 
 | Section                | Purpose                                                           |
 | ---------------------- | ----------------------------------------------------------------- |
 | TL;DR                  | 3-5 sentences: what / why / approach (HOW) / done. Human-review surface — readers verify direction here before approving the planner→executor handoff. |
-| Background & Context   | Phase 0 discussion, motivation, links to related work             |
-| Requirements           | Tagged list (must-have / nice-to-have / out-of-scope)             |
-| Out of Scope           | Explicit list of things discussed but excluded                    |
+| Requirements           | Tagged list (`[user-stated]` / `[inferred]`), with an Out of Scope subsection |
 | Decisions              | Each decision + alternatives considered + rationale               |
-| Technical Approach     | Architecture, data flow, integration points                       |
-| Patterns to Follow     | Specific existing files referenced as examples                    |
 | Acceptance Criteria    | Bullet list — the contract Phase 4 testing gates against          |
 | Implementation Order   | Numbered sequence the executor follows verbatim                   |
 | File Changes           | Action / File / Change / Reason table                             |
-| Tests                  | Test cases + files + what they validate                           |
-| Dependencies           | New packages, version constraints                                 |
-| Risks                  | Likelihood / impact / mitigation                                  |
 | Verification           | Commands for fast-check (after edit) and broad-check (before PR)  |
 | Progress Log           | Append-only log of every phase milestone                          |
 
+**Extended sections — present only when the task needs them:**
+
+| Section                | Included when                                                     |
+| ---------------------- | ----------------------------------------------------------------- |
+| Background & Context   | The "why" is not self-evident from the TL;DR                       |
+| Technical Approach     | Architectural / multi-component change (high-level only)          |
+| Patterns to Follow     | A non-obvious existing convention must be matched                 |
+| Edge Cases             | Non-trivial edge / error cases beyond the Acceptance Criteria     |
+| API / Interfaces       | A public interface / type / config shape is defined or changed    |
+| Tests                  | Test design is non-obvious beyond Acceptance Criteria + Verification |
+| Dependencies           | A dependency is added, removed, or upgraded                       |
+| Risks                  | High complexity, migration, or irreversible operation             |
+
 All multi-signal `confidence(plan)` rule checks must pass:
 
+- All eight Core sections are present
 - File paths in the File Changes table resolve in the worktree
 - Requirements are tagged (must / nice / out-of-scope)
 - Acceptance Criteria section is non-empty

@@ -159,7 +159,15 @@ Be specific. The design feeds `code-quality(plan)` next, then `confidence(plan)`
 
 ### 2a. Capture Phase 0 context
 
-Transfer ALL Phase 0 discussion into the in-conversation plan draft (the
+Capture context broadly *in conversation* now — it is cheap and you may need it.
+What actually gets written to `plan.md` is tiered by `aw-create-plan`: the Core
+sections (requirements, decisions, acceptance criteria, implementation order,
+file changes, verification) are always persisted; the Extended sections below
+(background, edge cases, API, patterns) are persisted only when their
+`Include when` trigger holds. Gather all of it; let `aw-create-plan` decide what
+to persist.
+
+Transfer the relevant Phase 0 discussion into the in-conversation plan draft (the
 `aw-create-plan` skill will write it to disk in Phase 2):
 
 - **Background & context** — why this change is needed

@@ -77,9 +77,9 @@ If arguments contain **"fix"** (e.g., `code fix`, `plan fix`, `analysis fix`), r
 
 | Dimension        | Weight | What to evaluate                                                                                                 |
 | ---------------- | ------ | ---------------------------------------------------------------------------------------------------------------- |
-| **Completeness** | 40%    | Are ALL Phase 0 requirements captured? All sections populated? Could a new session execute from this plan alone? |
-| **Feasibility**  | 30%    | Is the technical approach sound? Are patterns consistent with the codebase? Are risks identified?                |
-| **No ambiguity** | 30%    | Are implementation steps specific enough to execute without interpretation? Are edge cases addressed?            |
+| **Completeness** | 40%    | Are ALL Phase 0 requirements captured? Are the Core sections populated (and the Extended sections present where the task needs them)? Could a new session execute from this plan alone? Do NOT penalize an Extended section that is legitimately omitted because its `Include when` trigger does not apply. |
+| **Feasibility**  | 30%    | Is the technical approach sound? Are patterns consistent with the codebase? Are risks identified where applicable?                |
+| **No ambiguity** | 30%    | Are implementation steps specific enough to execute without interpretation? Are edge cases addressed where applicable?            |
 
 #### Step 2 — Deterministic rule checks (run via Bash)
 
@@ -88,7 +88,7 @@ Every check below MUST pass for plan mode. A single failed rule caps the gate at
 | # | Rule check                                                | Verification                                                                                       |
 | - | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
 | 1 | `plan.md` exists at the expected path                     | `test -f .agent/$(git branch --show-current)/plan.md`                                              |
-| 2 | All required sections present                             | `grep -E '^## (Summary\|Background.*Context\|Requirements\|Decisions\|Technical Approach\|Acceptance Criteria\|Implementation Order\|File Changes\|Tests\|Risks\|Verification\|Progress Log)' plan.md \| wc -l` ≥ 12 |
+| 2 | All Core sections present                                 | `grep -E '^## (TL;DR\|Requirements\|Decisions\|Acceptance Criteria\|Implementation Order\|File Changes\|Verification\|Progress Log)' plan.md \| wc -l` ≥ 8 — these are the always-on Core tier. Extended sections (Background, Technical Approach, Patterns, Edge Cases, API, Tests, Dependencies, Risks) are include-when-needed and are NOT counted here. |
 | 3 | Acceptance Criteria section is non-empty                  | `awk '/^## Acceptance Criteria/,/^## /' plan.md \| grep -c '^- \|^[0-9]'` ≥ 1                       |
 | 4 | Every file in `## File Changes` resolves OR is `create`   | For each modify/delete row, `git ls-files <path>` returns the path. Create rows skip this check.   |
 | 5 | Every requirement is tagged `[user-stated]` or `[inferred]`| `awk '/^## Requirements/,/^## /' plan.md \| grep -c '\[user-stated\]\|\[inferred\]'` matches the requirement count |
