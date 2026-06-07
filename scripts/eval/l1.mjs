@@ -40,7 +40,10 @@ const s = new Suite("L1 deterministic contract checks");
     return out;
   }
   // Skills that live in sibling repos by design — links to them are not repo-internal.
-  const SIBLING_REPO = /(git-worktree-workflows|otel-instrumentation|otel-semantic-conventions)/;
+  // (otel-* used to be here as broken relative links; they now point at the dash0
+  // agent-skills repo via https, so the http skip handles them — and any NEW relative
+  // otel link would correctly fail.)
+  const SIBLING_REPO = /git-worktree-workflows/;
   const files = [
     ...walk(join(REPO_ROOT, "skills")).filter((f) => !f.includes("/templates/") && !f.endsWith("/_template.md")),
     ...walk(join(REPO_ROOT, "memory")),

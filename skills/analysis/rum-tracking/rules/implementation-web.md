@@ -292,7 +292,7 @@ export const dash0Destination = {
 
 See [`otel-conventions.md`](./otel-conventions.md) for span / attribute
 rules, and the
-[`otel-instrumentation/rules/sdks/browser.md`](../../otel-instrumentation/rules/sdks/browser.md)
+[`otel-instrumentation/rules/sdks/browser.md`](https://github.com/dash0hq/agent-skills)
 file for full SDK setup including the OTel JS option.
 
 ## Performance budget
@@ -326,5 +326,5 @@ file for full SDK setup including the OTel JS option.
 - [Vercel — Custom events for Analytics](https://vercel.com/docs/analytics/custom-events)
 - [Segment — Typewriter](https://github.com/segmentio/typewriter)
 - [Avo Codegen — TypeScript](https://www.avo.app/docs/reference/avo-codegen/programming-languages/typescript)
-- [`otel-instrumentation/rules/sdks/browser.md`](../../otel-instrumentation/rules/sdks/browser.md)
-- [`otel-instrumentation/rules/sdks/nextjs.md`](../../otel-instrumentation/rules/sdks/nextjs.md)
+- [`otel-instrumentation/rules/sdks/browser.md`](https://github.com/dash0hq/agent-skills)
+- [`otel-instrumentation/rules/sdks/nextjs.md`](https://github.com/dash0hq/agent-skills)

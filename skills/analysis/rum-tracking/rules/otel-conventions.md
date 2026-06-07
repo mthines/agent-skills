@@ -18,10 +18,11 @@ or any OTLP-emitting client), follow the official semantic conventions.
 Custom attribute names that overlap registry namespaces fragment queries
 across services and break Dash0's derived-attribute computation.
 
-This rule is the RUM-specific application of the
-[`otel-semantic-conventions`](../../otel-semantic-conventions/SKILL.md)
-and [`otel-instrumentation`](../../otel-instrumentation/SKILL.md) skills —
-load them for full attribute / span / metric guidance.
+This rule is the RUM-specific application of the `otel-semantic-conventions`
+and `otel-instrumentation` skills, which live in the
+[dash0 agent-skills repo](https://github.com/dash0hq/agent-skills) (a dependency
+of this skill) — install or browse them there for full attribute / span / metric
+guidance.
 
 ## Contents
 
@@ -137,7 +138,7 @@ or accessibility role), not a generated DOM ID.
 
 Root client spans must be `INTERNAL` (page load, interaction).
 A `CLIENT` root span signals lost trace context — see
-[`otel-instrumentation` span hygiene](../../otel-instrumentation/rules/spans.md#root-spans-must-not-be-client).
+[`otel-instrumentation` span hygiene](https://github.com/dash0hq/agent-skills).
 
 ## Status code
 
@@ -171,7 +172,7 @@ on metric attributes.
 
 **Never on metrics**: `user.id`, `session.id`, `url.full`, raw `route`
 with IDs, timestamps.
-See [`otel-instrumentation` metrics cardinality](../../otel-instrumentation/rules/metrics.md#cardinality-management).
+See [`otel-instrumentation` metrics cardinality](https://github.com/dash0hq/agent-skills).
 
 The Web Vitals metric names above are project-local — there is **no
 stable OTel semantic convention for Web Vitals yet** (the Client
@@ -262,7 +263,7 @@ through it.
 - [OTel Attribute Registry](https://opentelemetry.io/docs/specs/semconv/registry/attributes/)
 - [OTel — Sessions](https://opentelemetry.io/docs/specs/semconv/registry/attributes/session/)
 - [Dash0 SDK Web](https://github.com/dash0hq/dash0-sdk-web)
-- [`otel-semantic-conventions/rules/attributes.md`](../../otel-semantic-conventions/rules/attributes.md)
-- [`otel-instrumentation/rules/spans.md`](../../otel-instrumentation/rules/spans.md)
-- [`otel-instrumentation/rules/metrics.md`](../../otel-instrumentation/rules/metrics.md)
-- [`otel-instrumentation/rules/sensitive-data.md`](../../otel-instrumentation/rules/sensitive-data.md)
+- [`otel-semantic-conventions/rules/attributes.md`](https://github.com/dash0hq/agent-skills)
+- [`otel-instrumentation/rules/spans.md`](https://github.com/dash0hq/agent-skills)
+- [`otel-instrumentation/rules/metrics.md`](https://github.com/dash0hq/agent-skills)
+- [`otel-instrumentation/rules/sensitive-data.md`](https://github.com/dash0hq/agent-skills)
