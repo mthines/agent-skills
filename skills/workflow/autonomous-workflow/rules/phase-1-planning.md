@@ -279,7 +279,7 @@ Disable by removing the invocation here (see
 
 ---
 
-## Adversarial Pre-Mortem (opt-in)
+## Adversarial Pre-Mortem
 
 **Anchor:** `adversarial-pre-mortem`
 
