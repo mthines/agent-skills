@@ -59,7 +59,35 @@ what a golden case should encode. When a lesson is promoted via `diagnose`,
 add the case here so the fix is locked. The `diagnostic-surface.md` failure
 taxonomies are a proto-spec for this golden set.
 
-## CI
+## CI — two requireable checks
 
-`.github/workflows/evals.yml` runs **L1 only** on every PR (deterministic, no
-key, no cost). L2 is local/manual until the golden set is large enough to gate.
+Both layers run in GitHub Actions, so each shows up as a status check you can
+require via branch protection:
+
+| Workflow | Check name | Trigger | Needs a secret? | Gates? |
+| --- | --- | --- | --- | --- |
+| `.github/workflows/evals-l1.yml` | **evals · L1 (contract checks)** | every PR + push to `main` | no | **yes** — fails on any broken contract |
+| `.github/workflows/evals-l2.yml` | **evals · L2 (tier routing)** | PRs touching routing files, + manual `workflow_dispatch` | `ANTHROPIC_API_KEY` | soft — `EVAL_GATE` catastrophic floor (70%) |
+
+**To enable L2:** add an `ANTHROPIC_API_KEY` repository secret (Settings →
+Secrets and variables → Actions). Until then the L2 job still runs and **passes**
+(the script skips cleanly with no key), so it's safe to require immediately and
+safe for fork PRs (which can't read secrets). Accuracy + any misses are written
+to the PR's check summary.
+
+**Why L2 only gates softly:** the golden set is 30 cases (< 50), which `evals.md`
+calls statistically noisy. The 70% floor only catches a badly-broken rubric, not
+1–2 cases of model noise. Grow `tier-routing.jsonl` to ≥ 50, then tighten the
+floor (or switch to 0%-regression-vs-baseline) and gate hard.
+
+To require them: Settings → Branches → branch protection → "Require status
+checks" → pick **evals · L1** (and **evals · L2** once the secret is set).
+
+### Burning down the L1 baseline
+
+`l1.mjs` keeps a small `BASELINE` of pre-existing broken links so the gate
+catches *new* breakage without failing on history. As of now it holds only the
+`playwright-test-healer` **agent** references in `e2e-pr-stabilizer` — a missing
+artifact (the agent doesn't exist in `agents/`), not a stale path. Resolve by
+creating the agent, pointing at its real home, or rewording the refs; then
+remove it from `BASELINE`.

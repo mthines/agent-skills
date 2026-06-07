@@ -69,5 +69,22 @@ if (misses.length) {
   console.log("\nMisses (inspect — a miss is either a model error OR a too-vague rubric/golden label):");
   for (const m of misses) console.log(`  - ${m.id}: ${m.expected}→${m.got}  «${m.task}»`);
 }
-// Report-only: always exit 0 (golden set < 50). When you grow it to ≥ 50, gate here.
+
+// Surface the result on the PR check (GitHub Actions step summary), if present.
+if (process.env.GITHUB_STEP_SUMMARY) {
+  const { appendFileSync } = await import("node:fs");
+  const rows = misses.map((m) => `| ${m.id} | ${m.expected} | ${m.got} |`).join("\n");
+  appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+    `### L2 tier-routing — ${acc}% (${pass}/${results.length}), model \`${MODEL}\`\n\n` +
+    (misses.length ? `| case | expected | got |\n| --- | --- | --- |\n${rows}\n` : "All cases passed.\n"));
+}
+
+// Gating is opt-in via EVAL_GATE (a percentage floor). Default = report-only (exit 0),
+// because the golden set is < 50 (evals.md: statistically noisy). CI sets a conservative
+// catastrophic floor that only trips on a badly-broken rubric, not 1–2 cases of noise.
+const gate = process.env.EVAL_GATE ? Number(process.env.EVAL_GATE) : null;
+if (gate !== null && Number(acc) < gate) {
+  console.error(`\n✗ accuracy ${acc}% is below the EVAL_GATE floor of ${gate}%`);
+  process.exit(1);
+}
 process.exit(0);

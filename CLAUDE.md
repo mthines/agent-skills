@@ -240,8 +240,8 @@ All applicable hops must resolve. If any is missing, the harness will not see th
 
 Regression evals for the skills live in [`scripts/eval/`](./scripts/eval/README.md), in two layers:
 
-- **L1 — deterministic contract checks** (`node scripts/eval/l1.mjs`): no LLM, no cost, runs in CI ([`.github/workflows/evals.yml`](./.github/workflows/evals.yml)) on every PR. Asserts link/anchor integrity (baseline-ratcheted), the `aw` tier table ≡ `SKILL.md` Step 1, the `plan.md` Core-section contract (runs the actual `confidence` rule #2/#3 idioms — incl. the #31 regression), `diagnose` skill resolvability, lesson-scope storage, and frontmatter sanity.
-- **L2 — behavioral evals** (`ANTHROPIC_API_KEY=… node scripts/eval/l2-tier-routing.mjs`): runs a model against a golden set (`golden/tier-routing.jsonl`) to check `aw` tier routing. Report-only until the golden set reaches ≥ 50 cases. Skips cleanly without a key.
+- **L1 — deterministic contract checks** (`node scripts/eval/l1.mjs`): no LLM, no cost, gated in CI ([`.github/workflows/evals-l1.yml`](./.github/workflows/evals-l1.yml)) on every PR. Asserts link/anchor integrity (baseline-ratcheted), the `aw` tier table ≡ `SKILL.md` Step 1, the `plan.md` Core-section contract (runs the actual `confidence` rule #2/#3 idioms — incl. the #31 regression), `diagnose` skill resolvability, lesson-scope storage, and frontmatter sanity.
+- **L2 — behavioral evals** (`ANTHROPIC_API_KEY=… node scripts/eval/l2-tier-routing.mjs`): runs a model against a golden set (`golden/tier-routing.jsonl`) to check `aw` tier routing. In CI via [`.github/workflows/evals-l2.yml`](./.github/workflows/evals-l2.yml) — runs on routing-file changes + manual dispatch, needs an `ANTHROPIC_API_KEY` repo secret, soft-gates at a 70% catastrophic floor (golden set < 50 ⇒ report-only-ish per `evals.md`). Skips cleanly without a key.
 
 When a lesson is promoted via `diagnose`, add a golden case so the fix is locked. Methodology: [`ai-engineering/rules/evals.md`](./skills/quality/ai-engineering/rules/evals.md).
 

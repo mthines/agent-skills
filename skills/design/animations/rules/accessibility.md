@@ -31,7 +31,7 @@ Honour it.
 > **Layout morphs need extra care.** A list-to-stacked-cards or full-to-collapsed-nav
 > animation travels much further than a fade and is the riskiest case
 > for vestibular users. Its dedicated accessibility section lives in
-> [`from-to-morphs.md`](./from-to-morphs.md#accessibility--the-rules-for-big-morphs):
+> [`state-choreography.md`](./state-choreography.md#accessibility--the-rules-for-big-morphs):
 > `<MotionConfig reducedMotion="user">` at the root, focus
 > preservation, `aria-live` announcements, `aria-label` when text
 > disappears, and pointer-event gating during the transition.

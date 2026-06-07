@@ -1,8 +1,8 @@
-name: evals (L1 deterministic)
+name: evals · L1 (contract checks)
 
-# Runs the L1 contract checks on every PR and push to main. L1 is deterministic,
-# needs no API key, and costs nothing. L2 (behavioral, LLM-in-the-loop) is run
-# locally / on demand — see scripts/eval/README.md.
+# Runs the L1 deterministic contract checks on every PR and push to main.
+# No API key, no cost — safe to require as a branch-protection check.
+# L2 (behavioral, LLM-in-the-loop) lives in evals-l2.yml. See scripts/eval/README.md.
 
 on:
   pull_request:

@@ -1,0 +1,42 @@
+name: evals · L2 (tier routing)
+
+# Behavioral eval: does the `aw` dispatcher route tasks to the right tier?
+# Runs a model, so it needs a secret and costs a few tokens. To keep it cheap and
+# relevant it runs ONLY when routing-related files change (or on manual dispatch).
+#
+# Setup (one-time): add an ANTHROPIC_API_KEY repository secret
+#   (Settings → Secrets and variables → Actions → New repository secret).
+# Without the secret the job still runs and passes — the script skips cleanly —
+# so this is safe to require as a check and safe for fork PRs.
+
+on:
+  pull_request:
+    paths:
+      - "skills/workflow/autonomous-workflow/templates/dispatcher.template.md"
+      - "skills/workflow/autonomous-workflow/SKILL.md"
+      - "skills/workflow/autonomous-workflow/rules/phase-0-validation.md"
+      - "scripts/eval/golden/tier-routing.jsonl"
+      - "scripts/eval/l2-tier-routing.mjs"
+      - "scripts/eval/lib.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  l2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: L2 tier-routing eval
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Conservative catastrophic floor. A healthy rubric scores ~90%+; 70%
+          # only trips on a badly-broken rubric, not 1–2 cases of model noise on a
+          # 30-case set. Tighten (or move to 0% regression vs baseline) once the
+          # golden set reaches ≥ 50 — see scripts/eval/README.md.
+          EVAL_GATE: "70"
+        run: node scripts/eval/l2-tier-routing.mjs

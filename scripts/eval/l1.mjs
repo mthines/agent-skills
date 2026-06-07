@@ -17,15 +17,14 @@ const s = new Suite("L1 deterministic contract checks");
 // NO NEW breakage: known pre-existing breaks live in the baseline below (a ratchet —
 // burn the list down over time; never add to it for new work).
 {
-  // Pre-existing breaks as of this eval's introduction. Each is real link debt in
-  // an unrelated skill, tracked here so the gate catches *regressions*, not history.
+  // Known pre-existing breaks. The gate catches NEW breakage; burn this list down,
+  // never add to it for new work. The remaining entries are links to the
+  // `playwright-test-healer` AGENT, which does not exist in agents/ — a genuinely
+  // MISSING artifact (the e2e-pr-stabilizer skill depends on it), not a stale path.
+  // Resolve by creating the agent, pointing at its real home, or rewording the refs.
   const BASELINE = new Set([
-    "skills/design/animations/references/recipes.md::../rules/from-to-morphs.md",
-    "skills/design/animations/rules/patterns.md::./from-to-morphs.md",
-    "skills/design/animations/rules/accessibility.md::./from-to-morphs.md#accessibility--the-rules-for-big-morphs",
     "skills/testing/e2e-pr-stabilizer/SKILL.md::../../../agents/playwright-test-healer.md",
     "skills/testing/e2e-pr-stabilizer/rules/root-cause-and-fix.md::../../../agents/playwright-test-healer.md",
-    "skills/workflow/fix-bug/rules/reproduction.md::./independent-verification.md#check-3--diff-sanity",
   ]);
   // linksOutsideFences: skip ``` fenced blocks (examples) and obvious placeholders.
   function realLinks(file) {
