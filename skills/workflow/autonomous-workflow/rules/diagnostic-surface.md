@@ -98,6 +98,16 @@ Lite Mode runs produce no `plan.md` / `walkthrough.md` — diagnoses against Lit
 
 ---
 
+## Lessons scope
+
+- Scope: `aw-lessons`
+- Tier: `project-shared` (`<repo>/memory/aw-lessons/`)
+- Read for evidence with: `Skill("persistent-memory", "read aw-lessons --tier project-shared")`
+
+Diagnose Step 2 loads promotion-eligible lessons (`seen_count >= 3` or `status: structural`) as evidence — they are the strongest signal that a failure recurs. See [`self-improvement-loop.md`](./self-improvement-loop.md).
+
+---
+
 ## Validators
 
 - `claude plugin validate skills/workflow/autonomous-workflow` — frontmatter + structure check.

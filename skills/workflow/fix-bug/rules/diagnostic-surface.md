@@ -17,6 +17,7 @@ tags:
 - [Failure taxonomy](#failure-taxonomy)
 - [Hard invariants](#hard-invariants)
 - [Artifacts](#artifacts)
+- [Lessons scope](#lessons-scope)
 - [Validators](#validators)
 
 ---
@@ -145,6 +146,16 @@ The diagnoser must not propose to relax any of these without explicit user confi
 | Phase 8 verification log                      | `telemetry-verification.md`                                 | Phase 8 (post-deploy)                                               |
 
 `--analyse-only` runs produce only Phases 0–4 artifacts (no plan.md, no PR, no verifier, no Phase 8); diagnoses against analyse-only runs have a thinner evidence trail and the report should call that out. Triage (Phase 0.5) runs and is logged even in analyse-only mode.
+
+---
+
+## Lessons scope
+
+- Scope: `fix-bug-lessons` (fix-bug's own diagnostic-phase lessons; implementation-phase lessons live in `aw-lessons`)
+- Tier: `project-shared` (`<repo>/memory/fix-bug-lessons/`)
+- Read for evidence with: `Skill("persistent-memory", "read fix-bug-lessons --tier project-shared")`
+
+Diagnose Step 2 loads promotion-eligible lessons (`seen_count >= 3` or `status: structural`) as evidence — keyed by `bugClass` + input shape. See [`self-improvement-loop.md`](./self-improvement-loop.md).
 
 ---
 

@@ -114,6 +114,12 @@ After the INDEX loads:
 3. A lesson is **advisory** — it informs the plan; it never silently changes a
    gate or skips a phase. If a lesson conflicts with the user's stated intent,
    the user's intent wins and the conflict is surfaced.
+4. **Maintenance check.** If the loaded `INDEX.md` is at or near its 200-line
+   cap (≥ ~180 lines), surface a one-line suggestion to run
+   `/persistent-memory consolidate aw-lessons` — do not run it inside the
+   autonomous loop. Skipping consolidation forever lets the INDEX rot and recall
+   degrade (persistent-memory's documented anti-pattern); this nudge is the
+   trigger the loop would otherwise lack.
 
 Log:
 
@@ -278,3 +284,7 @@ disabling the fast tier.
   the basis for the entrenchment guards above.
 
 See also [`../../../authoring/persistent-memory/references/research-sources.md`](../../../authoring/persistent-memory/references/research-sources.md).
+
+**Worked example.** A full lesson lifecycle (capture → recur 3× → promote →
+apply) is traced in
+[`../references/self-improvement-walkthrough.md`](../references/self-improvement-walkthrough.md).

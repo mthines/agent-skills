@@ -66,6 +66,16 @@ Every new row must come from a real, confidence-gated, user-approved diagnosis.
 
 ---
 
+## Lessons scope
+
+<!-- Omit this whole section if the skill has no self-improvement loop. -->
+
+- Scope: `<skill-name>-lessons`
+- Tier: `project-shared` (`<repo>/memory/<skill-name>-lessons/`)
+- Read for evidence with: `Skill("persistent-memory", "read <skill-name>-lessons --tier project-shared")`
+
+---
+
 ## Validators
 
 - <local command — e.g. `claude plugin validate skills/<name>`>

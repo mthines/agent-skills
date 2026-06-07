@@ -87,6 +87,9 @@ Skill("persistent-memory", "read fix-bug-lessons --tier project-shared")     # s
 3. Lessons are **advisory** — they never relax a confidence gate, the Phase 5
    thresholds, the reproduction gate, or any hard invariant.
 4. Record applied lessons in the bug-notes ledger under `Lessons applied`.
+5. **Maintenance check.** If the `INDEX.md` is at/near its 200-line cap
+   (≥ ~180 lines), surface a one-line `/persistent-memory consolidate fix-bug-lessons`
+   suggestion — do not run it inside the autonomous loop.
 
 Log to the ledger:
 

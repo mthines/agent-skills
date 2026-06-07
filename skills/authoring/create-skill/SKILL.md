@@ -268,6 +268,14 @@ inferring phases from the target body's H2 sections (`SKILL.md` for skills,
 Diagnose Mode never modifies user product code.
 It only proposes changes to the target's own source.
 
+**Self-improving skills.** An orchestrator skill can close the loop further with
+a two-tier self-improvement loop: a fast episodic-lessons tier
+(`persistent-memory`) feeding the slow `diagnose` tier via a recurrence gate.
+The reusable recipe — including when NOT to add one — is in
+[`rules/self-improvement-loop-pattern.md`](./rules/self-improvement-loop-pattern.md).
+When a target declares a `## Lessons scope`, Diagnose Mode reads it as evidence
+(Step 2).
+
 ---
 
 ## Required Reading by Phase
@@ -283,6 +291,7 @@ Load these on demand — do not preload them all.
 | 4        | `rules/repository-conventions.md`                                                       |
 | 5        | `rules/quality-checklist.md`                                                            |
 | diagnose | `rules/diagnose-mode.md`, `rules/diagnostic-surface.md`, plus the target's `rules/diagnostic-surface.md` |
+| loop     | `rules/self-improvement-loop-pattern.md` (adding a self-improvement loop to an orchestrator skill) |
 
 Worked examples in `references/skill-archetypes.md` are optional — load only
 when the user asks "what does an X-shaped skill look like?".

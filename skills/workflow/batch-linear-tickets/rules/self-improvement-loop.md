@@ -79,6 +79,10 @@ Apply matches as **advisory inputs**: a classification lesson biases the
 lesson primes Phase 2 to look for a known recurring conflict pattern. Lessons
 never override an explicit `--type` flag or auto-approve a `Needs Info` ticket.
 
+**Maintenance check.** If the `INDEX.md` is at/near its 200-line cap
+(≥ ~180 lines), surface a one-line `/persistent-memory consolidate batch-lessons`
+suggestion — do not run it inside the loop.
+
 ---
 
 ## Write lessons (Phase 5)

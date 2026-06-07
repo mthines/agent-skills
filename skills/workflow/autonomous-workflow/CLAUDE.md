@@ -103,6 +103,7 @@ skills/workflow/autonomous-workflow/
     ├── autonomous-workflow-complete.md      # Full end-to-end walked example.
     ├── error-recovery-scenarios.md          # Concrete error → recovery transcripts.
     ├── iterative-refinement.md              # Worked example of stuck-loop recovery.
+    ├── self-improvement-walkthrough.md      # Worked example: a lesson's full lifecycle (capture → recur → promote).
     └── anthropic-architecture-research.md   # Verbatim Anthropic citations + design mapping.
 ```
 

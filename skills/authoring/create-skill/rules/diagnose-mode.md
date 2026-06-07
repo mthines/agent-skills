@@ -104,13 +104,15 @@ The confidence gate at Step 6 is **mandatory** — there is no path to `--apply`
 Diagnose Mode works against **two target kinds**: skills (multi-file directories under `skills/`) and agents (single-file `.md` files under `agents/`, optionally with a sibling `agents/<name>/` directory holding rules).
 Both resolve through the same procedure — only the source-root path differs.
 
-Resolve the target's diagnostic surface by trying paths in this fixed order, stopping at the first match:
+Resolve the target's diagnostic surface by trying paths in this fixed order, stopping at the first match. **Skills in this repo live under a category directory (`skills/<category>/<name>/`), so a flat `skills/<name>/` lookup alone will miss them — the glob in step 2 is what makes resolution work here.**
 
-1. **Skill candidate** — if `skills/<target-name>/` exists, the target is a skill. Source root: `skills/<target-name>/`. Surface path: `skills/<target-name>/rules/diagnostic-surface.md`.
-2. **Agent candidate** — else if `agents/<target-name>.md` exists, the target is an agent. Source root: `agents/`. Surface path: `agents/<target-name>/rules/diagnostic-surface.md` (the rules directory sits next to the single-file agent body).
-3. **Neither** — refuse and ask the user to clarify; do not guess. Print the two paths checked.
+1. **Flat skill candidate** — if `skills/<target-name>/` exists (flat layout / other repos), the target is a skill. Source root: `skills/<target-name>/`.
+2. **Category-nested skill candidate** — else glob `skills/*/<target-name>/` (one category level, this repo's layout). If **exactly one** directory matches, that is the source root (e.g. `skills/workflow/fix-bug/`). If **more than one** matches, list them and ask the user which to target — do not guess.
+3. **Installed skill candidate** — else if the target is installed but not in the current checkout, try the flat install paths `~/.claude/skills/<target-name>/` then `~/.agents/skills/<target-name>/`, and `readlink -f` to the real source root (the cross-tool symlink chain `~/.claude/skills/...` → `~/.agents/skills/...` → repo resolves to a possibly-nested repo path).
+4. **Agent candidate** — else if `agents/<target-name>.md` exists, the target is an agent. Source root: `agents/`. Surface path: `agents/<target-name>/rules/diagnostic-surface.md` (the rules directory sits next to the single-file agent body).
+5. **None** — refuse and ask the user to clarify; do not guess. Print every path/glob checked.
 
-Resolve the real path with `readlink -f` in case the local checkout uses the cross-tool symlink chain (`~/.claude/skills/...` → `~/.agents/skills/...` → repo). `git apply` always runs from the resolved source root.
+In all cases the surface path is `<source-root>/rules/diagnostic-surface.md`. Always `readlink -f` the resolved source root before running `git apply` (the checkout may be reached through the symlink chain above). `git apply` always runs from the resolved source root.
 
 If the surface path does not exist at the matched candidate, fall back to inference (see [Fallback](#fallback-for-skills-and-agents-without-a-diagnostic-surface)) and warn the user once that fidelity is reduced.
 
@@ -119,7 +121,7 @@ The surface gives you the target's:
 - **Phase model** — list of phases / steps with their gates and rule files.
 - **Failure taxonomy** — known classes (each with an ID like `F1`, `F2`, plus `F-novel`).
 - **Existing-guards-per-phase table** — what already runs at each phase.
-- **Source root** — the path against which `git apply` is executed (`skills/<target-name>/` for skills, `agents/` for agents). The surface file itself declares this — trust it over the candidate-matching above when they conflict.
+- **Source root** — the path against which `git apply` is executed (`skills/<category>/<target-name>/` for skills in this repo, or flat `skills/<target-name>/` elsewhere; `agents/` for agents). The surface file itself declares this in its `## Source root` section — trust it over the candidate-matching above when they conflict.
 - **Hard invariants** — gates the target marks as load-bearing (the diagnoser is forbidden from proposing relaxations to these without manual user confirmation).
 
 ### Step 2 — Evidence collection
@@ -133,6 +135,7 @@ Gather every observable that describes what happened:
 5. The **invocation log** of any companions / sub-steps the target ran (when, with what outcome).
 6. Any **diff** between the produced output and what the user says was correct.
 7. The **transcript** of any tests, lint runs, CI runs, or judgments that "passed" while the bug was present.
+8. **Episodic lessons** — if the surface declares a `## Lessons scope` (the skill's fast-tier self-improvement store), load it with `Skill("persistent-memory", "read <scope> --tier <tier>")` and pull the entries whose `trigger-context` matches this failure, **prioritising promotion-eligible ones (`seen_count >= 3` or `status: structural`)**. A lesson that already recurred N times is the strongest possible evidence that this is a real, recurring class — not a one-off — and it often already names the phase and the fix in its *"What to do next time"* field. Cite the matched lesson IDs and their `seen_count` in the report's Evidence section. Skip silently if no scope is declared or `persistent-memory` is absent.
 
 If the target ran in a degraded mode (e.g. autonomous-workflow Lite, fix-bug `--analyse-only`) and produced fewer artifacts, note that fact explicitly — it is a contributing factor and the report must call it out.
 

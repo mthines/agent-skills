@@ -20,6 +20,7 @@ The contract spec lives at [`skills/authoring/create-skill/rules/diagnostic-surf
 - [Failure taxonomy](#failure-taxonomy)
 - [Hard invariants](#hard-invariants)
 - [Artifacts](#artifacts)
+- [Lessons scope](#lessons-scope)
 - [Validators](#validators)
 
 ---
@@ -100,6 +101,16 @@ The diagnoser must not propose to relax any of these without explicit user confi
 | Draft PR(s) + Linear comments             | `aw-executor` / Phase 5 | Phase 4–5                        |
 
 This skill produces no durable per-run ledger of its own (unlike `fix-bug`'s bug-notes); the per-ticket artifacts above plus the Linear writeback are the trail. Diagnoses rely on the session transcript + `batch-lessons` history.
+
+---
+
+## Lessons scope
+
+- Scope: `batch-lessons` (batch-orchestration lessons only; planning/impl lessons live in `aw-lessons` via the fan-out)
+- Tier: `project-shared` (`<repo>/memory/batch-lessons/`)
+- Read for evidence with: `Skill("persistent-memory", "read batch-lessons --tier project-shared")`
+
+Diagnose Step 2 loads promotion-eligible lessons (`seen_count >= 3` or `status: structural`) as evidence — keyed by label set / ticket-type / affected-area. See [`self-improvement-loop.md`](./self-improvement-loop.md).
 
 ---
 

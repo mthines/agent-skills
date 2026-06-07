@@ -30,8 +30,9 @@ The literal scaffolding template lives at [`templates/diagnostic-surface.templat
 
 ## Required sections
 
-A valid `rules/diagnostic-surface.md` contains the eight sections below in order.
-Missing any section ⇒ `create-skill diagnose` falls back to inferred mode and warns the user.
+A valid `rules/diagnostic-surface.md` contains the sections below in order.
+Sections 1–7 are required; **Lessons scope** and **Validators** are optional.
+Missing any required section ⇒ `create-skill diagnose` falls back to inferred mode and warns the user.
 
 ### 1. Frontmatter
 
@@ -150,7 +151,23 @@ The diagnoser reads these in Step 2 of its procedure.
 If your skill produces no artifacts, write `(none — diagnosis relies on transcript only)`.
 Be honest — a skill with no artifact trail is harder to diagnose, and the report should call that out.
 
-### 8. Validators (optional)
+### 8. Lessons scope (optional)
+
+If the skill has a fast-tier self-improvement loop (a committed `persistent-memory` scope it reads/writes across runs), declare the scope and tier here.
+Step 2 of the diagnose procedure loads it as **evidence** — promotion-eligible lessons (`seen_count >= 3` or `status: structural`) are the strongest signal that a failure recurs, and they often already name the phase and fix.
+
+```markdown
+## Lessons scope
+
+- Scope: `<skill>-lessons`
+- Tier: `project-shared` (`<repo>/memory/<skill>-lessons/`)
+- Read for evidence with: `Skill("persistent-memory", "read <skill>-lessons --tier project-shared")`
+```
+
+Omit this section if the skill has no self-improvement loop.
+See [`self-improvement-loop-pattern.md`](./self-improvement-loop-pattern.md) for how to add one.
+
+### 9. Validators (optional)
 
 Local commands the diagnoser can run after `--apply` to confirm the change did not break the skill.
 
