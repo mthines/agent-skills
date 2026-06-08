@@ -14,7 +14,7 @@ Methodology follows the repo's own [`ai-engineering/rules/evals.md`](../../skill
 | **Cost / speed** | Free, milliseconds. Runs in CI on every PR. | Costs API tokens, seconds–minutes. Run locally / nightly. |
 | **Scoring** | Exact assertions (pass/fail). | Accuracy vs human-labelled golden set (here: exact-match on a label; no LLM-judge needed for classification). |
 | **Catches** | Broken links/anchors, missing plan sections, gate-logic regressions, doc drift, version-collision. | "The skill biases the model the wrong way" — wrong tier routing, mis-classification, mis-calibrated confidence. Things reading the markdown can't prove. |
-| **Example here** | `l1.mjs` — incl. the #31 confidence-gate regression and the dispatcher↔SKILL tier-table drift. | `l2-tier-routing.mjs` — does `aw` route tasks to Micro/Lite/Full correctly? |
+| **Example here** | `l1.mjs` — incl. the #31 confidence-gate regression and the dispatcher↔SKILL tier-table drift. | `l2.mjs` — does `aw` route tasks to the right tier? does `/fix-bug` classify the bug right? |
 
 **Why both?** L1 proves the *contract* (cheap, every PR). L2 proves the
 *behavior* (expensive, periodic). L1 would never have caught "the dispatcher
@@ -39,18 +39,39 @@ Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
 
 Add a check: append a `s.check(label, condition, detail)` in `l1.mjs`.
 
-## L2 — `ANTHROPIC_API_KEY=… node scripts/eval/l2-tier-routing.mjs`
+## L2 — `ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs`
 
-Feeds the dispatcher's **live** `## Tier detection` rubric + each golden task
-to the model and exact-matches the emitted tier against the label in
-`golden/tier-routing.jsonl`. Skips cleanly (exit 0) without an API key.
+Data-driven: one runner, many suites. Each suite feeds a skill's **live** rubric
+section (read straight from the skill source, so the eval tests the *shipped*
+instructions) + a labelled input to the model, and exact-matches the model's
+choice against the human label. Classification → exact-match, **no LLM-as-judge**.
 
-- **Report-only** today: 30 cases. The repo's `evals.md` says < 50 is "noisy —
-  do not gate CI." Grow `tier-routing.jsonl` to ≥ 50, then add a gate threshold.
+| Suite | Question | Rubric read from | Choices |
+| --- | --- | --- | --- |
+| `tier-routing` | Which tier for this task? | dispatcher `## Tier detection` | Micro / Lite / Full |
+| `bug-class` | What `bugClass` for this evidence? | fix-bug `### Step 0c` | the 9 classes |
+| `complexity-triage` | simple or complex bug? | fix-bug `## Phase 0.5` | simple / complex |
+| `aw-should-trigger` | should the routing rule auto-trigger? | the whole routing rule | trigger / skip |
+
+```bash
+node scripts/eval/l2.mjs                 # all suites
+node scripts/eval/l2.mjs --suite bug-class
+EVAL_MODEL=… EVAL_GATE=70 node scripts/eval/l2.mjs
+```
+
+- **Report-only** by default (each golden set is < 50 — `evals.md` calls that
+  noisy). `EVAL_GATE=<pct>` soft-gates: fail if any suite is below the floor.
 - A **miss** means one of two things — inspect it: the model got it wrong
   (improve the rubric), or the golden label is itself debatable (fix the label).
-  That feedback loop *is* the eval.
-- Override the actor model with `EVAL_MODEL=…`.
+  That feedback loop *is* the eval. Skips cleanly (exit 0) with no API key.
+
+### Add a suite
+
+1. Drop a `golden/<name>.jsonl` of `{"id","input","expected","notes"}` lines.
+2. Append a config object to `SUITES` in `l2.mjs` — point `rubric.section` at the
+   skill heading to read live, and list the `choices`.
+3. Add the golden path / rubric file to `evals-l2.yml`'s `paths:` so CI runs it
+   when relevant files change.
 
 ### The link to self-improvement
 
@@ -67,7 +88,7 @@ require via branch protection:
 | Workflow | Check name | Trigger | Needs a secret? | Gates? |
 | --- | --- | --- | --- | --- |
 | `.github/workflows/evals-l1.yml` | **evals · L1 (contract checks)** | every PR + push to `main` | no | **yes** — fails on any broken contract |
-| `.github/workflows/evals-l2.yml` | **evals · L2 (tier routing)** | PRs touching routing files, + manual `workflow_dispatch` | `ANTHROPIC_API_KEY` | soft — `EVAL_GATE` catastrophic floor (70%) |
+| `.github/workflows/evals-l2.yml` | **evals · L2 (behavioral)** | PRs touching a rubric/golden file, + manual `workflow_dispatch` | `ANTHROPIC_API_KEY` | soft — `EVAL_GATE` floor (70%), per suite |
 
 **To enable L2:** add an `ANTHROPIC_API_KEY` repository secret (Settings →
 Secrets and variables → Actions). Until then the L2 job still runs and **passes**
@@ -75,10 +96,10 @@ Secrets and variables → Actions). Until then the L2 job still runs and **passe
 safe for fork PRs (which can't read secrets). Accuracy + any misses are written
 to the PR's check summary.
 
-**Why L2 only gates softly:** the golden set is 30 cases (< 50), which `evals.md`
+**Why L2 only gates softly:** each golden set is < 50 cases, which `evals.md`
 calls statistically noisy. The 70% floor only catches a badly-broken rubric, not
-1–2 cases of model noise. Grow `tier-routing.jsonl` to ≥ 50, then tighten the
-floor (or switch to 0%-regression-vs-baseline) and gate hard.
+1–2 cases of model noise. Grow a suite's golden set to ≥ 50, then tighten the
+floor (or switch to 0%-regression-vs-baseline) and gate it hard.
 
 To require them: Settings → Branches → branch protection → "Require status
 checks" → pick **evals · L1** (and **evals · L2** once the secret is set).

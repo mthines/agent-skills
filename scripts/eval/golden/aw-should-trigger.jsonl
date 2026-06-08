@@ -1,0 +1,15 @@
+{"id":"trig-1","input":"Implement a dark-mode toggle end-to-end and open a PR.","expected":"trigger","notes":"end-to-end + PR"}
+{"id":"trig-2","input":"Add user authentication autonomously.","expected":"trigger","notes":"'autonomously'"}
+{"id":"trig-3","input":"Ship the CSV export feature all the way to a PR.","expected":"trigger","notes":"'ship', 'all the way to a PR'"}
+{"id":"trig-4","input":"Handle this in isolation: refactor the API client to use retry-with-backoff.","expected":"trigger","notes":"'in isolation'"}
+{"id":"trig-5","input":"Take care of this without me — add rate limiting to the public endpoints.","expected":"trigger","notes":"'without me'"}
+{"id":"trig-6","input":"Work on this in a worktree: migrate the settings page to the new form library.","expected":"trigger","notes":"'in a worktree'"}
+{"id":"trig-7","input":"Land the password-reset flow through CI.","expected":"trigger","notes":"'land', 'through CI'"}
+{"id":"skip-1","input":"What does the useOrders hook do?","expected":"skip","notes":"question"}
+{"id":"skip-2","input":"Review my changes on this branch.","expected":"skip","notes":"code review"}
+{"id":"skip-3","input":"Explain how the auth flow works.","expected":"skip","notes":"explanation"}
+{"id":"skip-4","input":"Fix this typo here in the file I have open.","expected":"skip","notes":"single-file edit during interactive work, 'here'"}
+{"id":"skip-5","input":"Let's explore the codebase together to understand the data model.","expected":"skip","notes":"exploration / interactive"}
+{"id":"skip-6","input":"Can you look at this function with me and suggest improvements?","expected":"skip","notes":"interactive, collaborative"}
+{"id":"skip-7","input":"In this session, help me debug the failing test step by step.","expected":"skip","notes":"'in this session', interactive"}
+{"id":"skip-8","input":"Why is this selector returning null?","expected":"skip","notes":"question, no implementation requested"}
