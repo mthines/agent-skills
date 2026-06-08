@@ -55,8 +55,14 @@ A hypothesis that does not meet these requirements is `recommendation-only` — 
 Optimize mode produces recommendations, not edits — jump from Phase 4 directly to the report.
 See the "Optimize-mode finding catalogue" section below for what to put *in* those recommendations.
 
-Drive code edits through the [`playwright-test-healer`](https://playwright.dev/docs/test-agents) methodology.
-The healer agent's principles are non-negotiable.
+**If the Playwright healer agent is available** — i.e. the [Playwright MCP server](https://github.com/microsoft/playwright-mcp)
+is connected (`mcp__playwright__*` tools present) or the project has run
+`npx playwright init-agents` — **drive the fix through Playwright's
+[healer agent](https://playwright.dev/docs/test-agents)**: run the test in debug
+mode, inspect console logs / network requests / page snapshots, and repair until
+it passes (mark `.skip` only if the feature is genuinely broken). **Otherwise,
+fall back to the inline methodology in this rule.** Either way, the healer's
+principles below are non-negotiable.
 
 Phase 5 has **three sub-steps**:
 

@@ -24,6 +24,25 @@ and `otel-instrumentation` skills, which live in the
 of this skill) — install or browse them there for full attribute / span / metric
 guidance.
 
+**Load them at runtime when present.** Before applying the conventions below,
+invoke both — they carry the authoritative span/metric/attribute rules this rule
+defers to. Each **skips silently if not installed** (the dash0 skills are an
+optional dependency); log one line and continue with the RUM-specific guidance
+here:
+
+```
+Skill("otel-semantic-conventions")   # authoritative attribute registry; skips silently if not installed
+Skill("otel-instrumentation")        # span/metric hygiene + sensitive-data rules; skips silently if not installed
+```
+
+```markdown
+- [TIMESTAMP] otel-conventions: otel-semantic-conventions — invoked (or: not available, continuing)
+- [TIMESTAMP] otel-conventions: otel-instrumentation — invoked (or: not available, continuing)
+```
+
+When installed, treat their guidance as authoritative and this rule as the
+RUM-specific overlay; when absent, this rule stands on its own.
+
 ## Contents
 
 - [Signal selection — span, metric, or log?](#signal-selection--span-metric-or-log)

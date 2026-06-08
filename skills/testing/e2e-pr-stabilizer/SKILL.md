@@ -69,8 +69,10 @@ This skill is the orchestrator over those.
 > Playwright's own **healer** ([Playwright Test Agents](https://playwright.dev/docs/test-agents):
 > planner / generator / healer) running on the
 > [Playwright MCP server](https://github.com/microsoft/playwright-mcp). Set it up
-> with `npx playwright init-agents --loop=claude` (Playwright ≥ 1.56). References
-> to `playwright-test-healer` point there.
+> with `npx playwright init-agents --loop=claude` (Playwright ≥ 1.56). At runtime,
+> Phase 5 **uses the healer when the Playwright MCP is connected** (`mcp__playwright__*`
+> tools present) and **falls back to the inline root-cause methodology** when it
+> isn't — so the skill works with or without it, but is strongest with it.
 It does not duplicate their content — each phase delegates.
 
 ---
