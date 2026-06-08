@@ -26,7 +26,7 @@ GPU-cheap when implemented with the snippets below.
 
 For **from-to morphs** (list → stacked cards, full nav → icon-only
 nav, grid → detail view), see
-[`from-to-morphs.md`](./from-to-morphs.md) — those require Motion
+[`state-choreography.md`](./state-choreography.md) — those require Motion
 `layout` / `layoutId` or View Transitions, not the recipes below.
 
 ## 1 — Fade in / out

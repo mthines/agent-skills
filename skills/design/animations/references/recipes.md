@@ -28,7 +28,7 @@ needs a starting point to copy.
 
 For **from-to layout morphs** (list ↔ stacked cards, full ↔ icon-only
 nav, grid ↔ detail view) with their full accessibility checklist,
-see [`rules/from-to-morphs.md`](../rules/from-to-morphs.md) — the
+see [`rules/state-choreography.md`](../rules/state-choreography.md) — the
 recipes there are too long to inline here.
 
 ---

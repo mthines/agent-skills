@@ -20,7 +20,7 @@ Block PII at the source — at the call site, in the wrapper, and again in
 the Collector as defence in depth.
 
 This rule aligns with the
-[`otel-instrumentation` sensitive-data rules](../../otel-instrumentation/rules/sensitive-data.md);
+[`otel-instrumentation` sensitive-data rules](https://github.com/dash0hq/agent-skills);
 when in doubt, that rule's `Never-instrument list` wins.
 
 ## The never-track list
@@ -126,7 +126,7 @@ export function safeUrl(href: string): { route: string; query: Record<string, st
 
 In OTel, run a `SpanProcessor` that does the same on `url.full` and
 `http.request.header.*` — see the `otel-instrumentation` skill's
-[sensitive-data rule](../../otel-instrumentation/rules/sensitive-data.md).
+[sensitive-data rule](https://github.com/dash0hq/agent-skills).
 
 ### Exception messages
 
@@ -189,7 +189,7 @@ Track the deletion call itself with `user_deleted` (server-side only).
 
 ## References
 
-- [`otel-instrumentation` — sensitive data rules](../../otel-instrumentation/rules/sensitive-data.md)
+- [`otel-instrumentation` — sensitive data rules](https://github.com/dash0hq/agent-skills)
 - [GDPR Art. 9 — Special categories](https://gdpr-text.com/read/article-9/)
 - [EDPB Guidelines 2/2023 on cookies and fingerprinting](https://edpb.europa.eu/our-work-tools/our-documents/guidelines/guidelines-22023-technical-scope-art-53-eprivacy_en)
 - [PostHog — Privacy & Compliance](https://posthog.com/docs/privacy)

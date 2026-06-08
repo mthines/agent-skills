@@ -1,0 +1,18 @@
+{"id":"nd-1","input":"TypeError: Cannot read properties of undefined (reading 'name') at renderHeader (Header.tsx:42)","expected":"null-deref","notes":"classic undefined access"}
+{"id":"nd-2","input":"AttributeError: 'NoneType' object has no attribute 'id' in serializer.py","expected":"null-deref","notes":"python None deref"}
+{"id":"race-1","input":"The test passes locally but fails intermittently in CI — about 1 run in 5.","expected":"race","notes":"intermittent / flaky"}
+{"id":"race-2","input":"The visit counter is sometimes off when two requests hit the endpoint at the same time.","expected":"race","notes":"concurrency"}
+{"id":"obo-1","input":"The last item in the list is never rendered.","expected":"off-by-one","notes":"first/last missing"}
+{"id":"obo-2","input":"Pagination shows 9 items per page instead of the configured 10.","expected":"off-by-one","notes":"boundary count"}
+{"id":"cm-1","input":"API returns 422: expected string for field 'qty' but got number.","expected":"contract-mismatch","notes":"schema/type mismatch"}
+{"id":"cm-2","input":"Zod validation throws: 'email' is required but the client sends 'emailAddress'.","expected":"contract-mismatch","notes":"API shape mismatch"}
+{"id":"perf-1","input":"The dashboard takes 8s to load and INP is 600ms on the table view.","expected":"perf","notes":"latency/INP"}
+{"id":"perf-2","input":"Requests time out after 30s once concurrency goes above ~200.","expected":"perf","notes":"timeout under load"}
+{"id":"cfg-1","input":"Works locally but in prod the FEATURE_FLAG_NEW_CART env var is unset so the cart is empty.","expected":"config","notes":"env-var/flag"}
+{"id":"cfg-2","input":"After the last deploy the API base URL points at staging because the config map wasn't updated.","expected":"config","notes":"deploy-config"}
+{"id":"reg-1","input":"This worked last week; it started failing right after the 1.4.0 release.","expected":"regression","notes":"worked before / release boundary"}
+{"id":"reg-2","input":"git bisect points at commit abc1234 as the first bad commit.","expected":"regression","notes":"bisect/last-green"}
+{"id":"logic-1","input":"A discount is applied twice when a coupon and a sale overlap on the same item.","expected":"logic","notes":"generic logic, no other signal"}
+{"id":"logic-2","input":"Sorting users by name puts 'Zoe' before 'aaron' — uppercase sorts first.","expected":"logic","notes":"logic bug, not off-by-one"}
+{"id":"unk-1","input":"A customer says 'the site is broken' — no error, no steps, no logs.","expected":"unknown","notes":"insufficient evidence to classify"}
+{"id":"unk-2","input":"Something seems off with checkout but I can't reproduce it and there's nothing in the console.","expected":"unknown","notes":"no signal"}

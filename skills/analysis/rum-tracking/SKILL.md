@@ -37,6 +37,13 @@ and mobile (React Native/Expo) apps.
 Decides what to capture, what to drop, what's PII, and how to add, audit,
 update, and remove tracking code without breaking downstream dashboards.
 
+> **External dependency.** The OTel guidance in [`rules/otel-conventions.md`](./rules/otel-conventions.md)
+> builds on the `otel-instrumentation` and `otel-semantic-conventions` skills,
+> which live in the [dash0 agent-skills repo](https://github.com/dash0hq/agent-skills),
+> not this one. That rule **invokes them at runtime via `Skill()` when they're
+> installed** (and skips silently otherwise) — install them alongside this skill
+> to get their authoritative span/metric/attribute guidance.
+
 > **This `SKILL.md` is a thin index.**
 > Detailed rules live in `rules/*.md` and load on demand.
 > Worked examples live in `references/*.md`.

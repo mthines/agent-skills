@@ -1,0 +1,30 @@
+{"id":"micro-typo","task":"Fix a typo in the README: 'recieve' should be 'receive'.","expected":"Micro","notes":"1 file, purely mechanical, no logic."}
+{"id":"micro-version-bump","task":"Bump the package version in package.json from 1.4.2 to 1.4.3.","expected":"Micro","notes":"1 file, mechanical."}
+{"id":"micro-copyright","task":"Update the copyright year in LICENSE from 2025 to 2026.","expected":"Micro","notes":"1 file, mechanical."}
+{"id":"micro-dep-bump","task":"Update the lodash dependency from 4.17.20 to 4.17.21 in package.json.","expected":"Micro","notes":"1 file, mechanical dependency bump."}
+{"id":"micro-comment","task":"Fix a misleading code comment in src/utils/date.ts — it says 'returns ms' but it returns seconds.","expected":"Micro","notes":"1 file, comment only, no logic change."}
+{"id":"micro-config-flag","task":"Set 'strict': true in tsconfig.json.","expected":"Micro","notes":"1 file, config one-liner (no code follows here)."}
+{"id":"micro-rename-const","task":"Rename the constant DEFAULT_TIMEOUT to DEFAULT_TIMEOUT_MS in src/config.ts (single definition + no other refs).","expected":"Micro","notes":"1 file, mechanical rename."}
+{"id":"micro-broken-link","task":"Fix a broken relative link in docs/intro.md that points to ./setup.md (should be ../setup.md).","expected":"Micro","notes":"1 file, mechanical."}
+{"id":"micro-env-default","task":"Change the default PORT in .env.example from 3000 to 8080.","expected":"Micro","notes":"1 file, config one-liner."}
+{"id":"micro-changelog","task":"Add a one-line entry to CHANGELOG.md under Unreleased for the toggle fix.","expected":"Micro","notes":"1 file, mechanical doc edit."}
+{"id":"lite-null-check","task":"Fix a null-pointer bug in src/cart/total.ts where an empty cart throws; add a unit test for the empty case.","expected":"Lite","notes":"2 files, simple logic + test."}
+{"id":"lite-add-prop","task":"Add an optional 'disabled' prop to the Button component and forward it to the underlying <button>.","expected":"Lite","notes":"1-2 files, small logic change."}
+{"id":"lite-cli-flag","task":"Add a --verbose flag to the existing CLI that prints debug logs.","expected":"Lite","notes":"2-3 files, simple logic."}
+{"id":"lite-util-fn","task":"Add a formatCurrency(amount, currency) util and use it in the price label; include tests.","expected":"Lite","notes":"2-3 files, simple logic + tests."}
+{"id":"lite-validation","task":"Add email-format validation to the signup form field with an inline error message.","expected":"Lite","notes":"2-3 files, simple logic + UI."}
+{"id":"lite-off-by-one","task":"Fix an off-by-one in pagination so the last page renders; add a regression test.","expected":"Lite","notes":"2 files, contained logic + test."}
+{"id":"lite-rename-refs","task":"Rename the getUser() function to fetchUser() and update its 3 call sites.","expected":"Lite","notes":"2-3 files, mechanical-ish but multiple sites with logic refs."}
+{"id":"lite-default-sort","task":"Change the default sort of the table to 'date desc' and add a test asserting order.","expected":"Lite","notes":"2 files, small logic + test."}
+{"id":"lite-debounce","task":"Debounce the search input by 300ms in the existing SearchBar component.","expected":"Lite","notes":"1-2 files, contained logic."}
+{"id":"lite-error-toast","task":"Show a toast on API error in the existing useOrders hook (toast util already exists).","expected":"Lite","notes":"2 files, simple logic."}
+{"id":"full-auth","task":"Add user authentication (login, session, protected routes) to the app end-to-end.","expected":"Full","notes":"architectural, many files, cross-cutting."}
+{"id":"full-api-refactor","task":"Refactor the API client to use a retry-with-backoff strategy across all callers.","expected":"Full","notes":"cross-cutting, touches many files."}
+{"id":"full-migration","task":"Add a 'soft delete' feature: schema migration, repository changes, and API updates.","expected":"Full","notes":"multi-layer, migration, architectural."}
+{"id":"full-monorepo","task":"Move the shared types into a new package and update the web and mobile packages to consume it.","expected":"Full","notes":"2+ packages, architectural."}
+{"id":"full-unfamiliar","task":"Investigate and fix a memory leak somewhere in the streaming pipeline — I'm not sure which layer.","expected":"Full","notes":"unfamiliar / needs investigation, cross-cutting."}
+{"id":"full-state-mgmt","task":"Introduce a global state store and migrate the cart, auth, and theme contexts onto it.","expected":"Full","notes":"architectural, design decisions, many files."}
+{"id":"full-perf-rework","task":"Rework list rendering to virtualize and memoize across the dashboard's five heavy tables.","expected":"Full","notes":"cross-cutting, 4+ files, design decisions."}
+{"id":"full-new-feature","task":"Build a CSV export feature: backend endpoint, streaming, and a frontend download button with progress.","expected":"Full","notes":"multi-layer feature, 4+ files."}
+{"id":"full-design-decision","task":"Decide and implement how we paginate the activity feed (cursor vs offset) across API and UI.","expected":"Full","notes":"requires a design decision, cross-cutting."}
+{"id":"full-broad-refactor","task":"Replace moment.js with date-fns throughout the codebase (dozens of call sites).","expected":"Full","notes":"4+ files / many call sites with semantics to preserve."}

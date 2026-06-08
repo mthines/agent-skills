@@ -68,14 +68,15 @@ planner/executor agents.
 ## Tier detection
 
 Walk the questions in order; the first `yes` wins. **When in doubt, go heavier.**
-This table is **identical to `SKILL.md` Step 1** — keep the two in sync if either changes.
+This table is **identical to `SKILL.md` Step 1** (the `tier-table ≡ SKILL` eval in
+`scripts/eval/l1.mjs` enforces that) — keep the two in sync if either changes.
 
-| # | Question | If yes → |
-| - | -------- | -------- |
-| 1 | Is this task architectural / cross-cutting / does it require significant design decisions? | **Full** |
-| 2 | Does it involve unfamiliar code or domains the agent hasn't worked in before? | **Full** |
-| 3 | Is the change touching 4+ files OR 2+ packages? | **Full** |
-| 4 | Is the change 2–3 files, OR any non-trivial logic change? | **Lite** (else → **Micro**) |
+| # | Question                                                                                  | If yes →     | If no →     |
+| - | ----------------------------------------------------------------------------------------- | ------------ | ----------- |
+| 1 | Is this task architectural / cross-cutting / does it require significant design decisions? | **Full**     | go to next  |
+| 2 | Does the task involve unfamiliar code or domains the agent hasn't worked in before?       | **Full**     | go to next  |
+| 3 | Is the change touching 4+ files OR 2+ packages?                                           | **Full**     | go to next  |
+| 4 | Is the change 2–3 files, OR any non-trivial logic change?                                 | **Lite**     | **Micro**   |
 
 **Micro** = 1 file, purely mechanical (typo, copy, version/dependency bump, config one-liner, no logic change).
 

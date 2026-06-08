@@ -1,0 +1,14 @@
+{"id":"simple-1","input":"formatPrice() throws on an empty cart — add a guard for the empty case in that one function.","expected":"simple","notes":"single function, localized"}
+{"id":"simple-2","input":"Off-by-one in the pagination helper so the last page is dropped; one file.","expected":"simple","notes":"contained logic"}
+{"id":"simple-3","input":"A config key typo (API_BASE_RUL) points the client at the wrong endpoint.","expected":"simple","notes":"one-line, clear cause"}
+{"id":"simple-4","input":"The OrderDate component renders MM/DD instead of DD/MM — fix the format string.","expected":"simple","notes":"single component, obvious"}
+{"id":"simple-5","input":"A null check is missing before reading user.profile.avatar in one selector.","expected":"simple","notes":"localized null guard"}
+{"id":"simple-6","input":"Add a missing await on the save() call in the submit handler.","expected":"simple","notes":"single, clear fix"}
+{"id":"complex-1","input":"Intermittent auth failures across multiple services under load — unclear origin.","expected":"complex","notes":"cross-service, race-like, unclear"}
+{"id":"complex-2","input":"A memory leak somewhere in the streaming pipeline; not sure which layer.","expected":"complex","notes":"unfamiliar / multi-layer"}
+{"id":"complex-3","input":"Checkout total is wrong only for multi-currency carts that also have a coupon and a sale.","expected":"complex","notes":"multi-condition, cross-cutting"}
+{"id":"complex-4","input":"A data race between the cache and the DB writer corrupts records occasionally.","expected":"complex","notes":"concurrency, multi-component"}
+{"id":"complex-5","input":"The bug spans the API, the background worker, and the web client — they disagree on state.","expected":"complex","notes":"spans 3 layers"}
+{"id":"complex-6","input":"Failure is in an unfamiliar legacy billing module and it's unclear which step is wrong.","expected":"complex","notes":"unfamiliar + ambiguous"}
+{"id":"complex-7","input":"Users intermittently get logged out; might be token refresh, might be the load balancer.","expected":"complex","notes":"multiple plausible causes"}
+{"id":"complex-8","input":"A rounding discrepancy appears after a refactor touched the pricing, tax, and invoice modules.","expected":"complex","notes":"cross-module, post-refactor"}

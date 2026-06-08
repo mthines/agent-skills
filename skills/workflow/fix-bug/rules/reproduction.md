@@ -96,7 +96,7 @@ test('AlertBanner renders the dismiss button when dismissible is true', () => {
 });
 ```
 
-Anti-patterns to avoid (also flagged by the [Phase 7 verifier](./independent-verification.md#check-3--diff-sanity)):
+Anti-patterns to avoid (also flagged by the [Phase 7 verifier](./independent-verification.md#verifier-checks)):
 
 - **Snapshot tests as the only assertion** — a snapshot freezes implementation, not behaviour.
   The verifier cannot tell whether a snapshot diff is the bug fix or unrelated drift. Use
