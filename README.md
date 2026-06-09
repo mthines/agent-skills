@@ -8,17 +8,25 @@
 [![Agents](https://img.shields.io/badge/agents-4-0a7)](#agents-at-a-glance)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-supported-d97706)](https://claude.com/claude-code)
 
+A curated collection of skills, slash commands, and agents that encode how I actually ship software — distilled from real projects, not theory. They take a holistic approach to building and debugging, with three throughlines:
+
+- **Autonomy** — workflows that carry a task from a one-line prompt to a tested, reviewed PR (`autonomous-workflow`, `fix-bug`).
+- **Product building** — UX, visual design, and analytics treated as first-class, not afterthoughts (`ux`, `visual-design`, `charting`, `rum-tracking`).
+- **Quality** — confidence gates, adversarial pre-mortems, and TDD baked into the loop, not bolted on after (`confidence`, `critical`, `tdd`, `code-quality`).
+
 Works with Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and any other [Agent Skills](https://agentskills.io)-compatible tool.
 
 ```bash
-npx skills add https://github.com/mthines/agent-skills --all --agent claude-code
+git clone https://github.com/mthines/agent-skills.git
+cd agent-skills && bash scripts/sync-symlinks.sh
 ```
+
+Symlinks every skill live into your tool — edits and `git pull` land on the next agent turn, no reinstall. Upgrading, customizing, and the no-clone `npx` path are in [Install](#install).
 
 ---
 
 ## Table of contents
 
-- [Install](#install)
 - [Skills at a glance](#skills-at-a-glance)
   - [`workflow/` — end-to-end orchestrators](#workflow--end-to-end-orchestrators)
   - [`quality/` — code, tests, plans, AI apps](#quality--code-tests-plans-ai-apps)
@@ -28,64 +36,19 @@ npx skills add https://github.com/mthines/agent-skills --all --agent claude-code
   - [`analysis/` — investigate data, diagnose issues](#analysis--investigate-data-diagnose-issues)
   - [`authoring/` — skills about Claude Code itself](#authoring--skills-about-claude-code-itself)
 - [Agents at a glance](#agents-at-a-glance)
-- [Claude Code plugins](#claude-code-plugins)
 - [Featured: autonomous workflow](#featured-autonomous-workflow)
-- [Linear ticket investigator (per-project plug-in)](#linear-ticket-investigator-per-project-plug-in)
 - [Usage examples](#usage-examples)
+- [Install](#install)
+  - [Recommended: clone + symlink](#recommended-clone--symlink)
+  - [Upgrading](#upgrading)
+  - [Customize and still track upstream](#customize-and-still-track-upstream)
+  - [Quick try: `npx skills add`](#quick-try-npx-skills-add)
 - [VS Code extension](#vs-code-extension)
+- [Linear ticket investigator (per-project plug-in)](#linear-ticket-investigator-per-project-plug-in)
 - [Repository structure](#repository-structure)
 - [Local development](#local-development)
 - [Contributing](#contributing)
 - [License](#license)
-
-## Install
-
-> **Tip — keep it tidy.** Always pass `--agent <your-tool>` (e.g. `--agent claude-code`). Without it, `npx skills` symlinks every skill into ~24 different AI-tool directories at once.
-
-**Recommended — Claude Code, single skill:**
-
-```bash
-npx skills add https://github.com/mthines/agent-skills \
-  --skill confidence --agent claude-code --yes
-```
-
-**All skills, Claude Code:**
-
-```bash
-npx skills add https://github.com/mthines/agent-skills --all --agent claude-code
-```
-
-**Universal — any Agent Skills tool:**
-
-```bash
-npx skills add https://github.com/mthines/agent-skills --all
-```
-
-<details>
-<summary>Other tools (Claude Code marketplace, Gemini, Cursor, Copilot, Codex, manual)</summary>
-
-**Claude Code plugin marketplace:**
-
-```bash
-/plugin marketplace add mthines/agent-skills
-/plugin install mthines-agent-skills@mthines
-```
-
-**Gemini CLI:**
-
-```bash
-gemini extensions install https://github.com/mthines/agent-skills
-```
-
-**Cursor / Copilot / Codex / manual:**
-
-```bash
-git clone https://github.com/mthines/agent-skills.git ~/.agents/skills/mthines-agent-skills
-```
-
-Most tools auto-discover skills from `~/.agents/skills/`.
-
-</details>
 
 ## Skills at a glance
 
@@ -189,14 +152,6 @@ Agents are specialized sub-processes with their own model and tool configuration
 | **[bug-fix-verifier](./agents/bug-fix-verifier.md)** | Independent fresh-context verifier for `/fix-bug` PRs. Runs FAIL_TO_PASS, PASS_TO_PASS, diff sanity, repro integrity. Only agent allowed to undraft. |
 | **[feature-pr-verifier](./agents/feature-pr-verifier.md)** | Feature-PR counterpart to `bug-fix-verifier`. Verifies acceptance criteria, pass-to-pass, walkthrough integrity for `autonomous-workflow` Full Mode. |
 
-## Claude Code plugins
-
-Plugins live in `plugins/` and ship via [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) at the repo root.
-
-| Plugin | What it does |
-|--------|--------------|
-| **[agent-tasks-hooks](./plugins/agent-tasks-hooks/README.md)** | Emits privacy-safe NDJSON lifecycle events (`UserPromptSubmit`, `Stop`, `SessionStart`, `SessionEnd`, `Notification`) for the [Agent Tasks](https://marketplace.visualstudio.com/items?itemName=mthines.agent-tasks) VS Code extension. |
-
 ## Featured: autonomous workflow
 
 `autonomous-workflow` orchestrates a complete feature cycle — from a one-line task to a tested draft PR — using isolated Git worktrees.
@@ -228,29 +183,15 @@ All share the **`aw-`** prefix ("autonomous-workflow"): deliberate namespace so 
 
 The mode-aware stuck-loop cap at Phase 4 (3 Lite / 5 Full) is the biggest cost-saver: it prevents agents burning tokens on hallucinated fixes when their root-cause analysis is wrong.
 
-### Install
+### Setup
+
+After the [clone + symlink](#recommended-clone--symlink) install, run the dispatcher installer once to link the three `aw-` agents and the routing rule:
 
 ```bash
-npx skills add https://github.com/mthines/agent-skills --all --agent claude-code --yes
-bash ~/.claude/skills/workflow/autonomous-workflow/install.sh --global
+bash ~/.claude/skills/autonomous-workflow/install.sh --global
 ```
 
-This installs every skill in the repo, which is the shorter command. The companion skills (`tdd`, `ux`, `code-quality`, `documentation`, `ci-auto-fix`, etc.) skip silently if you don't want them — see [Customizing](./skills/workflow/autonomous-workflow/README.md) to opt out individually. For a per-project install, drop `--global` from both lines.
-
-### Usage
-
-```
-Implement dark mode toggle independently
-Build the user settings screen end-to-end
-Take care of issue #42 in a worktree
-```
-
-Companions skip silently if not installed. The only non-removable companion is `confidence` at Phase 1.
-
-### Prerequisites
-
-- [`gw`](https://github.com/mthines/gw-tools) — Git worktree manager (`brew install mthines/gw-tools/gw`)
-- [`gh`](https://cli.github.com) — GitHub CLI
+Companions (`tdd`, `ux`, `code-quality`, `documentation`, `ci-auto-fix`, …) skip silently if absent — see [Customizing](./skills/workflow/autonomous-workflow/README.md) to opt out individually. Drop `--global` for a per-project install. Requires [`gh`](https://cli.github.com); [`gw`](https://github.com/mthines/gw-tools) is optional (native `git worktree` fallback).
 
 ### Further reading
 
@@ -258,6 +199,146 @@ Companions skip silently if not installed. The only non-removable companion is `
 - [`skills/workflow/autonomous-workflow/CLAUDE.md`](./skills/workflow/autonomous-workflow/CLAUDE.md) — design intent
 - [`skills/workflow/autonomous-workflow/rules/companion-skills.md`](./skills/workflow/autonomous-workflow/rules/companion-skills.md) — companion registry
 - [`skills/workflow/autonomous-workflow/references/anthropic-architecture-research.md`](./skills/workflow/autonomous-workflow/references/anthropic-architecture-research.md) — rationale for the two-agent split
+
+## Usage examples
+
+Agent-invokable skills activate from natural language — just describe what you need.
+
+```
+Implement this feature autonomously / end-to-end / in a worktree
+Check the accessibility of this component
+I've tried fixing this bug three times — step back and analyze holistically
+Add this feature using TDD
+Rate your confidence in this implementation
+Analyse this screen recording for bugs
+```
+
+Slash commands are typed explicitly.
+
+```
+/batch-linear-tickets SUP-123 SUP-456
+/fix-bug https://app.dash0.com/.../trace?spanId=...
+/dx review my CLI tool
+/profile-optimizer ./trace.json
+/documentation init
+/documentation update
+/documentation readme
+/documentation audit
+/resolve-conflicts
+/review-changes --comments 42
+/implement-suggestion <pr-url> [<pr-url> ...]
+/create-pr
+/ci-auto-fix <run-id|pr-url>
+```
+
+## Install
+
+Two ways in:
+
+| Path | Stays current? | Customizable? | Best for |
+| ---- | -------------- | ------------- | -------- |
+| **Clone + symlink** (recommended) | Yes — `git pull` updates everything live | Yes — edit any skill in place | Living with these skills day to day |
+| **`npx skills add`** | No — installs a frozen copy you re-fetch to update | No — edits are overwritten on re-fetch | A quick, no-clone trial — one skill or all |
+
+### Recommended: clone + symlink
+
+```bash
+git clone https://github.com/mthines/agent-skills.git
+cd agent-skills
+bash scripts/sync-symlinks.sh
+```
+
+The script builds a two-tier symlink chain, so a single clone serves every Agent Skills–compatible tool:
+
+```
+~/.claude/skills/<name>     →  ~/.agents/skills/<name>     →  <clone>/skills/<category>/<name>
+~/.claude/agents/<name>.md  →  ~/.agents/agents/<name>.md  →  <clone>/agents/<name>.md
+```
+
+Because skills are symlinked, your edits and every `git pull` land on the **next agent turn** — no reinstall. The middle layer (`~/.agents/skills/`) is the cross-tool discovery directory other tools read. Run it with `bash`, not `sh`; pass `--dry-run` to preview.
+
+> Using `autonomous-workflow`? One extra step links its agents — see [Setup](#setup).
+
+### Upgrading
+
+```bash
+cd agent-skills && git pull
+bash scripts/sync-symlinks.sh   # only to wire up newly added skills/agents
+```
+
+`git pull` updates every symlinked skill in place. Re-run the sync script only to pick up skills or agents that are **new** since your last pull — it's a no-op for everything already linked.
+
+> **Coming from `npx skills add`?** That copy never tracks upstream — which is why upgrading felt hard. Delete the copied entries from `~/.claude/skills/` (and `~/.agents/skills/`), then switch to [clone + symlink](#recommended-clone--symlink). After that, `git pull` is the whole upgrade.
+
+### Customize and still track upstream
+
+To bend a skill to your own preferences **and** keep pulling new changes, fork and track this repo as `upstream`:
+
+```bash
+# Clone YOUR fork, then add this repo as upstream:
+git clone https://github.com/<you>/agent-skills.git
+cd agent-skills
+git remote add upstream https://github.com/mthines/agent-skills.git
+bash scripts/sync-symlinks.sh
+
+# Edit any skill, commit to your fork, and pull new work anytime:
+git pull upstream main
+```
+
+Customizations live on your fork; `git pull upstream main` merges in upstream changes. Keep edits scoped to the skills you actually change so merges stay clean.
+
+### Quick try: `npx skills add`
+
+A no-clone way to grab one skill or the whole collection. This installs a **frozen copy** — re-run to pick up changes; it does not track upstream.
+
+> **Keep it tidy.** Always pass `--agent <your-tool>` (e.g. `--agent claude-code`). Without it, `npx skills` symlinks every skill into ~24 different AI-tool directories at once.
+
+```bash
+# One skill, Claude Code:
+npx skills add https://github.com/mthines/agent-skills --skill confidence --agent claude-code --yes
+
+# All skills, Claude Code:
+npx skills add https://github.com/mthines/agent-skills --all --agent claude-code
+
+# Universal — any Agent Skills tool:
+npx skills add https://github.com/mthines/agent-skills --all
+```
+
+<details>
+<summary>Other tools (Claude Code marketplace, Gemini, manual clone)</summary>
+
+```bash
+# Claude Code plugin marketplace:
+/plugin marketplace add mthines/agent-skills
+/plugin install mthines-agent-skills@mthines
+
+# Gemini CLI:
+gemini extensions install https://github.com/mthines/agent-skills
+
+# Cursor / Copilot / Codex / manual — most tools auto-discover ~/.agents/skills/:
+git clone https://github.com/mthines/agent-skills.git ~/.agents/skills/mthines-agent-skills
+```
+
+</details>
+
+## VS Code extension
+
+The [`vscode-agent-tasks`](./packages/vscode-agent-tasks/) package visualizes `plan.md`, `task.md`, and `walkthrough.md` in the VS Code sidebar — phase progress, decisions, blockers, and completed checkboxes update live as the agent works.
+
+Install from the Marketplace by searching for **Agent Tasks** or:
+
+```
+mthines.agent-tasks
+```
+
+Default scan paths are `.agent/` and `.gw/`. Configure via `agentTasks.directories`. See [`packages/vscode-agent-tasks/README.md`](./packages/vscode-agent-tasks/README.md) for full docs.
+
+For live session status in the panel, add the optional [`agent-tasks-hooks`](./plugins/agent-tasks-hooks/README.md) Claude Code plugin — it emits privacy-safe NDJSON lifecycle events the extension reads. It's only useful with the extension installed:
+
+```
+/plugin marketplace add mthines/agent-skills
+/plugin install agent-tasks-hooks@agent-skills-plugins
+```
 
 ## Linear ticket investigator (per-project plug-in)
 
@@ -316,49 +397,6 @@ user-invocable: true
 
 That is the entire integration.
 
-## Usage examples
-
-Agent-invokable skills activate from natural language — just describe what you need.
-
-```
-Implement this feature autonomously / end-to-end / in a worktree
-Check the accessibility of this component
-I've tried fixing this bug three times — step back and analyze holistically
-Add this feature using TDD
-Rate your confidence in this implementation
-Analyse this screen recording for bugs
-```
-
-Slash commands are typed explicitly.
-
-```
-/batch-linear-tickets SUP-123 SUP-456
-/fix-bug https://app.dash0.com/.../trace?spanId=...
-/dx review my CLI tool
-/profile-optimizer ./trace.json
-/documentation init
-/documentation update
-/documentation readme
-/documentation audit
-/resolve-conflicts
-/review-changes --comments 42
-/implement-suggestion <pr-url> [<pr-url> ...]
-/create-pr
-/ci-auto-fix <run-id|pr-url>
-```
-
-## VS Code extension
-
-The [`vscode-agent-tasks`](./packages/vscode-agent-tasks/) package visualizes `plan.md`, `task.md`, and `walkthrough.md` in the VS Code sidebar — phase progress, decisions, blockers, and completed checkboxes update live as the agent works.
-
-Install from the Marketplace by searching for **Agent Tasks** or:
-
-```
-mthines.agent-tasks
-```
-
-Default scan paths are `.agent/` and `.gw/`. Configure via `agentTasks.directories`. See [`packages/vscode-agent-tasks/README.md`](./packages/vscode-agent-tasks/README.md) for full docs.
-
 ## Repository structure
 
 ```
@@ -370,40 +408,29 @@ packages/                 VS Code extension (vscode-agent-tasks)
 scripts/                  Local symlink sync (scripts/sync-symlinks.sh)
 ```
 
-Skills are installable with `npx skills add`. Agents live in `agents/` because they require their own model and tool configuration.
-
-Each skill has a `SKILL.md` manifest with YAML frontmatter (name, description, metadata) and a Markdown body with instructions. Skills with `rules/` subdirectories contain focused guidance documents that load on demand.
+Each skill has a `SKILL.md` manifest with YAML frontmatter (name, description, metadata) and a Markdown body with instructions. Skills with `rules/` subdirectories contain focused guidance documents that load on demand. Agents live in `agents/` because they require their own model and tool configuration.
 
 ## Local development
 
-Hacking on these skills? Wire your tool's skill directory at this checkout via symlinks so edits to `skills/<name>/SKILL.md` are live on the next agent turn — no `npx skills add` reinstall.
-
-The convention is a two-tier chain:
-
-```
-~/.claude/skills/<name>     →  ~/.agents/skills/<name>     →  <this repo>/skills/<name>
-~/.agents/agents/<name>.md  →  <this repo>/agents/<name>.md
-```
-
-The middle layer (`~/.agents/skills/`) is the cross-tool discovery directory used by Codex, Cursor, OpenCode, and others — one chain serves every tool.
+If you installed via [clone + symlink](#recommended-clone--symlink), you're already set up: every skill is live-linked, so edits to `skills/<category>/<name>/SKILL.md` take effect on the next agent turn.
 
 ### Add a new skill
 
-1. Create `skills/<name>/SKILL.md` in this repo.
-2. Run `scripts/sync-symlinks.sh` to wire the two-tier chain for every new or missing skill/agent.
+1. Create `skills/<category>/<name>/SKILL.md` in this repo.
+2. Run `bash scripts/sync-symlinks.sh` to wire the symlink chain for every new or missing skill/agent (`--dry-run` to preview).
 3. Add an entry to the inventory in [`CLAUDE.md`](./CLAUDE.md) and this README.
 
-For agents, write `agents/<name>.md` and rerun the sync script. Use `--dry-run` (or `-n`) to preview without applying changes.
+For agents, write `agents/<name>.md` and rerun the sync script.
 
 ### Edit an existing skill
 
-Edit `skills/<name>/SKILL.md` directly in this repo. Avoid writing through the symlinked path under `~/.claude/skills/` — writes propagate correctly, but it becomes ambiguous which checkout you touched if multiple worktrees exist.
+Edit `skills/<category>/<name>/SKILL.md` directly in this repo — never through the `~/.claude/skills/` symlink, or it gets ambiguous which checkout you touched when multiple worktrees exist.
 
 ### Verify the chain
 
 ```bash
 readlink ~/.claude/skills/<name>      # → ~/.agents/skills/<name>
-readlink ~/.agents/skills/<name>      # → <repo>/skills/<name>
+readlink ~/.agents/skills/<name>      # → <repo>/skills/<category>/<name>
 ```
 
 Both must resolve. If either is missing, the agent harness won't see the skill.
