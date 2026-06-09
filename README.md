@@ -58,7 +58,7 @@ Two ways in:
 | Path | Stays current? | Customizable? | Best for |
 | ---- | -------------- | ------------- | -------- |
 | **Clone + symlink** (recommended) | Yes — `git pull` updates everything live | Yes — edit any skill in place | Living with these skills day to day |
-| **`npx skills add`** | No — installs a frozen copy you re-fetch to update | No — edits are overwritten on re-fetch | A 30-second trial of one skill |
+| **`npx skills add`** | No — installs a frozen copy you re-fetch to update | No — edits are overwritten on re-fetch | A quick, no-clone trial — one skill or all |
 
 ### Recommended: clone + symlink
 
@@ -119,7 +119,7 @@ Your customizations live on your fork; `git pull upstream main` merges in new wo
 
 ### Quick try: `npx skills add`
 
-For a fast, no-clone trial of a single skill. This installs a **frozen copy** — re-run the command to pick up changes; it does not track upstream.
+For a fast, no-clone way to grab a single skill or the whole collection. This installs a **frozen copy** — re-run the command to pick up changes; it does not track upstream.
 
 > **Keep it tidy.** Always pass `--agent <your-tool>` (e.g. `--agent claude-code`). Without it, `npx skills` symlinks every skill into ~24 different AI-tool directories at once.
 
