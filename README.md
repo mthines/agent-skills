@@ -8,6 +8,12 @@
 [![Agents](https://img.shields.io/badge/agents-4-0a7)](#agents-at-a-glance)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-supported-d97706)](https://claude.com/claude-code)
 
+A curated collection of skills, slash commands, and agents that encode how I actually ship software — distilled from real projects, not theory. They take a holistic approach to building and debugging, with three throughlines:
+
+- **Autonomy** — workflows that carry a task from a one-line prompt to a tested, reviewed PR (`autonomous-workflow`, `fix-bug`).
+- **Product building** — UX, visual design, and analytics treated as first-class, not afterthoughts (`ux`, `visual-design`, `charting`, `rum-tracking`).
+- **Quality** — confidence gates, adversarial pre-mortems, and TDD baked into the loop, not bolted on after (`confidence`, `critical`, `tdd`, `code-quality`).
+
 Works with Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and any other [Agent Skills](https://agentskills.io)-compatible tool.
 
 ```bash
