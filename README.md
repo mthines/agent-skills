@@ -36,7 +36,6 @@ Symlinks every skill live into your tool — edits and `git pull` land on the ne
   - [`analysis/` — investigate data, diagnose issues](#analysis--investigate-data-diagnose-issues)
   - [`authoring/` — skills about Claude Code itself](#authoring--skills-about-claude-code-itself)
 - [Agents at a glance](#agents-at-a-glance)
-- [Claude Code plugins](#claude-code-plugins)
 - [Featured: autonomous workflow](#featured-autonomous-workflow)
 - [Usage examples](#usage-examples)
 - [Install](#install)
@@ -152,14 +151,6 @@ Agents are specialized sub-processes with their own model and tool configuration
 | **[linear-ticket-investigator](./agents/linear-ticket-investigator.md)** | Reads a Linear ticket, returns an Evidence Record matching `/fix-bug` Phase 2. Customizable via a per-project [domain navigator](#linear-ticket-investigator-per-project-plug-in). |
 | **[bug-fix-verifier](./agents/bug-fix-verifier.md)** | Independent fresh-context verifier for `/fix-bug` PRs. Runs FAIL_TO_PASS, PASS_TO_PASS, diff sanity, repro integrity. Only agent allowed to undraft. |
 | **[feature-pr-verifier](./agents/feature-pr-verifier.md)** | Feature-PR counterpart to `bug-fix-verifier`. Verifies acceptance criteria, pass-to-pass, walkthrough integrity for `autonomous-workflow` Full Mode. |
-
-## Claude Code plugins
-
-Plugins live in `plugins/` and ship via [`.claude-plugin/marketplace.json`](./.claude-plugin/marketplace.json) at the repo root.
-
-| Plugin | What it does |
-|--------|--------------|
-| **[agent-tasks-hooks](./plugins/agent-tasks-hooks/README.md)** | Emits privacy-safe NDJSON lifecycle events (`UserPromptSubmit`, `Stop`, `SessionStart`, `SessionEnd`, `Notification`) for the [Agent Tasks](https://marketplace.visualstudio.com/items?itemName=mthines.agent-tasks) VS Code extension. |
 
 ## Featured: autonomous workflow
 
@@ -341,6 +332,13 @@ mthines.agent-tasks
 ```
 
 Default scan paths are `.agent/` and `.gw/`. Configure via `agentTasks.directories`. See [`packages/vscode-agent-tasks/README.md`](./packages/vscode-agent-tasks/README.md) for full docs.
+
+For live session status in the panel, add the optional [`agent-tasks-hooks`](./plugins/agent-tasks-hooks/README.md) Claude Code plugin — it emits privacy-safe NDJSON lifecycle events the extension reads. It's only useful with the extension installed:
+
+```
+/plugin marketplace add mthines/agent-skills
+/plugin install agent-tasks-hooks@agent-skills-plugins
+```
 
 ## Linear ticket investigator (per-project plug-in)
 
