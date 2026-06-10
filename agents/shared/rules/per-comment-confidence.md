@@ -22,12 +22,12 @@ For each finding that survives `finding-grounding.md` and the dedupe pass in `ru
    - **Target**: `<file:line>`
    - **Claim**: the comment body (without prefix and decoration)
    - **Evidence**: the changed-file patch hunk that contains the line
-   - **Acceptance criteria**:
-     - The claim is factually correct given the patch hunk (accurate).
-     - The PR author can act on it without additional context (actionable).
-     - Posting this comment improves the PR more than it adds noise (helpful).
+   - **Acceptance criteria** (the reviewer's own rubric questions — inputs to the call, NOT scores the skill returns):
+     - Is the claim factually correct given the patch hunk?
+     - Can the PR author act on it without additional context?
+     - Does posting this comment improve the PR more than it adds noise?
 2. Run `Skill("confidence", "code")`.
-3. If the returned score is `< 80`, drop the comment. Log the drop with the score.
+3. If the returned **Final** score is `< 80`, drop the comment. Log the drop with the score.
 
 ## Why 80, not 70
 
@@ -43,18 +43,24 @@ For each finding that survives `finding-grounding.md` and the dedupe pass in `ru
 per_comment_confidence_threshold: 85  # default 80
 ```
 
-## Three sub-scores
+## What `confidence(code)` returns
 
-`confidence(code)` returns three scores: `accurate`, `actionable`, `helpful`. The drop decision is on the **minimum** of the three, matching the legacy reviewer's intent. A finding that is 95 % accurate but only 60 % actionable is noise — the author cannot do anything with it.
+`confidence(code)` scores three dimensions — **Correctness** (40 %), **Completeness** (30 %), **No regressions** (30 %) — and returns one weighted **Final** score (see `skills/quality/confidence/SKILL.md` § For `code` mode).
+The drop decision is on the **Final** score.
+A finding whose Final is dragged below 80 by any dimension is noise — a claim that is correct but incomplete, or complete but wrong, does not help the author.
 
 ```python
-def passes_confidence(scores: dict[str, int]) -> bool:
-    return min(scores["accurate"], scores["actionable"], scores["helpful"]) >= 80
+def passes_confidence(final_score: int) -> bool:
+    # final_score = weighted average of Correctness (40%),
+    # Completeness (30%), No-regressions (30%)
+    return final_score >= 80
 ```
+
+The acceptance-criteria questions in step 1 (accurate? actionable? helpful?) are the reviewer's rubric for framing the call — they are NOT scores the skill returns.
 
 ## What this check does not catch
 
-- Findings that the model is over-confident on across all three axes. This is the residual false-positive that `finding-grounding.md` is designed to catch.
+- Findings that the model is over-confident on across all three dimensions. This is the residual false-positive that `finding-grounding.md` is designed to catch.
 - Findings that are correct but redundant with another rubric. Handled by dedupe in `rubric-composition.md` before this step.
 - Findings that are correct and useful but stylistically wrong (too long, has bullets). Handled by `comment-shape.md` before this step.
 

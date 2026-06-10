@@ -20,7 +20,7 @@ HTTP 422: Pull request review thread line must be part of the diff
 
 ## Cache the patch list once
 
-At Step 5.1 in `pr-reviewer.md`, cache every changed file's patch:
+At Step 1.2 in `pr-reviewer.md`, cache every changed file's patch:
 
 ```bash
 REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
@@ -104,4 +104,4 @@ A finding may be on a **context line** (` `-prefix, valid for commenting) or on 
 
 - Comments whose `line` is correct on the RIGHT but whose `path` is wrong (e.g. agent typed `src/Foo.ts` when the file is `src/foo.ts`). Caught by `gh api` with HTTP 422 "file not in PR"; mitigation: the pre-flight reads `filename` from `/tmp/pr-files.json` so a path typo would have already failed earlier.
 - The "diff hunk can't be blank" error when GitHub considers a hunk too small. Rare; if hit, the agent reports the failure and the user re-runs after the patch grows.
-- Race condition where the PR receives new commits between Step 5.1 cache and Step 5.6 post. Mitigation: post against `commit_id = head.sha` captured at the cache step, not the latest SHA at post time.
+- Race condition where the PR receives new commits between the Step 1.2 cache and the Step 5 post. Mitigation: post against `commit_id = head.sha` captured at the cache step, not the latest SHA at post time.

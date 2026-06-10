@@ -21,7 +21,7 @@ The goal is a tripwire, not a coverage score.
 - [Pre-conditions](#pre-conditions)
 - [Procedure](#procedure)
 - [Examples](#examples)
-- [Stash safety](#stash-safety)
+- [Restore safety](#restore-safety)
 - [Latency target](#latency-target)
 - [Common mistakes](#common-mistakes)
 
@@ -45,16 +45,24 @@ For each test in the file:
 
 If the test asserts against a chain of three or more functions, mutate the most upstream call (the one that produces the value the assertion ultimately checks).
 
-### Step 2 — Save the original
+### Step 2 — Record the SUT file's pre-state
 
-Use `git stash` to preserve the working state — never edit-and-undo by hand.
+Do **not** stash.
+`git stash push -u` would stash away the uncommitted test under inspection too, so the test run in Step 4 errors and the result is uninterpretable.
+Instead, record the SUT file's pre-state so Step 5 can restore it exactly:
 
 ```bash
-git stash push -u -m "test-provenance-guard: pre-mutation snapshot"
+if git diff --quiet -- <sut-file> && git diff --cached --quiet -- <sut-file>; then
+  SUT_WAS_CLEAN=1                      # restore path: git restore
+else
+  SUT_WAS_CLEAN=0
+  SUT_BACKUP="$(mktemp)"
+  cp <sut-file> "$SUT_BACKUP"          # restore path: mv backup over the file
+fi
+git diff -- <sut-file> > /tmp/sut-pre-diff.txt   # recorded pre-state for Step 5 verification
 ```
 
-The `-u` flag includes untracked files.
-The stash gives a clean rollback path even if subsequent steps fail.
+Only the SUT file is touched by the sabotage; the test file and the rest of the working tree stay exactly as they are.
 
 ### Step 3 — Sabotage
 
@@ -97,21 +105,26 @@ Capture the exit code.
 
 ### Step 5 — Restore — ALWAYS
 
-Restore the working tree before doing anything else.
-Restoration is **not optional**, even if the test command crashed:
+Restore the SUT file before doing anything else.
+Restoration is **not optional**, even if the test command crashed.
+Pick the restore path recorded in Step 2:
 
 ```bash
-git stash pop
+if [[ "$SUT_WAS_CLEAN" == "1" ]]; then
+  git restore <sut-file>               # file was clean pre-mutation
+else
+  mv "$SUT_BACKUP" <sut-file>          # file had uncommitted changes pre-mutation
+fi
 ```
 
-Verify the SUT is back to its pre-mutation state:
+Verify the SUT is back to its pre-mutation state by comparing against the recorded pre-state:
 
 ```bash
-git status                  # should be clean of mutation changes
-git diff <sut-file>          # should be empty
+git diff -- <sut-file> | diff - /tmp/sut-pre-diff.txt   # must be empty output
 ```
 
-If `git stash pop` fails (e.g. merge conflict against fresh edits in the working tree), abort and surface the stash ref to the user — never leave a sabotaged tree behind.
+For a pre-clean file both sides are empty; for a pre-dirty file both sides show the same pre-existing diff.
+If the comparison is non-empty, stop and surface the discrepancy (and the backup path, if any) to the user — never leave a sabotaged tree behind.
 
 ### Step 6 — Interpret
 
@@ -120,7 +133,8 @@ If `git stash pop` fails (e.g. merge conflict against fresh edits in the working
 | FAIL — assertion mismatch   | Test correctly noticed the function is broken.                  | None.                       |
 | FAIL — type / build error   | Sabotage stub did not type-check.                               | None — re-stub and retry.   |
 | PASS                        | Test passed against a deliberately-broken function.             | `test-survives-sabotage`.   |
-| ERROR — test runner crashed | Inconclusive.                                                   | None — log and skip.        |
+| ERROR — test or SUT file missing / unresolved import | The procedure itself broke (bad sabotage edit, premature restore) — NOT inconclusive. | None — restore (Step 5), fix the procedure, retry once from Step 2. |
+| ERROR — test runner crashed for any other reason | Inconclusive.                                  | None — log and skip.        |
 
 A `test-survives-sabotage` finding has the same severity as a `shadowed-export` finding from Phase 1.
 Both indicate the test is by-construction.
@@ -176,18 +190,20 @@ The stub mutates nothing.
 The assertion fails.
 The test correctly notices the broken function.
 
-## Stash safety
+## Restore safety
 
 Restoration is the most error-prone step.
 A few rules:
 
-1. **One stash per mutation.**
-   Do not batch multiple mutations into one stash entry.
-2. **Verify the stash exists** before mutating: `git stash list | head -1`.
+1. **One sabotage per restore cycle.**
+   Do not batch multiple mutations into one Step 2→5 cycle.
+2. **Verify the pre-state was recorded** before sabotaging: `/tmp/sut-pre-diff.txt` exists, and `$SUT_BACKUP` exists when the file was dirty.
 3. **Restore in `finally`-style code paths.**
-   If the agent's mutation step crashes, the next thing the agent does — before any reporting, before any retry — is `git stash pop`.
-4. **If `git stash pop` fails**, do not retry blindly.
-   Surface the stash ref and the conflict; the autonomous-workflow stuck-loop protocol takes over.
+   If the agent's mutation step crashes, the next thing the agent does — before any reporting, before any retry — is the Step 5 restore (`git restore <sut-file>` or `mv "$SUT_BACKUP" <sut-file>`).
+4. **If the Step 5 verification comparison is non-empty**, do not retry blindly.
+   Surface the discrepancy and the backup path; the autonomous-workflow stuck-loop protocol takes over.
+5. **Never use `git stash` here.**
+   `git stash push -u` stashes the uncommitted test under inspection along with everything else, so the run errors; `git stash pop` does not revert a sabotage edit made after the stash.
 
 ## Latency target
 
@@ -202,8 +218,10 @@ If the suite cannot be run for a single test in under two minutes, that itself i
 
 ## Common mistakes
 
-- **Mutating without a stash.**
-  Manual edit-and-undo loses changes if anything goes wrong. **Fix:** always stash first.
+- **Mutating without recording the pre-state.**
+  Manual edit-and-undo loses changes if anything goes wrong. **Fix:** always run Step 2 (record clean/dirty state; `cp` to a `mktemp` backup when dirty) first.
+- **Stashing instead of backing up.**
+  `git stash push -u` stashes the uncommitted test under inspection, so the run errors and the result is uninterpretable. **Fix:** leave the tree alone; back up only the SUT file.
 - **Mutating multiple functions in one go.**
   You lose the signal — was *this* function the one the test claims to cover, or that other one?
   **Fix:** one mutation at a time.

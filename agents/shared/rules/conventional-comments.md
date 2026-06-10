@@ -21,7 +21,7 @@ Both agents emit comments that conform to the [Conventional Comments](https://co
 | `issue` | `issue:` |
 | `question` | `question:` |
 
-The prefix is prepended **after** the comment-shape mechanical check passes (see `comment-shape.md`). Re-running shape after prefix prepending is required only if the prepend pushes `body.length` over 240 — in practice the prefix adds 8–12 characters; if a finding was already at 230 chars the prepend pushes it over and `comment-shape.md` will drop it. That is intended: a 230-character finding is already too long.
+The prefix is prepended **before** the comment-shape mechanical check runs (see `comment-shape.md`) — the shape check is the last gate, so the 240-char cap applies to the final posted text including prefix and decoration. In practice the prefix adds 8–12 characters; a finding that was already at 230 chars is pushed over the cap by the prepend and `comment-shape.md` drops it. That is intended: a 230-character finding is already too long.
 
 ## Decorations
 

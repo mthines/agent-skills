@@ -56,7 +56,7 @@ Any single trivial-skip condition triggers skip. If in doubt, run holistic — t
 
 ## When to run (the call)
 
-After Step 2.5 (Dedupe + consolidate) and before Step 2.6 (Finding grounding). The new step is **2.4 Holistic review** in both agents.
+After the rubrics produce raw findings and **before** Step 2.5 (Dedupe + consolidate), so holistic findings participate in dedupe and can collide-and-win against line-level findings on the same `(file, line)`. The new step is **2.4 Holistic review** in both agents.
 
 ```
 Skill("holistic-analysis", "review")
@@ -95,11 +95,12 @@ Map each finding to the calling agent's Conventional-Comments category:
 
 Holistic findings are not exempt from the downstream gates:
 
-1. **finding-grounding** — every backticked symbol must grep-resolve in the changed file or in a caller surfaced during Phase R1.
-2. **per-comment-confidence** — `Skill("confidence", "code")` ≥ 80, same threshold as line-level findings.
-3. **comment-shape** — ≤ 240 chars, ≤ 2 sentences. A holistic finding that needs more space than this either (a) gets trimmed once and re-checked, or (b) gets dropped and listed in the terminal Quality Gate summary so the user can paste manually.
+1. **dedupe + consolidate** (`rubric-composition.md § Consolidation`) — holistic findings enter the same dedupe pass as rubric findings; on a `(file, line)` collision with a line-level finding, the holistic claim wins (broader context).
+2. **finding-grounding** — every backticked symbol must grep-resolve in the changed file or in a caller surfaced during Phase R1.
+3. **per-comment-confidence** — `Skill("confidence", "code")` ≥ 80, same threshold as line-level findings.
+4. **comment-shape** — ≤ 240 chars, ≤ 2 sentences. A holistic finding that needs more space than this either (a) gets trimmed once and re-checked, or (b) gets dropped and listed in the terminal Quality Gate summary so the user can paste manually.
 
-A holistic finding that survives all three gates is emitted as a card in the local proposal (`pr-reviewer`) or the Self-Review report (`reviewer`).
+A holistic finding that survives all four gates is emitted as a card in the local proposal (`pr-reviewer`) or the Self-Review report (`reviewer`).
 
 ## Blocking verdict
 

@@ -10,7 +10,7 @@ tags:
 
 # Rubric composition
 
-Both agents load multiple review rubrics: `code-quality` (always for substantive diffs), `ux` (UI files), `critical` (high-stakes diffs or `--critical`), `screen-recorder` (motion diffs in PR Mode only), and up to 3 user-supplied lenses via `--with`.
+Both agents load multiple review rubrics: `code-quality` (always for substantive diffs), `ux` (UI files), `critical` (high-stakes diffs or `--critical`), and up to 3 user-supplied lenses via `--with`.
 
 Without a consolidation step, each rubric emits findings independently and the agent has to inline-dedupe while also writing comments. Research grounding: Qodo's 2026 "Rule System" and Greptile's multi-agent architecture both add an explicit coordinator pass — the consolidation step is what turns multi-rubric findings from noise into signal.
 
@@ -22,7 +22,6 @@ Strict order so dedup is deterministic:
 2. `ux` (UI globs: `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `app/**/*.{ts,tsx}` for App-Router screens).
 3. `critical` (`--critical` flag OR auto-engage heuristic — see below).
 4. `--with` lenses (max 3, in the order given on the command line).
-5. `screen-recorder` (PR Mode only; motion regex match; preview deploy URL available).
 
 ## Auto-engage heuristics for `critical`
 

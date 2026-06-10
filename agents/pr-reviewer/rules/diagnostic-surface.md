@@ -52,7 +52,7 @@ The companion agent `reviewer` handles own-work (Fix Mode, Report Mode, Self-Rev
 | 2.4 | Holistic review (default ON) | [shared/rules/holistic-review.md](../../shared/rules/holistic-review.md), `Skill("holistic-analysis", "review")` | Runs unless `--no-holistic` OR trivial-skip; emits 0–3 findings mapped to `issue` (intent-mismatch) / `question` (system-fit, scope-creep) |
 | 2.5 | Dedupe + consolidate | [shared/rules/rubric-composition.md § Consolidation](../../shared/rules/rubric-composition.md) | Per-file cap 5; total cap 20; priority-sorted; holistic claim wins on `(file, line)` collision |
 | 2.6 | Finding grounding | [shared/rules/finding-grounding.md](../../shared/rules/finding-grounding.md) | Every backticked symbol grep-confirmed in changed file |
-| 2.7 | Per-comment confidence | [shared/rules/per-comment-confidence.md](../../shared/rules/per-comment-confidence.md) | `Skill("confidence", "code")` ≥ 80; min(accurate, actionable, helpful) |
+| 2.7 | Per-comment confidence | [shared/rules/per-comment-confidence.md](../../shared/rules/per-comment-confidence.md) | `Skill("confidence", "code")` weighted Final ≥ 80 (Correctness, Completeness, No-regressions) |
 | 2.8 | Comment shape | [shared/rules/comment-shape.md](../../shared/rules/comment-shape.md) | ≤ 240 chars, ≤ 2 sentences, no headings, no bullets |
 | 2.9 | Conventional Comments | [shared/rules/conventional-comments.md](../../shared/rules/conventional-comments.md) | Prefix prepended; `(blocking)` / `(non-blocking)` decoration appended |
 | 3 | Local proposal | [pr-reviewer.md § Step 3](../pr-reviewer.md), [templates/pr-comment-card.template.md](../../templates/pr-comment-card.template.md) | Summary table + numbered cards; total / dropped counts |
@@ -80,7 +80,7 @@ There is no Auto-Fix phase. There is no Self-Review phase. Both belong to `revie
 | 2.4 | Default-on holistic call; trivial-skip heuristic (whitespace / dep-bumps / test-only / < 10 lines + no high-stakes); 3-finding cap; pr-reviewer maps `system-fit` to `question` | Holistic skipped on a non-trivial diff that the heuristic incorrectly marked trivial; holistic finding overrides a line-level finding on the same `(file, line)` when the line-level was actually correct; framing leaks: `system-fit` posted as `issue` instead of `question` |
 | 2.5 | Per-file cap 5, total cap 20, priority-sorted; holistic claim wins on collision | LLM dedupes inline despite the rule; cap drops not surfaced; holistic-vs-line-level collision resolved wrongly |
 | 2.6 | Backticked-token grep, allowlist for keywords / built-ins | Hallucinated multi-word phrase passes (not backticked); allowlist over-eager |
-| 2.7 | `Skill("confidence", "code")` ≥ 80; min of 3 sub-scores | Confidence skill not yet wired for per-comment input shape |
+| 2.7 | `Skill("confidence", "code")` weighted Final ≥ 80 over Correctness / Completeness / No-regressions | Confidence skill not yet wired for per-comment input shape |
 | 2.8 | Mechanical pre-emit: length, sentences, structure | Trim heuristic breaks the comment's point; drop reported but easy to miss |
 | 2.9 | Prefix table + decoration; mechanical pre-emit | Decoration appended twice on retry |
 | 3 | Card template, summary table | Card emitted without anchor; user can't validate without opening PR |

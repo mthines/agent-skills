@@ -62,14 +62,29 @@ A criterion that the executor declared "implemented" but for which you cannot fi
 
 Run the project's full test suite on the PR head SHA. Compare to the base SHA's pass set.
 
+Do **not** diff raw suite stdout — it contains timings, ordering noise, and worker interleaving.
+Use the framework's structured reporter, extract the set of `(test id, status)` pairs, and compare the sets ignoring order and timing:
+
 ```bash
+# Pick the structured-reporter flag for the project's framework:
+#   vitest / playwright:  <project_test_command> --reporter=json
+#   jest:                 <project_test_command> --json
+#   pytest:               <project_test_command> --json-report (pytest-json-report plugin)
+#   go:                   go test -json ./...
 git checkout <base_sha>
-<project_test_command> > /tmp/base_results.txt 2>&1
+<project_test_command> --reporter=json > /tmp/base_results.json 2>/dev/null
 git checkout <pr_head_sha>
-<project_test_command> > /tmp/pr_results.txt 2>&1
+<project_test_command> --reporter=json > /tmp/pr_results.json 2>/dev/null
+
+# Extract sorted (test id, status) pairs and compare as sets (vitest shape shown — adapt the jq path per framework):
+jq -r '.testResults[] | .name as $f | .assertionResults[] | "\($f)::\(.fullName)\t\(.status)"' /tmp/base_results.json | sort > /tmp/base_set.txt
+jq -r '.testResults[] | .name as $f | .assertionResults[] | "\($f)::\(.fullName)\t\(.status)"' /tmp/pr_results.json  | sort > /tmp/pr_set.txt
+diff /tmp/base_set.txt /tmp/pr_set.txt
 ```
 
-Diff the result sets. Any test that **passed on base but fails on PR head** is a red flag.
+If the framework offers no JSON reporter, fall back to extracting only the per-test pass/fail lines (strip timings and counters) before diffing — never diff the raw stdout.
+
+Any test that **passed on base but fails on PR head** is a red flag.
 
 A test that was **failing on base and now passes** is fine (could be intentional — features sometimes fix latent bugs as a side effect — but mention it).
 

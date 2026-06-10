@@ -44,7 +44,7 @@ The trailing `---` separates cards. The trailing pseudo-code block is **optional
 | `line` | yes | RIGHT-side line number (single) | `42` |
 | `end_line` | no | RIGHT-side line number (multi) | `42-48` |
 | `category` | yes | one of: `praise`, `nitpick`, `suggestion`, `issue`, `question` | `suggestion` |
-| `confidence` | yes | the `min(accurate, actionable, helpful)` from `per-comment-confidence.md` | `87` |
+| `confidence` | yes | the weighted **Final** score (Correctness 40 %, Completeness 30 %, No-regressions 30 %) from `per-comment-confidence.md` | `87` |
 | `Code` anchor | yes | the literal 1–3 line slice from the changed file at the pinned line | the actual code being commented on |
 | `Comment` body | yes | passes `comment-shape.md`; starts with Conventional-Comments prefix; optionally ends with decoration | `suggestion: Could use a Map here for clearer iteration semantics. **(non-blocking)**` |
 | Pseudo-code | no | only for `suggestion` / `issue` with a concrete replacement | `const cache = new Map<string, Value>();` |
@@ -132,7 +132,7 @@ praise: Nice — the discriminated union makes exhaustiveness checks free. **(no
 
 | Agent | What the card becomes |
 | --- | --- |
-| `pr-reviewer` | The body is extracted (without `_Pseudo-code_` disclaimer, without the Code anchor) and posted to `gh api pulls/{n}/reviews` as one `comments[]` entry. The full card is also printed to the terminal proposal in Step 5.5. |
+| `pr-reviewer` | The body is extracted (without `_Pseudo-code_` disclaimer, without the Code anchor) and posted to `gh api pulls/{n}/reviews` as one `comments[]` entry. The full card is also printed to the terminal proposal in Step 3. |
 | `reviewer` Self-Review | The full card is printed to the terminal. Nothing is posted. The orchestrator agent reads the cards and decides whether to address them before undrafting. |
 
 The card is the contract. If the agent emits something that does not match this template, the renderer is broken.

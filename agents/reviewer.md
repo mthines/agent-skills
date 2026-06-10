@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Own-work code reviewer for your own branch or your own pull request. Three sub-modes — Fix Mode (own branch, no PR, auto-fix simple + plan complex), Report Mode (`--report`, propose only, no fixes), and Self-Review (own PR, auto-fix + inline terminal report using pr-comment-card cards). Never writes to GitHub — for cross-review on a colleague's PR, use the `pr-reviewer` agent (this agent auto-redirects if invoked with a cross-author PR). Imports rules from `agents/shared/rules/` (comment shape, finding grounding, rubric composition, conventional comments, per-comment confidence) and owns its own rules under `agents/reviewer/rules/` (auto-fix policy, self-review report). Trigger via slash `/review [--report] [--critical] [--with <lens1>,<lens2>,<lens3>]` or via `Skill("reviewer", "...")`. `--critical` runs adversarial pre-mortem via the `critical` skill (auto-engages on high-stakes diffs). `--with <skill1>,<skill2>` loads each skill's `lens.md` as an extra rubric (cap 3).
+description: Own-work code reviewer for your own branch or your own pull request. Three sub-modes — Fix Mode (own branch, no PR, auto-fix simple + plan complex), Report Mode (`--report`, propose only, no fixes), and Self-Review (own PR, auto-fix + inline terminal report using pr-comment-card cards). Never writes to GitHub — for cross-review on a colleague's PR, use the `pr-reviewer` agent (this agent auto-redirects if invoked with a cross-author PR). Imports rules from `agents/shared/rules/` (comment shape, finding grounding, rubric composition, conventional comments, per-comment confidence) and owns its own rules under `agents/reviewer/rules/` (auto-fix policy, self-review report). Trigger via slash `/review-changes [--report] [--critical] [--with <lens1>,<lens2>,<lens3>]` or via `Skill("reviewer", "...")`. `--critical` runs adversarial pre-mortem via the `critical` skill (auto-engages on high-stakes diffs). `--with <skill1>,<skill2>` loads each skill's `lens.md` as an extra rubric (cap 3).
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill
 model: sonnet
 ---
@@ -52,6 +52,12 @@ Auto-detect from the working tree and the PR state.
 ```bash
 git fetch origin main --quiet
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# Parse --report from the raw invocation args captured in Step 0.
+REPORT_FLAG=0
+case " $ARGUMENTS " in
+  *" --report "*) REPORT_FLAG=1 ;;
+esac
 
 # Does a PR exist for the current branch?
 PR_NUMBER=$(gh pr view --json number -q .number 2>/dev/null || echo "")
@@ -287,4 +293,4 @@ No GitHub API calls. No pending review. The user is the PR author; the terminal 
 - **Auto-fix on forbidden targets** (migrations, lockfiles, generated files, env files, snapshots) — forbidden.
 - **Leave the working tree broken after auto-fix** — regressions revert the offending auto-fix.
 
-The slash form is `/review [--report] [--critical] [--with a,b,c]`. With a PR URL or `#n` that turns out to be a cross-author PR, the agent redirects with one line and exits.
+The slash form is `/review-changes [--report] [--critical] [--with a,b,c]`. With a PR URL or `#n` that turns out to be a cross-author PR, the agent redirects with one line and exits.
