@@ -60,9 +60,10 @@ is connected (`mcp__playwright__*` tools present) or the project has run
 `npx playwright init-agents` — **drive the fix through Playwright's
 [healer agent](https://playwright.dev/docs/test-agents)**: run the test in debug
 mode, inspect console logs / network requests / page snapshots, and repair until
-it passes (mark `.skip` only if the feature is genuinely broken). **Otherwise,
-fall back to the inline methodology in this rule.** Either way, the healer's
-principles below are non-negotiable.
+it passes.
+If the feature is genuinely broken, stop and escalate to the user with the evidence (trace, console, network) as a `recommendation-only` entry per [`guard-rails.md`](./guard-rails.md) — never mark `.skip` or `.fixme`, even when the healer offers it.
+**Otherwise, fall back to the inline methodology in this rule.**
+Either way, the healer's principles below are non-negotiable.
 
 Phase 5 has **three sub-steps**:
 
@@ -71,7 +72,7 @@ Phase 5 has **three sub-steps**:
 3. **Commit locally only after every new locator is verified.** Do not push — pushing is Phase 7's single deliberate action after Phase 6 ratifies the fix locally.
 
 If a new locator does not resolve in either check, the diff is hallucinated.
-Discard it, attach the refusal evidence to the dossier, and re-enter Phase 4 with that evidence — see [`fix-validation.md`](./fix-validation.md) Step 4.
+Discard it, attach the refusal evidence to the dossier, and re-enter Phase 4 with that evidence — see [`fix-validation.md`](./fix-validation.md) Step 3.
 Do not retry blindly with a different selector.
 
 ### Fix-pattern catalogue

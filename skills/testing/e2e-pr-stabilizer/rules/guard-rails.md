@@ -54,14 +54,24 @@ These are not forbidden, but require explicit evidence in the dossier:
 
 ## Detection checklist
 
-Before every commit, run this grep against the staged diff:
+Before every commit, run all three greps against the staged diff:
 
 ```bash
+# 1. Test-file weakening.
 git diff --cached --unified=0 -- 'tests/e2e/**' '**/*.spec.ts' \
   | grep -nE '\.skip\(|\.fixme\(|\.only\(|waitForTimeout|networkidle|force:\s*true|continue-on-error|--no-verify'
+
+# 2. Retry inflation in the Playwright config.
+git diff --cached --unified=1 -- 'playwright.config.*' '**/playwright.config.*' \
+  | grep -nE '^\+.*retries'
+
+# 3. continue-on-error in workflow YAML.
+git diff --cached --unified=0 -- '.github/workflows/**' \
+  | grep -nE '^\+.*continue-on-error'
 ```
 
-A non-empty match aborts the commit.
+A non-empty match on grep 1 or grep 3 aborts the commit unconditionally.
+A match on grep 2 aborts unless the surrounding hunk shows the new `retries` value is **not higher** than the removed one (a decrease is allowed; any increase is the forbidden edit from the table above).
 Print the offending lines and re-enter Phase 5 — the fix needs a different pattern.
 
 ## Why these rules exist

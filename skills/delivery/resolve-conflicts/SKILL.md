@@ -53,8 +53,10 @@ git fetch origin
 ### If Active Conflict Exists
 
 ```bash
-# List all conflicted files
-git diff --name-only --diff-filter=U
+# List all conflicted files AND capture the list now — once files are staged
+# in Step 5, `--diff-filter=U` returns nothing. Step 7's merge commit message
+# reads this file.
+git diff --name-only --diff-filter=U | tee /tmp/conflicted.txt
 
 # Show the conflict markers in each file
 git diff --check
@@ -194,11 +196,13 @@ git diff --cached --stat
 
 ### For Merge Conflicts
 ```bash
-# Commit the merge
+# Commit the merge, citing the conflicted-file list captured in Step 2.
+# Do NOT use `git diff --name-only HEAD~1` here — that lists every merged
+# file, not just the files whose conflicts were resolved.
 git commit -m "Merge origin/main into $(git branch --show-current)
 
 Resolved conflicts in:
-$(git diff --name-only HEAD~1)"
+$(cat /tmp/conflicted.txt)"
 ```
 
 ### For Rebase Conflicts

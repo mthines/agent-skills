@@ -92,7 +92,7 @@ It does not duplicate their content — each phase delegates.
 `$ARGUMENTS` is parsed as `[mode] [pr-ref]` in any order:
 
 - `optimize` (literal token) selects optimize mode; anything else is treated as `pr-ref`.
-- `pr-ref` is a PR URL (`https://github.com/dash0hq/dash0/pull/13319`) or PR number (`13319`).
+- `pr-ref` is a PR URL (`https://github.com/<org>/<repo>/pull/13319`) or PR number (`13319`).
 - If `pr-ref` is missing, auto-detect the open PR for the current branch (same path as [`/ci-auto-fix`](../../delivery/ci-auto-fix/SKILL.md) Step 0).
 - If `mode` is missing, default to `stabilize`.
 
@@ -166,7 +166,8 @@ Do **not** re-implement.
    The skill never commits a fix that names an element that does not exist.
 6. **Three consecutive local passes or no commit.**
    A single passing run can be a coin flip on a flake.
-   Three in a row makes the fix statistically credible before we spend a CI cycle on it.
+   Three in a row — hardened with `--repeat-each=3` when the measured flake rate is low (see [`rules/local-iteration.md`](./rules/local-iteration.md)) — filters out most unfixed flakes before we spend a CI cycle.
+   The streak is necessary but not sufficient evidence; Phase 7's CI ratification plus the telemetry comparison is the real confirmation.
 7. **Never weaken the suite.**
    No `.skip`, `.fixme`, `waitForTimeout`, `continue-on-error`, `--no-verify`, or removed assertions.
    The full list lives in [`rules/guard-rails.md`](./rules/guard-rails.md).
@@ -198,7 +199,7 @@ One-liners; the full list lives in [`rules/guard-rails.md`](./rules/guard-rails.
 ```text
 /e2e-pr-stabilizer                                                       # stabilize, auto-detect PR
 /e2e-pr-stabilizer 13319                                                 # stabilize PR 13319
-/e2e-pr-stabilizer https://github.com/dash0hq/dash0/pull/13319           # stabilize via URL
+/e2e-pr-stabilizer https://github.com/<org>/<repo>/pull/13319            # stabilize via URL
 /e2e-pr-stabilizer optimize                                              # optimize, auto-detect PR
 /e2e-pr-stabilizer optimize 13319                                        # optimize PR 13319
 ```

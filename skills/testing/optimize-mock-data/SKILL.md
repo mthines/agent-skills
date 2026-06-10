@@ -9,9 +9,10 @@ description: >
   reordered keys, fields present in some files but missing from
   others, megabyte-sized payloads), when adding a new mock that must
   match an existing set, or when preparing fixtures for a
-  storage-cost-sensitive context. Three modes — `analyze` (default,
+  storage-cost-sensitive context. Four modes — `analyze` (default,
   read-only), `normalize` (rewrites files in place), `shrink` (caps
-  verbose string fields). Triggers on "optimize mock data",
+  verbose string fields), `trim` (reduces array cardinality without
+  touching strings). Triggers on "optimize mock data",
   "normalize fixtures", "check mock structure", "audit mocks",
   "shrink test fixtures", "are these mocks consistent",
   "/optimize-mock-data".
@@ -49,7 +50,7 @@ the user explicitly asks for `shrink`.
 ## Mode Detection
 
 Parse `$ARGUMENTS` as `<mode> <path> [flags]` where `<mode>` is one of
-`analyze`, `normalize`, `shrink`. If the first token is a path
+`analyze`, `normalize`, `shrink`, `trim`. If the first token is a path
 (starts with `/`, `./`, or `~`) treat it as `<path>` and default
 `<mode>` to `analyze`.
 

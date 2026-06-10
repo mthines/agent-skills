@@ -112,11 +112,38 @@ Read the target `.yml` and produce a structured report — do not mutate
 unless asked.
 
 1. Parse the workflow: triggers, jobs, steps, permissions, concurrency.
-2. For each rule file in [`rules/`](./rules/), mark **PASS / WARN /
+2. Measure the run metrics — **report each metric when computable; print
+   `n/a (<reason>)` otherwise** (no runs yet, logs expired, no cache steps).
+
+   Average run duration over the last 10 completed runs:
+
+   ```bash
+   gh run list --workflow <file>.yml --status completed --limit 10 \
+     --json startedAt,updatedAt \
+     --jq 'map((.updatedAt | fromdate) - (.startedAt | fromdate))
+           | add / length | round
+           | "\(. / 60 | floor)m\(. % 60)s"'
+   ```
+
+   Cache hit rate over the last 10 completed runs — count cache-restore
+   outcomes in the logs (hit rate = `Cache restored` ÷ total restore
+   attempts; logs older than the retention window return nothing, so
+   report `n/a` rather than guessing):
+
+   ```bash
+   gh run list --workflow <file>.yml --status completed --limit 10 \
+     --json databaseId --jq '.[].databaseId' \
+     | while read -r id; do
+         gh run view "$id" --log 2>/dev/null \
+           | grep -hoE 'Cache restored from key|Cache not found'
+       done | sort | uniq -c
+   ```
+
+3. For each rule file in [`rules/`](./rules/), mark **PASS / WARN /
    FAIL** with one line of evidence (`line N: <quote>`).
-3. End with a prioritised "Top 3 fixes" list — biggest speed / cost /
+4. End with a prioritised "Top 3 fixes" list — biggest speed / cost /
    security wins first.
-4. Offer to apply the fixes if the user wants — switch to `scaffold`
+5. Offer to apply the fixes if the user wants — switch to `scaffold`
    mode for that section.
 
 Format:
@@ -125,8 +152,8 @@ Format:
 Workflow: .github/workflows/ci.yml
 Lines: 142
 Jobs: 4
-Average run (last 10): 7m12s
-Cache hit rate (last 10): 30%
+Average run (last 10): 7m12s            # or: n/a (no completed runs)
+Cache hit rate (last 10): 30%           # or: n/a (logs expired / no cache steps)
 
 Anatomy: PASS
 Triggers + concurrency: WARN — no `cancel-in-progress` on PR (line 8)

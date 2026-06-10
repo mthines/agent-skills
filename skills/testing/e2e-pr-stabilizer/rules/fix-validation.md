@@ -118,6 +118,12 @@ test('selector probe', async ({ page }) => {
   // Replicate any necessary setup from the original test (login, fixture
   // load) — copy verbatim from the spec being verified.
 
+  // Landmark check — a locator the original test resolves successfully
+  // *before* the failing action (take it from the trace). This is the
+  // probe's own sanity check: it proves the setup reached the right state.
+  console.log('PROBE_URL', page.url());
+  console.log('LANDMARK_COUNT', await page.locator('<known-good landmark locator>').count());
+
   const count = await page.locator('<the new locator under review>').count();
   console.log('LOCATOR_COUNT', count);
 });
@@ -136,9 +142,21 @@ Then delete the probe file (Phase 5 must leave no `.tmp/` artefacts behind).
 | `LOCATOR_COUNT` | Verdict |
 |-----------------|---------|
 | ≥ 1 | **Verified live.** The selector resolves. Continue. |
-| 0 | **Hallucinated** at runtime. Refuse the diff. Go to Step 3. |
+| 0 and the landmark check passed | **Hallucinated** at runtime. Refuse the diff. Go to Step 3. |
+| 0 and the landmark check failed | **Probe-setup error** — see "Disambiguating a zero count" below. Fix the probe, not the selector. |
 | ≥ 2 and the diff uses `.first()` to dedupe | **Refuse** — `.first()` is forbidden as a disambiguation strategy ([`guard-rails.md`](./guard-rails.md)). Rewrite the locator and re-run Step 1. |
 | ≥ 2 and the diff uses `.and(...)` or accessible-name disambiguation | **Verified** — multiple matches are acceptable when the diff narrows on a property the matches do not share. |
+
+### Disambiguating a zero count
+
+The probe copies the original test's setup, so a probe with **wrong setup** (broken login, missing fixture, redirect to an error page) also yields `LOCATOR_COUNT 0` — indistinguishable from a hallucinated selector unless you check the page state first.
+
+When `LOCATOR_COUNT` is `0`, decide in this order:
+
+1. **Check `PROBE_URL`** — it must match the route the failing action runs on. A redirect to `/login`, `/404`, or an error page is a probe-setup error.
+2. **Check `LANDMARK_COUNT`** — the landmark is a locator the original test resolves successfully before the failing action, so it must be ≥ 1 on a correctly-set-up page.
+3. **Both checks pass and `LOCATOR_COUNT` is still 0** → the new locator is genuinely **hallucinated**. Refuse the diff and go to Step 3.
+4. **Either check fails** → classify as a **probe-setup error**. Fix the probe (auth, fixture load, navigation), not the selector, and re-run Step 2. A probe-setup error never counts as a selector-existence refusal in Step 3's two-refusal accounting.
 
 ### Live-check fallback when probe is impossible
 

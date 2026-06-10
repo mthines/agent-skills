@@ -36,15 +36,19 @@ fd -t f 'playwright\.config\.(ts|js|mjs)' tests/e2e/ 2>/dev/null || \
 fd -t f 'playwright\.config\.(ts|js|mjs)' .
 
 # 3. Fall back to a direct invocation rooted at the Playwright config dir.
-#    pnpm is the package manager — see CLAUDE.md.
-pnpm --filter @dash0/ui-e2e exec playwright test --help >/dev/null
+#    Detect the package manager from the target repository's lockfile
+#    (pnpm-lock.yaml → pnpm, yarn.lock → yarn, package-lock.json → npm, bun.lockb → bun)
+#    and the E2E package name from that package's package.json.
+#    The target repository's CLAUDE.md often documents the canonical command — check it first.
+#    Example shape (pnpm workspace with an E2E package):
+<package-manager> --filter <e2e-package> exec playwright test --help >/dev/null
 ```
 
 Record the resolved invocation as `PLAYWRIGHT_CMD` and use it verbatim in both phases.
-A typical resolution looks like:
+An example resolution (placeholders filled in for a pnpm workspace whose E2E package is `@acme/ui-e2e`):
 
 ```bash
-PLAYWRIGHT_CMD='pnpm --filter @dash0/ui-e2e exec playwright test'
+PLAYWRIGHT_CMD='pnpm --filter @acme/ui-e2e exec playwright test'
 ```
 
 If no resolution succeeds, print the candidates and stop — do not guess.
@@ -55,10 +59,13 @@ Playwright needs the app running.
 Inspect `playwright.config.ts`'s `webServer.url` — that is the canonical baseURL.
 
 ```bash
-node -e "
-const cfg = require('./tests/e2e/playwright.config.ts');
-console.log(cfg.default?.use?.baseURL ?? cfg.default?.webServer?.url ?? '');
-" 2>/dev/null
+# Validate that Playwright can load the config (handles TypeScript configs,
+# which `node -e "require(...)"` cannot).
+npx playwright test --list --config <path-to-playwright-config> >/dev/null 2>&1 \
+  && echo "config-ok" || echo "config-error"
+
+# Extract the baseURL / webServer.url from the config source.
+grep -nE "baseURL|webServer" <path-to-playwright-config>
 ```
 
 If `webServer.command` is set, Playwright will start the app itself — no external action needed.
@@ -159,6 +166,11 @@ $PLAYWRIGHT_CMD \
   --retries 0
 ```
 
+**Low-flake-rate hardening:** when the Phase 1 measured `failure_rate` is below `0.33`, add `--repeat-each=3` to every Phase 6 invocation.
+Each attempt then executes the test 3 times in one invocation, and the attempt counts as `passed` only if **every** repeat passes.
+This stays within the existing 10-attempt budget — repeats do not consume extra attempts.
+The "Why three" section below explains why the extra executions are needed at low flake rates.
+
 ### Loop logic
 
 ```text
@@ -182,7 +194,12 @@ while streak < 3 and attempts < 10:
 
 ### Why three, and why "consecutive"
 
-- **Why three:** at a 33 % flake rate (1-in-3), three independent passes have ≈ 30 % probability of being lucky chance, two have ≈ 44 %, one has ≈ 67 %. Three is the lowest streak that makes a coin-flip explanation unlikely without dragging out the loop. At 10 % flake (the entry threshold for `stabilize`) three consecutive passes drop accidental-pass probability to ≈ 73 % → 81 % → 88 % → 93 %, so the third pass is the one that pushes us comfortably above 90 %.
+- **Why three — the honest math:** an *unfixed* flaky test with per-run failure probability `p` still passes `n` consecutive runs with probability `(1 − p)ⁿ`.
+  At `p = 0.33` (a 1-in-3 flake), three consecutive passes happen by luck with probability `(0.67)³ ≈ 30 %` — the gate catches the unfixed flake about 70 % of the time, which is acceptable for a local pre-filter.
+  At `p = 0.10` — exactly the `stabilize` entry threshold in [`telemetry-driven-analysis.md`](./telemetry-driven-analysis.md) — the false-pass probability is `(0.90)³ ≈ 73 %`, so three bare runs would catch the unfixed flake only ~27 % of the time.
+  That is why the low-flake-rate hardening above applies `--repeat-each=3`: three passing attempts then mean ~9 executions, with false-pass probability `(0.90)⁹ ≈ 39 %` at `p = 0.10` — better, but still not proof.
+- **The streak is necessary, not sufficient:** a clean local streak is required evidence before spending a CI cycle, but it never *confirms* the fix on its own.
+  Real confirmation is Phase 7's CI ratification plus the telemetry comparison against the Phase 1 baseline, and [`guard-rails.md`](./guard-rails.md) already forbids closing the loop on a single passing CI run when the baseline failure rate was below 100 %.
 - **Why consecutive:** a fix that passes 3 / 5 is not stable; it is "improved" at best. The skill must distinguish "the flake is gone" from "the flake is rarer". Consecutive passes test the former.
 
 ### When the streak breaks

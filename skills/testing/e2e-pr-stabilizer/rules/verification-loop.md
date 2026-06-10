@@ -22,7 +22,7 @@ The local environment is faster but not identical to CI; persistent CI-only fail
 
 Before pushing, confirm the state is shippable:
 
-1. **Working tree is clean except for the committed fixes.** `git status` should show no untracked files in `tests/e2e/` (delete any leftover `.tmp/selector-probe.spec.ts` from Phase 5 Step 3).
+1. **Working tree is clean except for the committed fixes.** `git status` should show no untracked files in `tests/e2e/` (delete any leftover `.tmp/selector-probe.spec.ts` from Phase 5 Step 2).
 2. **Every fix passed Phase 6.** No `requires-human-judgment` entries should be on the push path — those are report-only.
 3. **The branch is up-to-date with its base.** Rebase if `main` (or the PR's base ref) has moved during the local loop:
    ```bash
@@ -70,13 +70,15 @@ Once the run concludes (pass or fail), wait briefly for spans to land in Dash0 �
 
 ```jsonc
 [
-  { "key": "service.name",          "operator": "is",         "value":  "ui-e2e" },
+  { "key": "service.name",          "operator": "is",         "value":  "<service-name>" },
   { "key": "otel.parent.id",        "operator": "is_not_set" },
   { "key": "ci.is_ci",              "operator": "is_one_of",  "value":  "true" },
   { "key": "git.pull_request_link", "operator": "is_one_of",  "values": ["<PR_URL>"] },
   { "key": "vcs.ref.head.revision", "operator": "is_one_of",  "values": ["<head_sha after push>"] }
 ]
 ```
+
+`<service-name>` is the same value resolved in Phase 1 ([`telemetry-driven-analysis.md`](./telemetry-driven-analysis.md)) — the `service.name` from the target repo's OTel exporter.
 
 The `vcs.ref.head.revision` filter is essential — without it, the comparison includes the failing pre-fix attempts.
 
@@ -148,3 +150,4 @@ That is the explicit user-decision moment.
 | `gh run watch` errors | Network or auth | Retry once; on second failure stop and report. |
 | Telemetry pull returns 0 spans for the new run | Span landing latency or attribute drift | Wait 60 s, retry once. If still empty, mark the iteration `evidence-stale` and report. |
 | Same test failed identically on CI as Phase 1 | Fix did not generalise to CI environment | Treat as `ci-local-divergence` — escalate, do not loop. |
+| Dash0 MCP not configured (no `mcp__dash0-*` tools) | The session has no telemetry source | Per [`telemetry-driven-analysis.md`](./telemetry-driven-analysis.md): `stabilize` skipped Phase 1 and ran local-only in degraded mode — skip Steps 3–4 here, ratify on the CI run conclusion alone, and mark the report `degraded: no-telemetry`. `optimize` should have stopped at Phase 1; if you reach this phase in optimize mode without telemetry, something went wrong — stop. |
