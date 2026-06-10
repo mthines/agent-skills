@@ -141,4 +141,60 @@ function acceptanceCriteriaCount(plan) {
   }
 }
 
+// ── Check G: cross-file contract drift guards (2026-06 holistic audit) ──
+// Every defect below was a contradiction between files that must agree —
+// the class Check A's link integrity cannot see. Lock the repaired contracts.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const norm = (t) => t.replace(/\s+/g, " ");
+
+  // G1: the seen_count UPDATE contract sentence is shared verbatim by all three owners
+  // (persistent-memory write pipeline + both autonomous-workflow loop surfaces).
+  // Without it, applied lessons never reach the seen_count >= 3 promotion gate.
+  const CONTRACT =
+    "An UPDATE to an entry that carries a `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`.";
+  for (const p of [
+    "skills/authoring/persistent-memory/rules/write-pipeline.md",
+    "skills/workflow/autonomous-workflow/rules/self-improvement-loop.md",
+    "skills/workflow/autonomous-workflow/rules/phase-7-ci-gate.md",
+  ])
+    s.check(`G1 seen_count UPDATE contract in ${p.split("/").pop()}`, norm(read(p)).includes(norm(CONTRACT)));
+
+  // G2: the fix-bug fast-lane plan is a superset of the aw-create-plan Core sections —
+  // otherwise aw-executor's bail check and confidence(plan) rule #2 reject every fast-lane plan.
+  const CORE = ["TL;DR", "Requirements", "Decisions", "Acceptance Criteria",
+    "Implementation Order", "File Changes", "Verification", "Progress Log"];
+  const fastLane = read("skills/workflow/fix-bug/rules/fast-lane-plan-contract.md");
+  const missingCore = CORE.filter((c) => !fastLane.includes(c));
+  s.check("G2 fast-lane plan contract ⊇ Core-8 sections", missingCore.length === 0, missingCore.join(", "));
+
+  // G3: implement-suggestion's non-removable override keys on /critical's REAL output
+  // buckets (Must-fix), never the phantom Critical/High/Major severity taxonomy.
+  const isFiles = walk(join(REPO_ROOT, "skills/workflow/implement-suggestion"));
+  const phantomSeverity = isFiles.filter((f) => /Critical or (High|Major)/.test(readFileSync(f, "utf8"))).map(rel);
+  const usesMustFix = isFiles.some((f) => readFileSync(f, "utf8").includes("Must-fix"));
+  s.check("G3 implement-suggestion keys on /critical's Must-fix bucket",
+    phantomSeverity.length === 0 && usesMustFix, phantomSeverity.join(", ") || "Must-fix missing");
+
+  // G4: review agents consume confidence(code)'s real contract (weighted Final over
+  // Correctness/Completeness/No-regressions), not a fictional returned score trio.
+  const pcc = read("agents/shared/rules/per-comment-confidence.md");
+  s.check("G4 per-comment gate consumes the real confidence(code) contract",
+    !/returns three scores/.test(pcc) && /Correctness/.test(pcc));
+
+  // G5: forbidden phrases that re-introduce audited contradictions or phantom references.
+  const FORBIDDEN = [
+    [/Never auto-continue past iteration 3/, "flat 3-cap — caps are mode-aware with one-shot auto-replan"],
+    [/iterate until passing/i, "uncapped iteration — the stuck-loop cap governs"],
+    [/\bvisual-test\b/, "phantom visual-test agent"],
+    [/worker-dispatch-prompt\.md/, "phantom dispatch prompt file"],
+    [/\bmcp list\b/, "fabricated mcp CLI — detect MCP tools from the tool list"],
+  ];
+  const scan = [...walk(join(REPO_ROOT, "skills")), ...walk(join(REPO_ROOT, "agents"))];
+  for (const [re, why] of FORBIDDEN) {
+    const hits = scan.filter((f) => re.test(readFileSync(f, "utf8"))).map(rel);
+    s.check(`G5 no /${re.source}/ (${why})`, hits.length === 0, hits.slice(0, 3).join(", "));
+  }
+}
+
 process.exit(s.report() ? 0 : 1);
