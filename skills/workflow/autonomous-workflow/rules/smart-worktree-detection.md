@@ -211,4 +211,4 @@ Task: "implement dashboard widgets"
 ## References
 
 - Related rule: [phase-2-worktree](./phase-2-worktree.md)
-- Related skill: [git-worktree-workflows](../../git-worktree-workflows/)
+- Without `gw`, inspect and create worktrees natively: `git worktree list` to detect existing ones, `git worktree add -b <branch> <path>` to create.

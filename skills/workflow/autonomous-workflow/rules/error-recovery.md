@@ -15,7 +15,7 @@ tags:
 - [Worktree Creation Failures](#worktree-creation-failures)
 - [Dependency Installation Failures](#dependency-installation-failures)
 - [Test Failures During Iteration](#test-failures-during-iteration)
-- [Stuck-Loop Hit at 3 Iterations](#stuck-loop-hit-at-3-iterations)
+- [Stuck-Loop Hit at the Cap](#stuck-loop-hit-at-the-cap)
 - [Companion Skill Not Available](#companion-skill-not-available)
 - [Build Failures](#build-failures)
 - [CI Failures (Phase 7)](#ci-failures-phase-7)
@@ -66,35 +66,40 @@ native fallback. See
 
 See [phase-4-testing](./phase-4-testing.md) for the full iteration strategy.
 
-**Quick reference (3-iteration cap):**
+**Quick reference (mode-aware cap: 3 Lite Mode / 5 Full Mode):**
 
-| Iteration | Action                                                       |
-| --------- | ------------------------------------------------------------ |
-| 1         | Read error, fix the most likely cause                        |
-| 2         | Re-read error in light of attempt 1; adjust mental model     |
-| 3         | This is the cap. Run `Skill("confidence", "analysis")`,  |
-|           | summarize attempts, escalate to user                         |
+| Iteration       | Action                                                       |
+| --------------- | ------------------------------------------------------------ |
+| 1               | Read error, fix the most likely cause                        |
+| 2 … cap − 1     | Re-read error in light of prior attempts; adjust mental model |
+| cap (3 or 5)    | Stop iterating. Run `Skill("confidence", "analysis")` and follow the Phase 4 auto-replan protocol |
 
-After 3 iterations on the same failing area, **stop guessing**. Token spend
+After the mode's cap on the same failing area, **stop guessing**. Token spend
 beyond this rarely converges.
 
 ---
 
-## Stuck-Loop Hit at 3 Iterations
+## Stuck-Loop Hit at the Cap
 
-**Detection:** Same failing test or area attempted 3 times without resolution.
+**Detection:** Same failing test or area attempted up to the mode-aware cap
+(3 iterations in Lite Mode / 5 in Full Mode) without resolution.
 
 **Recovery (mandatory):**
 
 1. Run `Skill("confidence", "analysis")` to root-cause the failure.
-2. Append to `plan.md` Progress Log: a one-line summary of each prior attempt
-   plus the confidence findings.
-3. Present to the user:
-   - The 3 attempts (what was tried, why each failed)
+2. If the score is < 90% and the one-shot auto-replan has not yet been used:
+   run `Skill("holistic-analysis")`, regenerate the affected `plan.md` sections
+   via `aw-create-plan`, reset the counter, set `auto_replan_used`, and resume
+   the Phase 4 loop once more (the [auto-replan protocol](./phase-4-testing.md#stuck-loop-detection)).
+3. Otherwise (score ≥ 90%, or auto-replan already used), append to `plan.md`
+   Progress Log a one-line summary of each prior attempt plus the confidence
+   findings, then present to the user:
+   - The attempts (what was tried, why each failed — pre- and post-replan)
    - Confidence findings (root cause, blocked assumptions)
    - Three options: **continue** with new approach / **try a different angle**
      (e.g. holistic-analysis) / **stop and hand back**
-4. Wait for user response. **Never auto-continue past iteration 3.**
+4. Wait for user response. **Never auto-continue past the mode's cap, except
+   the single automatic re-plan permitted by the Phase 4 auto-replan protocol.**
 
 If the user asks for a fresh analysis, invoke
 `Skill("holistic-analysis")` to step back and re-trace the execution path
@@ -160,8 +165,8 @@ See [phase-7-ci-gate](./phase-7-ci-gate.md) for details.
 
 ### Stuck in Loop
 
-**Detection:** Same fix attempted 3 times without progress (covered above
-under "Stuck-Loop Hit at 3 Iterations").
+**Detection:** Same fix attempted up to the mode's cap without progress
+(covered above under "Stuck-Loop Hit at the Cap").
 
 ### Context Loss
 

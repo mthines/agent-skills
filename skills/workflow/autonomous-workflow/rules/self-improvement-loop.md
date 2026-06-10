@@ -157,6 +157,13 @@ Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")   # 
   NOOP** against existing lessons (Mem0-style). A lesson that recurs resolves
   to **UPDATE**, which **bumps `seen_count`** and refreshes `expires` — it does
   not create a duplicate. This is what makes recurrence countable.
+- **Applied-lesson UPDATE contract.** If a lesson read at the start of the run
+  was applied and the failure it targets did not recur, write an UPDATE for
+  that lesson — successful application counts as recurrence evidence. An UPDATE
+  to an entry that carries a `seen_count` field MUST increment `seen_count` by
+  1 and refresh `expires`. This is how a *working* lesson still reaches the
+  `seen_count >= 3` promotion gate. "Capture nothing on a clean run" applies
+  only when no lessons were read or none matched.
 
 Log:
 

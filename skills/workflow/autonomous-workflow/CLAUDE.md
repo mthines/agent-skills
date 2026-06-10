@@ -575,7 +575,8 @@ There's no automated test suite for this skill. The validation pattern is:
 2. Run a small Lite Mode task — verify Phase 0 + Phase 2 + Phase 5 + Phase 6
    companions all fire correctly.
 3. Run a larger Full Mode task — verify `plan.md` and `walkthrough.md` are
-   generated, confidence gates fire, stuck-loop respects the 3-iteration cap.
+   generated, confidence gates fire, stuck-loop respects the mode-aware cap
+   (5 iterations in Full Mode).
 
 If you change the stuck-loop number, mode-detection criteria, or the
 companion list, do both runs.

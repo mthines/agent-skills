@@ -18,6 +18,7 @@ tags:
 - [Core Principles](#core-principles)
 - [Procedure (Order of Operations)](#procedure-order-of-operations)
 - [Pre-Push Review](#pre-push-review)
+- [Findings Quality Gate](#findings-quality-gate)
 - [Walkthrough](#walkthrough)
 - [PR Creation](#pr-creation)
 - [Delivery Checklist](#delivery-checklist)
@@ -101,7 +102,35 @@ surface in the inline report for the user to act on.
 | Skips silently if missing | Yes — log and continue with manual diff review                         |
 | Disable                   | Remove this section (not recommended; you lose the pre-push safety net)|
 
-Handle the review output:
+## Findings Quality Gate
+
+**Anchor:** `findings-quality-gate`
+
+Before acting on the review output, run the optional false-positive filter over the findings list:
+
+```
+Skill("aw-review-quality-gate")     # skips silently if not installed
+```
+
+The gate runs its six-question checklist per finding, drops findings that fail two or more checks, downgrades findings that fail exactly one, and emits a `### Quality Gate` summary (reviewed / dropped / downgraded / passed).
+Act on the **filtered** findings list, not the raw one.
+The gate is advisory — it filters review noise; it never blocks the phase.
+
+| Property                  | Value                                                                  |
+| ------------------------- | ---------------------------------------------------------------------- |
+| Runs in Full Mode         | Yes                                                                    |
+| Runs in Lite Mode         | Yes                                                                    |
+| Skips silently if missing | Yes — act on the raw findings list, log and continue                   |
+| Disable                   | Remove this section; the raw `review-changes` output is used directly  |
+
+Log to Progress Log:
+
+```markdown
+- [TIMESTAMP] Phase 6: aw-review-quality-gate — N reviewed, X dropped, Y downgraded
+- [TIMESTAMP] Phase 6: aw-review-quality-gate — not available, continuing
+```
+
+Handle the (filtered) review output:
 
 | Reviewer verdict       | Action                                                                            |
 | ---------------------- | --------------------------------------------------------------------------------- |

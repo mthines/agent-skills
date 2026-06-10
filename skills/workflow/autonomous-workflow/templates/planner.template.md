@@ -47,18 +47,23 @@ finished — even if the work feels done.
    If unavailable, ask the user to install the companion set (see the skill's
    `SKILL.md` Auto-Trigger Setup section). Do not attempt to plan without it.
 
-2. **Detect workflow mode** — output the canonical block before doing
+2. **Detect workflow mode** — output the canonical block (field-for-field
+   identical to `SKILL.md` Step 1 and the dispatcher template) before doing
    anything else:
 
    ```
    MODE SELECTION:
-   - Mode: [Full | Lite]
+   - Tier: [Micro | Lite | Full]
    - Reasoning: [why]
    - Estimated files: [number]
-   - Complexity: [simple | moderate | architectural]
+   - Complexity: [trivial | simple | moderate | architectural]
+   - Lessons applied: [N matched, or none]
    ```
 
-   When in doubt, choose **Full Mode**.
+   When in doubt, choose **Full**. If the tier comes out Micro or Lite, you
+   are the wrong agent — the dispatcher (or the user) should run those
+   single-pass; say so and stop rather than producing a `plan.md` the tier
+   does not need.
 
 3. **Verify prerequisites** — `which gh` (REQUIRED, hard-stop if missing),
    `which gw` (recommended; warn once and fall back to native `git worktree`).

@@ -91,10 +91,11 @@ all hold. `/fix-bug` becomes the plan author; `aw-planner` does not run.
 
    This writes `.agent/fix/<slug>/plan.md` plus the next `plan.vN.md`
    snapshot.
-5. **Validate plan.md** — re-read the file and confirm all 14 required
-   sections are present. On any missing section, fail loudly, log to the
-   ledger, and stop. Do NOT dispatch the executor against an under-specified
-   plan.
+5. **Validate plan.md** — re-read the file and confirm all 20 required
+   sections (the 8 `aw-create-plan` Core sections plus the bug-specific ones,
+   per [`fast-lane-plan-contract.md`](./fast-lane-plan-contract.md#required-sections))
+   are present. On any missing section, fail loudly, log to the ledger, and
+   stop. Do NOT dispatch the executor against an under-specified plan.
 
 ### Step 6b (fast) — Dispatch `aw-executor`
 
@@ -109,6 +110,10 @@ run. The CEGIS refinement contract in the plan is binding. On round-3
 failure, the orchestrator (/fix-bug) handles the fallback — do not retry
 beyond 3 rounds.
 ```
+
+If the harness's Agent tool does not support the `isolation` parameter, omit
+it — the worktree already exists from Step 6a (fast); the prompt's worktree
+path is the isolation contract.
 
 The executor runs autonomous-workflow Phases 3–7 (implement, test, document,
 draft PR, watch CI). Do not wait for CI to finish before reporting back —
@@ -168,6 +173,8 @@ Use the Agent tool with `subagent_type: "aw-planner"` and
 `isolation: "worktree"`. Pass the **Bug Fix Pack** from
 [`templates/bug-fix-pack.md`](../templates/bug-fix-pack.md), filled in from
 the Evidence Record (Phase 2) and holistic-analysis output (Phase 3).
+If the harness does not support the `isolation` parameter, omit it — the
+planner creates and enters the worktree itself as part of its Phase 2.
 
 The planner runs autonomous-workflow Phases 0–2 (validation, planning,
 worktree + `plan.md`), gated by its own internal `confidence(plan) >= 90 %`.
@@ -189,6 +196,11 @@ Minimal prompt:
 ```text
 Execute the plan at .agent/<branch>/plan.md in the current worktree.
 ```
+
+If the harness does not support the `isolation` parameter, omit it and ensure
+the worktree exists (the planner created it in Step 6a; create it manually
+with `git worktree add` only if it is somehow missing) — then name the
+worktree path explicitly in the prompt.
 
 The executor runs autonomous-workflow Phases 3–7 (implement, test, document,
 draft PR, watch CI). Do not wait for CI to finish before reporting back —

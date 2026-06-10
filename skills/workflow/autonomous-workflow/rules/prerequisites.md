@@ -212,4 +212,4 @@ Without `gh`, Phase 6 (PR creation) and Phase 7 (CI gate) cannot proceed —
 - gw-tools README: <https://github.com/mthines/gw-tools>
 - GitHub CLI manual: <https://cli.github.com/manual/>
 - Native git worktree: <https://git-scm.com/docs/git-worktree>
-- Related skill: [`git-worktree-workflows`](../../git-worktree-workflows/)
+- Without `gw`, the native equivalents are `git worktree add -b <branch> <path>`, `git worktree list`, and `git worktree remove <path>`.

@@ -11,7 +11,7 @@ tags:
 
 # Pre-Flight Sweep
 
-Phase 1 step 1b. Run **after** evidence resolution (1a), **before** Source Mapping (Phase 2).
+Phase 1.5. Run **after** evidence resolution (step 1a), **before** Source Mapping (Phase 2).
 Cheap, deterministic probes that often name the bug in seconds without holistic analysis.
 
 Source: [Effective harnesses for long-running agents (Anthropic)](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
@@ -103,7 +103,7 @@ the Evidence Record:
 - candidate commits: <count> (from probe #3)
 ```
 
-This window is the input to the **bisect fast-path** in Phase 2.5 (see
+This window is the input to the **bisect fast-path** (Phase 2 step 2c — see
 [`reproduction.md`](./reproduction.md#bisect-fast-path)). Bisect cannot run yet — it requires the
 deterministic repro produced in Phase 2.5.
 

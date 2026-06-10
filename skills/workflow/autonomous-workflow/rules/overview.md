@@ -29,10 +29,11 @@ tags:
 
 **Before starting ANY phase, you MUST determine the workflow mode:**
 
-| Mode     | Criteria                             | Artifacts Required  |
-| -------- | ------------------------------------ | ------------------- |
-| **Full** | 4+ files OR complex/architectural    | **YES - MANDATORY** |
-| **Lite** | 1-3 files AND simple/straightforward | No                  |
+| Tier      | Criteria                                                | Artifacts Required  |
+| --------- | ------------------------------------------------------- | ------------------- |
+| **Full**  | 4+ files OR complex/architectural OR unfamiliar         | **YES - MANDATORY** |
+| **Lite**  | 2–3 files AND simple/straightforward                    | No                  |
+| **Micro** | 1 file, purely mechanical (typo, copy, version bump)    | No                  |
 
 **For Full Mode:** Plan during Phase 1, validate with `Skill("confidence", "plan")`,
 then generate `plan.md` via `Skill("aw-create-plan")` inside the worktree AFTER
@@ -56,8 +57,9 @@ docs, and CI auto-fix.
 - **Always create worktree (Phase 2)**: Isolation is mandatory.
 - **`plan.md` is the single source of truth**: A new session must be able to
   execute from it alone.
-- **Stuck-loop has a hard limit**: 3 iterations on the same failing area
-  triggers `Skill("confidence", "analysis")` and escalation.
+- **Stuck-loop has a mode-aware cap**: 3 iterations (Lite Mode) / 5 iterations
+  (Full Mode) on the same failing area triggers `Skill("confidence", "analysis")`
+  and the one-shot auto-replan or user escalation.
 - **Companions skip silently if not installed**: never block on a missing
   companion.
 - **Self-validate continuously**: Check work at every step.
@@ -69,7 +71,8 @@ Companion skills are invoked at specific phases based on the task. The full
 registry, trigger conditions, and disable instructions live in
 [`companion-skills.md`](./companion-skills.md). **All companions skip silently
 if not installed** — the workflow continues without them. The only
-non-removable companion is `confidence` at Phase 1 (the plan gate).
+non-removable companion is `confidence` at Phase 1 (the Full Mode plan gate —
+Lite Mode has no `plan.md` to gate and Micro skips all quality companions).
 
 ## Artifact System
 
@@ -95,7 +98,7 @@ for full details.
 | 1     | Planning                   | Autonomous    | Analyze codebase, design, `confidence` gate  |
 | 2     | Worktree Setup             | **MANDATORY** | Create isolated worktree, write `plan.md`    |
 | 3     | Implementation             | Autonomous    | Code changes in isolated worktree            |
-| 4     | Testing                    | Autonomous    | Iterate until tests pass (3-iteration cap)   |
+| 4     | Testing                    | Autonomous    | Iterate until tests pass (mode-aware cap: 3 Lite / 5 Full) |
 | 5     | Documentation              | Autonomous    | `documentation update` for `CLAUDE.md`, `README.md`, `docs/` |
 | 6     | PR Creation                | Autonomous    | `review-changes`, walkthrough, draft PR      |
 | 7     | CI Gate + Optional Cleanup | Autonomous    | Watch CI, `ci-auto-fix` per failure, prune   |
@@ -117,11 +120,11 @@ Phase 3: Implementation (Full: follow plan.md, update Progress Log)
     | tdd / ux companions per task type, fast-check after each edit
     | code-quality(code) once at end
     | (code complete)
-Phase 4: Testing & Iteration <- 3-iteration cap per failing area
-    | After 3 same-area iterations: confidence(analysis) -> escalate to user
+Phase 4: Testing & Iteration <- mode-aware cap (3 Lite / 5 Full) per failing area
+    | At the cap: confidence(analysis) -> one-shot auto-replan, then escalate to user
     | (all tests pass OR user-approved stop)
 Phase 5: Documentation
-    | Skill("documentation", "update") always (self-improving docs loop across CLAUDE.md, README.md, docs/)
+    | Skill("documentation", "update --auto") always (self-improving docs loop across CLAUDE.md, README.md, docs/)
     | (docs complete)
 Phase 6: PR Creation
     | Skill("review-changes") -> Skill("aw-create-walkthrough") -> Skill("create-pr")
@@ -184,22 +187,34 @@ Use for simple, focused changes:
 
 **Triggers:**
 
-- 1-3 files changed
+- 2–3 files changed, OR any non-trivial logic change in 1 file
 - Straightforward implementation
 - Single session completion
 - No complex decisions
 
+### Micro Mode (single-pass, no planning)
+
+Use for 1-file purely mechanical changes (typo, copy tweak, version or config
+bump):
+
+- No artifact files created
+- Planning and all quality companions skipped (docs only if they drift)
+- Follows the Lite phase path otherwise
+- Phase 0 and Phase 2 still mandatory
+
 ### Decision Flow
 
 ```
-DECIDE MODE FIRST (before any work):
+DECIDE TIER FIRST (before any work):
 
-Is this a complex change? (4+ files OR architectural)
+Is this complex / architectural / unfamiliar OR 4+ files?
 |-- Yes -> Full Mode
 |   |-- Plan in conversation during Phase 1
 |   |-- Create plan.md INSIDE worktree (after Phase 2) at .agent/{branch}/
-|-- No (1-3 files, straightforward)
-    |-- Lite Mode (no artifacts, still use worktree)
+|-- No: is it 2-3 files OR any non-trivial logic change?
+    |-- Yes -> Lite Mode (no artifacts, still use worktree)
+    |-- No (1 file, purely mechanical)
+        |-- Micro Mode (Lite path with planning + quality companions skipped)
 ```
 
 ## Expected Outcomes

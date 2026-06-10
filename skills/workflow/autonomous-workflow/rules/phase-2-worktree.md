@@ -381,4 +381,4 @@ for the native fallback procedure. The workflow continues without `gw`.
 - gw-tools (recommended): <https://github.com/mthines/gw-tools>
 - Native git worktree docs: <https://git-scm.com/docs/git-worktree>
 - Related skill: [`aw-create-plan`](../../aw-create-plan/SKILL.md)
-- Related skill: [`git-worktree-workflows`](../../git-worktree-workflows/)
+- Without `gw`, create worktrees natively: `git worktree add -b <branch> ../<repo>-<branch-slug>` from the main checkout.

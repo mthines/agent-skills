@@ -39,14 +39,16 @@ inside the worktree, never on the main branch.
 Before any Phase 1 work, the [Phase 0](./phase-0-validation.md) MODE SELECTION
 block must already be emitted and the user must have said "proceed".
 
-| Mode     | Criteria                              | Plan output       |
-| -------- | ------------------------------------- | ----------------- |
-| **Full** | 4+ files OR complex / architectural   | `plan.md` required (Phase 2) |
-| **Lite** | 1-3 files AND simple                  | Brief mental plan only       |
+| Tier      | Criteria                                        | Plan output                  | `confidence(plan)` |
+| --------- | ----------------------------------------------- | ---------------------------- | ------------------ |
+| **Full**  | complex / architectural / unfamiliar / 4+ files | `plan.md` required (Phase 2) | **Mandatory — cannot be disabled** |
+| **Lite**  | 2–3 files AND simple                            | Brief mental plan only       | Skipped            |
+| **Micro** | 1 file, purely mechanical                       | None                         | Skipped            |
 
-The remainder of this rule covers Full Mode. Lite Mode skips to Phase 2 with a
-short mental plan. `confidence(plan)` still runs in Lite Mode — it is the only
-non-removable gate in any mode.
+The remainder of this rule covers Full Mode.
+Lite and Micro skip to Phase 2 with a short mental plan (Micro: none).
+`confidence(plan)` is mandatory in **Full Mode only** — it is the workflow's one non-removable companion, and its deterministic rule checks require a `plan.md` on disk.
+Lite Mode's plan is inline (no `plan.md`), so the gate's deterministic checks are unsatisfiable and the gate is skipped; Micro skips all quality companions.
 
 ---
 
@@ -129,7 +131,7 @@ follow, gotchas. Synthesize their reports into the planning context.
 # Explore: package gw-tool — entry points, types, command pattern
 # Explore: package autonomous-workflow-agent — phase rules, companion invocation
 # Explore: past PRs — gh pr list --search "worktree" --limit 10
-# Explore: docs — CLAUDE.md, skills/git-worktree-workflows/SKILL.md
+# Explore: docs — CLAUDE.md, skills/<relevant-skill>/SKILL.md
 ```
 
 For simple tasks (under the trigger thresholds), do sequential research using
@@ -337,7 +339,9 @@ Disable by removing the invocation here (see
 
 **Anchor:** `confidence-gate`
 
-**MANDATORY in Full Mode. Cannot be disabled.**
+**MANDATORY in Full Mode only. Cannot be disabled there.**
+Lite Mode skips this gate — its plan is inline and the gate's deterministic rules require a `plan.md`.
+Micro skips all quality companions, this one included.
 
 After design is finalized and `code-quality(plan)` suggestions are applied,
 run the plan-confidence gate:

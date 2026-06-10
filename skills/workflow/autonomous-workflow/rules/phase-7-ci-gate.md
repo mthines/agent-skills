@@ -344,6 +344,17 @@ Wait for confirmation. Default is to keep the worktree if the user is silent.
 
 ### Step 3: Remove Worktree
 
+**Deferred-verification guard.**
+If the branch has a pending deferred verification — e.g. `/fix-bug` Phase 8 deferred mode awaiting `/fix-bug --verify-deploy <PR>` (look for a deferred-watch note on the PR / Linear ticket, or a Phase 8 "deferred" entry in `.agent/{branch}/bug-notes.md`) — copy `.agent/{branch}/` into the main checkout **before** removing the worktree, because removal deletes the gitignored `.agent/{branch}/` ledger the re-entry path depends on:
+
+```bash
+MAIN="$(git worktree list --porcelain | head -1 | sed 's/^worktree //')"
+mkdir -p "$MAIN/.agent/<branch-name>"
+cp -R ".agent/<branch-name>/." "$MAIN/.agent/<branch-name>/"
+```
+
+`--verify-deploy` later resolves the ledger at `.agent/<branch>/bug-notes.md` relative to the checkout it runs in, so the copy keeps the recovery handle alive after the worktree is gone.
+
 ```bash
 # With gw (recommended — handles branch + worktree atomically)
 gw remove <branch-name>
@@ -361,7 +372,7 @@ Validate:
 | --------------------------------------------------------- | ------------------------------ |
 | `gw list` (or `git worktree list`) no longer shows branch | Yes                            |
 | Worktree directory deleted                                | Yes                            |
-| `.agent/{branch-name}/` artifacts                         | Removed alongside the worktree |
+| `.agent/{branch-name}/` artifacts                         | Removed alongside the worktree (copied to the main checkout first when a deferred verification is pending — see guard above) |
 
 ### Step 4: Navigate Back to Main
 
@@ -395,7 +406,13 @@ Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")     
 
 Good end-of-run lessons: a companion trigger that should have fired but didn't,
 a plan gap that surfaced only during execution, a recurring fix pattern worth
-encoding. Capture nothing if the run was clean — empty lessons are noise.
+encoding.
+
+**Applied-lesson UPDATE contract.**
+If a lesson read at the start of the run was applied and the failure it targets did not recur, write an UPDATE for that lesson — successful application counts as recurrence evidence.
+An UPDATE to an entry that carries a `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`.
+Without this write, a lesson that works never accumulates the recurrence evidence the `seen_count >= 3` promotion gate requires.
+Capture nothing only when the run was clean **and** no lessons were read (or none matched) — empty lessons are noise.
 
 - `--auto` skips consent, **not** the privacy pre-flight (never store secrets /
   PII). Lessons are workflow mechanics, never product data.
@@ -436,4 +453,4 @@ Disable by removing this invocation (see
 - Related skill: [create-pr — Step 8 parallel pattern](../../../delivery/create-pr/SKILL.md)
 - Related agent: [reviewer](../../../../agents/reviewer.md) — optional Phase 7 auto-review
 - Related agent: [feature-pr-verifier](../../../../agents/feature-pr-verifier.md) — optional Phase 7 auto-verify (Full Mode)
-- Related rule: [git-worktree-workflows cleanup](../../git-worktree-workflows/rules/cleanup.md)
+- Without `gw`, clean up natively: `git worktree remove <path>` then `git branch -d <branch>` (Step 3 above shows the full commands).

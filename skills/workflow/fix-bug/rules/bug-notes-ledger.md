@@ -50,9 +50,14 @@ The ledger is consumed by:
 
 ## Lifecycle
 
+**Creation contract: the ledger is created on first write.**
+Any phase that appends creates the file from [`templates/bug-notes.md`](../templates/bug-notes.md) when it does not yet exist.
+Under the normal flow the first write — and therefore the creation point — is the **Phase 0.5 triage append**; this is the single canonical statement of when the ledger is initialised.
+
 | Event | Action |
 |-------|--------|
-| Phase 1 (after pre-flight) | **Create** the ledger with the partial Evidence Record + pre-flight findings |
+| Phase 0.5 (after triage) | **Create** the ledger (first write) and append the `Complexity triage` section |
+| Phase 1 (after pre-flight) | **Append** the partial Evidence Record + pre-flight findings |
 | Phase 2 (after repro lock) | **Append** the repro path + status |
 | Phase 3 (after holistic analysis) | **Append** the hypotheses table from holistic-analysis Phase 4 |
 | Phase 4 (after confidence gate) | **Append** the confidence score + breakdown |

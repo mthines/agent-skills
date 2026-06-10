@@ -44,7 +44,7 @@ This loop owns lessons about fix-bug's **own diagnostic phases** — the ones
 | -------------------------- | --------------------------------------- |
 | Intake / `bugClass` misclassification (Phase 0) | Implementation patterns (Phase 3) |
 | Complexity triage `simple`/`complex` misfires (Phase 0.5) | Test authoring / flakiness (Phase 4) |
-| Reproduction-layer selection, false-green repro (Phase 2b) | Doc / PR / CI lessons (Phase 5–7) |
+| Reproduction-layer selection, false-green repro (Phase 2.5) | Doc / PR / CI lessons (Phase 5–7) |
 | Root-cause analysis blamed wrong file/line (Phase 3) | |
 | Confidence-gate / branch-decision lessons (Phase 4–5) | |
 | Telemetry-verification mode mis-classification (Phase 8) | |
@@ -61,7 +61,7 @@ This loop owns lessons about fix-bug's **own diagnostic phases** — the ones
 
 Lesson record schema is identical to the shared one (procedural memory; the four
 mandatory fields *What failed / Why / What to do next time / Promotion target*).
-Add a `phase:` field naming the fix-bug phase (`0`, `0.5`, `2b`, `3`, `5`, `8`).
+Add a `phase:` field naming the fix-bug phase (`0`, `0.5`, `2.5`, `3`, `5`, `8`).
 
 ---
 
@@ -80,7 +80,7 @@ Skill("persistent-memory", "read fix-bug-lessons --tier project-shared")     # s
    shape. Load full entries only for matches.
 2. Apply matches as **inputs** to the decision they target: a triage lesson
    biases the `simple`/`complex` call (it never overrides the conservative
-   default toward `complex`); a reproduction-layer lesson biases Phase 2b's
+   default toward `complex`); a reproduction-layer lesson biases Phase 2.5's
    layer routing; an analysis lesson is passed to `holistic-analysis` (or the
    lightweight analysis) as a "previously this bugClass was misattributed to X"
    hint.
@@ -110,7 +110,7 @@ have under-performed — these are the high-signal moments:
 | Write point | When | Lesson captures |
 | ----------- | ---- | --------------- |
 | **Phase 7 verifier RED** | `bug-fix-verifier` left the PR draft | The fix was wrong despite the gates — which earlier phase under-caught it (triage too `simple`? repro false-green? analysis wrong file?) |
-| **Phase 8 telemetry still firing** | Post-deploy signal did not decay / recurred | The "fix" did not fix the production symptom — strongest signal; almost always a Phase 3 analysis or Phase 2b repro-fidelity lesson |
+| **Phase 8 telemetry still firing** | Post-deploy signal did not decay / recurred | The "fix" did not fix the production symptom — strongest signal; almost always a Phase 3 analysis or Phase 2.5 repro-fidelity lesson |
 | **Triage upgrade** | `simple → complex` upgrade, or fast-lane → standard-lane CEGIS round-3 fallback | A `simple`/fast-lane misclassification for this `bugClass` / input shape |
 | **Phase 5 stop** | `< 92 %` stop, or below-70 % hand-back | An evidence / analysis gap pattern for this `bugClass` (what evidence would have raised the score) |
 

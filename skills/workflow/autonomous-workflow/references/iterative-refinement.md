@@ -2,7 +2,7 @@
 
 Examples showing how continuous iteration and self-validation improve code quality throughout implementation.
 
-> **Scope note — refinement vs. stuck-loop:** Self-review iteration (refining a draft until it's good) is distinct from stuck-loop iteration (the same test failing repeatedly). The 3-iteration cap in [`phase-4-testing.md`](../rules/phase-4-testing.md#stuck-loop-detection) applies to the latter — not to quality-driven self-refinement covered in this document.
+> **Scope note — refinement vs. stuck-loop:** Self-review iteration (refining a draft until it's good) is distinct from stuck-loop iteration (the same test failing repeatedly). The mode-aware iteration cap (3 Lite Mode / 5 Full Mode) in [`phase-4-testing.md`](../rules/phase-4-testing.md#stuck-loop-detection) applies to the latter — not to quality-driven self-refinement covered in this document.
 
 ## Contents
 
@@ -759,7 +759,7 @@ Total cost: Low (clean code, no rework, happy users)
 
 **Different rule for stuck-loop iteration:**
 
-- ❌ "I've tried 3 times on the same failure" — if 3 attempts haven't converged, the mental model is probably wrong. Run `confidence(analysis)` and escalate per the stuck-loop protocol in [phase-4-testing.md](../rules/phase-4-testing.md#stuck-loop-detection). This is distinct from quality-driven self-refinement above, which has no fixed cap.
+- ❌ "I've hit the mode's cap on the same failure" (3 attempts in Lite Mode / 5 in Full Mode) — if that many attempts haven't converged, the mental model is probably wrong. Run `confidence(analysis)` and follow the auto-replan / escalation protocol in [phase-4-testing.md](../rules/phase-4-testing.md#stuck-loop-detection). This is distinct from quality-driven self-refinement above, which has no fixed cap.
 
 **Exception - stop and ask user if:**
 

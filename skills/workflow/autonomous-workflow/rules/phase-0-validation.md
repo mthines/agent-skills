@@ -119,6 +119,11 @@ Wait for user response. Do NOT proceed until:
 - Scope is confirmed
 - User explicitly types "proceed" or equivalent
 
+**Pre-authorized autonomy (escape hatch).**
+If the user's invocation contains an explicit autonomy grant — the phrase "proceed without confirmation" (or an equivalently explicit grant) or the `--no-confirm` flag — do NOT wait: post the Step 4 understanding summary (including any open questions, answered with your stated best-guess assumptions), emit the MODE SELECTION block, and proceed immediately to Phase 1.
+The grant must be explicit in the invocation — never infer it from tone, urgency, or task simplicity.
+Default behavior without a grant is unchanged: wait for the user's explicit "proceed".
+
 If the user clarifies or corrects:
 
 1. Update your understanding.
@@ -159,6 +164,7 @@ MODE SELECTION:
 - Reasoning: [why]
 - Estimated files: [number]
 - Complexity: [trivial | simple | moderate | architectural]
+- Lessons applied: [N matched, or none]
 ```
 
 > **Do NOT create artifact files in Phase 0.** Artifacts (`plan.md`,
@@ -197,10 +203,11 @@ Does this match your vision?"
 [Wait for "proceed"]
 
 MODE SELECTION:
-- Mode: Full
+- Tier: Full
 - Reasoning: Touches provider, layout, navbar, persistence; requires tests
 - Estimated files: 6
 - Complexity: moderate
+- Lessons applied: none
 ```
 
 ## Validation Checklist
