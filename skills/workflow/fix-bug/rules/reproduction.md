@@ -13,7 +13,7 @@ tags:
 
 # Reproduction Lock
 
-Phase 2 step 2b. **Before** holistic analysis (Phase 3). Constructs a deterministic artefact that
+Phase 2.5. **Before** holistic analysis (Phase 3). Constructs a deterministic artefact that
 reproduces the bug — the executor's `FAIL_TO_PASS` contract.
 
 This rule **does not write tests itself** — it picks the right test layer, then delegates to the
@@ -34,7 +34,7 @@ Source: SWE-agent ([NeurIPS 2024](https://proceedings.neurips.cc/paper_files/pap
 - [What counts as a valid repro](#what-counts-as-a-valid-repro)
 - [Path convention](#path-convention)
 - [Best-effort fallback](#best-effort-fallback)
-- [Forbidden reasons to skip Phase 2b](#forbidden-reasons-to-skip-phase-2b)
+- [Forbidden reasons to skip Phase 2.5](#forbidden-reasons-to-skip-phase-25)
 - [Bisect fast-path](#bisect-fast-path)
 
 ---
@@ -215,9 +215,9 @@ Do **not** block on this — Phase 3 proceeds. The executor (Phase 6) cannot use
 
 ---
 
-## Forbidden reasons to skip Phase 2b
+## Forbidden reasons to skip Phase 2.5
 
-Phase 2b is **not optional**. The only valid reasons to mark a repro as best-effort are
+Phase 2.5 is **not optional**. The only valid reasons to mark a repro as best-effort are
 the three listed in [Best-effort fallback](#best-effort-fallback) (race conditions,
 production-only bugs, Heisenbugs) plus rows 7 and 8 of the
 [layer routing table](#layer-routing) (visual-only, performance regression). These five

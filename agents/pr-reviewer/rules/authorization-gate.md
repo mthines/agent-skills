@@ -16,7 +16,7 @@ Without that authorization, the harness security policy treats the post as unaut
 
 ## When this gate runs
 
-This gate is the **only** thing standing between the comment proposal (Step 5.5 in `pr-reviewer.md`) and the actual API call (Step 5.6). The proposal is always produced — Steps 5.1–5.5 are mandatory in cross-review and are not gated on authorization. The API call is separately gated by this rule.
+This gate is the **only** thing standing between the comment proposal (Step 3 in `pr-reviewer.md`) and the actual API call (Step 5). The proposal is always produced — Steps 1–3.5 are mandatory in cross-review and are not gated on authorization. The API call is separately gated by this rule (Step 4).
 
 ## The two authorization paths
 

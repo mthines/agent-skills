@@ -63,9 +63,13 @@ dedicated skills that guarantee consistent, complete output.
 
 **Skip artifacts (Lite Mode) when:**
 
-- Task involves 1-3 files
+- Task involves 2–3 files (or 1 file with non-trivial logic) AND is simple
 - Implementation is straightforward
 - Can be completed quickly in one session
+
+**Skip artifacts (Micro Mode) when:**
+
+- Task involves 1 file and is purely mechanical (typo, copy, version or config bump) — Micro also skips planning and all quality companions
 
 See [overview](./overview.md) for the complete decision flow.
 

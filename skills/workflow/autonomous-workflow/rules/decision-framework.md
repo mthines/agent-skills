@@ -115,7 +115,7 @@ Internal refactoring?
 
 ### When to Iterate
 
-- Tests failing → Iterate (fix and retest)
+- Tests failing → Iterate (fix and retest, within the mode-aware stuck-loop cap below)
 - Feature incomplete → Iterate (finish implementation)
 - Code doesn't follow patterns → Iterate (refactor)
 - Documentation insufficient → Iterate (improve docs)
@@ -140,7 +140,7 @@ Internal refactoring?
 
 ### Never Stop For
 
-- Test failures (iterate until passing)
+- Test failures **below the mode-aware stuck-loop cap** (3 iterations Lite Mode / 5 Full Mode on the same failing area) — iterate; at the cap, run `Skill("confidence", "analysis")` and follow the [Phase 4 auto-replan protocol](./phase-4-testing.md#stuck-loop-detection) instead of iterating further
 - Lint errors (fix immediately)
 - Unclear code (refactor until clear)
 - Missing docs (write them)

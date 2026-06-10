@@ -8,11 +8,14 @@ description: >
   Three modes: "fix" (default) for bugs and broken behavior, "refactor" for
   restructuring/improvement, and "review" for PR validation (returns structured
   intent-match + system-fit findings for the reviewer / pr-reviewer agents to
-  consume — never run on its own for routine review work). Use when the user
-  says "step back", "think holistically", "analyze the whole thing", "zoom out",
-  "look at the bigger picture", "rethink this", or when an attempt has failed
-  and the user wants a fresh, thorough analysis.
-  Also triggers on "/holistic", "/step-back", "/rethink", "/zoom-out".
+  consume — never run on its own for routine review work). Trigger ONLY
+  when at least one isolated fix attempt has already failed, or the user
+  explicitly requests a full execution-path analysis — phrases like
+  "step back", "think holistically", "analyze the whole thing", "zoom out",
+  "look at the bigger picture", or "rethink this" qualify only in that
+  context. Never trigger for trivial one-line fixes or first-attempt
+  debugging. Also triggers on "/holistic", "/step-back", "/rethink",
+  "/zoom-out".
 disable-model-invocation: false
 license: MIT
 metadata:

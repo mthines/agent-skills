@@ -116,14 +116,18 @@ Healer: tests/dashboard/create-project.spec.ts is failing on
 "create project" — inspect the page, propose a fix.
 ```
 
-Heal-loop cap: **three attempts per failing test**.
-At the cap:
+Heal-loop cap: **three attempts per failing test, total** — a confidence-gated apply counts as one of the three, never as a fourth.
+After the **second** failed attempt:
 
-1. Stop the loop.
+1. Pause the loop.
 2. Run `confidence(analysis)` on the failure.
-3. If confidence ≥ 90% the locator change is correct, apply and re-run.
-4. If confidence < 90%, escalate to the user with the trace, the spec, and
-   the proposed diff.
+3. If confidence ≥ 90% the locator change is correct, spend the third and
+   final attempt applying it and re-running.
+4. If confidence < 90% — or the third attempt also fails — stop and escalate
+   to the user with the trace, the spec, and the proposed diff.
+
+The total never exceeds three runs; see
+[`rules/anti-patterns.md`](./anti-patterns.md) — raising the cap is a refusal.
 
 When the Healer reaches a locator that has no stable role / label / text:
 

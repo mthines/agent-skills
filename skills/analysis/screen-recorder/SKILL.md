@@ -68,7 +68,8 @@ Reach for this skill when **any** of the following is true:
 
 Do **not** reach for this skill when:
 
-- A static screenshot is sufficient — use the `visual-test` agent.
+- A static screenshot is sufficient — capture a still directly (the
+  `reviewer` agent's visual pass owns PR-attached screenshots).
 - The task is to author a durable Playwright test — use the
   `e2e-testing` skill.
 - The input is an existing `trace.zip` — use
@@ -215,7 +216,7 @@ no narration.
 
 ## Phase 6 — Integration callers
 
-This skill is called by three other consumers via `Skill("screen-recorder")`.
+This skill is called by four other consumers via `Skill("screen-recorder")`.
 Full handshake spec: [`rules/integrations.md`](./rules/integrations.md).
 
 | Caller        | When                                                                              | Required inputs                                |
@@ -223,6 +224,7 @@ Full handshake spec: [`rules/integrations.md`](./rules/integrations.md).
 | `animations`  | After Phase 7 ("Measure") to attach a clip to the delivery, or when the user asks "show me". | `url`, `selector`, animation name (becomes `output-name`). |
 | `ux`          | When a finding is severity Critical / High and concerns timing, motion, focus order, or interaction feedback. | `url`, `selector`, the finding ID.             |
 | `reviewer`    | In PR Mode when the diff matches `animations` / `ux` heuristics and the PR author has not attached a recording. | `url`, `selector`, PR number (for the upload path). |
+| `storybook`   | When a scaffolded story includes motion or transitions that a still screenshot cannot prove (multi-frame interactions). | `url` (story permalink), `selector`, story name (becomes `output-name`). |
 
 Callers pass inputs in their `Skill()` call body; this skill never asks
 the calling skill questions — it falls back to defaults and proceeds, or

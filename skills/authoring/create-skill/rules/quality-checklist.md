@@ -83,10 +83,13 @@ Use this list in two ways:
 
 ## Repository conventions (this repo only)
 
-- [ ] Skill directory is `skills/<name>/`.
-- [ ] If using local-dev, both symlinks resolve:
+- [ ] Skill directory is `skills/<category>/<name>/` (category one of
+      `workflow`, `quality`, `delivery`, `testing`, `design`, `analysis`,
+      `authoring`).
+- [ ] If using local-dev, `bash scripts/sync-symlinks.sh` has been run and
+      both symlinks resolve:
       `~/.claude/skills/<name>` → `~/.agents/skills/<name>` →
-      `<repo>/skills/<name>`.
+      `<repo>/skills/<category>/<name>`.
 - [ ] An entry exists in the `CLAUDE.md` inventory.
 - [ ] An entry exists in the `README.md` table.
 - [ ] An entry exists in the `Repository Structure` tree at the bottom of

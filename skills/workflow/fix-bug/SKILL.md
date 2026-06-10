@@ -91,7 +91,9 @@ Phase 3:   Analysis                   → Skill("holistic-analysis", "fix") [com
                                       OR lightweight in-skill analysis [simple]
 Phase 4:   Confidence Gate            → /confidence analysis
 Phase 5:   Branch Decision            → >= 92 % auto-implement (no human confirmation);
-                                       70–91 % stop with raise-the-score guidance;
+                                       80–91 % stop with raise-the-score guidance,
+                                       force-proceed offered (routes standard-lane);
+                                       70–79 % stop, force-proceed flagged NOT recommended;
                                        < 70 % stop, no force-proceed.
                                        --analyse-only always stops here.
 Phase 6:   Autonomous Handoff (lane-split)
@@ -116,7 +118,7 @@ hypotheses. See [`rules/bug-notes-ledger.md`](./rules/bug-notes-ledger.md).
 | Flag | Default | Behaviour |
 |------|---------|-----------|
 | (none) | **yes** | Full pipeline (Phases 0–8). Phase 0.5 triages complexity; Phase 5 dispatches via the fast-lane (simple) or standard-lane (complex) when confidence >= 92 % — no human confirmation required. |
-| `--analyse-only` | | Read-only analysis. Phases 0–4 (including Phase 0.5 triage) run as normal; Phase 5 **always** returns the proposal regardless of confidence; Phases 6–8 are skipped. The analysis primitive `/batch-linear-tickets` calls per ticket. |
+| `--analyse-only` | | Read-only analysis. Phases 0–4 (including Phase 0.5 triage) run as normal; Phase 5 **always** returns the proposal regardless of confidence; Phases 6–8 are skipped. The read-only analysis primitive for any caller that wants a proposal without a PR. (`/batch-linear-tickets` does **not** call this — its Phase 1 dispatches `linear-ticket-investigator` + `holistic-analysis` directly.) |
 | `--force-holistic` | | Skip Phase 0.5's `simple` classification — always treat the bug as `complex`. Forces holistic-analysis (Phase 3) and the standard-lane in Phase 6, regardless of triage signals. Use when triage's conservative-by-default behaviour is not conservative enough for the user's taste. Mutually exclusive with `--analyse-only` and `--verify-deploy`. |
 | `--verify-deploy <PR>` | | Re-entry path for deferred Phase 8 verification. Skips Phases 1–7 entirely; recovers the Evidence Record from `.agent/<branch>/bug-notes.md` for the PR's head branch and runs Phase 8 against the already-shipped fix. See [Verify-deploy short-circuit](#verify-deploy-short-circuit) below. |
 
@@ -152,8 +154,8 @@ Flags are mutually exclusive. They are detected in Phase 0 step 0a and stripped 
 |------|---------------|
 | [complexity-triage](./rules/complexity-triage.md) | Phase 0.5 — signal table + decision rule + `simple` / `complex` outcome |
 | [evidence-resolution](./rules/evidence-resolution.md) | Phase 1 step 1a — per-input procedures |
-| [preflight](./rules/preflight.md) | Phase 1 step 1b — cheap localisation probes; may upgrade triage to `simple` |
-| [reproduction](./rules/reproduction.md) | Phase 2 step 2b — layer routing + delegation to /tdd / /e2e-testing* |
+| [preflight](./rules/preflight.md) | Phase 1.5 — cheap localisation probes; may upgrade triage to `simple` |
+| [reproduction](./rules/reproduction.md) | Phase 2.5 — layer routing + delegation to /tdd / /e2e-testing* |
 | [autonomous-handoff](./rules/autonomous-handoff.md) | Phase 6 — lane selection + fast-lane / standard-lane dispatch + CEGIS contract |
 | [fast-lane-plan-contract](./rules/fast-lane-plan-contract.md) | Phase 6 fast-lane only — required plan.md sections when `/fix-bug` authors plan.md directly via `aw-create-plan` |
 | [independent-verification](./rules/independent-verification.md) | Phase 7 — verifier checks (FAIL_TO_PASS, PASS_TO_PASS, diff sanity, repro integrity) |
@@ -278,7 +280,12 @@ apply the decision rule (conservative default: pick `complex` when in doubt). Th
 | `complex` | run `Skill("holistic-analysis", "fix")` | standard-lane |
 
 Append the classification, signals, decision, and provisional lane to the bug-notes ledger under
-a `Complexity triage` section. Pre-flight (Phase 1b) may upgrade `complex` → `simple` later;
+a `Complexity triage` section.
+The ledger is **created on first write**: if `.agent/<branch-or-slug>/bug-notes.md` does not yet
+exist, create it from [`templates/bug-notes.md`](./templates/bug-notes.md) before appending —
+under the normal flow this Phase 0.5 append is the first write and therefore the creation point
+(see [`rules/bug-notes-ledger.md`](./rules/bug-notes-ledger.md#lifecycle)).
+Pre-flight (Phase 1.5) may upgrade `complex` → `simple` later;
 never the reverse direction inside a run. `--force-holistic` short-circuits to `complex`.
 
 ---
@@ -295,7 +302,11 @@ Phases 1–7 entirely.
    gh pr view <PR> --json headRefName,mergeCommit,labels
    ```
 
-2. **Locate the bug-notes ledger** at `.agent/<headRefName>/bug-notes.md`. If missing, fail:
+2. **Locate the bug-notes ledger** at `.agent/<headRefName>/bug-notes.md` in the current checkout.
+   The ledger survives worktree cleanup because the autonomous-workflow Phase 7 cleanup copies
+   `.agent/<branch>/` into the main checkout before removing a worktree with a pending deferred
+   verification — see the [deferred-verification guard](../autonomous-workflow/rules/phase-7-ci-gate.md#optional-post-merge-cleanup).
+   If missing, fail:
 
    ```text
    No bug-notes ledger found for PR #<N> at .agent/<branch>/bug-notes.md.
@@ -332,7 +343,7 @@ Phases 1–7 entirely.
 Walk only the procedures in [`rules/evidence-resolution.md`](./rules/evidence-resolution.md) that
 match the inputs classified in Phase 0. Each procedure produces a partial evidence record.
 
-### Step 1b — Pre-flight sweep
+### Phase 1.5 — Pre-flight sweep
 
 Run the deterministic localisation probes in [`rules/preflight.md`](./rules/preflight.md) —
 recent commits to affected files, last-known-green deploy SHA, lockfile / env diff, CI flips.
@@ -340,7 +351,7 @@ Append findings to the Evidence Record.
 
 If pre-flight produces a single-commit short-circuit (commit + diff size + CI flip window all
 align), skip Phase 3 and route directly to Phase 5 with a high-confidence proposal. Otherwise
-capture the regression window for Phase 2.5 bisect.
+capture the regression window for the step 2c bisect fast-path.
 
 ---
 
@@ -352,7 +363,7 @@ Merge the partial records from Phase 1 into a single Evidence Record. The schema
 [`templates/bug-notes.md`](./templates/bug-notes.md) under the `Evidence Record` section. This
 is the input to Phase 3 and the seed for the bug-notes ledger.
 
-### Step 2b — Reproduction lock
+### Phase 2.5 — Reproduction lock
 
 Construct a deterministic failing reproduction following [`rules/reproduction.md`](./rules/reproduction.md).
 The rule's layer-routing table picks the lowest test layer that can capture the bug, then
@@ -373,11 +384,15 @@ If the pre-flight sweep produced a `last_green_sha` AND a non-best-effort repro 
 Phase 5 with proposal "revert or amend `<sha>`". See
 [reproduction.md → Bisect fast-path](./rules/reproduction.md#bisect-fast-path).
 
-### Step 2d — Initialise the bug-notes ledger
+### Step 2d — Seed the Evidence Record into the bug-notes ledger
 
-Create `.agent/<branch-or-slug>/bug-notes.md` from [`templates/bug-notes.md`](./templates/bug-notes.md).
-Every later phase reads on entry and appends on exit. See
-[`rules/bug-notes-ledger.md`](./rules/bug-notes-ledger.md).
+The ledger at `.agent/<branch-or-slug>/bug-notes.md` normally already exists — it is created on
+first write, which under the normal flow is the Phase 0.5 triage append.
+Create it from [`templates/bug-notes.md`](./templates/bug-notes.md) now only if no earlier phase
+wrote it (create-if-missing).
+Append the merged Evidence Record from step 2a.
+Every later phase reads on entry and appends on exit.
+See [`rules/bug-notes-ledger.md`](./rules/bug-notes-ledger.md#lifecycle).
 
 ---
 
@@ -406,7 +421,7 @@ Skip `holistic-analysis` entirely. Run the lightweight procedure described in
 [`rules/complexity-triage.md`](./rules/complexity-triage.md#what-simple-actually-skips):
 
 1. Read the suspect file at the suspect line + 30 lines of context.
-2. Identify the minimal change that satisfies the failing repro (Phase 2b) and does not break
+2. Identify the minimal change that satisfies the failing repro (Phase 2.5) and does not break
    neighbours.
 3. Write a root-cause paragraph to the Evidence Record — same shape `holistic-analysis` produces,
    including a `Falsifiable prediction:` line that the repro confirms.
@@ -435,7 +450,7 @@ Append the score and breakdown to the bug-notes ledger's `Confidence trajectory`
 ### Step 5a — Reproduction gate (mechanical)
 
 Before evaluating the confidence-based action below, the skill **must** validate that
-Phase 2b actually produced a usable reproduction artefact. This is a deterministic
+Phase 2.5 actually produced a usable reproduction artefact. This is a deterministic
 check on the bug-notes ledger; it runs regardless of confidence score and regardless
 of `ANALYSE_ONLY`. There is no force-proceed below this gate — the repro is the
 executor's `FAIL_TO_PASS` contract (Phase 6) and the verifier's primary check (Phase 7),
@@ -454,10 +469,10 @@ Procedure:
 | 2 | `Path:` resolves to an existing `repro/*.md` file AND `Status:` contains `best-effort` AND `Reason:` is one of: `race`, `production-only`, `heisenbug`, `visual`, `performance`                                          |
 
 If **neither** condition holds, fail with this exact structured error and route back
-to Phase 2b:
+to Phase 2.5:
 
 ```text
-Phase 5 gate failed: Phase 2b did not produce a gate-eligible reproduction.
+Phase 5 gate failed: Phase 2.5 did not produce a gate-eligible reproduction.
 
 Bug-notes ledger says:
   Path:   <verbatim from ledger or "missing">
@@ -469,11 +484,11 @@ A reproduction must satisfy one of:
   2. Best-effort marker at repro/<id>.md with Status "best-effort" AND
      Reason in {race, production-only, heisenbug, visual, performance}
 
-Returning to Phase 2b. Re-invoke /tdd, /e2e-testing, or /e2e-testing-mobile,
+Returning to Phase 2.5. Re-invoke /tdd, /e2e-testing, or /e2e-testing-mobile,
 or explicitly document a best-effort reason from the closed list above.
 The forbidden self-justifications ("small diff", "pattern exercised elsewhere",
 "scaffolding overhead", "would duplicate the fix") are not valid reasons —
-see rules/reproduction.md § Forbidden reasons to skip Phase 2b.
+see rules/reproduction.md § Forbidden reasons to skip Phase 2.5.
 
 There is no force-proceed below this gate.
 ```
@@ -686,7 +701,7 @@ synchronously when the project auto-deploys on merge.
 
 **If the originating signal does not decay (or recurs)**, write a lesson — this
 is the strongest evidence that the "fix" did not fix the production symptom, and
-almost always points back to a Phase 3 analysis or Phase 2b repro-fidelity gap:
+almost always points back to a Phase 3 analysis or Phase 2.5 repro-fidelity gap:
 
 ```text
 Skill("persistent-memory", "write fix-bug-lessons --tier project-shared --auto")     # skips silently if not installed
@@ -819,8 +834,8 @@ shape stays stable; only the tail varies.
     originating query stops firing. Phase 8 enforces this. Same for both lanes.
 11. **Linear is one input adapter among several.** A Linear URL routes through
     `linear-ticket-investigator` to produce an Evidence Record, then continues at Phase 2 like
-    any other input. `/batch-linear-tickets` is a thin wrapper that fans out
-    `/fix-bug --analyse-only` per ticket.
+    any other input. `/batch-linear-tickets` does not wrap `/fix-bug` — its Phase 1 dispatches
+    `linear-ticket-investigator` (and `holistic-analysis` for bug tickets) per ticket directly.
 12. **Learn across bugs, but only advisory.** `fix-bug-lessons` (read Phase 0.5,
     write Phase 5/7/8) biases triage / repro / analysis from prior misfires;
     it never relaxes a gate. A lesson recurring `seen_count >= 3` is promoted

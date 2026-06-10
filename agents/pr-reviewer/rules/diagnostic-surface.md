@@ -41,21 +41,21 @@ The companion agent `reviewer` handles own-work (Fix Mode, Report Mode, Self-Rev
 
 | Phase | Name | Rule / section | Gate |
 | --- | --- | --- | --- |
-| 0 | Raw-arguments read | [pr-reviewer.md § Step 0](../pr-reviewer.md) | Raw arguments preserved verbatim; parent paraphrases ignored |
-| 0.5 | Authorship pre-check | [pr-reviewer.md § Step 0.5](../pr-reviewer.md) | `author != current user`; refuse with redirect to `reviewer` if equal |
-| 1.1 | PR resolution | [pr-reviewer.md § Step 1.1](../pr-reviewer.md) | PR number, repo, base/head/state resolved via `gh pr view --json` |
+| 0 | Raw-arguments read | [pr-reviewer.md § Step 0](../../pr-reviewer.md) | Raw arguments preserved verbatim; parent paraphrases ignored |
+| 0.5 | Authorship pre-check | [pr-reviewer.md § Step 0.5](../../pr-reviewer.md) | `author != current user`; refuse with redirect to `reviewer` if equal |
+| 1.1 | PR resolution | [pr-reviewer.md § Step 1.1](../../pr-reviewer.md) | PR number, repo, base/head/state resolved via `gh pr view --json` |
 | 1.2 | Patch cache | [line-validity.md](./line-validity.md) | `/tmp/pr-files.json` populated; sole source of line-validity truth |
-| 1.3 | Intent synthesis | [pr-reviewer.md § Step 1.3](../pr-reviewer.md) | 2–3 line intent summary; uncertainty flagged on missing PR body |
-| 1.5 | Pre-existing-issue separation | [pr-reviewer.md § Step 1.5](../pr-reviewer.md) | Context-line findings tagged `[pre-existing]`; excluded from verdict |
+| 1.3 | Intent synthesis | [pr-reviewer.md § Step 1.3](../../pr-reviewer.md) | 2–3 line intent summary; uncertainty flagged on missing PR body |
+| 1.5 | Pre-existing-issue separation | [pr-reviewer.md § Step 1.5](../../pr-reviewer.md) | Context-line findings tagged `[pre-existing]`; excluded from verdict |
 | 1.6 | Lens loading | [shared/rules/rubric-composition.md](../../shared/rules/rubric-composition.md), [review-lens-contract.md](../../../skills/authoring/create-skill/rules/review-lens-contract.md) | Max 3 lenses; `lens-version: 1`; dedupe against auto-loaded |
 | 2 | Review (multi-rubric) | [shared/rules/rubric-composition.md](../../shared/rules/rubric-composition.md) | `code-quality` always; `ux` on UI globs; `critical` on auto-engage / `--critical`; lenses |
 | 2.4 | Holistic review (default ON) | [shared/rules/holistic-review.md](../../shared/rules/holistic-review.md), `Skill("holistic-analysis", "review")` | Runs unless `--no-holistic` OR trivial-skip; emits 0–3 findings mapped to `issue` (intent-mismatch) / `question` (system-fit, scope-creep) |
 | 2.5 | Dedupe + consolidate | [shared/rules/rubric-composition.md § Consolidation](../../shared/rules/rubric-composition.md) | Per-file cap 5; total cap 20; priority-sorted; holistic claim wins on `(file, line)` collision |
 | 2.6 | Finding grounding | [shared/rules/finding-grounding.md](../../shared/rules/finding-grounding.md) | Every backticked symbol grep-confirmed in changed file |
-| 2.7 | Per-comment confidence | [shared/rules/per-comment-confidence.md](../../shared/rules/per-comment-confidence.md) | `Skill("confidence", "code")` ≥ 80; min(accurate, actionable, helpful) |
+| 2.7 | Per-comment confidence | [shared/rules/per-comment-confidence.md](../../shared/rules/per-comment-confidence.md) | `Skill("confidence", "code")` weighted Final ≥ 80 (Correctness, Completeness, No-regressions) |
 | 2.8 | Comment shape | [shared/rules/comment-shape.md](../../shared/rules/comment-shape.md) | ≤ 240 chars, ≤ 2 sentences, no headings, no bullets |
 | 2.9 | Conventional Comments | [shared/rules/conventional-comments.md](../../shared/rules/conventional-comments.md) | Prefix prepended; `(blocking)` / `(non-blocking)` decoration appended |
-| 3 | Local proposal | [pr-reviewer.md § Step 3](../pr-reviewer.md), [templates/pr-comment-card.template.md](../../templates/pr-comment-card.template.md) | Summary table + numbered cards; total / dropped counts |
+| 3 | Local proposal | [pr-reviewer.md § Step 3](../../pr-reviewer.md), [templates/pr-comment-card.template.md](../../templates/pr-comment-card.template.md) | Summary table + numbered cards; total / dropped counts |
 | 3.5 | Line validity | [line-validity.md](./line-validity.md) | Every `(file, line)` falls inside a RIGHT-side diff hunk |
 | 4 | Authorization gate | [authorization-gate.md](./authorization-gate.md) | `--publish` token in raw args OR explicit phrase in latest user message with negation guard clear |
 | 5 | Post pending review | [posting-mechanics.md](./posting-mechanics.md) | `event` omitted; `body == ""`; verified `state: PENDING` post-call |
@@ -80,7 +80,7 @@ There is no Auto-Fix phase. There is no Self-Review phase. Both belong to `revie
 | 2.4 | Default-on holistic call; trivial-skip heuristic (whitespace / dep-bumps / test-only / < 10 lines + no high-stakes); 3-finding cap; pr-reviewer maps `system-fit` to `question` | Holistic skipped on a non-trivial diff that the heuristic incorrectly marked trivial; holistic finding overrides a line-level finding on the same `(file, line)` when the line-level was actually correct; framing leaks: `system-fit` posted as `issue` instead of `question` |
 | 2.5 | Per-file cap 5, total cap 20, priority-sorted; holistic claim wins on collision | LLM dedupes inline despite the rule; cap drops not surfaced; holistic-vs-line-level collision resolved wrongly |
 | 2.6 | Backticked-token grep, allowlist for keywords / built-ins | Hallucinated multi-word phrase passes (not backticked); allowlist over-eager |
-| 2.7 | `Skill("confidence", "code")` ≥ 80; min of 3 sub-scores | Confidence skill not yet wired for per-comment input shape |
+| 2.7 | `Skill("confidence", "code")` weighted Final ≥ 80 over Correctness / Completeness / No-regressions | Confidence skill not yet wired for per-comment input shape |
 | 2.8 | Mechanical pre-emit: length, sentences, structure | Trim heuristic breaks the comment's point; drop reported but easy to miss |
 | 2.9 | Prefix table + decoration; mechanical pre-emit | Decoration appended twice on retry |
 | 3 | Card template, summary table | Card emitted without anchor; user can't validate without opening PR |

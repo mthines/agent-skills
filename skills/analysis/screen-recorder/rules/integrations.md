@@ -11,7 +11,7 @@ tags:
 
 # Integrations
 
-This skill is callable by three other consumers via `Skill("screen-recorder")`.
+This skill is callable by four other consumers via `Skill("screen-recorder")`.
 Each consumer has a specific reason to invoke and a specific input shape.
 The rule below is the **contract** — when changing this skill, update the
 call sites listed at the bottom.
@@ -22,6 +22,7 @@ call sites listed at the bottom.
 - Caller 1 — `animations` skill
 - Caller 2 — `ux` skill
 - Caller 3 — `reviewer` agent
+- Caller 4 — `storybook` skill
 - Downstream sink — `video-analyser` skill (record → analyse → iterate)
 - Return value contract
 - Call-site inventory
@@ -114,8 +115,7 @@ concerns one of:
 - Interaction feedback (haptics-equivalent: press states, ripple,
   highlight).
 
-Lower-severity findings get a still screenshot via the `visual-test`
-agent, not a recording.
+Lower-severity findings get a still screenshot, not a recording.
 
 ### Required inputs from `ux`
 
@@ -235,6 +235,24 @@ pending review is filed, using the snippet above. The `reviewer` agent
 should surface the returned `RECORDING_PATH=` in its `### Motion evidence`
 subsection and then execute the upload snippet as a post-review step.
 
+## Caller 4 — `storybook`
+
+### When `storybook` calls
+
+During the `storybook` skill's visual-verification step, when a scaffolded story includes motion, transitions, focus-order changes, or hover-revealed UI — anything where the change exists between two static frames and a still screenshot cannot prove it.
+The delegation rules live in
+[`skills/design/storybook/rules/visual-verification.md`](../../../design/storybook/rules/visual-verification.md).
+
+### Required inputs from `storybook`
+
+- `url` — the story permalink on the running Storybook
+  (e.g. `http://localhost:6006/?path=/story/components-card--default`).
+- `selector` — the component's stable handle inside the story canvas.
+- `output-name` — the story name, so the artifact maps back to the story
+  that produced it.
+- If the Storybook URL is auth-gated, the caller passes the
+  `storageState.json` path from its auth profile.
+
 ## Downstream sink — `video-analyser` skill
 
 `video-analyser` is **not a caller** of this skill — it does not invoke
@@ -333,6 +351,7 @@ When this skill's contract changes, update these call sites:
 | [`skills/design/animations/SKILL.md`](../../../design/animations/SKILL.md) | Phase 7 "Measure" — append two `Skill("screen-recorder")` calls.           |
 | [`skills/design/ux/SKILL.md`](../../../design/ux/SKILL.md)                 | Phase 3 "Report" — invoke for Critical / High findings on motion concerns. |
 | [`agents/reviewer.md`](../../../../agents/reviewer.md)       | Step 2 "Analysis" — after UX rubric, when motion heuristics match.         |
+| [`skills/design/storybook/rules/visual-verification.md`](../../../design/storybook/rules/visual-verification.md) | "When `screen-recorder` is the right tool" — `Skill()` call for multi-frame interactions. |
 
 ## Common mistakes
 

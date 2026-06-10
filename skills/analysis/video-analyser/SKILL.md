@@ -89,14 +89,9 @@ Walk this table top-to-bottom; the first matching rule wins.
 
 ### Linear ticket URL
 
-1. Check Linear MCP availability.
-
-```bash
-if ! mcp list 2>/dev/null | grep -q linear; then
-  echo "Linear MCP is not configured. Download the video from the ticket and re-invoke with a local file path."
-  exit 1
-fi
-```
+1. Check Linear MCP availability — at the instruction level, not via a shell command.
+   Inspect the tool list available in this session for a Linear MCP issue-read tool; the name varies by host (for example `mcp__Linear__get_issue` or `mcp__claude_ai_Linear__get_issue`).
+   If no such tool is present, do not run any shell command to detect MCP — instead ask the user to paste the ticket content (or download the video attachment and re-invoke with a local file path), then continue with whichever they provide.
 
 Do not attempt to scrape the Linear web UI as a fallback.
 

@@ -37,12 +37,12 @@ clean recovery.
 
 | Phase | Gate / Checkpoint                                                                                  |
 | ----- | -------------------------------------------------------------------------------------------------- |
-| 0     | Mode selected (Full / Lite). User confirmed understanding.                                         |
-| 1     | Plan matches requirements. `Skill("confidence", "plan")` >= 90% (mandatory companion).             |
+| 0     | Tier selected (Micro / Lite / Full). User confirmed understanding.                                 |
+| 1     | Plan matches requirements. `Skill("confidence", "plan")` >= 90% (mandatory companion, Full Mode only — Lite and Micro have no `plan.md`). |
 | 2     | Worktree created with `gw add` (or native `git worktree add` fallback). CWD is the worktree. Deps installed. `plan.md` written under `.agent/{branch}/` (Full Mode). |
 | 3     | Working in isolated worktree. Build/lint passes after each edit. `code-quality(code)` run at end.  |
 | 4     | All tests pass OR user-approved stop after stuck-loop escalation.                                  |
-| 5     | Docs reflect changes. `Skill("documentation", "update")` run.                                      |
+| 5     | Docs reflect changes. `Skill("documentation", "update --auto")` run.                               |
 | 6     | `Skill("review-changes")` clean. Walkthrough shown. Draft PR opened via `Skill("create-pr")`.      |
 | 7     | CI green OR user-approved stop. Optional `gw remove` (or `git worktree remove` + `git branch -d`) after merge. |
 
@@ -95,7 +95,7 @@ See [companion-skills.md#stuck-loop-protocol-phase-4](./companion-skills.md#stuc
 
 | Companion           | Safety-critical? | Behavior if missing                          |
 | ------------------- | ---------------- | -------------------------------------------- |
-| `confidence` (Phase 1) | **Yes** — the plan gate | Stop, ask user to install before continuing |
+| `confidence` (Phase 1) | **Yes** — the Full Mode plan gate (Lite/Micro have no `plan.md` and skip it) | Stop, ask user to install before continuing (Full Mode) |
 | All other companions  | No                       | Log one line, continue without              |
 
 **Companions are NOT safety-critical** — the workflow continues without them.
@@ -123,7 +123,7 @@ Log:
 | > 50 files changed                     | Scope too large — split PRs     |
 | > 3 hours stuck                        | Fundamental issue — escalate    |
 | > 100 commits                          | Approach is wrong — escalate    |
-| 3 iterations on same failing area      | Run `confidence(analysis)`, escalate |
+| Stuck-loop cap on same failing area (3 Lite / 5 Full) | Run `confidence(analysis)`; one-shot auto-replan or escalate |
 | 2 `ci-auto-fix` handoffs on same PR    | Stop, surface failures to user  |
 
 ---
@@ -135,7 +135,7 @@ Log:
 3. Scope creep detected.
 4. Tests reveal misunderstanding.
 5. Resource limits approaching.
-6. Stuck-loop cap (3 iterations) hit.
+6. Stuck-loop cap hit (3 iterations in Lite Mode / 5 in Full Mode) and auto-replan already used.
 7. Critical companion (`confidence`) unavailable.
 
 ### How to Ask

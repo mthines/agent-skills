@@ -33,7 +33,7 @@ because agents reliably skew positive when grading their own work."
 
 Runs only when **all** hold:
 
-- Phase 6 dispatched `aw-planner` + `aw-executor` and the executor opened a draft PR.
+- Phase 6 dispatched `aw-executor` via **either lane** — fast-lane (`/fix-bug` → `aw-create-plan` → `aw-executor`, no aw-planner) or standard-lane (`aw-planner` → `aw-executor`) — and the executor opened a draft PR. Verification is identical for both lanes.
 - Phase 5 was in default mode (not `--analyse-only`).
 - A valid (non-best-effort) repro exists from Phase 2.5.
 

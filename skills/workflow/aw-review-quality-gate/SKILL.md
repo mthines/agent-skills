@@ -24,6 +24,7 @@ The gate catches false positives, noise, and miscalibrated severity — the most
 
 ## When to Use
 
+- As the `autonomous-workflow` Phase 6 review companion — invoked via `Skill()` after `review-changes` returns findings, before the workflow acts on them. See [`phase-6-pr-creation.md#findings-quality-gate`](../autonomous-workflow/rules/phase-6-pr-creation.md#findings-quality-gate). Graceful skip: the workflow acts on the raw findings if this skill is not installed.
 - After the reviewer agent generates findings (Step 2.5).
 - After DX or UX review skills produce their finding lists.
 - Any time a skill produces actionable recommendations that a human will read.

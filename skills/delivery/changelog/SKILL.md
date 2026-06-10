@@ -81,7 +81,10 @@ Parse flags in any order; the first non-flag positional integer is
 DAYS=7
 SCOPE=current
 AUDIENCE=technical
-for arg in "$@"; do
+# Slash-command skills receive the raw argument string in $ARGUMENTS,
+# not positional parameters — split it on whitespace before iterating.
+read -r -a ARGS <<< "$ARGUMENTS"
+for arg in "${ARGS[@]}"; do
   case "$arg" in
     --scope=current|--scope=all) SCOPE="${arg#--scope=}" ;;
     --audience=technical|--audience=general) AUDIENCE="${arg#--audience=}" ;;
@@ -339,7 +342,7 @@ the default behavior with a wider window.
 /changelog last-month
 ```
 
-Reject: `Argument must be an integer number of days (got "last-month").`
+Reject: `Argument must be a positive integer number of days (got "last-month").`
 Do not silently coerce to 7.
 
 ### Bad — `--scope=current` outside a GitHub-linked repo

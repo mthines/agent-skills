@@ -87,6 +87,7 @@ MODE SELECTION:
 - Tier: [Micro | Lite | Full]
 - Reasoning: [why]
 - Estimated files: [number]
+- Complexity: [trivial | simple | moderate | architectural]
 - Lessons applied: [N matched, or none]
 ```
 
@@ -95,7 +96,7 @@ MODE SELECTION:
 | Tier | Who runs it | Plan artifact | Companions |
 | ---- | ----------- | ------------- | ---------- |
 | **Micro** | **You, single-pass.** Phase 0 (quick confirm) → Phase 2 (worktree) → edit → fast check → `documentation update` only if docs drift → `create-pr`. Skip planning and all quality companions. | none | none (except docs-if-needed) |
-| **Lite** | **You, single-pass.** Run the Lite path from `SKILL.md` in this one context (brief mental plan, no `plan.md`); light companions per task signal. | none | per signal (Phase 5 docs, Phase 6 create-pr always) |
+| **Lite** | **You, single-pass.** Run the Lite path from `SKILL.md` in this one context (brief mental plan, no `plan.md`); light companions per task signal. `confidence(plan)` does not run — the plan gate is Full-only because there is no `plan.md` to gate. | none | per signal (Phase 5 docs, Phase 6 create-pr always) |
 | **Full** | **Hand off to the split — dispatch only.** Dispatch `aw-planner` (it produces a gated `plan.md`), then on a cleared gate dispatch `aw-executor`. **Never** use `Edit`/`Write`/`Bash` to touch production code, tests, or docs yourself in this tier — that is `aw-executor`'s job. | `plan.md` | all applicable |
 
 **Why the split is Full-only:** the planner→executor handoff buys context
@@ -130,7 +131,11 @@ handoff.
   Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")   # skips silently if not installed
   ```
 
-  Write nothing if the run was clean — empty lessons are noise. For **Full**,
+  Write nothing if the run was clean **and** no read lesson was applied — empty
+  lessons are noise. If a lesson you read at intake was applied and its failure
+  did not recur, write an UPDATE for it (successful application counts as
+  recurrence evidence; the UPDATE MUST bump `seen_count` by 1 and refresh
+  `expires`). For **Full**,
   the planner/executor already write at their phase points (stuck-loop,
   end-of-run); your exit write is the catch-all so Micro/Lite also contribute.
 - **Promotion** — if a matched or written lesson has `seen_count >= 3` (or
@@ -156,7 +161,10 @@ handoff.
 - **Adaptive, never always-heavy.** Match the tier to the task. Forcing Full on
   a Micro task is the anti-pattern this dispatcher exists to prevent.
 - **Phase 0 + Phase 2 stay mandatory in every tier** — quick validation and
-  worktree isolation are non-negotiable, even for Micro.
+  worktree isolation are non-negotiable, even for Micro. If the invocation
+  carries an explicit autonomy grant ("proceed without confirmation" or
+  `--no-confirm`), Phase 0 posts its summary and proceeds without waiting —
+  the phase still runs; only the synchronous confirmation wait is waived.
 - **No AI co-author tags** on commits or PRs.
 
 The skill and the phase rules carry the procedures. Route, learn, and get out of

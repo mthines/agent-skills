@@ -158,7 +158,7 @@ Otherwise (`--type=auto`):
    `mcp__linear-server__*` tool). **Launch all fetches in one message** for parallelism.
 2. Apply the classification rules in
    [ticket-type-classification](./rules/ticket-type-classification.md):
-   - Has any label in `{bug, defect, incident, regression, hotfix}` → **bug**
+   - Has any label in `{bug, defect, incident, regression, hotfix, fix, kind/bug}` → **bug**
    - Otherwise → **feature**
    - No labels at all → **unknown** (status becomes `Needs Info`)
 
@@ -274,10 +274,19 @@ planner used. **Launch ALL executors in a single message:**
 
 ```text
 Execute the plan at .agent/<branch>/plan.md in the current worktree.
+
+Lesson-write serialization: do NOT write to shared lesson scopes (aw-lessons)
+during this run — return your lesson candidates in your result payload; the
+orchestrator writes them serially after the fan-out completes.
 ```
 
 The executor runs autonomous-workflow Phases 3–7: implement, test, document, open the draft PR,
 watch CI.
+
+**Lesson-write serialization (batch fan-out contract).**
+Parallel executors return lesson candidates in their result payload; the orchestrator writes all lessons serially after fan-out completes.
+Executors MUST NOT write to shared lesson scopes directly during fan-out.
+Concurrent writes to `memory/aw-lessons/INDEX.md` can interleave; the serial post-fan-out write (one `Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")` per candidate batch, in Phase 5) is the only safe path.
 
 ---
 
@@ -335,6 +344,10 @@ recurring `seen_count >= 3` becomes promotion-eligible — see
 
 - **Inherited for free:** the planning and implementation phases use the
   `aw-lessons` loop because Phase 4 dispatches `aw-planner` / `aw-executor`.
+  **Serialization contract:** parallel executors return lesson candidates in
+  their result payload; the orchestrator writes all lessons serially after
+  fan-out completes. Executors MUST NOT write to shared lesson scopes directly
+  during fan-out.
 - **Fast tier (this skill):** `batch-lessons` — read at Phase 1, written at
   Phase 5 — covers batch-level orchestration only (type classification,
   cross-ticket correlation, chronic `Needs Info`). Advisory; skips silently if
@@ -371,7 +384,7 @@ for the exact lookup procedure.
 
 ### Type Classification Overrides
 
-If your workspace uses non-standard labels (e.g., `kind/bug` instead of `bug`), edit
+If your workspace uses non-standard labels (e.g., `type:bug` instead of `bug`), edit
 [ticket-type-classification](./rules/ticket-type-classification.md)'s default label list or
 always pass `--type=bug` / `--type=feature` explicitly.
 
@@ -386,8 +399,11 @@ always pass `--type=bug` / `--type=feature` explicitly.
    surfacing in Phase 4 is per-planner, not a separate batch gate.
 3. **Analyse once, execute once.** Phase 1 is the only place analysis runs per ticket. Phase 4
    dispatches `aw-planner` directly using that analysis — no re-investigation.
-4. **Parallelize every fan-out.** Label fetches, investigators, holistic-analyses, planners, and
-   executors all launch in one message each (per homogeneous group).
+4. **Parallelize every fan-out — but serialize lesson writes.** Label fetches, investigators,
+   holistic-analyses, planners, and executors all launch in one message each (per homogeneous
+   group). Parallel executors return lesson candidates in their result payload; the orchestrator
+   writes all lessons serially after fan-out completes. Executors MUST NOT write to shared lesson
+   scopes directly during fan-out.
 5. **Correlate before executing.** Detect shared root causes, shared files, and conflicts so one
    plan can resolve multiple tickets — across types.
 6. **Handle partial failures at every phase.** If some agents fail, present what you have and

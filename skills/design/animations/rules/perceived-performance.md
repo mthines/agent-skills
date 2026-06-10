@@ -80,6 +80,8 @@ Measure the p75 of the actual wait on production traffic before deciding — loc
 If the wait crosses a threshold *during* the request (e.g. it usually returns at 250 ms but sometimes at 2 s), pick the **upper-bound** pattern.
 A user who sometimes sees a skeleton and sometimes sees nothing reads it as flicker.
 
+This table is the **canonical** wait-duration ladder; the quick reference in [`ux/SKILL.md`](../../ux/SKILL.md) ("Response Time Thresholds") mirrors it — update both files together if the bands change.
+
 ---
 
 ## Skeleton loaders

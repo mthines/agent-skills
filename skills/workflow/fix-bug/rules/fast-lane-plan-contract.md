@@ -45,7 +45,7 @@ Preconditions checked by Phase 6 step 6a before this rule loads:
 
 1. Phase 0.5 triage classified the bug as `simple`.
 2. Phase 4 confidence gate cleared at ≥ 92 %.
-3. Phase 2b produced a non-best-effort failing reproduction (best-effort
+3. Phase 2.5 produced a non-best-effort failing reproduction (best-effort
    repros fall back to standard-lane — fast-lane requires a real
    `FAIL_TO_PASS` contract).
 4. The worktree does **not** yet exist — `/fix-bug` creates it as part of
@@ -57,22 +57,31 @@ If any precondition fails, route to standard-lane and log the reason.
 
 ## Required sections
 
-`plan.md` for the fast-lane MUST have these sections, in this order:
+The fast-lane `plan.md` is a **superset of the [`aw-create-plan`](../../aw-create-plan/SKILL.md) Core schema**: every Core section — TL;DR, Requirements, Decisions, Acceptance Criteria, Implementation Order, File Changes, Verification, Progress Log — appears verbatim, plus the bug-specific sections below.
+Because every Core section is present by name, the plan satisfies the `aw-create-plan` Core schema, so `aw-executor`'s bail-out check and the `confidence(plan)` deterministic rule checks pass unchanged.
+
+`plan.md` MUST have these sections, in this order (Core sections marked):
 
 1. **Title** — one-line bug summary (matches PR title)
-2. **Branch + worktree** — `fix/<slug>` and `.agent/fix/<slug>/`
-3. **Symptom** — verbatim from Evidence Record
-4. **Bug class** — from Phase 0
-5. **Reproduction** — repro path, command, status
-6. **Root cause** — from in-skill lightweight analysis (NOT holistic-analysis)
-7. **Proposed change** — file + line + before/after sketch
-8. **CEGIS refinement contract** — verbatim (see [Section spec](#section-by-section-spec))
-9. **FAIL_TO_PASS contract** — the repro test name + expected failure mode
-10. **PASS_TO_PASS contract** — list of test files that must continue to pass
-11. **Bug-notes ledger pointer** — path + read/append discipline reminder
-12. **Confidence trajectory** — analysis score + breakdown
-13. **Out of scope** — explicit list of what NOT to touch
-14. **Done criteria** — when aw-executor opens the draft PR
+2. **TL;DR** *(Core)* — 3–5 sentences: symptom / root cause / proposed change / done-when
+3. **Branch + worktree** — `fix/<slug>` and `.agent/fix/<slug>/`
+4. **Requirements** *(Core)* — tagged requirements from the Evidence Record, with an `### Out of Scope` subsection (the explicit do-not-touch list)
+5. **Symptom** — verbatim from Evidence Record
+6. **Bug class** — from Phase 0
+7. **Reproduction** — repro path, command, status
+8. **Root cause** — from in-skill lightweight analysis (NOT holistic-analysis)
+9. **Decisions** *(Core)* — chosen fix + alternatives rejected + rationale
+10. **Proposed change** — file + line + before/after sketch
+11. **Acceptance Criteria** *(Core)* — testable done conditions; replaces the former "Done criteria" section name to match the Core schema
+12. **Implementation Order** *(Core)* — numbered, atomic executor steps
+13. **File Changes** *(Core)* — Action / File / Change / Reason table
+14. **Verification** *(Core)* — after-edit and before-PR commands
+15. **CEGIS refinement contract** — verbatim (see [Section spec](#section-by-section-spec))
+16. **FAIL_TO_PASS contract** — the repro test name + expected failure mode
+17. **PASS_TO_PASS contract** — list of test files that must continue to pass
+18. **Bug-notes ledger pointer** — path + read/append discipline reminder
+19. **Confidence trajectory** — analysis score + breakdown
+20. **Progress Log** *(Core)* — append-only; seeded and versioned by `aw-create-plan`
 
 `plan.vN.md` is written alongside per the `aw-create-plan` contract — same
 content, immutable snapshot.
@@ -90,7 +99,19 @@ content, immutable snapshot.
 The line is the PR title. Use the same phrasing as the bug-notes ledger's
 `Symptom` field, compressed.
 
-### 2. Branch + worktree
+### 2. TL;DR
+
+```markdown
+## TL;DR
+
+<3–5 sentences: (1) the symptom being fixed, (2) the root cause in one
+sentence, (3) the proposed change, (4) done when the FAIL_TO_PASS repro
+passes and every PASS_TO_PASS suite stays green.>
+```
+
+This is the human-review surface the Core schema requires — direction must be agreeable or contestable in under 60 seconds.
+
+### 3. Branch + worktree
 
 ```markdown
 ## Branch + worktree
@@ -101,16 +122,39 @@ The line is the PR title. Use the same phrasing as the bug-notes ledger's
 - Created by: `/fix-bug` fast-lane (no aw-planner)
 ```
 
-### 3. Symptom
+### 4. Requirements
+
+```markdown
+## Requirements
+
+1. <symptom from the Evidence Record> no longer occurs — [user-stated]
+2. All tests listed under PASS_TO_PASS continue to pass — [inferred]
+
+### Out of Scope
+
+The executor must NOT:
+
+- Modify any file outside the affected-files table in the Evidence Record
+  without re-running confidence(analysis).
+- Modify the repro file under `repro/` to make tests pass — verifier
+  rejects this.
+- Introduce new dependencies.
+- Refactor neighbouring code that wasn't part of the failing path.
+```
+
+Tag every requirement `[user-stated]` or `[inferred]` per the Core schema.
+Add bug-specific out-of-scope items as needed — the list is the cheap guardrail against scope creep on a "simple" fix.
+
+### 5. Symptom
 
 Copy the Evidence Record's `Symptom` paragraph verbatim. Do not paraphrase —
 the verifier (Phase 7) checks this against the Evidence Record.
 
-### 4. Bug class
+### 6. Bug class
 
 Single line: `Bug class: <bugClass from Phase 0>`.
 
-### 5. Reproduction
+### 7. Reproduction
 
 ```markdown
 ## Reproduction
@@ -124,7 +168,7 @@ Single line: `Bug class: <bugClass from Phase 0>`.
 If the repro is best-effort, the precondition check above fails — this
 section will never carry a best-effort repro on the fast-lane.
 
-### 6. Root cause
+### 8. Root cause
 
 One paragraph, written by `/fix-bug` itself during the simple-path
 lightweight analysis (see
@@ -143,7 +187,19 @@ The paragraph must include a `Falsifiable prediction:` line — the assertion
 the repro is making. If the repro doesn't falsify a prediction, the bug
 isn't actually well-understood and triage should not have picked `simple`.
 
-### 7. Proposed change
+### 9. Decisions
+
+```markdown
+## Decisions
+
+| Decision | Alternatives Rejected | Rationale |
+| -------- | --------------------- | --------- |
+| <the chosen minimal fix> | <e.g. revert commit <sha>; broader refactor of <area>> | <why the minimal change satisfies the repro without collateral risk> |
+```
+
+At minimum one row: the chosen fix, with the alternatives the lightweight analysis rejected and why.
+
+### 10. Proposed change
 
 ```markdown
 ## Proposed change
@@ -169,7 +225,59 @@ limited to single-line patches — it's limited to bugs where the change is
 **obvious from the suspect site**. A 20-line refactor in one function is
 still simple if the cause is contained.
 
-### 8. CEGIS refinement contract
+### 11. Acceptance Criteria
+
+Renamed from the former "Done criteria" so the Core schema's section name appears verbatim — same content.
+
+```markdown
+## Acceptance Criteria
+
+- [ ] FAIL_TO_PASS test passes.
+- [ ] All PASS_TO_PASS tests/suites pass.
+- [ ] The diff touches only files listed in the affected-files table (plus
+      the commit message + PR description).
+- [ ] Bug-notes ledger has been appended with Phase 6 fast-lane events
+      (worktree creation, CEGIS rounds, final patch summary).
+
+Executor opens the draft PR when every criterion is checked.
+Verifier (Phase 7) decides undraft. Executor does NOT undraft.
+```
+
+### 12. Implementation Order
+
+```markdown
+## Implementation Order
+
+1. Apply the proposed change at `<path>:<line>`.
+2. Run the repro per the CEGIS refinement contract.
+3. Run every PASS_TO_PASS test/suite.
+4. Append the CEGIS round results to the bug-notes ledger.
+```
+
+Keep steps atomic and bug-specific — add one step per `File` block when the proposed change spans multiple files.
+
+### 13. File Changes
+
+```markdown
+## File Changes
+
+| Action | File   | Change                          | Reason                          |
+| ------ | ------ | ------------------------------- | ------------------------------- |
+| modify | <path> | <one-line change description>   | <link to the root cause>        |
+```
+
+Every file listed here must also appear in the Evidence Record's affected-files table — the Out of Scope rule and the verifier's diff-sanity check both key off that table.
+
+### 14. Verification
+
+```markdown
+## Verification
+
+- **After editing**: `<repro command>` (the FAIL_TO_PASS check)
+- **Before PR**: `<project test command covering the PASS_TO_PASS suites>`
+```
+
+### 15. CEGIS refinement contract
 
 Verbatim from [`bug-fix-pack.md`](../templates/bug-fix-pack.md) — same
 3-round cap, same counterexample-append discipline. The aw-executor's
@@ -191,7 +299,7 @@ After each implementation edit:
    do NOT keep guessing.
 ```
 
-### 9. FAIL_TO_PASS contract
+### 16. FAIL_TO_PASS contract
 
 ```markdown
 ## FAIL_TO_PASS
@@ -202,7 +310,7 @@ After each implementation edit:
 - Verifier (Phase 7) re-runs this in a fresh context.
 ```
 
-### 10. PASS_TO_PASS contract
+### 17. PASS_TO_PASS contract
 
 ```markdown
 ## PASS_TO_PASS
@@ -219,7 +327,7 @@ every test that imports a changed file is a PASS_TO_PASS candidate. If the
 test count exceeds 10, list the *suites* that must pass rather than
 individual files — the executor expands suites at run time.
 
-### 11. Bug-notes ledger pointer
+### 18. Bug-notes ledger pointer
 
 ```markdown
 ## Bug-notes ledger
@@ -232,7 +340,7 @@ individual files — the executor expands suites at run time.
   trajectory.
 ```
 
-### 12. Confidence trajectory
+### 19. Confidence trajectory
 
 ```markdown
 ## Confidence (analysis)
@@ -243,40 +351,16 @@ individual files — the executor expands suites at run time.
 - **Overall: <X%>** — cleared the ≥ 92 % fast-lane gate at Phase 4.
 ```
 
-### 13. Out of scope
+### 20. Progress Log
 
 ```markdown
-## Out of scope
+## Progress Log
 
-The executor must NOT:
-
-- Modify any file outside the affected-files table in the Evidence Record
-  without re-running confidence(analysis).
-- Modify the repro file under `repro/` to make tests pass — verifier
-  rejects this.
-- Introduce new dependencies.
-- Refactor neighbouring code that wasn't part of the failing path.
+- [<TIMESTAMP>] Phase 6 (fast-lane): plan.v1.md created by /fix-bug via aw-create-plan
 ```
 
-Add bug-specific out-of-scope items as needed. The list is the cheap
-guardrail against scope creep on a "simple" fix.
-
-### 14. Done criteria
-
-```markdown
-## Done
-
-Executor opens a draft PR when:
-
-1. FAIL_TO_PASS test passes.
-2. All PASS_TO_PASS tests/suites pass.
-3. The diff touches only files listed in the affected-files table (plus the
-   commit message + PR description).
-4. Bug-notes ledger has been appended with Phase 6 fast-lane events
-   (worktree creation, CEGIS rounds, final patch summary).
-
-Verifier (Phase 7) decides undraft. Executor does NOT undraft.
-```
+`aw-create-plan` seeds this section; every later milestone (executor takeover, CEGIS rounds, phase transitions) appends per the Core schema's append-only contract.
+Timestamps use full ISO 8601 (`YYYY-MM-DDTHH:MM:SSZ`).
 
 ---
 
@@ -286,8 +370,9 @@ Verifier (Phase 7) decides undraft. Executor does NOT undraft.
 procedure that [`autonomous-handoff.md`](./autonomous-handoff.md#fast-lane)
 references.
 
-1. **Create the worktree.** Use `gw checkout fix/<slug>` per
-   [`MEMORY.md`](/Users/mthines/.claude/projects/-Users-mthines-Workspace-dash0-git/memory/MEMORY.md).
+1. **Create the worktree.** Prefer `gw checkout fix/<slug>` when the `gw`
+   CLI is available; otherwise use plain
+   `git worktree add -b fix/<slug> .agent/fix/<slug>` from the main checkout.
    Capture the worktree path; it is `.agent/fix/<slug>/`.
 
 2. **Move the bug-notes ledger.** If the ledger was initialised under the
@@ -305,9 +390,11 @@ references.
    `plan.vN.md` snapshot. It does NOT validate the plan body against this
    contract — that responsibility stays with `/fix-bug`.
 
-4. **Validate the plan.md** — re-read the file and confirm all 14 required
-   sections are present. If any are missing, fail with a clear error and do
-   NOT dispatch the executor. The bug-notes ledger captures the failure.
+4. **Validate the plan.md** — re-read the file and confirm all 20 required
+   sections (the 8 Core sections plus the bug-specific ones) are present per
+   the [Required sections](#required-sections) list. If any are missing, fail
+   with a clear error and do NOT dispatch the executor. The bug-notes ledger
+   captures the failure.
 
 5. **Dispatch `aw-executor`.** Use the Agent tool with
    `subagent_type: "aw-executor"` and `isolation: "worktree"` pointing at
@@ -318,6 +405,10 @@ references.
    This plan was authored directly by /fix-bug (fast-lane); aw-planner did
    not run. The CEGIS refinement contract in the plan is binding.
    ```
+
+   If the harness's Agent tool does not support the `isolation` parameter,
+   omit it — the worktree already exists from step 1; the prompt's worktree
+   path is the isolation contract.
 
 6. **Return to** [`autonomous-handoff.md` step 6c](./autonomous-handoff.md#step-6c--report-back)
    for the status report.

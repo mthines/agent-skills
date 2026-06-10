@@ -317,7 +317,7 @@ The planner's scope ends at the confidence gate + handoff message. It must not:
 | Write production code                    | That's Phase 3, executor's job                                     |
 | Run tests                                | That's Phase 4                                                     |
 | Create PRs                               | That's Phase 6                                                     |
-| Fan out parallel implementation work     | Phase 3 is sequential by design ([`companion-skills.md`](./companion-skills.md#parallelization)) |
+| Fan out parallel implementation work     | Implementation fan-out belongs to the executor — Phase 3 allows controlled fan-out over file-disjoint slices (cap 3 concurrent) under the Sub-Agent Resource Discipline ([`parallel-coordination.md`](./parallel-coordination.md#sub-agent-resource-discipline)); the planner never dispatches implementation sub-agents |
 
 **Allowed:** Phase 1's parallel `Explore` sub-agents — those produce planning context (research summaries), not code, and are bounded to the planner's session.
 

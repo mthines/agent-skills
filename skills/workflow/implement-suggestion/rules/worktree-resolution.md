@@ -19,7 +19,7 @@ For each PR tuple from Phase 0:
 
 ### Step 1 — Try `gw checkout`
 
-The `gw` CLI (from the `git-worktree-workflows` skill) is the canonical tool.
+The `gw` CLI ([gw-tools](https://github.com/mthines/gw-tools)) is the canonical tool; without it, an isolated equivalent is `git worktree add ../<repo>-pr-<n> <head-branch>` after `git fetch origin <head-branch>`.
 
 ```bash
 gw checkout <prNumber>          # if the current repo matches the PR's repo

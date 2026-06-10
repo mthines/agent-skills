@@ -235,4 +235,4 @@ Removals happen only when the underlying gate or companion is itself removed fro
 - **Pre-populating the failure taxonomy.** Speculation pushes the diagnoser to force-match. **Fix:** seed only with `F-novel`, grow from real diagnoses.
 - **Hiding the source root.** A wrong source root makes `--apply` fail silently or write to the wrong place. **Fix:** state the path explicitly.
 - **Omitting hard invariants.** Without them, the diagnoser may propose relaxing a load-bearing gate. **Fix:** list every gate the skill considers non-negotiable.
-- **Storing the surface outside `rules/`.** The diagnoser looks for an exact path. **Fix:** use `skills/<name>/rules/diagnostic-surface.md` for skills or `agents/<name>/rules/diagnostic-surface.md` for agents.
+- **Storing the surface outside `rules/`.** The diagnoser looks for an exact path. **Fix:** use `skills/<category>/<name>/rules/diagnostic-surface.md` for skills or `agents/<name>/rules/diagnostic-surface.md` for agents.

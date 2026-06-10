@@ -13,7 +13,18 @@ Phase 1 establishes the baseline.
 It answers "which tests are actually flaky on this PR, and how often" using span history from CI runs that have already happened.
 The trace evidence used for root cause comes from **local** runs in Phase 2 — see [`local-iteration.md`](./local-iteration.md).
 
-If the historical telemetry is empty, **stop and surface that to the user** — never proceed on guesses.
+If the Dash0 MCP is configured but the historical telemetry is empty, **stop and surface that to the user** — never proceed on guesses.
+
+**If the Dash0 MCP is not configured at all** (no `mcp__dash0-*` tools in the session), the response depends on the mode:
+
+- `stabilize`: skip Phase 1 and proceed **local-only in degraded mode**.
+  Tell the user explicitly what was lost: no historical baseline, no `failure_rate` entry thresholds (the fix queue is instead built from the PR's failing CI checks plus local reproduction in Phase 2), and no Phase 7 telemetry comparison (CI ratification falls back to the run conclusion alone).
+  Mark the report `degraded: no-telemetry`.
+- `optimize`: **stop.**
+  Optimize mode's queue is built entirely from span duration percentiles; without telemetry there is nothing to rank.
+  Tell the user to configure the Dash0 MCP and re-run.
+
+This failure mode is also listed in the failure-mode table in [`verification-loop.md`](./verification-loop.md).
 
 ## Dash0 MCP spans
 
@@ -32,12 +43,15 @@ Do not omit fields — `otel.parent.id is_not_set` is what isolates the top-leve
 
 ```jsonc
 [
-  { "key": "service.name",          "operator": "is",         "value":  "ui-e2e" },
+  { "key": "service.name",          "operator": "is",         "value":  "<service-name>" },
   { "key": "otel.parent.id",        "operator": "is_not_set" },
   { "key": "ci.is_ci",              "operator": "is_one_of",  "value":  "true" },
   { "key": "git.pull_request_link", "operator": "is_one_of",  "values": ["<PR_URL>"] }
 ]
 ```
+
+`<service-name>` is the `service.name` configured in the target repo's OTel exporter — discover it from the Playwright config (reporter / exporter options) or from exporter env vars (`OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES`).
+`ui-e2e` is only an example value; do not assume it.
 
 Time range: last **7 days** by default, or since the PR was opened — whichever is shorter.
 

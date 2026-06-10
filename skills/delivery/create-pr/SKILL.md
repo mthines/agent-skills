@@ -240,11 +240,13 @@ Dispatched background review subagent (PR: <pr-url>). Continuing with CI watch.
 The job isn't done when the PR is created. Block on CI so the user doesn't have to come back to a red PR later.
 
 ```bash
-sleep 10                                # let workflows register
-gh pr checks <pr-number> --watch        # blocks until every check completes; non-zero exit if any failed
+sleep 10                                          # let workflows register
+timeout 1800 gh pr checks <pr-number> --watch     # blocks until every check completes (30-min cap); non-zero exit if any failed
 ```
 
 `--watch` waits for queued/running checks and exits with the final aggregate status. If the exit code is 0, jump to Step 10. Otherwise continue.
+
+The `timeout 1800` cap keeps a hung or queued-forever check from blocking the skill indefinitely — same idea as the 10-minute review poll in [`rules/review-mode.md`](./rules/review-mode.md). If it expires (exit code 124), run `gh pr checks <pr-number>` once, report the still-pending checks to the user, and escalate instead of re-watching.
 
 If `gh pr checks` reports no checks at all after a minute, this repo probably doesn't run CI on PRs — also jump to Step 10.
 
@@ -283,7 +285,7 @@ Use the returned `category` to decide the path:
   ```bash
   gh run rerun <run-id> --failed
   ```
-  Then re-watch with `gh pr checks <pr-number> --watch`. At most one rerun per check.
+  Then re-watch with `timeout 1800 gh pr checks <pr-number> --watch` (same 30-minute cap and expiry handling as Step 7). At most one rerun per check.
 
 ## Step 9: Apply Fixes
 

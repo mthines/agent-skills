@@ -36,6 +36,10 @@ agents **already** read / write the `aw-lessons` scope for the planning and
 implementation phases. **The batch skill inherits that automatically** — no
 wiring needed and no duplication here.
 
+**Serialization contract for the fan-out.**
+Parallel executors return lesson candidates in their result payload; the orchestrator writes all lessons serially after fan-out completes.
+Executors MUST NOT write to shared lesson scopes directly during fan-out — concurrent writes to `memory/aw-lessons/INDEX.md` can interleave.
+
 This loop owns only the lessons unique to **batch-level orchestration** — the
 decisions `aw-planner` / `aw-executor` never make:
 

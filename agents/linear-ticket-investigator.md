@@ -1,7 +1,7 @@
 ---
 name: linear-ticket-investigator
 description: Extract evidence from a single Linear ticket — read the ticket, locate affected code, and return an Evidence Record matching the /fix-bug Phase 2 schema. Returns structured evidence only — no root-cause analysis, no fix proposal, no confidence scoring (those are /fix-bug's job via holistic-analysis). Used by /fix-bug's Linear input route and fan-out by /batch-linear-tickets.
-tools: Read, Glob, Grep, Skill
+tools: Read, Glob, Grep, Skill, mcp__Linear__get_issue, mcp__Linear__list_comments, mcp__claude_ai_Linear__get_issue, mcp__claude_ai_Linear__list_comments
 model: sonnet
 ---
 
@@ -12,8 +12,11 @@ You read the ticket, locate the affected code, and return an **Evidence Record**
 You do NOT analyze root causes, propose fixes, or score confidence — those are `/fix-bug`'s
 responsibilities via the `holistic-analysis` and `confidence` skills.
 
-This agent uses the Linear MCP tools (`mcp__claude_ai_Linear__*`).
-If the host project does not have Linear MCP configured, the calling skill (`/fix-bug` or
+This agent uses the Linear MCP tools.
+Tool names vary by server alias (`mcp__Linear__get_issue`, `mcp__claude_ai_Linear__get_issue`, …) —
+resolve the issue-read and comment-read tools at runtime from your available-tools list; do not
+hard-code the namespace.
+If no Linear MCP tool is available in the host project, the calling skill (`/fix-bug` or
 `/batch-linear-tickets`) handles the fallback.
 
 ---
@@ -44,8 +47,11 @@ This rule overrides everything else.
 
 ### Step 1: Read the Ticket
 
-Use `mcp__claude_ai_Linear__get_issue` with the ticket identifier provided in your prompt.
-Also read comments via `mcp__claude_ai_Linear__list_comments`.
+Locate the Linear MCP issue-read tool in your tool list — the server alias varies, for example
+`mcp__Linear__get_issue` or `mcp__claude_ai_Linear__get_issue`.
+Call it with the ticket identifier provided in your prompt.
+Also read comments via the matching comment-list tool (for example `mcp__Linear__list_comments`
+or `mcp__claude_ai_Linear__list_comments`).
 
 Extract:
 

@@ -24,7 +24,7 @@ change forces the whole PR into standard-lane.
 ### Fast-lane preconditions (all must hold)
 
 - Every `apply` comment edits a **single file**.
-- No `/critical` finding raised `Critical` or `Major`.
+- No `/critical` finding raised `Must-fix`.
 - Across the PR, ≤ 3 files are touched in total.
 - No `apply` comment proposes a rename / move / signature change (any
   cross-file ripple).
@@ -32,7 +32,7 @@ change forces the whole PR into standard-lane.
 ### Standard-lane triggers (any one)
 
 - Any `apply` comment spans ≥ 2 files.
-- Any `/critical` finding tagged `Major`.
+- Any `/critical` finding tagged `Must-fix` (which also forces `surface` in Phase 4 — a standard-lane plan is authored only for the surviving `apply` comments).
 - ≥ 4 files touched across the PR.
 - Any `apply` comment proposes a rename / signature change / API surface change.
 - Pack contains contradictory `apply` comments (B references A; the worker

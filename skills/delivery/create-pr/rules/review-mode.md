@@ -176,7 +176,7 @@ While the background subagent waits for Claude's review and then runs `/implemen
 
 Both paths can push commits to the same PR branch. Conflicts are handled as follows:
 
-- **`/ci-auto-fix`** has its own pull-rebase-retry logic. If `/implement-suggestion` pushes a commit between auto-fix's fetch and push, auto-fix will rebase and retry.
+- **`/ci-auto-fix`** pulls with `--rebase` before pushing and retries a rejected (non-fast-forward) push once after rebasing — see its Step 6. If `/implement-suggestion` pushes a commit between auto-fix's commit and push, auto-fix rebases and retries; a conflicting rebase makes it stop and report rather than auto-resolve.
 - **`/implement-suggestion`**'s dispatched worker also pulls before pushing. If `/ci-auto-fix` lands a commit first, the worker rebases on top.
 - In the rare case both push at the same instant and one loses the race repeatedly, the loser will exit after its internal retry cap. That outcome surfaces in the final report and the user can manually rerun the loser.
 

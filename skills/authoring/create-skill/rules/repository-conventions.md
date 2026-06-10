@@ -16,11 +16,13 @@ if the user is publishing the skill to a different repo.
 ## Where the skill lives
 
 ```
-skills/<name>/SKILL.md
+skills/<category>/<name>/SKILL.md
 ```
 
-Skills live under `skills/`. Agents (specialised sub-processes with their
-own model + tool config) live under `agents/`. Everything else
+Skills live under `skills/`, nested one level inside a category directory.
+The seven categories are `workflow/`, `quality/`, `delivery/`, `testing/`, `design/`, `analysis/`, and `authoring/`.
+Pick the category that matches the skill's job; do not create new categories without updating the root `CLAUDE.md` inventory structure.
+Agents (specialised sub-processes with their own model + tool config) live under `agents/`. Everything else
 (`packages/`, `plugins/`) is package code, not a skill.
 
 ## The two-tier symlink chain (local development)
@@ -29,31 +31,32 @@ The author's machine wires this repo into the harness via two symlinks per
 skill:
 
 ```
-~/.claude/skills/<name>     →  ~/.agents/skills/<name>     →  <this repo>/skills/<name>
+~/.claude/skills/<name>     →  ~/.agents/skills/<name>     →  <this repo>/skills/<category>/<name>
 ```
 
+The installed-side paths stay **flat** (`~/.claude/skills/<name>`, `~/.agents/skills/<name>`) because that is how every Agent-Skills-compatible tool reads them; only the repo target is category-nested.
 The middle layer (`~/.agents/skills/`) is the cross-tool discovery
 directory used by Codex, Cursor, OpenCode, and other Agent Skills-
 compatible clients. One chain serves every tool.
 
 ### Wire a new skill
 
-```bash
-# Step 1 — link from the cross-tool dir into the repo
-ln -s "$REPO/skills/<name>" "$HOME/.agents/skills/<name>"
+Run the repo's sync script from the repo root — do not create the symlinks by hand:
 
-# Step 2 — link from Claude's dir into the cross-tool dir
-ln -s "$HOME/.agents/skills/<name>" "$HOME/.claude/skills/<name>"
+```bash
+bash scripts/sync-symlinks.sh
 ```
 
-`$REPO` is the absolute path to this repo (e.g.
-`/Users/mthines/Workspace/mthines/agent-skills.git/main`).
+The script walks `skills/` recursively for every directory with a `SKILL.md` (and `agents/` for agents), and wires the full two-tier chain for anything new or missing in one pass.
+It is idempotent: it skips entries already linked correctly, repairs broken or wrong-target symlinks, and refuses to overwrite real files or directories.
+Pass `--dry-run` (or `-n`) to preview without applying.
+Invoke it with `bash` (or `./scripts/sync-symlinks.sh`), **not** `sh` — it uses bash arrays and process substitution.
 
 ### Verify
 
 ```bash
 readlink ~/.claude/skills/<name>     # → ~/.agents/skills/<name>
-readlink ~/.agents/skills/<name>     # → <repo>/skills/<name>
+readlink ~/.agents/skills/<name>     # → <repo>/skills/<category>/<name>
 ```
 
 Both must resolve. If either is missing, the harness will not see the
@@ -61,7 +64,7 @@ skill.
 
 ## Editing convention
 
-Always edit at `skills/<name>/SKILL.md` directly — never via the symlinked
+Always edit at `skills/<category>/<name>/SKILL.md` directly — never via the symlinked
 path under `~/.claude/` or `~/.agents/`. Writes through symlinks resolve
 correctly but make it ambiguous which checkout the change lands in (this
 matters when multiple worktrees exist).
@@ -73,21 +76,19 @@ a skill.
 
 ### `CLAUDE.md` (project instructions)
 
-The repo-root `CLAUDE.md` has an inventory under `## Repository Structure`.
-Add the skill to the correct subsection:
-
-| Subsection                   | Use for                                                            |
-| ---------------------------- | ------------------------------------------------------------------ |
-| Agent-invokable skills       | Skills the model can `Skill()`-invoke without a slash command.     |
-| Workflow companions          | Skills with `disable-model-invocation: true`, called by orchestrators. |
-| Slash commands               | Skills with `disable-model-invocation: true`, user-invoked.        |
-| Agents                       | Files under `agents/` (not `skills/`).                             |
+The repo-root `CLAUDE.md` has an inventory under `## Repository Structure`,
+grouped by category subsection (`### \`workflow/\``, `### \`quality/\``,
+`### \`delivery/\``, `### \`testing/\``, `### \`design/\``,
+`### \`analysis/\``, `### \`authoring/\``, plus `### Agents`).
+Add the skill to its category's subsection with the correct type marker:
+`auto` (model-invokable via `Skill()`), `/` (slash command only), or
+`Skill()` (called by other skills, no model invocation).
 
 Each entry is a single bullet:
 
 ```markdown
-- `<name>` — One-line third-person description matching the SKILL.md
-  description.
+- `<name>` (`auto` | `/` | `Skill()`) — One-line third-person description
+  matching the SKILL.md description.
 ```
 
 ### `README.md` (user-facing)
@@ -98,14 +99,14 @@ The repo-root `README.md` has three places to update:
    matches the invocation type). Add a row:
 
    ```markdown
-   | **[/<name>](./skills/<name>/SKILL.md)** | One-line description matching SKILL.md. |
+   | **[/<name>](./skills/<category>/<name>/SKILL.md)** | One-line description matching SKILL.md. |
    ```
 
 2. **The Repository Structure tree** at the bottom of the README. Add a
    line:
 
    ```text
-     <name>/             SKILL.md + rules/                   (slash command)
+     <category>/<name>/  SKILL.md + rules/                   (slash command)
    ```
 
 3. **(Optional)** the slash-command listing under "Quick start" if the

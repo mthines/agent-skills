@@ -51,28 +51,52 @@ The repro must:
 1. **Fail** when run on the base SHA (the bug existed there).
 2. **Pass** when run on the PR head SHA (the bug is fixed).
 
+The repro file is committed on the PR branch and does **not** exist on base — bring it onto base before running, and clean it up after:
+
 ```bash
 git checkout <base_sha>
-<repro_command>; echo "base exit: $?"
+git checkout <pr_head_sha> -- <repro_path>          # bring the PR's repro onto base
+<repro_command> 2>&1 | tee /tmp/base_run.txt; echo "base exit: ${PIPESTATUS[0]}"
+git rm -f -q <repro_path>                            # clean up — the repro is not tracked on base
 git checkout <pr_head_sha>
-<repro_command>; echo "pr_head exit: $?"
+<repro_command> 2>&1 | tee /tmp/pr_head_run.txt; echo "pr_head exit: ${PIPESTATUS[0]}"
 ```
 
 If base exit is 0 (repro doesn't actually fail on base), the repro is invalid — return red.
 If PR head exit is non-zero, the fix doesn't fix the bug — return red.
 
+**The base failure must be the documented bug.**
+Read `/tmp/base_run.txt` and confirm the failure output matches the bug symptom from the Evidence Record (the failing assertion, error message, or behaviour it describes).
+A non-zero exit from "file not found", "cannot resolve module", or an import error on a module that only exists on the PR head is NOT a valid FAIL signal — the repro depends on PR-only code, so it cannot demonstrate the bug on base.
+Classify that as a repro-integrity failure (Check 4) and return red.
+
 ### Check 2 — `PASS_TO_PASS`
 
 Run the project's full test suite on the PR head SHA. Compare to the base SHA's pass set.
 
+Do **not** diff raw suite stdout — it contains timings, ordering noise, and worker interleaving.
+Use the framework's structured reporter, extract the set of `(test id, status)` pairs, and compare the sets ignoring order and timing:
+
 ```bash
+# Pick the structured-reporter flag for the project's framework:
+#   vitest / playwright:  <project_test_command> --reporter=json
+#   jest:                 <project_test_command> --json
+#   pytest:               <project_test_command> --json-report (pytest-json-report plugin)
+#   go:                   go test -json ./...
 git checkout <base_sha>
-<project_test_command> > /tmp/base_results.txt 2>&1
+<project_test_command> --reporter=json > /tmp/base_results.json 2>/dev/null
 git checkout <pr_head_sha>
-<project_test_command> > /tmp/pr_results.txt 2>&1
+<project_test_command> --reporter=json > /tmp/pr_results.json 2>/dev/null
+
+# Extract sorted (test id, status) pairs and compare as sets (vitest shape shown — adapt the jq path per framework):
+jq -r '.testResults[] | .name as $f | .assertionResults[] | "\($f)::\(.fullName)\t\(.status)"' /tmp/base_results.json | sort > /tmp/base_set.txt
+jq -r '.testResults[] | .name as $f | .assertionResults[] | "\($f)::\(.fullName)\t\(.status)"' /tmp/pr_results.json  | sort > /tmp/pr_set.txt
+diff /tmp/base_set.txt /tmp/pr_set.txt
 ```
 
-Diff the result sets. Any test that **passed on base but fails on PR head** is a red flag.
+If the framework offers no JSON reporter, fall back to extracting only the per-test pass/fail lines (strip timings and counters) before diffing — never diff the raw stdout.
+
+Any test that **passed on base but fails on PR head** is a red flag.
 
 A test that was **failing on base and now passes** is fine (could be an unrelated fix or the
 intended repro).

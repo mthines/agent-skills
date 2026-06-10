@@ -203,7 +203,7 @@ When called from `autonomous-workflow` Phase 4, also append one line to `.agent/
 - **Treating a passing test as proof the test is correct.**
   A test can pass for the wrong reason — that is the entire raison d'être of this skill.
 - **Mutating without restoring.**
-  Every sabotage step is paired with `git stash pop` (or equivalent restore) — see `rules/mutation-check.md`.
+  Every sabotage step is paired with a restore — `git restore <sut-file>` when the file was clean, or moving the recorded backup over it when it was dirty — see `rules/mutation-check.md`.
 - **Self-healing with a redesign.**
   Moving logic and improving it in the same step is two refactors masquerading as one — split them.
 - **Running mutation when static already failed.**

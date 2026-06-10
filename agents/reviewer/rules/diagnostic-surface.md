@@ -42,13 +42,13 @@ The companion agent `pr-reviewer` handles cross-review on someone else's PR; its
 
 | Phase | Name | Rule / section | Gate |
 | --- | --- | --- | --- |
-| 0 | Raw-arguments read | [reviewer.md § Step 0](../reviewer.md) | Raw arguments preserved verbatim |
-| 0.5 | Mode detection | [reviewer.md § Mode Detection](../reviewer.md) | Exactly one sub-mode chosen: Fix / Report / Self-Review |
-| 0.6 | Cross-PR redirect | [reviewer.md § Step 0.6](../reviewer.md) | If a PR ref is passed but `author != current user`, agent redirects to `pr-reviewer` |
-| 1.1 | Diff acquisition | [reviewer.md § Step 1.1](../reviewer.md) | `git diff origin/main...HEAD` for branch; `gh pr diff` + cached patch list for Self-Review |
-| 1.2 | Triage for large diffs | [reviewer.md § Step 1.2](../reviewer.md) | Above ~30 files: skip auto-generated, lockfiles, vendored |
-| 1.3 | Intent synthesis | [reviewer.md § Step 1.3](../reviewer.md) | 2–3 line intent summary; uncertainty flagged on missing PR body |
-| 1.5 | Pre-existing-issue separation | [reviewer.md § Step 1.5](../reviewer.md) | Context-line findings tagged `[pre-existing]`; excluded from verdict |
+| 0 | Raw-arguments read | [reviewer.md § Step 0](../../reviewer.md) | Raw arguments preserved verbatim |
+| 0.5 | Mode detection | [reviewer.md § Mode Detection](../../reviewer.md) | Exactly one sub-mode chosen: Fix / Report / Self-Review |
+| 0.6 | Cross-PR redirect | [reviewer.md § Step 0.6](../../reviewer.md) | If a PR ref is passed but `author != current user`, agent redirects to `pr-reviewer` |
+| 1.1 | Diff acquisition | [reviewer.md § Step 1.1](../../reviewer.md) | `git diff origin/main...HEAD` for branch; `gh pr diff` + cached patch list for Self-Review |
+| 1.2 | Triage for large diffs | [reviewer.md § Step 1.2](../../reviewer.md) | Above ~30 files: skip auto-generated, lockfiles, vendored |
+| 1.3 | Intent synthesis | [reviewer.md § Step 1.3](../../reviewer.md) | 2–3 line intent summary; uncertainty flagged on missing PR body |
+| 1.5 | Pre-existing-issue separation | [reviewer.md § Step 1.5](../../reviewer.md) | Context-line findings tagged `[pre-existing]`; excluded from verdict |
 | 1.6 | Lens loading | [shared/rules/rubric-composition.md](../../shared/rules/rubric-composition.md) | Max 3 lenses; `lens-version: 1`; dedupe |
 | 2 | Review (multi-rubric) | [shared/rules/rubric-composition.md](../../shared/rules/rubric-composition.md) | `code-quality` always; `ux` on UI globs; `critical` on auto-engage / `--critical`; lenses |
 | 2.4 | Holistic review (default ON) | [shared/rules/holistic-review.md](../../shared/rules/holistic-review.md), `Skill("holistic-analysis", "review")` | Runs unless `--no-holistic` OR trivial-skip; emits 0–3 findings mapped to `issue` / `suggestion` / `nitpick` (reviewer asserts; cross-review questions) |
@@ -57,7 +57,7 @@ The companion agent `pr-reviewer` handles cross-review on someone else's PR; its
 | 2.7 | Per-comment confidence | [shared/rules/per-comment-confidence.md](../../shared/rules/per-comment-confidence.md) | `Skill("confidence", "code")` ≥ 80 |
 | 2.8 | Comment shape | [shared/rules/comment-shape.md](../../shared/rules/comment-shape.md) | ≤ 240 chars, ≤ 2 sentences, no structure |
 | 2.9 | Conventional Comments | [shared/rules/conventional-comments.md](../../shared/rules/conventional-comments.md) | Prefix prepended; decoration appended |
-| 3 | Output & verdict | [reviewer.md § Step 3](../reviewer.md) | Summary table + verdict + 1–10 score; default permissive |
+| 3 | Output & verdict | [reviewer.md § Step 3](../../reviewer.md) | Summary table + verdict + 1–10 score; default permissive |
 | 4 | Auto-fix | [reviewer/rules/auto-fix-policy.md](./auto-fix-policy.md) | Skipped on `--report`; simple-vs-complex split; forbidden targets respected |
 | 5 | Self-Review report | [reviewer/rules/self-review-report.md](./self-review-report.md) | Inline terminal output using pr-comment-card cards; no GitHub API calls |
 

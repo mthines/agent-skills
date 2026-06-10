@@ -3,7 +3,8 @@ name: tdd
 description: >
   Enforces strict Test-Driven Development with RED-GREEN-REFACTOR cycles.
   Writes one failing test at a time, implements minimal code to pass, then
-  refactors. Uses subagent isolation to prevent tests-by-construction. Pairs
+  refactors. Delegates to the `test-provenance-guard` skill during REFACTOR
+  to detect tests-by-construction (static + mutation checks). Pairs
   with the `code-quality` skill: invokes `Skill('code-quality')` during the
   REFACTOR phase to apply the full code-quality rule set against the GREEN
   output, and cites refactor recipes (R1–R20) by ID when reporting changes.

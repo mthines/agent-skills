@@ -122,18 +122,18 @@ to write the same cache and one overwrites the other.
 ### Good — Node CI with cache + restore fallback
 
 ```yaml
-- name: Cache npm + node_modules
+- name: Cache npm
   uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 # v4.2.0
   with:
-    path: |
-      ~/.npm
-      node_modules
+    path: ~/.npm
     key: npm-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}
     restore-keys: |
       npm-${{ runner.os }}-
 - name: Install dependencies
   run: npm ci
 ```
+
+Cache only the package manager's global directory (`~/.npm`) and let `npm ci` assemble `node_modules` — never cache `node_modules` itself (see the Bad example below and Core Principle 1 in [`SKILL.md`](../SKILL.md)).
 
 ### Bad — primary key uses `github.sha`
 

@@ -28,14 +28,13 @@ Pick `mode` per the comment:
 | Pure prose feedback ("rethink this caching strategy")                   | `analysis` |
 | References an architectural question                                    | `analysis` |
 
-`/critical` returns findings tagged by severity:
+`/critical` returns findings in three severity buckets — `Must-fix`, `Should-fix`, and `Nice-to-have` (see [`critical` output format](../../../quality/critical/SKILL.md#output-format)):
 
-| Severity     | Treatment in the matrix below                       |
-| ------------ | --------------------------------------------------- |
-| `Critical`   | **Overrides matrix → force `surface`.**             |
-| `High`       | **Overrides matrix → force `surface`.**             |
-| `Medium`     | Recorded in pack; does not override matrix.         |
-| `Low`        | Recorded in pack; does not override matrix.         |
+| Severity       | Treatment in the matrix below                       |
+| -------------- | --------------------------------------------------- |
+| `Must-fix`     | **Overrides matrix → force `surface`.**             |
+| `Should-fix`   | Recorded in pack; does not override matrix.         |
+| `Nice-to-have` | Recorded in pack; does not override matrix.         |
 
 Capture the full finding text — the worker subagent reads it when crafting
 the commit message and the Phase 7 report cites it.
@@ -64,7 +63,7 @@ Inputs the gate sees:
 | 70%–79%             | `surface`     | `surface`            |
 | < 70%               | `skip`        | `skip`               |
 
-Override: **any `Critical` or `High` finding from `/critical` forces `surface`** regardless of score.
+Override: **any `Must-fix` finding from `/critical` forces `surface`** regardless of score.
 
 ## Why `nit` has a higher bar
 
@@ -82,7 +81,7 @@ Record per comment in the pack:
   "commentId": 4567890123,
   "decision": "apply" | "surface" | "skip",
   "criticalFindings": [
-    { "severity": "Medium", "title": "...", "evidence": "..." }
+    { "severity": "Should-fix", "title": "...", "evidence": "..." }
   ],
   "confidenceScore": 87,
   "confidenceBreakdown": {
@@ -129,7 +128,7 @@ always `surface` — the human reads, the human decides.
 
 Three things can force a `surface` decision regardless of score:
 
-1. **`/critical` finding at `Critical` or `High`** — non-removable.
+1. **`/critical` finding at `Must-fix`** — non-removable.
 2. **Gate failure** — non-removable.
 3. **Ambiguous classification** in Phase 3 (deferred to surface) — Phase 4
    never sees these comments, but the pack still references them.

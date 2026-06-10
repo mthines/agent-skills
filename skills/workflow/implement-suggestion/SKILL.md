@@ -176,9 +176,11 @@ Decision matrix:
 | 70%–79%             | `surface`     | `surface`            |
 | < 70%               | `skip`        | `skip`               |
 
-A `/critical` finding tagged **Critical or High** overrides the matrix and
+A `/critical` finding tagged **Must-fix** overrides the matrix and
 forces `surface`, even at ≥ 90%. This is non-removable — `/critical`'s
-Critical/High calls are designed to catch what `/confidence` cannot.
+Must-fix calls are designed to catch what `/confidence` cannot.
+(`/critical` emits Must-fix / Should-fix / Nice-to-have; only Must-fix
+overrides — the lower buckets are recorded in the pack.)
 
 ### Phase 5 — Build suggestion-pack
 
@@ -199,8 +201,8 @@ Lane is picked from the pack's complexity signals:
 
 | Lane | Trigger | Plan authored by |
 |------|---------|------------------|
-| **Fast-lane** | All `apply` changes are single-file mechanical edits AND no `/critical` finding raised Major; AND total file count ≤ 3 | Skill writes the pack directly |
-| **Standard-lane** | Any change spans ≥ 2 files; OR `/critical` raised Major on any change; OR ≥ 4 files affected across the PR | Skill dispatches `aw-planner` with the pack as `plan.md` seed |
+| **Fast-lane** | All `apply` changes are single-file mechanical edits AND no `/critical` finding raised Must-fix; AND total file count ≤ 3 | Skill writes the pack directly |
+| **Standard-lane** | Any change spans ≥ 2 files; OR `/critical` raised Must-fix on any change; OR ≥ 4 files affected across the PR | Skill dispatches `aw-planner` with the pack as `plan.md` seed |
 
 For each PR, dispatch the worker subagent (one message, parallel across PRs):
 
@@ -208,12 +210,12 @@ For each PR, dispatch the worker subagent (one message, parallel across PRs):
 Agent(
   description: "Apply suggestion-pack to PR #<n>",
   subagent_type: "general-purpose",
-  prompt: <contents of rules/worker-dispatch-prompt.md, filled in>
+  prompt: <the "Worker prompt template" from rules/handoff.md, filled in — the template is inline in that file; no external prompt file exists>
 )
 ```
 
 Full dispatch contract and prompt template:
-[`rules/handoff.md`](./rules/handoff.md).
+[`rules/handoff.md#worker-prompt-template`](./rules/handoff.md#worker-prompt-template).
 
 **The main agent does not edit files in Phase 6.** All applies / commits /
 pushes happen inside the worker subagent so the loud loop (test runs,
@@ -254,7 +256,7 @@ suggestion I just pasted" path with no PR plumbing.
 
 - **Never** push with `--force` or `--force-with-lease` without explicit user approval.
 - **Never** push with `--no-verify` or bypass hooks.
-- **Never** apply a change whose `/critical` review surfaced Critical/High without surfacing first.
+- **Never** apply a change whose `/critical` review surfaced a Must-fix finding without surfacing first.
 - **Never** auto-rebase a PR branch — surface and stop.
 - **Never** delete or weaken tests or types to make a suggestion fit.
 - **One commit per PR.** A run that processes 5 PRs produces at most 5 commits, not 5×N.

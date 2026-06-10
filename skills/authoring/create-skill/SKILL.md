@@ -64,7 +64,7 @@ State the detected mode and target in one line before continuing. Example:
 
 ```
 Mode: scaffold
-Target: skills/<proposed-name>/
+Target: skills/<category>/<proposed-name>/
 ```
 
 ---
@@ -124,10 +124,11 @@ generating anything — see `rules/structure-decision.md` for the full rubric.
 | Reusable boilerplate the skill emits literally      | Move to `templates/` |
 | One mode and one concern                            | Single-file    |
 
-Output the chosen layout as a tree before writing files:
+Output the chosen layout as a tree before writing files.
+In this repo the directory is nested one level under a category (`workflow/`, `quality/`, `delivery/`, `testing/`, `design/`, `analysis/`, or `authoring/` — see `rules/repository-conventions.md`):
 
 ```
-skills/<name>/
+skills/<category>/<name>/
 ├── SKILL.md
 ├── rules/...
 ├── references/...
@@ -171,18 +172,20 @@ After each file, verify:
 If the user runs the local-dev symlink chain (the default for this repo),
 follow `rules/repository-conventions.md` to:
 
-1. Create the cross-tool symlink:
-   `ln -s "$REPO/skills/<name>" "$HOME/.agents/skills/<name>"`.
-2. Create the Claude Code symlink:
-   `ln -s "$HOME/.agents/skills/<name>" "$HOME/.claude/skills/<name>"`.
-3. Verify both with `readlink`.
-4. Append a row to the inventory in `CLAUDE.md` (under "Slash commands" or
-   the appropriate section).
+1. Place the skill at `skills/<category>/<name>/` (categories: `workflow`,
+   `quality`, `delivery`, `testing`, `design`, `analysis`, `authoring`).
+2. Run `bash scripts/sync-symlinks.sh` from the repo root to wire the
+   two-tier chain (`~/.claude/skills/<name>` → `~/.agents/skills/<name>` →
+   `<repo>/skills/<category>/<name>`) — never `ln -s` by hand, and never
+   invoke the script with `sh`.
+3. Verify both hops with `readlink`.
+4. Append an entry to the inventory in `CLAUDE.md` (under the matching
+   `### \`<category>/\`` subsection, with the correct type marker).
 5. Append a row to the table in `README.md` and add the skill to the
    "Repository Structure" tree at the bottom of the README.
 
 If the user is publishing the skill via `npx skills add` only, skip steps
-1–3 but still update the inventories.
+2–3 but still update the inventories.
 
 ### Phase 5 — Self-check
 

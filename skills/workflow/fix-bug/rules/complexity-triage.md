@@ -62,7 +62,7 @@ Triage reads the artifacts already produced by Phase 0:
 - Raw symptom text from `$ARGUMENTS`
 
 Triage **does not** run Phase 1 probes — those are deliberately deferred so
-the pre-flight short-circuit (Phase 1b) can still upgrade a `complex`
+the pre-flight short-circuit (Phase 1.5) can still upgrade a `complex`
 classification to fast-lane after the fact.
 
 ---
@@ -117,7 +117,7 @@ evidence on either side.
 
 The decision is **not reversible from inside the same run** — once triage
 commits, later phases do not re-triage. The single exception is the pre-flight
-short-circuit in Phase 1b: if all three short-circuit conditions hold, the
+short-circuit in Phase 1.5: if all three short-circuit conditions hold, the
 classification is upgraded to `simple` regardless of triage output. The
 upgrade is logged.
 
@@ -158,9 +158,9 @@ The Phase pipeline for a `simple` bug:
 | 0 | run | run |
 | 0.5 (triage) | run | run |
 | 1a (evidence resolution) | run | run |
-| 1b (pre-flight) | run | run |
+| 1.5 (pre-flight) | run | run |
 | 2a (evidence record) | run | run |
-| 2b (reproduction lock) | run | run |
+| 2.5 (reproduction lock) | run | run |
 | 2c (bisect fast-path) | run if regression class | run if regression class |
 | 2d (ledger init) | run | run |
 | **3 (holistic analysis)** | **SKIP** — in-skill lightweight analysis instead | run |
@@ -173,7 +173,7 @@ The Phase pipeline for a `simple` bug:
 The lightweight analysis the simple path runs **in place of** Phase 3:
 
 1. Read the suspect file at the suspect line + 30 lines of context.
-2. Identify the minimal change that satisfies the failing repro (Phase 2b)
+2. Identify the minimal change that satisfies the failing repro (Phase 2.5)
    and does not break neighbours.
 3. Write the proposed change to the Evidence Record as plain prose, exactly
    the way `holistic-analysis` would have written its root-cause paragraph.

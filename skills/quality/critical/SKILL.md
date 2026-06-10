@@ -72,7 +72,7 @@ Default to `plan` if no argument.
 | --------------- | ------- | ----------------------------------- | ------------------------------------------- |
 | `plan`          | **yes** | A `plan.md` or proposed approach    | Planning phase, before autonomous execution |
 | `code`          |         | A diff or set of changed files      | Reviewer agent (`--critical`), pre-PR       |
-| `analysis`  |         | A root-cause + fix proposal         | `/fix-bug` Phase 3.5, before the gate       |
+| `analysis`  |         | A root-cause + fix proposal         | `/implement-suggestion` Phase 4 (per review comment, before the `/confidence` gate) |
 
 State the detected mode in one line before running: `Mode: critical/<mode>. Target: <one-line summary>.`
 

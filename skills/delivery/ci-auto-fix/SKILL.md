@@ -149,7 +149,17 @@ Only proceed to push if local verification passes.
 
    <brief explanation of root cause and fix>
    ```
-3. Push to the current branch
+3. Sync with the remote before pushing — another process (e.g. a parallel `/implement-suggestion` worker) may have pushed in the meantime:
+   ```bash
+   git pull --rebase origin "<branch>"
+   ```
+   If the rebase conflicts, run `git rebase --abort`, stop, and report the conflicting files to the user — do not auto-resolve.
+4. Push to the current branch:
+   ```bash
+   git push origin "<branch>"
+   ```
+5. If the push is rejected as non-fast-forward, run `git pull --rebase origin "<branch>"` and retry the push **once**.
+   If the retry push also fails, or the rebase conflicts, stop and report to the user instead of force-pushing or looping.
 
 ## Step 7: Wait for CI and verify
 
@@ -165,10 +175,11 @@ After pushing, monitor the check:
    gh run list --branch <current-branch> --limit 5
    ```
 
-3. Watch the run until completion:
+3. Watch the run until completion, bounded at 30 minutes so a hung or queued-forever run cannot block the loop indefinitely:
    ```bash
-   gh run watch <new-run-id>
+   timeout 1800 gh run watch <new-run-id>
    ```
+   If `timeout` expires (exit code 124), run `gh run view <new-run-id>` to capture which jobs are still pending, report them to the user, and escalate instead of continuing to block — same pattern as the 10-minute review poll in [`create-pr/rules/review-mode.md`](../create-pr/rules/review-mode.md).
 
 4. Check the result:
    ```bash

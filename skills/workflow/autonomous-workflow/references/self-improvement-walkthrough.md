@@ -83,8 +83,14 @@ A different RN feature, weeks later. At **Phase 1** the planner reads
 task, so it is applied as a plan constraint ("run `ux` for the nested screens").
 The agent runs `ux` this time — good, the fast tier already helped.
 
-But the same root cause (the narrow trigger) is still in the skill, so at
-end-of-run the executor records the recurrence:
+This write is mandated by the applied-lesson UPDATE contract
+([`self-improvement-loop.md`](../rules/self-improvement-loop.md#fast-tier--write-lessons)):
+if a lesson read at the start of the run was applied and the failure it
+targets did not recur, write an UPDATE for that lesson — successful
+application counts as recurrence evidence, and the UPDATE MUST increment
+`seen_count` by 1 and refresh `expires`. The same root cause (the narrow
+trigger) is still in the skill, so at end-of-run the executor records the
+recurrence:
 
 ```
 Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")

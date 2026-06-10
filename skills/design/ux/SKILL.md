@@ -119,11 +119,14 @@ Output findings using this structure:
 These are always in context. Detailed rules are in `rules/` files.
 
 ### Response Time Thresholds
-- <100ms: instant feedback (button press, toggle)
-- 100-300ms: slight delay OK, show state change
-- 300ms-1s: show spinner
-- 1-5s: show skeleton/progress
-- >5s: show percentage, allow cancel
+- <100ms: nothing beyond the press-state animation — a spinner here is noise
+- 100-300ms: press-state animation + content swap; no spinner, no skeleton (a sub-200ms spinner flash reads as broken)
+- 300ms-1s: skeleton matching the content shape, or a 200ms-floored inline spinner
+- 1-3s: skeleton + progress indicator (indeterminate bar or shimmer)
+- 3-10s: determinate progress bar with a label ("4 of 12 files")
+- >10s: streamed partial output, cancellable progress bar with ETA, or an async "we'll notify you" pattern
+
+Canonical source for these bands: the wait-duration ladder in [`animations/rules/perceived-performance.md`](../animations/rules/perceived-performance.md) — update both files together if the bands change.
 
 ### Touch Target Minimums
 - iOS: 44x44pt | Android: 48x48dp | WCAG AA: 24x24px | WCAG AAA: 44x44px
