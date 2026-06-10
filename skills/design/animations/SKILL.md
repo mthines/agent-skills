@@ -21,7 +21,7 @@ license: MIT
 metadata:
   author: mthines
   version: '1.0.0'
-  workflow_type: slash-command
+  workflow_type: applied
   tags:
     - animations
     - css

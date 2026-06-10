@@ -108,6 +108,10 @@ Stale `episodic` entries are candidates for archive. Stale `semantic`,
 `procedural`, and `preference` entries are NOT auto-archived —
 durable facts age slowly.
 
+**Expired entries are archived regardless of type.**
+Any entry whose `expires` frontmatter date has passed is an archive candidate, including `procedural` lesson-scope entries — this is the lesson loop's pruning contract (see [`write-pipeline.md`](./write-pipeline.md#lesson-scope-entries)).
+The episodic age rule above is unchanged and applies in addition.
+
 Mark candidates with `[ARCHIVE]` in the preview. The user can opt out
 per-entry.
 
@@ -134,8 +138,9 @@ Block until the user replies.
 ## Phase 4 — Rewrite INDEX
 
 After files are moved, rewrite `INDEX.md` from the surviving entries.
-Use the same template at
-[`../templates/INDEX.md`](../templates/INDEX.md).
+**Preserve the scope's existing INDEX structure**: read the current `INDEX.md` first and regenerate the entry lines within the headings it already declares (for example the lesson scopes' phase-grouped layout with a "Promotion-eligible" section).
+Never replace a scope-specific layout with the generic one.
+Fall back to the template at [`../templates/INDEX.md`](../templates/INDEX.md) only for scopes whose INDEX was created from that template (it has the Subjects / Preferences / Routines headings) or whose INDEX is missing.
 
 The new INDEX must be ≤ 200 lines. If it is not, the merge groups were
 too conservative — flag this to the user and re-run with broader groups.

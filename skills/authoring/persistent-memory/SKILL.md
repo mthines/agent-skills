@@ -13,7 +13,10 @@ description: >
   never-store list (passwords, API keys, JWTs, credit cards, SSNs,
   private keys); mandatory consent preview before write. Documents
   scaling from markdown → SQLite FTS → vector DB → managed memory
-  (Mem0 / Letta / Zep). Triggers on "remember this", "save to
+  (Mem0 / Letta / Zep). Also backs the committed lesson scopes
+  (`memory/aw-lessons`, `fix-bug-lessons`, `batch-lessons`) used by
+  the workflow self-improvement loops of `autonomous-workflow`,
+  `fix-bug`, and `batch-linear-tickets`. Triggers on "remember this", "save to
   memory", "recall memory", "load memory", "what do you remember
   about", "consolidate memory", "forget that", "/persistent-memory".
 disable-model-invocation: true

@@ -183,6 +183,7 @@ whose name matches Playwright conventions (`playwright-report*`,
 nested ZIPs, and writes a manifest of all `trace.zip` files discovered,
 grouped by failed test where possible. Then continue with the unpacked
 flow below.
+If `gh` is not installed or unauthenticated, ask the user to download the trace artifact manually from the Actions run page and provide the local path — the `trace.zip` flow below is unaffected.
 
 ### Input is a `trace.zip`
 

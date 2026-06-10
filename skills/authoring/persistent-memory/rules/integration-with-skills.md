@@ -155,6 +155,9 @@ things make this a safe pattern worth copying:
 See [`../../../workflow/autonomous-workflow/rules/self-improvement-loop.md`](../../../workflow/autonomous-workflow/rules/self-improvement-loop.md)
 for the full contract.
 
+**Lesson-scope schema contract.** The committed lesson scopes (`memory/aw-lessons`, `memory/fix-bug-lessons`, `memory/batch-lessons`) carry an extended entry schema with five mandatory fields (`phase`, `trigger-context`, `seen_count`, `status`, `expires`), defined on this skill's side in [`write-pipeline.md`](./write-pipeline.md#lesson-scope-entries) and templated at [`../templates/lesson-entry.md`](../templates/lesson-entry.md).
+The host-skill loops depend on exactly these fields (recurrence counting, promotion gating, expiry pruning), so any change to the lesson schema MUST update both the write pipeline's lesson-entry rules and the host skill's loop rules in the same PR — the two surfaces must never drift.
+
 ## When NOT to integrate
 
 Some skills should never call `persistent-memory`:

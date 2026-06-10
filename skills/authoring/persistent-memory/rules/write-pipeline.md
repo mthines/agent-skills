@@ -17,6 +17,8 @@ tags:
 - [Phase 3 — Resolve against existing entries](#phase-3--resolve-against-existing-entries)
 - [Phase 4 — Consent preview](#phase-4--consent-preview)
 - [Phase 5 — Write and audit](#phase-5--write-and-audit)
+- [Lesson-scope entries](#lesson-scope-entries)
+- [Concurrent writers](#concurrent-writers)
 - [Edge cases](#edge-cases)
 
 Two-phase write modeled on Mem0's Extraction → Update pipeline. Every
@@ -150,16 +152,20 @@ For each approved candidate:
 3. Write the entry file from
    [`../templates/memory-entry.md`](../templates/memory-entry.md),
    filling in frontmatter and body.
+   When writing to a lesson scope, use
+   [`../templates/lesson-entry.md`](../templates/lesson-entry.md) instead —
+   see [Lesson-scope entries](#lesson-scope-entries).
 4. Add one line to `INDEX.md` under the appropriate section.
 
 ### `UPDATE`
 
 1. Read the target entry file.
 2. Update its body. Set `updated:` in the frontmatter to now.
-3. If the new content materially supersedes the old, append a brief
+3. An UPDATE to an entry that carries a `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`.
+4. If the new content materially supersedes the old, append a brief
    `## History` block to the entry body with the prior wording and a
    timestamp. Never silently overwrite history.
-4. Update the corresponding INDEX line if the summary changed.
+5. Update the corresponding INDEX line if the summary changed.
 
 ### `DELETE`
 
@@ -188,6 +194,32 @@ not, surface a one-line warning:
 ```text
 INDEX is now 207 lines — `/persistent-memory consolidate parenting` is overdue.
 ```
+
+## Lesson-scope entries
+
+A **lesson scope** is a scope consumed by a host skill's self-improvement loop (for example the committed `aw-lessons`, `fix-bug-lessons`, and `batch-lessons` scopes under `memory/`).
+Entries written to a lesson scope use the extended template at [`../templates/lesson-entry.md`](../templates/lesson-entry.md), not the base entry template.
+Five frontmatter fields are **mandatory** on every lesson-scope entry:
+
+| Field             | Purpose                                                                                              |
+| ----------------- | ----------------------------------------------------------------------------------------------------- |
+| `phase`           | The host-skill phase the lesson applies to.                                                            |
+| `trigger-context` | A concrete matching signal (file glob, task type, tech) — never a subjective condition.                |
+| `seen_count`      | Recurrence counter; starts at 1 on ADD, incremented by every UPDATE (the promotion-gate signal).      |
+| `status`          | `active` \| `promoted` \| `retired` \| `structural`.                                                  |
+| `expires`         | ISO 8601 expiry; default created + 90 days, refreshed on each re-sighting.                             |
+
+This schema is the contract shared with the host-skill loops — see
+[`autonomous-workflow/rules/self-improvement-loop.md`](../../../workflow/autonomous-workflow/rules/self-improvement-loop.md).
+A write to a lesson scope that omits any of the five fields is a defect; do not persist it.
+
+## Concurrent writers
+
+Shared lesson scopes can be written by parallel agents (for example fan-out executors that all inherit the lesson-write step), so writes must assume a concurrent writer exists.
+
+- **Entry files are safe.** ADD only creates new files (the filename-collision rule appends `-2`, `-3`, …), so concurrent entry writes cannot clobber each other.
+- **`INDEX.md` and `AUDIT.log` are read-modify-write hazards.** A writer MUST re-read `INDEX.md` immediately before writing, apply its change to that fresh copy, and re-check the file after the write; if the post-write content does not contain the change, re-read and re-apply. `AUDIT.log` is append-only — never rewrite it in place.
+- **Orchestrators serialize.** An orchestrator that fans out parallel workers must not let workers write lesson scopes directly: executors return lesson candidates, and the orchestrator writes serially. This pipeline expects exactly one writer per scope at a time.
 
 ## Edge cases
 
