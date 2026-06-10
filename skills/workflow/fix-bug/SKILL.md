@@ -503,7 +503,9 @@ Otherwise:
 
 The 92 % threshold is the substitute for aw-planner's `confidence(plan) ≥ 90 %` that the fast-lane
 bypasses. It is *stricter* on purpose: bypassing the planner means one fewer independent gate,
-and the higher bar on the gate we keep restores the three-gate invariant.
+and the higher bar on the gate we keep restores the three-gate invariant. For the full tier ↔ lane
+mapping and the shared-agents relationship with `autonomous-workflow`, see
+[`autonomous-workflow/CLAUDE.md` → Sibling skill: fix-bug](../autonomous-workflow/CLAUDE.md#sibling-skill-fix-bug).
 
 **On a stop (`< 92 %`, or below-70 % hand-back), and on any triage upgrade
 (`simple → complex`) or fast-lane → standard-lane CEGIS fallback**, write a

@@ -500,6 +500,57 @@ Design rules that keep this from rotting:
   set of phase rules — it follows Lite's phase behavior with planning and quality
   companions skipped. This keeps the phase rules from needing a third column.
 
+## Sibling skill: fix-bug
+
+`fix-bug` is `autonomous-workflow`'s bug-shaped sibling — shared agents, parallel
+tiers. It is **not** a fork —
+it reuses this skill's agents and conventions and only adds bug-specific intake,
+reproduction, and verification. Keep the two aligned where they share machinery;
+keep them divergent where the problem shape demands it.
+
+### What fix-bug reuses from here
+
+- **Agents** — `aw-planner`, `aw-executor`, and `aw-create-plan`. fix-bug's
+  standard lane is `aw-planner → aw-executor`; its fast lane is
+  `aw-create-plan → aw-executor` (planner skipped).
+- **Self-improvement loop** — `fix-bug-lessons` defers to this skill's
+  [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) as the
+  canonical schema + entrenchment guards, and divides labor: diagnostic-phase
+  lessons live in `fix-bug-lessons`; implementation-phase lessons are inherited
+  via `aw-executor`'s `aw-lessons`.
+- **`diagnose` contract** (`diagnostic-surface.md`), the `.agent/{branch}/`
+  artifact convention, and confidence-gated autonomous action.
+
+### Tier ↔ lane mapping
+
+The two skills tier the same way under different names. fix-bug has **no Micro**
+by design — every bug needs a reproduction and an independent verifier, so there
+is no "skip everything" tier.
+
+| `autonomous-workflow` tier | `fix-bug` lane              | Planner/executor split?         |
+| -------------------------- | --------------------------- | ------------------------------- |
+| Micro (1-file mechanical)  | — (no equivalent)           | —                               |
+| Lite (2–3 files, simple)   | fast lane (triage `simple`) | executor only (planner skipped) |
+| Full (4+ / complex)        | standard lane (triage `complex`) | planner → executor         |
+
+### The deliberate divergence: the verifier
+
+`aw` Lite/Micro run **single-pass in the dispatcher's own context** — the agent
+that writes the code also grades it. That is an acceptable risk for a small
+*feature* edit. fix-bug's fast lane refuses it: it skips the *planner* but still
+dispatches `aw-executor` and **always** runs `bug-fix-verifier` in fresh context,
+because "agents skew positive when grading their own work" and the bug-fix failure
+mode is shipping a regression while claiming to fix one. To compensate for the
+dropped `confidence(plan)` gate, fix-bug raises its analysis gate to **92 %**
+(vs this skill's 90 %) — owned and derived in [`../fix-bug/SKILL.md`](../fix-bug/SKILL.md)
+Phase 5.
+
+**Do not** collapse fix-bug's fast lane to `aw`-style single-pass: it would trade
+away the independent-verification invariant that distinguishes bug-fixing from
+feature work. And **do not** give fix-bug its own dispatcher agent — it is a
+single slash-command entry that branches internally; `aw` needed a dispatcher
+only to fix a routing-rule mismatch that `/fix-bug` does not have.
+
 ## Confidence-gated autonomous action — design intent
 
 The pattern v3.6 established remains: **autonomous actions that change code

@@ -60,7 +60,7 @@ Skills are grouped by directory category. Each row shows the invocation type:
 
 ### `workflow/` — end-to-end orchestrators
 
-Coordinate other skills to ship complete changes.
+Coordinate other skills to ship complete changes. `autonomous-workflow` (features) and `fix-bug` (bugs) are a family: both ship through the shared `aw-` agents and the same two-tier self-improvement loop, tiered the same way — `fix-bug` adds bug-specific intake, reproduction, and an independent verifier on every lane.
 
 | Skill | What it does | Type |
 |-------|--------------|------|
