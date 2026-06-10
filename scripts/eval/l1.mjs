@@ -42,6 +42,7 @@ const s = new Suite("L1 deterministic contract checks");
   const SIBLING_REPO = /git-worktree-workflows/;
   const files = [
     ...walk(join(REPO_ROOT, "skills")).filter((f) => !f.includes("/templates/") && !f.endsWith("/_template.md")),
+    ...walk(join(REPO_ROOT, "agents")).filter((f) => !f.includes("/templates/")),
     ...walk(join(REPO_ROOT, "memory")),
     join(REPO_ROOT, "CLAUDE.md"),
     join(REPO_ROOT, "README.md"),
@@ -165,13 +166,16 @@ function acceptanceCriteriaCount(plan) {
   const CORE = ["TL;DR", "Requirements", "Decisions", "Acceptance Criteria",
     "Implementation Order", "File Changes", "Verification", "Progress Log"];
   const fastLane = read("skills/workflow/fix-bug/rules/fast-lane-plan-contract.md");
-  const missingCore = CORE.filter((c) => !fastLane.includes(c));
-  s.check("G2 fast-lane plan contract ⊇ Core-8 sections", missingCore.length === 0, missingCore.join(", "));
+  // Match heading-shaped occurrences (`## <name>`), not prose mentions — the executor
+  // bail check and confidence rule #2 key on `^## ` headings, so the guard must too.
+  const missingCore = CORE.filter(
+    (c) => !new RegExp("^## " + c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$", "m").test(fastLane));
+  s.check("G2 fast-lane plan contract ⊇ Core-8 sections (as ## headings)", missingCore.length === 0, missingCore.join(", "));
 
   // G3: implement-suggestion's non-removable override keys on /critical's REAL output
   // buckets (Must-fix), never the phantom Critical/High/Major severity taxonomy.
   const isFiles = walk(join(REPO_ROOT, "skills/workflow/implement-suggestion"));
-  const phantomSeverity = isFiles.filter((f) => /Critical or (High|Major)/.test(readFileSync(f, "utf8"))).map(rel);
+  const phantomSeverity = isFiles.filter((f) => /Critical( or |\/)(High|Major)/.test(readFileSync(f, "utf8"))).map(rel);
   const usesMustFix = isFiles.some((f) => readFileSync(f, "utf8").includes("Must-fix"));
   s.check("G3 implement-suggestion keys on /critical's Must-fix bucket",
     phantomSeverity.length === 0 && usesMustFix, phantomSeverity.join(", ") || "Must-fix missing");

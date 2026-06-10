@@ -51,7 +51,7 @@ Any other outcome blocks Phase 6.
 - **Never re-add what was deleted.** Consult
   `.agent/docs/removed-rules.jsonl` before proposing any new rule.
 - **Hot path stays lean.** Root `CLAUDE.md` is capped at 200 lines.
-- **Always close the doc loop.** The skill runs in both Full and Lite Mode.
+- **Always close the doc loop.** The skill runs in Full and Lite Mode; Micro runs it only when docs drift.
 
 ## Procedure
 

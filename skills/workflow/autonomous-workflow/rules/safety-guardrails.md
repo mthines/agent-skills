@@ -38,7 +38,7 @@ clean recovery.
 | Phase | Gate / Checkpoint                                                                                  |
 | ----- | -------------------------------------------------------------------------------------------------- |
 | 0     | Tier selected (Micro / Lite / Full). User confirmed understanding.                                 |
-| 1     | Plan matches requirements. `Skill("confidence", "plan")` >= 90% (mandatory companion).             |
+| 1     | Plan matches requirements. `Skill("confidence", "plan")` >= 90% (mandatory companion, Full Mode only — Lite and Micro have no `plan.md`). |
 | 2     | Worktree created with `gw add` (or native `git worktree add` fallback). CWD is the worktree. Deps installed. `plan.md` written under `.agent/{branch}/` (Full Mode). |
 | 3     | Working in isolated worktree. Build/lint passes after each edit. `code-quality(code)` run at end.  |
 | 4     | All tests pass OR user-approved stop after stuck-loop escalation.                                  |

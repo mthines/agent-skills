@@ -24,7 +24,7 @@ afford to load three of them.
 
 ## Hard rules
 
-1. **One file, one path.** A lens lives at `skills/<name>/lens.md`,
+1. **One file, one path.** A lens lives at `skills/<category>/<name>/lens.md`,
    top-level, sibling to `SKILL.md`. No nested lenses. No `rules/lens.md`.
    The reviewer reads exactly this path and nothing else when applying the
    lens.
