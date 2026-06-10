@@ -73,8 +73,8 @@ review pass
   → rubric-composition.md (dedupe + cap)
   → finding-grounding.md   (claimed symbols exist?)
   → per-comment-confidence (Skill("confidence", "code") ≥ 80?)
-  → comment-shape.md       (≤ 240 chars, ≤ 2 sentences, no structure?)
   → conventional-comments.md (prefix prepend + decoration)
+  → comment-shape.md       (≤ 240 chars, ≤ 2 sentences, no structure?)
   → (PR Mode only) line-validity.md (hunk-bounds RIGHT-side check)
   → emit / post
 ```
