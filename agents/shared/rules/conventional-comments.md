@@ -34,20 +34,35 @@ Decorations are part of the Conventional Comments spec and help PR authors triag
 
 ## Examples
 
+Every code symbol in the prose is backticked. `suggestion:` and `issue:` comments with a concrete patch include a fenced fix block — see `comment-shape.md § Suggestion / issue → include a fix block`.
+
 ```
-praise: Nice — the discriminated union makes exhaustiveness checks free. **(non-blocking)**
+praise: Nice — the discriminated union on `Result<T>` makes exhaustiveness checks free. **(non-blocking)**
 ```
 
 ```
-issue: Empty catch swallows network vs. not-found errors — worth surfacing the failure. **(blocking)**
+issue: Empty `catch {}` swallows network vs. not-found errors — worth surfacing the failure. **(blocking)**
+
+```typescript
+try {
+  return await fetchUser(id);
+} catch (err) {
+  if (err instanceof NotFoundError) return null;
+  throw err;
+}
+```
 ```
 
 ```
-suggestion: Could use a `Map` here for clearer iteration semantics. **(non-blocking)**
+suggestion: A `Map<string, Value>` reads clearer than `Record<string, Value>` here and avoids prototype-key pitfalls. **(non-blocking)**
+
+```typescript
+const cache = new Map<string, Value>();
+```
 ```
 
 ```
-question: Is the empty catch intentional? Curious whether we want to surface the error. **(non-blocking)**
+question: Is the empty `catch {}` intentional? Curious whether we want to surface the error to the caller. **(non-blocking)**
 ```
 
 ## Mechanical check

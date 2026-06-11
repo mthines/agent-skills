@@ -22,18 +22,18 @@ The card is the **handoff format** between the review pipeline and the emit step
 ```
 
 **Comment:**
-<body — already conforms to comment-shape.md and starts with Conventional-Comments prefix>
+<body — already conforms to comment-shape.md and starts with Conventional-Comments prefix; every code symbol in prose is backticked>
 
 _Pseudo-code — verify before applying._
 
 ```<lang>
-<optional ≤ 6-line suggested replacement — only for suggestion / issue categories>
+<≤ 10-line suggested replacement — strongly preferred for suggestion / issue when a concrete patch exists>
 ```
 
 ---
 ```
 
-The trailing `---` separates cards. The trailing pseudo-code block is **optional** and only present when a concrete code suggestion clarifies the comment. Always include the italic disclaimer when a pseudo-code block is present.
+The trailing `---` separates cards. The pseudo-code block is **strongly preferred for `suggestion` and `issue` categories** when there is a concrete patch — that fenced block is the part the PR author actually copies. Omit it only when the fix is shorter to describe in prose, when there is no code change, or when the fix would exceed 10 lines (route long-form fixes to the terminal proposal). Always include the italic disclaimer when a pseudo-code block is present.
 
 ## Field definitions
 
@@ -54,17 +54,23 @@ The trailing `---` separates cards. The trailing pseudo-code block is **optional
 Both agents run this assertion immediately before emitting any card:
 
 ```python
+import re
+
+FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\n.*?\n```", re.DOTALL)
+
 def card_is_valid(card: dict) -> bool:
+    body = card["body"]
+    prose = FENCE_RE.sub("", body).strip()  # 240 cap applies to prose only
     return (
         card["file"] and card["line"] >= 1
         and card["category"] in {"praise", "nitpick", "suggestion", "issue", "question"}
         and 0 <= card["confidence"] <= 100
         and card["confidence"] >= 80
         and card["anchor"] and len(card["anchor"].splitlines()) <= 3
-        and card["body"].startswith((
+        and body.startswith((
             "praise:", "nitpick:", "suggestion:", "issue:", "question:"
         ))
-        and len(card["body"]) <= 240
+        and len(prose) <= 240
     )
 ```
 
@@ -83,7 +89,7 @@ const cache: Record<string, Value> = {};
 ```
 
 **Comment:**
-suggestion: Could use a `Map` here for clearer iteration semantics. **(non-blocking)**
+suggestion: A `Map<string, Value>` reads clearer than `Record<string, Value>` here and avoids prototype-key pitfalls. **(non-blocking)**
 
 _Pseudo-code — verify before applying._
 
@@ -94,7 +100,7 @@ const cache = new Map<string, Value>();
 ---
 ```
 
-### Example 2 — issue without snippet
+### Example 2 — issue with snippet
 
 ```
 #### 2. `src/bar.ts:15-18` — issue (90%)
@@ -107,15 +113,58 @@ try {
 ```
 
 **Comment:**
-issue: Empty catch swallows network vs. not-found errors — worth surfacing the failure. **(blocking)**
+issue: Empty `catch {}` swallows network vs. not-found errors — worth surfacing the failure to the caller. **(blocking)**
+
+_Pseudo-code — verify before applying._
+
+```typescript
+try {
+  return await fetchUser(id);
+} catch (err) {
+  if (err instanceof NotFoundError) return null;
+  throw err;
+}
+```
 
 ---
 ```
 
-### Example 3 — praise
+### Example 3 — issue with multi-line fix block
 
 ```
-#### 3. `src/baz.ts:7` — praise (85%)
+#### 3. `src/oauth-popup.ts:42` — issue (90%)
+
+**Code:**
+```typescript
+popupRef.current = window.open("/", "_blank", "popup=true,…");
+setIsConnecting(true);
+```
+
+**Comment:**
+issue: If the user closes the OAuth popup manually, `isConnecting` is never reset — the button stays disabled until reload. **(blocking)**
+
+_Pseudo-code — verify before applying._
+
+```typescript
+useEffect(() => {
+  if (!isConnecting) return;
+  const id = setInterval(() => {
+    if (popupRef.current?.closed) {
+      setIsConnecting(false);
+      clearInterval(id);
+    }
+  }, 500);
+  return () => clearInterval(id);
+}, [isConnecting]);
+```
+
+---
+```
+
+### Example 4 — praise (no fix block)
+
+```
+#### 4. `src/baz.ts:7` — praise (85%)
 
 **Code:**
 ```typescript
@@ -123,7 +172,7 @@ type Result<T> = { ok: true; value: T } | { ok: false; err: Error };
 ```
 
 **Comment:**
-praise: Nice — the discriminated union makes exhaustiveness checks free. **(non-blocking)**
+praise: Nice — the discriminated union on `Result<T>` makes exhaustiveness checks free. **(non-blocking)**
 
 ---
 ```
