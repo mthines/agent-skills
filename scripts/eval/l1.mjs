@@ -199,6 +199,14 @@ function acceptanceCriteriaCount(plan) {
     const hits = scan.filter((f) => re.test(readFileSync(f, "utf8"))).map(rel);
     s.check(`G5 no /${re.source}/ (${why})`, hits.length === 0, hits.slice(0, 3).join(", "));
   }
+
+  // G6: Phase 1 — Cross-rubric agreement rule is present and carries the promotion language.
+  // Locks the contract that ≥ 2 rubric overlap lowers the per-comment-confidence threshold.
+  const rcmd = read("agents/shared/rules/rubric-composition.md");
+  s.check("G6 rubric-composition has Cross-rubric agreement section",
+    rcmd.includes("Cross-rubric agreement"));
+  s.check("G6 rubric-composition 80 → 70 promotion language present",
+    rcmd.includes("80") && rcmd.includes("70") && /agreement.promoted/i.test(rcmd));
 }
 
 process.exit(s.report() ? 0 : 1);

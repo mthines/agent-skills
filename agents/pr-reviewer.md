@@ -158,8 +158,9 @@ After rubric findings are collected, the pipeline runs through these gates in st
 rubrics produce raw findings
   → 2.4 holistic-review.md         (Skill("holistic-analysis", "review") — default on)
   → 2.5 rubric-composition § Consolidation (dedupe + per-file cap 5 + total cap 20)
+  → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.6 finding-grounding.md       (every backticked symbol grep-resolves)
-  → 2.7 per-comment-confidence.md  (Skill("confidence", "code") ≥ 80)
+  → 2.7 per-comment-confidence.md  (Skill("confidence", "code") ≥ 80, or ≥ 70 for agreement-promoted)
   → 2.8 comment-shape.md           (≤ 240 chars, ≤ 2 sentences, no structure)
   → 2.9 conventional-comments.md   (prefix + decoration)
 ```
@@ -232,7 +233,7 @@ Output two views: a scannable summary table, then numbered detail cards using `a
 | 2  | src/bar.ts:15-18   | issue       | 90%  | `try { return await fetchUser…` |
 
 **Total: <N> comments** · <X> issue · <Y> suggestion · <Z> praise
-**Quality Gate**: produced <P>, dedupe drops <D>, grounding drops <G>, confidence drops <C>, shape drops <S>, final <F>
+**Quality Gate**: produced <P>, dedupe drops <D>, agreement-promoted <A>, grounding drops <G>, confidence drops <C>, shape drops <S>, final <F>
 
 ### Details
 

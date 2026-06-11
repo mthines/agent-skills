@@ -50,6 +50,14 @@ const SUITES = [
     inputKey: "input", inputLabel: "User message",
     choices: ["trigger", "skip"],
   },
+  {
+    name: "reviewer-agreement-bump",
+    golden: "golden/reviewer-agreement-bump.jsonl",
+    rubric: { file: "agents/shared/rules/rubric-composition.md", section: "## Cross-rubric agreement" },
+    instruction: "You apply the Cross-rubric agreement rule from the reviewer pipeline. Given a scenario describing dedupe pass results, classify whether the surviving finding would be marked agreement-promoted.",
+    inputKey: "input", inputLabel: "Scenario",
+    choices: ["promoted", "not-promoted"],
+  },
 ];
 
 const MODEL = process.env.EVAL_MODEL || "claude-sonnet-4-6";

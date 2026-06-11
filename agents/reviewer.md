@@ -157,8 +157,9 @@ Run the full shared pipeline. Each gate is hard; no retries; drop is final withi
 rubrics produce raw findings
   → 2.4 holistic-review.md         (Skill("holistic-analysis", "review") — default on)
   → 2.5 rubric-composition § Consolidation (dedupe + per-file cap 10)
+  → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.6 finding-grounding.md       (every backticked symbol grep-resolves)
-  → 2.7 per-comment-confidence.md  (Skill("confidence", "code") ≥ 80)
+  → 2.7 per-comment-confidence.md  (Skill("confidence", "code") ≥ 80, or ≥ 70 for agreement-promoted)
   → 2.8 comment-shape.md           (≤ 240 chars, ≤ 2 sentences, no structure)
   → 2.9 conventional-comments.md   (prefix + decoration)
 ```
@@ -223,6 +224,7 @@ Emit each finding as a card from `agents/templates/pr-comment-card.template.md`.
 ```
 Findings produced:        <N>
 Dedupe drops:             <D>
+Agreement-promoted:       <A>
 Grounding drops:          <G>
 Confidence drops:         <C>
 Shape drops:              <S>

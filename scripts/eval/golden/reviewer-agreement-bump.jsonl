@@ -1,0 +1,6 @@
+{"id":"two-rubrics-same-line-same-prefix","input":"Two rubrics (code-quality and ux) both flag auth.ts:42 with an `issue:` prefix — the dedupe pass retained one finding and appended `(also flagged by ux)`","expected":"promoted"}
+{"id":"single-rubric-only","input":"Only code-quality flags utils.ts:10 with a `suggestion:` prefix — no other rubric touched the same line","expected":"not-promoted"}
+{"id":"ux-and-critical-same-line","input":"Both ux and critical flag form.tsx:88 with an `issue:` prefix — dedupe kept the ux finding and appended `(also flagged by critical)`","expected":"promoted"}
+{"id":"adjacent-lines-not-same","input":"code-quality flags utils.ts:10 and ux flags utils.ts:12 — adjacent lines but not the same line (gap of 2), same prefix","expected":"not-promoted"}
+{"id":"same-line-different-prefix","input":"code-quality and ux both flag button.tsx:55, but with different prefixes: code-quality emits `issue:` and ux emits `suggestion:` — dedupe kept both because different prefix","expected":"not-promoted"}
+{"id":"three-rubrics-same-line","input":"Three rubrics — code-quality, ux, and critical — all independently flag api/handler.ts:100 with an `issue:` prefix — dedupe retained one finding with two `(also flagged by ...)` annotations","expected":"promoted"}

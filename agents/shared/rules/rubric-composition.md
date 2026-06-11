@@ -46,6 +46,27 @@ Walk findings in load order. For each new finding, if a prior finding has:
 
 Dedupe runs **before** the per-comment confidence check (`per-comment-confidence.md`) — no point scoring a duplicate.
 
+## Cross-rubric agreement
+
+After the dedupe pass, walk the surviving findings. For each finding that was
+retained (not dropped) in the dedupe pass with an `(also flagged by <rubric>)`
+annotation — meaning ≥ 2 rubrics independently fingerprinted the same
+`(file, line)` with the same Conventional-Comments prefix — mark the finding
+as **agreement-promoted**.
+
+Agreement-promoted findings use a lowered `per-comment-confidence` drop threshold
+of **70** (instead of the default **80 → 70**) when the finding reaches the
+per-comment-confidence gate. Single-rubric findings keep the 80 threshold.
+
+The count of agreement-promoted findings is tracked for the Quality Gate log as
+`agreement-promoted: <N>`. A run with `agreement-promoted: 0` is healthy — most
+PRs will not have multi-rubric overlap.
+
+**Threshold reference:**
+- Default (single-rubric): ≥ 80 (`per-comment-confidence.md` standard)
+- Agreement-promoted (multi-rubric): ≥ 70 (this section)
+- Tuning fallback: raise to 75 if noise emerges in practice
+
 ## Consolidation pass
 
 After dedupe, run one explicit consolidation step:
