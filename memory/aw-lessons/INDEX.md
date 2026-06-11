@@ -29,11 +29,15 @@
 
 ### Phase 4 — Testing
 
+- See Phase 7 entry below — the chained-rounds RAM lesson sits at end-of-run, since `aw`'s own verify is correct and the actionable owner is [`reviewer-lessons`](../reviewer-lessons/INDEX.md).
+
 ### Phase 5 — Documentation
 
 ### Phase 6 — PR Creation
 
 ### Phase 7 — CI Gate
+
+- [2026-06-11-no-chained-reviewer-after-autonomous-pr](entries/2026-06-11-no-chained-reviewer-after-autonomous-pr.md) — Closing nudge on heavy monorepos: warn the orchestrator not to chain `reviewer --fix` + `aw-executor` after the PR is open. Primary owner is [`reviewer-lessons`](../reviewer-lessons/INDEX.md).
 
 ## Promotion-eligible (seen_count ≥ 3 or `structural`)
 

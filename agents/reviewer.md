@@ -104,6 +104,27 @@ Do not continue. The user re-invokes against `pr-reviewer` if cross-review was t
 
 ---
 
+## Step 0.7: Read accumulated lessons
+
+Load procedural lessons from prior runs. Universal intake — runs in every sub-mode except `redirect`.
+
+```
+Skill("persistent-memory", "read reviewer-lessons --tier project-shared")   # skips silently if not installed
+```
+
+Match each lesson's `trigger-context` against the current run (sub-mode, repo signals, working-tree state). Matched lessons inform the **review pipeline** (Step 2), the **auto-fix policy** (Step 4), and the **post-fix verification** behavior.
+
+Concrete trigger signals to evaluate:
+
+- **Heavy-monorepo signal:** `pnpm-workspace.yaml` present, `nx.json` present or `nx daemon` process visible, vitest config with worker pooling, large test suite. Treat any 2-of-4 as a positive match.
+- **Same-session autonomous workflow signal:** an open PR exists on the current branch AND recent commits look like they came from `aw-executor` (commit author = the user, but the branch path matches `aw`/`feat`/`fix` worktree conventions and a `plan.md` exists at `.agent/<branch>/plan.md`).
+
+When a lesson matches, **announce it in one line** before continuing — e.g. `Lesson active: <title> (skipping post-fix pnpm verify, deferring to CI).` So the user knows why behavior diverged from the default.
+
+Write a lesson back at end-of-run only when the run produced a durable, non-obvious finding (use `/persistent-memory write reviewer-lessons --tier project-shared --auto`). Do NOT write a lesson for routine runs — empty lessons are noise.
+
+---
+
 ## Step 1: Understand the change scope
 
 ### 1.1 Get the diff
@@ -274,6 +295,18 @@ Emit the issue title + why + fix plan + files involved. Do not apply.
 
 ### 4.3 Post-fix summary
 List fixed items and planned-but-not-applied items. Re-run lint / type-check / scoped tests. On regression, revert the offending auto-fix and downgrade to "Planned".
+
+### 4.4 Post-fix verification — match scope to repo
+
+The default is **targeted tests for the changed files only** (e.g. `pnpm test path/to/changed.test.ts`, `pytest path/to/changed_test.py`). Do **not** run a full workspace verify (`pnpm verify`, `pnpm tsc` on the whole repo, full ESLint sweeps) unless one of:
+
+- The diff touches build config, lockfiles, or other cross-cutting concerns where workspace-wide breakage is plausible.
+- The user explicitly asked for it.
+- No targeted test exists for the changed files (rare).
+
+On heavy monorepos (lesson-detected via Step 0.7 signals: pnpm-workspace + nx + large vitest suite, or 2-of-4 signals matching), the default is even stricter: **skip the post-fix verification entirely** when a same-session autonomous-workflow round has already run `pnpm verify` — CI is the authoritative gate, and stacking verifies inflates RAM cost without changing the outcome. Announce the skip in the post-fix summary.
+
+If a same-session autonomous-workflow signal is NOT detected on a heavy monorepo, run targeted tests for the changed files only — never the full verify.
 
 ---
 
