@@ -38,6 +38,10 @@
 #                  to the cloned skill files are picked up live by every
 #                  Agent Skills-compatible tool, no reinstall needed.
 #
+# Flags:
+#   -q, --quiet    Suppress success output (errors still print to stderr).
+#                  Used when invoked from a parent installer.
+#
 # Usage:
 #   bash install.sh                 # per-project install (current directory)
 #   bash install.sh --global        # personal install (all projects)
@@ -47,6 +51,7 @@
 set -euo pipefail
 
 MODE="project"
+QUIET=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -62,6 +67,10 @@ while [[ $# -gt 0 ]]; do
       MODE="development"
       shift
       ;;
+    -q|--quiet)
+      QUIET=1
+      shift
+      ;;
     -h|--help)
       sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# *//;s/^#//'
       exit 0
@@ -73,6 +82,8 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+vlog() { (( QUIET )) || echo "$@"; }
 
 case "$MODE" in
   global)
@@ -161,7 +172,7 @@ if [[ "$MODE" == "development" ]]; then
   fi
 
   ln -sfn "$SKILL_DIR" "$DISCOVERY_DIR"
-  echo "✓ Discovery: $DISCOVERY_DIR → $SKILL_DIR"
+  vlog "✓ Discovery: $DISCOVERY_DIR → $SKILL_DIR"
 
   if [[ -e "$CLAUDE_DIR/skills/autonomous-workflow" && ! -L "$CLAUDE_DIR/skills/autonomous-workflow" ]]; then
     echo "error: $CLAUDE_DIR/skills/autonomous-workflow already exists and is not a symlink" >&2
@@ -169,7 +180,7 @@ if [[ "$MODE" == "development" ]]; then
   fi
   mkdir -p "$CLAUDE_DIR/skills"
   ln -sfn "$DISCOVERY_DIR" "$CLAUDE_DIR/skills/autonomous-workflow"
-  echo "✓ Claude skill: $CLAUDE_DIR/skills/autonomous-workflow → $DISCOVERY_DIR"
+  vlog "✓ Claude skill: $CLAUDE_DIR/skills/autonomous-workflow → $DISCOVERY_DIR"
 fi
 
 # Clean up legacy unprefixed names from older installs (pre-aw- namespace).
@@ -182,44 +193,44 @@ for legacy in "autonomous-planner.md:planner.template.md" \
   legacy_path="$CLAUDE_DIR/agents/$legacy_name"
   if [[ -L "$legacy_path" ]] && [[ "$(readlink "$legacy_path")" == *"/templates/$legacy_target" ]]; then
     rm "$legacy_path"
-    echo "✓ Removed legacy:  $legacy_path (renamed to aw- prefix)"
+    vlog "✓ Removed legacy:  $legacy_path (renamed to aw- prefix)"
   fi
 done
 
 # Link the agent definitions under the `aw-` namespace
 # (short for "autonomous-workflow").
 ln -sf "$SKILL_DIR/templates/dispatcher.template.md" "$CLAUDE_DIR/agents/aw.md"
-echo "✓ Dispatcher:     $CLAUDE_DIR/agents/aw.md (opt-in entry point; tier routing + self-improvement loop)"
+vlog "✓ Dispatcher:     $CLAUDE_DIR/agents/aw.md (opt-in entry point; tier routing + self-improvement loop)"
 
 ln -sf "$SKILL_DIR/templates/planner.template.md" "$CLAUDE_DIR/agents/aw-planner.md"
-echo "✓ Planner agent:  $CLAUDE_DIR/agents/aw-planner.md"
+vlog "✓ Planner agent:  $CLAUDE_DIR/agents/aw-planner.md"
 
 ln -sf "$SKILL_DIR/templates/executor.template.md" "$CLAUDE_DIR/agents/aw-executor.md"
-echo "✓ Executor agent: $CLAUDE_DIR/agents/aw-executor.md"
+vlog "✓ Executor agent: $CLAUDE_DIR/agents/aw-executor.md"
 
 # Link the routing rule. Project + development modes get auto-routing;
 # global mode skips it (most users don't want auto-trigger on every project).
 if [[ "$MODE" == "project" || "$MODE" == "development" ]]; then
   ln -sf "$SKILL_DIR/templates/routing-rule.template.md" "$CLAUDE_DIR/rules/autonomous-workflow-routing.md"
-  echo "✓ Routing:        $CLAUDE_DIR/rules/autonomous-workflow-routing.md"
+  vlog "✓ Routing:        $CLAUDE_DIR/rules/autonomous-workflow-routing.md"
 else
-  echo "  (skipping routing rule — global mode; add manually per-project if desired)"
+  vlog "  (skipping routing rule — global mode; add manually per-project if desired)"
 fi
 
-echo ""
-echo "done. autonomous-workflow is ready ($MODE mode)."
-echo ""
-echo "three agents installed (aw- = autonomous-workflow namespace):"
-echo "  • aw           — opt-in dispatcher; detects tier (Micro/Lite/Full) + owns the lessons loop"
-echo "  • aw-planner   — phases 0-2, produces .agent/{branch}/plan.md (Full tier)"
-echo "  • aw-executor  — phases 3-7, produces walkthrough.md + draft PR (Full tier)"
-echo "  Micro/Lite run single-pass via aw; Full hands off planner → executor (gated on confidence(plan) ≥ 90%)."
-echo "  See: skills/workflow/autonomous-workflow/rules/planner-executor-handoff.md"
+vlog ""
+vlog "done. autonomous-workflow is ready ($MODE mode)."
+vlog ""
+vlog "three agents installed (aw- = autonomous-workflow namespace):"
+vlog "  • aw           — opt-in dispatcher; detects tier (Micro/Lite/Full) + owns the lessons loop"
+vlog "  • aw-planner   — phases 0-2, produces .agent/{branch}/plan.md (Full tier)"
+vlog "  • aw-executor  — phases 3-7, produces walkthrough.md + draft PR (Full tier)"
+vlog "  Micro/Lite run single-pass via aw; Full hands off planner → executor (gated on confidence(plan) ≥ 90%)."
+vlog "  See: skills/workflow/autonomous-workflow/rules/planner-executor-handoff.md"
 
 if [[ "$MODE" == "development" ]]; then
-  echo ""
-  echo "edits to $SKILL_DIR are now live on the next agent turn."
-  echo "to verify the chain:"
-  echo "  readlink ~/.claude/skills/autonomous-workflow"
-  echo "  readlink ~/.agents/skills/autonomous-workflow"
+  vlog ""
+  vlog "edits to $SKILL_DIR are now live on the next agent turn."
+  vlog "to verify the chain:"
+  vlog "  readlink ~/.claude/skills/autonomous-workflow"
+  vlog "  readlink ~/.agents/skills/autonomous-workflow"
 fi

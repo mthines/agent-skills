@@ -217,6 +217,8 @@ The middle layer (`~/.agents/skills/`) is the cross-tool discovery directory use
 
 For agents, write `agents/<name>.md` in this repo and rerun `bash scripts/sync-symlinks.sh`.
 
+Skill-local installers: if a skill ships `skills/<category>/<name>/install.sh`, `sync-symlinks.sh` discovers it and runs `bash <path> --development --quiet` after the main symlink pass. The installer must accept both flags, be idempotent, and write errors to stderr. See `skills/workflow/autonomous-workflow/install.sh` for the reference implementation.
+
 Invoke the script with `bash` (or `./scripts/sync-symlinks.sh`), **not** `sh` — the script uses bash arrays and process substitution, which POSIX sh doesn't support.
 
 The script is idempotent: it skips entries that are already linked correctly, repairs broken or wrong-target symlinks, and refuses to overwrite real files or directories. Pass `--dry-run` (or `-n`) to preview without applying.

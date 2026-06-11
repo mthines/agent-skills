@@ -204,3 +204,20 @@ else
   log ""
   log "summary: $created created, $repaired repaired, $skipped_ok already ok, $skipped_unsafe skipped (unsafe)"
 fi
+
+# Per-skill install scripts: some skills need extra wiring beyond the
+# basic skill/agent symlink (e.g. autonomous-workflow installs three
+# agent-template links and a routing rule). Convention: a skill that
+# ships an install.sh must accept --development for local-clone wiring,
+# must accept --quiet to suppress success output, and must be idempotent.
+# Errors still print to stderr; set -e aborts this script on installer
+# failure so the user sees the installer's error directly.
+queued=()
+while IFS= read -r -d '' install_script; do
+  queued+=("$(basename "$(dirname "$install_script")")")
+  (( DRY_RUN )) || bash "$install_script" --development --quiet
+done < <(find "$REPO_ROOT/skills" -mindepth 1 -maxdepth 5 -type f -name install.sh -print0 2>/dev/null)
+
+if (( DRY_RUN )) && (( ${#queued[@]} > 0 )); then
+  log "would run skill installers: ${queued[*]}"
+fi

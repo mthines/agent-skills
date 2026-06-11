@@ -185,7 +185,7 @@ The mode-aware stuck-loop cap at Phase 4 (3 Lite / 5 Full) is the biggest cost-s
 
 ### Setup
 
-After the [clone + symlink](#recommended-clone--symlink) install, run the dispatcher installer once to link the three `aw-` agents and the routing rule:
+The [clone + symlink](#recommended-clone--symlink) install already links the three `aw-` agents and the routing rule — `sync-symlinks.sh` runs the dispatcher installer for you. If you used `npx skills add` instead, run the dispatcher installer manually:
 
 ```bash
 bash ~/.claude/skills/autonomous-workflow/install.sh --global
@@ -257,7 +257,7 @@ The script builds a two-tier symlink chain, so a single clone serves every Agent
 
 Because skills are symlinked, your edits and every `git pull` land on the **next agent turn** — no reinstall. The middle layer (`~/.agents/skills/`) is the cross-tool discovery directory other tools read. Run it with `bash`, not `sh`; pass `--dry-run` to preview.
 
-> Using `autonomous-workflow`? One extra step links its agents — see [Setup](#setup).
+Any skill that ships its own `install.sh` (currently only [`autonomous-workflow`](./skills/workflow/autonomous-workflow/), which links three `aw-` agents and a routing rule) auto-runs at the end of the sync — no separate step.
 
 ### Upgrading
 
@@ -421,6 +421,8 @@ If you installed via [clone + symlink](#recommended-clone--symlink), you're alre
 3. Add an entry to the inventory in [`CLAUDE.md`](./CLAUDE.md) and this README.
 
 For agents, write `agents/<name>.md` and rerun the sync script.
+
+If your skill needs extra wiring beyond the standard symlink chain (e.g. linking template files as agents, like `autonomous-workflow`), ship a `skills/<category>/<name>/install.sh`. The sync script discovers it automatically and invokes it with `--development --quiet` after the main pass. Contract: accept both flags, be idempotent, write errors to stderr.
 
 ### Edit an existing skill
 
