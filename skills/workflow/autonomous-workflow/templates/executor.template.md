@@ -106,12 +106,12 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 4     | `holistic-analysis`    | Auto-replan only — `confidence(analysis) < 90%` (one-shot)       | —                |
 | 4     | `persistent-memory`    | At stuck-loop escalation — record failing area + resolution          | `write aw-lessons --tier project-shared --auto` |
 | 5     | `docs`                 | Always (with skip conditions per phase-5 rule)                       | `update --auto`  |
-| 6     | `review-changes`       | Always before push                                                   | —                |
-| 6     | `aw-review-quality-gate` | After `review-changes` returns findings (false-positive filter; advisory) | —          |
+| 6     | `reviewer` *(agent)*   | Always before push — dispatched directly via the Agent tool (Fix Mode on own branch; auto-fix every Simple finding across all severities) | `--critical` + auto-fix-all prompt |
+| 6     | `aw-review-quality-gate` | After the `reviewer` agent returns findings (false-positive filter; advisory) | —          |
 | 6     | `aw-create-walkthrough` | Full Mode only                                                      | —                |
 | 6     | `create-pr`            | Always                                                               | —                |
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                               | `<run-id\|pr-url>` |
-| 7     | `reviewer` *(agent)*   | After CI green — dispatched as `subagent_type: reviewer` in PR Mode (self-review sub-mode for self-authored PRs: inline report + autofix; on a cross-author PR the reviewer never writes to GitHub — it redirects to `pr-reviewer`) | `<pr-url> --pr`    |
+| 7     | `reviewer` *(agent)*   | After CI green — dispatched as `subagent_type: reviewer` (PR self-review sub-mode for self-authored PRs: `--critical` + auto-fix every Simple finding regardless of severity, inline report; cross-author PRs redirect to `pr-reviewer`) | `<pr-url> --critical` + auto-fix-all prompt |
 | 7     | `persistent-memory`    | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `write aw-lessons --tier project-shared --auto` |
 
 ## Stuck-Loop Reminder

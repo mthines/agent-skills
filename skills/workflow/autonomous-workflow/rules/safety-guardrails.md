@@ -43,7 +43,7 @@ clean recovery.
 | 3     | Working in isolated worktree. Build/lint passes after each edit. `code-quality(code)` run at end.  |
 | 4     | All tests pass OR user-approved stop after stuck-loop escalation.                                  |
 | 5     | Docs reflect changes. `Skill("docs", "update --auto")` run.                               |
-| 6     | `Skill("review-changes")` clean. Walkthrough shown. Draft PR opened via `Skill("create-pr")`.      |
+| 6     | `reviewer` agent dispatched (`--critical` + auto-fix-all-Simple-severities); blocking findings resolved. Walkthrough shown. Draft PR opened via `Skill("create-pr")`. |
 | 7     | CI green OR user-approved stop. Optional `gw remove` (or `git worktree remove` + `git branch -d`) after merge. |
 
 See each `phase-N-*.md` rule for full gate details.

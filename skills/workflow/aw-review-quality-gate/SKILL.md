@@ -7,7 +7,7 @@ description: >
   Use after generating findings but before delivering them.
   Triggers on: "quality gate findings", "validate findings", "gate my review",
   "/aw-review-quality-gate".
-disable-model-invocation: true
+disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines

@@ -12,7 +12,7 @@ disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines
-  version: '3.12.0'
+  version: '3.13.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -173,13 +173,13 @@ for the full registry, trigger conditions, and **how to disable any companion**.
 | 4     | `holistic-analysis`    | After confidence at Phase 4 if user asks for retry     | —                |
 | 4     | `persistent-memory`    | At stuck-loop escalation — record failing area + resolution as a lesson | `write aw-lessons --tier project-shared --auto` |
 | 5     | `docs`                 | Always (self-improving doc loop — updates `CLAUDE.md`, `README.md`, `docs/`) | `update --auto`  |
-| 6     | `review-changes`       | Always before push                                     | —                |
-| 6     | `aw-review-quality-gate` | After `review-changes` returns findings — false-positive filter (advisory) | —                |
+| 6     | `reviewer` *(agent)*   | Always before push — dispatched directly via the Agent tool (Fix Mode on own branch; auto-fix all Simple findings across every severity) | `--critical` + auto-fix-all prompt |
+| 6     | `aw-review-quality-gate` | After the `reviewer` agent returns findings — false-positive filter (advisory) | —                |
 | 6     | `aw-create-walkthrough` | Full Mode only                                        | —                |
 | 6     | `create-pr`            | Always                                                 | —                |
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                 | `<run-id\|pr-url>` |
 | 7     | `persistent-memory`    | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `write aw-lessons --tier project-shared --auto` |
-| 7     | `reviewer` *(agent)*   | After CI green — auto-dispatch in PR Mode (self-review sub-mode for self-authored PRs: inline report + autofix; on a cross-author PR the reviewer never writes to GitHub — it redirects to `pr-reviewer`) | `<pr-url> --pr`    |
+| 7     | `reviewer` *(agent)*   | After CI green — auto-dispatch in PR Mode (self-review sub-mode for self-authored PRs: inline report + auto-fix every Simple finding regardless of severity, incl. Nitpick / Nice-to-have; cross-author PR redirects to `pr-reviewer`) | `<pr-url> --critical` + auto-fix-all prompt |
 
 ---
 
@@ -242,8 +242,8 @@ Three phases benefit from sub-agent fan-out:
 | 3     | Code per `plan.md` → companions per task type (`tdd`, `ux`) → fast-check after each edit; `code-quality(code)` once at end |
 | 4     | Run tests → iterate (cap: 5 same area in Full Mode) → `confidence(analysis)` → one-shot auto-replan or escalate to user |
 | 5     | `Skill("docs", "update --auto")` always — refreshes `CLAUDE.md`, `.claude/rules/`, `README.md`, `docs/`, `CHANGELOG.md` |
-| 6     | `Skill("review-changes")` → `Skill("aw-create-walkthrough")` → `Skill("create-pr")`             |
-| 7     | Watch CI → `Skill("ci-auto-fix")` per failure (parallel) → after CI green dispatch `reviewer` agent (PR Mode: self-review sub-mode for self-authored PRs emits inline report; optional, skips if not installed) → `gw remove` after merge (optional) |
+| 6     | Dispatch `reviewer` agent (`--critical`, auto-fix every Simple finding across all severities) → `Skill("aw-create-walkthrough")` → `Skill("create-pr")` |
+| 7     | Watch CI → `Skill("ci-auto-fix")` per failure (parallel) → after CI green dispatch `reviewer` agent (`<pr-url> --critical`, PR Mode self-review sub-mode: auto-fix every Simple finding incl. Nitpick / Nice-to-have, emit inline report; optional, skips if not installed) → `gw remove` after merge (optional) |
 
 ### Lite Mode
 
@@ -259,7 +259,7 @@ Skip artifacts and most companions. Phase 0, Phase 2, Phase 5 (`docs update`), a
 | 4     | Test, fix failures (3-iteration limit applies)  |
 | 5     | `Skill("docs", "update --auto")`       |
 | 6     | `Skill("create-pr")`                            |
-| 7     | Watch CI, `ci-auto-fix` if needed, then auto-dispatch `reviewer` agent (skips if not installed) |
+| 7     | Watch CI, `ci-auto-fix` if needed, then auto-dispatch `reviewer` agent with `--critical` + auto-fix-all-Simple-severities prompt (skips if not installed) |
 
 ---
 
@@ -378,7 +378,7 @@ and how to disable. Run `bash install.sh --help` for script options.
 
 ### Related Agents
 
-- [`reviewer`](../../../agents/reviewer.md) — optional Phase 7 auto-review. PR (self-review) sub-mode (self-authored PRs): auto-fix + inline terminal report. On someone else's PR the reviewer never writes to GitHub — it refuses and redirects to the `pr-reviewer` agent. Install the agent alongside the skill and the workflow will dispatch it automatically when CI turns green.
+- [`reviewer`](../../../agents/reviewer.md) — optional Phase 6 pre-push review AND Phase 7 post-CI auto-review. Both passes are dispatched with `--critical` (forces the adversarial pre-mortem via `Skill("critical", "code")`) and an auto-fix-everything prompt — every Simple finding is applied to the working tree regardless of severity (Critical / High / Medium / Low / Nitpick / Nice-to-have), per `agents/reviewer/rules/auto-fix-policy.md`. Phase 6 lands in Fix Mode (own branch); Phase 7 lands in PR (self-review) sub-mode (self-authored PR — inline terminal report, no GitHub posts). On someone else's PR the reviewer redirects to the `pr-reviewer` agent. Install the agent alongside the skill and the workflow will dispatch it automatically.
 
 ---
 

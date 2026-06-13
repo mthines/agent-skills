@@ -7,7 +7,7 @@ description: >
   the draft PR.
   Triggers on create walkthrough, generate walkthrough, write walkthrough artifact.
 license: MIT
-disable-model-invocation: true
+disable-model-invocation: false
 metadata:
   author: mthines
   version: '1.0.0'

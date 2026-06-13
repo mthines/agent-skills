@@ -11,7 +11,7 @@ description: >
   Triggers on create plan, generate plan, write plan artifact, regenerate plan,
   iterate on plan.
 license: MIT
-disable-model-invocation: true
+disable-model-invocation: false
 metadata:
   author: mthines
   version: '2.0.0'

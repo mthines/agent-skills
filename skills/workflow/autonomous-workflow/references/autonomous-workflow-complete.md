@@ -870,7 +870,7 @@ $ pnpm lint
 ### Review Changes (Self-Review)
 
 ```
-Skill("review-changes")
+Agent(subagent_type: "reviewer", prompt: "Pre-push self-review --critical, auto-fix all Simple findings across every severity bucket")
 → Analyzed 8 commits across 5 new files / 3 modified files
 → Coverage: 100% on new code, no regressions in existing tests
 → Consistency: matches shadcn/ui patterns and existing context layout

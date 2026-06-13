@@ -256,7 +256,7 @@ Never auto-undraft. The verifier is advisory; the human is the gatekeeper.
 
 ## Auto Review
 
-After CI is green, automatically dispatch the `reviewer` agent in **PR Mode**. Because Phase 7 PRs are always self-authored (aw-executor opens them), the reviewer enters **PR (self-review)** sub-mode: auto-fix runs and findings are emitted as an inline terminal report (Step 5.8). No pending GitHub comments are posted. **`reviewer` is an optional agent companion**, not a skill — invocation and graceful-skip semantics differ slightly from `Skill()`-based companions.
+After CI is green, automatically dispatch the `reviewer` agent in **PR Mode** with `--critical` and the auto-fix-everything-Simple prompt. Because Phase 7 PRs are always self-authored (aw-executor opens them), the reviewer enters **PR (self-review)** sub-mode: auto-fix runs across every severity bucket (Critical / High / Medium / Low / Nitpick / Nice-to-have), and findings are emitted as an inline terminal report (Step 5.8). No pending GitHub comments are posted. **`reviewer` is an optional agent companion**, not a skill — invocation and graceful-skip semantics differ slightly from `Skill()`-based companions.
 
 | Property                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
@@ -264,7 +264,10 @@ After CI is green, automatically dispatch the `reviewer` agent in **PR Mode**. B
 | Runs in Lite Mode         | Yes                                                                    |
 | Skips silently if missing | Yes — log one line and continue to cleanup step                        |
 | Posts comments live?      | No — self-review sub-mode: reviewer auto-fixes and emits inline terminal report (Step 5.8) |
+| Args                      | `<pr-url> --critical` plus the auto-fix-everything-Simple instruction in the prompt body |
 | Disable                   | Remove this section; CI green becomes the terminal gate                |
+
+**Why `--critical` here as well as in Phase 6?** Phase 6 reviews the working tree on the own branch (Fix Mode); Phase 7 reviews the merged-state of the open PR (Self-Review sub-mode). Each pass sees a different surface — Phase 6 catches issues before push, Phase 7 catches anything that emerged from CI's perspective or that the user added between Phase 6 and PR open. Both passes run the adversarial pre-mortem.
 
 ### Step 1: Detect the `reviewer` agent
 
@@ -291,19 +294,32 @@ Then proceed to [Optional Post-Merge Cleanup](#optional-post-merge-cleanup).
 
 ### Step 2: Dispatch the `reviewer` sub-agent
 
-Spawn one sub-agent with `subagent_type: reviewer` and pass the PR URL. The reviewer will detect self-authorship via Rule 0 and enter PR (self-review) sub-mode automatically: auto-fix actionable findings, then emit findings as an inline terminal report (Step 5.8).
+Spawn one sub-agent with `subagent_type: reviewer` and pass the PR URL plus `--critical`. The reviewer will detect self-authorship via Rule 0 and enter PR (self-review) sub-mode automatically: auto-fix actionable findings across every severity bucket, then emit findings as an inline terminal report (Step 5.8).
 
 ```
-description: Auto-review PR after CI green
+description: Auto-review PR after CI green (critical, autofix all)
 subagent_type: reviewer
 prompt: |
-  <pr-url> --pr
+  <pr-url> --critical
 
   Phase 7 of the autonomous-workflow has just turned CI green on a self-authored
   PR. Run a full PR review. The reviewer will detect self-authorship via Rule 0
-  (gh api user vs pr author) and enter PR (self-review) sub-mode automatically:
-  auto-fix actionable findings, then emit findings as an inline terminal report
-  (Step 5.8) — do not post pending GitHub comments.
+  (gh api user vs pr author) and enter PR (self-review) sub-mode automatically.
+
+  Auto-fix scope — apply auto-fix for ALL severities (Critical / High / Medium /
+  Low / Nitpick / Nice-to-have) where the auto-fix policy classifies the finding
+  as Simple (typos, unused imports, lint/format errors, dead code, comment trims
+  under R35, whitespace, obvious type annotations). Do not skip Nitpick /
+  Nice-to-have findings — the auto-fix policy's Simple-vs-Complex split is the
+  safety floor, not the severity bucket. Complex findings (signature changes,
+  public renames, >10-line edits, generated/migration/lock files) stay
+  propose-only per `agents/reviewer/rules/auto-fix-policy.md`.
+
+  --critical forces the adversarial pre-mortem via `Skill("critical", "code")`
+  even on a low-stakes diff; surface its findings inline.
+
+  Emit the inline terminal report (Step 5.8) — do not post pending GitHub
+  comments.
 ```
 
 Do **not** wrap the sub-agent call in a retry loop — `reviewer` owns its own validation.
@@ -440,7 +456,7 @@ Disable by removing this invocation (see
 - [ ] Judgment failures escalated to user with full report
 - [ ] CI is green OR user has approved stopping
 - [ ] (Optional, Full Mode) `feature-pr-verifier` agent dispatched after CI green; verdict surfaced or skip logged
-- [ ] (Optional) `reviewer` agent dispatched after CI green; inline report surfaced or skip logged
+- [ ] (Optional) `reviewer` agent dispatched after CI green with `--critical` + auto-fix-all-Simple-severities; inline report surfaced or skip logged
 - [ ] (Optional) PR merged → worktree removed with user confirmation
 - [ ] `persistent-memory(write aw-lessons)` invoked at end-of-run; promotion suggested if `seen_count >= 3` (anchor: `lessons-write`)
 - [ ] Final status reported to user
