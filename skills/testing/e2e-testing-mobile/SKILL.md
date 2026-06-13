@@ -12,7 +12,7 @@ description: >
   "e2e for react native", "test the native app", "/e2e-testing-mobile".
   Defer to [`e2e-testing`](../e2e-testing/SKILL.md) for web flows and
   the WebView portion of hybrid apps.
-disable-model-invocation: true
+disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines

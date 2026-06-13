@@ -161,13 +161,13 @@ trigger registry is in
 | 4     | `confidence`           | Optional  | `analysis` at iteration cap (3 Lite / 5 Full) |
 | 4     | `holistic-analysis`    | Optional  | Step-back analysis after stuck-loop confidence |
 | 5     | `docs update`          | Optional  | Self-improving doc loop (keeps `CLAUDE.md`, `README.md`, and `docs/` in sync) |
-| 6     | `review-changes`       | Optional  | Pre-PR diff review                            |
+| 6     | `reviewer` *(agent)*   | Optional  | Pre-PR diff review — dispatched directly via the Agent tool with `--critical` + auto-fix-all-severities prompt (Fix Mode on own branch) |
 | 6     | `aw-create-walkthrough` | Optional  | Writes `.agent/{branch}/walkthrough.md`      |
 | 6     | `create-pr`            | Optional  | Narrative PR description + push + watch       |
 | 4     | `persistent-memory`    | Optional  | Writes a lesson at stuck-loop escalation (`write aw-lessons`) |
 | 7     | `ci-auto-fix`          | Optional  | Diagnose + fix failed CI checks               |
 | 7     | `persistent-memory`    | Optional  | End-of-run: writes durable run lessons; suggests promotion when `seen_count >= 3` |
-| 7     | `reviewer` *(agent)*   | Optional  | After CI green: dispatches as PR Mode sub-agent — self-review sub-mode auto-fixes + emits an inline terminal report (cross-author PRs are redirected to `pr-reviewer`; the reviewer never writes to GitHub) |
+| 7     | `reviewer` *(agent)*   | Optional  | After CI green: dispatches as PR Mode sub-agent with `--critical` + auto-fix-all-severities prompt — self-review sub-mode auto-fixes every Simple finding (incl. Nitpick / Nice-to-have) + emits an inline terminal report (cross-author PRs are redirected to `pr-reviewer`; the reviewer never writes to GitHub) |
 
 **`confidence` at Phase 1 is the only non-removable companion.** Without it,
 the plan gate is gone and the workflow loses its primary safety mechanism.

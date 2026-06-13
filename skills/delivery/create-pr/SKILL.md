@@ -16,7 +16,7 @@ description: >
   judgment-required failures via /confidence rather than guessing. Invoke with
   /create-pr, /create-pr --split, /create-pr --review, or pass --no-quality to
   skip the pre-push quality pass.
-disable-model-invocation: true
+disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines

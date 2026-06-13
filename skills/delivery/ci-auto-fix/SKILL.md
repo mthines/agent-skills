@@ -5,7 +5,7 @@ description: >
   until CI passes. Provider-agnostic in scope (currently implements the GitHub
   Actions path via `gh`). Refuses to disable, skip, or weaken checks. Invoke
   with /ci-auto-fix <run-id|pr-url>.
-disable-model-invocation: true
+disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines

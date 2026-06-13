@@ -23,7 +23,7 @@ When writing or editing content, follow these principles:
 Skills live in `skills/<category>/<name>/SKILL.md` across 7 categories.
 Agents live in `agents/` since they need their own model and tool configuration.
 
-Type markers: `auto` = model-invokable via `Skill()`; `/` = slash command only; `Skill()` = called by other skills, no model invocation.
+Type markers (by primary entry point — all three are technically model-invocable via the `Skill()` tool when `disable-model-invocation: false`): `auto` = description aggressively auto-triggers on natural language; `/` = primary entry is the slash command, description does not auto-trigger; `Skill()` = primary entry is being called by another skill / workflow.
 
 ### `workflow/` — end-to-end orchestrators
 
@@ -73,7 +73,7 @@ Type markers: `auto` = model-invokable via `Skill()`; `/` = slash command only; 
 - `playwright-trace-analyzer` (`/`) — analyze `trace.zip`; names the race behind a flake; confidence-gated
 - `profile-optimizer` (`/`) — React DevTools / Chrome Performance trace analysis; ranked optimisation plan
 - `rum-tracking` (`auto`) — product analytics and RUM event tracking; what to capture, what's PII, OTel semantic conventions
-- `screen-recorder` (`/`) — record short cropped UI videos via Playwright + ffmpeg
+- `screen-recorder` (`Skill()`) — record short cropped UI videos via Playwright + ffmpeg; called by `animations`, `ux`, `storybook`, and the `pr-reviewer` agent on motion-heavy diffs
 - `video-analyser` (`auto`) — analyze screen recordings for bugs; optional OCR + Whisper transcription
 
 ### `authoring/` — skills about Claude Code itself

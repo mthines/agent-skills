@@ -19,7 +19,7 @@ description: >
   `fix-bug`, and `batch-linear-tickets`. Triggers on "remember this", "save to
   memory", "recall memory", "load memory", "what do you remember
   about", "consolidate memory", "forget that", "/persistent-memory".
-disable-model-invocation: true
+disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines
@@ -168,9 +168,8 @@ entry counts and last-updated timestamps. No writes.
 
 ## Integration With Other Skills
 
-This skill is **slash-only** (`disable-model-invocation: true`) — its
-description does not load into every session. Two ways to actually
-invoke it:
+This skill is **model-invocable** (`disable-model-invocation: false`)
+so host workflows can call it programmatically. Two ways to invoke it:
 
 1. **Explicit** — the user types `/persistent-memory write parenting`
    or `/persistent-memory read parenting`.
@@ -179,8 +178,10 @@ invoke it:
    `Skill("persistent-memory", "read <scope>")` when the host runs.
 
 The second form is the canonical integration. Runtime `Skill()` calls
-work regardless of `disable-model-invocation` — the skill only needs to
-exist in `~/.claude/skills/`. See
+require `disable-model-invocation: false` — without it the Skill tool
+refuses the call at the harness layer (you'd see
+`Skill X cannot be used with Skill tool due to disable-model-invocation`).
+See
 [`rules/integration-with-skills.md`](./rules/integration-with-skills.md)
 for the full contract and the literal snippet at
 [`templates/pointer-snippet.md`](./templates/pointer-snippet.md).

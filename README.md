@@ -178,7 +178,7 @@ All share the **`aw-`** prefix ("autonomous-workflow"): deliberate namespace so 
 | 3 | Implementation | `tdd`, `ux`, `code-quality` |
 | 4 | Testing | `confidence(analysis)`, `holistic-analysis` (auto-replan once at cap) |
 | 5 | Documentation | `docs update` |
-| 6 | PR creation | `review-changes`, `aw-create-walkthrough`, `create-pr` |
+| 6 | PR creation | `reviewer` agent (`--critical` + auto-fix-all-severities), `aw-create-walkthrough`, `create-pr` |
 | 7 | CI gate | `ci-auto-fix` |
 
 The mode-aware stuck-loop cap at Phase 4 (3 Lite / 5 Full) is the biggest cost-saver: it prevents agents burning tokens on hallucinated fixes when their root-cause analysis is wrong.

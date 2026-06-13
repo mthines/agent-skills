@@ -10,7 +10,7 @@ description: >
   Playwright MCP into a repo. Triggers on "test this flow", "add e2e",
   "verify the user journey", "write e2e test", "feature test", "playwright
   agents", "/e2e-testing".
-disable-model-invocation: true
+disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines
