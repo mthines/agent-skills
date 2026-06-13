@@ -46,14 +46,14 @@ Use this section as the lookup table when proposing new agent flavors, splits, o
 
 **Mapping in autonomous-workflow:**
 As of v3.3, the skill installs the split planner/executor pair by default.
-The original monolithic agent (`agent.template.md`) is deprecated and retained only for backward compatibility with existing installs.
+The original monolithic agent (`_deprecated-single-agent.md`) is deprecated and retained only for backward compatibility with existing installs.
 
 The "start simple" prescription is honored in the *design* of the split: the boundary is at Phase 2 → Phase 3, exactly one context boundary, not a five-role pipeline. The deprecated monolithic agent was the v1/v2 incarnation of this principle; v3.3 chose the split because empirical evidence showed that the planner's exploration history measurably crowds out the executor's working context even on medium-complexity tasks.
 
 | Agent | Status | When used |
 |---|---|---|
 | `aw-planner` + `aw-executor` (under the `aw-` namespace) | Default (v3.3+) | All new installs |
-| `agent.template.md` (monolithic) | Deprecated | Existing installs only — backward compat |
+| `_deprecated-single-agent.md` (monolithic) | Deprecated | Existing installs only — backward compat |
 
 ### 2.2 Multi-agent costs 3-10× more tokens
 
@@ -277,7 +277,7 @@ Phase 0 lives inside the planner agent, not in a dedicated clarifier.
 
 **Why rejected:**
 A clarifier → planner → implementer → tester → reviewer pipeline is the canonical anti-pattern Anthropic names.
-autonomous-workflow keeps the agent count to two (planner + executor), with all other roles realized as advisory skills. The deprecated monolithic template (`agent.template.md`) is backward-compat only.
+autonomous-workflow keeps the agent count to two (planner + executor), with all other roles realized as advisory skills. The deprecated monolithic template (`_deprecated-single-agent.md`) is backward-compat only.
 
 ### 3.3 A "code reviewer agent" parallel to the executor — REJECTED
 

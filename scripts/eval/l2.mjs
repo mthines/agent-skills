@@ -21,7 +21,7 @@ const SUITES = [
   {
     name: "tier-routing",
     golden: "golden/tier-routing.jsonl",
-    rubric: { file: "skills/workflow/autonomous-workflow/templates/aw.template.md", section: "## Tier detection" },
+    rubric: { file: "skills/workflow/autonomous-workflow/templates/aw.agent.md", section: "## Tier detection" },
     instruction: "You are the autonomous-workflow dispatcher. Using ONLY the tier-detection rules below, classify the task into exactly one tier.",
     inputKey: "task", inputLabel: "Task",
     choices: ["Micro", "Lite", "Full"],
@@ -45,7 +45,7 @@ const SUITES = [
   {
     name: "aw-should-trigger",
     golden: "golden/aw-should-trigger.jsonl",
-    rubric: { file: "skills/workflow/autonomous-workflow/templates/routing-rule.template.md", section: null }, // whole file
+    rubric: { file: "skills/workflow/autonomous-workflow/templates/routing.rule.md", section: null }, // whole file
     instruction: "You apply the autonomous-workflow routing rule below. Decide whether it should auto-trigger on the user's message. Reply 'trigger' or 'skip'.",
     inputKey: "input", inputLabel: "User message",
     choices: ["trigger", "skip"],

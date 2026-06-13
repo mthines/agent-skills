@@ -15,8 +15,8 @@ on:
   pull_request:
     paths:
       # rubric sources (read live by the eval)
-      - "skills/workflow/autonomous-workflow/templates/aw.template.md"
-      - "skills/workflow/autonomous-workflow/templates/routing-rule.template.md"
+      - "skills/workflow/autonomous-workflow/templates/aw.agent.md"
+      - "skills/workflow/autonomous-workflow/templates/routing.rule.md"
       - "skills/workflow/autonomous-workflow/SKILL.md"
       - "skills/workflow/autonomous-workflow/rules/phase-0-validation.md"
       - "skills/workflow/fix-bug/SKILL.md"
