@@ -6,12 +6,12 @@ The autonomous-workflow now installs two agents (`aw-planner` +
 single-agent template is no longer linked by `install.sh`.
 
 Existing installs that point at this file still work, but new installs
-should use `planner.template.md` + `executor.template.md`.
+should use `aw-planner.agent.md` + `aw-executor.agent.md`.
 
 See:
 - `../rules/planner-executor-handoff.md` — handoff contract
-- `./planner.template.md`
-- `./executor.template.md`
+- `./aw-planner.agent.md`
+- `./aw-executor.agent.md`
 -->
 
 ---
@@ -27,8 +27,8 @@ model: sonnet
 
 This template is preserved for users with existing installs that still link
 to it. New installs use the planner + executor split — see
-[`planner.template.md`](./planner.template.md) and
-[`executor.template.md`](./executor.template.md), with the contract
+[`aw-planner.agent.md`](./aw-planner.agent.md) and
+[`aw-executor.agent.md`](./aw-executor.agent.md), with the contract
 described in
 [`../rules/planner-executor-handoff.md`](../rules/planner-executor-handoff.md).
 

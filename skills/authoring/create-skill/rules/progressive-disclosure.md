@@ -61,6 +61,12 @@ What does **not** belong in `SKILL.md`:
 | `templates/`   | Literal text the skill emits or fills in                      | When the skill is generating output     |
 | `scripts/`     | Executable helpers (Python, Bash, Node)                       | Executed via `Bash`; not read into ctx  |
 
+`templates/` may also hold agent or rule definitions that the skill's
+`install.sh` symlinks *verbatim* into `~/.claude/agents/` or `~/.claude/rules/`
+(the A5 orchestrator case). Those are not emitted boilerplate — name them
+`<agent-name>.agent.md` / `<name>.rule.md` (not `*.template.md`) so the filename
+states what they are and a search for the agent name finds them.
+
 ## Patterns
 
 ### Pattern A — High-level guide with references

@@ -85,6 +85,15 @@ Type markers (by primary entry point — all three are technically model-invocab
 
 ### Agents
 
+The `aw` dispatcher and its two specialist agents are the flagship of this repo (see [`autonomous-workflow`](#workflow--end-to-end-orchestrators)).
+They are **generated from templates**, not stored as `agents/*.md`, so searching `agents/` for them returns nothing — search `skills/workflow/autonomous-workflow/templates/` instead (each template's filename matches its installed agent name):
+
+- `aw` — opt-in dispatcher: reads `aw-lessons`, detects tier (Micro/Lite/Full), routes single-pass vs the planner→executor split. Source: [`templates/aw.agent.md`](./skills/workflow/autonomous-workflow/templates/aw.agent.md), installed by `install.sh` as `~/.claude/agents/aw.md`
+- `aw-planner` — Full tier, phases 0–2 (validate, plan, worktree + `plan.md`), gated on `confidence(plan) ≥ 90%`. Source: [`templates/aw-planner.agent.md`](./skills/workflow/autonomous-workflow/templates/aw-planner.agent.md), installed as `aw-planner.md`
+- `aw-executor` — Full tier, phases 3–7 (implement, test, docs, PR, CI). Source: [`templates/aw-executor.agent.md`](./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md), installed as `aw-executor.md`
+
+The agents below live as `agents/*.md` files and are dispatched by skills:
+
 - `reviewer` — own-work code reviewer (own branch or own PR). Three sub-modes: Fix (auto-fix simple + plan complex), Report (`--report`, propose only), Self-Review (own PR, auto-fix + inline terminal report). Never writes to GitHub — redirects to `pr-reviewer` on a cross-author PR. Imports shared rules under `agents/shared/rules/`
 - `pr-reviewer` — cross-review reviewer for someone else's PR. Authors short, grounded, confidence-gated inline comments and (with `--publish` or an explicit authorization phrase) posts them as a PENDING review invisible to the author until you submit from the GitHub UI. Refuses on your own PR (points to `reviewer`). Imports shared rules under `agents/shared/rules/`; owns auth gate + posting mechanics + line validity under `agents/pr-reviewer/rules/`
 - `linear-ticket-investigator` — reads a Linear ticket, returns Evidence Record for `/fix-bug` Phase 2. No analysis / fix / confidence (those live in `/fix-bug`)
@@ -218,6 +227,8 @@ The middle layer (`~/.agents/skills/`) is the cross-tool discovery directory use
 For agents, write `agents/<name>.md` in this repo and rerun `bash scripts/sync-symlinks.sh`.
 
 Skill-local installers: if a skill ships `skills/<category>/<name>/install.sh`, `sync-symlinks.sh` discovers it and runs `bash <path> --development --quiet` after the main symlink pass. The installer must accept both flags, be idempotent, and write errors to stderr. See `skills/workflow/autonomous-workflow/install.sh` for the reference implementation.
+
+Naming files a skill installs by symlink: when a skill's `install.sh` symlinks a file *verbatim* into `~/.claude/agents/` or `~/.claude/rules/` (as `autonomous-workflow` does from its `templates/` directory), name the source after what it *is* — `<agent-name>.agent.md` for an agent (e.g. `aw.agent.md` → installed as `aw.md`) and `<name>.rule.md` for a rule (e.g. `routing.rule.md`) — not `*.template.md`. These are definitions, not fill-in templates (no substitution happens), and the `<name>.agent.md` form lets a repo search for the agent name land directly on the file. Reserve `*.template.md` / plain `templates/*.md` for boilerplate a skill *emits or fills in* at runtime (e.g. `aw-create-plan`'s `plan.md`).
 
 Invoke the script with `bash` (or `./scripts/sync-symlinks.sh`), **not** `sh` — the script uses bash arrays and process substitution, which POSIX sh doesn't support.
 

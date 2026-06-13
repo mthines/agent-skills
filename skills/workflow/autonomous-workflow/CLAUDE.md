@@ -100,11 +100,11 @@ skills/workflow/autonomous-workflow/
 │   ├── self-improvement-loop.md # Episodic-lessons fast tier (persistent-memory aw-lessons) + promotion to diagnose. Read Phase 1; write Phase 4/7.
 │   └── _template.md            # Boilerplate for new rule files.
 ├── templates/
-│   ├── dispatcher.template.md  # aw dispatcher agent (opt-in entry; tier routing + universal loop). Linked by install.sh as aw.md.
-│   ├── planner.template.md     # aw-planner agent (phases 0-2). Linked by install.sh as aw-planner.md.
-│   ├── executor.template.md    # aw-executor agent (phases 3-7). Linked by install.sh as aw-executor.md.
-│   ├── agent.template.md       # DEPRECATED — kept for backward compat only. Not linked.
-│   └── routing-rule.template.md# Auto-routing rule (linked into ~/.claude/rules/).
+│   ├── aw.agent.md                 # aw dispatcher agent (opt-in entry; tier routing + universal loop). Linked by install.sh as aw.md.
+│   ├── aw-planner.agent.md         # aw-planner agent (phases 0-2). Linked by install.sh as aw-planner.md.
+│   ├── aw-executor.agent.md        # aw-executor agent (phases 3-7). Linked by install.sh as aw-executor.md.
+│   ├── _deprecated-single-agent.md # DEPRECATED — kept for backward compat only. Not linked.
+│   └── routing.rule.md             # Auto-routing rule (linked into ~/.claude/rules/).
 └── references/
     ├── autonomous-workflow-complete.md      # Full end-to-end walked example.
     ├── error-recovery-scenarios.md          # Concrete error → recovery transcripts.
@@ -277,9 +277,9 @@ When changing the cap numbers, update **all** of:
 - `rules/overview.md`
 - `SKILL.md` Core Principles + companion table (Phase 4 `confidence` trigger)
 - `README.md` Key Principles + companion table (Phase 4 `confidence` trigger)
-- `templates/planner.template.md` — Stuck-Loop Reminder section
-- `templates/executor.template.md` — Stuck-Loop Reminder section
-- `templates/agent.template.md` — DEPRECATED but update for consistency
+- `templates/aw-planner.agent.md` — Stuck-Loop Reminder section
+- `templates/aw-executor.agent.md` — Stuck-Loop Reminder section
+- `templates/_deprecated-single-agent.md` — DEPRECATED but update for consistency
 - `references/iterative-refinement.md` — the worked stuck-loop example
   referenced from phase-4 must reflect the canonical limits (the "Different
   rule for stuck-loop iteration" callout under "When to Stop Iterating").
@@ -304,7 +304,7 @@ When in doubt, choose the heavier tier. Micro/Lite are for genuinely small
 changes — not for "the user said it's small." **Phase 0 and Phase 2 are
 mandatory in every tier**, Micro included.
 
-The **`aw` dispatcher** (`templates/dispatcher.template.md`) is the opt-in,
+The **`aw` dispatcher** (`templates/aw.agent.md`) is the opt-in,
 single entry point that owns this decision: it reads `aw-lessons`, detects the
 tier, and routes (single-pass for Micro/Lite, the split for Full). It replaced
 the old "routing rule dispatches the planner first" behavior, which sent Lite
@@ -548,7 +548,7 @@ autonomy and going rogue.
 
 ### Editing the agent templates
 
-`dispatcher.template.md`, `planner.template.md`, and `executor.template.md` are
+`aw.agent.md`, `aw-planner.agent.md`, and `aw-executor.agent.md` are
 what get symlinked into `~/.claude/agents/` as `aw.md`, `aw-planner.md`, and
 `aw-executor.md` by `install.sh` (the `aw-` prefix is the autonomous-workflow
 namespace — keeps the agents grouped together and unmistakable when listed
@@ -564,7 +564,7 @@ If you ever rename the namespace, update all four (frontmatter name,
 install.sh symlink target, routing rule dispatch, and every doc reference)
 in the same PR.
 
-The deprecated `agent.template.md` (single-agent) is still present for backward
+The deprecated `_deprecated-single-agent.md` (single-agent) is still present for backward
 compat but is **not** linked by `install.sh`. Do not add new behavior there.
 
 ### Testing changes end-to-end
@@ -585,7 +585,7 @@ companion list, do both runs.
 
 The dispatcher's two load-bearing runtime behaviors have **no static check** —
 they must be exercised live (markdown can't prove them). Run this after editing
-`dispatcher.template.md`, the tier tables, or the routing rule:
+`aw.agent.md`, the tier tables, or the routing rule:
 
 1. **Install** all three agents: `bash install.sh --development` (links `aw.md`,
    `aw-planner.md`, `aw-executor.md`) and confirm `readlink ~/.claude/agents/aw.md`
@@ -629,8 +629,36 @@ end-user-facing; this file is contributor-facing.
 
 ## History
 
+- **v3.13.2** — Agent-template discoverability + role-accurate filenames. The
+  three agent definitions in `templates/` are symlinked verbatim by `install.sh`
+  (no substitution ever happens), so the old `*.template.md` naming both
+  mislead — they aren't fill-in templates — and hid the agents from search:
+  a repo lookup for `aw` / `aw-planner` / `aw-executor` found nothing because the
+  runtime names lived only inside file contents. Renamed each file so its name
+  states what it is and matches the installed agent:
+  `dispatcher.template.md` → `aw.agent.md`, `planner.template.md` →
+  `aw-planner.agent.md`, `executor.template.md` → `aw-executor.agent.md`. Applied
+  the same role-suffix logic to the rest of `templates/`:
+  `routing-rule.template.md` → `routing.rule.md` and the deprecated single-agent
+  template `agent.template.md` → `_deprecated-single-agent.md`. The directory
+  stays `templates/` (it means "source files this skill installs into your
+  Claude config"). Pure rename — no behavior change; agent `name:` frontmatter,
+  install paths (`aw.md`, `aw-planner.md`, `aw-executor.md`,
+  `autonomous-workflow-routing.md`), and the legacy-cleanup block (still matches
+  the pre-`aw-` `autonomous-planner.md` / `autonomous-executor.md` link targets)
+  are all unchanged. Coupled surfaces updated in lockstep: `install.sh`
+  (`template_required` + symlink targets), `SKILL.md` Templates table, this file,
+  `rules/planner-executor-handoff.md`, `references/anthropic-architecture-research.md`,
+  the deprecated file's banner, and the L1/L2 evals + eval README that read the
+  dispatcher template by path. Root `README.md` / `CLAUDE.md` additionally add
+  the three `aw` agents to their agent inventories and feature `aw` as the
+  flagship entry point. Note: renaming the deprecated single-agent file dangles
+  the symlink for pre-v3.3 single-agent installs that never re-ran `install.sh`
+  (negligible — those predate the `aw` agents and `install.sh` no longer
+  recreates that link). L1: 69/69.
+
 - **v3.12** — Adaptive dispatch + universal loop. Added a third agent, **`aw`**
-  (`templates/dispatcher.template.md`, linked as `aw.md`) — a thin, opt-in
+  (`templates/aw.agent.md`, linked as `aw.md`) — a thin, opt-in
   dispatcher that reads `aw-lessons`, detects the tier, and routes. Added a
   **Micro** tier (1-file mechanical: skip planning + quality companions) below
   Lite/Full, so mode detection is now 3-tier (`Micro | Lite | Full`); Micro
@@ -643,7 +671,7 @@ end-user-facing; this file is contributor-facing.
   coverage decoupled. Routing rule now dispatches `aw` instead of "planner first"
   (fixing the Lite-has-no-plan.md impedance mismatch). `aw` is **opt-in**: invoked
   via a trigger phrase or `@aw`, never a wrapper on casual edits. Coupled surfaces
-  updated: `install.sh` (links `aw.md` + 3-agent summary), `routing-rule.template.md`,
+  updated: `install.sh` (links `aw.md` + 3-agent summary), `routing.rule.md`,
   `SKILL.md` (3-tier detection + dispatcher in Templates + version 3.12.0),
   `phase-0-validation.md` (3-tier MODE SELECTION), this file, `README.md`,
   `diagnostic-surface.md`, and the root inventory. Research: Learning When to Plan
@@ -817,10 +845,10 @@ end-user-facing; this file is contributor-facing.
     `references/anthropic-architecture-research.md`.
   - The agents share `companion-skills.md` and the phase rules — the split
     is an architectural lever, not a behavior change.
-  - `templates/agent.template.md` (the original single-agent template) is
+  - `templates/_deprecated-single-agent.md` (the original single-agent template) is
     preserved as a backward-compat artifact for users with existing
     installs, but is no longer linked by `install.sh`. New installs use
-    `planner.template.md` + `executor.template.md`.
+    `aw-planner.agent.md` + `aw-executor.agent.md`.
 
 - **v3.2** — Quality refinements based on field-alignment review:
   - **Multi-signal `confidence(plan)` gate.** The `confidence` skill's `plan`

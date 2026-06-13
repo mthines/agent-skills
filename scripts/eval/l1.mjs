@@ -76,7 +76,7 @@ function tierQuestions(file) {
     .map((l) => l.replace(/\s+/g, " ").trim());
 }
 {
-  const a = tierQuestions(join(AW, "templates/dispatcher.template.md"));
+  const a = tierQuestions(join(AW, "templates/aw.agent.md"));
   const b = tierQuestions(join(AW, "SKILL.md"));
   s.check("dispatcher tier table ≡ SKILL.md Step 1", a.length >= 4 && JSON.stringify(a) === JSON.stringify(b),
     a.length !== b.length ? `row count ${a.length} vs ${b.length}` : "rows differ");

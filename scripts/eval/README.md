@@ -28,7 +28,7 @@ Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
 - **Links/anchors** resolve across `skills/`, `memory/`, root docs (skips code
   fences + templates; ratchets on a baseline of pre-existing debt — see the
   `BASELINE` set, burn it down, never add to it).
-- **Tier table** in `dispatcher.template.md` is byte-identical to `SKILL.md` Step 1.
+- **Tier table** in `aw.agent.md` is byte-identical to `SKILL.md` Step 1.
 - **plan.md Core contract** — runs the *actual* `confidence` rule #2 (8 Core
   sections) and rule #3 (Acceptance Criteria non-empty, the #31 fix) against
   fixtures in `fixtures/plans/`.

@@ -10,7 +10,7 @@
 
 A curated collection of skills, slash commands, and agents that encode how I actually ship software — distilled from real projects, not theory. They take a holistic approach to building and debugging, with three throughlines:
 
-- **Autonomy** — workflows that carry a task from a one-line prompt to a tested, reviewed PR (`autonomous-workflow`, `fix-bug`).
+- **Autonomy** — workflows that carry a task from a one-line prompt to a tested, reviewed PR. The flagship is **`aw`** (the [`autonomous-workflow`](#featured-autonomous-workflow) dispatcher); `fix-bug` is the single-bug counterpart.
 - **Product building** — UX, visual design, and analytics treated as first-class, not afterthoughts (`ux`, `visual-design`, `charting`, `rum-tracking`).
 - **Quality** — confidence gates, adversarial pre-mortems, and TDD baked into the loop, not bolted on after (`confidence`, `critical`, `tdd`, `code-quality`).
 
@@ -144,8 +144,13 @@ Meta — scaffolding new skills, maintaining docs, persisting memory.
 
 Agents are specialized sub-processes with their own model and tool configuration. Dispatched by other skills, not invoked directly.
 
+The flagship `aw` agents are **generated from templates** in `skills/workflow/autonomous-workflow/templates/` (each template's filename matches its installed agent name) and symlinked into `~/.claude/agents/` by `install.sh` — they are not stored as `agents/*.md`, so search the templates directory to find them. See [Featured: autonomous workflow](#featured-autonomous-workflow) for the full picture.
+
 | Agent | What it does |
 |-------|--------------|
+| **[aw](./skills/workflow/autonomous-workflow/templates/aw.agent.md)** | Opt-in dispatcher and primary entry point: reads `aw-lessons`, detects tier (Micro/Lite/Full), and routes — single-pass for Micro/Lite, the `aw-planner` → `aw-executor` split for Full. Installed as `~/.claude/agents/aw.md`. |
+| **[aw-planner](./skills/workflow/autonomous-workflow/templates/aw-planner.agent.md)** | Full-tier phases 0–2: validate, plan, create the worktree, generate `plan.md`. Gated on `confidence(plan) ≥ 90%` before handoff. Installed as `aw-planner.md`. |
+| **[aw-executor](./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md)** | Full-tier phases 3–7: implement, test, update docs, open the draft PR, watch CI. Reads `plan.md` cold. Installed as `aw-executor.md`. |
 | **[reviewer](./agents/reviewer.md)** | Own-work code reviewer (own branch or own PR). Three sub-modes: Fix (auto-fix simple + plan complex), Report (`--report`, propose only), Self-Review (own PR, auto-fix + inline terminal report). Never writes to GitHub — redirects to `pr-reviewer` on a cross-author PR. Orthogonal `--with <skill>` loads up to 3 additional lenses. |
 | **[pr-reviewer](./agents/pr-reviewer.md)** | Cross-review reviewer for someone else's PR. Authors short, grounded, confidence-gated inline comments (≤ 240 chars, ≤ 2 sentences, `Skill("confidence")` ≥ 80) and (with `--publish` or an explicit authorization phrase) posts them as a PENDING review invisible to the author until you submit from the GitHub UI. Refuses on your own PR (points to `reviewer`). |
 | **[linear-ticket-investigator](./agents/linear-ticket-investigator.md)** | Reads a Linear ticket, returns an Evidence Record matching `/fix-bug` Phase 2. Customizable via a per-project [domain navigator](#linear-ticket-investigator-per-project-plug-in). |
@@ -154,11 +159,13 @@ Agents are specialized sub-processes with their own model and tool configuration
 
 ## Featured: autonomous workflow
 
-`autonomous-workflow` orchestrates a complete feature cycle — from a one-line task to a tested draft PR — using isolated Git worktrees.
+**`aw` is the flagship of this repo** — the one agent you invoke to carry a task from a one-line prompt to a tested, reviewed draft PR. You say *"implement X autonomously"* (or `@aw`) and it does the rest: detects how big the work is, plans only when planning earns its keep, and routes to the right specialists, all inside an isolated Git worktree.
+
+`aw` is the opt-in entry point to the **`autonomous-workflow`** skill — the phase-based machinery (0–7) and companion-skill orchestration behind it. You drive `aw`; `autonomous-workflow` is how it works under the hood.
 
 ### Three agents, one workflow
 
-The skill installs an opt-in **dispatcher** plus the two specialist agents it routes to for complex work, connected by `plan.md`:
+`aw` installs as an opt-in **dispatcher** plus the two specialist agents it routes to for complex work, connected by `plan.md`:
 
 | Agent | Role | Exit gate |
 |-------|------|-----------|

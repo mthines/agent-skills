@@ -12,7 +12,7 @@ disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines
-  version: '3.13.0'
+  version: '3.13.2'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -299,10 +299,10 @@ the full handoff contract is in
 
 | Template                                                         | Purpose                                  |
 | ---------------------------------------------------------------- | ---------------------------------------- |
-| [dispatcher.template.md](./templates/dispatcher.template.md)     | `aw` dispatcher agent (tier routing + loop) |
-| [planner.template.md](./templates/planner.template.md)           | Planner agent definition (phases 0-2)    |
-| [executor.template.md](./templates/executor.template.md)         | Executor agent definition (phases 3-7)   |
-| [routing-rule.template.md](./templates/routing-rule.template.md) | Auto-trigger rule for `.claude/rules/`   |
+| [aw.agent.md](./templates/aw.agent.md)                           | `aw` dispatcher agent (tier routing + loop) |
+| [aw-planner.agent.md](./templates/aw-planner.agent.md)           | Planner agent definition (phases 0-2)    |
+| [aw-executor.agent.md](./templates/aw-executor.agent.md)         | Executor agent definition (phases 3-7)   |
+| [routing.rule.md](./templates/routing.rule.md)                   | Auto-trigger rule for `.claude/rules/`   |
 
 ---
 

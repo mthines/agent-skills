@@ -152,10 +152,10 @@ template_required() {
   fi
 }
 
-template_required "dispatcher.template.md"
-template_required "planner.template.md"
-template_required "executor.template.md"
-template_required "routing-rule.template.md"
+template_required "aw.agent.md"
+template_required "aw-planner.agent.md"
+template_required "aw-executor.agent.md"
+template_required "routing.rule.md"
 
 mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/rules"
 
@@ -199,19 +199,19 @@ done
 
 # Link the agent definitions under the `aw-` namespace
 # (short for "autonomous-workflow").
-ln -sf "$SKILL_DIR/templates/dispatcher.template.md" "$CLAUDE_DIR/agents/aw.md"
+ln -sf "$SKILL_DIR/templates/aw.agent.md" "$CLAUDE_DIR/agents/aw.md"
 vlog "✓ Dispatcher:     $CLAUDE_DIR/agents/aw.md (opt-in entry point; tier routing + self-improvement loop)"
 
-ln -sf "$SKILL_DIR/templates/planner.template.md" "$CLAUDE_DIR/agents/aw-planner.md"
+ln -sf "$SKILL_DIR/templates/aw-planner.agent.md" "$CLAUDE_DIR/agents/aw-planner.md"
 vlog "✓ Planner agent:  $CLAUDE_DIR/agents/aw-planner.md"
 
-ln -sf "$SKILL_DIR/templates/executor.template.md" "$CLAUDE_DIR/agents/aw-executor.md"
+ln -sf "$SKILL_DIR/templates/aw-executor.agent.md" "$CLAUDE_DIR/agents/aw-executor.md"
 vlog "✓ Executor agent: $CLAUDE_DIR/agents/aw-executor.md"
 
 # Link the routing rule. Project + development modes get auto-routing;
 # global mode skips it (most users don't want auto-trigger on every project).
 if [[ "$MODE" == "project" || "$MODE" == "development" ]]; then
-  ln -sf "$SKILL_DIR/templates/routing-rule.template.md" "$CLAUDE_DIR/rules/autonomous-workflow-routing.md"
+  ln -sf "$SKILL_DIR/templates/routing.rule.md" "$CLAUDE_DIR/rules/autonomous-workflow-routing.md"
   vlog "✓ Routing:        $CLAUDE_DIR/rules/autonomous-workflow-routing.md"
 else
   vlog "  (skipping routing rule — global mode; add manually per-project if desired)"
