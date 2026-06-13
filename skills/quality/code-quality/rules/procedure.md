@@ -9,7 +9,7 @@ tags:
 
 # Procedure
 
-The skill operates in two modes — authoring (writing new code) and review (refactoring or auditing existing code). Detect the mode from context: if the user says "review" or "audit" or references existing code, use review mode. Otherwise default to authoring and apply principles silently while you write.
+This file covers the two foundational modes — authoring (writing new code) and review (refactoring or auditing existing code, findings only). The skill also has **plan mode** ([`plan-mode.md`](./plan-mode.md)) and **simplify mode** ([`simplify-mode.md`](./simplify-mode.md), which runs the review pass below and then auto-applies the mechanical findings behind a confidence gate). Detect the mode from `$ARGUMENTS`: `plan` → plan-mode.md, `code`/`review` → use this file's *Review Mode* section, `simplify` → simplify-mode.md, anything else → use this file's *Authoring Mode* section.
 
 ## Authoring Mode
 

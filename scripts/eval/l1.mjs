@@ -207,6 +207,31 @@ function acceptanceCriteriaCount(plan) {
     rcmd.includes("Cross-rubric agreement"));
   s.check("G6 rubric-composition 80 → 70 promotion language present",
     rcmd.includes("80") && rcmd.includes("70") && /agreement.promoted/i.test(rcmd));
+
+  // G7: every refactor recipe (R\d+) in refactor-recipes.md's Contents list appears
+  // in exactly one of the M or J rows of the Recipe Class table. The "simplify" mode
+  // auto-applies Class M recipes; an unclassified recipe silently defaults to J, but
+  // the contract is that the table is exhaustive — drift here erodes the classification
+  // as a correctness boundary.
+  const recipes = read("skills/quality/code-quality/rules/refactor-recipes.md");
+  const contentsBlock = recipes.match(/## Contents\n([\s\S]+?)\n## /);
+  const contentsIds = contentsBlock
+    ? [...contentsBlock[1].matchAll(/^- (R\d+):/gm)].map((m) => m[1])
+    : [];
+  const classTable = recipes.match(/\| \*\*M \(Mechanical\)\*\* \| ([^|]+) \|[\s\S]+?\| \*\*J \(Judgment\)\*\* \| ([^|]+) \|/);
+  const mIds = classTable ? [...classTable[1].matchAll(/R\d+/g)].map((m) => m[0]) : [];
+  const jIds = classTable ? [...classTable[2].matchAll(/R\d+/g)].map((m) => m[0]) : [];
+  const classified = new Set([...mIds, ...jIds]);
+  const unclassified = contentsIds.filter((id) => !classified.has(id));
+  s.check("G7 every recipe in Contents has a class (M or J)",
+    contentsIds.length > 0 && unclassified.length === 0,
+    unclassified.length ? `unclassified: ${unclassified.join(", ")}` : `${contentsIds.length} recipes classified`);
+  const dupInM = mIds.filter((id, i) => mIds.indexOf(id) !== i);
+  const dupInJ = jIds.filter((id, i) => jIds.indexOf(id) !== i);
+  const inBoth = mIds.filter((id) => jIds.includes(id) && !/R17/.test(id));
+  s.check("G7 no recipe appears in both M and J (R17 split is the only exception)",
+    inBoth.length === 0 && dupInM.length === 0 && dupInJ.length === 0,
+    [inBoth.length && `both: ${inBoth.join(", ")}`, dupInM.length && `dup M: ${dupInM.join(", ")}`, dupInJ.length && `dup J: ${dupInJ.join(", ")}`].filter(Boolean).join("; "));
 }
 
 process.exit(s.report() ? 0 : 1);

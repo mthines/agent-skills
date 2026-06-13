@@ -41,8 +41,12 @@ Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
   sentence shared verbatim by persistent-memory and the autonomous-workflow
   loop, the fast-lane plan ⊇ Core-8 sections, implement-suggestion keyed on
   `/critical`'s real Must-fix bucket, the per-comment gate consuming
-  `confidence(code)`'s real output, and a forbidden-phrase list for audited
-  contradictions and phantom references.
+  `confidence(code)`'s real output, a forbidden-phrase list for audited
+  contradictions and phantom references, and the
+  `code-quality` Recipe Class table being exhaustive over every R-recipe in
+  the Contents list (G7 — `simplify` mode keys auto-apply on this
+  classification, so an unclassified or doubly-classified recipe is a hard
+  failure).
 
 Add a check: append a `s.check(label, condition, detail)` in `l1.mjs`.
 
