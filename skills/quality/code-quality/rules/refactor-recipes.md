@@ -50,6 +50,7 @@ Named refactors so reviews can cite a recipe by ID instead of describing it from
 - R33: Wire TanStack Query Offline Persistence
 - R34: Replace Prop-Soup Component with Deep-Namespace Compound
 - R35: Trim Verbose Comment
+- Recipe Class — Mechanical vs Judgment
 - Recipe Index by File
 
 ## How to use this catalog
@@ -386,6 +387,35 @@ In authoring mode, recipes are reminders during the REFACTOR phase of TDD.
 No hard length cap — a rare comment legitimately needs a paragraph (subtle invariant, hard-won workaround). Keep those; rewrite everything else to one line.
 **Why:** Verbose comments accrete faster than they decay. They restate code, drift from it, lull readers into trusting stale narration, and crowd the diff on every unrelated change. The reader can read the code — comments must add what code can't: the WHY, the constraint, the surprise. Brevity preserves the signal that *this comment is worth reading*.
 **See:** [`comments.md` § Brevity — Trim to the WHY](./comments.md#brevity--trim-to-the-why).
+
+---
+
+## Recipe Class — Mechanical vs Judgment
+
+`simplify` mode auto-applies **Class M (Mechanical)** recipes behind a `confidence(code) ≥ 90 %` gate; **Class J (Judgment)** recipes are proposed but never auto-written.
+See [`simplify-mode.md`](./simplify-mode.md) for the gate, ordering, and revert contract.
+
+| Class | Recipes | Why this class |
+|---|---|---|
+| **M (Mechanical)** | R1, R2, R6, R7, R13, R17 (remove branch only), R35 | Structural transformation. Trigger is unambiguous from the source. No naming, architectural, or cross-module judgment required. Confidence on the diff is a sufficient correctness proxy. |
+| **J (Judgment)** | R3, R4, R5, R8, R9, R10, R11, R12, R14, R15, R16, R17 (justify branch), R18, R19, R20, R21, R22, R23, R24, R25, R26, R27, R28, R29, R30, R31, R32, R33, R34 | Requires naming, architectural taste, cross-module impact analysis, framework / runtime knowledge, semantic decision, or a domain decision. Confidence on the diff alone cannot validate correctness — propose to the human. |
+
+Three recipes that look structural but carry semantic side-effects sit in **J** for documented reasons (the adversarial review that produced this classification flagged each as a confident-but-wrong auto-apply trap):
+
+- **R3 Replace Conditional with Lookup** — moves from lazy branch evaluation (`if (a) return f(); if (b) return g();`) to eager record-value evaluation (`{ a: f(), b: g() }[key]`). If any branch has side effects or throws, the transformation silently changes runtime behaviour. `tsc --noEmit` does not catch this. To make a future variant Class M, narrow the Trigger to "every branch value is a literal or already-bound function reference (no calls in the lookup values)".
+- **R4 Extract Guarded Function** — "long function" is a semantic judgment (fails Class M test 1). Extraction also changes the call-stack visible to debuggers and any instrumentation wrapping the function (OTel spans, Proxy intercepts).
+- **R14 Replace Boolean Parameter with Two Functions** — deletes a function signature. External callers not in the scoped files break. `simplify`'s scoped fast-check cannot prove no caller is dynamic or in another compilation unit. To make a future variant Class M, gate on "all call sites are inside the scoped files" via static caller-graph analysis.
+
+**Rule for new recipes:** when adding a recipe, append it to the table above with an explicit class.
+Default for an un-classified recipe is **J** — `simplify` mode never auto-applies an un-classified recipe.
+
+Class-defining tests for **M**:
+
+1. The recipe's *Trigger* is a syntactic / structural pattern, not a semantic decision (e.g., "two maps keyed by the same union" is structural; "this function does too much" is semantic).
+2. The recipe's *Replace with* preserves observable behaviour (no API contract change, no error-shape change, no timing change).
+3. The recipe's change footprint is bounded by the recipe text itself (no "...and update every caller in the codebase" without an explicit, mechanical rewrite path).
+
+If any of those three fail, the recipe is **J**.
 
 ---
 
