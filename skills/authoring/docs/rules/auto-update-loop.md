@@ -1,10 +1,10 @@
 # Auto-Update Loop (Called from Autonomous Workflows)
 
-When this skill is invoked from a non-interactive workflow (`autonomous-workflow` Phase 5, etc.) the guardrails differ from a user-initiated `/documentation update`.
+When this skill is invoked from a non-interactive workflow (`autonomous-workflow` Phase 5, etc.) the guardrails differ from a user-initiated `/docs update`.
 A user can review every proposed change; an autonomous run cannot.
 The rules below prevent the four failure modes that ruin auto-updated docs: stale-rule re-assertion, hot-path bloat, one-off generalization, and documentation of behaviour Claude already exhibits.
 
-This file is loaded when the caller passes `--auto` as a flag after the mode token (e.g. `Skill("documentation", "update --auto")`).
+This file is loaded when the caller passes `--auto` as a flag after the mode token (e.g. `Skill("docs", "update --auto")`).
 The skill parses `$ARGUMENTS` as `update` (mode) + `--auto` (flag); `--auto` triggers loading this file.
 
 ## 1. The Six Targets

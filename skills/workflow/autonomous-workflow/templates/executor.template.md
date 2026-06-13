@@ -105,7 +105,7 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 4     | `confidence`           | At iteration cap on same failing area (auto-replan trigger)          | `analysis`   |
 | 4     | `holistic-analysis`    | Auto-replan only — `confidence(analysis) < 90%` (one-shot)       | —                |
 | 4     | `persistent-memory`    | At stuck-loop escalation — record failing area + resolution          | `write aw-lessons --tier project-shared --auto` |
-| 5     | `documentation`        | Always (with skip conditions per phase-5 rule)                       | `update --auto`  |
+| 5     | `docs`                 | Always (with skip conditions per phase-5 rule)                       | `update --auto`  |
 | 6     | `review-changes`       | Always before push                                                   | —                |
 | 6     | `aw-review-quality-gate` | After `review-changes` returns findings (false-positive filter; advisory) | —          |
 | 6     | `aw-create-walkthrough` | Full Mode only                                                      | —                |

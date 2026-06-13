@@ -52,7 +52,7 @@ Each check is binary. Failing any one blocks the write.
 
 ## 5. Sub-mode: `nested <dir>`
 
-When the user runs `/documentation update nested <dir>`, route every
+When the user runs `/docs update nested <dir>`, route every
 update for changes under `<dir>` to `<dir>/CLAUDE.md` instead of root.
 
 1. Verify `<dir>` exists and contains source code (not just docs or
@@ -71,7 +71,7 @@ update for changes under `<dir>` to `<dir>/CLAUDE.md` instead of root.
 
 ## 6. Sub-mode: `pattern <glob>`
 
-When the user runs `/documentation update pattern <glob>`, switch from
+When the user runs `/docs update pattern <glob>`, switch from
 diff-driven to discovery-driven. Use this when shared shape exists
 across many files of the same name (`bindings.ts`, `route.ts`,
 `*.test.ts`).
@@ -261,7 +261,7 @@ symlink-vs-`@import` trade-off.
 
 ## 9. Worked example — pattern rule routing
 
-A user runs `/documentation update pattern "**/bindings.ts"` and the
+A user runs `/docs update pattern "**/bindings.ts"` and the
 skill discovers that every `bindings.ts` re-exports from `./types`. The
 Placement Resolver:
 

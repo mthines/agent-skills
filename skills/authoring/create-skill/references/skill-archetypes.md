@@ -206,7 +206,7 @@ review PRs) lives in companion skills. The orchestrator decides *when*.
 
 ## A6 — Scaffolder (generates new artefacts)
 
-**Examples in this repo:** `documentation` (init mode), `create-skill` (this skill).
+**Examples in this repo:** `docs` (init mode), `create-skill` (this skill).
 
 **Shape:**
 

@@ -99,7 +99,7 @@ for full details.
 | 2     | Worktree Setup             | **MANDATORY** | Create isolated worktree, write `plan.md`    |
 | 3     | Implementation             | Autonomous    | Code changes in isolated worktree            |
 | 4     | Testing                    | Autonomous    | Iterate until tests pass (mode-aware cap: 3 Lite / 5 Full) |
-| 5     | Documentation              | Autonomous    | `documentation update` for `CLAUDE.md`, `README.md`, `docs/` |
+| 5     | Documentation              | Autonomous    | `docs update` for `CLAUDE.md`, `README.md`, `docs/` |
 | 6     | PR Creation                | Autonomous    | `review-changes`, walkthrough, draft PR      |
 | 7     | CI Gate + Optional Cleanup | Autonomous    | Watch CI, `ci-auto-fix` per failure, prune   |
 
@@ -124,7 +124,7 @@ Phase 4: Testing & Iteration <- mode-aware cap (3 Lite / 5 Full) per failing are
     | At the cap: confidence(analysis) -> one-shot auto-replan, then escalate to user
     | (all tests pass OR user-approved stop)
 Phase 5: Documentation
-    | Skill("documentation", "update --auto") always (self-improving docs loop across CLAUDE.md, README.md, docs/)
+    | Skill("docs", "update --auto") always (self-improving docs loop across CLAUDE.md, README.md, docs/)
     | (docs complete)
 Phase 6: PR Creation
     | Skill("review-changes") -> Skill("aw-create-walkthrough") -> Skill("create-pr")
@@ -183,7 +183,7 @@ Use for simple, focused changes:
 - No artifact files created
 - Plan exists only in conversation
 - Faster execution
-- Phase 0, Phase 2, `documentation update`, and `create-pr` still required
+- Phase 0, Phase 2, `docs update`, and `create-pr` still required
 
 **Triggers:**
 
@@ -224,7 +224,7 @@ Is this complex / architectural / unfamiliar OR 4+ files?
 - Isolated worktree created
 - Complete implementation
 - All tests passing locally
-- Documentation updated (including `CLAUDE.md`, `README.md`, `docs/` via `documentation update`)
+- Documentation updated (including `CLAUDE.md`, `README.md`, `docs/` via `docs update`)
 - Draft PR ready for review with walkthrough
 - CI green (or user-approved stop)
 

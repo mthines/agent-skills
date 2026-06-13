@@ -267,7 +267,7 @@ Progress Log section of `plan.md`. Example milestones:
 | 3     | Each file modified, fast-check run |
 | 3     | `code-quality(code)` at end        |
 | 4     | Each test run + result             |
-| 5     | Docs updated, `documentation update` run |
+| 5     | Docs updated, `docs update` run |
 | 6     | `review-changes`, `create-pr`      |
 | 7     | CI status, `ci-auto-fix` runs      |
 

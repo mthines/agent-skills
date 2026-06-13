@@ -11,7 +11,7 @@ description: >
   CLAUDE.md", "optimize CLAUDE.md", "/optimize-claude-md". Three modes —
   `audit` (read-only ranked report + slash-conversion candidates), `trim`
   (interactive one-line hook + diff approval), `extract` (moves sections
-  to linked files preserving content). Composes with `documentation`
+  to linked files preserving content). Composes with `docs`
   (Placement Resolver) and `create-skill` (invocation matrix). Hard rules:
   refuses files < 10k chars; never deletes silently; never edits any
   skill's canonical `SKILL.md` frontmatter — routes to `/create-skill`.
@@ -147,8 +147,8 @@ Load on demand — do not preload.
 
 ## Composition
 
-- Calls [`documentation` skill](../documentation/SKILL.md)'s Placement
-  Resolver via `Skill("documentation", "pattern <glob>")` when an extraction
+- Calls [`docs` skill](../docs/SKILL.md)'s Placement
+  Resolver via `Skill("docs", "pattern <glob>")` when an extraction
   needs cross-cutting placement (e.g. a rule applies to multiple subtrees).
 - References [`create-skill`](../create-skill/SKILL.md)'s
   [`token-economics.md`](../create-skill/rules/token-economics.md) and

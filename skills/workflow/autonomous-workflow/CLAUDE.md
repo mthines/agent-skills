@@ -312,7 +312,7 @@ tasks — that have no `plan.md` — to the planner anyway. See the design-inten
 section below.
 
 Phase 0 and Phase 2 are mandatory regardless of mode. Phase 5
-`documentation update` runs in both modes (the self-improving doc loop is
+`docs update` runs in both modes (the self-improving doc loop is
 cheap and matters for small changes too — they still drift docs).
 
 ---
@@ -848,7 +848,7 @@ end-user-facing; this file is contributor-facing.
     sequential questions in Phase 0 (architectural? unfamiliar? 4+ files?)
     replace the conflated "4+ files OR complex" criterion. Complexity
     decides first; file count is the fallback.
-  - **`documentation update` opt-out lever.** Per-task skip conditions documented
+  - **`docs update` opt-out lever.** Per-task skip conditions documented
     (pure dependency bumps, test-only changes, config-only changes, user
     override). Default remains always-on; the skip is logged.
 

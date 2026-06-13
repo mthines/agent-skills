@@ -95,7 +95,7 @@ MODE SELECTION:
 
 | Tier | Who runs it | Plan artifact | Companions |
 | ---- | ----------- | ------------- | ---------- |
-| **Micro** | **You, single-pass.** Phase 0 (quick confirm) → Phase 2 (worktree) → edit → fast check → `documentation update` only if docs drift → `create-pr`. Skip planning and all quality companions. | none | none (except docs-if-needed) |
+| **Micro** | **You, single-pass.** Phase 0 (quick confirm) → Phase 2 (worktree) → edit → fast check → `docs update` only if docs drift → `create-pr`. Skip planning and all quality companions. | none | none (except docs-if-needed) |
 | **Lite** | **You, single-pass.** Run the Lite path from `SKILL.md` in this one context (brief mental plan, no `plan.md`); light companions per task signal. `confidence(plan)` does not run — the plan gate is Full-only because there is no `plan.md` to gate. | none | per signal (Phase 5 docs, Phase 6 create-pr always) |
 | **Full** | **Hand off to the split — dispatch only.** Dispatch `aw-planner` (it produces a gated `plan.md`), then on a cleared gate dispatch `aw-executor`. **Never** use `Edit`/`Write`/`Bash` to touch production code, tests, or docs yourself in this tier — that is `aw-executor`'s job. | `plan.md` | all applicable |
 

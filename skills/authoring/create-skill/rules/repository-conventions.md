@@ -138,7 +138,7 @@ consistently:
 - `applied` — writes code (`tdd`, `implement-suggestion`).
 - `orchestrator` — calls other skills (`autonomous-workflow`,
   `batch-linear-tickets`).
-- `scaffolder` — generates new artefacts (`documentation`, `create-skill`).
+- `scaffolder` — generates new artefacts (`docs`, `create-skill`).
 - `slash-command` — slash-only single-purpose tool (`create-pr`,
   `ci-auto-fix`).
 - `companion` — workflow companion called by an orchestrator
