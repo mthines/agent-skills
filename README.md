@@ -78,7 +78,7 @@ Decide whether something is good before you commit to it.
 
 | Skill | What it does | Type |
 |-------|--------------|------|
-| **[code-quality](./skills/quality/code-quality/SKILL.md)** | Authors and reviews code for low cognitive complexity, guard clauses, early returns, single-responsibility. | `auto` |
+| **[code-quality](./skills/quality/code-quality/SKILL.md)** | Authors and reviews code for low cognitive complexity, guard clauses, early returns, single-responsibility. Four modes: `plan`, authoring (default), `review` (proposes), `simplify` (review-then-apply mechanical refactors behind `confidence(code) ≥ 90 %`). | `auto` |
 | **[confidence](./skills/quality/confidence/SKILL.md)** | Rates confidence that work fully solves the requirement. Modes: `plan`, `code`, `analysis`. Multi-signal gate; deterministic rule checks cap LLM score. | `auto` |
 | **[critical](./skills/quality/critical/SKILL.md)** | Adversarial pre-mortem: hostile-persona walk through failure modes, blast radius, rollback, hidden coupling, and a mandatory steelman alternative. Never iterates. | `auto` |
 | **[tdd](./skills/quality/tdd/SKILL.md)** | Strict RED-GREEN-REFACTOR cycles. Writes one failing test, implements minimal code, refactors. | `auto` |
