@@ -172,7 +172,7 @@ my-orchestrator/
 ├── SKILL.md          # Phase table + companion table
 ├── README.md         # User-facing install / customise
 ├── CLAUDE.md         # Developer / contributor docs
-├── install.sh        # Symlinks templates
+├── install.sh        # Symlinks the agent/rule definitions into .claude/
 ├── rules/
 │   ├── phase-0-validation.md
 │   ├── phase-1-planning.md
@@ -181,8 +181,20 @@ my-orchestrator/
 ├── references/
 │   └── worked-examples.md
 └── templates/
-    └── agent.template.md
+    ├── aw.agent.md          # agent definition, symlinked verbatim → ~/.claude/agents/aw.md
+    ├── aw-planner.agent.md
+    ├── aw-executor.agent.md
+    └── routing.rule.md      # rule definition, symlinked → ~/.claude/rules/
 ```
+
+**Naming the symlinked definitions:** when `install.sh` links a file *verbatim*
+into `~/.claude/agents/` or `~/.claude/rules/`, name it after what it *is* —
+`<agent-name>.agent.md` and `<name>.rule.md` — not `*.template.md`. These are
+definitions, not fill-in templates (no substitution happens), and the
+`<name>.agent.md` form lets a repo search for the agent name land directly on
+the file. Reserve `*.template.md` / plain `templates/*.md` for boilerplate the
+skill *emits or fills in* at runtime (the A6 scaffolder case below). The
+directory stays `templates/` — read it as "source files this skill installs".
 
 **Frontmatter:**
 

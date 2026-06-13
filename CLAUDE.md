@@ -228,6 +228,8 @@ For agents, write `agents/<name>.md` in this repo and rerun `bash scripts/sync-s
 
 Skill-local installers: if a skill ships `skills/<category>/<name>/install.sh`, `sync-symlinks.sh` discovers it and runs `bash <path> --development --quiet` after the main symlink pass. The installer must accept both flags, be idempotent, and write errors to stderr. See `skills/workflow/autonomous-workflow/install.sh` for the reference implementation.
 
+Naming files a skill installs by symlink: when a skill's `install.sh` symlinks a file *verbatim* into `~/.claude/agents/` or `~/.claude/rules/` (as `autonomous-workflow` does from its `templates/` directory), name the source after what it *is* — `<agent-name>.agent.md` for an agent (e.g. `aw.agent.md` → installed as `aw.md`) and `<name>.rule.md` for a rule (e.g. `routing.rule.md`) — not `*.template.md`. These are definitions, not fill-in templates (no substitution happens), and the `<name>.agent.md` form lets a repo search for the agent name land directly on the file. Reserve `*.template.md` / plain `templates/*.md` for boilerplate a skill *emits or fills in* at runtime (e.g. `aw-create-plan`'s `plan.md`).
+
 Invoke the script with `bash` (or `./scripts/sync-symlinks.sh`), **not** `sh` — the script uses bash arrays and process substitution, which POSIX sh doesn't support.
 
 The script is idempotent: it skips entries that are already linked correctly, repairs broken or wrong-target symlinks, and refuses to overwrite real files or directories. Pass `--dry-run` (or `-n`) to preview without applying.
