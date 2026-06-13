@@ -30,8 +30,8 @@ In the **Full tier**, the autonomous-workflow runs as two agents connected by a
 single artifact (the `aw` dispatcher routes Full tasks here; Micro/Lite run
 single-pass and never reach this handoff):
 
-- **Planner agent** ([`templates/planner.template.md`](../templates/planner.template.md)) — runs phases 0–2 (validation, planning, worktree + `plan.md` generation).
-- **Executor agent** ([`templates/executor.template.md`](../templates/executor.template.md)) — runs phases 3–7 (implementation, testing, docs, PR, CI).
+- **Planner agent** ([`templates/aw-planner.template.md`](../templates/aw-planner.template.md)) — runs phases 0–2 (validation, planning, worktree + `plan.md` generation).
+- **Executor agent** ([`templates/aw-executor.template.md`](../templates/aw-executor.template.md)) — runs phases 3–7 (implementation, testing, docs, PR, CI).
 
 This split follows Anthropic's "context boundary" principle — separating exploration-heavy work (Phase 0–2) from execution-heavy work (Phase 3–7) keeps each agent's context window focused and avoids polluting implementation decisions with planning dead-ends. See [`references/anthropic-architecture-research.md`](../references/anthropic-architecture-research.md) for the underlying research.
 
@@ -346,5 +346,5 @@ If the executor discovers mid-implementation that the plan is fundamentally flaw
 - Companion registry: [companion-skills.md](./companion-skills.md)
 - Architecture research: [`references/anthropic-architecture-research.md`](../references/anthropic-architecture-research.md)
 - Templates:
-  - [`templates/planner.template.md`](../templates/planner.template.md) — planner agent
-  - [`templates/executor.template.md`](../templates/executor.template.md) — executor agent
+  - [`templates/aw-planner.template.md`](../templates/aw-planner.template.md) — planner agent
+  - [`templates/aw-executor.template.md`](../templates/aw-executor.template.md) — executor agent

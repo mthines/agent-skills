@@ -100,9 +100,9 @@ skills/workflow/autonomous-workflow/
 │   ├── self-improvement-loop.md # Episodic-lessons fast tier (persistent-memory aw-lessons) + promotion to diagnose. Read Phase 1; write Phase 4/7.
 │   └── _template.md            # Boilerplate for new rule files.
 ├── templates/
-│   ├── dispatcher.template.md  # aw dispatcher agent (opt-in entry; tier routing + universal loop). Linked by install.sh as aw.md.
-│   ├── planner.template.md     # aw-planner agent (phases 0-2). Linked by install.sh as aw-planner.md.
-│   ├── executor.template.md    # aw-executor agent (phases 3-7). Linked by install.sh as aw-executor.md.
+│   ├── aw.template.md          # aw dispatcher agent (opt-in entry; tier routing + universal loop). Linked by install.sh as aw.md.
+│   ├── aw-planner.template.md     # aw-planner agent (phases 0-2). Linked by install.sh as aw-planner.md.
+│   ├── aw-executor.template.md    # aw-executor agent (phases 3-7). Linked by install.sh as aw-executor.md.
 │   ├── agent.template.md       # DEPRECATED — kept for backward compat only. Not linked.
 │   └── routing-rule.template.md# Auto-routing rule (linked into ~/.claude/rules/).
 └── references/
@@ -277,8 +277,8 @@ When changing the cap numbers, update **all** of:
 - `rules/overview.md`
 - `SKILL.md` Core Principles + companion table (Phase 4 `confidence` trigger)
 - `README.md` Key Principles + companion table (Phase 4 `confidence` trigger)
-- `templates/planner.template.md` — Stuck-Loop Reminder section
-- `templates/executor.template.md` — Stuck-Loop Reminder section
+- `templates/aw-planner.template.md` — Stuck-Loop Reminder section
+- `templates/aw-executor.template.md` — Stuck-Loop Reminder section
 - `templates/agent.template.md` — DEPRECATED but update for consistency
 - `references/iterative-refinement.md` — the worked stuck-loop example
   referenced from phase-4 must reflect the canonical limits (the "Different
@@ -304,7 +304,7 @@ When in doubt, choose the heavier tier. Micro/Lite are for genuinely small
 changes — not for "the user said it's small." **Phase 0 and Phase 2 are
 mandatory in every tier**, Micro included.
 
-The **`aw` dispatcher** (`templates/dispatcher.template.md`) is the opt-in,
+The **`aw` dispatcher** (`templates/aw.template.md`) is the opt-in,
 single entry point that owns this decision: it reads `aw-lessons`, detects the
 tier, and routes (single-pass for Micro/Lite, the split for Full). It replaced
 the old "routing rule dispatches the planner first" behavior, which sent Lite
@@ -548,7 +548,7 @@ autonomy and going rogue.
 
 ### Editing the agent templates
 
-`dispatcher.template.md`, `planner.template.md`, and `executor.template.md` are
+`aw.template.md`, `aw-planner.template.md`, and `aw-executor.template.md` are
 what get symlinked into `~/.claude/agents/` as `aw.md`, `aw-planner.md`, and
 `aw-executor.md` by `install.sh` (the `aw-` prefix is the autonomous-workflow
 namespace — keeps the agents grouped together and unmistakable when listed
@@ -585,7 +585,7 @@ companion list, do both runs.
 
 The dispatcher's two load-bearing runtime behaviors have **no static check** —
 they must be exercised live (markdown can't prove them). Run this after editing
-`dispatcher.template.md`, the tier tables, or the routing rule:
+`aw.template.md`, the tier tables, or the routing rule:
 
 1. **Install** all three agents: `bash install.sh --development` (links `aw.md`,
    `aw-planner.md`, `aw-executor.md`) and confirm `readlink ~/.claude/agents/aw.md`
@@ -630,7 +630,7 @@ end-user-facing; this file is contributor-facing.
 ## History
 
 - **v3.12** — Adaptive dispatch + universal loop. Added a third agent, **`aw`**
-  (`templates/dispatcher.template.md`, linked as `aw.md`) — a thin, opt-in
+  (`templates/aw.template.md`, linked as `aw.md`) — a thin, opt-in
   dispatcher that reads `aw-lessons`, detects the tier, and routes. Added a
   **Micro** tier (1-file mechanical: skip planning + quality companions) below
   Lite/Full, so mode detection is now 3-tier (`Micro | Lite | Full`); Micro
@@ -820,7 +820,7 @@ end-user-facing; this file is contributor-facing.
   - `templates/agent.template.md` (the original single-agent template) is
     preserved as a backward-compat artifact for users with existing
     installs, but is no longer linked by `install.sh`. New installs use
-    `planner.template.md` + `executor.template.md`.
+    `aw-planner.template.md` + `aw-executor.template.md`.
 
 - **v3.2** — Quality refinements based on field-alignment review:
   - **Multi-signal `confidence(plan)` gate.** The `confidence` skill's `plan`

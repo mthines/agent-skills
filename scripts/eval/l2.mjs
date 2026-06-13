@@ -21,7 +21,7 @@ const SUITES = [
   {
     name: "tier-routing",
     golden: "golden/tier-routing.jsonl",
-    rubric: { file: "skills/workflow/autonomous-workflow/templates/dispatcher.template.md", section: "## Tier detection" },
+    rubric: { file: "skills/workflow/autonomous-workflow/templates/aw.template.md", section: "## Tier detection" },
     instruction: "You are the autonomous-workflow dispatcher. Using ONLY the tier-detection rules below, classify the task into exactly one tier.",
     inputKey: "task", inputLabel: "Task",
     choices: ["Micro", "Lite", "Full"],

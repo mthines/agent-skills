@@ -152,9 +152,9 @@ template_required() {
   fi
 }
 
-template_required "dispatcher.template.md"
-template_required "planner.template.md"
-template_required "executor.template.md"
+template_required "aw.template.md"
+template_required "aw-planner.template.md"
+template_required "aw-executor.template.md"
 template_required "routing-rule.template.md"
 
 mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/rules"
@@ -199,13 +199,13 @@ done
 
 # Link the agent definitions under the `aw-` namespace
 # (short for "autonomous-workflow").
-ln -sf "$SKILL_DIR/templates/dispatcher.template.md" "$CLAUDE_DIR/agents/aw.md"
+ln -sf "$SKILL_DIR/templates/aw.template.md" "$CLAUDE_DIR/agents/aw.md"
 vlog "✓ Dispatcher:     $CLAUDE_DIR/agents/aw.md (opt-in entry point; tier routing + self-improvement loop)"
 
-ln -sf "$SKILL_DIR/templates/planner.template.md" "$CLAUDE_DIR/agents/aw-planner.md"
+ln -sf "$SKILL_DIR/templates/aw-planner.template.md" "$CLAUDE_DIR/agents/aw-planner.md"
 vlog "✓ Planner agent:  $CLAUDE_DIR/agents/aw-planner.md"
 
-ln -sf "$SKILL_DIR/templates/executor.template.md" "$CLAUDE_DIR/agents/aw-executor.md"
+ln -sf "$SKILL_DIR/templates/aw-executor.template.md" "$CLAUDE_DIR/agents/aw-executor.md"
 vlog "✓ Executor agent: $CLAUDE_DIR/agents/aw-executor.md"
 
 # Link the routing rule. Project + development modes get auto-routing;

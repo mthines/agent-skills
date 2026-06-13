@@ -85,6 +85,15 @@ Type markers (by primary entry point — all three are technically model-invocab
 
 ### Agents
 
+The `aw` dispatcher and its two specialist agents are the flagship of this repo (see [`autonomous-workflow`](#workflow--end-to-end-orchestrators)).
+They are **generated from templates**, not stored as `agents/*.md`, so searching `agents/` for them returns nothing — search `skills/workflow/autonomous-workflow/templates/` instead (each template's filename matches its installed agent name):
+
+- `aw` — opt-in dispatcher: reads `aw-lessons`, detects tier (Micro/Lite/Full), routes single-pass vs the planner→executor split. Source: [`templates/aw.template.md`](./skills/workflow/autonomous-workflow/templates/aw.template.md), installed by `install.sh` as `~/.claude/agents/aw.md`
+- `aw-planner` — Full tier, phases 0–2 (validate, plan, worktree + `plan.md`), gated on `confidence(plan) ≥ 90%`. Source: [`templates/aw-planner.template.md`](./skills/workflow/autonomous-workflow/templates/aw-planner.template.md), installed as `aw-planner.md`
+- `aw-executor` — Full tier, phases 3–7 (implement, test, docs, PR, CI). Source: [`templates/aw-executor.template.md`](./skills/workflow/autonomous-workflow/templates/aw-executor.template.md), installed as `aw-executor.md`
+
+The agents below live as `agents/*.md` files and are dispatched by skills:
+
 - `reviewer` — own-work code reviewer (own branch or own PR). Three sub-modes: Fix (auto-fix simple + plan complex), Report (`--report`, propose only), Self-Review (own PR, auto-fix + inline terminal report). Never writes to GitHub — redirects to `pr-reviewer` on a cross-author PR. Imports shared rules under `agents/shared/rules/`
 - `pr-reviewer` — cross-review reviewer for someone else's PR. Authors short, grounded, confidence-gated inline comments and (with `--publish` or an explicit authorization phrase) posts them as a PENDING review invisible to the author until you submit from the GitHub UI. Refuses on your own PR (points to `reviewer`). Imports shared rules under `agents/shared/rules/`; owns auth gate + posting mechanics + line validity under `agents/pr-reviewer/rules/`
 - `linear-ticket-investigator` — reads a Linear ticket, returns Evidence Record for `/fix-bug` Phase 2. No analysis / fix / confidence (those live in `/fix-bug`)

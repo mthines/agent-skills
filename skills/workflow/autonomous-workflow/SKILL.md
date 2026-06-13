@@ -299,9 +299,9 @@ the full handoff contract is in
 
 | Template                                                         | Purpose                                  |
 | ---------------------------------------------------------------- | ---------------------------------------- |
-| [dispatcher.template.md](./templates/dispatcher.template.md)     | `aw` dispatcher agent (tier routing + loop) |
-| [planner.template.md](./templates/planner.template.md)           | Planner agent definition (phases 0-2)    |
-| [executor.template.md](./templates/executor.template.md)         | Executor agent definition (phases 3-7)   |
+| [aw.template.md](./templates/aw.template.md)                     | `aw` dispatcher agent (tier routing + loop) |
+| [aw-planner.template.md](./templates/aw-planner.template.md)     | Planner agent definition (phases 0-2)    |
+| [aw-executor.template.md](./templates/aw-executor.template.md)   | Executor agent definition (phases 3-7)   |
 | [routing-rule.template.md](./templates/routing-rule.template.md) | Auto-trigger rule for `.claude/rules/`   |
 
 ---
