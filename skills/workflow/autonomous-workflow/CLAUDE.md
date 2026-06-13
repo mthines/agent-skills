@@ -629,6 +629,23 @@ end-user-facing; this file is contributor-facing.
 
 ## History
 
+- **v3.13.1** — Agent-template discoverability rename. Renamed the three agent
+  templates so each filename matches its installed agent name (strip
+  `.template` to get the linked file): `dispatcher.template.md` → `aw.template.md`,
+  `planner.template.md` → `aw-planner.template.md`, `executor.template.md` →
+  `aw-executor.template.md`. Before this, a repo search for `aw` / `aw-planner` /
+  `aw-executor` found nothing — the runtime agent names lived only inside file
+  contents, not filenames. Pure rename — no behavior change; agent `name:`
+  frontmatter, install paths (`aw.md`, `aw-planner.md`, `aw-executor.md`), and
+  the legacy-cleanup block (still matches the pre-`aw-` `autonomous-planner.md` /
+  `autonomous-executor.md` link targets) are all unchanged. Coupled surfaces
+  updated in lockstep: `install.sh` (`template_required` + symlink targets),
+  `SKILL.md` Templates table, this file, `rules/planner-executor-handoff.md`,
+  the deprecated `agent.template.md`, and the L1/L2 evals + eval README that read
+  the dispatcher template by path. Root `README.md` / `CLAUDE.md` additionally
+  add the three `aw` agents to their agent inventories and feature `aw` as the
+  flagship entry point. L1: 69/69.
+
 - **v3.12** — Adaptive dispatch + universal loop. Added a third agent, **`aw`**
   (`templates/aw.template.md`, linked as `aw.md`) — a thin, opt-in
   dispatcher that reads `aw-lessons`, detects the tier, and routes. Added a

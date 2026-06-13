@@ -12,7 +12,7 @@ disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines
-  version: '3.13.0'
+  version: '3.13.1'
   workflow_type: orchestrator
   tags:
     - autonomous
