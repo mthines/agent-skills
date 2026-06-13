@@ -11,7 +11,7 @@ description: >
   CLAUDE.md", "optimize CLAUDE.md", "/optimize-claude-md". Three modes —
   `audit` (read-only ranked report + slash-conversion candidates), `trim`
   (interactive one-line hook + diff approval), `extract` (moves sections
-  to linked files preserving content). Composes with `documentation`
+  to linked files preserving content). Composes with `docs`
   (Placement Resolver) and `create-skill` (invocation matrix). Hard rules:
   refuses files < 10k chars; never deletes silently; never edits any
   skill's canonical `SKILL.md` frontmatter — routes to `/create-skill`.

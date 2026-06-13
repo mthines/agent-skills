@@ -172,7 +172,7 @@ for the full registry, trigger conditions, and **how to disable any companion**.
 | 4     | `confidence`           | At iteration cap (3 Lite / 5 Full) on same failing area | `analysis`   |
 | 4     | `holistic-analysis`    | After confidence at Phase 4 if user asks for retry     | —                |
 | 4     | `persistent-memory`    | At stuck-loop escalation — record failing area + resolution as a lesson | `write aw-lessons --tier project-shared --auto` |
-| 5     | `documentation`        | Always (self-improving doc loop — updates `CLAUDE.md`, `README.md`, `docs/`) | `update --auto`  |
+| 5     | `docs`                 | Always (self-improving doc loop — updates `CLAUDE.md`, `README.md`, `docs/`) | `update --auto`  |
 | 6     | `review-changes`       | Always before push                                     | —                |
 | 6     | `aw-review-quality-gate` | After `review-changes` returns findings — false-positive filter (advisory) | —                |
 | 6     | `aw-create-walkthrough` | Full Mode only                                        | —                |
@@ -317,7 +317,7 @@ download skills, then run [`install.sh`](./install.sh).
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux documentation \
+          code-quality holistic-analysis tdd ux docs \
           review-changes create-pr ci-auto-fix persistent-memory \
   --agent claude-code \
   --global --yes
@@ -329,7 +329,7 @@ bash ~/.claude/skills/autonomous-workflow/install.sh --global
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux documentation \
+          code-quality holistic-analysis tdd ux docs \
           review-changes create-pr ci-auto-fix persistent-memory \
   --agent claude-code \
   --yes
