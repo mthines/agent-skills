@@ -36,7 +36,7 @@ Type markers: `auto` = model-invokable via `Skill()`; `/` = slash command only; 
 ### `quality/` — code, tests, plans, AI apps
 
 - `ai-engineering` (`/`) — LLM/AI app review across 13 concerns (prompts, caching, RAG, agents, evals, safety, observability)
-- `code-quality` (`auto`) — readability, complexity, maintainability. Four modes: `plan` (validate a plan), authoring (default), `review` (findings only), `simplify` (review-then-apply for end-of-feature cleanup — auto-applies Class M refactor recipes behind `confidence(code) ≥ 90 %` + scoped fast-check, with revert-on-failure).
+- `code-quality` (`auto`) — readability, complexity, maintainability. Four modes: `plan` (validate a plan), authoring (default), `review` (findings only), `simplify` (review-then-apply for end-of-feature cleanup — auto-applies Class M refactor recipes behind `confidence(code) ≥ 90 %` + scoped fast-check, with revert-on-failure). Class M/J taxonomy lives in [`refactor-recipes.md`](./skills/quality/code-quality/rules/refactor-recipes.md#recipe-class--mechanical-vs-judgment) and is guarded by L1 G7
 - `confidence` (`auto`) — multi-signal confidence gate for `plan` / `code` / `analysis`; deterministic rule caps LLM score at 89%
 - `critical` (`auto`) — adversarial pre-mortem with mandatory steelman alternative. Never iterates
 - `dx` (`/`) — CLI / shell-script DX review
