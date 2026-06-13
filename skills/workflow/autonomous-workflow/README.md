@@ -89,7 +89,7 @@ routing-rule symlinks for you. Two steps: download skills, then run install.
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux documentation \
+          code-quality holistic-analysis tdd ux docs \
           review-changes create-pr ci-auto-fix persistent-memory \
   --agent claude-code \
   --global --yes
@@ -101,7 +101,7 @@ bash ~/.claude/skills/autonomous-workflow/install.sh --global
 ```bash
 npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux documentation \
+          code-quality holistic-analysis tdd ux docs \
           review-changes create-pr ci-auto-fix persistent-memory \
   --agent claude-code \
   --yes
@@ -160,7 +160,7 @@ trigger registry is in
 | 3     | `code-quality`         | Optional  | End-of-Phase-3 code-quality pass              |
 | 4     | `confidence`           | Optional  | `analysis` at iteration cap (3 Lite / 5 Full) |
 | 4     | `holistic-analysis`    | Optional  | Step-back analysis after stuck-loop confidence |
-| 5     | `documentation update` | Optional  | Self-improving doc loop (keeps `CLAUDE.md`, `README.md`, and `docs/` in sync) |
+| 5     | `docs update`          | Optional  | Self-improving doc loop (keeps `CLAUDE.md`, `README.md`, and `docs/` in sync) |
 | 6     | `review-changes`       | Optional  | Pre-PR diff review                            |
 | 6     | `aw-create-walkthrough` | Optional  | Writes `.agent/{branch}/walkthrough.md`      |
 | 6     | `create-pr`            | Optional  | Narrative PR description + push + watch       |
@@ -204,7 +204,7 @@ Best for per-machine or one-off customization. When running
 # Install everything except `tdd` and `ux`
 npx skills add https://github.com/mthines/agent-skills \
   --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis documentation \
+          code-quality holistic-analysis docs \
           review-changes create-pr ci-auto-fix \
   --agent claude-code \
   --yes
@@ -241,7 +241,7 @@ Planner → `plan.md` → executor (the split). Generates artifacts under
 ### Lite (simple changes, 2-3 files)
 
 Single-pass (no planner/executor split). No artifact files; plan exists only in
-conversation. Phase 0, Phase 2, Phase 5 (`documentation update`), and Phase 6
+conversation. Phase 0, Phase 2, Phase 5 (`docs update`), and Phase 6
 (`create-pr`) still required.
 
 ### Micro (1-file mechanical: typo / copy / version-or-config bump)

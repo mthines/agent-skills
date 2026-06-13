@@ -70,7 +70,7 @@ Lever (2). Reduces the always-on **available-skills list**, not the CLAUDE.md fi
 | --------------------------- | --------------- | ----------- | ------------------------------------------------------------ | -------------: |
 | `video-analyser`            | agent-invokable | slash-only  | Side-effectful; user-driven trigger only.                    |    ~70 tokens |
 | `ai-engineering`            | agent-invokable | slash-only  | Verbose description (1,170 chars); used rarely.              |   ~290 tokens |
-| `documentation`             | agent-invokable | slash-only  | Documentation work is user-initiated, not auto-triggered.    |   ~460 tokens |
+| `docs`                      | agent-invokable | slash-only  | Documentation work is user-initiated, not auto-triggered.    |   ~460 tokens |
 | `tdd`                       | agent-invokable | **leave**   | Composable; legitimately auto-loads on "write tests" / "add coverage". | — |
 | `code-quality`              | agent-invokable | **leave**   | Composable; auto-loads during reviews.                       | — |
 

@@ -998,7 +998,7 @@ After PR is merged, run: `gw remove feat/dark-mode-toggle`
 - ✅ Phase 2: Environment validated, `aw-create-plan` invoked
 - ✅ Phase 3: Implementation self-reviewed
 - ✅ Phase 4: Tests passing (1 iteration)
-- ✅ Phase 5: Documentation validated, `documentation update` invoked
+- ✅ Phase 5: Documentation validated, `docs update` invoked
 - ✅ Phase 6: `review-changes` + `aw-create-walkthrough` + `create-pr` invoked
 - ✅ Phase 7: `ci-auto-fix` invoked — all checks green
 
