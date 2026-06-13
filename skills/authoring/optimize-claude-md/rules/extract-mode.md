@@ -40,14 +40,14 @@ Moves a long section (or entire sub-section) from `CLAUDE.md` to a linked file u
 | Source content                                            | Default destination                                   |
 | --------------------------------------------------------- | ----------------------------------------------------- |
 | Skill / agent inventory paragraph                         | `docs/inventory.md` (or per-skill `SKILL.md` if appropriate) |
-| Cross-cutting rule applying to multiple subtrees          | `.claude/rules/<topic>.md` with `paths:` glob (delegates to [`documentation` skill's Placement Resolver](../../documentation/rules/placement-resolver.md)) |
+| Cross-cutting rule applying to multiple subtrees          | `.claude/rules/<topic>.md` with `paths:` glob (delegates to [`docs` skill's Placement Resolver](../../docs/rules/placement-resolver.md)) |
 | Rule applying only to one package                         | `<package-dir>/CLAUDE.md`                             |
 | Design rationale ("why we chose X")                       | `docs/decisions/<topic>.md` (or `ADR-<n>.md` if the repo uses ADRs) |
 | Feature history / changelog                               | `CHANGELOG.md` (or `docs/history.md`)                 |
 | Workspace structure tree > 30 lines                       | `docs/structure.md`                                   |
 | Long worked examples or before/after code                 | The skill's own `references/<topic>.md`               |
 
-If the user has a `documentation` skill installed, **delegate cross-cutting placement** via `Skill("documentation", "pattern <glob>")` rather than picking the destination by hand. The Placement Resolver handles glob-scoped routing.
+If the user has a `docs` skill installed, **delegate cross-cutting placement** via `Skill("docs", "pattern <glob>")` rather than picking the destination by hand. The Placement Resolver handles glob-scoped routing.
 
 ## Brief-link replacement template
 
@@ -119,7 +119,7 @@ A `Nx commands` section is hot-path (agents run those commands). Moving it to `d
 ## Common mistakes
 
 - **Removing source before verifying destination.** Race-condition for content loss. **Fix:** read destination first.
-- **Picking a destination that doesn't exist in the repo's docs structure.** Adds an orphan directory. **Fix:** check for an existing `docs/` or use the documentation skill's Placement Resolver.
+- **Picking a destination that doesn't exist in the repo's docs structure.** Adds an orphan directory. **Fix:** check for an existing `docs/` or use the `docs` skill's Placement Resolver.
 - **Extracting partial content from a code block.** Breaks syntax / examples. **Fix:** never split a fenced code block — extract the whole section that contains it.
 - **Linking to the destination using an absolute path.** Brittle across worktrees. **Fix:** always use relative paths.
 - **Forgetting to ask for approval.** Required by [`hard-rules.md`](./hard-rules.md). **Fix:** always show the proposed move, then ask `y/n/skip-rest`.

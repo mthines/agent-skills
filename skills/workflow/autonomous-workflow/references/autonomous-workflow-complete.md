@@ -823,7 +823,7 @@ $ git commit -m "docs(changelog): add dark mode feature entry"
 ### Self-Improving Doc Loop
 
 ```
-Skill("documentation", "update")
+Skill("docs", "update")
 → Scanned changes for new conventions worth promoting
 → Suggested: "Theme context pattern (provider + useTheme hook) — promote to CLAUDE.md?"
 → Accepted: appended snippet under "## Patterns" in CLAUDE.md

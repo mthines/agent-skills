@@ -78,7 +78,7 @@ Decide whether something is good before you commit to it.
 
 | Skill | What it does | Type |
 |-------|--------------|------|
-| **[code-quality](./skills/quality/code-quality/SKILL.md)** | Authors and reviews code for low cognitive complexity, guard clauses, early returns, single-responsibility. | `auto` |
+| **[code-quality](./skills/quality/code-quality/SKILL.md)** | Authors and reviews code for low cognitive complexity, guard clauses, early returns, single-responsibility. Four modes: `plan`, authoring (default), `review` (proposes), `simplify` (review-then-apply mechanical refactors behind `confidence(code) ≥ 90 %`). | `auto` |
 | **[confidence](./skills/quality/confidence/SKILL.md)** | Rates confidence that work fully solves the requirement. Modes: `plan`, `code`, `analysis`. Multi-signal gate; deterministic rule checks cap LLM score. | `auto` |
 | **[critical](./skills/quality/critical/SKILL.md)** | Adversarial pre-mortem: hostile-persona walk through failure modes, blast radius, rollback, hidden coupling, and a mandatory steelman alternative. Never iterates. | `auto` |
 | **[tdd](./skills/quality/tdd/SKILL.md)** | Strict RED-GREEN-REFACTOR cycles. Writes one failing test, implements minimal code, refactors. | `auto` |
@@ -135,7 +135,7 @@ Meta — scaffolding new skills, maintaining docs, persisting memory.
 
 | Skill | What it does | Type |
 |-------|--------------|------|
-| **[documentation](./skills/authoring/documentation/SKILL.md)** | Authors and audits `CLAUDE.md`, `AGENTS.md`, `README.md`, and Diátaxis `docs/` trees. Modes: `init`, `update`, `readme`, `audit`. | `auto` |
+| **[docs](./skills/authoring/docs/SKILL.md)** | Authors and audits `CLAUDE.md`, `AGENTS.md`, `README.md`, and Diátaxis `docs/` trees. Modes: `init`, `update`, `readme`, `audit`. | `auto` |
 | **[/create-skill](./skills/authoring/create-skill/SKILL.md)** | Scaffold, review, upgrade, or diagnose agent skills. `diagnose <target>` is the retrospective self-improvement entry point. | `/` |
 | **[/optimize-claude-md](./skills/authoring/optimize-claude-md/SKILL.md)** | Audits `CLAUDE.md` for context bloat. Modes: `audit`, `trim`, `extract`. Flags rarely-used agent-invokable skills that should become slash-only. | `/` |
 | **[/persistent-memory](./skills/authoring/persistent-memory/SKILL.md)** | Persists context across conversations as plain markdown, scoped per topic. Operations: `write`, `read`, `consolidate`, `forget`. Three storage tiers. Also backs `autonomous-workflow`'s `aw-lessons` self-improvement loop. | `/` |
@@ -177,7 +177,7 @@ All share the **`aw-`** prefix ("autonomous-workflow"): deliberate namespace so 
 | 2 | Worktree + plan.md | `aw-create-plan` (Full Mode) |
 | 3 | Implementation | `tdd`, `ux`, `code-quality` |
 | 4 | Testing | `confidence(analysis)`, `holistic-analysis` (auto-replan once at cap) |
-| 5 | Documentation | `documentation update` |
+| 5 | Documentation | `docs update` |
 | 6 | PR creation | `review-changes`, `aw-create-walkthrough`, `create-pr` |
 | 7 | CI gate | `ci-auto-fix` |
 
@@ -191,7 +191,7 @@ The [clone + symlink](#recommended-clone--symlink) install already links the thr
 bash ~/.claude/skills/autonomous-workflow/install.sh --global
 ```
 
-Companions (`tdd`, `ux`, `code-quality`, `documentation`, `ci-auto-fix`, …) skip silently if absent — see [Customizing](./skills/workflow/autonomous-workflow/README.md) to opt out individually. Drop `--global` for a per-project install. Requires [`gh`](https://cli.github.com); [`gw`](https://github.com/mthines/gw-tools) is optional (native `git worktree` fallback).
+Companions (`tdd`, `ux`, `code-quality`, `docs`, `ci-auto-fix`, …) skip silently if absent — see [Customizing](./skills/workflow/autonomous-workflow/README.md) to opt out individually. Drop `--global` for a per-project install. Requires [`gh`](https://cli.github.com); [`gw`](https://github.com/mthines/gw-tools) is optional (native `git worktree` fallback).
 
 ### Further reading
 
@@ -220,10 +220,10 @@ Slash commands are typed explicitly.
 /fix-bug https://app.dash0.com/.../trace?spanId=...
 /dx review my CLI tool
 /profile-optimizer ./trace.json
-/documentation init
-/documentation update
-/documentation readme
-/documentation audit
+/docs init
+/docs update
+/docs readme
+/docs audit
 /resolve-conflicts
 /review-changes --comments 42
 /implement-suggestion <pr-url> [<pr-url> ...]

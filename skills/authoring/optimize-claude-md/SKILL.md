@@ -147,8 +147,8 @@ Load on demand — do not preload.
 
 ## Composition
 
-- Calls [`documentation` skill](../documentation/SKILL.md)'s Placement
-  Resolver via `Skill("documentation", "pattern <glob>")` when an extraction
+- Calls [`docs` skill](../docs/SKILL.md)'s Placement
+  Resolver via `Skill("docs", "pattern <glob>")` when an extraction
   needs cross-cutting placement (e.g. a rule applies to multiple subtrees).
 - References [`create-skill`](../create-skill/SKILL.md)'s
   [`token-economics.md`](../create-skill/rules/token-economics.md) and

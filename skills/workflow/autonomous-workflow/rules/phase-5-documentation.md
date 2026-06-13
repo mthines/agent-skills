@@ -24,9 +24,9 @@ tags:
 Bring every documentation surface in sync with the changes made in
 Phase 3 — `CLAUDE.md`, `.claude/rules/`, `AGENTS.md`, `README.md`, the
 `docs/` tree, and `CHANGELOG.md`. The phase ends with a mandatory
-`Skill("documentation", "update")` invocation passing `--auto`, which
+`Skill("docs", "update")` invocation passing `--auto`, which
 runs the **six-target auto-update loop** governed by
-[`documentation/rules/auto-update-loop.md`](../../../authoring/documentation/rules/auto-update-loop.md):
+[`docs/rules/auto-update-loop.md`](../../../authoring/docs/rules/auto-update-loop.md):
 
 - Hot-path budget (root `CLAUDE.md` ≤ 200 lines).
 - Recurrence threshold (a new rule must have been observed ≥ 2 times).
@@ -35,7 +35,7 @@ runs the **six-target auto-update loop** governed by
 - Per-write `confidence(analysis) ≥ 90 %` gate.
 - Post-write verification via `/memory` / `InstructionsLoaded` hook and `lychee` link check.
 
-Gate: `Skill("documentation", "update --auto")` returns `outcome: "applied"` or `outcome: "skipped"` with a logged reason.
+Gate: `Skill("docs", "update --auto")` returns `outcome: "applied"` or `outcome: "skipped"` with a logged reason.
 Any other outcome blocks Phase 6.
 
 ## Core Principles
@@ -55,10 +55,10 @@ Any other outcome blocks Phase 6.
 
 ## Procedure
 
-### Step 1: Hand off to the documentation skill in auto mode
+### Step 1: Hand off to the docs skill in auto mode
 
 ```
-Skill("documentation", "update --auto")
+Skill("docs", "update --auto")
 ```
 
 The skill performs the full procedure end-to-end:
@@ -123,14 +123,14 @@ stage but defer the commit until the PR's final commit boundary.
 
 ## Documentation Trigger
 
-ALWAYS invoke `documentation update` at the end of Phase 5. This is the
+ALWAYS invoke `docs update` at the end of Phase 5. This is the
 always-on self-improving doc loop — it keeps every doc surface aligned
 with what the code now does so future autonomous runs (and other agents
 working in this repo) start with better context instead of stale
 guidance.
 
 ```
-Skill("documentation", "update --auto")
+Skill("docs", "update --auto")
 ```
 
 | Property                   | Value                                                                |
@@ -144,13 +144,13 @@ After invocation, log to the `plan.md` Progress Log (Full Mode) or
 in-conversation (Lite Mode):
 
 ```markdown
-- [TIMESTAMP] Phase 5: documentation(update --auto) — outcome=applied (3 files)
+- [TIMESTAMP] Phase 5: docs(update --auto) — outcome=applied (3 files)
 ```
 
 If the skill is not available:
 
 ```markdown
-- [TIMESTAMP] Phase 5: documentation skill not installed, continuing
+- [TIMESTAMP] Phase 5: docs skill not installed, continuing
 ```
 
 ## When to Skip
@@ -158,7 +158,7 @@ If the skill is not available:
 **Default: always run.** This subsection is an opt-out escape hatch, not
 a default change. The self-improving doc loop runs unless one of the
 conditions below applies. The skill itself enforces these via
-[`auto-update-loop.md`](../../../authoring/documentation/rules/auto-update-loop.md) §4
+[`auto-update-loop.md`](../../../authoring/docs/rules/auto-update-loop.md) §4
 — Phase 5 only needs to know that the skill returns `outcome: "skipped"`
 in those cases.
 
@@ -177,22 +177,22 @@ If none of the conditions above apply, run the skill as normal.
 (Full Mode) or note in-conversation (Lite Mode):
 
 ```markdown
-- [TIMESTAMP] Phase 5: documentation(update) — skipped (reason: <reason>)
+- [TIMESTAMP] Phase 5: docs(update) — skipped (reason: <reason>)
 ```
 
 Examples:
 
 ```markdown
-- [2026-05-14T15:42:00Z] Phase 5: documentation(update) — skipped (reason: user override during Phase 0)
-- [2026-05-14T15:42:00Z] Phase 5: documentation(update) — skipped (reason: pure dependency bump, package.json + lockfile only)
-- [2026-05-14T15:42:00Z] Phase 5: documentation(update) — skipped (reason: test-only change)
-- [2026-05-14T15:42:00Z] Phase 5: documentation(update) — skipped (reason: config-only change, no behavior delta)
-- [2026-05-14T15:42:00Z] Phase 5: documentation(update) — skipped (reason: pure refactor, identical behaviour)
+- [2026-05-14T15:42:00Z] Phase 5: docs(update) — skipped (reason: user override during Phase 0)
+- [2026-05-14T15:42:00Z] Phase 5: docs(update) — skipped (reason: pure dependency bump, package.json + lockfile only)
+- [2026-05-14T15:42:00Z] Phase 5: docs(update) — skipped (reason: test-only change)
+- [2026-05-14T15:42:00Z] Phase 5: docs(update) — skipped (reason: config-only change, no behavior delta)
+- [2026-05-14T15:42:00Z] Phase 5: docs(update) — skipped (reason: pure refactor, identical behaviour)
 ```
 
 ## Documentation Checklist
 
-- [ ] `Skill("documentation", "update --auto")` invoked (or logged as not installed).
+- [ ] `Skill("docs", "update --auto")` invoked (or logged as not installed).
 - [ ] Run summary outcome is `applied` or `skipped` (not `error`).
 - [ ] If `applied`, `files_changed` reviewed in `git log`.
 - [ ] If `skipped`, reason is one of the five conditions above.
@@ -203,7 +203,7 @@ Examples:
 **Update Progress Log (Full Mode):**
 
 ```markdown
-- [TIMESTAMP] Phase 5: documentation update applied (CLAUDE.md, README.md, 1 rule file)
+- [TIMESTAMP] Phase 5: docs update applied (CLAUDE.md, README.md, 1 rule file)
 ```
 
 ## References
@@ -211,7 +211,7 @@ Examples:
 - Related rule: [phase-4-testing](./phase-4-testing.md)
 - Related rule: [phase-6-pr-creation](./phase-6-pr-creation.md)
 - Companion registry: [companion-skills.md](./companion-skills.md)
-- Related skill: [`documentation`](../../../authoring/documentation/SKILL.md)
-- Auto-update governance: [`documentation/rules/auto-update-loop.md`](../../../authoring/documentation/rules/auto-update-loop.md)
-- Placement Resolver: [`documentation/rules/placement-resolver.md`](../../../authoring/documentation/rules/placement-resolver.md)
-- Drift detection: [`documentation/rules/drift-detection.md`](../../../authoring/documentation/rules/drift-detection.md)
+- Related skill: [`docs`](../../../authoring/docs/SKILL.md)
+- Auto-update governance: [`docs/rules/auto-update-loop.md`](../../../authoring/docs/rules/auto-update-loop.md)
+- Placement Resolver: [`docs/rules/placement-resolver.md`](../../../authoring/docs/rules/placement-resolver.md)
+- Drift detection: [`docs/rules/drift-detection.md`](../../../authoring/docs/rules/drift-detection.md)

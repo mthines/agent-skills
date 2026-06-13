@@ -42,7 +42,7 @@ clean recovery.
 | 2     | Worktree created with `gw add` (or native `git worktree add` fallback). CWD is the worktree. Deps installed. `plan.md` written under `.agent/{branch}/` (Full Mode). |
 | 3     | Working in isolated worktree. Build/lint passes after each edit. `code-quality(code)` run at end.  |
 | 4     | All tests pass OR user-approved stop after stuck-loop escalation.                                  |
-| 5     | Docs reflect changes. `Skill("documentation", "update --auto")` run.                               |
+| 5     | Docs reflect changes. `Skill("docs", "update --auto")` run.                               |
 | 6     | `Skill("review-changes")` clean. Walkthrough shown. Draft PR opened via `Skill("create-pr")`.      |
 | 7     | CI green OR user-approved stop. Optional `gw remove` (or `git worktree remove` + `git branch -d`) after merge. |
 

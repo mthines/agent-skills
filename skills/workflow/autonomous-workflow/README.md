@@ -385,7 +385,7 @@ to this skill's source.
 - [`tdd`](../../quality/tdd/) — RED-GREEN-REFACTOR enforcement
 - [`ux`](../../design/ux/) — UI / accessibility review
 - [`holistic-analysis`](../../analysis/holistic-analysis/) — execution-path analysis
-- [`documentation`](../../authoring/documentation/) — keeps `CLAUDE.md`, `README.md`, and `docs/` in sync
+- [`docs`](../../authoring/docs/) — keeps `CLAUDE.md`, `README.md`, and `docs/` in sync
 - [`review-changes`](../../quality/review-changes/) — pre-PR review
 - [`create-pr`](../../delivery/create-pr/) — narrative PR description + push + watch
 - [`ci-auto-fix`](../../delivery/ci-auto-fix/) — diagnose and fix failed CI checks

@@ -1,5 +1,5 @@
 ---
-name: documentation
+name: docs
 description: >
   Authors, audits, and maintains project documentation across CLAUDE.md /
   .claude/rules/, AGENTS.md, README.md, and Diátaxis docs/ trees (root +
@@ -13,7 +13,7 @@ description: >
   to docs/, marketing to README.md. Triggers on "init claude", "bootstrap
   docs", "scaffold CLAUDE.md", "update docs", "sync CLAUDE.md", "docs
   drift", "write a README", "audit our docs", "review the README",
-  "Diátaxis", "/documentation".
+  "Diátaxis", "/docs".
 license: MIT
 metadata:
   author: mthines
@@ -59,7 +59,7 @@ A second token of `--auto` is a cross-cutting modifier (see below).
 | `audit`   |         | "audit", "review the docs", "doc health check", or `$ARGUMENTS == "audit"`.            |
 
 **`--auto` modifier** — append to any mode token to enable the autonomous-workflow guardrails.
-Always passed by `autonomous-workflow` Phase 5 as `Skill("documentation", "update --auto")`.
+Always passed by `autonomous-workflow` Phase 5 as `Skill("docs", "update --auto")`.
 When `--auto` is present, also load [`auto-update-loop.md`](./rules/auto-update-loop.md) before executing the mode's phases.
 
 Disambiguation rule when no mode token is passed:

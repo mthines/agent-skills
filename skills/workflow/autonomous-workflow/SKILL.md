@@ -241,13 +241,13 @@ Three phases benefit from sub-agent fan-out:
 | 2     | `gw add`, `gw cd`, install deps, `Skill("aw-create-plan")` inside worktree                      |
 | 3     | Code per `plan.md` → companions per task type (`tdd`, `ux`) → fast-check after each edit; `code-quality(code)` once at end |
 | 4     | Run tests → iterate (cap: 5 same area in Full Mode) → `confidence(analysis)` → one-shot auto-replan or escalate to user |
-| 5     | `Skill("documentation", "update --auto")` always — refreshes `CLAUDE.md`, `.claude/rules/`, `README.md`, `docs/`, `CHANGELOG.md` |
+| 5     | `Skill("docs", "update --auto")` always — refreshes `CLAUDE.md`, `.claude/rules/`, `README.md`, `docs/`, `CHANGELOG.md` |
 | 6     | `Skill("review-changes")` → `Skill("aw-create-walkthrough")` → `Skill("create-pr")`             |
 | 7     | Watch CI → `Skill("ci-auto-fix")` per failure (parallel) → after CI green dispatch `reviewer` agent (PR Mode: self-review sub-mode for self-authored PRs emits inline report; optional, skips if not installed) → `gw remove` after merge (optional) |
 
 ### Lite Mode
 
-Skip artifacts and most companions. Phase 0, Phase 2, Phase 5 (`documentation update`), and Phase 6 (`create-pr`) still required.
+Skip artifacts and most companions. Phase 0, Phase 2, Phase 5 (`docs update`), and Phase 6 (`create-pr`) still required.
 
 | Phase | Action                                          |
 | ----- | ----------------------------------------------- |
@@ -257,7 +257,7 @@ Skip artifacts and most companions. Phase 0, Phase 2, Phase 5 (`documentation up
 | 2     | `gw add fix/bug-name`                           |
 | 3     | Code, commit                                    |
 | 4     | Test, fix failures (3-iteration limit applies)  |
-| 5     | `Skill("documentation", "update --auto")`       |
+| 5     | `Skill("docs", "update --auto")`       |
 | 6     | `Skill("create-pr")`                            |
 | 7     | Watch CI, `ci-auto-fix` if needed, then auto-dispatch `reviewer` agent (skips if not installed) |
 
@@ -370,7 +370,7 @@ and how to disable. Run `bash install.sh --help` for script options.
 - [`tdd`](../../quality/tdd/SKILL.md) — RED-GREEN-REFACTOR enforcement
 - [`ux`](../../design/ux/SKILL.md) — UI / accessibility review
 - [`holistic-analysis`](../../analysis/holistic-analysis/SKILL.md) — execution-path analysis for complex tasks
-- [`documentation`](../../authoring/documentation/SKILL.md) — keeps `CLAUDE.md`, `.claude/rules/`, `README.md`, and `docs/` in sync with code changes
+- [`docs`](../../authoring/docs/SKILL.md) — keeps `CLAUDE.md`, `.claude/rules/`, `README.md`, and `docs/` in sync with code changes
 - [`review-changes`](../../quality/review-changes/SKILL.md) — pre-PR review
 - [`create-pr`](../../delivery/create-pr/SKILL.md) — narrative PR description + push + watch
 - [`ci-auto-fix`](../../delivery/ci-auto-fix/SKILL.md) — diagnose and fix failed CI checks

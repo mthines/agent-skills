@@ -124,7 +124,7 @@ Phase 4: Testing & Iteration <- mode-aware cap (3 Lite / 5 Full) per failing are
     | At the cap: confidence(analysis) -> one-shot auto-replan, then escalate to user
     | (all tests pass OR user-approved stop)
 Phase 5: Documentation
-    | Skill("documentation", "update --auto") always (self-improving docs loop across CLAUDE.md, README.md, docs/)
+    | Skill("docs", "update --auto") always (self-improving docs loop across CLAUDE.md, README.md, docs/)
     | (docs complete)
 Phase 6: PR Creation
     | Skill("review-changes") -> Skill("aw-create-walkthrough") -> Skill("create-pr")
