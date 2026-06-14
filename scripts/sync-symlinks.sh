@@ -15,21 +15,75 @@
 #
 # Usage:
 #   scripts/sync-symlinks.sh            # apply changes (verbose per-action log)
+#   scripts/sync-symlinks.sh --aw       # apply, but only autonomous-workflow + its companions
 #   scripts/sync-symlinks.sh --dry-run  # preview only, table view
 #   scripts/sync-symlinks.sh -n         # short form of --dry-run
+#   scripts/sync-symlinks.sh --aw -n    # flags are combinable
 
 set -euo pipefail
 
 DRY_RUN=0
-if [[ "${1:-}" == "--dry-run" || "${1:-}" == "-n" ]]; then
-  DRY_RUN=1
-fi
+AW_ONLY=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run|-n) DRY_RUN=1; shift ;;
+    --aw)         AW_ONLY=1; shift ;;
+    *)
+      echo "error: unknown argument: $1" >&2
+      echo "usage: $0 [--aw] [--dry-run|-n]" >&2
+      exit 1
+      ;;
+  esac
+done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AGENTS_SKILLS_DIR="$HOME/.agents/skills"
 AGENTS_AGENTS_DIR="$HOME/.agents/agents"
 CLAUDE_SKILLS_DIR="$HOME/.claude/skills"
 CLAUDE_AGENTS_DIR="$HOME/.claude/agents"
+
+# Curated bundle for --aw: the autonomous-workflow skill plus the companion
+# skills documented in skills/workflow/autonomous-workflow/README.md, and the
+# agents the workflow dispatches to (reviewer / pr-reviewer).
+#
+# The aw / aw-planner / aw-executor agent symlinks are created by the
+# autonomous-workflow install.sh, which runs as part of the install.sh
+# discovery pass at the bottom of this script.
+AW_SKILLS=(
+  autonomous-workflow
+  aw-create-plan
+  aw-create-walkthrough
+  confidence
+  code-quality
+  holistic-analysis
+  tdd
+  ux
+  docs
+  review-changes
+  create-pr
+  ci-auto-fix
+  persistent-memory
+)
+AW_AGENTS=(
+  reviewer.md
+  pr-reviewer.md
+)
+
+in_aw_set() {
+  local kind="$1" name="$2"
+  local item
+  if [[ "$kind" == "skill" ]]; then
+    for item in "${AW_SKILLS[@]}"; do
+      [[ "$item" == "$name" ]] && return 0
+    done
+  else
+    for item in "${AW_AGENTS[@]}"; do
+      [[ "$item" == "$name" ]] && return 0
+    done
+  fi
+  return 1
+}
 
 created=0
 repaired=0
@@ -147,6 +201,9 @@ max_name=4   # "NAME"
 while IFS= read -r -d '' skill_md; do
   skill_path="$(dirname "$skill_md")"
   name="$(basename "$skill_path")"
+  if (( AW_ONLY )) && ! in_aw_set skill "$name"; then
+    continue
+  fi
   entries+=("skill	$name	$skill_path")
   (( ${#name} > max_name )) && max_name=${#name}
 done < <(find "$REPO_ROOT/skills" -mindepth 1 -maxdepth 5 -type f -name SKILL.md -print0 2>/dev/null)
@@ -154,9 +211,17 @@ done < <(find "$REPO_ROOT/skills" -mindepth 1 -maxdepth 5 -type f -name SKILL.md
 for agent_path in "$REPO_ROOT"/agents/*.md; do
   [[ -f "$agent_path" ]] || continue
   name="$(basename "$agent_path")"
+  if (( AW_ONLY )) && ! in_aw_set agent "$name"; then
+    continue
+  fi
   entries+=("agent	$name	$agent_path")
   (( ${#name} > max_name )) && max_name=${#name}
 done
+
+if (( AW_ONLY )); then
+  log "mode: --aw (autonomous-workflow bundle: ${#AW_SKILLS[@]} skills + ${#AW_AGENTS[@]} agents)"
+  log ""
+fi
 
 if (( DRY_RUN )); then
   # Header.
@@ -214,7 +279,11 @@ fi
 # failure so the user sees the installer's error directly.
 queued=()
 while IFS= read -r -d '' install_script; do
-  queued+=("$(basename "$(dirname "$install_script")")")
+  skill_name="$(basename "$(dirname "$install_script")")"
+  if (( AW_ONLY )) && ! in_aw_set skill "$skill_name"; then
+    continue
+  fi
+  queued+=("$skill_name")
   (( DRY_RUN )) || bash "$install_script" --development --quiet
 done < <(find "$REPO_ROOT/skills" -mindepth 1 -maxdepth 5 -type f -name install.sh -print0 2>/dev/null)
 

@@ -1,4 +1,4 @@
-# Autonomous Workflow
+# `@aw` — Autonomous Workflow
 
 > Execute complete feature development cycles autonomously using isolated worktrees, layered companion skills, and a CI gate.
 
@@ -72,51 +72,30 @@ hooks, smart cleanup, shell-integrated `gw cd`), then the workflow continues
 normally. See [`rules/prerequisites.md#fallback-to-native-git-worktree`](./rules/prerequisites.md#fallback-to-native-git-worktree)
 for the full feature comparison.
 
-### Step 2: Install the skill + agents
-
-The skill ships with [`install.sh`](./install.sh) which handles the agent +
-routing-rule symlinks for you. Two steps: download skills, then run install.
-
-> **Pass `--agent claude-code`.** Without it, `npx skills` symlinks every skill
-> into ~24 different AI-tool directories at once (`.codebuddy/`, `.continue/`,
-> `.crush/`, `.factory/`, `.goose/`, `.junie/`, `.kilocode/`, …). Scoping the
-> install to the tool you actually use keeps your workspace tidy and your
-> `git status` short. Drop the flag (or use `--agent '*'`) only if you really
-> want the universal install.
-
-#### Option A: Global (personal use, all projects)
+### Step 2: Clone and install
 
 ```bash
-npx skills add https://github.com/mthines/agent-skills \
-  --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux docs \
-          review-changes create-pr ci-auto-fix persistent-memory \
-  --agent claude-code \
-  --global --yes
-bash ~/.claude/skills/autonomous-workflow/install.sh --global
+git clone https://github.com/mthines/agent-skills.git
+cd agent-skills
+bash scripts/sync-symlinks.sh --aw
 ```
 
-#### Option B: Per-project (team use, committable)
+`--aw` symlinks the autonomous-workflow skill and its 12 companion skills,
+plus the `aw` / `aw-planner` / `aw-executor` agents, into your `~/.claude/`
+directory. Edits to the cloned repo are picked up live on the next agent
+turn — `git pull` is the whole upgrade story.
 
-```bash
-npx skills add https://github.com/mthines/agent-skills \
-  --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux docs \
-          review-changes create-pr ci-auto-fix persistent-memory \
-  --agent claude-code \
-  --yes
-bash .claude/skills/autonomous-workflow/install.sh
-```
+To install **every** skill and agent in this repo (not just the AW bundle),
+drop the `--aw` flag. To preview without applying, add `--dry-run` (or `-n`).
 
-To run with fewer companions, omit them from the `--skill` list. See
-[Disabling Companions](#disabling-companions) below. Run
-`bash install.sh --help` for script options.
+> **Prefer a no-clone install?** `npx skills add` still works — see the root
+> [README](../../../README.md#install) for the npx path and other options.
 
 Then say *"implement X independently"* (or invoke `@aw`) — the routing rule
 dispatches the **`aw` dispatcher**, which detects the tier and routes: Micro/Lite
 run single-pass; Full hands off to the planner→executor split.
 
-#### What `install.sh` sets up
+#### What gets installed
 
 Three agents linked into your `.claude/agents/` directory under the
 **`aw-` namespace** (short for "autonomous-workflow") so they group together
@@ -195,20 +174,21 @@ Best for permanent project-level customization:
    row's "Disable by" link).
 4. Commit. Future runs in this project will skip the companion.
 
-### 2. Skip at install time (omit from `--skill` list)
+### 2. Remove individual symlinks after install
 
-Best for per-machine or one-off customization. When running
-`npx skills add ...`, simply omit the companion from the `--skill` list:
+Best for per-machine or one-off customization. After running
+`bash scripts/sync-symlinks.sh --aw`, delete the symlink for any companion
+you don't want:
 
 ```bash
-# Install everything except `tdd` and `ux`
-npx skills add https://github.com/mthines/agent-skills \
-  --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis docs \
-          review-changes create-pr ci-auto-fix \
-  --agent claude-code \
-  --yes
+# Drop tdd and ux from this machine's install
+rm ~/.claude/skills/tdd ~/.claude/skills/ux
 ```
+
+Re-running `bash scripts/sync-symlinks.sh --aw` would re-create them, so commit
+to the removal: either don't re-run, or edit the `AW_SKILLS` list in
+[`scripts/sync-symlinks.sh`](../../../scripts/sync-symlinks.sh) to drop them
+permanently.
 
 When the workflow tries to invoke the missing companion, Claude will return an
 error and the workflow will log:
