@@ -308,56 +308,30 @@ the full handoff contract is in
 
 ## Auto-Trigger Setup (Recommended)
 
-Install the skill + companions so Claude auto-triggers on phrases like
-*"implement X independently"*, *"in isolation"*, *"end-to-end"*. Two steps:
-download skills, then run [`install.sh`](./install.sh).
-
-**Global** (personal use, all projects):
+Install the skill, its companions, and the `aw-*` agents in one step:
 
 ```bash
-npx skills add https://github.com/mthines/agent-skills \
-  --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux docs \
-          review-changes create-pr ci-auto-fix persistent-memory \
-  --agent claude-code \
-  --global --yes
-bash ~/.claude/skills/autonomous-workflow/install.sh --global
+git clone https://github.com/mthines/agent-skills.git
+cd agent-skills
+bash scripts/sync-symlinks.sh --aw
 ```
 
-**Per-project** (team use, committable):
+`--aw` symlinks the autonomous-workflow skill and its 12 companion skills
+into `~/.claude/skills/`, plus the `aw` / `aw-planner` / `aw-executor` agents
+into `~/.claude/agents/`. The `reviewer` agent (optional Phase 6/7 review) is
+also linked; remove its symlink and Phase 7 logs `reviewer — not available,
+continuing` and proceeds. Edits to the cloned repo are picked up live on the
+next agent turn.
 
-```bash
-npx skills add https://github.com/mthines/agent-skills \
-  --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \
-          code-quality holistic-analysis tdd ux docs \
-          review-changes create-pr ci-auto-fix persistent-memory \
-  --agent claude-code \
-  --yes
-bash .claude/skills/autonomous-workflow/install.sh
-```
+The routing rule dispatches `aw`, which detects the tier and routes —
+Micro/Lite single-pass, or planner→executor for Full. After install, Claude
+auto-triggers on phrases like *"implement X independently"*, *"in isolation"*,
+*"end-to-end"*.
 
-> **Want the optional Phase 7 auto-review?** Install the `reviewer` agent
-> alongside the skill. Today the easiest path is to clone the agent
-> definition into your agents directory (`agents/reviewer.md`); the
-> workflow detects it at `.claude/agents/reviewer.md`,
-> `~/.agents/agents/reviewer.md`, or `~/.claude/agents/reviewer.md` and
-> dispatches it automatically when CI turns green. Skip the install and
-> Phase 7 logs `reviewer — not available, continuing` and proceeds.
-
-> The `--agent claude-code` flag is recommended — it scopes the install to
-> `.claude/skills/` only. Without it the CLI symlinks the skills into every
-> supported AI tool's directory at once (`.codebuddy/`, `.continue/`, `.crush/`,
-> …). Drop it (or use `--agent '*'`) only if you want the universal install.
-
-After the script runs, three agents are linked into your `.claude/agents/`
-directory: `aw.md` (the opt-in dispatcher), `aw-planner.md`, and
-`aw-executor.md` (the `aw-` prefix is the autonomous-workflow namespace). The
-routing rule dispatches `aw`, which detects the tier and routes — Micro/Lite
-single-pass, or planner→executor for Full.
-
-To run with fewer companions, omit them from the `--skill` list. See
-[`rules/companion-skills.md`](./rules/companion-skills.md) for what each does
-and how to disable. Run `bash install.sh --help` for script options.
+To install the full repo (not just the AW bundle) drop the `--aw` flag. For
+the per-project install, the no-clone `npx skills add` alternative, or
+per-companion disabling, see the [README](./README.md#installation) and
+[`rules/companion-skills.md`](./rules/companion-skills.md).
 
 ---
 
