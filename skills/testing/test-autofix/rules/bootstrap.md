@@ -47,7 +47,7 @@ Look for these files in the project root (and common subdirectories):
 | **Jest** | `jest.config.ts`, `jest.config.js`, `jest.config.cjs`, or `"jest"` in `package.json` devDependencies |
 | **Deno** | `deno.json`, `deno.jsonc`, or `deno.lock` present |
 | **Playwright** | `playwright.config.ts`, `playwright.config.js`, or `"@playwright/test"` in devDependencies |
-| **Pytest** | `pytest.ini`, `pyproject.toml` with `[tool.pytest.ist-options]`, `setup.cfg` with `[tool:pytest]`, or `pytest` in `requirements*.txt` |
+| **Pytest** | `pytest.ini`, `pyproject.toml` with `[tool.pytest.ini_options]`, `setup.cfg` with `[tool:pytest]`, or `pytest` in `requirements*.txt` |
 | **Maestro** | `.maestro/` directory or `*.yaml` files with Maestro `appId:` keys |
 | **Storybook** | `.storybook/` directory AND (`"@storybook/addon-vitest"` or `"@storybook/test-runner"`) in devDependencies |
 
@@ -65,15 +65,15 @@ If multiple stacks are detected:
 
 ## Step 3 — Load the detector template
 
-Load the matching detector from [`../detectors/`](../detectors/):
+Load the matching detector:
 
-- Vitest → `detectors/vitest.md`
-- Jest → `detectors/jest.md`
-- Deno → `detectors/deno.md`
-- Playwright → `detectors/playwright.md`
-- Pytest → `detectors/pytest.md`
-- Maestro → `detectors/maestro.md`
-- Storybook → `detectors/storybook.md`
+- Vitest → [`../detectors/vitest.md`](../detectors/vitest.md)
+- Jest → [`../detectors/jest.md`](../detectors/jest.md)
+- Deno → [`../detectors/deno.md`](../detectors/deno.md)
+- Playwright → [`../detectors/playwright.md`](../detectors/playwright.md)
+- Pytest → [`../detectors/pytest.md`](../detectors/pytest.md)
+- Maestro → [`../detectors/maestro.md`](../detectors/maestro.md)
+- Storybook → [`../detectors/storybook.md`](../detectors/storybook.md)
 
 ## Step 4 — Customize the template
 
@@ -90,33 +90,31 @@ Fill in the template's placeholder values based on the detected project:
 
 ## Step 5 — Propose the surface diff and wait for approval
 
-Present the proposed surface file to the user:
-
-```
-Bootstrap detected: <stack>
-Project key: <key>
-Surface file: surfaces/<key>.md
-
-Proposed surface:
----
-<full surface file content>
----
-
-Please review and confirm. You can edit the commands before I write the file.
-Confirm with "yes" or provide corrections.
-```
+Render the proposal block exactly per [`../templates/bootstrap-proposal.md`](../templates/bootstrap-proposal.md).
+The template is the canonical user-facing format; do not improvise the wording.
 
 **Do NOT write the file until the user confirms.**
 If the user provides corrections, apply them and show the updated content before writing.
 
-## Step 6 — Write the surface file
+## Step 6 — Write the surface file (atomic)
 
-After approval:
+After approval, write the file atomically to avoid corruption when two
+`test-autofix` runs touch the same surface concurrently (parallel CI workers,
+interactive + agent session against the same repo):
 
 1. Create the `surfaces/` directory if it does not exist.
-2. Write the surface file to `surfaces/<project-key>.md`.
-3. Confirm:
+2. Write to a temporary sibling first, then rename:
+   ```bash
+   tmp="surfaces/<project-key>.md.tmp.$$"
+   # write content to "$tmp" with the Write tool
+   mv -n "$tmp" "surfaces/<project-key>.md"
    ```
+   `mv -n` (no-clobber) refuses to overwrite if another worker already wrote the
+   target between Step 5's check and Step 6's rename. If the rename is refused,
+   re-read the now-existing surface and re-validate per
+   [`surface-validation.md`](./surface-validation.md) instead of writing.
+3. Confirm:
+   ```text
    Surface written: surfaces/<project-key>.md
    Proceeding to Phase 1.
    ```

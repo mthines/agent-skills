@@ -100,7 +100,7 @@ The `--surface <path>` flag is the escape hatch for unusual layouts.
 remote=$(git remote get-url origin 2>/dev/null)
 if [[ -n "$remote" ]]; then
   key=$(echo "$remote" \
-    | sed 's|^[a-z+]*://||; s|^git@||; s|:|/|; s|\.git$||' \
+    | sed 's|^[a-z+]*://||; s|^git@||; s|:|/|g; s|\.git$||' \
     | tr '/' '-' \
     | tr '[:upper:]' '[:lower:]')
 else

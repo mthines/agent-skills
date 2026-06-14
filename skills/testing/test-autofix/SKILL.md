@@ -46,7 +46,7 @@ Load the matching rule file when you need detail — do not preload them.
 | 4 | Apply + verify single failing test | this file + [`rules/anti-patterns.md`](./rules/anti-patterns.md) |
 | 5 | test-provenance-guard (optional companion) | invoke `Skill("test-provenance-guard")` |
 | 6 | Outer loop: re-run full surface; regression-detect | [`rules/regression-detection.md`](./rules/regression-detection.md) |
-| 9 | Report (structured exit summary) | [`templates/exit-summary.md`](./templates/exit-summary.md) |
+| 7 | Report (structured exit summary) | [`templates/exit-summary.md`](./templates/exit-summary.md) |
 
 Always read [`rules/anti-patterns.md`](./rules/anti-patterns.md) first.
 The hard refusals apply to every phase.
@@ -66,13 +66,29 @@ The argument is: `$ARGUMENTS`.
 
 ## Phase 0 — Resolve the surface
 
-Determine the surface file for the current project.
+Determine the surface file for the current project. Phase 0 is a hard
+two-branch decision; pick exactly one path and follow it through.
+
+### Step 1 — Pick the resolution branch
+
+- **If `--surface <path>` was passed** → branch A.
+- **Otherwise** → branch B.
+
+### Branch A — `--surface <path>` override
+
+Use the file at `<path>` directly as the surface. **Do NOT compute the project
+key, do NOT scan `surfaces/`, do NOT run bootstrap.**
+
+Still validate per [`rules/surface-validation.md`](./rules/surface-validation.md),
+but tolerate the project-key mismatch warning (it's expected when overriding).
+
+When validation passes, jump straight to Phase 1.
+
+### Branch B — Auto-resolve from project key
 
 1. Compute the project key per [`rules/project-keying.md`](./rules/project-keying.md).
 
-2. If `--surface <path>` was passed: use that file directly. Skip steps 3–5.
-
-3. Look for `surfaces/<project-key>.md` next to this skill file.
+2. Look for `surfaces/<project-key>.md` next to this skill file.
    The skill's own directory is resolved by following the symlink chain of
    the loaded `SKILL.md`:
    ```bash
@@ -81,13 +97,15 @@ Determine the surface file for the current project.
    If that fails (model-invocation context), default to
    `~/.agents/skills/test-autofix/surfaces/`.
 
-4. If no surface file is found: run bootstrap per [`rules/bootstrap.md`](./rules/bootstrap.md).
-   Bootstrap detects the stack, proposes a surface diff, waits for user approval,
-   then writes the file. Do NOT proceed to Phase 1 until the surface exists.
+3. **If no surface file is found** → run bootstrap per
+   [`rules/bootstrap.md`](./rules/bootstrap.md). Bootstrap detects the stack,
+   proposes a surface diff, waits for user approval, then writes the file.
+   Do NOT proceed to Phase 1 until the surface exists.
 
-5. If a surface file exists: validate it per [`rules/surface-validation.md`](./rules/surface-validation.md).
-   If validation fails, propose an update diff and ask once.
-   If the user declines the update, escalate — do not run with an invalid surface.
+4. **If a surface file exists** → validate it per
+   [`rules/surface-validation.md`](./rules/surface-validation.md). If validation
+   fails, propose an update diff and ask once. If the user declines the update,
+   escalate — do not run with an invalid surface.
 
 ## Phase 1 — Detect failures and build the plan
 
@@ -205,7 +223,7 @@ After a batch of fixes:
 
 4. On any exit, write a summary section to the plan file.
 
-## Phase 9 — Report
+## Phase 7 — Report
 
 Always end with the structured exit summary from
 [`templates/exit-summary.md`](./templates/exit-summary.md).

@@ -58,6 +58,24 @@ which <first-word>
 
 A resolved binary is sufficient — do not run the full detect command during validation.
 
+### Tool-version-manager edge case
+
+If `which <executable>` fails but the project uses a tool-version manager
+(`mise`, `asdf`, `nvm`, `volta`, `pyenv`), the binary is real but not on the
+agent's PATH. Detect this case before treating the surface as stale:
+
+| Signal in repo | Tool manager | Treat `which` miss as |
+| --- | --- | --- |
+| `.tool-versions` / `mise.toml` / `.mise.toml` | mise / asdf | **valid** (suggest `--skip-validation`) |
+| `.nvmrc` | nvm | **valid** (suggest `--skip-validation`) |
+| `package.json#volta` | volta | **valid** (suggest `--skip-validation`) |
+| `.python-version` | pyenv | **valid** (suggest `--skip-validation`) |
+| (none of the above) | — | **stale** (propose update diff) |
+
+When the surface is treated as valid via this exemption, log:
+`Surface validation: binary not on PATH, but <tool-manager> detected. Suggest --skip-validation for this project.`
+Do not auto-add `--skip-validation` to the surface or the invocation — the user owns that choice.
+
 ### Step 3 — Check the single-test-command binary
 
 Same check as Step 2 for the `single-test-command` executable.
