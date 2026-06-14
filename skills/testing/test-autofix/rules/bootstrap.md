@@ -17,7 +17,7 @@ tags:
 - [Step 3 — Load the detector template](#step-3--load-the-detector-template)
 - [Step 4 — Customize the template](#step-4--customize-the-template)
 - [Step 5 — Propose the surface diff and wait for approval](#step-5--propose-the-surface-diff-and-wait-for-approval)
-- [Step 6 — Write the surface file](#step-6--write-the-surface-file)
+- [Step 6 — Write the surface file (atomic)](#step-6--write-the-surface-file-atomic)
 - [Edge cases](#edge-cases)
 
 Bootstrap runs when no surface file exists for the current project.
