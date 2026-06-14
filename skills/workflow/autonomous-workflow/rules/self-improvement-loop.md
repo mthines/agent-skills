@@ -107,19 +107,24 @@ After the INDEX loads:
 1. Match each lesson's `trigger-context` against the current task (file globs,
    task type, tech). Load the full entry only for matches — progressive
    disclosure; do not pull every entry.
-2. Treat each **matching** lesson's *"What to do next time"* as a **hard
-   constraint** on the plan / implementation, exactly like an Acceptance
-   Criterion. Record it in `plan.md` under a `## Lessons applied` note (Full
+2. Treat each **matching** lesson's *"What to do next time"* as a
+   **consideration** on the plan / implementation — apply it unless it
+   conflicts with the user's stated intent or task-specific constraints.
+   Record applied lessons in `plan.md` under a `## Lessons applied` note (Full
    Mode).
-3. A lesson is **advisory** — it informs the plan; it never silently changes a
-   gate or skips a phase. If a lesson conflicts with the user's stated intent,
-   the user's intent wins and the conflict is surfaced.
+3. Lessons are **advisory** — they bias the plan; they never silently change a
+   gate, skip a phase, or override the user's intent. If a lesson conflicts
+   with the user's stated intent, the user's intent wins and the conflict is
+   surfaced.
 4. **Maintenance check.** If the loaded `INDEX.md` is at or near its 200-line
-   cap (≥ ~180 lines), surface a one-line suggestion to run
-   `/persistent-memory consolidate aw-lessons` — do not run it inside the
-   autonomous loop. Skipping consolidation forever lets the INDEX rot and recall
-   degrade (persistent-memory's documented anti-pattern); this nudge is the
-   trigger the loop would otherwise lack.
+   cap (≥ ~180 lines), invoke
+   `Skill("persistent-memory", "consolidate aw-lessons --tier project-shared --auto")`
+   at the next write point (Phase 4, Phase 7, or dispatcher exit-write).
+   Autonomous consolidate prunes **expired** and **low-confidence** entries
+   only; merges and contradictions are surfaced for review rather than
+   resolved silently (preserves entrenchment guard #4). Without periodic
+   consolidation the INDEX rots and recall degrades (persistent-memory's
+   documented anti-pattern).
 
 Log:
 
@@ -135,8 +140,10 @@ Log:
 
 **Anchor:** `lessons-write`
 
-A lesson is captured at the two points where the workflow already knows
-something went wrong or a run just completed — no new reflection step is added:
+A lesson is captured at the two points below. The end-of-run write includes a
+brief **retrospective prompt** so friction is captured even on clean runs —
+the dominant failure mode of this loop is *no capture at all* (cold-start),
+and recurrence + expiry filter noise downstream:
 
 | Write point | When | What to capture |
 | ----------- | ---- | --------------- |
@@ -162,8 +169,15 @@ Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")   # 
   that lesson — successful application counts as recurrence evidence. An UPDATE
   to an entry that carries a `seen_count` field MUST increment `seen_count` by
   1 and refresh `expires`. This is how a *working* lesson still reaches the
-  `seen_count >= 3` promotion gate. "Capture nothing on a clean run" applies
-  only when no lessons were read or none matched.
+  `seen_count >= 3` promotion gate.
+- **Retrospective prompt (Phase 7 / dispatcher exit-write).** Before writing,
+  ask: was there friction, a surprise, a guess that paid off, a near-miss, or a
+  companion that should have fired? Phrase each capture as an **observation**
+  ("last run hit X") not a **rule** ("always do Y") — the read step applies
+  observations as considerations, not constraints. Write nothing only when the
+  retrospective surfaces nothing **and** no lesson was applied — empty lessons
+  are noise. Phase 4 stuck-loop is failure-event-driven and does not need the
+  retrospective.
 
 Log:
 

@@ -79,12 +79,13 @@ Skill("persistent-memory", "read aw-lessons --tier project-shared")     # skips 
 
 1. Match each lesson's `trigger-context` against the current task (file globs,
    task type, tech). Load full entries only for matches (progressive disclosure).
-2. Treat each matching lesson's *"What to do next time"* as a **hard constraint**
-   on the plan — like an Acceptance Criterion. Record applied lessons in `plan.md`
-   under `## Lessons applied`.
-3. Lessons are **advisory**: they inform the plan, never silently change a gate
-   or skip a phase. If a lesson conflicts with the user's intent, the user wins —
-   surface the conflict.
+2. Treat each matching lesson's *"What to do next time"* as a **consideration**
+   on the plan — apply it unless it conflicts with the user's stated intent or
+   task-specific constraints. Record applied lessons in `plan.md` under
+   `## Lessons applied`.
+3. Lessons are **advisory**: they bias the plan, never silently change a gate,
+   skip a phase, or override the user's intent. If a lesson conflicts with the
+   user's intent, the user wins — surface the conflict.
 4. **Promotion check:** if any matched lesson has `seen_count >= 3` or
    `status: structural`, surface the one-line promotion suggestion from
    [`self-improvement-loop.md#lesson-promotion`](./self-improvement-loop.md#lesson-promotion).

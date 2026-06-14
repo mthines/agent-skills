@@ -428,7 +428,11 @@ encoding.
 If a lesson read at the start of the run was applied and the failure it targets did not recur, write an UPDATE for that lesson — successful application counts as recurrence evidence.
 An UPDATE to an entry that carries a `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`.
 Without this write, a lesson that works never accumulates the recurrence evidence the `seen_count >= 3` promotion gate requires.
-Capture nothing only when the run was clean **and** no lessons were read (or none matched) — empty lessons are noise.
+
+**Retrospective prompt.**
+Before writing, ask: was there friction, a surprise, a guess that paid off, a near-miss, or a companion that should have fired?
+Phrase each capture as an **observation** ("last run hit X") not a **rule** ("always do Y") — the read step applies observations as considerations, not constraints.
+Write nothing only when the retrospective surfaces nothing **and** no lesson was applied — empty lessons are noise.
 
 - `--auto` skips consent, **not** the privacy pre-flight (never store secrets /
   PII). Lessons are workflow mechanics, never product data.

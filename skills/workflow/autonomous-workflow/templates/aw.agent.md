@@ -131,18 +131,25 @@ handoff.
   Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")   # skips silently if not installed
   ```
 
-  Write nothing if the run was clean **and** no read lesson was applied — empty
-  lessons are noise. If a lesson you read at intake was applied and its failure
-  did not recur, write an UPDATE for it (successful application counts as
+  Before writing, do a 30-second retrospective: was there friction, a surprise,
+  a guess that paid off, a near-miss, or a companion that should have fired?
+  Phrase each capture as an **observation** ("last run hit X") not a **rule**
+  ("always do Y") — the read step applies observations as considerations, not
+  constraints. If a lesson you read at intake was applied and its failure did
+  not recur, write an UPDATE for it (successful application counts as
   recurrence evidence; the UPDATE MUST bump `seen_count` by 1 and refresh
-  `expires`). For **Full**,
-  the planner/executor already write at their phase points (stuck-loop,
-  end-of-run); your exit write is the catch-all so Micro/Lite also contribute.
+  `expires`). Write nothing only when the retrospective surfaces nothing **and**
+  no lesson was applied — empty lessons are noise. For **Full**, the
+  planner/executor already write at their phase points (stuck-loop, end-of-run);
+  your exit write is the catch-all so Micro/Lite also contribute.
 - **Promotion** — if a matched or written lesson has `seen_count >= 3` (or
   `status: structural`), surface (do not act):
   `/create-skill diagnose autonomous-workflow --symptom "<lesson title>"`.
-- **Maintenance** — if the `aw-lessons` INDEX is near its 200-line cap, suggest
-  `/persistent-memory consolidate aw-lessons`.
+- **Maintenance** — if the `aw-lessons` INDEX is near its 200-line cap (≥ 180
+  lines), invoke
+  `Skill("persistent-memory", "consolidate aw-lessons --tier project-shared --auto")`
+  immediately after the exit-write. Autonomous consolidate prunes expired and
+  low-confidence entries only; contradictions are surfaced for review.
 
 `--auto` skips consent, never the privacy pre-flight (no secrets / PII in lessons).
 
