@@ -38,7 +38,7 @@ If the failure is a test, classify whether the test or the production code is wr
 ### `workflow-bug`
 
 Read every workflow file in `.github/workflows/` before editing one.
-Job dependencies (`needs:`), composite actions, and reusable workflows mean a one-file change can break a sibling job — see Step 2 in [`../SKILL.md`](../SKILL.md).
+Job dependencies (`needs:`), composite actions, and reusable workflows mean a one-file change can break a sibling job — see Phase 2 in [`../SKILL.md`](../SKILL.md).
 
 ### `dep-bug`
 
