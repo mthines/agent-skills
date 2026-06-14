@@ -1,35 +1,70 @@
 ---
 name: ci-auto-fix
 description: >
-  Diagnose a failed CI check, apply a minimal fix, push, and iteratively verify
-  until CI passes. Provider-agnostic in scope (currently implements the GitHub
-  Actions path via `gh`). Refuses to disable, skip, or weaken checks. Invoke
-  with /ci-auto-fix <run-id|pr-url>.
+  Diagnoses a failed CI check, classifies it with an explicit verdict
+  (code-bug | workflow-bug | dep-bug | env-bug | flaky | unsure),
+  confidence-gates the fix (>=90 auto, 80-89 ask, <80 escalate),
+  applies it, pushes, and iteratively verifies until CI passes — reverting
+  the last commit if a brand-new failure appears. Provider-agnostic in
+  scope; currently implements the GitHub Actions path via `gh`. Hard-
+  refuses to disable, skip, or weaken checks. Triggers on "CI is failing",
+  "fix the CI", "the build is red", "auto-fix this PR's checks",
+  "GitHub Actions failed", "/ci-auto-fix".
 disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines
-  version: '2.0.0'
+  version: '3.0.0'
   workflow_type: command
+  tags:
+    - ci
+    - github-actions
+    - auto-fix
+    - confidence-gate
+    - regression-detection
+    - guardrails
+    - gh
 ---
 
 # CI Auto-Fix
 
-Diagnose and fix a failed CI check, then verify it passes. Generic across repositories; currently implements the GitHub Actions path via `gh`.
+Diagnose and fix a failed CI check, then verify it passes.
+Generic across repositories; currently implements the GitHub Actions path via `gh`.
+
+This `SKILL.md` is the **orchestration index**.
+Load the matching rule file when you need detail — do not preload them.
+
+| Phase | Goal | Required rule |
+| ----- | ---- | ------------- |
+| 0 | Resolve the target (run ID / PR URL / auto-detect) | this file |
+| 1 | Identify the failure (fetch logs) | this file |
+| 2 | Read every workflow file before editing one | this file |
+| 3 | Classify the failure with an explicit verdict | [`rules/verdicts.md`](./rules/verdicts.md) |
+| 3.5 | Write the plan artifact + run the confidence gate | [`rules/confidence-gate.md`](./rules/confidence-gate.md) + [`templates/plan-artifact.md`](./templates/plan-artifact.md) |
+| 4 | Apply the minimal, targeted fix | this file + [`rules/anti-patterns.md`](./rules/anti-patterns.md) |
+| 5 | Verify locally before pushing | this file |
+| 6 | Commit and push (rebase-safe) | this file |
+| 7 | Wait for CI and capture the new result | this file |
+| 8 | Iterate — with regression detection | [`rules/regression-detection.md`](./rules/regression-detection.md) |
+| 9 | Report (structured exit summary) | this file |
+
+Always read [`rules/anti-patterns.md`](./rules/anti-patterns.md) first.
+The refusals apply to every phase.
 
 ## Input
 
 The user provides one of:
-- A GitHub Actions check/run URL (e.g., `https://github.com/owner/repo/actions/runs/12345678`)
+
+- A GitHub Actions check/run URL (e.g. `https://github.com/owner/repo/actions/runs/12345678`)
 - A check run ID or workflow run ID
-- A PR URL with failing checks (e.g., `https://github.com/owner/repo/pull/42`)
-- **Nothing** — if `$ARGUMENTS` is empty, auto-detect the failing CI for the current branch's PR (see Step 0 below).
+- A PR URL with failing checks (e.g. `https://github.com/owner/repo/pull/42`)
+- **Nothing** — if `$ARGUMENTS` is empty, auto-detect the failing CI for the current branch's PR (see Phase 0).
 
-The argument is: $ARGUMENTS
+The argument is: `$ARGUMENTS`.
 
-## Step 0: Resolve the target when no argument was given
+## Phase 0 — Resolve the target
 
-If `$ARGUMENTS` is empty, do not ask the user — resolve the target automatically:
+If `$ARGUMENTS` is empty, do not ask the user — resolve automatically:
 
 1. Get the current branch:
    ```bash
@@ -40,128 +75,157 @@ If `$ARGUMENTS` is empty, do not ask the user — resolve the target automatical
    ```bash
    gh pr list --head "<branch>" --state open --json number,url,headRepositoryOwner --limit 1
    ```
-   - If exactly one PR is found, use its URL as the PR input and continue to Step 1.
-   - If the PR's `headRepositoryOwner.login` differs from the current repo's owner (i.e., the PR is from a fork), surface that fact to the user before continuing.
+   - If exactly one PR is found, use its URL as the PR input and continue to Phase 1.
+   - If `headRepositoryOwner.login` differs from the current repo's owner (fork PR), surface that fact to the user before continuing.
    - If no open PR is found, fall back to the most recent failed workflow run on this branch:
      ```bash
      gh run list --branch "<branch>" --limit 10 --json databaseId,conclusion,workflowName \
        | jq '[.[] | select(.conclusion == "failure")] | .[0]'
      ```
      If a failed run is found, treat its `databaseId` as the run ID input.
-   - If neither resolves (no PR, no failed run), **then** ask the user for input.
+   - If neither resolves (no PR, no failed run), **then** ask the user.
 
 3. Print the resolved target before continuing:
    `Auto-detected target: <PR URL or run ID> on branch <branch>`.
 
-## Step 1: Identify the failure
+## Phase 1 — Identify the failure
 
-Based on the input provided:
+Based on the input:
 
-1. **If a run URL or run ID was given**, fetch the failed job logs:
+1. **Run URL or run ID** — fetch the failed job logs:
    ```bash
    gh run view <run-id> --log-failed
    ```
 
-2. **If a PR URL was given**, list the failing checks first:
+2. **PR URL** — list the failing checks first:
    ```bash
    gh pr checks <pr-number> --repo <owner/repo>
    ```
    Then fetch logs for each failing check.
 
-3. **If just a check suite or check run ID**, use:
+3. **Check suite / check run ID**:
    ```bash
    gh api repos/<owner>/<repo>/check-runs/<check-run-id>
    ```
 
 Extract and summarize:
-- Which job(s) failed
-- The specific error messages and exit codes
-- Which step within the job failed
-- The full error context (surrounding log lines)
 
-## Step 2: Understand the workflow holistically
+- Which job(s) failed.
+- The specific error messages and exit codes.
+- Which step within the job failed.
+- The full error context (surrounding log lines).
 
-Before making any changes, read and understand ALL workflow files in the repository:
+## Phase 2 — Understand the workflow holistically
+
+Before making any changes, read every workflow file in the repository:
 
 ```bash
 find .github/workflows -name '*.yml' -o -name '*.yaml'
 ```
 
-Read each workflow file. Build a mental model of:
-- How jobs depend on each other (`needs:`)
-- What triggers each workflow (`on:`)
-- Shared steps, reusable workflows, or composite actions
-- Environment variables and secrets used
-- Matrix strategies
-- Caching strategies
-- Artifact passing between jobs
+Build a mental model of:
+
+- How jobs depend on each other (`needs:`).
+- What triggers each workflow (`on:`).
+- Shared steps, reusable workflows, composite actions.
+- Environment variables and secrets used.
+- Matrix strategies.
+- Caching strategies.
+- Artifact passing between jobs.
 
 This holistic understanding prevents fixes that solve one problem but break another job or workflow.
 
-## Step 3: Identify the root cause
+## Phase 3 — Classify the failure (verdict required)
 
-Analyze the error in context:
-1. Is it a **code error** (lint, type check, test failure, build error)?
-2. Is it a **workflow configuration error** (bad YAML, wrong action version, missing secret)?
-3. Is it a **dependency issue** (lockfile mismatch, missing package, version conflict)?
-4. Is it a **flaky/transient error** (network timeout, rate limit, resource exhaustion)?
-5. Is it an **environment issue** (wrong Node/Python/etc version, missing system dependency)?
+Pick exactly one verdict per failure.
+The verdict binds behavior; do not skip this step.
 
-For code errors, read the relevant source files to understand the issue before fixing.
+Full decision table and per-verdict notes: [`rules/verdicts.md`](./rules/verdicts.md).
 
-## Step 4: Fix the error
+Verdicts at a glance:
 
-Apply the minimal, targeted fix:
-- **Code errors**: Fix the actual code issue (lint error, type error, failing test, etc.)
-- **Workflow errors**: Fix the workflow YAML
-- **Dependency issues**: Update lockfile or fix version constraints
+- `code-bug` / `workflow-bug` / `dep-bug` / `env-bug` → continue to Phase 3.5.
+- `flaky` / `unsure` → **escalate.** Stop.
 
-### Guard rails — do NOT:
-- Disable or skip failing checks/tests just to make CI pass
-- Add `continue-on-error: true` to mask failures
-- Remove linting rules or type checks
-- Skip hooks with `--no-verify`
-- Make unrelated changes or refactor surrounding code
-- Weaken any validation or safety checks
+## Phase 3.5 — Plan artifact + confidence gate
 
-### Do:
-- Make the smallest change that correctly fixes the root cause
-- Ensure the fix is consistent with the rest of the codebase
-- If fixing a test, make sure the test is actually wrong (not the code it tests)
-- Run the relevant checks locally first if possible (build, lint, test)
+1. Write or update the plan at `.agent/{branch}/ci-auto-fix-plan.md` using [`templates/plan-artifact.md`](./templates/plan-artifact.md).
+   The plan is read-only documentation of intent — the user can pre-empt before any code is written.
 
-## Step 5: Verify locally
+2. Run the confidence gate per [`rules/confidence-gate.md`](./rules/confidence-gate.md):
 
-Before pushing, run the same checks that failed locally to the extent possible:
-- If build failed: run the build command
-- If lint failed: run the linter
-- If tests failed: run the tests
-- If typecheck failed: run the type checker
+   | Score | Action |
+   | ----- | ------ |
+   | ≥ 90 | Auto-apply. Continue to Phase 4. |
+   | 80–89 | Show the diff, ask once, apply on approval. |
+   | < 80 | Escalate. Do not write. |
+
+   The gate is non-negotiable.
+
+## Phase 4 — Fix the error
+
+Apply the minimal, targeted fix per the verdict:
+
+- `code-bug` — fix the actual code issue.
+- `workflow-bug` — fix the workflow YAML.
+- `dep-bug` — update the lockfile or correct the version constraint.
+- `env-bug` — pin or bump the runner-side version.
+
+Hard refusals (full list in [`rules/anti-patterns.md`](./rules/anti-patterns.md)):
+
+- Do not disable, skip, or weaken any check.
+- Do not add `continue-on-error: true`.
+- Do not add `.skip` / `it.only` to silence a test.
+- Do not skip hooks with `--no-verify`.
+- Do not refactor surrounding code.
+
+Do:
+
+- Make the smallest change that fixes the root cause.
+- Stay consistent with the rest of the codebase.
+- If fixing a test, verify the test is the one that's wrong (not the code it tests).
+
+## Phase 5 — Verify locally
+
+Before pushing, run the same checks that failed:
+
+- If build failed: run the build command.
+- If lint failed: run the linter.
+- If tests failed: run the tests.
+- If typecheck failed: run the type checker.
 
 Only proceed to push if local verification passes.
 
-## Step 6: Commit and push
+## Phase 6 — Commit and push
 
-1. Stage only the files relevant to the fix
-2. Write a clear commit message describing what was fixed and why:
-   ```
+1. Stage only the files relevant to the fix.
+
+2. Write a clear commit message:
+
+   ```text
    fix(ci): <description of what was fixed>
 
    <brief explanation of root cause and fix>
    ```
-3. Sync with the remote before pushing — another process (e.g. a parallel `/implement-suggestion` worker) may have pushed in the meantime:
+
+3. Sync with the remote before pushing — a parallel worker may have pushed:
+
    ```bash
    git pull --rebase origin "<branch>"
    ```
-   If the rebase conflicts, run `git rebase --abort`, stop, and report the conflicting files to the user — do not auto-resolve.
-4. Push to the current branch:
+
+   If the rebase conflicts, run `git rebase --abort`, stop, and report the conflicting files to the user. Do not auto-resolve.
+
+4. Push:
+
    ```bash
    git push origin "<branch>"
    ```
-5. If the push is rejected as non-fast-forward, run `git pull --rebase origin "<branch>"` and retry the push **once**.
-   If the retry push also fails, or the rebase conflicts, stop and report to the user instead of force-pushing or looping.
 
-## Step 7: Wait for CI and verify
+5. If the push is rejected as non-fast-forward, rebase and retry the push **once**.
+   If the retry also fails, or the rebase conflicts, stop and report. Never `--force` push from this skill.
+
+## Phase 7 — Wait for CI
 
 After pushing, monitor the check:
 
@@ -175,36 +239,55 @@ After pushing, monitor the check:
    gh run list --branch <current-branch> --limit 5
    ```
 
-3. Watch the run until completion, bounded at 30 minutes so a hung or queued-forever run cannot block the loop indefinitely:
+3. Watch the run until completion, bounded at 30 minutes:
    ```bash
    timeout 1800 gh run watch <new-run-id>
    ```
-   If `timeout` expires (exit code 124), run `gh run view <new-run-id>` to capture which jobs are still pending, report them to the user, and escalate instead of continuing to block — same pattern as the 10-minute review poll in [`create-pr/rules/review-mode.md`](../create-pr/rules/review-mode.md).
+   If `timeout` expires (exit code 124), run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate. Same pattern as the 10-minute review poll in [`../create-pr/rules/review-mode.md`](../create-pr/rules/review-mode.md).
 
 4. Check the result:
    ```bash
    gh run view <new-run-id>
    ```
 
-## Step 8: Iterate if still failing
+## Phase 8 — Iterate with regression detection
 
-If the check still fails:
+Full decision table: [`rules/regression-detection.md`](./rules/regression-detection.md).
 
-1. Fetch the new failure logs:
-   ```bash
-   gh run view <new-run-id> --log-failed
-   ```
-2. Determine if this is the same error or a new/different one
-3. Go back to **Step 3** and repeat the fix cycle
-4. Maximum 4 iterations — if still failing after 4 attempts, report the situation to the user with:
-   - What was tried
-   - What errors remain
-   - Suggested next steps for manual investigation
+At a glance:
 
-## Step 9: Report success
+- Same failure → re-classify in Phase 3.
+- Strict subset → continue with the remaining failures.
+- New failure that did not exist before → **revert the last commit** (`git revert HEAD && git push`) and re-plan or escalate.
 
-Once all checks pass, report:
-- What the original error was
-- What fix was applied
-- Confirmation that all checks are now passing
-- Link to the successful run
+Maximum 4 iterations.
+After 4, escalate with the structured exit summary.
+
+## Phase 9 — Report
+
+Always end with a structured summary block, regardless of outcome:
+
+```text
+ci-auto-fix run
+  Outcome: <green | escalated | regression-reverted | max-iterations>
+  Original failure: <workflow / job / step + one-line cause>
+  Verdict: <code-bug | workflow-bug | dep-bug | env-bug | flaky | unsure>
+  Iterations: <N>/4
+  Plan: .agent/{branch}/ci-auto-fix-plan.md
+  Successful run: <URL>           # if green
+  Escalation reason: <…>           # if not green
+```
+
+On success, include the original error, the fix applied, confirmation that all checks pass, and a link to the successful run.
+
+On escalation, include what was tried (one line per iteration), what remains, and suggested next steps for manual investigation.
+
+## Definition of done
+
+The run is done when ANY of the following is true:
+
+- All checks are green AND the structured exit summary has been printed.
+- The verdict was `flaky` or `unsure` and the failure was escalated to the user.
+- The confidence gate scored < 80 and the fix was not written.
+- A regression was detected and reverted, and the user owns the next step.
+- `--max-iterations` (default 4) was reached.
