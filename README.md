@@ -94,7 +94,7 @@ Plumbing for shipping code.
 | Skill | What it does | Type |
 |-------|--------------|------|
 | **[/create-pr](./skills/delivery/create-pr/SKILL.md)** | Narrative PR description, push, open PR, watch CI, auto-fix simple failures. Flags: `--split` (multi-PR breakdown), `--review` (Claude GitHub App + auto-implement loop). | `/` |
-| **[/ci-auto-fix](./skills/delivery/ci-auto-fix/SKILL.md)** | Diagnoses a failed CI check, applies a minimal fix, pushes, iterates until green. Refuses to disable or weaken checks. | `/` |
+| **[/ci-auto-fix](./skills/delivery/ci-auto-fix/SKILL.md)** | Verdict-gated CI diagnosis and fix (`code-bug\|workflow-bug\|dep-bug\|env-bug\|flaky\|unsure`); confidence gate (≥90 auto, 80–89 ask, <80 escalate); regressing pushes auto-revert. Refuses to disable or weaken checks. | `/` |
 | **[/resolve-conflicts](./skills/delivery/resolve-conflicts/SKILL.md)** | Detects merge/rebase conflicts, shows both sides with context, proposes resolutions, asks for ambiguous cases. | `/` |
 | **[/changelog](./skills/delivery/changelog/SKILL.md)** | Generates a personal markdown changelog of merged PRs and closed Linear tickets over a configurable window (default 7 days). | `/` |
 | **[/github-actions-author](./skills/delivery/github-actions-author/SKILL.md)** | Authors and reviews fast, cheap, maintainable GitHub Actions workflows (2026 best practices). Modes: `scaffold`, `review`. | `/` |

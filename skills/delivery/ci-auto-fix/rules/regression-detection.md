@@ -18,7 +18,7 @@ This rule is non-optional.
 
 ## When to run
 
-In Step 8 of [`../SKILL.md`](../SKILL.md), after the new CI run completes and its failed-job logs have been fetched.
+In Phase 8 of [`../SKILL.md`](../SKILL.md), after the new CI run completes and its failed-job logs have been fetched.
 
 ## Decision table
 
@@ -35,9 +35,19 @@ git revert HEAD --no-edit
 git push origin "<branch>"
 ```
 
+Then sync to the authoritative remote state before re-planning — a concurrent worker (`/implement-suggestion`, parallel `ci-auto-fix`) may have pushed between the revert and the next iteration:
+
+```bash
+git pull --rebase origin "<branch>"
+git log -1 --format='Baseline after revert: %H'
+```
+
+Record the printed baseline SHA in the plan artifact's `## Iteration <N> — reverted` section so the user can verify the post-revert HEAD matches the expected pre-fix baseline.
+If the rebase conflicts, stop and report — do not auto-resolve and do not re-plan on an unknown HEAD.
+
 Then:
 
-1. Append a `## Iteration <N> — reverted` section to the plan artifact (see [`../templates/plan-artifact.md`](../templates/plan-artifact.md)).
+1. Append a `## Iteration <N> — reverted` section to the plan artifact (see [`../templates/plan-artifact.md`](../templates/plan-artifact.md)), including the baseline SHA.
 2. Re-classify from the original failure set in [`verdicts.md`](./verdicts.md).
 3. If the second attempt also regresses, escalate — do not try a third.
 
@@ -50,7 +60,7 @@ Other clones, PR review comments, and CI artifacts pinned to the reverted SHA al
 ## Iteration cap
 
 Maximum 4 iterations.
-If still failing after 4 attempts (including any reverts), escalate with the structured exit summary from Step 9.
+If still failing after 4 attempts (including any reverts), escalate with the structured exit summary from Phase 9.
 
 ## Definition of "new failure"
 
