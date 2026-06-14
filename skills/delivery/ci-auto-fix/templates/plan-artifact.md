@@ -17,6 +17,7 @@
 - Score: <0–100>
 - Risk tag: <workflow-touch | prod-code-touch | lockfile-touch>
 - Action: <auto-apply | ask-once | escalate>
+- Escalation reason: <one sentence — fill in only when Action is `escalate`>
 
 ## Iteration <N> — <result>
 

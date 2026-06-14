@@ -56,3 +56,10 @@ The `risk:` tag in the prompt shapes the gate's strictness:
 
 Pick the dominant risk if the fix touches multiple surfaces.
 Do not stack risk tags.
+
+Tiebreaker for mixed surfaces:
+
+1. If any touched surface is `prod-code-touch`, use `prod-code-touch`.
+2. Otherwise, prefer `lockfile-touch` over `workflow-touch`.
+
+Rationale: a wrong production-code change ships incorrect behavior to users (strongest blast radius), a wrong lockfile pin reproduces deterministically in every environment, and a wrong workflow edit only affects future CI runs.
