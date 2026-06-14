@@ -47,7 +47,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 ### `delivery/` — Git, PR, CI
 
 - `changelog` (`/`) — personal PR + Linear ticket digest. Template: [`delivery/changelog/templates/changelog.md`](./skills/delivery/changelog/templates/changelog.md)
-- `ci-auto-fix` (`/`) — diagnose and fix failed GitHub Actions checks until green
+- `ci-auto-fix` (`/`) — verdict-gated, confidence-gated CI diagnosis and fix; `flaky`/`unsure` escalate, `*-bug` verdicts continue to a ≥90/80–89/<80 gate; regressing pushes auto-revert
 - `create-pr` (`/`) — narrative PR description; watch CI. Flags: `--split`, `--review`
 - `github-actions-author` (`/`) — author / review GHA workflows (2026 best practices)
 - `resolve-conflicts` (`/`) — analyze and resolve merge / rebase conflicts

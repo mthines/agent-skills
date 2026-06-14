@@ -18,7 +18,7 @@ This rule is non-optional.
 
 ## When to run
 
-In Step 8 of [`../SKILL.md`](../SKILL.md), after the new CI run completes and its failed-job logs have been fetched.
+In Phase 8 of [`../SKILL.md`](../SKILL.md), after the new CI run completes and its failed-job logs have been fetched.
 
 ## Decision table
 
@@ -50,7 +50,7 @@ Other clones, PR review comments, and CI artifacts pinned to the reverted SHA al
 ## Iteration cap
 
 Maximum 4 iterations.
-If still failing after 4 attempts (including any reverts), escalate with the structured exit summary from Step 9.
+If still failing after 4 attempts (including any reverts), escalate with the structured exit summary from Phase 9.
 
 ## Definition of "new failure"
 

@@ -25,7 +25,7 @@ Before editing any file.
 Invoke the `confidence` skill in analysis mode:
 
 ```text
-Skill("confidence", "analyze proposed fix: <one-line summary>; verdict: <code-bug|workflow-bug|dep-bug|env-bug>; surface: ci; risk: <workflow-touch|prod-code-touch|lockfile-touch>")
+Skill("confidence", "analysis proposed fix: <one-line summary>; verdict: <code-bug|workflow-bug|dep-bug|env-bug>; surface: ci; risk: <workflow-touch|prod-code-touch|lockfile-touch>")
 ```
 
 Record the score in the plan artifact under `## Confidence`.
@@ -34,7 +34,7 @@ Record the score in the plan artifact under `## Confidence`.
 
 | Score | Action |
 | --- | --- |
-| ≥ 90 | Auto-apply. Continue to Step 4 in [`../SKILL.md`](../SKILL.md). |
+| ≥ 90 | Auto-apply. Continue to Phase 4 in [`../SKILL.md`](../SKILL.md). |
 | 80–89 | Show the diff, ask the user once, apply on approval. |
 | < 80 | Escalate. Do not write. |
 
