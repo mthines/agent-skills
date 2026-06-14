@@ -33,12 +33,25 @@ Record it in the plan artifact (see [`../templates/plan-artifact.md`](../templat
 
 Read the relevant source files before proposing a fix.
 Never propose a code change from the log alone.
-If the failure is a test, classify whether the test or the production code is wrong (defer to a dedicated test-healing skill, e.g. `/test-healer`, when the local repo has it installed).
+
+Sub-classify the failure shape before fixing:
+
+- Formatter / linter auto-fix available (`pnpm lint --fix`, `ruff --fix`, `gofmt`) → apply and re-run.
+- Trivial type error (missing import, wrong generic argument, obvious null check) → fix in place.
+- Real test failure → classify whether the test or the production code is wrong; defer to a dedicated test-healing skill (e.g. `/test-healer`) when the local repo has it installed.
+
+A failure forwarded from `/create-pr`'s triage as `lint-format` or `trivial-type` is not a test failure and must not be routed to `/test-healer`.
 
 ### `workflow-bug`
 
 Read every workflow file in `.github/workflows/` before editing one.
 Job dependencies (`needs:`), composite actions, and reusable workflows mean a one-file change can break a sibling job — see Phase 2 in [`../SKILL.md`](../SKILL.md).
+
+Common shapes:
+
+- Runner permission / OIDC failures (`Error: Resource not accessible by integration`, `id-token: write` missing) → add or correct the `permissions:` block at the job or workflow level. This is a structural fix, not a logic edit.
+- Wrong action version → bump to a pinned tag (never `@main`) and link the upstream changelog entry justifying the bump.
+- Missing or misnamed secret → surface to the user before editing; secret names are case-sensitive and adding a guess wastes a runner.
 
 ### `dep-bug`
 
