@@ -55,6 +55,39 @@
         "reveal": "always",
         "panel": "new"
       }
+    },
+    {
+      "label": "Sync symlinks",
+      "type": "shell",
+      "command": "bash",
+      "args": ["scripts/sync-symlinks.sh"],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Sync symlinks (dry-run)",
+      "type": "shell",
+      "command": "bash",
+      "args": ["scripts/sync-symlinks.sh", "--dry-run"],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Sync symlinks (autonomous-workflow only)",
+      "type": "shell",
+      "command": "bash",
+      "args": ["scripts/sync-symlinks.sh", "--aw"],
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
     }
   ]
 }
