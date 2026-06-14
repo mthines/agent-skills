@@ -58,6 +58,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 - `e2e-testing-mobile` (`/`) — Maestro YAML flows for Expo / React Native; `testID`-first locator ladder; runs on Maestro Cloud via EAS
 - `e2e-pr-stabilizer` (`/`) — local-first stabilizer for Playwright E2E on one PR; Dash0 MCP spans (`git.pull_request_link`) as historical baseline, then iterates locally with `--trace=on` and the same OTel exporter. Validation is empirical, not predictive: every new locator must resolve against source (static grep) or the live app (`locator.count() ≥ 1`) before commit, and the fixed test must pass 3 consecutive local runs before the single push. CI watch ratifies. Refuses `.skip` / `.fixme` / `waitForTimeout`. Two modes: `stabilize` (default) and `optimize` (report-only, ranks slow-action wins by measured ms saved, no commits)
 - `optimize-mock-data` (`/`) — JSON/JSONL fixture analyze / normalize / shrink
+- `test-autofix` (`/`) — stack-agnostic test healer: bootstrap surface on first run, classify test-bug vs prod-bug, confidence-gate every fix, regression-detect after each batch; supports Vitest, Jest, Deno, Playwright, Pytest, Maestro, Storybook
 
 ### `design/` — UI, visual, interaction
 

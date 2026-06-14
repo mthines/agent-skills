@@ -107,6 +107,7 @@ Plumbing for shipping code.
 | **[/e2e-testing-mobile](./skills/testing/e2e-testing-mobile/SKILL.md)** | Mobile counterpart on Maestro YAML flows for Expo / React Native. `testID`-first locator ladder; runs on Maestro Cloud via EAS Workflow. | `/` |
 | **[/e2e-pr-stabilizer](./skills/testing/e2e-pr-stabilizer/SKILL.md)** | Local-first stabilizer for Playwright E2E on one PR. Pulls Dash0 MCP spans (`git.pull_request_link`) as historical baseline, then iterates locally with `--trace=on` and the same OTel exporter. Validation is empirical, not predictive: every new locator must resolve against source (static grep) or the live app (`locator.count() ≥ 1`) before commit, and the fixed test must pass 3 consecutive local runs before the single push. CI watch ratifies. Refuses `.skip` / `.fixme` / `waitForTimeout`. Modes: `stabilize` (default) and `optimize` (report-only, ranks slow-action wins by measured ms saved). | `/` |
 | **[/optimize-mock-data](./skills/testing/optimize-mock-data/SKILL.md)** | Optimizes JSON/JSONL fixture directories via shared-schema inference, drift detection, safe shrink/normalize. | `/` |
+| **[/test-autofix](./skills/testing/test-autofix/SKILL.md)** | Stack-agnostic test healer. Bootstrap auto-detects your stack (Vitest, Jest, Deno, Playwright, Pytest, Maestro, Storybook) and writes a surface file on first run. Classifies each failure as `test-bug`, `prod-bug`, or `unsure`; confidence-gates every fix (≥90 auto, 80–89 ask, <80 escalate); reverts on regression. | `/` |
 
 ### `design/` — UI, visual, interaction
 
@@ -407,7 +408,8 @@ That is the entire integration.
 ## Repository structure
 
 ```
-skills/                   39 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
+skills/                   40 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
+  testing/test-autofix/    stack-agnostic test healer — bootstrap, classify, confidence-gate, regression-detect
 agents/                   5 agents (reviewer, pr-reviewer, linear-ticket-investigator, bug-fix-verifier, feature-pr-verifier)
 plugins/                  1 Claude Code plugin (agent-tasks-hooks)
 packages/                 VS Code extension (vscode-agent-tasks)

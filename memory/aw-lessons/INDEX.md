@@ -27,6 +27,8 @@
 
 ### Phase 3 — Implementation
 
+- [2026-06-14-add-contents-to-long-rules-files](entries/2026-06-14-add-contents-to-long-rules-files.md) — When scaffolding a skill, check every rules/*.md line count during authoring and add ## Contents if >100 lines; do not defer to the quality-checklist phase.
+
 ### Phase 4 — Testing
 
 - See Phase 7 entry below — the chained-rounds RAM lesson sits at end-of-run, since `aw`'s own verify is correct and the actionable owner is [`reviewer-lessons`](../reviewer-lessons/INDEX.md).

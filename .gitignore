@@ -49,3 +49,6 @@ dist
 # Environment
 .env*
 .next
+
+# test-autofix per-project surface files (project-local state, not committed)
+skills/testing/test-autofix/surfaces/*.md
