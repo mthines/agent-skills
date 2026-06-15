@@ -12,6 +12,7 @@ tags:
 
 ## Contents
 
+- [Spec-Driven UI Verification (runs BEFORE this rule)](#spec-driven-ui-verification-runs-before-this-rule)
 - [Overview](#overview)
 - [Core Principles](#core-principles)
 - [Procedure](#procedure)
@@ -20,6 +21,20 @@ tags:
 - [When to Stop and Ask (beyond stuck-loop)](#when-to-stop-and-ask-beyond-stuck-loop)
 - [Testing Checklist](#testing-checklist)
 - [References](#references)
+
+## Spec-Driven UI Verification (runs BEFORE this rule)
+
+If `.agent/{branch}/specs.md` exists and the plan touches UI files, the executor
+runs **[`phase-4-spec-verification.md`](./phase-4-spec-verification.md)** first
+— before this rule's lint/type/test loop. That sub-rule dispatches `aw-tester`
+and iterates until the verdict is `green` or `inconclusive`. Only after it
+completes (or self-skips) does the executor enter this rule's test loop.
+
+The iteration cap below applies to **both** loops independently. See
+[`phase-4-spec-verification.md#step-3-iterate-on-red`](./phase-4-spec-verification.md#step-3-iterate-on-red)
+for the spec-verification stuck-loop escalation path.
+
+---
 
 ## Overview
 
@@ -550,6 +565,7 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 - [`companion-skills.md`](./companion-skills.md) — full companion registry and disable instructions
 - [`safety-guardrails.md`](./safety-guardrails.md) — hard stops and limits
 - [`phase-3-implementation.md`](./phase-3-implementation.md) — prior phase (mirrors the 3-attempt cap on fast-check failures)
+- [`phase-4-spec-verification.md`](./phase-4-spec-verification.md) — spec-driven UI verification sub-rule (runs before this loop for UI tasks)
 - [`phase-5-documentation.md`](./phase-5-documentation.md) — next phase
 - [Ralph Wiggum Pattern](https://ralph-wiggum.ai) — research origin of iterate-until-done
 - [Fast Feedback Loops (Addy Osmani)](https://addyosmani.com/blog/ai-coding-workflow/) — research origin of self-reflection cadence

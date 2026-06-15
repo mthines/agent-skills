@@ -77,7 +77,19 @@ Parse each `## Spec N:` block. Extract:
 - url (resolve `{placeholder}` against `fixtures.references`)
 - preconditions (log, do not re-check what auth/seed already handles)
 - flow steps (parse WHEN/THEN/AND into Playwright actions + assertions)
-- `continues-from` (if present, reuse the prior spec's browser state)
+- `continues-from` (if present, reuse the prior spec's browser state — see note below)
+
+**`continues-from` semantics:** the prior spec's page, cookies, and local storage
+are inherited as the starting state. The prior spec must have passed in this
+invocation. If the prior spec failed or was skipped, skip this spec too with
+reason `continues-from: Spec N — prior spec did not pass`.
+
+**Constraint:** if `reset_between_specs: true`, each spec starts a fresh context.
+`continues-from` is incompatible with `reset_between_specs: true` — if both are
+set, log a warning and skip the chained spec:
+```
+continues-from: Spec N — skipped (reset_between_specs: true makes state reuse impossible)
+```
 
 ---
 
@@ -119,6 +131,24 @@ Skip auth setup entirely.
 Skip ALL specs that have an authed precondition. Log:
 ```
 auth.strategy: manual — skipping {N} authed spec(s) autonomously
+```
+
+### Strategy: `env-credentials`
+
+Run a short headless login flow using `auth.identity.email` and an env-var
+password before the first spec. Capture the resulting storage state to a
+temporary file and use it for the run (do not persist it).
+
+```bash
+# Example: read password from env, run login script
+E2E_EMAIL="${auth.identity.email}"
+E2E_PASSWORD="${E2E_CREDENTIALS_PASSWORD}"  # resolved from process env
+```
+
+If the credentials env var is unset or the login flow fails, fall back to
+`auth.strategy: manual` behaviour for this run and log:
+```
+auth.strategy: env-credentials — login failed ({reason}); treating as manual for this run
 ```
 
 ---
@@ -244,6 +274,8 @@ Lesson format (mirrors `aw-lessons` exactly):
 ```markdown
 ---
 id: <yyyy-mm-dd>-<kebab-slug>
+created: <ISO 8601 timestamp — time of first write>
+updated: <ISO 8601 timestamp — time of last update>
 type: procedural
 scope: aw-tester-lessons
 phase: 4
@@ -253,6 +285,7 @@ confidence: high | medium | low
 status: active
 expires: <ISO 8601 — created + 90 days>
 source: system
+redacted: false
 ---
 
 # <one-line lesson title>
