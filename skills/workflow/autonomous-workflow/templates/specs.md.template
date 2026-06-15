@@ -1,0 +1,66 @@
+# Specs: <Feature Title>
+
+Plan: ../plan.md                   # relative path to the plan that prompted these specs
+Surface: local                     # references .claude/surfaces/local.yml
+Refactor: no                       # "yes" hints regression intent: assert behaviour unchanged
+
+# ---
+# SPEC FORMAT
+#
+# Each spec describes one user goal from the outside.
+# Specs are NOT implementation tests — they describe what the user observes.
+#
+# persist field:
+#   critical-path   — at end of Phase 4 aw-executor hands this spec to the
+#                     e2e-testing skill's Generator to produce a saved *.spec.ts
+#   verify-only     — ephemeral; used to verify this change then discarded
+#
+# url field:
+#   {placeholders} resolve from surface.fixtures.references (e.g. {dashboardId})
+#
+# flow field locator descriptors:
+#   {role: "button", name: "Save"}    — preferred (accessibility-tree)
+#   {testid: "save-draft"}            — escape hatch only
+#   {text: /regex/}                   — text match
+#   NO CSS-class or nth-child selectors
+#
+# network assertions:
+#   network: METHOD /path returned NNN
+#   Example: network: POST /api/alerts returned 201
+#
+# continues-from:
+#   Reuse the browser state from a prior spec's end. The prior spec must have
+#   run in the same aw-tester invocation and must have passed.
+# ---
+
+## Spec 1: <one-line user goal for a new feature>
+persist: verify-only
+url: /dashboard/{dashboardId}
+preconditions:
+  - User is logged in as admin (handled by surface auth)
+  - Dashboard "{dashboardId}" exists (handled by surface seed)
+flow:
+  - WHEN {role: "button", name: "Add Widget"} is clicked
+    THEN {role: "dialog", name: "Add Widget"} is visible
+    AND {role: "listbox", name: "Widget type"} is visible
+  - WHEN {role: "option", name: "Time Series"} is clicked
+    THEN {role: "option", name: "Time Series"} has aria-selected: true
+  - WHEN {role: "button", name: "Add"} is clicked
+    THEN {role: "dialog", name: "Add Widget"} is not visible
+    AND {text: "Time Series"} is visible on the page
+    AND network: POST /api/dashboards/{dashboardId}/widgets returned 201
+
+## Spec 2: <one-line user goal — refactor regression check>
+persist: critical-path
+url: /alerts
+preconditions:
+  - User is logged in as admin
+continues-from: Spec 1
+flow:
+  - WHEN page loads
+    THEN {role: "heading", name: "Alerts"} is visible
+    AND {role: "table", name: "Alert list"} is visible
+  - WHEN {role: "button", name: "Create alert"} is clicked
+    THEN {role: "dialog", name: "Create alert"} is visible
+  - WHEN {role: "button", name: "Cancel"} is clicked
+    THEN {role: "dialog", name: "Create alert"} is not visible

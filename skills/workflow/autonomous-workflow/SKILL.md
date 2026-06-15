@@ -13,7 +13,7 @@ argument-hint: '<task-description> [--no-confirm] [--critical]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.13.2'
+  version: '3.14.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -241,6 +241,7 @@ Three phases benefit from sub-agent fan-out:
 | 1     | Analyze codebase (parallel `Explore` if complex), design with `code-quality(plan)`, `confidence(plan)` gate |
 | 2     | `gw add`, `gw cd`, install deps, `Skill("aw-create-plan")` inside worktree                      |
 | 3     | Code per `plan.md` → companions per task type (`tdd`, `ux`) → fast-check after each edit; `code-quality(code)` once at end |
+| 4 (UI)| **First:** `aw-tester` spec verification (before lint/type/test) → `green`/`inconclusive` → promote `critical-path` specs via `e2e-testing` Generator |
 | 4     | Run tests → iterate (cap: 5 same area in Full Mode) → `confidence(analysis)` → one-shot auto-replan or escalate to user |
 | 5     | `Skill("docs", "update --auto")` always — refreshes `CLAUDE.md`, `.claude/rules/`, `README.md`, `docs/`, `CHANGELOG.md` |
 | 6     | Dispatch `reviewer` agent (`--critical`, auto-fix every Simple finding across all severities) → `Skill("aw-create-walkthrough")` → `Skill("create-pr")` |
@@ -275,15 +276,16 @@ for the full how-to.
 
 ## Templates
 
-The skill installs **three agents** under the **`aw-` namespace prefix** (short
+The skill installs **four agents** under the **`aw-` namespace prefix** (short
 for "autonomous-workflow") so they group together in `.claude/agents/` and are
 unmistakable when listed alongside unrelated agents:
 
 | Agent          | Role | Terminal artifact                              | Exit gate                                          |
 | -------------- | ---- | ---------------------------------------------- | -------------------------------------------------- |
 | `aw`           | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes single-pass vs the split, owns the self-improvement loop for every tier. | — (delegates) | Task routed + exit lesson written |
-| `aw-planner`   | Full-tier, phases 0–2 | `.agent/{branch}/plan.md`                      | `confidence(plan) ≥ 90%` (or user-approved)        |
+| `aw-planner`   | Full-tier, phases 0–2 | `.agent/{branch}/plan.md` + `specs.md` (UI tasks) | `confidence(plan) ≥ 90%` (or user-approved) |
 | `aw-executor`  | Full-tier, phases 3–7 | `.agent/{branch}/walkthrough.md` + draft PR    | Walkthrough shown inline, Phase 7 CI gate run      |
+| `aw-tester`    | Phase 4 (UI) spec verification | Verdict block (~200 tokens) | `green` or `inconclusive` before lint/type/test |
 
 **`aw` is the single entry point developers opt into** (a trigger phrase or
 `@aw`). It is adaptive, not always-heavy: Micro/Lite run single-pass in `aw`'s
@@ -298,12 +300,20 @@ automatically; borderline plans pause for user approval. The design rationale
 the full handoff contract is in
 [`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md).
 
+**UI verification prerequisite:** run `/aw-setup` once per project before the
+first autonomous UI task. This scaffolds `.claude/surfaces/local.yml` and
+validates it with a smoke spec. The planner halts and prompts if no surface
+exists — do not auto-scaffold.
+
 | Template                                                         | Purpose                                  |
 | ---------------------------------------------------------------- | ---------------------------------------- |
 | [aw.agent.md](./templates/aw.agent.md)                           | `aw` dispatcher agent (tier routing + loop) |
-| [aw-planner.agent.md](./templates/aw-planner.agent.md)           | Planner agent definition (phases 0-2)    |
+| [aw-planner.agent.md](./templates/aw-planner.agent.md)           | Planner agent definition (phases 0-2) — emits specs.md for UI tasks |
 | [aw-executor.agent.md](./templates/aw-executor.agent.md)         | Executor agent definition (phases 3-7)   |
+| [aw-tester.agent.md](./templates/aw-tester.agent.md)             | Spec-driven UI verification (Phase 4) — dispatched by executor |
 | [routing.rule.md](./templates/routing.rule.md)                   | Auto-trigger rule for `.claude/rules/`   |
+| [surface.yml.template](./templates/surface.yml.template)         | Surface schema (base URL, auth, fixtures) |
+| [specs.md.template](./templates/specs.md.template)               | Specs file schema with example blocks    |
 
 ---
 
@@ -341,6 +351,7 @@ per-companion disabling, see the [README](./README.md#installation) and
 - [`confidence`](../../quality/confidence/SKILL.md) — quality gate (plan, code, analysis)
 - [`aw-create-plan`](../aw-create-plan/SKILL.md) — `plan.md` artifact generator
 - [`aw-create-walkthrough`](../aw-create-walkthrough/SKILL.md) — `walkthrough.md` artifact generator
+- [`aw-setup`](./aw-setup/SKILL.md) — **one-time UI surface scaffolding** (prerequisite for `aw-tester`; run `/aw-setup` once per project before the first autonomous UI task)
 - [`code-quality`](../../quality/code-quality/SKILL.md) — readability and complexity review
 - [`tdd`](../../quality/tdd/SKILL.md) — RED-GREEN-REFACTOR enforcement
 - [`ux`](../../design/ux/SKILL.md) — UI / accessibility review
@@ -349,10 +360,12 @@ per-companion disabling, see the [README](./README.md#installation) and
 - [`review-changes`](../../quality/review-changes/SKILL.md) — pre-PR review
 - [`create-pr`](../../delivery/create-pr/SKILL.md) — narrative PR description + push + watch
 - [`ci-auto-fix`](../../delivery/ci-auto-fix/SKILL.md) — diagnose and fix failed CI checks
-- [`persistent-memory`](../../authoring/persistent-memory/SKILL.md) — backs the `aw-lessons` fast-tier self-improvement loop (read at Phase 1, write at Phase 4 / 7)
+- [`persistent-memory`](../../authoring/persistent-memory/SKILL.md) — backs the `aw-lessons` and `aw-tester-lessons` fast-tier self-improvement loops
+- [`e2e-testing`](../../testing/e2e-testing/SKILL.md) — Generator for promoting `critical-path` specs to saved `*.spec.ts` at end of Phase 4
 
 ### Related Agents
 
+- [`aw-tester`](./templates/aw-tester.agent.md) — spec-driven UI verification agent. Dispatched by the executor in Phase 4 (before lint/type/test) and optionally in Phase 7 (spec rehearsal against preview). Requires a surface at `.claude/surfaces/` — run `/aw-setup` first.
 - [`reviewer`](../../../agents/reviewer.md) — optional Phase 6 pre-push review AND Phase 7 post-CI auto-review. Both passes are dispatched with `--critical` (forces the adversarial pre-mortem via `Skill("critical", "code")`) and an auto-fix-everything prompt — every Simple finding is applied to the working tree regardless of severity (Critical / High / Medium / Low / Nitpick / Nice-to-have), per `agents/reviewer/rules/auto-fix-policy.md`. Phase 6 lands in Fix Mode (own branch); Phase 7 lands in PR (self-review) sub-mode (self-authored PR — inline terminal report, no GitHub posts). On someone else's PR the reviewer redirects to the `pr-reviewer` agent. Install the agent alongside the skill and the workflow will dispatch it automatically.
 
 ---
