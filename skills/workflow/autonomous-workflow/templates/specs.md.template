@@ -1,7 +1,7 @@
 # Specs: <Feature Title>
 
 Plan: ../plan.md                   # relative path to the plan that prompted these specs
-Surface: local                     # references .claude/surfaces/local.yml
+Target: local                      # references .claude/aw-targets/local.yml
 Refactor: no                       # "yes" hints regression intent: assert behaviour unchanged
 
 # ---
@@ -16,7 +16,7 @@ Refactor: no                       # "yes" hints regression intent: assert behav
 #   verify-only     — ephemeral; used to verify this change then discarded
 #
 # url field:
-#   {placeholders} resolve from surface.fixtures.references (e.g. {dashboardId})
+#   {placeholders} resolve from aw-target.fixtures.references (e.g. {dashboardId})
 #
 # flow field locator descriptors — mini-grammar:
 #
@@ -54,17 +54,17 @@ Refactor: no                       # "yes" hints regression intent: assert behav
 #   passed. If the prior spec was skipped or failed, aw-tester skips this spec
 #   too (reason: "continues-from: Spec N — prior spec did not pass").
 #
-#   IMPORTANT: continues-from is silently broken when the surface sets
+#   IMPORTANT: continues-from is silently broken when the aw-target sets
 #   reset_between_specs: true (each spec starts a fresh context). Do not use
-#   continues-from on surfaces with reset_between_specs: true.
+#   continues-from on aw-targets with reset_between_specs: true.
 # ---
 
 ## Spec 1: <one-line user goal for a new feature>
 persist: verify-only
 url: /dashboard/{dashboardId}
 preconditions:
-  - User is logged in as admin (handled by surface auth)
-  - Dashboard "{dashboardId}" exists (handled by surface seed)
+  - User is logged in as admin (handled by aw-target auth)
+  - Dashboard "{dashboardId}" exists (handled by aw-target seed)
 flow:
   - WHEN {role: "button", name: "Add Widget"} is clicked
     THEN {role: "dialog", name: "Add Widget"} is visible

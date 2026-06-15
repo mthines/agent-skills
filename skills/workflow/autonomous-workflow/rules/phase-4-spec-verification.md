@@ -6,7 +6,7 @@ tags:
   - aw-tester
   - spec-verification
   - ui
-  - surfaces
+  - aw-targets
 ---
 
 # Phase 4: Spec-Driven UI Verification
@@ -16,7 +16,7 @@ tags:
 - [Overview](#overview)
 - [When this sub-rule applies](#when-this-sub-rule-applies)
 - [Prerequisites](#prerequisites)
-- [Step 1: Detect the surface](#step-1-detect-the-surface)
+- [Step 1: Detect the aw-target](#step-1-detect-the-aw-target)
 - [Step 2: Run aw-tester](#step-2-run-aw-tester)
 - [Step 3: Iterate on red](#step-3-iterate-on-red)
 - [Step 4: Spec promotion](#step-4-spec-promotion)
@@ -49,10 +49,10 @@ before the unit/integration test loop, not as a replacement for it.
 Run this sub-rule when ALL of the following are true:
 
 1. `.agent/{branch}/specs.md` exists (the planner emitted it).
-2. `.claude/surfaces/` contains at least one surface file.
+2. `.claude/aw-targets/` contains at least one aw-target file.
 3. The plan's `## File changes` table includes at least one UI file (`*.tsx`,
    `*.jsx`, `*.css`, `*.vue`, `*.svelte`, a route/page file, or a layout file).
-4. The surface's auth state is valid (see [Prerequisites](#prerequisites)).
+4. The aw-target's auth state is valid (see [Prerequisites](#prerequisites)).
 
 If any condition is false, skip this sub-rule entirely — log one line and
 proceed to the normal Phase 4 test loop:
@@ -63,7 +63,7 @@ proceed to the normal Phase 4 test loop:
 
 Valid skip reasons:
 - `no specs.md found`
-- `no surface defined at .claude/surfaces/`
+- `no aw-target defined at .claude/aw-targets/`
 - `no UI files in plan`
 - `auth.strategy: manual — authed specs will be skipped by aw-tester`
 - `aw-tester agent not available`
@@ -72,20 +72,20 @@ Valid skip reasons:
 
 ## Prerequisites
 
-### Surface file
+### Aw-Target file
 
-The surface file must exist at `.claude/surfaces/{surface_name}.yml`, where
-`surface_name` comes from the `Surface:` header in `specs.md`.
+The aw-target file must exist at `.claude/aw-targets/{aw_target_name}.yml`, where
+`aw_target_name` comes from the `Target:` header in `specs.md`.
 
-If the surface file is missing, **halt and tell the user**:
+If the aw-target file is missing, **halt and tell the user**:
 
 ```
-Spec verification cannot run: no surface defined at .claude/surfaces/{surface_name}.yml.
-Run /aw-setup to scaffold the surface (one-time setup, ~2 minutes).
-Spec verification will be skipped until the surface is configured.
+Spec verification cannot run: no aw-target defined at .claude/aw-targets/{aw_target_name}.yml.
+Run /aw-setup to scaffold the aw-target (one-time setup, ~2 minutes).
+Spec verification will be skipped until the aw-target is configured.
 ```
 
-Do NOT attempt to scaffold the surface yourself. `/aw-setup` is the user-run
+Do NOT attempt to scaffold the aw-target yourself. `/aw-setup` is the user-run
 setup flow.
 
 ### Auth storage state freshness
@@ -103,13 +103,13 @@ If `auth.strategy: storage-state` and the storage state file is missing or its
 
 ---
 
-## Step 1: Detect the surface
+## Step 1: Detect the aw-target
 
 ```bash
-# Resolve surface name from specs.md header
-SURFACE=$(grep "^Surface:" .agent/$(git branch --show-current)/specs.md | awk '{print $2}')
-SURFACE_FILE=".claude/surfaces/${SURFACE}.yml"
-test -f "$SURFACE_FILE" && echo "surface found: $SURFACE_FILE" || echo "surface missing"
+# Resolve aw-target name from specs.md header
+AW_TARGET=$(grep "^Target:" .agent/$(git branch --show-current)/specs.md | awk '{print $2}')
+AW_TARGET_FILE=".claude/aw-targets/${AW_TARGET}.yml"
+test -f "$AW_TARGET_FILE" && echo "aw-target found: $AW_TARGET_FILE" || echo "aw-target missing"
 ```
 
 Also detect the `aw-tester` agent:
@@ -130,16 +130,16 @@ If `aw-tester` is not installed at either location, log and skip:
 
 ## Step 2: Run aw-tester
 
-Dispatch `aw-tester` as a sub-agent. Pass the specs path and surface name.
+Dispatch `aw-tester` as a sub-agent. Pass the specs path and aw-target name.
 
 ```
 description: Run spec-driven UI verification before lint/type/test gates
 subagent_type: aw-tester
 prompt: |
-  Run the specs at .agent/{branch}/specs.md against surface "{surface_name}".
+  Run the specs at .agent/{branch}/specs.md against aw-target "{aw_target_name}".
   Mode: --bail-on-first-red
   
-  Surface file: .claude/surfaces/{surface_name}.yml
+  Aw-Target file: .claude/aw-targets/{aw_target_name}.yml
   Specs file: .agent/{branch}/specs.md
   
   Return the verdict block in the exact output schema format.
@@ -259,7 +259,7 @@ skipped `specs.md` correctly but specs.md was left from a prior run.
 Full Phase 4 spec-verification log example:
 
 ```markdown
-- [2026-06-15T10:00:00Z] Phase 4: spec-verification — surface: local (.claude/surfaces/local.yml)
+- [2026-06-15T10:00:00Z] Phase 4: spec-verification — aw-target: local (.claude/aw-targets/local.yml)
 - [2026-06-15T10:00:02Z] Phase 4: aw-tester — dispatched (2 specs, --bail-on-first-red)
 - [2026-06-15T10:00:18Z] Phase 4: aw-tester — verdict: red
   (Spec-1: pass, Spec-2: fail — locator {role: "button", name: "Add Widget"} not found)
@@ -275,7 +275,7 @@ Full Phase 4 spec-verification log example:
 ## Checklist
 
 - [ ] UI files detected in plan (or sub-rule skipped with `no UI files in plan`)
-- [ ] Surface file located at `.claude/surfaces/{surface_name}.yml`
+- [ ] Aw-Target file located at `.claude/aw-targets/{aw_target_name}.yml`
 - [ ] `aw-tester` agent detected at `.claude/agents/aw-tester.md` or `~/.claude/agents/aw-tester.md`
 - [ ] aw-tester invoked with `--bail-on-first-red`
 - [ ] Verdict `green` or `inconclusive` before proceeding to lint/type/test
@@ -291,6 +291,6 @@ Full Phase 4 spec-verification log example:
 - Parent rule: [`phase-4-testing.md`](./phase-4-testing.md) — stuck-loop detection and mode-aware cap
 - Agent: [`aw-tester.agent.md`](../templates/aw-tester.agent.md) — the spec runner
 - Skill: [`e2e-testing`](../../../testing/e2e-testing/SKILL.md) — Generator for critical-path spec promotion
-- Setup: [`aw-setup/SKILL.md`](../aw-setup/SKILL.md) — surface scaffolding (user-run prerequisite)
-- Templates: [`surface.yml.template`](../templates/surface.yml.template), [`specs.md.template`](../templates/specs.md.template)
+- Setup: [`aw-setup/SKILL.md`](../aw-setup/SKILL.md) — aw-target scaffolding (user-run prerequisite)
+- Templates: [`aw-target.yml.template`](../templates/aw-target.yml.template), [`specs.md.template`](../templates/specs.md.template)
 - Planning: [`phase-1-planning.md`](./phase-1-planning.md) — where specs.md is emitted

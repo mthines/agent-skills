@@ -125,10 +125,10 @@ Summary:
    `/layouts/`, `/components/`.
 2. If NO UI files found: log `spec-emission — skipped (no UI files in plan)` and continue.
 3. If UI files found:
-   a. Check `ls .claude/surfaces/*.yml 2>/dev/null | head -1`.
-   b. If no surface: **halt** and tell the user to run `/aw-setup` before continuing.
+   a. Check `ls .claude/aw-targets/*.yml 2>/dev/null | head -1`.
+   b. If no aw-target: **halt** and tell the user to run `/aw-setup` before continuing.
       Wait for user to confirm completion. Do NOT scaffold yourself.
-   c. If surface exists: draft `specs.md` following the template at
+   c. If aw-target exists: draft `specs.md` following the template at
       [`templates/specs.md.template`](./specs.md.template). Write it to
       `.agent/{branch}/specs.md` in Phase 2 (alongside `plan.md`).
 
@@ -154,7 +154,7 @@ Output the structured handoff message verbatim (canonical format from
 - Worktree: <path>
 - Files to change: N
 - Acceptance Criteria: M items
-- Specs: .agent/{branch}/specs.md ({N} specs, surface: {name}) | none (non-UI task)
+- Specs: .agent/{branch}/specs.md ({N} specs, aw-target: {name}) | none (non-UI task)
 
 Reply with one of:
 - "execute" / "continue" — dispatch the executor.

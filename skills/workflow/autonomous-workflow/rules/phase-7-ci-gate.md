@@ -211,7 +211,7 @@ If no preview URL is found, log and skip:
 
 ### Step 2: Run aw-tester in --all mode
 
-Dispatch `aw-tester` with an ephemeral surface override (base_url = preview URL,
+Dispatch `aw-tester` with an ephemeral aw-target override (base_url = preview URL,
 auth.strategy: none — preview deployments typically have no captured auth state):
 
 ```
@@ -220,7 +220,7 @@ subagent_type: aw-tester
 prompt: |
   Rehearse the specs at .agent/{branch}/specs.md against the preview deployment.
   
-  Override surface base_url to: {preview_url}
+  Override aw-target base_url to: {preview_url}
   Auth strategy override: none (preview — no auth state available)
   Specs file: .agent/{branch}/specs.md
   Mode: --all

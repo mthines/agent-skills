@@ -243,7 +243,7 @@ vlog "  Micro/Lite run single-pass via aw; Full hands off planner → executor (
 vlog "  See: skills/workflow/autonomous-workflow/rules/planner-executor-handoff.md"
 vlog ""
 vlog "UI verification setup (one-time, per project):"
-vlog "  Run /aw-setup to scaffold .claude/surfaces/local.yml before the first UI autonomous task."
+vlog "  Run /aw-setup to scaffold .claude/aw-targets/local.yml before the first UI autonomous task."
 vlog "  See: skills/workflow/autonomous-workflow/aw-setup/SKILL.md"
 
 if [[ "$MODE" == "development" ]]; then
