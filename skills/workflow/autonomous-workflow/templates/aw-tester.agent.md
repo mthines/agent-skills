@@ -2,11 +2,11 @@
 name: aw-tester
 description: >
   Spec-driven UI verification agent for the autonomous-workflow (`aw-` namespace).
-  Reads a specs.md file and a surface.yml, runs each spec against a live app
+  Reads a specs.md file and an aw-target.yml, runs each spec against a live app
   via Playwright (headless by default), and returns a compact pass/fail verdict.
   Designed to run inside the executor's Phase 4 iteration loop — before
   lint/type/test gates — so the executor can verify UI correctness autonomously.
-  Invoke with a specs.md path and a surface name or path. Use `--bail-on-first-red`
+  Invoke with a specs.md path and an aw-target name or path. Use `--bail-on-first-red`
   (default) for fast iteration; `--all` for the Phase 7 rehearsal.
 tools:
   - Read
@@ -44,7 +44,7 @@ aw-tester-lessons: not available, continuing
 ```
 
 After the INDEX loads, match each lesson's `trigger-context` against the
-surface name and spec flow patterns. Load full entries only for matches.
+aw-target name and spec flow patterns. Load full entries only for matches.
 Apply matching lessons as fast-tier heuristics for this run — particularly
 locator-healing transformations. A lesson that recurs (`seen_count >= 3`)
 is promotion-eligible; surface the one-line suggestion to the executor.
@@ -56,14 +56,14 @@ Resolve the following from the invocation prompt:
 | Input | Source | Required |
 |-------|--------|----------|
 | `specs_path` | Argument or `.agent/{branch}/specs.md` | Yes |
-| `surface_name` | Argument (e.g. `local`) | Yes |
-| `surface_path` | `.claude/surfaces/{surface_name}.yml` | Derived |
+| `aw_target_name` | Argument (e.g. `local`) | Yes |
+| `aw_target_path` | `.claude/aw-targets/{aw_target_name}.yml` | Derived |
 | `mode` | `--bail-on-first-red` (default) or `--all` | No |
 | `headed` | `--headed` flag | No |
 
-### 3. Load the surface
+### 3. Load the aw-target
 
-Read `.claude/surfaces/{surface_name}.yml`. Parse:
+Read `.claude/aw-targets/{aw_target_name}.yml`. Parse:
 - `base_url`
 - `auth.strategy` and `auth.storage_state` (if strategy is `storage-state`)
 - `fixtures.references` (for placeholder resolution)
@@ -105,7 +105,7 @@ test -f "<auth.storage_state>" && echo "exists" || echo "missing"
 
 **Missing or stale:**
 If the file does not exist, or if the first authed page returns HTTP 401:
-1. Read `auth.refresh.command` from the surface.
+1. Read `auth.refresh.command` from the aw-target.
 2. Run it with `auth.refresh.timeout_seconds` as the timeout.
 3. Retry the failed spec once.
 4. If it still fails with 401, mark the spec `skipped` with reason
@@ -113,7 +113,7 @@ If the file does not exist, or if the first authed page returns HTTP 401:
 
 Write a slow-tier lesson if auth refresh was needed:
 ```
-auth refresh triggered on surface "{surface_name}" — command: {command}
+auth refresh triggered on aw-target "{aw_target_name}" — command: {command}
 ```
 
 Log:
@@ -261,7 +261,7 @@ After delivering the verdict, write lessons for any of the following:
 | Event | What to capture |
 |-------|-----------------|
 | Locator healing succeeded | Which locator pattern failed, which transformation worked |
-| Auth refresh triggered | Surface name, command, whether it succeeded |
+| Auth refresh triggered | Aw-Target name, command, whether it succeeded |
 | `inconclusive` verdict | Why specs were skipped and what would unblock them |
 | New failure pattern | The failing step shape that didn't appear in prior lessons |
 
@@ -279,7 +279,7 @@ updated: <ISO 8601 timestamp — time of last update>
 type: procedural
 scope: aw-tester-lessons
 phase: 4
-trigger-context: <concrete signal: locator pattern, surface name, component type>
+trigger-context: <concrete signal: locator pattern, aw-target name, component type>
 seen_count: 1
 confidence: high | medium | low
 status: active

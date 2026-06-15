@@ -314,19 +314,19 @@ If zero files match, skip spec emission entirely and log:
 - [TIMESTAMP] Phase 1: spec-emission — skipped (no UI files in plan)
 ```
 
-### Surface prerequisite check
+### Aw-Target prerequisite check
 
-Before emitting specs, verify a surface exists:
+Before emitting specs, verify an aw-target exists:
 
 ```bash
-ls .claude/surfaces/*.yml 2>/dev/null | head -1
+ls .claude/aw-targets/*.yml 2>/dev/null | head -1
 ```
 
-If no surface file exists, **halt and tell the user**:
+If no aw-target file exists, **halt and tell the user**:
 
 ```
-This task touches UI files. Spec-driven verification requires a surface.
-Run /aw-setup to scaffold .claude/surfaces/local.yml before proceeding.
+This task touches UI files. Spec-driven verification requires an aw-target.
+Run /aw-setup to scaffold .claude/aw-targets/local.yml before proceeding.
 This is a one-time setup (~2 minutes). The planner will pause here.
 
 After /aw-setup completes, reply "continue" and the planner will resume.
@@ -334,7 +334,7 @@ After /aw-setup completes, reply "continue" and the planner will resume.
 
 Wait for the user to confirm `/aw-setup` is done. Do NOT auto-scaffold.
 Do NOT attempt to run `/aw-setup` yourself — it is interactive and requires
-user input. If the surface's `auth.storage_state` file is older than 7 days,
+user input. If the aw-target's `auth.storage_state` file is older than 7 days,
 warn but do not halt:
 
 ```markdown
@@ -356,8 +356,8 @@ Guidelines for the planner when writing specs:
 - Locator descriptors: `{role: ..., name: ...}` preferred. Never CSS selectors.
 - Keep spec flow steps to 3–6 steps. Long flows should be broken into
   `continues-from` chains.
-- Placeholder syntax: `{dashboardId}` resolves from `surface.fixtures.references`.
-  Use only references that exist in the surface file.
+- Placeholder syntax: `{dashboardId}` resolves from `aw-target.fixtures.references`.
+  Use only references that exist in the aw-target file.
 - Network assertions: include only when the AC explicitly requires a specific
   HTTP status or response shape.
 
@@ -370,10 +370,10 @@ on the main branch. The specs file is a planning artifact — it lives in
 Log:
 
 ```markdown
-- [TIMESTAMP] Phase 1: spec-emission — {N} specs drafted (surface: {name},
+- [TIMESTAMP] Phase 1: spec-emission — {N} specs drafted (aw-target: {name},
   {critical-path-count} critical-path, {verify-only-count} verify-only)
 - [TIMESTAMP] Phase 1: spec-emission — skipped (no UI files in plan)
-- [TIMESTAMP] Phase 1: spec-emission — halted (no surface; user told to run /aw-setup)
+- [TIMESTAMP] Phase 1: spec-emission — halted (no aw-target; user told to run /aw-setup)
 ```
 
 ---
@@ -475,7 +475,7 @@ contract and message format.
 - [ ] `holistic-analysis` invoked if complexity triggered (anchor: `complex-task-detection`)
 - [ ] Technical approach designed with specific file references
 - [ ] `code-quality(plan)` invoked and design refined (anchor: `design-quality`)
-- [ ] UI surface check: if plan touches UI files, surface exists OR user told to run `/aw-setup`; `specs.md` drafted or skip logged (anchor: `spec-emission-anchor`)
+- [ ] UI surface check: if plan touches UI files, aw-target exists OR user told to run `/aw-setup`; `specs.md` drafted or skip logged (anchor: `spec-emission-anchor`)
 - [ ] `confidence(plan)` ≥ 90% OR user-approved (anchor: `confidence-gate`)
 - [ ] Companion invocations logged (will move to `plan.md` Progress Log in Phase 2)
 
@@ -494,5 +494,5 @@ contract and message format.
 - Related skill: [`holistic-analysis`](../../../analysis/holistic-analysis/SKILL.md)
 - Related skill: [`aw-create-plan`](../../aw-create-plan/SKILL.md)
 - Related rule: [`phase-4-spec-verification.md`](./phase-4-spec-verification.md) — where specs.md is consumed
-- Setup skill: [`aw-setup/SKILL.md`](../aw-setup/SKILL.md) — surface scaffolding
+- Setup skill: [`aw-setup/SKILL.md`](../aw-setup/SKILL.md) — aw-target scaffolding
 - Template: [`templates/specs.md.template`](../templates/specs.md.template) — spec format reference

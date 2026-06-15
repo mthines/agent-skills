@@ -300,8 +300,8 @@ the full handoff contract is in
 [`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md).
 
 **UI verification prerequisite:** run `/aw-setup` once per project before the
-first autonomous UI task. This scaffolds `.claude/surfaces/local.yml` and
-validates it with a smoke spec. The planner halts and prompts if no surface
+first autonomous UI task. This scaffolds `.claude/aw-targets/local.yml` and
+validates it with a smoke spec. The planner halts and prompts if no aw-target
 exists — do not auto-scaffold.
 
 | Template                                                         | Purpose                                  |
@@ -311,7 +311,7 @@ exists — do not auto-scaffold.
 | [aw-executor.agent.md](./templates/aw-executor.agent.md)         | Executor agent definition (phases 3-7)   |
 | [aw-tester.agent.md](./templates/aw-tester.agent.md)             | Spec-driven UI verification (Phase 4) — dispatched by executor |
 | [routing.rule.md](./templates/routing.rule.md)                   | Auto-trigger rule for `.claude/rules/`   |
-| [surface.yml.template](./templates/surface.yml.template)         | Surface schema (base URL, auth, fixtures) |
+| [aw-target.yml.template](./templates/aw-target.yml.template)     | Aw-Target schema (base URL, auth, fixtures) |
 | [specs.md.template](./templates/specs.md.template)               | Specs file schema with example blocks    |
 
 ---
@@ -350,7 +350,7 @@ per-companion disabling, see the [README](./README.md#installation) and
 - [`confidence`](../../quality/confidence/SKILL.md) — quality gate (plan, code, analysis)
 - [`aw-create-plan`](../aw-create-plan/SKILL.md) — `plan.md` artifact generator
 - [`aw-create-walkthrough`](../aw-create-walkthrough/SKILL.md) — `walkthrough.md` artifact generator
-- [`aw-setup`](./aw-setup/SKILL.md) — **one-time UI surface scaffolding** (prerequisite for `aw-tester`; run `/aw-setup` once per project before the first autonomous UI task)
+- [`aw-setup`](./aw-setup/SKILL.md) — **one-time UI aw-target scaffolding** (prerequisite for `aw-tester`; run `/aw-setup` once per project before the first autonomous UI task)
 - [`code-quality`](../../quality/code-quality/SKILL.md) — readability and complexity review
 - [`tdd`](../../quality/tdd/SKILL.md) — RED-GREEN-REFACTOR enforcement
 - [`ux`](../../design/ux/SKILL.md) — UI / accessibility review
@@ -364,7 +364,7 @@ per-companion disabling, see the [README](./README.md#installation) and
 
 ### Related Agents
 
-- [`aw-tester`](./templates/aw-tester.agent.md) — spec-driven UI verification agent. Dispatched by the executor in Phase 4 (before lint/type/test) and optionally in Phase 7 (spec rehearsal against preview). Requires a surface at `.claude/surfaces/` — run `/aw-setup` first.
+- [`aw-tester`](./templates/aw-tester.agent.md) — spec-driven UI verification agent. Dispatched by the executor in Phase 4 (before lint/type/test) and optionally in Phase 7 (spec rehearsal against preview). Requires an aw-target at `.claude/aw-targets/` — run `/aw-setup` first.
 - [`reviewer`](../../../agents/reviewer.md) — optional Phase 6 pre-push review AND Phase 7 post-CI auto-review. Both passes are dispatched with `--critical` (forces the adversarial pre-mortem via `Skill("critical", "code")`) and an auto-fix-everything prompt — every Simple finding is applied to the working tree regardless of severity (Critical / High / Medium / Low / Nitpick / Nice-to-have), per `agents/reviewer/rules/auto-fix-policy.md`. Phase 6 lands in Fix Mode (own branch); Phase 7 lands in PR (self-review) sub-mode (self-authored PR — inline terminal report, no GitHub posts). On someone else's PR the reviewer redirects to the `pr-reviewer` agent. Install the agent alongside the skill and the workflow will dispatch it automatically.
 
 ---

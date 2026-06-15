@@ -41,11 +41,11 @@ the workflow never blocks on a missing companion.
 | [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) | Fast-tier episodic-lessons loop (`aw-lessons`) + promotion to `diagnose`. |
 | [`rules/phase-4-spec-verification.md`](./rules/phase-4-spec-verification.md) | Spec-driven UI verification sub-rule (before lint/type/test). |
 | [`rules/parallel-coordination.md`](./rules/parallel-coordination.md) | Sub-agent fan-out and multi-agent handoff. |
-| [`templates/`](./templates/)       | Agent templates + auto-trigger routing rule + surface/specs templates. |
+| [`templates/`](./templates/)       | Agent templates + auto-trigger routing rule + aw-target/specs templates. |
 | [`templates/aw-tester.agent.md`](./templates/aw-tester.agent.md) | `aw-tester` spec-driven UI verification agent. |
-| [`templates/surface.yml.template`](./templates/surface.yml.template) | Surface schema (base URL, auth strategy, fixtures, constraints). |
+| [`templates/aw-target.yml.template`](./templates/aw-target.yml.template) | Aw-Target schema (base URL, auth strategy, fixtures, constraints). |
 | [`templates/specs.md.template`](./templates/specs.md.template)   | Specs file format with example blocks for new features and refactors. |
-| [`aw-setup/SKILL.md`](./aw-setup/SKILL.md) | Interactive one-time surface scaffolding skill (`/aw-setup`). |
+| [`aw-setup/SKILL.md`](./aw-setup/SKILL.md) | Interactive one-time aw-target scaffolding skill (`/aw-setup`). |
 | [`memory/aw-tester-lessons/`](../../../memory/aw-tester-lessons/) | Cross-run lessons for `aw-tester` (mirrors `aw-lessons` format). |
 | [`references/`](./references/)     | Lazy-loaded examples (full execution trace, error scenarios).   |
 
@@ -120,8 +120,8 @@ on Full tasks (where context isolation + a resumable `plan.md` earn it), and run
 Micro/Lite single-pass. It is invoked deliberately, not as a wrapper on every prompt.
 
 **One-time UI setup:** run `/aw-setup` once per project before the first autonomous
-UI task. This scaffolds `.claude/surfaces/local.yml` (the surface `aw-tester` reads)
-and validates it with a smoke spec. The planner halts and prompts if no surface exists.
+UI task. This scaffolds `.claude/aw-targets/local.yml` (the aw-target `aw-tester` reads)
+and validates it with a smoke spec. The planner halts and prompts if no aw-target exists.
 See [`aw-setup/SKILL.md`](./aw-setup/SKILL.md).
 
 > **Upgrading from a pre-`aw-` install?** The installer detects legacy
@@ -150,7 +150,7 @@ trigger registry is in
 | 3     | `tdd`                  | Optional  | RED-GREEN-REFACTOR for pure logic / business rules |
 | 3     | `ux`                   | Optional  | UI / accessibility review when UI files touched |
 | 3     | `code-quality`         | Optional  | End-of-Phase-3 code-quality pass              |
-| 4 (UI)| `aw-tester` *(agent)*  | Optional  | Spec-driven UI verification — dispatched before lint/type/test when `specs.md` + surface exist |
+| 4 (UI)| `aw-tester` *(agent)*  | Optional  | Spec-driven UI verification — dispatched before lint/type/test when `specs.md` + aw-target exist |
 | 4     | `confidence`           | Optional  | `analysis` at iteration cap (3 Lite / 5 Full) |
 | 4     | `holistic-analysis`    | Optional  | Step-back analysis after stuck-loop confidence |
 | 5     | `docs update`          | Optional  | Self-improving doc loop (keeps `CLAUDE.md`, `README.md`, and `docs/` in sync) |

@@ -103,7 +103,7 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 3     | `tdd`                  | Pure logic / business rules / "test-driven"                          | —                |
 | 3     | `ux`                   | UI files (`*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, RN screens)         | —                |
 | 3     | `code-quality`         | Once at end of Phase 3 (not per-file)                                | `code`           |
-| 4 (UI)| `aw-tester` *(agent)*  | Before lint/type/test — UI files in plan AND `.agent/{branch}/specs.md` exists AND surface defined | `specs.md + surface + --bail-on-first-red` |
+| 4 (UI)| `aw-tester` *(agent)*  | Before lint/type/test — UI files in plan AND `.agent/{branch}/specs.md` exists AND aw-target defined | `specs.md + aw-target + --bail-on-first-red` |
 | 4     | `confidence`           | At iteration cap on same failing area (auto-replan trigger)          | `analysis`   |
 | 4     | `holistic-analysis`    | Auto-replan only — `confidence(analysis) < 90%` (one-shot)       | —                |
 | 4     | `persistent-memory`    | At stuck-loop escalation — record failing area + resolution          | `write aw-lessons --tier project-shared --auto` |
@@ -113,7 +113,7 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 6     | `aw-create-walkthrough` | Full Mode only                                                      | —                |
 | 6     | `create-pr`            | Always                                                               | —                |
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                               | `<run-id\|pr-url>` |
-| 7 (UI)| `aw-tester` *(agent)*  | After CI green — spec rehearsal against preview URL (advisory; skips if no preview URL or no specs.md) | `specs.md + preview-surface + --all` |
+| 7 (UI)| `aw-tester` *(agent)*  | After CI green — spec rehearsal against preview URL (advisory; skips if no preview URL or no specs.md) | `specs.md + preview-aw-target + --all` |
 | 7     | `reviewer` *(agent)*   | After CI green — dispatched as `subagent_type: reviewer` (PR self-review sub-mode for self-authored PRs: `--critical` + auto-fix every Simple finding regardless of severity, inline report; cross-author PRs redirect to `pr-reviewer`) | `<pr-url> --critical` + auto-fix-all prompt |
 | 7     | `persistent-memory`    | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `write aw-lessons --tier project-shared --auto` |
 
@@ -124,7 +124,7 @@ spec-verification sub-rule **before** the lint/type/test loop. Full procedure in
 [`rules/phase-4-spec-verification.md`](../rules/phase-4-spec-verification.md).
 
 Summary:
-1. Detect surface at `.claude/surfaces/{surface_name}.yml`. If missing, halt and
+1. Detect aw-target at `.claude/aw-targets/{aw_target_name}.yml`. If missing, halt and
    tell the user to run `/aw-setup`. Do NOT scaffold yourself.
 2. Dispatch `aw-tester` with `--bail-on-first-red`. Wait for the verdict block.
 3. On `green` / `inconclusive`: proceed to lint/type/test.
@@ -135,7 +135,7 @@ Summary:
 Self-skips when:
 - No `specs.md` at `.agent/{branch}/specs.md`
 - No UI files in plan
-- No surface defined
+- No aw-target defined
 - `aw-tester` agent not installed (log one line, continue)
 
 ---

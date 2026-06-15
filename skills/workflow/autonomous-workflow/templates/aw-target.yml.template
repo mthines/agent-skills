@@ -1,6 +1,6 @@
-# surface.yml — aw-tester surface definition
+# aw-target.yml — aw-tester aw-target definition
 #
-# A "surface" is a named browser context: a base URL, an auth strategy, and
+# An "aw-target" is a named browser context: a base URL, an auth strategy, and
 # fixture references. `aw-tester` reads this file before running any spec.
 #
 # Convention:
@@ -15,7 +15,7 @@
 #
 # ---
 
-name: local                        # referenced by specs: "Surface: local"
+name: local                        # referenced by specs: "Target: local"
 
 base_url: http://localhost:3000    # the URL aw-tester navigates to; no trailing slash
 
@@ -26,7 +26,7 @@ auth:
   #   storageState option so the browser starts authenticated. Fastest and most
   #   reliable strategy.
   #
-  # none: no auth; specs run against a public or pre-authed surface.
+  # none: no auth; specs run against a public or pre-authed aw-target.
   #
   # manual: aw-tester skips authed specs autonomously and logs "auth.strategy:
   #   manual — skipping authed spec". Use when SSO, hardware MFA, or mandatory
@@ -66,5 +66,5 @@ fixtures:
 
 constraints:
   parallelism: 1                   # number of concurrent Playwright pages
-                                   # keep at 1 for stateful surfaces (default)
+                                   # keep at 1 for stateful aw-targets (default)
   reset_between_specs: false       # true = new browser context per spec (slower, more isolated)

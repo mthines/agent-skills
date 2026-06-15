@@ -2,10 +2,10 @@
 name: aw-setup
 description: >
   One-time (but safely re-runnable) setup flow that scaffolds a project's
-  aw-tester surface: detects auth strategy, captures storage state, writes
-  .claude/surfaces/local.yml, and validates with a smoke spec. Re-runs detect
-  the existing surface and only re-prompt for what broke or changed.
-  Triggers on "/aw-setup", "setup aw-tester", "scaffold surface".
+  aw-tester aw-target: detects auth strategy, captures storage state, writes
+  .claude/aw-targets/local.yml, and validates with a smoke spec. Re-runs detect
+  the existing aw-target and only re-prompt for what broke or changed.
+  Triggers on "/aw-setup", "setup aw-tester", "scaffold aw-target".
 disable-model-invocation: false
 license: MIT
 metadata:
@@ -14,20 +14,20 @@ metadata:
   workflow_type: slash-command
   tags:
     - aw-tester
-    - surface
+    - aw-target
     - auth
     - setup
     - autonomous-workflow
 ---
 
-# aw-setup — Surface Scaffolding for aw-tester
+# aw-setup — Aw-Target Scaffolding for aw-tester
 
-Interactive, idempotent setup flow that scaffolds the `.claude/surfaces/` config
+Interactive, idempotent setup flow that scaffolds the `.claude/aw-targets/` config
 that `aw-tester` needs to run specs. Run it **once** before the first autonomous
 PR that touches UI. Re-run it when auth drifts, fixtures change, or base URL moves.
 
 > **This is the prerequisite for spec-driven UI verification in the
-> autonomous-workflow.** Without a surface file, `aw-tester` cannot run and
+> autonomous-workflow.** Without an aw-target file, `aw-tester` cannot run and
 > the executor's Phase 4 spec verification step skips cleanly.
 
 ---
@@ -46,12 +46,12 @@ PR that touches UI. Re-run it when auth drifts, fixtures change, or base URL mov
 
 **First run:** full guided scaffolding (Phases A–E).
 
-**Re-run:** detect `.claude/surfaces/local.yml` exists, validate each field:
+**Re-run:** detect `.claude/aw-targets/local.yml` exists, validate each field:
 - Auth storage state: does the file exist? Is it fresh (< N days old)?
 - Fixtures: does the seed command resolve? Do references point to env vars that exist?
 - Smoke spec: run it. If green, done — no prompts needed.
 - Only prompt for what broke or is missing.
-- Show a unified diff before overwriting any field in the surface file.
+- Show a unified diff before overwriting any field in the aw-target file.
 - Never silently overwrite `.auth/*.json`.
 
 ---
@@ -60,7 +60,7 @@ PR that touches UI. Re-run it when auth drifts, fixtures change, or base URL mov
 
 ### Phase A — Detect
 
-Read the project to guess the surface configuration. Look for:
+Read the project to guess the aw-target configuration. Look for:
 
 | Signal | What to look for |
 |--------|-----------------|
@@ -68,7 +68,7 @@ Read the project to guess the surface configuration. Look for:
 | Auth strategy | `next-auth` / `auth.js` imports, custom `/api/auth` routes, OAuth config |
 | Test backdoors | Dev-only cookies (`__e2e_token`), test env vars (`E2E_AUTH_TOKEN`), seed scripts in `package.json` |
 | Fixtures / seed | `db:seed`, `db:reset`, `seed:aw`, `test:setup` scripts |
-| Existing surface | `.claude/surfaces/local.yml` (re-run path) |
+| Existing aw-target | `.claude/aw-targets/local.yml` (re-run path) |
 
 Detection confidence level:
 - **High:** base URL found in env, auth strategy clear, seed script named explicitly.
@@ -125,26 +125,26 @@ Then:
 
 ### Phase D — Write
 
-Write the surface file and ensure the auth file is gitignored.
+Write the aw-target file and ensure the auth file is gitignored.
 
 **First run:**
 
 ```bash
-mkdir -p .claude/surfaces
-# write .claude/surfaces/local.yml from the template
+mkdir -p .claude/aw-targets
+# write .claude/aw-targets/local.yml from the template
 ```
 
-Show the complete surface YAML to the user for review before writing.
+Show the complete aw-target YAML to the user for review before writing.
 
 **Re-run:** show a unified diff:
 ```
---- .claude/surfaces/local.yml (existing)
-+++ .claude/surfaces/local.yml (proposed)
+--- .claude/aw-targets/local.yml (existing)
++++ .claude/aw-targets/local.yml (proposed)
 @@ ...
 ```
 
 Require user confirmation before writing. If the diff is empty, say "No changes
-needed — surface is up to date."
+needed — aw-target is up to date."
 
 **Gitignore guard:**
 ```bash
@@ -158,13 +158,13 @@ be produced by the bootstrap command, ask: "Overwrite existing auth state at
 
 ### Phase E — Smoke-test
 
-Call `aw-tester` with a one-spec smoke to validate the surface end-to-end:
+Call `aw-tester` with a one-spec smoke to validate the aw-target end-to-end:
 
 ```
 aw-tester:
   specs: |
     # Specs: Smoke Test
-    Surface: local
+    Target: local
     
     ## Spec 1: Homepage loads as the identified test user
     persist: verify-only
@@ -175,15 +175,15 @@ aw-tester:
       - WHEN page loads
         THEN page title is not "Error" and not "404"
         AND page does not contain {text: "Sign in"}
-  surface: local
+  aw-target: local
   mode: --bail-on-first-red
 ```
 
 | Verdict | Action |
 |---------|--------|
-| `green` | Done. Surface is scaffolded and validated. |
+| `green` | Done. Aw-Target is scaffolded and validated. |
 | `red` | Show the diagnostic blob. Loop back to Phase B with the specific failure. |
-| `inconclusive` | Auth strategy is `manual` — expected. Surface is written, authed specs will be skipped. |
+| `inconclusive` | Auth strategy is `manual` — expected. Aw-Target is written, authed specs will be skipped. |
 
 ---
 
@@ -212,17 +212,17 @@ Here is what a first-run session looks like for a Next.js project:
     ✓ .auth/local.json written (12kb)
     Loading http://localhost:3000/ ... ✓ HTTP 200, title: "Dashboard"
 
-[D] Writing surface:
-    Creating .claude/surfaces/local.yml ...
+[D] Writing aw-target:
+    Creating .claude/aw-targets/local.yml ...
     [shows YAML preview]
     Adding .auth/ to .gitignore
     Confirm? [y/N] y
-    ✓ .claude/surfaces/local.yml written
+    ✓ .claude/aw-targets/local.yml written
 
 [E] Smoke spec...
     Running aw-tester smoke spec...
     verdict: green
-    ✓ Surface validated. aw-tester is ready.
+    ✓ Aw-Target validated. aw-tester is ready.
 ```
 
 ---
@@ -230,7 +230,7 @@ Here is what a first-run session looks like for a Next.js project:
 ## Re-run example
 
 ```
-[Re-run detected] .claude/surfaces/local.yml exists.
+[Re-run detected] .claude/aw-targets/local.yml exists.
 Validating...
     ✓ base_url: http://localhost:3000 — reachable
     ✗ auth.storage_state: .auth/local.json — missing (deleted or expired)
@@ -240,21 +240,21 @@ One field needs attention: auth storage state is missing.
 [C] Re-running auth bootstrap...
     Running: pnpm run auth:bootstrap (timeout: 30s)
     ✓ .auth/local.json written (12kb)
-[D] No changes to surface.yml needed.
+[D] No changes to aw-target.yml needed.
 [E] Smoke spec... verdict: green
-✓ Surface re-validated.
+✓ Aw-Target re-validated.
 ```
 
 ---
 
-## Surface file location
+## Aw-Target file location
 
 | File | Path | Committed? |
 |------|------|-----------|
-| Surface definition | `.claude/surfaces/local.yml` | Yes |
+| Aw-Target definition | `.claude/aw-targets/local.yml` | Yes |
 | Auth storage state | `.auth/local.json` | No — gitignored |
 
-The surface file is committed so teammates can see the surface configuration.
+The aw-target file is committed so teammates can see the aw-target configuration.
 The auth storage state is gitignored — it contains session tokens.
 
 ---
@@ -270,7 +270,7 @@ The auth storage state is gitignored — it contains session tokens.
 
 ## Definition of done
 
-- [ ] `.claude/surfaces/local.yml` written and reviewed by the user.
+- [ ] `.claude/aw-targets/local.yml` written and reviewed by the user.
 - [ ] `.auth/local.json` exists (or `auth.strategy: manual` is set).
 - [ ] `.auth/` is in `.gitignore`.
 - [ ] Smoke spec returned `green` (or `inconclusive` for `manual` auth strategy).
