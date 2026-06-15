@@ -155,6 +155,7 @@ template_required() {
 template_required "aw.agent.md"
 template_required "aw-planner.agent.md"
 template_required "aw-executor.agent.md"
+template_required "aw-tester.agent.md"
 template_required "routing.rule.md"
 
 mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/rules"
@@ -208,6 +209,19 @@ vlog "✓ Planner agent:  $CLAUDE_DIR/agents/aw-planner.md"
 ln -sf "$SKILL_DIR/templates/aw-executor.agent.md" "$CLAUDE_DIR/agents/aw-executor.md"
 vlog "✓ Executor agent: $CLAUDE_DIR/agents/aw-executor.md"
 
+ln -sf "$SKILL_DIR/templates/aw-tester.agent.md" "$CLAUDE_DIR/agents/aw-tester.md"
+vlog "✓ Tester agent:   $CLAUDE_DIR/agents/aw-tester.md (spec-driven UI verification; dispatched by executor in Phase 4)"
+
+# Scaffold the aw-tester-lessons memory directory alongside aw-lessons.
+# Only create if it doesn't exist — never overwrite an existing scope.
+MEMORY_DIR="${SKILL_DIR}/../../../memory/aw-tester-lessons"
+if [[ -d "$MEMORY_DIR" ]]; then
+  vlog "  (aw-tester-lessons memory: already exists at $MEMORY_DIR)"
+else
+  mkdir -p "$MEMORY_DIR/entries" "$MEMORY_DIR/archive"
+  vlog "✓ Memory:         aw-tester-lessons directory scaffolded at $MEMORY_DIR"
+fi
+
 # Link the routing rule. Project + development modes get auto-routing;
 # global mode skips it (most users don't want auto-trigger on every project).
 if [[ "$MODE" == "project" || "$MODE" == "development" ]]; then
@@ -220,12 +234,17 @@ fi
 vlog ""
 vlog "done. autonomous-workflow is ready ($MODE mode)."
 vlog ""
-vlog "three agents installed (aw- = autonomous-workflow namespace):"
+vlog "four agents installed (aw- = autonomous-workflow namespace):"
 vlog "  • aw           — opt-in dispatcher; detects tier (Micro/Lite/Full) + owns the lessons loop"
 vlog "  • aw-planner   — phases 0-2, produces .agent/{branch}/plan.md (Full tier)"
 vlog "  • aw-executor  — phases 3-7, produces walkthrough.md + draft PR (Full tier)"
+vlog "  • aw-tester    — spec-driven UI verification; dispatched by executor in Phase 4 (before lint/type/test)"
 vlog "  Micro/Lite run single-pass via aw; Full hands off planner → executor (gated on confidence(plan) ≥ 90%)."
 vlog "  See: skills/workflow/autonomous-workflow/rules/planner-executor-handoff.md"
+vlog ""
+vlog "UI verification setup (one-time, per project):"
+vlog "  Run /aw-setup to scaffold .claude/surfaces/local.yml before the first UI autonomous task."
+vlog "  See: skills/workflow/autonomous-workflow/aw-setup/SKILL.md"
 
 if [[ "$MODE" == "development" ]]; then
   vlog ""

@@ -15,13 +15,14 @@ the workflow never blocks on a missing companion.
 | Phase | Name                       | Gate                                             |
 | ----- | -------------------------- | ------------------------------------------------ |
 | 0     | Validation                 | User confirmed understanding, mode selected      |
-| 1     | Planning                   | `confidence(plan)` >= 90% (or user-approved)     |
-| 2     | Worktree Setup             | Worktree created, `plan.md` written              |
+| 1     | Planning                   | `confidence(plan)` >= 90% (or user-approved); `specs.md` drafted for UI tasks |
+| 2     | Worktree Setup             | Worktree created, `plan.md` (+ `specs.md`) written |
 | 3     | Implementation             | Code complete, fast checks pass                  |
+| 4 (UI)| Spec Verification          | `aw-tester` verdict `green`/`inconclusive` — runs before lint/type/test |
 | 4     | Testing                    | All tests pass OR user-approved stop             |
 | 5     | Documentation              | Docs reflect changes (incl. `CLAUDE.md`)         |
 | 6     | PR Creation                | Walkthrough shown, draft PR opened               |
-| 7     | CI Gate + Optional Cleanup | CI green OR user-approved stop                   |
+| 7     | CI Gate + Optional Cleanup | CI green OR user-approved stop; optional spec rehearsal against preview |
 
 ---
 
@@ -38,8 +39,14 @@ the workflow never blocks on a missing companion.
 | [`rules/error-recovery.md`](./rules/error-recovery.md)         | Recovery procedures for common errors.      |
 | [`rules/safety-guardrails.md`](./rules/safety-guardrails.md)   | Validation checkpoints and resource caps.   |
 | [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) | Fast-tier episodic-lessons loop (`aw-lessons`) + promotion to `diagnose`. |
+| [`rules/phase-4-spec-verification.md`](./rules/phase-4-spec-verification.md) | Spec-driven UI verification sub-rule (before lint/type/test). |
 | [`rules/parallel-coordination.md`](./rules/parallel-coordination.md) | Sub-agent fan-out and multi-agent handoff. |
-| [`templates/`](./templates/)       | Agent template + auto-trigger routing rule.                     |
+| [`templates/`](./templates/)       | Agent templates + auto-trigger routing rule + surface/specs templates. |
+| [`templates/aw-tester.agent.md`](./templates/aw-tester.agent.md) | `aw-tester` spec-driven UI verification agent. |
+| [`templates/surface.yml.template`](./templates/surface.yml.template) | Surface schema (base URL, auth strategy, fixtures, constraints). |
+| [`templates/specs.md.template`](./templates/specs.md.template)   | Specs file format with example blocks for new features and refactors. |
+| [`aw-setup/SKILL.md`](./aw-setup/SKILL.md) | Interactive one-time surface scaffolding skill (`/aw-setup`). |
+| [`memory/aw-tester-lessons/`](../../../memory/aw-tester-lessons/) | Cross-run lessons for `aw-tester` (mirrors `aw-lessons` format). |
 | [`references/`](./references/)     | Lazy-loaded examples (full execution trace, error scenarios).   |
 
 `SKILL.md` is intentionally thin — it's the index Claude loads first. The
@@ -97,19 +104,25 @@ run single-pass; Full hands off to the planner→executor split.
 
 #### What gets installed
 
-Three agents linked into your `.claude/agents/` directory under the
+Four agents linked into your `.claude/agents/` directory under the
 **`aw-` namespace** (short for "autonomous-workflow") so they group together
 and are unmistakable when listed alongside unrelated agents:
 
 | Agent | Role | Terminal artifact | Exit gate |
 |---|---|---|---|
 | `aw` | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes, owns the self-improvement loop for every tier. | — (delegates) | Task routed + exit lesson written |
-| `aw-planner` | Full tier, phases 0–2 (validation, planning, worktree + plan.md) | `.agent/{branch}/plan.md` | `confidence(plan) ≥ 90%` (or user-approved override) |
+| `aw-planner` | Full tier, phases 0–2 (validation, planning, worktree + plan.md + specs.md) | `.agent/{branch}/plan.md` + `specs.md` (UI tasks) | `confidence(plan) ≥ 90%` (or user-approved override) |
 | `aw-executor` | Full tier, phases 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
+| `aw-tester` | Phase 4 spec-driven UI verification — dispatched by executor before lint/type/test | Verdict block (~200 tokens) | `green` or `inconclusive` |
 
 `aw` is **adaptive and opt-in**: it only pays the planner→executor handoff cost
 on Full tasks (where context isolation + a resumable `plan.md` earn it), and runs
 Micro/Lite single-pass. It is invoked deliberately, not as a wrapper on every prompt.
+
+**One-time UI setup:** run `/aw-setup` once per project before the first autonomous
+UI task. This scaffolds `.claude/surfaces/local.yml` (the surface `aw-tester` reads)
+and validates it with a smoke spec. The planner halts and prompts if no surface exists.
+See [`aw-setup/SKILL.md`](./aw-setup/SKILL.md).
 
 > **Upgrading from a pre-`aw-` install?** The installer detects legacy
 > `autonomous-planner.md` / `autonomous-executor.md` symlinks pointing at
@@ -137,6 +150,7 @@ trigger registry is in
 | 3     | `tdd`                  | Optional  | RED-GREEN-REFACTOR for pure logic / business rules |
 | 3     | `ux`                   | Optional  | UI / accessibility review when UI files touched |
 | 3     | `code-quality`         | Optional  | End-of-Phase-3 code-quality pass              |
+| 4 (UI)| `aw-tester` *(agent)*  | Optional  | Spec-driven UI verification — dispatched before lint/type/test when `specs.md` + surface exist |
 | 4     | `confidence`           | Optional  | `analysis` at iteration cap (3 Lite / 5 Full) |
 | 4     | `holistic-analysis`    | Optional  | Step-back analysis after stuck-loop confidence |
 | 5     | `docs update`          | Optional  | Self-improving doc loop (keeps `CLAUDE.md`, `README.md`, and `docs/` in sync) |

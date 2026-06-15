@@ -27,6 +27,7 @@ inside the worktree, never on the main branch.
 - [Complex Task Detection](#complex-task-detection)
 - [Step 2: Draft Technical Design](#step-2-draft-technical-design)
 - [Design Quality](#design-quality)
+- [Spec Emission (UI tasks)](#spec-emission-anchor)
 - [Confidence Gate](#confidence-gate)
 - [Planner-Executor Handoff](#planner-executor-handoff)
 - [Planning Checklist](#planning-checklist)
@@ -290,6 +291,93 @@ Disable by removing the invocation here (see
 
 ---
 
+## Spec Emission (UI tasks)
+
+**Anchor:** `spec-emission-anchor`
+
+After the technical approach is drafted but **before** the confidence gate,
+emit a `specs.md` file when the task touches a UI surface. This is the
+planning-time deliverable that `aw-tester` consumes in Phase 4.
+
+### Heuristic: does the task touch a UI surface?
+
+Check the `## File changes` table in the in-conversation plan draft. If ANY
+planned file matches these patterns, emit `specs.md`:
+
+- `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`
+- `*.css`, `*.module.css`, `*.scss`
+- Files in `/pages/`, `/app/`, `/routes/`, `/layouts/`, `/components/`
+
+If zero files match, skip spec emission entirely and log:
+
+```markdown
+- [TIMESTAMP] Phase 1: spec-emission — skipped (no UI files in plan)
+```
+
+### Surface prerequisite check
+
+Before emitting specs, verify a surface exists:
+
+```bash
+ls .claude/surfaces/*.yml 2>/dev/null | head -1
+```
+
+If no surface file exists, **halt and tell the user**:
+
+```
+This task touches UI files. Spec-driven verification requires a surface.
+Run /aw-setup to scaffold .claude/surfaces/local.yml before proceeding.
+This is a one-time setup (~2 minutes). The planner will pause here.
+
+After /aw-setup completes, reply "continue" and the planner will resume.
+```
+
+Wait for the user to confirm `/aw-setup` is done. Do NOT auto-scaffold.
+Do NOT attempt to run `/aw-setup` yourself — it is interactive and requires
+user input. If the surface's `auth.storage_state` file is older than 7 days,
+warn but do not halt:
+
+```markdown
+- [TIMESTAMP] Phase 1: spec-emission — auth state at {path} is {N} days old;
+  consider re-running /aw-setup to refresh before execution.
+```
+
+### What to emit
+
+Write `specs.md` alongside `plan.md`. Follow the format in
+[`templates/specs.md.template`](../templates/specs.md.template).
+
+Guidelines for the planner when writing specs:
+
+- Write one spec per **user goal**, not per implementation step.
+- Prefer `verify-only` for refactors and small UI fixes (most specs).
+- Use `critical-path` only for acceptance criteria that must be permanently
+  regression-tested (major new flows, core user journeys).
+- Locator descriptors: `{role: ..., name: ...}` preferred. Never CSS selectors.
+- Keep spec flow steps to 3–6 steps. Long flows should be broken into
+  `continues-from` chains.
+- Placeholder syntax: `{dashboardId}` resolves from `surface.fixtures.references`.
+  Use only references that exist in the surface file.
+- Network assertions: include only when the AC explicitly requires a specific
+  HTTP status or response shape.
+
+### Spec file path
+
+Write to `.agent/{branch}/specs.md` in Phase 2 (alongside `plan.md`), never
+on the main branch. The specs file is a planning artifact — it lives in
+`.agent/` and is gitignored alongside `plan.md`.
+
+Log:
+
+```markdown
+- [TIMESTAMP] Phase 1: spec-emission — {N} specs drafted (surface: {name},
+  {critical-path-count} critical-path, {verify-only-count} verify-only)
+- [TIMESTAMP] Phase 1: spec-emission — skipped (no UI files in plan)
+- [TIMESTAMP] Phase 1: spec-emission — halted (no surface; user told to run /aw-setup)
+```
+
+---
+
 ## Adversarial Pre-Mortem
 
 **Anchor:** `adversarial-pre-mortem`
@@ -387,6 +475,7 @@ contract and message format.
 - [ ] `holistic-analysis` invoked if complexity triggered (anchor: `complex-task-detection`)
 - [ ] Technical approach designed with specific file references
 - [ ] `code-quality(plan)` invoked and design refined (anchor: `design-quality`)
+- [ ] UI surface check: if plan touches UI files, surface exists OR user told to run `/aw-setup`; `specs.md` drafted or skip logged (anchor: `spec-emission-anchor`)
 - [ ] `confidence(plan)` ≥ 90% OR user-approved (anchor: `confidence-gate`)
 - [ ] Companion invocations logged (will move to `plan.md` Progress Log in Phase 2)
 
@@ -404,3 +493,6 @@ contract and message format.
 - Related skill: [`code-quality`](../../../quality/code-quality/SKILL.md)
 - Related skill: [`holistic-analysis`](../../../analysis/holistic-analysis/SKILL.md)
 - Related skill: [`aw-create-plan`](../../aw-create-plan/SKILL.md)
+- Related rule: [`phase-4-spec-verification.md`](./phase-4-spec-verification.md) — where specs.md is consumed
+- Setup skill: [`aw-setup/SKILL.md`](../aw-setup/SKILL.md) — surface scaffolding
+- Template: [`templates/specs.md.template`](../templates/specs.md.template) — spec format reference

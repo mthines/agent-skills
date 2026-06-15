@@ -17,6 +17,7 @@ tags:
 - [Procedure](#procedure)
 - [Auto Fix](#auto-fix)
 - [Parallel CI Fixes](#parallel-ci-fixes)
+- [Spec Rehearsal (optional, UI tasks only)](#spec-rehearsal-optional-ui-tasks-only)
 - [Auto Verify](#auto-verify)
 - [Auto Review](#auto-review)
 - [Optional Post-Merge Cleanup](#optional-post-merge-cleanup)
@@ -179,6 +180,71 @@ Tell the user: PR URL, all checks green, and that the worktree is preserved pend
 Then proceed to [Auto Verify](#auto-verify) before any cleanup. Capture any
 durable run lesson per [Lessons Write](#lessons-write) (also applies on a
 user-approved stop, or when a post-merge bug surfaces in the same session).
+
+## Spec Rehearsal (optional, UI tasks only)
+
+After all CI checks are green and `.agent/{branch}/specs.md` exists, optionally
+rehearse the specs against the preview deployment. This validates that the UI
+change works end-to-end in the deployed environment, not just locally.
+
+| Property | Value |
+|----------|-------|
+| Runs when | `specs.md` exists AND a preview URL is available (Vercel/Netlify preview comment, or similar) |
+| Skips when | No preview URL, no `specs.md`, `aw-tester` agent not installed |
+| Mode | `--all` (report all failures, not just the first) |
+| Verdict effect | Advisory — does not block undraft; user makes final call |
+
+### Step 1: Detect preview URL
+
+```bash
+# Try to find a preview URL from PR comments
+gh pr view <pr-number> --json comments --jq '.comments[].body' \
+  | grep -Eo 'https://[a-z0-9-]+\.(vercel\.app|netlify\.app|preview\.[a-z]+)[^ ]*' \
+  | head -1
+```
+
+If no preview URL is found, log and skip:
+
+```markdown
+- [TIMESTAMP] Phase 7: spec-rehearsal — skipped (no preview URL found on PR)
+```
+
+### Step 2: Run aw-tester in --all mode
+
+Dispatch `aw-tester` with an ephemeral surface override (base_url = preview URL,
+auth.strategy: none — preview deployments typically have no captured auth state):
+
+```
+description: Rehearse specs against preview deployment
+subagent_type: aw-tester
+prompt: |
+  Rehearse the specs at .agent/{branch}/specs.md against the preview deployment.
+  
+  Override surface base_url to: {preview_url}
+  Auth strategy override: none (preview — no auth state available)
+  Specs file: .agent/{branch}/specs.md
+  Mode: --all
+  
+  Skip any spec whose preconditions require a logged-in user.
+  Return the verdict block in the exact output schema format.
+```
+
+### Step 3: Surface verdict (advisory)
+
+| Verdict | What to tell the user |
+|---------|----------------------|
+| `green` | "Preview rehearsal passed. All {N} specs green on {preview_url}." |
+| `red` | "Preview rehearsal flagged {N} failing spec(s). Review before undrafting." |
+| `inconclusive` | "Preview rehearsal: {N} specs skipped (auth required). Unauthed specs: {result}." |
+
+Never auto-undraft based on the spec rehearsal verdict. Log:
+
+```markdown
+- [TIMESTAMP] Phase 7: spec-rehearsal — verdict: {green|red|inconclusive}
+  ({N} specs on {preview_url})
+```
+
+---
 
 ## Auto Verify
 
@@ -459,6 +525,7 @@ Disable by removing this invocation (see
 - [ ] `ci-auto-fix` invoked per mechanical failure (parallel when independent, cap 2)
 - [ ] Judgment failures escalated to user with full report
 - [ ] CI is green OR user has approved stopping
+- [ ] (Optional, UI tasks) `aw-tester` spec rehearsal dispatched against preview URL; verdict surfaced or skip logged
 - [ ] (Optional, Full Mode) `feature-pr-verifier` agent dispatched after CI green; verdict surfaced or skip logged
 - [ ] (Optional) `reviewer` agent dispatched after CI green with `--critical` + auto-fix-all-Simple-severities; inline report surfaced or skip logged
 - [ ] (Optional) PR merged → worktree removed with user confirmation
@@ -468,9 +535,11 @@ Disable by removing this invocation (see
 ## References
 
 - Related rule: [phase-6-pr-creation](./phase-6-pr-creation.md)
+- Related rule: [phase-4-spec-verification](./phase-4-spec-verification.md) — Phase 4 spec runner (local)
 - Companion registry: [companion-skills.md](./companion-skills.md)
 - Related skill: [ci-auto-fix](../../../delivery/ci-auto-fix/SKILL.md)
 - Related skill: [create-pr — Step 8 parallel pattern](../../../delivery/create-pr/SKILL.md)
+- Related agent: [aw-tester](../templates/aw-tester.agent.md) — optional Phase 7 spec rehearsal (UI tasks)
 - Related agent: [reviewer](../../../../agents/reviewer.md) — optional Phase 7 auto-review
 - Related agent: [feature-pr-verifier](../../../../agents/feature-pr-verifier.md) — optional Phase 7 auto-verify (Full Mode)
 - Without `gw`, clean up natively: `git worktree remove <path>` then `git branch -d <branch>` (Step 3 above shows the full commands).

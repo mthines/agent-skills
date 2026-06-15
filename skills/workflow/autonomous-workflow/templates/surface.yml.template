@@ -1,0 +1,70 @@
+# surface.yml — aw-tester surface definition
+#
+# A "surface" is a named browser context: a base URL, an auth strategy, and
+# fixture references. `aw-tester` reads this file before running any spec.
+#
+# Convention:
+#   - Commit this file (it contains no secrets).
+#   - Add .auth/<name>.json to .gitignore (it contains the auth storage state).
+#   - Run `/aw-setup` once to scaffold this file and validate it with a smoke spec.
+#   - Re-run `/aw-setup` anytime auth drifts, fixtures change, or base URL moves.
+#
+# Placeholder resolution:
+#   ${VAR}   — resolved from the process environment at test time.
+#   {name}   — resolved from this file's fixtures.references map at spec time.
+#
+# ---
+
+name: local                        # referenced by specs: "Surface: local"
+
+base_url: http://localhost:3000    # the URL aw-tester navigates to; no trailing slash
+
+auth:
+  strategy: storage-state          # one of: storage-state | none | manual | env-credentials
+  #
+  # storage-state: aw-tester reads the .auth JSON and passes it to Playwright's
+  #   storageState option so the browser starts authenticated. Fastest and most
+  #   reliable strategy.
+  #
+  # none: no auth; specs run against a public or pre-authed surface.
+  #
+  # manual: aw-tester skips authed specs autonomously and logs "auth.strategy:
+  #   manual — skipping authed spec". Use when SSO, hardware MFA, or mandatory
+  #   CAPTCHA makes automated login impossible.
+  #
+  # env-credentials: aw-tester runs a short login flow using the email + password
+  #   below and captures the resulting storage state. Slower; prefer storage-state
+  #   when a bootstrap command is available.
+
+  storage_state: ./.auth/local.json   # path relative to repo root; gitignored
+
+  refresh:
+    when: missing-or-expired       # one of: missing-or-expired | always | never
+    command: pnpm run auth:bootstrap
+    timeout_seconds: 30
+
+  identity:                        # the test user aw-setup logged in as
+    email: test+aw@example.com
+    role: admin                    # informational; used in smoke spec description
+
+fixtures:
+  seed:
+    command: pnpm run db:seed:aw   # idempotent seed command; run once before suite
+    idempotent: true               # if true, aw-tester may skip re-seeding on re-runs
+
+  references:                      # specs use {name} placeholders that resolve here
+    # dashboardId: ${SEED_DASHBOARD_ID}    # resolved from env at test time
+    # datasetIds:
+    #   default: ${SEED_DATASET_DEFAULT}
+    #   staging: ${SEED_DATASET_STAGING}
+
+  cleanup:
+    command: pnpm run db:reset:aw
+    on: never                      # one of: never | finally | on-failure
+    # "never" is safe for most teams — seed is idempotent and cleanup is slow.
+    # "finally" cleans up after every run. "on-failure" only on red verdict.
+
+constraints:
+  parallelism: 1                   # number of concurrent Playwright pages
+                                   # keep at 1 for stateful surfaces (default)
+  reset_between_specs: false       # true = new browser context per spec (slower, more isolated)

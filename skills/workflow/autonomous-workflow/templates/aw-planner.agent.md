@@ -112,6 +112,31 @@ promotion suggestion (`/create-skill diagnose autonomous-workflow`). Skips
 silently if `persistent-memory` is not installed. Full contract:
 [`rules/self-improvement-loop.md`](../rules/self-improvement-loop.md).
 
+## Spec Emission (UI tasks — anchor: `spec-emission-anchor`)
+
+After drafting the technical approach and invoking `code-quality(plan)`, check
+whether the task touches a UI surface. Full procedure in
+[`rules/phase-1-planning.md#spec-emission-anchor`](../rules/phase-1-planning.md#spec-emission-anchor).
+
+Summary:
+
+1. Scan the in-conversation plan's `## File changes` table for `*.tsx`, `*.jsx`,
+   `*.css`, `*.vue`, `*.svelte`, or files under `/pages/`, `/app/`, `/routes/`,
+   `/layouts/`, `/components/`.
+2. If NO UI files found: log `spec-emission — skipped (no UI files in plan)` and continue.
+3. If UI files found:
+   a. Check `ls .claude/surfaces/*.yml 2>/dev/null | head -1`.
+   b. If no surface: **halt** and tell the user to run `/aw-setup` before continuing.
+      Wait for user to confirm completion. Do NOT scaffold yourself.
+   c. If surface exists: draft `specs.md` following the template at
+      [`templates/specs.md.template`](./specs.md.template). Write it to
+      `.agent/{branch}/specs.md` in Phase 2 (alongside `plan.md`).
+
+Write specs.md as a Phase 2 artifact (not in conversation — write it to disk
+via `Write`). The executor reads it from disk in Phase 4.
+
+---
+
 ## Handoff Protocol
 
 When Phases 0–2 are complete, choose one branch:
@@ -129,6 +154,7 @@ Output the structured handoff message verbatim (canonical format from
 - Worktree: <path>
 - Files to change: N
 - Acceptance Criteria: M items
+- Specs: .agent/{branch}/specs.md ({N} specs, surface: {name}) | none (non-UI task)
 
 Reply with one of:
 - "execute" / "continue" — dispatch the executor.
