@@ -18,10 +18,29 @@ Refactor: no                       # "yes" hints regression intent: assert behav
 # url field:
 #   {placeholders} resolve from surface.fixtures.references (e.g. {dashboardId})
 #
-# flow field locator descriptors:
-#   {role: "button", name: "Save"}    — preferred (accessibility-tree)
-#   {testid: "save-draft"}            — escape hatch only
-#   {text: /regex/}                   — text match
+# flow field locator descriptors — mini-grammar:
+#
+#   Key-value object in single braces. Keys are identifiers; values are either
+#   double-quoted strings or JS regex literals (/pattern/).
+#
+#   Supported forms:
+#     {role: "button", name: "Save"}           — role + accessible name (preferred)
+#     {role: "button", name: "Save", exact: false}  — partial accessible name
+#     {label: "Email address"}                 — form label
+#     {placeholder: "Search…"}                 — input placeholder
+#     {text: "Submit"}                          — visible text (exact)
+#     {text: /submit/i}                         — visible text (regex)
+#     {testid: "save-draft"}                   — data-testid (escape hatch)
+#
+#   Edge cases:
+#     Comma inside a name:  quote the whole name — {role: "button", name: "Save, continue"}
+#     Regex with comma:     {text: /save, continue/i}  — comma inside /.../ is fine
+#     Multi-word role:      {role: "menu item", name: "Delete"}
+#
+#   Resolver contract: aw-tester maps each form to Playwright's getByRole /
+#   getByLabel / getByPlaceholder / getByText / getByTestId. CSS selectors,
+#   nth-child, and XPath are NEVER valid locator forms.
+#
 #   NO CSS-class or nth-child selectors
 #
 # network assertions:
@@ -29,8 +48,15 @@ Refactor: no                       # "yes" hints regression intent: assert behav
 #   Example: network: POST /api/alerts returned 201
 #
 # continues-from:
-#   Reuse the browser state from a prior spec's end. The prior spec must have
-#   run in the same aw-tester invocation and must have passed.
+#   Reuse the browser state from a prior spec's end — the prior spec's page,
+#   cookies, and local storage are inherited as the starting state for this spec.
+#   The prior spec must have run in the same aw-tester invocation and must have
+#   passed. If the prior spec was skipped or failed, aw-tester skips this spec
+#   too (reason: "continues-from: Spec N — prior spec did not pass").
+#
+#   IMPORTANT: continues-from is silently broken when the surface sets
+#   reset_between_specs: true (each spec starts a fresh context). Do not use
+#   continues-from on surfaces with reset_between_specs: true.
 # ---
 
 ## Spec 1: <one-line user goal for a new feature>
