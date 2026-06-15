@@ -28,6 +28,7 @@
 ### Phase 3 — Implementation
 
 - [2026-06-14-add-contents-to-long-rules-files](entries/2026-06-14-add-contents-to-long-rules-files.md) — When scaffolding a skill, check every rules/*.md line count during authoring and add ## Contents if >100 lines; do not defer to the quality-checklist phase.
+- [2026-06-15-missing-referenced-skill-fallback](entries/2026-06-15-missing-referenced-skill-fallback.md) — When a task references a skill by name for pattern extraction and it is not installed, scan installed siblings with overlapping tags rather than blocking.
 
 ### Phase 4 — Testing
 
