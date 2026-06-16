@@ -17,7 +17,7 @@ argument-hint: '[scaffold|review|upgrade|diagnose] [<skill-name>|<path>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.2.0'
   workflow_type: scaffolder-advisory-and-diagnoser
   tags:
     - skill-authoring
@@ -145,6 +145,11 @@ Draft the YAML frontmatter using `rules/frontmatter.md` and
 - `description` is third-person, ≤ 1024 chars, includes both **what** and
   **when** (trigger phrases), front-loaded with the most important keywords.
 - `disable-model-invocation: true` is set if the user picked slash-only.
+- `argument-hint` is set (unless the skill is `user-invocable: false`),
+  derived from the **Modes** (Q5) and **Inputs** (Q6) answers from Phase 0.
+  Mirror the actual modes / flags; use `[…]` for optional, `<…>` for
+  placeholders, `|` for alternatives. If the skill takes no arguments,
+  emit `argument-hint: ''` explicitly rather than omitting the field.
 - `metadata.tags` are populated (5–10 specific terms).
 
 ### Phase 3 — File generation

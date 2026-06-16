@@ -21,7 +21,7 @@ the system prompt). Treat it like a public API.
 | `name`                     | Recommended | ≤ 64 chars, lowercase letters / digits / hyphens only, no XML tags, no reserved words (`anthropic`, `claude`). Falls back to the directory name.     |
 | `description`              | Recommended | ≤ 1024 chars, non-empty, no XML tags. Third-person. Front-load triggers. Falls back to the first paragraph of body if omitted.                       |
 | `when_to_use`              | Optional    | Extra trigger context. Appended to `description`; combined cap is 1,536 chars in the skill listing.                                                  |
-| `argument-hint`            | Optional    | Autocomplete hint, e.g. `[issue-number]` or `[filename] [format]`.                                                                                   |
+| `argument-hint`            | Required*   | Autocomplete hint shown in the `/` menu. **Required** unless `user-invocable: false`. Mirror the skill's actual modes / flags. Use `[…]` for optional, `<…>` for placeholders, `\|` for alternatives. Examples: `[plan\|review\|simplify]`, `<pr-url> [--publish]`, `[--mode static\|mutate] [<paths>]`. |
 | `arguments`                | Optional    | Named positional args for `$name` substitution. Space-separated string or YAML list.                                                                 |
 | `disable-model-invocation` | Optional    | `true` → only the user can invoke (slash-only). Default `false`.                                                                                     |
 | `user-invocable`           | Optional    | `false` → hidden from the `/` menu. Use for background-knowledge skills. Default `true`.                                                             |
@@ -49,6 +49,10 @@ Before writing, run every check:
 - [ ] `description` lists 3–8 explicit trigger phrases the user might type.
 - [ ] If `disable-model-invocation: true`, the description still mentions
       the slash form (e.g. `"/<name>"`) so the user can find it.
+- [ ] `argument-hint` is set unless `user-invocable: false`. It mirrors the
+      skill's actual modes / flags and uses `[…]` for optional, `<…>` for
+      placeholders, `|` for alternatives. If the skill takes no
+      arguments, emit `argument-hint: ''` explicitly rather than omitting.
 - [ ] `metadata.tags` includes 5–10 specific tags (no `tools` / `helper`).
 - [ ] No XML tags inside `description` or `name`.
 
@@ -60,6 +64,7 @@ name: <kebab-case-name>
 description: >
   <Third-person verb> <what it does>. Use when <when to use>. Triggers on
   "<phrase 1>", "<phrase 2>", "<phrase 3>", "/<name>".
+argument-hint: '[<mode-a>|<mode-b>] [<positional>]'
 license: MIT
 metadata:
   author: <handle>
@@ -80,6 +85,7 @@ description: >
   <Third-person verb> <what it does>. Triggers on "<phrase 1>", "<phrase 2>",
   "/<name>".
 disable-model-invocation: true
+argument-hint: '[<mode-a>|<mode-b>] [--flag] [<positional>]'
 allowed-tools: Bash(git *) Read Edit
 metadata:
   author: <handle>
@@ -123,3 +129,8 @@ metadata:
   are rejected.
 - **Mismatched name and directory.** The directory is the source of truth
   for invocation; the `name:` field should match.
+- **Missing `argument-hint`.** A user-invocable skill without one forces
+  the user to read the full description to discover its modes / flags.
+  Always emit one (unless `user-invocable: false`); for skills with no
+  arguments, emit `argument-hint: ''` explicitly so the omission is
+  intentional, not forgotten.

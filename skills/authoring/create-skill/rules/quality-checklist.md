@@ -33,6 +33,10 @@ Use this list in two ways:
 - [ ] `metadata.tags` lists 5–10 specific tags (avoid `tools`, `helper`).
 - [ ] `disable-model-invocation` is set explicitly (true or false), not
       omitted, when invocation control matters.
+- [ ] `argument-hint` is set unless `user-invocable: false`. Mirrors the
+      skill's actual modes / flags; uses `[…]` for optional, `<…>` for
+      placeholders, `|` for alternatives. If the skill takes no
+      arguments, the empty string `''` is emitted explicitly.
 - [ ] `allowed-tools`, if present, is the minimum set the skill needs.
 - [ ] If `paths:` is set, the globs match the actual files the skill cares
       about.

@@ -4,6 +4,7 @@ description: >
   <Third-person verb> <what it does>. <Methodology / approach>. Use when
   <when to use>. Triggers on "<phrase 1>", "<phrase 2>", "<phrase 3>",
   "/<name>".
+argument-hint: '[<mode-a>|<mode-b>] [<positional>]'
 license: MIT
 metadata:
   author: <handle>
