@@ -12,6 +12,7 @@ description: >
   new model", "write evals", "test my prompt", "audit AI code",
   "/ai-engineering".
 disable-model-invocation: true
+argument-hint: '[guide|review|design] [<area>|<file>]'
 license: MIT
 metadata:
   author: mthines

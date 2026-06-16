@@ -10,6 +10,7 @@ description: >
   "investigate this mp4", "investigate this mov", "analyse this clip",
   "look at this screen capture", "what is happening in this video",
   "analyse this screen capture", "video-analyser", "/video-analyser".
+argument-hint: '<video-path|linear-url|video-url>'
 license: MIT
 metadata:
   author: mthines

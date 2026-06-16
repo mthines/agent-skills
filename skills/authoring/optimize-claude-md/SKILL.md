@@ -16,6 +16,7 @@ description: >
   refuses files < 10k chars; never deletes silently; never edits any
   skill's canonical `SKILL.md` frontmatter — routes to `/create-skill`.
 disable-model-invocation: true
+argument-hint: '[audit|trim|extract] [<path>]'
 license: MIT
 metadata:
   author: mthines

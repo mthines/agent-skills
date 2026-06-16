@@ -8,6 +8,7 @@ description: >
   Use during planning before autonomous execution, before opening a high-stakes PR, or when a fix "feels off".
   One adversarial pass per run — naïve self-refine loops amplify bias.
   Modes: plan (default), code, analysis. Triggers on "critical", "challenge this", "pre-mortem", "red-team this", "/critical".
+argument-hint: '[plan|code|analysis]'
 license: MIT
 metadata:
   author: mthines

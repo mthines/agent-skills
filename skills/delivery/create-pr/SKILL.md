@@ -17,6 +17,7 @@ description: >
   /create-pr, /create-pr --split, /create-pr --review, or pass --no-quality to
   skip the pre-push quality pass.
 disable-model-invocation: false
+argument-hint: '[--split] [--review] [--no-quality]'
 license: MIT
 metadata:
   author: mthines

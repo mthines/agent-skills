@@ -12,6 +12,7 @@ description: >
   feature). Triggers on "visual design", "make this look good", "brand
   identity", "style direction", "improve the visuals", "review the look",
   "does this look generic", "/visual-design".
+argument-hint: '[guide|review|direction]'
 license: MIT
 metadata:
   author: mthines

@@ -11,6 +11,7 @@ description: >
   "fix the CI", "the build is red", "auto-fix this PR's checks",
   "GitHub Actions failed", "/ci-auto-fix".
 disable-model-invocation: false
+argument-hint: '[<pr-url>|<run-id>]'
 license: MIT
 metadata:
   author: mthines

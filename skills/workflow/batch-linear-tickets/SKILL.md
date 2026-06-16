@@ -11,6 +11,7 @@ description: >
   completion. Triggers on "batch-linear-tickets", "batch analyze",
   "solve these tickets", "implement these tickets", "analyze tickets",
   "/batch-linear-tickets".
+argument-hint: '[--type=auto|bug|feature] <ticket-ids>'
 user-invocable: true
 metadata:
   author: mthines

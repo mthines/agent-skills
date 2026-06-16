@@ -5,6 +5,7 @@ description: >
   hygiene. Routes to `reviewer` for own work or `pr-reviewer` for a cross-author PR.
   Invoke with /review-changes.
 disable-model-invocation: true
+argument-hint: '[<pr-url>|#<n>] [--report] [--critical] [--publish]'
 license: MIT
 metadata:
   author: mthines

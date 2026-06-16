@@ -11,6 +11,7 @@ description: >
   Triggers on: "tdd", "write tests", "test this", "add test coverage",
   "test driven", "red green refactor", "/tdd".
 disable-model-invocation: false
+argument-hint: '[after] [<feature-description>]'
 license: MIT
 metadata:
   author: mthines

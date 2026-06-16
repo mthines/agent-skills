@@ -15,6 +15,7 @@ description: >
   to optimise an E2E suite with evidence. Triggers on "analyze trace",
   "playwright trace", "e2e trace", "test flake", "why did playwright
   fail", "playwright timing", "/playwright-trace-analyzer".
+argument-hint: '<trace.zip|trace-dir|github-actions-url>'
 license: MIT
 disable-model-invocation: true
 metadata:

@@ -13,6 +13,7 @@ description: >
   skill", "split this skill", "diagnose this skill", "why did <skill>
   miss this", "/create-skill".
 disable-model-invocation: true
+argument-hint: '[scaffold|review|upgrade|diagnose] [<skill-name>|<path>]'
 license: MIT
 metadata:
   author: mthines

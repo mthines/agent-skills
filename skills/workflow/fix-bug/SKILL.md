@@ -17,6 +17,7 @@ description: >
   --force-holistic to skip the fast lane and always use holistic-analysis. Triggers on
   "fix this bug", "investigate this error", "this Dash0 span shows a failure", "this stack trace
   looks wrong", "/fix-bug".
+argument-hint: '[--analyse-only|--force-holistic] [<bug-description>|<ticket>]'
 license: MIT
 user-invocable: true
 disable-model-invocation: true

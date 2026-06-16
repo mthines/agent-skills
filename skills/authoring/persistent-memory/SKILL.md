@@ -20,6 +20,7 @@ description: >
   memory", "recall memory", "load memory", "what do you remember
   about", "consolidate memory", "forget that", "/persistent-memory".
 disable-model-invocation: false
+argument-hint: '[write|read|consolidate|forget] <scope> [--tier home|project-local|project-shared]'
 license: MIT
 metadata:
   author: mthines
