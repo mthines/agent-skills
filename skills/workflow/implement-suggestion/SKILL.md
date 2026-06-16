@@ -13,6 +13,7 @@ description: >
   on "implement suggestion", "apply review comments", "address PR feedback",
   "implement reviewer feedback", "fix PR comments", "/implement-suggestion".
 disable-model-invocation: true
+argument-hint: '[<pr-url>|#<n>] [--critical]'
 license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(gw *) Read Edit Write Glob Grep Skill
 metadata:

@@ -12,6 +12,7 @@ description: >
   my failing tests", "tests are red", "auto-fix tests", "heal the tests",
   "/test-autofix".
 disable-model-invocation: false
+argument-hint: '[<surface>|<file-path>] [--plan-only] [--max-iterations <n>]'
 license: MIT
 metadata:
   author: mthines

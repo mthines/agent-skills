@@ -14,6 +14,7 @@ description: >
   docs", "scaffold CLAUDE.md", "update docs", "sync CLAUDE.md", "docs
   drift", "write a README", "audit our docs", "review the README",
   "Diátaxis", "/docs".
+argument-hint: '[init|update|readme|audit] [--auto|--dry-run] [--nested <dir>|--pattern <glob>]'
 license: MIT
 metadata:
   author: mthines

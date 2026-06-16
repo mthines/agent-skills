@@ -14,6 +14,7 @@ description: >
   optimise a hot path with evidence. Triggers on "analyze profile", "react
   profiler", "chrome performance", "optimize from profile", "profile this",
   "why is this slow", "memory leak", "heap snapshot", "/profile-optimizer".
+argument-hint: '<profile.json|trace.json|.cpuprofile|.heapsnapshot>'
 license: MIT
 disable-model-invocation: true
 metadata:

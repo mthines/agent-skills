@@ -17,6 +17,7 @@ description: >
   debugging. Also triggers on "/holistic", "/step-back", "/rethink",
   "/zoom-out".
 disable-model-invocation: false
+argument-hint: '[fix|refactor|review]'
 license: MIT
 metadata:
   author: mthines

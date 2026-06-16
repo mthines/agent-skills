@@ -9,6 +9,7 @@ description: >
   implementation, or during investigation. Triggers on "confidence check",
   "validate plan", "rate confidence", "quality gate", "/confidence".
 disable-model-invocation: false
+argument-hint: '[plan|code|analysis]'
 license: MIT
 metadata:
   author: mthines

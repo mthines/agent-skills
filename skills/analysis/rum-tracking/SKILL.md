@@ -12,6 +12,7 @@ description: >
   implement, audit, remove, plan. Triggers on "track this event",
   "add analytics", "what should I track", "is this PII", "tracking plan",
   "remove tracking", "audit analytics", "/rum-tracking".
+argument-hint: '[guide|implement|audit|remove|plan] [<target>]'
 license: MIT
 metadata:
   author: mthines

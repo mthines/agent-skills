@@ -17,6 +17,7 @@ description: >
   "lottie", "rive", "ideal feedback", "how should X feel",
   "skeleton loader", "perceived performance", "feel faster",
   "optimistic UI", "/animations".
+argument-hint: '[brainstorm|decision-flow]'
 license: MIT
 metadata:
   author: mthines

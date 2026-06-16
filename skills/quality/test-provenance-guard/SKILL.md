@@ -17,6 +17,7 @@ description: >
   logic", "mutation sanity check", "are these tests fake",
   "/test-provenance-guard".
 disable-model-invocation: false
+argument-hint: '[--mode static|mutate|both] [--fix|--report-only] [<paths>]'
 license: MIT
 metadata:
   author: mthines

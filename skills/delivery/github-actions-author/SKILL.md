@@ -14,6 +14,7 @@ description: >
   "github workflow", "ci pipeline", "create workflow", "speed up ci",
   "review my workflow", "/github-actions-author".
 disable-model-invocation: true
+argument-hint: '[scaffold|review] [<workflow-file>]'
 license: MIT
 metadata:
   author: mthines

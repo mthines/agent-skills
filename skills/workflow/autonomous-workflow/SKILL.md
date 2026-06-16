@@ -9,6 +9,7 @@ description: >
   isolation", "in a worktree", or independent feature work. Invoke with
   /autonomous-workflow.
 disable-model-invocation: false
+argument-hint: '<task-description> [--no-confirm] [--critical]'
 license: MIT
 metadata:
   author: mthines
