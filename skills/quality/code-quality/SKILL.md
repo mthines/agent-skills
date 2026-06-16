@@ -14,10 +14,11 @@ description: >
   review, after writing new code, in TDD GREEN/REFACTOR, or when
   asked to "improve quality", "make this readable", "reduce
   complexity", "deduplicate", "clean this up", or "/code-quality".
+argument-hint: '[plan|review|simplify] [aggressive|dry-run|<path>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.4.0'
+  version: '1.4.1'
   workflow_type: advisory
   tags:
     - code-quality
