@@ -6,6 +6,8 @@
 
 ## In plain English
 
+![How aw works: you say one thing, it sizes the job (Micro / Lite / Full), then runs an isolated pipeline — Understand, Plan, Build, Test, Document, Open PR, Green CI, Self-Review — to a ready-to-merge pull request, learning from every run.](../../../assets/aw-overview.png)
+
 **You write one sentence. `aw` delivers a finished, tested, reviewed pull request — on its own.**
 
 That's the whole thing. You describe the change you want, and `aw` does everything a careful engineer would do, in order, without you babysitting it:
