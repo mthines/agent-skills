@@ -212,15 +212,9 @@ vlog "✓ Executor agent: $CLAUDE_DIR/agents/aw-executor.md"
 ln -sf "$SKILL_DIR/templates/aw-tester.agent.md" "$CLAUDE_DIR/agents/aw-tester.md"
 vlog "✓ Tester agent:   $CLAUDE_DIR/agents/aw-tester.md (spec-driven UI verification; dispatched by executor in Phase 4)"
 
-# Scaffold the aw-tester-lessons memory directory alongside aw-lessons.
-# Only create if it doesn't exist — never overwrite an existing scope.
-MEMORY_DIR="${SKILL_DIR}/../../../memory/aw-tester-lessons"
-if [[ -d "$MEMORY_DIR" ]]; then
-  vlog "  (aw-tester-lessons memory: already exists at $MEMORY_DIR)"
-else
-  mkdir -p "$MEMORY_DIR/entries" "$MEMORY_DIR/archive"
-  vlog "✓ Memory:         aw-tester-lessons directory scaffolded at $MEMORY_DIR"
-fi
+# No repo-side memory scaffolding — fast-tier lesson scopes are home-tier
+# (~/.agent-memory/<scope>/) so they accumulate per-user across every project.
+# persistent-memory creates the scope directory lazily on first write.
 
 # Link the routing rule. Project + development modes get auto-routing;
 # global mode skips it (most users don't want auto-trigger on every project).

@@ -482,8 +482,22 @@ the same session — capture any durable lesson so future runs improve. This is
 the **fast tier** of the self-improvement loop; full contract in
 [`self-improvement-loop.md`](./self-improvement-loop.md#fast-tier--write-lessons).
 
+Classify each candidate lesson per
+[`self-improvement-loop.md#fast-tier--write-lessons`](./self-improvement-loop.md#fast-tier--write-lessons):
+universal → `home`; project-bound + opted in → `project-shared`; project-bound
++ not opted in → `home` with an opt-in hint.
+
 ```
-Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")     # skips silently if not installed
+# Universal candidate — always home.
+Skill("persistent-memory", "write aw-lessons --tier home --auto")
+
+# Project-bound candidate — opt-in gated.
+if [ -f memory/aw-lessons/INDEX.md ]; then
+  Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")
+else
+  Skill("persistent-memory", "write aw-lessons --tier home --auto")
+  log "Project-bound lesson fell back to home. Team can opt in once with: Skill(\"persistent-memory\", \"write aw-lessons --tier project-shared\")"
+fi
 ```
 
 Good end-of-run lessons: a companion trigger that should have fired but didn't,
@@ -504,14 +518,17 @@ Write nothing only when the retrospective surfaces nothing **and** no lesson was
   PII). Lessons are workflow mechanics, never product data.
 - Recurring lessons UPDATE and bump `seen_count`. When a written or matched
   lesson reaches `seen_count >= 3` (or is tagged `structural`), surface the
-  promotion suggestion — run `/create-skill diagnose autonomous-workflow` to
-  harden the skill's source behind its confidence gate. See
-  [`self-improvement-loop.md#lesson-promotion`](./self-improvement-loop.md#lesson-promotion).
+  **tier-appropriate** promotion suggestion: `home` lessons promote to skill
+  source via `/create-skill diagnose autonomous-workflow`; `project-shared`
+  lessons promote to repo rules via `Skill("docs", "update --add-rule …")`.
+  See [`self-improvement-loop.md#lesson-promotion`](./self-improvement-loop.md#lesson-promotion).
 
 Log:
 
 ```markdown
-- [TIMESTAMP] Phase 7: persistent-memory(write aw-lessons) — 1 lesson (ADD); 1 promotion-eligible (seen_count=3) → suggested diagnose
+- [TIMESTAMP] Phase 7: persistent-memory(write aw-lessons --tier home) — 1 lesson (ADD); 1 promotion-eligible (seen_count=3) → suggested diagnose
+- [TIMESTAMP] Phase 7: persistent-memory(write aw-lessons --tier project-shared) — 1 lesson (ADD); repo opted in
+- [TIMESTAMP] Phase 7: persistent-memory(write aw-lessons --tier home) — 1 project-bound lesson fell back to home
 - [TIMESTAMP] Phase 7: persistent-memory(write aw-lessons) — not available, continuing
 ```
 

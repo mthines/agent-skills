@@ -121,12 +121,17 @@ function acceptanceCriteriaCount(plan) {
   }
 }
 
-// ── Check E: committed lesson scopes have the persistent-memory storage contract ──
+// ── Check E: agent-skills.git itself does not commit fast-tier scopes ──
+// Consumer repos MAY commit memory/<scope>/ to opt their team into the
+// project-shared tier (the workflow auto-detects and reads/writes there).
+// But agent-skills.git is the SKILL SOURCE, not a consumer — a committed
+// fast-tier scope here would silently apply this repo's lessons to every
+// skill-development run, polluting the universal store with skill-author
+// noise. Keep this directory absent in agent-skills.git specifically.
 {
-  for (const scope of ["aw-lessons", "fix-bug-lessons", "batch-lessons"]) {
+  for (const scope of ["aw-lessons", "aw-tester-lessons", "fix-bug-lessons", "batch-lessons", "reviewer-lessons"]) {
     const dir = join(REPO_ROOT, "memory", scope);
-    s.check(`memory/${scope} has INDEX.md + entries/`,
-      existsSync(join(dir, "INDEX.md")) && existsSync(join(dir, "entries")));
+    s.check(`memory/${scope} not committed in agent-skills.git (this is the skill source, not a consumer)`, !existsSync(dir));
   }
 }
 

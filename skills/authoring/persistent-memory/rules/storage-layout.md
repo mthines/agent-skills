@@ -39,15 +39,16 @@ guess. Never silently fall back to a default the user did not see.
 - If the user did not specify a tier, default to **`home`**. State the
   default explicitly: `Storage tier: home (default)`.
 - **A caller may pin the tier inline with `--tier <home|project-local|project-shared>`**
-  (e.g. `write aw-lessons --tier project-shared --auto`). A pinned tier
-  resolves the scope to that tier without an interactive prompt — including
-  `--tier project-shared`, where the pin **is** the standing consent (a host
-  skill writing to an established, committed scope on the user's behalf; the
-  scope already living in the repo is the user's prior opt-in). The pin still
-  errors-and-exits if the tier requires a git repo and the working directory
-  is not one, and the **privacy pre-flight still runs** (`--tier` and `--auto`
-  never bypass the never-store list). State the resolved tier explicitly:
-  `Storage tier: project-shared (pinned)`.
+  (e.g. `write aw-lessons --tier home --auto` for a cross-project fast-tier
+  lesson scope, or `write team-runbooks --tier project-shared --auto` for a
+  committed team scope). A pinned tier resolves the scope to that tier without
+  an interactive prompt — including `--tier project-shared`, where the pin
+  **is** the standing consent (a host skill writing to an established,
+  committed scope on the user's behalf; the scope already living in the repo
+  is the user's prior opt-in). The pin still errors-and-exits if the tier
+  requires a git repo and the working directory is not one, and the **privacy
+  pre-flight still runs** (`--tier` and `--auto` never bypass the never-store
+  list). State the resolved tier explicitly: `Storage tier: home (pinned)`.
 - If the user asks for `project-local` or `project-shared` and the
   current working directory is not a git repo, error and exit. Do not
   silently fall back to `home`.

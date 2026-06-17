@@ -108,11 +108,17 @@ Do not continue. The user re-invokes against `pr-reviewer` if cross-review was t
 
 Load procedural lessons from prior runs. Universal intake — runs in every sub-mode except `redirect`.
 
+Two-tier fan-out — universal lessons from `home`, project-shared from cwd
+repo when opted in:
+
 ```
-Skill("persistent-memory", "read reviewer-lessons --tier project-shared")   # skips silently if not installed
+Skill("persistent-memory", "read reviewer-lessons --tier home")   # skips silently if not installed
+if [ -f memory/reviewer-lessons/INDEX.md ]; then
+  Skill("persistent-memory", "read reviewer-lessons --tier project-shared")
+fi
 ```
 
-Match each lesson's `trigger-context` against the current run (sub-mode, repo signals, working-tree state). Matched lessons inform the **review pipeline** (Step 2), the **auto-fix policy** (Step 4), and the **post-fix verification** behavior.
+Union both INDEXes. Match each lesson's `trigger-context` against the current run (sub-mode, repo signals, working-tree state). Matched lessons inform the **review pipeline** (Step 2), the **auto-fix policy** (Step 4), and the **post-fix verification** behavior. Project-shared wins on conflict with home.
 
 Concrete trigger signals to evaluate:
 
@@ -121,7 +127,19 @@ Concrete trigger signals to evaluate:
 
 When a lesson matches, **announce it in one line** before continuing — e.g. `Lesson active: <title> (skipping post-fix pnpm verify, deferring to CI).` So the user knows why behavior diverged from the default.
 
-Write a lesson back at end-of-run only when the run produced a durable, non-obvious finding (use `/persistent-memory write reviewer-lessons --tier project-shared --auto`). Do NOT write a lesson for routine runs — empty lessons are noise.
+Write a lesson back at end-of-run only when the run produced a durable, non-obvious finding. Classify first: universal review-style observations → `home`; repo-specific (e.g. "this monorepo's vitest crashes when X") → `project-shared` if `memory/reviewer-lessons/INDEX.md` exists in cwd, else `home` with an opt-in hint. Do NOT write a lesson for routine runs — empty lessons are noise.
+
+```
+# Universal:
+Skill("persistent-memory", "write reviewer-lessons --tier home --auto")
+
+# Project-bound, opt-in gated:
+if [ -f memory/reviewer-lessons/INDEX.md ]; then
+  Skill("persistent-memory", "write reviewer-lessons --tier project-shared --auto")
+else
+  Skill("persistent-memory", "write reviewer-lessons --tier home --auto")
+fi
+```
 
 ---
 

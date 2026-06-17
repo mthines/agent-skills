@@ -139,7 +139,7 @@ Before classifying, load `batch-lessons` so prior classification and correlation
 misfires bias this batch:
 
 ```text
-Skill("persistent-memory", "read batch-lessons --tier project-shared")     # skips silently if not installed
+Skill("persistent-memory", "read batch-lessons --tier home")     # skips silently if not installed
 ```
 
 Match lessons by label set / ticket-type / affected-area; apply as **advisory
@@ -287,7 +287,7 @@ watch CI.
 **Lesson-write serialization (batch fan-out contract).**
 Parallel executors return lesson candidates in their result payload; the orchestrator writes all lessons serially after fan-out completes.
 Executors MUST NOT write to shared lesson scopes directly during fan-out.
-Concurrent writes to `memory/aw-lessons/INDEX.md` can interleave; the serial post-fan-out write (one `Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")` per candidate batch, in Phase 5) is the only safe path.
+Concurrent writes to `~/.agent-memory/aw-lessons/INDEX.md` can interleave; the serial post-fan-out write (one `Skill("persistent-memory", "write aw-lessons --tier home --auto")` per candidate batch, in Phase 5) is the only safe path.
 
 ---
 
@@ -327,7 +327,7 @@ When the batch's own orchestration misfired, write a lesson so the next batch
 does better:
 
 ```text
-Skill("persistent-memory", "write batch-lessons --tier project-shared --auto")     # skips silently if not installed
+Skill("persistent-memory", "write batch-lessons --tier home --auto")     # skips silently if not installed
 ```
 
 Capture: a ticket whose type was wrong (label set → correct type), a

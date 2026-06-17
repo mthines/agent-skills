@@ -40,7 +40,7 @@ The contract spec lives at [`skills/authoring/create-skill/rules/diagnostic-surf
 | Phase | Existing guards                                                                                                  | Typical gaps                                                                                                  |
 | ----- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
 | 0     | Tier detection (Micro/Lite/Full) via the `aw` dispatcher; user confirms understanding                            | Tier under-selected (a Full task routed as Micro/Lite) → planner `confidence(plan)` gate + quality companions skipped; Micro chosen for a change that carried hidden logic |
-| 1     | `persistent-memory(read aw-lessons --tier project-shared)` (fast-tier lessons applied as constraints); `code-quality(plan)`; `confidence(plan)` ≥ 90 % gate (LLM + deterministic rule checks) | Plan missed a hidden constraint; rule checks didn't cover the failure shape; a recorded lesson existed but its `trigger-context` didn't match the task so it wasn't applied |
+| 1     | `persistent-memory(read aw-lessons --tier home)` (fast-tier lessons applied as constraints); `code-quality(plan)`; `confidence(plan)` ≥ 90 % gate (LLM + deterministic rule checks) | Plan missed a hidden constraint; rule checks didn't cover the failure shape; a recorded lesson existed but its `trigger-context` didn't match the task so it wasn't applied |
 | 2     | Worktree isolation; `aw-create-plan` writes `plan.md` (Core sections always; Extended sections per `Include when` trigger) | `plan.md` missing a Core section the executor / gate rely on, OR an Extended section omitted when its trigger actually applied |
 | 3     | `tdd` (RED-GREEN-REFACTOR + mutation); `ux`; `code-quality(code)` at end; Sub-Agent Resource Discipline (resource-discipline language embedded in each fan-out dispatch prompt) | Companion not triggered because trigger condition was too narrow; mutation step skipped in non-TDD path; fan-out dispatch block missing the discipline language (F2) |
 | 4     | Stuck-loop cap (3 Lite / 5 Full); `confidence(analysis)`; auto-replan via `holistic-analysis`; `persistent-memory(write aw-lessons)` at escalation | Tests passed first try → no RED phase → no mutation check; cap miscounted; lesson not written so the same stuck-loop recurs next run |
@@ -101,8 +101,8 @@ Lite Mode runs produce no `plan.md` / `walkthrough.md` — diagnoses against Lit
 ## Lessons scope
 
 - Scope: `aw-lessons`
-- Tier: `project-shared` (`<repo>/memory/aw-lessons/`)
-- Read for evidence with: `Skill("persistent-memory", "read aw-lessons --tier project-shared")`
+- Tier: `home` (`~/.agent-memory/aw-lessons/`)
+- Read for evidence with: `Skill("persistent-memory", "read aw-lessons --tier home")`
 
 Diagnose Step 2 loads promotion-eligible lessons (`seen_count >= 3` or `status: structural`) as evidence — they are the strongest signal that a failure recurs. See [`self-improvement-loop.md`](./self-improvement-loop.md).
 

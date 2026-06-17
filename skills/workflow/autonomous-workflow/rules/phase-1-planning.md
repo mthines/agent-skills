@@ -74,12 +74,21 @@ Before research, load the workflow's accumulated lessons so prior mistakes bias
 the plan. This is the **fast tier** of the self-improvement loop — full contract
 in [`self-improvement-loop.md`](./self-improvement-loop.md#fast-tier--read-lessons).
 
+Two-tier fan-out — universal lessons from `home` always, project-shared from
+the cwd repo when the team has opted in:
+
 ```
-Skill("persistent-memory", "read aw-lessons --tier project-shared")     # skips silently if not installed
+Skill("persistent-memory", "read aw-lessons --tier home")     # skips silently if not installed
+if [ -f memory/aw-lessons/INDEX.md ]; then
+  Skill("persistent-memory", "read aw-lessons --tier project-shared")
+fi
 ```
 
-1. Match each lesson's `trigger-context` against the current task (file globs,
-   task type, tech). Load full entries only for matches (progressive disclosure).
+1. Union the two INDEXes. Match each lesson's `trigger-context` against the
+   current task (file globs, task type, tech). Load full entries only for
+   matches (progressive disclosure). Tier-of-origin is not a match criterion;
+   if a `home` and a `project-shared` lesson conflict, project-shared wins
+   (closer scope) — log the conflict.
 2. Treat each matching lesson's *"What to do next time"* as a **consideration**
    on the plan — apply it unless it conflicts with the user's stated intent or
    task-specific constraints. Record applied lessons in `plan.md` under
@@ -94,8 +103,10 @@ Skill("persistent-memory", "read aw-lessons --tier project-shared")     # skips 
 Log:
 
 ```markdown
-- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier project-shared) — N lessons matched, applied as constraints
-- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier project-shared) — not available, continuing
+- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier home) — N lessons matched, applied as constraints
+- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier project-shared) — M lessons matched (project opted in)
+- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier project-shared) — not opted in (no memory/aw-lessons/), skipping
+- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons) — not available, continuing
 ```
 
 Disable by removing this invocation (see
@@ -469,7 +480,7 @@ contract and message format.
 
 ## Planning Checklist
 
-- [ ] `persistent-memory(read aw-lessons --tier project-shared)` invoked; matching lessons applied as constraints (anchor: `lessons-read`)
+- [ ] `persistent-memory(read aw-lessons --tier home)` invoked; matching lessons applied as constraints (anchor: `lessons-read`)
 - [ ] Codebase analyzed (structure, patterns, stack)
 - [ ] Parallel `Explore` sub-agents used if complexity triggered (anchor: `parallel-research`)
 - [ ] `holistic-analysis` invoked if complexity triggered (anchor: `complex-task-detection`)

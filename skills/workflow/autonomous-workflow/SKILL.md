@@ -159,27 +159,27 @@ for the full registry, trigger conditions, and **how to disable any companion**.
 
 | Phase | Companion              | Trigger                                                | Args             |
 | ----- | ---------------------- | ------------------------------------------------------ | ---------------- |
-| 1     | `persistent-memory`    | Always — read accumulated workflow lessons before design (fast-tier self-improvement) | `read aw-lessons --tier project-shared` |
+| 1     | `persistent-memory`    | Always — read accumulated workflow lessons before design (fast-tier self-improvement) | `read aw-lessons --tier home` |
 | 1     | `holistic-analysis`    | Complex / multi-domain / unfamiliar task               | —                |
 | 1     | `code-quality`         | Always (informs design)                                | `plan`           |
 | 1     | `critical`             | Opt-in only (user passed `--critical` to the workflow). Single adversarial pre-mortem pass between `code-quality(plan)` and `confidence(plan)`. Findings flow into `aw-create-plan` as plan defects (must-fix) and considered-alternatives notes (steelman). Advisory — does not gate. | `plan` |
 | 1     | `confidence`           | Always (plan gate, MANDATORY)                          | `plan`           |
 | 2     | `aw-create-plan`       | Full Mode only                                         | —                |
-| 3     | `persistent-memory`    | Executor entry — read lessons when `plan.md` has no `## Lessons applied` (no-planner paths) | `read aw-lessons --tier project-shared` |
+| 3     | `persistent-memory`    | Executor entry — read lessons when `plan.md` has no `## Lessons applied` (no-planner paths) | `read aw-lessons --tier home` |
 | 3     | `tdd`                  | Pure logic / business rules / "test-driven"            | —                |
 | 3     | `ux`                   | UI files touched (`*.tsx`, `*.jsx`, `*.vue`, RN)       | —                |
 | 3     | `code-quality`         | Once at end of Phase 3 (not per-file)                  | `code`           |
 | 4     | `test-provenance-guard` | After Step 5 — any new `*.test.*` / `*.unit.*` / `*.spec.*` file written | `--diff --base $(git merge-base HEAD main) --fix` *(autofix gated by `confidence(code) ≥ 90 %`)* |
 | 4     | `confidence`           | At iteration cap (3 Lite / 5 Full) on same failing area | `analysis`   |
 | 4     | `holistic-analysis`    | After confidence at Phase 4 if user asks for retry     | —                |
-| 4     | `persistent-memory`    | At stuck-loop escalation — record failing area + resolution as a lesson | `write aw-lessons --tier project-shared --auto` |
+| 4     | `persistent-memory`    | At stuck-loop escalation — record failing area + resolution as a lesson | `write aw-lessons --tier home --auto` |
 | 5     | `docs`                 | Always (self-improving doc loop — updates `CLAUDE.md`, `README.md`, `docs/`) | `update --auto`  |
 | 6     | `reviewer` *(agent)*   | Always before push — dispatched directly via the Agent tool (Fix Mode on own branch; auto-fix all Simple findings across every severity) | `--critical` + auto-fix-all prompt |
 | 6     | `aw-review-quality-gate` | After the `reviewer` agent returns findings — false-positive filter (advisory) | —                |
 | 6     | `aw-create-walkthrough` | Full Mode only                                        | —                |
 | 6     | `create-pr`            | Always                                                 | —                |
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                 | `<run-id\|pr-url>` |
-| 7     | `persistent-memory`    | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `write aw-lessons --tier project-shared --auto` |
+| 7     | `persistent-memory`    | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `write aw-lessons --tier home --auto` |
 | 7     | `reviewer` *(agent)*   | After CI green — auto-dispatch in PR Mode (self-review sub-mode for self-authored PRs: inline report + auto-fix every Simple finding regardless of severity, incl. Nitpick / Nice-to-have; cross-author PR redirects to `pr-reviewer`) | `<pr-url> --critical` + auto-fix-all prompt |
 
 ---

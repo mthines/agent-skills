@@ -54,10 +54,20 @@ This loop owns lessons about fix-bug's **own diagnostic phases** — the ones
 ## Scope
 
 - **Scope:** `fix-bug-lessons`
-- **Tier:** `project-shared` (committed) — `<repo>/memory/fix-bug-lessons/`.
+- **Tiers (two, used together):**
+  - **`home`** — per-user, cross-project at `~/.agent-memory/fix-bug-lessons/`.
+    Default for **universal** bug-class lessons. Always read; default write
+    target.
+  - **`project-shared`** — committed, team-scoped at `<repo>/memory/fix-bug-lessons/`.
+    Opt-in: only read / written when `memory/fix-bug-lessons/INDEX.md` already
+    exists in cwd (team opted in by creating it once via
+    `Skill("persistent-memory", "write fix-bug-lessons --tier project-shared")`).
+    Default for **project-bound** bug-class lessons (a bug pattern only this
+    codebase produces).
 - Lessons are keyed by **`bugClass`** and **input shape** (the Phase 0
   classification) in their `trigger-context`, so the Phase 0.5 read can match
-  them mechanically against the current bug.
+  them mechanically against the current bug. Tier is determined at write time
+  by whether the `bugClass` or input shape is repo-specific.
 
 Lesson record schema is identical to the shared one (procedural memory; the four
 mandatory fields *What failed / Why / What to do next time / Promotion target*).
@@ -72,12 +82,19 @@ Add a `phase:` field naming the fix-bug phase (`0`, `0.5`, `2.5`, `3`, `5`, `8`)
 At the start of **Complexity Triage (Phase 0.5)**, after `bugClass` is inferred
 (Phase 0c) but before the triage decision commits, load lessons:
 
+Two-tier fan-out — universal lessons from `home`, project-shared from cwd
+repo when opted in:
+
 ```
-Skill("persistent-memory", "read fix-bug-lessons --tier project-shared")     # skips silently if not installed
+Skill("persistent-memory", "read fix-bug-lessons --tier home")     # skips silently if not installed
+if [ -f memory/fix-bug-lessons/INDEX.md ]; then
+  Skill("persistent-memory", "read fix-bug-lessons --tier project-shared")
+fi
 ```
 
-1. Match each lesson's `trigger-context` against the current `bugClass` + input
-   shape. Load full entries only for matches.
+1. Union both INDEXes. Match each lesson's `trigger-context` against the
+   current `bugClass` + input shape. Load full entries only for matches.
+   Project-shared wins on conflict with home (closer scope).
 2. Apply matches as **inputs** to the decision they target: a triage lesson
    biases the `simple`/`complex` call (it never overrides the conservative
    default toward `complex`); a reproduction-layer lesson biases Phase 2.5's
@@ -94,8 +111,8 @@ Skill("persistent-memory", "read fix-bug-lessons --tier project-shared")     # s
 Log to the ledger:
 
 ```markdown
-- [TIMESTAMP] Phase 0.5: persistent-memory(read fix-bug-lessons --tier project-shared) — N lessons matched (bugClass=<x>), applied
-- [TIMESTAMP] Phase 0.5: persistent-memory(read fix-bug-lessons --tier project-shared) — not available, continuing
+- [TIMESTAMP] Phase 0.5: persistent-memory(read fix-bug-lessons --tier home) — N lessons matched (bugClass=<x>), applied
+- [TIMESTAMP] Phase 0.5: persistent-memory(read fix-bug-lessons --tier home) — not available, continuing
 ```
 
 ---
@@ -114,14 +131,29 @@ have under-performed — these are the high-signal moments:
 | **Triage upgrade** | `simple → complex` upgrade, or fast-lane → standard-lane CEGIS round-3 fallback | A `simple`/fast-lane misclassification for this `bugClass` / input shape |
 | **Phase 5 stop** | `< 92 %` stop, or below-70 % hand-back | An evidence / analysis gap pattern for this `bugClass` (what evidence would have raised the score) |
 
+Classify each candidate as **universal** (a `bugClass` any project could hit)
+or **project-bound** (the bugClass cites a repo-specific symbol, file path,
+or domain term). Then dispatch:
+
 ```
-Skill("persistent-memory", "write fix-bug-lessons --tier project-shared --auto")     # skips silently if not installed
+# Universal candidate — home.
+Skill("persistent-memory", "write fix-bug-lessons --tier home --auto")
+
+# Project-bound candidate — opt-in gated.
+if [ -f memory/fix-bug-lessons/INDEX.md ]; then
+  Skill("persistent-memory", "write fix-bug-lessons --tier project-shared --auto")
+else
+  Skill("persistent-memory", "write fix-bug-lessons --tier home --auto")
+  log "Project-bound lesson fell back to home. Opt in once with: Skill(\"persistent-memory\", \"write fix-bug-lessons --tier project-shared\")"
+fi
 ```
 
 - `--auto` skips consent, **not** the privacy pre-flight (never store secrets /
-  PII — and a `bugClass` lesson never needs product data).
+  PII — and a `bugClass` lesson never needs product data; the bar is stricter
+  for `project-shared` writes since the content lands in the repo).
 - Recurring lessons resolve to **UPDATE**, bumping `seen_count`. At
-  `seen_count >= 3`, surface the promotion suggestion.
+  `seen_count >= 3`, surface the **tier-appropriate** promotion suggestion:
+  `home` → `/create-skill diagnose fix-bug`; `project-shared` → repo rules.
 
 Log to the ledger's `Phase log`.
 

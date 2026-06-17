@@ -13,10 +13,12 @@ description: >
   never-store list (passwords, API keys, JWTs, credit cards, SSNs,
   private keys); mandatory consent preview before write. Documents
   scaling from markdown → SQLite FTS → vector DB → managed memory
-  (Mem0 / Letta / Zep). Also backs the committed lesson scopes
-  (`memory/aw-lessons`, `fix-bug-lessons`, `batch-lessons`) used by
-  the workflow self-improvement loops of `autonomous-workflow`,
-  `fix-bug`, and `batch-linear-tickets`. Triggers on "remember this", "save to
+  (Mem0 / Letta / Zep). Also backs the per-user home-tier lesson scopes
+  (`~/.agent-memory/aw-lessons/`, `aw-tester-lessons`, `fix-bug-lessons`,
+  `batch-lessons`, `reviewer-lessons`) used by the self-improvement loops of
+  `autonomous-workflow`, `fix-bug`, `batch-linear-tickets`, and the
+  `reviewer` agent — lessons follow the user across every repository.
+  Triggers on "remember this", "save to
   memory", "recall memory", "load memory", "what do you remember
   about", "consolidate memory", "forget that", "/persistent-memory".
 disable-model-invocation: false

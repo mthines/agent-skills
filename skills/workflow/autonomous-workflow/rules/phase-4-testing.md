@@ -460,8 +460,23 @@ capture what was learned so the next run does better. This is the **fast tier**
 of the self-improvement loop — full contract in
 [`self-improvement-loop.md`](./self-improvement-loop.md#fast-tier--write-lessons).
 
+Classify the candidate lesson — see the table in
+[`self-improvement-loop.md#fast-tier--write-lessons`](./self-improvement-loop.md#fast-tier--write-lessons).
+Universal lessons land in `home`; project-bound lessons land in
+`project-shared` only when the team has opted in (the directory exists),
+otherwise fall back to `home` with an opt-in hint:
+
 ```
-Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")     # skips silently if not installed
+# Universal candidate — always home.
+Skill("persistent-memory", "write aw-lessons --tier home --auto")
+
+# Project-bound candidate — opt-in gated.
+if [ -f memory/aw-lessons/INDEX.md ]; then
+  Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")
+else
+  Skill("persistent-memory", "write aw-lessons --tier home --auto")
+  log "Project-bound lesson fell back to home (no committed memory/aw-lessons/). Opt in once with: Skill(\"persistent-memory\", \"write aw-lessons --tier project-shared\")"
+fi
 ```
 
 Capture: the failing area, every hypothesis tried, what finally worked (or that
@@ -470,16 +485,20 @@ it didn't), and the **earliest phase** that should have caught it. The lesson is
 instruction (see the schema in the loop file).
 
 - `--auto` skips the consent preview (the loop cannot pause per write); the
-  **privacy pre-flight still runs** — never store secrets / PII. Lessons are
-  about workflow mechanics, never product data.
+  **privacy pre-flight still runs** — never store secrets / PII. The privacy
+  bar is stricter for `--tier project-shared` writes (content lands in the
+  repo and every collaborator sees it).
 - A recurring lesson resolves to **UPDATE** and bumps `seen_count` — it does not
-  duplicate. When `seen_count >= 3`, surface the promotion suggestion from
-  [`self-improvement-loop.md#lesson-promotion`](./self-improvement-loop.md#lesson-promotion).
+  duplicate. When `seen_count >= 3`, surface the tier-appropriate promotion
+  suggestion from [`self-improvement-loop.md#lesson-promotion`](./self-improvement-loop.md#lesson-promotion)
+  (skill source for `home`; repo rules for `project-shared`).
 
 Log:
 
 ```markdown
-- [TIMESTAMP] Phase 4: persistent-memory(write aw-lessons) — 1 lesson (UPDATE, seen_count→3); promotion suggested
+- [TIMESTAMP] Phase 4: persistent-memory(write aw-lessons --tier home) — 1 lesson (UPDATE, seen_count→3); promotion suggested (skill source)
+- [TIMESTAMP] Phase 4: persistent-memory(write aw-lessons --tier project-shared) — 1 lesson (ADD); repo opted in
+- [TIMESTAMP] Phase 4: persistent-memory(write aw-lessons --tier home) — 1 project-bound lesson fell back to home (no committed memory/aw-lessons/)
 - [TIMESTAMP] Phase 4: persistent-memory(write aw-lessons) — not available, continuing
 ```
 

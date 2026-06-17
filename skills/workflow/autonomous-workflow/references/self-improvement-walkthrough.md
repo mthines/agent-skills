@@ -44,7 +44,7 @@ regression shipped each time.
 Phase 4 escalates (a UX bug surfaced late). The executor writes a lesson:
 
 ```
-Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")
+Skill("persistent-memory", "write aw-lessons --tier home --auto")
 ```
 
 Resolves to **ADD**. New entry `entries/2026-06-07-ux-trigger-missed-nested-tsx.md`:
@@ -93,7 +93,7 @@ trigger) is still in the skill, so at end-of-run the executor records the
 recurrence:
 
 ```
-Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")
+Skill("persistent-memory", "write aw-lessons --tier home --auto")
 ```
 
 The candidate matches the existing entry → resolves to **UPDATE**, not a

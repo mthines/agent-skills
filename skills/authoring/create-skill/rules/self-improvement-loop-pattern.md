@@ -78,10 +78,21 @@ Reflexion / SSGM self-reinforcing-error guards.
 ## Conventions
 
 - **Scope name:** `<skill>-lessons` (e.g. `fix-bug-lessons`). Lowercase kebab.
-- **Tier:** `project-shared` (committed at `<repo>/memory/<skill>-lessons/`) so
-  the team's agents share the learning and it is version-controlled. **Pin it
-  explicitly** in every invocation: `--tier project-shared` — persistent-memory
-  defaults to `home`, so an unpinned call writes to the wrong place.
+- **Two tiers, both used:**
+  - **`home`** (per-user at `~/.agent-memory/<skill>-lessons/`) — universal
+    lessons that follow the user across every repo. Always read; default
+    write target. Not committed — the slow-tier promotion (`/create-skill
+    diagnose`) ships a recurring `home` lesson to every consumer.
+  - **`project-shared`** (committed at `<repo>/memory/<skill>-lessons/`) —
+    project-bound lessons specific to the cwd repo. Opt-in: only read /
+    written when `memory/<skill>-lessons/INDEX.md` already exists in the
+    cwd repo. Promotion of a recurring `project-shared` lesson lands in
+    the repo's own `CLAUDE.md` / `.claude/rules/` via the `docs` skill,
+    not in this skill's source.
+  - The workflow classifies each candidate at write time. Pin the tier
+    **explicitly** in every invocation (`--tier home` or
+    `--tier project-shared`) — readable on the call site and immune to
+    future default changes.
 - **Lesson type:** `procedural` ("what to do better next time"), not a fact.
   Four mandatory body fields: *What failed / Why / What to do next time /
   Promotion target*. Plus frontmatter `seen_count`, `status`, `expires`,
@@ -101,21 +112,26 @@ For a skill named `<skill>` in category `<cat>`:
       [`autonomous-workflow/rules/self-improvement-loop.md`](../../../workflow/autonomous-workflow/rules/self-improvement-loop.md)
       for the shared schema + guards; state only what differs (scope, read/write
       points, promotion target). Keep it self-contained enough to execute.
-- [ ] Read invocation at the **start of work** (apply matches as advisory
-      constraints; include the maintenance check that suggests `consolidate`
-      when the INDEX nears 200 lines).
+- [ ] Read invocation at the **start of work** — two-tier fan-out (`home`
+      always; `project-shared` only when `memory/<skill>-lessons/INDEX.md`
+      already exists in cwd). Apply matches as advisory constraints; include
+      the per-tier maintenance check that suggests `consolidate` when either
+      INDEX nears 200 lines.
 - [ ] Write invocation(s) at the **failure / end-of-run points** the skill
       already detects (escalation, verifier-red, end-of-run) — no new
-      reflection step.
-- [ ] Promotion suggestion when a read/written lesson hits `seen_count >= 3`.
+      reflection step. Classify candidates: universal → `home`; project-bound
+      + opted in → `project-shared`; project-bound + not opted in → `home`
+      with a one-line opt-in hint.
+- [ ] Promotion suggestion when a read/written lesson hits `seen_count >= 3`,
+      tier-appropriate: `home` → `/create-skill diagnose <skill>`;
+      `project-shared` → `Skill("docs", "update --add-rule …")`.
 - [ ] `persistent-memory` added to the skill's companion registry / prerequisites
       as **optional** (loop skips silently if absent).
 - [ ] `## Lessons scope` section added to the skill's `rules/diagnostic-surface.md`
       (so `diagnose` Step 2 loads it as evidence).
-- [ ] Committed scope seeded: `memory/<skill>-lessons/INDEX.md` + `entries/`,
-      `archive/`, `AUDIT.log`.
 - [ ] SKILL.md `## Self-Improvement` section + inventory entries in root
-      `CLAUDE.md` / `README.md`.
+      `CLAUDE.md` / `README.md`. (No repo-side seed directory — the scope is
+      created lazily on first write at `~/.agent-memory/<skill>-lessons/`.)
 
 ---
 

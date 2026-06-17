@@ -71,8 +71,15 @@ Every new row must come from a real, confidence-gated, user-approved diagnosis.
 <!-- Omit this whole section if the skill has no self-improvement loop. -->
 
 - Scope: `<skill-name>-lessons`
-- Tier: `project-shared` (`<repo>/memory/<skill-name>-lessons/`)
-- Read for evidence with: `Skill("persistent-memory", "read <skill-name>-lessons --tier project-shared")`
+- Tiers: `home` (always, `~/.agent-memory/<skill-name>-lessons/`) +
+  `project-shared` (opt-in per repo, `<repo>/memory/<skill-name>-lessons/`)
+- Read for evidence with the two-tier fan-out:
+  ```
+  Skill("persistent-memory", "read <skill-name>-lessons --tier home")
+  if [ -f memory/<skill-name>-lessons/INDEX.md ]; then
+    Skill("persistent-memory", "read <skill-name>-lessons --tier project-shared")
+  fi
+  ```
 
 ---
 
