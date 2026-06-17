@@ -38,7 +38,7 @@ wiring needed and no duplication here.
 
 **Serialization contract for the fan-out.**
 Parallel executors return lesson candidates in their result payload; the orchestrator writes all lessons serially after fan-out completes.
-Executors MUST NOT write to shared lesson scopes directly during fan-out — concurrent writes to `memory/aw-lessons/INDEX.md` can interleave.
+Executors MUST NOT write to shared lesson scopes directly during fan-out — concurrent writes to `~/.agent-memory/aw-lessons/INDEX.md` can interleave.
 
 This loop owns only the lessons unique to **batch-level orchestration** — the
 decisions `aw-planner` / `aw-executor` never make:
@@ -58,9 +58,17 @@ when promoted into the project's classification / correlation rules — see
 ## Scope
 
 - **Scope:** `batch-lessons`
-- **Tier:** `project-shared` (committed) — `<repo>/memory/batch-lessons/`.
+- **Tiers (two, used together):**
+  - **`home`** — per-user, cross-project at `~/.agent-memory/batch-lessons/`.
+    Universal classification / correlation patterns.
+  - **`project-shared`** — committed, team-scoped at `<repo>/memory/batch-lessons/`.
+    Opt-in (directory must already exist). Workspace-specific label sets and
+    correlation patterns — almost always project-bound since label conventions
+    are per-workspace.
 - `trigger-context` is keyed by **ticket label set** / **ticket-type** /
-  **affected-area** so the Phase 1 read can match mechanically.
+  **affected-area** so the Phase 1 read can match mechanically. Since label
+  sets are usually project-specific, expect most `batch-lessons` to be
+  project-bound — set up the opt-in directory once per repo.
 
 Lesson schema is the shared procedural-memory shape (four mandatory fields:
 *What failed / Why / What to do next time / Promotion target*). Add a `phase:`
@@ -74,14 +82,21 @@ field naming the batch phase (`1a`, `1d`, `2`).
 
 At the **start of Phase 1**, before classifying ticket types, load lessons:
 
+Two-tier fan-out:
+
 ```
-Skill("persistent-memory", "read batch-lessons --tier project-shared")     # skips silently if not installed
+Skill("persistent-memory", "read batch-lessons --tier home")     # skips silently if not installed
+if [ -f memory/batch-lessons/INDEX.md ]; then
+  Skill("persistent-memory", "read batch-lessons --tier project-shared")
+fi
 ```
 
-Apply matches as **advisory inputs**: a classification lesson biases the
-`bug`/`feature` call for tickets with the matching label set; a correlation
-lesson primes Phase 2 to look for a known recurring conflict pattern. Lessons
-never override an explicit `--type` flag or auto-approve a `Needs Info` ticket.
+Union both INDEXes. Apply matches as **advisory inputs**: a classification
+lesson biases the `bug`/`feature` call for tickets with the matching label
+set; a correlation lesson primes Phase 2 to look for a known recurring
+conflict pattern. Lessons never override an explicit `--type` flag or
+auto-approve a `Needs Info` ticket. Project-shared wins on conflict with
+home.
 
 **Maintenance check.** If the `INDEX.md` is at/near its 200-line cap
 (≥ ~180 lines), surface a one-line `/persistent-memory consolidate batch-lessons`
@@ -102,12 +117,27 @@ when the batch's own orchestration was shown to misfire:
 | A cross-ticket conflict surfaced in execution that Phase 2 correlation missed | The signal Phase 2 should have correlated on |
 | A ticket shape was chronically `Needs Info` | What evidence the investigator needed up front |
 
+Classify each candidate: universal label-set patterns → `home`; workspace-
+specific label conventions or repo-specific correlation patterns →
+`project-shared` if the team opted in, else `home` with a fallback hint.
+
 ```
-Skill("persistent-memory", "write batch-lessons --tier project-shared --auto")     # skips silently if not installed
+# Universal candidate — home.
+Skill("persistent-memory", "write batch-lessons --tier home --auto")
+
+# Project-bound candidate — opt-in gated.
+if [ -f memory/batch-lessons/INDEX.md ]; then
+  Skill("persistent-memory", "write batch-lessons --tier project-shared --auto")
+else
+  Skill("persistent-memory", "write batch-lessons --tier home --auto")
+  log "Project-bound lesson fell back to home. Opt in once with: Skill(\"persistent-memory\", \"write batch-lessons --tier project-shared\")"
+fi
 ```
 
-`--auto` skips consent, not the privacy pre-flight. Recurring lessons UPDATE and
-bump `seen_count`; at `seen_count >= 3`, surface the promotion suggestion.
+`--auto` skips consent, not the privacy pre-flight (stricter for
+`project-shared` writes — content lands in the repo). Recurring lessons UPDATE
+and bump `seen_count`; at `seen_count >= 3`, surface the tier-appropriate
+promotion suggestion (`home` → skill source; `project-shared` → repo rules).
 
 ---
 

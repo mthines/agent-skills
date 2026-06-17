@@ -82,7 +82,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 - `create-skill` (`/`) — scaffold, review, upgrade, diagnose skills
 - `docs` (`auto`) — author / audit `CLAUDE.md`, `AGENTS.md`, `README.md`, Diátaxis `docs/` trees
 - `optimize-claude-md` (`/`) — audit `CLAUDE.md` for context bloat; refuses below 10k chars
-- `persistent-memory` (`/`) — cross-conversation markdown memory store; tiered (home / project-local / project-shared). Also backs the fast-tier self-improvement loops for `autonomous-workflow`, `fix-bug`, and `batch-linear-tickets` via committed scopes at [`memory/`](./memory/) (`aw-lessons`, `fix-bug-lessons`, `batch-lessons`)
+- `persistent-memory` (`/`) — cross-conversation markdown memory store; tiered (home / project-local / project-shared). Also backs the fast-tier self-improvement loops for `autonomous-workflow`, `fix-bug`, `batch-linear-tickets`, and `reviewer`. Each loop uses **two tiers together**: `home` at `~/.agent-memory/<scope>/` for universal lessons that follow the user across every repo, plus opt-in `project-shared` at `<cwd-repo>/memory/<scope>/` (committed, team-scoped) for repo-bound lessons — the workflow classifies each candidate at write time and project-shared writes are gated on the team having created the directory once. Scopes: `aw-lessons`, `aw-tester-lessons`, `fix-bug-lessons`, `batch-lessons`, `reviewer-lessons`.
 
 ### Agents
 

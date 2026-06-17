@@ -84,7 +84,6 @@ the workflow never blocks on a missing companion.
 | [`templates/aw-target.yml.template`](./templates/aw-target.yml.template) | Aw-Target schema (base URL, auth strategy, fixtures, constraints). |
 | [`templates/specs.md.template`](./templates/specs.md.template)   | Specs file format with example blocks for new features and refactors. |
 | [`aw-setup/SKILL.md`](./aw-setup/SKILL.md) | Interactive one-time aw-target scaffolding skill (`/aw-setup`). |
-| [`memory/aw-tester-lessons/`](../../../memory/aw-tester-lessons/) | Cross-run lessons for `aw-tester` (mirrors `aw-lessons` format). |
 | [`references/`](./references/)     | Lazy-loaded examples (full execution trace, error scenarios).   |
 
 `SKILL.md` is intentionally thin — it's the index Claude loads first. The
@@ -350,12 +349,32 @@ The workflow improves across runs through a **two-tier loop** (full contract:
 
 When `persistent-memory` is installed, the workflow **reads** accumulated
 lessons before planning (Phase 1) and **writes** new ones when it gets stuck
-(Phase 4) or finishes (Phase 7), in the committed `aw-lessons` scope at
-`<repo>/memory/aw-lessons/`. Lessons are **advisory** — they bias the plan
-(applied like Acceptance Criteria), never silently change a gate. The fast tier
-is fully optional: uninstall `persistent-memory` and it degrades to nothing.
-Lessons expire (default 90 days) and `/persistent-memory consolidate aw-lessons`
-prunes stale ones, so a wrong lesson decays instead of entrenching.
+(Phase 4) or finishes (Phase 7). Lessons live in **two tiers, used together**:
+
+- **Universal lessons** land at `~/.agent-memory/aw-lessons/` (the `home` tier).
+  These follow the user across every repository — a lesson captured in repo A
+  biases the next run in repo B. Always read; default write target.
+- **Project-bound lessons** land at `<cwd-repo>/memory/aw-lessons/` (the
+  `project-shared` tier, committed to the repo so the whole team benefits).
+  **Opt-in per repo:** the workflow only reads / writes here when
+  `memory/aw-lessons/INDEX.md` already exists in the repo. Opt in once with:
+  ```
+  /persistent-memory write aw-lessons --tier project-shared
+  ```
+  Subsequent runs auto-write project-bound lessons there. A project-bound
+  candidate that arrives before the team opts in falls back to `home` and the
+  run surfaces a one-line "consider opting in" hint.
+
+The workflow classifies each candidate lesson at write time: a `trigger-context`
+that references a repo path / repo-specific package / domain term → project-bound;
+a glob, framework name, or task type with no repo binding → universal. When
+ambiguous, default to universal (`home`).
+
+Lessons are **advisory** — they bias the plan (applied like Acceptance
+Criteria), never silently change a gate. The fast tier is fully optional:
+uninstall `persistent-memory` and it degrades to nothing. Lessons expire
+(default 90 days) and `/persistent-memory consolidate aw-lessons --tier <home|project-shared>`
+prunes stale ones per tier, so a wrong lesson decays instead of entrenching.
 
 ### Slow tier — retrospective diagnosis
 

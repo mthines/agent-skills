@@ -3,7 +3,7 @@ id: <yyyy-mm-dd>-<kebab-case-slug>
 created: <ISO-8601 UTC, e.g. 2026-05-15T10:23:00Z>
 updated: <ISO-8601 UTC, same as created on ADD>
 type: procedural
-scope: <lesson-scope-name, e.g. aw-lessons | fix-bug-lessons | batch-lessons>
+scope: <lesson-scope-name, e.g. aw-lessons | aw-tester-lessons | fix-bug-lessons | batch-lessons | reviewer-lessons>
 phase: <host-skill phase the lesson applies to, e.g. 0–7>
 trigger-context: <concrete signal — file glob, task type, tech, e.g. "RN screens (*.tsx nested)">
 seen_count: 1

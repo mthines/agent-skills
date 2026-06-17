@@ -1,5 +1,0 @@
-# aw-lessons audit log — append-only ledger of write / consolidate / forget operations.
-# Format: <ISO-8601 timestamp> | <operation> | <count> | <one-line summary>
-2026-06-11T10:00:00Z | write | 1 | ADD: no-chained-reviewer-after-autonomous-pr (Phase 4)
-2026-06-11T10:20:00Z | update | 1 | UPDATE: no-chained-reviewer-after-autonomous-pr (Phase 4 → Phase 7, downgraded to closing-nudge; primary owner moved to reviewer-lessons)
-{"ts":"2026-06-14T12:00:00Z","op":"write","scope":"aw-lessons","added":1,"updated":0,"deleted":0,"actor":"system","auto":true}

@@ -160,8 +160,14 @@ Step 2 of the diagnose procedure loads it as **evidence** — promotion-eligible
 ## Lessons scope
 
 - Scope: `<skill>-lessons`
-- Tier: `project-shared` (`<repo>/memory/<skill>-lessons/`)
-- Read for evidence with: `Skill("persistent-memory", "read <skill>-lessons --tier project-shared")`
+- Tiers: `home` (always) + `project-shared` (opt-in per repo)
+- Read for evidence with the two-tier fan-out:
+  ```
+  Skill("persistent-memory", "read <skill>-lessons --tier home")
+  if [ -f memory/<skill>-lessons/INDEX.md ]; then
+    Skill("persistent-memory", "read <skill>-lessons --tier project-shared")
+  fi
+  ```
 ```
 
 Omit this section if the skill has no self-improvement loop.

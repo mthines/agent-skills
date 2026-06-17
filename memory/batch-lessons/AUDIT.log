@@ -1,2 +1,0 @@
-# batch-lessons audit log — append-only ledger of write / consolidate / forget operations.
-# Format: <ISO-8601 timestamp> | <operation> | <count> | <one-line summary>

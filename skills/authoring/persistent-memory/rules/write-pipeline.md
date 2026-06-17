@@ -197,7 +197,7 @@ INDEX is now 207 lines — `/persistent-memory consolidate parenting` is overdue
 
 ## Lesson-scope entries
 
-A **lesson scope** is a scope consumed by a host skill's self-improvement loop (for example the committed `aw-lessons`, `fix-bug-lessons`, and `batch-lessons` scopes under `memory/`).
+A **lesson scope** is a scope consumed by a host skill's self-improvement loop (for example the per-user `aw-lessons`, `aw-tester-lessons`, `fix-bug-lessons`, `batch-lessons`, and `reviewer-lessons` scopes under `~/.agent-memory/`).
 Entries written to a lesson scope use the extended template at [`../templates/lesson-entry.md`](../templates/lesson-entry.md), not the base entry template.
 Five frontmatter fields are **mandatory** on every lesson-scope entry:
 

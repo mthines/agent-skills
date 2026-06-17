@@ -35,7 +35,7 @@ Do not dump browser logs unless a spec failed.
 ### 1. Read cross-run lessons (slow tier)
 
 ```
-Skill("persistent-memory", "read aw-tester-lessons --tier project-shared")
+Skill("persistent-memory", "read aw-tester-lessons --tier home")
 ```
 
 If `persistent-memory` is not installed, skip silently and log one line:
@@ -266,7 +266,7 @@ After delivering the verdict, write lessons for any of the following:
 | New failure pattern | The failing step shape that didn't appear in prior lessons |
 
 ```
-Skill("persistent-memory", "write aw-tester-lessons --tier project-shared --auto")
+Skill("persistent-memory", "write aw-tester-lessons --tier home --auto")
 ```
 
 Lesson format (mirrors `aw-lessons` exactly):

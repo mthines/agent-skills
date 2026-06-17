@@ -52,16 +52,24 @@ planner/executor agents.
 
    If unavailable, ask the user to install the companion set and stop.
 
-2. **Read lessons (universal intake — all tiers):**
+2. **Read lessons (universal intake — all tiers; two-tier fan-out):**
 
    ```
-   Skill("persistent-memory", "read aw-lessons --tier project-shared")   # skips silently if not installed
+   Skill("persistent-memory", "read aw-lessons --tier home")   # skips silently if not installed
+   if [ -f memory/aw-lessons/INDEX.md ]; then
+     Skill("persistent-memory", "read aw-lessons --tier project-shared")
+   fi
    ```
 
-   Match each lesson's `trigger-context` against the task. Matches inform **both**
-   the tier decision below **and** the approach. A lesson may bias routing
-   (e.g. "auth-touching changes always end up Full") — so even the routing is
-   self-improving. Full contract: [`rules/self-improvement-loop.md`](../rules/self-improvement-loop.md).
+   `home` carries universal lessons that follow the user across every repo.
+   `project-shared` carries team-committed lessons specific to the cwd repo —
+   read only when the team has opted in by creating `memory/aw-lessons/`.
+   Union both INDEXes. Match each lesson's `trigger-context` against the task.
+   Matches inform **both** the tier decision below **and** the approach. A
+   lesson may bias routing (e.g. "auth-touching changes always end up Full")
+   — so even the routing is self-improving. On contradiction between tiers,
+   `project-shared` wins (closer scope). Full contract:
+   [`rules/self-improvement-loop.md`](../rules/self-improvement-loop.md).
 
 3. **Detect the tier** (see table) and emit the MODE SELECTION block.
 
@@ -123,12 +131,24 @@ handoff.
 
 ## Self-improvement loop (you own it)
 
-- **Intake read** — step 2 above. Universal; every tier.
+- **Intake read** — step 2 above. Universal; every tier. Two-tier fan-out.
 - **Exit write** — after the task completes (PR opened, or work handed back),
-  capture any durable lesson:
+  capture any durable lesson. Classify each candidate as **universal** or
+  **project-bound** (see the table in
+  [`rules/self-improvement-loop.md#fast-tier--write-lessons`](../rules/self-improvement-loop.md#fast-tier--write-lessons))
+  and dispatch by verdict:
 
   ```
-  Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")   # skips silently if not installed
+  # Universal candidate — home.
+  Skill("persistent-memory", "write aw-lessons --tier home --auto")
+
+  # Project-bound candidate — opt-in gated.
+  if [ -f memory/aw-lessons/INDEX.md ]; then
+    Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")
+  else
+    Skill("persistent-memory", "write aw-lessons --tier home --auto")
+    log "Project-bound lesson fell back to home. Opt in once with: Skill(\"persistent-memory\", \"write aw-lessons --tier project-shared\")"
+  fi
   ```
 
   Before writing, do a 30-second retrospective: was there friction, a surprise,
@@ -143,11 +163,12 @@ handoff.
   planner/executor already write at their phase points (stuck-loop, end-of-run);
   your exit write is the catch-all so Micro/Lite also contribute.
 - **Promotion** — if a matched or written lesson has `seen_count >= 3` (or
-  `status: structural`), surface (do not act):
-  `/create-skill diagnose autonomous-workflow --symptom "<lesson title>"`.
-- **Maintenance** — if the `aw-lessons` INDEX is near its 200-line cap (≥ 180
-  lines), invoke
-  `Skill("persistent-memory", "consolidate aw-lessons --tier project-shared --auto")`
+  `status: structural`), surface the **tier-appropriate** suggestion (do not
+  act): `home` → `/create-skill diagnose autonomous-workflow --symptom "<title>"`;
+  `project-shared` → `Skill("docs", "update --add-rule \"<title>\" --source memory/aw-lessons/entries/<id>.md")`.
+- **Maintenance** — per tier: if either `aw-lessons` INDEX (home or
+  project-shared, when opted in) is near its 200-line cap (≥ 180 lines), invoke
+  `Skill("persistent-memory", "consolidate aw-lessons --tier <home|project-shared> --auto")`
   immediately after the exit-write. Autonomous consolidate prunes expired and
   low-confidence entries only; contradictions are surfaced for review.
 

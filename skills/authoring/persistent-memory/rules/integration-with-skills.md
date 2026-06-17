@@ -137,11 +137,15 @@ the end.
 ### Worked example: the `aw-lessons` self-improvement loop
 
 `autonomous-workflow` is a real consumer of this handshake. It reads the
-committed `aw-lessons` scope before planning (Phase 1) and writes a lesson
-when it gets stuck (Phase 4) or finishes (Phase 7), using
-`write aw-lessons --auto`. The lessons are **procedural** ("what to do
-better next time"), and a lesson that recurs (`seen_count >= 3`) is promoted
-into the skill's own source through a separate confidence-gated step. Two
+per-user `aw-lessons` scope at `~/.agent-memory/aw-lessons/` before planning
+(Phase 1) and writes a lesson when it gets stuck (Phase 4) or finishes
+(Phase 7), using `write aw-lessons --tier home --auto`. Home-tier means a
+lesson captured while working in repo A biases the next run in repo B — the
+workflow's learning is per-user, not per-repo. The lessons are **procedural**
+("what to do better next time"), and a lesson that recurs (`seen_count >= 3`)
+is promoted into the skill's own source through a separate confidence-gated
+step (the slow tier — the only path that ships a lesson to every other
+consumer of the skill). Two
 things make this a safe pattern worth copying:
 
 1. **`--auto` skips consent but never the privacy pre-flight** — the
@@ -155,7 +159,7 @@ things make this a safe pattern worth copying:
 See [`../../../workflow/autonomous-workflow/rules/self-improvement-loop.md`](../../../workflow/autonomous-workflow/rules/self-improvement-loop.md)
 for the full contract.
 
-**Lesson-scope schema contract.** The committed lesson scopes (`memory/aw-lessons`, `memory/fix-bug-lessons`, `memory/batch-lessons`) carry an extended entry schema with five mandatory fields (`phase`, `trigger-context`, `seen_count`, `status`, `expires`), defined on this skill's side in [`write-pipeline.md`](./write-pipeline.md#lesson-scope-entries) and templated at [`../templates/lesson-entry.md`](../templates/lesson-entry.md).
+**Lesson-scope schema contract.** The per-user home-tier lesson scopes (`~/.agent-memory/aw-lessons/`, `aw-tester-lessons`, `fix-bug-lessons`, `batch-lessons`, `reviewer-lessons`) carry an extended entry schema with five mandatory fields (`phase`, `trigger-context`, `seen_count`, `status`, `expires`), defined on this skill's side in [`write-pipeline.md`](./write-pipeline.md#lesson-scope-entries) and templated at [`../templates/lesson-entry.md`](../templates/lesson-entry.md).
 The host-skill loops depend on exactly these fields (recurrence counting, promotion gating, expiry pruning), so any change to the lesson schema MUST update both the write pipeline's lesson-entry rules and the host skill's loop rules in the same PR — the two surfaces must never drift.
 
 ## When NOT to integrate

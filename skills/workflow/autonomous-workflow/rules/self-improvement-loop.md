@@ -98,30 +98,44 @@ Invoked at the **start of planning** (Phase 1) and again before
 **implementation / testing** (Phase 3, Phase 4) so accumulated lessons bias the
 work before mistakes repeat.
 
+The read is a **two-tier fan-out** — universal lessons from `home`, plus
+team-shared project lessons from `project-shared` when the team has opted in:
+
 ```
-Skill("persistent-memory", "read aw-lessons --tier project-shared")     # skips silently if not installed
+# (1) Always read the per-user home tier — universal lessons follow the user.
+Skill("persistent-memory", "read aw-lessons --tier home")     # skips silently if not installed
+
+# (2) Read the committed project-shared tier ONLY when the team has opted in
+#     (the directory already exists at <cwd-repo>/memory/aw-lessons/).
+#     Do not create the directory here — that's an explicit user act.
+if [ -f memory/aw-lessons/INDEX.md ]; then
+  Skill("persistent-memory", "read aw-lessons --tier project-shared")
+fi
 ```
 
-After the INDEX loads:
+After both INDEXes load (union the matches):
 
 1. Match each lesson's `trigger-context` against the current task (file globs,
    task type, tech). Load the full entry only for matches — progressive
-   disclosure; do not pull every entry.
+   disclosure; do not pull every entry. Tier-of-origin is not a match
+   criterion; both tiers fire the same way.
 2. Treat each **matching** lesson's *"What to do next time"* as a
    **consideration** on the plan / implementation — apply it unless it
    conflicts with the user's stated intent or task-specific constraints.
    Record applied lessons in `plan.md` under a `## Lessons applied` note (Full
-   Mode).
+   Mode), noting the source tier in parentheses (e.g. `(project-shared)`) so
+   reviewers can tell repo-specific guidance from universal.
 3. Lessons are **advisory** — they bias the plan; they never silently change a
    gate, skip a phase, or override the user's intent. If a lesson conflicts
    with the user's stated intent, the user's intent wins and the conflict is
-   surfaced.
-4. **Maintenance check.** If the loaded `INDEX.md` is at or near its 200-line
-   cap (≥ ~180 lines), invoke
-   `Skill("persistent-memory", "consolidate aw-lessons --tier project-shared --auto")`
-   at the next write point (Phase 4, Phase 7, or dispatcher exit-write).
-   Autonomous consolidate prunes **expired** and **low-confidence** entries
-   only; merges and contradictions are surfaced for review rather than
+   surfaced. If a `project-shared` lesson and a `home` lesson contradict, the
+   `project-shared` lesson wins (closer scope) — log the conflict.
+4. **Maintenance check.** Per-tier: if either loaded `INDEX.md` is at or near
+   its 200-line cap (≥ ~180 lines), invoke
+   `Skill("persistent-memory", "consolidate aw-lessons --tier <home|project-shared> --auto")`
+   for that tier at the next write point (Phase 4, Phase 7, or dispatcher
+   exit-write). Autonomous consolidate prunes **expired** and **low-confidence**
+   entries only; merges and contradictions are surfaced for review rather than
    resolved silently (preserves entrenchment guard #4). Without periodic
    consolidation the INDEX rots and recall degrades (persistent-memory's
    documented anti-pattern).
@@ -129,9 +143,10 @@ After the INDEX loads:
 Log:
 
 ```markdown
-- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier project-shared) — N lessons matched, applied as constraints
-- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier project-shared) — not available, continuing
-- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier project-shared) — 0 lessons matched this task
+- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier home) — N lessons matched, applied as constraints
+- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier project-shared) — M lessons matched (project-shared opted in)
+- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier project-shared) — not opted in (no memory/aw-lessons/), skipping
+- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons) — not available, continuing
 ```
 
 ---
@@ -150,16 +165,47 @@ and recurrence + expiry filter noise downstream:
 | **Phase 4 stuck-loop escalation** | The iteration cap was hit (and/or auto-replan ran) on the same failing area | What the failing area was, every hypothesis tried, what finally worked (or that it didn't), and the phase that should have caught it earlier |
 | **Phase 7 end-of-run** | CI green, or user-approved stop, or a post-merge bug surfaces in the same session | Any durable lesson from the run — a missed trigger, a plan gap, a recurring fix pattern |
 
+**Tier classification (load-bearing).** Before writing, classify each candidate
+as **project-bound** or **universal** by looking at its `trigger-context`:
+
+| Verdict | Signal |
+| ------- | ------ |
+| **Project-bound** | Trigger references a concrete cwd-repo path (`packages/foo/`, `apps/bar/`, `src/specific-file.ts`), a repo-specific package / Nx target / domain term that another repo could not plausibly have, or the lesson body cites a file that only exists here. |
+| **Universal** | Trigger is a glob with no repo prefix (`*.tsx`, `**/*.test.ts`), names a framework / tool / task type (React Native, Playwright, monorepo refactor) with no repo binding, or could re-derive in any sufficiently-similar repository. |
+
+When ambiguous, default to **universal** — `home` errs toward broader reach;
+a misclassified universal lesson harms nothing in other repos because its
+`trigger-context` still has to match. A misclassified project-bound lesson
+written to `home` only bloats the home INDEX.
+
+Then dispatch by verdict:
+
 ```
-Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")   # skips silently if not installed
+# Universal lesson — always lands in home.
+Skill("persistent-memory", "write aw-lessons --tier home --auto")   # skips silently if not installed
+
+# Project-bound lesson — opt-in gated. Write to project-shared ONLY when the
+# team has already created the committed scope; otherwise fall back to home
+# and surface a one-line opt-in hint.
+if [ -f memory/aw-lessons/INDEX.md ]; then
+  Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")
+else
+  Skill("persistent-memory", "write aw-lessons --tier home --auto")
+  log "Project-bound lesson written to home (no committed memory/aw-lessons/ in this repo). To collect them per-repo, the team can opt in once: /persistent-memory write aw-lessons --tier project-shared"
+fi
 ```
 
+- The opt-in guard preserves the persistent-memory consent contract — a
+  committed scope only exists because a human created it, never because the
+  workflow silently committed lessons to the repo.
 - `--auto` bypasses the consent preview (the autonomous loop cannot pause for
   approval on every write). The **privacy pre-flight is NOT bypassed** —
   `persistent-memory` still refuses to store secrets / PII on its never-store
   list, `--auto` or not. Lessons are about *workflow mechanics*, never product
   data — if a candidate lesson contains a credential, a customer name, or a
-  token, it is dropped, not written.
+  token, it is dropped, not written. (The privacy bar is **stricter** for
+  `project-shared` writes — content lands in the repo and every collaborator
+  sees it.)
 - The write pipeline resolves each candidate as **ADD / UPDATE / DELETE /
   NOOP** against existing lessons (Mem0-style). A lesson that recurs resolves
   to **UPDATE**, which **bumps `seen_count`** and refreshes `expires` — it does
@@ -179,11 +225,12 @@ Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")   # 
   are noise. Phase 4 stuck-loop is failure-event-driven and does not need the
   retrospective.
 
-Log:
+Log (include the resolved tier in every line):
 
 ```markdown
-- [TIMESTAMP] Phase 4: persistent-memory(write aw-lessons) — 1 lesson (UPDATE, seen_count→3)
-- [TIMESTAMP] Phase 7: persistent-memory(write aw-lessons) — 1 lesson (ADD), 1 NOOP
+- [TIMESTAMP] Phase 4: persistent-memory(write aw-lessons --tier home) — 1 lesson (UPDATE, seen_count→3)
+- [TIMESTAMP] Phase 7: persistent-memory(write aw-lessons --tier project-shared) — 1 lesson (ADD) — project-bound, repo opted in
+- [TIMESTAMP] Phase 7: persistent-memory(write aw-lessons --tier home) — 1 project-bound lesson fell back to home (no committed memory/aw-lessons/); opt-in hint surfaced
 - [TIMESTAMP] Phase 7: persistent-memory(write aw-lessons) — not available, continuing
 ```
 
@@ -208,20 +255,29 @@ matched / written lessons. A lesson is **promotion-eligible** when **either**:
 ### What promotion does
 
 For each eligible lesson, surface a one-line suggestion to the user — do **not**
-act silently:
+act silently. The suggested target **depends on the lesson's tier**:
 
-```
-Lesson "<title>" has recurred N times (phase <p>). Promote it to a permanent
-guard? Run:  /create-skill diagnose autonomous-workflow --symptom "<lesson title>"
-```
+| Lesson tier | Promotion target | One-liner |
+| ----------- | ---------------- | --------- |
+| `home` (universal) | The skill's source — ships to every consumer | `Lesson "<title>" recurred N times. Promote to a permanent skill guard? Run:  /create-skill diagnose autonomous-workflow --symptom "<title>"` |
+| `project-shared` (project-bound) | The repo's own docs — `CLAUDE.md` / `.claude/rules/` — ships to every teammate working in this repo | `Lesson "<title>" recurred N times in this repo. Promote to a repo rule? Run:  Skill("docs", "update --add-rule '<title>' --source memory/aw-lessons/entries/<id>.md")` |
 
-When the user runs it, Diagnose Mode reads `aw-lessons` as **evidence** (the
-full `seen_count` history and prior contexts make the diagnosis far more
-accurate than a single-session reflection), produces one confidence-gated
-unified-diff proposal against this skill's source, and applies it only at
-`confidence(analysis) ≥ 90 %` **with explicit user confirmation**. The gate and
-apply flow are unchanged — see
+The split is load-bearing: a repo-specific behavior change does not belong in
+the skill source (it would change every consumer's behavior for one repo's
+quirk). Conversely, a universal behavior change does not belong in one repo's
+`CLAUDE.md` (it would silo a fix that other repos also need).
+
+When the user runs the home-tier promotion, Diagnose Mode reads `aw-lessons`
+as **evidence** (the full `seen_count` history and prior contexts make the
+diagnosis far more accurate than a single-session reflection), produces one
+confidence-gated unified-diff proposal against this skill's source, and applies
+it only at `confidence(analysis) ≥ 90 %` **with explicit user confirmation**.
+The gate and apply flow are unchanged — see
 [`../../../authoring/create-skill/rules/diagnose-mode.md`](../../../authoring/create-skill/rules/diagnose-mode.md).
+
+The project-shared promotion path uses the `docs` skill (or equivalent) to
+draft the repo-rule edit, gated by the same confidence + user-approval
+contract.
 
 ### After a successful promotion
 
@@ -260,15 +316,33 @@ the false belief. These guards are non-negotiable:
 ## Storage
 
 - **Scope:** `aw-lessons`
-- **Tier:** `project-shared` (committed) — lives at `<repo>/memory/aw-lessons/`.
-  Committed so the whole team's agents inherit the lessons and the history is
-  version-controlled and reviewable. (Switch to `project-local` /
-  gitignored or `home` / personal by changing the tier the `read` / `write`
-  invocations resolve — see
-  [`../../../authoring/persistent-memory/rules/storage-layout.md`](../../../authoring/persistent-memory/rules/storage-layout.md).)
-- **Layout:** standard `persistent-memory` scope — `INDEX.md` (≤ 200 lines,
-  always loaded), `entries/<date>-<slug>.md` (loaded on demand), `archive/`,
-  `AUDIT.log`.
+- **Tiers (two, used together):**
+  - **`home`** — per-user, cross-project at `~/.agent-memory/aw-lessons/`. The
+    default for **universal** lessons. Lessons follow the user across every
+    repository. Not committed. Always read; always available for writes.
+  - **`project-shared`** — committed, team-scoped at `<cwd-repo>/memory/aw-lessons/`.
+    Opt-in: only read when `memory/aw-lessons/INDEX.md` already exists in the
+    current repo; only written to when the same directory exists (the workflow
+    never silently creates committed scopes). The default for **project-bound**
+    lessons once the team has opted in. A team opts in once by running
+    `Skill("persistent-memory", "write aw-lessons --tier project-shared")`
+    manually (or by hand-creating the directory), after which the workflow
+    auto-writes project-bound lessons there.
+  - **`project-local`** is available for per-user private project notes
+    (gitignored at `<cwd-repo>/.agent/memory/aw-lessons/`) — see
+    [`../../../authoring/persistent-memory/rules/storage-layout.md`](../../../authoring/persistent-memory/rules/storage-layout.md).
+    The workflow does not write here by default; it is an explicit user choice.
+- **Tier classification on write** — see [Fast tier — write lessons](#fast-tier--write-lessons).
+  Universal → `home`; project-bound + opted in → `project-shared`; project-bound
+  + not opted in → `home` with a one-line opt-in hint.
+- **Promotion targets differ by tier** — `home` → skill source via
+  `/create-skill diagnose`; `project-shared` → repo rules via `docs` skill.
+  See [Lesson promotion](#lesson-promotion).
+- **Layout:** standard `persistent-memory` scope per tier — `INDEX.md`
+  (≤ 200 lines, always loaded), `entries/<date>-<slug>.md` (loaded on demand),
+  `archive/`, `AUDIT.log`. The 200-line cap applies **per tier** independently
+  (each scope's home INDEX and project-shared INDEX consolidate on their own
+  schedules).
 
 ---
 

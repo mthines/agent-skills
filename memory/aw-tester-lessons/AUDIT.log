@@ -1,3 +1,0 @@
-# aw-tester-lessons audit log — append-only ledger of write / consolidate / forget operations.
-# Format: <ISO-8601 timestamp> | <operation> | <count> | <one-line summary>
-2026-06-15T00:00:00Z | init | 0 | Scaffolded INDEX.md, entries/, archive/ for aw-tester cross-run lessons

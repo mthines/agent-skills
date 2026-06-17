@@ -64,7 +64,7 @@ The bug-notes ledger ([`bug-notes-ledger.md`](./bug-notes-ledger.md)) is read on
 | Phase | Existing guards                                                                                                                                          | Typical gaps                                                                                                                |
 | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | 0     | First-match input-classification table; mode-flag detection (`--analyse-only`, `--verify-deploy`, `--force-holistic`); `bugClass` inference; refuse-on-free-text | Input shape misclassified (e.g. URL-only stack trace); `bugClass` set to `unknown` and downstream gates didn't compensate    |
-| 0.5   | 14-row signal table; conservative-by-default decision rule; refuses `force-simple` when input lacks an anchor; pre-flight can upgrade `complex` → `simple`; `persistent-memory(read fix-bug-lessons --tier project-shared)` applies prior triage/repro/analysis lessons as advisory inputs | Classified `simple` on a cross-cutting bug (caught by CEGIS round 3 fallback); classified `complex` on a trivial bug (wasted tokens, no correctness loss); a recorded lesson existed but its `trigger-context` bugClass didn't match so it wasn't applied |
+| 0.5   | 14-row signal table; conservative-by-default decision rule; refuses `force-simple` when input lacks an anchor; pre-flight can upgrade `complex` → `simple`; `persistent-memory(read fix-bug-lessons --tier home)` applies prior triage/repro/analysis lessons as advisory inputs | Classified `simple` on a cross-cutting bug (caught by CEGIS round 3 fallback); classified `complex` on a trivial bug (wasted tokens, no correctness loss); a recorded lesson existed but its `trigger-context` bugClass didn't match so it wasn't applied |
 | 1a    | Per-input resolution procedures; capability gates for Dash0 / Linear / video MCPs                                                                        | MCP missing ⇒ silent fallback that produced a thin Evidence Record                                                           |
 | 1.5   | Recent-commits probe; lockfile / env diff; last-known-green deploy SHA; CI flip detection                                                                | Pre-flight short-circuit fired on coincidence (commit aligned but wasn't the cause)                                           |
 | 2a    | Evidence Record schema in [`templates/bug-notes.md`](../templates/bug-notes.md)                                                                          | Required field left blank ⇒ holistic-analysis (or lightweight analysis on fast-lane) ran on incomplete evidence              |
@@ -152,8 +152,8 @@ The diagnoser must not propose to relax any of these without explicit user confi
 ## Lessons scope
 
 - Scope: `fix-bug-lessons` (fix-bug's own diagnostic-phase lessons; implementation-phase lessons live in `aw-lessons`)
-- Tier: `project-shared` (`<repo>/memory/fix-bug-lessons/`)
-- Read for evidence with: `Skill("persistent-memory", "read fix-bug-lessons --tier project-shared")`
+- Tier: `home` (`~/.agent-memory/fix-bug-lessons/`)
+- Read for evidence with: `Skill("persistent-memory", "read fix-bug-lessons --tier home")`
 
 Diagnose Step 2 loads promotion-eligible lessons (`seen_count >= 3` or `status: structural`) as evidence — keyed by `bugClass` + input shape. See [`self-improvement-loop.md`](./self-improvement-loop.md).
 

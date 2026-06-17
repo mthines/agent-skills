@@ -436,14 +436,20 @@ that the same failure happened before. The fast tier fills both gaps.
 
 | Tier | Mechanism | Storage | Behavior change? | Gate |
 | ---- | --------- | ------- | ---------------- | ---- |
-| **Fast** | `persistent-memory` `aw-lessons` (read Phase 1, write Phase 4/7) | committed markdown at `<repo>/memory/aw-lessons/` | No — advisory input to planning | none (privacy pre-flight only) |
-| **Slow** | `/create-skill diagnose autonomous-workflow` | this skill's source | Yes — a rule / gate / trigger | `confidence(analysis) ≥ 90 %` + user approval |
+| **Fast (home)** | `persistent-memory` `aw-lessons --tier home` (read Phase 1, write Phase 4/7) | per-user markdown at `~/.agent-memory/aw-lessons/` — follows the user across every repo | No — advisory input to planning | none (privacy pre-flight only) |
+| **Fast (project-shared)** | `persistent-memory` `aw-lessons --tier project-shared` (read + write only when `<repo>/memory/aw-lessons/` exists) | committed markdown at `<cwd-repo>/memory/aw-lessons/` — team-scoped, opt-in per repo | No — advisory input to planning | none (privacy pre-flight, **stricter** because content lands in the repo) |
+| **Slow (home → skill source)** | `/create-skill diagnose autonomous-workflow` | this skill's source | Yes — a rule / gate / trigger for every consumer | `confidence(analysis) ≥ 90 %` + user approval |
+| **Slow (project-shared → repo rules)** | `Skill("docs", "update --add-rule …")` | the cwd repo's `CLAUDE.md` / `.claude/rules/` | Yes — a rule for everyone working in that repo | `confidence(analysis) ≥ 90 %` + user approval |
 
-The two are connected by a **recurrence gate**: a lesson reaching
-`seen_count >= 3` (or tagged `structural`) is promotion-eligible, and the
-workflow suggests running `diagnose` — which then reads `aw-lessons` as evidence
-so the diagnosis is grounded in N occurrences, not one. The full contract,
-lesson schema, and the entrenchment guards live in
+The fast and slow tiers are connected by a **recurrence gate**: a lesson
+reaching `seen_count >= 3` (or tagged `structural`) is promotion-eligible.
+The **tier of the lesson determines the promotion target**: a `home` lesson
+promotes to the skill's source (every consumer benefits via the next install);
+a `project-shared` lesson promotes to the cwd repo's own rules (every teammate
+working in that repo benefits via the next git pull). The workflow surfaces a
+one-line suggestion in either case — it never acts silently. The full
+contract, lesson schema, classification rule, opt-in mechanics, and the
+entrenchment guards live in
 [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
 
 **Why a fast tier that doesn't change behavior?** Because the dominant risk in
@@ -598,11 +604,10 @@ they must be exercised live (markdown can't prove them). Run this after editing
    (a gated `plan.md` appears), then **`aw-executor`**. If the harness refuses
    nested sub-agent dispatch, `aw` must fall back to telling you to run them —
    confirm it does **not** silently downgrade to single-pass.
-4. **Universal loop + tier pin (the R2 risk):** after any of the above, confirm a
-   lesson file was written under **`<repo>/memory/aw-lessons/entries/`** (the
-   committed `project-shared` scope) — **not** `~/.agent-memory/aw-lessons/`. If
-   it landed in `~/.agent-memory/`, the `--tier project-shared` pin is not being
-   honored by `persistent-memory`.
+4. **Universal loop + two-tier writes (the R2 risk):** run two checks.
+   - **Universal lesson:** after a run where the lesson is generic (e.g. trigger-context like `*.tsx` or `monorepo refactor`), confirm a lesson file was written under **`~/.agent-memory/aw-lessons/entries/`** (the per-user `home` scope) and NOT in `<repo>/memory/aw-lessons/`. If it landed in the project repo, the classifier mis-routed a universal lesson.
+   - **Project-bound lesson, opt-in:** in a repo that has `memory/aw-lessons/INDEX.md` committed, run a task that produces a repo-bound lesson (trigger-context referencing a repo path) and confirm the lesson file lands in `<repo>/memory/aw-lessons/entries/` (the committed `project-shared` scope) — NOT in `~/.agent-memory/`. If it landed in home, the opt-in guard or the classifier is broken.
+   - **Project-bound lesson, NOT opted in:** in a repo with no `memory/aw-lessons/` directory, produce a repo-bound lesson and confirm it lands in `~/.agent-memory/aw-lessons/` (fallback) and an opt-in hint appears in the run log. If the run silently created `memory/aw-lessons/` in the cwd repo, the opt-in guard is broken — the workflow must NEVER commit-create a scope without explicit user opt-in.
 5. **Opt-in boundary:** in an interactive session, make a casual single-file edit
    **without** a trigger phrase or `@aw`. Expect: `aw` does **not** engage.
 
@@ -689,7 +694,7 @@ end-user-facing; this file is contributor-facing.
   `confidence(analysis) ≥ 90 %` + user-approval gate. Lessons are **advisory** —
   they never auto-change behavior (the entrenchment guard against
   self-reinforcing error). The committed scope is seeded at
-  `<repo>/memory/aw-lessons/`. Coupled surfaces updated: `companion-skills.md`
+  `~/.agent-memory/aw-lessons/`. Coupled surfaces updated: `companion-skills.md`
   (3 rows + Self-Improvement Loop section), `phase-1-planning.md` (`lessons-read`),
   `phase-4-testing.md` (`lessons-write`), `phase-7-ci-gate.md` (`lessons-write`),
   `diagnostic-surface.md` (guards + advisory-only invariant), both agent
