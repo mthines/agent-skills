@@ -4,6 +4,44 @@
 
 > **📦 VS Code extension available.** Install [**Agent Tasks**](https://marketplace.visualstudio.com/items?itemName=mthines.agent-tasks) from the Marketplace to visualize `plan.md`, `task.md`, and `walkthrough.md` artifacts directly in your VS Code sidebar — see in-progress phases, completed task checkboxes, decisions, and blockers at a glance. Defaults to scanning `.agent/` (with `.gw/` as fallback), configurable via `agentTasks.directories`. Source lives in [`packages/vscode-agent-tasks/`](../../../packages/vscode-agent-tasks/).
 
+## In plain English
+
+![How aw works: you say one thing, it sizes the job (Micro / Lite / Full), then runs an isolated pipeline — Understand, Plan, Build, Test, Document, Open PR, Green CI, Self-Review — to a ready-to-merge pull request, learning from every run.](../../../assets/aw-overview.png)
+
+**You write one sentence. `aw` delivers a finished, tested, reviewed pull request — on its own.**
+
+That's the whole thing. You describe the change you want, and `aw` does everything a careful engineer would do, in order, without you babysitting it:
+
+1. **Sizes the job.** Typo? Small tweak? Real feature? It picks how much process to run, so small things stay fast.
+2. **Works in isolation.** Spins up its own Git worktree, so your main branch is never touched.
+3. **Plans → builds → tests → documents.** Writes the code, runs the tests, fixes what fails, updates the docs.
+4. **Opens the PR.** Writes a real description and pushes a draft for you to approve.
+5. **Gets CI green.** Watches the pipeline and fixes what breaks.
+6. **Reviews its own work.** Runs an adversarial self-review and applies the easy fixes before you ever look.
+7. **Learns.** Records lessons each run, so the next run is a little smarter.
+
+### It looks complex. Using it is one sentence.
+
+The machinery below — three agents, eight phases, a dozen companion skills, confidence gates — is the part that *does the work for you*. None of it is setup you have to do.
+
+| What you see in the docs | What you actually do |
+| ------------------------ | -------------------- |
+| 3 agents, 8 phases, 12 companions, confidence gates | Type one sentence (or `@aw`). |
+| "Do I need to configure all this?" | No — it auto-picks how much process to run. |
+| "Will it run off and break things?" | No — isolated worktree, a gate at every step, and a draft PR you approve. |
+
+**Try it:**
+
+```text
+Implement a dark-mode toggle independently
+Add user authentication end-to-end
+Refactor the API client to use retry logic — handle it in isolation
+```
+
+The complexity is the machine's job, not yours. You write the sentence; it runs the machine. The rest of this README is the reference manual for when you want to look under the hood.
+
+---
+
 ## What This Skill Does
 
 This skill enables AI agents to autonomously execute complete feature
