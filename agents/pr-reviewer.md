@@ -272,6 +272,22 @@ A finding that survived 2.6 → 2.9 but fails line validity is **logged in the t
 
 ---
 
+## Step 3.6: Persist the publish-ready payload
+
+After line validity resolves every surviving comment to a valid RIGHT-side line, the fully-computed payload exists in context. Persist it to a **deterministic, PR-keyed path** so a later authorization — even from a fresh agent with no shared context — can publish without re-deriving anything:
+
+```bash
+REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
+PAYLOAD_PATH=".agent/pr-review/${REPO//\//__}__${PR_NUMBER}.payload.json"
+mkdir -p .agent/pr-review
+```
+
+Write the exact `POST .../reviews` body — `commit_id`, `body: ""`, and the validated `comments[]` (each with final `path`, `line`, `side`, and Conventional-Comments `body`) — to `PAYLOAD_PATH`. Append a `dropped[]` array carrying any line-validity / shape casualties verbatim so they survive into the publish run's report.
+
+This artifact is the single source of truth for the publish step. It costs one small `Write` per run and turns a later publish from a full re-review into a near-zero-token submit. Name the artifact path in the Step 3 report so the user (or a parent agent) can publish later with just the PR reference.
+
+---
+
 ## Step 4: Authorization gate
 
 See `agents/pr-reviewer/rules/authorization-gate.md`. Assert `token_path_satisfied OR (phrase_path_satisfied AND NOT negation_guard_fired)`. Without authorization, emit the closing report verbatim and stop — no GitHub API call.
@@ -310,14 +326,22 @@ Include:
 
 ---
 
-## Resuming a prior proposal
+## Fast publish path — reuse the persisted payload
 
-If re-invoked by a parent agent referencing comments already drafted earlier ("post the 5 comments you proposed"):
+A publish request usually arrives **after** the review run, in a **separate invocation** — often a fresh agent with none of the review context (the user reads the proposal, then says "post them"). Re-deriving the payload from the diff (re-running rubrics, holistic, grounding, confidence, and line math) costs nearly as much as the original review and produces a *different* finding set than the one the user approved. Do not do it. Prefer the persisted payload from Step 3.6.
 
-1. **Parent passes the prior proposal verbatim** — treat it as authoritative. Validate each `(file, line)` against the cached patch list (Step 3.5), drop anything that no longer pins, post the survivors.
-2. **Parent only references the prior proposal without inline content** — ask once: "I don't have the prior proposal in this context — paste it or should I re-run the full review?"
+When authorization is granted (Step 4), resolve the artifact path first:
 
-Do not silently re-derive. Re-analysis produces a different set of findings and discards the proposal the user (or parent) was acting on.
+```bash
+REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
+PAYLOAD_PATH=".agent/pr-review/${REPO//\//__}__${PR_NUMBER}.payload.json"
+```
+
+1. **Artifact exists** → fast path. Skip Steps 1.3–3 entirely. Read the payload, re-fetch `/tmp/pr-files.json` once, and re-validate each saved comment's `(path, line)` against the current hunks per `line-validity.md` — a membership check over already-computed lines, not a re-derivation (retarget ≤ 3 lines or drop). Refresh `commit_id` from the current head SHA, run `payload_is_safe` (`posting-mechanics.md`), post, verify `state: PENDING`, report. No rubric / holistic / grounding / confidence pass re-runs.
+2. **No artifact, but a parent passes the prior proposal inline** → treat it as authoritative, validate each `(file, line)` (Step 3.5), post the survivors. Do not re-review.
+3. **No artifact and no inline proposal** → ask once: "I don't have a saved payload or the prior proposal for PR #<n> — paste it, or should I re-run the full review?"
+
+Never silently re-derive: a fresh review discards the proposal the user (or parent) was acting on, and burns full-review tokens to do it.
 
 ---
 
