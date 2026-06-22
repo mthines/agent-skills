@@ -57,6 +57,7 @@ The companion agent `reviewer` handles own-work (Fix Mode, Report Mode, Self-Rev
 | 2.9 | Conventional Comments | [shared/rules/conventional-comments.md](../../shared/rules/conventional-comments.md) | Prefix prepended; `(blocking)` / `(non-blocking)` decoration appended |
 | 3 | Local proposal | [pr-reviewer.md § Step 3](../../pr-reviewer.md), [templates/pr-comment-card.template.md](../../templates/pr-comment-card.template.md) | Summary table + numbered cards; total / dropped counts |
 | 3.5 | Line validity | [line-validity.md](./line-validity.md) | Every `(file, line)` falls inside a RIGHT-side diff hunk |
+| 3.6 | Persist publish-ready payload | [pr-reviewer.md § Step 3.6](../../pr-reviewer.md) | Validated `comments[]` + `commit_id` + `body:""` written to `.agent/pr-review/<owner>__<repo>__<n>.payload.json` |
 | 4 | Authorization gate | [authorization-gate.md](./authorization-gate.md) | `--publish` token in raw args OR explicit phrase in latest user message with negation guard clear |
 | 5 | Post pending review | [posting-mechanics.md](./posting-mechanics.md) | `event` omitted; `body == ""`; verified `state: PENDING` post-call |
 | 6 | Report | [posting-mechanics.md § Reporting](./posting-mechanics.md) | Lead with "Drafted N pending comments"; use "drafted" not "posted" |
@@ -107,6 +108,7 @@ The matrix is not exhaustive — when a real failure exposes a guard not listed 
 | `F-self-pr-routed-to-cross-reviewer` | Wrong-agent | `pr-reviewer` invoked on user's own PR; should have refused | 0.5 |
 | `F-event-fallback` | Anti-pattern fallback | On API failure, agent sends `event: COMMENT` or any submitting event | 5 |
 | `F-line-out-of-hunk` | Diff geometry | Proposed `(file, line)` falls outside any RIGHT-side hunk; payload rejected entirely | 3.5 |
+| `F-publish-rederives-payload` | Publish-path token waste | A post-authorization publish run (often a fresh invocation) rebuilds the `comments[]` payload by re-running the full review pipeline instead of reading the persisted artifact — costs ~full-review tokens and may produce a different finding set than the user approved | 3.6 → 4–5 |
 | `F-body-non-empty` | Payload shape | Review `body` populated with verdict / score; PR author sees noise on submit | 5 |
 | `F-posted-leaks-into-report` | Communication invariant | Final report uses "posted" instead of "drafted"; produces false-failure perception | 6 |
 | `F-novel` | Novel mode | Does not match any existing row | — |
@@ -148,10 +150,11 @@ The diagnoser must not propose to relax any of these without explicit user confi
 | Pending review on GitHub (`state: PENDING`) | pr-reviewer Step 5 | Authorization granted |
 | `/tmp/pr-files.json` (ephemeral) | `gh api repos/.../pulls/{n}/files` | Step 1.2 |
 | `/tmp/review-payload.json` (ephemeral) | pr-reviewer Step 5 | Posting payload |
+| `.agent/pr-review/<owner>__<repo>__<n>.payload.json` (durable) | pr-reviewer Step 3.6 | Every run with ≥ 1 surviving comment |
 | Terminal Quality Gate summary | shared/rules pipeline | Every run |
 | `.agent/recordings/*.{webm,mp4,gif}` | `Skill("screen-recorder")` | Motion-relevant diff + stable selector + preview deploy URL |
 
-The agent produces no durable artefact in the repo. Diagnoses lean entirely on the transcript plus the GitHub-side pending review (inspectable via `gh api`).
+The agent's only durable artefact is the PR-keyed payload under `.agent/pr-review/` (gitignored scratch), which lets a later publish invocation post without re-reviewing. Diagnoses otherwise lean on the transcript plus the GitHub-side pending review (inspectable via `gh api`).
 
 ---
 
