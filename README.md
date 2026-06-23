@@ -160,6 +160,33 @@ The flagship `aw` agents are **generated from templates** in `skills/workflow/au
 
 ## Featured: autonomous workflow
 
+### In plain English
+
+![How aw works: you say one thing, it sizes the job (Micro / Lite / Full), then runs an isolated pipeline — Understand, Plan, Build, Test, Document, Open PR, Green CI, Self-Review — to a ready-to-merge pull request, learning from every run.](./assets/aw-overview.png)
+
+**You write one sentence. `aw` delivers a finished, tested, reviewed pull request — on its own.**
+
+You describe the change; `aw` does everything a careful engineer would do, in order, without you babysitting it:
+
+1. **Sizes the job** — typo, small tweak, or real feature — so small things stay fast.
+2. **Works in its own Git worktree** — your main branch is never touched.
+3. **Plans, builds, tests, and documents** the change.
+4. **Opens a draft PR** with a real description for you to approve.
+5. **Gets CI green** and **reviews its own work** before you ever look.
+6. **Learns** from each run, so the next one is a little smarter.
+
+It *looks* complex — three agents, eight phases, a dozen companion skills, confidence gates. That machinery is the part that does the work *for you*: none of it is setup. What you do is type one sentence (or `@aw`), and approve the PR at the end. The complexity is the machine's job, not yours.
+
+```text
+Implement a dark-mode toggle independently
+Add user authentication end-to-end
+Refactor the API client to use retry logic — handle it in isolation
+```
+
+The rest of this section is the under-the-hood reference.
+
+### Under the hood
+
 **`aw` is the flagship of this repo** — the one agent you invoke to carry a task from a one-line prompt to a tested, reviewed draft PR. You say *"implement X autonomously"* (or `@aw`) and it does the rest: detects how big the work is, plans only when planning earns its keep, and routes to the right specialists, all inside an isolated Git worktree.
 
 `aw` is the opt-in entry point to the **`autonomous-workflow`** skill — the phase-based machinery (0–7) and companion-skill orchestration behind it. You drive `aw`; `autonomous-workflow` is how it works under the hood.
