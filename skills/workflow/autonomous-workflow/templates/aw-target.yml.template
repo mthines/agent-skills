@@ -22,9 +22,22 @@ base_url: http://localhost:3000    # the URL aw-tester navigates to; no trailing
 auth:
   strategy: storage-state          # one of: storage-state | none | manual | env-credentials
   #
-  # storage-state: aw-tester reads the .auth JSON and passes it to Playwright's
-  #   storageState option so the browser starts authenticated. Fastest and most
-  #   reliable strategy.
+  # storage-state (recommended): aw-tester reads the .auth JSON and passes it
+  #   to Playwright's storageState option so the browser starts authenticated.
+  #   Fastest and most reliable strategy. Pair with one of two refresh flows:
+  #
+  #     (a) Interactive headful capture — for SSO / OAuth / passwordless /
+  #         anything you can't easily script. User logs in once in a real
+  #         browser; storage state persists for days/weeks.
+  #         refresh.command runs scripts/auth-bootstrap-headful.mjs.
+  #
+  #     (b) Automated credentials — for plain email+password forms with no
+  #         MFA / CAPTCHA. Runs unattended (CI, scheduled refresh).
+  #         refresh.command runs scripts/auth-bootstrap-credentials.mjs
+  #         and reads E2E_EMAIL / E2E_PASSWORD from the environment.
+  #
+  #   Both flows write to the same `.auth/<name>.json`. Run `/aw-setup` once
+  #   to scaffold the script and wire the command below.
   #
   # none: no auth; specs run against a public or pre-authed aw-target.
   #
@@ -32,16 +45,35 @@ auth:
   #   manual — skipping authed spec". Use when SSO, hardware MFA, or mandatory
   #   CAPTCHA makes automated login impossible.
   #
-  # env-credentials: aw-tester runs a short login flow using the email + password
-  #   below and captures the resulting storage state. Slower; prefer storage-state
-  #   when a bootstrap command is available.
+  # env-credentials: legacy alias for storage-state + the credentials bootstrap
+  #   script. Equivalent to setting strategy: storage-state with refresh.command
+  #   pointing at scripts/auth-bootstrap-credentials.mjs. Kept for backwards
+  #   compatibility; new aw-targets should use storage-state.
 
   storage_state: ./.auth/local.json   # path relative to repo root; gitignored
 
   refresh:
     when: missing-or-expired       # one of: missing-or-expired | always | never
-    command: pnpm run auth:bootstrap
-    timeout_seconds: 30
+
+    # ===== EXAMPLE (a) Interactive headful capture (default for new setups) =====
+    command: |
+      AUTH_LOGIN_URL=http://localhost:3000/login \
+        AUTH_STORAGE_STATE=./.auth/local.json \
+        AUTH_POST_LOGIN_URL_PATTERN='/dashboard' \
+        node scripts/auth-bootstrap-headful.mjs
+    timeout_seconds: 600           # generous — waits on a human
+
+    # ===== EXAMPLE (b) Automated credentials — uncomment to use instead =====
+    # command: |
+    #   AUTH_LOGIN_URL=http://localhost:3000/login \
+    #     AUTH_STORAGE_STATE=./.auth/local.json \
+    #     AUTH_POST_LOGIN_URL_PATTERN='/dashboard' \
+    #     node scripts/auth-bootstrap-credentials.mjs
+    # timeout_seconds: 60          # E2E_EMAIL / E2E_PASSWORD read from env
+
+    # ===== EXAMPLE (c) Existing user-defined bootstrap command =====
+    # command: pnpm run auth:bootstrap
+    # timeout_seconds: 30
 
   identity:                        # the test user aw-setup logged in as
     email: test+aw@example.com

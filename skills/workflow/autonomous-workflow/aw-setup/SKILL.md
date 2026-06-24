@@ -10,7 +10,7 @@ disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: slash-command
   tags:
     - aw-tester
@@ -84,12 +84,22 @@ for a re-run that detected broken fields.
 **Questions (lean set — skip any the detector answered with high confidence):**
 
 1. What is the base URL for local development? (e.g. `http://localhost:3000`)
-2. How does auth work? Options:
-   - Storage state (recommended) — provide a bootstrap command that captures login
-   - Test backdoor — provide a dev token or test cookie name
-   - None — no auth required
-   - Manual — SSO/MFA/CAPTCHA prevents automation (aw-tester will skip authed specs)
-3. What email/role should the test user have?
+2. **How should aw-tester get an authenticated session?** Five strategies, in
+   order from "best default" to "last resort" (see [Auth flow templates](#auth-flow-templates)
+   for the full mechanics of each):
+
+   | # | Strategy | When to pick | aw-setup writes |
+   |---|----------|--------------|-----------------|
+   | a | **Interactive headful capture** (recommended for first-time setup, SSO, OAuth, passwordless) | You can log in by hand once and reuse the session for days/weeks | `scripts/auth-bootstrap-headful.mjs` + `auth.refresh.command` in aw-target.yml |
+   | b | **Automated credentials (env vars)** (CI / unattended re-auth) | Plain HTML email+password form, no MFA, no CAPTCHA | `scripts/auth-bootstrap-credentials.mjs` + `auth.refresh.command` in aw-target.yml |
+   | c | **Existing bootstrap command** (you already have `pnpm run auth:bootstrap` or similar) | You've already invested in a login script | aw-target.yml referencing your command |
+   | d | **None** | The aw-target is public or pre-authed | aw-target.yml with `auth.strategy: none` |
+   | e | **Manual** (SSO with no test mode, hardware MFA, mandatory CAPTCHA) | Automation is genuinely impossible | aw-target.yml with `auth.strategy: manual` — aw-tester will skip authed specs |
+
+   When in doubt, pick (a) — it works for nearly every login flow and produces
+   the same `storage_state` artifact the other strategies converge to.
+3. What email/role should the test user have? (informational — used in smoke
+   spec description and as the default for `E2E_EMAIL` if you picked strategy b)
 4. Is there a seed command that creates test fixtures? (e.g. `pnpm run db:seed:aw`)
 
 **Re-run:** only ask about fields that failed validation. State which fields were
@@ -107,34 +117,47 @@ accepted via cookie) and re-run /aw-setup.
 
 ### Phase C — Probe
 
-Run the proposed login flow once in a headless browser (or headed if the user
-prefers) to validate that auth works:
+Run the chosen auth flow once to validate it produces a working storage state.
+Behaviour depends on the strategy picked in Phase B:
 
-```bash
-# Example: run the bootstrap command with a timeout
-timeout 30 pnpm run auth:bootstrap \
-  && echo "bootstrap succeeded" \
-  || echo "bootstrap failed"
-```
+| Strategy | Probe command | Expected outcome |
+|----------|---------------|------------------|
+| (a) Interactive headful capture | `AUTH_LOGIN_URL=... AUTH_STORAGE_STATE=./.auth/local.json node scripts/auth-bootstrap-headful.mjs` | Headful browser opens. User logs in. `.auth/local.json` is written when the user closes the browser (or hits a `POST_LOGIN_URL_PATTERN`). |
+| (b) Automated credentials | `AUTH_LOGIN_URL=... AUTH_STORAGE_STATE=./.auth/local.json AUTH_POST_LOGIN_URL_PATTERN='/dashboard' E2E_EMAIL=... E2E_PASSWORD=... node scripts/auth-bootstrap-credentials.mjs` | Headless run. `.auth/local.json` written on success. Script exits non-zero with a diagnostic if locators or credentials are wrong. |
+| (c) Existing bootstrap command | `timeout 30 <user-provided command>` | The user's command produces `.auth/local.json`. |
+| (d) None | (skip — no auth) | n/a |
+| (e) Manual | (skip — aw-tester will skip authed specs) | n/a |
 
-Then:
+Then for every strategy except (d) / (e):
 1. Verify `.auth/local.json` was written.
 2. Load one fixture URL (base_url + `/`) and confirm it renders (HTTP 200 and
    the page title is not an error page).
 3. If the probe fails, report the error and loop back to Phase B.
 
+For strategy (b), the most common probe failure is a locator mismatch — the
+script's default `getByLabel(/email/i)` / `getByLabel(/password/i)` / submit
+button regex don't match the project's form. The fix is a 3-line edit to the
+`CUSTOMIZE` block in `scripts/auth-bootstrap-credentials.mjs`. aw-setup
+shows the failing locator and offers to surface the form's actual labels via
+a one-shot Playwright probe so the user can paste them into the script.
+
 ### Phase D — Write
 
-Write the aw-target file and ensure the auth file is gitignored.
+Write the aw-target file, the chosen bootstrap script (if applicable), and
+ensure the auth file is gitignored.
 
 **First run:**
 
 ```bash
-mkdir -p .claude/aw-targets
+mkdir -p .claude/aw-targets scripts
 # write .claude/aw-targets/local.yml from the template
+# if strategy is (a): copy auth-bootstrap-headful.template.mjs → scripts/auth-bootstrap-headful.mjs
+# if strategy is (b): copy auth-bootstrap-credentials.template.mjs → scripts/auth-bootstrap-credentials.mjs
 ```
 
-Show the complete aw-target YAML to the user for review before writing.
+Show the complete aw-target YAML AND the bootstrap script to the user for
+review before writing. For strategy (b), explicitly call out the `CUSTOMIZE`
+block in the script and confirm the user has reviewed the locators.
 
 **Re-run:** show a unified diff:
 ```
@@ -252,10 +275,119 @@ One field needs attention: auth storage state is missing.
 | File | Path | Committed? |
 |------|------|-----------|
 | Aw-Target definition | `.claude/aw-targets/local.yml` | Yes |
-| Auth storage state | `.auth/local.json` | No — gitignored |
+| Bootstrap script (strategy a or b) | `scripts/auth-bootstrap-headful.mjs` or `scripts/auth-bootstrap-credentials.mjs` | Yes |
+| Auth storage state | `.auth/local.json` | **No — gitignored** |
+| Credentials (strategy b) | `E2E_EMAIL` / `E2E_PASSWORD` env vars (e.g. `.env.local`) | **No — gitignored** |
 
-The aw-target file is committed so teammates can see the aw-target configuration.
-The auth storage state is gitignored — it contains session tokens.
+The aw-target file and bootstrap script are committed so teammates can use the
+same flow. The auth storage state and credentials are gitignored — they
+contain secrets.
+
+---
+
+## Auth flow templates
+
+aw-setup ships two ready-to-copy bootstrap scripts under
+[`templates/`](./templates/). Both produce the same artifact (a Playwright
+`storageState` JSON) but get there differently:
+
+### (a) Interactive headful capture — `auth-bootstrap-headful.template.mjs`
+
+**What it does.** Launches a headful Chromium pointed at `AUTH_LOGIN_URL`,
+prints "log in then close the window" to stderr, and saves storage state
+when either:
+- the page URL matches `AUTH_POST_LOGIN_URL_PATTERN` (if provided), or
+- the user closes the browser window (via a `browser.on('disconnected')`
+  handler — the save is idempotent).
+
+**When to pick this.** SSO, OAuth, passwordless flows, anything that's hard
+to script. Also a fine default for first-time setup — log in once, reuse the
+session for days. To refresh, run the script again.
+
+**Env contract.**
+| Var | Required | Purpose |
+|-----|----------|---------|
+| `AUTH_LOGIN_URL` | Yes | The page to open |
+| `AUTH_STORAGE_STATE` | Yes | Output path (`./.auth/<name>.json`) |
+| `AUTH_POST_LOGIN_URL_PATTERN` | No | JS regex source; auto-save + close when matched |
+| `AUTH_TIMEOUT_MS` | No | Max wait for the pattern (default 10 min) |
+
+**Bootstrap command in aw-target.yml:**
+```yaml
+auth:
+  strategy: storage-state
+  storage_state: ./.auth/local.json
+  refresh:
+    when: missing-or-expired
+    command: |
+      AUTH_LOGIN_URL=http://localhost:3000/login \
+        AUTH_STORAGE_STATE=./.auth/local.json \
+        AUTH_POST_LOGIN_URL_PATTERN='/dashboard' \
+        node scripts/auth-bootstrap-headful.mjs
+    timeout_seconds: 600   # generous — user-driven step
+```
+
+### (b) Automated credentials — `auth-bootstrap-credentials.template.mjs`
+
+**What it does.** Headless Chromium logs in by filling a plain HTML form with
+`E2E_EMAIL` / `E2E_PASSWORD`, waits for `AUTH_POST_LOGIN_URL_PATTERN`, and
+saves storage state. The locator block at the top of the script is marked
+`>>> CUSTOMIZE <<<` because every project's login form has different labels.
+
+**When to pick this.** Plain HTML email+password form, no MFA / CAPTCHA, you
+want unattended refreshes (CI, scheduled re-auth, mass test execution).
+**Skip this** if your login is SSO, OAuth-redirect, magic-link, or has
+required MFA — those need (a).
+
+**Env contract.**
+| Var | Required | Purpose |
+|-----|----------|---------|
+| `AUTH_LOGIN_URL` | Yes | The page that hosts the login form |
+| `AUTH_STORAGE_STATE` | Yes | Output path (`./.auth/<name>.json`) |
+| `AUTH_POST_LOGIN_URL_PATTERN` | Yes | JS regex source matched after submit |
+| `E2E_EMAIL` | Yes | The test user's email/username |
+| `E2E_PASSWORD` | Yes | The test user's password (env var, never committed) |
+| `AUTH_TIMEOUT_MS` | No | Max wait for the post-login URL (default 30s) |
+
+**Bootstrap command in aw-target.yml:**
+```yaml
+auth:
+  strategy: storage-state
+  storage_state: ./.auth/local.json
+  refresh:
+    when: missing-or-expired
+    command: |
+      AUTH_LOGIN_URL=http://localhost:3000/login \
+        AUTH_STORAGE_STATE=./.auth/local.json \
+        AUTH_POST_LOGIN_URL_PATTERN='/dashboard' \
+        node scripts/auth-bootstrap-credentials.mjs
+    timeout_seconds: 60
+```
+
+Then declare the credentials env vars in `.env.local` (gitignored) or your
+CI secret store:
+```bash
+# .env.local — DO NOT COMMIT
+export E2E_EMAIL="test+aw@example.com"
+export E2E_PASSWORD="<from-1password-or-similar>"
+```
+
+### Which one wins for your project?
+
+A quick decision aid (the same logic aw-setup uses in Phase B):
+
+```
+Is the login form plain HTML (email + password + submit, no redirects)?
+├─ Yes → Can you store the password in a CI secret / .env.local safely?
+│        ├─ Yes → (b) Automated credentials
+│        └─ No  → (a) Interactive headful capture
+└─ No (SSO, OAuth, magic link, MFA) → (a) Interactive headful capture
+```
+
+Both flows produce the same `.auth/<name>.json` — aw-tester does not care
+which one created it. You can switch later by re-running `/aw-setup` and
+picking a different strategy; aw-setup detects the change and offers to
+rewrite the bootstrap script + the `refresh.command` line in lockstep.
 
 ---
 
@@ -265,16 +397,27 @@ The auth storage state is gitignored — it contains session tokens.
 - **No dependency on `aw-tester` being installed** — aw-setup brings its own probe.
 - If `playwright` is already installed locally, aw-setup uses the local binary;
   otherwise it falls back to `npx playwright@latest`.
+- The bootstrap scripts (`scripts/auth-bootstrap-*.mjs`) `import { chromium } from 'playwright'`,
+  so they need Playwright available at runtime. aw-tester's pinned binary
+  resolution covers this transparently (see [`templates/aw-tester.agent.md`](../templates/aw-tester.agent.md#pinned-playwright-resolution-replaces-npx---yes-playwrightlatest))
+  — if no project install is found, the cached branch-local install is reused.
 
 ---
 
 ## Definition of done
 
 - [ ] `.claude/aw-targets/local.yml` written and reviewed by the user.
+- [ ] If strategy (a) or (b): the matching bootstrap script written under
+      `scripts/auth-bootstrap-*.mjs` and reviewed by the user (especially
+      the `CUSTOMIZE` block for strategy b).
 - [ ] `.auth/local.json` exists (or `auth.strategy: manual` is set).
-- [ ] `.auth/` is in `.gitignore`.
+- [ ] `.auth/` is in `.gitignore`. If strategy (b), `.env.local` (or whichever
+      file holds `E2E_PASSWORD`) is also in `.gitignore`.
 - [ ] Smoke spec returned `green` (or `inconclusive` for `manual` auth strategy).
 - [ ] User told what to do next:
   - "Run an autonomous task that touches UI — the executor's Phase 4 will
     now run `aw-tester` automatically."
   - "Re-run `/aw-setup` when auth expires or fixtures change."
+  - For strategy (b): "If the login form changes, edit the `CUSTOMIZE` block
+    in `scripts/auth-bootstrap-credentials.mjs`. The locator ladder is
+    role/label-based so it tolerates most CSS / DOM changes."
