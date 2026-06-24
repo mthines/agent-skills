@@ -103,7 +103,8 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 3     | `tdd`                  | Pure logic / business rules / "test-driven"                          | —                |
 | 3     | `ux`                   | UI files (`*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, RN screens)         | —                |
 | 3     | `code-quality`         | Once at end of Phase 3 (not per-file)                                | `code`           |
-| 4 (UI)| `aw-tester` *(agent)*  | Before lint/type/test — UI files in plan AND `.agent/{branch}/specs.md` exists AND aw-target defined | `specs.md + aw-target + --bail-on-first-red` |
+| 4 (UI) cold | `aw-tester` *(agent)*  | **Once** at Phase 4 entry, plus on hot-loop escalation triggers — UI files in plan AND `.agent/{branch}/specs.md` exists AND aw-target defined | `specs.md + aw-target + --bail-on-first-red` |
+| 4 (UI) hot  | `playwright` *(direct Bash)* | Every iteration on the same failing spec — re-runs persisted `last-run.spec.ts` via `$playwright_bin test --grep "<failing_spec_id>"` (no sub-agent) | `--reporter=line --workers=1` |
 | 4     | `confidence`           | At iteration cap on same failing area (auto-replan trigger)          | `analysis`   |
 | 4     | `holistic-analysis`    | Auto-replan only — `confidence(analysis) < 90%` (one-shot)       | —                |
 | 4     | `persistent-memory`    | At stuck-loop escalation — record failing area + resolution          | `write aw-lessons --tier home --auto` |
@@ -123,14 +124,29 @@ When `.agent/{branch}/specs.md` exists and the plan touches UI files, run the
 spec-verification sub-rule **before** the lint/type/test loop. Full procedure in
 [`rules/phase-4-spec-verification.md`](../rules/phase-4-spec-verification.md).
 
-Summary:
+Summary (cold pass → hot loop → escalation):
 1. Detect aw-target at `.claude/aw-targets/{aw_target_name}.yml`. If missing, halt and
    tell the user to run `/aw-setup`. Do NOT scaffold yourself.
-2. Dispatch `aw-tester` with `--bail-on-first-red`. Wait for the verdict block.
+2. **Cold pass (once at Phase 4 entry):** dispatch `aw-tester` with
+   `--bail-on-first-red`. Wait for the verdict block. Capture `hot_loop:`
+   from the verdict (paths to the persisted spec + Playwright binary).
 3. On `green` / `inconclusive`: proceed to lint/type/test.
-4. On `red`: fix the implementation (not the spec), re-run aw-tester. Apply the
-   mode-aware stuck-loop cap to this iteration loop too.
-5. After `green`, hand `critical-path` specs to `e2e-testing` Generator.
+4. On `red`: **hot loop** — fix the implementation (not the spec, not the
+   persisted `last-run.spec.ts`), then re-run the persisted spec directly:
+   ```bash
+   "$(cat .agent/$(git branch --show-current)/.aw-tester/playwright-bin)" \
+     test --reporter=line --workers=1 \
+     --grep "<failing_spec_id>" \
+     .agent/$(git branch --show-current)/.aw-tester/last-run.spec.ts
+   ```
+   Exit 0 = green, non-zero = red. NO sub-agent dispatch in the hot loop.
+   Confirm full-batch green with one no-`--grep` run before lint/type/test.
+5. **Escalate to a fresh cold pass** when: same locator fails 2× in a row,
+   `specs.md` mtime > the persisted meta's `specs_mtime`, HTTP 401, hot-loop
+   iteration cap (3 Lite / 5 Full) hit on the same spec, or Phase 7 rehearsal.
+   The cold-pass escalation resets the hot-loop counter once; a second
+   escalation on the same spec goes to parent stuck-loop detection.
+6. After `green`, hand `critical-path` specs to `e2e-testing` Generator.
 
 Self-skips when:
 - No `specs.md` at `.agent/{branch}/specs.md`

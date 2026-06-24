@@ -31,8 +31,9 @@ and iterates until the verdict is `green` or `inconclusive`. Only after it
 completes (or self-skips) does the executor enter this rule's test loop.
 
 The iteration cap below applies to **both** loops independently. See
-[`phase-4-spec-verification.md#step-3-iterate-on-red`](./phase-4-spec-verification.md#step-3-iterate-on-red)
-for the spec-verification stuck-loop escalation path.
+[`phase-4-spec-verification.md#step-3-hot-loop--fast-iteration-on-red`](./phase-4-spec-verification.md#step-3-hot-loop--fast-iteration-on-red)
+for the spec-verification hot-loop iteration and [`phase-4-spec-verification.md#step-4-cold-pass-escalation`](./phase-4-spec-verification.md#step-4-cold-pass-escalation)
+for the escalation path.
 
 ---
 

@@ -155,6 +155,86 @@ auth.strategy: env-credentials — login failed ({reason}); treating as manual f
 
 ## Playwright Execution
 
+### Persistent run-state directory
+
+Every cold-pass invocation works against a stable per-branch directory:
+
+```
+.agent/<branch>/.aw-tester/
+├── last-run.spec.ts        # Generated Playwright spec — persisted so the executor's hot loop can re-run it directly
+├── last-run.meta.json      # { specs_mtime, aw_target_path, generated_at, failing_spec_id, last_locator_error }
+├── playwright-bin          # Plain-text file: the resolved Playwright binary path (project / branch-local / cached install)
+└── node_modules/           # Only populated when the project has no Playwright install and a branch-local one was needed
+```
+
+This directory is the **handshake with the executor's hot loop** (see Phase 4
+spec-verification rule). Treat the directory as your own — clean it on
+`verdict: green` only if the user-installed `aw-tester` has set
+`AW_TESTER_KEEP_LAST_RUN=0`; default is to keep it so the hot loop is
+available across Phase 4 cycles.
+
+### Pinned Playwright resolution (replaces `npx --yes playwright@latest`)
+
+Resolve the Playwright binary **in this order** — first match wins. Write the
+resolved path into `.agent/<branch>/.aw-tester/playwright-bin`:
+
+```bash
+AW_DIR=".agent/$(git branch --show-current)/.aw-tester"
+mkdir -p "$AW_DIR"
+
+# 1. Project-pinned install (most common — the project already uses Playwright).
+if [ -x "node_modules/.bin/playwright" ]; then
+  PLAYWRIGHT_BIN="$(pwd)/node_modules/.bin/playwright"
+# 2. Branch-local install (from a previous Phase 4 entry in this worktree).
+elif [ -x "$AW_DIR/node_modules/.bin/playwright" ]; then
+  PLAYWRIGHT_BIN="$AW_DIR/node_modules/.bin/playwright"
+# 3. Install once, cache for the rest of the worktree's life.
+else
+  ( cd "$AW_DIR" && npm install --no-save --no-audit --no-fund --silent playwright@latest )
+  PLAYWRIGHT_BIN="$AW_DIR/node_modules/.bin/playwright"
+fi
+
+echo "$PLAYWRIGHT_BIN" > "$AW_DIR/playwright-bin"
+"$PLAYWRIGHT_BIN" install chromium  # idempotent; no-op when already cached at ~/.cache/ms-playwright
+```
+
+**Why not `npx --yes playwright@latest`?** It re-resolves the `@latest` tag on
+every invocation (npm registry round-trip, 1–5 s) and re-checks the install
+even when cached. A pinned binary path + idempotent `install chromium` skips
+both. The executor's hot loop reuses the same `$PLAYWRIGHT_BIN`, so the cost
+is paid once per Phase 4 entry, never per iteration.
+
+### Spec file emission (persisted)
+
+Write the generated spec to `last-run.spec.ts` (don't pass it to Playwright on
+stdin or `/dev/null`). The executor's hot loop needs to re-run this exact
+file on subsequent iterations without re-dispatching this sub-agent.
+
+```bash
+# Write the inline spec file to the persistent path:
+cat > "$AW_DIR/last-run.spec.ts" <<'EOF'
+import { test, expect } from '@playwright/test';
+// ...generated spec body, one test() per ## Spec N: block in specs.md...
+EOF
+
+# Record metadata so the executor can detect staleness.
+SPECS_MTIME=$(stat -f %m .agent/$(git branch --show-current)/specs.md 2>/dev/null || stat -c %Y .agent/$(git branch --show-current)/specs.md)
+cat > "$AW_DIR/last-run.meta.json" <<EOF
+{
+  "specs_mtime": $SPECS_MTIME,
+  "aw_target_path": "$AW_TARGET_PATH",
+  "generated_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "failing_spec_id": null,
+  "last_locator_error": null
+}
+EOF
+```
+
+When a spec fails, **update `last-run.meta.json`** with the failing spec id
+and the locator error string before returning the verdict. The hot loop reads
+this to detect "same locator failure 2× in a row" and escalate back to a cold
+pass.
+
 ### Browser context
 
 Launch Playwright **once** for the entire batch. Do not spawn a new context
@@ -162,11 +242,8 @@ per spec (one context per batch is the key optimization over turn-by-turn
 invocation).
 
 ```bash
-# Inline headless script — no playwright.config.ts required.
-# The agent constructs and runs this script via Bash.
-npx --yes playwright@latest test --reporter=json \
-  --config=/dev/null \
-  <generated-inline-spec-file>
+# Cold-pass invocation — uses the resolved $PLAYWRIGHT_BIN, never npx.
+"$PLAYWRIGHT_BIN" test --reporter=json --workers=1 "$AW_DIR/last-run.spec.ts"
 ```
 
 If `reset_between_specs: true`, use a new `browser.newContext()` per spec
@@ -240,6 +317,15 @@ specs:
       attempted healing: getByText('X') — found 0 elements
       last network response: POST /api/foo → 500 {"error":"db timeout"}
       console errors: TypeError: Cannot read property 'id' of undefined (app.js:142)
+hot_loop:
+  spec_file: .agent/<branch>/.aw-tester/last-run.spec.ts
+  playwright_bin: <absolute path written to .aw-tester/playwright-bin>
+  failing_spec_id: <Spec-N, only on red; omit on green/inconclusive>
+  # Executor: for fast iteration on the same failing spec, run directly:
+  #   "$playwright_bin" test --reporter=line --workers=1 --grep "<failing_spec_id>" "$spec_file"
+  # Exit code 0 = green, anything else = red. Re-dispatch this aw-tester
+  # sub-agent only when (a) the hot loop fails twice with the same locator
+  # error, or (b) specs.md changed since generated_at, or (c) Phase 7 rehearsal.
 notes: <optional one-paragraph context; omit if nothing notable>
 ```
 
@@ -328,8 +414,12 @@ These are identical to the `aw-lessons` guards — mandatory:
 ## Hard Rules
 
 - **No browser config explosion.** This agent does not require the project to
-  have a `playwright.config.ts`. It brings its own Playwright invocation via
-  `npx playwright@latest`.
+  have a `playwright.config.ts`. It resolves a Playwright binary via the
+  project install → branch-local install → install-once cascade, never
+  `npx --yes playwright@latest`.
+- **Persist `last-run.spec.ts`.** The generated spec lives in
+  `.agent/<branch>/.aw-tester/` so the executor's hot loop can re-run it
+  without re-dispatching this sub-agent.
 - **No intermediate snapshots.** Snapshot only on assertion failure.
 - **Token discipline.** Network + console capture only on failed specs.
 - **One browser context per batch** (unless `reset_between_specs: true`).
@@ -337,3 +427,7 @@ These are identical to the `aw-lessons` guards — mandatory:
   reads ~200 tokens, not browser logs.
 - **No silent skips.** Every skipped spec has a `reason`.
 - **Bail is the default.** `--all` is opt-in.
+- **Cold pass is for handoff, not iteration.** This sub-agent is dispatched
+  on Phase 4 entry, on hot-loop escalation, and on Phase 7 rehearsal — not
+  on every executor iteration. The executor runs the persisted spec
+  directly between cold passes.

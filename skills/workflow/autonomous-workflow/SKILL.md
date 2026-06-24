@@ -241,7 +241,7 @@ Three phases benefit from sub-agent fan-out:
 | 1     | Analyze codebase (parallel `Explore` if complex), design with `code-quality(plan)`, `confidence(plan)` gate |
 | 2     | `gw add`, `gw cd`, install deps, `Skill("aw-create-plan")` inside worktree                      |
 | 3     | Code per `plan.md` → companions per task type (`tdd`, `ux`) → fast-check after each edit; `code-quality(code)` once at end |
-| 4 (UI)| **First:** `aw-tester` spec verification (before lint/type/test) → `green`/`inconclusive` → promote `critical-path` specs via `e2e-testing` Generator |
+| 4 (UI)| **First:** `aw-tester` cold pass at Phase 4 entry (full sub-agent, structured verdict); subsequent iterations run the persisted `last-run.spec.ts` directly via Bash (hot loop, no sub-agent) until `green`/`inconclusive`; promote `critical-path` specs via `e2e-testing` Generator |
 | 4     | Run tests → iterate (cap: 5 same area in Full Mode) → `confidence(analysis)` → one-shot auto-replan or escalate to user |
 | 5     | `Skill("docs", "update --auto")` always — refreshes `CLAUDE.md`, `.claude/rules/`, `README.md`, `docs/`, `CHANGELOG.md` |
 | 6     | Dispatch `reviewer` agent (`--critical`, auto-fix every Simple finding across all severities) → `Skill("aw-create-walkthrough")` → `Skill("create-pr")` |
@@ -285,7 +285,7 @@ unmistakable when listed alongside unrelated agents:
 | `aw`           | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes single-pass vs the split, owns the self-improvement loop for every tier. | — (delegates) | Task routed + exit lesson written |
 | `aw-planner`   | Full-tier, phases 0–2 | `.agent/{branch}/plan.md` + `specs.md` (UI tasks) | `confidence(plan) ≥ 90%` (or user-approved) |
 | `aw-executor`  | Full-tier, phases 3–7 | `.agent/{branch}/walkthrough.md` + draft PR    | Walkthrough shown inline, Phase 7 CI gate run      |
-| `aw-tester`    | Phase 4 (UI) spec verification | Verdict block (~200 tokens) | `green` or `inconclusive` before lint/type/test |
+| `aw-tester`    | Phase 4 (UI) spec verification — **cold pass only** (Phase 4 entry, escalation, Phase 7 rehearsal). Iteration uses the persisted `last-run.spec.ts` directly via Bash, not a sub-agent. | Verdict block (~200 tokens) with `hot_loop:` paths for direct re-run | `green` or `inconclusive` before lint/type/test |
 
 **`aw` is the single entry point developers opt into** (a trigger phrase or
 `@aw`). It is adaptive, not always-heavy: Micro/Lite run single-pass in `aw`'s
