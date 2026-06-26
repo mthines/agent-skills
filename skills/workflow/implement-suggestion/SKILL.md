@@ -12,13 +12,16 @@ description: >
   mode applies a single pasted suggestion in the current directory. Triggers
   on "implement suggestion", "apply review comments", "address PR feedback",
   "implement reviewer feedback", "fix PR comments", "/implement-suggestion".
+  With --watch, loops the apply on a single PR — waiting for new review-bot
+  comments after each push and re-applying until the reviewers go quiet (max 5
+  iterations); this is the loop /create-pr dispatches post-push.
 disable-model-invocation: true
-argument-hint: '[<pr-url>|#<n>] [--critical]'
+argument-hint: '[<pr-url>|#<n>] [--critical] [--watch]'
 license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(gw *) Read Edit Write Glob Grep Skill
 metadata:
   author: mthines
-  version: '2.0.0'
+  version: '2.1.0'
   workflow_type: orchestrator
   architecture: parse/resolve/fetch/classify/validate/pack/handoff(fast|standard)/report
   composes:
@@ -78,6 +81,12 @@ Mode: multi-pr  Active PR: dash0/console#1234 (current branch)
 
 If the detection finds a `MERGED` or `CLOSED` PR, refuse to proceed and ask
 the user to confirm explicitly.
+
+**`--watch` modifier** (orthogonal to mode): if `$ARGUMENTS` contains `--watch`,
+the run loops the single-pass on one PR until the review bots go quiet (max 5
+iterations). It requires exactly one PR (multi-pr with n=1, or the active PR).
+Refuse `--watch` with more than one PR or in free-text mode. Full procedure in
+[`rules/watch-mode.md`](./rules/watch-mode.md) — load it now when `--watch` is set.
 
 Full parsing rules live in [`rules/input-parsing.md`](./rules/input-parsing.md).
 
@@ -240,6 +249,18 @@ Then per PR list:
 - **Surfaced** (needs user) — comment, gate score, `/critical` finding if any.
 - **Skipped** — comment, reason.
 
+## Watch Workflow (`--watch`)
+
+A loop wrapper around the multi-PR single-pass, scoped to one PR. Each iteration:
+waits for new review activity, runs Phases 1–7 over comments newer than the last
+processed timestamp, advances the baseline, and repeats until the reviewers go
+quiet or the iteration cap (default 5) is hit. `/create-pr` dispatches this as a
+background subagent post-push so a new PR auto-converges on its bot feedback.
+
+Full loop, the poll-for-new-activity snippet, parameters (`--max-iters`,
+`--interval`), the per-iteration report, and watch-specific hard rules live in
+[`rules/watch-mode.md`](./rules/watch-mode.md).
+
 ## Free-text Workflow
 
 When `$ARGUMENTS` is prose, a pasted comment, or a single comment permalink
@@ -289,6 +310,7 @@ If `gh` is missing in multi-PR mode, stop and tell the user to install it.
 | [`comment-classification`](./rules/comment-classification.md) | Phase 3 |
 | [`validation-gates`](./rules/validation-gates.md) | Phase 4 |
 | [`handoff`](./rules/handoff.md) | Phase 6 — worker prompt + standard-lane planner dispatch |
+| [`watch-mode`](./rules/watch-mode.md) | When `--watch` is set — the post-push feedback loop |
 
 Templates:
 

@@ -244,7 +244,7 @@ After pushing, monitor the check:
    ```bash
    timeout 1800 gh run watch <new-run-id>
    ```
-   If `timeout` expires (exit code 124), run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate. Same pattern as the 10-minute review poll in [`../create-pr/rules/review-mode.md`](../create-pr/rules/review-mode.md).
+   If `timeout` expires (exit code 124), run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate. Same bounded-poll pattern as the reviewer-feedback watch loop in [`../../workflow/implement-suggestion/rules/watch-mode.md`](../../workflow/implement-suggestion/rules/watch-mode.md).
 
 4. Check the result:
    ```bash
