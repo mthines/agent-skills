@@ -15,9 +15,10 @@ description: >
   dependency-ordered draft PRs after user approval. Escalates judgment-required
   CI failures via /confidence rather than guessing. Invoke with /create-pr,
   /create-pr --review, /create-pr --simplify, /create-pr --split, or pass
-  --no-quality to skip the pre-push quality pass.
+  --no-quality to skip the pre-push quality pass, or --no-feedback to skip
+  the post-push reviewer-feedback loop.
 disable-model-invocation: false
-argument-hint: '[--split] [--review] [--simplify] [--no-quality]'
+argument-hint: '[--split] [--review] [--simplify] [--no-quality] [--no-feedback]'
 license: MIT
 metadata:
   author: mthines
@@ -42,7 +43,7 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow; `--review`, `--simp
 | `split`      | `--split`, `-s`, or first positional token `split` | Analyse the branch diff, propose 2–4 dependency-ordered draft PRs (hard cap 5), execute only after user approval. Jump to the **Split Mode** section after Core Principles. |
 | `review`     | `--review`, `-r`                                   | Step 5.5 runs the local `reviewer` agent pass (auto-fix simple, plan complex) **before pushing** — via `Skill("polish", "review")`. See Step 5.5.                     |
 | `simplify`   | `--simplify`                                       | Step 5.5 runs code-quality simplify mode (apply Class M mechanical refactors behind a confidence gate) **before pushing** — via `Skill("polish", "simplify")`.        |
-| `no-quality` | `--no-quality` anywhere in arguments               | Skip the Step 5.5 pre-push quality pass entirely. Composes with `default`, `split`, `review`, and `simplify` (and wins — if present, no quality pass runs).           |
+| `no-quality` | `--no-quality` anywhere in arguments               | Skip the Step 5.5 pre-push quality pass entirely and also skip the Step 6.5 post-push reviewer-feedback loop. Composes with `default`, `split`, `review`, and `simplify` (and wins — if present, no quality pass or feedback loop runs). |
 | `no-feedback`| `--no-feedback` anywhere in arguments              | Skip the **default-on** post-push reviewer-feedback loop (Step 6.5). Composes with everything.                                                                       |
 
 `--review` and `--simplify` compose: passing both runs the full review + simplify works via `Skill("polish")`. The pre-push quality step is a thin delegation to the [`polish`](../../quality/polish/SKILL.md) skill — see Step 5.5 for the flag-to-mode mapping.
