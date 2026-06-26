@@ -27,7 +27,7 @@ inside the worktree, never on the main branch.
 - [Complex Task Detection](#complex-task-detection)
 - [Step 2: Draft Technical Design](#step-2-draft-technical-design)
 - [Design Quality](#design-quality)
-- [Spec Emission (UI tasks)](#spec-emission-anchor)
+- [Spec Emission (UI tasks)](#spec-emission-ui-tasks)
 - [Confidence Gate](#confidence-gate)
 - [Planner-Executor Handoff](#planner-executor-handoff)
 - [Planning Checklist](#planning-checklist)

@@ -36,7 +36,7 @@ a middle layer between English acceptance criteria in `plan.md` and saved
 Playwright test files.
 
 Specs are authored by the planner in `specs.md` alongside `plan.md` (see
-[`phase-1-planning.md` — Spec Emission](#spec-emission-anchor)). Most specs
+[`phase-1-planning.md` — Spec Emission](./phase-1-planning.md#spec-emission-ui-tasks)). Most specs
 are `verify-only` (ephemeral); a small subset are `critical-path` and get
 promoted to saved `*.spec.ts` via the `e2e-testing` skill's Generator.
 
