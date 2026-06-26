@@ -39,7 +39,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 - `code-quality` (`auto`) — readability, complexity, maintainability. Four modes: `plan` (validate a plan), authoring (default), `review` (findings only), `simplify` (review-then-apply for end-of-feature cleanup — auto-applies Class M refactor recipes behind `confidence(code) ≥ 90 %` + scoped fast-check, with revert-on-failure). Class M/J taxonomy lives in [`refactor-recipes.md`](./skills/quality/code-quality/rules/refactor-recipes.md#recipe-class--mechanical-vs-judgment) and is guarded by L1 G7
 - `confidence` (`auto`) — multi-signal confidence gate for `plan` / `code` / `analysis`; deterministic rule caps LLM score at 89%
 - `critical` (`auto`) — adversarial pre-mortem with mandatory steelman alternative. Never iterates
-- `polish` (`/`) — re-runnable pre-PR branch quality gate; thin orchestrator that composes the `reviewer` agent (auto-fix simple, plan complex) and `code-quality` simplify (apply Class M refactors). Modes: bare → full (review then simplify), `review`, `simplify`, `quick` (light mechanical pass). Commits each pass separately (`--no-commit` to skip). `/create-pr` delegates its pre-push step here (default → `quick`, `--review` → `review`, `--simplify` → `simplify`, both → `full`, `--no-quality` skips)
+- `polish` (`/`) — re-runnable pre-PR branch quality gate; thin orchestrator that composes the `reviewer` agent (auto-fix simple, plan complex) and `code-quality` simplify (apply Class M refactors). Modes: bare → full (review then simplify), `review`, `simplify`, `quick` (light mechanical pass). Commits each pass separately (`--no-commit` to skip). `/create-pr` delegates its pre-push step here — full pass by default; `--no-review` → simplify only, `--no-simplify` → reviewer only, `--quick` → light pass, `--no-quality` skips
 - `dx` (`/`) — CLI / shell-script DX review
 - `review-changes` (`/`) — dispatches to `reviewer` agent
 - `tdd` (`auto`) — strict RED-GREEN-REFACTOR
@@ -49,7 +49,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 
 - `changelog` (`/`) — personal PR + Linear ticket digest. Template: [`delivery/changelog/templates/changelog.md`](./skills/delivery/changelog/templates/changelog.md)
 - `ci-auto-fix` (`/`) — verdict-gated, confidence-gated CI diagnosis and fix; `flaky`/`unsure` escalate, `*-bug` verdicts continue to a ≥90/80–89/<80 gate; regressing pushes auto-revert
-- `create-pr` (`/`) — narrative PR description; watch CI. Pre-push quality delegated to `polish` (default → `quick`; `--review` → reviewer-agent pass; `--simplify` → code-quality simplify; both → full; `--no-quality` skips). Post-push reviewer-feedback loop is **default-on**: backgrounds `/implement-suggestion <pr> --watch` until bots go quiet (`--no-feedback` to skip). Other flags: `--split`
+- `create-pr` (`/`) — narrative PR description; watch CI. Pre-push quality delegated to `polish`, **full (review + simplify) by default**; scale down with `--no-review` (simplify only), `--no-simplify` (reviewer only), `--quick` (light mechanical pass), or `--no-quality` (skip). Post-push reviewer-feedback loop is **default-on**: backgrounds `/implement-suggestion <pr> --watch` until bots go quiet (`--no-feedback` to skip). Other flags: `--split`. Legacy `--review` / `--simplify` still accepted as single-pass scoping aliases
 - `github-actions-author` (`/`) — author / review GHA workflows (2026 best practices)
 - `resolve-conflicts` (`/`) — analyze and resolve merge / rebase conflicts
 

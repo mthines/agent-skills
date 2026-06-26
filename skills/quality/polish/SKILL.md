@@ -8,8 +8,9 @@ description: >
   Run bare for the full review + simplify works; scope it with `review`,
   `simplify`, or the light `quick` mechanical pass. Commits each pass separately
   for traceability (`--no-commit` to skip). Use standalone any time mid-development
-  to clean a branch, and note that `/create-pr` delegates to it (default → quick,
-  `--review` → review, `--simplify` → simplify). Triggers on "polish my branch",
+  to clean a branch, and note that `/create-pr` delegates to it — running the full
+  pass by default and scaling down via its `--no-review` / `--no-simplify` /
+  `--quick` flags. Triggers on "polish my branch",
   "clean this up before the PR", "review and simplify", "tidy up", "prep my
   branch", "/polish".
 disable-model-invocation: false
@@ -217,10 +218,10 @@ Surface the **planned-complex** (review) and **Class J proposals** (simplify) pr
 
 | `/create-pr` invocation     | Delegates to            |
 | --------------------------- | ----------------------- |
-| `/create-pr` (default)      | `Skill("polish", "quick")`    |
-| `/create-pr --review`       | `Skill("polish", "review")`   |
-| `/create-pr --simplify`     | `Skill("polish", "simplify")` |
-| `/create-pr --review --simplify` | `Skill("polish")` (full) |
+| `/create-pr` (default)      | `Skill("polish")` (full) |
+| `/create-pr --no-review`    | `Skill("polish", "simplify")` |
+| `/create-pr --no-simplify`  | `Skill("polish", "review")`   |
+| `/create-pr --quick`        | `Skill("polish", "quick")`    |
 | `/create-pr --no-quality`   | *(polish skipped)*      |
 
 Because the logic lives here, the standalone `/polish` command and `/create-pr`'s pre-push pass can never drift apart.
