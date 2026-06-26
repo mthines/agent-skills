@@ -49,7 +49,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 
 - `changelog` (`/`) — personal PR + Linear ticket digest. Template: [`delivery/changelog/templates/changelog.md`](./skills/delivery/changelog/templates/changelog.md)
 - `ci-auto-fix` (`/`) — verdict-gated, confidence-gated CI diagnosis and fix; `flaky`/`unsure` escalate, `*-bug` verdicts continue to a ≥90/80–89/<80 gate; regressing pushes auto-revert
-- `create-pr` (`/`) — narrative PR description; watch CI. Pre-push quality delegated to `polish` (default → `quick`; `--review` → reviewer-agent pass; `--simplify` → code-quality simplify; both → full; `--no-quality` skips). Post-push reviewer-feedback loop is **default-on**: backgrounds `/implement-suggestion <pr> --watch` until bots go quiet (`--no-feedback` to skip). Other flags: `--split`
+- `create-pr` (`/`) — narrative PR description; watch CI. Pre-push quality delegated to `polish`, **full (review + simplify) by default**; scale down with `--no-review` (simplify only), `--no-simplify` (reviewer only), `--quick` (light mechanical pass), or `--no-quality` (skip). Post-push reviewer-feedback loop is **default-on**: backgrounds `/implement-suggestion <pr> --watch` until bots go quiet (`--no-feedback` to skip). Other flags: `--split`. Legacy `--review` / `--simplify` still accepted as single-pass scoping aliases
 - `github-actions-author` (`/`) — author / review GHA workflows (2026 best practices)
 - `resolve-conflicts` (`/`) — analyze and resolve merge / rebase conflicts
 
