@@ -2,26 +2,26 @@
 name: create-pr
 description: >
   Generate a short, narrative GitHub pull request description (≤ 25 lines, hard
-  ceiling 40), run a quick code-quality pass over the branch diff and auto-fix
-  mechanical issues (dead comments, cryptic names, dead code, guard-clause
-  flips, magic numbers) before pushing, then push the branch, open the PR, and
-  watch CI to auto-fix simple failures (lint, format, lockfiles) before handing
-  back. With --split, analyses the branch diff and breaks it into 2–4 focused,
-  dependency-ordered draft PRs after user approval, so reviewers don't have to
-  digest a sprawling change in one sitting. With --review, posts an "@claude
-  review" comment after PR creation so Claude's GitHub App performs a
-  fresh-session code review, waits up to 10 minutes for the review to land,
-  then dispatches /implement-suggestion to auto-apply actionable feedback —
-  runs in parallel with the CI watch + auto-fix loop. Escalates
-  judgment-required failures via /confidence rather than guessing. Invoke with
-  /create-pr, /create-pr --split, /create-pr --review, or pass --no-quality to
-  skip the pre-push quality pass.
+  ceiling 40), run a pre-push quality pass over the branch diff via the `polish`
+  skill, then push the branch, open the PR, and watch CI to auto-fix simple
+  failures (lint, format, lockfiles) before handing back. The pre-push quality
+  step delegates to `/polish`: by default a quick mechanical pass (dead
+  comments, cryptic names, dead code, guard-clause flips, magic numbers); with
+  --review it runs the local `reviewer` agent (auto-fix simple, plan complex);
+  with --simplify it runs code-quality simplify mode (apply Class M mechanical
+  refactors behind a confidence gate); both flags run the full review +
+  simplify works — all before pushing, so the PR is clean when it goes up. With
+  --split, analyses the branch diff and breaks it into 2–4 focused,
+  dependency-ordered draft PRs after user approval. Escalates judgment-required
+  CI failures via /confidence rather than guessing. Invoke with /create-pr,
+  /create-pr --review, /create-pr --simplify, /create-pr --split, or pass
+  --no-quality to skip the pre-push quality pass.
 disable-model-invocation: false
-argument-hint: '[--split] [--review] [--no-quality]'
+argument-hint: '[--split] [--review] [--simplify] [--no-quality]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.4.0'
+  version: '2.0.0'
   workflow_type: command
 ---
 
@@ -34,19 +34,23 @@ Respect their time.
 
 ## Modes
 
-Parse `$ARGUMENTS`. `--split` selects an alternate workflow; `--review` is an **additive flag** that composes with the default workflow.
+Parse `$ARGUMENTS`. `--split` selects an alternate workflow; `--review`, `--simplify`, and `--no-quality` are **additive flags** that tune the pre-push quality step (Step 5.5) and compose with the default and split workflows.
 
-| Mode / Flag | Trigger                                                                                  | Behaviour                                                                                                                                                                                                |
-| ----------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default`   | No flag                                                                                  | One PR for the whole branch. Follow Steps 1–10 below.                                                                                                                                                    |
-| `split`     | `--split`, `-s`, or first positional token `split`                                       | Analyse the branch diff, propose 2–4 dependency-ordered draft PRs (hard cap 5), execute only after user approval. Jump to the **Split Mode** section after reading Core Principles.                       |
-| `review`    | `--review`, `-r`, or phrase `with claude review` / `claude review` anywhere in arguments | After Step 6, post `@claude review` on the PR, dispatch a background subagent that waits for Claude's review and runs `/implement-suggestion`, then continue with Steps 7+ in parallel. See **Review Mode**. |
-| `no-quality` | `--no-quality` anywhere in arguments                                                    | Skip the Step 5.5 pre-push code-quality pass. Composes with `default`, `split`, and `review`. Use when you want a hands-off push without the auto-fix sweep.                                                |
+| Mode / Flag  | Trigger                                            | Behaviour                                                                                                                                                              |
+| ------------ | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default`    | No flag                                            | One PR for the whole branch. Follow Steps 1–10 below. Step 5.5 runs the light quality pass.                                                                          |
+| `split`      | `--split`, `-s`, or first positional token `split` | Analyse the branch diff, propose 2–4 dependency-ordered draft PRs (hard cap 5), execute only after user approval. Jump to the **Split Mode** section after Core Principles. |
+| `review`     | `--review`, `-r`                                   | Step 5.5 runs the local `reviewer` agent pass (auto-fix simple, plan complex) **before pushing** — via `Skill("polish", "review")`. See Step 5.5.                     |
+| `simplify`   | `--simplify`                                       | Step 5.5 runs code-quality simplify mode (apply Class M mechanical refactors behind a confidence gate) **before pushing** — via `Skill("polish", "simplify")`.        |
+| `no-quality` | `--no-quality` anywhere in arguments               | Skip the Step 5.5 pre-push quality pass entirely. Composes with `default`, `split`, `review`, and `simplify` (and wins — if present, no quality pass runs).           |
+| `no-feedback`| `--no-feedback` anywhere in arguments              | Skip the **default-on** post-push reviewer-feedback loop (Step 6.5). Composes with everything.                                                                       |
+
+`--review` and `--simplify` compose: passing both runs the full review + simplify works via `Skill("polish")`. The pre-push quality step is a thin delegation to the [`polish`](../../quality/polish/SKILL.md) skill — see Step 5.5 for the flag-to-mode mapping.
+
+**The post-push reviewer-feedback loop (Step 6.5) is ON by default.** After the PR is created, a background subagent runs `/implement-suggestion <pr> --watch`, which waits for the repo's review bots (Claude, CodeRabbit, …) and humans to comment, applies the actionable feedback, pushes, and repeats until the reviewers go quiet (max 5 iterations). It runs in parallel with the CI watch (Steps 7–9). Pass `--no-feedback` to skip it. On repos with no review automation it ends quietly after the first wait, so the default is safe.
 
 In split mode, skip Step 5's "PR too big" trim — the split *is* the response to that signal.
-Each resulting sub-PR must still pass it on its own.
-
-`--review` is **incompatible with `--split`** in v1. If both flags are present, print one line — `--review is not supported with --split.` — and exit before any work.
+Each resulting sub-PR must still pass it on its own. When `--review` / `--simplify` are combined with `--split`, run the polish pass **once on the full branch** before computing the split (i.e. run Step 5.5 before S1), so each sub-PR inherits the cleaned-up code.
 
 ## Length budget — the hard rule
 
@@ -152,55 +156,37 @@ Count the rendered lines of the body. If it's over 25, cut. Common cuts:
 
 If you've cut as much as you can and it's still over 40 lines, the PR is too big. Stop and offer the user `/create-pr --split` before pushing.
 
-## Step 5.5: Quick code-quality pass (before pushing)
+## Step 5.5: Pre-push quality pass (delegated to `polish`)
 
-Run a fast review over the branch diff and apply mechanical fixes inline. The goal is to catch obvious noise — restated-WHAT comments, task-coupled comments (`// added for this PR`), cryptic local names, `else` after `return`, magic numbers, dead code — *before* reviewers see them. This is not a deep refactor.
+Clean the branch before it goes up by delegating to the [`polish`](../../quality/polish/SKILL.md) skill. `polish` owns all the pre-push quality logic (the mechanical-fix criteria, the docstring R35 special case, the reviewer-agent dispatch, the simplify pass, and the commit-per-pass behaviour), so `create-pr` carries none of it — the two can never drift.
 
 Skip this step entirely if any of the following hold:
 
 - `--no-quality` was passed in `$ARGUMENTS`.
 - The branch diff is non-code only (docs, generated artefacts, lockfiles, asset binaries). Decide from the file list, not the line count.
 
-Otherwise, invoke the code-quality skill in review mode against the branch diff:
+Otherwise, map the `create-pr` flags to a `polish` mode and invoke it once:
 
-```
-Skill('code-quality', 'review')
-```
+| Flags present                    | Invoke                          | What runs                                              |
+| -------------------------------- | ------------------------------- | ----------------------------------------------------- |
+| neither `--review` nor `--simplify` | `Skill('polish', 'quick')`     | Light mechanical pass (comments, naming, dead code).  |
+| `--review` only                  | `Skill('polish', 'review')`     | Reviewer agent — auto-fix simple, plan complex.       |
+| `--simplify` only                | `Skill('polish', 'simplify')`   | code-quality simplify — apply Class M refactors.      |
+| `--review` **and** `--simplify`  | `Skill('polish')`               | Full: review pass, then simplify pass.                |
 
-Scope: the same diff already in working memory from Step 1 (`git diff main...HEAD`). The skill returns a `## Code Quality Review` block grouped by High / Medium / Low impact, with recipe IDs (R1, R6, ...).
+Pass `--critical` through to `polish` if the user passed it to `create-pr`.
 
-**Auto-apply** findings that meet **all three** criteria — these are the "comments and coding style" fixes the user actually wants automated:
+`polish` operates on the same branch diff from Step 1, applies its fixes, and commits each pass as its own `chore:` commit — so `create-pr` does **not** commit here; `polish` already did.
 
-- Footprint stays inside files already in this PR's diff (no new files, no edits outside the diff).
-- The fix is mechanical, not a judgment call. Concretely: removing or rewriting a plain inline comment that explains WHAT or references the current task; renaming a local variable to a domain noun; dropping `else` after `return`/`throw`; extracting a magic number to a named constant; deleting unreachable / dead code introduced on this branch; flipping a single guard clause to an early return.
-- The fix does not change behaviour observable from a test or a caller.
+After it returns, read its report:
 
-**Docstring / JSDoc / TSDoc / Python-docstring blocks attached to a function, method, class, type, or exported constant are a special case.** Never delete the block as a noise-removal action — IDE hover, type strippers, and doc generators read it. Instead, apply `Skill('code-quality')` recipe **R35 step 4**: trim verbose prose to a one-sentence summary plus the structured tags (`@param`, `@returns`, `@throws`, `@deprecated`, `@since`, `@example`, `@see`, `@internal`, `@experimental`). Keep the block, keep the summary line, keep every contract-bearing tag; drop the restated-WHAT prose only. If the block would be empty after trimming, surface it as a judgment-required finding instead of removing it. License / SPDX headers and linter pragmas (`eslint-disable-next-line`, `@ts-expect-error`, `# noqa`) are also never removed.
+- If `polish` surfaced **planned-complex** (reviewer) or **Class J** (simplify) proposals worth a reviewer's eye, append at most one bullet under "Notes for reviewers" naming the largest one. Don't enumerate every finding.
+- If `polish` made no changes, continue silently.
 
-**Surface but do NOT auto-apply** — these are out of scope for a quick pre-push pass:
+**Hard rules for this step** (enforced inside `polish`, restated here as the contract):
 
-- Structural refactors (consolidating parallel maps across files, hoisting shared constants, schema-first migrations).
-- Type-driven design changes (branded primitives, discriminated unions, generic narrowing).
-- Anything that would expand the PR's blast radius or require updating callers in files not currently in the diff.
-- Anything where a sibling test would need updating.
-
-If you applied autofixes, commit them as a separate commit so the diff stays traceable:
-
-```bash
-git add -u
-git commit -m "chore: code-quality pass (comments, naming, dead code)"
-```
-
-If the review surfaced judgment-required findings worth a reviewer's eye, append at most one bullet under "Notes for reviewers" in the description naming the largest one (e.g., `Reviewer note: parallel LABELS/COLORS maps over Status — left as-is, R1 cleanup is a follow-up`). Don't enumerate every finding; the description is for reviewers, not for you to argue with the skill.
-
-If the review found nothing, continue silently.
-
-**Hard rules for this pass:**
-
-- Never delete or weaken a test to satisfy a finding.
-- Never apply a fix that changes public API or exported types.
-- If you're unsure whether a fix is mechanical or judgment-required, treat it as judgment-required and skip it.
-- Cap: one code-quality pass per PR creation. Don't loop.
+- Never delete or weaken a test, never change public API / exported types as a mechanical fix.
+- One `polish` invocation per PR creation. Don't loop.
 
 ## Step 6: Push and Create Draft PR
 
@@ -217,23 +203,41 @@ EOF
 
 Capture the PR URL/number from the output — the next steps need it.
 
-## Step 6.5: Trigger Claude Review (only if `--review` was passed)
+## Step 6.5: Dispatch the post-push reviewer-feedback loop (default ON)
 
-Skip this step entirely unless `--review` is set. If it is, follow the full procedure in [`rules/review-mode.md`](./rules/review-mode.md) — load it now.
+After the PR exists, absorb whatever feedback the repo's review bots (Claude, CodeRabbit, …) and humans post — iteratively — without blocking the main thread.
 
-The compressed flow:
+**Skip this step** when `--no-feedback` (or `--no-quality`, which implies no automated feedback work) is in `$ARGUMENTS`. Otherwise run it for every `create-pr`.
 
-1. Run the precondition check: confirm Claude's GitHub App is installed on the repo (`gh api /repos/<owner>/<repo>/installation`). If not installed, print one line and skip to Step 7.
-2. Record a UTC timestamp, then post `@claude review` exactly once via `gh pr comment <pr-url> --body "@claude review"`.
-3. Dispatch a `general-purpose` subagent with `run_in_background: true` that polls the PR for ~10 minutes for Claude's review, then invokes `Skill('implement-suggestion', '<pr-url>')` to apply the actionable feedback.
-4. **Continue to Step 7 in the main thread immediately** — do not block on the subagent. The user will be notified when it finishes.
+Dispatch a subagent with `run_in_background: true` that drives the watch loop, and **continue to Step 7 in the main thread immediately** — do not block on it:
 
-The background review path and the main-thread CI watch (Steps 7–9) push to the same branch in parallel. Each downstream skill handles pull-rebase internally; do not add explicit serialisation.
+```
+Agent(
+  description: "Absorb PR review feedback (watch loop)",
+  subagent_type: "general-purpose",
+  run_in_background: true,
+  prompt: |
+    Drive the reviewer-feedback loop for PR <pr-url> to completion.
+
+    Invoke: Skill('implement-suggestion', '<pr-url> --watch')
+
+    That skill waits for new review-bot / human comments after each push,
+    validates each through /critical + /confidence, applies the actionable
+    ones, pushes, and repeats until the reviewers go quiet (max 5 iterations).
+    It never opens a new PR and never undrafts this one.
+
+    Return its final watch report verbatim: the per-iteration table, the
+    stop reason, the head commit SHA, and any surfaced (needs-user) comments.
+    Keep it under 150 words; do not paste comment bodies or diffs.
+)
+```
+
+The watch loop and the main-thread CI watch (Steps 7–9) push to the same branch in parallel. Each downstream skill handles pull-rebase internally; do not add explicit serialisation.
 
 Print one line before continuing:
 
 ```
-Dispatched background review subagent (PR: <pr-url>). Continuing with CI watch.
+Dispatched background reviewer-feedback loop (PR: <pr-url>). Continuing with CI watch.
 ```
 
 ## Step 7: Wait for CI to Settle
@@ -247,7 +251,7 @@ timeout 1800 gh pr checks <pr-number> --watch     # blocks until every check com
 
 `--watch` waits for queued/running checks and exits with the final aggregate status. If the exit code is 0, jump to Step 10. Otherwise continue.
 
-The `timeout 1800` cap keeps a hung or queued-forever check from blocking the skill indefinitely — same idea as the 10-minute review poll in [`rules/review-mode.md`](./rules/review-mode.md). If it expires (exit code 124), run `gh pr checks <pr-number>` once, report the still-pending checks to the user, and escalate instead of re-watching.
+The `timeout 1800` cap keeps a hung or queued-forever check from blocking the skill indefinitely — same idea as the bounded poll in the watch loop ([`../../workflow/implement-suggestion/rules/watch-mode.md`](../../workflow/implement-suggestion/rules/watch-mode.md)). If it expires (exit code 124), run `gh pr checks <pr-number>` once, report the still-pending checks to the user, and escalate instead of re-watching.
 
 If `gh pr checks` reports no checks at all after a minute, this repo probably doesn't run CI on PRs — also jump to Step 10.
 
@@ -338,7 +342,27 @@ Short summary:
 - What was auto-fixed, one line per fix
 - Anything left for the user (only if Step 9 escalated or hit the cap)
 
-**If `--review` was passed**, also wait for the background review subagent (Step 6.5) to complete — you will be notified — and append its result. Use the report shape in [`rules/review-mode.md`](./rules/review-mode.md) under "Step 10 update": one block for CI, one block for the Claude review pass, and the final head commit SHA so the user can see the latest state at a glance.
+**Unless `--no-feedback` was passed**, also wait for the background reviewer-feedback loop (Step 6.5) to complete — you will be notified — and append its result. Final report shape:
+
+```
+PR: <pr-url>
+Title: <imperative title>
+
+CI:
+  Final status: <green | which checks red>
+  Auto-fixed: <one line per fix, or "none">
+  Iterations: <total /ci-auto-fix subagent dispatches>
+
+Reviewer feedback loop (/implement-suggestion --watch):
+  Stop reason: <reviewers quiet | nothing actionable left | iteration cap | skipped (--no-feedback)>
+  Iterations: <N>
+  Applied: <total across iterations>
+  Surfaced (needs you): <N>
+
+Head commit: <sha — the latest state after both paths pushed>
+```
+
+Because both paths push to the same branch, surface the final head SHA so the user sees the latest state at a glance.
 
 ## Split Mode (`--split`)
 
