@@ -20,8 +20,8 @@ conflict worth surfacing.
 
 ### 1. Shared Root Cause (bug-to-bug only)
 
-Compare root causes from each bug ticket's holistic-analysis output. If two or more bug
-tickets:
+Compare root causes from each bug ticket's `rca-investigator` Root-Cause Record. If two or more
+bug tickets:
 
 - Point to the same function, file, or code path as the root cause.
 - Describe the same underlying bug with different symptoms.

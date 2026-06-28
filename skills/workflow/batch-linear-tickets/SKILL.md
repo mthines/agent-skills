@@ -4,7 +4,7 @@ description: >
   Batch-analyze and resolve multiple Linear tickets — bug fixes and feature
   work. For each ticket: classifies as bug or feature (auto from Linear
   labels, or via the --type flag), dispatches the appropriate per-ticket
-  analysis (linear-ticket-investigator + holistic-analysis for bugs, just
+  analysis (linear-ticket-investigator + rca-investigator for bugs, just
   linear-ticket-investigator for features), gates on confidence, correlates
   findings across tickets, asks for user approval, then fans out aw-planner
   + aw-executor to ship PRs. Posts PR links back to each Linear ticket on
@@ -26,6 +26,7 @@ metadata:
     - persistent-memory
   agents:
     investigator: linear-ticket-investigator
+    rca: rca-investigator
     planner: aw-planner
     executor: aw-executor
   phases:
@@ -52,13 +53,16 @@ fan-out of the right analysis tools, cross-ticket correlation, the user-facing a
 and Linear writeback.
 
 Per-ticket investigation lives in `linear-ticket-investigator`. Per-ticket bug root-cause
-analysis lives in `holistic-analysis`. Per-ticket planning lives in `aw-planner`. Per-ticket
-implementation lives in `aw-executor`. This skill wires them together for batch operation.
+analysis is dispatched to the `rca-investigator` agent — it runs `holistic-analysis` (`fix`) +
+`confidence` (`analysis`) in an **isolated context per ticket**, so N bug analyses run in
+**parallel** and none of their verbose walkthroughs land in this orchestrator's window. Per-ticket
+planning lives in `aw-planner`. Per-ticket implementation lives in `aw-executor`. This skill wires
+them together for batch operation.
 
 ## Architecture
 
 ```text
-Phase 1: Per-Ticket Analysis    → per ticket: classify type → investigator → (holistic-analysis if bug) → confidence
+Phase 1: Per-Ticket Analysis    → per ticket: classify type → investigator → (rca-investigator if bug, carries confidence) | confidence(plan) if feature
 Phase 2: Cross-Ticket Correlation → detect shared root causes, file conflicts, duplicates
 Phase 3: Approval Gate          → user picks tickets to ship
 Phase 4: Parallel Execution     → fan out aw-planner + aw-executor for approved tickets
@@ -76,8 +80,9 @@ analysis from Phase 1.
 |-----------|---------|-----------|
 | Linear MCP (`mcp__claude_ai_Linear__*` or `mcp__linear-server__*`) | Read tickets + labels, post PR comments | **Yes** |
 | `linear-ticket-investigator` agent | Per-ticket evidence extraction | **Yes** |
-| `holistic-analysis` skill | Per-ticket bug root-cause analysis | **Yes** (for bug tickets) |
-| `confidence` skill | Per-ticket gate scoring | **Yes** |
+| `rca-investigator` agent ([`agents/rca-investigator.md`](../../../agents/rca-investigator.md)) | Per-ticket bug root-cause analysis — isolated + parallel; carries `confidence(analysis)` in its Root-Cause Record | **Yes** (for bug tickets) |
+| `holistic-analysis` skill | Run transitively inside `rca-investigator`; in-context fallback if the agent is unavailable | **Yes** (for bug tickets) |
+| `confidence` skill | Feature-ticket gate scoring (bug score comes from `rca-investigator`) | **Yes** |
 | `aw-planner` + `aw-executor` agents (from [`autonomous-workflow`](../autonomous-workflow/SKILL.md)) | Phase 4 dispatch | **Yes** |
 | `gh` CLI | PR creation by `aw-executor` | **Yes** |
 | `gw` CLI | Worktree management (planner) | Recommended |
@@ -97,7 +102,7 @@ analysis from Phase 1.
 | [diagnostic-surface](./rules/diagnostic-surface.md) | Consumed by `/create-skill diagnose batch-linear-tickets` — phase model, guards, hard invariants |
 
 > Investigation rules live in `linear-ticket-investigator`.
-> Bug root-cause rules live in `holistic-analysis`.
+> Bug root-cause rules live in `holistic-analysis`, dispatched via the `rca-investigator` agent.
 > Planning and execution rules live in `aw-planner` and `aw-executor`.
 > This skill only owns batch-level fan-out, classification, and the user-facing approval gate.
 
@@ -173,10 +178,25 @@ Dispatch the `linear-ticket-investigator` agent for every ticket — bug or feat
 The investigator returns an Evidence Record (problem description, affected code, certainty
 markers, information gaps). It does not implement; it investigates.
 
-### Step 1c — Dispatch holistic-analysis (bug tickets only)
+### Step 1c — Dispatch rca-investigator (bug tickets only)
 
-For tickets classified as **bug**, also dispatch `Skill("holistic-analysis", ...)` with the
-Evidence Record from Step 1b. This runs the full root-cause analysis.
+For tickets classified as **bug**, dispatch the `rca-investigator` agent with the Evidence Record
+from Step 1b:
+
+```text
+Task(subagent_type="rca-investigator", prompt="<Evidence Record from Step 1b>")
+```
+
+**Launch all bug-ticket rca-investigator calls in one message** so the analyses run in parallel —
+this is exactly the case where parallelism makes sense (N independent tickets, no shared state).
+Each agent runs `holistic-analysis` (`fix`) + `confidence` (`analysis`) in its **own** context and
+returns a compact **Root-Cause Record** (root cause, causal chain, evidence, ruled-out
+alternatives, **confidence score**, fix direction). The verbose 8-phase walkthrough never reaches
+this orchestrator.
+
+If the `rca-investigator` agent is not available in the host project, fall back to running
+`Skill("holistic-analysis", "fix")` + `Skill("confidence", "analysis")` in-context per bug ticket
+(serial, non-isolated) — the same analysis, without the isolation/parallelism benefit.
 
 Feature tickets skip this step — the investigator's Evidence Record (intent + acceptance
 criteria + affected code) is the analysis output. Root-cause analysis is bug-shaped and would
@@ -184,12 +204,12 @@ mis-frame feature work.
 
 ### Step 1d — Gate per ticket
 
-Run `Skill("confidence", "<mode>")` per ticket, where mode is:
-
-- **`analysis`** for bug tickets — scores evidence strength, root cause certainty, fix
-  confidence.
-- **`plan`** for feature tickets — scores completeness, feasibility, ambiguity of the proposed
-  approach captured in the investigator's Evidence Record.
+- **Bug tickets** — the `confidence(analysis)` score is already in the Root-Cause Record from
+  Step 1c (it scored evidence strength, root-cause certainty, fix confidence). Do **not** re-run
+  it; read it from the record.
+- **Feature tickets** — run `Skill("confidence", "plan")` in-context. It scores completeness,
+  feasibility, and ambiguity of the proposed approach captured in the investigator's Evidence
+  Record.
 
 Status mapping (same shape for both types, different source skill):
 
@@ -204,7 +224,8 @@ Status mapping (same shape for both types, different source skill):
 
 - **Type** (`bug` | `feature`).
 - The **Evidence Record** from the investigator.
-- For bugs: the **root cause** and **proposed fix** from holistic-analysis.
+- For bugs: the **root cause** and **proposed fix direction** from the `rca-investigator`
+  Root-Cause Record.
 - For features: the **proposed approach** + **acceptance criteria** from the Evidence Record.
 - The **confidence score** and **status**.
 
