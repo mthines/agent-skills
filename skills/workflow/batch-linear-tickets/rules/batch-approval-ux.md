@@ -58,7 +58,7 @@ shaped by ticket type:
 <summary>#1 SUP-123 (bug): Title — 95% — Ready</summary>
 
 **Symptom:** One-line summary
-**Root cause:** From holistic-analysis
+**Root cause:** From the rca-investigator Root-Cause Record
 **Proposed fix:** What will change, in which files
 **Affected files:** file1.ts:42, file2.ts:100
 **Confidence:** Evidence X% | Root cause certainty Y% | Fix confidence Z%

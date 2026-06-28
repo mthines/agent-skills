@@ -156,6 +156,7 @@ The flagship `aw` agents are **generated from templates** in `skills/workflow/au
 | **[reviewer](./agents/reviewer.md)** | Own-work code reviewer (own branch or own PR). Three sub-modes: Fix (auto-fix simple + plan complex), Report (`--report`, propose only), Self-Review (own PR, auto-fix + inline terminal report). Never writes to GitHub — redirects to `pr-reviewer` on a cross-author PR. Orthogonal `--with <skill>` loads up to 3 additional lenses. |
 | **[pr-reviewer](./agents/pr-reviewer.md)** | Cross-review reviewer for someone else's PR. Authors short, grounded, confidence-gated inline comments (≤ 240 chars, ≤ 2 sentences, `Skill("confidence")` ≥ 80) and (with `--publish` or an explicit authorization phrase) posts them as a PENDING review invisible to the author until you submit from the GitHub UI. Refuses on your own PR (points to `reviewer`). |
 | **[linear-ticket-investigator](./agents/linear-ticket-investigator.md)** | Reads a Linear ticket, returns an Evidence Record matching `/fix-bug` Phase 2. Customizable via a per-project [domain navigator](#linear-ticket-investigator-per-project-plug-in). |
+| **[rca-investigator](./agents/rca-investigator.md)** | Context-isolated root-cause analysis. Runs `holistic-analysis` (`fix`) + `confidence` (`analysis`) in a fresh context and returns only a distilled Root-Cause Record — the verbose walkthrough never pollutes the caller. Read-only; single source of truth stays in `holistic-analysis`. Dispatch via `Task()` for isolation. |
 | **[bug-fix-verifier](./agents/bug-fix-verifier.md)** | Independent fresh-context verifier for `/fix-bug` PRs. Runs FAIL_TO_PASS, PASS_TO_PASS, diff sanity, repro integrity. Only agent allowed to undraft. |
 | **[feature-pr-verifier](./agents/feature-pr-verifier.md)** | Feature-PR counterpart to `bug-fix-verifier`. Verifies acceptance criteria, pass-to-pass, walkthrough integrity for `autonomous-workflow` Full Mode. |
 
@@ -438,7 +439,7 @@ That is the entire integration.
 ```
 skills/                   40 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
   testing/test-autofix/    stack-agnostic test healer — bootstrap, classify, confidence-gate, regression-detect
-agents/                   5 agents (reviewer, pr-reviewer, linear-ticket-investigator, bug-fix-verifier, feature-pr-verifier)
+agents/                   6 agents (reviewer, pr-reviewer, linear-ticket-investigator, rca-investigator, bug-fix-verifier, feature-pr-verifier)
 plugins/                  1 Claude Code plugin (agent-tasks-hooks)
 packages/                 VS Code extension (vscode-agent-tasks)
 .claude-plugin/           marketplace.json — plugin distribution manifest

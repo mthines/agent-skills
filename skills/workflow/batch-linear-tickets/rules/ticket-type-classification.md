@@ -7,7 +7,7 @@ priority: HIGH
 # Ticket-Type Classification
 
 Phase 1 needs to know whether each ticket is a **bug** (route through investigator +
-holistic-analysis) or a **feature** (route through investigator only). Classification is
+rca-investigator) or a **feature** (route through investigator only). Classification is
 mechanical and cheap — it reads Linear labels and falls back to a status when labels are
 ambiguous or absent.
 

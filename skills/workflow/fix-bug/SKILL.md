@@ -6,8 +6,9 @@ description: >
   ticket URL, or free-text symptom. Classifies the input, **triages complexity** (Phase 0.5) to
   pick between a fast lane and a full holistic-analysis lane, runs a pre-flight sweep, locks a
   failing reproduction (delegating to /tdd, /e2e-testing, or /e2e-testing-mobile by layer),
-  delegates root-cause analysis to holistic-analysis on complex bugs (or runs a lightweight
-  in-skill analysis on simple ones), gates on confidence(analysis), and on >= 92 % hands off
+  delegates root-cause analysis to the isolated rca-investigator agent (holistic-analysis +
+  confidence) on complex bugs (or runs a lightweight in-skill analysis on simple ones), gates on
+  confidence(analysis), and on >= 92 % hands off
   **without human confirmation**: simple bugs take the fast lane (/fix-bug → aw-create-plan →
   aw-executor, no aw-planner) and complex bugs take the standard lane (aw-planner → aw-executor),
   both with a CEGIS refinement contract. Fast-lane round-3 CEGIS failure falls back to
@@ -27,6 +28,7 @@ metadata:
   workflow_type: orchestrator
   architecture: classify/triage/preflight/reproduce/analyse/gate/handoff(fast|standard)/verify/telemetry
   agents:
+    rca: rca-investigator
     planner: aw-planner
     executor: aw-executor
     verifier: bug-fix-verifier
@@ -70,7 +72,8 @@ metadata:
 
 Take a bug — described in any form the user has at hand — and either ship a verified draft PR
 with the fix or hand back a clear, evidence-backed proposal. This skill is a **thin
-orchestrator**: heavy reasoning lives in `holistic-analysis`, gating in `confidence`, test
+orchestrator**: heavy reasoning lives in `holistic-analysis` (dispatched isolated via the
+`rca-investigator` agent on the complex lane), gating in `confidence`, test
 authoring in `/tdd` / `/e2e-testing` / `/e2e-testing-mobile`, plan authoring in `aw-planner`
 (standard-lane) or `aw-create-plan` (fast-lane), implementation in `aw-executor`, and independent
 grading in `bug-fix-verifier`. This skill owns input classification, **complexity triage**,
@@ -88,7 +91,7 @@ Phase 0:   Intake                     → classify input + infer bugClass + dete
 Phase 0.5: Complexity Triage          → simple | complex (signals + decision rule)
 Phase 1:   Evidence Resolution        → per-input resolution + pre-flight sweep (may upgrade triage)
 Phase 2:   Source Mapping + Repro Lock → Evidence Record + failing repro (via /tdd or /e2e-testing*)
-Phase 3:   Analysis                   → Skill("holistic-analysis", "fix") [complex]
+Phase 3:   Analysis                   → Task(rca-investigator) — isolated holistic-analysis + confidence [complex]
                                       OR lightweight in-skill analysis [simple]
 Phase 4:   Confidence Gate            → /confidence analysis
 Phase 5:   Branch Decision            → >= 92 % auto-implement (no human confirmation);
@@ -120,7 +123,7 @@ hypotheses. See [`rules/bug-notes-ledger.md`](./rules/bug-notes-ledger.md).
 |------|---------|-----------|
 | (none) | **yes** | Full pipeline (Phases 0–8). Phase 0.5 triages complexity; Phase 5 dispatches via the fast-lane (simple) or standard-lane (complex) when confidence >= 92 % — no human confirmation required. |
 | `--analyse-only` | | Read-only analysis. Phases 0–4 (including Phase 0.5 triage) run as normal; Phase 5 **always** returns the proposal regardless of confidence; Phases 6–8 are skipped. The read-only analysis primitive for any caller that wants a proposal without a PR. (`/batch-linear-tickets` does **not** call this — its Phase 1 dispatches `linear-ticket-investigator` + `holistic-analysis` directly.) |
-| `--force-holistic` | | Skip Phase 0.5's `simple` classification — always treat the bug as `complex`. Forces holistic-analysis (Phase 3) and the standard-lane in Phase 6, regardless of triage signals. Use when triage's conservative-by-default behaviour is not conservative enough for the user's taste. Mutually exclusive with `--analyse-only` and `--verify-deploy`. |
+| `--force-holistic` | | Skip Phase 0.5's `simple` classification — always treat the bug as `complex`. Forces the complex-lane analysis (Phase 3 `Task(rca-investigator)`, which runs holistic-analysis inside) and the standard-lane in Phase 6, regardless of triage signals. Use when triage's conservative-by-default behaviour is not conservative enough for the user's taste. Mutually exclusive with `--analyse-only` and `--verify-deploy`. |
 | `--verify-deploy <PR>` | | Re-entry path for deferred Phase 8 verification. Skips Phases 1–7 entirely; recovers the Evidence Record from `.agent/<branch>/bug-notes.md` for the PR's head branch and runs Phase 8 against the already-shipped fix. See [Verify-deploy short-circuit](#verify-deploy-short-circuit) below. |
 
 Flags are mutually exclusive. They are detected in Phase 0 step 0a and stripped from
@@ -132,8 +135,9 @@ Flags are mutually exclusive. They are detected in Phase 0 step 0a and stripped 
 
 | Dependency | Purpose | Required? |
 |-----------|---------|-----------|
-| `holistic-analysis` skill | Phase 3 root-cause analysis | **Yes** |
-| `confidence` skill | Phase 4 gate (also used inside holistic-analysis) | **Yes** |
+| `rca-investigator` agent ([`agents/rca-investigator.md`](../../../agents/rca-investigator.md)) | Phase 3 complex-lane root-cause analysis — isolated; returns a Root-Cause Record carrying the `confidence(analysis)` score | **Yes** for complex lane |
+| `holistic-analysis` skill | Phase 3 analysis protocol — run transitively inside `rca-investigator`; in-context fallback if the agent is unavailable | **Yes** |
+| `confidence` skill | Phase 4 gate (also used inside holistic-analysis / rca-investigator) | **Yes** |
 | `/tdd` skill | Phase 2.5 reproduction at unit / component layer | **Yes** for non-best-effort repros |
 | `/e2e-testing` skill | Phase 2.5 reproduction at user-flow layer (web) | If web E2E repro |
 | `/e2e-testing-mobile` skill | Phase 2.5 reproduction at user-flow layer (Expo / React Native) | If mobile E2E repro |
@@ -278,7 +282,7 @@ apply the decision rule (conservative default: pick `complex` when in doubt). Th
 | Outcome | Phase 3 | Phase 6 lane (provisional) |
 |---------|---------|----------------------------|
 | `simple` | **skip** — lightweight in-skill analysis | fast-lane (if confidence ≥ 92 % + non-best-effort repro) |
-| `complex` | run `Skill("holistic-analysis", "fix")` | standard-lane |
+| `complex` | dispatch `Task(rca-investigator)` — isolated holistic-analysis + confidence | standard-lane |
 
 Append the classification, signals, decision, and provisional lane to the bug-notes ledger under
 a `Complexity triage` section.
@@ -401,20 +405,29 @@ See [`rules/bug-notes-ledger.md`](./rules/bug-notes-ledger.md#lifecycle).
 
 The phase splits by triage outcome (Phase 0.5):
 
-### Phase 3 — `complex` path: Holistic Analysis
+### Phase 3 — `complex` path: Holistic Analysis (isolated)
 
-Invoke `holistic-analysis` in `fix` mode with the Evidence Record (including the `bugClass` hint
-and any pre-flight short-circuit findings):
+Dispatch the `rca-investigator` agent with the Evidence Record (including the `bugClass` hint and
+any pre-flight short-circuit findings):
 
 ```text
-Skill("holistic-analysis", "fix\n\n<Evidence Record from Phase 2>")
+Task(subagent_type="rca-investigator", prompt="<Evidence Record from Phase 2>")
 ```
 
-`holistic-analysis` runs its own 8-phase protocol and internally calls `/confidence analysis`
-at its Phase 6. Do **not** duplicate that analysis here — Phase 3 is purely a delegation step.
+The agent runs `holistic-analysis` in `fix` mode + `/confidence analysis` **in its own context**
+and returns a compact **Root-Cause Record** (root cause, causal chain, evidence, ruled-out
+alternatives, confidence score, fix direction). The verbose 8-phase walkthrough stays inside the
+agent and never pollutes this orchestrator's window — only the distilled record comes back. This is
+a single dispatch (one bug, nothing to parallelize); the win here is isolation, not parallelism.
 
-If the bug-notes ledger has any `state = ruled-out` hypotheses, pass them in the prompt so
-holistic-analysis does not re-explore them.
+Do **not** re-run the analysis or the confidence score here — both are in the returned record.
+
+If the bug-notes ledger has any `state = ruled-out` hypotheses, pass them in the prompt so the
+agent does not re-explore them.
+
+If the `rca-investigator` agent is unavailable in the host project, fall back to running
+`Skill("holistic-analysis", "fix\n\n<Evidence Record>")` in-context (it internally calls
+`/confidence analysis` at its Phase 6) — the same analysis, without the isolation benefit.
 
 ### Phase 3 — `simple` path: Lightweight in-skill analysis
 
@@ -438,9 +451,10 @@ path, predicate has more than one plausible cause), upgrade triage to `complex` 
 
 ## Phase 4 — Confidence Gate
 
-Reuse the score holistic-analysis emitted at its Phase 6. Re-run `/confidence analysis` here
-**only** if new evidence has arrived between Phase 3 and now, or the proposed fix has materially
-changed.
+Reuse the score from Phase 3 — the `rca-investigator` Root-Cause Record carries it (or, on the
+in-context fallback, the score holistic-analysis emitted at its Phase 6). Re-run `/confidence
+analysis` here **only** if new evidence has arrived between Phase 3 and now, or the proposed fix
+has materially changed.
 
 Append the score and breakdown to the bug-notes ledger's `Confidence trajectory` table.
 

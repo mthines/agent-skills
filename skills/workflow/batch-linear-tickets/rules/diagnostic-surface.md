@@ -33,7 +33,7 @@ The contract spec lives at [`skills/authoring/create-skill/rules/diagnostic-surf
 
 ## Phase model
 
-`batch-linear-tickets` is a 5-phase batch orchestrator. It composes per-ticket sub-skills/agents (`linear-ticket-investigator`, `holistic-analysis`, `confidence`, `aw-planner`, `aw-executor`) — failures **inside** those belong to *their* diagnostic surfaces, not this one. This surface covers batch-level orchestration only.
+`batch-linear-tickets` is a 5-phase batch orchestrator. It composes per-ticket sub-skills/agents (`linear-ticket-investigator`, `rca-investigator` (which wraps `holistic-analysis` + `confidence`), `confidence`, `aw-planner`, `aw-executor`) — failures **inside** those belong to *their* diagnostic surfaces, not this one. This surface covers batch-level orchestration only.
 
 | Phase | Name                       | Rule                                                                   | Gate                                                                              |
 | ----- | -------------------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
