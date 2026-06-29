@@ -73,6 +73,69 @@ Inputs:
 - `changed_files` — list of file objects with `path` and `patch`. In `pr-reviewer`, `/tmp/pr-files.json` is the source. In `reviewer`, derive from `git diff --name-only` + `git show`.
 - `caller` — the calling agent's name (`reviewer` or `pr-reviewer`). Determines the recommended Conventional-Comments category mapping (see below).
 
+## Targeted escalation (Step 2.4b)
+
+The Step 2.4 pass above is **broad and shallow**: one whole-PR scan, capped at 3 findings, spreading attention across the entire diff. It catches PR-wide intent mismatch and obvious system-fit, but it cannot deep-trace any single changed function's call graph. That deep trace is exactly the class the user cares about — *a function change that is clean in isolation but wrong for how the function is actually used*.
+
+Step 2.4b adds the deep tier. It runs **after** the broad 2.4 pass and the rubric findings are collected, and **before** Step 2.5 (dedupe). It takes the line-level findings that look context-dependent and fans out **parallel, single-target** holistic traces — one per finding — each scoped to that finding's symbol via the `focus` input (see `review-mode.md § Inputs`). This is the pipeline analogue of an agentic reviewer that "decides which areas need deeper investigation and follows code paths across files."
+
+It is **default-on for `pr-reviewer`** and **opt-in for `reviewer`** (the `--escalate` flag). It is suppressed by `--no-escalate` (finer than `--no-holistic`, which also skips 2.4) and skipped wholesale when 2.4 itself was trivial-skipped.
+
+### Selection (the agentic decision point)
+
+Walk the collected findings (both the rubric output and the broad 2.4 findings). Select a finding for escalation only if **all** hold:
+
+1. It sits on a **changed export** — a function, method, class, hook, or component defined (or signature-changed) in the diff. Not a local variable, comment, or string literal.
+2. Its correctness is **context-dependent** — at least one of: a return-type change, a newly thrown / rejected error, a side-effect-ordering change, caching or transaction semantics, a signature / contract change, a loop-or-batch caller — **OR** the symbol has **≥ 2 call sites** (cheap `grep -c` of the symbol across the repo).
+3. It is **not** an already-high-confidence trivial nit (style, naming, formatting).
+
+A finding that fails any test is left untouched and flows on to 2.5 as-is. Selection is logged.
+
+### Fan-out (the parallel mechanism)
+
+For each selected finding, emit one `Skill("holistic-analysis", "review")` call **with a `focus` block**. Emit the calls **in a single turn** so they run concurrently — this is the parallelism; no `Task` tool is required, and both agents already have `Skill`.
+
+```
+# one call per selected finding, all emitted together
+Skill("holistic-analysis", "review")
+  intent_summary: <from Step 1.3>
+  diff: <full unified diff>
+  changed_files: <from /tmp/pr-files.json or git>
+  caller: "reviewer" | "pr-reviewer"
+  focus:
+    file: <finding file>
+    line: <finding RIGHT-side line>
+    symbol: <changed export name>
+    finding: <the line-level claim being deepened>
+```
+
+Each focused call returns **≤ 1 finding** — the verdict on the seeded finding (`confirm` / `enrich` / `reshape` / `clear`; see `review-mode.md § Phase R2`). A `clear` returns nothing and the original line-level finding is **dropped** (the context proved it a false positive — this is the signal-to-noise win, not a loss).
+
+### Cost bound
+
+Escalate up to **10** findings per PR, highest-severity first. Ten — not three — because a focused single-symbol trace is far cheaper than the broad whole-PR pass, and the real ceilings already live downstream: the per-file cap (5 for `pr-reviewer`, 10 for `reviewer`), the total cap (20 for `pr-reviewer`), and the `per-comment-confidence` ≥ 80 gate that drops weak findings regardless of how many were escalated. If more than 10 qualify, run a **second parallel batch**; stop only once the surviving-comment total would exceed the posting cap (further findings cannot be posted anyway). Never silently drop a qualifying candidate — defer it and log it.
+
+### Re-entry into the pipeline
+
+A `confirm` / `enrich` / `reshape` result **replaces** the original line-level finding in the stream (same `(file, line)`, now carrying caller evidence and possibly an upgraded `type`). It then flows through the unchanged downstream gates exactly like any other finding: 2.5 dedupe + consolidate → 2.6 grounding → 2.7 per-comment-confidence → 2.8 shape → 2.9 conventional-comments → (PR mode) line-validity. The escalation adds **no new gate** — it makes the existing `confidence(code)` check sharper by handing it caller evidence the line-level view never had.
+
+Type → category mapping is the same as the 2.4 table below (caller-aware): for `pr-reviewer`, an escalated `system-fit` becomes a **`question`**, respecting the cross-review context asymmetry.
+
+### Logging
+
+The Quality Gate summary reports a dedicated block:
+
+```
+Targeted escalation (2.4b):
+  Status:             ran | skipped (--no-escalate) | skipped (2.4 trivial-skip) | skipped (opt-in not set)
+  Candidates:         <N qualifying findings>
+  Escalated:          <M> in <B> batch(es)
+  Deferred (>cap):    <K>
+  Verdicts:           <confirm> confirm / <enrich> enrich / <reshape> reshape / <clear> clear (dropped)
+```
+
+A run with several `clear` verdicts is healthy — escalation earning its cost by removing false positives. A run where every escalation `confirm`s with no `clear` or `enrich` is suspicious; spot-check the focused traces before trusting them.
+
 ## Output mapping (caller-aware)
 
 `holistic-analysis` returns at most 3 findings with `type` ∈ {`intent-mismatch`, `scope-creep`, `system-fit`} and `severity` ∈ {`blocker`, `major`, `minor`}.

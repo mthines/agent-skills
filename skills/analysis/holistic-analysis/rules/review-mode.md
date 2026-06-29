@@ -33,12 +33,25 @@ The calling agent passes:
 - `diff` — the full unified diff of the PR or branch under review.
 - `changed_files` — list of files in the diff (path + patch).
 - `caller` — `reviewer` (own work) or `pr-reviewer` (cross-review). Affects the framing of system-fit findings (see Output framing).
+- `focus` — **optional**. When present, the skill runs in **focused (single-target) mode**: it deepens one already-surfaced finding instead of scanning the whole diff. The calling agent's Step 2.4b escalation passes one `focus` per parallel call. Shape:
+
+  ```yaml
+  focus:
+    file: <path of the changed export>
+    line: <RIGHT-side line number of the finding>
+    symbol: <name of the changed export — function / method / class / hook / component>
+    finding: <the line-level claim being deepened, one sentence>
+  ```
+
+  When `focus` is absent, the skill runs in **whole-PR mode** (the default flow below, ≤ 3 findings). The two modes share Phases R1–R3 but scope and finding-count differ — each phase notes the focused-mode variant inline.
 
 ## Phase R1 — Scope the execution paths
 
 For each changed file's changed regions, identify the smallest set of execution paths that exercises the changed code. Walk **upstream** to entry points (route handlers, event handlers, scheduled jobs, UI actions) and **downstream** to side effects (DB writes, network calls, render outputs). Reuse the Phase 1 walkthrough technique from `SKILL.md` — same map shape, scoped to the diff rather than the whole flow.
 
 For non-trivial changes, dispatch parallel `Explore` agents per changed file to trace callers and dependents. The goal is not to find a bug — it is to assemble enough context to evaluate the two questions in Phase R2.
+
+**Focused mode (`focus` present).** Narrow the walk to the single `focus.symbol` only — do not scan the rest of the diff. Trace **upstream** every call site of `focus.symbol` (grep the symbol across the repo) and **downstream** every side effect the symbol triggers. This is "those specific code paths" — the deep trace of one changed export's call graph that the whole-PR pass cannot afford. The seed for the trace is `focus.finding`: the question is whether that claim holds once the symbol's actual callers and contracts are in view.
 
 ## Phase R2 — Two checks
 
@@ -57,9 +70,20 @@ Run both in order. Each emits 0–N raw findings; the calling agent will gate th
 
 Each system-fit gap is one finding.
 
+**Focused mode (`focus` present).** Skip the intent-match check (the whole-PR pass already ran it) and run **only** the system-fit check, against `focus.symbol`'s callers surfaced in R1, seeded by `focus.finding`. Reach exactly one of four verdicts:
+
+| Verdict | Meaning |
+| --- | --- |
+| `confirm` | The caller context proves `focus.finding` is a real problem. Emit it, enriched with the specific caller / contract evidence. |
+| `enrich` | `focus.finding` is real but the *root* issue is broader (e.g. a contract break the line-level view named only as a style nit). Emit the upgraded claim with caller evidence; set `type: system-fit` (or `intent-mismatch` if the change contradicts the PR's stated intent). |
+| `reshape` | `focus.finding` mis-states the problem, but the trace surfaced a *different* real issue on the same symbol. Emit the corrected claim. |
+| `clear` | The wider context shows the change is correct after all. Emit **no** finding — return an empty finding list. This is the false-positive-suppression path that protects signal-to-noise. |
+
 ## Phase R3 — Emit findings
 
 Return at most **3 findings** (intent-match + system-fit combined). Above 3 the output is noise — pick the highest-impact items.
+
+**Focused mode (`focus` present).** Return at most **1** finding — the verdict on `focus.finding` from R2. A `clear` verdict returns an empty list (the finding is dropped). The single record carries the same shape below; set `file` and `line` to `focus.file` / `focus.line` so the calling agent can re-anchor it onto the original comment.
 
 Each finding is a structured record:
 
@@ -110,3 +134,4 @@ Review mode is opt-out at the calling agent's layer (the calling agent enables i
 - Do NOT propose fixes — `system-fit` finding describes the gap; the calling agent or PR author decides how to close it.
 - Do NOT emit a confidence score per finding — that's `Skill("confidence", "code")`'s job, downstream.
 - Do NOT walk the full 8-phase protocol — `review` mode is streamlined R1 → R2 → R3 only. Reach for `fix` mode if the work is actually root-cause analysis.
+- Do NOT scan the whole diff when `focus` is present — focused mode traces exactly one symbol's call graph and returns ≤ 1 finding. Re-scanning the diff defeats the cost model that lets the caller run many focused traces in parallel.

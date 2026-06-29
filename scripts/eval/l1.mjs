@@ -237,6 +237,38 @@ function acceptanceCriteriaCount(plan) {
   s.check("G7 no recipe appears in both M and J (R17 split is the only exception)",
     inBoth.length === 0 && dupInM.length === 0 && dupInJ.length === 0,
     [inBoth.length && `both: ${inBoth.join(", ")}`, dupInM.length && `dup M: ${dupInM.join(", ")}`, dupInJ.length && `dup J: ${dupInJ.join(", ")}`].filter(Boolean).join("; "));
+
+  // G8: the targeted-escalation (Step 2.4b) contract is shared across four files —
+  // the holistic skill's review-mode (owns the `focus` input + focused R1–R3),
+  // the shared holistic-review rule (owns 2.4b selection/fan-out/cap), and both
+  // review agents (wire 2.4b into their pipeline). Drift here means the escalation
+  // calls into a `focus` input the skill never honours, or an agent advertises a
+  // step that no longer exists. Lock the four corners of the contract.
+  const reviewMode = read("skills/analysis/holistic-analysis/rules/review-mode.md");
+  const holisticReview = read("agents/shared/rules/holistic-review.md");
+  const prReviewer = read("agents/pr-reviewer.md");
+  const reviewerAgent = read("agents/reviewer.md");
+
+  // G8a: review-mode declares the `focus` input with all four sub-keys.
+  const focusKeys = ["file:", "line:", "symbol:", "finding:"];
+  s.check("G8a review-mode declares the focus input with file/line/symbol/finding",
+    /\bfocus\b/.test(reviewMode) && focusKeys.every((k) => reviewMode.includes(k)),
+    focusKeys.filter((k) => !reviewMode.includes(k)).join(", ") || "ok");
+
+  // G8b: the shared rule owns the 2.4b section and passes a `focus:` block in its call.
+  s.check("G8b holistic-review has Targeted escalation (Step 2.4b) section",
+    holisticReview.includes("Targeted escalation (Step 2.4b)") && /focus:/.test(holisticReview));
+
+  // G8c: the 10-cap cost bound is stated (guards against silent regression to 3).
+  s.check("G8c holistic-review escalation cap is 10, not 3",
+    /up to \*\*10\*\*/.test(holisticReview));
+
+  // G8d: both agents wire Step 2.4b into their pipeline and expose the right opt flag —
+  // pr-reviewer default-on with --no-escalate, reviewer opt-in with --escalate.
+  s.check("G8d pr-reviewer wires 2.4b + --no-escalate",
+    prReviewer.includes("2.4b") && prReviewer.includes("--no-escalate"));
+  s.check("G8d reviewer wires 2.4b + --escalate opt-in",
+    reviewerAgent.includes("2.4b") && reviewerAgent.includes("--escalate"));
 }
 
 process.exit(s.report() ? 0 : 1);
