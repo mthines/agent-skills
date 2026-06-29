@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 
 import {
+  collectOtherMarkdownFilesRecursively,
   diagnoseTargetFromFilename,
   findDiagnoseReports,
   findLinkedArtifacts,
@@ -198,6 +199,78 @@ describe('findLinkedArtifacts', () => {
       path.join(wt, '.agent', 'feat', 'x', 'zebra.md'),
     ]);
   });
+
+  // -------------------------------------------------------------------------
+  // Cross-subdirectory other-markdown discovery (repo-wide scan)
+  // -------------------------------------------------------------------------
+
+  it('surfaces .agent/asdf/de.md when branch is main and asdf is not the branch', () => {
+    // The user creates a file under an arbitrary subdirectory — not the branch dir.
+    const wt = setup({ '.agent/asdf/de.md': '# notes' });
+    // Branch is 'main'; there is no .agent/main/ directory at all.
+    const result = findLinkedArtifacts(wt, 'main', ['.agent']);
+    expect(result.otherMarkdownPaths).toEqual([path.join(wt, '.agent', 'asdf', 'de.md')]);
+    // artifactDir falls back to the configured dir root when no branch dir exists.
+    expect(result.artifactDir).toBe(path.join(wt, '.agent'));
+  });
+
+  it('surfaces files from multiple cross-branch subdirectories together', () => {
+    const wt = setup({
+      '.agent/asdf/de.md': '# de',
+      '.agent/other-branch/notes.md': '# notes',
+    });
+    const result = findLinkedArtifacts(wt, 'main', ['.agent']);
+    expect(result.otherMarkdownPaths).toEqual([
+      path.join(wt, '.agent', 'asdf', 'de.md'),
+      path.join(wt, '.agent', 'other-branch', 'notes.md'),
+    ]);
+  });
+
+  it('does NOT duplicate known artifacts from branch dir into otherMarkdownPaths', () => {
+    // .agent/main/ has plan.md (known artifact) + specs.md (other).
+    // .agent/asdf/ has de.md (other from a different subdir).
+    // Branch is 'main'.
+    const wt = setup({
+      '.agent/main/plan.md': '# plan',
+      '.agent/main/specs.md': '# specs',
+      '.agent/asdf/de.md': '# de',
+    });
+    const result = findLinkedArtifacts(wt, 'main', ['.agent']);
+    // Known artifact must appear in planPath, not in otherMarkdownPaths.
+    expect(result.planPath).toBe(path.join(wt, '.agent', 'main', 'plan.md'));
+    // specs.md (branch dir, not a known artifact name) and de.md both surface.
+    expect(result.otherMarkdownPaths).toEqual([
+      path.join(wt, '.agent', 'asdf', 'de.md'),
+      path.join(wt, '.agent', 'main', 'specs.md'),
+    ]);
+    // artifactDir is the branch dir since it exists.
+    expect(result.artifactDir).toBe(path.join(wt, '.agent', 'main'));
+  });
+
+  it('does NOT list diagnose reports from other subdirs in otherMarkdownPaths', () => {
+    // .agent/asdf/ has a diagnose report — must be excluded by the diagnose pattern.
+    const wt = setup({
+      '.agent/asdf/diagnose-fix-bug.md': '# diag',
+    });
+    const result = findLinkedArtifacts(wt, 'main', ['.agent']);
+    // diagnose-*.md files are excluded by filename pattern regardless of directory.
+    expect(result.otherMarkdownPaths).toBeUndefined();
+    expect(result.diagnosePaths).toBeUndefined();
+  });
+
+  it('does NOT list plan.v*.md snapshots from other subdirs in otherMarkdownPaths', () => {
+    const wt = setup({
+      '.agent/asdf/plan.v1.md': '# snap',
+    });
+    const result = findLinkedArtifacts(wt, 'main', ['.agent']);
+    expect(result.otherMarkdownPaths).toBeUndefined();
+  });
+
+  it('returns empty when the configured agent dir does not exist', () => {
+    const wt = setup({});
+    // No .agent/ directory at all.
+    expect(findLinkedArtifacts(wt, 'main', ['.agent'])).toEqual({});
+  });
 });
 
 describe('findDiagnoseReports', () => {
@@ -315,6 +388,76 @@ describe('diagnoseTargetFromFilename', () => {
     expect(diagnoseTargetFromFilename('plan.md')).toBeUndefined();
     expect(diagnoseTargetFromFilename('diagnose.md')).toBeUndefined();
     expect(diagnoseTargetFromFilename('diagnose-.md')).toBeUndefined();
+  });
+});
+
+describe('collectOtherMarkdownFilesRecursively', () => {
+  let tmpRoot: string;
+
+  beforeAll(() => {
+    tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'recursive-md-test-'));
+  });
+
+  afterAll(() => {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  it('returns [] for a missing directory', () => {
+    expect(collectOtherMarkdownFilesRecursively(path.join(tmpRoot, 'nope'), new Set())).toEqual([]);
+  });
+
+  it('returns [] for an empty directory', () => {
+    const dir = fs.mkdtempSync(path.join(tmpRoot, 'empty-'));
+    expect(collectOtherMarkdownFilesRecursively(dir, new Set())).toEqual([]);
+  });
+
+  it('finds .md files in nested subdirectories', () => {
+    const dir = fs.mkdtempSync(path.join(tmpRoot, 'nested-'));
+    fs.mkdirSync(path.join(dir, 'asdf'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'asdf', 'de.md'), '# de');
+    const result = collectOtherMarkdownFilesRecursively(dir, new Set());
+    expect(result).toEqual([path.join(dir, 'asdf', 'de.md')]);
+  });
+
+  it('excludes paths in the excluded set', () => {
+    const dir = fs.mkdtempSync(path.join(tmpRoot, 'exclude-'));
+    fs.writeFileSync(path.join(dir, 'notes.md'), '# notes');
+    fs.writeFileSync(path.join(dir, 'keep.md'), '# keep');
+    const excluded = new Set([path.join(dir, 'notes.md')]);
+    const result = collectOtherMarkdownFilesRecursively(dir, excluded);
+    expect(result).toEqual([path.join(dir, 'keep.md')]);
+  });
+
+  it('excludes known artifact filenames regardless of directory', () => {
+    const dir = fs.mkdtempSync(path.join(tmpRoot, 'known-'));
+    fs.mkdirSync(path.join(dir, 'sub'));
+    fs.writeFileSync(path.join(dir, 'sub', 'plan.md'), '# plan');
+    fs.writeFileSync(path.join(dir, 'sub', 'task.md'), '# task');
+    fs.writeFileSync(path.join(dir, 'sub', 'walkthrough.md'), '# walk');
+    expect(collectOtherMarkdownFilesRecursively(dir, new Set())).toEqual([]);
+  });
+
+  it('excludes plan.v*.md and diagnose-*.md regardless of directory', () => {
+    const dir = fs.mkdtempSync(path.join(tmpRoot, 'pat-'));
+    fs.mkdirSync(path.join(dir, 'sub'));
+    fs.writeFileSync(path.join(dir, 'sub', 'plan.v1.md'), '# snap');
+    fs.writeFileSync(path.join(dir, 'sub', 'diagnose-fix-bug.md'), '# diag');
+    expect(collectOtherMarkdownFilesRecursively(dir, new Set())).toEqual([]);
+  });
+
+  it('returns results sorted by absolute path across all directories', () => {
+    const dir = fs.mkdtempSync(path.join(tmpRoot, 'sort-'));
+    fs.mkdirSync(path.join(dir, 'aaa'));
+    fs.mkdirSync(path.join(dir, 'zzz'));
+    fs.writeFileSync(path.join(dir, 'zzz', 'a.md'), '# a');
+    fs.writeFileSync(path.join(dir, 'aaa', 'b.md'), '# b');
+    fs.writeFileSync(path.join(dir, 'aaa', 'a.md'), '# a');
+    const result = collectOtherMarkdownFilesRecursively(dir, new Set());
+    expect(result).toEqual([
+      path.join(dir, 'aaa', 'a.md'),
+      path.join(dir, 'aaa', 'b.md'),
+      path.join(dir, 'zzz', 'a.md'),
+    ]);
   });
 });
 
