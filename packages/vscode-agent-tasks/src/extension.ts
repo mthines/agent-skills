@@ -10,6 +10,7 @@ import {
   AgentTasksProvider,
   AgentBranchItem,
   DiagnoseSummaryItem,
+  OtherMarkdownFileItem,
   PlanSummaryItem,
   PlanVersionItem,
   WalkthroughSummaryItem,
@@ -17,7 +18,7 @@ import {
 } from './providers/agent-tasks-provider';
 import * as child_process from 'child_process';
 import { ArtifactWatcher } from './watchers/artifact-watcher';
-import { SessionsProvider, SessionItem } from './providers/sessions-provider';
+import { SessionsProvider, SessionItem, LinkedArtifactItem } from './providers/sessions-provider';
 import {
   SessionActivityDecorationProvider,
   SESSION_URI_SCHEME,
@@ -185,6 +186,10 @@ export function activate(context: vscode.ExtensionContext): void {
         label: `diagnose-${item.info.targetSkill}.md`,
       };
     }
+    if (item instanceof OtherMarkdownFileItem) {
+      const filename = path.basename(item.filePath);
+      return { fsPath: item.filePath, isDirectory: false, label: filename };
+    }
     return undefined;
   };
 
@@ -250,6 +255,24 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     agentTasksProvider.refresh();
   });
+
+  // -------------------------------------------------------------------------
+  // Open other-markdown file — shared by both trees.
+  //
+  // VS Code passes the tree item as the first argument to context-menu
+  // commands. Both `OtherMarkdownFileItem` (Agent Tasks tree) and
+  // `LinkedArtifactItem` with contextValue `otherMarkdownFile` (Sessions
+  // tree) carry `filePath` as a public field, so the handler extracts it
+  // uniformly from either type.
+  // -------------------------------------------------------------------------
+
+  const openOtherMarkdownFileCmd = vscode.commands.registerCommand(
+    'agentTasks.openOtherMarkdownFile',
+    async (item: OtherMarkdownFileItem | LinkedArtifactItem) => {
+      if (!item?.filePath) return;
+      await vscode.commands.executeCommand('agentTasks.openMarkdown', item.filePath);
+    }
+  );
 
   // -------------------------------------------------------------------------
   // Sessions panel
@@ -937,6 +960,7 @@ export function activate(context: vscode.ExtensionContext): void {
     revealInOSCmd,
     copyPathCmd,
     deleteArtifactsCmd,
+    openOtherMarkdownFileCmd,
     toggleScopeCmd,
     // Sessions panel
     sessionsView,

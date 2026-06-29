@@ -566,7 +566,7 @@ export class OtherMarkdownFileItem extends vscode.TreeItem {
     this.tooltip = new vscode.MarkdownString(
       `**${filename}**\n\n\`${relPath}\``
     );
-    this.contextValue = 'agentOtherMarkdownFile';
+    this.contextValue = 'otherMarkdownFile';
     this.command = {
       command: 'agentTasks.openMarkdown',
       title: `Open ${filename}`,

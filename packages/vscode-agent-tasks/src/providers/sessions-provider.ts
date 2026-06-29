@@ -427,10 +427,15 @@ export class SessionItem extends vscode.TreeItem {
  * Agent Tasks panel so the visual association is consistent.
  */
 export class LinkedArtifactItem extends vscode.TreeItem {
-  constructor(label: string, iconId: string, public readonly filePath: string) {
+  constructor(
+    label: string,
+    iconId: string,
+    public readonly filePath: string,
+    contextValueOverride?: string
+  ) {
     super(label, vscode.TreeItemCollapsibleState.None);
     this.iconPath = new vscode.ThemeIcon(iconId);
-    this.contextValue = 'claudeSessionArtifact';
+    this.contextValue = contextValueOverride ?? 'claudeSessionArtifact';
     this.tooltip = filePath;
     this.command = {
       command: 'agentTasks.openMarkdown',
@@ -1134,12 +1139,14 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     }
 
     // Unknown "other" markdown files at the bottom — always after known entries.
+    // Use the shared `otherMarkdownFile` contextValue so right-click menus can
+    // target these rows across both the Sessions and Agent Tasks trees.
     if (links.otherMarkdownPaths) {
       for (const mdPath of links.otherMarkdownPaths) {
         const filename = mdPath.split(/[\\/]/).pop() ?? mdPath;
         // Strip the `.md` extension for a compact label (e.g. `specs.md` → `specs`).
         const label = filename.endsWith('.md') ? filename.slice(0, -3) : filename;
-        out.push(new LinkedArtifactItem(label, 'markdown', mdPath));
+        out.push(new LinkedArtifactItem(label, 'markdown', mdPath, 'otherMarkdownFile'));
       }
     }
 

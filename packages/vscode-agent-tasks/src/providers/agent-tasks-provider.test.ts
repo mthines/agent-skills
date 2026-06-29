@@ -13,6 +13,14 @@
  *      file (no false "empty" suppression).
  *   4. Ordering puts other files LAST — recognised branches are surfaced first,
  *      other files sort stably by path below them.
+ *
+ * TreeItem shape contract (cannot be tested in vitest due to vscode dependency):
+ *   - `OtherMarkdownFileItem.contextValue` MUST be `'otherMarkdownFile'`.
+ *   - `OtherMarkdownFileItem.command.command` MUST be `'agentTasks.openMarkdown'`.
+ *   - `LinkedArtifactItem` instances created for `otherMarkdownPaths` in
+ *     `sessions-provider.ts` MUST use `contextValueOverride = 'otherMarkdownFile'`.
+ *   These constants enable the `view/item/context` menu entries in package.json
+ *   to fire `agentTasks.openOtherMarkdownFile` on right-click in both trees.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
