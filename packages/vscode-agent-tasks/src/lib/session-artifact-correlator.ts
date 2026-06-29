@@ -253,6 +253,53 @@ export function findLinkedArtifacts(
   return {};
 }
 
+/**
+ * Collect all "other" `.md` absolute paths under each configured artifact
+ * root directory for a worktree, excluding the caller-supplied set of already-
+ * rendered paths.
+ *
+ * Returns pairs of `{ absPath, relPath }` sorted stably by `absPath`, where
+ * `relPath` is relative to the nearest configured dir root
+ * (e.g. `asdf/de.md` for a file inside `.agent/asdf/`).
+ *
+ * Pure Node.js — no VS Code dependency — vitest-testable.
+ * Used by `agent-tasks-provider.ts` to surface "other" markdown files in the
+ * Agent Tasks tree, reusing the same walk/exclusion logic as the Sessions panel.
+ */
+export function collectOtherFilePathsForWorktree(
+  worktreePath: string,
+  configuredDirs: string[],
+  excludedAbsPaths: ReadonlySet<string>
+): Array<{ absPath: string; relPath: string }> {
+  const allOther: string[] = [];
+  for (const dirName of configuredDirs) {
+    const artifactRoot = path.join(worktreePath, dirName);
+    try {
+      if (!fs.statSync(artifactRoot).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    allOther.push(...collectOtherMarkdownFilesRecursively(artifactRoot, excludedAbsPaths));
+  }
+
+  // Deduplicate (same file could theoretically appear across two configured dirs
+  // if they overlap — unlikely, but guard it), then sort stably by path.
+  const unique = [...new Set(allOther)].sort();
+
+  return unique.map((absPath) => {
+    // Compute relative path from the nearest configured dir root.
+    let relPath = absPath;
+    for (const dirName of configuredDirs) {
+      const root = path.join(worktreePath, dirName) + path.sep;
+      if (absPath.startsWith(root)) {
+        relPath = absPath.slice(root.length);
+        break;
+      }
+    }
+    return { absPath, relPath };
+  });
+}
+
 /** Returns true iff at least one artifact file path is set. */
 export function hasLinkedArtifacts(links: LinkedArtifacts): boolean {
   return Boolean(
