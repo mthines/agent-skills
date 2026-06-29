@@ -568,9 +568,9 @@ export class OtherMarkdownFileItem extends vscode.TreeItem {
     );
     this.contextValue = 'otherMarkdownFile';
     this.command = {
-      command: 'agentTasks.openMarkdown',
+      command: 'agentTasks.openOtherMarkdownFile',
       title: `Open ${filename}`,
-      arguments: [filePath],
+      arguments: [{ filePath }],
     };
   }
 }

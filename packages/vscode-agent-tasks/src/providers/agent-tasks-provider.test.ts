@@ -16,9 +16,11 @@
  *
  * TreeItem shape contract (cannot be tested in vitest due to vscode dependency):
  *   - `OtherMarkdownFileItem.contextValue` MUST be `'otherMarkdownFile'`.
- *   - `OtherMarkdownFileItem.command.command` MUST be `'agentTasks.openMarkdown'`.
+ *   - `OtherMarkdownFileItem.command.command` MUST be `'agentTasks.openOtherMarkdownFile'`
+ *     so single-click opens the editable editor directly (not the rendered preview).
  *   - `LinkedArtifactItem` instances created for `otherMarkdownPaths` in
- *     `sessions-provider.ts` MUST use `contextValueOverride = 'otherMarkdownFile'`.
+ *     `sessions-provider.ts` MUST use `contextValueOverride = 'otherMarkdownFile'`,
+ *     which causes their inline command to also be `agentTasks.openOtherMarkdownFile`.
  *   These constants enable the `view/item/context` menu entries in package.json
  *   to fire `agentTasks.openOtherMarkdownFile` on right-click in both trees.
  */

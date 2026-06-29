@@ -33,7 +33,6 @@ import { PrStatusCache } from './lib/pr-status-cache';
 import { SystemGhExecutor } from './lib/gh-executor';
 import { PrPoller } from './lib/pr-poller';
 import { DEFAULT_SESSION_FILTER } from './lib/session-filter';
-import { createClickState, handleMarkdownClick } from './lib/markdown-click-handler';
 
 export function activate(context: vscode.ExtensionContext): void {
   initLogger(context);
@@ -95,50 +94,18 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.executeCommand('agentTasksExplorer.focus');
   });
 
-  // ---------------------------------------------------------------------------
-  // Single-vs-double-click debounce state for markdown artifact rows.
-  //
-  // VS Code TreeView has no native double-click event — the TreeItem `command`
-  // fires on every click, including a second click on an already-selected item.
-  // We keep a per-path timer map to distinguish:
-  //
-  //   Single click  → after 300 ms with no second click
-  //                   → open the rendered markdown preview (markdown.showPreview)
-  //   Double click  → second invocation within 300 ms
-  //                   → open a persistent, editable editor tab (showTextDocument)
-  //
-  // The single-click action is intentionally delayed so a double click never
-  // flashes the preview before opening the editable editor.
-  //
-  // Applies to ALL markdown artifact rows in both trees (Agent Tasks and
-  // Sessions panels) — plan, task, walkthrough, diagnose, and other-markdown rows.
-  //
-  // The deprecated `agentTasks.openMarkdownInPreview` setting is left as-is
-  // (no-op) — it was already deprecated/no-op before this change; the new
-  // behaviour (single = rendered preview, double = editable) supersedes it.
-  // ---------------------------------------------------------------------------
-  const markdownClickState = createClickState();
-
-  const openMarkdownCmd = vscode.commands.registerCommand('agentTasks.openMarkdown', (filePath: string) => {
+  const openMarkdownCmd = vscode.commands.registerCommand('agentTasks.openMarkdown', async (filePath: string) => {
     if (!filePath || !fs.existsSync(filePath)) {
       return;
     }
     const uri = vscode.Uri.file(filePath);
-
-    handleMarkdownClick(
-      filePath,
-      markdownClickState,
-      // Single click → rendered markdown preview.
-      () => {
-        void vscode.commands.executeCommand('markdown.showPreview', uri);
-      },
-      // Double click → persistent, editable editor tab.
-      () => {
-        void vscode.workspace.openTextDocument(uri).then((doc) => {
-          return vscode.window.showTextDocument(doc, { preview: false });
-        });
-      },
-    );
+    const usePreview = vscode.workspace.getConfiguration('agentTasks').get<boolean>('openMarkdownInPreview', true);
+    if (usePreview) {
+      await vscode.commands.executeCommand('markdown.showPreview', uri);
+    } else {
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc, { preview: false });
+    }
   });
 
   const openPlanCmd = vscode.commands.registerCommand('agentTasks.openPlan', async (item) => {
@@ -303,7 +270,8 @@ export function activate(context: vscode.ExtensionContext): void {
     'agentTasks.openOtherMarkdownFile',
     async (item: OtherMarkdownFileItem | LinkedArtifactItem) => {
       if (!item?.filePath) return;
-      await vscode.commands.executeCommand('agentTasks.openMarkdown', item.filePath);
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(item.filePath));
+      await vscode.window.showTextDocument(doc, { preview: false });
     }
   );
 
