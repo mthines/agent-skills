@@ -381,6 +381,13 @@ export class SessionItem extends vscode.TreeItem {
             : `${linkedArtifacts.diagnosePaths.length} diagnose reports`;
         parts.push(noun);
       }
+      if (linkedArtifacts.otherMarkdownPaths && linkedArtifacts.otherMarkdownPaths.length > 0) {
+        const noun =
+          linkedArtifacts.otherMarkdownPaths.length === 1
+            ? '1 other file'
+            : `${linkedArtifacts.otherMarkdownPaths.length} other files`;
+        parts.push(noun);
+      }
       md.appendMarkdown(`**Linked artifacts:** ${parts.join(' · ')}\n\n`);
     }
 
@@ -1076,8 +1083,17 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
 
   /**
    * Children of a `SessionItem` are one `LinkedArtifactItem` per artifact
-   * file present at `<worktree>/<dir>/<branch>/`. Order: task.md, plan.md,
-   * walkthrough.md — matches the Agent Tasks panel.
+   * file present at `<worktree>/<dir>/<branch>/`.
+   *
+   * Order (known/recognised first, unknown last):
+   *   1. task.md
+   *   2. plan.md
+   *   3. walkthrough.md
+   *   4. diagnose-*.md reports (sorted by filename)
+   *   5. Pull Request row (when branch + worktree are known)
+   *   6. Other `.md` files that agents created but the extension does not
+   *      recognise explicitly (e.g. `specs.md`, `notes.md`), sorted by
+   *      filename — always at the bottom so known entries stay prominent.
    */
   private makeArtifactChildren(
     session: SessionItem
@@ -1085,6 +1101,8 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     const links = session.linkedArtifacts;
     if (!links) return [];
     const out: Array<LinkedArtifactItem | PrLinkItem> = [];
+
+    // Known/recognised entries first.
     if (links.taskPath) out.push(new LinkedArtifactItem('Task', 'tasklist', links.taskPath));
     if (links.planPath) out.push(new LinkedArtifactItem('Plan', 'notebook', links.planPath));
     if (links.walkthroughPath) {
@@ -1099,10 +1117,9 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
       }
     }
 
-    // Append a Pull Request row when we know the branch + worktree, so the
-    // user has a visible, recognisable button next to Plan/Walkthrough rather
-    // than relying on right-click discovery. The row's mode follows the
-    // current PR enrichment state.
+    // Pull Request row — always rendered between the recognised artifacts and
+    // the unknown "other" files, so the user has a visible, recognisable button
+    // next to Plan/Walkthrough rather than relying on right-click discovery.
     const branch = session.session.gitBranch;
     const worktreePath = this.sessionWorktrees.get(session.session.sessionId);
     if (branch && worktreePath) {
@@ -1113,6 +1130,16 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
         out.push(new PrLinkItem('open', branch, worktreePath, enrichment.info.url));
       } else if (enrichment.status === 'no-pr' || enrichment.status === 'error') {
         out.push(new PrLinkItem('create', branch, worktreePath, undefined));
+      }
+    }
+
+    // Unknown "other" markdown files at the bottom — always after known entries.
+    if (links.otherMarkdownPaths) {
+      for (const mdPath of links.otherMarkdownPaths) {
+        const filename = mdPath.split(/[\\/]/).pop() ?? mdPath;
+        // Strip the `.md` extension for a compact label (e.g. `specs.md` → `specs`).
+        const label = filename.endsWith('.md') ? filename.slice(0, -3) : filename;
+        out.push(new LinkedArtifactItem(label, 'markdown', mdPath));
       }
     }
 
