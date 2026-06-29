@@ -417,7 +417,8 @@
         "agentTasks.openMarkdownInPreview": {
           "type": "boolean",
           "default": true,
-          "description": "Open task.md, plan.md, and walkthrough.md in Markdown preview mode instead of the text editor"
+          "markdownDeprecationMessage": "Deprecated — all artifact and markdown files now open as persistent, editable editor tabs regardless of this setting. This option no longer has any effect and will be removed in a future release.",
+          "description": "Deprecated. All artifact files now open as editable editor tabs. This setting has no effect."
         },
         "agentTasks.sortBy": {
           "type": "string",

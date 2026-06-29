@@ -99,13 +99,13 @@ export function activate(context: vscode.ExtensionContext): void {
       return;
     }
     const uri = vscode.Uri.file(filePath);
-    const usePreview = vscode.workspace.getConfiguration('agentTasks').get<boolean>('openMarkdownInPreview', true);
-    if (usePreview) {
-      await vscode.commands.executeCommand('markdown.showPreview', uri);
-    } else {
-      const doc = await vscode.workspace.openTextDocument(uri);
-      await vscode.window.showTextDocument(doc, { preview: false });
-    }
+    // Always open artifact and other-markdown files as a persistent, editable
+    // editor tab — never VS Code's preview tab (italic, single-click-reused)
+    // and never the markdown rendered-preview pane. Artifact files are meant
+    // to be read and edited directly, so `preview: false` is the correct default
+    // for every row that routes through this command.
+    const doc = await vscode.workspace.openTextDocument(uri);
+    await vscode.window.showTextDocument(doc, { preview: false });
   });
 
   const openPlanCmd = vscode.commands.registerCommand('agentTasks.openPlan', async (item) => {
