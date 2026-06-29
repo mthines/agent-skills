@@ -49,7 +49,8 @@ Detect from the raw arguments:
 | `--publish` | Authorization token (path 1 in `authorization-gate.md`) |
 | `--critical` | Force adversarial pre-mortem via `Skill("critical", "code")` |
 | `--no-critical` | Suppress auto-engage of `critical` |
-| `--no-holistic` | Skip the default-on holistic review step (Step 2.4) |
+| `--no-holistic` | Skip the default-on holistic review step (Step 2.4) and the targeted escalation (Step 2.4b) |
+| `--no-escalate` | Skip only the targeted holistic escalation (Step 2.4b); keep the broad Step 2.4 pass |
 | `--with a,b,c` | Up to 3 additional review lenses |
 
 Parse the PR reference:
@@ -156,7 +157,8 @@ After rubric findings are collected, the pipeline runs through these gates in st
 
 ```
 rubrics produce raw findings
-  → 2.4 holistic-review.md         (Skill("holistic-analysis", "review") — default on)
+  → 2.4 holistic-review.md         (Skill("holistic-analysis", "review") — broad whole-PR, default on)
+  → 2.4b holistic-review.md § Targeted escalation (parallel focused traces on context-dependent findings — default on)
   → 2.5 rubric-composition § Consolidation (dedupe + per-file cap 5 + total cap 20)
   → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.6 finding-grounding.md       (every backticked symbol grep-resolves)
@@ -188,6 +190,16 @@ The skill returns 0–3 structured findings. Map each to a Conventional-Comments
 - `scope-creep` → `question`
 
 Mapped findings feed into the same finding stream as the rubric output, then pass through 2.5 (dedupe + consolidate) and the rest of the downstream gates.
+
+### 2.4b Targeted holistic escalation (default ON)
+
+See `agents/shared/rules/holistic-review.md § Targeted escalation (Step 2.4b)`. Runs after 2.4 and before dedupe.
+
+The broad 2.4 pass spreads attention across the whole diff and caps at 3 findings; it cannot deep-trace any one changed function's call graph. This step closes that gap: it selects the line-level findings that look **context-dependent** (changed exports whose correctness depends on caller behaviour — return-type / error / ordering / caching / contract changes, or ≥ 2 call sites) and fans out **parallel** `Skill("holistic-analysis", "review")` calls — one per selected finding, each with a `focus` block scoping it to that symbol's call graph. Cap 10, highest-severity first, second batch if more qualify.
+
+Each focused trace returns one verdict (`confirm` / `enrich` / `reshape` / `clear`). A `clear` drops the original finding (false positive caught by the wider context); the others replace it in the stream, now carrying caller evidence. For `pr-reviewer`, an escalated `system-fit` maps to a **`question`** (Step 2.4 mapping), respecting the cross-review context asymmetry.
+
+Skip when `--no-escalate` was passed in Step 0, or when 2.4 was trivial-skipped. The escalation adds no new gate — escalated findings re-enter the same 2.5 → 2.9 pipeline.
 
 ### 2.5 Dedupe + consolidate
 

@@ -41,7 +41,8 @@ Examine the **raw arguments** verbatim. Do not paraphrase. Detect:
 | `--report` | Force Report Mode — no auto-fix |
 | `--critical` | Force adversarial pre-mortem via `Skill("critical", "code")` |
 | `--no-critical` | Suppress auto-engage of `critical` |
-| `--no-holistic` | Skip the default-on holistic review step (Step 2.4) |
+| `--no-holistic` | Skip the default-on holistic review step (Step 2.4) and the targeted escalation (Step 2.4b) |
+| `--escalate` | Enable targeted holistic escalation (Step 2.4b — off by default in `reviewer`) |
 | `--with a,b,c` | Up to 3 additional review lenses |
 | PR URL or `#<n>` | Treat as a PR reference; route through Step 0.6 |
 
@@ -194,7 +195,8 @@ Run the full shared pipeline. Each gate is hard; no retries; drop is final withi
 
 ```
 rubrics produce raw findings
-  → 2.4 holistic-review.md         (Skill("holistic-analysis", "review") — default on)
+  → 2.4 holistic-review.md         (Skill("holistic-analysis", "review") — broad whole-PR, default on)
+  → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — opt-in via --escalate)
   → 2.5 rubric-composition § Consolidation (dedupe + per-file cap 10)
   → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.6 finding-grounding.md       (every backticked symbol grep-resolves)
@@ -235,6 +237,10 @@ The skill returns 0–3 structured findings. In `reviewer` (own work, you are th
 - `scope-creep` → `nitpick`
 
 Holistic findings flow through 2.5–2.9 like any other rubric output.
+
+### 2.4b Targeted holistic escalation (opt-in via `--escalate`)
+
+See `agents/shared/rules/holistic-review.md § Targeted escalation (Step 2.4b)`. **Off by default in `reviewer`** — enable with `--escalate`. When on, it selects the context-dependent findings (changed exports whose correctness depends on caller behaviour, or ≥ 2 call sites) and fans out **parallel** `Skill("holistic-analysis", "review")` calls with a `focus` block, one per finding (cap 10, highest-severity first, second batch if more qualify). Each returns one verdict (`confirm` / `enrich` / `reshape` / `clear`); a `clear` drops the finding, the rest replace it with caller evidence. Escalated findings re-enter 2.5–2.9 unchanged. Skipped when `--no-holistic` was passed or 2.4 was trivial-skipped.
 
 ### Remaining gates
 
