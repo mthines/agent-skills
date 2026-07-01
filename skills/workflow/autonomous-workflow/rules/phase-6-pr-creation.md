@@ -179,20 +179,53 @@ Log to Progress Log:
 
 ## PR Creation
 
-Invoke `create-pr` to handle the rest of the delivery in one go: narrative description generation, push, open the draft PR, and watch the initial CI run.
+Invoke `create-pr` to handle the rest of the delivery in one go: a **pre-push quality pass**, narrative description generation, push, open the draft PR, watch the initial CI run, and a post-push reviewer-feedback loop.
+
+**Invoke it BARE — never scale it down by default:**
 
 ```
 Skill("create-pr")
 ```
 
+A bare `create-pr` runs its FULL default pipeline: Step 5.5 delegates to `Skill("polish")` (the `reviewer` agent auto-fixing simple findings + `code-quality` **simplify** applying Class M refactors behind a confidence gate), and Step 6.5 runs the post-push reviewer-feedback loop. **Do NOT pass `--no-review`, `--no-simplify`, `--quick`, `--no-quality`, or `--no-feedback`** unless the user explicitly asked to skip a pass. The executor MUST also keep the Phase 6 Step 2 `reviewer` (`--critical`) dispatch — the critical self-review with autofix — it is not optional.
+
+> **Resource note — what the "save RAM" rule actually scopes.** This repo's resource guidance is about *execution cost only*: do not run `eslint` / `tsc` / tests **in parallel**, and do not spawn **parallel sub-agents** or **cascading full-verify rounds** (the 55+ GB OOM incident). It lets you economize *how and when* you run lint/tsc/tests (sequentially, never in parallel) — it does NOT let you skip the quality passes. create-pr's polish (reviewer auto-fix), code-quality **simplify**, and the Phase 6 critical self-review are sequential reasoning passes — the single-sequential-loop variant repo memory explicitly permits. Skipping them to "save RAM" is a category error and a Phase 6 collapse (taxonomy F5). Run the full sequential pass; only lint/tsc/test *execution* is what the RAM rule constrains.
+
 What `create-pr` handles:
 
-| Step                    | Owner       |
-| ----------------------- | ----------- |
-| Description generation  | `create-pr` |
-| `git push -u origin`    | `create-pr` |
-| `gh pr create --draft`  | `create-pr` |
-| Watch initial CI        | `create-pr` |
+| Step                          | Owner       |
+| ----------------------------- | ----------- |
+| Pre-push polish (review)      | `create-pr` → `polish` → `reviewer` agent |
+| Pre-push polish (simplify)    | `create-pr` → `polish` → `code-quality` simplify |
+| Description generation        | `create-pr` |
+| `git push -u origin`          | `create-pr` |
+| `gh pr create --draft`        | `create-pr` |
+| Watch initial CI              | `create-pr` |
+| Post-push reviewer-feedback   | `create-pr` Step 6.5 |
+
+### Phase 6 Delivery Receipt (GATE — Full + Lite)
+
+Phase 6 is NOT complete until you emit this receipt. It is the mechanical proof the quality passes ran; an empty/`skipped`-only receipt without a `companion … not available` line is a Phase 6 collapse — stop and run the missing pass before declaring delivery done.
+
+```bash
+# Deterministic check (Full Mode): the walkthrough MUST exist on disk.
+test -f ".agent/$(git branch --show-current)/walkthrough.md" \
+  && echo "receipt: walkthrough.md present" \
+  || echo "receipt: walkthrough.md MISSING — Phase 6 incomplete, run aw-create-walkthrough"
+```
+
+Then emit, inline, a `### Phase 6 Delivery Receipt` block with one line per required sub-step, each either a real result or an explicit `not available, continuing` (never silently omitted):
+
+```
+### Phase 6 Delivery Receipt
+- reviewer (pre-push, --critical): <N findings, M auto-fixed, B blocking | not available, continuing>
+- aw-create-walkthrough: <walkthrough.md present | Lite Mode — skipped | not available, continuing>
+- create-pr → polish (review): <verdict + auto-fixed count | not available, continuing>
+- create-pr → polish (simplify): <recipe IDs applied | none | not available, continuing>
+- create-pr → reviewer-feedback loop: <stop reason + iterations | --no-feedback (only if user asked) | not available, continuing>
+```
+
+If any line above would be blank because the pass did not run AND no `not available` reason applies, the pass was skipped in error: run it, then re-emit the receipt.
 
 | Property                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
