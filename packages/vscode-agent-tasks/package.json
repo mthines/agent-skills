@@ -191,6 +191,12 @@
         "command": "agentTasks.sessions.restoreDefaultFilter",
         "title": "Show Fewer Sessions (Restore Default Filter)",
         "category": "Agent Tasks"
+      },
+      {
+        "command": "agentTasks.openOtherMarkdownFile",
+        "title": "Open File",
+        "icon": "$(go-to-file)",
+        "category": "Agent Tasks"
       }
     ],
     "menus": {
@@ -254,6 +260,10 @@
         {
           "command": "agentTasks.sessions.restoreDefaultFilter",
           "when": "true"
+        },
+        {
+          "command": "agentTasks.openOtherMarkdownFile",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -326,12 +336,12 @@
         },
         {
           "command": "agentTasks.revealInOS",
-          "when": "view == agentTasksExplorer && viewItem =~ /^(agentBranch|agentWorktreeFlat|agentPlanFile|agentPlanVersion|agentWalkthroughFile|agentDiagnoseFile)/",
+          "when": "view == agentTasksExplorer && viewItem =~ /^(agentBranch|agentWorktreeFlat|agentPlanFile|agentPlanVersion|agentWalkthroughFile|agentDiagnoseFile|otherMarkdownFile)/",
           "group": "1_navigation@1"
         },
         {
           "command": "agentTasks.copyPath",
-          "when": "view == agentTasksExplorer && viewItem =~ /^(agentBranch|agentWorktreeFlat|agentPlanFile|agentPlanVersion|agentWalkthroughFile|agentDiagnoseFile)/",
+          "when": "view == agentTasksExplorer && viewItem =~ /^(agentBranch|agentWorktreeFlat|agentPlanFile|agentPlanVersion|agentWalkthroughFile|agentDiagnoseFile|otherMarkdownFile)/",
           "group": "1_navigation@2"
         },
         {
@@ -348,6 +358,16 @@
           "command": "agentTasks.sessions.openPR",
           "when": "view == agentSessionsExplorer && viewItem =~ /WithPr$/",
           "group": "inline@1"
+        },
+        {
+          "command": "agentTasks.openOtherMarkdownFile",
+          "when": "view == agentTasksExplorer && viewItem == otherMarkdownFile",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentTasks.openOtherMarkdownFile",
+          "when": "view == agentSessionsExplorer && viewItem == otherMarkdownFile",
+          "group": "navigation@1"
         }
       ]
     },

@@ -31,6 +31,7 @@ import {
 import { discoverWorktreePaths } from '../lib/worktree-discovery';
 import { findPlanVersions, PlanVersionInfo } from '../lib/plan-versions';
 import {
+  collectOtherFilePathsForWorktree,
   diagnoseTargetFromFilename,
   findDiagnoseReports,
 } from '../lib/session-artifact-correlator';
@@ -531,6 +532,49 @@ export class DiagnoseSummaryItem extends vscode.TreeItem {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Tree item: OtherMarkdownFileItem
+// ---------------------------------------------------------------------------
+
+/**
+ * Leaf node for an agent-created `.md` file that is not a recognised artifact
+ * (`task.md`, `plan.md`, `walkthrough.md`, `diagnose-*.md`, `plan.v*.md`).
+ *
+ * Rendered at the BOTTOM of the worktree group, after all recognised branch
+ * rows, so the well-known entries always appear first.
+ *
+ * Label: filename without extension (e.g. `specs`).
+ * Description / tooltip: relative subdir path within the configured dir root
+ * so `.agent/asdf/de.md` is distinguishable from `.agent/main/de.md`.
+ * Click opens the file via `agentTasks.openMarkdown`.
+ */
+export class OtherMarkdownFileItem extends vscode.TreeItem {
+  constructor(
+    public readonly filePath: string,
+    /** Relative path from the configured dir root (e.g. `asdf/de.md`). */
+    relPath: string
+  ) {
+    const filename = path.basename(filePath);
+    const label = filename.endsWith('.md') ? filename.slice(0, -3) : filename;
+    // Show the containing subdirectory in description for disambiguation.
+    const relDir = path.dirname(relPath);
+    const description = relDir && relDir !== '.' ? relDir : undefined;
+
+    super(label, vscode.TreeItemCollapsibleState.None);
+    this.iconPath = new vscode.ThemeIcon('markdown');
+    this.description = description;
+    this.tooltip = new vscode.MarkdownString(
+      `**${filename}**\n\n\`${relPath}\``
+    );
+    this.contextValue = 'otherMarkdownFile';
+    this.command = {
+      command: 'agentTasks.openOtherMarkdownFile',
+      title: `Open ${filename}`,
+      arguments: [{ filePath }],
+    };
+  }
+}
+
 export class DecisionItem extends vscode.TreeItem {
   constructor(decision: string, rationale: string, phase: string, taskFilePath?: string) {
     super(decision, vscode.TreeItemCollapsibleState.None);
@@ -568,6 +612,7 @@ type AgentTaskTreeItem =
   | WorktreeFlatItem
   | EmptyScopeItem
   | AgentBranchItem
+  | OtherMarkdownFileItem
   | TaskGroupItem
   | TaskCheckboxItem
   | TasksSummaryItem
@@ -723,6 +768,38 @@ function findBranchDirs(dir: string, relativePath = ''): string[] {
 }
 
 /**
+ * Collect all "other" `.md` files under each configured artifact root for a
+ * worktree, excluding paths already rendered as recognised branch artifacts.
+ *
+ * Returns `OtherMarkdownFileItem[]` sorted stably by absolute path.
+ * Delegates to `collectOtherFilePathsForWorktree` (from `session-artifact-correlator`)
+ * for the pure path-collection logic so the walk/exclusion logic has a single
+ * source of truth.
+ */
+function collectOtherFilesForWorktree(
+  worktreePath: string,
+  configuredDirs: string[],
+  branches: BranchItemWithMeta[]
+): OtherMarkdownFileItem[] {
+  // Build the exclusion set from all recognised artifact paths in the branches.
+  const excluded = new Set<string>();
+  for (const b of branches) {
+    const { artifactDir } = b.item;
+    for (const name of ['task.md', 'plan.md', 'walkthrough.md']) {
+      excluded.add(path.join(artifactDir, name));
+    }
+    for (const d of b.item.diagnoses) {
+      excluded.add(d.filePath);
+    }
+    // plan.v*.md — excluded by PLAN_VERSION_PATTERN inside the helper.
+  }
+
+  return collectOtherFilePathsForWorktree(worktreePath, configuredDirs, excluded).map(
+    ({ absPath, relPath }) => new OtherMarkdownFileItem(absPath, relPath)
+  );
+}
+
+/**
  * Sort branch items by the configured sort settings.
  */
 function sortBranchItems(items: BranchItemWithMeta[]): BranchItemWithMeta[] {
@@ -774,14 +851,17 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
       return this.getRootItems();
     }
 
-    // Flattened worktree node (1-branch case): delegate directly to branch children
+    // Flattened worktree node (1-branch case): show branch artifacts, then other
+    // markdown files that aren't recognized artifacts.
     if (element instanceof WorktreeFlatItem) {
-      return this.getBranchChildren(element.branch);
+      const branchChildren = this.getBranchChildren(element.branch);
+      const otherFiles = this.getOtherFilesForWorktree(element.worktreePath);
+      return [...branchChildren, ...otherFiles];
     }
 
-    // Worktree group level: list branches for that worktree
+    // Worktree group level: list branches for that worktree, then other files.
     if (element instanceof WorktreeArtifactGroupItem) {
-      return this.getBranchItemsForWorktree(element.worktreePath);
+      return this.getWorktreeChildren(element.worktreePath);
     }
 
     // Branch level: show task groups, plan, decisions, blockers
@@ -836,41 +916,50 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
       ) ?? workspacePath;
 
     if (scope === 'current') {
-      // Flat list for current worktree only
-      const branches = this.getBranchItemsForWorktree(currentWorktree);
+      // Flat list for current worktree only — branches first, then other files.
+      const allItems = this.getWorktreeChildren(currentWorktree);
 
-      // Empty-state: current has nothing but other worktrees do
-      if (branches.length === 0 && allWorktrees.length > 1) {
+      // Empty-state: current has nothing but other worktrees do.
+      if (allItems.length === 0 && allWorktrees.length > 1) {
         const configuredDirs = getConfiguredDirs();
         const otherCount = allWorktrees
           .filter((wt) => wt !== currentWorktree)
-          .filter((wt) => collectBranchesForWorktree(wt, configuredDirs).length > 0).length;
+          .filter((wt) => {
+            const branches = collectBranchesForWorktree(wt, configuredDirs);
+            if (branches.length > 0) return true;
+            return collectOtherFilesForWorktree(wt, configuredDirs, branches).length > 0;
+          }).length;
         if (otherCount > 0) {
           return [new EmptyScopeItem(otherCount)];
         }
       }
-      return branches;
+      return allItems;
     }
 
     // scope === 'all': single-worktree stays flat; multi-worktree gets groups
 
     if (allWorktrees.length <= 1) {
-      // Single worktree — flat list, no group wrapper
-      return this.getBranchItemsForWorktree(currentWorktree);
+      // Single worktree — flat list, no group wrapper; branches first, then
+      // other markdown files.
+      return this.getWorktreeChildren(currentWorktree);
     }
 
     // Multi-worktree: group by worktree, current first
     const configuredDirs = getConfiguredDirs();
-    const groups: Array<{ wt: string; branches: BranchItemWithMeta[]; mtime: number }> = [];
+    const groups: Array<{ wt: string; branches: BranchItemWithMeta[]; otherCount: number; mtime: number }> = [];
 
     for (const wt of allWorktrees) {
       const branches = collectBranchesForWorktree(wt, configuredDirs);
+      const otherFiles = collectOtherFilesForWorktree(wt, configuredDirs, branches);
       const mtime = branches.reduce((max, b) => Math.max(max, b.mtime), 0);
-      groups.push({ wt, branches, mtime });
+      groups.push({ wt, branches, otherCount: otherFiles.length, mtime });
     }
 
-    // Show current worktree even when empty; hide others when empty
-    const visibleGroups = groups.filter((g) => g.wt === currentWorktree || g.branches.length > 0);
+    // Show current worktree even when empty; show others that have branches OR
+    // other markdown files.
+    const visibleGroups = groups.filter(
+      (g) => g.wt === currentWorktree || g.branches.length > 0 || g.otherCount > 0
+    );
 
     visibleGroups.sort((a, b) => {
       if (a.wt === currentWorktree) return -1;
@@ -880,10 +969,17 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
 
     return visibleGroups.map((g) => {
       const isCurrent = g.wt === currentWorktree;
-      // 1-branch case: flatten — skip the redundant AgentBranchItem level
+      // 1-branch case: flatten — skip the redundant AgentBranchItem level.
+      // Other-markdown-only case (0 branches): also use the flat path so the
+      // worktree expands to show the files directly without an extra level.
       if (g.branches.length === 1) {
         const sorted = sortBranchItems(g.branches);
         return new WorktreeFlatItem(g.wt, isCurrent, sorted[0].item);
+      }
+      if (g.branches.length === 0) {
+        // Worktree has only other files — show as a group whose children are
+        // those files; count = 0 branches is intentional.
+        return new WorktreeArtifactGroupItem(g.wt, 0, isCurrent);
       }
       return new WorktreeArtifactGroupItem(g.wt, g.branches.length, isCurrent);
     });
@@ -913,6 +1009,33 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
     }
 
     return sortBranchItems(Array.from(itemsByKey.values())).map((i) => i.item);
+  }
+
+  /**
+   * Compute the "other markdown file" rows for one worktree, excluding paths
+   * that are already rendered as recognised branch artifacts.
+   *
+   * Delegates to the module-level `collectOtherFilesForWorktree` helper so the
+   * walk/exclusion logic has a single source of truth.
+   */
+  private getOtherFilesForWorktree(worktreePath: string): OtherMarkdownFileItem[] {
+    const configuredDirs = getConfiguredDirs();
+    const branches = collectBranchesForWorktree(worktreePath, configuredDirs);
+    return collectOtherFilesForWorktree(worktreePath, configuredDirs, branches);
+  }
+
+  /**
+   * Return the full sorted child list for a worktree: recognised branch rows
+   * first (sorted per `sortBranchItems`), then "other" markdown file rows
+   * sorted stably by path.
+   *
+   * Used by both `getChildren(WorktreeArtifactGroupItem)` and the single-
+   * worktree flat-list path in `getRootItems`.
+   */
+  private getWorktreeChildren(worktreePath: string): AgentTaskTreeItem[] {
+    const branches = this.getBranchItemsForWorktree(worktreePath);
+    const otherFiles = this.getOtherFilesForWorktree(worktreePath);
+    return [...branches, ...otherFiles];
   }
 
   private taskItemToCheckbox(t: TaskItem, taskFilePath: string): TaskCheckboxItem {

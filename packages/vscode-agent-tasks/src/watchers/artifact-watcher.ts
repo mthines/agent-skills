@@ -545,18 +545,13 @@ export class ArtifactWatcher implements vscode.Disposable {
 
   private async openArtifact(uri: vscode.Uri, label: string): Promise<void> {
     try {
-      const usePreview = vscode.workspace
-        .getConfiguration('agentTasks')
-        .get<boolean>('openMarkdownInPreview', true);
-      if (usePreview) {
-        await vscode.commands.executeCommand('markdown.showPreview', uri);
-      } else {
-        const doc = await vscode.workspace.openTextDocument(uri);
-        await vscode.window.showTextDocument(doc, {
-          preview: false,
-          viewColumn: vscode.ViewColumn.One,
-        });
-      }
+      // Open newly-generated artifacts as persistent, editable editor tabs —
+      // never VS Code's preview tab or the markdown rendered-preview pane.
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await vscode.window.showTextDocument(doc, {
+        preview: false,
+        viewColumn: vscode.ViewColumn.One,
+      });
       vscode.window.showInformationMessage(`${label} generated: ${path.basename(path.dirname(uri.fsPath))}`);
     } catch {
       // ignore open errors
