@@ -15,8 +15,9 @@ description: >
   scaling from markdown → SQLite FTS → vector DB → managed memory
   (Mem0 / Letta / Zep). Also backs the per-user home-tier lesson scopes
   (`~/.agent-memory/aw-lessons/`, `aw-tester-lessons`, `fix-bug-lessons`,
-  `batch-lessons`, `reviewer-lessons`) used by the self-improvement loops of
-  `autonomous-workflow`, `fix-bug`, `batch-linear-tickets`, and the
+  `batch-lessons`, `reviewer-lessons`, `implement-suggestion-lessons`) used by the
+  self-improvement loops of `autonomous-workflow`, `fix-bug`,
+  `batch-linear-tickets`, `implement-suggestion`, and the
   `reviewer` agent — lessons follow the user across every repository.
   Triggers on "remember this", "save to
   memory", "recall memory", "load memory", "what do you remember

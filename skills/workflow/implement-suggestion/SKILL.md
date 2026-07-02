@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(gw *) Read Edit Write Glob Grep Skill
 metadata:
   author: mthines
-  version: '2.1.0'
+  version: '2.2.0'
   workflow_type: orchestrator
   architecture: parse/resolve/fetch/classify/validate/pack/handoff(fast|standard)/report
   composes:
@@ -156,6 +156,22 @@ if present.
 
 ### Phase 3 — Classify
 
+<a id="lessons-read"></a>
+**Before tagging — read prior lessons.** Load `implement-suggestion-lessons` so accumulated
+misclassifications and gate mis-calibrations bias this run before they repeat.
+Full contract in [`rules/self-improvement-loop.md#read-lessons-phase-3`](./rules/self-improvement-loop.md#read-lessons-phase-3):
+
+```
+Skill("persistent-memory", "read implement-suggestion-lessons --tier home")     # skips silently if not installed
+if [ -f memory/implement-suggestion-lessons/INDEX.md ]; then
+  Skill("persistent-memory", "read implement-suggestion-lessons --tier project-shared")
+fi
+```
+
+Match each lesson's `trigger-context` (reviewer source + topic) against the
+ledger. Matches are **advisory inputs** to Phase 3 tagging and the Phase 4 gates
+— they never relax the two-gate requirement or a hard rule.
+
 Tag every comment per [`rules/comment-classification.md`](./rules/comment-classification.md):
 
 | Tag           | Treatment                                                                  |
@@ -249,6 +265,23 @@ Then per PR list:
 - **Surfaced** (needs user) — comment, gate score, `/critical` finding if any.
 - **Skipped** — comment, reason.
 
+<a id="lessons-write"></a>
+**After the report — write lessons.** Run the retrospective and capture any
+durable lesson from the run (a Phase 3 misclassification, a Phase 4 gate
+mis-score, a Phase 6 lane misfire, an apply that needed a scoped-check fix).
+Full contract, tier classification, and the applied-lesson UPDATE rule in
+[`rules/self-improvement-loop.md#write-lessons`](./rules/self-improvement-loop.md#write-lessons):
+
+```
+# Universal candidate → home. Project-bound candidate → project-shared only when opted in.
+Skill("persistent-memory", "write implement-suggestion-lessons --tier home --auto")     # skips silently if not installed
+```
+
+A lesson reaching `seen_count >= 3` is promotion-eligible — surface the
+tier-appropriate one-liner (`/create-skill diagnose implement-suggestion` for
+`home`; a repo rule via `docs` for `project-shared`). Never promote silently.
+See [`rules/self-improvement-loop.md#lesson-promotion`](./rules/self-improvement-loop.md#lesson-promotion).
+
 ## Watch Workflow (`--watch`)
 
 A loop wrapper around the multi-PR single-pass, scoped to one PR. Each iteration:
@@ -274,6 +307,24 @@ without a PR worktree context:
 Free-text mode preserves v1 behaviour: a quick "implement this colleague
 suggestion I just pasted" path with no PR plumbing.
 
+## Self-Improvement
+
+`/implement-suggestion` gets better across runs through a two-tier lessons loop
+(fast episodic tier + gated promotion), identical in shape to
+`autonomous-workflow` and `fix-bug`. It **reads** `implement-suggestion-lessons` at Phase 3
+and **writes** at Phase 7 (and on a `--watch` re-flag), keyed by reviewer source
++ comment topic. Lessons are **advisory** — they bias classification, gate
+calibration, and lane selection, but never relax a gate or a hard rule. A lesson
+that recurs (`seen_count >= 3`) is promotion-eligible to a permanent skill guard
+via `/create-skill diagnose implement-suggestion`.
+
+The loop owns implement-suggestion's **own** decision phases only; the
+standard-lane `aw-planner` dispatch already contributes to `aw-lessons` for the
+planning of architectural changes — this loop does not duplicate that.
+`persistent-memory` is an **optional companion**: if it is not installed the
+whole loop skips silently. Full contract:
+[`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
+
 ## Hard Rules
 
 - **Never** push with `--force` or `--force-with-lease` without explicit user approval.
@@ -297,6 +348,7 @@ suggestion I just pasted" path with no PR plumbing.
 | `/critical` skill | Adversarial pre-mortem per comment | **Yes** |
 | `/confidence` skill | Gate scoring per comment | **Yes** |
 | `aw-planner` agent | Standard-lane plan authoring | Required when standard-lane fires |
+| `persistent-memory` skill | `implement-suggestion-lessons` self-improvement loop (read Phase 3, write Phase 7 / watch re-flag) | Optional — loop skips silently if absent |
 
 If `gh` is missing in multi-PR mode, stop and tell the user to install it.
 
@@ -311,6 +363,7 @@ If `gh` is missing in multi-PR mode, stop and tell the user to install it.
 | [`validation-gates`](./rules/validation-gates.md) | Phase 4 |
 | [`handoff`](./rules/handoff.md) | Phase 6 — worker prompt + standard-lane planner dispatch |
 | [`watch-mode`](./rules/watch-mode.md) | When `--watch` is set — the post-push feedback loop |
+| [`self-improvement-loop`](./rules/self-improvement-loop.md) | Cross-cutting — `implement-suggestion-lessons` fast tier (read Phase 3 / write Phase 7 + watch re-flag) + promotion to `diagnose` |
 
 Templates:
 
@@ -328,3 +381,7 @@ Templates:
    existing branch and Phase 7's report links to the existing PR URL.
 5. **Parallelize per PR, sequentialize per comment.** PR-level work fans out; per-PR validation
    stays linear so the gates see consistent state.
+6. **Learn across runs, but only advisory.** `implement-suggestion-lessons` (read Phase 3, write Phase 7)
+   biases classification, gate calibration, and lane selection from prior runs — but a lesson
+   never relaxes a gate or a hard rule. Only a recurrence-proven lesson (`seen_count >= 3`) earns
+   a confidence-gated, user-approved change to the skill's source.
