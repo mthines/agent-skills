@@ -21,7 +21,7 @@ description: >
 argument-hint: '[--analyse-only|--force-holistic] [<bug-description>|<ticket>]'
 license: MIT
 user-invocable: true
-disable-model-invocation: true
+disable-model-invocation: false
 metadata:
   author: mthines
   version: '2.2.0'
