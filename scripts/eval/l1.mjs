@@ -129,7 +129,7 @@ function acceptanceCriteriaCount(plan) {
 // skill-development run, polluting the universal store with skill-author
 // noise. Keep this directory absent in agent-skills.git specifically.
 {
-  for (const scope of ["aw-lessons", "aw-tester-lessons", "fix-bug-lessons", "batch-lessons", "reviewer-lessons", "implement-suggestion-lessons"]) {
+  for (const scope of ["aw-lessons", "aw-tester-lessons", "fix-bug-lessons", "batch-lessons", "reviewer-lessons", "implement-suggestion-lessons", "ci-auto-fix-lessons", "e2e-pr-stabilizer-lessons", "test-auto-fix-lessons"]) {
     const dir = join(REPO_ROOT, "memory", scope);
     s.check(`memory/${scope} not committed in agent-skills.git (this is the skill source, not a consumer)`, !existsSync(dir));
   }

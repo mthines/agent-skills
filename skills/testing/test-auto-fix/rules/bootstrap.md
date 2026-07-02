@@ -99,7 +99,7 @@ If the user provides corrections, apply them and show the updated content before
 ## Step 6 — Write the surface file (atomic)
 
 After approval, write the file atomically to avoid corruption when two
-`test-autofix` runs touch the same surface concurrently (parallel CI workers,
+`test-auto-fix` runs touch the same surface concurrently (parallel CI workers,
 interactive + agent session against the same repo):
 
 1. Create the `surfaces/` directory if it does not exist.

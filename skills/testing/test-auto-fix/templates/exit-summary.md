@@ -1,16 +1,16 @@
-# test-autofix exit summary template
+# test-auto-fix exit summary template
 
 Always end a run with this block, regardless of outcome.
 Fill every field; omit optional fields only when clearly not applicable.
 
 ```text
-test-autofix run
+test-auto-fix run
   Outcome: <green | escalated | regression-reverted | max-iterations>
   Resolved: <N> failures
   Escalated: <N> failures (<comma-separated verdicts, e.g.: prod-bug, unsure>)
   Iterations: <N>/<max>
   Surface: <path to surface file>
-  Plan: .agent/{branch}/test-autofix-plan.md
+  Plan: .agent/{branch}/test-auto-fix-plan.md
   Successful run: <detect-command output summary>      # if outcome is green
   Escalation reason: <one sentence per escalated failure>  # if outcome is not green
 ```

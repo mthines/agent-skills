@@ -22,7 +22,7 @@ argument-hint: '[stabilize|optimize] [pr-url|pr-number]'
 allowed-tools: Bash(gh *) Bash(git *) Bash(node *) Bash(pnpm *) Bash(npx *) Bash(jq *) Read Edit Write Grep Glob
 metadata:
   author: mthines
-  version: '2.0.0'
+  version: '2.1.0'
   workflow_type: slash-command
   tags:
     - playwright
@@ -135,10 +135,10 @@ Do not preload.
 | 0 | [`rules/input-resolution.md`](./rules/input-resolution.md) |
 | 1 | [`rules/telemetry-driven-analysis.md`](./rules/telemetry-driven-analysis.md), [`references/dash0-mcp-filters.md`](./references/dash0-mcp-filters.md) |
 | 2 | [`rules/local-iteration.md`](./rules/local-iteration.md) |
-| 3–4 | [`rules/root-cause-and-fix.md`](./rules/root-cause-and-fix.md) |
+| 3–4 | [`rules/root-cause-and-fix.md`](./rules/root-cause-and-fix.md), [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) (read lessons — stabilize only) |
 | 5 | [`rules/root-cause-and-fix.md`](./rules/root-cause-and-fix.md), [`rules/fix-validation.md`](./rules/fix-validation.md), [`rules/guard-rails.md`](./rules/guard-rails.md) |
 | 6 | [`rules/local-iteration.md`](./rules/local-iteration.md) |
-| 7 | [`rules/verification-loop.md`](./rules/verification-loop.md) |
+| 7 | [`rules/verification-loop.md`](./rules/verification-loop.md), [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) (write lessons on ratification — stabilize only) |
 | 8 | [`templates/stabilization-report.md`](./templates/stabilization-report.md) |
 
 For trace mechanics (zip → JSONL → action timeline), defer to [`/playwright-trace-analyzer`](../../analysis/playwright-trace-analyzer/SKILL.md).
@@ -178,6 +178,26 @@ Do **not** re-implement.
    Cross-PR refactors belong in a different skill.
 
 ---
+
+## Self-Improvement
+
+`/e2e-pr-stabilizer` gets better across runs through a two-tier lessons loop
+(fast episodic tier + gated promotion), like `autonomous-workflow` and
+`fix-bug`. In **`stabilize` mode** it **reads** `e2e-pr-stabilizer-lessons` at
+Phase 4 (biasing the P1–P6 pattern classification and the Phase 5 locator
+strategy) and **writes** at Phase 7 — gated on the **telemetry ratification
+signal**, not the local 3-pass streak, so only fixes that CI actually confirmed
+`fixed` accrue a working lesson. The two tiers split naturally: `home` holds
+universal race-shape → fix-shape mappings, `project-shared` holds app-specific
+locator robustness. Lessons are **advisory** — they never relax a guard-rail, an
+empirical gate, or the 3-consecutive-pass requirement. A recurring lesson
+(`seen_count >= 3`) is promotion-eligible via
+`/create-skill diagnose e2e-pr-stabilizer`.
+
+`optimize` mode skips the loop (no fix, no ratification signal).
+`persistent-memory` is an **optional companion**: if absent, the loop skips
+silently. Full contract:
+[`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
 
 ## Anti-patterns
 
