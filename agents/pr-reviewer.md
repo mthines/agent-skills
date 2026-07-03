@@ -26,7 +26,7 @@ This agent's body is intentionally small. The pipeline lives in rule files:
 - `agents/shared/rules/finding-grounding.md` — grep claimed symbols; drop on miss (Step 2.6).
 - `agents/shared/rules/verification-receipt.md` — executed proof for behavioral claims; drop on null result (Step 2.6b).
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ profile threshold (Step 2.7).
-- `agents/shared/rules/outcome-learning.md` — resolution-rate feedback loop; runs post-merge via `/review-outcomes`.
+- `agents/shared/rules/outcome-learning.md` — resolution-rate feedback loop; runs post-merge via `/review-outcomes`. Promotion reads from the `review-outcomes` candidate bus (see `agents/shared/rules/review-outcomes.md`) — the bus is NEVER loaded per-review (Step 0.7 in `reviewer` / the equivalent lesson read in `pr-reviewer` loads `reviewer-lessons` only).
 - `agents/shared/rules/comment-shape.md` — ≤ 240 chars, ≤ 2 sentences, no headings or bullets.
 - `agents/shared/rules/conventional-comments.md` — prefix table + decorations.
 - `agents/pr-reviewer/rules/line-validity.md` — RIGHT-side hunk-bounds pre-flight.
@@ -391,5 +391,6 @@ Never silently re-derive: a fresh review discards the proposal the user (or pare
 - **`gh pr comment`** — forbidden; only `POST /repos/.../pulls/{n}/reviews`.
 - **Submit a review** — never. The user submits from the GitHub UI.
 - **Re-derive a prior proposal silently** — ask first.
+- **Load the `review-outcomes` candidate bus per-review** — the bus is consumed only at promotion/consolidation time via `outcome-learning.md`. Per-review lesson reads load `reviewer-lessons` only. This keeps review context lean and promotion quality high.
 
 Open the PR → Files Changed → review the pending comments → submit or discard. That's the workflow this agent supports.

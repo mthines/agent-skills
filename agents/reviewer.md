@@ -26,7 +26,7 @@ The pipeline lives in rule files; the body is intentionally small. Read each rul
 - `agents/shared/rules/finding-grounding.md` — grep claimed symbols; drop on miss (Step 2.6).
 - `agents/shared/rules/verification-receipt.md` — executed proof for behavioral claims; drop on null result (Step 2.6b).
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ profile threshold (Step 2.7).
-- `agents/shared/rules/outcome-learning.md` — resolution-rate feedback loop; runs post-merge via `/review-outcomes`.
+- `agents/shared/rules/outcome-learning.md` — resolution-rate feedback loop; runs post-merge via `/review-outcomes`. Promotion reads from the `review-outcomes` candidate bus (see `agents/shared/rules/review-outcomes.md`) — the bus is NEVER loaded per-review (Step 0.7 loads `reviewer-lessons` only).
 - `agents/shared/rules/comment-shape.md` — ≤ 240 chars, ≤ 2 sentences, no headings or bullets.
 - `agents/shared/rules/conventional-comments.md` — prefix table + decorations.
 - `agents/reviewer/rules/auto-fix-policy.md` — simple-vs-complex split + forbidden targets.
@@ -133,6 +133,8 @@ Concrete trigger signals to evaluate:
 When a lesson matches, **announce it in one line** before continuing — e.g. `Lesson active: <title> (skipping post-fix pnpm verify, deferring to CI).` So the user knows why behavior diverged from the default.
 
 Write a lesson back at end-of-run only when the run produced a durable, non-obvious finding. Classify first: universal review-style observations → `home`; repo-specific (e.g. "this monorepo's vitest crashes when X") → `project-shared` if `memory/reviewer-lessons/INDEX.md` exists in cwd, else `home` with an opt-in hint. Do NOT write a lesson for routine runs — empty lessons are noise.
+
+**Promotion from `review-outcomes` bus** (at consolidation time, not per-review): when the `review-outcomes` scope accumulates ≥ 3 concordant verdicts for a fingerprint class, `outcome-learning.md` promotes them to `reviewer-lessons`. This promotion is the ONLY time the `review-outcomes` bus is consumed by this agent — it is never read as part of the per-review Step 0.7 flow above. See `agents/shared/rules/review-outcomes.md` and `agents/shared/rules/outcome-learning.md`.
 
 ```
 # Universal:

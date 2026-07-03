@@ -317,6 +317,57 @@ function acceptanceCriteriaCount(plan) {
       content.includes("null") && content.includes("verification") &&
       (content.includes("never read as confirmation") || content.includes("drop")));
   }
+
+  // G12: review-outcomes.md exists as the shared candidate/outcome bus and documents
+  // the four required contracts: volatile TTL, fingerprint reuse, promotion threshold,
+  // and provenance rule. These are the stable literal strings the emit step and
+  // agents wire against — check them verbatim.
+  {
+    const ro = read("agents/shared/rules/review-outcomes.md");
+    s.check("G12a review-outcomes.md exists and declares volatile TTL (30 days)",
+      ro.includes("review-outcomes") && ro.includes("volatile") && /30.day/i.test(ro));
+    s.check("G12b review-outcomes.md mandates fingerprint reuse from prior-comment-awareness",
+      ro.includes("prior-comment-awareness") && ro.includes("fingerprint"));
+    s.check("G12c review-outcomes.md states promotion-agreement threshold (≥ 3 concordant verdicts)",
+      /concordant.*verdict|verdict.*concordant/i.test(ro) || /3 concordant/i.test(ro));
+    s.check("G12d review-outcomes.md states provenance honesty rule (mixed-source)",
+      ro.includes("provenance") && /mixed.source/i.test(ro) &&
+      (ro.includes("filter by") || ro.includes("filter by `source`")));
+    s.check("G12e review-outcomes.md states candidate bus NOT loaded per-review",
+      ro.includes("MUST NOT") && ro.includes("per-review") ||
+      ro.includes("per-review") && ro.includes("never") && ro.includes("Step 0.7"));
+    s.check("G12f review-outcomes.md names outcome-emit step token (anchors implement-suggestion's emit)",
+      ro.includes("outcome-emit") || ro.includes("implement-suggestion"));
+  }
+
+  // G13: implement-suggestion SKILL.md references review-outcomes as a producer
+  // and contains the outcome-emit step. Check for stable literal tokens written
+  // into the file — these strings are controlled by this commit.
+  {
+    const isSkill = read("skills/workflow/implement-suggestion/SKILL.md");
+    s.check("G13a implement-suggestion references review-outcomes scope",
+      isSkill.includes("review-outcomes"));
+    s.check("G13b implement-suggestion contains outcome-emit anchor/step",
+      isSkill.includes("outcome-emit"));
+    s.check("G13c implement-suggestion states emit is non-blocking (append-only)",
+      /non-blocking/i.test(isSkill) && isSkill.includes("review-outcomes"));
+    s.check("G13d implement-suggestion references outcome-learning.md as the consumer",
+      isSkill.includes("outcome-learning.md") && isSkill.includes("review-outcomes"));
+  }
+
+  // G14: outcome-learning.md names review-outcomes as its primary input and explicitly
+  // forbids loading the bus per-review (Step 0.7 discipline). Both contracts are
+  // stable literal strings this commit writes into the file.
+  {
+    const ol = read("agents/shared/rules/outcome-learning.md");
+    s.check("G14a outcome-learning.md names review-outcomes as primary input",
+      ol.includes("review-outcomes") && /primary.*input|primary.*signal/i.test(ol));
+    s.check("G14b outcome-learning.md states bus is NEVER loaded per-review",
+      ol.includes("review-outcomes") && (ol.includes("NEVER") || ol.includes("never")) &&
+      ol.includes("per-review"));
+    s.check("G14c outcome-learning.md references review-outcomes.md for bus schema",
+      ol.includes("review-outcomes.md") && (ol.includes("schema") || ol.includes("bus")));
+  }
 }
 
 process.exit(s.report() ? 0 : 1);
