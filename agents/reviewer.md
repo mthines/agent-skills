@@ -154,7 +154,7 @@ fi
 
 **Run only when `SUB_MODE == "self-review"`.** Skip in Fix Mode and Report Mode (no prior GitHub state).
 
-See `agents/shared/rules/prior-comment-awareness.md`. Fetch existing review comments on the PR, build the dedup set and the resolved-suggestion set. These are consumed at Step 2.5 (dedup against prior bot comments) and throughout Step 2 (anti-flip-flop drops).
+See `agents/shared/rules/prior-comment-awareness.md`. Fetch existing review comments on the PR, build the dedup set and the resolved-suggestion set. These are consumed at Step 2.5b (dedup against prior bot comments) and throughout Step 2 (anti-flip-flop drops).
 
 ### 1.1 Get the diff
 
