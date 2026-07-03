@@ -211,6 +211,7 @@ Run the full shared pipeline. Each gate is hard; no retries; drop is final withi
 
 ```
 rubrics produce raw findings
+  → 2.3  review-config.md § Filters (drop findings in categories suppressed by .review.yaml — runs before holistic)
   → 2.4  holistic-review.md         (Skill("holistic-analysis", "review") — broad whole-PR, default on)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — opt-in via --escalate)
   → 2.5  rubric-composition § Consolidation (dedupe + per-file cap 10)
@@ -230,6 +231,14 @@ In order (`agents/shared/rules/rubric-composition.md`): `code-quality` → `ux` 
 ### 2.1 Walk rubrics against the diff
 
 Each rubric emits raw findings.
+
+### 2.3 Filter suppression (from `.review.yaml`)
+
+See `agents/shared/rules/review-config.md § Filters`.
+Drop any finding whose category matches a suppressor in the effective `filters:` list for the finding's file.
+This step runs immediately after the rubric walk and **before** 2.4 holistic review, so a suppressed finding never consumes a holistic-escalation slot.
+When no `.review.yaml` is present (`profile: balanced`), the `filters:` list is empty and this step is a no-op.
+Filter drops are logged as `Filter drops: <FL>` in the Quality Gate summary.
 
 ### 2.4 Holistic review (default ON)
 

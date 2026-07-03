@@ -177,7 +177,7 @@ done
 The effective config is consumed by:
 
 - `per-comment-confidence.md` (2.7) — reads the profile's threshold.
-- The filter evaluation (early in Step 2) — drops findings in suppressed categories.
+- The filter evaluation (**Step 2.3**, early in Step 2, before holistic review) — drops findings in suppressed categories.
 - The path-instruction injection at `per-comment-confidence.md` (2.7) — appends instruction to Evidence.
 
 ---

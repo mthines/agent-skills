@@ -173,6 +173,7 @@ After rubric findings are collected, the pipeline runs through these gates in st
 
 ```
 rubrics produce raw findings
+  → 2.3  review-config.md § Filters (drop findings in categories suppressed by .review.yaml — runs before holistic)
   → 2.4  holistic-review.md         (Skill("holistic-analysis", "review") — broad whole-PR, default on)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — default on)
   → 2.5  rubric-composition § Consolidation (dedupe + per-file cap 5 + total cap 20)
@@ -184,6 +185,14 @@ rubrics produce raw findings
   → 2.8  comment-shape.md           (≤ 240 chars, ≤ 2 sentences, no structure)
   → 2.9  conventional-comments.md   (prefix + decoration)
 ```
+
+### 2.3 Filter suppression (from `.review.yaml`)
+
+See `agents/shared/rules/review-config.md § Filters`.
+Drop any finding whose category matches a suppressor in the effective `filters:` list for the finding's file.
+This step runs immediately after the rubric walk and **before** 2.4 holistic review, so a suppressed finding never consumes a holistic-escalation slot.
+When no `.review.yaml` is present (`profile: balanced`), the `filters:` list is empty and this step is a no-op.
+Filter drops are logged as `Filter drops: <FL>` in the Quality Gate summary.
 
 ### 2.4 Holistic review (default ON)
 
