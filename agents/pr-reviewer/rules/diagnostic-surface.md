@@ -43,16 +43,20 @@ The companion agent `reviewer` handles own-work (Fix Mode, Report Mode, Self-Rev
 | --- | --- | --- | --- |
 | 0 | Raw-arguments read | [pr-reviewer.md § Step 0](../../pr-reviewer.md) | Raw arguments preserved verbatim; parent paraphrases ignored |
 | 0.5 | Authorship pre-check | [pr-reviewer.md § Step 0.5](../../pr-reviewer.md) | `author != current user`; refuse with redirect to `reviewer` if equal |
+| 1.0 | Prior-comment awareness (default ON) | [shared/rules/prior-comment-awareness.md](../../shared/rules/prior-comment-awareness.md) | Existing PR review comments fetched via `gh api`; dedup set and resolved-suggestion set built |
 | 1.1 | PR resolution | [pr-reviewer.md § Step 1.1](../../pr-reviewer.md) | PR number, repo, base/head/state resolved via `gh pr view --json` |
 | 1.2 | Patch cache | [line-validity.md](./line-validity.md) | `/tmp/pr-files.json` populated; sole source of line-validity truth |
 | 1.3 | Intent synthesis | [pr-reviewer.md § Step 1.3](../../pr-reviewer.md) | 2–3 line intent summary; uncertainty flagged on missing PR body |
 | 1.5 | Pre-existing-issue separation | [pr-reviewer.md § Step 1.5](../../pr-reviewer.md) | Context-line findings tagged `[pre-existing]`; excluded from verdict |
 | 1.6 | Lens loading | [shared/rules/rubric-composition.md](../../shared/rules/rubric-composition.md), [review-lens-contract.md](../../../skills/authoring/create-skill/rules/review-lens-contract.md) | Max 3 lenses; `lens-version: 1`; dedupe against auto-loaded |
+| 1.7 | Review config load | [shared/rules/review-config.md](../../shared/rules/review-config.md) | `.review.yaml` hierarchy resolved; absent config → `profile: balanced` (defaults to profile: balanced — threshold 80, per-file cap 5, no filters) |
 | 2 | Review (multi-rubric) | [shared/rules/rubric-composition.md](../../shared/rules/rubric-composition.md) | `code-quality` always; `ux` on UI globs; `critical` on auto-engage / `--critical`; lenses |
 | 2.4 | Holistic review (default ON) | [shared/rules/holistic-review.md](../../shared/rules/holistic-review.md), `Skill("holistic-analysis", "review")` | Runs unless `--no-holistic` OR trivial-skip; emits 0–3 findings mapped to `issue` (intent-mismatch) / `question` (system-fit, scope-creep) |
 | 2.5 | Dedupe + consolidate | [shared/rules/rubric-composition.md § Consolidation](../../shared/rules/rubric-composition.md) | Per-file cap 5; total cap 20; priority-sorted; holistic claim wins on `(file, line)` collision |
+| 2.5b | Prior-comment dedup | [shared/rules/prior-comment-awareness.md](../../shared/rules/prior-comment-awareness.md) | Drop findings already said in a prior review pass; anti-flip-flop on resolved suggestions |
 | 2.6 | Finding grounding | [shared/rules/finding-grounding.md](../../shared/rules/finding-grounding.md) | Every backticked symbol grep-confirmed in changed file |
-| 2.7 | Per-comment confidence | [shared/rules/per-comment-confidence.md](../../shared/rules/per-comment-confidence.md) | `Skill("confidence", "code")` weighted Final ≥ 80 (Correctness, Completeness, No-regressions) |
+| 2.6b | Verification receipt | [shared/rules/verification-receipt.md](../../shared/rules/verification-receipt.md) | Behavioral claims need executed proof (grep / ast-grep / file-read); null result = DROP |
+| 2.7 | Per-comment confidence | [shared/rules/per-comment-confidence.md](../../shared/rules/per-comment-confidence.md) | `Skill("confidence", "code")` weighted Final ≥ profile threshold (default 80); receipt evidence fed in |
 | 2.8 | Comment shape | [shared/rules/comment-shape.md](../../shared/rules/comment-shape.md) | ≤ 240 chars, ≤ 2 sentences, no headings, no bullets |
 | 2.9 | Conventional Comments | [shared/rules/conventional-comments.md](../../shared/rules/conventional-comments.md) | Prefix prepended; `(blocking)` / `(non-blocking)` decoration appended |
 | 3 | Local proposal | [pr-reviewer.md § Step 3](../../pr-reviewer.md), [templates/pr-comment-card.template.md](../../templates/pr-comment-card.template.md) | Summary table + numbered cards; total / dropped counts |
@@ -72,16 +76,20 @@ There is no Auto-Fix phase. There is no Self-Review phase. Both belong to `revie
 | --- | --- | --- |
 | 0 | Literal-args rule, parent-paraphrase ignored | Argument quoting strips `--publish`; bare integer mistaken for hash |
 | 0.5 | `gh api user` vs `gh pr view --json author.login`; explicit refusal on match | Token belongs to a different account than the user's CLI session; agent runs as wrong identity |
+| 1.0 | Prior PR comments fetched via `gh api`; dedup set built (default ON) | `gh api` paginates on PRs with > 100 comments; first-pass run has empty dedup set (correct no-op) |
 | 1.1 | `gh pr view --json state`; warn on `MERGED` / `CLOSED` | Long-running PR with multiple commits since cache; race with new pushes |
 | 1.2 | `/tmp/pr-files.json` populated once at run start | Cache stale if run takes > 60 s and PR receives commits |
 | 1.3 | Sources: PR title, body, commit messages, branch name | Branch named `fix/stuff`; intent guessed and findings calibrated against the guess |
 | 1.5 | Context-line tagging via diff prefix inspection | Finding on a moved line counted as new when same logic existed on deleted line |
 | 1.6 | Max 3, lens-version validation, dedupe, applies-to glob | Lens > 80 lines warned but loaded; missing `lens.md` silently skipped |
+| 1.7 | `.review.yaml` hierarchy walk; absent file → `profile: balanced` (defaults to profile: balanced) | Nested subtree overrides root profile silently if path walk is incorrect |
 | 2 | Skill loading order; auto-engage heuristics for `critical` | Auto-engage regex misses `prisma/migrations`; UX heuristic misses Svelte 5 `.svelte.ts` |
 | 2.4 | Default-on holistic call; trivial-skip heuristic (whitespace / dep-bumps / test-only / < 10 lines + no high-stakes); 3-finding cap; pr-reviewer maps `system-fit` to `question` | Holistic skipped on a non-trivial diff that the heuristic incorrectly marked trivial; holistic finding overrides a line-level finding on the same `(file, line)` when the line-level was actually correct; framing leaks: `system-fit` posted as `issue` instead of `question` |
 | 2.5 | Per-file cap 5, total cap 20, priority-sorted; holistic claim wins on collision | LLM dedupes inline despite the rule; cap drops not surfaced; holistic-vs-line-level collision resolved wrongly |
+| 2.5b | Prior-comment dedup: `(path, line ± 2)` + same prefix → DROP; anti-flip-flop: resolved suggestion contradicted → DROP unconditionally | Dedup step skipped on incremental review pass; anti-flip-flop threshold miscalibrated on moved lines |
 | 2.6 | Backticked-token grep, allowlist for keywords / built-ins | Hallucinated multi-word phrase passes (not backticked); allowlist over-eager |
-| 2.7 | `Skill("confidence", "code")` weighted Final ≥ 80 over Correctness / Completeness / No-regressions | Confidence skill not yet wired for per-comment input shape |
+| 2.6b | Proof tool run (grep / ast-grep / file-read); null/empty result → DROP; contradicting result → DROP; ambiguous → downgrade to `question:` | Proof tool not run on behavioral claims; null result mistakenly treated as confirmation |
+| 2.7 | `Skill("confidence", "code")` weighted Final ≥ profile threshold (default 80); receipt evidence in Evidence field | Confidence skill not yet wired for per-comment input shape; threshold not read from resolved profile |
 | 2.8 | Mechanical pre-emit: length, sentences, structure | Trim heuristic breaks the comment's point; drop reported but easy to miss |
 | 2.9 | Prefix table + decoration; mechanical pre-emit | Decoration appended twice on retry |
 | 3 | Card template, summary table | Card emitted without anchor; user can't validate without opening PR |
@@ -111,6 +119,9 @@ The matrix is not exhaustive — when a real failure exposes a guard not listed 
 | `F-publish-rederives-payload` | Publish-path token waste | A post-authorization publish run (often a fresh invocation) rebuilds the `comments[]` payload by re-running the full review pipeline instead of reading the persisted artifact — costs ~full-review tokens and may produce a different finding set than the user approved | 3.6 → 4–5 |
 | `F-body-non-empty` | Payload shape | Review `body` populated with verdict / score; PR author sees noise on submit | 5 |
 | `F-posted-leaks-into-report` | Communication invariant | Final report uses "posted" instead of "drafted"; produces false-failure perception | 6 |
+| `F-null-receipt-treated-as-confirmation` | Receipt failure | A null or empty verification-receipt proof result was interpreted as confirming the behavioral claim instead of dropping the finding | 2.6b |
+| `F-flip-flop-not-suppressed` | Anti-flip-flop bypass | Agent proposed a finding that contradicts a resolved prior suggestion without triggering the anti-flip-flop drop | 2.5b |
+| `F-config-back-compat-broken` | Config regression | A `.review.yaml` absence caused a behavior change (threshold, cap, or filter change) instead of defaulting to `profile: balanced` | 1.7 |
 | `F-novel` | Novel mode | Does not match any existing row | — |
 
 The taxonomy is **append-only**. New failure classes are added only after a confidence-gated diagnosis surfaces them.
@@ -128,7 +139,10 @@ The diagnoser must not propose to relax any of these without explicit user confi
 - **Never fall back to a submitting event on API failure.** Report verbatim with the request payload, list unposted comments, stop.
 - **Every posted comment body MUST start with a Conventional-Comments prefix.** Mechanical check at the end of `posting-mechanics.md` is non-skippable.
 - **Every posted comment body MUST be ≤ 240 chars and ≤ 2 sentences.** Mechanical check in `comment-shape.md` is non-skippable.
-- **Drop any comment with `Skill("confidence", "code")` score < 80.** Threshold is fixed at 80; lowering it produces noise that erodes trust.
+- **Drop any comment with `Skill("confidence", "code")` score below the profile threshold.** Default 80 for `balanced`; tunable via `.review.yaml` profile. Lowering without a config file is a guard failure.
+- **A null verification proof result drops the finding; it is never read as confirmation.** `verification-receipt.md` (2.6b) is non-skippable for behavioral claims.
+- **Anti-flip-flop drops are non-negotiable.** A finding that contradicts a resolved prior suggestion is dropped unconditionally, regardless of confidence score.
+- **Absent `.review.yaml` MUST equal today's defaults.** Any behavior change without a config file present is a guard failure (`F-config-back-compat-broken`).
 - **Verify review state after posting.** Newest review by current user MUST be `state: "PENDING"`. Anything else is treated as accidental submission and the user is alerted with the review ID and a dismissal command.
 - **Use "drafted", never "posted", in the user-facing report.**
 - **Auto-fix is forbidden in this agent.** Auto-fix lives only in `reviewer`. An auto-fix attempt by `pr-reviewer` is a guard failure regardless of mode.

@@ -19,10 +19,14 @@ This agent **never writes to GitHub**. If invoked on a PR authored by someone el
 
 The pipeline lives in rule files; the body is intentionally small. Read each rule once at the step that owns it.
 
+- `agents/shared/rules/review-config.md` — load `.review.yaml` profile, filters, path instructions (Step 1.7).
+- `agents/shared/rules/prior-comment-awareness.md` — fetch existing PR comments for dedup + anti-flip-flop (Self-Review only, Step 1.0).
 - `agents/shared/rules/rubric-composition.md` — load + dedupe + consolidate code-quality / ux / critical / lenses.
 - `agents/shared/rules/holistic-review.md` — default-on intent-match + system-fit pass via `Skill("holistic-analysis", "review")`.
-- `agents/shared/rules/finding-grounding.md` — grep claimed symbols; drop on miss.
-- `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ 80.
+- `agents/shared/rules/finding-grounding.md` — grep claimed symbols; drop on miss (Step 2.6).
+- `agents/shared/rules/verification-receipt.md` — executed proof for behavioral claims; drop on null result (Step 2.6b).
+- `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ profile threshold (Step 2.7).
+- `agents/shared/rules/outcome-learning.md` — resolution-rate feedback loop; runs post-merge via `/review-outcomes`.
 - `agents/shared/rules/comment-shape.md` — ≤ 240 chars, ≤ 2 sentences, no headings or bullets.
 - `agents/shared/rules/conventional-comments.md` — prefix table + decorations.
 - `agents/reviewer/rules/auto-fix-policy.md` — simple-vs-complex split + forbidden targets.
@@ -146,6 +150,12 @@ fi
 
 ## Step 1: Understand the change scope
 
+### 1.0 Prior-comment awareness (Self-Review sub-mode only)
+
+**Run only when `SUB_MODE == "self-review"`.** Skip in Fix Mode and Report Mode (no prior GitHub state).
+
+See `agents/shared/rules/prior-comment-awareness.md`. Fetch existing review comments on the PR, build the dedup set and the resolved-suggestion set. These are consumed at Step 2.5 (dedup against prior bot comments) and throughout Step 2 (anti-flip-flop drops).
+
 ### 1.1 Get the diff
 
 ```bash
@@ -187,6 +197,12 @@ Findings on `+`-prefixed lines are new. Findings on ` `-prefixed (context) lines
 
 See `agents/shared/rules/rubric-composition.md` for the lens-loading contract.
 
+### 1.7 Load review config
+
+See `agents/shared/rules/review-config.md`. Walk `.review.yaml` files upward from each changed file, merge in precedence order (closer file wins on `profile`; filters and path instructions union). Resolve the effective `profile`, `filters`, and `path_instructions` per changed file.
+
+Absent `.review.yaml` defaults to `profile: balanced` — threshold 80, per-file cap 10, no filters, no path instructions. No behavior change from today's defaults.
+
 ---
 
 ## Step 2: Review
@@ -195,14 +211,16 @@ Run the full shared pipeline. Each gate is hard; no retries; drop is final withi
 
 ```
 rubrics produce raw findings
-  → 2.4 holistic-review.md         (Skill("holistic-analysis", "review") — broad whole-PR, default on)
+  → 2.4  holistic-review.md         (Skill("holistic-analysis", "review") — broad whole-PR, default on)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — opt-in via --escalate)
-  → 2.5 rubric-composition § Consolidation (dedupe + per-file cap 10)
+  → 2.5  rubric-composition § Consolidation (dedupe + per-file cap 10)
   → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
-  → 2.6 finding-grounding.md       (every backticked symbol grep-resolves)
-  → 2.7 per-comment-confidence.md  (Skill("confidence", "code") ≥ 80, or ≥ 70 for agreement-promoted)
-  → 2.8 comment-shape.md           (≤ 240 chars, ≤ 2 sentences, no structure)
-  → 2.9 conventional-comments.md   (prefix + decoration)
+  → 2.5b prior-comment-awareness.md § Dedup (Self-Review: drop if already said)
+  → 2.6  finding-grounding.md       (every backticked symbol grep-resolves)
+  → 2.6b verification-receipt.md    (behavioral claims need executed proof; null result = DROP)
+  → 2.7  per-comment-confidence.md  (Skill("confidence", "code") ≥ profile threshold, or ≥ 70 for agreement-promoted)
+  → 2.8  comment-shape.md           (≤ 240 chars, ≤ 2 sentences, no structure)
+  → 2.9  conventional-comments.md   (prefix + decoration)
 ```
 
 ### 2.0 Load rubrics
@@ -244,7 +262,7 @@ See `agents/shared/rules/holistic-review.md § Targeted escalation (Step 2.4b)`.
 
 ### Remaining gates
 
-2.5 dedupe → 2.6 grounding → 2.7 confidence → 2.8 shape → 2.9 Conventional Comments. See the linked shared rules.
+2.5 dedupe → 2.5a cross-rubric agreement → 2.5b prior-comment dedup (Self-Review) → 2.6 grounding → 2.6b verification receipt → 2.7 confidence → 2.8 shape → 2.9 Conventional Comments. See the linked shared rules.
 
 ---
 
@@ -270,8 +288,13 @@ Emit each finding as a card from `agents/templates/pr-comment-card.template.md`.
 Findings produced:        <N>
 Dedupe drops:             <D>
 Agreement-promoted:       <A>
+Prior-comment dedup:      <P>  (Self-Review: already said in a prior review pass)
+Anti-flip-flop drops:     <X>  (would contradict a resolved prior suggestion)
 Grounding drops:          <G>
-Confidence drops:         <C>
+Receipt drops:            <R>  (behavioral claims with null/contradicting proof)
+Receipt downgrades:       <RD> (ambiguous proof → downgraded to question:)
+Filter drops:             <FL> (suppressed by .review.yaml filters)
+Confidence drops:         <C>  (threshold: <T>)
 Shape drops:              <S>
 Final findings:           <F>
 ```

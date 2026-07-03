@@ -269,6 +269,54 @@ function acceptanceCriteriaCount(plan) {
     prReviewer.includes("2.4b") && prReviewer.includes("--no-escalate"));
   s.check("G8d reviewer wires 2.4b + --escalate opt-in",
     reviewerAgent.includes("2.4b") && reviewerAgent.includes("--escalate"));
+
+  // G9: verification-receipt (Step 2.6b) is wired into BOTH agents' pipeline blocks
+  // in the same position (after 2.6 grounding, before 2.7 confidence).
+  // This guards against one agent drifting out of sync.
+  const verificationReceipt = read("agents/shared/rules/verification-receipt.md");
+  s.check("G9a verification-receipt.md declares Step 2.6b",
+    verificationReceipt.includes("2.6b") && verificationReceipt.includes("verification-receipt"));
+  s.check("G9b verification-receipt.md declares null-result DROP rule",
+    /null.*DROP|DROP.*null/i.test(verificationReceipt) || verificationReceipt.includes("null result = DROP") ||
+    verificationReceipt.includes("null or empty proof result DROPS"));
+  s.check("G9c reviewer.md wires 2.6b between 2.6 and 2.7",
+    /2\.6[^\n]*grounding[^\n]*\n[^\n]*2\.6b[^\n]*\n[^\n]*2\.7/m.test(reviewerAgent) ||
+    (reviewerAgent.includes("2.6b") && reviewerAgent.includes("verification-receipt")));
+  s.check("G9c pr-reviewer.md wires 2.6b between 2.6 and 2.7",
+    prReviewer.includes("2.6b") && prReviewer.includes("verification-receipt"));
+
+  // G10: review-config.md declares that absent .review.yaml defaults to profile: balanced,
+  // and that balanced = today's defaults (threshold 80, per-file caps 5/10).
+  // Back-compat: any behavior change without a config file is a guard failure.
+  const reviewConfig = read("agents/shared/rules/review-config.md");
+  s.check("G10a review-config.md states 'defaults to profile: balanced' (back-compat phrase)",
+    reviewConfig.includes("defaults to profile: balanced"));
+  s.check("G10b review-config.md states balanced threshold is 80",
+    /balanced.*80|80.*balanced/i.test(reviewConfig) || reviewConfig.includes("**80**"));
+  s.check("G10c per-comment-confidence.md still documents threshold default of 80",
+    read("agents/shared/rules/per-comment-confidence.md").includes("80"));
+
+  // G11: both agents' diagnostic-surface Phase model tables include the new phases
+  // 1.0, 1.7, 2.5b, 2.6b — failure taxonomy is append-only; verify new rows exist.
+  const reviewerDiag = read("agents/reviewer/rules/diagnostic-surface.md");
+  const prReviewerDiag = read("agents/pr-reviewer/rules/diagnostic-surface.md");
+  for (const [label, content] of [["reviewer", reviewerDiag], ["pr-reviewer", prReviewerDiag]]) {
+    s.check(`G11 ${label} diagnostic-surface has phase 1.7 (review config load)`,
+      content.includes("1.7") && content.includes("review-config"));
+    s.check(`G11 ${label} diagnostic-surface has phase 2.5b (prior-comment dedup)`,
+      content.includes("2.5b") && content.includes("prior-comment"));
+    s.check(`G11 ${label} diagnostic-surface has phase 2.6b (verification receipt)`,
+      content.includes("2.6b") && content.includes("verification-receipt"));
+    s.check(`G11 ${label} diagnostic-surface failure taxonomy has F-null-receipt-treated-as-confirmation`,
+      content.includes("F-null-receipt-treated-as-confirmation"));
+    s.check(`G11 ${label} diagnostic-surface failure taxonomy has F-flip-flop-not-suppressed`,
+      content.includes("F-flip-flop-not-suppressed"));
+    s.check(`G11 ${label} diagnostic-surface failure taxonomy has F-config-back-compat-broken`,
+      content.includes("F-config-back-compat-broken"));
+    s.check(`G11 ${label} diagnostic-surface hard invariants include null-receipt drop rule`,
+      content.includes("null") && content.includes("verification") &&
+      (content.includes("never read as confirmation") || content.includes("drop")));
+  }
 }
 
 process.exit(s.report() ? 0 : 1);
