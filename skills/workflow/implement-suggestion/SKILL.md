@@ -282,6 +282,43 @@ tier-appropriate one-liner (`/create-skill diagnose implement-suggestion` for
 `home`; a repo rule via `docs` for `project-shared`). Never promote silently.
 See [`rules/self-improvement-loop.md#lesson-promotion`](./rules/self-improvement-loop.md#lesson-promotion).
 
+#### Outcome emit
+
+After writing lessons — emit outcome records to `review-outcomes`. For every comment
+processed in this run (any verdict: `applied`, `rejected-at-validation`, `deferred`), append
+a fingerprinted outcome record to the `review-outcomes` persistent-memory scope.
+This is the outcome-emit step that feeds the shared candidate/outcome bus consumed by
+[`agents/shared/rules/outcome-learning.md`](../../../agents/shared/rules/outcome-learning.md) at promotion time.
+
+Reuse the per-comment `/critical` + `/confidence` result already in context — do not recompute.
+Derive `verdict` from the Phase 4 decision matrix:
+
+| Phase 4 outcome | `verdict` value |
+| --- | --- |
+| Gate cleared, patch landed | `applied` |
+| `/critical` Must-fix raised OR `/confidence` below threshold | `rejected-at-validation` |
+| Gate cleared but scoped out / deferred | `deferred` |
+| Patch landed then reverted after CI failure | `reverted-after-ci` (written at the end of the `--watch` loop if CI failure is traced to this patch) |
+
+Infer `source` from the comment author login per the heuristic in [`review-outcomes.md`](../../../agents/shared/rules/review-outcomes.md).
+
+```
+# Append-only, non-blocking — one record per processed comment.
+# Degrade gracefully if persistent-memory is absent (skips silently).
+Skill("persistent-memory", "write review-outcomes --tier home --auto")
+# Project-shared, if opted in:
+if [ -f memory/review-outcomes/INDEX.md ]; then
+  Skill("persistent-memory", "write review-outcomes --tier project-shared --auto")
+fi
+# Opportunistic consolidation if INDEX exceeds 180 lines:
+if [ $(wc -l < ~/.agent-memory/review-outcomes/INDEX.md 2>/dev/null || echo 0) -ge 180 ]; then
+  Skill("persistent-memory", "consolidate review-outcomes --tier home --auto")
+fi
+```
+
+This step is **append-only and non-blocking** — it MUST NOT gate or delay the Phase 7 report.
+If `persistent-memory` is absent, the step skips silently; the apply flow is unaffected.
+
 ## Watch Workflow (`--watch`)
 
 A loop wrapper around the multi-PR single-pass, scoped to one PR. Each iteration:
@@ -293,6 +330,11 @@ background subagent post-push so a new PR auto-converges on its bot feedback.
 Full loop, the poll-for-new-activity snippet, parameters (`--max-iters`,
 `--interval`), the per-iteration report, and watch-specific hard rules live in
 [`rules/watch-mode.md`](./rules/watch-mode.md).
+
+Inside each `--watch` iteration, after the per-iteration Phase 7 report:
+run the outcome-emit step (see [above](#outcome-emit)) for every comment processed in that iteration.
+This ensures that `reverted-after-ci` verdicts are captured at the end of the iteration where CI failure is detected.
+The emit is append-only and non-blocking in each iteration.
 
 ## Free-text Workflow
 
@@ -324,6 +366,12 @@ planning of architectural changes — this loop does not duplicate that.
 `persistent-memory` is an **optional companion**: if it is not installed the
 whole loop skips silently. Full contract:
 [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
+
+In addition to writing `implement-suggestion-lessons`, this skill is now a **producer of the
+`review-outcomes` shared candidate/outcome bus** (see [`agents/shared/rules/review-outcomes.md`](../../../agents/shared/rules/review-outcomes.md)).
+At Phase 7 (and per-iteration inside `--watch`), it appends a fingerprinted outcome record
+for each processed comment.
+The reviewers (`reviewer`, `pr-reviewer`) consume this bus only at promotion/consolidation time — never per-review.
 
 ## Hard Rules
 

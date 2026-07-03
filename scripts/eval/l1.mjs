@@ -269,6 +269,105 @@ function acceptanceCriteriaCount(plan) {
     prReviewer.includes("2.4b") && prReviewer.includes("--no-escalate"));
   s.check("G8d reviewer wires 2.4b + --escalate opt-in",
     reviewerAgent.includes("2.4b") && reviewerAgent.includes("--escalate"));
+
+  // G9: verification-receipt (Step 2.6b) is wired into BOTH agents' pipeline blocks
+  // in the same position (after 2.6 grounding, before 2.7 confidence).
+  // This guards against one agent drifting out of sync.
+  const verificationReceipt = read("agents/shared/rules/verification-receipt.md");
+  s.check("G9a verification-receipt.md declares Step 2.6b",
+    verificationReceipt.includes("2.6b") && verificationReceipt.includes("verification-receipt"));
+  s.check("G9b verification-receipt.md declares null-result DROP rule",
+    /null.*DROP|DROP.*null/i.test(verificationReceipt) || verificationReceipt.includes("null result = DROP") ||
+    verificationReceipt.includes("null or empty proof result DROPS"));
+  s.check("G9c reviewer.md wires 2.6b between 2.6 and 2.7",
+    /2\.6[^\n]*grounding[^\n]*\n[^\n]*2\.6b[^\n]*\n[^\n]*2\.7/m.test(reviewerAgent) ||
+    (reviewerAgent.includes("2.6b") && reviewerAgent.includes("verification-receipt")));
+  s.check("G9c pr-reviewer.md wires 2.6b between 2.6 and 2.7",
+    prReviewer.includes("2.6b") && prReviewer.includes("verification-receipt"));
+
+  // G10: review-config.md declares that absent .review.yaml defaults to profile: balanced,
+  // and that balanced = today's defaults (threshold 80, per-file caps 5/10).
+  // Back-compat: any behavior change without a config file is a guard failure.
+  const reviewConfig = read("agents/shared/rules/review-config.md");
+  s.check("G10a review-config.md states 'defaults to profile: balanced' (back-compat phrase)",
+    reviewConfig.includes("defaults to profile: balanced"));
+  s.check("G10b review-config.md states balanced threshold is 80",
+    /balanced.*80|80.*balanced/i.test(reviewConfig) || reviewConfig.includes("**80**"));
+  s.check("G10c per-comment-confidence.md still documents threshold default of 80",
+    read("agents/shared/rules/per-comment-confidence.md").includes("80"));
+
+  // G11: both agents' diagnostic-surface Phase model tables include the new phases
+  // 1.0, 1.7, 2.5b, 2.6b — failure taxonomy is append-only; verify new rows exist.
+  const reviewerDiag = read("agents/reviewer/rules/diagnostic-surface.md");
+  const prReviewerDiag = read("agents/pr-reviewer/rules/diagnostic-surface.md");
+  for (const [label, content] of [["reviewer", reviewerDiag], ["pr-reviewer", prReviewerDiag]]) {
+    s.check(`G11 ${label} diagnostic-surface has phase 1.7 (review config load)`,
+      content.includes("1.7") && content.includes("review-config"));
+    s.check(`G11 ${label} diagnostic-surface has phase 2.5b (prior-comment dedup)`,
+      content.includes("2.5b") && content.includes("prior-comment"));
+    s.check(`G11 ${label} diagnostic-surface has phase 2.6b (verification receipt)`,
+      content.includes("2.6b") && content.includes("verification-receipt"));
+    s.check(`G11 ${label} diagnostic-surface failure taxonomy has F-null-receipt-treated-as-confirmation`,
+      content.includes("F-null-receipt-treated-as-confirmation"));
+    s.check(`G11 ${label} diagnostic-surface failure taxonomy has F-flip-flop-not-suppressed`,
+      content.includes("F-flip-flop-not-suppressed"));
+    s.check(`G11 ${label} diagnostic-surface failure taxonomy has F-config-back-compat-broken`,
+      content.includes("F-config-back-compat-broken"));
+    s.check(`G11 ${label} diagnostic-surface hard invariants include null-receipt drop rule`,
+      content.includes("null") && content.includes("verification") &&
+      (content.includes("never read as confirmation") || content.includes("drop")));
+  }
+
+  // G12: review-outcomes.md exists as the shared candidate/outcome bus and documents
+  // the four required contracts: volatile TTL, fingerprint reuse, promotion threshold,
+  // and provenance rule. These are the stable literal strings the emit step and
+  // agents wire against — check them verbatim.
+  {
+    const ro = read("agents/shared/rules/review-outcomes.md");
+    s.check("G12a review-outcomes.md exists and declares volatile TTL (30 days)",
+      ro.includes("review-outcomes") && ro.includes("volatile") && /30.day/i.test(ro));
+    s.check("G12b review-outcomes.md mandates fingerprint reuse from prior-comment-awareness",
+      ro.includes("prior-comment-awareness") && ro.includes("fingerprint"));
+    s.check("G12c review-outcomes.md states promotion-agreement threshold (≥ 3 concordant verdicts)",
+      /concordant.*verdict|verdict.*concordant/i.test(ro) || /3 concordant/i.test(ro));
+    s.check("G12d review-outcomes.md states provenance honesty rule (mixed-source)",
+      ro.includes("provenance") && /mixed.source/i.test(ro) &&
+      (ro.includes("filter by") || ro.includes("filter by `source`")));
+    s.check("G12e review-outcomes.md states candidate bus NOT loaded per-review",
+      ro.includes("MUST NOT") && ro.includes("per-review") ||
+      ro.includes("per-review") && ro.includes("never") && ro.includes("Step 0.7"));
+    s.check("G12f review-outcomes.md names outcome-emit step token (anchors implement-suggestion's emit)",
+      ro.includes("outcome-emit") || ro.includes("implement-suggestion"));
+  }
+
+  // G13: implement-suggestion SKILL.md references review-outcomes as a producer
+  // and contains the outcome-emit step. Check for stable literal tokens written
+  // into the file — these strings are controlled by this commit.
+  {
+    const isSkill = read("skills/workflow/implement-suggestion/SKILL.md");
+    s.check("G13a implement-suggestion references review-outcomes scope",
+      isSkill.includes("review-outcomes"));
+    s.check("G13b implement-suggestion contains outcome-emit anchor/step",
+      isSkill.includes("outcome-emit"));
+    s.check("G13c implement-suggestion states emit is non-blocking (append-only)",
+      /non-blocking/i.test(isSkill) && isSkill.includes("review-outcomes"));
+    s.check("G13d implement-suggestion references outcome-learning.md as the consumer",
+      isSkill.includes("outcome-learning.md") && isSkill.includes("review-outcomes"));
+  }
+
+  // G14: outcome-learning.md names review-outcomes as its primary input and explicitly
+  // forbids loading the bus per-review (Step 0.7 discipline). Both contracts are
+  // stable literal strings this commit writes into the file.
+  {
+    const ol = read("agents/shared/rules/outcome-learning.md");
+    s.check("G14a outcome-learning.md names review-outcomes as primary input",
+      ol.includes("review-outcomes") && /primary.*input|primary.*signal/i.test(ol));
+    s.check("G14b outcome-learning.md states bus is NEVER loaded per-review",
+      ol.includes("review-outcomes") && (ol.includes("NEVER") || ol.includes("never")) &&
+      ol.includes("per-review"));
+    s.check("G14c outcome-learning.md references review-outcomes.md for bus schema",
+      ol.includes("review-outcomes.md") && (ol.includes("schema") || ol.includes("bus")));
+  }
 }
 
 process.exit(s.report() ? 0 : 1);
