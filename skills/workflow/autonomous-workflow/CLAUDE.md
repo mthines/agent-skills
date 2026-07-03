@@ -110,7 +110,8 @@ skills/workflow/autonomous-workflow/
     ├── error-recovery-scenarios.md          # Concrete error → recovery transcripts.
     ├── iterative-refinement.md              # Worked example of stuck-loop recovery.
     ├── self-improvement-walkthrough.md      # Worked example: a lesson's full lifecycle (capture → recur → promote).
-    └── anthropic-architecture-research.md   # Verbatim Anthropic citations + design mapping.
+    ├── anthropic-architecture-research.md   # Verbatim Anthropic citations + design mapping.
+    └── planning-quality-research.md         # 2024–2026 web-research pass on planner quality (anti-reinvention, spec fidelity, clarify-or-abstain, executable checks); findings → concrete proposals + roadmap. Design menu, not shipped.
 ```
 
 The split between `SKILL.md` (lean index, always in context), `rules/` (loaded
