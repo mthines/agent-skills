@@ -229,6 +229,16 @@ still simple if the cause is contained.
 
 Renamed from the former "Done criteria" so the Core schema's section name appears verbatim — same content.
 
+> **Intentionally un-IDed.** Fast-lane criteria carry no `AC-{n}` IDs and no
+> `(covers: R{m})` annotations — that is the documented marker that opts a plan
+> out of `confidence(plan)` rules #9/#11 (which never run on the fast-lane
+> anyway; the ≥ 92 % `confidence(analysis)` gate is the substitute) and out of
+> `checks.yaml` emission. The CEGIS refinement contract + FAIL_TO_PASS /
+> PASS_TO_PASS contracts already fill the executable-check role for a bug fix.
+> Do not "upgrade" this section to the IDed format without also emitting
+> `checks.yaml` — half-adopting the format would trip rule #11's ID-sync check
+> if a future lane ever routes through `confidence(plan)`.
+
 ```markdown
 ## Acceptance Criteria
 

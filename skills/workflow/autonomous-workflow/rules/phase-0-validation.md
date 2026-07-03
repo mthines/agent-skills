@@ -89,6 +89,53 @@ Cover four buckets:
 - "How will we know this is complete?"
 - "What tests must pass?"
 
+### Step 3b: Restate and Diff the Requirements
+
+**Anchor:** `restate-and-diff`
+
+Before presenting understanding, restate every requirement **in your own
+words** and diff the restatement against the user's words. The gap between
+what a spec says and what the model perceives is a measured failure mode
+(specification misalignment — see
+[`references/planning-quality-research.md#42-specification-fidelity-requirement-coverage`](../references/planning-quality-research.md#42-specification-fidelity-requirement-coverage));
+surfacing the diff *before* planning is the cheapest place to close it.
+
+Classify every delta and carry it into Step 4:
+
+| Delta kind          | Example                                                        | Treat as                   |
+| ------------------- | -------------------------------------------------------------- | -------------------------- |
+| Added assumption    | User said "save the preference"; restatement says "…to localStorage" | Question (or tagged `[inferred]` requirement) |
+| Dropped clause      | User said "toggle in header and settings"; restatement covers header only | Fix the restatement        |
+| Reinterpreted term  | User said "fast"; restatement says "under 200ms"               | Question — do not pin numbers the user never gave |
+
+A restatement with zero deltas on a non-trivial task is a red flag that the
+diff was skipped — re-walk the user's words clause by clause.
+
+### Step 3c: Missing-Information Gate
+
+**Anchor:** `missing-information-gate`
+
+Enumerate the information you **need but do not have**, and classify each item.
+This is the guess-vs-ask gate: agents measurably hallucinate missing
+requirements instead of asking, and self-reported confidence is a poor trigger
+for asking — an explicit enumeration is the plan-time substitute.
+
+| Class                 | Criterion                                                                                                   | Action                          |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `blocking`            | Absence changes the **observable behavior** of the result — data handling, security, error semantics, integration contracts, anything irreversible | **Halt and ask.** Never guess.  |
+| `assume-and-proceed`  | Absence affects polish, not behavior — naming, placement, cosmetic defaults                                  | State the assumption explicitly in Step 4 and proceed |
+
+Detection prompts: Is any behavior unspecified for an input that can occur? Is
+error handling undefined? Is an external system named without its contract? Do
+two requirements conflict? Does a term have 2+ materially different readings
+(if the Step 3b restatement diverged on it, it does)?
+
+**A `blocking` item halts even under pre-authorized autonomy** (`--no-confirm` /
+"proceed without confirmation") — the grant waives the confirmation *wait*, not
+the safety of load-bearing unknowns. Calibrate honestly: over-asking is a real
+cost. `blocking` is reserved for information whose absence changes behavior,
+not polish.
+
 ### Step 4: Present Understanding
 
 Summarize using this exact shape:
@@ -101,6 +148,15 @@ Based on your request, I understand:
 3. **Approach**: [technical approach]
 4. **Tests**: [validation strategy]
 5. **Docs**: [documentation updates]
+
+Restatement deltas (Step 3b):
+
+- [delta + how it is handled — or "none (clause-by-clause walk done)"]
+
+Missing information (Step 3c):
+
+- blocking: [item — must be answered before proceeding | "none"]
+- assuming: [item — stated default | "none"]
 
 Questions before proceeding:
 
@@ -123,6 +179,7 @@ Wait for user response. Do NOT proceed until:
 If the user's invocation contains an explicit autonomy grant — the phrase "proceed without confirmation" (or an equivalently explicit grant) or the `--no-confirm` flag — do NOT wait: post the Step 4 understanding summary (including any open questions, answered with your stated best-guess assumptions), emit the MODE SELECTION block, and proceed immediately to Phase 1.
 The grant must be explicit in the invocation — never infer it from tone, urgency, or task simplicity.
 Default behavior without a grant is unchanged: wait for the user's explicit "proceed".
+**Exception — the grant does not cover `blocking` gaps.** If Step 3c classified any missing-information item as `blocking`, halt and ask regardless of the grant: the grant waives the confirmation wait, never a load-bearing unknown. Only `assume-and-proceed` items may be answered with stated assumptions under the grant.
 
 If the user clarifies or corrects:
 
@@ -215,6 +272,8 @@ MODE SELECTION:
 Before leaving Phase 0:
 
 - [ ] User request fully understood
+- [ ] Requirements restated in own words and diffed against the user's words; every delta surfaced (anchor: `restate-and-diff`)
+- [ ] Missing information enumerated and classified `blocking` / `assume-and-proceed`; no unresolved `blocking` item — even under `--no-confirm` (anchor: `missing-information-gate`)
 - [ ] All ambiguities clarified
 - [ ] Scope explicitly confirmed
 - [ ] Acceptance criteria defined

@@ -15,7 +15,8 @@ only** — `plan.md` is written in [Phase 2](./phase-2-worktree.md#plan-generati
 inside the worktree, never on the main branch.
 
 > **Order of operations:** research (parallel `Explore` if complex) →
-> optional `holistic-analysis` → technical design → `code-quality(plan)` →
+> optional `holistic-analysis` → technical design (incl. Existing Code Survey
+> for planned `create`s + executable checks drafting) → `code-quality(plan)` →
 > `confidence(plan)` gate → Phase 2.
 
 ## Contents
@@ -26,6 +27,8 @@ inside the worktree, never on the main branch.
 - [Step 1: Analyze Codebase](#step-1-analyze-codebase)
 - [Complex Task Detection](#complex-task-detection)
 - [Step 2: Draft Technical Design](#step-2-draft-technical-design)
+  - [Existing Code Survey (anti-reinvention)](#existing-code-survey-anti-reinvention)
+  - [Draft traceable, executable Acceptance Criteria](#2d-draft-traceable-executable-acceptance-criteria)
 - [Design Quality](#design-quality)
 - [Spec Emission (UI tasks)](#spec-emission-ui-tasks)
 - [Confidence Gate](#confidence-gate)
@@ -171,6 +174,26 @@ Tools: `nx_workspace`, `nx_project_details`, `Glob`.
 
 Tools: `Grep`, `Read`.
 
+**Localize by the dependency graph first, keywords second.** Graph-guided
+localization measurably beats flat keyword/embedding retrieval for finding
+where relevant code already lives (see
+[`references/planning-quality-research.md#41-codebase-grounded-planning-anti-reinvention`](../references/planning-quality-research.md#41-codebase-grounded-planning-anti-reinvention)).
+Concretely, in this order:
+
+1. **Definitions** — `Grep` for the symbol/concept's definition sites
+   (`function <name>`, `class <name>`, `export`), not just occurrences.
+2. **References** — from each definition, follow its callers and imports
+   (grep the symbol across the repo; read the importing files).
+3. **Coarse graph** — in a monorepo, `nx graph` / `nx show projects --affected`
+   (or the equivalent) bounds which packages participate before any file-level
+   search.
+4. **Keyword sweep last** — free-text grep only to catch what the def/ref walk
+   missed.
+
+The def/ref walk is what feeds the
+[Existing Code Survey](#existing-code-survey-anti-reinvention) below — record
+the searches as you run them.
+
 **Technology stack**
 
 - Framework version and features
@@ -246,6 +269,38 @@ Use one consolidated table:
 | modify | README.md           | Add feature docs       | User-facing change |
 ```
 
+### Existing Code Survey (anti-reinvention)
+
+**Anchor:** `existing-code-survey`
+
+For **every `create` row** that introduces a new function / module / component,
+run a reuse search and record the verdict — before the design is locked in.
+LLM agents measurably re-implement existing functionality as **semantic
+clones** (textually different, functionally equivalent), and downstream review
+is documented *not* to catch them — so the gate lives here, at plan time
+(evidence in [`references/planning-quality-research.md#41`](../references/planning-quality-research.md#41-codebase-grounded-planning-anti-reinvention)).
+
+For each planned new unit:
+
+1. **Search by responsibility, not name.** Grep 2–3 phrasings of what the unit
+   *does* (e.g. for a `formatCurrency` helper: `format`, `currency`, `Intl`,
+   `money`), plus the def/ref walk from Step 1.
+2. **Judge overlap functionally.** A candidate with a different name and shape
+   but the same responsibility is a match — name/text similarity is explicitly
+   the wrong signal for this.
+3. **Record the verdict:**
+
+| Verdict     | Meaning                                            | Requirement                                     |
+| ----------- | -------------------------------------------------- | ----------------------------------------------- |
+| `EXTEND`    | Add capability to the existing unit — don't create | Update the File Changes row: modify, not create |
+| `WRAP`      | Compose/adapt the existing unit                    | New unit delegates; no duplicated logic         |
+| `BUILD NEW` | Nothing suitable exists                            | Valid ONLY with the empty-returning searches recorded |
+
+The survey lands in `plan.md` as the `## Existing Code Survey` Extended section
+(deterministic trigger: any `create` row — `confidence(plan)` rule #10 fails a
+plan that creates without surveying). Search quality is scored by the gate's
+Completeness dimension: "looked around" is not a search record.
+
 ### 2d. Define testing strategy with specific cases
 
 ```markdown
@@ -256,6 +311,27 @@ Use one consolidated table:
 | integration | end-to-end flow        | feature.e2e.ts    | Full pipeline      |
 | manual      | toggle and verify      | —                 | Visual check       |
 ```
+
+### 2d². Draft traceable, executable Acceptance Criteria
+
+**Anchor:** `acceptance-criteria-drafting`
+
+Acceptance Criteria follow the format contract in the
+[`aw-create-plan` template](../../aw-create-plan/SKILL.md#template):
+
+- Each criterion carries a unique `AC-{n}` ID and a `(covers: R{m})`
+  annotation naming the requirement(s) it verifies. Every `[user-stated]`
+  requirement must be covered — `confidence(plan)` rule #9 fails otherwise.
+- **Prefer the EARS trigger→response shape**: "When `<trigger>`, the system
+  shall `<observable response>`" (`While` / `If…then` / `Where` variants for
+  state, unwanted-behavior, and feature-scoped criteria). The fixed shape is
+  what makes a criterion machine-checkable: trigger → check precondition,
+  shall-response → check assertion.
+- For each criterion, sketch **how a machine verifies it** — a command, an
+  HTTP call + expected status, a grep. These sketches become the `checks.yaml`
+  entries `aw-create-plan` writes in Phase 2 (one per `AC-{n}`; rule #11 keeps
+  them in sync). A criterion with no conceivable runner is either rewritten or
+  explicitly marked as a `judge` check (rubric-scored, never gates alone).
 
 ### 2e. Define verification commands
 
@@ -481,10 +557,12 @@ contract and message format.
 ## Planning Checklist
 
 - [ ] `persistent-memory(read aw-lessons --tier home)` invoked; matching lessons applied as constraints (anchor: `lessons-read`)
-- [ ] Codebase analyzed (structure, patterns, stack)
+- [ ] Codebase analyzed (structure, patterns, stack) — dependency-graph localization (def/ref walk) before keyword sweep
 - [ ] Parallel `Explore` sub-agents used if complexity triggered (anchor: `parallel-research`)
 - [ ] `holistic-analysis` invoked if complexity triggered (anchor: `complex-task-detection`)
 - [ ] Technical approach designed with specific file references
+- [ ] Existing Code Survey completed for every planned `create` — searches recorded, verdicts assigned (anchor: `existing-code-survey`)
+- [ ] Acceptance Criteria carry `AC-{n}` IDs + `(covers: R{m})` annotations; every `[user-stated]` requirement covered; EARS shape preferred; a runner sketched per criterion (anchor: `acceptance-criteria-drafting`)
 - [ ] `code-quality(plan)` invoked and design refined (anchor: `design-quality`)
 - [ ] UI surface check: if plan touches UI files, aw-target exists OR user told to run `/aw-setup`; `specs.md` drafted or skip logged (anchor: `spec-emission-anchor`)
 - [ ] `confidence(plan)` ≥ 90% OR user-approved (anchor: `confidence-gate`)
@@ -505,5 +583,7 @@ contract and message format.
 - Related skill: [`holistic-analysis`](../../../analysis/holistic-analysis/SKILL.md)
 - Related skill: [`aw-create-plan`](../../aw-create-plan/SKILL.md)
 - Related rule: [`phase-4-spec-verification.md`](./phase-4-spec-verification.md) — where specs.md is consumed
+- Related rule: [`phase-4-testing.md#executable-checks-loop`](./phase-4-testing.md#executable-checks-loop) — where checks.yaml is consumed
+- Research basis: [`references/planning-quality-research.md`](../references/planning-quality-research.md) — anti-reinvention, spec fidelity, clarify-or-abstain, executable checks
 - Setup skill: [`aw-setup/SKILL.md`](../aw-setup/SKILL.md) — aw-target scaffolding
 - Template: [`templates/specs.md.template`](../templates/specs.md.template) — spec format reference

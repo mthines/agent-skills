@@ -30,8 +30,11 @@ Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
   `BASELINE` set, burn it down, never add to it).
 - **Tier table** in `aw.agent.md` is byte-identical to `SKILL.md` Step 1.
 - **plan.md Core contract** — runs the *actual* `confidence` rule #2 (8 Core
-  sections) and rule #3 (Acceptance Criteria non-empty, the #31 fix) against
-  fixtures in `fixtures/plans/`.
+  sections), rule #3 (Acceptance Criteria non-empty, the #31 fix), rule #9
+  (every `[user-stated]` requirement covered by a `(covers: R…)` annotation),
+  rule #10 (a `create` row requires an Existing Code Survey verdict;
+  modify-only passes vacuously), and rule #11 (checks.yaml `AC-{n}` IDs in
+  sync with the plan, both directions) against fixtures in `fixtures/plans/`.
 - **diagnose resolvability** — every skill with a `diagnostic-surface.md` is
   uniquely resolvable by `skills/*/<name>/` (locks the path-resolution fix).
 - **lesson scopes** — committed `memory/<scope>/` have the storage contract.

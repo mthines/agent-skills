@@ -241,12 +241,16 @@ Skill("aw-create-plan")     # skips silently if not installed
 
 The skill writes to `.agent/{branch-name}/plan.md`, capturing the full Phase 0
 + Phase 1 conversation context (requirements, decisions, file changes,
-testing strategy, risks, verification commands).
+testing strategy, risks, verification commands) — **and derives
+`.agent/{branch-name}/checks.yaml`** (one executable check per `AC-{n}`
+acceptance criterion; see
+[`aw-create-plan` Step 2b](../../aw-create-plan/SKILL.md#step-2b-derive-checksyaml-from-the-acceptance-criteria)).
+The executor's Phase 4 loop gates on those checks mechanically.
 
 Log the invocation in the plan's Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 2: aw-create-plan() — invoked (.agent/{branch}/plan.md written)
+- [TIMESTAMP] Phase 2: aw-create-plan() — invoked (.agent/{branch}/plan.md + checks.yaml written, N checks)
 - [TIMESTAMP] Phase 2: aw-create-plan() — not available, continuing without artifact
 ```
 
@@ -331,6 +335,7 @@ Before Phase 3 (Implementation):
 - [ ] Environment fast-check passes
 - [ ] `.agent/` is gitignored (root `.gitignore` or nested `.agent/.gitignore`)
 - [ ] `plan.md` created in `.agent/{branch}/plan.md` (Full Mode only — anchor: `plan-generation`)
+- [ ] `checks.yaml` created alongside `plan.md` — one entry per `AC-{n}`, statuses `pending` (Full Mode only)
 - [ ] First Progress Log entry written
 
 **If any checkbox is unchecked, STOP and complete Phase 2.**

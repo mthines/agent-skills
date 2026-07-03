@@ -26,9 +26,16 @@ The executor half of the autonomous-workflow is strong.
 The **planner** half — Phase 0 → Phase 2, producing `plan.md` behind the `confidence(plan)` gate — has more headroom.
 This document records a focused web-research pass (five parallel search angles, 23 sources fetched, 25 claims adversarially verified) on how state-of-the-art coding agents raise planning quality, and turns each finding into a concrete proposal against a specific planner file.
 
-This is a **research and design reference**, not a shipped change.
-Nothing here has been applied to runtime behavior.
-Every proposal names the file it would touch and the invariant it must respect (see [`CLAUDE.md`](../CLAUDE.md) "Things to keep invariant").
+This began as a **research and design reference**; as of **v3.15** the roadmap
+in §6 has been implemented (P1–P3, with the noted adaptations: traceability is
+embedded in the Acceptance Criteria rather than a separate Core section, and
+the Existing Code Survey is a deterministic-trigger Extended section — both to
+keep Core-8 stable).
+Implementation record: the v3.15.0 entry in [`CLAUDE.md`](../CLAUDE.md#history);
+design intent: [`CLAUDE.md` "Plan-quality gates + executable checks"](../CLAUDE.md#plan-quality-gates--executable-checks--design-intent).
+The findings, caveats, and open questions below remain the durable evidence
+base — instrumentation of the executable-checks loop (open question #3) is
+still pending.
 
 **Relationship to [`anthropic-architecture-research.md`](./anthropic-architecture-research.md).**
 That file grounds the *architecture* (why planner/executor split, why `plan.md`, why the tiered template) in Anthropic guidance plus the foundational planning literature (ADaPT, Plan-and-Act, Reflexion, PlanBench, overthinking / inverse-scaling, long-context degradation).
@@ -284,7 +291,7 @@ These map cleanly onto this skill's existing philosophy — confidence-gated aut
 
 Ordered by leverage-to-effort.
 Each names the file(s) it touches.
-None is committed; this is a menu.
+**Status: implemented in v3.15** (see the History entry in [`CLAUDE.md`](../CLAUDE.md#history) for the as-built mapping); kept as the original decision record.
 
 | Priority | Change | Concern | Files | Effort | Confidence it helps |
 | -------- | ------ | ------- | ----- | ------ | ------------------- |
