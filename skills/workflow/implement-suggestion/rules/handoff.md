@@ -172,6 +172,14 @@ Apply reviewer suggestions to an existing pull request.
    note it as "no thread to resolve" in your report. Do NOT resolve threads for
    `surface` / `skip` comments — only the ones you actually addressed.
 
+   Resolve-side failures do NOT abort — the commits are already on the remote,
+   so unlike step 3b there is nothing to hold back. If a reply or
+   `resolveReviewThread` call errors on one thread (permission denied, or a bot
+   already resolved it — `resolveReviewThread` on an already-resolved thread is
+   a safe no-op), record that thread as `not-resolved: <verbatim error>` and
+   CONTINUE to the next thread. Never unwind a landed commit because a
+   resolution call failed.
+
 ## Hard rules
 - DO NOT open a new PR. The PR exists at <pr-url>.
 - DO NOT push --force or --force-with-lease.
