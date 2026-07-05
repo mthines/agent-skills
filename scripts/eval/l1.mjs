@@ -414,6 +414,49 @@ function checksInSync(plan, checks) {
     s.check("G14c outcome-learning.md references review-outcomes.md for bus schema",
       ol.includes("review-outcomes.md") && (ol.includes("schema") || ol.includes("bus")));
   }
+
+  // G15: implement-suggestion commit-per-comment + resolve-thread invariants (v2.3.0).
+  // These lock the behavioral contract of the worker: one commit per addressed
+  // comment, push ONCE, then resolve each addressed thread. The REST reply path
+  // MUST carry the pull number (a prior review regression removed it) and the
+  // forbidden legacy phrase "one commit per PR" must not reappear anywhere in
+  // the skill. All are stable literal tokens this commit controls.
+  {
+    const handoff = read("skills/workflow/implement-suggestion/rules/handoff.md");
+    const isSkill2 = read("skills/workflow/implement-suggestion/SKILL.md");
+    const fetching = read("skills/workflow/implement-suggestion/rules/comment-fetching.md");
+    const watch = read("skills/workflow/implement-suggestion/rules/watch-mode.md");
+    const pack = read("skills/workflow/implement-suggestion/templates/suggestion-pack.md");
+    const skillFiles = [
+      ["SKILL.md", isSkill2], ["handoff.md", handoff], ["comment-fetching.md", fetching],
+      ["watch-mode.md", watch], ["suggestion-pack.md", pack],
+    ];
+
+    s.check("G15a handoff worker prompt mandates one commit per comment",
+      handoff.includes("ONE COMMIT PER COMMENT"));
+    s.check("G15b handoff pushes ONCE after all per-comment commits",
+      handoff.includes("Push ONCE") || handoff.includes("push ONCE"));
+    s.check("G15c handoff resolves via resolveReviewThread",
+      handoff.includes("resolveReviewThread"));
+    s.check("G15d handoff REST reply path carries the pull number",
+      handoff.includes("pulls/<n>/comments/<comment-id>/replies"));
+    s.check("G15e handoff does NOT use the pull-number-less reply path (prior regression)",
+      !handoff.includes("pulls/comments/<comment-id>/replies"));
+    s.check("G15f handoff skips resolve for null threadId (issues/review-summary)",
+      handoff.includes("threadId") && handoff.includes("no thread to resolve"));
+    s.check("G15g handoff aborts push+resolve on partial-batch failure",
+      handoff.includes("partial batch") && /push nothing/i.test(handoff) && /resolve nothing/i.test(handoff));
+    s.check("G15h handoff continues (does not abort) on a resolve-side failure",
+      handoff.includes("not-resolved") && handoff.includes("CONTINUE"));
+    s.check("G15i comment-fetching captures threadId and guards GraphQL truncation",
+      fetching.includes("threadId") && fetching.includes("hasNextPage"));
+    s.check("G15j SKILL.md hard rule is 'One commit per applied comment'",
+      isSkill2.includes("One commit per applied comment"));
+    for (const [label, content] of skillFiles) {
+      s.check(`G15k ${label} does not reintroduce the legacy 'one commit per PR' phrase`,
+        !/one commit per pr\b/i.test(content));
+    }
+  }
 }
 
 process.exit(s.report() ? 0 : 1);

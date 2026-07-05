@@ -6,9 +6,11 @@ description: >
   active PR) per PR: resolves a worktree, fetches every actionable comment
   from both human teammates AND AI code-review bots (claude[bot],
   coderabbitai[bot], …), validates each through /critical + /confidence,
-  builds a structured suggestion-pack, and dispatches a worker subagent to
-  apply / commit / push to the existing branch — fast-lane for mechanical
-  edits, standard-lane via aw-planner for architectural changes. Free-text
+  builds a structured suggestion-pack, and dispatches a worker subagent that
+  applies each approved change as its own commit, pushes to the existing
+  branch, and resolves the addressed review thread — so every handled comment
+  ends up resolved and the PR is left clean. Fast-lane for mechanical edits,
+  standard-lane via aw-planner for architectural changes. Free-text
   mode applies a single pasted suggestion in the current directory. Triggers
   on "implement suggestion", "apply review comments", "address PR feedback",
   "implement reviewer feedback", "fix PR comments", "/implement-suggestion".
@@ -21,9 +23,9 @@ license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(gw *) Read Edit Write Glob Grep Skill
 metadata:
   author: mthines
-  version: '2.2.0'
+  version: '2.3.0'
   workflow_type: orchestrator
-  architecture: parse/resolve/fetch/classify/validate/pack/handoff(fast|standard)/report
+  architecture: parse/resolve/fetch/classify/validate/pack/handoff(fast|standard)/commit-per-comment+resolve-thread/report
   composes:
     - critical
     - confidence
@@ -105,10 +107,10 @@ Phase 2:  Comment fetch          → per-PR ledger (parallel across PRs)
 Phase 3:  Classify               → actionable / nit / discussion / praise
 Phase 4:  Two-gate validation    → /critical → /confidence per actionable comment
 Phase 5:  Build suggestion-pack  → .agent/<branch>/suggestion-pack.md per PR
-Phase 6:  Handoff (lane-split)
+Phase 6:  Handoff (lane-split)         → worker: commit-per-comment, push, resolve thread
             ├── Fast-lane (simple):     dispatch worker subagent with pack
             └── Standard-lane (complex): aw-planner → plan.md → worker subagent
-Phase 7:  Report                 → per-PR table: applied / surfaced / skipped
+Phase 7:  Report                 → per-PR table: applied / surfaced / skipped / resolved
 ```
 
 Per-PR work in Phases 1–6 runs in **parallel across PRs** (one message,
@@ -243,9 +245,18 @@ Agent(
 Full dispatch contract and prompt template:
 [`rules/handoff.md#worker-prompt-template`](./rules/handoff.md#worker-prompt-template).
 
+The worker makes **one commit per applied comment** (each message cites that
+comment's `@author` + URL), pushes once after all commits, then **resolves
+each addressed review thread** — posting a brief `Addressed in <sha>` reply,
+then `resolveReviewThread`. This leaves a clean one-to-one trail (commit →
+resolved comment) and a PR where every handled comment is resolved; only
+`surface` / `skip` comments stay open. `issues` / `review`-summary comments
+have no resolvable thread and are reported as such. Full contract in
+[`rules/handoff.md#worker-prompt-template`](./rules/handoff.md#worker-prompt-template).
+
 **The main agent does not edit files in Phase 6.** All applies / commits /
-pushes happen inside the worker subagent so the loud loop (test runs,
-push retries) stays out of the main context.
+pushes / thread resolutions happen inside the worker subagent so the loud loop
+(test runs, push retries) stays out of the main context.
 
 ### Phase 7 — Report
 
@@ -254,16 +265,24 @@ Emit one summary table:
 ```markdown
 ## Implement-Suggestion Results
 
-| PR | Branch | Lane | Applied | Surfaced | Skipped | Commit | Pushed |
-|----|--------|------|---------|----------|---------|--------|--------|
-| dash0/console#1234 | fix/foo | fast | 3 | 1 | 2 | abc1234 | ✓ |
-| dash0/console#1278 | feat/bar | standard | 0 | 2 | 1 | — | — |
+| PR | Branch | Lane | Applied | Surfaced | Skipped | Commits | Pushed | Resolved |
+|----|--------|------|---------|----------|---------|---------|--------|----------|
+| dash0/console#1234 | fix/foo | fast | 3 | 1 | 2 | abc1234, def5678, 9a0bcde | ✓ | 3/3 |
+| dash0/console#1278 | feat/bar | standard | 0 | 2 | 1 | — | — | 0/0 |
 ```
 
+`Commits` lists one SHA per applied comment (commit-per-comment). `Resolved`
+is `<threads-resolved>/<applied-with-a-thread>` — comments whose fix landed and
+whose thread was resolved, over the applied comments that had a resolvable
+thread (`issues` / `review`-summary comments have none and are excluded from
+the denominator).
+
 Then per PR list:
-- **Applied** — comment ID, author, one-line summary.
+- **Applied** — comment ID, author, one-line summary, commit SHA, thread status
+  (resolved / no-thread).
 - **Surfaced** (needs user) — comment, gate score, `/critical` finding if any.
-- **Skipped** — comment, reason.
+  Thread left open.
+- **Skipped** — comment, reason. Thread left open.
 
 <a id="lessons-write"></a>
 **After the report — write lessons.** Run the retrospective and capture any
@@ -380,7 +399,12 @@ The reviewers (`reviewer`, `pr-reviewer`) consume this bus only at promotion/con
 - **Never** apply a change whose `/critical` review surfaced a Must-fix finding without surfacing first.
 - **Never** auto-rebase a PR branch — surface and stop.
 - **Never** delete or weaken tests or types to make a suggestion fit.
-- **One commit per PR.** A run that processes 5 PRs produces at most 5 commits, not 5×N.
+- **One commit per applied comment.** Each addressed comment is its own commit
+  (message citing that comment) so `git log` maps one-to-one to resolved threads.
+- **Resolve every addressed thread; leave the rest open.** After a comment's fix
+  lands and is pushed, the worker replies with the commit SHA and calls
+  `resolveReviewThread`. `surface` / `skip` comments — and any comment whose
+  commit did not land — stay open. Never resolve a thread whose fix is not on the remote.
 - **Worktree isolation.** Each PR gets its own `gw` worktree.
 - **Resolved threads are skipped at fetch time.**
 - **Main agent does not apply / commit / push in multi-PR mode.** Workers do.
