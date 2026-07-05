@@ -34,6 +34,13 @@ import {
   diagnoseTargetFromFilename,
   findDiagnoseReports,
 } from '../lib/session-artifact-correlator';
+import {
+  ChecksSummary,
+  ParsedCheck,
+  formatChecksRollup,
+  parseChecksYaml,
+  summarizeChecks,
+} from '../parsers/checks-parser';
 
 export type { PlanVersionInfo };
 export { findPlanVersions };
@@ -160,17 +167,27 @@ function getBranchIcon(hasWalkthrough: boolean, task: ParsedTask | undefined): v
 
 /**
  * Returns the short description string for a branch based on its artifact state.
- * Used by both AgentBranchItem and WorktreeFlatItem.
+ * Used by both AgentBranchItem and WorktreeFlatItem. When the branch carries
+ * executable checks, a compact `✓ pass/total` rollup is appended so check
+ * progress is glanceable without expanding the branch.
  */
-function getBranchDescription(hasWalkthrough: boolean, task: ParsedTask | undefined): string {
-  if (hasWalkthrough) return 'completed';
-  if (task?.phase && task.phaseName) {
-    return `Phase ${task.phase} · ${task.phaseName}`;
+function getBranchDescription(
+  hasWalkthrough: boolean,
+  task: ParsedTask | undefined,
+  checksSummary?: ChecksSummary
+): string {
+  let base = '';
+  if (hasWalkthrough) {
+    base = 'completed';
+  } else if (task?.phase && task.phaseName) {
+    base = `Phase ${task.phase} · ${task.phaseName}`;
+  } else if (task?.blockers && task.blockers.length > 0) {
+    base = `${task.blockers.length} blocker${task.blockers.length !== 1 ? 's' : ''}`;
   }
-  if (task?.blockers && task.blockers.length > 0) {
-    return `${task.blockers.length} blocker${task.blockers.length !== 1 ? 's' : ''}`;
-  }
-  return '';
+
+  const rollup = checksSummary ? formatChecksRollup(checksSummary) : '';
+  if (!rollup) return base;
+  return base ? `${base} · ${rollup}` : rollup;
 }
 
 // ---------------------------------------------------------------------------
@@ -178,18 +195,23 @@ function getBranchDescription(hasWalkthrough: boolean, task: ParsedTask | undefi
 // ---------------------------------------------------------------------------
 
 export class AgentBranchItem extends vscode.TreeItem {
+  /** Summary of `checks.yaml` statuses; undefined when the branch has no checks. */
+  public readonly checksSummary: ChecksSummary | undefined;
+
   constructor(
     public readonly branchName: string,
     public readonly artifactDir: string,
     public readonly task: ParsedTask | undefined,
     public readonly plan: ParsedPlan | undefined,
     public readonly hasWalkthrough: boolean,
-    public readonly diagnoses: DiagnoseFileInfo[] = []
+    public readonly diagnoses: DiagnoseFileInfo[] = [],
+    public readonly checks: ParsedCheck[] = []
   ) {
     super(branchName, vscode.TreeItemCollapsibleState.Collapsed);
 
+    this.checksSummary = checks.length > 0 ? summarizeChecks(checks) : undefined;
     this.contextValue = hasWalkthrough ? 'agentBranchCompleted' : 'agentBranch';
-    this.description = getBranchDescription(hasWalkthrough, task);
+    this.description = getBranchDescription(hasWalkthrough, task, this.checksSummary);
     this.tooltip = this.getTooltip();
     this.iconPath = getBranchIcon(hasWalkthrough, task);
 
@@ -207,6 +229,15 @@ export class AgentBranchItem extends vscode.TreeItem {
     }
     if (this.hasWalkthrough) {
       md.appendMarkdown('$(check) **Completed** - walkthrough available\n\n');
+    }
+    if (this.checksSummary) {
+      const s = this.checksSummary;
+      const extras: string[] = [];
+      if (s.fail > 0) extras.push(`${s.fail} failing`);
+      if (s.unsatisfiable > 0) extras.push(`${s.unsatisfiable} unsatisfiable`);
+      md.appendMarkdown(
+        `**Checks:** ${s.pass}/${s.total} passing${extras.length > 0 ? ` (${extras.join(', ')})` : ''}\n\n`
+      );
     }
     if (this.diagnoses.length > 0) {
       const labels = this.diagnoses.map((d) => `\`${d.targetSkill}\``).join(', ');
@@ -263,7 +294,7 @@ export class WorktreeFlatItem extends vscode.TreeItem {
     this.iconPath = getBranchIcon(branch.hasWalkthrough, branch.task);
 
     // Description: compose (current) prefix with branch state description
-    const branchDesc = getBranchDescription(branch.hasWalkthrough, branch.task);
+    const branchDesc = getBranchDescription(branch.hasWalkthrough, branch.task, branch.checksSummary);
     if (isCurrent) {
       this.description = branchDesc ? `(current) · ${branchDesc}` : '(current)';
     } else {
@@ -479,6 +510,97 @@ export class WalkthroughSummaryItem extends vscode.TreeItem {
 }
 
 /**
+ * Leaf node representing one check entry from `checks.yaml`. The icon maps
+ * the check's status; the EARS criterion text carries the row description
+ * (truncated) and the full contract lives in the tooltip. Click opens
+ * `checks.yaml` (as a text document — never Markdown preview).
+ */
+export class CheckItem extends vscode.TreeItem {
+  constructor(public readonly check: ParsedCheck, public readonly checksFilePath: string) {
+    super(check.id, vscode.TreeItemCollapsibleState.None);
+
+    this.iconPath = CheckItem.iconForStatus(check.status);
+    const ears = check.ears ?? '';
+    this.description = ears.length > 40 ? ears.slice(0, 40) + '…' : ears;
+
+    const md = new vscode.MarkdownString();
+    md.appendMarkdown(`**${check.id}** — _${check.status}_\n\n`);
+    if (check.ears) md.appendMarkdown(`${check.ears}\n\n`);
+    if (check.expect) md.appendMarkdown(`**Expect:** \`${check.expect}\`\n\n`);
+    const meta: string[] = [];
+    if (check.kind) meta.push(`kind: ${check.kind}`);
+    if (check.requirement) meta.push(`covers: ${check.requirement}`);
+    if (meta.length > 0) md.appendMarkdown(`_${meta.join(' · ')}_`);
+    this.tooltip = md;
+
+    this.command = {
+      command: 'agentTasks.openMarkdown',
+      title: 'Open Checks',
+      arguments: [checksFilePath],
+    };
+  }
+
+  /**
+   * Status → icon. Distinct glyph per status (not color-only — WCAG 1.4.1):
+   *   pending       → circle-large-outline (default)
+   *   pass          → pass (green)
+   *   fail          → error (red) — normal mid-loop state, not an alarm
+   *   unsatisfiable → warning (yellow) — the executor's escalation affordance
+   */
+  static iconForStatus(status: ParsedCheck['status']): vscode.ThemeIcon {
+    switch (status) {
+      case 'pass':
+        return new vscode.ThemeIcon('pass', new vscode.ThemeColor('charts.green'));
+      case 'fail':
+        return new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red'));
+      case 'unsatisfiable':
+        return new vscode.ThemeIcon('warning', new vscode.ThemeColor('charts.yellow'));
+      case 'pending':
+      default:
+        return new vscode.ThemeIcon('circle-large-outline');
+    }
+  }
+}
+
+/**
+ * Collapsible group node for a branch's `checks.yaml` — the executable
+ * acceptance-check ledger derived from the plan's Acceptance Criteria.
+ * One `CheckItem` leaf per check. Read-only: check definitions are
+ * executor-immutable and `status:` is executor-owned, so the tree offers
+ * no mutation affordances and the file is excluded from standalone delete
+ * (same reasoning as `plan.md` — see extension.ts `resolveTarget`).
+ */
+export class ChecksSummaryItem extends vscode.TreeItem {
+  public readonly checkItems: CheckItem[];
+
+  constructor(public readonly checksFilePath: string, public readonly checks: ParsedCheck[]) {
+    super('Checks', vscode.TreeItemCollapsibleState.Collapsed);
+    this.iconPath = new vscode.ThemeIcon('checklist');
+    this.checkItems = checks.map((c) => new CheckItem(c, checksFilePath));
+
+    const summary = summarizeChecks(checks);
+    const parts: string[] = [formatChecksRollup(summary)];
+    if (summary.unsatisfiable > 0) {
+      parts.push(`${summary.unsatisfiable} unsatisfiable`);
+    } else if (summary.fail > 0) {
+      parts.push(`${summary.fail} fail`);
+    }
+    this.description = parts.filter(Boolean).join(' · ');
+
+    this.tooltip = new vscode.MarkdownString(
+      `**Executable acceptance checks** (\`checks.yaml\`)\n\n` +
+        `${summary.pass}/${summary.total} passing · ${summary.pending} pending` +
+        `${summary.fail > 0 ? ` · ${summary.fail} failing` : ''}` +
+        `${summary.unsatisfiable > 0 ? ` · ${summary.unsatisfiable} unsatisfiable` : ''}\n\n` +
+        `Statuses are flipped live by the executor's Phase 4 check loop. ` +
+        `Check definitions are executor-immutable — this view is read-only.`
+    );
+
+    this.contextValue = 'agentChecksFile';
+  }
+}
+
+/**
  * Leaf node representing one `diagnose-{target}.md` report produced by
  * `/create-skill diagnose <target>`. The label always includes the target
  * skill name (extracted from the filename) so multiple reports under the
@@ -575,6 +697,8 @@ type AgentTaskTreeItem =
   | PlanVersionsGroupItem
   | PlanVersionItem
   | WalkthroughSummaryItem
+  | ChecksSummaryItem
+  | CheckItem
   | DiagnoseSummaryItem
   | DecisionItem
   | BlockerItem;
@@ -654,6 +778,17 @@ function collectBranchesForWorktree(
         }
       }
 
+      const checksPath = path.join(branchDir, 'checks.yaml');
+      let checks: ParsedCheck[] = [];
+      if (fs.existsSync(checksPath)) {
+        try {
+          checks = parseChecksYaml(fs.readFileSync(checksPath, 'utf-8')).checks;
+          latestMtime = Math.max(latestMtime, fs.statSync(checksPath).mtimeMs);
+        } catch {
+          // ignore parse / stat errors — a malformed ledger renders nothing
+        }
+      }
+
       const diagnoses: DiagnoseFileInfo[] = [];
       for (const dp of diagnosePaths) {
         const targetSkill = diagnoseTargetFromFilename(path.basename(dp));
@@ -671,7 +806,7 @@ function collectBranchesForWorktree(
       const hasInProgress = task?.taskSections.some((s) => s.items.some((t) => t.inProgress)) ?? false;
 
       results.push({
-        item: new AgentBranchItem(relPath, branchDir, task, plan, hasWalkthrough, diagnoses),
+        item: new AgentBranchItem(relPath, branchDir, task, plan, hasWalkthrough, diagnoses, checks),
         mtime: latestMtime,
         name: relPath.toLowerCase(),
         hasWalkthrough,
@@ -812,6 +947,11 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
     // Plan versions group: list each historical snapshot
     if (element instanceof PlanVersionsGroupItem) {
       return element.versions;
+    }
+
+    // Checks group: one leaf per executable acceptance check
+    if (element instanceof ChecksSummaryItem) {
+      return element.checkItems;
     }
 
     return [];
@@ -973,6 +1113,13 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
       const planPath = path.join(branch.artifactDir, 'plan.md');
       const versions = findPlanVersions(branch.artifactDir);
       children.push(new PlanSummaryItem(branch.plan, planPath, versions));
+    }
+
+    // Checks — the plan's executable acceptance contract, statuses flipped
+    // live by the executor's Phase 4 loop. Absent file → absent node.
+    if (branch.checks.length > 0) {
+      const checksPath = path.join(branch.artifactDir, 'checks.yaml');
+      children.push(new ChecksSummaryItem(checksPath, branch.checks));
     }
 
     // Walkthrough

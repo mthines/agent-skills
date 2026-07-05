@@ -147,6 +147,7 @@ nx release vscode-agent-tasks --configuration=dry-run
 - `src/lib/pr-status-reducer.ts` — `resolveDisplayStatus()` pure function; combines `SessionStatus` + `PrEnrichment` → `DisplayStatus`
 - `src/lib/pr-poller.ts` — `PrPoller`; polls PR status at 90s cadence, capped at 20 most-recent branches
 - `src/parsers/session-jsonl-parser.ts` — pure JSONL parser; `SessionStatus` union includes `unread`; exports `UNREAD_TTL_MS = 24h`
+- `src/parsers/checks-parser.ts` — pure tolerant parser for `.agent/{branch}/checks.yaml` (the aw-planner's executable acceptance-check ledger); exports `parseChecksYaml`, `summarizeChecks`, `formatChecksRollup` (`✓ pass/total` rollup on branch + running-session rows), `diffNewUnsatisfiable` (transition detection behind `ArtifactWatcher.onUnsatisfiableCheck` → warning notification, gated by `agentTasks.notifyUnsatisfiableCheck`). Read-only surface — check definitions are executor-immutable; excluded from standalone delete
 
 ### Workspace files
 

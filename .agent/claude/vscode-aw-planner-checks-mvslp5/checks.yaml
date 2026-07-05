@@ -12,7 +12,7 @@
   setup: "pnpm install"
   run: "cd packages/vscode-agent-tasks && pnpm exec vitest run src/parsers/checks-parser.test.ts"
   expect: "exit 0"
-  status: pending
+  status: pass
 - id: AC-2
   requirement: R1
   ears: "When a branch artifact dir contains checks.yaml, the Agent Tasks branch node shall include a ChecksSummaryItem with one CheckItem leaf per check"
@@ -20,7 +20,7 @@
   setup: "none"
   run: "grep -q 'class ChecksSummaryItem' packages/vscode-agent-tasks/src/providers/agent-tasks-provider.ts && grep -q 'class CheckItem' packages/vscode-agent-tasks/src/providers/agent-tasks-provider.ts && grep -q 'new ChecksSummaryItem' packages/vscode-agent-tasks/src/providers/agent-tasks-provider.ts && grep -q 'agentChecksFile' packages/vscode-agent-tasks/src/providers/agent-tasks-provider.ts"
   expect: "exit 0 (class defs + instantiation in getBranchChildren + contextValue present)"
-  status: pending
+  status: pass
 - id: AC-3
   requirement: R2
   ears: "When checks.yaml changes under a watched artifact dir, ArtifactWatcher shall emit onArtifactChanged on both the native dispatch and the Linux fallback pattern path"
@@ -28,7 +28,7 @@
   setup: "none"
   run: "test \"$(grep -c 'checks\\.yaml' packages/vscode-agent-tasks/src/watchers/artifact-watcher.ts)\" -ge 2"
   expect: "exit 0 (checks.yaml referenced in both watcher paths)"
-  status: pending
+  status: pass
 - id: AC-4
   requirement: R3
   ears: "When total > 0, formatChecksRollup shall return the compact pass/total rollup used by branch rows and running session rows; when total == 0 it shall return an empty string"
@@ -36,7 +36,7 @@
   setup: "pnpm install"
   run: "cd packages/vscode-agent-tasks && pnpm exec vitest run src/parsers/checks-parser.test.ts -t rollup && grep -q 'formatChecksRollup' src/providers/agent-tasks-provider.ts && grep -q 'formatChecksRollup' src/providers/sessions-provider.ts"
   expect: "exit 0 (rollup tests pass and both providers call the formatter)"
-  status: pending
+  status: pass
 - id: AC-5
   requirement: R4
   ears: "When checks.yaml exists in the correlated artifact dir, findLinkedArtifacts shall return checksPath; when absent, checksPath shall be undefined"
@@ -44,7 +44,7 @@
   setup: "pnpm install"
   run: "cd packages/vscode-agent-tasks && pnpm exec vitest run src/lib/session-artifact-correlator.test.ts"
   expect: "exit 0 (incl. new checksPath present/absent cases)"
-  status: pending
+  status: pass
 - id: AC-6
   requirement: R5
   ears: "When a check transitions to unsatisfiable, diffNewUnsatisfiable shall return its id exactly once and the extension shall show one suppressible warning notification; a wholesale reset to pending shall return no ids"
@@ -52,7 +52,7 @@
   setup: "pnpm install"
   run: "cd packages/vscode-agent-tasks && pnpm exec vitest run src/parsers/checks-parser.test.ts -t unsatisfiable && grep -q 'onUnsatisfiableCheck' src/watchers/artifact-watcher.ts && grep -q 'notifyUnsatisfiableCheck' src/extension.ts"
   expect: "exit 0 (diff helper tests pass; watcher event + gated subscription wired)"
-  status: pending
+  status: pass
 - id: AC-7
   requirement: "R6, R8"
   ears: "The agentChecksFile contextValue shall appear in the revealInOS and copyPath menu when-clauses and shall NOT appear in the deleteArtifacts when-clause"
@@ -60,7 +60,7 @@
   setup: "none"
   run: "node -e \"const p=require('./packages/vscode-agent-tasks/package.json');const m=p.contributes.menus['view/item/context'];const f=c=>m.filter(e=>e.command==='agentTasks.'+c).some(e=>/agentChecksFile/.test(e.when));if(!(f('revealInOS')&&f('copyPath')&&!f('deleteArtifacts')))process.exit(1)\""
   expect: "exit 0"
-  status: pending
+  status: pass
 - id: AC-8
   requirement: R7
   ears: "When no checks.yaml exists in a branch dir, tree output and LinkedArtifacts shall be unchanged from current behavior and the full pre-existing suite shall pass"
@@ -68,7 +68,7 @@
   setup: "pnpm install"
   run: "nx test vscode-agent-tasks"
   expect: "exit 0 (entire suite, incl. untouched pre-existing tests)"
-  status: pending
+  status: pass
 - id: AC-9
   requirement: R8
   ears: "When a checks item is opened from either panel, the file shall open as a text document and never via markdown.showPreview"
@@ -76,7 +76,7 @@
   setup: "none"
   run: "grep -Eq \"endsWith\\('\\.md'\\)|\\.md'\\)\" packages/vscode-agent-tasks/src/extension.ts && grep -q 'showTextDocument' packages/vscode-agent-tasks/src/extension.ts"
   expect: "exit 0 (openMarkdown handler branches on extension before preview)"
-  status: pending
+  status: pass
 - id: AC-10
   requirement: R9
   ears: "When the implementation is complete, build, test, and lint shall all pass"
@@ -84,4 +84,4 @@
   setup: "pnpm install"
   run: "nx build vscode-agent-tasks && nx test vscode-agent-tasks && nx lint vscode-agent-tasks"
   expect: "exit 0 on all three"
-  status: pending
+  status: pass
