@@ -48,6 +48,7 @@ For each `apply` decision, one block:
 
 - **Source**: <reviews | pulls | issues>
 - **URL**: <permalink>
+- **Thread ID**: `<PRRT_… | null>` (null = no resolvable thread; worker skips resolve)
 - **Path:Line**: `<path>:<line>` (side: <LEFT|RIGHT>)
 - **Body**:
   > <verbatim comment body>
@@ -99,23 +100,31 @@ touch files outside this list.
 | `<path>` | `<lines>` | `<id>` | edit / replace / extract |
 | … | … | … | … |
 
-## Commit Message
+## Commit Messages
 
-The worker uses this verbatim (one commit per PR):
+**One commit per applied comment** — the worker commits each comment's fix
+separately so `git log` and the resolved threads line up one-to-one. Per
+`apply` comment the worker uses:
 
 ```
-address review comments
+address review comment: <one-line summary of this comment's fix>
 
-- <one bullet per applied comment, citing @author and comment URL>
+Addresses @<author>'s comment: <comment-url>
 
 Refs: <pr-url>
 ```
 
+After all per-comment commits are pushed, the worker resolves each addressed
+thread (reply with the commit SHA, then `resolveReviewThread`) so the PR is
+left with every addressed comment resolved and only `surface` / `skip`
+comments still open.
+
 ## Risk and Rollback
 
 - **Risk**: <one paragraph — what could break, what was considered>
-- **Rollback**: `git revert <commit-sha>` on the PR branch. Each pack
-  produces exactly one commit so revert is atomic.
+- **Rollback**: `git revert <commit-sha>` on the PR branch. Each applied
+  comment is its own commit, so a single comment's fix can be reverted in
+  isolation without unwinding the others.
 
 ## Test Plan
 

@@ -35,10 +35,12 @@ Use `--paginate` if any endpoint may exceed 100 results:
 gh api --paginate repos/<owner>/<repo>/pulls/<n>/comments
 ```
 
-## Resolved-thread filter
+## Resolved-thread filter and thread-ID map
 
-GitHub does not expose "resolved" status on `/pulls/<n>/comments` directly.
-Use the GraphQL endpoint for resolved status:
+GitHub does not expose "resolved" status — or the thread node ID needed to
+**resolve** a thread — on `/pulls/<n>/comments` directly. Use the GraphQL
+endpoint for both. Fetch the thread `id` (the GraphQL node ID, **not** the
+`databaseId`) and every comment's `databaseId` in the thread:
 
 ```bash
 gh api graphql -f query='
@@ -47,8 +49,9 @@ gh api graphql -f query='
       pullRequest(number: $number) {
         reviewThreads(first: 100) {
           nodes {
+            id
             isResolved
-            comments(first: 1) { nodes { databaseId } }
+            comments(first: 100) { nodes { databaseId } }
           }
         }
       }
@@ -56,8 +59,20 @@ gh api graphql -f query='
   }' -f owner=<owner> -f name=<repo> -F number=<n>
 ```
 
-Build a `resolvedCommentIds: Set<number>` from the result and drop any
-pulls-comment whose `id` is in the set.
+From the result build two structures:
+
+1. `resolvedCommentIds: Set<number>` — every `databaseId` in a thread whose
+   `isResolved == true`. Drop any pulls-comment whose `id` is in the set.
+2. `commentIdToThreadId: Map<number, string>` — map every comment `databaseId`
+   in an **unresolved** thread to that thread's node `id`. This is what the
+   worker uses in Phase 6 to call `resolveReviewThread` after committing the
+   fix for that comment. Carry it into the pack (per `apply` comment) as
+   `threadId`.
+
+Only `source == "pulls"` comments belong to a resolvable review thread.
+`issues` comments and top-level `review` summaries have no thread node ID —
+their `threadId` is `null` and they are **not** resolvable (see
+[handoff.md](./handoff.md) for how the worker handles the `null` case).
 
 ## Suggestion blocks
 
@@ -90,11 +105,15 @@ GitHub's UI lets the reviewer "Commit suggestion" with one click — the worker 
   "inReplyTo": null,
   "reviewId": 987654,
   "reviewState": "CHANGES_REQUESTED" | "COMMENTED" | "APPROVED" | null,
-  "isResolved": false
+  "isResolved": false,
+  "threadId": "PRRT_kwDO…"
 }
 ```
 
-Fields `path`, `line`, `side`, `originalLine` are only present when `source == "pulls"`.
+Fields `path`, `line`, `side`, `originalLine`, `threadId` are only present when
+`source == "pulls"`. `threadId` is the GraphQL review-thread node ID (from
+`commentIdToThreadId`) the worker resolves after committing the fix; it is
+`null` for `issues` / `review` comments, which have no resolvable thread.
 
 ## Deduplication
 
