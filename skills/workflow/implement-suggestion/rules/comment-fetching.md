@@ -48,6 +48,7 @@ gh api graphql -f query='
     repository(owner: $owner, name: $name) {
       pullRequest(number: $number) {
         reviewThreads(first: 100) {
+          pageInfo { hasNextPage }
           nodes {
             id
             isResolved
@@ -58,6 +59,17 @@ gh api graphql -f query='
     }
   }' -f owner=<owner> -f name=<repo> -F number=<n>
 ```
+
+**Truncation guard.** GraphQL connections cap at `first: 100`; `--paginate`
+does not work for GraphQL. If `reviewThreads.pageInfo.hasNextPage == true`, the
+PR has > 100 review threads and this single page is incomplete — threads beyond
+position 100 would arrive with `threadId: null`, be silently skipped at resolve
+time, and make the Phase 7 `Resolved` count under-report. Do **not** silently
+truncate: either page through with the `endCursor` cursor, or surface a warning
+in the Phase 7 report — `PR has > 100 review threads; thread-ID map is
+incomplete; some addressed comments may not be auto-resolved` — and continue.
+The inner `comments(first: 100)` cap only matters for a single thread with
+> 100 replies (rare); the same guard applies if you observe it.
 
 From the result build two structures:
 

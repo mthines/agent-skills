@@ -7,7 +7,7 @@ headSha: <head-sha>
 worktree: <absolute-path-to-worktree>
 lane: <fast | standard>
 generatedAt: <ISO-8601-timestamp>
-generatedBy: implement-suggestion v2.0.0
+generatedBy: implement-suggestion v2.3.0
 ---
 
 # Suggestion Pack — <owner>/<repo>#<n>

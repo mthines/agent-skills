@@ -121,7 +121,9 @@ Apply reviewer suggestions to an existing pull request.
       typecheck + unit tests) if wired up. If a check fails:
       - For a clear mechanical fix (formatter / lint autofix): apply, re-check.
       - For anything else: STOP and report — do not "fix until green" by
-        weakening tests or types. Leave the commits already made in place.
+        weakening tests or types. Leave the commits already made in place as
+        LOCAL-ONLY, and do NOT proceed to steps 4 or 5: push nothing and
+        resolve nothing. A partial batch must not reach the remote.
    c. git add the files for THIS comment only, then git commit (no --no-verify,
       no Co-Authored-By) with this message:
 
@@ -135,9 +137,10 @@ Apply reviewer suggestions to an existing pull request.
 
    d. Record the resulting commit SHA and the comment's `threadId` for step 5.
 
-4. git push (no --force, no --force-with-lease). Push ONCE, after every
-   per-comment commit is made, so all the fix commits reach the remote before
-   any thread is resolved.
+4. git push (no --force, no --force-with-lease). Only reach this step if EVERY
+   `apply` entry committed without a STOP in step 3b — otherwise you already
+   aborted above. Push ONCE, after every per-comment commit is made, so all the
+   fix commits reach the remote before any thread is resolved.
 
 5. Resolve each addressed thread so the PR is left clean — one thread per
    committed comment, IN THE SAME ORDER you committed. For each `apply` entry
@@ -176,6 +179,9 @@ Apply reviewer suggestions to an existing pull request.
 - DO NOT delete or weaken tests or types.
 - DO NOT modify files outside the pack's apply list.
 - DO NOT batch comments — exactly one commit per addressed comment.
+- DO NOT push a partial batch. If step 3b STOPs on any comment, push nothing
+  and resolve nothing — leave the completed commits local and report them as
+  un-pushed.
 - DO NOT resolve a thread whose commit did not land, or a `surface` / `skip`
   comment's thread. Only resolve threads you addressed with a landed commit.
 - If push is rejected because the branch moved on the remote, STOP and
