@@ -13,7 +13,7 @@ argument-hint: '[plan|code|analysis]'
 license: MIT
 metadata:
   author: mthines
-  version: '2.2.0'
+  version: '2.3.0'
   workflow_type: advisory
   tags:
     - confidence
@@ -78,13 +78,13 @@ If arguments contain **"fix"** (e.g., `code fix`, `plan fix`, `analysis fix`), r
 
 | Dimension        | Weight | What to evaluate                                                                                                 |
 | ---------------- | ------ | ---------------------------------------------------------------------------------------------------------------- |
-| **Completeness** | 40%    | Are ALL Phase 0 requirements captured? Are the Core sections populated (and the Extended sections present where the task needs them)? Could a new session execute from this plan alone? Do NOT penalize an Extended section that is legitimately omitted because its `Include when` trigger does not apply. |
+| **Completeness** | 40%    | Are ALL Phase 0 requirements captured? Are the Core sections populated (and the Extended sections present where the task needs them)? Could a new session execute from this plan alone? Do NOT penalize an Extended section that is legitimately omitted because its `Include when` trigger does not apply (e.g. no Existing Code Survey on a modification-only plan). DO score down an Existing Code Survey whose "Searched for" column is vague ("looked around") or whose `BUILD NEW` verdicts show no searches — rule #10 checks presence, this dimension checks search quality. |
 | **Feasibility**  | 30%    | Is the technical approach sound? Are patterns consistent with the codebase? Are risks identified where applicable?                |
 | **No ambiguity** | 30%    | Are implementation steps specific enough to execute without interpretation? Are edge cases addressed where applicable?            |
 
 #### Step 2 — Deterministic rule checks (run via Bash)
 
-Every check below MUST pass for plan mode. A single failed rule caps the gate at **89% regardless of LLM score** — the agent must surface the failed rule and either fix the plan or escalate to the user.
+Every check below MUST pass for plan mode. A single failed rule caps the gate at **89% regardless of LLM score** — the agent must surface the failed rule and either fix the plan or escalate to the user. Rules #10 and #11 are **conditionally applicable** (their trigger condition is part of the rule); when the condition does not hold they pass vacuously with a logged note — they never silently skip.
 
 | # | Rule check                                                | Verification                                                                                       |
 | - | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
@@ -96,6 +96,9 @@ Every check below MUST pass for plan mode. A single failed rule caps the gate at
 | 6 | Every decision row has a Rationale column populated       | `awk -F'[\|]' '/^## Decisions/{f=1;next} /^###? /{f=0} !f{next} !/^[\|]/{next} {r++} r<3{next} NF<5{bad=1} $4 ~ /^[ \t]*$/{bad=1} END{exit bad}' plan.md` exits 0 — no missing or empty cells in the Rationale (third) column of the Decisions table. The field separator and row match use the bracket class `[\|]`, so the command needs no shell pipes and executes verbatim. |
 | 7 | All timestamps are ISO 8601 with time component           | `awk '/^## Progress Log/{f=1;next} /^###? /{f=0} !f{next} /^- /{n++} /^- \[20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z\]/{t++} END{exit n!=t}' plan.md` exits 0 — every Progress Log entry starts with a `[YYYY-MM-DDTHH:MM:SSZ]` timestamp. Single awk command with no shell pipes, so the table row executes verbatim. |
 | 8 | Verification commands are non-template                    | "After editing" and "Before PR" lines do not contain `{` or `}` placeholder braces                 |
+| 9 | Every `[user-stated]` requirement is covered by an Acceptance Criterion | `awk '/^## Requirements/ {rs=1; as=0; next} /^## Acceptance Criteria/ {as=1; rs=0; next} /^###? / {rs=0; as=0} rs && /^[-0-9]/ {n++; if (index($0,"[user-stated]")) us[n]=1} as {s=$0; while (match(s, /covers:[^)]*/)) {seg=substr(s,RSTART,RLENGTH); s=substr(s,RSTART+RLENGTH); while (match(seg,/R[0-9]+/)) {cov[substr(seg,RSTART+1,RLENGTH-1)]=1; seg=substr(seg,RSTART+RLENGTH)}}} END {for (i in us) if (!(i in cov)) exit 1; exit 0}' plan.md` exits 0 — requirements are numbered by list position (first item = R1; Out of Scope items excluded by the `###` reset); every position tagged `[user-stated]` must appear in a `(covers: R…)` annotation in the Acceptance Criteria. This is the requirement→criterion traceability gate: a plan cannot silently drop a user-stated requirement. Single awk command with no shell pipes, so the table row executes verbatim. |
+| 10 | Every planned `create` has an Existing Code Survey verdict | `awk -F'[\|]' '/^## File Changes/ {fc=1; es=0; next} /^## Existing Code Survey/ {es=1; fc=0; next} /^###? / {fc=0; es=0} fc && /^[\|]/ && $2 ~ /create/ {creates++} es && /^[\|]/ {if (index($0,"EXTEND") + index($0,"WRAP") + index($0,"BUILD NEW") > 0) rows++} END {if (creates == 0) exit 0; exit (rows < 1)}' plan.md` exits 0 — when the File Changes table has ≥ 1 `create` row, the `## Existing Code Survey` section must exist with ≥ 1 verdict row (`EXTEND` / `WRAP` / `BUILD NEW`). Modification-only plans pass vacuously (the section is legitimately omitted). This is the anti-reinvention gate: no new unit without a recorded reuse search. The field separator uses the bracket class `[\|]` and the verdict match uses pipe-free `index()` sums, so the command needs no shell pipes and executes verbatim. |
+| 11 | `checks.yaml` exists and its IDs are in sync with the plan | Applies only when the Acceptance Criteria carry `AC-{n}` IDs (un-IDed plans — e.g. `/fix-bug` fast-lane — skip with a logged note). Verify: `test -f .agent/$(git branch --show-current)/checks.yaml`, then for each `AC-{n}` in the plan's Acceptance Criteria section, `grep -c "^- id: AC-{n}$" checks.yaml` returns ≥ 1, and every `id:` in checks.yaml resolves to an AC in the plan. Any orphan in either direction fails. |
 
 Run each check, list pass/fail in the output table. **A failing rule is a blocker the gate must surface even if the LLM dimensional score is high.**
 

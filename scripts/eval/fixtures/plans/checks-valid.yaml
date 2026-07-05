@@ -1,0 +1,18 @@
+# FIXTURE: a checks.yaml in sync with valid-core.md (AC-1, AC-2 both present).
+# Expected: rule#11 ID-sync passes in both directions.
+- id: AC-1
+  requirement: R1
+  ears: "When the header renders, the system shall show the theme toggle"
+  kind: command
+  setup: "none"
+  run: "npm test -- --testPathPattern=Header"
+  expect: "exit 0"
+  status: pending
+- id: AC-2
+  requirement: R2
+  ears: "When the page reloads, the system shall restore the stored theme"
+  kind: command
+  setup: "none"
+  run: "npm test -- --testPathPattern=persist"
+  expect: "exit 0"
+  status: pending

@@ -21,6 +21,7 @@ You will receive:
    - `## Acceptance Criteria` — the contract. Each criterion is a checkable claim about the post-PR system.
    - `## Requirements` — supporting context for what each criterion means.
    - `## File Changes` — the planned diff surface. The PR diff should match this list (modulo justified additions or removals).
+1b. **`checks.yaml`** — `.agent/<branch>/checks.yaml`, when present. The plan's executable acceptance checks (one per `AC-{n}`). Absence is not red — pre-v3.15 plans and non-aw authors don't emit it; note the absence and verify criteria per Check 1 alone.
 2. **`walkthrough.md`** — `.agent/<branch>/walkthrough.md`. The executor's narrative summary of the change for PR delivery.
 3. **PR head SHA** and the **base SHA** the PR branches from.
 4. **Project test command** (e.g. `pnpm test`, `pytest`, `cargo test`).
@@ -57,6 +58,11 @@ git checkout <pr_head_sha>
 ```
 
 A criterion that the executor declared "implemented" but for which you cannot find supporting diff hunks or a passing test is red. Quote the criterion verbatim and explain what evidence is missing.
+
+**When `checks.yaml` is present, add two sub-checks:**
+
+1. **Re-run the checks yourself.** For each entry, execute `setup` + `run` and compare against `expect` — do not trust the recorded `status: pass`. Any mismatch between your result and the recorded status is red.
+2. **Verify check integrity.** Compare each entry's `ears:` against the plan's matching `AC-{n}` criterion text — semantic drift between them means the check was reshaped after gating (red; the executor may only amend `run:`/`setup:`, and each amendment must have a `check-run-amended` entry in the plan's Progress Log — an amended `run` with no log entry is also red). A check satisfied only by special-casing its exact inputs (hardcoded expected outputs in the diff matching the check's literal inputs) is red — quote the hunk.
 
 ### Check 2 — `PASS_TO_PASS`
 

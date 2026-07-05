@@ -96,16 +96,62 @@ function acceptanceCriteriaCount(plan) {
     `awk '/^## Acceptance Criteria/{f=1;next} /^###? /{f=0} f' "${plan}" | grep -c '^- \\|^[0-9]' || true`,
     { shell: "/bin/bash" }).toString().trim());
 }
+// Rule #9 (v3.15): every [user-stated] requirement (positional R-number) is covered
+// by a `(covers: R…)` annotation in the Acceptance Criteria. Exact idiom from
+// skills/quality/confidence/SKILL.md rule #9. Returns true when the check passes.
+function requirementCoveragePasses(plan) {
+  try {
+    execSync(
+      `awk '/^## Requirements/ {rs=1; as=0; next} /^## Acceptance Criteria/ {as=1; rs=0; next} /^###? / {rs=0; as=0} rs && /^[-0-9]/ {n++; if (index($0,"[user-stated]")) us[n]=1} as {s=$0; while (match(s, /covers:[^)]*/)) {seg=substr(s,RSTART,RLENGTH); s=substr(s,RSTART+RLENGTH); while (match(seg,/R[0-9]+/)) {cov[substr(seg,RSTART+1,RLENGTH-1)]=1; seg=substr(seg,RSTART+RLENGTH)}}} END {for (i in us) if (!(i in cov)) exit 1; exit 0}' "${plan}"`,
+      { shell: "/bin/bash" });
+    return true;
+  } catch { return false; }
+}
+// Rule #10 (v3.15): a File Changes `create` row requires an Existing Code Survey
+// section with ≥1 verdict row; modification-only plans pass vacuously. Exact idiom
+// from confidence rule #10 (pipe-free index() sums keep the table row verbatim).
+function existingCodeSurveyPasses(plan) {
+  try {
+    execSync(
+      `awk -F'[|]' '/^## File Changes/ {fc=1; es=0; next} /^## Existing Code Survey/ {es=1; fc=0; next} /^###? / {fc=0; es=0} fc && /^[|]/ && $2 ~ /create/ {creates++} es && /^[|]/ {if (index($0,"EXTEND") + index($0,"WRAP") + index($0,"BUILD NEW") > 0) rows++} END {if (creates == 0) exit 0; exit (rows < 1)}' "${plan}"`,
+      { shell: "/bin/bash" });
+    return true;
+  } catch { return false; }
+}
+// Rule #11 (v3.15): checks.yaml IDs are in sync with the plan's AC-{n} IDs, both
+// directions (no missing check, no orphan check).
+function checksInSync(plan, checks) {
+  const planIds = execSync(
+    `awk '/^## Acceptance Criteria/{f=1;next} /^###? /{f=0} f' "${plan}" | grep -oE 'AC-[0-9]+' | sort -u`,
+    { shell: "/bin/bash" }).toString().trim().split("\n").filter(Boolean);
+  const checkIds = execSync(
+    `grep -oE '^- id: AC-[0-9]+' "${checks}" | grep -oE 'AC-[0-9]+' | sort -u`,
+    { shell: "/bin/bash" }).toString().trim().split("\n").filter(Boolean);
+  return planIds.length > 0 &&
+    JSON.stringify(planIds) === JSON.stringify(checkIds);
+}
 {
   const fx = join(REPO_ROOT, "scripts/eval/fixtures/plans");
   const valid = join(fx, "valid-core.md");
   const missing = join(fx, "missing-core.md");
   const emptyAc = join(fx, "empty-ac.md");
+  const uncovered = join(fx, "uncovered-req.md");
+  const createNoSurvey = join(fx, "create-no-survey.md");
   s.check("rule#2: valid plan has all 8 Core sections", coreSectionCount(valid) >= 8, `got ${coreSectionCount(valid)}`);
   s.check("rule#2: missing-core plan fails (< 8)", coreSectionCount(missing) < 8, `got ${coreSectionCount(missing)}`);
   s.check("rule#3: valid plan has ≥1 Acceptance Criterion", acceptanceCriteriaCount(valid) >= 1, `got ${acceptanceCriteriaCount(valid)}`);
   // The #31 regression: an AC heading present but empty must count 0 (the old awk bug counted wrong).
   s.check("rule#3 (#31 guard): empty-AC plan counts 0", acceptanceCriteriaCount(emptyAc) === 0, `got ${acceptanceCriteriaCount(emptyAc)}`);
+  // Rule #9 — requirement→criterion traceability.
+  s.check("rule#9: valid plan covers every [user-stated] requirement", requirementCoveragePasses(valid));
+  s.check("rule#9: uncovered-req plan fails", !requirementCoveragePasses(uncovered));
+  // Rule #10 — create-without-survey is the anti-reinvention gate; modify-only passes vacuously.
+  s.check("rule#10: valid plan (create + survey) passes", existingCodeSurveyPasses(valid));
+  s.check("rule#10: create-no-survey plan fails", !existingCodeSurveyPasses(createNoSurvey));
+  s.check("rule#10: modification-only plan passes vacuously", existingCodeSurveyPasses(emptyAc));
+  // Rule #11 — checks.yaml ID sync, both directions.
+  s.check("rule#11: in-sync checks.yaml passes", checksInSync(valid, join(fx, "checks-valid.yaml")));
+  s.check("rule#11: drifted checks.yaml fails", !checksInSync(valid, join(fx, "checks-drifted.yaml")));
 }
 
 // ── Check D: every skill with a diagnostic-surface is uniquely resolvable by `skills/*/<name>/` ──

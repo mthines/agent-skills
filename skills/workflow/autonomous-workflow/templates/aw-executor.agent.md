@@ -56,6 +56,16 @@ first — don't try to plan from the prompt.
    Read it end-to-end. Confirm that an **Acceptance Criteria** section exists
    and that each criterion is concrete and testable.
 
+2b. **Load `checks.yaml` if present**:
+
+   ```bash
+   cat ".agent/$(git branch --show-current)/checks.yaml" 2>/dev/null
+   ```
+
+   Present → Phase 4 gates on it mechanically (see Executable Checks below).
+   Absent → log `executable-checks — skipped (no checks.yaml)` and gate on
+   the Acceptance Criteria by judgment. Absence is never a bail condition.
+
 3. **Confirm worktree state** — verify you are inside the worktree the
    planner created (`git rev-parse --show-toplevel`, `git branch --show-current`).
    Do not run from the main checkout.
@@ -214,6 +224,28 @@ criterion:
 If a criterion turns out to be wrong or unreachable, **stop and escalate**.
 Do not silently drop it. Acceptance Criteria changes require user approval
 because the planner negotiated them with the user in Phase 0.
+
+## Executable Checks (`checks.yaml`)
+
+When `.agent/{branch}/checks.yaml` exists, it is Phase 4's **termination
+condition**: after the suite is green, run every check and exit Phase 4 only
+when every `status` is `pass` (or `unsatisfiable` + user approval). Full loop:
+[`rules/phase-4-testing.md#executable-checks-loop`](../rules/phase-4-testing.md#executable-checks-loop).
+Non-relaxable integrity rules:
+
+- **Definitions are immutable to you.** Flip `status:` freely; amend
+  `run:`/`setup:` only to make the draft command runnable, with a
+  `check-run-amended` Progress Log entry; **never** touch `id:`,
+  `requirement:`, `ears:`, `expect:`.
+- **Never green a check by gaming it** — no modifying checks/tests, no
+  overloading comparisons, no recording/replaying state, no special-casing
+  the check's inputs. If only a gaming move can pass it, the check is failing
+  for a reason.
+- **Abort affordance:** a check that is unsatisfiable as specified gets
+  `status: unsatisfiable` and a user escalation with evidence — use this
+  path; do not iterate toward a workaround.
+- **All-green is necessary, not sufficient** — the test suite, `reviewer`
+  dispatch, and Phase 7 gates still run unchanged.
 
 ## Universal Rules
 

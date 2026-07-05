@@ -25,9 +25,9 @@ Concretely:
 - **Companion skills** — the actual work (planning, TDD, UX review, code
   quality, doc updates, PR creation, CI fixing) is delegated to specialist
   skills in this same repo.
-- **Artifacts** — Full Mode produces `plan.md` and `walkthrough.md` in
-  `.agent/{branch}/` so a fresh Claude session can pick up where another
-  left off.
+- **Artifacts** — Full Mode produces `plan.md`, `checks.yaml`, and
+  `walkthrough.md` in `.agent/{branch}/` so a fresh Claude session can pick
+  up where another left off (and Phase 4 can gate on runnable checks).
 
 If you find yourself adding domain knowledge to this skill (how to write a
 React component, how to fix a TypeScript error, how to write a good commit
@@ -89,7 +89,7 @@ skills/workflow/autonomous-workflow/
 │   ├── phase-5-documentation.md
 │   ├── phase-6-pr-creation.md
 │   ├── phase-7-ci-gate.md      # Replaces phase-7-cleanup.md from v2.
-│   ├── artifacts-overview.md   # The two-artifact pattern (plan.md, walkthrough.md).
+│   ├── artifacts-overview.md   # The artifact pattern (plan.md, checks.yaml, walkthrough.md).
 │   ├── decision-framework.md   # Branch naming, test strategy, mode detection.
 │   ├── error-recovery.md       # Common failures and recovery procedures.
 │   ├── parallel-coordination.md# Sub-agent fan-out and multi-agent handoff.
@@ -110,7 +110,8 @@ skills/workflow/autonomous-workflow/
     ├── error-recovery-scenarios.md          # Concrete error → recovery transcripts.
     ├── iterative-refinement.md              # Worked example of stuck-loop recovery.
     ├── self-improvement-walkthrough.md      # Worked example: a lesson's full lifecycle (capture → recur → promote).
-    └── anthropic-architecture-research.md   # Verbatim Anthropic citations + design mapping.
+    ├── anthropic-architecture-research.md   # Verbatim Anthropic citations + design mapping.
+    └── planning-quality-research.md         # 2024–2026 web-research pass on planner quality (anti-reinvention, spec fidelity, clarify-or-abstain, executable checks); evidence base + decision record for the v3.15 plan-quality gates.
 ```
 
 The split between `SKILL.md` (lean index, always in context), `rules/` (loaded
@@ -384,6 +385,18 @@ When editing this skill, do not break these — they're load-bearing:
   `diagnose` apply, and promotion requires `seen_count >= 3` (or an explicit
   `structural` tag). Never auto-apply lessons to behavior or promote on one run.
   See [`rules/self-improvement-loop.md#entrenchment-guards-load-bearing`](./rules/self-improvement-loop.md#entrenchment-guards-load-bearing).
+- **`checks.yaml` definitions are executor-immutable; gaming a check is never
+  a fix.** The executor flips `status:` (and amends `run:`/`setup:` only with a
+  logged `check-run-amended` entry); `id:`/`requirement:`/`ears:`/`expect:` are
+  planner-owned. The four forbidden strategies (modify checks/tests, overload
+  comparisons, record/replay state, special-case inputs) and the
+  `unsatisfiable` abort affordance are non-relaxable. All-green checks never
+  waive the suite, `confidence`, `reviewer`, or Phase 7 verification. See
+  [`rules/phase-4-testing.md#executable-checks-loop`](./rules/phase-4-testing.md#executable-checks-loop).
+- **A `blocking` missing-information gap halts even under `--no-confirm`.**
+  The pre-authorization grant waives the Phase 0 confirmation wait, never the
+  missing-information gate. See
+  [`rules/phase-0-validation.md#step-3c-missing-information-gate`](./rules/phase-0-validation.md#step-3c-missing-information-gate).
 
 ---
 
@@ -505,6 +518,40 @@ Design rules that keep this from rotting:
 - **Micro reuses the Lite phase path.** Micro is a routing tier, not a fourth
   set of phase rules — it follows Lite's phase behavior with planning and quality
   companions skipped. This keeps the phase rules from needing a third column.
+
+## Plan-quality gates + executable checks — design intent
+
+v3.15 added four planning-quality mechanisms, each mapping one researched
+failure mode to the earliest phase that can catch it (full evidence base:
+[`references/planning-quality-research.md`](./references/planning-quality-research.md)):
+
+| Mechanism | Failure mode addressed | Where | Enforcement |
+| --------- | ---------------------- | ----- | ----------- |
+| Restate-and-diff | Specification misalignment — the model plans against its *perception* of the spec, not the spec | Phase 0 Step 3b | Procedure + checklist (human-in-loop) |
+| Missing-Information Gate | Hallucinated requirements — guessing where information is absent | Phase 0 Step 3c | `blocking` halts even under `--no-confirm` (hard invariant) |
+| Existing Code Survey | The "implement-box": re-implementing existing functionality as semantic clones review doesn't catch | Phase 1 / plan Extended section | `confidence(plan)` rule #10 (deterministic; create ⇒ survey) |
+| Traceability + `checks.yaml` | Silently dropped requirements; "criteria met" judged instead of verified; verifier gaming | Phase 1→2 authoring, Phase 4 loop | Rules #9/#11 (deterministic) + check-integrity hard invariants |
+
+Design rules that keep this from rotting:
+
+- **Core-8 stays Core-8.** Traceability is embedded in the Acceptance
+  Criteria (`AC-{n}` + `covers:`), and the survey is an Extended section with
+  a deterministic trigger — deliberately NOT new Core sections, because the
+  Core set is coupled to `confidence` rule #2, the L1 evals, and fix-bug's
+  fast-lane contract (L1 G2).
+- **`checks.yaml` is additive, never a replacement.** It mechanizes the
+  Acceptance-Criteria sprint contract; the suite, `confidence`, `reviewer`,
+  and Phase 7 verifiers are unchanged. The check-integrity rules exist
+  because verifier-driven loops are demonstrably gameable (models special-case
+  test inputs and edit tests to force green; an explicit abort affordance is
+  the strongest counter-lever, and it must be prompted for explicitly because
+  Claude under-uses it by default — see research §5).
+- **Backward compatible by absence.** No `checks.yaml` → the executor logs one
+  line and gates on ACs by judgment (pre-v3.15 behavior). Plans without
+  `AC-{n}` IDs (fix-bug fast-lane, legacy) skip rule #11 with a logged note.
+- **The planner pins contracts, not implementations.** `ears` + `expect` are
+  exact; `run` is a draft the executor finalizes (logged). Pinning full check
+  bodies upfront would re-introduce the cascading-error failure mode (§2.8).
 
 ## Confidence-gated autonomous action — design intent
 
@@ -633,6 +680,43 @@ end-user-facing; this file is contributor-facing.
 ---
 
 ## History
+
+- **v3.15.0** — Plan-quality gates + executable checks. Implements the four
+  mechanisms from [`references/planning-quality-research.md`](./references/planning-quality-research.md)
+  (2024–2026 web-research pass; see that file for citations and caveats):
+  - **Phase 0:** Step 3b restate-and-diff (surface spec-perception deltas
+    before presenting understanding) and Step 3c Missing-Information Gate
+    (`blocking` vs `assume-and-proceed`; `blocking` halts even under
+    `--no-confirm` — new hard invariant).
+  - **Phase 1:** dependency-graph-first localization in Step 1; Existing Code
+    Survey (recorded reuse searches + `EXTEND`/`WRAP`/`BUILD NEW` verdict per
+    planned `create`) as a deterministic-trigger Extended plan section;
+    Acceptance Criteria gain `AC-{n}` IDs, `(covers: R{m})` traceability
+    annotations, and EARS trigger→response preference.
+  - **Phase 2:** `aw-create-plan` v2.1.0 Step 2b derives
+    `.agent/{branch}/checks.yaml` — one runnable check per criterion
+    (`command`/`grep`/`judge`), statuses `pending`, re-derived per iteration.
+  - **Phase 4:** new Executable Checks Loop — checks.yaml is the mechanical
+    termination condition and progress ledger; check definitions are
+    executor-immutable, four gaming strategies forbidden, `unsatisfiable`
+    abort affordance escalates; all-green is necessary-not-sufficient.
+    Self-skips when no checks.yaml (backward compatible).
+  - **Gate:** `confidence` v2.3.0 adds deterministic rules #9 (every
+    `[user-stated]` requirement covered), #10 (create ⇒ survey), #11
+    (checks.yaml ID sync; skipped for un-IDed plans like fix-bug fast-lane).
+  - Coupled surfaces updated in lockstep: phase rules 0/1/2/4,
+    `safety-guardrails.md` (Executable-Check Integrity section),
+    `planner-executor-handoff.md` (Core/Extended tables, rule-check list,
+    handoff messages gain a `Checks:` line, executor entry step 3b),
+    `artifacts-overview.md` (three-artifact table + tree), all three agent
+    templates, `diagnostic-surface.md` (guards + 3 hard invariants +
+    artifact row), `SKILL.md` (v3.15.0, principle #9, artifact table, quick
+    reference), `README.md`, and L1 evals (`l1.mjs` runs the actual rule
+    #9/#10/#11 idioms against new fixtures `uncovered-req.md`,
+    `create-no-survey.md`, `checks-valid.yaml`, `checks-drifted.yaml`;
+    `valid-core.md` upgraded to the new AC format). Deliberately NOT added:
+    new Core sections (Core-8 is coupled to rule #2, L1 G2, and fix-bug's
+    fast-lane) and any weakening of existing gates (checks are additive).
 
 - **v3.13.2** — Agent-template discoverability + role-accurate filenames. The
   three agent definitions in `templates/` are symlinked verbatim by `install.sh`

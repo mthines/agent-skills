@@ -62,13 +62,19 @@ Phases 0–2 are also the cheapest to redo — no code has been written, no PR e
 | Section                | Purpose                                                           |
 | ---------------------- | ----------------------------------------------------------------- |
 | TL;DR                  | 3-5 sentences: what / why / approach (HOW) / done. Human-review surface — readers verify direction here before approving the planner→executor handoff. |
-| Requirements           | Tagged list (`[user-stated]` / `[inferred]`), with an Out of Scope subsection |
+| Requirements           | Tagged list (`[user-stated]` / `[inferred]`), with an Out of Scope subsection. Implicitly numbered by position (R1, R2, …) for traceability. |
 | Decisions              | Each decision + alternatives considered + rationale               |
-| Acceptance Criteria    | Bullet list — the contract Phase 4 testing gates against          |
+| Acceptance Criteria    | Bullet list with `AC-{n}` IDs + `(covers: R{m})` annotations — the contract Phase 4 testing gates against, mirrored 1:1 into `checks.yaml` |
 | Implementation Order   | Numbered sequence the executor follows verbatim                   |
 | File Changes           | Action / File / Change / Reason table                             |
 | Verification           | Commands for fast-check (after edit) and broad-check (before PR)  |
 | Progress Log           | Append-only log of every phase milestone                          |
+
+The plan travels with a sibling artifact: **`.agent/{branch}/checks.yaml`** —
+one executable check per `AC-{n}`, statuses `pending`. The executor's Phase 4
+[Executable Checks Loop](./phase-4-testing.md#executable-checks-loop) gates on
+it mechanically. Check definitions are executor-immutable (see the loop's
+integrity rules); its absence is logged, not a bail condition.
 
 **Extended sections — present only when the task needs them:**
 
@@ -79,6 +85,7 @@ Phases 0–2 are also the cheapest to redo — no code has been written, no PR e
 | Patterns to Follow     | A non-obvious existing convention must be matched                 |
 | Edge Cases             | Non-trivial edge / error cases beyond the Acceptance Criteria     |
 | API / Interfaces       | A public interface / type / config shape is defined or changed    |
+| Existing Code Survey   | File Changes has ≥ 1 `create` row (deterministic trigger — rule #10 fails a create-without-survey plan) |
 | Tests                  | Test design is non-obvious beyond Acceptance Criteria + Verification |
 | Dependencies           | A dependency is added, removed, or upgraded                       |
 | Risks                  | High complexity, migration, or irreversible operation             |
@@ -89,6 +96,9 @@ All multi-signal `confidence(plan)` rule checks must pass:
 - File paths in the File Changes table resolve in the worktree
 - Requirements are tagged (must / nice / out-of-scope)
 - Acceptance Criteria section is non-empty
+- Every `[user-stated]` requirement is covered by a `(covers: R{m})` annotation (rule #9)
+- Every planned `create` has an Existing Code Survey verdict (rule #10)
+- `checks.yaml` exists with IDs in sync with the plan's `AC-{n}` criteria (rule #11)
 - Implementation Order is numbered and references actual files
 - Verification commands are concrete (no placeholders)
 
@@ -142,6 +152,8 @@ At the end of Phase 2, the planner outputs **one** of the two messages below —
 - Worktree: <path>
 - Files to change: N
 - Acceptance Criteria: M items
+- Checks: .agent/{branch}/checks.yaml (M checks: K command/grep, J judge)
+- Specs: .agent/{branch}/specs.md ({N} specs, aw-target: {name}) | none (non-UI task)
 
 Reply with one of:
 - "execute" / "continue" — dispatch the executor.
@@ -284,6 +296,17 @@ At the start of Phase 3, the **aw-executor agent**:
    Do not skim. The executor's mental model for the rest of the run comes from this file.
 
 3. **Verifies the Acceptance Criteria section is non-empty.** This is the contract Phase 4 testing gates against. An empty section means the plan is incomplete — bail.
+
+3b. **Loads `checks.yaml` if present.**
+
+   ```bash
+   cat .agent/$(git branch --show-current)/checks.yaml 2>/dev/null
+   ```
+
+   Present → Phase 4 gates on the [Executable Checks Loop](./phase-4-testing.md#executable-checks-loop);
+   note the check count and any `judge`-kind entries. Absent → log
+   `executable-checks — skipped (no checks.yaml)` and gate on the Acceptance
+   Criteria by judgment. **Absence is never a bail condition.**
 
 4. **Logs the takeover** to the `plan.md` Progress Log:
 

@@ -1,5 +1,7 @@
 <!-- FIXTURE: a valid Core-only plan.md. All 8 Core sections present; Acceptance
-     Criteria non-empty. Expected: rule#2 = 8, rule#3 ≥ 1 → gate not capped. -->
+     Criteria non-empty with AC-{n} IDs + (covers: R{m}) annotations covering every
+     [user-stated] requirement; the create row has an Existing Code Survey verdict.
+     Expected: rule#2 = 8, rule#3 ≥ 1, rule#9 pass, rule#10 pass → gate not capped. -->
 # Plan: add a dark-mode toggle
 
 ## TL;DR
@@ -16,8 +18,8 @@ Add a header toggle that switches theme and persists the choice. Small, UI-only.
 - Use the existing `ThemeContext` (alternative: new store — rejected, overkill).
 
 ## Acceptance Criteria
-- Clicking the toggle flips the theme.
-- The choice persists across a reload.
+- [ ] AC-1 (covers: R1) — When the header renders, the system shall show the theme toggle.
+- [ ] AC-2 (covers: R2) — When the page reloads, the system shall restore the stored theme.
 
 ## Implementation Order
 1. Add toggle to `Header.tsx`.
@@ -27,6 +29,12 @@ Add a header toggle that switches theme and persists the choice. Small, UI-only.
 | Action | File | Change | Reason |
 | ------ | ---- | ------ | ------ |
 | modify | `src/Header.tsx` | add toggle | user-facing control |
+| create | `src/theme/persist.ts` | localStorage read/write helpers | persistence |
+
+## Existing Code Survey
+| Planned new unit | Searched for | Closest existing match | Verdict | Rationale |
+| ---------------- | ------------ | ---------------------- | ------- | --------- |
+| `persist.ts` | grep "localStorage", "persist", "storage"; refs of ThemeContext | none | BUILD NEW | no storage abstraction exists |
 
 ## Verification
 - Fast: `npx tsc --noEmit`

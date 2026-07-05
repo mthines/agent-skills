@@ -52,12 +52,12 @@ the workflow never blocks on a missing companion.
 
 | Phase | Name                       | Gate                                             |
 | ----- | -------------------------- | ------------------------------------------------ |
-| 0     | Validation                 | User confirmed understanding, mode selected      |
-| 1     | Planning                   | `confidence(plan)` >= 90% (or user-approved); `specs.md` drafted for UI tasks |
-| 2     | Worktree Setup             | Worktree created, `plan.md` (+ `specs.md`) written |
+| 0     | Validation                 | User confirmed understanding, mode selected; requirements restated + diffed; no unresolved `blocking` missing-information item |
+| 1     | Planning                   | `confidence(plan)` >= 90% (or user-approved) — incl. requirement→criterion traceability and an Existing Code Survey per planned `create`; `specs.md` drafted for UI tasks |
+| 2     | Worktree Setup             | Worktree created, `plan.md` + `checks.yaml` (+ `specs.md`) written |
 | 3     | Implementation             | Code complete, fast checks pass                  |
 | 4 (UI)| Spec Verification          | `aw-tester` verdict `green`/`inconclusive` — runs before lint/type/test |
-| 4     | Testing                    | All tests pass OR user-approved stop             |
+| 4     | Testing                    | All tests pass AND every `checks.yaml` check passes OR user-approved stop |
 | 5     | Documentation              | Docs reflect changes (incl. `CLAUDE.md`)         |
 | 6     | PR Creation                | Walkthrough shown, draft PR opened               |
 | 7     | CI Gate + Optional Cleanup | CI green OR user-approved stop; optional spec rehearsal against preview |
@@ -148,7 +148,7 @@ and are unmistakable when listed alongside unrelated agents:
 | Agent | Role | Terminal artifact | Exit gate |
 |---|---|---|---|
 | `aw` | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes, owns the self-improvement loop for every tier. | — (delegates) | Task routed + exit lesson written |
-| `aw-planner` | Full tier, phases 0–2 (validation, planning, worktree + plan.md + specs.md) | `.agent/{branch}/plan.md` + `specs.md` (UI tasks) | `confidence(plan) ≥ 90%` (or user-approved override) |
+| `aw-planner` | Full tier, phases 0–2 (validation, planning, worktree + plan.md + checks.yaml + specs.md) | `.agent/{branch}/plan.md` + `checks.yaml` + `specs.md` (UI tasks) | `confidence(plan) ≥ 90%` (or user-approved override) |
 | `aw-executor` | Full tier, phases 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
 | `aw-tester` | Phase 4 spec-driven UI verification — dispatched by executor before lint/type/test | Verdict block (~200 tokens) | `green` or `inconclusive` |
 
@@ -267,6 +267,8 @@ Planner → `plan.md` → executor (the split). Generates artifacts under
 
 - `plan.md` — implementation strategy, decisions, progress log (single
   source of truth)
+- `checks.yaml` — one executable check per acceptance criterion; Phase 4's
+  mechanical termination condition (definitions immutable to the executor)
 - `walkthrough.md` — final summary generated at Phase 6
 
 ### Lite (simple changes, 2-3 files)
@@ -320,9 +322,15 @@ untouched — only new artifacts land in `.agent/`. Migrate manually with
    the cap, run `confidence(analysis)` and auto-replan or escalate.
 6. **Companions skip silently** — never block on a missing companion (except
    `confidence` at Phase 1).
-7. **Stop and ask when blocked** — don't guess on ambiguity.
+7. **Stop and ask when blocked** — don't guess on ambiguity. A `blocking`
+   missing-information gap halts even under `--no-confirm`.
 8. **No AI co-author tags** — never add `Co-Authored-By` lines to commits or
    PRs.
+9. **Plans are grounded, traceable, and executable** (Full Mode) — every
+   planned `create` carries a recorded reuse-search verdict, every user-stated
+   requirement maps to an `AC-{n}` criterion, and `checks.yaml` lets Phase 4
+   gate on runnable checks instead of judgment. All-green checks are
+   necessary, never sufficient.
 
 ---
 

@@ -64,11 +64,11 @@ Coordinate other skills to ship complete changes.
 
 | Skill | What it does | Type |
 |-------|--------------|------|
-| **[autonomous-workflow](./skills/workflow/autonomous-workflow/SKILL.md)** | Phase-based orchestrator (0–7): task → plan → worktree → code → test → docs → draft PR → CI gate. Opt-in `aw` dispatcher routes by tier (Micro/Lite single-pass, Full → planner/executor split). Universal two-tier self-improvement: episodic `aw-lessons` promotes to gated `diagnose` at `seen_count ≥ 3`. See [featured section](#featured-autonomous-workflow). | `auto` |
+| **[autonomous-workflow](./skills/workflow/autonomous-workflow/SKILL.md)** | Phase-based orchestrator (0–7): task → plan → worktree → code → test → docs → draft PR → CI gate. Opt-in `aw` dispatcher routes by tier (Micro/Lite single-pass, Full → planner/executor split). Plan-quality gates (v3.15): missing-information gate, Existing Code Survey (anti-reinvention), requirement→criterion traceability, and an executable `checks.yaml` Phase 4 gates on mechanically. Universal two-tier self-improvement: episodic `aw-lessons` promotes to gated `diagnose` at `seen_count ≥ 3`. See [featured section](#featured-autonomous-workflow). | `auto` |
 | **[fix-bug](./skills/workflow/fix-bug/SKILL.md)** | 10-phase bug pipeline: intake → triage → evidence → repro-lock → analyse → gate → handoff → verify → telemetry. Lane-split: fast for simple, standard for complex. Self-improves via `fix-bug-lessons` (read Phase 0.5 / write Phase 5·7·8) + promotion to `diagnose`. | `/` |
 | **[batch-linear-tickets](./skills/workflow/batch-linear-tickets/SKILL.md)** | Batch-analyze Linear tickets by dispatching `linear-ticket-investigator` (plus `holistic-analysis` for bug tickets) per ticket, gate user approval, then dispatch planners and executors in parallel. Requires Linear MCP. Self-improves via `batch-lessons` (classification + correlation) and inherits `aw-lessons` via the fan-out. | `/` |
 | **[implement-suggestion](./skills/workflow/implement-suggestion/SKILL.md)** | Apply reviewer suggestions across one or more PRs. Reads humans and AI bots (`claude[bot]`, `coderabbit`, `sourcery`), validates each via `/critical` + `/confidence`, applies in the existing branch. `--watch` loops on one PR until reviewers go quiet (max 5 iterations). Learns across runs via the `implement-suggestion-lessons` self-improvement loop (read Phase 3 / write Phase 7 + watch re-flag). | `/` |
-| **[aw-create-plan](./skills/workflow/aw-create-plan/SKILL.md)** | Generates `.agent/{branch}/plan.md` — the source of truth a new session can resume from. | `Skill()` |
+| **[aw-create-plan](./skills/workflow/aw-create-plan/SKILL.md)** | Generates `.agent/{branch}/plan.md` — the source of truth a new session can resume from — plus `checks.yaml`, one executable check per acceptance criterion. | `Skill()` |
 | **[aw-create-walkthrough](./skills/workflow/aw-create-walkthrough/SKILL.md)** | Generates `.agent/{branch}/walkthrough.md` — the PR-delivery summary. | `Skill()` |
 | **[aw-review-quality-gate](./skills/workflow/aw-review-quality-gate/SKILL.md)** | Self-check quality gate for review findings: filters noise, dedupes, ranks severity. | `Skill()` |
 
@@ -158,7 +158,7 @@ The flagship `aw` agents are **generated from templates** in `skills/workflow/au
 | **[linear-ticket-investigator](./agents/linear-ticket-investigator.md)** | Reads a Linear ticket, returns an Evidence Record matching `/fix-bug` Phase 2. Customizable via a per-project [domain navigator](#linear-ticket-investigator-per-project-plug-in). |
 | **[rca-investigator](./agents/rca-investigator.md)** | Context-isolated root-cause analysis. Runs `holistic-analysis` (`fix`) + `confidence` (`analysis`) in a fresh context and returns only a distilled Root-Cause Record — the verbose walkthrough never pollutes the caller. Read-only; single source of truth stays in `holistic-analysis`. Dispatch via `Task()` for isolation. |
 | **[bug-fix-verifier](./agents/bug-fix-verifier.md)** | Independent fresh-context verifier for `/fix-bug` PRs. Runs FAIL_TO_PASS, PASS_TO_PASS, diff sanity, repro integrity. Only agent allowed to undraft. |
-| **[feature-pr-verifier](./agents/feature-pr-verifier.md)** | Feature-PR counterpart to `bug-fix-verifier`. Verifies acceptance criteria, pass-to-pass, walkthrough integrity for `autonomous-workflow` Full Mode. |
+| **[feature-pr-verifier](./agents/feature-pr-verifier.md)** | Feature-PR counterpart to `bug-fix-verifier`. Verifies acceptance criteria, pass-to-pass, walkthrough integrity for `autonomous-workflow` Full Mode — and re-runs `checks.yaml` checks itself, verifying check integrity (no drift, no unlogged amendments, no special-casing). |
 
 ## Featured: autonomous workflow
 
@@ -209,16 +209,18 @@ All share the **`aw-`** prefix ("autonomous-workflow"): deliberate namespace so 
 
 | Phase | Name | Companions (optional unless marked) |
 |-------|------|-------------------------------------|
-| 0 | Validation | — |
-| 1 | Planning | `holistic-analysis`, `code-quality`, **`confidence(plan)` (mandatory)** |
-| 2 | Worktree + plan.md | `aw-create-plan` (Full Mode) |
+| 0 | Validation (restate-and-diff + missing-information gate) | — |
+| 1 | Planning (Existing Code Survey + traceable ACs) | `holistic-analysis`, `code-quality`, **`confidence(plan)` (mandatory)** |
+| 2 | Worktree + plan.md + checks.yaml | `aw-create-plan` (Full Mode) |
 | 3 | Implementation | `tdd`, `ux`, `code-quality` |
-| 4 | Testing | `confidence(analysis)`, `holistic-analysis` (auto-replan once at cap) |
+| 4 | Testing (+ executable checks loop) | `confidence(analysis)`, `holistic-analysis` (auto-replan once at cap) |
 | 5 | Documentation | `docs update` |
 | 6 | PR creation | `reviewer` agent (`--critical` + auto-fix-all-severities), `aw-create-walkthrough`, `create-pr` |
 | 7 | CI gate | `ci-auto-fix` |
 
 The mode-aware stuck-loop cap at Phase 4 (3 Lite / 5 Full) is the biggest cost-saver: it prevents agents burning tokens on hallucinated fixes when their root-cause analysis is wrong.
+
+Full-tier plans are **grounded, traceable, and executable** (v3.15): every planned `create` carries a recorded reuse-search verdict (no re-implementing what already exists), every user-stated requirement maps to an `AC-{n}` acceptance criterion, a `blocking` information gap halts even under `--no-confirm`, and `checks.yaml` gives Phase 4 a runnable definition of done (check definitions are immutable to the executor; gaming a check is a hard stop).
 
 ### Setup
 
