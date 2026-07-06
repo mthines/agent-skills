@@ -11,8 +11,25 @@
 A curated collection of skills, slash commands, and agents that encode how I actually ship software — distilled from real projects, not theory. They take a holistic approach to building and debugging, with three throughlines:
 
 - **Autonomy** — workflows that carry a task from a one-line prompt to a tested, reviewed PR. The flagship is **`aw`** (the [`autonomous-workflow`](#featured-autonomous-workflow) dispatcher); `fix-bug` is the single-bug counterpart.
+
+  ```
+  Implement this ticket end-to-end, all the way to a PR
+  /fix-bug <stack-trace | span-url | file:line>
+  ```
+
 - **Product building** — UX, visual design, and analytics treated as first-class, not afterthoughts (`ux`, `visual-design`, `charting`, `rum-tracking`).
+
+  ```
+  Fix the accessibility problems on this screen
+  Which chart fits this data?
+  ```
+
 - **Quality** — confidence gates, adversarial pre-mortems, and TDD baked into the loop, not bolted on after (`confidence`, `critical`, `tdd`, `code-quality`).
+
+  ```
+  Add this feature with TDD
+  Red-team this plan before I build it
+  ```
 
 Works with Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and any other [Agent Skills](https://agentskills.io)-compatible tool.
 
@@ -125,6 +142,7 @@ Plumbing for shipping code.
 | Skill | What it does | Type |
 |-------|--------------|------|
 | **[holistic-analysis](./skills/analysis/holistic-analysis/SKILL.md)** | Forces a full entry-to-exit execution-path trace when incremental fixes aren't working. `review` mode validates a PR diff for the reviewer agents; an optional `focus` input runs a focused single-target deep trace of one changed export's call graph. | `auto` |
+| **[ideate](./skills/analysis/ideate/SKILL.md)** | Generates, stress-tests, and iteratively evolves ideas via research-grounded agent loops: parallel persona generators (nominal-group simulation), independent judges on separate novelty/feasibility/impact/fit axes with a protected wildcard, ≤ 3 recombination rounds, `confidence(analysis)` gate on finalists. Auto-triages `quick` vs `deep`. | `auto` |
 | **[rum-tracking](./skills/analysis/rum-tracking/SKILL.md)** | Guides product analytics and RUM event tracking for web (React/Next.js) and mobile (React Native/Expo). Decides what to track, what's noise, what's PII; covers OTel semantic conventions, tracking plans, GDPR/CCPA compliance, and clean implement / audit / remove workflows. | `auto` |
 | **[video-analyser](./skills/analysis/video-analyser/SKILL.md)** | Analyses a screen recording for bugs. Resolves input from a Linear ticket URL, local path, or direct URL. Optional Tesseract OCR and Whisper transcription. | `auto` |
 | **[/profile-optimizer](./skills/analysis/profile-optimizer/SKILL.md)** | Analyses React DevTools Profiler exports or Chrome Performance traces. Maps hotspots to source. Iterates via `confidence(analysis)` until ≥ 90%. | `/` |
@@ -439,7 +457,7 @@ That is the entire integration.
 ## Repository structure
 
 ```
-skills/                   40 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
+skills/                   43 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
   testing/test-auto-fix/    stack-agnostic test healer — bootstrap, classify, confidence-gate, regression-detect
 agents/                   6 agents (reviewer, pr-reviewer, linear-ticket-investigator, rca-investigator, bug-fix-verifier, feature-pr-verifier)
 plugins/                  1 Claude Code plugin (agent-tasks-hooks)
