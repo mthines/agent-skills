@@ -79,6 +79,8 @@ First match wins:
 | 4 | User is mid-conversation and wants options fast ("any ideas?", "what do you think?").                   | `quick` |
 | 5 | Unsure.                                                                                                 | `quick`, and name the escalation path: "run `/ideate deep <problem>` for the full pipeline". |
 
+Cost expectation: a deep `--n 3` run dispatches ~17 subagents (2 bursts × 5 generators, 1 pool judge, 1 breeder, 1 variant judge, 3 panel judges, 1 pre-mortem) — prefer `quick` for casual or budget-sensitive asks.
+
 ---
 
 ## Workflow
