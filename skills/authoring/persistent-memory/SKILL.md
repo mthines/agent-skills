@@ -16,10 +16,11 @@ description: >
   (Mem0 / Letta / Zep). Also backs the per-user home-tier lesson scopes
   (`~/.agent-memory/aw-lessons/`, `aw-tester-lessons`, `fix-bug-lessons`,
   `batch-lessons`, `reviewer-lessons`, `implement-suggestion-lessons`,
-  `ci-auto-fix-lessons`, `e2e-pr-stabilizer-lessons`, `test-auto-fix-lessons`)
-  used by the self-improvement loops of `autonomous-workflow`, `fix-bug`,
+  `ci-auto-fix-lessons`, `e2e-pr-stabilizer-lessons`, `test-auto-fix-lessons`,
+  `ideate-lessons`) used by the self-improvement loops of
+  `autonomous-workflow`, `fix-bug`,
   `batch-linear-tickets`, `implement-suggestion`, `ci-auto-fix`,
-  `e2e-pr-stabilizer`, `test-auto-fix`, and the
+  `e2e-pr-stabilizer`, `test-auto-fix`, `ideate`, and the
   `reviewer` agent — lessons follow the user across every repository.
   Triggers on "remember this", "save to
   memory", "recall memory", "load memory", "what do you remember
