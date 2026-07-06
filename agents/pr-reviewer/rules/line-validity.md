@@ -9,6 +9,12 @@ tags:
 
 # Line validity
 
+## Pre-flight is a pure in-memory computation — zero GitHub API calls
+
+Line validity is decided **entirely** from the patch data already cached in `/tmp/pr-files.json` at Step 1.2, using the `compute_valid_right_lines` hunk-walk below. It makes **no network calls of any kind**.
+
+**Never post a probe, test, or throwaway comment to GitHub to discover whether a line is valid.** There is no such thing as a "safe test comment": every `POST .../pulls/{n}/reviews` call is a real review — under some configurations (e.g. `event: "COMMENT"`) it is submitted and made public immediately, producing duplicate/stray comments the author sees. The **first and only** GitHub review API call in the whole run is the final submit POST in `posting-mechanics.md` that carries all comments in one payload. If you find yourself reaching for `gh api` during pre-flight to "check" a line, STOP — the answer is already in `/tmp/pr-files.json`.
+
 The GitHub review API `line` parameter refers to the line number on the **RIGHT side** (new file) of the diff. A comment whose line falls outside any diff hunk on the RIGHT side returns:
 
 ```

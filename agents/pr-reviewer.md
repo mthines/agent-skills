@@ -307,6 +307,8 @@ After verdict assembly, run `Skill("confidence", "code")` against the overall ve
 
 See `agents/pr-reviewer/rules/line-validity.md`. For every comment in the proposal, validate `(file, line)` against the cached patch list. Retarget by ≤ 3 lines or drop.
 
+This is a **pure in-memory computation over `/tmp/pr-files.json` — no GitHub API calls.** Never post a probe/test comment to check a line; every review POST is a real, potentially-public review. The first and only review API call is the final submit POST in Step 5.
+
 A finding that survived 2.6 → 2.9 but fails line validity is **logged in the terminal Quality Gate summary** so the user can post manually if needed.
 
 ---
