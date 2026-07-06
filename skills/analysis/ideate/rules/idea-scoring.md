@@ -64,9 +64,11 @@ Judge prompt shape:
 You are an independent judge. You did not write these ideas. Success
 criterion: <criterion>. Score the whole pool one axis at a time — all
 ideas on Novelty (1–10), then all on Feasibility, then Impact, then Fit —
-using the rubric definitions provided. Ideas are anonymized and shuffled,
-each trimmed to title + mechanism. Do not reward length or style. Return
-only the score table.
+using the rubric definitions provided. Use the full 1–10 range per axis;
+on large pools scores compress toward the middle, so anchor the pool's
+best idea per axis near 9–10 and its weakest near 1–2 before scoring the
+rest. Ideas are anonymized and shuffled, each trimmed to title +
+mechanism. Do not reward length or style. Return only the score table.
 ```
 
 ## Ranking procedure
@@ -84,6 +86,7 @@ Select `--n` finalists (default 3) from the ranked pool:
 
 1. Instruct the selector verbatim: **"select the most creative ideas that satisfy the success criterion"** — the explicit "creative" instruction partially corrects the feasibility bias (§3.2).
 2. **Novelty protection:** at least one finalist must be the pool's highest-Novelty idea with Feasibility ≥ 4, even when its composite loses to safer ideas.
+   Ties on Novelty break by composite.
    Label it the **wildcard** in the report.
    With `--n 1`, the wildcard does not consume the single finalist slot — report it additionally in the report's Wildcard section.
 3. Never fill the finalist list with ideas from a single niche (see [`evolution-loop.md`](./evolution-loop.md) for niche construction) — two finalists max per niche.

@@ -31,8 +31,8 @@ A burst is one round of generation across all generators.
 | ---- | -------------------------------------------------------------------------------------------------------------- |
 | 1    | Burst 1 — broad: each generator gets the selected framing, its persona, and one operator. No other context.     |
 | 2    | Pool and dedupe (below). Log the unique count.                                                                  |
-| 3    | Burst 2 — reseed: same structure, plus the pooled idea *titles only* and the instruction "propose only what has NOT been said yet". Originality rises with extended effort — the obvious ideas came first (§1.5). |
-| 4    | Further bursts only while the previous burst's non-duplicate yield ≥ 20%. Below that, the pool has plateaued (§4.1) — stop generating and move to scoring. |
+| 3    | Burst 2 — reseed: same personas, rotated operators, plus an exclusion list of the pooled ideas as *title + one-line mechanism* and the instruction "propose only what has NOT been said yet". Originality rises with extended effort — the obvious ideas came first (§1.5). Bare titles under-specify what is taken — generators re-invent the same mechanism under a new name; the one-line mechanism is what steers them off it. |
+| 4    | Stop generating at the first of: (a) ≥ 2 bursts done AND the pool gate met, (b) the previous burst's non-duplicate yield < 20% (the pool has plateaued, §4.1), or (c) 4 bursts (hard cap). A high yield alone never justifies another burst once the gate is met — the pool only needs to feed `--n` finalists, not maximize coverage. |
 
 Burst 2 is mandatory in both modes.
 Never skip it because burst 1 "looks sufficient" — burst 1 is where the obvious ideas live.

@@ -3,7 +3,7 @@
 - **Date:** {yyyy-mm-dd}
 - **Mode:** {quick | deep} ({auto-triaged | user-set})
 - **Framing used:** {selected HMW framing} — {chosen by user | autonomous default, one step wider than the literal ask}
-- **Success criterion:** {what made an idea "good" for this run}
+- **Success criterion:** {what made an idea "good" for this run} ({user-stated | inferred})
 
 ## Finalists
 
@@ -51,6 +51,7 @@
 | Non-duplicate yield per burst    | {b1: n%}, {b2: n%}{, …}                    |
 | Evolution rounds                 | {n} (stopped: {round cap | flat scores | duplicate variants}) |
 | Top composite trajectory         | {r0: n.n} → {r1: n.n}{ → …}                |
+| Subagents dispatched (deep mode) | {n} ({breakdown})                          |
 
 ## Your verdict
 

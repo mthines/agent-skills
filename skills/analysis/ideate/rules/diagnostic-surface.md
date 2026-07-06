@@ -51,7 +51,7 @@ The contract spec lives at [`skills/authoring/create-skill/rules/diagnostic-surf
 | ----- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | 0     | Depth-triage table; missing-problem refusal.                             | Ambiguous asks triaged quick when the user wanted depth.                    |
 | 1     | Width-varied framings; autonomous default (one step wider than literal). | Framing chosen re-states the literal ask five ways (no real width variance). |
-| 2     | Persona-per-call; mandatory burst 2; ≥ 20% yield stopping rule.          | Personas too similar; operators assigned but ignored by generators.         |
+| 2     | Persona-per-call; mandatory burst 2; gate-met/yield/4-burst stopping rule. | Personas too similar; operators assigned but ignored by generators.         |
 | 3     | Anonymization; order-swap pairs; length normalization.                   | Composite used for selection despite the selection rules.                   |
 | 4     | Niche elitism; 3-round cap; external re-scoring.                         | Niches drawn too coarsely (everything lands in 2 buckets).                   |
 | 5     | Executability probe; confidence thresholds.                              | Probe written as marketing prose instead of a first concrete step.           |

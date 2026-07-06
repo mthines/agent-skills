@@ -96,7 +96,8 @@ First match wins:
 
 ### Phase 0 — Intake & triage
 
-1. Read lessons (advisory input for *mechanics only* — see the hard invariant under Self-Improvement):
+1. Read lessons (advisory input for *mechanics only* — see the hard invariant under Self-Improvement).
+   Check the paths first — when neither `~/.agent-memory/ideate-lessons/` nor `memory/ideate-lessons/INDEX.md` exists (first run), skip without invoking `persistent-memory`:
 
    ```text
    Skill("persistent-memory", "read ideate-lessons --tier home")
@@ -136,7 +137,7 @@ Problem framing measurably shapes ideation breadth and direction (§2.5) — ski
 | Skill               | When                                                            | Call                                                       |
 | ------------------- | --------------------------------------------------------------- | ----------------------------------------------------------- |
 | `confidence`        | Phase 5, on the finalist recommendation.                        | `Skill("confidence", "analysis")`                           |
-| `critical`          | Deep mode, top finalist (automatic); any finalist on request.   | `Skill("critical", "analysis")`                             |
+| `critical`          | Deep mode, top finalist (automatic); any finalist on request.   | `Skill("critical", "analysis")` — run inside a fresh subagent so the pre-mortem stays adversarial and the main context stays lean. |
 | `ux`                | Finalists that are UI/UX or product-surface concepts.           | `Skill("ux")` as a lens on the finalist.                    |
 | `persistent-memory` | Phases 0 and 7.                                                 | See [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md). |
 
