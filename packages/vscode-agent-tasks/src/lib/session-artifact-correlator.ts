@@ -30,6 +30,8 @@ export interface LinkedArtifacts {
   taskPath?: string;
   planPath?: string;
   walkthroughPath?: string;
+  /** Executable acceptance-check ledger (`checks.yaml`) written by aw-create-plan. */
+  checksPath?: string;
   /** Absolute paths to every `diagnose-*.md` report found in the branch dir, sorted by filename. */
   diagnosePaths?: string[];
 }
@@ -88,18 +90,21 @@ export function findLinkedArtifacts(
     const taskPath = path.join(branchDir, 'task.md');
     const planPath = path.join(branchDir, 'plan.md');
     const walkthroughPath = path.join(branchDir, 'walkthrough.md');
+    const checksPath = path.join(branchDir, 'checks.yaml');
     const diagnosePaths = findDiagnoseReports(branchDir);
 
     const result: LinkedArtifacts = {};
     if (fs.existsSync(taskPath)) result.taskPath = taskPath;
     if (fs.existsSync(planPath)) result.planPath = planPath;
     if (fs.existsSync(walkthroughPath)) result.walkthroughPath = walkthroughPath;
+    if (fs.existsSync(checksPath)) result.checksPath = checksPath;
     if (diagnosePaths.length > 0) result.diagnosePaths = diagnosePaths;
 
     if (
       result.taskPath ||
       result.planPath ||
       result.walkthroughPath ||
+      result.checksPath ||
       result.diagnosePaths
     ) {
       result.artifactDir = branchDir;
@@ -116,6 +121,7 @@ export function hasLinkedArtifacts(links: LinkedArtifacts): boolean {
     links.taskPath ||
       links.planPath ||
       links.walkthroughPath ||
+      links.checksPath ||
       (links.diagnosePaths && links.diagnosePaths.length > 0)
   );
 }

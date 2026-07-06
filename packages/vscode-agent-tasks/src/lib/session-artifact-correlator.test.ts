@@ -97,6 +97,29 @@ describe('findLinkedArtifacts', () => {
     expect(result.planPath).toBe(path.join(wt, '.agent', 'feat', 'foo', 'bar', 'plan.md'));
   });
 
+  it('returns checksPath when checks.yaml exists alongside plan.md', () => {
+    const wt = setup({
+      '.agent/feat/x/plan.md': '# plan',
+      '.agent/feat/x/checks.yaml': '- id: AC-1\n  status: pending\n',
+    });
+    const result = findLinkedArtifacts(wt, 'feat/x', ['.agent']);
+    expect(result.checksPath).toBe(path.join(wt, '.agent', 'feat', 'x', 'checks.yaml'));
+    expect(result.planPath).toBeDefined();
+  });
+
+  it('leaves checksPath undefined when checks.yaml is absent', () => {
+    const wt = setup({ '.agent/feat/x/plan.md': '# plan' });
+    const result = findLinkedArtifacts(wt, 'feat/x', ['.agent']);
+    expect(result.checksPath).toBeUndefined();
+  });
+
+  it('treats checks.yaml alone as a valid linked artifact', () => {
+    const wt = setup({ '.agent/feat/x/checks.yaml': '- id: AC-1\n  status: pending\n' });
+    const result = findLinkedArtifacts(wt, 'feat/x', ['.agent']);
+    expect(result.checksPath).toBe(path.join(wt, '.agent', 'feat', 'x', 'checks.yaml'));
+    expect(result.artifactDir).toBe(path.join(wt, '.agent', 'feat', 'x'));
+  });
+
   it('returns every diagnose-*.md report sorted by filename', () => {
     const wt = setup({
       '.agent/feat/x/plan.md': '# plan',
@@ -184,5 +207,6 @@ describe('hasLinkedArtifacts', () => {
     expect(hasLinkedArtifacts({ planPath: '/tmp/plan.md' })).toBe(true);
     expect(hasLinkedArtifacts({ taskPath: '/tmp/task.md' })).toBe(true);
     expect(hasLinkedArtifacts({ walkthroughPath: '/tmp/walk.md' })).toBe(true);
+    expect(hasLinkedArtifacts({ checksPath: '/tmp/checks.yaml' })).toBe(true);
   });
 });

@@ -24,8 +24,29 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { discoverWorktreePaths } from '../lib/worktree-discovery';
+import {
+  diffNewUnsatisfiable,
+  parseChecksYaml,
+  statusMapOf,
+  type CheckStatus,
+} from '../parsers/checks-parser';
 
-const ARTIFACT_FILES = new Set(['task.md', 'plan.md', 'walkthrough.md']);
+const ARTIFACT_FILES = new Set(['task.md', 'plan.md', 'walkthrough.md', 'checks.yaml']);
+
+/**
+ * The executable acceptance-check ledger written by `aw-create-plan` and
+ * status-flipped live by the aw-executor's Phase 4 loop. Watched for refresh
+ * (both trees show it) and for `unsatisfiable` transitions (the executor's
+ * escalation affordance), but never auto-opened — it arrives together with
+ * `plan.md` and one auto-open per plan event is enough.
+ */
+const CHECKS_FILE = 'checks.yaml';
+
+/** Payload for `onUnsatisfiableCheck` — the ids that newly turned unsatisfiable. */
+export interface UnsatisfiableCheckEvent {
+  checksPath: string;
+  ids: string[];
+}
 
 /**
  * Matches versioned plan snapshots — `plan.v1.md`, `plan.v2.md`, … —
@@ -71,8 +92,19 @@ export class ArtifactWatcher implements vscode.Disposable {
   /** Coalesces rapid worktree-discovery events into a single rebuild check */
   private worktreeCheckTimer: ReturnType<typeof setTimeout> | undefined;
 
+  /**
+   * Per-file `id → status` baseline for every known checks.yaml. Used to
+   * detect transitions into `unsatisfiable` — the watcher is the single
+   * owner of file-level artifact events, so the diff lives here and the
+   * providers stay display-only.
+   */
+  private checksStatuses = new Map<string, Map<string, CheckStatus>>();
+
   private _onArtifactChanged = new vscode.EventEmitter<string>();
   readonly onArtifactChanged = this._onArtifactChanged.event;
+
+  private _onUnsatisfiableCheck = new vscode.EventEmitter<UnsatisfiableCheckEvent>();
+  readonly onUnsatisfiableCheck = this._onUnsatisfiableCheck.event;
 
   constructor() {
     this.scanExistingArtifacts();
@@ -96,6 +128,10 @@ export class ArtifactWatcher implements vscode.Disposable {
             this.knownWalkthroughs.add(path.join(dir, entry.name));
           } else if (entry.name === 'plan.md') {
             this.knownPlans.add(path.join(dir, entry.name));
+          } else if (entry.name === CHECKS_FILE) {
+            // Seed the status baseline without firing — a pre-existing
+            // unsatisfiable check is state, not a transition.
+            this.updateChecksBaseline(path.join(dir, entry.name), { silent: true });
           } else if (DIAGNOSE_FILE_PATTERN.test(entry.name)) {
             this.knownDiagnoses.add(path.join(dir, entry.name));
           }
@@ -438,6 +474,7 @@ export class ArtifactWatcher implements vscode.Disposable {
       '**/plan.md',
       '**/plan.v*.md',
       '**/walkthrough.md',
+      '**/checks.yaml',
       '**/diagnose-*.md',
     ];
     const watchBases = this.getWatchBases();
@@ -497,6 +534,9 @@ export class ArtifactWatcher implements vscode.Disposable {
         }
       } else {
         // 'change' — file content modified
+        if (basename === CHECKS_FILE) {
+          this.updateChecksBaseline(fullPath, { silent: false });
+        }
         this._onArtifactChanged.fire(basename);
       }
     }, ArtifactWatcher.DEBOUNCE_MS);
@@ -506,6 +546,14 @@ export class ArtifactWatcher implements vscode.Disposable {
 
   private onFileCreated(fullPath: string, basename: string): void {
     this._onArtifactChanged.fire(basename);
+
+    if (basename === CHECKS_FILE) {
+      // A freshly-created checks.yaml (or a plan re-iteration overwriting it
+      // via rename) establishes / updates the baseline. Deliberately no
+      // auto-open — see CHECKS_FILE doc comment.
+      this.updateChecksBaseline(fullPath, { silent: false });
+      return;
+    }
 
     if (basename === 'walkthrough.md' && !this.knownWalkthroughs.has(fullPath)) {
       this.knownWalkthroughs.add(fullPath);
@@ -540,7 +588,35 @@ export class ArtifactWatcher implements vscode.Disposable {
     this.knownWalkthroughs.delete(fullPath);
     this.knownPlans.delete(fullPath);
     this.knownDiagnoses.delete(fullPath);
+    this.checksStatuses.delete(fullPath);
     this._onArtifactChanged.fire(basename);
+  }
+
+  /**
+   * Re-parse a checks.yaml, diff its statuses against the stored baseline,
+   * and fire `onUnsatisfiableCheck` for any check that newly transitioned
+   * into `unsatisfiable`. `silent` suppresses the event (used when seeding
+   * baselines at scan time — pre-existing state is not a transition).
+   *
+   * A wholesale reset to `pending` (plan re-iteration re-derives the file)
+   * produces no event by construction: nothing is unsatisfiable afterwards.
+   */
+  private updateChecksBaseline(fullPath: string, opts: { silent: boolean }): void {
+    let content: string;
+    try {
+      content = fs.readFileSync(fullPath, 'utf-8');
+    } catch {
+      return; // unreadable — keep the old baseline; delete handles eviction
+    }
+    const { checks } = parseChecksYaml(content);
+    const prev = this.checksStatuses.get(fullPath);
+    if (!opts.silent) {
+      const ids = diffNewUnsatisfiable(prev, checks);
+      if (ids.length > 0) {
+        this._onUnsatisfiableCheck.fire({ checksPath: fullPath, ids });
+      }
+    }
+    this.checksStatuses.set(fullPath, statusMapOf(checks));
   }
 
   private async openArtifact(uri: vscode.Uri, label: string): Promise<void> {
@@ -588,6 +664,7 @@ export class ArtifactWatcher implements vscode.Disposable {
     }
     this.lifetimeDisposables = [];
     this._onArtifactChanged.dispose();
+    this._onUnsatisfiableCheck.dispose();
   }
 }
 
