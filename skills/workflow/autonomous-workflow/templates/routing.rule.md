@@ -8,6 +8,12 @@ When the user asks to implement something using phrases that signal independent,
 - "take care of this", "handle this without me"
 - "ship this", "land this", "all the way to a PR", "through CI"
 
+> This trigger vocabulary is mirrored in the `aw` agent's `description:`
+> frontmatter (`templates/aw.agent.md`) — the two are one coherent discovery
+> surface. When you add, remove, or reword a trigger phrase here, update the
+> description's `Use when …` / `Triggers on …` clauses in the same change so the
+> rule and the agent never drift.
+
 Dispatch the **`aw` dispatcher** with the user's full request as the prompt:
 
 > The autonomous-workflow ships three agents under the `aw-` namespace prefix

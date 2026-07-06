@@ -15,7 +15,7 @@ argument-hint: '[<pr-url>|<run-id>]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.0.0'
+  version: '3.1.0'
   workflow_type: command
   tags:
     - ci
@@ -40,14 +40,14 @@ Load the matching rule file when you need detail — do not preload them.
 | 0 | Resolve the target (run ID / PR URL / auto-detect) | this file |
 | 1 | Identify the failure (fetch logs) | this file |
 | 2 | Read every workflow file before editing one | this file |
-| 3 | Classify the failure with an explicit verdict | [`rules/verdicts.md`](./rules/verdicts.md) |
+| 3 | Classify the failure with an explicit verdict | [`rules/verdicts.md`](./rules/verdicts.md) + [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) (read lessons) |
 | 3.5 | Write the plan artifact + run the confidence gate | [`rules/confidence-gate.md`](./rules/confidence-gate.md) + [`templates/plan-artifact.md`](./templates/plan-artifact.md) |
 | 4 | Apply the minimal, targeted fix | this file + [`rules/anti-patterns.md`](./rules/anti-patterns.md) |
 | 5 | Verify locally before pushing | this file |
 | 6 | Commit and push (rebase-safe) | this file |
 | 7 | Wait for CI and capture the new result | this file |
-| 8 | Iterate — with regression detection | [`rules/regression-detection.md`](./rules/regression-detection.md) |
-| 9 | Report (structured exit summary) | this file |
+| 8 | Iterate — with regression detection | [`rules/regression-detection.md`](./rules/regression-detection.md) + [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) (write on revert) |
+| 9 | Report (structured exit summary) | this file + [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) (write on outcome) |
 
 Always read [`rules/anti-patterns.md`](./rules/anti-patterns.md) first.
 The refusals apply to every phase.
@@ -282,6 +282,27 @@ ci-auto-fix run
 On success, include the original error, the fix applied, confirmation that all checks pass, and a link to the successful run.
 
 On escalation, include what was tried (one line per iteration), what remains, and suggested next steps for manual investigation.
+
+## Self-Improvement
+
+`/ci-auto-fix` gets better across runs through a two-tier lessons loop (fast
+episodic tier + gated promotion), like `autonomous-workflow` and `fix-bug`. It
+**reads** `ci-auto-fix-lessons` at Phase 3 (biasing the verdict and the Phase 8
+regression call) and **writes** at Phase 8 (on a revert — the strongest negative
+signal) and Phase 9 (on the CI outcome). Lessons are **advisory** — they never
+relax the confidence gate, the revert-on-new-failure rule, or any refusal in
+[`rules/anti-patterns.md`](./rules/anti-patterns.md).
+
+This loop is deliberately **more conservative** than the others because the
+verdict is inferred from CI logs alone: **verdict lessons default to the
+`project-shared` tier** (repo-specific failure shapes are far more reliable than
+cross-repo generalizations) with a **raised promotion bar (`seen_count >= 5`)**,
+and **regression lessons are `volatile` with a 30-day expiry** since error
+signatures churn. A lesson can never authorize a check-weakening or soft-refusal
+action — those still re-gate on this run. Full contract and the two
+ci-auto-fix-specific entrenchment guards:
+[`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
+`persistent-memory` is optional; the loop skips silently if absent.
 
 ## Definition of done
 

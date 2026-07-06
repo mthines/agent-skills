@@ -16,18 +16,23 @@ After the rewrite, per-comment confidence is routed through the dedicated `confi
 
 ## The check
 
-For each finding that survives `finding-grounding.md` and the dedupe pass in `rubric-composition.md`:
+For each finding that survives `finding-grounding.md` (2.6) and `verification-receipt.md` (2.6b):
 
-1. Construct a `confidence(code)` call with the finding as input:
+1. Resolve the effective confidence threshold for this finding's file.
+   The threshold is set by the resolved `profile` from `review-config.md` (Step 1.7).
+   The default (absent `.review.yaml` or `profile: balanced`) is **80**.
+   See `review-config.md` for the full profile→threshold table.
+
+2. Construct a `confidence(code)` call with the finding as input:
    - **Target**: `<file:line>`
    - **Claim**: the comment body (without prefix and decoration)
-   - **Evidence**: the changed-file patch hunk that contains the line
+   - **Evidence**: the changed-file patch hunk that contains the line, PLUS any verification receipt from Step 2.6b (raw tool output that supports or modifies the claim)
    - **Acceptance criteria** (the reviewer's own rubric questions — inputs to the call, NOT scores the skill returns):
      - Is the claim factually correct given the patch hunk?
      - Can the PR author act on it without additional context?
      - Does posting this comment improve the PR more than it adds noise?
-2. Run `Skill("confidence", "code")`.
-3. If the returned **Final** score is `< 80`, drop the comment. Log the drop with the score.
+3. Run `Skill("confidence", "code")`.
+4. If the returned **Final** score is `< threshold`, drop the comment. Log the drop with the score and the effective threshold.
 
 ## Why 80, not 70
 
@@ -37,11 +42,10 @@ For each finding that survives `finding-grounding.md` and the dedupe pass in `ru
 | 80 | Claude Code Review default; 2026 FindSkill.ai field comparison | Targets the < 5 % false-positive rate above which devs read every comment |
 | 90 | Bito / Qodo enterprise tier defaults | Drops too many true positives at typical SOTA model output quality; reserve for high-stakes-only repos |
 
-80 is the recommended setting. Repos with `.review.yaml` overrides can tune via:
-
-```yaml
-per_comment_confidence_threshold: 85  # default 80
-```
+80 is the recommended setting, established by `profile: balanced` in `review-config.md`.
+Repos tune the threshold by setting `profile: chill` (90) or `profile: assertive` (70) in `.review.yaml`.
+A bare `per_comment_confidence_threshold: N` without a `profile:` field is accepted as a direct override for backwards compatibility.
+See `agents/shared/rules/review-config.md` for the full profile table and hierarchical discovery rules.
 
 ## What `confidence(code)` returns
 
@@ -50,10 +54,11 @@ The drop decision is on the **Final** score.
 A finding whose Final is dragged below 80 by any dimension is noise — a claim that is correct but incomplete, or complete but wrong, does not help the author.
 
 ```python
-def passes_confidence(final_score: int) -> bool:
+def passes_confidence(final_score: int, threshold: int = 80) -> bool:
+    # threshold resolved from review-config.md profile (default: 80 = balanced)
     # final_score = weighted average of Correctness (40%),
     # Completeness (30%), No-regressions (30%)
-    return final_score >= 80
+    return final_score >= threshold
 ```
 
 The acceptance-criteria questions in step 1 (accurate? actionable? helpful?) are the reviewer's rubric for framing the call — they are NOT scores the skill returns.
@@ -70,12 +75,13 @@ The pipeline runs strict left-to-right:
 
 ```
 review pass
-  → rubric-composition.md (dedupe + cap)
-  → finding-grounding.md   (claimed symbols exist?)
-  → per-comment-confidence (Skill("confidence", "code") ≥ 80?)
-  → conventional-comments.md (prefix prepend + decoration)
-  → comment-shape.md       (≤ 240 chars, ≤ 2 sentences, no structure?)
-  → (PR Mode only) line-validity.md (hunk-bounds RIGHT-side check)
+  → rubric-composition.md (dedupe + cap)                      [2.5]
+  → finding-grounding.md   (claimed symbols exist?)            [2.6]
+  → verification-receipt.md (behavioral claim proven?)         [2.6b]
+  → per-comment-confidence (Skill("confidence", "code") ≥ threshold?) [2.7]
+  → conventional-comments.md (prefix prepend + decoration)    [2.9]
+  → comment-shape.md       (≤ 240 chars, ≤ 2 sentences?)      [2.8]
+  → (PR Mode only) line-validity.md (hunk-bounds RIGHT-side)  [3.5]
   → emit / post
 ```
 
@@ -90,7 +96,12 @@ Quality Gate:
   Findings produced:        24
   Dedupe drops:              6
   Grounding drops:           3
-  Confidence drops:          7 (avg score: 64)
+  Receipt drops:             2  (behavioral claims with null/contradicting proof)
+  Receipt downgrades:        1  (ambiguous proof → downgraded to question:)
+  Filter drops:              1  (suppressed by .review.yaml filters)
+  Prior-comment dedup:       2  (already said in a prior review pass)
+  Anti-flip-flop drops:      0  (would contradict a resolved prior suggestion)
+  Confidence drops:          7 (avg score: 64, threshold: 80)
   Shape drops:               2
   Final findings posted:     6
 ```

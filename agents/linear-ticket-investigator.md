@@ -62,6 +62,7 @@ Extract:
 - **Labels** — component labels, source labels, any other tags.
 - **Current state** — what Linear state the ticket is in.
 - **Attachments** — Dash0 links, screenshots, screen recordings, stack traces, code references.
+  Screen recordings / videos are high-value evidence — capture their URLs precisely for Step 5.5.
 - **Linked issues** — related tickets, blocking/blocked-by relationships.
 
 ### Step 2: Load Domain Context
@@ -117,6 +118,23 @@ If the ticket body or comments contain Dash0 / Sentry / observability links, lis
 Evidence Record's `Sources` section verbatim. Do NOT resolve them here — `/fix-bug`'s Phase 1
 Dash0 resolution handles that step.
 
+### Step 5.5: Flag Video Attachments
+
+Videos and screen recordings are often the single most important evidence on a bug ticket — they
+show the exact UI state, error dialogs, and reproduction steps that free-text descriptions miss.
+You **cannot** analyse a video yourself (you have no `Bash` / `ffmpeg`), so your job is to **detect
+and flag** it so the calling skill runs the `video-analyser` skill on it.
+
+1. Scan the ticket `description`, every comment, and the attachment list for URLs whose path ends
+   in `.mp4`, `.mov`, `.webm`, or `.avi` (case-insensitive), plus any Linear attachment explicitly
+   typed or labelled as a video / screen recording.
+2. Collect **every** matching URL verbatim — do not dedupe by guessing; list each distinct URL.
+3. Set the `Video evidence` field in the output (see schema) to `Present` with the URL list when
+   one or more are found, or `None` when there are none.
+
+Do NOT attempt to download, transcode, or describe the video. Flagging it is the whole job here —
+the orchestrator (`/fix-bug` or `/batch-linear-tickets`) owns the `video-analyser` run.
+
 ### Step 6: Information Gaps
 
 If missing critical info (no repro steps, vague description, no telemetry, no error messages),
@@ -149,7 +167,15 @@ URL: {Linear URL}
 - Linear ticket: {URL}
 - Dash0: {span/log/event URL, if present in ticket}
 - Stack trace: {paste verbatim from ticket body or comment, if present}
-- Screenshot/video: {attachment URL, if present}
+- Screenshot: {image attachment URL, if present}
+
+### Video evidence
+<one of — this field is machine-read by the calling skill to decide whether to run video-analyser:>
+- None: no video / screen-recording attachment on the ticket.
+- Present: <N> video attachment(s) found. The calling skill MUST run the `video-analyser` skill
+  (on the ticket URL, or on each URL below) before it analyses this ticket. URLs:
+  - {video attachment URL 1}
+  - {video attachment URL 2}
 
 ### Affected code (initial scope)
 | File | Line(s) | Symbol | Role | Source of suspicion |

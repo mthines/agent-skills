@@ -1,4 +1,4 @@
-# test-autofix run — <branch> — iteration <N>
+# test-auto-fix run — <branch> — iteration <N>
 
 ## Surface
 

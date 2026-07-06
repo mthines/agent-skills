@@ -15,7 +15,7 @@ tags:
 - [CRITICAL: When to Create Artifacts](#critical-when-to-create-artifacts)
 - [Overview](#overview)
 - [When to Use Artifacts](#when-to-use-artifacts)
-- [Two-Artifact Pattern](#two-artifact-pattern)
+- [Artifact Pattern](#artifact-pattern)
 - [Caller-supplied context artefacts](#caller-supplied-context-artefacts)
 - [Plan Versioning](#plan-versioning)
 - [Quality Gate](#quality-gate)
@@ -48,7 +48,7 @@ the worktree.**
 
 ## Overview
 
-The autonomous workflow uses a two-artifact pattern for documenting decisions,
+The autonomous workflow uses a three-artifact pattern for documenting decisions,
 tracking progress, and generating summaries. Artifact creation is handled by
 dedicated skills that guarantee consistent, complete output.
 
@@ -73,11 +73,12 @@ dedicated skills that guarantee consistent, complete output.
 
 See [overview](./overview.md) for the complete decision flow.
 
-## Two-Artifact Pattern
+## Artifact Pattern
 
 | Artifact        | File(s)                                              | Created by                       | When                                                 |
 | --------------- | ---------------------------------------------------- | -------------------------------- | ---------------------------------------------------- |
 | **Plan**        | `.agent/{branch}/plan.md` + `plan.v{N}.md` snapshots | `Skill("aw-create-plan")`        | After Phase 2 — and again on every plan iteration    |
+| **Checks**      | `.agent/{branch}/checks.yaml`                        | `Skill("aw-create-plan")` (Step 2b) | With the plan — re-derived (statuses reset) on every plan iteration |
 | **Walkthrough** | `.agent/{branch}/walkthrough.md`                     | `Skill("aw-create-walkthrough")` | Phase 6                                              |
 
 `plan.md` is the single source of truth — a new Claude session should be able
@@ -85,11 +86,17 @@ to execute from it alone. Every invocation of `aw-create-plan` writes a new
 immutable `plan.v{N}.md` snapshot **and** overwrites `plan.md` so it always
 points at the latest version. See **Plan Versioning** below.
 
+`checks.yaml` is the plan's **executable contract** — one runnable check per
+`AC-{n}` acceptance criterion. The executor's Phase 4
+[Executable Checks Loop](./phase-4-testing.md#executable-checks-loop) uses it
+as termination condition and progress ledger (`status:` fields). It is not
+versioned; check definitions are executor-immutable.
+
 ## Caller-supplied context artefacts
 
 Orchestrators that invoke `aw-planner` (e.g., [`/fix-bug`](../../fix-bug/SKILL.md)
 and other future task-shaped orchestrators) may attach **additional artefacts**
-to the planner pack beyond the two standard ones above. The pattern: the
+to the planner pack beyond the standard ones above. The pattern: the
 orchestrator declares a path to a caller-managed artefact under a
 `## Context artefacts` section in the planner pack, the planner reads it on
 entry and references the path verbatim in `plan.md`, and the executor reads
@@ -185,10 +192,12 @@ This is the **only non-removable companion** in the workflow.
 │   ├── plan.v1.md        # Initial plan snapshot (immutable)
 │   ├── plan.v2.md        # User-iteration snapshot (immutable)
 │   ├── plan.v3.md        # Phase 4 auto-replan snapshot (immutable)
+│   ├── checks.yaml       # Executable acceptance checks (status ledger)
 │   └── walkthrough.md    # Final summary (created at Phase 6)
 └── fix-auth-bug/
     ├── plan.md           # ≡ plan.v1.md (only one iteration so far)
-    └── plan.v1.md
+    ├── plan.v1.md
+    └── checks.yaml
 ```
 
 > **Why `.agent/` (singular)?** It aligns with the `~/.agents/skills/`

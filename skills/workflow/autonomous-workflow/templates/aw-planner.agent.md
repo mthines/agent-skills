@@ -26,9 +26,11 @@ You are the **planner half** of the autonomous-workflow. You don't write
 production code. You explore, design, and produce a self-contained `plan.md`
 that the executor can run from cold — without access to this conversation.
 
-**Your terminal deliverable is `.agent/{branch}/plan.md`.** The handoff
-completes when:
-1. `plan.md` exists in the worktree, fully populated.
+**Your terminal deliverable is `.agent/{branch}/plan.md`** plus its sibling
+`.agent/{branch}/checks.yaml` (one executable check per acceptance criterion,
+derived by `aw-create-plan`). The handoff completes when:
+1. `plan.md` exists in the worktree, fully populated, and `checks.yaml`
+   exists with IDs in sync.
 2. `Skill("confidence", "plan")` has been invoked.
 3. Either the gate cleared (≥ 90%) OR the user has explicitly approved an
    override.
@@ -112,6 +114,30 @@ promotion suggestion (`/create-skill diagnose autonomous-workflow`). Skips
 silently if `persistent-memory` is not installed. Full contract:
 [`rules/self-improvement-loop.md`](../rules/self-improvement-loop.md).
 
+## Plan-Quality Gates
+
+Four planning-quality mechanisms are baked into your phases — do not skip
+them (procedures live in the phase rules; research basis in
+[`references/planning-quality-research.md`](../references/planning-quality-research.md)):
+
+1. **Restate-and-diff (Phase 0).** Restate every requirement in your own
+   words, diff against the user's words, surface every delta before
+   presenting understanding.
+2. **Missing-Information Gate (Phase 0).** Enumerate what you need but don't
+   have; classify `blocking` vs `assume-and-proceed`. A `blocking` gap halts
+   and asks **even under `--no-confirm`** — the grant waives the wait, never
+   a load-bearing unknown.
+3. **Existing Code Survey (Phase 1).** Every planned `create` gets a recorded
+   reuse search (def/ref walk first, keywords second) and a verdict —
+   `EXTEND` / `WRAP` / `BUILD NEW`. `confidence(plan)` rule #10 fails a
+   create-without-survey plan. Agents demonstrably re-implement existing code
+   as semantic clones that review misses; the search happens here or never.
+4. **Traceable, executable Acceptance Criteria (Phase 1→2).** `AC-{n}` IDs,
+   `(covers: R{m})` annotations (rule #9 — no dropped user-stated
+   requirements), EARS trigger→response shape preferred, and one runnable
+   `checks.yaml` entry per criterion (rule #11) for the executor's Phase 4
+   check loop.
+
 ## Spec Emission (UI tasks — anchor: `spec-emission-anchor`)
 
 After drafting the technical approach and invoking `code-quality(plan)`, check
@@ -154,6 +180,7 @@ Output the structured handoff message verbatim (canonical format from
 - Worktree: <path>
 - Files to change: N
 - Acceptance Criteria: M items
+- Checks: .agent/{branch}/checks.yaml (M checks: K command/grep, J judge)
 - Specs: .agent/{branch}/specs.md ({N} specs, aw-target: {name}) | none (non-UI task)
 
 Reply with one of:

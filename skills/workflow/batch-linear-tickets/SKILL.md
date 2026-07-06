@@ -23,6 +23,7 @@ metadata:
     - holistic-analysis
     - autonomous-workflow
     - confidence
+    - video-analyser
     - persistent-memory
   agents:
     investigator: linear-ticket-investigator
@@ -62,7 +63,7 @@ them together for batch operation.
 ## Architecture
 
 ```text
-Phase 1: Per-Ticket Analysis    → per ticket: classify type → investigator → (rca-investigator if bug, carries confidence) | confidence(plan) if feature
+Phase 1: Per-Ticket Analysis    → per ticket: classify type → investigator → (video-analyser if video flagged) → (rca-investigator if bug, carries confidence) | confidence(plan) if feature
 Phase 2: Cross-Ticket Correlation → detect shared root causes, file conflicts, duplicates
 Phase 3: Approval Gate          → user picks tickets to ship
 Phase 4: Parallel Execution     → fan out aw-planner + aw-executor for approved tickets
@@ -83,6 +84,7 @@ analysis from Phase 1.
 | `rca-investigator` agent ([`agents/rca-investigator.md`](../../../agents/rca-investigator.md)) | Per-ticket bug root-cause analysis — isolated + parallel; carries `confidence(analysis)` in its Root-Cause Record | **Yes** (for bug tickets) |
 | `holistic-analysis` skill | Run transitively inside `rca-investigator`; in-context fallback if the agent is unavailable | **Yes** (for bug tickets) |
 | `confidence` skill | Feature-ticket gate scoring (bug score comes from `rca-investigator`) | **Yes** |
+| `video-analyser` skill | Analyse a video / screen-recording attachment flagged on a ticket (Step 1b.5) | Optional — skips silently if absent or no video flagged |
 | `aw-planner` + `aw-executor` agents (from [`autonomous-workflow`](../autonomous-workflow/SKILL.md)) | Phase 4 dispatch | **Yes** |
 | `gh` CLI | PR creation by `aw-executor` | **Yes** |
 | `gw` CLI | Worktree management (planner) | Recommended |
@@ -176,7 +178,33 @@ Dispatch the `linear-ticket-investigator` agent for every ticket — bug or feat
 **Launch all investigator calls in one message** for parallelism.
 
 The investigator returns an Evidence Record (problem description, affected code, certainty
-markers, information gaps). It does not implement; it investigates.
+markers, information gaps). It does not implement; it investigates. It also flags any video /
+screen-recording attachment in the record's `Video evidence` field — but it cannot analyse the
+video (no `Bash`). That is Step 1b.5's job.
+
+### Step 1b.5 — Analyse flagged video attachments
+
+For every ticket whose Evidence Record has `Video evidence: Present`, run the `video-analyser`
+skill before analysis (Step 1c). A screen recording usually carries the clearest reproduction
+steps and exact error state available — treating it as first-class evidence materially improves
+the downstream root-cause analysis and confidence score.
+
+For each such ticket, pass the Linear ticket URL so `video-analyser`'s own Linear resolution
+obtains an authenticated (pre-signed) download URL via MCP:
+
+```text
+Skill("video-analyser", "<Linear ticket URL>")
+```
+
+Because `video-analyser` shells out to `ffmpeg`, these calls are **not** parallelisable via a
+single message the way the agent dispatches are — run them sequentially (one ticket's video at a
+time). For a ticket with multiple distinct videos, re-invoke with each direct video URL from the
+`Video evidence` list.
+
+Fold the structured video findings (errors, UI state, inferred reproduction steps) into that
+ticket's Evidence Record before Step 1c, so `rca-investigator` sees them. If the `video-analyser`
+skill is not installed, note the un-analysed video URL in the Evidence Record and continue — do
+not block the batch on it.
 
 ### Step 1c — Dispatch rca-investigator (bug tickets only)
 

@@ -43,7 +43,22 @@ Key invariants:
 - **Only process comments newer than the last processed timestamp.** Each iteration advances `baseline.timestamp` to "now" *after* the pass, so the next iteration sees only feedback the bots posted in response to the latest push. This is what prevents re-applying the same comment in a churn loop.
 - **Resolved threads are skipped at fetch time** (inherited from Phase 2). A comment the worker addressed and the bot then resolves will not reappear.
 - **The two-gate validation (`/critical` + `/confidence`) runs every iteration.** Watch mode never lowers the bar; a low-confidence comment is surfaced, not force-applied, on every pass.
-- **One commit per iteration** (inherited from the per-PR commit rule). A 3-iteration run produces at most 3 commits.
+- **One commit per applied comment, every iteration** (inherited from the per-comment commit rule).
+  Each iteration applies, commits per comment, pushes, then resolves the threads it addressed — so an iteration that lands 2 fixes leaves 2 commits and 2 newly-resolved threads.
+  This is also why the next iteration sees fewer open comments: threads resolved in a prior iteration are skipped at fetch time.
+
+## Lesson capture on re-flag
+
+Watch mode surfaces the loop's **strongest self-improvement signal**: a reviewer
+re-commenting on a location or topic that a **prior iteration already applied**
+means that earlier apply was wrong or incomplete. When an iteration's new
+feedback overlaps (same file:line region or same topic + reviewer source) a
+comment an earlier iteration tagged `apply`, write a `implement-suggestion-lessons` lesson
+for that reviewer source + topic before running the pass — this is the `Watch
+re-flag` write point in
+[`self-improvement-loop.md#write-lessons`](./self-improvement-loop.md#write-lessons).
+The lesson is advisory (it biases the next run's Phase 3 / Phase 4); it never
+changes the current iteration's gates.
 
 ## Waiting for new review activity
 
@@ -79,11 +94,11 @@ Replace the single Phase 7 table with a per-iteration roll-up, then the standard
 ```markdown
 ## Implement-Suggestion (watch) — <owner>/<repo>#<n>
 
-| Iter | New feedback | Applied | Surfaced | Skipped | Commit | Pushed |
-|------|--------------|---------|----------|---------|--------|--------|
-| 1    | 4            | 3       | 1        | 0       | abc1234 | ✓ |
-| 2    | 1            | 1       | 0        | 0       | def5678 | ✓ |
-| 3    | 0            | —       | —        | —       | —       | — |
+| Iter | New feedback | Applied | Surfaced | Skipped | Commits | Pushed | Resolved |
+|------|--------------|---------|----------|---------|---------|--------|----------|
+| 1    | 4            | 3       | 1        | 0       | abc1234, def5678, 9a0bcde | ✓ | 3/3 |
+| 2    | 1            | 1       | 0        | 0       | c0ffee1 | ✓ | 1/1 |
+| 3    | 0            | —       | —        | —       | —       | —      | —   |
 
 Stopped: reviewers quiet after 3 iterations.
 Head commit: def5678

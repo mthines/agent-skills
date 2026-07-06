@@ -1,5 +1,5 @@
 ---
-name: test-autofix
+name: test-auto-fix
 description: >
   Diagnoses failing tests across any project, classifies each failure as a
   test-bug, prod-bug, or unsure, confidence-gates the fix (auto-apply at
@@ -10,13 +10,13 @@ description: >
   tests, add .skip/.only, or weaken assertions. Regression-detects after
   every fix: reverts on new failure instead of stacking. Triggers on "fix
   my failing tests", "tests are red", "auto-fix tests", "heal the tests",
-  "/test-autofix".
+  "/test-auto-fix".
 disable-model-invocation: false
 argument-hint: '[<surface>|<file-path>] [--plan-only] [--max-iterations <n>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: applied
   tags:
     - tests
@@ -29,7 +29,7 @@ metadata:
     - bootstrap
 ---
 
-# test-autofix
+# test-auto-fix
 
 Autonomously diagnose and fix failing tests in any project, with hard
 guardrails so the loop never devolves into "make the red go away".
@@ -41,13 +41,13 @@ Load the matching rule file when you need detail — do not preload them.
 | ----- | ---- | ------------- |
 | 0 | Resolve the surface (bootstrap or validate) | [`rules/bootstrap.md`](./rules/bootstrap.md) + [`rules/surface-validation.md`](./rules/surface-validation.md) |
 | 1 | Detect which test surface(s) are failing; build fix plan | this file + [`templates/plan-artifact.md`](./templates/plan-artifact.md) |
-| 2 | Per failure: classify as test-bug / prod-bug / unsure | [`rules/verdicts.md`](./rules/verdicts.md) |
+| 2 | Per failure: classify as test-bug / prod-bug / unsure | [`rules/verdicts.md`](./rules/verdicts.md) + [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) (read lessons) |
 | 3 | Per failure: draft the smallest possible fix | this file |
 | 3.5 | Confidence gate — before any edit | [`rules/confidence-gate.md`](./rules/confidence-gate.md) |
 | 4 | Apply + verify single failing test | this file + [`rules/anti-patterns.md`](./rules/anti-patterns.md) |
 | 5 | test-provenance-guard (optional companion) | invoke `Skill("test-provenance-guard")` |
-| 6 | Outer loop: re-run full surface; regression-detect | [`rules/regression-detection.md`](./rules/regression-detection.md) |
-| 7 | Report (structured exit summary) | [`templates/exit-summary.md`](./templates/exit-summary.md) |
+| 6 | Outer loop: re-run full surface; regression-detect | [`rules/regression-detection.md`](./rules/regression-detection.md) + [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) (write lessons) |
+| 7 | Report (structured exit summary) | [`templates/exit-summary.md`](./templates/exit-summary.md) + [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) (write on outcome) |
 
 Always read [`rules/anti-patterns.md`](./rules/anti-patterns.md) first.
 The hard refusals apply to every phase.
@@ -96,7 +96,7 @@ When validation passes, jump straight to Phase 1.
    readlink -f "$(dirname "$0")"
    ```
    If that fails (model-invocation context), default to
-   `~/.agents/skills/test-autofix/surfaces/`.
+   `~/.agents/skills/test-auto-fix/surfaces/`.
 
 3. **If no surface file is found** → run bootstrap per
    [`rules/bootstrap.md`](./rules/bootstrap.md). Bootstrap detects the stack,
@@ -123,7 +123,7 @@ When validation passes, jump straight to Phase 1.
 
 3. If every surface is green: stop immediately. Tell the user. Do not invent work.
 
-4. Write the fix plan to `.agent/{branch}/test-autofix-plan.md` using
+4. Write the fix plan to `.agent/{branch}/test-auto-fix-plan.md` using
    [`templates/plan-artifact.md`](./templates/plan-artifact.md).
    The plan is read-only documentation of intent.
    Order: high-confidence test-bug fixes first, prod-bug suspects last.
@@ -230,15 +230,35 @@ Always end with the structured exit summary from
 [`templates/exit-summary.md`](./templates/exit-summary.md).
 
 ```text
-test-autofix run
+test-auto-fix run
   Outcome: <green | escalated | regression-reverted | max-iterations>
   Resolved: <N> failures
   Escalated: <N> failures (<verdicts>)
   Iterations: <N>/<max>
   Surface: <surface-file-path>
-  Plan: .agent/{branch}/test-autofix-plan.md
+  Plan: .agent/{branch}/test-auto-fix-plan.md
   Escalation reason: <…>           # if not green
 ```
+
+## Self-Improvement
+
+`/test-auto-fix` gets better across runs through a two-tier lessons loop (fast
+episodic tier + gated promotion), like `autonomous-workflow` and `fix-bug`. It
+**reads** `test-auto-fix-lessons` at Phase 2 (biasing the verdict and the Phase 3
+fix sub-class) and **writes** at Phase 6 (regression / same-failure signal) and
+Phase 7 (outcome retrospective), keyed by `stack : failure-pattern :
+verdict-sub-class`. This **complements the surface file** (which is config — how
+to run tests here — not learned judgment) rather than duplicating it. Lessons are
+**advisory** — they never lower the confidence gate, never turn a
+`prod-bug`/`unsure` escalation into a silent test edit, and never override a
+refusal in [`rules/anti-patterns.md`](./rules/anti-patterns.md).
+
+Most value is **within a project** (catching a recurring verdict misclassification
+for a failure shape); cross-project leverage is weaker because the feedback is
+binary and local. A recurring lesson (`seen_count >= 3`) is promotion-eligible via
+`/create-skill diagnose test-auto-fix`. `persistent-memory` is optional; the loop
+skips silently if absent. Full contract:
+[`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
 
 ## Definition of done
 

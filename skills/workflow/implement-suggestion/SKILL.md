@@ -6,9 +6,11 @@ description: >
   active PR) per PR: resolves a worktree, fetches every actionable comment
   from both human teammates AND AI code-review bots (claude[bot],
   coderabbitai[bot], …), validates each through /critical + /confidence,
-  builds a structured suggestion-pack, and dispatches a worker subagent to
-  apply / commit / push to the existing branch — fast-lane for mechanical
-  edits, standard-lane via aw-planner for architectural changes. Free-text
+  builds a structured suggestion-pack, and dispatches a worker subagent that
+  applies each approved change as its own commit, pushes to the existing
+  branch, and resolves the addressed review thread — so every handled comment
+  ends up resolved and the PR is left clean. Fast-lane for mechanical edits,
+  standard-lane via aw-planner for architectural changes. Free-text
   mode applies a single pasted suggestion in the current directory. Triggers
   on "implement suggestion", "apply review comments", "address PR feedback",
   "implement reviewer feedback", "fix PR comments", "/implement-suggestion".
@@ -21,9 +23,9 @@ license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(gw *) Read Edit Write Glob Grep Skill
 metadata:
   author: mthines
-  version: '2.1.0'
+  version: '2.3.0'
   workflow_type: orchestrator
-  architecture: parse/resolve/fetch/classify/validate/pack/handoff(fast|standard)/report
+  architecture: parse/resolve/fetch/classify/validate/pack/handoff(fast|standard)/commit-per-comment+resolve-thread/report
   composes:
     - critical
     - confidence
@@ -105,10 +107,10 @@ Phase 2:  Comment fetch          → per-PR ledger (parallel across PRs)
 Phase 3:  Classify               → actionable / nit / discussion / praise
 Phase 4:  Two-gate validation    → /critical → /confidence per actionable comment
 Phase 5:  Build suggestion-pack  → .agent/<branch>/suggestion-pack.md per PR
-Phase 6:  Handoff (lane-split)
+Phase 6:  Handoff (lane-split)         → worker: commit-per-comment, push, resolve thread
             ├── Fast-lane (simple):     dispatch worker subagent with pack
             └── Standard-lane (complex): aw-planner → plan.md → worker subagent
-Phase 7:  Report                 → per-PR table: applied / surfaced / skipped
+Phase 7:  Report                 → per-PR table: applied / surfaced / skipped / resolved
 ```
 
 Per-PR work in Phases 1–6 runs in **parallel across PRs** (one message,
@@ -155,6 +157,22 @@ are filtered. Exclude resolved threads. Honor `commentFilter` from Phase 0
 if present.
 
 ### Phase 3 — Classify
+
+<a id="lessons-read"></a>
+**Before tagging — read prior lessons.** Load `implement-suggestion-lessons` so accumulated
+misclassifications and gate mis-calibrations bias this run before they repeat.
+Full contract in [`rules/self-improvement-loop.md#read-lessons-phase-3`](./rules/self-improvement-loop.md#read-lessons-phase-3):
+
+```
+Skill("persistent-memory", "read implement-suggestion-lessons --tier home")     # skips silently if not installed
+if [ -f memory/implement-suggestion-lessons/INDEX.md ]; then
+  Skill("persistent-memory", "read implement-suggestion-lessons --tier project-shared")
+fi
+```
+
+Match each lesson's `trigger-context` (reviewer source + topic) against the
+ledger. Matches are **advisory inputs** to Phase 3 tagging and the Phase 4 gates
+— they never relax the two-gate requirement or a hard rule.
 
 Tag every comment per [`rules/comment-classification.md`](./rules/comment-classification.md):
 
@@ -227,9 +245,18 @@ Agent(
 Full dispatch contract and prompt template:
 [`rules/handoff.md#worker-prompt-template`](./rules/handoff.md#worker-prompt-template).
 
+The worker makes **one commit per applied comment** (each message cites that
+comment's `@author` + URL), pushes once after all commits, then **resolves
+each addressed review thread** — posting a brief `Addressed in <sha>` reply,
+then `resolveReviewThread`. This leaves a clean one-to-one trail (commit →
+resolved comment) and a PR where every handled comment is resolved; only
+`surface` / `skip` comments stay open. `issues` / `review`-summary comments
+have no resolvable thread and are reported as such. Full contract in
+[`rules/handoff.md#worker-prompt-template`](./rules/handoff.md#worker-prompt-template).
+
 **The main agent does not edit files in Phase 6.** All applies / commits /
-pushes happen inside the worker subagent so the loud loop (test runs,
-push retries) stays out of the main context.
+pushes / thread resolutions happen inside the worker subagent so the loud loop
+(test runs, push retries) stays out of the main context.
 
 ### Phase 7 — Report
 
@@ -238,16 +265,78 @@ Emit one summary table:
 ```markdown
 ## Implement-Suggestion Results
 
-| PR | Branch | Lane | Applied | Surfaced | Skipped | Commit | Pushed |
-|----|--------|------|---------|----------|---------|--------|--------|
-| dash0/console#1234 | fix/foo | fast | 3 | 1 | 2 | abc1234 | ✓ |
-| dash0/console#1278 | feat/bar | standard | 0 | 2 | 1 | — | — |
+| PR | Branch | Lane | Applied | Surfaced | Skipped | Commits | Pushed | Resolved |
+|----|--------|------|---------|----------|---------|---------|--------|----------|
+| dash0/console#1234 | fix/foo | fast | 3 | 1 | 2 | abc1234, def5678, 9a0bcde | ✓ | 3/3 |
+| dash0/console#1278 | feat/bar | standard | 0 | 2 | 1 | — | — | 0/0 |
 ```
 
+`Commits` lists one SHA per applied comment (commit-per-comment). `Resolved`
+is `<threads-resolved>/<applied-with-a-thread>` — comments whose fix landed and
+whose thread was resolved, over the applied comments that had a resolvable
+thread (`issues` / `review`-summary comments have none and are excluded from
+the denominator).
+
 Then per PR list:
-- **Applied** — comment ID, author, one-line summary.
+- **Applied** — comment ID, author, one-line summary, commit SHA, thread status
+  (resolved / no-thread).
 - **Surfaced** (needs user) — comment, gate score, `/critical` finding if any.
-- **Skipped** — comment, reason.
+  Thread left open.
+- **Skipped** — comment, reason. Thread left open.
+
+<a id="lessons-write"></a>
+**After the report — write lessons.** Run the retrospective and capture any
+durable lesson from the run (a Phase 3 misclassification, a Phase 4 gate
+mis-score, a Phase 6 lane misfire, an apply that needed a scoped-check fix).
+Full contract, tier classification, and the applied-lesson UPDATE rule in
+[`rules/self-improvement-loop.md#write-lessons`](./rules/self-improvement-loop.md#write-lessons):
+
+```
+# Universal candidate → home. Project-bound candidate → project-shared only when opted in.
+Skill("persistent-memory", "write implement-suggestion-lessons --tier home --auto")     # skips silently if not installed
+```
+
+A lesson reaching `seen_count >= 3` is promotion-eligible — surface the
+tier-appropriate one-liner (`/create-skill diagnose implement-suggestion` for
+`home`; a repo rule via `docs` for `project-shared`). Never promote silently.
+See [`rules/self-improvement-loop.md#lesson-promotion`](./rules/self-improvement-loop.md#lesson-promotion).
+
+#### Outcome emit
+
+After writing lessons — emit outcome records to `review-outcomes`. For every comment
+processed in this run (any verdict: `applied`, `rejected-at-validation`, `deferred`), append
+a fingerprinted outcome record to the `review-outcomes` persistent-memory scope.
+This is the outcome-emit step that feeds the shared candidate/outcome bus consumed by
+[`agents/shared/rules/outcome-learning.md`](../../../agents/shared/rules/outcome-learning.md) at promotion time.
+
+Reuse the per-comment `/critical` + `/confidence` result already in context — do not recompute.
+Derive `verdict` from the Phase 4 decision matrix:
+
+| Phase 4 outcome | `verdict` value |
+| --- | --- |
+| Gate cleared, patch landed | `applied` |
+| `/critical` Must-fix raised OR `/confidence` below threshold | `rejected-at-validation` |
+| Gate cleared but scoped out / deferred | `deferred` |
+| Patch landed then reverted after CI failure | `reverted-after-ci` (written at the end of the `--watch` loop if CI failure is traced to this patch) |
+
+Infer `source` from the comment author login per the heuristic in [`review-outcomes.md`](../../../agents/shared/rules/review-outcomes.md).
+
+```
+# Append-only, non-blocking — one record per processed comment.
+# Degrade gracefully if persistent-memory is absent (skips silently).
+Skill("persistent-memory", "write review-outcomes --tier home --auto")
+# Project-shared, if opted in:
+if [ -f memory/review-outcomes/INDEX.md ]; then
+  Skill("persistent-memory", "write review-outcomes --tier project-shared --auto")
+fi
+# Opportunistic consolidation if INDEX exceeds 180 lines:
+if [ $(wc -l < ~/.agent-memory/review-outcomes/INDEX.md 2>/dev/null || echo 0) -ge 180 ]; then
+  Skill("persistent-memory", "consolidate review-outcomes --tier home --auto")
+fi
+```
+
+This step is **append-only and non-blocking** — it MUST NOT gate or delay the Phase 7 report.
+If `persistent-memory` is absent, the step skips silently; the apply flow is unaffected.
 
 ## Watch Workflow (`--watch`)
 
@@ -260,6 +349,11 @@ background subagent post-push so a new PR auto-converges on its bot feedback.
 Full loop, the poll-for-new-activity snippet, parameters (`--max-iters`,
 `--interval`), the per-iteration report, and watch-specific hard rules live in
 [`rules/watch-mode.md`](./rules/watch-mode.md).
+
+Inside each `--watch` iteration, after the per-iteration Phase 7 report:
+run the outcome-emit step (see [above](#outcome-emit)) for every comment processed in that iteration.
+This ensures that `reverted-after-ci` verdicts are captured at the end of the iteration where CI failure is detected.
+The emit is append-only and non-blocking in each iteration.
 
 ## Free-text Workflow
 
@@ -274,6 +368,30 @@ without a PR worktree context:
 Free-text mode preserves v1 behaviour: a quick "implement this colleague
 suggestion I just pasted" path with no PR plumbing.
 
+## Self-Improvement
+
+`/implement-suggestion` gets better across runs through a two-tier lessons loop
+(fast episodic tier + gated promotion), identical in shape to
+`autonomous-workflow` and `fix-bug`. It **reads** `implement-suggestion-lessons` at Phase 3
+and **writes** at Phase 7 (and on a `--watch` re-flag), keyed by reviewer source
++ comment topic. Lessons are **advisory** — they bias classification, gate
+calibration, and lane selection, but never relax a gate or a hard rule. A lesson
+that recurs (`seen_count >= 3`) is promotion-eligible to a permanent skill guard
+via `/create-skill diagnose implement-suggestion`.
+
+The loop owns implement-suggestion's **own** decision phases only; the
+standard-lane `aw-planner` dispatch already contributes to `aw-lessons` for the
+planning of architectural changes — this loop does not duplicate that.
+`persistent-memory` is an **optional companion**: if it is not installed the
+whole loop skips silently. Full contract:
+[`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
+
+In addition to writing `implement-suggestion-lessons`, this skill is now a **producer of the
+`review-outcomes` shared candidate/outcome bus** (see [`agents/shared/rules/review-outcomes.md`](../../../agents/shared/rules/review-outcomes.md)).
+At Phase 7 (and per-iteration inside `--watch`), it appends a fingerprinted outcome record
+for each processed comment.
+The reviewers (`reviewer`, `pr-reviewer`) consume this bus only at promotion/consolidation time — never per-review.
+
 ## Hard Rules
 
 - **Never** push with `--force` or `--force-with-lease` without explicit user approval.
@@ -281,7 +399,12 @@ suggestion I just pasted" path with no PR plumbing.
 - **Never** apply a change whose `/critical` review surfaced a Must-fix finding without surfacing first.
 - **Never** auto-rebase a PR branch — surface and stop.
 - **Never** delete or weaken tests or types to make a suggestion fit.
-- **One commit per PR.** A run that processes 5 PRs produces at most 5 commits, not 5×N.
+- **One commit per applied comment.** Each addressed comment is its own commit
+  (message citing that comment) so `git log` maps one-to-one to resolved threads.
+- **Resolve every addressed thread; leave the rest open.** After a comment's fix
+  lands and is pushed, the worker replies with the commit SHA and calls
+  `resolveReviewThread`. `surface` / `skip` comments — and any comment whose
+  commit did not land — stay open. Never resolve a thread whose fix is not on the remote.
 - **Worktree isolation.** Each PR gets its own `gw` worktree.
 - **Resolved threads are skipped at fetch time.**
 - **Main agent does not apply / commit / push in multi-PR mode.** Workers do.
@@ -297,6 +420,7 @@ suggestion I just pasted" path with no PR plumbing.
 | `/critical` skill | Adversarial pre-mortem per comment | **Yes** |
 | `/confidence` skill | Gate scoring per comment | **Yes** |
 | `aw-planner` agent | Standard-lane plan authoring | Required when standard-lane fires |
+| `persistent-memory` skill | `implement-suggestion-lessons` self-improvement loop (read Phase 3, write Phase 7 / watch re-flag) | Optional — loop skips silently if absent |
 
 If `gh` is missing in multi-PR mode, stop and tell the user to install it.
 
@@ -311,6 +435,7 @@ If `gh` is missing in multi-PR mode, stop and tell the user to install it.
 | [`validation-gates`](./rules/validation-gates.md) | Phase 4 |
 | [`handoff`](./rules/handoff.md) | Phase 6 — worker prompt + standard-lane planner dispatch |
 | [`watch-mode`](./rules/watch-mode.md) | When `--watch` is set — the post-push feedback loop |
+| [`self-improvement-loop`](./rules/self-improvement-loop.md) | Cross-cutting — `implement-suggestion-lessons` fast tier (read Phase 3 / write Phase 7 + watch re-flag) + promotion to `diagnose` |
 
 Templates:
 
@@ -328,3 +453,7 @@ Templates:
    existing branch and Phase 7's report links to the existing PR URL.
 5. **Parallelize per PR, sequentialize per comment.** PR-level work fans out; per-PR validation
    stays linear so the gates see consistent state.
+6. **Learn across runs, but only advisory.** `implement-suggestion-lessons` (read Phase 3, write Phase 7)
+   biases classification, gate calibration, and lane selection from prior runs — but a lesson
+   never relaxes a gate or a hard rule. Only a recurrence-proven lesson (`seen_count >= 3`) earns
+   a confidence-gated, user-approved change to the skill's source.

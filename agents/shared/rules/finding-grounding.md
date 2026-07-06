@@ -56,7 +56,7 @@ A short allowlist file lives at the agent root: `agents/shared/rules/grounding-a
 
 ## What this check does not catch
 
-- A comment that names a real symbol but describes the wrong behaviour ("`validateAuth` returns `null` on failure" when it actually throws). That is a semantic-claim failure, caught by per-comment confidence and the Quality Gate, not this rule.
+- A comment that names a real symbol but describes the wrong behaviour ("`validateAuth` returns `null` on failure" when it actually throws). That is a semantic-claim failure. **Grounding = existence; claim-verification is `verification-receipt.md` (Step 2.6b)**, which runs immediately after this step and requires an executed proof for every behavioral claim.
 - A comment that omits backticks entirely ("the validateAuth function returns null"). Encourage backticks in `comment-shape.md` examples but do not enforce — un-backticked claims pass this check by construction.
 - A correctly-named symbol that the comment claims is defined in a different file. Beyond this rule's scope; route to per-comment confidence.
 

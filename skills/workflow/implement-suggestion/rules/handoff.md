@@ -52,8 +52,11 @@ Agent(
 )
 ```
 
-The worker reads the pack at `.agent/<branch>/suggestion-pack.md`,
-applies the changes, runs the project's fast checks, commits, and pushes.
+The worker reads the pack at `.agent/<branch>/suggestion-pack.md`, then for
+each `apply` comment: applies the edit, runs the project's fast checks, and
+makes one commit citing that comment. After all commits it pushes once, then
+resolves each addressed review thread (reply with the commit SHA, then
+`resolveReviewThread`) so the PR is left clean.
 
 ## Standard-lane dispatch
 
@@ -107,25 +110,75 @@ Apply reviewer suggestions to an existing pull request.
 1. cd <worktree>.
 2. Verify git status --porcelain is empty and HEAD == <head-sha-from-pack>.
    If either fails, STOP and report — do not auto-stash or auto-rebase.
-3. For each `apply` entry in the pack (or each Acceptance Criterion in the
-   plan, for standard-lane), apply the proposed edit using Edit / Write.
-4. Run the project's fast checks if wired up (lint + typecheck + unit tests
-   scoped to the touched files only). If a check fails:
-   - For a clear mechanical fix (formatter / lint autofix): apply, re-check.
-   - For anything else: STOP and report — do not "fix until green" by
-     weakening tests or types.
-5. Compose a single commit message:
+3. Process each `apply` entry in the pack SEQUENTIALLY, in pack order (for
+   standard-lane, iterate the Acceptance Criteria, each of which cites a
+   comment ID). This is ONE COMMIT PER COMMENT — do not batch multiple
+   comments into a single commit. For each entry:
 
-   ```
-   address review comments
+   a. Apply that comment's proposed edit using Edit / Write. Touch only the
+      files that comment's pack entry lists.
+   b. Run the project's fast checks scoped to the touched files (lint +
+      typecheck + unit tests) if wired up. If a check fails:
+      - For a clear mechanical fix (formatter / lint autofix): apply, re-check.
+      - For anything else: STOP and report — do not "fix until green" by
+        weakening tests or types. Leave the commits already made in place as
+        LOCAL-ONLY, and do NOT proceed to steps 4 or 5: push nothing and
+        resolve nothing. A partial batch must not reach the remote.
+   c. git add the files for THIS comment only, then git commit (no --no-verify,
+      no Co-Authored-By) with this message:
 
-   - <one bullet per applied comment, citing reviewer handle and comment URL>
+      ```
+      address review comment: <one-line summary of this comment's fix>
 
-   Refs: <pr-url>
-   ```
+      Addresses @<author>'s comment: <comment-url>
 
-6. git commit (no --no-verify, no Co-Authored-By).
-7. git push (no --force, no --force-with-lease).
+      Refs: <pr-url>
+      ```
+
+   d. Record the resulting commit SHA and the comment's `threadId` for step 5.
+
+4. git push (no --force, no --force-with-lease). Only reach this step if EVERY
+   `apply` entry committed without a STOP in step 3b — otherwise you already
+   aborted above. Push ONCE, after every per-comment commit is made, so all the
+   fix commits reach the remote before any thread is resolved.
+
+5. Resolve each addressed thread so the PR is left clean — one thread per
+   committed comment, IN THE SAME ORDER you committed. For each `apply` entry
+   whose commit landed AND whose `threadId` is non-null:
+
+   a. Post a brief reply on the thread tying the commit to the comment (this is
+      the visible "which commit resolved which comment" trail). Reply to the
+      thread's top-level comment id (the pack's comment `id`):
+
+      ```bash
+      gh api --method POST \
+        "repos/<owner>/<repo>/pulls/<n>/comments/<comment-id>/replies" \
+        -f body="Addressed in <commit-sha>. ✅"
+      ```
+
+   b. Resolve the thread:
+
+      ```bash
+      gh api graphql -f query='
+        mutation($threadId: ID!) {
+          resolveReviewThread(input: {threadId: $threadId}) {
+            thread { isResolved }
+          }
+        }' -f threadId="<threadId>"
+      ```
+
+   If `threadId` is null (an `issues` comment or a top-level `review` summary —
+   these have no resolvable thread), SKIP the reply + resolve for that entry and
+   note it as "no thread to resolve" in your report. Do NOT resolve threads for
+   `surface` / `skip` comments — only the ones you actually addressed.
+
+   Resolve-side failures do NOT abort — the commits are already on the remote,
+   so unlike step 3b there is nothing to hold back. If a reply or
+   `resolveReviewThread` call errors on one thread (permission denied, or a bot
+   already resolved it — `resolveReviewThread` on an already-resolved thread is
+   a safe no-op), record that thread as `not-resolved: <verbatim error>` and
+   CONTINUE to the next thread. Never unwind a landed commit because a
+   resolution call failed.
 
 ## Hard rules
 - DO NOT open a new PR. The PR exists at <pr-url>.
@@ -133,16 +186,23 @@ Apply reviewer suggestions to an existing pull request.
 - DO NOT skip hooks.
 - DO NOT delete or weaken tests or types.
 - DO NOT modify files outside the pack's apply list.
+- DO NOT batch comments — exactly one commit per addressed comment.
+- DO NOT push a partial batch. If step 3b STOPs on any comment, push nothing
+  and resolve nothing — leave the completed commits local and report them as
+  un-pushed.
+- DO NOT resolve a thread whose commit did not land, or a `surface` / `skip`
+  comment's thread. Only resolve threads you addressed with a landed commit.
 - If push is rejected because the branch moved on the remote, STOP and
-  report. Do not auto-rebase.
+  report BEFORE resolving any thread. Do not auto-rebase. (Resolving a thread
+  whose fix is not on the remote would leave a misleading trail.)
 
 ## Output you return
-A short report:
+A short report, one row per `apply` comment:
 
-- Commit SHA (or "not committed: <reason>").
+- Comment ID / @author → commit SHA (or "not committed: <reason>") →
+  thread status (resolved / no-thread / not-resolved: <reason>).
 - Push status (success / rejected — verbatim error).
-- Per-comment outcome: applied / skipped-with-reason.
-- Fast-check status: passed / failed-with-excerpt.
+- Fast-check status per comment: passed / failed-with-excerpt.
 ```
 
 ## Planner prompt template (standard-lane only)
@@ -194,7 +254,10 @@ misclassified, not that the agent needs more attempts.
 ## Hard rules
 
 - **Workers never open new PRs.** Push to existing branch only.
-- **Workers never amend prior commits.** One commit per PR, per run.
+- **Workers never amend prior commits.** One commit per addressed comment.
+- **Workers resolve every thread they addressed** — reply with the commit SHA,
+  then `resolveReviewThread`. A landed fix whose thread is left open is a
+  reporting bug. `surface` / `skip` threads stay open.
 - **Standard-lane below-gate stops.** No silent fallback to fast-lane.
 - **Main agent does not edit files in Phase 6** — all `Edit` / `Write` calls
   happen inside the worker subagent.

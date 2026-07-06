@@ -9,6 +9,7 @@ import * as fs from 'fs';
 import {
   AgentTasksProvider,
   AgentBranchItem,
+  ChecksSummaryItem,
   DiagnoseSummaryItem,
   OtherMarkdownFileItem,
   PlanSummaryItem,
@@ -99,7 +100,12 @@ export function activate(context: vscode.ExtensionContext): void {
       return;
     }
     const uri = vscode.Uri.file(filePath);
-    const usePreview = vscode.workspace.getConfiguration('agentTasks').get<boolean>('openMarkdownInPreview', true);
+    // Markdown preview only makes sense for .md files. Non-Markdown artifacts
+    // (checks.yaml) always open as a text document, regardless of the
+    // openMarkdownInPreview setting.
+    const usePreview =
+      filePath.endsWith('.md') &&
+      vscode.workspace.getConfiguration('agentTasks').get<boolean>('openMarkdownInPreview', true);
     if (usePreview) {
       await vscode.commands.executeCommand('markdown.showPreview', uri);
     } else {
@@ -178,6 +184,13 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     if (item instanceof WalkthroughSummaryItem) {
       return { fsPath: item.walkthroughFilePath, isDirectory: false, label: 'walkthrough.md' };
+    }
+    // ChecksSummaryItem resolves for Reveal/Copy Path only. It is deliberately
+    // NOT wired into deleteArtifacts (the agentChecksFile contextValue is
+    // absent from that menu regex): deleting checks.yaml in isolation silently
+    // downgrades the executor to judgment-gating — same reasoning as plan.md.
+    if (item instanceof ChecksSummaryItem) {
+      return { fsPath: item.checksFilePath, isDirectory: false, label: 'checks.yaml' };
     }
     if (item instanceof DiagnoseSummaryItem) {
       return {
@@ -336,6 +349,30 @@ export function activate(context: vscode.ExtensionContext): void {
   // rows appear/disappear without waiting for a session-level event.
   artifactWatcher.onArtifactChanged(() => {
     sessionsProvider.refresh();
+  });
+
+  // `unsatisfiable` is the executor's escalation affordance — it means the
+  // agent is blocked on a check it cannot legitimately satisfy and needs a
+  // human decision. This is the one check-status transition worth a real
+  // notification (`fail` is a normal mid-loop state and stays silent). The
+  // watcher fires only on transitions, so no per-tick dedup is needed here.
+  artifactWatcher.onUnsatisfiableCheck(({ checksPath, ids }) => {
+    const notify = vscode.workspace
+      .getConfiguration('agentTasks')
+      .get<boolean>('notifyUnsatisfiableCheck', true);
+    if (!notify) return;
+    const branchName = path.basename(path.dirname(checksPath));
+    log(`Unsatisfiable check(s) ${ids.join(', ')} in ${checksPath}`);
+    void vscode.window
+      .showWarningMessage(
+        `Agent Tasks: ${ids.join(', ')} marked unsatisfiable in ${branchName} — the executor needs input.`,
+        'Open checks.yaml'
+      )
+      .then((choice) => {
+        if (choice === 'Open checks.yaml') {
+          void vscode.commands.executeCommand('agentTasks.openMarkdown', checksPath);
+        }
+      });
   });
 
   // Start watching the session dirs that the provider discovered on first render.

@@ -78,6 +78,32 @@ Agent({
 Pass the returned Evidence Record forward to Phase 2 of `/fix-bug` like any other input. Do not
 re-investigate; the investigator owns the ticket-reading step.
 
+### Analyse any video attachment (before Phase 2)
+
+The investigator cannot analyse videos (it has no `Bash` / `ffmpeg`) — it only flags them in the
+Evidence Record's `Video evidence` field. `/fix-bug` runs on the main context and **does** have
+`Bash`, so it owns the analysis:
+
+1. Read the returned Evidence Record's `Video evidence` field.
+2. If it is `Present`, run the video-analyser skill once per flagged video before continuing —
+   pass the Linear ticket URL so the skill's own Linear resolution obtains an authenticated
+   (pre-signed) download URL via MCP:
+
+   ```text
+   Skill("video-analyser", "<Linear ticket URL>")
+   ```
+
+   For a ticket with multiple distinct videos, re-invoke with each direct video URL from the
+   `Video evidence` list.
+3. Fold the structured video findings (errors, UI state, inferred reproduction steps) into the
+   merged Evidence Record — append them to `Symptom`, `Sources`, and `Reproduction`. A screen
+   recording usually carries the clearest reproduction steps available, so they take precedence
+   over a vague free-text repro.
+4. If `Video evidence` is `None`, skip this step silently.
+
+If the `video-analyser` skill is not installed in the host project, note the un-analysed video URL
+in the Evidence Record's `Sources` and continue — do not block resolution on it.
+
 If the Linear MCP server is not configured, print this message and wait:
 
 ```text

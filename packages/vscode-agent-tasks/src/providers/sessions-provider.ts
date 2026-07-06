@@ -37,6 +37,7 @@ import {
   findLinkedArtifacts,
   hasLinkedArtifacts,
 } from '../lib/session-artifact-correlator';
+import { formatChecksRollup, parseChecksYaml, summarizeChecks } from '../parsers/checks-parser';
 import type { HookEvent, HookEventName } from '../lib/hook-event-types';
 import type { PrEnrichment } from '../lib/pr-status-cache';
 import type { PrPoller, BranchTarget } from '../lib/pr-poller';
@@ -73,6 +74,22 @@ function getConfiguredArtifactDirs(): string[] {
     .getConfiguration('agentTasks')
     .get<string[]>('directories', []);
   return cfg.length > 0 ? cfg : ['.agent', '.gw'];
+}
+
+/**
+ * Read + parse a linked `checks.yaml` and return the compact `✓ pass/total`
+ * rollup, or `undefined` when the file is unreadable or has no checks.
+ * Called per running session per refresh — the file is small (KBs) and
+ * running sessions are few, so no caching is needed.
+ */
+function readChecksRollup(checksPath: string): string | undefined {
+  try {
+    const { checks } = parseChecksYaml(fs.readFileSync(checksPath, 'utf-8'));
+    const rollup = formatChecksRollup(summarizeChecks(checks));
+    return rollup || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +246,13 @@ export class SessionItem extends vscode.TreeItem {
       status: SessionStatus;
       linkedArtifacts?: LinkedArtifacts;
       prEnrichment?: PrEnrichment;
+      /**
+       * Compact `✓ pass/total` rollup of the linked checks.yaml. Passed by
+       * the provider only while the session is `running` — that is when
+       * check progress answers "how far along is my agent"; on idle rows it
+       * would just crowd the already-tight description slot.
+       */
+      checksRollup?: string;
     }
   ) {
     const linked = options.linkedArtifacts;
@@ -254,7 +278,9 @@ export class SessionItem extends vscode.TreeItem {
     // `? · <time>` when gitBranch is undefined.
     const branchTrunc =
       branch.length > 25 ? branch.slice(0, 25) + '\u2026' : branch;
-    this.description = `${branchTrunc} · ${timeStr}`;
+    this.description = options.checksRollup
+      ? `${branchTrunc} · ${timeStr} · ${options.checksRollup}`
+      : `${branchTrunc} · ${timeStr}`;
 
     this.iconPath = SessionItem.iconForStatus(this.displayStatus);
     // Synthetic resourceUri keys this row into the FileDecorationProvider so
@@ -373,6 +399,7 @@ export class SessionItem extends vscode.TreeItem {
       const parts: string[] = [];
       if (linkedArtifacts.taskPath) parts.push('task.md');
       if (linkedArtifacts.planPath) parts.push('plan.md');
+      if (linkedArtifacts.checksPath) parts.push('checks.yaml');
       if (linkedArtifacts.walkthroughPath) parts.push('walkthrough.md');
       if (linkedArtifacts.diagnosePaths && linkedArtifacts.diagnosePaths.length > 0) {
         const noun =
@@ -1094,10 +1121,18 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
         ? this.prStatusCache.getEnrichment(session.gitBranch)
         : undefined;
 
+    const status = this.computeStatus(session);
+    const links = this.sessionLinks.get(session.sessionId);
+    const checksRollup =
+      status === 'running' && links?.checksPath
+        ? readChecksRollup(links.checksPath)
+        : undefined;
+
     return new SessionItem(session, {
-      status: this.computeStatus(session),
-      linkedArtifacts: this.sessionLinks.get(session.sessionId),
+      status,
+      linkedArtifacts: links,
       prEnrichment,
+      checksRollup,
     });
   }
 
@@ -1125,6 +1160,9 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     // Known/recognised entries first.
     if (links.taskPath) out.push(new LinkedArtifactItem('Task', 'tasklist', links.taskPath));
     if (links.planPath) out.push(new LinkedArtifactItem('Plan', 'notebook', links.planPath));
+    if (links.checksPath) {
+      out.push(new LinkedArtifactItem('Checks', 'checklist', links.checksPath));
+    }
     if (links.walkthroughPath) {
       out.push(new LinkedArtifactItem('Walkthrough', 'book', links.walkthroughPath));
     }

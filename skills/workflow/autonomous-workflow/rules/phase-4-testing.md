@@ -16,6 +16,7 @@ tags:
 - [Overview](#overview)
 - [Core Principles](#core-principles)
 - [Procedure](#procedure)
+- [Executable Checks Loop](#executable-checks-loop)
 - [Stuck-Loop Detection](#stuck-loop-detection)
 - [Stuck Recovery](#stuck-recovery)
 - [When to Stop and Ask (beyond stuck-loop)](#when-to-stop-and-ask-beyond-stuck-loop)
@@ -64,6 +65,7 @@ Companions invoked from this phase **skip silently if not installed** — see
 | Focus on ONE failing test at a time             | Don't fix multiple simultaneously — root causes get tangled         |
 | Lightweight per-iteration self-reflection       | Brief self-check before each iteration — NOT a full `confidence` run |
 | Fix root causes, not symptoms                   | A passing test on a wrong fix is worse than a red one               |
+| Checks gate mechanically (Full Mode)            | Phase 4 exits when every `checks.yaml` check passes — not when "criteria feel met". Check definitions are executor-immutable; gaming a check is a hard stop |
 | Auto-replan on low confidence                   | When stuck and confidence < 90%, trigger holistic-analysis and re-invoke `aw-create-plan` to produce the next `plan.v{N+1}.md` snapshot |
 | One-shot retry only                             | After auto-replan, Phase 4 may resume at most ONCE before mandatory escalation |
 | Track everything in `plan.md` Progress Log      | Auditable trail of attempts and outcomes                            |
@@ -210,6 +212,15 @@ npm run build
 
 All three must pass before exiting Phase 4.
 
+### Step 6b: Run the Executable Checks (Full Mode)
+
+After the suite is green, run every check in `.agent/{branch}/checks.yaml`
+per the [Executable Checks Loop](#executable-checks-loop) below. **Phase 4 is
+not complete until every check's `status` is `pass`** (or a check was declared
+`unsatisfiable` and the user approved). Self-skips (one log line) when no
+`checks.yaml` exists — legacy plans and non-aw authors gate on the Acceptance
+Criteria by judgment, as before.
+
 ### Step 7: Update Progress Log (Full Mode)
 
 Append to `.agent/{branch}/plan.md`:
@@ -250,6 +261,87 @@ git commit -m "test(scope): add coverage for <feature>
 ```
 
 Never add `Co-Authored-By` lines. See [`safety-guardrails.md`](./safety-guardrails.md).
+
+---
+
+## Executable Checks Loop
+
+**Anchor:** `executable-checks`
+
+Full Mode plans ship with `.agent/{branch}/checks.yaml` — one runnable check
+per `AC-{n}` acceptance criterion, authored by the planner via
+[`aw-create-plan` Step 2b](../../aw-create-plan/SKILL.md#step-2b-derive-checksyaml-from-the-acceptance-criteria).
+This loop replaces "the LLM judges whether the criteria are met" with "the
+harness runs the checks": `checks.yaml` is the Phase 4 **termination condition
+and progress ledger**.
+
+**Self-skip:** if `checks.yaml` does not exist, log
+`executable-checks — skipped (no checks.yaml)` and gate on the Acceptance
+Criteria by judgment (the pre-v3.15 behavior). Never bail because it's absent.
+
+### The loop
+
+```
+for each check in checks.yaml with status pending or fail:
+    1. Run `setup` (if not "none"), then `run`.
+    2. Compare the observed output / exit code against `expect`.
+    3. Match     → set status: pass. Log: `[TS] Phase 4: check AC-n — pass`
+       Mismatch  → set status: fail. The check joins the failing-area queue —
+                   fix the IMPLEMENTATION, then re-run. Failing checks count
+                   toward the same mode-aware iteration cap (3 Lite / 5 Full)
+                   and stuck-loop protocol as failing tests.
+    4. kind: judge → resolve by rubric-scored LLM judgment against the AC's
+       text; record the verdict + one-line rationale in the Progress Log.
+       A judge check NEVER gates alone: it cannot be the only evidence that
+       an irreversible step is safe, and a plan whose checks are majority
+       judge-kind should be flagged to the user as weakly verifiable.
+
+Phase 4 exit gate: every check status == pass
+                   (or unsatisfiable + user approval — see below).
+```
+
+### Check-integrity rules (NON-RELAXABLE)
+
+Verifier-driven loops are gameable — agents demonstrably special-case test
+inputs, overload comparisons, and edit tests to force green (evidence:
+[`references/planning-quality-research.md#5-failure-modes-that-gate-the-loop-idea`](../references/planning-quality-research.md#5-failure-modes-that-gate-the-loop-idea)).
+The rules:
+
+1. **Check definitions are executor-immutable.** The executor may flip
+   `status:` freely. It may amend `run:`/`setup:` ONLY to make the draft
+   command runnable against the real code, and every amendment requires a
+   Progress Log entry: `[TS] Phase 4: check-run-amended AC-n — <why>`.
+   `id:`, `requirement:`, `ears:`, and `expect:` are **never** edited by the
+   executor. A diff that changes them is a hard stop → user escalation.
+2. **Forbidden strategies — never satisfy a check by:** (a) modifying the
+   check or a test to match wrong behavior, (b) overloading operators /
+   comparisons to fake equality, (c) recording or replaying state to bypass
+   the real code path, (d) special-casing the check's exact inputs
+   (hardcoding expected outputs). If the only way to green is one of these,
+   the check is failing for a reason — go to the abort affordance.
+3. **Abort affordance.** When a check is genuinely unsatisfiable as specified
+   (the criterion is wrong, contradicts another, or the expected behavior is
+   unreachable), set `status: unsatisfiable` and **escalate to the user**
+   with the evidence — do not iterate toward a workaround. An explicit
+   give-up path is the single most effective anti-gaming lever; use it.
+4. **All-green is necessary, not sufficient.** Passing checks means the
+   runnable contract holds — not that intent is met. The full test suite,
+   `reviewer` dispatch, and Phase 7 verifier gates all still run unchanged.
+
+### Logging
+
+```markdown
+- [2026-04-29T16:50:00Z] Phase 4: executable-checks — 5 checks loaded (4 command, 1 judge)
+- [2026-04-29T16:51:10Z] Phase 4: check AC-1 — pass (expect 401, got 401)
+- [2026-04-29T16:52:30Z] Phase 4: check AC-3 — fail (expect 401, got 500); joining iteration loop
+- [2026-04-29T16:55:02Z] Phase 4: check-run-amended AC-3 — port 3000 → 4001 (dev server config)
+- [2026-04-29T16:58:44Z] Phase 4: check AC-3 — pass; all 5 checks green
+```
+
+Disable: remove this section's invocation from Step 6b — but note the
+check-integrity rules are a hard invariant in
+[`diagnostic-surface.md`](./diagnostic-surface.md#hard-invariants); weakening
+them (as opposed to disabling the loop) is never a valid customization.
 
 ---
 
@@ -577,6 +669,8 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 - [ ] New tests added for new functionality
 - [ ] `test-provenance-guard` invoked after new test files written; findings healed or escalated
 - [ ] Full suite + lint + build all green
+- [ ] Every `checks.yaml` check `status: pass` — or `unsatisfiable` escalated and user-approved; skip logged if no `checks.yaml` (anchor: `executable-checks`)
+- [ ] No check definition edited (`id`/`requirement`/`ears`/`expect` untouched); every `run:`/`setup:` amendment has a `check-run-amended` Progress Log entry
 - [ ] Progress Log updated in `.agent/{branch}/plan.md` (Full Mode)
 - [ ] Ready for Phase 5 documentation
 

@@ -16,6 +16,7 @@ tags:
 - [Validation Checkpoints (per Phase)](#validation-checkpoints-per-phase)
 - [Self-Validation Questions](#self-validation-questions)
 - [Stuck-Loop Limit (Phase 4)](#stuck-loop-limit-phase-4)
+- [Executable-Check Integrity (Phase 4)](#executable-check-integrity-phase-4)
 - [Tool Prerequisites](#tool-prerequisites)
 - [Companion-Skill Safety](#companion-skill-safety)
 - [Resource Limits](#resource-limits)
@@ -37,11 +38,11 @@ clean recovery.
 
 | Phase | Gate / Checkpoint                                                                                  |
 | ----- | -------------------------------------------------------------------------------------------------- |
-| 0     | Tier selected (Micro / Lite / Full). User confirmed understanding.                                 |
-| 1     | Plan matches requirements. `Skill("confidence", "plan")` >= 90% (mandatory companion, Full Mode only — Lite and Micro have no `plan.md`). |
-| 2     | Worktree created with `gw add` (or native `git worktree add` fallback). CWD is the worktree. Deps installed. `plan.md` written under `.agent/{branch}/` (Full Mode). |
+| 0     | Tier selected (Micro / Lite / Full). User confirmed understanding. No unresolved `blocking` missing-information item — even under `--no-confirm`. |
+| 1     | Plan matches requirements. `Skill("confidence", "plan")` >= 90% (mandatory companion, Full Mode only — Lite and Micro have no `plan.md`). Every `[user-stated]` requirement covered by an Acceptance Criterion; every planned `create` has an Existing Code Survey verdict. |
+| 2     | Worktree created with `gw add` (or native `git worktree add` fallback). CWD is the worktree. Deps installed. `plan.md` + `checks.yaml` written under `.agent/{branch}/` (Full Mode). |
 | 3     | Working in isolated worktree. Build/lint passes after each edit. `code-quality(code)` run at end.  |
-| 4     | All tests pass OR user-approved stop after stuck-loop escalation.                                  |
+| 4     | All tests pass AND every `checks.yaml` check passes (or `unsatisfiable` user-approved) OR user-approved stop after stuck-loop escalation. |
 | 5     | Docs reflect changes. `Skill("docs", "update --auto")` run.                               |
 | 6     | `reviewer` agent dispatched (`--critical` + auto-fix-all-Simple-severities); blocking findings resolved. Walkthrough shown. Draft PR opened via `Skill("create-pr")`. |
 | 7     | CI green OR user-approved stop. Optional `gw remove` (or `git worktree remove` + `git branch -d`) after merge. |
@@ -78,6 +79,23 @@ than the cap on the same failing area almost always means the mental model
 is wrong — continuing burns tokens without converging.
 
 See [companion-skills.md#stuck-loop-protocol-phase-4](./companion-skills.md#stuck-loop-protocol-phase-4) for the full auto-replan protocol.
+
+---
+
+## Executable-Check Integrity (Phase 4)
+
+Full Mode gates Phase 4 on `.agent/{branch}/checks.yaml`. Verifier-driven
+loops invite gaming — agents demonstrably hardcode expected outputs, edit
+tests, and exploit weak comparisons to force green. These rules are
+**non-relaxable** (full loop in
+[`phase-4-testing.md#executable-checks-loop`](./phase-4-testing.md#executable-checks-loop)):
+
+| Rule | Detail |
+| ---- | ------ |
+| Definitions are executor-immutable | Only `status:` flips freely. `run:`/`setup:` amendments require a `check-run-amended` Progress Log entry. `id:`/`requirement:`/`ears:`/`expect:` — never. A diff touching them is a hard stop. |
+| Four forbidden strategies | Never green a check by modifying tests/checks, overloading comparisons, recording/replaying state, or special-casing the check's inputs. |
+| Abort affordance | A check unsatisfiable-as-specified gets `status: unsatisfiable` + user escalation with evidence — never a workaround. |
+| Necessary, not sufficient | All-green checks never waive the test suite, `reviewer` dispatch, or Phase 7 verifier. |
 
 ---
 

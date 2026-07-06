@@ -10,9 +10,26 @@
 
 A curated collection of skills, slash commands, and agents that encode how I actually ship software — distilled from real projects, not theory. They take a holistic approach to building and debugging, with three throughlines:
 
-- **Autonomy** — workflows that carry a task from a one-line prompt to a tested, reviewed PR. The flagship is **`aw`** (the [`autonomous-workflow`](#featured-autonomous-workflow) dispatcher); `fix-bug` is the single-bug counterpart.
-- **Product building** — UX, visual design, and analytics treated as first-class, not afterthoughts (`ux`, `visual-design`, `charting`, `rum-tracking`).
-- **Quality** — confidence gates, adversarial pre-mortems, and TDD baked into the loop, not bolted on after (`confidence`, `critical`, `tdd`, `code-quality`).
+- 🤖 **Autonomy** — workflows that carry a task from a one-line prompt to a tested, reviewed PR. The flagship is **`aw`** (the [`autonomous-workflow`](#featured-autonomous-workflow) dispatcher); `fix-bug` is the single-bug counterpart.
+
+  ```
+  Implement this ticket end-to-end, all the way to a PR
+  /fix-bug <stack-trace | span-url | file:line>
+  ```
+
+- 🎨 **Product building** — UX, visual design, and analytics treated as first-class, not afterthoughts (`ux`, `visual-design`, `charting`, `rum-tracking`).
+
+  ```
+  Fix the accessibility problems on this screen
+  Which chart fits this data?
+  ```
+
+- ✅ **Quality** — confidence gates, adversarial pre-mortems, and TDD baked into the loop, not bolted on after (`confidence`, `critical`, `tdd`, `code-quality`).
+
+  ```
+  Add this feature with TDD
+  Red-team this plan before I build it
+  ```
 
 Works with Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and any other [Agent Skills](https://agentskills.io)-compatible tool.
 
@@ -64,11 +81,11 @@ Coordinate other skills to ship complete changes.
 
 | Skill | What it does | Type |
 |-------|--------------|------|
-| **[autonomous-workflow](./skills/workflow/autonomous-workflow/SKILL.md)** | Phase-based orchestrator (0–7): task → plan → worktree → code → test → docs → draft PR → CI gate. Opt-in `aw` dispatcher routes by tier (Micro/Lite single-pass, Full → planner/executor split). Universal two-tier self-improvement: episodic `aw-lessons` promotes to gated `diagnose` at `seen_count ≥ 3`. See [featured section](#featured-autonomous-workflow). | `auto` |
+| **[autonomous-workflow](./skills/workflow/autonomous-workflow/SKILL.md)** | Phase-based orchestrator (0–7): task → plan → worktree → code → test → docs → draft PR → CI gate. Opt-in `aw` dispatcher routes by tier (Micro/Lite single-pass, Full → planner/executor split). Plan-quality gates (v3.15): missing-information gate, Existing Code Survey (anti-reinvention), requirement→criterion traceability, and an executable `checks.yaml` Phase 4 gates on mechanically. Universal two-tier self-improvement: episodic `aw-lessons` promotes to gated `diagnose` at `seen_count ≥ 3`. See [featured section](#featured-autonomous-workflow). | `auto` |
 | **[fix-bug](./skills/workflow/fix-bug/SKILL.md)** | 10-phase bug pipeline: intake → triage → evidence → repro-lock → analyse → gate → handoff → verify → telemetry. Lane-split: fast for simple, standard for complex. Self-improves via `fix-bug-lessons` (read Phase 0.5 / write Phase 5·7·8) + promotion to `diagnose`. | `/` |
 | **[batch-linear-tickets](./skills/workflow/batch-linear-tickets/SKILL.md)** | Batch-analyze Linear tickets by dispatching `linear-ticket-investigator` (plus `holistic-analysis` for bug tickets) per ticket, gate user approval, then dispatch planners and executors in parallel. Requires Linear MCP. Self-improves via `batch-lessons` (classification + correlation) and inherits `aw-lessons` via the fan-out. | `/` |
-| **[implement-suggestion](./skills/workflow/implement-suggestion/SKILL.md)** | Apply reviewer suggestions across one or more PRs. Reads humans and AI bots (`claude[bot]`, `coderabbit`, `sourcery`), validates each via `/critical` + `/confidence`, applies in the existing branch. `--watch` loops on one PR until reviewers go quiet (max 5 iterations). | `/` |
-| **[aw-create-plan](./skills/workflow/aw-create-plan/SKILL.md)** | Generates `.agent/{branch}/plan.md` — the source of truth a new session can resume from. | `Skill()` |
+| **[implement-suggestion](./skills/workflow/implement-suggestion/SKILL.md)** | Apply reviewer suggestions across one or more PRs. Reads humans and AI bots (`claude[bot]`, `coderabbit`, `sourcery`), validates each via `/critical` + `/confidence`, applies in the existing branch. `--watch` loops on one PR until reviewers go quiet (max 5 iterations). Learns across runs via the `implement-suggestion-lessons` self-improvement loop (read Phase 3 / write Phase 7 + watch re-flag). | `/` |
+| **[aw-create-plan](./skills/workflow/aw-create-plan/SKILL.md)** | Generates `.agent/{branch}/plan.md` — the source of truth a new session can resume from — plus `checks.yaml`, one executable check per acceptance criterion. | `Skill()` |
 | **[aw-create-walkthrough](./skills/workflow/aw-create-walkthrough/SKILL.md)** | Generates `.agent/{branch}/walkthrough.md` — the PR-delivery summary. | `Skill()` |
 | **[aw-review-quality-gate](./skills/workflow/aw-review-quality-gate/SKILL.md)** | Self-check quality gate for review findings: filters noise, dedupes, ranks severity. | `Skill()` |
 
@@ -95,7 +112,7 @@ Plumbing for shipping code.
 | Skill | What it does | Type |
 |-------|--------------|------|
 | **[/create-pr](./skills/delivery/create-pr/SKILL.md)** | Narrative PR description, push, open PR, watch CI, auto-fix simple failures. Pre-push quality delegated to `polish`, **full review + simplify by default**; scale down with `--no-review`, `--no-simplify`, `--quick`, or `--no-quality`. Post-push reviewer-feedback loop default-on (`/implement-suggestion --watch`; `--no-feedback` skips). Flags: `--split`, `--quick`, `--no-review`, `--no-simplify`, `--no-quality`, `--no-feedback`. | `/` |
-| **[/ci-auto-fix](./skills/delivery/ci-auto-fix/SKILL.md)** | Verdict-gated CI diagnosis and fix (`code-bug\|workflow-bug\|dep-bug\|env-bug\|flaky\|unsure`); confidence gate (≥90 auto, 80–89 ask, <80 escalate); regressing pushes auto-revert. Refuses to disable or weaken checks. | `/` |
+| **[/ci-auto-fix](./skills/delivery/ci-auto-fix/SKILL.md)** | Verdict-gated CI diagnosis and fix (`code-bug\|workflow-bug\|dep-bug\|env-bug\|flaky\|unsure`); confidence gate (≥90 auto, 80–89 ask, <80 escalate); regressing pushes auto-revert. Refuses to disable or weaken checks. Self-improves via `ci-auto-fix-lessons` (read Phase 3 / write Phase 8·9) — conservative: verdict lessons default to `project-shared`, `seen_count ≥ 5` bar, regression lessons volatile/30-day. | `/` |
 | **[/resolve-conflicts](./skills/delivery/resolve-conflicts/SKILL.md)** | Detects merge/rebase conflicts, shows both sides with context, proposes resolutions, asks for ambiguous cases. | `/` |
 | **[/changelog](./skills/delivery/changelog/SKILL.md)** | Generates a personal markdown changelog of merged PRs and closed Linear tickets over a configurable window (default 7 days). | `/` |
 | **[/github-actions-author](./skills/delivery/github-actions-author/SKILL.md)** | Authors and reviews fast, cheap, maintainable GitHub Actions workflows (2026 best practices). Modes: `scaffold`, `review`. | `/` |
@@ -106,9 +123,9 @@ Plumbing for shipping code.
 |-------|--------------|------|
 | **[/e2e-testing](./skills/testing/e2e-testing/SKILL.md)** | Spec-first Playwright Test Agents loop (Planner / Generator / Healer, v1.56). Locator ladder, `data-testid` source diffs, 3-attempt heal cap. | `/` |
 | **[/e2e-testing-mobile](./skills/testing/e2e-testing-mobile/SKILL.md)** | Mobile counterpart on Maestro YAML flows for Expo / React Native. `testID`-first locator ladder; runs on Maestro Cloud via EAS Workflow. | `/` |
-| **[/e2e-pr-stabilizer](./skills/testing/e2e-pr-stabilizer/SKILL.md)** | Local-first stabilizer for Playwright E2E on one PR. Pulls Dash0 MCP spans (`git.pull_request_link`) as historical baseline, then iterates locally with `--trace=on` and the same OTel exporter. Validation is empirical, not predictive: every new locator must resolve against source (static grep) or the live app (`locator.count() ≥ 1`) before commit, and the fixed test must pass 3 consecutive local runs before the single push. CI watch ratifies. Refuses `.skip` / `.fixme` / `waitForTimeout`. Modes: `stabilize` (default) and `optimize` (report-only, ranks slow-action wins by measured ms saved). | `/` |
+| **[/e2e-pr-stabilizer](./skills/testing/e2e-pr-stabilizer/SKILL.md)** | Local-first stabilizer for Playwright E2E on one PR. Pulls Dash0 MCP spans (`git.pull_request_link`) as historical baseline, then iterates locally with `--trace=on` and the same OTel exporter. Validation is empirical, not predictive: every new locator must resolve against source (static grep) or the live app (`locator.count() ≥ 1`) before commit, and the fixed test must pass 3 consecutive local runs before the single push. CI watch ratifies. Refuses `.skip` / `.fixme` / `waitForTimeout`. Modes: `stabilize` (default) and `optimize` (report-only, ranks slow-action wins by measured ms saved). Self-improves via `e2e-pr-stabilizer-lessons` (read Phase 4 / write Phase 7, `stabilize` only) — writes gated on the telemetry ratification, not the local 3-pass streak. | `/` |
 | **[/optimize-mock-data](./skills/testing/optimize-mock-data/SKILL.md)** | Optimizes JSON/JSONL fixture directories via shared-schema inference, drift detection, safe shrink/normalize. | `/` |
-| **[/test-autofix](./skills/testing/test-autofix/SKILL.md)** | Stack-agnostic test healer. Bootstrap auto-detects your stack (Vitest, Jest, Deno, Playwright, Pytest, Maestro, Storybook) and writes a surface file on first run. Classifies each failure as `test-bug`, `prod-bug`, or `unsure`; confidence-gates every fix (≥90 auto, 80–89 ask, <80 escalate); reverts on regression. | `/` |
+| **[/test-auto-fix](./skills/testing/test-auto-fix/SKILL.md)** | Stack-agnostic test healer. Bootstrap auto-detects your stack (Vitest, Jest, Deno, Playwright, Pytest, Maestro, Storybook) and writes a surface file on first run. Classifies each failure as `test-bug`, `prod-bug`, or `unsure`; confidence-gates every fix (≥90 auto, 80–89 ask, <80 escalate); reverts on regression. Self-improves via `test-auto-fix-lessons` (read Phase 2 / write Phase 6·7), keyed by stack + failure-pattern + verdict sub-class — complements the surface file rather than duplicating it. | `/` |
 
 ### `design/` — UI, visual, interaction
 
@@ -125,6 +142,7 @@ Plumbing for shipping code.
 | Skill | What it does | Type |
 |-------|--------------|------|
 | **[holistic-analysis](./skills/analysis/holistic-analysis/SKILL.md)** | Forces a full entry-to-exit execution-path trace when incremental fixes aren't working. `review` mode validates a PR diff for the reviewer agents; an optional `focus` input runs a focused single-target deep trace of one changed export's call graph. | `auto` |
+| **[ideate](./skills/analysis/ideate/SKILL.md)** | Generates, stress-tests, and iteratively evolves ideas via research-grounded agent loops: parallel persona generators (nominal-group simulation), independent judges on separate novelty/feasibility/impact/fit axes with a protected wildcard, ≤ 3 recombination rounds, `confidence(analysis)` gate on finalists. Auto-triages `quick` vs `deep`. | `auto` |
 | **[rum-tracking](./skills/analysis/rum-tracking/SKILL.md)** | Guides product analytics and RUM event tracking for web (React/Next.js) and mobile (React Native/Expo). Decides what to track, what's noise, what's PII; covers OTel semantic conventions, tracking plans, GDPR/CCPA compliance, and clean implement / audit / remove workflows. | `auto` |
 | **[video-analyser](./skills/analysis/video-analyser/SKILL.md)** | Analyses a screen recording for bugs. Resolves input from a Linear ticket URL, local path, or direct URL. Optional Tesseract OCR and Whisper transcription. | `auto` |
 | **[/profile-optimizer](./skills/analysis/profile-optimizer/SKILL.md)** | Analyses React DevTools Profiler exports or Chrome Performance traces. Maps hotspots to source. Iterates via `confidence(analysis)` until ≥ 90%. | `/` |
@@ -140,7 +158,7 @@ Meta — scaffolding new skills, maintaining docs, persisting memory.
 | **[docs](./skills/authoring/docs/SKILL.md)** | Authors and audits `CLAUDE.md`, `AGENTS.md`, `README.md`, and Diátaxis `docs/` trees. Modes: `init`, `update`, `readme`, `audit`. | `auto` |
 | **[/create-skill](./skills/authoring/create-skill/SKILL.md)** | Scaffold, review, upgrade, or diagnose agent skills. `diagnose <target>` is the retrospective self-improvement entry point. | `/` |
 | **[/optimize-claude-md](./skills/authoring/optimize-claude-md/SKILL.md)** | Audits `CLAUDE.md` for context bloat. Modes: `audit`, `trim`, `extract`. Flags rarely-used agent-invokable skills that should become slash-only. | `/` |
-| **[/persistent-memory](./skills/authoring/persistent-memory/SKILL.md)** | Persists context across conversations as plain markdown, scoped per topic. Operations: `write`, `read`, `consolidate`, `forget`. Three storage tiers. Also backs the fast-tier lesson scopes `aw-lessons`, `aw-tester-lessons`, `fix-bug-lessons`, `batch-lessons`, `reviewer-lessons` — each used in **two tiers together**: `home` (`~/.agent-memory/`, universal, cross-project) plus opt-in `project-shared` (`<repo>/memory/`, committed, team-scoped) for project-bound lessons. | `/` |
+| **[/persistent-memory](./skills/authoring/persistent-memory/SKILL.md)** | Persists context across conversations as plain markdown, scoped per topic. Operations: `write`, `read`, `consolidate`, `forget`. Three storage tiers. Also backs the fast-tier lesson scopes `aw-lessons`, `aw-tester-lessons`, `fix-bug-lessons`, `batch-lessons`, `reviewer-lessons`, `implement-suggestion-lessons`, `ci-auto-fix-lessons`, `e2e-pr-stabilizer-lessons`, `test-auto-fix-lessons`, and the volatile `review-outcomes` candidate/outcome bus (produced by `implement-suggestion`, consumed by `outcome-learning.md` at promotion time — never per-review) — each used in **two tiers together**: `home` (`~/.agent-memory/`, universal, cross-project) plus opt-in `project-shared` (`<repo>/memory/`, committed, team-scoped) for project-bound lessons. | `/` |
 
 ## Agents at a glance
 
@@ -153,12 +171,12 @@ The flagship `aw` agents are **generated from templates** in `skills/workflow/au
 | **[aw](./skills/workflow/autonomous-workflow/templates/aw.agent.md)** | Opt-in dispatcher and primary entry point: reads `aw-lessons`, detects tier (Micro/Lite/Full), and routes — single-pass for Micro/Lite, the `aw-planner` → `aw-executor` split for Full. Installed as `~/.claude/agents/aw.md`. |
 | **[aw-planner](./skills/workflow/autonomous-workflow/templates/aw-planner.agent.md)** | Full-tier phases 0–2: validate, plan, create the worktree, generate `plan.md`. Gated on `confidence(plan) ≥ 90%` before handoff. Installed as `aw-planner.md`. |
 | **[aw-executor](./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md)** | Full-tier phases 3–7: implement, test, update docs, open the draft PR, watch CI. Reads `plan.md` cold. Installed as `aw-executor.md`. |
-| **[reviewer](./agents/reviewer.md)** | Own-work code reviewer (own branch or own PR). Three sub-modes: Fix (auto-fix simple + plan complex), Report (`--report`, propose only), Self-Review (own PR, auto-fix + inline terminal report). Never writes to GitHub — redirects to `pr-reviewer` on a cross-author PR. Orthogonal `--with <skill>` loads up to 3 additional lenses. |
-| **[pr-reviewer](./agents/pr-reviewer.md)** | Cross-review reviewer for someone else's PR. Authors short, grounded, confidence-gated inline comments (≤ 240 chars, ≤ 2 sentences, `Skill("confidence")` ≥ 80) and (with `--publish` or an explicit authorization phrase) posts them as a PENDING review invisible to the author until you submit from the GitHub UI. Refuses on your own PR (points to `reviewer`). Two-tier holistic review: a broad whole-PR pass plus default-on **targeted escalation** (Step 2.4b) that fans out parallel single-target holistic traces on context-dependent findings (cap 10, `--no-escalate` to skip). |
+| **[reviewer](./agents/reviewer.md)** | Own-work code reviewer (own branch or own PR). Three sub-modes: Fix (auto-fix simple + plan complex), Report (`--report`, propose only), Self-Review (own PR, auto-fix + inline terminal report). Never writes to GitHub — redirects to `pr-reviewer` on a cross-author PR. Orthogonal `--with <skill>` loads up to 3 additional lenses. Shared pipeline includes: `verification-receipt.md` (Step 2.6b — executed proof for behavioral claims; null = DROP), `outcome-learning.md` (resolution-rate promotion loop; consumes `review-outcomes` bus at promotion time only — never per-review), `review-outcomes.md` (shared candidate/outcome bus — produced by `implement-suggestion`, consumed at promotion time only), `review-config.md` (`.review.yaml` profile / filters; absent → `profile: balanced` = today's defaults), `prior-comment-awareness.md` (Self-Review: dedup + anti-flip-flop). |
+| **[pr-reviewer](./agents/pr-reviewer.md)** | Cross-review reviewer for someone else's PR. Authors short, grounded, confidence-gated inline comments (≤ 240 chars, ≤ 2 sentences, `Skill("confidence")` ≥ profile threshold, default 80) and (with `--publish` or an explicit authorization phrase) posts them as a PENDING review invisible to the author until you submit from the GitHub UI. Refuses on your own PR (points to `reviewer`). Two-tier holistic review: a broad whole-PR pass plus default-on **targeted escalation** (Step 2.4b) that fans out parallel single-target holistic traces on context-dependent findings (cap 10, `--no-escalate` to skip). Shared rules: `verification-receipt.md` (2.6b), `outcome-learning.md` (post-merge via `/review-outcomes`; consumes `review-outcomes` bus at promotion time only — never per-review), `review-outcomes.md` (shared candidate/outcome bus — produced by `implement-suggestion`, consumed at promotion time only), `review-config.md` (1.7 config load), `prior-comment-awareness.md` (default-on prior-comment dedup + anti-flip-flop). |
 | **[linear-ticket-investigator](./agents/linear-ticket-investigator.md)** | Reads a Linear ticket, returns an Evidence Record matching `/fix-bug` Phase 2. Customizable via a per-project [domain navigator](#linear-ticket-investigator-per-project-plug-in). |
 | **[rca-investigator](./agents/rca-investigator.md)** | Context-isolated root-cause analysis. Runs `holistic-analysis` (`fix`) + `confidence` (`analysis`) in a fresh context and returns only a distilled Root-Cause Record — the verbose walkthrough never pollutes the caller. Read-only; single source of truth stays in `holistic-analysis`. Dispatch via `Task()` for isolation. |
 | **[bug-fix-verifier](./agents/bug-fix-verifier.md)** | Independent fresh-context verifier for `/fix-bug` PRs. Runs FAIL_TO_PASS, PASS_TO_PASS, diff sanity, repro integrity. Only agent allowed to undraft. |
-| **[feature-pr-verifier](./agents/feature-pr-verifier.md)** | Feature-PR counterpart to `bug-fix-verifier`. Verifies acceptance criteria, pass-to-pass, walkthrough integrity for `autonomous-workflow` Full Mode. |
+| **[feature-pr-verifier](./agents/feature-pr-verifier.md)** | Feature-PR counterpart to `bug-fix-verifier`. Verifies acceptance criteria, pass-to-pass, walkthrough integrity for `autonomous-workflow` Full Mode — and re-runs `checks.yaml` checks itself, verifying check integrity (no drift, no unlogged amendments, no special-casing). |
 
 ## Featured: autonomous workflow
 
@@ -209,16 +227,18 @@ All share the **`aw-`** prefix ("autonomous-workflow"): deliberate namespace so 
 
 | Phase | Name | Companions (optional unless marked) |
 |-------|------|-------------------------------------|
-| 0 | Validation | — |
-| 1 | Planning | `holistic-analysis`, `code-quality`, **`confidence(plan)` (mandatory)** |
-| 2 | Worktree + plan.md | `aw-create-plan` (Full Mode) |
+| 0 | Validation (restate-and-diff + missing-information gate) | — |
+| 1 | Planning (Existing Code Survey + traceable ACs) | `holistic-analysis`, `code-quality`, **`confidence(plan)` (mandatory)** |
+| 2 | Worktree + plan.md + checks.yaml | `aw-create-plan` (Full Mode) |
 | 3 | Implementation | `tdd`, `ux`, `code-quality` |
-| 4 | Testing | `confidence(analysis)`, `holistic-analysis` (auto-replan once at cap) |
+| 4 | Testing (+ executable checks loop) | `confidence(analysis)`, `holistic-analysis` (auto-replan once at cap) |
 | 5 | Documentation | `docs update` |
 | 6 | PR creation | `reviewer` agent (`--critical` + auto-fix-all-severities), `aw-create-walkthrough`, `create-pr` |
 | 7 | CI gate | `ci-auto-fix` |
 
 The mode-aware stuck-loop cap at Phase 4 (3 Lite / 5 Full) is the biggest cost-saver: it prevents agents burning tokens on hallucinated fixes when their root-cause analysis is wrong.
+
+Full-tier plans are **grounded, traceable, and executable** (v3.15): every planned `create` carries a recorded reuse-search verdict (no re-implementing what already exists), every user-stated requirement maps to an `AC-{n}` acceptance criterion, a `blocking` information gap halts even under `--no-confirm`, and `checks.yaml` gives Phase 4 a runnable definition of done (check definitions are immutable to the executor; gaming a check is a hard stop).
 
 ### Setup
 
@@ -437,8 +457,8 @@ That is the entire integration.
 ## Repository structure
 
 ```
-skills/                   40 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
-  testing/test-autofix/    stack-agnostic test healer — bootstrap, classify, confidence-gate, regression-detect
+skills/                   43 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
+  testing/test-auto-fix/    stack-agnostic test healer — bootstrap, classify, confidence-gate, regression-detect
 agents/                   6 agents (reviewer, pr-reviewer, linear-ticket-investigator, rca-investigator, bug-fix-verifier, feature-pr-verifier)
 plugins/                  1 Claude Code plugin (agent-tasks-hooks)
 packages/                 VS Code extension (vscode-agent-tasks)

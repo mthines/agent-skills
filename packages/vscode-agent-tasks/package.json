@@ -1,8 +1,8 @@
 {
   "name": "agent-tasks",
   "displayName": "Agent Tasks",
-  "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md, diagnose-*.md) from the VS Code sidebar",
-  "version": "0.71.0",
+  "description": "Visualize autonomous agent workflow artifacts (plan.md, task.md, walkthrough.md, checks.yaml, diagnose-*.md) from the VS Code sidebar",
+  "version": "0.71.1",
   "publisher": "mthines",
   "license": "MIT",
   "repository": {
@@ -336,12 +336,12 @@
         },
         {
           "command": "agentTasks.revealInOS",
-          "when": "view == agentTasksExplorer && viewItem =~ /^(agentBranch|agentWorktreeFlat|agentPlanFile|agentPlanVersion|agentWalkthroughFile|agentDiagnoseFile|otherMarkdownFile)/",
+          "when": "view == agentTasksExplorer && viewItem =~ /^(agentBranch|agentWorktreeFlat|agentPlanFile|agentPlanVersion|agentWalkthroughFile|agentChecksFile|agentDiagnoseFile|otherMarkdownFile)/",
           "group": "1_navigation@1"
         },
         {
           "command": "agentTasks.copyPath",
-          "when": "view == agentTasksExplorer && viewItem =~ /^(agentBranch|agentWorktreeFlat|agentPlanFile|agentPlanVersion|agentWalkthroughFile|agentDiagnoseFile|otherMarkdownFile)/",
+          "when": "view == agentTasksExplorer && viewItem =~ /^(agentBranch|agentWorktreeFlat|agentPlanFile|agentPlanVersion|agentWalkthroughFile|agentChecksFile|agentDiagnoseFile|otherMarkdownFile)/",
           "group": "1_navigation@2"
         },
         {
@@ -397,7 +397,7 @@
             ".gw"
           ],
           "scope": "resource",
-          "description": "Directories (relative to workspace and ancestors) to scan for agent task artifacts (plan.md, task.md, walkthrough.md, diagnose-*.md). Order = priority. Empty array falls back to the defaults ['.agent', '.gw']."
+          "description": "Directories (relative to workspace and ancestors) to scan for agent task artifacts (plan.md, task.md, walkthrough.md, checks.yaml, diagnose-*.md). Order = priority. Empty array falls back to the defaults ['.agent', '.gw']."
         },
         "agentTasks.autoOpenWalkthrough": {
           "type": "boolean",
@@ -417,7 +417,12 @@
         "agentTasks.openMarkdownInPreview": {
           "type": "boolean",
           "default": true,
-          "description": "Open task.md, plan.md, and walkthrough.md in Markdown preview mode instead of the text editor"
+          "description": "Open task.md, plan.md, and walkthrough.md in Markdown preview mode instead of the text editor. Non-Markdown artifacts (checks.yaml) always open as a text document."
+        },
+        "agentTasks.notifyUnsatisfiableCheck": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a warning notification when a check in checks.yaml transitions to 'unsatisfiable' — the executor's signal that it is blocked and needs input. Failing checks are a normal part of the execution loop and never notify."
         },
         "agentTasks.sortBy": {
           "type": "string",

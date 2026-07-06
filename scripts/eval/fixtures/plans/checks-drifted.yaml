@@ -1,0 +1,19 @@
+# FIXTURE: a checks.yaml that drifted from valid-core.md — AC-2 is missing
+# and an orphan AC-9 appears that no plan criterion defines.
+# Expected: rule#11 ID-sync fails in both directions.
+- id: AC-1
+  requirement: R1
+  ears: "When the header renders, the system shall show the theme toggle"
+  kind: command
+  setup: "none"
+  run: "npm test -- --testPathPattern=Header"
+  expect: "exit 0"
+  status: pending
+- id: AC-9
+  requirement: R1
+  ears: "Orphan check no plan criterion defines"
+  kind: command
+  setup: "none"
+  run: "true"
+  expect: "exit 0"
+  status: pending

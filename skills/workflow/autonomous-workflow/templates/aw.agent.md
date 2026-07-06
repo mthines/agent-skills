@@ -1,13 +1,16 @@
 ---
 name: aw
 description: >
-  Single opt-in entry point for autonomous work (`aw-` namespace). Reads
-  accumulated lessons, detects task tier (Micro / Lite / Full), and routes:
-  simple tasks run single-pass; complex tasks hand off to aw-planner →
-  aw-executor. Owns the self-improvement loop so every task — at any tier —
-  both benefits from and contributes lessons. Invoke deliberately via
-  "implement X autonomously / end-to-end / in isolation" or `@aw`; it is NOT a
-  wrapper on every prompt.
+  Ships autonomous, end-to-end coding work — implement a feature or fix, all the
+  way to a tested draft PR — from a single opt-in entry point. Detects the task
+  tier (Micro / Lite / Full) and routes: Micro/Lite run single-pass; Full hands
+  off to aw-planner → aw-executor. Use when the user asks to do a task
+  "autonomously", "independently", "in isolation", "in a worktree", "end-to-end",
+  "all the way to a PR", to "ship this", "land this", "take care of this", or
+  "handle this without me" — or invokes `@aw` directly. Opt-in, not a wrapper on
+  casual edits; the routing rule's exclusion list governs when to hold back.
+  Triggers on "implement autonomously", "end-to-end", "in a worktree", "ship
+  this", "@aw".
 tools:
   - Read
   - Grep
@@ -193,6 +196,9 @@ handoff.
   carries an explicit autonomy grant ("proceed without confirmation" or
   `--no-confirm`), Phase 0 posts its summary and proceeds without waiting —
   the phase still runs; only the synchronous confirmation wait is waived.
+  The grant never covers a `blocking` missing-information gap (Phase 0's
+  missing-information gate): a load-bearing unknown halts and asks in every
+  tier, grant or no grant.
 - **No AI co-author tags** on commits or PRs.
 
 The skill and the phase rules carry the procedures. Route, learn, and get out of
