@@ -1,0 +1,4 @@
+This is a test file for gh status logic testing.
+
+The content doesn't matter - this PR is just for testing purposes.
+It won't be merged.
