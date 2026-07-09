@@ -457,6 +457,44 @@ function checksInSync(plan, checks) {
         !/one commit per pr\b/i.test(content));
     }
   }
+
+  // G16: the code-quality `simplify deep` tier auto-applies ONLY Class J recipes.
+  // Its judgment-wave ordered list and its evidence table must never name a
+  // pure-mechanical (Class M, not also J) recipe — that recipe is applied in the
+  // mechanical wave, and listing it again is the double-classification bug the
+  // reviewer caught (L1 G7 checks the source table but cannot see the wave split).
+  // `mIds`/`jIds` come from G7's parse of the refactor-recipes Class table, so this
+  // guard tracks that single source of truth automatically. R17 (the documented
+  // M/J split) is legitimately Class J in its "justify" branch, so it is excluded.
+  const simplifyMode = read("skills/quality/code-quality/rules/simplify-mode.md");
+  const pureMechanical = new Set(mIds.filter((id) => !jIds.includes(id)));
+
+  // (a) judgment-wave ordered list — recipes are assigned in **bold**; the prose
+  //     that correctly names Class M recipes as belonging to the mechanical wave
+  //     uses plain (non-bold) ids, so a bold-id scan targets only the assignments.
+  const waveMatch = simplifyMode.match(/\*\*Judgment wave\*\*[\s\S]+?(?=### The per-finding gate)/);
+  const waveBoldIds = waveMatch ? [...waveMatch[0].matchAll(/\*\*(R\d+)\b/g)].map((m) => m[1]) : [];
+
+  // (b) evidence table — the recipe column (2nd cell) of the two known rows.
+  const evidenceRows = [...simplifyMode.matchAll(/^\| \*\*(?:Compiler-provable|Runtime-behaviour)\*\*[^\n]*$/gm)]
+    .map((m) => m[0].split("|")[2] || "");
+  const evidenceIds = evidenceRows.flatMap((col) => [...col.matchAll(/R\d+/g)].map((m) => m[0]));
+
+  const waveViolations = waveBoldIds.filter((id) => pureMechanical.has(id));
+  const evidenceViolations = evidenceIds.filter((id) => pureMechanical.has(id));
+
+  s.check("G16a deep judgment-wave list found + assigns recipes",
+    waveMatch !== null && waveBoldIds.length > 0,
+    waveMatch ? `${waveBoldIds.length} bold recipe ids` : "judgment-wave section not found");
+  s.check("G16b deep judgment wave names only Class J recipes (no pure-mechanical)",
+    waveViolations.length === 0,
+    waveViolations.length ? `Class M in judgment wave: ${[...new Set(waveViolations)].join(", ")}` : "clean");
+  s.check("G16c deep evidence table has both rows + assigns recipes",
+    evidenceRows.length === 2 && evidenceIds.length > 0,
+    `${evidenceRows.length} rows, ${evidenceIds.length} recipe ids`);
+  s.check("G16d deep evidence table names only Class J recipes (no pure-mechanical)",
+    evidenceViolations.length === 0,
+    evidenceViolations.length ? `Class M in evidence table: ${[...new Set(evidenceViolations)].join(", ")}` : "clean");
 }
 
 process.exit(s.report() ? 0 : 1);

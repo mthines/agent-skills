@@ -5,13 +5,15 @@ description: >
   ceiling 40), run a pre-push quality pass over the branch diff via the `polish`
   skill, then push the branch, open the PR, and watch CI to auto-fix simple
   failures (lint, format, lockfiles) before handing back. The pre-push step
-  delegates to `/polish` and runs the FULL review + simplify works by default:
-  the local `reviewer` agent (auto-fix simple, plan complex) followed by
-  code-quality simplify (apply Class M refactors behind a confidence gate) —
-  all before pushing, so the PR is clean when it goes up. Scale it down with
-  --no-review (skip the reviewer pass), --no-simplify (skip simplify), --quick
-  (light mechanical pass only), or --no-quality (skip pre-push quality
-  entirely). A post-push reviewer-feedback loop also runs by default
+  delegates to `/polish`, whose default is the DEEP tier: the local `reviewer`
+  agent (auto-fix simple, plan complex) followed by code-quality simplify deep —
+  which applies Class M mechanical refactors AND the bigger Class J refactors
+  (deduplication, structural, type-driven) behind a test-backed gate (confidence
+  ≥ 90 % plus behaviour-preservation evidence; unprovable findings stay
+  proposals) — all before pushing, so the PR is clean when it goes up. Scale it
+  down with --no-review (mechanical simplify only), --no-simplify (reviewer
+  only), --quick (light mechanical pass only), or --no-quality (skip pre-push
+  quality entirely). A post-push reviewer-feedback loop also runs by default
   (--no-feedback to skip). With --split, analyses the branch diff and breaks it
   into 2–4 focused, dependency-ordered draft PRs after user approval. Escalates
   judgment-required CI failures via /confidence rather than guessing. Invoke
@@ -35,13 +37,13 @@ Respect their time.
 
 ## Modes
 
-Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The pre-push quality step (Step 5.5) runs the **full review + simplify works by default**; the `--no-*` / `--quick` flags below **scale it down**. All flags compose with the default and split workflows.
+Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The pre-push quality step (Step 5.5) runs the **deep review + simplify works by default** (polish's default is the deep tier — reviewer agent → simplify deep, including the test-backed Class J refactors); the `--no-*` / `--quick` flags below **scale it down**. All flags compose with the default and split workflows.
 
 | Mode / Flag    | Trigger                                            | Behaviour                                                                                                                                                              |
 | -------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default`      | No flag                                            | One PR for the whole branch. Step 5.5 runs the **full** polish pass (reviewer agent → simplify) via `Skill("polish")`. Follow Steps 1–10 below.                       |
+| `default`      | No flag                                            | One PR for the whole branch. Step 5.5 runs the **deep** polish pass (reviewer agent → simplify deep, with test-backed Class J refactors) via `Skill("polish")`. Follow Steps 1–10 below. |
 | `split`        | `--split`, `-s`, or first positional token `split` | Analyse the branch diff, propose 2–4 dependency-ordered draft PRs (hard cap 5), execute only after user approval. Jump to the **Split Mode** section after Core Principles. |
-| `no-review`    | `--no-review`                                       | Step 5.5 drops the reviewer pass → `Skill("polish", "simplify")` (simplify only).                                                                                    |
+| `no-review`    | `--no-review`                                       | Step 5.5 drops the reviewer pass → `Skill("polish", "simplify")` (mechanical simplify only, no Class J).                                                              |
 | `no-simplify`  | `--no-simplify`                                     | Step 5.5 drops the simplify pass → `Skill("polish", "review")` (reviewer only).                                                                                      |
 | `quick`        | `--quick`                                           | Step 5.5 runs only the light mechanical pass → `Skill("polish", "quick")` (no reviewer agent, no structural refactors).                                              |
 | `no-quality`   | `--no-quality` anywhere in arguments               | Skip the Step 5.5 pre-push quality pass entirely **and** the Step 6.5 post-push feedback loop. Wins over every other quality flag.                                    |
@@ -49,7 +51,7 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The pre-push qualit
 
 The pre-push quality step is a thin delegation to the [`polish`](../../quality/polish/SKILL.md) skill — see Step 5.5 for the full flag-to-mode mapping and precedence.
 
-> **Legacy positive flags.** `--review` and `--simplify` are still accepted as explicit single-pass scoping: `--review` alone ≡ `--no-simplify` (reviewer only), `--simplify` alone ≡ `--no-review` (simplify only), and `--review --simplify` ≡ the default (full). Prefer the `--no-*` form — with the full pass now the default, the negative flags read more clearly.
+> **Legacy positive flags.** `--review` and `--simplify` are still accepted as explicit single-pass scoping: `--review` alone ≡ `--no-simplify` (reviewer only), `--simplify` alone ≡ `--no-review` (mechanical simplify only), and `--review --simplify` ≡ the default (deep). Prefer the `--no-*` form — with the deep pass now the default, the negative flags read more clearly.
 
 **The post-push reviewer-feedback loop (Step 6.5) is ON by default.** After the PR is created, a background subagent runs `/implement-suggestion <pr> --watch`, which waits for the repo's review bots (Claude, CodeRabbit, …) and humans to comment, applies the actionable feedback, pushes, and repeats until the reviewers go quiet (max 5 iterations). It runs in parallel with the CI watch (Steps 7–9). Pass `--no-feedback` to skip it. On repos with no review automation it ends quietly after the first wait, so the default is safe.
 
@@ -169,14 +171,14 @@ Skip this step entirely if any of the following hold:
 - `--no-quality` was passed in `$ARGUMENTS`.
 - The branch diff is non-code only (docs, generated artefacts, lockfiles, asset binaries). Decide from the file list, not the line count.
 
-Otherwise, map the `create-pr` flags to a `polish` mode and invoke it once. The **default is the full pass**; the flags scale it down. Evaluate in this precedence order (first match wins):
+Otherwise, map the `create-pr` flags to a `polish` mode and invoke it once. The **default is the deep pass**; the flags scale it down. Evaluate in this precedence order (first match wins):
 
 | # | Flags present                                          | Invoke                          | What runs                                              |
 | - | ------------------------------------------------------ | ------------------------------- | ----------------------------------------------------- |
 | 1 | `--quick`, or both `--no-review` **and** `--no-simplify` | `Skill('polish', 'quick')`     | Light mechanical pass (comments, naming, dead code).  |
-| 2 | `--no-review` (or legacy `--simplify` alone)            | `Skill('polish', 'simplify')`   | code-quality simplify — apply Class M refactors.      |
+| 2 | `--no-review` (or legacy `--simplify` alone)            | `Skill('polish', 'simplify')`   | code-quality simplify — mechanical Class M refactors only. |
 | 3 | `--no-simplify` (or legacy `--review` alone)            | `Skill('polish', 'review')`     | Reviewer agent — auto-fix simple, plan complex.       |
-| 4 | **none of the above (default)**                         | `Skill('polish')`               | Full: review pass, then simplify pass.                |
+| 4 | **none of the above (default)**                         | `Skill('polish')`               | Deep: review pass, then simplify deep (mechanical Class M **and** test-backed Class J refactors). |
 
 (`--no-quality` is handled above as an outright skip and never reaches this table.)
 

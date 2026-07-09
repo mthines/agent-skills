@@ -14,11 +14,11 @@ description: >
   review, after writing new code, in TDD GREEN/REFACTOR, or when
   asked to "improve quality", "make this readable", "reduce
   complexity", "deduplicate", "clean this up", or "/code-quality".
-argument-hint: '[plan|review|simplify] [aggressive|dry-run|<path>]'
+argument-hint: '[plan|review|simplify] [aggressive|deep|dry-run|<path>] [--characterize]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.4.1'
+  version: '1.5.0'
   workflow_type: advisory
   tags:
     - code-quality
@@ -54,9 +54,9 @@ This skill applies in four modes:
 1. **Plan mode** — invoked with `Skill("code-quality", "plan")`, before any code is written. Reads a `plan.md` (or proposed approach) and the existing codebase, and verifies the plan's structure follows the existing patterns and avoids predictable design-time risks (premature parallel maps, missing branded primitives, untyped error paths, parameter creep, neighbour mismatch). Returns findings only — no code edits. Used by `autonomous-workflow` Phase 1. See [`rules/plan-mode.md`](./rules/plan-mode.md).
 2. **Authoring mode** — when writing new code (e.g., GREEN phase of TDD, new features). Apply principles inline so the first version already meets the bar. Default mode when no argument is passed.
 3. **Review mode** — invoked with `Skill("code-quality", "code")` or `Skill("code-quality", "review")`, after code is written. When refactoring, reviewing PRs, or being asked to "clean this up". Diagnose against the rules and propose targeted changes. Returns findings only — no code edits.
-4. **Simplify mode** — invoked with `Skill("code-quality", "simplify")`, after a feature is implemented and tests are green. Runs the review pass, then **applies** mechanical refactors (Class M recipes from [`rules/refactor-recipes.md`](./rules/refactor-recipes.md#recipe-class--mechanical-vs-judgment)) one at a time behind `Skill("confidence", "code") ≥ 90 %` and a scoped fast-check, reverting on failure. Judgment-class recipes (Class J) stay as proposals. See [`rules/simplify-mode.md`](./rules/simplify-mode.md). Variants: `simplify aggressive` also auto-applies Medium-impact mechanical recipes; `simplify dry-run` reports without writing; `simplify <path>` scopes to a path instead of the diff.
+4. **Simplify mode** — invoked with `Skill("code-quality", "simplify")`, after a feature is implemented and tests are green. Runs the review pass, then **applies** mechanical refactors (Class M recipes from [`rules/refactor-recipes.md`](./rules/refactor-recipes.md#recipe-class--mechanical-vs-judgment)) one at a time behind `Skill("confidence", "code") ≥ 90 %` and a scoped fast-check, reverting on failure. Judgment-class recipes (Class J) stay as proposals. See [`rules/simplify-mode.md`](./rules/simplify-mode.md). Variants: `simplify aggressive` also auto-applies Medium-impact mechanical recipes; `simplify deep` **also auto-applies Class J judgment recipes** (dedup-by-extraction, structural, type-driven) behind a stricter **test-backed** gate — confidence ≥ 90 % plus behaviour-preservation evidence (compiler-green for type-level recipes, a green-before-and-after covering test for runtime recipes; no evidence ⇒ demote); `simplify dry-run` reports without writing; `simplify <path>` scopes to a path instead of the diff.
 
-Detect the mode from the `$ARGUMENTS` first token: `plan` → plan mode; `code` or `review` → review mode; `simplify` → simplify mode; anything else (including no argument) → authoring mode. The legacy convention "user said review or audit" still routes to review mode for ad-hoc invocations.
+Detect the mode from the `$ARGUMENTS` first token: `plan` → plan mode; `code` or `review` → review mode; `simplify` → simplify mode (second token selects the tier: `aggressive`, `deep`, `dry-run`, or a `<path>`; `--characterize` composes with `deep` to write a provenance-checked characterization test for an untested runtime refactor instead of demoting it); anything else (including no argument) → authoring mode. The legacy convention "user said review or audit" still routes to review mode for ad-hoc invocations.
 
 ---
 
