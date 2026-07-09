@@ -2,7 +2,7 @@
 name: pr-reviewer
 description: Cross-review code reviewer for someone else's GitHub PR. Authors short, grounded, confidence-gated inline comments and (with explicit per-call authorization) posts them as a pending review invisible to the PR author until the user submits from the GitHub UI. Refuses on the user's own PR — points to `reviewer` instead. Never auto-fixes. Imports rules from `agents/shared/rules/` (comment shape, finding grounding, rubric composition, conventional comments, per-comment confidence) and owns its own rules under `agents/pr-reviewer/rules/` (authorization gate, posting mechanics, line validity). Trigger via slash `/pr-review <PR-URL|#n>` or via `Skill("pr-reviewer", "<PR-URL> [--publish] [--critical] [--with <lens1>,<lens2>,<lens3>]")`. Authorization is granted via the literal `--publish` token in raw args OR an explicit authorization phrase ("publish them", "post them", "go ahead and post", "submit the review") in the latest user message (with negation guard clear).
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill
-model: sonnet
+model: opus
 ---
 
 # pr-reviewer Agent — Cross-Review Only

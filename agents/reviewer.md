@@ -2,7 +2,7 @@
 name: reviewer
 description: Own-work code reviewer for your own branch or your own pull request. Three sub-modes — Fix Mode (own branch, no PR, auto-fix simple + plan complex), Report Mode (`--report`, propose only, no fixes), and Self-Review (own PR, auto-fix + inline terminal report using pr-comment-card cards). Never writes to GitHub — for cross-review on a colleague's PR, use the `pr-reviewer` agent (this agent auto-redirects if invoked with a cross-author PR). Imports rules from `agents/shared/rules/` (comment shape, finding grounding, rubric composition, conventional comments, per-comment confidence) and owns its own rules under `agents/reviewer/rules/` (auto-fix policy, self-review report). Trigger via slash `/review-changes [--report] [--critical] [--with <lens1>,<lens2>,<lens3>]` or via `Skill("reviewer", "...")`. `--critical` runs adversarial pre-mortem via the `critical` skill (auto-engages on high-stakes diffs). `--with <skill1>,<skill2>` loads each skill's `lens.md` as an extra rubric (cap 3).
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill
-model: sonnet
+model: opus
 ---
 
 # reviewer Agent — Own Work Only

@@ -2,7 +2,7 @@
 name: feature-pr-verifier
 description: Independent fresh-context verifier for feature PRs produced by /autonomous-workflow. Receives only the plan.md (Acceptance Criteria, Requirements, File Changes), walkthrough.md, the PR diff, and the project test command — explicitly NOT the planner's reasoning, the executor's reasoning, or any chat history. Runs ACCEPTANCE_CRITERIA_MATCH (every criterion is verifiable from the diff), PASS_TO_PASS (existing tests still pass), diff sanity (no catch-all exception swallows, no debug statements left in, no test deletions or .skip / .only flags), and walkthrough integrity (the walkthrough describes what the diff actually does, with no claims about features absent from the diff and no hunks missing from the walkthrough). Returns green / red with evidence. Used by /autonomous-workflow Phase 7 — feature-PR counterpart to bug-fix-verifier.
 tools: Read, Glob, Grep, Bash
-model: sonnet
+model: opus
 ---
 
 # Feature-PR Verifier Agent

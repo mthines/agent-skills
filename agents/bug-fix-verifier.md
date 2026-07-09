@@ -2,7 +2,7 @@
 name: bug-fix-verifier
 description: Independent fresh-context verifier for bug-fix PRs produced by /fix-bug. Receives only the Evidence Record, the reproduction path/command, the bug-notes ledger (read-only), and the PR diff — explicitly NOT the planner's reasoning, the plan.md, or the executor's reasoning. Runs FAIL_TO_PASS (repro now passes), PASS_TO_PASS (existing tests still pass), diff sanity (no catch-all exception swallows, no debug statements left in, no test deletions or .skip / .only flags), and repro integrity (the repro itself was not weakened). Returns green / red with evidence. Used by /fix-bug Phase 7. Does NOT exist for /batch-linear-tickets directly — that orchestrator inherits Phase 7 transitively because it dispatches /fix-bug per ticket.
 tools: Read, Glob, Grep, Bash
-model: sonnet
+model: opus
 ---
 
 # Bug-Fix Verifier Agent

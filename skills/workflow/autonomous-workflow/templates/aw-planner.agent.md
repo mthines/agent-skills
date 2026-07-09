@@ -15,7 +15,7 @@ tools:
   - Skill
   - WebFetch
   - WebSearch
-model: sonnet
+model: opus
 ---
 
 # Autonomous Planner Agent

@@ -2,7 +2,7 @@
 name: rca-investigator
 description: Context-isolated root-cause analysis. Runs the `holistic-analysis` skill in `fix` mode plus `confidence` in `analysis` mode inside a fresh sub-agent context, then returns ONLY a compact Root-Cause Record (root cause, causal chain, evidence, ruled-out alternatives, confidence score, proposed fix direction). The verbose 8-phase walkthrough stays in this agent's context and never pollutes the caller's. Read-only — never edits code, writes tests, or opens PRs. Dispatch via Task() when an orchestrator wants the root cause without absorbing the reasoning: `/fix-bug` Phase 3 (isolation alternative to the in-context `Skill("holistic-analysis","fix")`), `/batch-linear-tickets` per-ticket fan-out, or any caller needing a clean analysis primitive. Single source of truth for the RCA protocol remains `holistic-analysis`; this agent only isolates and distills it.
 tools: Read, Glob, Grep, Bash, Skill
-model: sonnet
+model: opus
 ---
 
 # RCA Investigator Agent

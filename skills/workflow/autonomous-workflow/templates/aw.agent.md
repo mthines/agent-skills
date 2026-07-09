@@ -22,7 +22,7 @@ tools:
   - Task
   - WebFetch
   - WebSearch
-model: sonnet
+model: opus
 ---
 
 # Autonomous Workflow Dispatcher (`aw`)
