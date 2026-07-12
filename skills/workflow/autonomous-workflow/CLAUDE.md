@@ -98,6 +98,7 @@ skills/workflow/autonomous-workflow/
 │   ├── planner-executor-handoff.md # Handoff contract between planner and executor.
 │   ├── diagnostic-surface.md   # Phase model + failure taxonomy + guards table consumed by `/create-skill diagnose autonomous-workflow`.
 │   ├── self-improvement-loop.md # Episodic-lessons fast tier (persistent-memory aw-lessons) + promotion to diagnose. Read Phase 1; write Phase 4/7.
+│   ├── convention-memory.md    # Repo-convention learned layer (persistent-memory aw-conventions) + promotion to committed .claude/rules via docs. Read/write hoisted to dispatcher.
 │   └── _template.md            # Boilerplate for new rule files.
 ├── templates/
 │   ├── aw.agent.md                 # aw dispatcher agent (opt-in entry; tier routing + universal loop). Linked by install.sh as aw.md.
@@ -111,7 +112,8 @@ skills/workflow/autonomous-workflow/
     ├── iterative-refinement.md              # Worked example of stuck-loop recovery.
     ├── self-improvement-walkthrough.md      # Worked example: a lesson's full lifecycle (capture → recur → promote).
     ├── anthropic-architecture-research.md   # Verbatim Anthropic citations + design mapping.
-    └── planning-quality-research.md         # 2024–2026 web-research pass on planner quality (anti-reinvention, spec fidelity, clarify-or-abstain, executable checks); evidence base + decision record for the v3.15 plan-quality gates.
+    ├── planning-quality-research.md         # 2024–2026 web-research pass on planner quality (anti-reinvention, spec fidelity, clarify-or-abstain, executable checks); evidence base + decision record for the v3.15 plan-quality gates.
+    └── repo-convention-research.md           # 2024–2026 web-research pass on persistent repo-convention understanding (path-scoped committed rules, self-updating memory guards, monorepo lazy-load); evidence base + decision record for the repo-convention layer.
 ```
 
 The split between `SKILL.md` (lean index, always in context), `rules/` (loaded
@@ -385,6 +387,15 @@ When editing this skill, do not break these — they're load-bearing:
   `diagnose` apply, and promotion requires `seen_count >= 3` (or an explicit
   `structural` tag). Never auto-apply lessons to behavior or promote on one run.
   See [`rules/self-improvement-loop.md#entrenchment-guards-load-bearing`](./rules/self-improvement-loop.md#entrenchment-guards-load-bearing).
+- **The repo-convention layer is two-layer, and the committed/gitignored split
+  is fixed.** Proven conventions are committed (`.claude/rules`, authored by
+  `docs`); unproven learned deltas are gitignored (`aw-conventions` scope).
+  Learned deltas are advisory, verified-before-write (repo-verified only, never
+  from untrusted text), never weaken a check, and promote only at
+  `seen_count >= 3` with user approval. Repo *structure* is never stored — only
+  slow-changing conventions. Do not merge `aw-conventions` into `aw-lessons` or
+  move rule-authoring out of the `docs` skill. See
+  [`rules/convention-memory.md#entrenchment-guards-load-bearing`](./rules/convention-memory.md#entrenchment-guards-load-bearing).
 - **`checks.yaml` definitions are executor-immutable; gaming a check is never
   a fix.** The executor flips `status:` (and amends `run:`/`setup:` only with a
   logged `check-run-amended` entry); `id:`/`requirement:`/`ears:`/`expect:` are
@@ -477,6 +488,56 @@ change. The fast tier is a fully optional companion — uninstall
 lessons themselves live in `persistent-memory`, not in the workflow's rules. The
 workflow only owns *when* to read / write / promote — the same orchestrator
 discipline that governs every other companion.
+
+---
+
+## Repo-convention layer — design intent
+
+A second, parallel `persistent-memory` loop (scope `aw-conventions`, owned by
+[`rules/convention-memory.md`](./rules/convention-memory.md)) gives the workflow a
+persistent, self-updating understanding of a repo's **conventions** — "UI code
+here is React, follow these practices; the API package follows those" — so `aw`
+applies per-area conventions consistently instead of re-deriving them each run.
+The evidence base is
+[`references/repo-convention-research.md`](./references/repo-convention-research.md).
+
+It is **two-layer**, and the split is the load-bearing design choice:
+
+| Layer | Content | Storage | Committed? | Owner |
+| ----- | ------- | ------- | ---------- | ----- |
+| **1 — convention rules** | Proven per-area conventions | `.claude/rules/*.md` (path-scoped) | **Yes** | `docs` skill authors; `aw-setup` repo-profile seeds |
+| **2 — learned deltas** | Unproven, discovered mid-run | `aw-conventions` scope | **No** (gitignored tiers) | `convention-memory.md` |
+
+Design rules that keep this from rotting:
+
+- **Reuse, don't reinvent.** Layer-1 authoring is the `docs` skill (it already
+  owns `.claude/rules`, the `paths:` template, content-routing, and the hot-path
+  budget); Layer-2 storage/read/write/promotion reuses `persistent-memory` and the
+  `self-improvement-loop.md` machinery. This skill adds only *detection*
+  (`aw-setup` repo-profile) and *when to read/write/promote* — no new store, no
+  new rule engine. If you find yourself hand-writing rule-authoring logic here,
+  stop — it belongs in `docs`.
+- **Committed vs gitignored is not negotiable.** Proven conventions are committed
+  (team-shared, reviewable, cross-tool); only unproven learned deltas are
+  gitignored. Reversing this either hides team knowledge or commits unvetted
+  deltas — both are documented failure modes (research §3).
+- **Conventions ≠ lessons.** `aw-conventions` (semantic — how the repo's code is
+  written) is a separate scope from `aw-lessons` (procedural — how the workflow
+  behaves), with a different promotion target: conventions always promote to the
+  repo's committed `.claude/rules` (they are per-repo, per-path), whereas a `home`
+  lesson promotes to the skill source. Do not merge the scopes.
+- **Structure is never stored.** Only slow-changing conventions persist; repo
+  structure (file trees, symbol maps) is re-derived live each run (grep /
+  repo-map). Snapshotting structure is the staleness anti-pattern (research §5).
+- **The layer is advisory and hard-gated.** A learned convention never changes a
+  gate; it is only eligible when verified against the repo's own code on a green
+  run (never from untrusted issue/PR/web text — the MINJA defense), and can never
+  authorize weakening a check. Promotion requires `seen_count >= 3` and user
+  approval. These inherit `self-improvement-loop.md`'s entrenchment guards.
+
+Like every companion, the whole learned layer skips silently if
+`persistent-memory` is not installed; Layer 1 (the committed rules) keeps working
+because the harness loads it directly.
 
 ---
 

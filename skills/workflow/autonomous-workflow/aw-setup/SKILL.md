@@ -1,26 +1,60 @@
 ---
 name: aw-setup
 description: >
-  One-time (but safely re-runnable) setup flow that scaffolds a project's
-  aw-tester aw-target: detects auth strategy, captures storage state, writes
-  .claude/aw-targets/local.yml, and validates with a smoke spec. Re-runs detect
-  the existing aw-target and only re-prompt for what broke or changed.
-  Triggers on "/aw-setup", "setup aw-tester", "scaffold aw-target".
+  One-time (but safely re-runnable) per-project setup flow with two modes.
+  aw-target mode scaffolds a project's aw-tester aw-target (detects auth
+  strategy, captures storage state, writes .claude/aw-targets/local.yml,
+  validates with a smoke spec). repo-profile mode scans the repo (including
+  monorepo layout), detects each area's stack, and scaffolds committed
+  path-scoped .claude/rules/*.md convention rules (React for UI, API for
+  backend) via the docs skill, so aw applies per-area best practices
+  consistently. Both modes re-run idempotently — detect the existing state and
+  only re-prompt for what broke or changed. Triggers on "/aw-setup", "setup
+  aw-tester", "scaffold aw-target", "aw-setup repo-profile", "scaffold repo
+  conventions".
 disable-model-invocation: false
+argument-hint: '[aw-target|repo-profile]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.2.0'
   workflow_type: slash-command
   tags:
     - aw-tester
     - aw-target
     - auth
     - setup
+    - repo-profile
+    - conventions
     - autonomous-workflow
 ---
 
-# aw-setup — Aw-Target Scaffolding for aw-tester
+# aw-setup — Per-Project Scaffolding for the autonomous-workflow
+
+Interactive, idempotent setup flow with **two modes**. Run either once per
+project; re-run when the underlying state drifts.
+
+## Mode detection
+
+Parse `$ARGUMENTS` (first token) and select the mode. When no token is given,
+ask once which mode the user wants — never guess.
+
+| Mode | Default token | What it scaffolds | Where it goes | Committed? |
+| ---- | ------------- | ----------------- | ------------- | ---------- |
+| **aw-target** (this file) | `aw-target` (default) | aw-tester auth/base-URL/fixtures | `.claude/aw-targets/local.yml` | Yes (secrets gitignored) |
+| **repo-profile** | `repo-profile` | Committed per-area convention rules ([`rules/repo-profile.md`](./rules/repo-profile.md)) | `.claude/rules/*.md` (via the `docs` skill) | Yes (learned layer gitignored) |
+
+The **repo-profile** mode is the setup half of the two-layer repo-convention
+system: it seeds the **committed** convention rules (Layer 1), while the
+runtime **learned** layer (Layer 2, gitignored `aw-conventions` deltas that
+promote up into these rules) is owned by
+[`../rules/convention-memory.md`](../rules/convention-memory.md). Its full
+procedure is in [`rules/repo-profile.md`](./rules/repo-profile.md); the rest of
+*this* file documents the **aw-target** mode.
+
+---
+
+# aw-target mode — Aw-Target Scaffolding for aw-tester
 
 Interactive, idempotent setup flow that scaffolds the `.claude/aw-targets/` config
 that `aw-tester` needs to run specs. Run it **once** before the first autonomous

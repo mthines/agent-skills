@@ -68,6 +68,16 @@ engine is owned by `create-skill` so the same procedure works across every
 skill in the repo (`fix-bug`, `batch-linear-tickets`, future ones) — they each
 declare their own diagnostic surface.
 
+**Repo-convention loop (parallel).** A second `persistent-memory` loop gives the
+workflow a persistent, self-updating understanding of the repo's **conventions**
+(React for UI, API practices for backend, monorepo layout) in the `aw-conventions`
+scope, hoisted to the dispatcher like lessons. It is two-layer: proven
+conventions live in committed `.claude/rules/*.md` (seeded by
+[`aw-setup` repo-profile](./aw-setup/SKILL.md), authored via `docs`), and
+unproven learned deltas live in the gitignored `aw-conventions` scope and promote
+up into the committed rules at `seen_count >= 3`. Full contract:
+[`rules/convention-memory.md`](./rules/convention-memory.md).
+
 ---
 
 ## CRITICAL: Before Starting Any Work
@@ -354,7 +364,7 @@ per-companion disabling, see the [README](./README.md#installation) and
 - [`confidence`](../../quality/confidence/SKILL.md) — quality gate (plan, code, analysis)
 - [`aw-create-plan`](../aw-create-plan/SKILL.md) — `plan.md` artifact generator
 - [`aw-create-walkthrough`](../aw-create-walkthrough/SKILL.md) — `walkthrough.md` artifact generator
-- [`aw-setup`](./aw-setup/SKILL.md) — **one-time UI aw-target scaffolding** (prerequisite for `aw-tester`; run `/aw-setup` once per project before the first autonomous UI task)
+- [`aw-setup`](./aw-setup/SKILL.md) — **one-time per-project scaffolding**, two modes: `aw-target` (UI aw-target for `aw-tester`; run before the first autonomous UI task) and `repo-profile` (committed path-scoped `.claude/rules` convention rules — Layer 1 of the repo-convention system in [`rules/convention-memory.md`](./rules/convention-memory.md))
 - [`code-quality`](../../quality/code-quality/SKILL.md) — readability and complexity review
 - [`tdd`](../../quality/tdd/SKILL.md) — RED-GREEN-REFACTOR enforcement
 - [`ux`](../../design/ux/SKILL.md) — UI / accessibility review

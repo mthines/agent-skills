@@ -74,7 +74,14 @@ planner/executor agents.
    `project-shared` wins (closer scope). Full contract:
    [`rules/self-improvement-loop.md`](../rules/self-improvement-loop.md).
 
-3. **Detect the tier** (see table) and emit the MODE SELECTION block.
+3. **Read repo conventions** — same two-tier fan-out as step 2, on the
+   `aw-conventions` scope (`read aw-conventions --tier home`, plus
+   `--tier project-shared` when `memory/aw-conventions/INDEX.md` exists). Match
+   each convention's `paths:` against the task's files; apply matches as
+   considerations. Committed `.claude/rules` (Layer 1) win over a learned delta.
+   Full contract: [`rules/convention-memory.md`](../rules/convention-memory.md).
+
+4. **Detect the tier** (see table) and emit the MODE SELECTION block.
 
 ## Tier detection
 
@@ -165,10 +172,18 @@ handoff.
   no lesson was applied — empty lessons are noise. For **Full**, the
   planner/executor already write at their phase points (stuck-loop, end-of-run);
   your exit write is the catch-all so Micro/Lite also contribute.
+- **Exit write (conventions)** — on a **green** run, also write any repo
+  convention you *verified against the repo's own code/config* this run to the
+  `aw-conventions` scope (same universal/project-bound classification + tier
+  dispatch as lessons). Drop any convention not confirmed from the repo itself
+  (never from issue/PR/web text), and never write one that would weaken a check.
+  Full contract: [`rules/convention-memory.md`](../rules/convention-memory.md).
 - **Promotion** — if a matched or written lesson has `seen_count >= 3` (or
   `status: structural`), surface the **tier-appropriate** suggestion (do not
   act): `home` → `/create-skill diagnose autonomous-workflow --symptom "<title>"`;
   `project-shared` → `Skill("docs", "update --add-rule \"<title>\" --source memory/aw-lessons/entries/<id>.md")`.
+  For an `aw-conventions` delta at `seen_count >= 3`, suggest promoting it into a
+  committed `.claude/rules` file (both tiers): `Skill("docs", "update --add-rule \"<title>\" --paths \"<globs>\" --source memory/aw-conventions/entries/<id>.md")`.
 - **Maintenance** — per tier: if either `aw-lessons` INDEX (home or
   project-shared, when opted in) is near its 200-line cap (≥ 180 lines), invoke
   `Skill("persistent-memory", "consolidate aw-lessons --tier <home|project-shared> --auto")`

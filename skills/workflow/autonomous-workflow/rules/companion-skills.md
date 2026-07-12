@@ -10,6 +10,7 @@ to disable, swap, or add companions.
 - [Registry](#registry)
 - [Agent Companions](#agent-companions)
 - [Self-Improvement Loop (persistent-memory)](#self-improvement-loop-persistent-memory)
+- [Repo-Convention Loop (persistent-memory)](#repo-convention-loop-persistent-memory)
 - [Stuck-Loop Protocol (Phase 4)](#stuck-loop-protocol-phase-4)
 - [Parallelization](#parallelization)
 - [Adding a New Companion](#adding-a-new-companion)
@@ -97,6 +98,31 @@ the entrenchment guards that stop self-reinforcing error — lives in
 [`self-improvement-loop.md`](./self-improvement-loop.md). Like every companion,
 `persistent-memory` **skips silently if not installed**: the fast tier degrades
 to nothing and the slow tier (`diagnose`) is unaffected.
+
+---
+
+## Repo-Convention Loop (persistent-memory)
+
+A second, parallel `persistent-memory` loop gives the workflow a persistent,
+self-updating understanding of the repo's **conventions** (React practices for
+UI code, API practices for backend code, monorepo layout). It uses the
+`aw-conventions` scope, **hoisted to the `aw` dispatcher** (read at intake, write
+at exit, all tiers) — not the phase table above.
+
+It is **two-layer**: proven conventions live in committed `.claude/rules/*.md`
+(Layer 1, seeded by [`aw-setup` repo-profile](../aw-setup/rules/repo-profile.md),
+authored via the `docs` skill), and unproven learned deltas live in the
+gitignored `aw-conventions` scope (Layer 2). A delta reaching `seen_count >= 3`
+is *suggested* for promotion into a committed `.claude/rules` file via
+`Skill("docs", "update --add-rule ...")`. Conventions are **advisory** and
+inherit the same entrenchment guards as lessons, plus verify-before-write and a
+provenance rule (only repo-verified conventions from a green run; never one that
+weakens a check).
+
+Full contract — record schema, read/write triggers, promotion, and guards —
+lives in [`convention-memory.md`](./convention-memory.md). Skips silently if
+`persistent-memory` is not installed; Layer 1 (the committed rules) is
+unaffected because the harness loads it directly.
 
 ---
 

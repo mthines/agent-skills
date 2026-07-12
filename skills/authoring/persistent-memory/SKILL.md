@@ -22,6 +22,10 @@ description: >
   `batch-linear-tickets`, `implement-suggestion`, `ci-auto-fix`,
   `e2e-pr-stabilizer`, `test-auto-fix`, `ideate`, and the
   `reviewer` agent — lessons follow the user across every repository.
+  Additionally backs the `aw-conventions` scope — semantic repo-convention
+  memory (the learned layer of `autonomous-workflow`'s repo-convention system)
+  that `aw` reads at intake and writes verified conventions to at exit, with
+  proven ones promoting into committed `.claude/rules/*.md`.
   Triggers on "remember this", "save to
   memory", "recall memory", "load memory", "what do you remember
   about", "consolidate memory", "forget that", "/persistent-memory".
