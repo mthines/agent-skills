@@ -51,6 +51,14 @@ const SUITES = [
     choices: ["trigger", "skip"],
   },
   {
+    name: "optimize-approach-optimality",
+    golden: "golden/optimize-approach-optimality.jsonl",
+    rubric: { file: "skills/quality/optimize-approach/rules/optimality-rubric.md", section: null }, // whole rubric
+    instruction: "You are the optimize-approach skill at Phase O2. Using ONLY the optimality rubric below, classify the described approach unit: 'suboptimal' only when a materially better approach exists AND no anti-overlap guard fires AND the materiality bar clears; otherwise 'optimal'.",
+    inputKey: "input", inputLabel: "Approach unit",
+    choices: ["optimal", "suboptimal"],
+  },
+  {
     name: "reviewer-agreement-bump",
     golden: "golden/reviewer-agreement-bump.jsonl",
     rubric: { file: "agents/shared/rules/rubric-composition.md", section: "## Cross-rubric agreement" },

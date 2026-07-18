@@ -66,6 +66,8 @@ choice against the human label. Classification → exact-match, **no LLM-as-judg
 | `bug-class` | What `bugClass` for this evidence? | fix-bug `### Step 0c` | the 9 classes |
 | `complexity-triage` | simple or complex bug? | fix-bug `## Phase 0.5` | simple / complex |
 | `aw-should-trigger` | should the routing rule auto-trigger? | the whole routing rule | trigger / skip |
+| `reviewer-agreement-bump` | is the surviving finding agreement-promoted? | reviewer `## Cross-rubric agreement` | promoted / not-promoted |
+| `optimize-approach-optimality` | is this approach optimal or suboptimal? | optimize-approach `optimality-rubric.md` (whole file) | optimal / suboptimal |
 
 ```bash
 node scripts/eval/l2.mjs                 # all suites
