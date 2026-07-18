@@ -51,7 +51,10 @@ Parse the **first token** of `$ARGUMENTS`. Everything else is a flag.
 | **full** *(default)* | No mode token                    | `review` pass, then `simplify` pass. The "do the works" button.                                           |
 | `review`             | First token `review`             | Reviewer-agent pass only — auto-fix simple, plan complex.                                                  |
 | `simplify`           | First token `simplify`           | `code-quality` simplify pass only — apply Class M mechanical refactors.                                    |
+| `optimize`           | First token `optimize`           | Optimality pass only — `Skill("optimize-approach", "apply")` over the branch diff (gated approach rewrite).|
 | `quick`              | First token `quick`              | Light mechanical pass only (comments, naming, dead code). No reviewer agent, no structural refactors.     |
+
+In `full` and `review` modes the optimality lens runs **inside** the reviewer pass (the `reviewer` agent's Step 2.4c calls `optimize-approach` in apply mode). The standalone `optimize` mode above is for running only that lens without the rest of the reviewer pass.
 
 Flags (compose with any mode):
 
@@ -59,6 +62,7 @@ Flags (compose with any mode):
 | ------------- | ------------------------------------------------------------------------------------------------------------- |
 | `--no-commit` | Leave all changes in the working tree instead of committing each pass. Use mid-development to keep iterating. |
 | `--critical`  | Pass `--critical` through to the reviewer agent (adversarial pre-mortem). Ignored by `simplify` / `quick`.    |
+| `--no-optimize` | Pass `--no-optimize` through to the reviewer agent — skip the default-on optimality lens (Step 2.4c). Ignored by `simplify` / `quick`. |
 
 **Order is fixed in full mode: `review` first, then `simplify`.** The reviewer fixes correctness and obvious cleanups; simplify then applies structural refactors to the already-cleaner code, so confidence gates evaluate the final shape.
 
@@ -124,7 +128,9 @@ Agent(
 )
 ```
 
-Capture from the agent's reply: the verdict, the auto-fixed list, and the planned-complex list. The planned-complex items are **surfaced to the user**, not applied — they need judgment.
+The reviewer pass includes the **optimality lens** (its Step 2.4c calls `optimize-approach` in apply mode: at most one approach rewrite behind `confidence(code) ≥ 90 %` + revert-on-failure; the rest reported). Pass `--no-optimize` through when the user set it on polish.
+
+Capture from the agent's reply: the verdict, the auto-fixed list (including any applied approach rewrite), and the planned-complex list. The planned-complex items are **surfaced to the user**, not applied — they need judgment.
 
 The reviewer runs its own post-fix verification (targeted tests for changed files) and reverts any auto-fix that regresses. Do not re-run a full verify here; trust its gate.
 
@@ -141,6 +147,18 @@ This runs the code-quality review pass, then **applies** Class M (mechanical) re
 Capture from its output: which recipes were applied (by ID, e.g. R6, R12) and which were surfaced as judgment-required proposals.
 
 Do **not** pass `aggressive` unless the user explicitly asked for it — the default (High-impact Class M only) is the safe pre-PR setting.
+
+### Pass D — `optimize` (mode: optimize only)
+
+The standalone optimality pass. Invoke `optimize-approach` in apply mode against the branch diff:
+
+```
+Skill("optimize-approach", "apply")
+```
+
+This judges each approach unit against the four-axis rubric and **applies** at most one materially-better approach rewrite behind its own `apply_safe` + `confidence(code) ≥ 90 %` gate, with a scoped check and revert-on-failure. Anything not apply-safe or below the gate is surfaced as a proposal, not applied. Capture which rewrite was applied (axis + files) and which proposals were reported.
+
+Do not run this pass in `full` mode — `full`'s reviewer pass already covers optimality via Step 2.4c, and running it twice would double the work.
 
 ### Pass C — `quick` (mode: quick only)
 
@@ -173,6 +191,9 @@ git add -u && git commit -m "chore: simplify pass (mechanical refactors)"
 
 # After Pass C (quick):
 git add -u && git commit -m "chore: code-quality pass (comments, naming, dead code)"
+
+# After Pass D (optimize):
+git add -u && git commit -m "chore: optimize pass (approach rewrite)"
 ```
 
 In full mode this can produce up to two commits (review, then simplify). That is intended — each pass is independently revertible.
@@ -198,6 +219,10 @@ Simplify pass:
 Quick pass:        # only if mode == quick
   Applied: <one line per mechanical fix, or "none">
 
+Optimize pass:     # only if mode == optimize
+  Applied: <axis + files of the applied approach rewrite, or "none">
+  Proposed (not applied): <one line each, or "none">
+
 Commits: <SHA + message per pass, or "none (--no-commit)">
 ```
 
@@ -208,6 +233,7 @@ Surface the **planned-complex** (review) and **Class J proposals** (simplify) pr
 - **Never weaken the codebase to look clean.** No deleting/skipping/weakening tests, no disabling lint rules or type checks, no `--no-verify`.
 - **Never change public API or exported types** as a mechanical fix. That is always judgment-required — surface it.
 - **Never apply a Class J (judgment) refactor automatically.** Only Class M, only behind the confidence gate. When unsure whether a fix is mechanical or judgment, treat it as judgment and surface it.
+- **Approach rewrites (optimize pass) apply only behind the confidence gate, scoped to the diff's files, with revert-on-failure.** An approach rewrite touching a public API, a forbidden target, or files outside the diff is surfaced as a proposal, never auto-applied — that policy lives in the `optimize-approach` skill and polish does not override it.
 - **Never write to GitHub.** Polish is local-only. PR creation and any GitHub-side review belong to `/create-pr`.
 - **Never stash, reset, or discard the user's uncommitted work.**
 - **One pass each per invocation. Do not loop.** If the branch still has issues after a polish run, that is a signal for the user to act on, not for the skill to grind.

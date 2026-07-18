@@ -23,6 +23,7 @@ This agent's body is intentionally small. The pipeline lives in rule files:
 - `agents/shared/rules/prior-comment-awareness.md` — fetch existing PR comments for dedup + anti-flip-flop (default ON, Step 1.0).
 - `agents/shared/rules/rubric-composition.md` — load + dedupe + consolidate code-quality / ux / critical / lenses.
 - `agents/shared/rules/holistic-review.md` — default-on intent-match + system-fit pass via `Skill("holistic-analysis", "review")`.
+- `agents/shared/rules/optimality-review.md` — default-on "is this the best approach" pass via `Skill("optimize-approach", "report")` (Step 2.4c); report-only in cross-review.
 - `agents/shared/rules/finding-grounding.md` — grep claimed symbols; drop on miss (Step 2.6).
 - `agents/shared/rules/verification-receipt.md` — executed proof for behavioral claims; drop on null result (Step 2.6b).
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ profile threshold (Step 2.7).
@@ -55,6 +56,7 @@ Detect from the raw arguments:
 | `--no-critical` | Suppress auto-engage of `critical` |
 | `--no-holistic` | Skip the default-on holistic review step (Step 2.4) and the targeted escalation (Step 2.4b) |
 | `--no-escalate` | Skip only the targeted holistic escalation (Step 2.4b); keep the broad Step 2.4 pass |
+| `--no-optimize` | Skip the default-on optimality review step (Step 2.4c) |
 | `--with a,b,c` | Up to 3 additional review lenses |
 
 Parse the PR reference:
@@ -176,6 +178,7 @@ rubrics produce raw findings
   → 2.3  review-config.md § Filters (drop findings in categories suppressed by .review.yaml — runs before holistic)
   → 2.4  holistic-review.md         (Skill("holistic-analysis", "review") — broad whole-PR, default on)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — default on)
+  → 2.4c optimality-review.md      (Skill("optimize-approach", "report") — is this the best approach, default on)
   → 2.5  rubric-composition § Consolidation (dedupe + per-file cap 5 + total cap 20)
   → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.5b prior-comment-awareness.md § Dedup (drop if already said in a prior review pass)
@@ -227,6 +230,22 @@ The broad 2.4 pass spreads attention across the whole diff and caps at 3 finding
 Each focused trace returns one verdict (`confirm` / `enrich` / `reshape` / `clear`). A `clear` drops the original finding (false positive caught by the wider context); the others replace it in the stream, now carrying caller evidence. For `pr-reviewer`, an escalated `system-fit` maps to a **`question`** (Step 2.4 mapping), respecting the cross-review context asymmetry.
 
 Skip when `--no-escalate` was passed in Step 0, or when 2.4 was trivial-skipped. The escalation adds no new gate — escalated findings re-enter the same 2.5 → 2.9 pipeline.
+
+### 2.4c Optimality review (default ON)
+
+See `agents/shared/rules/optimality-review.md`. Runs after holistic (2.4/2.4b) and before dedupe. Asks the design-level question the other passes assume away: **is this the most optimal approach, and if not what is?**
+
+Cross-review is **report-only** — never apply. Skip when `--no-optimize` was passed OR the holistic trivial-skip heuristic already fired (reuse it). Otherwise invoke:
+
+```
+Skill("optimize-approach", "report")
+  intent_summary: <from Step 1.3>
+  diff: <full unified diff>
+  changed_files: <from /tmp/pr-files.json>
+  caller: "pr-reviewer"
+```
+
+The skill returns 0–2 proposals. Map each to a **`question`** (cross-review context asymmetry — the agent has less context than the author), non-blocking. Proposals flow through 2.5 → 2.9 like any other finding.
 
 ### 2.5 Dedupe + consolidate
 

@@ -23,6 +23,7 @@ The pipeline lives in rule files; the body is intentionally small. Read each rul
 - `agents/shared/rules/prior-comment-awareness.md` — fetch existing PR comments for dedup + anti-flip-flop (Self-Review only, Step 1.0).
 - `agents/shared/rules/rubric-composition.md` — load + dedupe + consolidate code-quality / ux / critical / lenses.
 - `agents/shared/rules/holistic-review.md` — default-on intent-match + system-fit pass via `Skill("holistic-analysis", "review")`.
+- `agents/shared/rules/optimality-review.md` — default-on "is this the best approach" pass via `Skill("optimize-approach", ...)` (Step 2.4c); apply mode in Fix / Self-Review.
 - `agents/shared/rules/finding-grounding.md` — grep claimed symbols; drop on miss (Step 2.6).
 - `agents/shared/rules/verification-receipt.md` — executed proof for behavioral claims; drop on null result (Step 2.6b).
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ profile threshold (Step 2.7).
@@ -46,6 +47,7 @@ Examine the **raw arguments** verbatim. Do not paraphrase. Detect:
 | `--critical` | Force adversarial pre-mortem via `Skill("critical", "code")` |
 | `--no-critical` | Suppress auto-engage of `critical` |
 | `--no-holistic` | Skip the default-on holistic review step (Step 2.4) and the targeted escalation (Step 2.4b) |
+| `--no-optimize` | Skip the default-on optimality review step (Step 2.4c) |
 | `--escalate` | Enable targeted holistic escalation (Step 2.4b — off by default in `reviewer`) |
 | `--with a,b,c` | Up to 3 additional review lenses |
 | PR URL or `#<n>` | Treat as a PR reference; route through Step 0.6 |
@@ -216,6 +218,7 @@ rubrics produce raw findings
   → 2.3  review-config.md § Filters (drop findings in categories suppressed by .review.yaml — runs before holistic)
   → 2.4  holistic-review.md         (Skill("holistic-analysis", "review") — broad whole-PR, default on)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — opt-in via --escalate)
+  → 2.4c optimality-review.md      (Skill("optimize-approach", ...) — is this the best approach, default on)
   → 2.5  rubric-composition § Consolidation (dedupe + per-file cap 10)
   → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.5b prior-comment-awareness.md § Dedup (Self-Review: drop if already said)
@@ -270,6 +273,16 @@ Holistic findings flow through 2.5–2.9 like any other rubric output.
 ### 2.4b Targeted holistic escalation (opt-in via `--escalate`)
 
 See `agents/shared/rules/holistic-review.md § Targeted escalation (Step 2.4b)`. **Off by default in `reviewer`** — enable with `--escalate`. When on, it selects the context-dependent findings (changed exports whose correctness depends on caller behaviour, or ≥ 2 call sites) and fans out **parallel** `Skill("holistic-analysis", "review")` calls with a `focus` block, one per finding (cap 10, highest-severity first, second batch if more qualify). Each returns one verdict (`confirm` / `enrich` / `reshape` / `clear`); a `clear` drops the finding, the rest replace it with caller evidence. Escalated findings re-enter 2.5–2.9 unchanged. Skipped when `--no-holistic` was passed or 2.4 was trivial-skipped.
+
+### 2.4c Optimality review (default ON)
+
+See `agents/shared/rules/optimality-review.md`. Runs after holistic (2.4/2.4b) and before dedupe. Asks the one design-level question the other passes assume away: **is this the most optimal approach, and if not what is?**
+
+Skip when `--no-optimize` was passed OR when the holistic trivial-skip heuristic already fired (reuse it — do not recompute). Otherwise invoke `Skill("optimize-approach", "report")` in **all** sub-modes — 2.4c is read-only so it never mutates files mid-pipeline.
+
+Pass `intent_summary` (Step 1.3), the diff, `changed_files`, and `caller: "reviewer"`. The skill returns 0–2 proposals. Map each per `optimality-review.md`: `analysis_confidence ≥ 90 %` → `suggestion`, 70–89 % → `question`. Optimality proposals are **non-blocking** — they never drive "Request changes". Proposals flow through 2.5–2.9 like any other finding.
+
+In **Fix Mode / Self-Review**, applying the top `apply_safe` proposal is deferred to Step 4 (see `agents/shared/rules/optimality-review.md § Apply`). **Report Mode never applies.**
 
 ### Remaining gates
 
@@ -347,6 +360,9 @@ See `agents/reviewer/rules/auto-fix-policy.md` for the full simple-vs-complex sp
 
 ### 4.1 Simple — fix immediately
 Remove unused imports / vars; lint autofix; add obvious type annotations; fix typos; normalize whitespace; remove dead code. Note each fix briefly.
+
+### 4.1b Optimality apply (Fix Mode + Self-Review)
+For the highest-impact optimality proposal from Step 2.4c flagged `apply_safe: true`, apply it via `Skill("optimize-approach", "apply")` — one proposal only, behind the skill's `apply_safe` + `confidence(code) ≥ 90 %` gate with scoped check and revert-on-failure. A proposal that is not apply-safe, fails the gate, or reverts stays a reported finding — never force-applied. Log the applied rewrite as an approach change.
 
 ### 4.2 Complex — plan only
 Emit the issue title + why + fix plan + files involved. Do not apply.
