@@ -19,10 +19,10 @@ Skip it for a single-file flow or a trivial one-to-two-hop trace — reading the
 ## Step 1: Detect
 
 Check whether a call-graph CLI is available.
-The reference tool is [`tree-sitter-analyzer`](https://github.com/mthines/tree-sitter-analyzer), which resolves call graphs accurately for Go, Python, and TypeScript/JavaScript.
+The reference tool is [`codexray`](https://github.com/mthines/codexray), which resolves call graphs accurately for Go, Python, and TypeScript/JavaScript.
 
 ```bash
-command -v tree-sitter-analyzer >/dev/null 2>&1 && echo available || echo absent
+command -v codexray >/dev/null 2>&1 && echo available || echo absent
 ```
 
 If it reports `absent`, stop here and fall back to the manual trace.
@@ -33,12 +33,12 @@ Give the tool the entry function and its file as the root, and pick a direction.
 
 ```bash
 # transitive callees of an entry point (what it calls) — seeds the execution map
-tree-sitter-analyzer --project-root . --call-graph chain \
+codexray --project-root . --call-graph chain \
   --call-graph-function <fn> --call-graph-file <path> --call-graph-depth 3 --format toon
 
 # direct callees / callers of one function
-tree-sitter-analyzer --project-root . --call-graph callees --call-graph-function <fn> --format toon
-tree-sitter-analyzer --project-root . --call-graph callers --call-graph-function <fn> --format toon
+codexray --project-root . --call-graph callees --call-graph-function <fn> --format toon
+codexray --project-root . --call-graph callers --call-graph-function <fn> --format toon
 ```
 
 Use `chain` to seed the execution map for Phase 1 Step 1a, and `callers` for Context Gathering step 2 (find every call site).
