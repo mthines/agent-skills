@@ -43,6 +43,7 @@ code.
 
 - [Mode Detection](#mode-detection) — pick `fix` (default), `refactor`, or `review` (rule file)
 - [Context Gathering](#context-gathering) — 11-point checklist before reasoning
+- [Call-Graph Map (optional accelerator)](./rules/call-graph-map.md) — mechanically seed the execution map when a call-graph CLI is available
 - [Phase 1: Full Execution Path Walkthrough](#phase-1-full-execution-path-walkthrough) — entry-to-exit map, per-block analysis, contract boundaries, summary
 - [Phase 2: Step Back — Identify the Principle](#phase-2-step-back--identify-the-principle)
 - [Phase 3: Scene Set — Explain the Situation to the Duck](#phase-3-scene-set--explain-the-situation-to-the-duck)
@@ -78,7 +79,7 @@ Before analyzing, gather all relevant context:
 6. **Related files** — if this is a component, read the parent; if a utility, read its consumers
 7. **Find the entry point** — Where does this execution path begin? For an API endpoint, this is the route handler or middleware entry. For a UI flow, this is the user action or event trigger. For a background job, this is the scheduler or queue consumer. Walk **upstream** from the user's focus point until you reach the boundary of the system.
 8. **Find the exit point** — Where does this execution path end? The HTTP response, the database commit, the rendered output, the emitted event. Walk **downstream** from the user's focus point until you reach the boundary.
-9. **Map the full chain** — Read every file, function, and middleware between entry and exit. Build an ordered list of every step in the execution path. Use Explore agents in parallel to trace imports and call sites if the chain spans many files.
+9. **Map the full chain** — Read every file, function, and middleware between entry and exit. Build an ordered list of every step in the execution path. Use Explore agents in parallel to trace imports and call sites if the chain spans many files. **Fast path (optional):** if a call-graph CLI is available, seed this map mechanically first via [`rules/call-graph-map.md`](./rules/call-graph-map.md), then read each step's body; fall back to the manual Explore + grep trace when it is not.
 10. **Read every step in full** — Do not skim. Read each function body completely. Bugs hide in the parts you'd normally skip.
 11. **Identify all side effects** — Database writes, cache mutations, event emissions, external API calls, logging, metrics — anything that modifies state outside the current function scope.
 
@@ -92,7 +93,8 @@ After gathering context, walk through the execution path **sequentially from ent
 
 ### Step 1a: Draw the Execution Map
 
-Create a numbered list of every step in the execution path:
+Create a numbered list of every step in the execution path.
+If you seeded a call map via [`rules/call-graph-map.md`](./rules/call-graph-map.md), use it as the skeleton here — it already resolves the cross-file callers and callees, so your job is to order the steps and read each body.
 
 ```
 ## Execution Path: [name of the flow, e.g., "POST /api/v1/ingest"]
