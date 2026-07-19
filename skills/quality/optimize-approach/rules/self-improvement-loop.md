@@ -41,8 +41,10 @@ Lessons here are **procedural** and about *this skill's own judgment*, never abo
 - The optimal-vs-suboptimal bar (an axis that recurrently fired false; a materiality call that was wrong).
 - The anti-overlap guards (a proposal that was really a `code-quality` / `critical` / `holistic-review` finding in disguise).
 - The apply-safety judgment (a rewrite marked `apply_safe` that had to be reverted).
+- The plan-time judgment (a plan-mode proposal that duplicated the Existing Code Survey / `critical`, or a re-plan the planner rejected).
 
 `trigger-context` must be concrete (file globs, stack, axis, caller) so the O0 read matches mechanically.
+Record the `caller` in every lesson's `trigger-context` (`reviewer` / `pr-reviewer` / `polish` / `aw-planner`) so a plan-mode lesson does not wrongly bias a diff-mode run and vice versa.
 
 ## Fast tier — read (Phase O0)
 

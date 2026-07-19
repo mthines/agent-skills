@@ -17,6 +17,7 @@ inside the worktree, never on the main branch.
 > **Order of operations:** research (parallel `Explore` if complex) →
 > optional `holistic-analysis` → technical design (incl. Existing Code Survey
 > for planned `create`s + executable checks drafting) → `code-quality(plan)` →
+> optional `critical(plan)` → `optimize-approach(plan)` (default-on, quiet) →
 > `confidence(plan)` gate → Phase 2.
 
 ## Contents
@@ -31,6 +32,8 @@ inside the worktree, never on the main branch.
   - [Draft traceable, executable Acceptance Criteria](#2d-draft-traceable-executable-acceptance-criteria)
 - [Design Quality](#design-quality)
 - [Spec Emission (UI tasks)](#spec-emission-ui-tasks)
+- [Adversarial Pre-Mortem](#adversarial-pre-mortem)
+- [Approach Optimality](#approach-optimality)
 - [Confidence Gate](#confidence-gate)
 - [Planner-Executor Handoff](#planner-executor-handoff)
 - [Planning Checklist](#planning-checklist)
@@ -511,6 +514,65 @@ Disable by removing the invocation here (see
 
 ---
 
+## Approach Optimality
+
+**Anchor:** `approach-optimality`
+
+**Default-on in Full Mode, quiet early-exit.** Once the technical design is
+drafted (including the Existing Code Survey) and after `code-quality(plan)` /
+`critical`, ask the one design-level question the other Phase 1 gates assume
+away: **is this the most optimal approach for the intent, and if not what is?**
+Plan time is the cheapest moment to switch — the approach is still words, not
+code. Skip when the user passed `--no-optimize`.
+
+Run between the adversarial pre-mortem and `confidence(plan)`:
+
+```
+Skill("optimize-approach", "plan")     # skips silently if not installed
+  intent_summary: <task intent / requirements from Phase 0–1>
+  approach: <Technical Approach + Decisions + Implementation Order + File Changes from the plan draft>
+  survey: <Existing Code Survey verdicts>
+  caller: "aw-planner"
+```
+
+The skill returns plan-level proposals (or nothing when the approach is already
+optimal). It does **not** re-run the Existing Code Survey, `critical`, or
+`confidence` — its net-new value is the approach-level simplicity / performance
+/ robustness judgment plus a materially-better-approach steelman. Treat the
+output as follows:
+
+- **Proposal with `analysis_confidence ≥ 90 %`** → weigh it against the user's
+  stated intent (a proposal never overrides intent). **If adopted**, revise the
+  technical approach in the plan draft accordingly. If `plan.md` was already
+  written, regenerate it via `aw-create-plan` (a new `plan.vN.md`) so the
+  `confidence(plan)` gate below scores the revised approach.
+- **Proposal below 90 %** → a note the planner may weigh; not a required change.
+- **Empty** → the planned approach is sound; proceed to the gate.
+
+**Bounded — one pass per planning cycle.** A re-plan triggered by an adopted
+proposal does **not** re-invoke `optimize-approach` on the revised plan (the
+revision already incorporates the better approach). This is the guard against a
+propose→re-plan→propose loop.
+
+`optimize-approach` is **advisory** — it does not gate. `confidence(plan)`
+remains the only mandatory Phase 1 gate. Never bypass confidence on the strength
+of a clean optimality pass.
+
+Log:
+
+```markdown
+- [TIMESTAMP] Phase 1: optimize-approach(plan) — optimal (no better approach found)
+- [TIMESTAMP] Phase 1: optimize-approach(plan) — 1 proposal adopted; plan revised (plan.v2.md)
+- [TIMESTAMP] Phase 1: optimize-approach(plan) — 1 proposal below gate, logged as note
+- [TIMESTAMP] Phase 1: optimize-approach(plan) — skipped (--no-optimize)
+- [TIMESTAMP] Phase 1: optimize-approach(plan) — not available, continuing
+```
+
+Disable by removing the invocation here (see
+[`companion-skills.md`](./companion-skills.md#registry)).
+
+---
+
 ## Confidence Gate
 
 **Anchor:** `confidence-gate`
@@ -565,6 +627,7 @@ contract and message format.
 - [ ] Acceptance Criteria carry `AC-{n}` IDs + `(covers: R{m})` annotations; every `[user-stated]` requirement covered; EARS shape preferred; a runner sketched per criterion (anchor: `acceptance-criteria-drafting`)
 - [ ] `code-quality(plan)` invoked and design refined (anchor: `design-quality`)
 - [ ] UI surface check: if plan touches UI files, aw-target exists OR user told to run `/aw-setup`; `specs.md` drafted or skip logged (anchor: `spec-emission-anchor`)
+- [ ] `optimize-approach(plan)` invoked (Full Mode, unless `--no-optimize`); proposals adopted-and-replanned or logged (anchor: `approach-optimality`)
 - [ ] `confidence(plan)` ≥ 90% OR user-approved (anchor: `confidence-gate`)
 - [ ] Companion invocations logged (will move to `plan.md` Progress Log in Phase 2)
 
@@ -581,6 +644,7 @@ contract and message format.
 - Related skill: [`confidence`](../../../quality/confidence/SKILL.md)
 - Related skill: [`code-quality`](../../../quality/code-quality/SKILL.md)
 - Related skill: [`holistic-analysis`](../../../analysis/holistic-analysis/SKILL.md)
+- Related skill: [`optimize-approach`](../../../quality/optimize-approach/SKILL.md)
 - Related skill: [`aw-create-plan`](../../aw-create-plan/SKILL.md)
 - Related rule: [`phase-4-spec-verification.md`](./phase-4-spec-verification.md) — where specs.md is consumed
 - Related rule: [`phase-4-testing.md#executable-checks-loop`](./phase-4-testing.md#executable-checks-loop) — where checks.yaml is consumed

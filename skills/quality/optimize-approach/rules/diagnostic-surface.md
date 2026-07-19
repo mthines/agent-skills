@@ -44,6 +44,7 @@ The skill body is `SKILL.md`; rules live under `rules/`; the shared wiring rule 
 | O4 | Deep understanding | [SKILL.md § O4](../SKILL.md), `Skill("holistic-analysis", "refactor")` | `confidence(analysis)` scored on the alternative |
 | O5 (report) | Deliver proposal | [report-mode.md](./report-mode.md) | ≤ 2 proposals; each with grep-resolvable evidence |
 | O5 (apply) | Apply rewrite | [apply-mode.md](./apply-mode.md) | `confidence(code) ≥ 90 %` + `apply_safe` + scoped check + revert-on-failure |
+| O5 (plan) | Deliver plan proposal | [plan-mode.md](./plan-mode.md) | Plan-level proposals; planner revises via `aw-create-plan`; advisory, never gates; one pass per planning cycle |
 | O5 (write) | Lesson write + promotion | [self-improvement-loop.md](./self-improvement-loop.md) | Fast-tier write; `seen_count >= 3` suggests promotion |
 
 ---
@@ -74,6 +75,8 @@ The skill body is `SKILL.md`; rules live under `rules/`; the shared wiring rule 
 | `F-apply-not-reverted` | Broken tree | A failed scoped check did not revert the rewrite | O5 apply |
 | `F-verdict-blocked` | Verdict escape | An optimality proposal drove a "Request changes" verdict in a calling agent | O5 report |
 | `F-lesson-mis-scoped` | Scope leak | Project-bound lesson written to a silently-created committed scope | O5 write |
+| `F-plan-overlap` | Anti-overlap bypass (plan mode) | Plan-mode proposal re-surfaces Existing Code Survey, `critical`, or `confidence(plan)` output | O5 plan |
+| `F-plan-loop` | Unbounded re-plan | Plan mode re-invoked on a plan it already caused to be revised | O5 plan |
 | `F-novel` | Novel mode | Does not match any existing row | — |
 
 The taxonomy is **append-only**. New classes are added after confidence-gated, user-approved diagnoses surface them.
@@ -89,6 +92,7 @@ The taxonomy is **append-only**. New classes are added after confidence-gated, u
 - **Apply is gated.** No rewrite below `confidence(code) ≥ 90 %`, none outside `apply_safe`, none touching a forbidden target, none widening blast radius, and every failed scoped check reverts. The gate is never skipped inside a calling agent's loop.
 - **`pr-reviewer` never applies.** Cross-review is report-only.
 - **Optimality never blocks the verdict.** Proposals are advisory (`suggestion` / `question`), like `scope-creep`.
+- **Plan mode is advisory and never gates.** It proposes; the planner revises via `aw-create-plan` and `confidence(plan)` remains the only mandatory Phase 1 gate. Plan mode runs once per planning cycle — it must not re-run on a plan it caused to be revised (`F-plan-loop`), and must not re-surface Survey / `critical` / `confidence` output (`F-plan-overlap`).
 - **Lessons are advisory.** The only path from a lesson to changed behavior is a confidence-gated, user-approved `diagnose` apply; promotion requires `seen_count >= 3` or an explicit `structural` tag. A lesson may never relax the apply gate, the forbidden-targets list, or the never-block rule.
 
 ---

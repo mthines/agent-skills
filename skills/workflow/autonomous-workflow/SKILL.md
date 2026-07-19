@@ -13,7 +13,7 @@ argument-hint: '<task-description> [--no-confirm] [--critical]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.15.0'
+  version: '3.16.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -164,6 +164,7 @@ for the full registry, trigger conditions, and **how to disable any companion**.
 | 1     | `holistic-analysis`    | Complex / multi-domain / unfamiliar task               | —                |
 | 1     | `code-quality`         | Always (informs design)                                | `plan`           |
 | 1     | `critical`             | Opt-in only (user passed `--critical` to the workflow). Single adversarial pre-mortem pass between `code-quality(plan)` and `confidence(plan)`. Findings flow into `aw-create-plan` as plan defects (must-fix) and considered-alternatives notes (steelman). Advisory — does not gate. | `plan` |
+| 1     | `optimize-approach`    | Default-on in Full Mode (quiet early-exit; skip on `--no-optimize`). "Is this the most optimal approach?" pass between the pre-mortem and `confidence(plan)`. Adopted proposals trigger a bounded re-plan via `aw-create-plan`. Advisory — does not gate. | `plan` |
 | 1     | `confidence`           | Always (plan gate, MANDATORY)                          | `plan`           |
 | 2     | `aw-create-plan`       | Full Mode only                                         | —                |
 | 3     | `persistent-memory`    | Executor entry — read lessons when `plan.md` has no `## Lessons applied` (no-planner paths) | `read aw-lessons --tier home` |
@@ -241,7 +242,7 @@ Three phases benefit from sub-agent fan-out:
 | ----- | ----------------------------------------------------------------------------------------------- |
 | Setup | MODE SELECTION + prerequisite check                                                             |
 | 0     | Restate-and-diff the requirements, run the missing-information gate (`blocking` halts even under `--no-confirm`), ask clarifying questions, get explicit "proceed" |
-| 1     | Analyze codebase (dependency-graph localization first; parallel `Explore` if complex), Existing Code Survey per planned `create`, traceable EARS-shaped ACs, design with `code-quality(plan)`, `confidence(plan)` gate |
+| 1     | Analyze codebase (dependency-graph localization first; parallel `Explore` if complex), Existing Code Survey per planned `create`, traceable EARS-shaped ACs, design with `code-quality(plan)`, `optimize-approach(plan)` approach check, `confidence(plan)` gate |
 | 2     | `gw add`, `gw cd`, install deps, `Skill("aw-create-plan")` inside worktree (writes `plan.md` + `checks.yaml`)   |
 | 3     | Code per `plan.md` → companions per task type (`tdd`, `ux`) → fast-check after each edit; `code-quality(code)` once at end |
 | 4 (UI)| **First:** `aw-tester` cold pass at Phase 4 entry (full sub-agent, structured verdict); subsequent iterations run the persisted `last-run.spec.ts` directly via Bash (hot loop, no sub-agent) until `green`/`inconclusive`; promote `critical-path` specs via `e2e-testing` Generator |

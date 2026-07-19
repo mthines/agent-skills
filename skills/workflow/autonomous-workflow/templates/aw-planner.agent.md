@@ -97,6 +97,7 @@ Full registry in [`rules/companion-skills.md`](../rules/companion-skills.md).
 | 1     | `persistent-memory` | Always — load prior workflow lessons before design | `read aw-lessons --tier home` |
 | 1     | `holistic-analysis` | Complex / multi-domain / unfamiliar task         | —                 |
 | 1     | `code-quality`      | Always (informs design)                          | `plan`            |
+| 1     | `optimize-approach` | Full Mode default-on (skip on `--no-optimize`)   | `plan`            |
 | 1     | `confidence`        | Always — MANDATORY plan gate                     | `plan`            |
 | 2     | `aw-create-plan`    | Full Mode only                                   | —                 |
 

@@ -681,6 +681,30 @@ end-user-facing; this file is contributor-facing.
 
 ## History
 
+- **v3.16.0** — Plan-time optimality lens. Wired the `optimize-approach` skill's
+  new `plan` mode into **Phase 1** as a default-on companion (Full Mode; quiet
+  early-exit; `--no-optimize` to skip), running between the adversarial pre-mortem
+  and `confidence(plan)`. It asks the one design-level question the other Phase 1
+  gates assume away — *is this the most optimal approach, and if not what is?* —
+  at the cheapest moment to switch (the approach is still words, not code).
+  **Positioned against the existing plan-time gates, not overlapping them:** it
+  consumes the Existing Code Survey verdicts (codebase-fit reuse is the survey's
+  job, rule #10), does not re-list `critical`'s failure modes, and never
+  re-scores `confidence(plan)`. Its net-new value is the approach-level
+  simplicity / performance / robustness judgment plus a materially-better-approach
+  steelman. **Advisory — does not gate**; adopted proposals trigger a **bounded**
+  re-plan via `aw-create-plan` (one optimality pass per planning cycle — no
+  re-invoke on the plan it revised, the `F-plan-loop` guard). Coupled surfaces
+  updated in lockstep: `phase-1-planning.md` (new `## Approach Optimality` step +
+  anchor, order-of-operations note, Contents, Planning Checklist, References),
+  `companion-skills.md` (registry row + disable link), `aw-planner.agent.md`
+  (companion table), `diagnostic-surface.md` (Phase 1 guard row + typical gaps),
+  `SKILL.md` (companion table + Phase 1 quick-ref + version 3.16.0), `README.md`
+  (companion table). The skill side adds `optimize-approach/rules/plan-mode.md`
+  plus mode-detection / surface / lessons updates. `optimize-approach` skips
+  silently if not installed — the lens degrades to nothing and the gate is
+  unaffected. Root `CLAUDE.md` / `README.md` inventory updated.
+
 - **v3.15.0** — Plan-quality gates + executable checks. Implements the four
   mechanisms from [`references/planning-quality-research.md`](./references/planning-quality-research.md)
   (2024–2026 web-research pass; see that file for citations and caveats):

@@ -8,12 +8,14 @@ description: >
   codebase-fit, simplicity, performance, robustness — at the approach level,
   deferring line-level and failure-mode findings to code-quality, critical,
   and holistic-review. Stays silent when the approach is already optimal
-  (quiet early-exit). Called by the reviewer and pr-reviewer agents and the
-  polish skill as a default-on lens; also runnable standalone. Triggers on
+  (quiet early-exit). A `plan` mode reviews a drafted plan's approach at plan
+  time (aw-planner Phase 1) — the cheapest moment to switch. Called by the
+  reviewer and pr-reviewer agents, the polish skill, and aw-planner as a
+  default-on lens; also runnable standalone. Triggers on
   "is this the best approach", "better way to do this", "is this optimal",
   "optimize this approach", "rethink the approach", "/optimize-approach".
 disable-model-invocation: false
-argument-hint: '[report|apply]'
+argument-hint: '[report|apply|plan]'
 license: MIT
 metadata:
   author: mthines
@@ -55,6 +57,7 @@ Parse the **first token** of `$ARGUMENTS`.
 | --- | --- | --- | --- |
 | `report` | **yes** | No mode token, or `report` | Emit a structured proposal (or nothing when optimal). Never edits files. |
 | `apply` | | First token `apply` | Same analysis, then apply the top proposal behind a confidence gate. Own-work contexts only. |
+| `plan` | | First token `plan` | Review a drafted plan's approach at plan time (aw-planner Phase 1). Returns plan-level proposals; the planner revises the plan. See [`rules/plan-mode.md`](./rules/plan-mode.md). |
 
 ## Inputs
 
@@ -63,9 +66,11 @@ When a calling agent (reviewer / pr-reviewer / polish) invokes this skill, it pa
 - `intent_summary` — 2–3 line intent (the caller's Step 1.3 output).
 - `diff` — the full unified diff under review.
 - `changed_files` — list of `{path, patch}` entries.
-- `caller` — `reviewer` | `pr-reviewer` | `polish` (affects comment framing and whether apply is allowed).
+- `caller` — `reviewer` | `pr-reviewer` | `polish` | `aw-planner` (affects framing and whether apply is allowed).
 
-Standalone (`/optimize-approach [report|apply]`) derives all four from the current branch diff against `origin/main`.
+For `plan` mode the caller (`aw-planner`) passes a drafted plan's approach and its Existing Code Survey verdicts instead of a diff — see [`rules/plan-mode.md`](./rules/plan-mode.md) for that input shape.
+
+Standalone (`/optimize-approach [report|apply]`) derives the diff-mode inputs from the current branch diff against `origin/main`.
 
 ## Workflow
 
@@ -122,6 +127,7 @@ Load on demand — do not preload.
 | O2, O3, O4 | [`rules/optimality-rubric.md`](./rules/optimality-rubric.md) |
 | O5 (report) | [`rules/report-mode.md`](./rules/report-mode.md), [`templates/proposal.template.md`](./templates/proposal.template.md) |
 | O5 (apply) | [`rules/apply-mode.md`](./rules/apply-mode.md) |
+| plan mode | [`rules/plan-mode.md`](./rules/plan-mode.md) — approach review at plan time (aw-planner Phase 1) |
 | wiring | [`agents/shared/rules/optimality-review.md`](../../../agents/shared/rules/optimality-review.md) — how the review agents call this skill |
 | diagnose | [`rules/diagnostic-surface.md`](./rules/diagnostic-surface.md) |
 
