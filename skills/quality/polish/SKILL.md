@@ -54,7 +54,7 @@ Parse the **first token** of `$ARGUMENTS`. Everything else is a flag.
 | `optimize`           | First token `optimize`           | Optimality pass only — `Skill("optimize-approach", "apply")` over the branch diff (gated approach rewrite).|
 | `quick`              | First token `quick`              | Light mechanical pass only (comments, naming, dead code). No reviewer agent, no structural refactors.     |
 
-In `full` and `review` modes the optimality lens runs **inside** the reviewer pass (the `reviewer` agent's Step 2.4c calls `optimize-approach` in apply mode). The standalone `optimize` mode above is for running only that lens without the rest of the reviewer pass.
+In `full` and `review` modes the optimality lens runs **inside** the reviewer pass (the `reviewer` agent runs `optimize-approach` in report mode at Step 2.4c, then applies the top approach rewrite in its Step 4 auto-fix phase). The standalone `optimize` mode above is for running only that lens without the rest of the reviewer pass.
 
 Flags (compose with any mode):
 
@@ -128,7 +128,7 @@ Agent(
 )
 ```
 
-The reviewer pass includes the **optimality lens** (its Step 2.4c calls `optimize-approach` in apply mode: at most one approach rewrite behind `confidence(code) ≥ 90 %` + revert-on-failure; the rest reported). Pass `--no-optimize` through when the user set it on polish.
+The reviewer pass includes the **optimality lens** (report at Step 2.4c, then at most one approach rewrite applied in its Step 4 auto-fix phase behind `confidence(code) ≥ 90 %` + revert-on-failure; the rest reported). Pass `--no-optimize` through when the user set it on polish.
 
 Capture from the agent's reply: the verdict, the auto-fixed list (including any applied approach rewrite), and the planned-complex list. The planned-complex items are **surfaced to the user**, not applied — they need judgment.
 
