@@ -15,7 +15,7 @@ description: >
   "is this the best approach", "better way to do this", "is this optimal",
   "optimize this approach", "rethink the approach", "/optimize-approach".
 disable-model-invocation: false
-argument-hint: '[report|apply|plan]'
+argument-hint: '[report|apply|plan] [--no-confidence-gate]'
 license: MIT
 metadata:
   author: mthines
@@ -58,6 +58,12 @@ Parse the **first token** of `$ARGUMENTS`.
 | `report` | **yes** | No mode token, or `report` | Emit a structured proposal (or nothing when optimal). Never edits files. |
 | `apply` | | First token `apply` | Same analysis, then apply the top proposal behind a confidence gate. Own-work contexts only. |
 | `plan` | | First token `plan` | Review a drafted plan's approach at plan time (aw-planner Phase 1). Returns plan-level proposals; the planner revises the plan. See [`rules/plan-mode.md`](./rules/plan-mode.md). |
+
+## Flags
+
+| Flag | Applies to | Effect |
+| --- | --- | --- |
+| `--no-confidence-gate` | `apply` | **Human-only override.** Bypasses the `confidence(code) ≥ 90 %` gate for a single `apply` run. Reserved for explicit human slash invocations — a calling agent (`reviewer`, `polish`, `aw-planner`) **never** sets it. The other apply-mode guards are **not** waived: `apply_safe`, the forbidden-targets list, the scoped check, and revert-on-failure all still apply. See [`rules/apply-mode.md`](./rules/apply-mode.md). |
 
 ## Inputs
 
