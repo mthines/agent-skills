@@ -55,6 +55,13 @@ itself needs to be three-dimensional.
 > [`references/recipes.md`](./references/recipes.md). Drop-in HTML/CSS
 > snippets live in [`templates/`](./templates).
 
+> **Web only.** This skill's mechanics are web (CSS, Motion, View
+> Transitions, Web Animations API). For **React Native / Expo** motion
+> (Reanimated, gesture-handler, Moti, Lottie, Rive), use the
+> [`animations-native`](../animations-native/SKILL.md) skill instead —
+> it reuses this skill's platform-agnostic
+> [brainstorm / verb→motion catalog](./rules/interaction-feedback.md).
+
 ---
 
 ## Core Bet

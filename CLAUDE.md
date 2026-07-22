@@ -64,7 +64,8 @@ Type markers (by primary entry point — all three are technically model-invocab
 
 ### `design/` — UI, visual, interaction
 
-- `animations` (`auto`) — CSS-first animations; perceived performance; interaction-feedback brainstorming
+- `animations` (`auto`) — CSS-first **web** animations; perceived performance; interaction-feedback brainstorming. Redirects React Native work to `animations-native`
+- `animations-native` (`auto`) — **React Native / Expo** animations with Reanimated (worklets, shared values, layout animations) and gestures with react-native-gesture-handler (builder + v3 hook API), running motion on the UI thread. Covers the CSS-vs-worklet API split, Moti/Lottie/Rive selection, Reduce Motion + haptics, and UI-thread-vs-JS-thread FPS profiling. Reuses the `animations` skill's platform-agnostic verb→motion brainstorm rather than duplicating it
 - `charting` (`auto`) — pick chart type + library for web (React/Next.js) and mobile (Expo/RN)
 - `storybook` (`auto`) — visual regression + Playground + interaction-test stories; opt-in OS-keychain auth profiles
 - `ux` (`auto`) — UX, a11y, microcopy, dark-pattern review (WCAG 2.2, Apple HIG, Material Design 3). Hard rule: never recommends a dark pattern

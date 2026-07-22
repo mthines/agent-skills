@@ -132,7 +132,8 @@ Plumbing for shipping code.
 
 | Skill | What it does | Type |
 |-------|--------------|------|
-| **[animations](./skills/design/animations/SKILL.md)** | CSS-first web animation. Three modes: Brainstorm, Perceived-Performance, technical workflow (CSS → WAAPI → Motion → R3F). | `auto` |
+| **[animations](./skills/design/animations/SKILL.md)** | CSS-first web animation. Three modes: Brainstorm, Perceived-Performance, technical workflow (CSS → WAAPI → Motion → R3F). Redirects React Native to `animations-native`. | `auto` |
+| **[animations-native](./skills/design/animations-native/SKILL.md)** | React Native / Expo animation: Reanimated (worklets, shared values, layout animations), react-native-gesture-handler (pan/pinch/drag/swipe), Moti/Lottie/Rive, Reduce Motion + haptics, UI-thread profiling. | `auto` |
 | **[charting](./skills/design/charting/SKILL.md)** | Selects chart type + visualization library for web (React/Next.js) and mobile (Expo/RN). Maps intent → chart → library based on platform and dataset size. | `auto` |
 | **[storybook](./skills/design/storybook/SKILL.md)** | Scaffolds three artefacts per component: visual regression story, Playground, interaction test. Opt-in OS-keychain auth profiles. | `auto` |
 | **[ux](./skills/design/ux/SKILL.md)** | Reviews UI for usability, WCAG 2.2 accessibility, platform compliance (Apple HIG, Material Design 3), and **dark-pattern detection**. Hard rule: never recommends a dark pattern. | `auto` |
@@ -458,7 +459,7 @@ That is the entire integration.
 ## Repository structure
 
 ```
-skills/                   43 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
+skills/                   44 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
   testing/test-auto-fix/    stack-agnostic test healer — bootstrap, classify, confidence-gate, regression-detect
 agents/                   6 agents (reviewer, pr-reviewer, linear-ticket-investigator, rca-investigator, bug-fix-verifier, feature-pr-verifier)
 plugins/                  1 Claude Code plugin (agent-tasks-hooks)
