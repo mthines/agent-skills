@@ -99,9 +99,17 @@ For each approved target:
 
 ### `--archive` (default)
 
-1. `mv entries/<file>.md archive/<file>.md`.
-2. Remove the corresponding INDEX line.
-3. Append AUDIT.log line.
+1. Read the entry's frontmatter.
+2. Append `archived_at: <ISO-8601 UTC timestamp of now>` to the frontmatter.
+   If `archived_at` already exists (e.g. a re-archive), overwrite it.
+3. Write the updated frontmatter back to the file.
+4. `mv entries/<file>.md archive/<file>.md`.
+5. Remove the corresponding INDEX line.
+6. Append AUDIT.log line.
+
+The `archived_at` field is the clock the purge pipeline uses to determine
+when the entry is eligible for permanent deletion (see
+[`purge-pipeline.md`](./purge-pipeline.md)).
 
 ### `--hard-delete`
 

@@ -121,8 +121,19 @@ Same layout as `entries/`. Entries are MOVED here (not copied) when:
 - `forget` runs with `--archive` instead of `--hard-delete` (the default
   for `forget` — see [`forget-pipeline.md`](./forget-pipeline.md)).
 
-Never delete an archived entry programmatically. The user can prune
-`archive/` manually with `rm` if they choose.
+Every file moved to `archive/` must have an `archived_at` frontmatter
+field (ISO-8601 UTC) written at the time of move.
+The purge pipeline reads this field to determine when the entry is
+eligible for permanent deletion.
+
+Default TTL: **30 days** from `archived_at`.
+Override per scope by adding `<!-- purge-retention: <short|standard|extended|keep> -->`
+to the top of `INDEX.md` (7 / 30 / 90 days / never respectively).
+See [`purge-pipeline.md`](./purge-pipeline.md) for the full contract.
+
+Run purge manually with `/persistent-memory purge <scope>` or
+`/persistent-memory purge --all`.
+Use `--dry-run` to preview candidates without deleting.
 
 ### `AUDIT.log`
 

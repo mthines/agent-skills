@@ -3,11 +3,15 @@ name: persistent-memory
 description: >
   Persists context across conversations as plain markdown so every
   future session can enrich a topic-scoped memory (e.g. `parenting`,
-  `relationship-anna`, `work-history`, `project-acme`). Four operations:
+  `relationship-anna`, `work-history`, `project-acme`). Five operations:
   `write` (extract candidates, resolve as ADD / UPDATE / DELETE / NOOP
   per Mem0), `read` (load a ≤ 200-line INDEX; fetch detail entries on
   demand per Claude Code's MEMORY.md pattern), `consolidate`
-  (sleep-style merge + prune), `forget` (delete or redact with audit).
+  (sleep-style merge + prune), `forget` (soft-archive or hard-delete
+  with audit, writes `archived_at` timestamp on archive), `purge`
+  (TTL-based permanent deletion of archived entries; default 30-day
+  retention window, configurable per scope via `purge-retention` hint
+  in INDEX.md; supports `--dry-run`, `--all`, `--auto`).
   Three storage tiers: home (`~/.agent-memory/<scope>/`, default),
   project-local (gitignored), project-shared (committed). Strict
   never-store list (passwords, API keys, JWTs, credit cards, SSNs,
@@ -24,13 +28,15 @@ description: >
   `reviewer` agent — lessons follow the user across every repository.
   Triggers on "remember this", "save to
   memory", "recall memory", "load memory", "what do you remember
-  about", "consolidate memory", "forget that", "/persistent-memory".
+  about", "consolidate memory", "forget that", "purge archive",
+  "auto-delete old memories", "clean up archive",
+  "/persistent-memory".
 disable-model-invocation: false
-argument-hint: '[write|read|consolidate|forget] <scope> [--tier home|project-local|project-shared]'
+argument-hint: '[write|read|consolidate|forget|purge] <scope|--all> [--tier home|project-local|project-shared] [--dry-run] [--auto]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.2.0'
   workflow_type: applied
   tags:
     - memory
@@ -63,13 +69,14 @@ files, so any future conversation can pick up where the last one left off.
 
 Parse `$ARGUMENTS` (first token) and detect the operation:
 
-| Operation     | Default | Trigger phrases                                                          |
-| ------------- | ------- | ------------------------------------------------------------------------ |
-| `write`       | **yes** | "remember", "save to memory", "add to memory", `$0 == "write"`           |
-| `read`        |         | "recall", "load memory", "what do you remember about", `$0 == "read"`    |
-| `consolidate` |         | "consolidate memory", "compress memory", `$0 == "consolidate"`           |
-| `forget`      |         | "forget that", "delete memory", "redact", `$0 == "forget"`               |
-| `list`        |         | "list memory", "what scopes do I have", `$0 == "list"`                   |
+| Operation     | Default | Trigger phrases                                                                        |
+| ------------- | ------- | -------------------------------------------------------------------------------------- |
+| `write`       | **yes** | "remember", "save to memory", "add to memory", `$0 == "write"`                         |
+| `read`        |         | "recall", "load memory", "what do you remember about", `$0 == "read"`                  |
+| `consolidate` |         | "consolidate memory", "compress memory", `$0 == "consolidate"`                         |
+| `forget`      |         | "forget that", "delete memory", "redact", `$0 == "forget"`                             |
+| `purge`       |         | "purge archive", "auto-delete old memories", "clean up archive", `$0 == "purge"`       |
+| `list`        |         | "list memory", "what scopes do I have", `$0 == "list"`                                 |
 
 State the detected operation and resolved scope in one line before
 continuing. Example:
@@ -94,6 +101,7 @@ Load on demand — do not preload.
 | `read`        | [`rules/storage-layout.md`](./rules/storage-layout.md), [`rules/read-pipeline.md`](./rules/read-pipeline.md) |
 | `consolidate` | [`rules/consolidate-pipeline.md`](./rules/consolidate-pipeline.md), [`rules/memory-taxonomy.md`](./rules/memory-taxonomy.md) |
 | `forget`      | [`rules/forget-pipeline.md`](./rules/forget-pipeline.md), [`rules/privacy-and-consent.md`](./rules/privacy-and-consent.md) |
+| `purge`       | [`rules/storage-layout.md`](./rules/storage-layout.md), [`rules/purge-pipeline.md`](./rules/purge-pipeline.md) |
 | `list`        | [`rules/storage-layout.md`](./rules/storage-layout.md)                                         |
 | integration   | [`rules/integration-with-skills.md`](./rules/integration-with-skills.md)                       |
 | scaling       | [`rules/scaling-tiers.md`](./rules/scaling-tiers.md)                                           |
@@ -165,6 +173,22 @@ prior phase's gate passes.
 | 0     | Resolve target   | [`rules/forget-pipeline.md`](./rules/forget-pipeline.md)   | Memory id, slug, or query resolves to exactly one entry set   |
 | 1     | Show + confirm   | [`rules/forget-pipeline.md`](./rules/forget-pipeline.md)   | User saw the entries and explicitly confirmed                 |
 | 2     | Delete or redact | [`rules/forget-pipeline.md`](./rules/forget-pipeline.md)   | Entries removed (or redacted); INDEX + AUDIT.log updated      |
+
+### `purge`
+
+Permanently deletes archived entries that have exceeded their retention window.
+The default window is 30 days from `archived_at`; override per scope via
+`<!-- purge-retention: short|standard|extended|keep -->` in `INDEX.md`.
+
+| Phase | Name              | Rule                                                         | Gate                                                                    |
+| ----- | ----------------- | ------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| 0     | Resolve scope     | [`rules/storage-layout.md`](./rules/storage-layout.md)       | Scope resolved; tier confirmed                                          |
+| 1     | Scan archive      | [`rules/purge-pipeline.md`](./rules/purge-pipeline.md)       | Every archived entry read; `archived_at` extracted or estimated         |
+| 2     | Classify          | [`rules/purge-pipeline.md`](./rules/purge-pipeline.md)       | Each entry tagged `PURGE` / `KEEP` / `EXEMPT` / `SKIP`                 |
+| 3     | Consent preview   | [`rules/purge-pipeline.md`](./rules/purge-pipeline.md)       | User saw candidate list and confirmed (skipped with `--auto`)           |
+| 4     | Hard delete       | [`rules/purge-pipeline.md`](./rules/purge-pipeline.md)       | `archive/<file>` deleted; AUDIT.log line appended per candidate         |
+
+Flags: `--dry-run` (preview only, no writes), `--all` (all scopes), `--auto` (skip consent for automated sweeps).
 
 ### `list`
 
@@ -286,4 +310,15 @@ A `forget` run is done when:
 
 - [ ] Target entries shown verbatim before deletion.
 - [ ] User confirmed (typed "yes" or `--confirm` flag).
+- [ ] `archived_at` written to frontmatter before move (if archiving).
 - [ ] Entries removed (or redacted); INDEX updated; AUDIT.log line appended.
+
+A `purge` run is done when:
+
+- [ ] Scope and tier resolved.
+- [ ] Every archived entry read; `archived_at` extracted or estimated.
+- [ ] Candidates classified (`PURGE` / `KEEP` / `EXEMPT` / `SKIP`).
+- [ ] Candidate list shown to user (or `--dry-run` printed and stopped).
+- [ ] User confirmed (or `--auto` flag was explicit).
+- [ ] Each `PURGE` entry deleted from `archive/`; AUDIT.log line appended.
+- [ ] Summary printed: "Purged N archived entries from `<scope>` (<tier>)."

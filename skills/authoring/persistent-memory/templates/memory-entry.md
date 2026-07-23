@@ -11,6 +11,7 @@ tags:
 confidence: <high | medium | low>
 source: <user-stated | inferred | external | system>
 redacted: false
+archived_at: <ISO-8601 UTC timestamp, set only when entry is moved to archive/>
 ---
 
 # <One-line title — same as the INDEX line>
