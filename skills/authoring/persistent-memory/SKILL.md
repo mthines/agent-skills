@@ -13,7 +13,10 @@ description: >
   never-store list (passwords, API keys, JWTs, credit cards, SSNs,
   private keys); mandatory consent preview before write. Documents
   scaling from markdown → SQLite FTS → vector DB → managed memory
-  (Mem0 / Letta / Zep). Also backs the per-user home-tier lesson scopes
+  (Mem0 / Letta / Zep). Optionally routes all four operations to a
+  shared **LoreKit** MCP backend (hosted, cross-machine, CI-durable)
+  behind the same call contract, so lessons survive beyond one machine.
+  Also backs the per-user home-tier lesson scopes
   (`~/.agent-memory/aw-lessons/`, `aw-tester-lessons`, `fix-bug-lessons`,
   `batch-lessons`, `reviewer-lessons`, `implement-suggestion-lessons`,
   `ci-auto-fix-lessons`, `e2e-pr-stabilizer-lessons`, `test-auto-fix-lessons`,
@@ -43,6 +46,9 @@ metadata:
     - privacy
     - consent
     - consolidation
+    - lorekit
+    - mcp
+    - backend
 ---
 
 # Persistent Memory
@@ -96,6 +102,7 @@ Load on demand — do not preload.
 | `forget`      | [`rules/forget-pipeline.md`](./rules/forget-pipeline.md), [`rules/privacy-and-consent.md`](./rules/privacy-and-consent.md) |
 | `list`        | [`rules/storage-layout.md`](./rules/storage-layout.md)                                         |
 | integration   | [`rules/integration-with-skills.md`](./rules/integration-with-skills.md)                       |
+| backend       | [`rules/backend-lorekit.md`](./rules/backend-lorekit.md) — load at Phase 0 when a LoreKit backend is configured |
 | scaling       | [`rules/scaling-tiers.md`](./rules/scaling-tiers.md)                                           |
 | pre-flight    | [`rules/quality-checklist.md`](./rules/quality-checklist.md), [`rules/anti-patterns.md`](./rules/anti-patterns.md) |
 
@@ -128,6 +135,19 @@ Per-scope directory layout (identical across tiers):
 
 Every operation is gated. Do not proceed to the next phase until the
 prior phase's gate passes.
+
+**Backend resolution (Phase 0, every operation).** The default backend is the
+local markdown filesystem described below. LoreKit is **explicit opt-in**
+(env `LOREKIT_MCP_URL` + `LOREKIT_TOKEN`, or `{"backend":"lorekit"}` in
+`~/.agent-memory/config.json`) — a `lorekit` server merely present in
+`.mcp.json` does **not** switch the backend. When opted in and usable, load
+[`rules/backend-lorekit.md`](./rules/backend-lorekit.md) and run against
+LoreKit's MCP tools; the call contract, privacy pre-flight, and consent gates
+are identical — only where the bytes land changes. Memory is **best-effort**:
+if LoreKit is not configured, not usable, or unreachable, the operation degrades
+(markdown, or "no lessons" on read, or a one-line "not saved" notice on write)
+and **never blocks or breaks the host skill**. Anyone not using LoreKit sees no
+change.
 
 ### `write` (default)
 
@@ -215,7 +235,12 @@ For the parenting example: add one block to `parenting/SKILL.md`:
 | 1    | Plain markdown (this skill, default)           | ≤ ~500 entries per scope, single user, no semantic search needed         |
 | 2    | Markdown + SQLite FTS index (this skill, opt-in) | Up to ~5k entries per scope, keyword search beats full-INDEX scan       |
 | 3    | Markdown blobs + local vector DB (Chroma, Qdrant) | Semantic recall ("what did we discuss about X") matters                |
-| 4    | Managed memory layer (Mem0, Letta, Zep)        | Multi-user, multi-tenant, > 10k entries, graph relationships, hosted SLA |
+| 4    | Managed memory layer (Mem0, Letta, Zep) or **LoreKit** (MCP) | Multi-user, multi-tenant, > 10k entries, graph relationships, hosted SLA — or simply lessons that must survive across machines / CI (LoreKit) |
+
+**LoreKit** is the lightest Tier-4 option and the one built for *lessons*
+specifically: a hosted, scoped, keyed lesson store reached over one MCP
+endpoint. It activates behind the same call contract — see
+[`rules/backend-lorekit.md`](./rules/backend-lorekit.md).
 
 Graduate one tier at a time. The skill ships a migration recipe in
 [`rules/scaling-tiers.md`](./rules/scaling-tiers.md) for moving from

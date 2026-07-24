@@ -26,6 +26,13 @@ Every memory operation resolves two things before touching disk:
 If either is ambiguous, ask the user once (single batched message). Never
 guess. Never silently fall back to a default the user did not see.
 
+> **Backend note.** This layout describes the default **markdown** backend.
+> When a **LoreKit** backend is configured, the same three tiers map onto
+> LoreKit scopes (`home` → `global`, `project-shared` → `repo::{owner}/{repo}`,
+> `project-local` → `branch::…`) and there is no on-disk directory — see
+> [`backend-lorekit.md`](./backend-lorekit.md). Scope naming and tier
+> *selection* rules below apply to both backends.
+
 ## Tier table
 
 | Tier             | Root path                              | Committed?         | Cross-machine? | Default for                                        |
