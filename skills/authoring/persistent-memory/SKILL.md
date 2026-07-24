@@ -137,13 +137,17 @@ Every operation is gated. Do not proceed to the next phase until the
 prior phase's gate passes.
 
 **Backend resolution (Phase 0, every operation).** The default backend is the
-local markdown filesystem described below. If a **LoreKit** backend is
-configured (env `LOREKIT_MCP_URL` + `LOREKIT_TOKEN`, a `lorekit` server in
-`.mcp.json`, or `{"backend":"lorekit"}` in `~/.agent-memory/config.json`),
-load [`rules/backend-lorekit.md`](./rules/backend-lorekit.md) and run the
-operation against LoreKit's MCP tools instead. The call contract, the privacy
-pre-flight, and the consent gates are identical across backends — only where
-the bytes land changes.
+local markdown filesystem described below. LoreKit is **explicit opt-in**
+(env `LOREKIT_MCP_URL` + `LOREKIT_TOKEN`, or `{"backend":"lorekit"}` in
+`~/.agent-memory/config.json`) — a `lorekit` server merely present in
+`.mcp.json` does **not** switch the backend. When opted in and usable, load
+[`rules/backend-lorekit.md`](./rules/backend-lorekit.md) and run against
+LoreKit's MCP tools; the call contract, privacy pre-flight, and consent gates
+are identical — only where the bytes land changes. Memory is **best-effort**:
+if LoreKit is not configured, not usable, or unreachable, the operation degrades
+(markdown, or "no lessons" on read, or a one-line "not saved" notice on write)
+and **never blocks or breaks the host skill**. Anyone not using LoreKit sees no
+change.
 
 ### `write` (default)
 

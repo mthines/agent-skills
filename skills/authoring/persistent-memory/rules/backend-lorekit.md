@@ -47,13 +47,29 @@ one authenticated MCP endpoint, not a `~/.agent-memory/` directory.
 
 ## When this backend is active
 
-Resolve the backend once, at Phase 0 of every operation. The backend is
-**LoreKit** when any of these is true (checked in order); otherwise it is the
-default **markdown** backend and the standard pipelines apply unchanged:
+The default backend is **markdown**. LoreKit is **explicit opt-in** — it is
+never activated merely because a `lorekit` MCP server happens to be connected.
+That distinction matters: an authenticated `lorekit` server may be present so
+an agent can call `memory.*` directly, or for the `lorekit-memory`
+hooks/skill, *without* the user intending to relocate their `persistent-memory`
+scopes — including personal ones like `parenting` — into a hosted store.
+Presence of the tools is necessary but **not sufficient**.
 
-1. Env `LOREKIT_MCP_URL` **and** `LOREKIT_TOKEN` are both set.
-2. A `lorekit` server is present in the project's `.mcp.json`.
-3. `~/.agent-memory/config.json` contains `{ "backend": "lorekit" }`.
+Resolve the backend once, at Phase 0. The backend is **LoreKit** only when an
+explicit opt-in signal is present **and** usable:
+
+1. **Opt-in signal** — either env `LOREKIT_MCP_URL` **and** `LOREKIT_TOKEN` are
+   both set, or `~/.agent-memory/config.json` contains `{ "backend": "lorekit" }`.
+   A bare `lorekit` entry in `.mcp.json` is *not* an opt-in — it only supplies
+   the endpoint/token the opt-in then uses.
+2. **Usable config** — the resolved endpoint is not the `<project-ref>`
+   placeholder and a token is present. If the opt-in is set but the config is a
+   placeholder or missing its token, treat LoreKit as **not configured**: fall
+   back to markdown and emit one line — `LoreKit opt-in set but not usable
+   (run: npx @lorekit/cli doctor) — using markdown.`
+
+Otherwise the default markdown backend applies and the standard pipelines run
+unchanged — so anyone **not** using LoreKit sees no behavioural change at all.
 
 State the resolved backend on the operation's status line:
 
@@ -63,10 +79,39 @@ Scope: aw-lessons
 Backend: lorekit (scope global)
 ```
 
-If LoreKit is selected but its MCP tools are not connected, do **not** fall
-back silently to markdown for a write (that would split a lesson store across
-two backends). Report `LoreKit backend configured but MCP tools unavailable`
-and stop the operation. Reads may degrade to "no lessons" and continue.
+### Failure posture — memory is best-effort, never blocks the host
+
+Memory is an assist, not a dependency. A memory operation must **never throw,
+block, or abort the host skill/agent's actual work** — the loops already treat
+it as "skips silently if not installed". When LoreKit is opted in but a call
+fails at runtime, degrade loudly and continue:
+
+| Situation | Behaviour |
+|-----------|-----------|
+| MCP tools not connected / network error / timeout | **read** → return "no lessons" and continue; **write** → skip, emit one line (`LoreKit unreachable — lesson not saved`). Host work proceeds. |
+| Invalid / expired token (`-32001`) | Same as above — surface the auth error in the one-line notice; do not retry, do not block. |
+| Read-only `lk_ro_*` token on a write | Reads succeed; the write is skipped with `LoreKit token is read-only — lesson not saved`. |
+
+Do **not** silently fall back to markdown for a *failed* write — that would
+split one lesson store across two backends. The lesson is simply not persisted
+this run; that is an accepted best-effort miss (the host task is unaffected),
+and it is surfaced, never hidden. (Markdown fallback applies only to the
+*config-time* not-usable case above, before any store has been chosen.)
+
+### Personal scopes stay protected
+
+The opt-in signals are machine/repo-wide, so in principle they route every
+scope — including personal topic scopes — to LoreKit. Two guards keep that from
+being a surprise:
+
+- The **consent preview** (Phase 4) still runs for non-`--auto` writes and now
+  names the destination, e.g. `Write 2 memories to parenting → LoreKit
+  (scope global)? [y/N]`. Only the lesson loops pass `--auto`, and those are
+  the scopes intended for a shared store.
+- To keep personal scopes local while lessons go hosted, prefer the
+  `config.json` opt-in and pair it with markdown for personal scopes, or simply
+  answer `N` at the consent preview for a personal scope. A migration should
+  never move a personal scope to a hosted backend without the user seeing it.
 
 ---
 
