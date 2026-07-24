@@ -1,4 +1,4 @@
-# LoreKit backend — activation
+# LoreKit Backend — Activation
 
 LoreKit is **explicit opt-in**: activate it with **path 1** (env) **or**
 **path 3** (config file). Path 2 (`.mcp.json`, written by the CLI) only supplies

@@ -35,7 +35,7 @@ signal forces it.
 | 1    | Plain markdown (this skill, default)               | ≤ ~500 entries          | grep / INDEX     | No         | $0              |
 | 2    | Markdown + SQLite FTS index                        | ≤ ~5,000 entries        | Keyword (FTS5)   | No         | $0 (local file) |
 | 3    | Markdown blobs + local vector DB (Chroma, Qdrant)  | ≤ ~50,000 entries       | Semantic + keyword | No       | Local infra     |
-| 4    | Managed memory layer (Mem0, Letta, Zep)            | Millions, multi-tenant  | Semantic + graph | Yes        | SaaS + API      |
+| 4    | Managed memory layer (Mem0, Letta, Zep, **LoreKit**) | Millions, multi-tenant  | Semantic + graph | Yes        | SaaS + API      |
 
 The skill ships **Tier 1** by default and documents the migration
 recipes here.
