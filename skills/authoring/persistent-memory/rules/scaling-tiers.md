@@ -172,6 +172,13 @@ When personal markdown stops fitting the deployment. Examples:
 | **Mem0** | Production-ready, extraction + update pipeline, graph variant, SDK-first | Hosted (or self-host with Postgres); learning curve  |
 | **Letta** (formerly MemGPT) | Stateful agents, virtual-memory architecture (core / recall / archival), full runtime | Heavyweight — agents run *inside* Letta             |
 | **Zep**  | Temporal knowledge graph, message + summary memory, evals built-in       | Server component; opinions about session model      |
+| **LoreKit** | Purpose-built for *lessons*: scoped/keyed/tagged store over one MCP endpoint; upsert + archive/purge lifecycle; cross-machine + CI + team sharing; activates behind this skill's existing call contract | Self-hosted Supabase + a token; no semantic/graph recall (keyword + scope/tag only) |
+
+LoreKit is the lightest entry on this tier and the natural fit for the
+lesson scopes (`aw-lessons`, `fix-bug-lessons`, …): it solves "lessons are
+stuck on one machine and lost in CI" without a graph database or an agent
+runtime. Its per-operation mapping (tier → scope, bucket → key + tag, entry →
+`value`) lives in [`backend-lorekit.md`](./backend-lorekit.md).
 
 ### Migration recipe (Tier 3 → Tier 4)
 
@@ -195,6 +202,10 @@ When personal markdown stops fitting the deployment. Examples:
 
 ### When to choose which provider
 
+- **Skill lessons that must survive across machines and CI, shared by a
+  team, with no rewrite of the consuming skills** → LoreKit (activates
+  behind the existing `Skill("persistent-memory", …)` call contract; see
+  [`backend-lorekit.md`](./backend-lorekit.md)).
 - **Multi-user SaaS, mature SDK, OAuth-style auth wanted** → Mem0.
 - **Single-agent or single-team, want full stateful agent runtime** →
   Letta.
