@@ -33,8 +33,7 @@ Give the tool the entry function and its file as the root, and pick a direction.
 
 ```bash
 # transitive callees of an entry point (what it calls) — seeds the execution map
-codexray --project-root . --call-graph chain \
-  --call-graph-function <fn> --call-graph-file <path> --call-graph-depth 3 --format toon
+codexray .
 
 # direct callees / callers of one function
 codexray --project-root . --call-graph callees --call-graph-function <fn> --format toon
@@ -53,7 +52,7 @@ Use it to:
 - Jump straight to each caller and callee instead of grepping for them.
 
 Then read each function body in full (Context Gathering step 10).
-The map tells you *where* to look, never *what* the code does.
+The map tells you _where_ to look, never _what_ the code does.
 
 ## Step 4: Fall back when the map is thin
 
@@ -63,7 +62,7 @@ Fall back to the manual trace for anything it cannot resolve:
 - **`callee_count: 0` or "not found"** — the tool could not resolve that function; trace it by hand.
   Never conclude "this function calls nothing" from an empty result.
 - **Dynamic dispatch** — interfaces, dependency injection, callbacks, and event emitters are resolved conservatively or not at all; follow them manually.
-- **Runtime path** — the map is static structure (every *reachable* call), not the path a specific input took.
+- **Runtime path** — the map is static structure (every _reachable_ call), not the path a specific input took.
   For a specific failing input, prefer a runtime trace (telemetry, a stack trace, or a debugger) and use the static map only for the surrounding surface.
 
 ## Anti-patterns
