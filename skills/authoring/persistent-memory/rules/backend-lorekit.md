@@ -68,6 +68,13 @@ explicit opt-in signal is present **and** usable:
    back to markdown and emit one line — `LoreKit opt-in set but not usable
    (run: npx @lorekit/cli doctor) — using markdown.`
 
+**Endpoint + token resolution.** The endpoint and token are read from
+`LOREKIT_MCP_URL` + `LOREKIT_TOKEN` when set, otherwise from the `lorekit`
+server entry in `.mcp.json`. `config.json`'s `{ "backend": "lorekit" }` only
+*selects* the backend — it carries no endpoint. So a `config.json` opt-in with
+neither env vars **nor** a `.mcp.json` entry has no usable config: step 2
+applies and the backend falls back to markdown.
+
 Otherwise the default markdown backend applies and the standard pipelines run
 unchanged — so anyone **not** using LoreKit sees no behavioural change at all.
 
