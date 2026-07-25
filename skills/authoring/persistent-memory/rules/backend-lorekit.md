@@ -199,9 +199,11 @@ remote degrades to `global` and says so.
    `memory.archive` each superseded key.
 3. Prune: `memory.archive` any entry past its `expires` (read from `value`
    frontmatter) — same staleness contract as markdown.
-4. Reclaim: `memory.purge { retention_days }` permanently removes rows archived
-   longer ago than the window. This is the LoreKit equivalent of clearing
-   `archive/`; it is irreversible, so it stays behind the same consent gate.
+4. Reclaim: `memory.purge { retention_days }` — where `retention_days` is a
+   positive integer number of days (default `30`, min `1`, max `365`) —
+   permanently removes rows archived longer ago than that window. This is the
+   LoreKit equivalent of clearing `archive/`; it is irreversible, so it stays
+   behind the same consent gate.
 
 ### `forget`
 
