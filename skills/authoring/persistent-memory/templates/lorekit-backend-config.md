@@ -41,7 +41,9 @@ tier project-local  → scope branch::{owner}/{repo}::{branch}
 bucket <name>       → key "<name>::<slug>"  +  tag "skill::<name>"
 lesson entry        → LoreKit value (markdown, verbatim frontmatter+body)
 ADD / UPDATE        → memory.write (upsert on same scope+key)
-DELETE / consolidate / forget → memory.archive / memory.purge / memory.delete
+DELETE (supersede)  → memory.archive old, then ADD successor
+consolidate         → memory.write merged + memory.archive superseded, then memory.purge to reclaim
+forget              → memory.archive (default) | memory.delete{force} | memory.write redacted
 read (2-tier)       → memory.list global then repo::{owner}/{repo}, merge
 ```
 
