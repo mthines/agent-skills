@@ -102,7 +102,7 @@ Load on demand — do not preload.
 | `forget`      | [`rules/forget-pipeline.md`](./rules/forget-pipeline.md), [`rules/privacy-and-consent.md`](./rules/privacy-and-consent.md) |
 | `list`        | [`rules/storage-layout.md`](./rules/storage-layout.md)                                         |
 | integration   | [`rules/integration-with-skills.md`](./rules/integration-with-skills.md)                       |
-| backend       | [`rules/backend-lorekit.md`](./rules/backend-lorekit.md) — load at Phase 0 when a LoreKit backend is configured |
+| backend       | [`rules/backend-lorekit.md`](./rules/backend-lorekit.md) — always resolve the backend at Phase 0 using this file (markdown is the default; the file defines the LoreKit opt-in and mis-config detection) |
 | scaling       | [`rules/scaling-tiers.md`](./rules/scaling-tiers.md)                                           |
 | pre-flight    | [`rules/quality-checklist.md`](./rules/quality-checklist.md), [`rules/anti-patterns.md`](./rules/anti-patterns.md) |
 
