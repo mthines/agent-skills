@@ -197,9 +197,9 @@ INDEX is now 207 lines — `/persistent-memory consolidate parenting` is overdue
 
 ## Lesson-scope entries
 
-A **lesson scope** is a scope consumed by a host skill's self-improvement loop (for example the per-user `aw-lessons`, `aw-tester-lessons`, `fix-bug-lessons`, `batch-lessons`, `reviewer-lessons`, `implement-suggestion-lessons`, `ci-auto-fix-lessons`, `e2e-pr-stabilizer-lessons`, and `test-auto-fix-lessons` scopes under `~/.agent-memory/`).
-Entries written to a lesson scope use the extended template at [`../templates/lesson-entry.md`](../templates/lesson-entry.md), not the base entry template.
-Five frontmatter fields are **mandatory** on every lesson-scope entry:
+A **lesson scope** is the bucket consumed by a host skill's self-improvement loop (for example `aw-lessons`, `aw-tester-lessons`, `fix-bug-lessons`, `batch-lessons`, `reviewer-lessons`, `implement-suggestion-lessons`, `ci-auto-fix-lessons`, `e2e-pr-stabilizer-lessons`, `optimize-approach-lessons`, `ideate-lessons`, and `test-auto-fix-lessons`).
+The loops now persist these on **LoreKit** (tag `loop::<skill>-lessons`, key `<skill>-lessons::<slug>`, scopes `global` / `repo::{owner}/{repo}` — see [`scaling-tiers.md`](./scaling-tiers.md#lorekit--the-self-improvement-loop-backend)), where the five mandatory fields below travel inside the entry's `value` as a `meta:` comment. This section remains the authoritative definition of that shared schema — the persistent-memory markdown template at [`../templates/lesson-entry.md`](../templates/lesson-entry.md) mirrors it for filesystem-backed use.
+Five fields are **mandatory** on every lesson-scope entry:
 
 | Field             | Purpose                                                                                              |
 | ----------------- | ----------------------------------------------------------------------------------------------------- |

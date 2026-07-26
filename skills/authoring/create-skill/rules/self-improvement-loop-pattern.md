@@ -61,7 +61,7 @@ entrenched-bias loop is harder.
 
 | Tier | Mechanism | Storage | Changes behavior? | Gate |
 | ---- | --------- | ------- | ----------------- | ---- |
-| **Fast (episodic)** | `persistent-memory` scope, read at the start of work, written at failure/end points | committed markdown | **No** — advisory input only | none (privacy pre-flight only) |
+| **Fast (episodic)** | LoreKit `memory.*` tools (via `lorekit-memory`), read at the start of work, written at failure/end points | LoreKit (managed) | **No** — advisory input only | none (privacy pre-flight only) |
 | **Slow (procedural)** | `/create-skill diagnose <skill>` | the skill's own source | **Yes** — a rule / gate / trigger | `confidence(analysis) ≥ 90 %` + user approval |
 
 The tiers connect via a **recurrence gate**: a lesson reaching `seen_count >= 3`
@@ -77,28 +77,29 @@ Reflexion / SSGM self-reinforcing-error guards.
 
 ## Conventions
 
-- **Scope name:** `<skill>-lessons` (e.g. `fix-bug-lessons`). Lowercase kebab.
-- **Two tiers, both used:**
-  - **`home`** (per-user at `~/.agent-memory/<skill>-lessons/`) — universal
-    lessons that follow the user across every repo. Always read; default
-    write target. Not committed — the slow-tier promotion (`/create-skill
-    diagnose`) ships a recurring `home` lesson to every consumer.
-  - **`project-shared`** (committed at `<repo>/memory/<skill>-lessons/`) —
-    project-bound lessons specific to the cwd repo. Opt-in: only read /
-    written when `memory/<skill>-lessons/INDEX.md` already exists in the
-    cwd repo. Promotion of a recurring `project-shared` lesson lands in
-    the repo's own `CLAUDE.md` / `.claude/rules/` via the `docs` skill,
-    not in this skill's source.
-  - The workflow classifies each candidate at write time. Pin the tier
-    **explicitly** in every invocation (`--tier home` or
-    `--tier project-shared`) — readable on the call site and immune to
-    future default changes.
+- **Bucket name:** `<skill>-lessons` (e.g. `fix-bug-lessons`). Lowercase kebab.
+  On LoreKit it is a **tag** (`loop::<skill>-lessons`) plus a **key namespace**
+  (`<skill>-lessons::<slug>`) — LoreKit's partition axis is repo/branch/global,
+  not named buckets, so the tag + key is how one loop's lessons stay separate.
+- **Two scopes, both used** (map cleanly onto LoreKit's scope model):
+  - **`global`** — universal lessons that follow the user across every repo.
+    Always read; default write target for universal lessons. The slow-tier
+    promotion (`/create-skill diagnose`) ships a recurring `global` lesson to
+    every consumer.
+  - **`repo::{owner}/{repo}`** — project-bound lessons specific to the cwd repo.
+    Promotion of a recurring `repo::` lesson lands in the repo's own
+    `CLAUDE.md` / `.claude/rules/` via the `docs` skill, not in this skill's
+    source. LoreKit's mode (remote / local `.lorekit/`) — not a filesystem
+    opt-in — decides whether a `repo::` lesson is private, synced, or committed.
+  - The workflow classifies each candidate at write time (universal → `global`,
+    project-bound → `repo::{owner}/{repo}`) and pins the `scope` **explicitly**
+    in every `memory.write` — readable on the call site.
 - **Lesson type:** `procedural` ("what to do better next time"), not a fact.
   Four mandatory body fields: *What failed / Why / What to do next time /
-  Promotion target*. Plus frontmatter `seen_count`, `status`, `expires`,
-  `trigger-context` (concrete: globs, task types, classes — so reads match
-  mechanically).
-- **Writes use `--auto`** (the loop can't pause for consent) — but the privacy
+  Promotion target*. Plus the `meta:` fields `seen_count`, `status`, `expires`,
+  `phase`, `trigger-context` (concrete: globs, task types, classes — so reads
+  match mechanically) carried inside the LoreKit `value`.
+- **Autonomous writes skip consent** (the loop can't pause) — but the privacy
   pre-flight still runs; never store secrets/PII.
 
 ---
@@ -112,26 +113,27 @@ For a skill named `<skill>` in category `<cat>`:
       [`autonomous-workflow/rules/self-improvement-loop.md`](../../../workflow/autonomous-workflow/rules/self-improvement-loop.md)
       for the shared schema + guards; state only what differs (scope, read/write
       points, promotion target). Keep it self-contained enough to execute.
-- [ ] Read invocation at the **start of work** — two-tier fan-out (`home`
-      always; `project-shared` only when `memory/<skill>-lessons/INDEX.md`
-      already exists in cwd). Apply matches as advisory constraints; include
-      the per-tier maintenance check that suggests `consolidate` when either
-      INDEX nears 200 lines.
+- [ ] Read invocation at the **start of work** — narrow-to-broad `memory.list`
+      (`repo::{owner}/{repo}` then `global`, filtered by tag
+      `loop::<skill>-lessons`; optional `memory.search` when the task names a
+      subsystem). Apply matches as advisory constraints; skip expired lessons.
+      No consolidation pass — LoreKit owns storage and dedups on write.
 - [ ] Write invocation(s) at the **failure / end-of-run points** the skill
       already detects (escalation, verifier-red, end-of-run) — no new
-      reflection step. Classify candidates: universal → `home`; project-bound
-      + opted in → `project-shared`; project-bound + not opted in → `home`
-      with a one-line opt-in hint.
+      reflection step. `memory.search` to dedup, then classify candidates:
+      universal → `memory.write` scope `global`; project-bound → scope
+      `repo::{owner}/{repo}`.
 - [ ] Promotion suggestion when a read/written lesson hits `seen_count >= 3`,
-      tier-appropriate: `home` → `/create-skill diagnose <skill>`;
-      `project-shared` → `Skill("docs", "update --add-rule …")`.
-- [ ] `persistent-memory` added to the skill's companion registry / prerequisites
-      as **optional** (loop skips silently if absent).
+      scope-appropriate: `global` → `/create-skill diagnose <skill>`;
+      `repo::` → `Skill("docs", "update --add-rule …")`.
+- [ ] `lorekit-memory` (LoreKit `memory.*` tools) added to the skill's companion
+      registry / prerequisites as **optional** (loop skips silently if the
+      `memory.*` tools are not connected).
 - [ ] `## Lessons scope` section added to the skill's `rules/diagnostic-surface.md`
       (so `diagnose` Step 2 loads it as evidence).
 - [ ] SKILL.md `## Self-Improvement` section + inventory entries in root
-      `CLAUDE.md` / `README.md`. (No repo-side seed directory — the scope is
-      created lazily on first write at `~/.agent-memory/<skill>-lessons/`.)
+      `CLAUDE.md` / `README.md`. (No repo-side seed directory — LoreKit creates
+      the scope lazily on first `memory.write`.)
 
 ---
 
@@ -144,9 +146,10 @@ Copy these into every loop — the dominant risk is **self-reinforcing error**
    a lesson to a behavior change is the confidence-gated, user-approved
    `diagnose` apply.
 2. **Recurrence (`seen_count >= 3`), not one run, gates promotion.**
-3. **Every lesson expires** (default 90 days); `consolidate` prunes stale ones.
+3. **Every lesson expires** (default 90 days, in the `meta:` block); the read
+   step ignores expired lessons so stale beliefs decay.
 4. **Contradictions are flagged, not silently overwritten.**
-5. **Privacy pre-flight is never bypassed** by `--auto`.
+5. **Privacy pre-flight is never bypassed** by autonomous writes.
 
 A lesson must never relax one of the skill's own hard invariants — that is what
 the slow tier's confidence gate and the `diagnostic-surface.md` hard-invariants
@@ -156,8 +159,12 @@ list are for.
 
 ## Don't reinvent the contract
 
-The lesson schema, read/write pipeline, ADD/UPDATE/DELETE/NOOP resolution, and
-consolidation all live in [`persistent-memory`](../../persistent-memory/SKILL.md).
-The promotion engine lives in [`diagnose-mode.md`](./diagnose-mode.md). Your loop
-file only declares **which scope, which read/write points, and the promotion
-target** — it does not re-implement memory mechanics or diagnosis.
+The lesson schema and the LoreKit read/write/dedup mechanics live in
+[`persistent-memory`](../../persistent-memory/SKILL.md) (see its
+[`scaling-tiers.md`](../../persistent-memory/rules/scaling-tiers.md#lorekit--the-self-improvement-loop-backend)
+LoreKit section and [`write-pipeline.md`](../../persistent-memory/rules/write-pipeline.md#lesson-scope-entries)
+lesson schema). The canonical loop contract lives in
+[`autonomous-workflow/rules/self-improvement-loop.md`](../../../workflow/autonomous-workflow/rules/self-improvement-loop.md),
+and the promotion engine in [`diagnose-mode.md`](./diagnose-mode.md). Your loop
+file only declares **which bucket (tag), which read/write points, and the
+promotion target** — it does not re-implement memory mechanics or diagnosis.

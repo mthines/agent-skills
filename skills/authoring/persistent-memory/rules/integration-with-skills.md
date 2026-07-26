@@ -134,23 +134,26 @@ The pointer block also tells the host skill to call `write` at the
 This is what makes the loop persistent: read at the start, write at
 the end.
 
-### Worked example: the `aw-lessons` self-improvement loop
+### Worked example: the `aw-lessons` self-improvement loop (now on LoreKit)
 
-`autonomous-workflow` is a real consumer of this handshake. It reads the
-per-user `aw-lessons` scope at `~/.agent-memory/aw-lessons/` before planning
-(Phase 1) and writes a lesson when it gets stuck (Phase 4) or finishes
-(Phase 7), using `write aw-lessons --tier home --auto`. Home-tier means a
-lesson captured while working in repo A biases the next run in repo B — the
-workflow's learning is per-user, not per-repo. The lessons are **procedural**
-("what to do better next time"), and a lesson that recurs (`seen_count >= 3`)
-is promoted into the skill's own source through a separate confidence-gated
-step (the slow tier — the only path that ships a lesson to every other
-consumer of the skill). Two
-things make this a safe pattern worth copying:
+`autonomous-workflow` is a real consumer of this read-at-start / write-at-end
+handshake — but it runs the handshake on **LoreKit**, not on this skill's
+markdown store (see [`scaling-tiers.md`](./scaling-tiers.md#lorekit--the-self-improvement-loop-backend)
+for the implementation details). It reads the `loop::aw-lessons` lessons
+narrow-to-broad (`memory.list` on `repo::{owner}/{repo}` then `global`) before
+planning (Phase 1) and writes a lesson when it gets stuck (Phase 4) or finishes
+(Phase 7) via `memory.write`. A universal lesson lands in `global`, so a lesson
+captured while working in repo A biases the next run in repo B — the workflow's
+learning is per-user, not per-repo. The lessons are **procedural** ("what to do
+better next time"), and a lesson that recurs (`seen_count >= 3`) is promoted
+into the skill's own source through a separate confidence-gated step (the slow
+tier — the only path that ships a lesson to every other consumer of the skill).
+Two things make this a safe pattern worth copying:
 
-1. **`--auto` skips consent but never the privacy pre-flight** — the
+1. **Autonomous writes skip consent but never the privacy pre-flight** — the
    workflow runs unattended, so it cannot pause per write, but secrets / PII
-   are still refused outright.
+   are still refused outright (a candidate lesson containing a credential is
+   dropped, not written).
 2. **Lessons are advisory** — they bias the host's behavior, they never
    silently change one of its gates. Behavior changes go through an explicit,
    gated promotion step. This is the entrenchment guard the Reflexion
@@ -159,8 +162,21 @@ things make this a safe pattern worth copying:
 See [`../../../workflow/autonomous-workflow/rules/self-improvement-loop.md`](../../../workflow/autonomous-workflow/rules/self-improvement-loop.md)
 for the full contract.
 
-**Lesson-scope schema contract.** The per-user home-tier lesson scopes (`~/.agent-memory/aw-lessons/`, `aw-tester-lessons`, `fix-bug-lessons`, `batch-lessons`, `reviewer-lessons`, `implement-suggestion-lessons`, `ci-auto-fix-lessons`, `e2e-pr-stabilizer-lessons`, `test-auto-fix-lessons`) carry an extended entry schema with five mandatory fields (`phase`, `trigger-context`, `seen_count`, `status`, `expires`), defined on this skill's side in [`write-pipeline.md`](./write-pipeline.md#lesson-scope-entries) and templated at [`../templates/lesson-entry.md`](../templates/lesson-entry.md).
-The host-skill loops depend on exactly these fields (recurrence counting, promotion gating, expiry pruning), so any change to the lesson schema MUST update both the write pipeline's lesson-entry rules and the host skill's loop rules in the same PR — the two surfaces must never drift.
+**Lesson-scope schema contract.** The loop lessons (tags `loop::aw-lessons`,
+`loop::aw-tester-lessons`, `loop::fix-bug-lessons`, `loop::batch-lessons`,
+`loop::reviewer-lessons`, `loop::implement-suggestion-lessons`,
+`loop::ci-auto-fix-lessons`, `loop::e2e-pr-stabilizer-lessons`,
+`loop::test-auto-fix-lessons`, `loop::optimize-approach-lessons`,
+`loop::ideate-lessons`) carry an extended entry schema with five mandatory
+fields (`phase`, `trigger-context`, `seen_count`, `status`, `expires`), defined
+on this skill's side in [`write-pipeline.md`](./write-pipeline.md#lesson-scope-entries)
+and templated at [`../templates/lesson-entry.md`](../templates/lesson-entry.md).
+On LoreKit these fields travel inside the entry's `value` (markdown) as a
+`meta:` comment rather than markdown frontmatter, but the fields and their
+semantics are identical. The host-skill loops depend on exactly these fields
+(recurrence counting, promotion gating, expiry pruning), so any change to the
+lesson schema MUST update both the write pipeline's lesson-entry rules and the
+host skill's loop rules in the same PR — the two surfaces must never drift.
 
 ## When NOT to integrate
 

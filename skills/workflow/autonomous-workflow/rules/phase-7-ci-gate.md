@@ -484,20 +484,17 @@ the **fast tier** of the self-improvement loop; full contract in
 
 Classify each candidate lesson per
 [`self-improvement-loop.md#fast-tier--write-lessons`](./self-improvement-loop.md#fast-tier--write-lessons):
-universal → `home`; project-bound + opted in → `project-shared`; project-bound
-+ not opted in → `home` with an opt-in hint.
+universal → `global`; project-bound → `repo::{owner}/{repo}`.
 
 ```
-# Universal candidate — always home.
-Skill("persistent-memory", "write aw-lessons --tier home --auto")
+# Dedup first so a recurrence updates in place.
+memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
-# Project-bound candidate — opt-in gated.
-if [ -f memory/aw-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")
-else
-  Skill("persistent-memory", "write aw-lessons --tier home --auto")
-  log "Project-bound lesson fell back to home. Team can opt in once with: Skill(\"persistent-memory\", \"write aw-lessons --tier project-shared\")"
-fi
+# Universal candidate → global.
+memory.write { scope: "global", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::end-of-run"], source_agent: "aw", trigger: "end-of-run" }
+
+# Project-bound candidate → this repo's scope.
+memory.write { scope: "repo::{owner}/{repo}", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::end-of-run"], source_agent: "aw", trigger: "end-of-run" }
 ```
 
 Good end-of-run lessons: a companion trigger that should have fired but didn't,
@@ -514,22 +511,22 @@ Before writing, ask: was there friction, a surprise, a guess that paid off, a ne
 Phrase each capture as an **observation** ("last run hit X") not a **rule** ("always do Y") — the read step applies observations as considerations, not constraints.
 Write nothing only when the retrospective surfaces nothing **and** no lesson was applied — empty lessons are noise.
 
-- `--auto` skips consent, **not** the privacy pre-flight (never store secrets /
-  PII). Lessons are workflow mechanics, never product data.
-- Recurring lessons UPDATE and bump `seen_count`. When a written or matched
-  lesson reaches `seen_count >= 3` (or is tagged `structural`), surface the
-  **tier-appropriate** promotion suggestion: `home` lessons promote to skill
-  source via `/create-skill diagnose autonomous-workflow`; `project-shared`
-  lessons promote to repo rules via `Skill("docs", "update --add-rule …")`.
+- Autonomous writes skip consent, **not** the privacy pre-flight (never store
+  secrets / PII). Lessons are workflow mechanics, never product data.
+- Recurring lessons UPDATE (same scope + key) and bump `seen_count`. When a
+  written or matched lesson reaches `seen_count >= 3` (or is tagged
+  `structural`), surface the **scope-appropriate** promotion suggestion:
+  `global` lessons promote to skill source via
+  `/create-skill diagnose autonomous-workflow`; `repo::` lessons promote to
+  repo rules via `Skill("docs", "update --add-rule …")`.
   See [`self-improvement-loop.md#lesson-promotion`](./self-improvement-loop.md#lesson-promotion).
 
 Log:
 
 ```markdown
-- [TIMESTAMP] Phase 7: persistent-memory(write aw-lessons --tier home) — 1 lesson (ADD); 1 promotion-eligible (seen_count=3) → suggested diagnose
-- [TIMESTAMP] Phase 7: persistent-memory(write aw-lessons --tier project-shared) — 1 lesson (ADD); repo opted in
-- [TIMESTAMP] Phase 7: persistent-memory(write aw-lessons --tier home) — 1 project-bound lesson fell back to home
-- [TIMESTAMP] Phase 7: persistent-memory(write aw-lessons) — not available, continuing
+- [TIMESTAMP] Phase 7: lorekit(memory.write global aw-lessons::<slug>) — ADD; 1 promotion-eligible (seen_count=3) → suggested diagnose
+- [TIMESTAMP] Phase 7: lorekit(memory.write repo::{owner}/{repo} aw-lessons::<slug>) — ADD; project-bound
+- [TIMESTAMP] Phase 7: lorekit — memory.* not connected, continuing
 ```
 
 Disable by removing this invocation (see
@@ -546,7 +543,7 @@ Disable by removing this invocation (see
 - [ ] (Optional, Full Mode) `feature-pr-verifier` agent dispatched after CI green; verdict surfaced or skip logged
 - [ ] (Optional) `reviewer` agent dispatched after CI green with `--critical` + auto-fix-all-Simple-severities; inline report surfaced or skip logged
 - [ ] (Optional) PR merged → worktree removed with user confirmation
-- [ ] `persistent-memory(write aw-lessons)` invoked at end-of-run; promotion suggested if `seen_count >= 3` (anchor: `lessons-write`)
+- [ ] `lorekit(memory.write aw-lessons)` invoked at end-of-run; promotion suggested if `seen_count >= 3` (anchor: `lessons-write`)
 - [ ] Final status reported to user
 
 ## References

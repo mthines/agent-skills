@@ -16,7 +16,7 @@ argument-hint: '[quick|deep] [--n <count>] [--no-framing] [<problem statement>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.0.1'
   workflow_type: orchestrator
   tags:
     - ideation
@@ -99,13 +99,11 @@ Cost expectation: a deep `--n 3` run dispatches ~17 subagents (2 bursts × 5 gen
 ### Phase 0 — Intake & triage
 
 1. Read lessons (advisory input for *mechanics only* — see the hard invariant under Self-Improvement).
-   Check the paths first — when neither `~/.agent-memory/ideate-lessons/` nor `memory/ideate-lessons/INDEX.md` exists (first run), skip without invoking `persistent-memory`:
+   Narrow-to-broad LoreKit fan-out; skips silently if `memory.*` is not connected:
 
    ```text
-   Skill("persistent-memory", "read ideate-lessons --tier home")
-   if [ -f memory/ideate-lessons/INDEX.md ]; then
-     Skill("persistent-memory", "read ideate-lessons --tier project-shared")
-   fi
+   memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::ideate-lessons"], limit: 50 }
+   memory.list { scope: "global",               tags: ["loop::ideate-lessons"], limit: 50 }
    ```
 
 2. Restate the problem in one sentence and name the success criterion — what makes an idea "good" here (cheapest, most novel, shippable this week, …).
@@ -141,9 +139,9 @@ Problem framing measurably shapes ideation breadth and direction (§2.5) — ski
 | `confidence`        | Phase 5, on the finalist recommendation.                        | `Skill("confidence", "analysis")`                           |
 | `critical`          | Deep mode, top finalist (automatic); any finalist on request.   | `Skill("critical", "analysis")` — run inside a fresh subagent so the pre-mortem stays adversarial and the main context stays lean. |
 | `ux`                | Finalists that are UI/UX or product-surface concepts.           | `Skill("ux")` as a lens on the finalist.                    |
-| `persistent-memory` | Phases 0 and 7.                                                 | See [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md). |
+| `lorekit-memory` (LoreKit `memory.*` tools) | Phases 0 and 7.                        | See [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md). |
 
-`confidence` is required; the others are optional — skip silently if not installed.
+`confidence` is required; the others are optional — skip silently if not installed / not connected.
 
 ---
 

@@ -28,7 +28,7 @@ This file owns what to do with accumulated signals once they cross the promotion
 
 ## Primary input: the `review-outcomes` bus
 
-The primary signal source for promotion decisions is the `review-outcomes` persistent-memory scope.
+The primary signal source for promotion decisions is the `review-outcomes` LoreKit bus (tag `loop::review-outcomes`).
 `implement-suggestion` appends a fingerprinted outcome record to this bus for each comment it processes (verdict, source, reason, PR, timestamp).
 See [`review-outcomes.md`](./review-outcomes.md) for the full record schema and fingerprint formula.
 
@@ -139,7 +139,7 @@ The `--watch` loop already uses `gh api` for status polling; outcome measurement
 **On-demand:** `/review-outcomes <pr>` runs the five gh-api steps above against any merged PR and writes the result to the lesson store.
 Useful for retrospective audits or when the automatic path was not active.
 
-Both fallback entry points call the same shared `gh api` sequence above and write to `reviewer-lessons` via `persistent-memory`.
+Both fallback entry points call the same shared `gh api` sequence above and write to `reviewer-lessons` via LoreKit `memory.write` (tag `loop::reviewer-lessons`).
 
 ---
 
@@ -153,10 +153,10 @@ When promoting:
 
 ### From `applied` verdicts (positive lesson)
 
-Write to `reviewer-lessons` via `persistent-memory`:
+Write to `reviewer-lessons` via LoreKit:
 
 ```
-Skill("persistent-memory", "write reviewer-lessons --tier home --auto")
+memory.write { scope: "global", key: "reviewer-lessons::<slug>", value: "<body>", tags: ["loop::reviewer-lessons", "source::outcome-applied"] }
 ```
 
 Lesson body: "Pattern [fingerprint class] reliably gets resolved — [short description]. Reinforce detection."
@@ -164,12 +164,12 @@ Lesson body: "Pattern [fingerprint class] reliably gets resolved — [short desc
 ### From `rejected-at-validation` or `reverted-after-ci` verdicts (noise/negative lesson)
 
 ```
-Skill("persistent-memory", "write reviewer-lessons --tier home --auto")
+memory.write { scope: "<global | repo::{owner}/{repo}>", key: "reviewer-lessons::<slug>", value: "<body>", tags: ["loop::reviewer-lessons", "source::outcome-rejected"] }
 ```
 
 Lesson body: "Pattern [fingerprint class] was rejected/reverted [N] times — over-flagging pattern: [short description]. Add to `filters:` in `.review.yaml` or lower confidence threshold."
 
-Classify: if the pattern is universal (e.g. "null-check assertions in safe-context `!` non-null assertions"), write to `home`; if repo-specific (e.g. "this repo's `EnsureMcpIntegrationId` is always guaranteed non-null by construction"), write to `project-shared` when opted in.
+Classify the scope: if the pattern is universal (e.g. "null-check assertions in safe-context `!` non-null assertions"), write to `global`; if repo-specific (e.g. "this repo's `EnsureMcpIntegrationId` is always guaranteed non-null by construction"), write to `repo::{owner}/{repo}`.
 
 ### From gh-api signals (fallback write path)
 
@@ -203,8 +203,8 @@ Outcome signals add a parallel gate:
 ## What this does not change
 
 - The existing `reviewer-lessons` fast-tier read/write contract in `reviewer.md` Step 0.7.
-- The `seen_count` UPDATE contract (owned by `persistent-memory/rules/write-pipeline.md`).
-- The two-tier lesson storage model (`home` vs opt-in `project-shared`).
+- The `seen_count` UPDATE contract (schema owned by `persistent-memory/rules/write-pipeline.md`; the loops persist it on LoreKit).
+- The two-scope lesson storage model (`global` vs repo-specific `repo::{owner}/{repo}`).
 - The per-comment confidence threshold (still 80 — outcome signals inform lessons, not the per-run gate).
 
 Outcome learning is an **async improvement loop**, not an in-run gate.

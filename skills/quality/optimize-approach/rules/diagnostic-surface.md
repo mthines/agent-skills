@@ -37,7 +37,7 @@ The skill body is `SKILL.md`; rules live under `rules/`; the shared wiring rule 
 
 | Phase | Name | Rule / section | Gate |
 | --- | --- | --- | --- |
-| O0 | Read lessons | [self-improvement-loop.md](./self-improvement-loop.md) | Fast-tier read; skips silently if `persistent-memory` absent |
+| O0 | Read lessons | [self-improvement-loop.md](./self-improvement-loop.md) | Fast-tier read; skips silently if LoreKit `memory.*` not connected |
 | O1 | Intent capture | [SKILL.md § O1](../SKILL.md) | 1–2 line intent per approach unit |
 | O2 | Optimality judgment | [optimality-rubric.md](./optimality-rubric.md) | Verdict `optimal`/`suboptimal` per 4-axis rubric + anti-overlap guards + materiality bar |
 | O3 | Quiet early-exit | [optimality-rubric.md](./optimality-rubric.md) | All units `optimal` → empty return |
@@ -53,14 +53,14 @@ The skill body is `SKILL.md`; rules live under `rules/`; the shared wiring rule 
 
 | Phase | Existing guards | Typical gaps |
 | --- | --- | --- |
-| O0 | Two-tier fan-out; `trigger-context` match; project-shared opt-in gate | Lesson applied as hard override instead of advisory |
+| O0 | Narrow-to-broad fan-out (`repo::` then `global`); `trigger-context` match; `expires` skip | Lesson applied as hard override instead of advisory |
 | O1 | Intent from caller or PR/branch; per-approach-unit split | Multi-file diff collapsed to one unit; per-unit judgment lost |
 | O2 | 4 axes; 4 anti-overlap guards; 3-part materiality bar | Mechanical-tidy candidate escalated (guard 1 not run); lateral rewrite escalated |
 | O3 | All-optimal → empty | Manufactured proposal on an optimal change |
 | O4 | Holistic refactor trace; `confidence(analysis)` gate | Proposal emitted from a shallow read with no trace |
 | O5 report | ≤ 2 cap; grep-resolvable evidence; non-blocking | Evidence field unfounded; proposal blocks the verdict |
 | O5 apply | `confidence(code) ≥ 90 %`; `apply_safe`; forbidden targets; scoped check; revert | Apply widened beyond diff files; revert skipped on red check |
-| O5 write | Classification; opt-in gate; privacy pre-flight | Project-bound lesson written to a silently-created committed scope |
+| O5 write | Classification (universal→`global` / project-bound→`repo::`); dedup; privacy pre-flight | Project-bound lesson mis-scoped to `global` (or vice versa) |
 
 ---
 
@@ -74,7 +74,7 @@ The skill body is `SKILL.md`; rules live under `rules/`; the shared wiring rule 
 | `F-apply-widened` | Blast-radius escape | Apply touched files outside the diff, or a public API/type | O5 apply |
 | `F-apply-not-reverted` | Broken tree | A failed scoped check did not revert the rewrite | O5 apply |
 | `F-verdict-blocked` | Verdict escape | An optimality proposal drove a "Request changes" verdict in a calling agent | O5 report |
-| `F-lesson-mis-scoped` | Scope leak | Project-bound lesson written to a silently-created committed scope | O5 write |
+| `F-lesson-mis-scoped` | Scope leak | Project-bound lesson written to `global` (or a `global` lesson written to `repo::`) | O5 write |
 | `F-plan-overlap` | Anti-overlap bypass (plan mode) | Plan-mode proposal re-surfaces Existing Code Survey, `critical`, or `confidence(plan)` output | O5 plan |
 | `F-plan-loop` | Unbounded re-plan | Plan mode re-invoked on a plan it already caused to be revised | O5 plan |
 | `F-novel` | Novel mode | Does not match any existing row | — |
@@ -99,9 +99,9 @@ The taxonomy is **append-only**. New classes are added after confidence-gated, u
 
 ## Lessons scope
 
-`optimize-approach-lessons` — the fast-tier self-improvement scope declared in [self-improvement-loop.md](./self-improvement-loop.md).
-Diagnose Mode reads this scope (both tiers) as **evidence** at Step 2: the `seen_count` history and prior `trigger-context` values make a diagnosis far more accurate than a single-session reflection.
-Read points: O0. Write points: O5. Promotion target for `home` lessons: this skill's source, via this diagnose entry point.
+`optimize-approach-lessons` — the fast-tier self-improvement scope declared in [self-improvement-loop.md](./self-improvement-loop.md) (LoreKit tag `loop::optimize-approach-lessons`).
+Diagnose Mode reads this bucket (both `global` and `repo::{owner}/{repo}` scopes) as **evidence** at Step 2: the `seen_count` history and prior `trigger-context` values make a diagnosis far more accurate than a single-session reflection.
+Read points: O0. Write points: O5. Promotion target for `global` lessons: this skill's source, via this diagnose entry point.
 
 ---
 
@@ -112,7 +112,7 @@ Read points: O0. Write points: O5. Promotion target for `home` lessons: this ski
 | Terminal proposal card(s) + summary line | O5 report | Report runs with ≥ 1 proposal |
 | `verdict: optimal` marker line | O3 | Quiet early-exit runs |
 | Rewrite applied to local files (uncommitted) | O5 apply | Apply runs that clear the gate |
-| Lesson entries under `~/.agent-memory/optimize-approach-lessons/` or `<repo>/memory/optimize-approach-lessons/` | O5 write | Runs that surface a durable lesson |
+| LoreKit lessons tagged `loop::optimize-approach-lessons` (`global` + `repo::{owner}/{repo}` scopes) | O5 write | Runs that surface a durable lesson |
 
 The skill produces no durable repo artifact of its own and never writes to GitHub.
 

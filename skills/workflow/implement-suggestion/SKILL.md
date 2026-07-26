@@ -23,7 +23,7 @@ license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(gw *) Read Edit Write Glob Grep Skill
 metadata:
   author: mthines
-  version: '2.3.0'
+  version: '2.4.0'
   workflow_type: orchestrator
   architecture: parse/resolve/fetch/classify/validate/pack/handoff(fast|standard)/commit-per-comment+resolve-thread/report
   composes:
@@ -159,15 +159,15 @@ if present.
 ### Phase 3 — Classify
 
 <a id="lessons-read"></a>
-**Before tagging — read prior lessons.** Load `implement-suggestion-lessons` so accumulated
+**Before tagging — read prior lessons.** Load the
+`implement-suggestion-lessons` lessons from LoreKit so accumulated
 misclassifications and gate mis-calibrations bias this run before they repeat.
 Full contract in [`rules/self-improvement-loop.md#read-lessons-phase-3`](./rules/self-improvement-loop.md#read-lessons-phase-3):
 
 ```
-Skill("persistent-memory", "read implement-suggestion-lessons --tier home")     # skips silently if not installed
-if [ -f memory/implement-suggestion-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "read implement-suggestion-lessons --tier project-shared")
-fi
+# Narrow-to-broad; silent no-op if memory.* not connected.
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::implement-suggestion-lessons"], limit: 50 }
+memory.list { scope: "global", tags: ["loop::implement-suggestion-lessons"], limit: 50 }
 ```
 
 Match each lesson's `trigger-context` (reviewer source + topic) against the
@@ -292,21 +292,24 @@ Full contract, tier classification, and the applied-lesson UPDATE rule in
 [`rules/self-improvement-loop.md#write-lessons`](./rules/self-improvement-loop.md#write-lessons):
 
 ```
-# Universal candidate → home. Project-bound candidate → project-shared only when opted in.
-Skill("persistent-memory", "write implement-suggestion-lessons --tier home --auto")     # skips silently if not installed
+# Classify scope (universal → global; project-bound → repo::{owner}/{repo}), dedup, then write.
+# Silent no-op if memory.* not connected.
+memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
+memory.write { scope: "<global | repo::{owner}/{repo}>", key: "implement-suggestion-lessons::<slug>", value: "<body>", tags: ["loop::implement-suggestion-lessons", "source::<trigger>"], source_agent: "implement-suggestion", trigger: "<end-of-run | watch-reflag | user-override>" }
 ```
 
 A lesson reaching `seen_count >= 3` is promotion-eligible — surface the
-tier-appropriate one-liner (`/create-skill diagnose implement-suggestion` for
-`home`; a repo rule via `docs` for `project-shared`). Never promote silently.
+scope-appropriate one-liner (`/create-skill diagnose implement-suggestion` for
+`global`; a repo rule via `docs` for `repo::`). Never promote silently.
 See [`rules/self-improvement-loop.md#lesson-promotion`](./rules/self-improvement-loop.md#lesson-promotion).
 
 #### Outcome emit
 
 After writing lessons — emit outcome records to `review-outcomes`. For every comment
-processed in this run (any verdict: `applied`, `rejected-at-validation`, `deferred`), append
-a fingerprinted outcome record to the `review-outcomes` persistent-memory scope.
-This is the outcome-emit step that feeds the shared candidate/outcome bus consumed by
+processed in this run (any verdict: `applied`, `rejected-at-validation`, `deferred`), the
+outcome-emit step appends to the `review-outcomes` LoreKit bus (tag `loop::review-outcomes`)
+via `memory.write` — one fingerprinted outcome record per comment.
+This feeds the shared candidate/outcome bus consumed by
 [`agents/shared/rules/outcome-learning.md`](../../../agents/shared/rules/outcome-learning.md) at promotion time.
 
 Reuse the per-comment `/critical` + `/confidence` result already in context — do not recompute.
@@ -323,20 +326,17 @@ Infer `source` from the comment author login per the heuristic in [`review-outco
 
 ```
 # Append-only, non-blocking — one record per processed comment.
-# Degrade gracefully if persistent-memory is absent (skips silently).
-Skill("persistent-memory", "write review-outcomes --tier home --auto")
-# Project-shared, if opted in:
-if [ -f memory/review-outcomes/INDEX.md ]; then
-  Skill("persistent-memory", "write review-outcomes --tier project-shared --auto")
-fi
-# Opportunistic consolidation if INDEX exceeds 180 lines:
-if [ $(wc -l < ~/.agent-memory/review-outcomes/INDEX.md 2>/dev/null || echo 0) -ge 180 ]; then
-  Skill("persistent-memory", "consolidate review-outcomes --tier home --auto")
-fi
+# Silent no-op if LoreKit's memory.* tools are not connected.
+# Universal calibration → global; repo-specific → repo::{owner}/{repo}.
+memory.write { scope: "<global | repo::{owner}/{repo}>", key: "review-outcomes::<fingerprint-slug>", value: "<outcome record>", tags: ["loop::review-outcomes", "source::<verdict>"], source_agent: "implement-suggestion", trigger: "outcome-emit" }
 ```
 
+LoreKit owns storage server-side and dedups on write, so there is no INDEX to
+consolidate — volatile candidates decay via their 30-day `meta:` TTL, pruned at
+promotion time (see [`review-outcomes.md`](../../../agents/shared/rules/review-outcomes.md)).
+
 This step is **append-only and non-blocking** — it MUST NOT gate or delay the Phase 7 report.
-If `persistent-memory` is absent, the step skips silently; the apply flow is unaffected.
+If LoreKit's `memory.*` tools are not connected, the step is a silent no-op; the apply flow is unaffected.
 
 ## Watch Workflow (`--watch`)
 
@@ -382,8 +382,9 @@ via `/create-skill diagnose implement-suggestion`.
 The loop owns implement-suggestion's **own** decision phases only; the
 standard-lane `aw-planner` dispatch already contributes to `aw-lessons` for the
 planning of architectural changes — this loop does not duplicate that.
-`persistent-memory` is an **optional companion**: if it is not installed the
-whole loop skips silently. Full contract:
+LoreKit (the `lorekit-memory` skill's `memory.*` tools) is an **optional
+companion**: if those tools are not connected the whole loop is a silent no-op.
+Full contract:
 [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
 
 In addition to writing `implement-suggestion-lessons`, this skill is now a **producer of the
@@ -420,7 +421,7 @@ The reviewers (`reviewer`, `pr-reviewer`) consume this bus only at promotion/con
 | `/critical` skill | Adversarial pre-mortem per comment | **Yes** |
 | `/confidence` skill | Gate scoring per comment | **Yes** |
 | `aw-planner` agent | Standard-lane plan authoring | Required when standard-lane fires |
-| `persistent-memory` skill | `implement-suggestion-lessons` self-improvement loop (read Phase 3, write Phase 7 / watch re-flag) | Optional — loop skips silently if absent |
+| `lorekit-memory` skill (LoreKit `memory.*` tools) | `implement-suggestion-lessons` self-improvement loop (read Phase 3, write Phase 7 / watch re-flag) | Optional — loop is a silent no-op if not connected |
 
 If `gh` is missing in multi-PR mode, stop and tell the user to install it.
 

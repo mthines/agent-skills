@@ -16,7 +16,7 @@ argument-hint: '[<surface>|<file-path>] [--plan-only] [--max-iterations <n>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.2.0'
   workflow_type: applied
   tags:
     - tests
@@ -253,11 +253,13 @@ to run tests here — not learned judgment) rather than duplicating it. Lessons 
 `prod-bug`/`unsure` escalation into a silent test edit, and never override a
 refusal in [`rules/anti-patterns.md`](./rules/anti-patterns.md).
 
-Most value is **within a project** (catching a recurring verdict misclassification
-for a failure shape); cross-project leverage is weaker because the feedback is
-binary and local. A recurring lesson (`seen_count >= 3`) is promotion-eligible via
-`/create-skill diagnose test-auto-fix`. `persistent-memory` is optional; the loop
-skips silently if absent. Full contract:
+Most value is **within a project** — the `repo::{owner}/{repo}` scope (catching a
+recurring verdict misclassification for a failure shape); cross-project leverage
+(the `global` scope) is weaker because the feedback is binary and local. A
+recurring lesson (`seen_count >= 3`) is promotion-eligible via
+`/create-skill diagnose test-auto-fix`. Lessons run through LoreKit's `memory.*`
+tools (the `lorekit-memory` skill); if LoreKit is not connected the loop is a
+silent no-op. Full contract:
 [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
 
 ## Definition of done

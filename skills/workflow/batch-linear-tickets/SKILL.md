@@ -15,7 +15,7 @@ argument-hint: '[--type=auto|bug|feature] <ticket-ids>'
 user-invocable: true
 metadata:
   author: mthines
-  version: '3.1.0'
+  version: '3.2.0'
   workflow_type: orchestrator
   architecture: classify/fan-out-analyse/correlate/gate/fan-out-execute
   composes:
@@ -24,7 +24,7 @@ metadata:
     - autonomous-workflow
     - confidence
     - video-analyser
-    - persistent-memory
+    - lorekit-memory
   agents:
     investigator: linear-ticket-investigator
     rca: rca-investigator
@@ -88,7 +88,7 @@ analysis from Phase 1.
 | `aw-planner` + `aw-executor` agents (from [`autonomous-workflow`](../autonomous-workflow/SKILL.md)) | Phase 4 dispatch | **Yes** |
 | `gh` CLI | PR creation by `aw-executor` | **Yes** |
 | `gw` CLI | Worktree management (planner) | Recommended |
-| `persistent-memory` skill | `batch-lessons` self-improvement loop (read Phase 1, write Phase 5) | Optional — loop skips silently if absent |
+| `lorekit-memory` skill (LoreKit `memory.*` tools) | `batch-lessons` self-improvement loop (read Phase 1, write Phase 5) | Optional — loop is a silent no-op if `memory.*` is not connected |
 | Project domain-navigator skill | Investigation accuracy in monorepos | Optional — see [Customization](#customization) |
 
 ---
@@ -142,17 +142,20 @@ in a single message** so they run in parallel.
 
 ### Step 1.read — Read prior batch lessons
 
-Before classifying, load `batch-lessons` so prior classification and correlation
-misfires bias this batch:
+Before classifying, load `batch-lessons` from LoreKit (narrow-to-broad — this
+repo's scope, then `global`) so prior classification and correlation misfires
+bias this batch:
 
 ```text
-Skill("persistent-memory", "read batch-lessons --tier home")     # skips silently if not installed
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::batch-lessons"], limit: 50 }   # no-op if memory.* not connected
+memory.list { scope: "global", tags: ["loop::batch-lessons"], limit: 50 }
 ```
 
 Match lessons by label set / ticket-type / affected-area; apply as **advisory
-inputs** to classification (Step 1a) and correlation (Phase 2). Lessons never
-override an explicit `--type` flag or auto-approve a `Needs Info` ticket. Full
-contract: [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md#read-lessons-phase-1).
+inputs** to classification (Step 1a) and correlation (Phase 2). Skip lessons
+whose `expires` has passed. Lessons never override an explicit `--type` flag or
+auto-approve a `Needs Info` ticket. Full contract:
+[`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md#read-lessons-phase-1).
 (The planning / implementation phases inherit the `aw-lessons` loop automatically
 via the `aw-planner` / `aw-executor` fan-out in Phase 4 — no action needed here.)
 
@@ -336,7 +339,7 @@ watch CI.
 **Lesson-write serialization (batch fan-out contract).**
 Parallel executors return lesson candidates in their result payload; the orchestrator writes all lessons serially after fan-out completes.
 Executors MUST NOT write to shared lesson scopes directly during fan-out.
-Concurrent writes to `~/.agent-memory/aw-lessons/INDEX.md` can interleave; the serial post-fan-out write (one `Skill("persistent-memory", "write aw-lessons --tier home --auto")` per candidate batch, in Phase 5) is the only safe path.
+Concurrent `memory.write` calls to the same `loop::aw-lessons` scope + key can race and clobber each other's `seen_count`; the serial post-fan-out write (one `memory.write` with tag `loop::aw-lessons` per candidate, in Phase 5) is the only safe path.
 
 ---
 
@@ -373,15 +376,17 @@ context).
 ### Step 5.write — Capture batch lessons
 
 When the batch's own orchestration misfired, write a lesson so the next batch
-does better:
+does better — classify scope (universal → `global`; workspace-specific →
+`repo::{owner}/{repo}`), dedup, then write:
 
 ```text
-Skill("persistent-memory", "write batch-lessons --tier home --auto")     # skips silently if not installed
+memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }     # no-op if memory.* not connected
+memory.write { scope: "<global | repo::{owner}/{repo}>", key: "batch-lessons::<slug>", value: "<body>", tags: ["loop::batch-lessons", "source::phase-5"], source_agent: "batch-linear-tickets", trigger: "phase-5" }
 ```
 
 Capture: a ticket whose type was wrong (label set → correct type), a
 cross-ticket conflict Phase 2 correlation missed, or a chronically `Needs Info`
-ticket shape. `--auto` skips consent, not the privacy pre-flight. A lesson
+ticket shape. The write skips consent, not the privacy pre-flight. A lesson
 recurring `seen_count >= 3` becomes promotion-eligible — see
 [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md#write-lessons-phase-5).
 
@@ -398,10 +403,13 @@ recurring `seen_count >= 3` becomes promotion-eligible — see
   their result payload; the orchestrator writes all lessons serially after
   fan-out completes. Executors MUST NOT write to shared lesson scopes directly
   during fan-out.
-- **Fast tier (this skill):** `batch-lessons` — read at Phase 1, written at
-  Phase 5 — covers batch-level orchestration only (type classification,
-  cross-ticket correlation, chronic `Needs Info`). Advisory; skips silently if
-  `persistent-memory` is absent.
+- **Fast tier (this skill):** `batch-lessons` (LoreKit `memory.*`, tag
+  `loop::batch-lessons`) — read at Phase 1, written at Phase 5 — covers
+  batch-level orchestration only (type classification, cross-ticket
+  correlation, chronic `Needs Info`), classified to the `global` scope
+  (universal patterns) or the `repo::{owner}/{repo}` scope (workspace-specific
+  label conventions). Advisory; a silent no-op if LoreKit's `memory.*` tools
+  are not connected.
 - **Slow tier:** a lesson recurring `seen_count >= 3` (or tagged `structural`)
   is promoted via `/create-skill diagnose batch-linear-tickets`, which reads the
   [diagnostic surface](./rules/diagnostic-surface.md) and `batch-lessons`

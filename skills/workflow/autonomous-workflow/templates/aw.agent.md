@@ -55,23 +55,20 @@ planner/executor agents.
 
    If unavailable, ask the user to install the companion set and stop.
 
-2. **Read lessons (universal intake — all tiers; two-tier fan-out):**
+2. **Read lessons (universal intake — narrow-to-broad over LoreKit):**
 
    ```
-   Skill("persistent-memory", "read aw-lessons --tier home")   # skips silently if not installed
-   if [ -f memory/aw-lessons/INDEX.md ]; then
-     Skill("persistent-memory", "read aw-lessons --tier project-shared")
-   fi
+   memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-lessons"], limit: 50 }   # no-op if memory.* not connected
+   memory.list { scope: "global",               tags: ["loop::aw-lessons"], limit: 50 }
    ```
 
-   `home` carries universal lessons that follow the user across every repo.
-   `project-shared` carries team-committed lessons specific to the cwd repo —
-   read only when the team has opted in by creating `memory/aw-lessons/`.
-   Union both INDEXes. Match each lesson's `trigger-context` against the task.
-   Matches inform **both** the tier decision below **and** the approach. A
-   lesson may bias routing (e.g. "auth-touching changes always end up Full")
-   — so even the routing is self-improving. On contradiction between tiers,
-   `project-shared` wins (closer scope). Full contract:
+   `global` carries universal lessons that follow the user across every repo.
+   `repo::{owner}/{repo}` carries lessons specific to the cwd repo. Union both
+   results. Match each lesson's `trigger-context` against the task. Matches
+   inform **both** the tier decision below **and** the approach. A lesson may
+   bias routing (e.g. "auth-touching changes always end up Full") — so even the
+   routing is self-improving. On contradiction between scopes, `repo::` wins
+   (closer scope). Full contract:
    [`rules/self-improvement-loop.md`](../rules/self-improvement-loop.md).
 
 3. **Detect the tier** (see table) and emit the MODE SELECTION block.
@@ -142,16 +139,14 @@ handoff.
   and dispatch by verdict:
 
   ```
-  # Universal candidate — home.
-  Skill("persistent-memory", "write aw-lessons --tier home --auto")
+  # Dedup first so a recurrence updates in place.
+  memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
-  # Project-bound candidate — opt-in gated.
-  if [ -f memory/aw-lessons/INDEX.md ]; then
-    Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")
-  else
-    Skill("persistent-memory", "write aw-lessons --tier home --auto")
-    log "Project-bound lesson fell back to home. Opt in once with: Skill(\"persistent-memory\", \"write aw-lessons --tier project-shared\")"
-  fi
+  # Universal candidate → global.
+  memory.write { scope: "global", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::<trigger>"], source_agent: "aw", trigger: "<trigger>" }
+
+  # Project-bound candidate → this repo's scope.
+  memory.write { scope: "repo::{owner}/{repo}", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::<trigger>"], source_agent: "aw", trigger: "<trigger>" }
   ```
 
   Before writing, do a 30-second retrospective: was there friction, a surprise,
@@ -166,16 +161,15 @@ handoff.
   planner/executor already write at their phase points (stuck-loop, end-of-run);
   your exit write is the catch-all so Micro/Lite also contribute.
 - **Promotion** — if a matched or written lesson has `seen_count >= 3` (or
-  `status: structural`), surface the **tier-appropriate** suggestion (do not
-  act): `home` → `/create-skill diagnose autonomous-workflow --symptom "<title>"`;
-  `project-shared` → `Skill("docs", "update --add-rule \"<title>\" --source memory/aw-lessons/entries/<id>.md")`.
-- **Maintenance** — per tier: if either `aw-lessons` INDEX (home or
-  project-shared, when opted in) is near its 200-line cap (≥ 180 lines), invoke
-  `Skill("persistent-memory", "consolidate aw-lessons --tier <home|project-shared> --auto")`
-  immediately after the exit-write. Autonomous consolidate prunes expired and
-  low-confidence entries only; contradictions are surfaced for review.
+  `status: structural`), surface the **scope-appropriate** suggestion (do not
+  act): `global` → `/create-skill diagnose autonomous-workflow --symptom "<title>"`;
+  `repo::` → `Skill("docs", "update --add-rule \"<title>\" --source lorekit:repo::{owner}/{repo}/aw-lessons::<slug>")`.
+- **Storage** — LoreKit owns storage and dedups on write; there is no INDEX to
+  consolidate. Stale beliefs decay via `expires` (the read step skips expired
+  lessons). The loop only picks the scope; LoreKit's mode decides where a
+  `repo::` lesson physically lives.
 
-`--auto` skips consent, never the privacy pre-flight (no secrets / PII in lessons).
+Autonomous writes skip consent, never the privacy pre-flight (no secrets / PII in lessons).
 
 ## Hard rules
 

@@ -7,6 +7,7 @@ tags:
   - lessons
   - fix-bug
   - promotion
+  - lorekit
   - meta
 ---
 
@@ -53,25 +54,36 @@ This loop owns lessons about fix-bug's **own diagnostic phases** — the ones
 
 ## Scope
 
-- **Scope:** `fix-bug-lessons`
-- **Tiers (two, used together):**
-  - **`home`** — per-user, cross-project at `~/.agent-memory/fix-bug-lessons/`.
-    Default for **universal** bug-class lessons. Always read; default write
-    target.
-  - **`project-shared`** — committed, team-scoped at `<repo>/memory/fix-bug-lessons/`.
-    Opt-in: only read / written when `memory/fix-bug-lessons/INDEX.md` already
-    exists in cwd (team opted in by creating it once via
-    `Skill("persistent-memory", "write fix-bug-lessons --tier project-shared")`).
-    Default for **project-bound** bug-class lessons (a bug pattern only this
-    codebase produces).
+The fast tier runs on **LoreKit** — its `memory.*` MCP tools (surfaced by the
+`lorekit-memory` skill). If those tools are **not connected**, the whole fast
+tier is a silent no-op (log one line, continue).
+
+- **Bucket = tag + key namespace.** LoreKit's partition axis is
+  repo/branch/global, not named buckets. This loop keeps its lessons separate
+  with the **tag** `loop::fix-bug-lessons` (reads filter by it; writes include
+  it) and the **key namespace** `fix-bug-lessons::<kebab-slug>`.
+- **Scopes (two, used together):**
+  - **`global`** — per-user, cross-repo. Follows the user across every
+    repository. Default for **universal** bug-class lessons. Always read;
+    default write target.
+  - **`repo::{owner}/{repo}`** — this repository's lessons. Default for
+    **project-bound** bug-class lessons (a bug pattern only this codebase
+    produces). Derive `{owner}/{repo}` from the `origin` remote, lowercased
+    (strip a trailing `.git`). LoreKit's mode (remote / local `.lorekit/`)
+    decides whether these are private, dashboard-synced, or committed — the
+    loop only selects the scope.
 - Lessons are keyed by **`bugClass`** and **input shape** (the Phase 0
   classification) in their `trigger-context`, so the Phase 0.5 read can match
-  them mechanically against the current bug. Tier is determined at write time
+  them mechanically against the current bug. Scope is determined at write time
   by whether the `bugClass` or input shape is repo-specific.
 
 Lesson record schema is identical to the shared one (procedural memory; the four
 mandatory fields *What failed / Why / What to do next time / Promotion target*).
-Add a `phase:` field naming the fix-bug phase (`0`, `0.5`, `2.5`, `3`, `5`, `8`).
+The metadata a filesystem store would keep in frontmatter travels inside the
+`value` markdown as a top `<!-- meta: phase=.. seen_count=.. status=..
+expires=.. trigger-context=".." -->` comment; the `phase` field names the
+fix-bug phase (`0`, `0.5`, `2.5`, `3`, `5`, `8`). The schema authority is
+[`persistent-memory/rules/write-pipeline.md`](../../../authoring/persistent-memory/rules/write-pipeline.md).
 
 ---
 
@@ -80,21 +92,27 @@ Add a `phase:` field naming the fix-bug phase (`0`, `0.5`, `2.5`, `3`, `5`, `8`)
 **Anchor:** `lessons-read`
 
 At the start of **Complexity Triage (Phase 0.5)**, after `bugClass` is inferred
-(Phase 0c) but before the triage decision commits, load lessons:
+(Phase 0c) but before the triage decision commits, load lessons.
 
-Two-tier fan-out — universal lessons from `home`, project-shared from cwd
-repo when opted in:
+The read is **narrow-to-broad** — project-bound lessons from `repo::` first,
+then universal lessons from `global` — merging the results (skips silently if
+`memory.*` is not connected):
 
+```text
+# (1) Project-bound lessons for this repo.
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::fix-bug-lessons"], limit: 50 }
+
+# (2) Universal lessons that follow the user across every repo.
+memory.list { scope: "global", tags: ["loop::fix-bug-lessons"], limit: 50 }
+
+# (3) Optional — when the bugClass or symptom names a subsystem/error, add a search:
+memory.search { q: "<bugClass or error keywords>", scopes: ["repo::{owner}/*", "global"], limit: 10 }
 ```
-Skill("persistent-memory", "read fix-bug-lessons --tier home")     # skips silently if not installed
-if [ -f memory/fix-bug-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "read fix-bug-lessons --tier project-shared")
-fi
-```
 
-1. Union both INDEXes. Match each lesson's `trigger-context` against the
-   current `bugClass` + input shape. Load full entries only for matches.
-   Project-shared wins on conflict with home (closer scope).
+1. Merge the matches. Match each lesson's `trigger-context` against the current
+   `bugClass` + input shape. Consider the full entry only for matches.
+   **Skip any lesson whose `expires` is in the past.** A `repo::` lesson wins
+   on conflict with a `global` lesson (closer scope) — log the conflict.
 2. Apply matches as **inputs** to the decision they target: a triage lesson
    biases the `simple`/`complex` call (it never overrides the conservative
    default toward `complex`); a reproduction-layer lesson biases Phase 2.5's
@@ -104,15 +122,17 @@ fi
 3. Lessons are **advisory** — they never relax a confidence gate, the Phase 5
    thresholds, the reproduction gate, or any hard invariant.
 4. Record applied lessons in the bug-notes ledger under `Lessons applied`.
-5. **Maintenance check.** If the `INDEX.md` is at/near its 200-line cap
-   (≥ ~180 lines), surface a one-line `/persistent-memory consolidate fix-bug-lessons`
-   suggestion — do not run it inside the autonomous loop.
+
+There is no local INDEX to maintain and no consolidation pass: LoreKit owns
+storage server-side and dedups on write. Stale beliefs decay through `expires`
+(the read step ignores expired lessons), not a line-count sweep.
 
 Log to the ledger:
 
 ```markdown
-- [TIMESTAMP] Phase 0.5: persistent-memory(read fix-bug-lessons --tier home) — N lessons matched (bugClass=<x>), applied
-- [TIMESTAMP] Phase 0.5: persistent-memory(read fix-bug-lessons --tier home) — not available, continuing
+- [TIMESTAMP] Phase 0.5: lorekit(memory.list repo::{owner}/{repo} loop::fix-bug-lessons) — N lessons matched (bugClass=<x>), applied
+- [TIMESTAMP] Phase 0.5: lorekit(memory.list global loop::fix-bug-lessons) — M lessons matched
+- [TIMESTAMP] Phase 0.5: lorekit — memory.* not connected, continuing
 ```
 
 ---
@@ -131,31 +151,47 @@ have under-performed — these are the high-signal moments:
 | **Triage upgrade** | `simple → complex` upgrade, or fast-lane → standard-lane CEGIS round-3 fallback | A `simple`/fast-lane misclassification for this `bugClass` / input shape |
 | **Phase 5 stop** | `< 92 %` stop, or below-70 % hand-back | An evidence / analysis gap pattern for this `bugClass` (what evidence would have raised the score) |
 
-Classify each candidate as **universal** (a `bugClass` any project could hit)
-or **project-bound** (the bugClass cites a repo-specific symbol, file path,
-or domain term). Then dispatch:
+**Scope classification (load-bearing).** Classify each candidate as
+**universal** (a `bugClass` any project could hit) or **project-bound** (the
+bugClass cites a repo-specific symbol, file path, or domain term). When
+ambiguous, default to **universal** (`global`) — a misclassified universal
+lesson harms nothing elsewhere because its `trigger-context` still has to match.
 
+Then **deduplicate first** so a recurrence UPDATES in place instead of piling
+up, and dispatch by verdict:
+
+```text
+# 1. Look for a near-duplicate across the scopes that could hold it.
+memory.search { q: "<key words of the lesson>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
+
+# 2a. Universal candidate — lands in global.
+memory.write { scope: "global", key: "fix-bug-lessons::<slug>", value: "<body>", tags: ["loop::fix-bug-lessons", "source::<trigger>"], source_agent: "fix-bug", trigger: "<trigger>" }
+
+# 2b. Project-bound candidate — lands in this repo's scope.
+memory.write { scope: "repo::{owner}/{repo}", key: "fix-bug-lessons::<slug>", value: "<body>", tags: ["loop::fix-bug-lessons", "source::<trigger>"], source_agent: "fix-bug", trigger: "<trigger>" }
 ```
-# Universal candidate — home.
-Skill("persistent-memory", "write fix-bug-lessons --tier home --auto")
 
-# Project-bound candidate — opt-in gated.
-if [ -f memory/fix-bug-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "write fix-bug-lessons --tier project-shared --auto")
-else
-  Skill("persistent-memory", "write fix-bug-lessons --tier home --auto")
-  log "Project-bound lesson fell back to home. Opt in once with: Skill(\"persistent-memory\", \"write fix-bug-lessons --tier project-shared\")"
-fi
+- **No filesystem opt-in ceremony.** The loop just picks the scope; LoreKit's
+  mode decides whether a `repo::` lesson is private, dashboard-synced, or
+  committed. The loop never creates directories or commits lesson files.
+- **Privacy pre-flight is NOT optional.** Never store secrets / PII — and a
+  `bugClass` lesson never needs product data. The bar is **stricter** for
+  `repo::` writes since the content is team-visible.
+- **Dedup resolves each candidate as ADD / UPDATE.** A recurring lesson reuses
+  the same **scope + key** and resolves to **UPDATE**, which bumps `seen_count`.
+  An UPDATE to an entry that carries a `seen_count` field MUST increment
+  `seen_count` by 1 and refresh `expires`. This is what makes recurrence
+  countable and how a lesson reaches the `seen_count >= 3` promotion gate.
+- At `seen_count >= 3`, surface the **scope-appropriate** promotion suggestion:
+  `global` → `/create-skill diagnose fix-bug`; `repo::` → repo rules.
+
+Log to the ledger's `Phase log`:
+
+```markdown
+- [TIMESTAMP] Phase 7: lorekit(memory.write global fix-bug-lessons::<slug>) — UPDATE, seen_count→3
+- [TIMESTAMP] Phase 8: lorekit(memory.write repo::{owner}/{repo} fix-bug-lessons::<slug>) — ADD — project-bound
+- [TIMESTAMP] Phase 5: lorekit — memory.* not connected, continuing
 ```
-
-- `--auto` skips consent, **not** the privacy pre-flight (never store secrets /
-  PII — and a `bugClass` lesson never needs product data; the bar is stricter
-  for `project-shared` writes since the content lands in the repo).
-- Recurring lessons resolve to **UPDATE**, bumping `seen_count`. At
-  `seen_count >= 3`, surface the **tier-appropriate** promotion suggestion:
-  `home` → `/create-skill diagnose fix-bug`; `project-shared` → repo rules.
-
-Log to the ledger's `Phase log`.
 
 ---
 
@@ -164,17 +200,26 @@ Log to the ledger's `Phase log`.
 **Anchor:** `lesson-promotion`
 
 A lesson reaching `seen_count >= 3` (or tagged `status: structural`) is
-promotion-eligible. Surface — never act silently:
+promotion-eligible. Surface — never act silently. The target **depends on the
+lesson's scope**:
 
-```
+```text
+# global (universal) lesson:
 Lesson "<title>" has recurred N times (phase <p>). Promote it to a permanent
 fix-bug guard?  Run:  /create-skill diagnose fix-bug --symptom "<lesson title>"
+
+# repo:: (project-bound) lesson:
+Lesson "<title>" has recurred N times in this repo. Promote it to a repo rule?
+Run:  Skill("docs", "update --add-rule '<title>' --source lorekit:repo::{owner}/{repo}/fix-bug-lessons::<slug>")
 ```
 
-Diagnose Mode reads `fix-bug-lessons` as evidence, walks fix-bug's
-[diagnostic surface](./diagnostic-surface.md), and emits one confidence-gated
-diff against fix-bug's source — applied only at `confidence(analysis) ≥ 90 %`
-with explicit user confirmation. On success, set the lesson `status: promoted`.
+Diagnose Mode reads the `loop::fix-bug-lessons` lessons as evidence, walks
+fix-bug's [diagnostic surface](./diagnostic-surface.md), and emits one
+confidence-gated diff against fix-bug's source — applied only at
+`confidence(analysis) ≥ 90 %` with explicit user confirmation. On success, set
+the lesson `status: promoted` (via a `memory.write` UPDATE to the same scope +
+key). The `repo::` promotion path uses the `docs` skill under the same
+confidence + user-approval contract.
 
 ---
 
@@ -186,9 +231,11 @@ Identical to the canonical loop — the dominant risk is self-reinforcing error:
    a lesson to a changed fix-bug gate / threshold / invariant is a
    confidence-gated, user-approved `diagnose` apply.
 2. **Recurrence (`seen_count >= 3`), not one run, gates promotion.**
-3. **Every lesson expires** (default 90 days); `consolidate` prunes stale ones.
-4. **Contradictions are flagged, not silently overwritten.**
-5. **Privacy pre-flight is never bypassed** by `--auto`.
+3. **Every lesson expires** (default 90 days); the read step ignores expired
+   lessons, so stale beliefs decay instead of entrenching.
+4. **Contradictions are flagged, not silently overwritten** (the dedup search
+   finds the prior entry).
+5. **Privacy pre-flight is never bypassed** by an autonomous write.
 
 A fix-bug lesson must **never** be allowed to relax a hard invariant from
 [`diagnostic-surface.md`](./diagnostic-surface.md) — e.g. it can bias triage

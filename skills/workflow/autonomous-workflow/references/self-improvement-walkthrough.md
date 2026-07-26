@@ -44,24 +44,14 @@ regression shipped each time.
 Phase 4 escalates (a UX bug surfaced late). The executor writes a lesson:
 
 ```
-Skill("persistent-memory", "write aw-lessons --tier home --auto")
+# Universal candidate → global.
+memory.write { scope: "global", key: "aw-lessons::ux-trigger-missed-nested-tsx", value: "<body below>", tags: ["loop::aw-lessons", "source::stuck-loop"], source_agent: "aw", trigger: "stuck-loop" }
 ```
 
-Resolves to **ADD**. New entry `entries/2026-06-07-ux-trigger-missed-nested-tsx.md`:
+Resolves to **ADD** (no existing `global` entry under that key). The `value`:
 
 ```markdown
----
-id: 2026-06-07-ux-trigger-missed-nested-tsx
-type: procedural
-scope: aw-lessons
-phase: 3
-trigger-context: "RN / nested *.tsx under components/ or screens/"
-seen_count: 1
-confidence: medium
-status: active
-expires: 2026-09-05T00:00:00Z
-source: system
----
+<!-- meta: phase=3 seen_count=1 confidence=medium status=active expires=2026-09-05T00:00:00Z trigger-context="RN / nested *.tsx under components/ or screens/" source=system -->
 
 # ux companion skipped for nested .tsx screens
 
@@ -72,15 +62,16 @@ an a11y regression shipped.
 **Promotion target:** phase-3-implementation.md#ux-trigger (widen the glob)
 ```
 
-Log: `Phase 4: persistent-memory(write aw-lessons) — 1 lesson (ADD, seen_count=1)`.
+Log: `Phase 4: lorekit(memory.write global aw-lessons::ux-trigger-missed-nested-tsx) — ADD, seen_count=1`.
 
 ---
 
 ## Run 2 — recurrence (UPDATE)
 
 A different RN feature, weeks later. At **Phase 1** the planner reads
-`aw-lessons`; the lesson's `trigger-context` ("nested `*.tsx`") matches the
-task, so it is applied as a plan constraint ("run `ux` for the nested screens").
+`loop::aw-lessons` (`global` scope); the lesson's `trigger-context` ("nested
+`*.tsx`") matches the task, so it is applied as a plan constraint ("run `ux` for
+the nested screens").
 The agent runs `ux` this time — good, the fast tier already helped.
 
 This write is mandated by the applied-lesson UPDATE contract
@@ -93,13 +84,15 @@ trigger) is still in the skill, so at end-of-run the executor records the
 recurrence:
 
 ```
-Skill("persistent-memory", "write aw-lessons --tier home --auto")
+# Dedup finds the existing entry; same scope + key → UPDATE in place.
+memory.search { q: "ux trigger nested tsx", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
+memory.write { scope: "global", key: "aw-lessons::ux-trigger-missed-nested-tsx", value: "<updated body>", tags: ["loop::aw-lessons", "source::end-of-run"], source_agent: "aw", trigger: "end-of-run" }
 ```
 
-The candidate matches the existing entry → resolves to **UPDATE**, not a
-duplicate: `seen_count → 2`, `expires` refreshed.
+The candidate matches the existing entry (same scope + key) → resolves to
+**UPDATE**, not a duplicate: `seen_count → 2`, `expires` refreshed.
 
-Log: `Phase 7: persistent-memory(write aw-lessons) — 1 lesson (UPDATE, seen_count=2)`.
+Log: `Phase 7: lorekit(memory.write global aw-lessons::ux-trigger-missed-nested-tsx) — UPDATE, seen_count=2`.
 
 ---
 
@@ -140,11 +133,11 @@ lesson being read.
 
 ## After promotion
 
-The lesson's `status` is set to `promoted` (an UPDATE) so it stops
-re-suggesting, and the body records the commit that hardened the skill. It
-remains as an audit trail of *why* the widened glob exists. Eventually it
-expires and `consolidate` archives it — the knowledge now lives in the source,
-not the memory.
+The lesson's `status` is set to `promoted` (a `memory.write` UPDATE to the same
+scope + key) so it stops re-suggesting, and the body records the commit that
+hardened the skill. It remains as an audit trail of *why* the widened glob
+exists. Eventually its `expires` passes and the read step stops surfacing it —
+the knowledge now lives in the source, not the memory.
 
 ---
 
@@ -156,5 +149,7 @@ not the memory.
   the skill — promotion waited for three independent confirmations.
 - **Confidence gate (93 %):** a speculative or wrong proposal would have been
   refused at `< 90 %`, leaving the report as a discussion artifact.
-- **Expiry + consolidate:** had the trigger been fixed another way, the stale
-  lesson would have decayed instead of entrenching a now-false belief.
+- **Expiry:** had the trigger been fixed another way, the stale lesson's
+  `expires` would have passed and the read step would ignore it — it decays
+  instead of entrenching a now-false belief (LoreKit owns storage; there is no
+  consolidation pass to run).

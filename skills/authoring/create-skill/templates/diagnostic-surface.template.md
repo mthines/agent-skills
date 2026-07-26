@@ -70,15 +70,13 @@ Every new row must come from a real, confidence-gated, user-approved diagnosis.
 
 <!-- Omit this whole section if the skill has no self-improvement loop. -->
 
-- Scope: `<skill-name>-lessons`
-- Tiers: `home` (always, `~/.agent-memory/<skill-name>-lessons/`) +
-  `project-shared` (opt-in per repo, `<repo>/memory/<skill-name>-lessons/`)
-- Read for evidence with the two-tier fan-out:
+- Bucket: `<skill-name>-lessons` (LoreKit tag `loop::<skill-name>-lessons`,
+  key `<skill-name>-lessons::<slug>`)
+- Scopes: `global` (universal) + `repo::{owner}/{repo}` (project-bound)
+- Read for evidence narrow-to-broad (via LoreKit `memory.*`):
   ```
-  Skill("persistent-memory", "read <skill-name>-lessons --tier home")
-  if [ -f memory/<skill-name>-lessons/INDEX.md ]; then
-    Skill("persistent-memory", "read <skill-name>-lessons --tier project-shared")
-  fi
+  memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::<skill-name>-lessons"], limit: 50 }
+  memory.list { scope: "global",               tags: ["loop::<skill-name>-lessons"], limit: 50 }
   ```
 
 ---

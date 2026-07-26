@@ -179,7 +179,7 @@ trigger registry is in
 
 | Phase | Companion              | Required? | What it does                                  |
 | ----- | ---------------------- | --------- | --------------------------------------------- |
-| 1     | `persistent-memory`    | Optional  | Reads `aw-lessons` — applies prior workflow lessons as plan constraints (fast-tier self-improvement) |
+| 1     | `lorekit-memory`       | Optional  | Reads `loop::aw-lessons` — applies prior workflow lessons as plan constraints (fast-tier self-improvement) |
 | 1     | `holistic-analysis`    | Optional  | Multi-domain execution-path tracing           |
 | 1     | `code-quality`         | Optional  | Design-quality review (informs the plan)      |
 | 1     | `optimize-approach`    | Optional  | Default-on approach-optimality check (`--no-optimize` to skip); adopted proposals trigger a bounded re-plan |
@@ -195,9 +195,9 @@ trigger registry is in
 | 6     | `reviewer` *(agent)*   | Optional  | Pre-PR diff review — dispatched directly via the Agent tool with `--critical` + auto-fix-all-severities prompt (Fix Mode on own branch) |
 | 6     | `aw-create-walkthrough` | Optional  | Writes `.agent/{branch}/walkthrough.md`      |
 | 6     | `create-pr`            | Optional  | Narrative PR description + push + watch       |
-| 4     | `persistent-memory`    | Optional  | Writes a lesson at stuck-loop escalation (`write aw-lessons`) |
+| 4     | `lorekit-memory`       | Optional  | Writes a lesson at stuck-loop escalation (`memory.write loop::aw-lessons`) |
 | 7     | `ci-auto-fix`          | Optional  | Diagnose + fix failed CI checks               |
-| 7     | `persistent-memory`    | Optional  | End-of-run: writes durable run lessons; suggests promotion when `seen_count >= 3` |
+| 7     | `lorekit-memory`       | Optional  | End-of-run: writes durable run lessons; suggests promotion when `seen_count >= 3` |
 | 7     | `reviewer` *(agent)*   | Optional  | After CI green: dispatches as PR Mode sub-agent with `--critical` + auto-fix-all-severities prompt — self-review sub-mode auto-fixes every Simple finding (incl. Nitpick / Nice-to-have) + emits an inline terminal report (cross-author PRs are redirected to `pr-reviewer`; the reviewer never writes to GitHub) |
 
 **`confidence` at Phase 1 is the only non-removable companion.** Without it,
@@ -354,36 +354,35 @@ You can also invoke explicitly: `@autonomous-workflow implement X`.
 The workflow improves across runs through a **two-tier loop** (full contract:
 [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md)).
 
-### Fast tier — episodic lessons (`persistent-memory`)
+### Fast tier — episodic lessons (LoreKit)
 
-When `persistent-memory` is installed, the workflow **reads** accumulated
-lessons before planning (Phase 1) and **writes** new ones when it gets stuck
-(Phase 4) or finishes (Phase 7). Lessons live in **two tiers, used together**:
+When LoreKit's `memory.*` tools are connected (via the `lorekit-memory` skill),
+the workflow **reads** accumulated `loop::aw-lessons` lessons before planning
+(Phase 1) and **writes** new ones when it gets stuck (Phase 4) or finishes
+(Phase 7). Lessons live in **two LoreKit scopes, used together**:
 
-- **Universal lessons** land at `~/.agent-memory/aw-lessons/` (the `home` tier).
-  These follow the user across every repository — a lesson captured in repo A
-  biases the next run in repo B. Always read; default write target.
-- **Project-bound lessons** land at `<cwd-repo>/memory/aw-lessons/` (the
-  `project-shared` tier, committed to the repo so the whole team benefits).
-  **Opt-in per repo:** the workflow only reads / writes here when
-  `memory/aw-lessons/INDEX.md` already exists in the repo. Opt in once with:
-  ```
-  /persistent-memory write aw-lessons --tier project-shared
-  ```
-  Subsequent runs auto-write project-bound lessons there. A project-bound
-  candidate that arrives before the team opts in falls back to `home` and the
-  run surfaces a one-line "consider opting in" hint.
+- **Universal lessons** go to the `global` scope. These follow the user across
+  every repository — a lesson captured in repo A biases the next run in repo B.
+  Always read; default write target.
+- **Project-bound lessons** go to the `repo::{owner}/{repo}` scope. Where a
+  `repo::` lesson physically lives — LoreKit's hosted server (`remote`, the
+  default) or a local `.lorekit/` directory, and whether it commits/syncs — is
+  LoreKit's own control model (`lorekit doctor`). There is no filesystem opt-in
+  ceremony: the workflow just picks the scope; LoreKit decides storage.
 
 The workflow classifies each candidate lesson at write time: a `trigger-context`
-that references a repo path / repo-specific package / domain term → project-bound;
-a glob, framework name, or task type with no repo binding → universal. When
-ambiguous, default to universal (`home`).
+that references a repo path / repo-specific package / domain term → project-bound
+(`repo::`); a glob, framework name, or task type with no repo binding → universal
+(`global`). When ambiguous, default to universal (`global`).
 
-Lessons are **advisory** — they bias the plan (applied like Acceptance
-Criteria), never silently change a gate. The fast tier is fully optional:
-uninstall `persistent-memory` and it degrades to nothing. Lessons expire
-(default 90 days) and `/persistent-memory consolidate aw-lessons --tier <home|project-shared>`
-prunes stale ones per tier, so a wrong lesson decays instead of entrenching.
+Lessons carry the LoreKit tag `loop::aw-lessons` and a key in the
+`aw-lessons::<slug>` namespace, so the loop's lessons stay separate from other
+loops' on the same scopes. Lessons are **advisory** — they bias the plan
+(applied like Acceptance Criteria), never silently change a gate. The fast tier
+is fully optional: disconnect LoreKit and it degrades to nothing. Lessons expire
+(default 90 days, in the lesson body) and the read step ignores expired ones, so
+a wrong lesson decays instead of entrenching — LoreKit owns storage and dedups
+on write, so there is no INDEX to consolidate.
 
 ### Slow tier — retrospective diagnosis
 
@@ -449,7 +448,7 @@ to this skill's source.
 - [`review-changes`](../../quality/review-changes/) — pre-PR review
 - [`create-pr`](../../delivery/create-pr/) — narrative PR description + push + watch
 - [`ci-auto-fix`](../../delivery/ci-auto-fix/) — diagnose and fix failed CI checks
-- [`persistent-memory`](../../authoring/persistent-memory/) — backs the `aw-lessons` fast-tier self-improvement loop
+- `lorekit-memory` (LoreKit `memory.*` tools) — backs the `aw-lessons` fast-tier self-improvement loop; see [`persistent-memory`](../../authoring/persistent-memory/) for the LoreKit backend docs
 - Worktree basics without `gw`: native [`git worktree`](https://git-scm.com/docs/git-worktree) (`add -b <branch> <path>`, `list`, `remove <path>`)
 
 ---

@@ -97,7 +97,7 @@ skills/workflow/autonomous-workflow/
 │   ├── smart-worktree-detection.md # Fuzzy-match task to existing worktree.
 │   ├── planner-executor-handoff.md # Handoff contract between planner and executor.
 │   ├── diagnostic-surface.md   # Phase model + failure taxonomy + guards table consumed by `/create-skill diagnose autonomous-workflow`.
-│   ├── self-improvement-loop.md # Episodic-lessons fast tier (persistent-memory aw-lessons) + promotion to diagnose. Read Phase 1; write Phase 4/7.
+│   ├── self-improvement-loop.md # Episodic-lessons fast tier (LoreKit loop::aw-lessons) + promotion to diagnose. Read Phase 1; write Phase 4/7.
 │   └── _template.md            # Boilerplate for new rule files.
 ├── templates/
 │   ├── aw.agent.md                 # aw dispatcher agent (opt-in entry; tier routing + universal loop). Linked by install.sh as aw.md.
@@ -449,19 +449,19 @@ that the same failure happened before. The fast tier fills both gaps.
 
 | Tier | Mechanism | Storage | Behavior change? | Gate |
 | ---- | --------- | ------- | ---------------- | ---- |
-| **Fast (home)** | `persistent-memory` `aw-lessons --tier home` (read Phase 1, write Phase 4/7) | per-user markdown at `~/.agent-memory/aw-lessons/` — follows the user across every repo | No — advisory input to planning | none (privacy pre-flight only) |
-| **Fast (project-shared)** | `persistent-memory` `aw-lessons --tier project-shared` (read + write only when `<repo>/memory/aw-lessons/` exists) | committed markdown at `<cwd-repo>/memory/aw-lessons/` — team-scoped, opt-in per repo | No — advisory input to planning | none (privacy pre-flight, **stricter** because content lands in the repo) |
-| **Slow (home → skill source)** | `/create-skill diagnose autonomous-workflow` | this skill's source | Yes — a rule / gate / trigger for every consumer | `confidence(analysis) ≥ 90 %` + user approval |
-| **Slow (project-shared → repo rules)** | `Skill("docs", "update --add-rule …")` | the cwd repo's `CLAUDE.md` / `.claude/rules/` | Yes — a rule for everyone working in that repo | `confidence(analysis) ≥ 90 %` + user approval |
+| **Fast (global)** | LoreKit `memory.*` tools, tag `loop::aw-lessons`, scope `global` (read Phase 1, write Phase 4/7) | LoreKit (managed) — follows the user across every repo | No — advisory input to planning | none (privacy pre-flight only) |
+| **Fast (repo::)** | LoreKit `memory.*` tools, tag `loop::aw-lessons`, scope `repo::{owner}/{repo}` | LoreKit (managed) — repo-scoped; LoreKit's mode decides private / synced / committed | No — advisory input to planning | none (privacy pre-flight, **stricter** because a repo scope is team-visible) |
+| **Slow (global → skill source)** | `/create-skill diagnose autonomous-workflow` | this skill's source | Yes — a rule / gate / trigger for every consumer | `confidence(analysis) ≥ 90 %` + user approval |
+| **Slow (repo:: → repo rules)** | `Skill("docs", "update --add-rule …")` | the cwd repo's `CLAUDE.md` / `.claude/rules/` | Yes — a rule for everyone working in that repo | `confidence(analysis) ≥ 90 %` + user approval |
 
 The fast and slow tiers are connected by a **recurrence gate**: a lesson
 reaching `seen_count >= 3` (or tagged `structural`) is promotion-eligible.
-The **tier of the lesson determines the promotion target**: a `home` lesson
+The **scope of the lesson determines the promotion target**: a `global` lesson
 promotes to the skill's source (every consumer benefits via the next install);
-a `project-shared` lesson promotes to the cwd repo's own rules (every teammate
+a `repo::` lesson promotes to the cwd repo's own rules (every teammate
 working in that repo benefits via the next git pull). The workflow surfaces a
 one-line suggestion in either case — it never acts silently. The full
-contract, lesson schema, classification rule, opt-in mechanics, and the
+contract, lesson schema, classification rule, scope mapping, and the
 entrenchment guards live in
 [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
 
@@ -470,11 +470,11 @@ any reflective-memory loop is *self-reinforcing error* (Reflexion's documented
 failure mode; the SSGM governance literature). Letting a single run rewrite the
 skill is exactly that failure. The fast tier captures lessons cheaply and
 reversibly; only recurrence-proven lessons earn a permanent, human-approved
-change. The fast tier is a fully optional companion — uninstall
-`persistent-memory` and it degrades to nothing while `diagnose` keeps working.
+change. The fast tier is a fully optional companion — disconnect LoreKit's
+`memory.*` tools and it degrades to nothing while `diagnose` keeps working.
 
 **Design rule for the loop:** keep domain knowledge out of this skill. The
-lessons themselves live in `persistent-memory`, not in the workflow's rules. The
+lessons themselves live in LoreKit, not in the workflow's rules. The
 workflow only owns *when* to read / write / promote — the same orchestrator
 discipline that governs every other companion.
 
@@ -651,10 +651,11 @@ they must be exercised live (markdown can't prove them). Run this after editing
    (a gated `plan.md` appears), then **`aw-executor`**. If the harness refuses
    nested sub-agent dispatch, `aw` must fall back to telling you to run them —
    confirm it does **not** silently downgrade to single-pass.
-4. **Universal loop + two-tier writes (the R2 risk):** run two checks.
-   - **Universal lesson:** after a run where the lesson is generic (e.g. trigger-context like `*.tsx` or `monorepo refactor`), confirm a lesson file was written under **`~/.agent-memory/aw-lessons/entries/`** (the per-user `home` scope) and NOT in `<repo>/memory/aw-lessons/`. If it landed in the project repo, the classifier mis-routed a universal lesson.
-   - **Project-bound lesson, opt-in:** in a repo that has `memory/aw-lessons/INDEX.md` committed, run a task that produces a repo-bound lesson (trigger-context referencing a repo path) and confirm the lesson file lands in `<repo>/memory/aw-lessons/entries/` (the committed `project-shared` scope) — NOT in `~/.agent-memory/`. If it landed in home, the opt-in guard or the classifier is broken.
-   - **Project-bound lesson, NOT opted in:** in a repo with no `memory/aw-lessons/` directory, produce a repo-bound lesson and confirm it lands in `~/.agent-memory/aw-lessons/` (fallback) and an opt-in hint appears in the run log. If the run silently created `memory/aw-lessons/` in the cwd repo, the opt-in guard is broken — the workflow must NEVER commit-create a scope without explicit user opt-in.
+4. **Universal loop + two-scope writes (the R2 risk):** run two checks against
+   LoreKit (`memory.search { q, scopes: ["repo::{owner}/*", "global"], tags: ["loop::aw-lessons"] }` to inspect).
+   - **Universal lesson:** after a run where the lesson is generic (e.g. trigger-context like `*.tsx` or `monorepo refactor`), confirm the lesson was written to the **`global`** scope (tag `loop::aw-lessons`) and NOT to `repo::{owner}/{repo}`. If it landed in the repo scope, the classifier mis-routed a universal lesson.
+   - **Project-bound lesson:** run a task that produces a repo-bound lesson (trigger-context referencing a repo path) and confirm the lesson lands in the **`repo::{owner}/{repo}`** scope — NOT in `global`. If it landed in `global`, the classifier is broken.
+   - **Storage delegation:** confirm the workflow never creates directories or commits lesson files in the cwd repo — where a `repo::` lesson physically lives is LoreKit's control model (`remote` / local `.lorekit/`), not the loop's. The loop must only call `memory.write` with a scope.
 5. **Opt-in boundary:** in an interactive session, make a casual single-file edit
    **without** a trigger phrase or `@aw`. Expect: `aw` does **not** engage.
 
@@ -680,6 +681,33 @@ end-user-facing; this file is contributor-facing.
 ---
 
 ## History
+
+- **v3.17.0** — Self-improvement fast tier migrated from `persistent-memory` to
+  **LoreKit** (MCP-backed shared agent memory). The two former tiers map onto
+  LoreKit scopes — `home` → `global`, `project-shared` → `repo::{owner}/{repo}`
+  — and the `aw-lessons` bucket becomes a LoreKit **tag** (`loop::aw-lessons`)
+  plus a **key namespace** (`aw-lessons::<slug>`), because LoreKit partitions by
+  repo/branch/global, not named buckets. Reads use `memory.list` narrow-to-broad
+  (repo:: then global) filtered by tag; writes classify the scope, `memory.search`
+  to dedup, then `memory.write` (same scope + key updates in place → the
+  recurrence UPDATE). The filesystem opt-in ceremony (`memory/aw-lessons/INDEX.md`)
+  is gone — LoreKit's mode (`remote` / local `.lorekit/`) decides where a `repo::`
+  lesson physically lives; the loop only picks the scope. INDEX 200-line caps and
+  `consolidate` are gone too (LoreKit owns storage and dedups on write); expiry
+  (the `expires` field, ignored on read once past) remains the decay mechanism.
+  The lesson schema (five `meta` fields + four bold fields), the advisory-only
+  semantics, the `seen_count >= 3` promotion gate, and all five entrenchment
+  guards are unchanged. Coupled surfaces updated in lockstep: `self-improvement-loop.md`
+  (canonical SSOT), `phase-1/3/4/7`, `companion-skills.md`, `diagnostic-surface.md`,
+  all four agent templates (`aw`, `aw-planner`, `aw-executor`, `aw-tester`),
+  `SKILL.md`, `README.md`, this file, and `references/self-improvement-walkthrough.md`.
+  `persistent-memory` is kept as the general-purpose personal-memory skill and now
+  documents the LoreKit backend (`rules/scaling-tiers.md`). The same migration was
+  applied to every other loop in the repo (`fix-bug`, `batch-linear-tickets`,
+  `implement-suggestion`, `ci-auto-fix`, `test-auto-fix`, `e2e-pr-stabilizer`,
+  `optimize-approach`, `ideate`, and the `reviewer` / `pr-reviewer` agents + the
+  `review-outcomes` bus). LoreKit skips silently when its `memory.*` tools are not
+  connected — the fast tier degrades to nothing and `diagnose` is unaffected.
 
 - **v3.16.0** — Plan-time optimality lens. Wired the `optimize-approach` skill's
   new `plan` mode into **Phase 1** as a default-on companion (Full Mode; quiet

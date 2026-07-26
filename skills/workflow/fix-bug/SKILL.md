@@ -24,7 +24,7 @@ user-invocable: true
 disable-model-invocation: false
 metadata:
   author: mthines
-  version: '2.2.0'
+  version: '2.3.0'
   workflow_type: orchestrator
   architecture: classify/triage/preflight/reproduce/analyse/gate/handoff(fast|standard)/verify/telemetry
   agents:
@@ -146,7 +146,7 @@ Flags are mutually exclusive. They are detected in Phase 0 step 0a and stripped 
 | `bug-fix-verifier` agent ([`agents/bug-fix-verifier.md`](../../../agents/bug-fix-verifier.md)) | Phase 7 independent verification | **Yes** for auto-fix path |
 | `gh` CLI | Draft PR creation by `aw-executor`; `gh pr ready` by Phase 7 | **Yes** for auto-fix path |
 | `gw` CLI | Worktree management (planner) | Recommended |
-| `persistent-memory` skill | `fix-bug-lessons` self-improvement loop (read Phase 0.5, write Phase 5/7/8) | Optional — loop skips silently if absent |
+| `lorekit-memory` skill (LoreKit `memory.*` tools) | `fix-bug-lessons` self-improvement loop (read Phase 0.5, write Phase 5/7/8) | Optional — loop is a silent no-op if `memory.*` is not connected |
 | `video-analyser` skill | Resolve video / screen-recording inputs — a direct video input (Phase 0 row 3) or a video attachment flagged on a Linear ticket (Phase 1 Linear route) | If video input or a Linear ticket carries a video |
 | Dash0 MCP server (`mcp__dash0__*` or equivalent) | Resolve span / log / web event URLs; Phase 8 polling | If Dash0 input |
 | Linear MCP (`mcp__claude_ai_Linear__*`) | Linear-ticket input route via `linear-ticket-investigator` | If Linear input |
@@ -264,17 +264,20 @@ analysis + fast-lane handoff) or **`complex`** (canonical holistic-analysis + st
 handoff). This is a **routing decision, not a quality decision** — confidence (Phase 4) still
 owns the auto-implement call.
 
-**Before the decision — read prior lessons.** Load `fix-bug-lessons` so this
-skill's own past misfires (triage / repro-layer / analysis) bias the run:
+**Before the decision — read prior lessons.** Load `fix-bug-lessons` from
+LoreKit (narrow-to-broad — this repo's scope, then `global`) so this skill's own
+past misfires (triage / repro-layer / analysis) bias the run:
 
 ```text
-Skill("persistent-memory", "read fix-bug-lessons --tier home")     # skips silently if not installed
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::fix-bug-lessons"], limit: 50 }   # no-op if memory.* not connected
+memory.list { scope: "global", tags: ["loop::fix-bug-lessons"], limit: 50 }
 ```
 
 Match lessons by `bugClass` + input shape; apply matches as **advisory inputs**
 to the triage decision (they never override the conservative `complex` default
-or relax any gate). Record applied lessons in the bug-notes ledger. Full
-contract: [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md#read-lessons-phase-05).
+or relax any gate). Skip lessons whose `expires` has passed. Record applied
+lessons in the bug-notes ledger. Full contract:
+[`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md#read-lessons-phase-05).
 
 Walk the 14-row signal table in [`rules/complexity-triage.md`](./rules/complexity-triage.md) and
 apply the decision rule (conservative default: pick `complex` when in doubt). The outcome:
@@ -537,13 +540,16 @@ and the higher bar on the gate we keep restores the three-gate invariant.
 
 **On a stop (`< 92 %`, or below-70 % hand-back), and on any triage upgrade
 (`simple → complex`) or fast-lane → standard-lane CEGIS fallback**, write a
-lesson so the next bug of this `bugClass` does better:
+lesson so the next bug of this `bugClass` does better — classify scope
+(universal → `global`; project-bound → `repo::{owner}/{repo}`), dedup, then
+write:
 
 ```text
-Skill("persistent-memory", "write fix-bug-lessons --tier home --auto")     # skips silently if not installed
+memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }     # no-op if memory.* not connected
+memory.write { scope: "<global | repo::{owner}/{repo}>", key: "fix-bug-lessons::<slug>", value: "<body>", tags: ["loop::fix-bug-lessons", "source::phase-5-stop"], source_agent: "fix-bug", trigger: "phase-5-stop" }
 ```
 
-`--auto` skips consent, not the privacy pre-flight. See
+The write skips consent, not the privacy pre-flight. See
 [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md#write-lessons).
 
 ---
@@ -674,10 +680,12 @@ procedure. Source: [Effective harnesses for long-running agents (Anthropic)](htt
 
 **On a verifier RED verdict**, write a lesson — the fix was wrong despite all
 three gates, which is the highest-signal moment to capture *which earlier phase
-under-caught it* (triage too `simple`? repro false-green? analysis wrong file?):
+under-caught it* (triage too `simple`? repro false-green? analysis wrong file?).
+Classify scope, dedup, then write:
 
 ```text
-Skill("persistent-memory", "write fix-bug-lessons --tier home --auto")     # skips silently if not installed
+memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }     # no-op if memory.* not connected
+memory.write { scope: "<global | repo::{owner}/{repo}>", key: "fix-bug-lessons::<slug>", value: "<body>", tags: ["loop::fix-bug-lessons", "source::verifier-red"], source_agent: "fix-bug", trigger: "verifier-red" }
 ```
 
 See [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md#write-lessons).
@@ -716,10 +724,12 @@ synchronously when the project auto-deploys on merge.
 
 **If the originating signal does not decay (or recurs)**, write a lesson — this
 is the strongest evidence that the "fix" did not fix the production symptom, and
-almost always points back to a Phase 3 analysis or Phase 2.5 repro-fidelity gap:
+almost always points back to a Phase 3 analysis or Phase 2.5 repro-fidelity gap.
+Classify scope, dedup, then write:
 
 ```text
-Skill("persistent-memory", "write fix-bug-lessons --tier home --auto")     # skips silently if not installed
+memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }     # no-op if memory.* not connected
+memory.write { scope: "<global | repo::{owner}/{repo}>", key: "fix-bug-lessons::<slug>", value: "<body>", tags: ["loop::fix-bug-lessons", "source::telemetry-firing"], source_agent: "fix-bug", trigger: "telemetry-firing" }
 ```
 
 See [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md#write-lessons).
@@ -731,14 +741,16 @@ See [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md#write-le
 `/fix-bug` improves across bugs through a **two-tier loop** (full contract:
 [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md)).
 
-**Fast tier — episodic lessons (`persistent-memory`, optional).** Reads
-`fix-bug-lessons` at Phase 0.5 (keyed by `bugClass` + input shape) and writes
-lessons at the highest-signal failure moments — verifier RED (Phase 7),
-telemetry-still-firing (Phase 8), triage upgrades, and Phase 5 stops — in the
-committed `fix-bug-lessons` scope. Lessons cover fix-bug's **own** diagnostic
-phases; implementation-phase lessons live in `aw-lessons` (written by
-`aw-executor`). Lessons are advisory and skip silently if `persistent-memory`
-is absent.
+**Fast tier — episodic lessons (LoreKit `memory.*`, optional).** Reads
+`fix-bug-lessons` (tag `loop::fix-bug-lessons`) at Phase 0.5 (keyed by
+`bugClass` + input shape) and writes lessons at the highest-signal failure
+moments — verifier RED (Phase 7), telemetry-still-firing (Phase 8), triage
+upgrades, and Phase 5 stops. Each lesson is classified to the `global` scope
+(universal bug classes) or the `repo::{owner}/{repo}` scope (project-bound bug
+patterns). Lessons cover fix-bug's **own** diagnostic phases;
+implementation-phase lessons live in `aw-lessons` (written by `aw-executor`).
+Lessons are advisory and the loop is a silent no-op if LoreKit's `memory.*`
+tools are not connected.
 
 **Slow tier — retrospective diagnosis.** If a run shipped wrong code despite all
 three confidence gates — or a post-merge regression traces back to a missed

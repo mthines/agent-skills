@@ -13,7 +13,7 @@ argument-hint: '<task-description> [--no-confirm] [--critical]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.16.0'
+  version: '3.17.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -40,11 +40,13 @@ companions skip silently if not installed.
 The workflow improves across runs through a **two-tier loop** (full contract in
 [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md)):
 
-**Fast tier — episodic lessons (`persistent-memory`, optional companion).** The
-workflow reads accumulated lessons before planning (Phase 1) and writes new ones
-when it gets stuck (Phase 4) or finishes (Phase 7), in the committed
-`aw-lessons` scope. Lessons are **advisory** — they bias the plan, never
-silently change a gate. Skips silently if `persistent-memory` is not installed.
+**Fast tier — episodic lessons (LoreKit `memory.*` tools, optional companion).**
+The workflow reads accumulated `loop::aw-lessons` lessons before planning
+(Phase 1) and writes new ones when it gets stuck (Phase 4) or finishes (Phase 7),
+mapping universal lessons to LoreKit's `global` scope and repo-bound lessons to
+`repo::{owner}/{repo}`. Lessons are **advisory** — they bias the plan, never
+silently change a gate. Skips silently when LoreKit's `memory.*` tools are not
+connected.
 **When invoked through the `aw` dispatcher, the read/write is hoisted to the
 dispatcher** (intake + exit) so **every tier** — Micro, Lite, and Full — both
 benefits from and contributes lessons; the phase-level reads/writes are the
@@ -160,28 +162,28 @@ for the full registry, trigger conditions, and **how to disable any companion**.
 
 | Phase | Companion              | Trigger                                                | Args             |
 | ----- | ---------------------- | ------------------------------------------------------ | ---------------- |
-| 1     | `persistent-memory`    | Always — read accumulated workflow lessons before design (fast-tier self-improvement) | `read aw-lessons --tier home` |
+| 1     | `lorekit-memory`       | Always — read accumulated workflow lessons before design (fast-tier self-improvement) | `memory.list loop::aw-lessons` |
 | 1     | `holistic-analysis`    | Complex / multi-domain / unfamiliar task               | —                |
 | 1     | `code-quality`         | Always (informs design)                                | `plan`           |
 | 1     | `critical`             | Opt-in only (user passed `--critical` to the workflow). Single adversarial pre-mortem pass between `code-quality(plan)` and `confidence(plan)`. Findings flow into `aw-create-plan` as plan defects (must-fix) and considered-alternatives notes (steelman). Advisory — does not gate. | `plan` |
 | 1     | `optimize-approach`    | Default-on in Full Mode (quiet early-exit; skip on `--no-optimize`). "Is this the most optimal approach?" pass between the pre-mortem and `confidence(plan)`. Adopted proposals trigger a bounded re-plan via `aw-create-plan`. Advisory — does not gate. | `plan` |
 | 1     | `confidence`           | Always (plan gate, MANDATORY)                          | `plan`           |
 | 2     | `aw-create-plan`       | Full Mode only                                         | —                |
-| 3     | `persistent-memory`    | Executor entry — read lessons when `plan.md` has no `## Lessons applied` (no-planner paths) | `read aw-lessons --tier home` |
+| 3     | `lorekit-memory`       | Executor entry — read lessons when `plan.md` has no `## Lessons applied` (no-planner paths) | `memory.list loop::aw-lessons` |
 | 3     | `tdd`                  | Pure logic / business rules / "test-driven"            | —                |
 | 3     | `ux`                   | UI files touched (`*.tsx`, `*.jsx`, `*.vue`, RN)       | —                |
 | 3     | `code-quality`         | Once at end of Phase 3 (not per-file)                  | `code`           |
 | 4     | `test-provenance-guard` | After Step 5 — any new `*.test.*` / `*.unit.*` / `*.spec.*` file written | `--diff --base $(git merge-base HEAD main) --fix` *(autofix gated by `confidence(code) ≥ 90 %`)* |
 | 4     | `confidence`           | At iteration cap (3 Lite / 5 Full) on same failing area | `analysis`   |
 | 4     | `holistic-analysis`    | After confidence at Phase 4 if user asks for retry     | —                |
-| 4     | `persistent-memory`    | At stuck-loop escalation — record failing area + resolution as a lesson | `write aw-lessons --tier home --auto` |
+| 4     | `lorekit-memory`       | At stuck-loop escalation — record failing area + resolution as a lesson | `memory.write loop::aw-lessons` |
 | 5     | `docs`                 | Always (self-improving doc loop — updates `CLAUDE.md`, `README.md`, `docs/`) | `update --auto`  |
 | 6     | `reviewer` *(agent)*   | Always before push — dispatched directly via the Agent tool (Fix Mode on own branch; auto-fix all Simple findings across every severity) | `--critical` + auto-fix-all prompt |
 | 6     | `aw-review-quality-gate` | After the `reviewer` agent returns findings — false-positive filter (advisory) | —                |
 | 6     | `aw-create-walkthrough` | Full Mode only                                        | —                |
 | 6     | `create-pr`            | Always                                                 | —                |
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                 | `<run-id\|pr-url>` |
-| 7     | `persistent-memory`    | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `write aw-lessons --tier home --auto` |
+| 7     | `lorekit-memory`       | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `memory.write loop::aw-lessons` |
 | 7     | `reviewer` *(agent)*   | After CI green — auto-dispatch in PR Mode (self-review sub-mode for self-authored PRs: inline report + auto-fix every Simple finding regardless of severity, incl. Nitpick / Nice-to-have; cross-author PR redirects to `pr-reviewer`) | `<pr-url> --critical` + auto-fix-all prompt |
 
 ---
@@ -364,7 +366,7 @@ per-companion disabling, see the [README](./README.md#installation) and
 - [`review-changes`](../../quality/review-changes/SKILL.md) — pre-PR review
 - [`create-pr`](../../delivery/create-pr/SKILL.md) — narrative PR description + push + watch
 - [`ci-auto-fix`](../../delivery/ci-auto-fix/SKILL.md) — diagnose and fix failed CI checks
-- [`persistent-memory`](../../authoring/persistent-memory/SKILL.md) — backs the `aw-lessons` and `aw-tester-lessons` fast-tier self-improvement loops
+- `lorekit-memory` (LoreKit `memory.*` tools) — backs the `aw-lessons` and `aw-tester-lessons` fast-tier self-improvement loops. See also [`persistent-memory`](../../authoring/persistent-memory/SKILL.md) for the LoreKit backend docs (`rules/scaling-tiers.md`)
 - [`e2e-testing`](../../testing/e2e-testing/SKILL.md) — Generator for promoting `critical-path` specs to saved `*.spec.ts` at end of Phase 4
 
 ### Related Agents

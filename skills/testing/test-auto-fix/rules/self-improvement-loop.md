@@ -5,6 +5,7 @@ tags:
   - self-improvement
   - memory
   - lessons
+  - lorekit
   - test-auto-fix
   - verdicts
   - regression-detection
@@ -20,6 +21,10 @@ contract: which scope, which read / write points, and the promotion gate. The
 **shared** lesson-record schema and the entrenchment guards are canonical in
 [`../../../workflow/autonomous-workflow/rules/self-improvement-loop.md`](../../../workflow/autonomous-workflow/rules/self-improvement-loop.md)
 — read that for the full design; this file states only what differs.
+
+The fast tier runs through **LoreKit's `memory.*` MCP tools** (surfaced by the
+`lorekit-memory` skill). If those tools are **not connected**, the whole fast
+tier is a silent no-op (log one line, continue).
 
 ## Contents
 
@@ -52,22 +57,37 @@ local* (a test goes green on re-run or it does not) — there is no distributed
 post-deploy signal like fix-bug's Phase 8 telemetry, and the verdict space is
 only three buckets (`test-bug` / `prod-bug` / `unsure`). The strongest value is
 therefore **within a project** (catching a recurring verdict misclassification
-or a chronically mis-scored fix class), with weaker cross-project leverage. The
+or a chronically mis-scored fix class) — which is exactly the
+`repo::{owner}/{repo}` scope below — with weaker cross-project leverage. The
 loop is worth running, but calibrate expectations accordingly.
 
 ---
 
 ## Scope
 
-- **Scope:** `test-auto-fix-lessons`
-- **Tiers (two, used together):**
-  - **`home`** — per-user at `~/.agent-memory/test-auto-fix-lessons/`. Default for
-    **universal** lessons (a stack + failure-shape → verdict/fix pattern that
-    holds for any project on that stack, e.g. "vitest + `Cannot find module` is
-    usually import-drift, not type-drift").
-  - **`project-shared`** — committed at `<repo>/memory/test-auto-fix-lessons/`.
-    Opt-in (only when `INDEX.md` exists in cwd). Default for **project-bound**
-    lessons (this repo's recurring failure shapes) — where most of the value is.
+LoreKit's partition axis is **scope**, not named buckets. This loop keeps its
+lessons separate from other loops' with a **tag** and a **key namespace**, and
+maps its two tiers onto scope:
+
+- **Bucket = tag + key namespace.** Every lesson carries the tag
+  `loop::test-auto-fix-lessons`; every key lives in the
+  `test-auto-fix-lessons::` namespace (e.g.
+  `test-auto-fix-lessons::vitest-cannot-find-module-import-drift`). Reads filter
+  by the tag; writes always include it. Same `scope` + `key` overwrites in
+  place — that is what makes recurrence countable.
+- **Scopes (two, used together):**
+  - **`global`** — universal, cross-repo. Default for **universal** lessons (a
+    stack + failure-shape → verdict/fix pattern that holds for any project on
+    that stack, e.g. "vitest + `Cannot find module` is usually import-drift, not
+    type-drift"). Always read; always available for writes.
+  - **`repo::{owner}/{repo}`** — this repository's lessons. Default for
+    **project-bound** lessons (this repo's recurring failure shapes) — where
+    most of the value is. LoreKit's mode (remote / local `.lorekit/`) decides
+    whether these are private, dashboard-synced, or committed; the loop only
+    selects the scope, never manages storage. Derive `{owner}/{repo}` from the
+    `origin` remote, lowercased (strip a trailing `.git`). No git remote → use
+    `global` only.
+
 - **trigger-context key:** `<stack> : <failure-pattern> : <verdict-sub-class>`
   where `stack` comes from the surface file, `failure-pattern` is the normalized
   first ~3 lines of the error (via the surface's `failure-parser`), and
@@ -76,8 +96,10 @@ loop is worth running, but calibrate expectations accordingly.
   mock-stub-mismatch).
 
 Lesson record schema is the shared one (procedural memory; the four mandatory
-fields *What failed / Why / What to do next time / Promotion target*). Set
-`phase:` to `2` (verdict), `3.5` (confidence calibration), or `6` (regression).
+fields *What failed / Why / What to do next time / Promotion target*, plus the
+`meta:` comment carrying `phase`, `seen_count`, `status`, `expires`,
+`trigger-context`). Set `phase:` to `2` (verdict), `3.5` (confidence
+calibration), or `6` (regression).
 
 ---
 
@@ -89,16 +111,24 @@ At the **start of Phase 2 (Classify each failure)** — after failures are
 detected and parsed (Phase 1) but before a verdict is emitted — load lessons.
 The surface is already resolved (Phase 0), so the `stack` key is known.
 
-```
-Skill("persistent-memory", "read test-auto-fix-lessons --tier home")     # skips silently if not installed
-if [ -f memory/test-auto-fix-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "read test-auto-fix-lessons --tier project-shared")
-fi
+The read is **narrow-to-broad** — project-bound lessons from `repo::` first,
+then universal lessons from `global`:
+
+```text
+# (1) Project-bound lessons for this repo (silent no-op if memory.* not connected).
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::test-auto-fix-lessons"], limit: 50 }
+
+# (2) Universal lessons that follow the user across every stack.
+memory.list { scope: "global", tags: ["loop::test-auto-fix-lessons"], limit: 50 }
+
+# (3) Optional — narrow by the parsed failure shape:
+memory.search { q: "<stack> <failure-pattern keywords>", scopes: ["repo::{owner}/*", "global"], limit: 10 }
 ```
 
-1. Union both INDEXes. Match each lesson's `<stack>:<failure-pattern>` against
-   the parsed failures. Load full entries only for matches. Project-shared wins
-   on conflict (closer scope).
+1. Union the matches. Match each lesson's `<stack>:<failure-pattern>` against
+   the parsed failures. Load full entries only for matches. `repo::` wins over
+   `global` on key collision (closer scope). **Skip any lesson whose `expires`
+   is in the past** — treat it as stale.
 2. Apply matches as **inputs**: a verdict lesson biases the Phase 2 classification
    for that failure shape; a fix-sub-class lesson biases the Phase 3 draft toward
    the strategy that worked before; a calibration lesson is a hint to Phase 3.5's
@@ -109,16 +139,18 @@ fi
    fix touch production code that the verdict said not to, and never override a
    hard refusal in [`anti-patterns.md`](./anti-patterns.md).
 4. Record applied lessons in the plan artifact
-   (`.agent/{branch}/test-auto-fix-plan.md`) under a `Lessons applied` note.
-5. **Maintenance check.** If a loaded `INDEX.md` is near its 200-line cap, surface
-   a one-line `/persistent-memory consolidate test-auto-fix-lessons` suggestion at
-   the Phase 7 write point.
+   (`.agent/{branch}/test-auto-fix-plan.md`) under a `Lessons applied` note,
+   marking the source scope.
+
+There is no local INDEX to maintain: LoreKit owns storage server-side and
+deduplicates on write, so the loop does not run a consolidation pass. Stale
+beliefs decay through `expires`, not a line-count sweep.
 
 Log:
 
 ```markdown
-- [TIMESTAMP] Phase 2: persistent-memory(read test-auto-fix-lessons --tier project-shared) — N lessons matched (stack=vitest), applied
-- [TIMESTAMP] Phase 2: persistent-memory(read test-auto-fix-lessons) — not available, continuing
+- [TIMESTAMP] Phase 2: lorekit(memory.list repo::{owner}/{repo} loop::test-auto-fix-lessons) — N lessons matched (stack=vitest), applied
+- [TIMESTAMP] Phase 2: lorekit — memory.* not connected, continuing
 ```
 
 ---
@@ -134,35 +166,46 @@ Log:
 | **Phase 4 — provenance revert** | `test-provenance-guard` flagged tests-by-construction and the fix was reverted | The "green" was fake — capture so the next run distrusts that shape |
 | **Phase 7 — end-of-run** | Green, or escalated (retrospective) | An UPDATE to any lesson read at Phase 2 that led to a clean green (accrues `seen_count`), or a durable new pattern from the run |
 
-Classify each candidate as **universal** (a stack + failure-shape pattern) or
-**project-bound** (this repo's recurring shape). Then dispatch:
+**Scope classification (load-bearing).** Classify each candidate as **universal**
+(a stack + failure-shape pattern that could re-derive on any project using that
+stack) or **project-bound** (this repo's recurring failure shape, or one keyed to
+a concrete path only this repo has). When ambiguous, default to **universal**
+(`global`). Then **deduplicate first** so a recurrence UPDATES in place:
 
+```text
+# 1. Dedup search across the scopes that could hold it.
+memory.search { q: "<stack> <failure-pattern> <verdict-sub-class>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
+
+# 2a. Universal candidate — always lands in global.
+memory.write { scope: "global", key: "test-auto-fix-lessons::<slug>", value: "<body>", tags: ["loop::test-auto-fix-lessons", "source::<trigger>"], source_agent: "test-auto-fix", trigger: "<trigger>" }
+
+# 2b. Project-bound candidate — lands in this repo's scope (most value lives here).
+memory.write { scope: "repo::{owner}/{repo}", key: "test-auto-fix-lessons::<slug>", value: "<body>", tags: ["loop::test-auto-fix-lessons", "source::<trigger>"], source_agent: "test-auto-fix", trigger: "<trigger>" }
 ```
-# Universal candidate — home.
-Skill("persistent-memory", "write test-auto-fix-lessons --tier home --auto")
 
-# Project-bound candidate — opt-in gated (most value lives here).
-if [ -f memory/test-auto-fix-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "write test-auto-fix-lessons --tier project-shared --auto")
-else
-  Skill("persistent-memory", "write test-auto-fix-lessons --tier home --auto")
-  log "Project-bound lesson fell back to home. Opt in once: Skill(\"persistent-memory\", \"write test-auto-fix-lessons --tier project-shared\")"
-fi
-```
-
-- `--auto` skips consent, **not** the privacy pre-flight (a test-failure lesson
-  never needs product data; the bar is stricter for `project-shared` writes).
-- **Applied-lesson UPDATE contract.** An UPDATE to an entry that carries a
-  `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`.
+- **No filesystem opt-in ceremony.** The loop just picks the scope; LoreKit's
+  mode decides whether a `repo::` lesson is private, dashboard-synced, or
+  committed to `.lorekit/`. The loop never creates directories or commits lesson
+  files.
+- **The privacy pre-flight is NOT optional.** A test-failure lesson never needs
+  product data — drop any candidate carrying a credential, a customer name, a
+  token, or PII rather than writing it. The bar is **stricter** for `repo::`
+  writes since a repo scope is team-visible.
+- **Dedup resolves each candidate as ADD / UPDATE.** Found the same situation
+  under a key → reuse that **exact scope + key** and `memory.write` an updated
+  body (same scope + key overwrites in place). An UPDATE to an entry that carries
+  a `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`.
+  This is what makes recurrence countable and is how a *working* lesson still
+  reaches the `seen_count >= 3` promotion gate.
 - **Never** write a lesson that encodes a test-weakening action (delete a test,
   `.skip`/`.only`, loosened matcher, mocked SUT) — those are hard-refused in
   [`anti-patterns.md`](./anti-patterns.md).
 
-Log (include tier + verdict shape + outcome):
+Log (include the resolved scope + verdict shape + outcome):
 
 ```markdown
-- [TIMESTAMP] Phase 7: persistent-memory(write test-auto-fix-lessons --tier project-shared) — 1 lesson (UPDATE, seen_count→3) — green
-- [TIMESTAMP] Phase 6: persistent-memory(write test-auto-fix-lessons --tier home) — 1 lesson (ADD) — regression reverted
+- [TIMESTAMP] Phase 7: lorekit(memory.write repo::{owner}/{repo} test-auto-fix-lessons::<slug>) — UPDATE, seen_count→3 — green
+- [TIMESTAMP] Phase 6: lorekit(memory.write global test-auto-fix-lessons::<slug>) — ADD — regression reverted
 ```
 
 ---
@@ -172,17 +215,18 @@ Log (include tier + verdict shape + outcome):
 **Anchor:** `lesson-promotion`
 
 A lesson reaching `seen_count >= 3` (or tagged `status: structural`) is
-promotion-eligible. Surface the tier-appropriate suggestion — never act silently:
+promotion-eligible. Surface the scope-appropriate suggestion — never act silently:
 
-- `home` → `/create-skill diagnose test-auto-fix --symptom "<title>"`
-- `project-shared` → `Skill("docs", "update --add-rule '<title>' --source memory/test-auto-fix-lessons/entries/<id>.md")`
+- `global` (universal) → `/create-skill diagnose test-auto-fix --symptom "<title>"`
+- `repo::{owner}/{repo}` (project-bound) → `Skill("docs", "update --add-rule '<title>' --source lorekit:repo::{owner}/{repo}/test-auto-fix-lessons::<slug>")`
 
 `test-auto-fix` has no `rules/diagnostic-surface.md`, so
 `/create-skill diagnose test-auto-fix` reads the SKILL.md H2 sections (phases,
-verdicts, anti-patterns) as its fallback surface plus `test-auto-fix-lessons` as
-evidence, and emits one confidence-gated diff — applied only at
-`confidence(analysis) ≥ 90 %` with explicit user confirmation. On success, set
-the lesson `status: promoted`. A recurring **universal** lesson may instead be
+verdicts, anti-patterns) as its fallback surface plus the
+`loop::test-auto-fix-lessons` lessons as evidence, and emits one
+confidence-gated diff — applied only at `confidence(analysis) ≥ 90 %` with
+explicit user confirmation. On success, `memory.write` an UPDATE setting the
+lesson `status: promoted`. A recurring **universal** lesson may instead be
 better promoted into the surface template or the verdict rubric — diagnose will
 propose the best target.
 
@@ -196,9 +240,13 @@ Identical to the canonical loop — the dominant risk is self-reinforcing error:
    changed verdict rule or default fix strategy is a confidence-gated,
    user-approved `diagnose` apply.
 2. **Recurrence (`seen_count >= 3`), not one run, gates promotion.**
-3. **Every lesson expires** (default 90 days); `consolidate` prunes stale ones.
-4. **Contradictions are flagged, not silently overwritten.**
-5. **Privacy pre-flight is never bypassed** by `--auto`.
+3. **Every lesson expires** (default 90 days). The read step ignores expired
+   lessons, so stale beliefs decay instead of entrenching — LoreKit owns storage
+   and dedups on write, so there is no consolidation pass.
+4. **Contradictions are flagged, not silently overwritten** (the dedup search
+   finds the prior entry).
+5. **Privacy pre-flight is never bypassed** — secrets / PII are dropped, not
+   written.
 
 A test-auto-fix lesson must **never** relax a hard refusal: it can bias the
 verdict toward a fix sub-class, but it can never delete or weaken a test, mock

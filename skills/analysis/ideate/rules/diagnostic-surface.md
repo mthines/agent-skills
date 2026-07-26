@@ -98,15 +98,13 @@ Every new row must come from a real, confidence-gated, user-approved diagnosis.
 
 ## Lessons scope
 
-- Scope: `ideate-lessons`
-- Tiers: `home` (always, `~/.agent-memory/ideate-lessons/`) + `project-shared` (opt-in per repo, `<repo>/memory/ideate-lessons/`)
-- Read for evidence with the two-tier fan-out:
+- Bucket: `ideate-lessons` — LoreKit tag `loop::ideate-lessons`, key namespace `ideate-lessons::<slug>`
+- Scopes: `global` (always, universal) + `repo::{owner}/{repo}` (project-bound, cwd repo)
+- Read for evidence with the narrow-to-broad fan-out:
 
   ```text
-  Skill("persistent-memory", "read ideate-lessons --tier home")
-  if [ -f memory/ideate-lessons/INDEX.md ]; then
-    Skill("persistent-memory", "read ideate-lessons --tier project-shared")
-  fi
+  memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::ideate-lessons"], limit: 50 }
+  memory.list { scope: "global",               tags: ["loop::ideate-lessons"], limit: 50 }
   ```
 
 ---

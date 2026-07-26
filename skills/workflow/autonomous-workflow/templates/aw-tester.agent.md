@@ -35,16 +35,17 @@ Do not dump browser logs unless a spec failed.
 ### 1. Read cross-run lessons (slow tier)
 
 ```
-Skill("persistent-memory", "read aw-tester-lessons --tier home")
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-tester-lessons"], limit: 50 }
+memory.list { scope: "global",               tags: ["loop::aw-tester-lessons"], limit: 50 }
 ```
 
-If `persistent-memory` is not installed, skip silently and log one line:
+If LoreKit's `memory.*` tools are not connected, skip silently and log one line:
 ```
-aw-tester-lessons: not available, continuing
+aw-tester-lessons: memory.* not connected, continuing
 ```
 
-After the INDEX loads, match each lesson's `trigger-context` against the
-aw-target name and spec flow patterns. Load full entries only for matches.
+After the lessons load, match each lesson's `trigger-context` against the
+aw-target name and spec flow patterns. Consider full entries only for matches.
 Apply matching lessons as fast-tier heuristics for this run — particularly
 locator-healing transformations. A lesson that recurs (`seen_count >= 3`)
 is promotion-eligible; surface the one-line suggestion to the executor.
@@ -352,27 +353,15 @@ After delivering the verdict, write lessons for any of the following:
 | New failure pattern | The failing step shape that didn't appear in prior lessons |
 
 ```
-Skill("persistent-memory", "write aw-tester-lessons --tier home --auto")
+# Dedup first, then write to the classified scope (universal → global; repo-bound → repo::).
+memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
+memory.write { scope: "<global | repo::{owner}/{repo}>", key: "aw-tester-lessons::<slug>", value: "<body>", tags: ["loop::aw-tester-lessons", "source::<trigger>"], source_agent: "aw-tester", trigger: "<trigger>" }
 ```
 
-Lesson format (mirrors `aw-lessons` exactly):
+Lesson body (mirrors `aw-lessons` exactly — LoreKit `value` markdown with a `meta:` comment):
 
 ```markdown
----
-id: <yyyy-mm-dd>-<kebab-slug>
-created: <ISO 8601 timestamp — time of first write>
-updated: <ISO 8601 timestamp — time of last update>
-type: procedural
-scope: aw-tester-lessons
-phase: 4
-trigger-context: <concrete signal: locator pattern, aw-target name, component type>
-seen_count: 1
-confidence: high | medium | low
-status: active
-expires: <ISO 8601 — created + 90 days>
-source: system
-redacted: false
----
+<!-- meta: phase=4 seen_count=1 confidence=<high|medium|low> status=active expires=<ISO 8601 — created + 90 days> trigger-context="<concrete signal: locator pattern, aw-target name, component type>" source=system -->
 
 # <one-line lesson title>
 
@@ -385,7 +374,7 @@ redacted: false
 Do NOT write a lesson when:
 - All specs passed cleanly with no healing.
 - The only failure was an expected auth issue already covered by a lesson.
-- The `persistent-memory` skill is not installed.
+- LoreKit's `memory.*` tools are not connected.
 
 **Promotion check:** after writing, check if any lesson (written or matched at
 startup) has `seen_count >= 3` or `status: structural`. If so, surface:
