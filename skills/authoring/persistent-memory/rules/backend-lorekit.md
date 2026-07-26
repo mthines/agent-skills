@@ -120,6 +120,13 @@ being a surprise:
   answer `N` at the consent preview for a personal scope. A migration should
   never move a personal scope to a hosted backend without the user seeing it.
 
+> These two guards are **advisory** (a prompt you can decline), not mechanical.
+> For a hard, auditable guarantee that specific scopes never leave the machine —
+> a compliance-style need — a **per-scope backend override** in `config.json`
+> (e.g. `{ "backend": "lorekit", "overrides": { "parenting": "markdown" } }`)
+> would route those scopes locally by rule rather than by consent. Not
+> implemented yet; noted as a future enhancement should that need arise.
+
 ---
 
 ## The mapping
