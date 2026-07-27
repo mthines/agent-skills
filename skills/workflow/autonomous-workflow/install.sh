@@ -212,9 +212,9 @@ vlog "✓ Executor agent: $CLAUDE_DIR/agents/aw-executor.md"
 ln -sf "$SKILL_DIR/templates/aw-tester.agent.md" "$CLAUDE_DIR/agents/aw-tester.md"
 vlog "✓ Tester agent:   $CLAUDE_DIR/agents/aw-tester.md (spec-driven UI verification; dispatched by executor in Phase 4)"
 
-# No repo-side memory scaffolding — fast-tier lesson scopes are home-tier
-# (~/.agent-memory/<scope>/) so they accumulate per-user across every project.
-# persistent-memory creates the scope directory lazily on first write.
+# No repo-side memory scaffolding — fast-tier lessons live in LoreKit (the
+# `memory.*` MCP tools), scope `global` for universal lessons so they accumulate
+# per-user across every project. LoreKit creates the scope lazily on first write.
 
 # Link the routing rule. Project + development modes get auto-routing;
 # global mode skips it (most users don't want auto-trigger on every project).

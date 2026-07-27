@@ -56,15 +56,13 @@ and any direct executor dispatch. If `plan.md` already lists applied lessons,
 skip — they are already in context.
 
 ```
-Skill("persistent-memory", "read aw-lessons --tier home")     # skips silently if not installed
-if [ -f memory/aw-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "read aw-lessons --tier project-shared")
-fi
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-lessons"], limit: 50 }   # no-op if memory.* not connected
+memory.list { scope: "global",               tags: ["loop::aw-lessons"], limit: 50 }
 ```
 
-Union both INDEXes. Match each lesson's `trigger-context` against the files /
+Union both results. Match each lesson's `trigger-context` against the files /
 area you are about to touch; treat matches as constraints (same advisory rule
-as the planner's read). Project-shared lessons win on conflict with home.
+as the planner's read). `repo::` lessons win on conflict with `global`.
 Full contract: [`self-improvement-loop.md`](./self-improvement-loop.md#fast-tier--read-lessons).
 
 Disable by removing this invocation (see

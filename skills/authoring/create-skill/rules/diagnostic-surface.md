@@ -153,20 +153,18 @@ Be honest — a skill with no artifact trail is harder to diagnose, and the repo
 
 ### 8. Lessons scope (optional)
 
-If the skill has a fast-tier self-improvement loop (a committed `persistent-memory` scope it reads/writes across runs), declare the scope and tier here.
+If the skill has a fast-tier self-improvement loop (a LoreKit lesson bucket it reads/writes across runs via the `memory.*` tools), declare the bucket and scopes here.
 Step 2 of the diagnose procedure loads it as **evidence** — promotion-eligible lessons (`seen_count >= 3` or `status: structural`) are the strongest signal that a failure recurs, and they often already name the phase and fix.
 
 ```markdown
 ## Lessons scope
 
-- Scope: `<skill>-lessons`
-- Tiers: `home` (always) + `project-shared` (opt-in per repo)
-- Read for evidence with the two-tier fan-out:
+- Bucket: `<skill>-lessons` (LoreKit tag `loop::<skill>-lessons`, key `<skill>-lessons::<slug>`)
+- Scopes: `global` (universal) + `repo::{owner}/{repo}` (project-bound)
+- Read for evidence narrow-to-broad:
   ```
-  Skill("persistent-memory", "read <skill>-lessons --tier home")
-  if [ -f memory/<skill>-lessons/INDEX.md ]; then
-    Skill("persistent-memory", "read <skill>-lessons --tier project-shared")
-  fi
+  memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::<skill>-lessons"], limit: 50 }
+  memory.list { scope: "global",               tags: ["loop::<skill>-lessons"], limit: 50 }
   ```
 ```
 

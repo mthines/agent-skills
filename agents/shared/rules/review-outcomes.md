@@ -24,16 +24,18 @@ This separates the high-frequency write path (per-comment, per-PR) from the low-
 
 ## Scope
 
-`review-outcomes` is a `persistent-memory` scope with two tiers:
+`review-outcomes` is a LoreKit bucket — tag `loop::review-outcomes`, key
+`review-outcomes::<fingerprint-slug>` — written via the `memory.*` MCP tools.
+It uses two LoreKit scopes:
 
-| Tier | Path | When written | When read |
-| --- | --- | --- | --- |
-| `home` | `~/.agent-memory/review-outcomes/` | Default — every `implement-suggestion` run | At promotion/consolidation time only |
-| `project-shared` | `<repo>/memory/review-outcomes/` | Opt-in — when the directory has been created by the team | At promotion/consolidation time only |
+| LoreKit scope | When written | When read |
+| --- | --- | --- |
+| `global` | Default — every `implement-suggestion` run (universal calibration) | At promotion/consolidation time only |
+| `repo::{owner}/{repo}` | Repo-specific calibration (e.g. "this repo's `X` is always non-null") | At promotion/consolidation time only |
 
-The `review-outcomes` scope is **volatile**: every entry carries a TTL of **30 days**.
-Unpromoted candidates that expire are pruned at consolidation time without review.
-30 days is the default; repositories with faster feedback loops may lower it via a `memory/review-outcomes/CONFIG.md` file.
+The `review-outcomes` bucket is **volatile**: every entry carries a `meta:` TTL of **30 days**.
+LoreKit does not auto-expire, so unpromoted candidates older than 30 days are pruned at consolidation time (prune-on-read) without review.
+30 days is the default; repositories with faster feedback loops may lower it via a `.review.yaml` `outcome-ttl` key.
 
 ---
 
@@ -110,13 +112,11 @@ Promotion acts as the quality gate that keeps `reviewer-lessons` small and high-
 The Step 0.7 read pattern for each agent remains:
 
 ```
-Skill("persistent-memory", "read reviewer-lessons --tier home")
-if [ -f memory/reviewer-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "read reviewer-lessons --tier project-shared")
-fi
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::reviewer-lessons"], limit: 50 }
+memory.list { scope: "global",               tags: ["loop::reviewer-lessons"], limit: 50 }
 ```
 
-`review-outcomes` is NOT added to this call.
+`review-outcomes` (tag `loop::review-outcomes`) is NOT added to this call.
 
 ---
 
@@ -132,7 +132,7 @@ When a fingerprint class accumulates **≥ 3 concordant verdicts** (same-directi
 | Mixed direction (no ≥ 3 concordant) | No promotion; keep accumulating |
 
 The default threshold is 3 concordant verdicts.
-Repositories with higher signal volume may lower this to 2 via `memory/review-outcomes/CONFIG.md`.
+Repositories with higher signal volume may lower this to 2 via a `.review.yaml` `outcome-promotion-threshold` key.
 
 Cross-reference `outcome-learning.md` for the full promotion decision procedure — this file owns the threshold and directionality; `outcome-learning.md` owns the mechanics of writing the promoted lesson.
 
@@ -141,27 +141,16 @@ Cross-reference `outcome-learning.md` for the full promotion decision procedure 
 ## Consolidation cadence
 
 Consolidation prunes the bus and triggers promotion checks.
-Three triggers, in priority order:
+Because LoreKit does not auto-expire, pruning is a **prune-on-read** pass at promotion time — cheap, since the bus is read only then.
+Two triggers, in priority order:
 
-1. **Volatile TTL auto-expiry** — entries older than 30 days are pruned automatically by `persistent-memory consolidate`.
-   No agent action needed; the store handles this passively.
+1. **Volatile TTL prune** — at each promotion/consolidation pass, drop entries whose `meta:` TTL is older than 30 days before evaluating the promotion threshold.
+   Delete them from LoreKit with a `memory.write` that supersedes the key, or leave them to age out of the tag listing.
 
-2. **Opportunistic consolidation** — when the `review-outcomes` INDEX exceeds **180 lines**, invoke immediately after any write:
-
-   ```
-   Skill("persistent-memory", "consolidate review-outcomes --tier home --auto")
-   # Project-shared, if opted in:
-   if [ -f memory/review-outcomes/INDEX.md ]; then
-     Skill("persistent-memory", "consolidate review-outcomes --tier project-shared --auto")
-   fi
-   ```
-
-   This prunes expired and low-confidence entries and surfaces promotion candidates.
-
-3. **Manual invocation** — `Skill("persistent-memory", "consolidate review-outcomes")` on demand for retrospective audits or before a team review session.
+2. **Manual invocation** — `/review-outcomes` on demand runs the same prune-then-promote pass for retrospective audits or before a team review session.
 
 No new infrastructure or cron job is needed.
-All three triggers use the existing `persistent-memory consolidate` operation.
+Both triggers run the same prune-then-check pass over the `loop::review-outcomes` tag via `memory.list` / `memory.search`.
 
 ---
 
@@ -189,7 +178,7 @@ If `implement-suggestion` is not installed or does not emit outcome records, no 
 The reviewers fall back to the `outcome-learning.md` conservative write path from the gh-api resolution signals (signals a/b/c) — nothing breaks.
 Learning is slower but the pipeline is not blocked.
 
-If `persistent-memory` is absent, the entire bus is a no-op — no writes, no reads, no promotion.
+If LoreKit's `memory.*` tools are not connected, the entire bus is a no-op — no writes, no reads, no promotion.
 All review runs continue normally.
 
 The bus is an optional enrichment, not a hard dependency.

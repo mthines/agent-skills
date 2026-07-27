@@ -15,7 +15,7 @@ argument-hint: '[<pr-url>|<run-id>]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.1.0'
+  version: '3.2.0'
   workflow_type: command
   tags:
     - ci
@@ -295,14 +295,15 @@ relax the confidence gate, the revert-on-new-failure rule, or any refusal in
 
 This loop is deliberately **more conservative** than the others because the
 verdict is inferred from CI logs alone: **verdict lessons default to the
-`project-shared` tier** (repo-specific failure shapes are far more reliable than
-cross-repo generalizations) with a **raised promotion bar (`seen_count >= 5`)**,
-and **regression lessons are `volatile` with a 30-day expiry** since error
-signatures churn. A lesson can never authorize a check-weakening or soft-refusal
-action — those still re-gate on this run. Full contract and the two
-ci-auto-fix-specific entrenchment guards:
-[`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
-`persistent-memory` is optional; the loop skips silently if absent.
+`repo::{owner}/{repo}` scope** (repo-specific failure shapes are far more
+reliable than cross-repo generalizations) with a **raised promotion bar
+(`seen_count >= 5`)**, and **regression lessons are `volatile` with a 30-day
+expiry** since error signatures churn. A lesson can never authorize a
+check-weakening or soft-refusal action — those still re-gate on this run. Full
+contract and the two ci-auto-fix-specific entrenchment guards:
+[`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md). LoreKit
+(the `lorekit-memory` skill's `memory.*` tools) is optional; the loop is a silent
+no-op if not connected.
 
 ## Definition of done
 

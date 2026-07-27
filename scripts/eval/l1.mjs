@@ -167,13 +167,13 @@ function checksInSync(plan, checks) {
   }
 }
 
-// ── Check E: agent-skills.git itself does not commit fast-tier scopes ──
-// Consumer repos MAY commit memory/<scope>/ to opt their team into the
-// project-shared tier (the workflow auto-detects and reads/writes there).
-// But agent-skills.git is the SKILL SOURCE, not a consumer — a committed
-// fast-tier scope here would silently apply this repo's lessons to every
-// skill-development run, polluting the universal store with skill-author
-// noise. Keep this directory absent in agent-skills.git specifically.
+// ── Check E: agent-skills.git commits no fast-tier lesson scopes ──
+// The loops now run their fast tier on LoreKit (tag loop::<scope>, scopes
+// global / repo::{owner}/{repo}), not on committed markdown — so no loop
+// writes memory/<scope>/ anymore. This guard stays as a belt-and-suspenders
+// check: a committed memory/<scope>/ directory here (e.g. left over from the
+// pre-LoreKit markdown backend, or hand-created) would be skill-author noise
+// masquerading as lessons. Keep these directories absent in agent-skills.git.
 {
   for (const scope of ["aw-lessons", "aw-tester-lessons", "fix-bug-lessons", "batch-lessons", "reviewer-lessons", "implement-suggestion-lessons", "ci-auto-fix-lessons", "e2e-pr-stabilizer-lessons", "test-auto-fix-lessons", "ideate-lessons"]) {
     const dir = join(REPO_ROOT, "memory", scope);

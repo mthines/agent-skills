@@ -449,7 +449,7 @@ Exactly three options, plain language:
 **Step 4: Capture the lesson.** Before or immediately after escalation, write a
 lesson per [Lessons Write](#lessons-write) so the failing area, the hypotheses
 tried, and the resolution are available to future runs. Skip silently if
-`persistent-memory` is not installed.
+LoreKit's `memory.*` tools are not connected.
 
 ### Logging
 
@@ -555,21 +555,18 @@ of the self-improvement loop — full contract in
 
 Classify the candidate lesson — see the table in
 [`self-improvement-loop.md#fast-tier--write-lessons`](./self-improvement-loop.md#fast-tier--write-lessons).
-Universal lessons land in `home`; project-bound lessons land in
-`project-shared` only when the team has opted in (the directory exists),
-otherwise fall back to `home` with an opt-in hint:
+Universal lessons land in `global`; project-bound lessons land in
+`repo::{owner}/{repo}`. Deduplicate first so a recurrence updates in place:
 
 ```
-# Universal candidate — always home.
-Skill("persistent-memory", "write aw-lessons --tier home --auto")
+# Dedup across the scopes that could hold it.
+memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
-# Project-bound candidate — opt-in gated.
-if [ -f memory/aw-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "write aw-lessons --tier project-shared --auto")
-else
-  Skill("persistent-memory", "write aw-lessons --tier home --auto")
-  log "Project-bound lesson fell back to home (no committed memory/aw-lessons/). Opt in once with: Skill(\"persistent-memory\", \"write aw-lessons --tier project-shared\")"
-fi
+# Universal candidate → global.
+memory.write { scope: "global", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::stuck-loop"], source_agent: "aw", trigger: "stuck-loop" }
+
+# Project-bound candidate → this repo's scope.
+memory.write { scope: "repo::{owner}/{repo}", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::stuck-loop"], source_agent: "aw", trigger: "stuck-loop" }
 ```
 
 Capture: the failing area, every hypothesis tried, what finally worked (or that
@@ -577,22 +574,22 @@ it didn't), and the **earliest phase** that should have caught it. The lesson is
 **procedural** — phrase *"What to do next time"* as a prescriptive, testable
 instruction (see the schema in the loop file).
 
-- `--auto` skips the consent preview (the loop cannot pause per write); the
-  **privacy pre-flight still runs** — never store secrets / PII. The privacy
-  bar is stricter for `--tier project-shared` writes (content lands in the
-  repo and every collaborator sees it).
-- A recurring lesson resolves to **UPDATE** and bumps `seen_count` — it does not
-  duplicate. When `seen_count >= 3`, surface the tier-appropriate promotion
-  suggestion from [`self-improvement-loop.md#lesson-promotion`](./self-improvement-loop.md#lesson-promotion)
-  (skill source for `home`; repo rules for `project-shared`).
+- Autonomous writes skip the consent preview (the loop cannot pause per write);
+  the **privacy pre-flight still runs** — never store secrets / PII. The privacy
+  bar is stricter for `repo::` writes (a repo scope is team-visible). The loop
+  only picks the scope; LoreKit decides where a `repo::` lesson physically lives.
+- A recurring lesson resolves to **UPDATE** (same scope + key) and bumps
+  `seen_count` — it does not duplicate. When `seen_count >= 3`, surface the
+  scope-appropriate promotion suggestion from
+  [`self-improvement-loop.md#lesson-promotion`](./self-improvement-loop.md#lesson-promotion)
+  (skill source for `global`; repo rules for `repo::`).
 
 Log:
 
 ```markdown
-- [TIMESTAMP] Phase 4: persistent-memory(write aw-lessons --tier home) — 1 lesson (UPDATE, seen_count→3); promotion suggested (skill source)
-- [TIMESTAMP] Phase 4: persistent-memory(write aw-lessons --tier project-shared) — 1 lesson (ADD); repo opted in
-- [TIMESTAMP] Phase 4: persistent-memory(write aw-lessons --tier home) — 1 project-bound lesson fell back to home (no committed memory/aw-lessons/)
-- [TIMESTAMP] Phase 4: persistent-memory(write aw-lessons) — not available, continuing
+- [TIMESTAMP] Phase 4: lorekit(memory.write global aw-lessons::<slug>) — UPDATE, seen_count→3; promotion suggested (skill source)
+- [TIMESTAMP] Phase 4: lorekit(memory.write repo::{owner}/{repo} aw-lessons::<slug>) — ADD; project-bound
+- [TIMESTAMP] Phase 4: lorekit — memory.* not connected, continuing
 ```
 
 Disable by removing this invocation (see
@@ -665,7 +662,7 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 - [ ] `plan.v{N+1}.md` snapshot created and `plan.md` updated after auto-replan (via `aw-create-plan`)
 - [ ] One-shot guard respected — auto_replan_used not bypassed
 - [ ] User escalation triggered when confidence >= 90% OR auto-replan exhausted
-- [ ] `persistent-memory(write aw-lessons)` invoked at stuck-loop escalation; promotion suggested if `seen_count >= 3` (anchor: `lessons-write`)
+- [ ] `lorekit(memory.write aw-lessons)` invoked at stuck-loop escalation; promotion suggested if `seen_count >= 3` (anchor: `lessons-write`)
 - [ ] New tests added for new functionality
 - [ ] `test-provenance-guard` invoked after new test files written; findings healed or escalated
 - [ ] Full suite + lint + build all green

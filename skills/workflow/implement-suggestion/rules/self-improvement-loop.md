@@ -7,6 +7,7 @@ tags:
   - lessons
   - implement-suggestion
   - promotion
+  - lorekit
   - meta
 ---
 
@@ -19,6 +20,10 @@ and the promotion gate. The **shared** lesson-record schema and the
 entrenchment guards are canonical in
 [`../../autonomous-workflow/rules/self-improvement-loop.md`](../../autonomous-workflow/rules/self-improvement-loop.md)
 — read that for the full design; this file states only what differs.
+
+The fast tier runs through **LoreKit's `memory.*` MCP tools** (surfaced by the
+`lorekit-memory` skill). If those tools are **not connected**, the whole fast
+tier is a silent no-op (log one line, continue).
 
 ## Contents
 
@@ -34,11 +39,12 @@ entrenchment guards are canonical in
 ## What this loop owns vs. what aw-lessons owns
 
 `/implement-suggestion`'s **standard-lane** dispatches `aw-planner` (Phase 6),
-which **already** reads / writes the `aw-lessons` scope for the *planning* of an
-architectural change. **Do not duplicate that here.** The **fast-lane** worker
-is a `general-purpose` subagent that inherits no lesson scope at all — so
-`implement-suggestion-lessons` is the primary learning surface for this skill, and the
-*only* one for the dominant fast-lane path.
+which **already** reads / writes the `aw-lessons` lessons (LoreKit tag
+`loop::aw-lessons`) for the *planning* of an architectural change. **Do not
+duplicate that here.** The **fast-lane** worker is a `general-purpose` subagent
+that inherits no lesson scope at all — so `implement-suggestion-lessons` is the
+primary learning surface for this skill, and the *only* one for the dominant
+fast-lane path.
 
 This loop owns lessons about implement-suggestion's **own** decision phases —
 the ones neither `aw-planner` nor the worker ever see:
@@ -55,28 +61,40 @@ the ones neither `aw-planner` nor the worker ever see:
 
 ## Scope
 
-- **Scope:** `implement-suggestion-lessons`
-- **Tiers (two, used together):**
-  - **`home`** — per-user, cross-project at `~/.agent-memory/implement-suggestion-lessons/`.
-    Default for **universal** lessons (a reviewer-source or suggestion-class
-    pattern any repo could hit). Always read; default write target.
-  - **`project-shared`** — committed, team-scoped at
-    `<repo>/memory/implement-suggestion-lessons/`. Opt-in: only read / written when
-    `memory/implement-suggestion-lessons/INDEX.md` already exists in cwd (a team opts in
-    once via
-    `Skill("persistent-memory", "write implement-suggestion-lessons --tier project-shared")`).
-    Default for **project-bound** lessons (a suggestion pattern only this
-    codebase produces).
-- Lessons are keyed by **reviewer source** (bot handle such as `claude[bot]` /
-  `coderabbitai[bot]`, or `human`) plus **comment topic / type** in their
-  `trigger-context`, so the Phase 3 read can match them mechanically against the
-  comments in the current ledger. Tier is determined at write time by whether
-  the topic cites a repo-specific symbol, path, or domain term.
+LoreKit's partition axis is **scope** — `global` or `repo::{owner}/{repo}`
+(`::` is the only separator; segments lowercased). The loop's bucket becomes a
+**tag** + a **key namespace**, and its two tiers map onto scope:
+
+- **Bucket → tag + key.** Every lesson carries the tag
+  `loop::implement-suggestion-lessons`; every key lives in the
+  `implement-suggestion-lessons::` namespace (e.g.
+  `implement-suggestion-lessons::coderabbit-import-order-nit`).
+- **Scopes (two, used together):**
+  - **`global`** — universal, cross-repo. Default for **universal** lessons (a
+    reviewer-source or suggestion-class pattern any repo could hit). Always
+    read; always available for writes.
+  - **`repo::{owner}/{repo}`** — this repository's lessons. Default for
+    **project-bound** lessons (a suggestion pattern only this codebase
+    produces). LoreKit's mode (remote / local `.lorekit/`) decides whether
+    these are private, dashboard-synced, or committed — the loop only selects
+    the scope. There is **no filesystem opt-in ceremony**.
+  - `branch::{owner}/{repo}::{branch}` is reserved and **not used** by this loop.
+
+Derive `{owner}/{repo}` from the `origin` remote, lowercased (strip a trailing
+`.git`). No git remote → use `global` only.
+
+Lessons are keyed by **reviewer source** (bot handle such as `claude[bot]` /
+`coderabbitai[bot]`, or `human`) plus **comment topic / type** in their
+`trigger-context`, so the Phase 3 read can match them mechanically against the
+comments in the current ledger. Scope is determined at write time by whether the
+topic cites a repo-specific symbol, path, or domain term.
 
 Lesson record schema is identical to the shared one (procedural memory; the four
 mandatory fields *What failed / Why / What to do next time / Promotion target*).
-Set the `phase:` field to the implement-suggestion phase the lesson applies to
-(`3`, `4`, or `6`).
+The metadata a filesystem store would keep in frontmatter travels inside the
+`value` markdown as a top `<!-- meta: phase=.. seen_count=.. confidence=..
+status=.. expires=.. trigger-context=".." -->` comment. Set the `phase:` field
+to the implement-suggestion phase the lesson applies to (`3`, `4`, or `6`).
 
 ---
 
@@ -88,19 +106,24 @@ At the **start of Phase 3 (Classify)** — after the per-PR ledger is built
 (Phase 2) but before any comment is tagged — load lessons. Reading here biases
 both classification (Phase 3) and the two gates (Phase 4).
 
-Two-tier fan-out — universal lessons from `home`, project-shared from the cwd
-repo when opted in:
+The read is **narrow-to-broad** — project-bound lessons from `repo::` first,
+then universal lessons from `global` — merging the results:
 
-```
-Skill("persistent-memory", "read implement-suggestion-lessons --tier home")     # skips silently if not installed
-if [ -f memory/implement-suggestion-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "read implement-suggestion-lessons --tier project-shared")
-fi
+```text
+# (1) Project-bound lessons for this repo (silent no-op if memory.* not connected).
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::implement-suggestion-lessons"], limit: 50 }
+
+# (2) Universal lessons that follow the user across every repo.
+memory.list { scope: "global", tags: ["loop::implement-suggestion-lessons"], limit: 50 }
+
+# (3) Optional — when the ledger names a reviewer source or topic, add a search:
+memory.search { q: "<reviewer source + topic keywords>", scopes: ["repo::{owner}/*", "global"], limit: 10 }
 ```
 
-1. Union both INDEXes. Match each lesson's `trigger-context` against the
-   reviewer source + topic of each comment in the ledger. Load full entries only
-   for matches. Project-shared wins on conflict with home (closer scope).
+1. Union the matches. Match each lesson's `trigger-context` against the reviewer
+   source + topic of each comment in the ledger. Load full entries only for
+   matches. **Skip any lesson whose `expires` is in the past** — treat it as
+   stale. `repo::` wins on conflict with `global` (closer scope).
 2. Apply matches as **inputs** to the decision they target: a classification
    lesson biases the Phase 3 tag for that comment; a calibration lesson is
    passed to Phase 4 as a "previously this suggestion class was over-/under-scored"
@@ -112,18 +135,18 @@ fi
    `nit` toward `actionable`, but it can never downgrade an `actionable` comment
    to `praise` to skip the gates.
 4. Record applied lessons in the Phase 7 report under a `Lessons applied` note,
-   marking the source tier in parentheses.
-5. **Maintenance check.** If a loaded `INDEX.md` is at/near its 200-line cap
-   (≥ ~180 lines), surface a one-line
-   `/persistent-memory consolidate implement-suggestion-lessons` suggestion at the Phase 7
-   write point — do not run it inline in a `--watch` loop.
+   marking the source scope in parentheses (e.g. `(repo)`).
+
+LoreKit owns storage server-side and deduplicates on write, so the loop does not
+run a consolidation pass. Stale beliefs decay through `expires`, not a
+line-count sweep.
 
 Log:
 
 ```markdown
-- [TIMESTAMP] Phase 3: persistent-memory(read implement-suggestion-lessons --tier home) — N lessons matched, applied
-- [TIMESTAMP] Phase 3: persistent-memory(read implement-suggestion-lessons --tier project-shared) — not opted in, skipping
-- [TIMESTAMP] Phase 3: persistent-memory(read implement-suggestion-lessons) — not available, continuing
+- [TIMESTAMP] Phase 3: lorekit(memory.list repo::{owner}/{repo} loop::implement-suggestion-lessons) — N lessons matched, applied
+- [TIMESTAMP] Phase 3: lorekit(memory.list global loop::implement-suggestion-lessons) — M lessons matched
+- [TIMESTAMP] Phase 3: lorekit — memory.* not connected, continuing
 ```
 
 ---
@@ -148,41 +171,45 @@ apply that needed a scoped-check fix? Phrase each capture as an **observation**
 never a rule. Write nothing when the retrospective surfaces nothing **and** no
 lesson read at Phase 3 was applied — empty lessons are noise.
 
-Classify each candidate as **universal** (a reviewer-source / suggestion-class
-pattern any repo could hit) or **project-bound** (the topic cites a
-repo-specific symbol, file path, or domain term). Then dispatch:
+**Scope classification (load-bearing).** Classify each candidate as **universal**
+(a reviewer-source / suggestion-class pattern any repo could hit) or
+**project-bound** (the topic cites a repo-specific symbol, file path, or domain
+term). When ambiguous, default to **universal** (`global`). Then **deduplicate
+first** so a recurrence UPDATES in place instead of piling up:
 
+```text
+# 1. Look for a near-duplicate across the scopes that could hold it.
+memory.search { q: "<key words of the lesson>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
+
+# 2a. Universal candidate — always lands in global.
+memory.write { scope: "global", key: "implement-suggestion-lessons::<slug>", value: "<body>", tags: ["loop::implement-suggestion-lessons", "source::<trigger>"], source_agent: "implement-suggestion", trigger: "<end-of-run | watch-reflag | user-override>" }
+
+# 2b. Project-bound candidate — lands in this repo's scope.
+memory.write { scope: "repo::{owner}/{repo}", key: "implement-suggestion-lessons::<slug>", value: "<body>", tags: ["loop::implement-suggestion-lessons", "source::<trigger>"], source_agent: "implement-suggestion", trigger: "<end-of-run | watch-reflag | user-override>" }
 ```
-# Universal candidate — home.
-Skill("persistent-memory", "write implement-suggestion-lessons --tier home --auto")
 
-# Project-bound candidate — opt-in gated.
-if [ -f memory/implement-suggestion-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "write implement-suggestion-lessons --tier project-shared --auto")
-else
-  Skill("persistent-memory", "write implement-suggestion-lessons --tier home --auto")
-  log "Project-bound lesson fell back to home. Opt in once with: Skill(\"persistent-memory\", \"write implement-suggestion-lessons --tier project-shared\")"
-fi
-```
-
-- `--auto` skips consent, **not** the privacy pre-flight (never store secrets /
-  PII — and a suggestion-class lesson never needs product data; the bar is
-  stricter for `project-shared` writes since the content lands in the repo).
+- **No filesystem opt-in ceremony.** The loop just picks the scope; LoreKit's
+  mode decides whether a `repo::` lesson is private, synced to the dashboard, or
+  committed to `.lorekit/`. The workflow never creates directories or commits
+  lesson files.
+- **Privacy pre-flight is NOT optional** (never store secrets / PII — and a
+  suggestion-class lesson never needs product data; the bar is **stricter** for
+  `repo::` writes since a repo scope is team-visible).
 - **Applied-lesson UPDATE contract.** If a lesson read at Phase 3 was applied and
   the miss it targets did not recur, write an UPDATE for it — successful
   application counts as recurrence evidence. An UPDATE to an entry that carries a
   `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`. This
   is how a *working* lesson still reaches the `seen_count >= 3` promotion gate.
-- Recurring lessons resolve to **UPDATE**, bumping `seen_count`. At
-  `seen_count >= 3`, surface the **tier-appropriate** promotion suggestion (see
-  below).
+- Recurring lessons resolve to **UPDATE** (same scope + key overwrites in place),
+  bumping `seen_count`. At `seen_count >= 3`, surface the **scope-appropriate**
+  promotion suggestion (see below).
 
-Log (include the resolved tier in every line):
+Log (include the resolved scope in every line):
 
 ```markdown
-- [TIMESTAMP] Phase 7: persistent-memory(write implement-suggestion-lessons --tier home) — 1 lesson (UPDATE, seen_count→3)
-- [TIMESTAMP] Phase 7: persistent-memory(write implement-suggestion-lessons --tier project-shared) — 1 lesson (ADD) — project-bound, repo opted in
-- [TIMESTAMP] Phase 7: persistent-memory(write implement-suggestion-lessons) — not available, continuing
+- [TIMESTAMP] Phase 7: lorekit(memory.write global implement-suggestion-lessons::<slug>) — UPDATE, seen_count→3
+- [TIMESTAMP] Phase 7: lorekit(memory.write repo::{owner}/{repo} implement-suggestion-lessons::<slug>) — ADD — project-bound
+- [TIMESTAMP] Phase 7: lorekit — memory.* not connected, continuing
 ```
 
 ---
@@ -193,19 +220,21 @@ Log (include the resolved tier in every line):
 
 A lesson reaching `seen_count >= 3` (or tagged `status: structural`) is
 promotion-eligible. Surface a one-line suggestion — never act silently. The
-target depends on the lesson's tier:
+target depends on the lesson's scope:
 
-| Lesson tier | Promotion target | One-liner |
-| ----------- | ---------------- | --------- |
-| `home` (universal) | The skill's source — ships to every consumer | `Lesson "<title>" recurred N times. Promote to a permanent implement-suggestion guard?  Run:  /create-skill diagnose implement-suggestion --symptom "<title>"` |
-| `project-shared` (project-bound) | The repo's own rules — ships to every teammate | `Lesson "<title>" recurred N times in this repo. Promote to a repo rule?  Run:  Skill("docs", "update --add-rule '<title>' --source memory/implement-suggestion-lessons/entries/<id>.md")` |
+| Lesson scope | Promotion target | One-liner |
+| ------------ | ---------------- | --------- |
+| `global` (universal) | The skill's source — ships to every consumer | `Lesson "<title>" recurred N times. Promote to a permanent implement-suggestion guard?  Run:  /create-skill diagnose implement-suggestion --symptom "<title>"` |
+| `repo::{owner}/{repo}` (project-bound) | The repo's own rules — ships to every teammate | `Lesson "<title>" recurred N times in this repo. Promote to a repo rule?  Run:  Skill("docs", "update --add-rule '<title>' --source lorekit:repo::{owner}/{repo}/implement-suggestion-lessons::<slug>")` |
 
 `implement-suggestion` has no `rules/diagnostic-surface.md`, so
 `/create-skill diagnose implement-suggestion` reads the SKILL.md H2 sections as
-its fallback surface (phases, gates, hard rules) plus `implement-suggestion-lessons` as
-evidence, and emits one confidence-gated diff against this skill's source —
-applied only at `confidence(analysis) ≥ 90 %` with explicit user confirmation.
-On success, set the lesson `status: promoted`.
+its fallback surface (phases, gates, hard rules) plus the
+`loop::implement-suggestion-lessons` lessons as evidence, and emits one
+confidence-gated diff against this skill's source — applied only at
+`confidence(analysis) ≥ 90 %` with explicit user confirmation. On success, set
+the lesson `status: promoted` via a `memory.write` UPDATE to the same
+scope + key.
 
 ---
 
@@ -217,9 +246,12 @@ Identical to the canonical loop — the dominant risk is self-reinforcing error:
    lesson to a changed classification rule, gate threshold, or lane trigger is a
    confidence-gated, user-approved `diagnose` apply.
 2. **Recurrence (`seen_count >= 3`), not one run, gates promotion.**
-3. **Every lesson expires** (default 90 days); `consolidate` prunes stale ones.
-4. **Contradictions are flagged, not silently overwritten.**
-5. **Privacy pre-flight is never bypassed** by `--auto`.
+3. **Every lesson expires** (default 90 days, refreshed on each re-sighting); the
+   read step ignores expired lessons, so stale beliefs decay. LoreKit owns
+   storage and dedups on write — no consolidation pass.
+4. **Contradictions are flagged, not silently overwritten** (the dedup search
+   surfaces the prior entry).
+5. **Privacy pre-flight is never bypassed** by an autonomous write.
 
 A suggestion lesson must **never** be allowed to relax a hard rule from
 [`../SKILL.md#hard-rules`](../SKILL.md#hard-rules) — it can bias the Phase 6 lane

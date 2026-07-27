@@ -19,7 +19,7 @@ argument-hint: '[report|apply|plan] [--no-confidence-gate]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.0.1'
   workflow_type: advisory
   tags:
     - optimize-approach
@@ -82,7 +82,7 @@ Standalone (`/optimize-approach [report|apply]`) derives the diff-mode inputs fr
 
 | Phase | Name | Rule file | Gate |
 | --- | --- | --- | --- |
-| O0 | Read lessons | [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) | Fast-tier read; skips silently if `persistent-memory` absent |
+| O0 | Read lessons | [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) | Fast-tier read; skips silently if LoreKit `memory.*` not connected |
 | O1 | Intent capture | this file | 1–2 line intent per changed approach unit |
 | O2 | Optimality judgment | [`rules/optimality-rubric.md`](./rules/optimality-rubric.md) | Verdict `optimal` \| `suboptimal` per the 4-axis rubric + materiality bar |
 | O3 | Quiet early-exit | [`rules/optimality-rubric.md`](./rules/optimality-rubric.md) | If `optimal`, return empty and stop |
@@ -139,8 +139,8 @@ Load on demand — do not preload.
 
 ## Self-Improvement
 
-This skill runs a two-tier self-improvement loop keyed by the `optimize-approach-lessons` scope.
-The fast tier (`persistent-memory`) reads lessons at O0 and writes them at O5 to calibrate the optimal-vs-suboptimal bar and the apply-safety judgment.
+This skill runs a two-tier self-improvement loop keyed by the `optimize-approach-lessons` bucket (LoreKit tag `loop::optimize-approach-lessons`).
+The fast tier (LoreKit `memory.*` tools, via the `lorekit-memory` skill) reads lessons at O0 and writes them at O5 to calibrate the optimal-vs-suboptimal bar and the apply-safety judgment.
 A lesson reaching `seen_count >= 3` becomes promotion-eligible for the slow tier (`/create-skill diagnose optimize-approach`).
 Full contract: [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
 

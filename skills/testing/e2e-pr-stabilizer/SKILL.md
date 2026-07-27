@@ -22,7 +22,7 @@ argument-hint: '[stabilize|optimize] [pr-url|pr-number]'
 allowed-tools: Bash(gh *) Bash(git *) Bash(node *) Bash(pnpm *) Bash(npx *) Bash(jq *) Read Edit Write Grep Glob
 metadata:
   author: mthines
-  version: '2.1.0'
+  version: '2.2.0'
   workflow_type: slash-command
   tags:
     - playwright
@@ -187,16 +187,16 @@ Do **not** re-implement.
 Phase 4 (biasing the P1–P6 pattern classification and the Phase 5 locator
 strategy) and **writes** at Phase 7 — gated on the **telemetry ratification
 signal**, not the local 3-pass streak, so only fixes that CI actually confirmed
-`fixed` accrue a working lesson. The two tiers split naturally: `home` holds
-universal race-shape → fix-shape mappings, `project-shared` holds app-specific
-locator robustness. Lessons are **advisory** — they never relax a guard-rail, an
-empirical gate, or the 3-consecutive-pass requirement. A recurring lesson
-(`seen_count >= 3`) is promotion-eligible via
+`fixed` accrue a working lesson. The two tiers split naturally: the `global`
+scope holds universal race-shape → fix-shape mappings, the `repo::{owner}/{repo}`
+scope holds app-specific locator robustness. Lessons are **advisory** — they
+never relax a guard-rail, an empirical gate, or the 3-consecutive-pass
+requirement. A recurring lesson (`seen_count >= 3`) is promotion-eligible via
 `/create-skill diagnose e2e-pr-stabilizer`.
 
-`optimize` mode skips the loop (no fix, no ratification signal).
-`persistent-memory` is an **optional companion**: if absent, the loop skips
-silently. Full contract:
+`optimize` mode skips the loop (no fix, no ratification signal). Lessons run
+through LoreKit's `memory.*` tools (the `lorekit-memory` skill); if LoreKit is
+not connected the loop is a silent no-op. Full contract:
 [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
 
 ## Anti-patterns

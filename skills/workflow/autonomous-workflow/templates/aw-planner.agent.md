@@ -94,7 +94,7 @@ Full registry in [`rules/companion-skills.md`](../rules/companion-skills.md).
 
 | Phase | Companion           | Trigger                                          | Args              |
 | ----- | ------------------- | ------------------------------------------------ | ----------------- |
-| 1     | `persistent-memory` | Always — load prior workflow lessons before design | `read aw-lessons --tier home` |
+| 1     | `lorekit-memory`    | Always — load prior workflow lessons before design | `memory.list loop::aw-lessons` |
 | 1     | `holistic-analysis` | Complex / multi-domain / unfamiliar task         | —                 |
 | 1     | `code-quality`      | Always (informs design)                          | `plan`            |
 | 1     | `optimize-approach` | Full Mode default-on (skip on `--no-optimize`)   | `plan`            |
@@ -106,13 +106,15 @@ mechanism.
 
 ## Lessons (fast tier of self-improvement)
 
-Before research, run `Skill("persistent-memory", "read aw-lessons --tier home")` and treat
-each lesson whose `trigger-context` matches this task as a **hard constraint**
-on the plan (record them under `## Lessons applied` in `plan.md`). Lessons are
-advisory — if one conflicts with the user's intent, the user wins; surface it.
-If a matched lesson has `seen_count >= 3` or `status: structural`, surface the
-promotion suggestion (`/create-skill diagnose autonomous-workflow`). Skips
-silently if `persistent-memory` is not installed. Full contract:
+Before research, read `loop::aw-lessons` narrow-to-broad
+(`memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-lessons"] }` then
+`{ scope: "global", … }`) and treat each lesson whose `trigger-context` matches
+this task as a **hard constraint** on the plan (record them under
+`## Lessons applied` in `plan.md`). Lessons are advisory — if one conflicts with
+the user's intent, the user wins; surface it. If a matched lesson has
+`seen_count >= 3` or `status: structural`, surface the promotion suggestion
+(`/create-skill diagnose autonomous-workflow`). Skips silently if LoreKit's
+`memory.*` tools are not connected. Full contract:
 [`rules/self-improvement-loop.md`](../rules/self-improvement-loop.md).
 
 ## Plan-Quality Gates

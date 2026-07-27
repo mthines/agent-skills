@@ -53,9 +53,11 @@ Watch mode surfaces the loop's **strongest self-improvement signal**: a reviewer
 re-commenting on a location or topic that a **prior iteration already applied**
 means that earlier apply was wrong or incomplete. When an iteration's new
 feedback overlaps (same file:line region or same topic + reviewer source) a
-comment an earlier iteration tagged `apply`, write a `implement-suggestion-lessons` lesson
-for that reviewer source + topic before running the pass — this is the `Watch
-re-flag` write point in
+comment an earlier iteration tagged `apply`, write an
+`implement-suggestion-lessons` lesson (LoreKit tag
+`loop::implement-suggestion-lessons`, via `memory.write`) for that reviewer
+source + topic before running the pass — this is the `Watch re-flag` write point
+in
 [`self-improvement-loop.md#write-lessons`](./self-improvement-loop.md#write-lessons).
 The lesson is advisory (it biases the next run's Phase 3 / Phase 4); it never
 changes the current iteration's gates.

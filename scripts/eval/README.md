@@ -37,7 +37,8 @@ Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
   sync with the plan, both directions) against fixtures in `fixtures/plans/`.
 - **diagnose resolvability** — every skill with a `diagnostic-surface.md` is
   uniquely resolvable by `skills/*/<name>/` (locks the path-resolution fix).
-- **lesson scopes** — committed `memory/<scope>/` have the storage contract.
+- **lesson scopes** — no `memory/<scope>/` is committed in this repo (the loops'
+  fast tier runs on LoreKit now, not committed markdown).
 - **frontmatter** — SKILL versions are semver; `name` matches the directory.
 - **cross-file contracts** — locks contracts that span producer and consumer
   files (the drift class link checks cannot see): the `seen_count` UPDATE

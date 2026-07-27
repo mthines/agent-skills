@@ -49,11 +49,11 @@ The contract spec lives at [`skills/authoring/create-skill/rules/diagnostic-surf
 
 | Phase | Existing guards                                                                                                                          | Typical gaps                                                                                                |
 | ----- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| 1     | Label-based type classification; `--type` override; `unknown` → `Needs Info` (blocks approval); per-ticket `confidence` gate (`analysis` for bugs, `plan` for features); `persistent-memory(read batch-lessons --tier home)` applies prior classification/correlation lessons | Ticket misclassified `feature` when it needed bug root-cause analysis (or vice-versa); `confidence` gate scored a thin Evidence Record high |
+| 1     | Label-based type classification; `--type` override; `unknown` → `Needs Info` (blocks approval); per-ticket `confidence` gate (`analysis` for bugs, `plan` for features); `lorekit(memory.list <repo::/global> loop::batch-lessons)` applies prior classification/correlation lessons | Ticket misclassified `feature` when it needed bug root-cause analysis (or vice-versa); `confidence` gate scored a thin Evidence Record high |
 | 2     | Cross-type correlation of shared root causes / files / duplicates / dependencies                                                          | A real cross-ticket conflict not correlated → two PRs collide on the same file                              |
 | 3     | Single explicit user approval gate; `Needs Info` tickets non-approvable                                                                  | User approved a `Needs Review` (70–89 %) ticket that should have collected more evidence                    |
 | 4     | Per-planner `confidence(plan)` ≥ 90 % gate inside `aw-planner`; worktree isolation; correlated tickets share one plan; `aw-lessons` loop inherited from the dispatched planner/executor | Below-gate plan force-proceeded; correlated group's single PR missed one ticket's acceptance criteria        |
-| 5     | Status table; per-ticket Linear writeback; `persistent-memory(write batch-lessons)` captures classification/correlation misfires        | PR link not posted back; ticket state left stale; a recurring misclassification never written as a lesson    |
+| 5     | Status table; per-ticket Linear writeback; `lorekit(memory.write <scope> loop::batch-lessons)` captures classification/correlation misfires        | PR link not posted back; ticket state left stale; a recurring misclassification never written as a lesson    |
 
 Cross-cutting guards:
 
@@ -106,9 +106,10 @@ This skill produces no durable per-run ledger of its own (unlike `fix-bug`'s bug
 
 ## Lessons scope
 
-- Scope: `batch-lessons` (batch-orchestration lessons only; planning/impl lessons live in `aw-lessons` via the fan-out)
-- Tier: `home` (`~/.agent-memory/batch-lessons/`)
-- Read for evidence with: `Skill("persistent-memory", "read batch-lessons --tier home")`
+- Backend: LoreKit `memory.*` tools (via the `lorekit-memory` skill).
+- Bucket: tag `loop::batch-lessons` + key namespace `batch-lessons::<slug>` (batch-orchestration lessons only; planning/impl lessons live in `aw-lessons` via the fan-out)
+- Scopes: `global` (universal patterns) + `repo::{owner}/{repo}` (workspace-specific label conventions — the common case)
+- Read for evidence with: `memory.list { scope: "global", tags: ["loop::batch-lessons"], limit: 50 }` (and the `repo::{owner}/{repo}` scope for project-bound lessons)
 
 Diagnose Step 2 loads promotion-eligible lessons (`seen_count >= 3` or `status: structural`) as evidence — keyed by label set / ticket-type / affected-area. See [`self-improvement-loop.md`](./self-improvement-loop.md).
 

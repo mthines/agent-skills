@@ -17,7 +17,7 @@ argument-hint: '[scaffold|review|upgrade|diagnose] [<skill-name>|<path>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.2.0'
+  version: '1.3.0'
   workflow_type: scaffolder-advisory-and-diagnoser
   tags:
     - skill-authoring
@@ -279,7 +279,7 @@ It only proposes changes to the target's own source.
 
 **Self-improving skills.** An orchestrator skill can close the loop further with
 a two-tier self-improvement loop: a fast episodic-lessons tier
-(`persistent-memory`) feeding the slow `diagnose` tier via a recurrence gate.
+(LoreKit `memory.*` tools) feeding the slow `diagnose` tier via a recurrence gate.
 The reusable recipe — including when NOT to add one — is in
 [`rules/self-improvement-loop-pattern.md`](./rules/self-improvement-loop-pattern.md).
 When a target declares a `## Lessons scope`, Diagnose Mode reads it as evidence

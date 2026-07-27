@@ -109,7 +109,7 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 
 | Phase | Companion              | Trigger                                                              | Args             |
 | ----- | ---------------------- | -------------------------------------------------------------------- | ---------------- |
-| 3     | `persistent-memory`    | Executor entry — read lessons only when `plan.md` has no `## Lessons applied` (no-planner paths) | `read aw-lessons --tier home` |
+| 3     | `lorekit-memory`       | Executor entry — read lessons only when `plan.md` has no `## Lessons applied` (no-planner paths) | `memory.list loop::aw-lessons` |
 | 3     | `tdd`                  | Pure logic / business rules / "test-driven"                          | —                |
 | 3     | `ux`                   | UI files (`*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, RN screens)         | —                |
 | 3     | `code-quality`         | Once at end of Phase 3 (not per-file)                                | `code`           |
@@ -117,7 +117,7 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 4 (UI) hot  | `playwright` *(direct Bash)* | Every iteration on the same failing spec — re-runs persisted `last-run.spec.ts` via `$playwright_bin test --grep "<failing_spec_id>"` (no sub-agent) | `--reporter=line --workers=1` |
 | 4     | `confidence`           | At iteration cap on same failing area (auto-replan trigger)          | `analysis`   |
 | 4     | `holistic-analysis`    | Auto-replan only — `confidence(analysis) < 90%` (one-shot)       | —                |
-| 4     | `persistent-memory`    | At stuck-loop escalation — record failing area + resolution          | `write aw-lessons --tier home --auto` |
+| 4     | `lorekit-memory`       | At stuck-loop escalation — record failing area + resolution          | `memory.write loop::aw-lessons` |
 | 5     | `docs`                 | Always (with skip conditions per phase-5 rule)                       | `update --auto`  |
 | 6     | `reviewer` *(agent)*   | Always before push — dispatched directly via the Agent tool (Fix Mode on own branch; auto-fix every Simple finding across all severities) | `--critical` + auto-fix-all prompt |
 | 6     | `aw-review-quality-gate` | After the `reviewer` agent returns findings (false-positive filter; advisory) | —          |
@@ -126,7 +126,7 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                               | `<run-id\|pr-url>` |
 | 7 (UI)| `aw-tester` *(agent)*  | After CI green — spec rehearsal against preview URL (advisory; skips if no preview URL or no specs.md) | `specs.md + preview-aw-target + --all` |
 | 7     | `reviewer` *(agent)*   | After CI green — dispatched as `subagent_type: reviewer` (PR self-review sub-mode for self-authored PRs: `--critical` + auto-fix every Simple finding regardless of severity, inline report; cross-author PRs redirect to `pr-reviewer`) | `<pr-url> --critical` + auto-fix-all prompt |
-| 7     | `persistent-memory`    | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `write aw-lessons --tier home --auto` |
+| 7     | `lorekit-memory`       | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `memory.write loop::aw-lessons` |
 
 ## Spec-Driven UI Verification (Phase 4, before lint/type/test)
 
@@ -187,17 +187,17 @@ Capture what each run teaches so the next one improves:
 
 - **Read** lessons before implementing — only when `plan.md` has no
   `## Lessons applied` section (the planner already applied them otherwise):
-  `Skill("persistent-memory", "read aw-lessons --tier home")`; treat
-  matches for the area you touch as constraints.
+  `memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-lessons"] }` then
+  `{ scope: "global", … }`; treat matches for the area you touch as constraints.
 - **Write** a lesson at Phase 4 stuck-loop escalation and at Phase 7 end-of-run
-  (`Skill("persistent-memory", "write aw-lessons --tier home --auto")`): the failing area /
-  run learning, and the **earliest phase** that should have caught it.
+  (`memory.write { scope: "<global|repo::{owner}/{repo}>", key: "aw-lessons::<slug>", tags: ["loop::aw-lessons", …] }`):
+  the failing area / run learning, and the **earliest phase** that should have caught it.
 - Lessons are **advisory** and never change a gate. A lesson reaching
   `seen_count >= 3` (or tagged `structural`) is promotion-eligible — surface
   `/create-skill diagnose autonomous-workflow` so it can become a permanent
   guard behind the confidence gate.
-- `--auto` skips consent, not the privacy pre-flight — never write secrets / PII.
-- Skips silently if `persistent-memory` is not installed. Full contract:
+- Autonomous writes skip consent, not the privacy pre-flight — never write secrets / PII.
+- Skips silently if LoreKit's `memory.*` tools are not connected. Full contract:
   [`rules/self-improvement-loop.md`](../rules/self-improvement-loop.md).
 
 ## Sub-Agent Resource Discipline

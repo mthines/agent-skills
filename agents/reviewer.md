@@ -113,19 +113,16 @@ Do not continue. The user re-invokes against `pr-reviewer` if cross-review was t
 
 ## Step 0.7: Read accumulated lessons
 
-Load procedural lessons from prior runs. Universal intake — runs in every sub-mode except `redirect`.
+Load procedural lessons from prior runs via the `lorekit-memory` skill (LoreKit `memory.*` MCP tools). Universal intake — runs in every sub-mode except `redirect`.
 
-Two-tier fan-out — universal lessons from `home`, project-shared from cwd
-repo when opted in:
+Narrow-to-broad fan-out — project-bound lessons from `repo::{owner}/{repo}` first, then universal lessons from `global` (skips silently if `memory.*` is not connected):
 
 ```
-Skill("persistent-memory", "read reviewer-lessons --tier home")   # skips silently if not installed
-if [ -f memory/reviewer-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "read reviewer-lessons --tier project-shared")
-fi
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::reviewer-lessons"], limit: 50 }
+memory.list { scope: "global",               tags: ["loop::reviewer-lessons"], limit: 50 }
 ```
 
-Union both INDEXes. Match each lesson's `trigger-context` against the current run (sub-mode, repo signals, working-tree state). Matched lessons inform the **review pipeline** (Step 2), the **auto-fix policy** (Step 4), and the **post-fix verification** behavior. Project-shared wins on conflict with home.
+Derive `{owner}/{repo}` from the `origin` remote, lowercased (strip a trailing `.git`); no git remote → read `global` only. Merge both lists (`repo::` wins over `global` on key collision) and skip any lesson whose `expires` is in the past. Match each lesson's `trigger-context` against the current run (sub-mode, repo signals, working-tree state). Matched lessons inform the **review pipeline** (Step 2), the **auto-fix policy** (Step 4), and the **post-fix verification** behavior.
 
 Concrete trigger signals to evaluate:
 
@@ -134,21 +131,22 @@ Concrete trigger signals to evaluate:
 
 When a lesson matches, **announce it in one line** before continuing — e.g. `Lesson active: <title> (skipping post-fix pnpm verify, deferring to CI).` So the user knows why behavior diverged from the default.
 
-Write a lesson back at end-of-run only when the run produced a durable, non-obvious finding. Classify first: universal review-style observations → `home`; repo-specific (e.g. "this monorepo's vitest crashes when X") → `project-shared` if `memory/reviewer-lessons/INDEX.md` exists in cwd, else `home` with an opt-in hint. Do NOT write a lesson for routine runs — empty lessons are noise.
+Write a lesson back at end-of-run only when the run produced a durable, non-obvious finding. Classify the scope first: universal review-style observations → `global`; repo-specific (e.g. "this monorepo's vitest crashes when X") → `repo::{owner}/{repo}`. When ambiguous, default to `global`. There is no filesystem opt-in ceremony — the loop just picks the scope; LoreKit's mode decides where a `repo::` lesson physically lives. The privacy pre-flight is never bypassed (stricter for `repo::` — it is team-visible). Do NOT write a lesson for routine runs — empty lessons are noise.
 
 **Promotion from `review-outcomes` bus** (at consolidation time, not per-review): when the `review-outcomes` scope accumulates ≥ 3 concordant verdicts for a fingerprint class, `outcome-learning.md` promotes them to `reviewer-lessons`. This promotion is the ONLY time the `review-outcomes` bus is consumed by this agent — it is never read as part of the per-review Step 0.7 flow above. See `agents/shared/rules/review-outcomes.md` and `agents/shared/rules/outcome-learning.md`.
 
 ```
-# Universal:
-Skill("persistent-memory", "write reviewer-lessons --tier home --auto")
+# Dedup first across the scopes that could hold it:
+memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
-# Project-bound, opt-in gated:
-if [ -f memory/reviewer-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "write reviewer-lessons --tier project-shared --auto")
-else
-  Skill("persistent-memory", "write reviewer-lessons --tier home --auto")
-fi
+# Universal lesson → global:
+memory.write { scope: "global", key: "reviewer-lessons::<slug>", value: "<lesson body>", tags: ["loop::reviewer-lessons", "source::end-of-run"], source_agent: "reviewer", trigger: "end-of-run" }
+
+# Project-bound lesson → this repo's scope:
+memory.write { scope: "repo::{owner}/{repo}", key: "reviewer-lessons::<slug>", value: "<lesson body>", tags: ["loop::reviewer-lessons", "source::end-of-run"], source_agent: "reviewer", trigger: "end-of-run" }
 ```
+
+Same `scope` + `key` overwrites in place: a recurrence resolves to UPDATE, not a duplicate. An UPDATE to an entry that carries a `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`. LoreKit owns storage and dedups on write — no consolidation pass. The lesson body / schema is unchanged (see `skills/authoring/persistent-memory/rules/write-pipeline.md` for the authoritative field contract); `seen_count >= 3` (or `status: structural`) makes a lesson promotion-eligible.
 
 ---
 

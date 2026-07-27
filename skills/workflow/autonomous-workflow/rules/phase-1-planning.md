@@ -80,20 +80,18 @@ Before research, load the workflow's accumulated lessons so prior mistakes bias
 the plan. This is the **fast tier** of the self-improvement loop — full contract
 in [`self-improvement-loop.md`](./self-improvement-loop.md#fast-tier--read-lessons).
 
-Two-tier fan-out — universal lessons from `home` always, project-shared from
-the cwd repo when the team has opted in:
+Narrow-to-broad read over LoreKit (tag `loop::aw-lessons`) — project-bound
+lessons for this repo, then universal lessons that follow the user everywhere:
 
 ```
-Skill("persistent-memory", "read aw-lessons --tier home")     # skips silently if not installed
-if [ -f memory/aw-lessons/INDEX.md ]; then
-  Skill("persistent-memory", "read aw-lessons --tier project-shared")
-fi
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-lessons"], limit: 50 }   # no-op if memory.* not connected
+memory.list { scope: "global",               tags: ["loop::aw-lessons"], limit: 50 }
 ```
 
-1. Union the two INDEXes. Match each lesson's `trigger-context` against the
-   current task (file globs, task type, tech). Load full entries only for
-   matches (progressive disclosure). Tier-of-origin is not a match criterion;
-   if a `home` and a `project-shared` lesson conflict, project-shared wins
+1. Union the results. Match each lesson's `trigger-context` against the
+   current task (file globs, task type, tech); consider full entries only for
+   matches. Skip lessons whose `expires` is past. Scope-of-origin is not a
+   match criterion; if a `repo::` and a `global` lesson conflict, `repo::` wins
    (closer scope) — log the conflict.
 2. Treat each matching lesson's *"What to do next time"* as a **consideration**
    on the plan — apply it unless it conflicts with the user's stated intent or
@@ -109,10 +107,9 @@ fi
 Log:
 
 ```markdown
-- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier home) — N lessons matched, applied as constraints
-- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier project-shared) — M lessons matched (project opted in)
-- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons --tier project-shared) — not opted in (no memory/aw-lessons/), skipping
-- [TIMESTAMP] Phase 1: persistent-memory(read aw-lessons) — not available, continuing
+- [TIMESTAMP] Phase 1: lorekit(memory.list repo::{owner}/{repo} loop::aw-lessons) — M lessons matched
+- [TIMESTAMP] Phase 1: lorekit(memory.list global loop::aw-lessons) — N lessons matched, applied as constraints
+- [TIMESTAMP] Phase 1: lorekit — memory.* not connected, continuing
 ```
 
 Disable by removing this invocation (see
@@ -618,7 +615,7 @@ contract and message format.
 
 ## Planning Checklist
 
-- [ ] `persistent-memory(read aw-lessons --tier home)` invoked; matching lessons applied as constraints (anchor: `lessons-read`)
+- [ ] `lorekit(memory.list loop::aw-lessons)` read narrow-to-broad (repo:: then global); matching lessons applied as constraints (anchor: `lessons-read`)
 - [ ] Codebase analyzed (structure, patterns, stack) — dependency-graph localization (def/ref walk) before keyword sweep
 - [ ] Parallel `Explore` sub-agents used if complexity triggered (anchor: `parallel-research`)
 - [ ] `holistic-analysis` invoked if complexity triggered (anchor: `complex-task-detection`)
