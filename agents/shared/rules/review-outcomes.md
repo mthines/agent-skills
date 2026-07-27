@@ -132,7 +132,7 @@ When a fingerprint class accumulates **≥ 3 concordant verdicts** (same-directi
 | Mixed direction (no ≥ 3 concordant) | No promotion; keep accumulating |
 
 The default threshold is 3 concordant verdicts.
-Repositories with higher signal volume may lower this to 2 via `memory/review-outcomes/CONFIG.md`.
+Repositories with higher signal volume may lower this to 2 via a `.review.yaml` `outcome-promotion-threshold` key.
 
 Cross-reference `outcome-learning.md` for the full promotion decision procedure — this file owns the threshold and directionality; `outcome-learning.md` owns the mechanics of writing the promoted lesson.
 
