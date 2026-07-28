@@ -152,35 +152,87 @@ spot mis-filtering.
 
 Process comments from **both** human teammates **and** AI / bot reviewers
 (`claude[bot]`, `coderabbitai[bot]`, `sourcery-ai[bot]`, `sweep-ai[bot]`,
-human reviewers — all included). The classification + validation gates in
+human reviewers — all included by default). The classification + validation gates in
 Phases 3–4 decide what is actually actionable; the fetch layer must not
 pre-filter by author type or the worker never sees the reviewer's feedback.
 
-Concretely:
+### Step 1 — Load bot policy from `.review.yaml`
 
-| Author kind                                                                                   | Treatment              |
-| --------------------------------------------------------------------------------------------- | ---------------------- |
-| Human teammate                                                                                | **Include**            |
-| AI code-review bot — `claude[bot]`, `coderabbitai[bot]`, `sourcery-ai[bot]`, `sweep-ai[bot]`  | **Include**            |
-| The current user (`gh auth status` login)                                                     | **Exclude** by default — self-notes, not feedback. Surface count in Phase 7. |
-| Noise bots — `dependabot[bot]`, `renovate[bot]`                                               | **Exclude** unless the body contains a fenced `suggestion` block          |
-| CI summary bots — `github-actions[bot]`                                                       | **Exclude** unless the body contains a fenced `suggestion` block          |
+Before filtering, load the resolved `bot_policy` from the `.review.yaml` config
+(see [`agents/shared/rules/review-config.md#bot-policy`](../../../../agents/shared/rules/review-config.md#bot-policy)).
+The resolved policy has two parts:
 
-The split between "AI reviewer" and "noise bot" is by **login allowlist**,
-not by `author.type`. Both groups have `author.type == "Bot"` on GitHub,
-but only the AI-reviewer group produces feedback worth gating through
-`/critical` + `/confidence`. The allowlist is conservative — if a new AI
-reviewer launches, add it explicitly rather than flipping to "all bots".
+- `default` (`include` | `exclude`) — fallback treatment for any bot not explicitly listed.
+  Default when no `bot_policy` is configured: `include` (standard allowlist below applies).
+- `bots` — a map of `login → { action, min_confidence }` entries.
+
+Build a lookup table for fast per-comment resolution:
+
+```python
+bot_policy = load_review_yaml_bot_policy()  # returns { default, bots: {...} }
+
+def resolve_bot_action(login: str) -> (action, min_confidence):
+    if login in bot_policy.bots:
+        return bot_policy.bots[login].action, bot_policy.bots[login].get("min_confidence")
+    if login ends with "[bot]":
+        # apply default only to bots; human logins never get excluded by bot_policy.default
+        return bot_policy.default, None
+    return "include", None  # human teammates always included
+```
+
+### Step 2 — Apply per-author filter
+
+Evaluate each comment's `author.login` against the resolved policy:
+
+| Author kind | Default treatment | Overridden by `bot_policy.bots`? |
+| --- | --- | --- |
+| Human teammate | **Include** | No — humans are never controlled by `bot_policy` |
+| AI reviewer — `claude[bot]`, `coderabbitai[bot]`, `sourcery-ai[bot]`, `sweep-ai[bot]` | **Include** | Yes — any entry in `bots` wins |
+| Noise bots — `dependabot[bot]`, `renovate[bot]` | **Exclude** unless body has a `suggestion` block | Yes — an explicit `include` or `require-apply` entry overrides the noise-bot default |
+| CI summary bots — `github-actions[bot]` | **Exclude** unless body has a `suggestion` block | Yes |
+| The current user (`gh auth status` login) | **Exclude** — self-notes, not feedback | No — self-exclusion cannot be overridden |
+| Any other bot not listed above | Follows `bot_policy.default` (`include` or `exclude`) | Yes |
+
+The split between "AI reviewer" and "noise bot" is by **login allowlist**, not by `author.type`.
+Both groups have `author.type == "Bot"` on GitHub, but only the AI-reviewer group produces feedback worth gating through `/critical` + `/confidence`.
+The allowlist is conservative — if a new AI reviewer launches, add it explicitly rather than flipping to "all bots" OR list it in `.review.yaml`.
+
+### Step 3 — Mark `require-apply` entries
+
+Comments from a bot whose resolved `action == "require-apply"` are included in the ledger with an extra field:
+
+```json
+{ ..., "requireApply": true, "min_confidence": null }
+```
+
+`implement-suggestion` Phase 4 reads this field: when `requireApply == true`, the comment **skips `/critical` + `/confidence`** and its verdict is forced to `apply`.
+The Phase 7 report counts these separately as `require-apply: N`.
+
+Hard limit on `require-apply`: the skill's global Hard Rules still apply (no `--force` push, no deleting tests, etc.).
+`require-apply` bypasses the confidence gate, not safety constraints.
+
+### Step 4 — Apply `min_confidence` override
+
+When a bot entry carries `min_confidence`, store it on every ledger entry from that bot:
+
+```json
+{ ..., "min_confidence": 70 }
+```
+
+Phase 4 (`validation-gates.md`) reads this field and uses it as the threshold for that comment instead of the profile default.
+When `requireApply == true`, `min_confidence` is ignored.
 
 Surface counts in the Phase 7 report:
 
 ```
 Comments fetched (n):
-  - human teammates:   <n>
-  - AI reviewers:      <n>   (claude[bot], coderabbitai[bot], …)
-  - self-filtered:     <n>
-  - noise-filtered:    <n>   (dependabot, github-actions, …)
-  - resolved-filtered: <n>
+  - human teammates:      <n>
+  - AI reviewers:         <n>   (claude[bot], coderabbitai[bot], …)
+  - self-filtered:        <n>
+  - noise-filtered:       <n>   (dependabot, github-actions, …)
+  - bot-policy-filtered:  <n>   (excluded by .review.yaml bot_policy)
+  - resolved-filtered:    <n>
+  - require-apply:        <n>   (gate bypassed per bot_policy)
 ```
 
 If the user wants to **exclude** AI-reviewer comments for a specific run,

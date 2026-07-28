@@ -6,6 +6,7 @@ tags:
   - critical
   - confidence
   - gate
+  - bot-policy
 ---
 
 # Validation Gates
@@ -13,6 +14,24 @@ tags:
 Phase 4 runs each `actionable` or `nit` comment through two gates in order.
 The order matters: `/critical`'s adversarial findings must feed
 `/confidence`'s evidence, never the reverse.
+
+## `require-apply` fast path
+
+Before running Gate 1, check the ledger entry's `requireApply` field (set by
+`comment-fetching.md` when `bot_policy.bots[login].action == "require-apply"`):
+
+```
+if comment.requireApply == true:
+    record decision = "apply"  (no /critical, no /confidence)
+    reason = "require-apply: gate bypassed per .review.yaml bot_policy"
+    proceed directly to Phase 5 (suggestion-pack)
+```
+
+The skill's global Hard Rules still apply — this path bypasses the confidence
+gate, not safety constraints.
+The worker still commits per comment, pushes, and resolves threads as normal.
+The Phase 7 report counts these as `require-apply: N` and lists them separately
+from the `/confidence`-gated `apply` count.
 
 ## Gate 1 — `/critical`
 
@@ -56,12 +75,22 @@ Inputs the gate sees:
 
 ## Decision matrix
 
-| `/confidence` score | `nit` comment | `actionable` comment |
-| ------------------- | ------------- | -------------------- |
-| ≥ 90%               | `apply`       | `apply`              |
-| 80%–89%             | `surface`     | `apply`              |
-| 70%–79%             | `surface`     | `surface`            |
-| < 70%               | `skip`        | `skip`               |
+Resolve the effective confidence threshold for this comment:
+
+```
+threshold = comment.min_confidence    # set by comment-fetching when bot_policy.bots[login].min_confidence is present
+            ?? resolved_profile.per_comment_confidence_threshold   # from .review.yaml profile
+            ?? 80   # balanced default
+```
+
+| `/confidence` score vs threshold | `nit` comment | `actionable` comment |
+| --------------------------------- | ------------- | -------------------- |
+| ≥ threshold + 10 %                | `apply`       | `apply`              |
+| threshold … threshold + 9 %       | `surface`     | `apply`              |
+| threshold − 10 % … threshold − 1% | `surface`     | `surface`            |
+| < threshold − 10 %                | `skip`        | `skip`               |
+
+With the default threshold of 80 these bands collapse to: ≥ 90 → apply/apply, 80–89 → surface/apply, 70–79 → surface/surface, < 70 → skip/skip (unchanged from the original matrix).
 
 Override: **any `Must-fix` finding from `/critical` forces `surface`** regardless of score.
 
@@ -132,3 +161,7 @@ Three things can force a `surface` decision regardless of score:
 2. **Gate failure** — non-removable.
 3. **Ambiguous classification** in Phase 3 (deferred to surface) — Phase 4
    never sees these comments, but the pack still references them.
+
+One thing can force an `apply` decision without running the gates:
+
+4. **`requireApply == true`** (set by `bot_policy` in `comment-fetching.md`) — the comment skips both Gate 1 and Gate 2 and is applied directly. Hard rules still apply.

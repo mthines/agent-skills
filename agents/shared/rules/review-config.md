@@ -1,19 +1,20 @@
 ---
-title: Review config — .review.yaml profile, filters, and path instructions
+title: Review config — .review.yaml profile, filters, path instructions, and bot policy
 impact: MEDIUM
 tags:
   - reviewer
   - pr-reviewer
   - configuration
   - profile
+  - bot-policy
 ---
 
 # Review config
 
 Both agents support per-repo (and per-subtree) configuration via a `.review.yaml` file.
-The config surface is deliberately small — one profile knob, one noise-suppressor list, one path-scoped guidance list — so that the most common customizations require minimal YAML authorship.
+The config surface is deliberately small — one profile knob, one noise-suppressor list, one path-scoped guidance list, and one bot-policy table — so that the most common customizations require minimal YAML authorship.
 
-**Back-compat guarantee:** an absent `.review.yaml` resolves to `profile: balanced`, which equals today's defaults (per-comment threshold 80, per-file caps 5 for `pr-reviewer` and 10 for `reviewer`, no filters, no path instructions).
+**Back-compat guarantee:** an absent `.review.yaml` resolves to `profile: balanced`, which equals today's defaults (per-comment threshold 80, per-file caps 5 for `pr-reviewer` and 10 for `reviewer`, no filters, no path instructions, and the standard bot allowlist).
 No behavior changes without an explicit config file.
 
 ---
@@ -36,6 +37,22 @@ path_instructions:                       # path-scoped guidance
     instruction: "Flag any irreversible schema change without a rollback path."
   - path: "src/billing/**"
     instruction: "Always engage critical lens for money-touching code."
+
+bot_policy:                              # per-bot include/exclude/gate controls
+  # global default applied to every bot not listed individually
+  default: include | exclude             # default: include (standard allowlist applies)
+  bots:
+    - login: "coderabbitai[bot]"
+      action: include | exclude | require-apply
+      # include      → include in ledger and gate through /critical + /confidence (default for AI reviewers)
+      # exclude      → drop all comments from this bot before Phase 3
+      # require-apply → include AND force verdict to `apply` regardless of confidence score
+      #                 (skip /critical + /confidence for this bot's comments)
+      min_confidence: 70 | 80 | 90      # override the profile threshold for this bot only (optional)
+    - login: "dependabot[bot]"
+      action: exclude
+    - login: "my-internal-bot[bot]"
+      action: require-apply
 ```
 
 ---
@@ -106,6 +123,68 @@ path_instructions:
 
 ---
 
+## Bot policy
+
+`bot_policy:` gives per-repo control over which bots participate in the `/implement-suggestion` comment-fetch phase and what treatment their comments receive.
+Without a `bot_policy` entry the default allowlist in `comment-fetching.md` applies unchanged.
+
+### `bot_policy.default`
+
+Controls what happens to any bot whose `login` is **not** listed in `bot_policy.bots`:
+
+| Value | Behaviour |
+| --- | --- |
+| `include` | Apply the standard allowlist from `comment-fetching.md` (default — back-compat) |
+| `exclude` | Drop all comments from bots not explicitly listed; only allowlisted humans pass through |
+
+Use `default: exclude` when you want a closed allowlist — only bots you name get through.
+
+### `bot_policy.bots[].action`
+
+| Action | Effect on `/implement-suggestion` Phase 2 / 3 / 4 |
+| --- | --- |
+| `include` | Included in ledger; goes through `/critical` + `/confidence` gates as normal |
+| `exclude` | Comments from this bot are dropped before Phase 3; counted in `bot-policy-filtered` in Phase 7 |
+| `require-apply` | Included in ledger; **skips `/critical` + `/confidence`**; verdict is forced to `apply` regardless of content. Use only for fully-trusted internal bots whose suggestions you want applied without a gate. |
+
+`require-apply` is a power-user escape hatch.
+It bypasses the two-gate safety check.
+Never use it for public bots or bots you do not control.
+
+### `bot_policy.bots[].min_confidence`
+
+Optional.
+When present, overrides the profile's `per_comment_confidence_threshold` for this bot's comments only.
+Useful for bots known to be conservative (raise `min_confidence` to reduce noise) or unusually reliable (lower it to accept more of their suggestions).
+Ignored when `action: require-apply`.
+
+### Merge rules for `bot_policy` in hierarchical discovery
+
+| Field | Merge rule |
+| --- | --- |
+| `default` | Closer file wins |
+| `bots` entries | **Union by `login`** — a closer file's entry for a given login overrides the root's entry for that login; new logins from a closer file are added |
+
+Example: root sets `default: include` and `dependabot[bot]: exclude`; a subtree's `.review.yaml` sets `my-bot[bot]: require-apply`.
+Files under that subtree see both rules applied.
+
+### Phase 7 report additions
+
+The Phase 7 report adds a `Bot-policy filtered` line alongside the existing filter counts:
+
+```
+Comments fetched (n):
+  - human teammates:      <n>
+  - AI reviewers:         <n>
+  - self-filtered:        <n>
+  - noise-filtered:       <n>   (dependabot, github-actions, …)
+  - bot-policy-filtered:  <n>   (excluded by .review.yaml bot_policy)
+  - resolved-filtered:    <n>
+  - require-apply:        <n>   (gate bypassed per bot_policy)
+```
+
+---
+
 ## Hierarchical discovery
 
 `.review.yaml` files are discovered by traversing **upward** from the changed file to the repo root, collecting all `.review.yaml` files found along the path.
@@ -128,6 +207,8 @@ Merge rules by field:
 | `profile` | Closer file wins — the most specific `.review.yaml` sets the profile |
 | `filters` | **Union** — filters from all files in the hierarchy apply; a closer file cannot un-filter a category from the root |
 | `path_instructions` | **Concatenation** — all instructions from all files apply, with closer-file instructions listed first |
+| `bot_policy.default` | Closer file wins |
+| `bot_policy.bots` | **Union by `login`** — closer file's entry wins on conflict; new logins are added |
 
 Example: if the root `.review.yaml` sets `profile: chill` and `src/payments/.review.yaml` sets `profile: assertive`, then files under `src/payments/` use `assertive` while all other files use `chill`.
 
@@ -179,6 +260,7 @@ The effective config is consumed by:
 - `per-comment-confidence.md` (2.7) — reads the profile's threshold.
 - The filter evaluation (**Step 2.3**, early in Step 2, before holistic review) — drops findings in suppressed categories.
 - The path-instruction injection at `per-comment-confidence.md` (2.7) — appends instruction to Evidence.
+- `comment-fetching.md` (Phase 2, author filter) — reads `bot_policy` to include/exclude/require-apply specific bots before Phase 3.
 
 ---
 
@@ -201,3 +283,5 @@ For backwards compatibility, a bare `per_comment_confidence_threshold: N` withou
 - Define how rubrics are authored or loaded — that is `rubric-composition.md`.
 - Govern posting authorization — that is `authorization-gate.md`.
 - Replace per-run flags — `--no-holistic`, `--no-critical`, `--with` still override on a per-invocation basis and take precedence over `.review.yaml` profile settings.
+- Apply `bot_policy` to the `pr-reviewer` or `reviewer` agents — those agents review diff content, not comments; `bot_policy` is consumed only by `implement-suggestion` (comment-fetching Phase 2).
+- Allow `require-apply` to bypass hard rules — the skill's global Hard Rules (never `--force`, never delete tests, etc.) still apply even when gate validation is skipped.
