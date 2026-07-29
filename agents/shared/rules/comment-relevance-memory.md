@@ -161,14 +161,56 @@ So the user knows the pipeline has been influenced.
 
 ### Who writes
 
-`implement-suggestion` is the **primary writer** of comment-relevance memories.
-It has the per-comment `/critical` + `/confidence` result and the full apply
-outcome already in context — no extra `gh api` calls are needed for the
-common path.
+There are three write paths, each covering a different point in the PR lifecycle:
 
-`reviewer` and `pr-reviewer` are **secondary writers** via the `outcome-learning.md`
-measurement path (gh-api signals a/b/c), used as fallback when
-`implement-suggestion` was not in the loop.
+| Writer | When it fires | Signal quality |
+| --- | --- | --- |
+| **GitHub Actions workflow** (`reviewer-comment-relevance.yml`) | At the moment a reviewer resolves a thread; at PR merge for open threads | **Highest fidelity** — real-time, covers every thread regardless of whether an agent was involved |
+| **`implement-suggestion`** (Phase 7 / `--watch`) | After the skill applies or rejects a comment | High — has the full `/critical` + `/confidence` verdict without extra API calls |
+| **`reviewer` / `pr-reviewer`** via `outcome-learning.md` | Post-merge via `/review-outcomes <pr>` or `--watch` tail step | Fallback — used when neither of the above paths were active |
+
+The paths are **additive**: the same fingerprint may be written multiple times with
+consistent `relevance` values, which LoreKit deduplicates by incrementing `seen_count`.
+Conflicting directions (e.g. one path says `relevant`, another says `not-relevant` for the
+same fingerprint) are surfaced as contradictions for user review, not silently resolved.
+
+### GitHub Actions webhook path
+
+The `.github/workflows/reviewer-comment-relevance.yml` workflow listens to two
+GitHub events and calls `scripts/record-comment-relevance.mjs` to classify and write:
+
+**Trigger 1 — `pull_request_review_thread: resolved`**
+
+Fires the moment any reviewer resolves a thread on a PR.
+The script fetches the thread's replies and checks for:
+1. 👎 reaction from the PR author on the root comment → `not-relevant / wont-fix`
+2. "Won't fix / by design / n/a / out of scope" language in any reply → `not-relevant / wont-fix`
+3. A commit after the comment that touches `(path, line ± 10)` → `relevant / fixed`
+4. Thread resolved with none of the above → `relevant / fixed` (human resolved = accepted)
+
+**Trigger 2 — `pull_request: closed` (merged)**
+
+Fires when a PR is merged.
+The script sweeps all review threads, skips any that had a fix commit or a won't-fix reply
+(already captured by Trigger 1), and records the rest as `weak-not-relevant / ignored-at-merge`.
+
+**Required secret**: `LOREKIT_API_KEY` in the repository's Actions secrets.
+Without it the workflow runs but skips the write (logs a graceful no-op).
+The `GITHUB_TOKEN` auto-provided by Actions handles all `gh api` read calls.
+
+The workflow writes via `npx @lorekit/cli memory write`:
+
+```bash
+npx @lorekit/cli memory write \
+  --scope "repo::{owner}/{repo}" \
+  --key "reviewer-comment-relevance::{fingerprint}" \
+  --value '{"fingerprint":"...","relevance":"...","resolution_method":"...","reason":"...","seen_count":1,"status":"active","expires":"..."}' \
+  --tags "loop::reviewer-comment-relevance,source::{resolution_method}" \
+  --source-agent "github-actions/reviewer-comment-relevance"
+```
+
+LoreKit's server-side deduplication handles the `seen_count` increment when the same
+key is written again — no additional lookup is needed from the workflow.
 
 ### What `implement-suggestion` writes (Phase 7 + watch re-flag)
 
