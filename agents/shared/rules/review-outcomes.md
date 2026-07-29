@@ -138,6 +138,19 @@ Cross-reference `outcome-learning.md` for the full promotion decision procedure 
 
 ---
 
+## Webhook write gate
+
+When an outcome record is appended by a GitHub webhook automation (not by `implement-suggestion` processing a human-authored PR), apply the dispatcher gate and per-PR dedup rules from
+[`autonomous-workflow/rules/webhook-memory-filter.md`](../../skills/workflow/autonomous-workflow/rules/webhook-memory-filter.md#per-pr-outcome-dedup)
+before calling `memory.write`.
+
+If `OUTCOME_WRITE_ENABLED == false`, skip the append entirely.
+If `OUTCOME_WRITE_ENABLED == true`, run the per-PR dedup check and the 24 h cooldown before writing.
+
+When the triggering context is `implement-suggestion` (the normal write path), these gates do not apply — `implement-suggestion` already deduplicates per its own per-comment gate.
+
+---
+
 ## Consolidation cadence
 
 Consolidation prunes the bus and triggers promotion checks.

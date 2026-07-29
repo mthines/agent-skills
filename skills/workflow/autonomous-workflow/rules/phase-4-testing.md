@@ -548,6 +548,18 @@ catalogue.
 
 **Anchor:** `lessons-write`
 
+**Webhook-automation pre-flight.**
+When this write is triggered by a GitHub webhook event (not a manual invocation),
+apply the dispatcher gate from
+[`webhook-memory-filter.md`](./webhook-memory-filter.md#dispatcher-gate-pre-flight)
+before any `memory.write` call.
+If `LESSON_WRITE_ENABLED == false`, log one line and skip this block entirely.
+If `LESSON_WRITE_ENABLED == true`, proceed directly to the write below — the
+stuck-loop quality gate in Phase 7 does NOT apply here (a stuck loop is always
+signal-worthy by definition). The privacy pre-flight still applies.
+When the triggering context is a human-authored prompt (the normal case), these
+gates do not apply — proceed directly to the write below.
+
 When the stuck-loop hits the cap (and especially at mandatory user escalation),
 capture what was learned so the next run does better. This is the **fast tier**
 of the self-improvement loop — full contract in

@@ -477,6 +477,18 @@ cd "$(git rev-parse --show-toplevel)"
 
 **Anchor:** `lessons-write`
 
+**Webhook-automation pre-flight.**
+When this write is triggered by a GitHub webhook event (not a manual invocation),
+apply the dispatcher gate from
+[`webhook-memory-filter.md`](./webhook-memory-filter.md#dispatcher-gate-pre-flight)
+before any `memory.write` call.
+If `LESSON_WRITE_ENABLED == false`, log one line and skip this block entirely.
+If `LESSON_WRITE_ENABLED == true`, additionally apply the
+[Phase 7 quality gate](./webhook-memory-filter.md#phase-7-quality-gate)
+to each candidate before persisting it.
+When the triggering context is a human-authored prompt (the normal case), these
+gates do not apply — proceed directly to the write below.
+
 At end-of-run — CI green, a user-approved stop, or a post-merge bug observed in
 the same session — capture any durable lesson so future runs improve. This is
 the **fast tier** of the self-improvement loop; full contract in
