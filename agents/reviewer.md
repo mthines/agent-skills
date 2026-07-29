@@ -28,6 +28,7 @@ The pipeline lives in rule files; the body is intentionally small. Read each rul
 - `agents/shared/rules/verification-receipt.md` — executed proof for behavioral claims; drop on null result (Step 2.6b).
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ profile threshold (Step 2.7).
 - `agents/shared/rules/outcome-learning.md` — resolution-rate feedback loop; runs post-merge via `/review-outcomes`. Promotion reads from the `review-outcomes` candidate bus (see `agents/shared/rules/review-outcomes.md`) — the bus is NEVER loaded per-review (Step 0.7 loads `reviewer-lessons` only).
+- `agents/shared/rules/comment-relevance-memory.md` — per-repo LoreKit memories of which comment patterns were relevant (fixed) vs. not-relevant (won't fix / ignored). Read at Step 0.7 alongside `reviewer-lessons`; used to suppress recurring noise patterns and reinforce reliably-resolved ones. Written post-merge via `outcome-learning.md` gh-api signals.
 - `agents/shared/rules/comment-shape.md` — ≤ 240 chars, ≤ 2 sentences, no headings or bullets.
 - `agents/shared/rules/conventional-comments.md` — prefix table + decorations.
 - `agents/reviewer/rules/auto-fix-policy.md` — simple-vs-complex split + forbidden targets.
@@ -122,7 +123,16 @@ memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::reviewer-lessons"], l
 memory.list { scope: "global",               tags: ["loop::reviewer-lessons"], limit: 50 }
 ```
 
-Derive `{owner}/{repo}` from the `origin` remote, lowercased (strip a trailing `.git`); no git remote → read `global` only. Merge both lists (`repo::` wins over `global` on key collision) and skip any lesson whose `expires` is in the past. Match each lesson's `trigger-context` against the current run (sub-mode, repo signals, working-tree state). Matched lessons inform the **review pipeline** (Step 2), the **auto-fix policy** (Step 4), and the **post-fix verification** behavior.
+Also load **comment-relevance memories** (see `agents/shared/rules/comment-relevance-memory.md`) in the same fan-out pass:
+
+```
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::reviewer-comment-relevance"], limit: 50 }
+memory.list { scope: "global",               tags: ["loop::reviewer-comment-relevance"], limit: 50 }
+```
+
+Derive `{owner}/{repo}` from the `origin` remote, lowercased (strip a trailing `.git`); no git remote → read `global` only. Merge both lists (`repo::` wins over `global` on key collision) and skip any lesson/memory whose `expires` is in the past. Match each lesson's `trigger-context` against the current run (sub-mode, repo signals, working-tree state). Matched lessons inform the **review pipeline** (Step 2), the **auto-fix policy** (Step 4), and the **post-fix verification** behavior.
+
+Loaded relevance memories are applied immediately after the rubric walk (before Step 2.3 filter suppression), per `comment-relevance-memory.md § Read`. Announce active suppressions and promotions in one line, e.g.: `Relevance memories active: 2 suppressions, 1 promotion (repo:owner/repo-name)`.
 
 Concrete trigger signals to evaluate:
 
@@ -213,6 +223,7 @@ Run the full shared pipeline. Each gate is hard; no retries; drop is final withi
 
 ```
 rubrics produce raw findings
+  → 2.2  comment-relevance-memory.md (drop/downgrade not-relevant patterns; promote reliably-resolved ones — runs before filter suppression)
   → 2.3  review-config.md § Filters (drop findings in categories suppressed by .review.yaml — runs before holistic)
   → 2.4  holistic-review.md         (Skill("holistic-analysis", "review") — broad whole-PR, default on)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — opt-in via --escalate)
@@ -234,6 +245,23 @@ In order (`agents/shared/rules/rubric-composition.md`): `code-quality` → `ux` 
 ### 2.1 Walk rubrics against the diff
 
 Each rubric emits raw findings.
+
+### 2.2 Relevance-memory filtering
+
+See `agents/shared/rules/comment-relevance-memory.md § Read`. Apply the loaded
+relevance memories from Step 0.7 against the raw finding set:
+
+- Findings whose `fingerprint` matches a `not-relevant` memory with `seen_count
+  >= 3` are **dropped** (logged as `Relevance-memory drops`).
+- Findings whose `fingerprint` matches a `not-relevant` memory with `seen_count
+  1–2` are **downgraded** to `nitpick` (logged as `Relevance-memory downgrades`).
+- Findings whose `fingerprint` matches a `relevant` memory with `seen_count >= 2`
+  are **promoted** (noted in terminal output only; never posted to GitHub).
+
+This step runs **before** Step 2.3 filter suppression so that memory-suppressed
+findings never consume a holistic-escalation slot.
+If no relevance memories were loaded at Step 0.7, this step is a no-op.
+Log drops and downgrades in the Quality Gate summary.
 
 ### 2.3 Filter suppression (from `.review.yaml`)
 
@@ -307,18 +335,21 @@ Emit each finding as a card from `agents/templates/pr-comment-card.template.md`.
 ### Quality Gate
 
 ```
-Findings produced:        <N>
-Dedupe drops:             <D>
-Agreement-promoted:       <A>
-Prior-comment dedup:      <P>  (Self-Review: already said in a prior review pass)
-Anti-flip-flop drops:     <X>  (would contradict a resolved prior suggestion)
-Grounding drops:          <G>
-Receipt drops:            <R>  (behavioral claims with null/contradicting proof)
-Receipt downgrades:       <RD> (ambiguous proof → downgraded to question:)
-Filter drops:             <FL> (suppressed by .review.yaml filters)
-Confidence drops:         <C>  (threshold: <T>)
-Shape drops:              <S>
-Final findings:           <F>
+Findings produced:           <N>
+Relevance-memory drops:      <RM>  (not-relevant pattern, seen ≥ 3 times)
+Relevance-memory downgrades: <RMD> (not-relevant pattern, seen 1–2 times → nitpick)
+Relevance-memory promotes:   <RMP> (reliably-resolved pattern, seen ≥ 2 times)
+Dedupe drops:                <D>
+Agreement-promoted:          <A>
+Prior-comment dedup:         <P>   (Self-Review: already said in a prior review pass)
+Anti-flip-flop drops:        <X>   (would contradict a resolved prior suggestion)
+Grounding drops:             <G>
+Receipt drops:               <R>   (behavioral claims with null/contradicting proof)
+Receipt downgrades:          <RD>  (ambiguous proof → downgraded to question:)
+Filter drops:                <FL>  (suppressed by .review.yaml filters)
+Confidence drops:            <C>   (threshold: <T>)
+Shape drops:                 <S>
+Final findings:              <F>
 ```
 
 ### Verdict

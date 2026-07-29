@@ -139,7 +139,9 @@ The `--watch` loop already uses `gh api` for status polling; outcome measurement
 **On-demand:** `/review-outcomes <pr>` runs the five gh-api steps above against any merged PR and writes the result to the lesson store.
 Useful for retrospective audits or when the automatic path was not active.
 
-Both fallback entry points call the same shared `gh api` sequence above and write to `reviewer-lessons` via LoreKit `memory.write` (tag `loop::reviewer-lessons`).
+Both fallback entry points call the same shared `gh api` sequence above and write to:
+1. `reviewer-lessons` via LoreKit `memory.write` (tag `loop::reviewer-lessons`) — the existing behavior.
+2. `reviewer-comment-relevance` via LoreKit `memory.write` (tag `loop::reviewer-comment-relevance`) — the new per-repo relevance signal that directly informs suppression and reinforcement in future review runs. See `agents/shared/rules/comment-relevance-memory.md § Write — What reviewer / pr-reviewer write`.
 
 ---
 

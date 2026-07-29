@@ -1,0 +1,9 @@
+{
+  "name": "pr-relevance-memory",
+  "version": "1.0.0",
+  "description": "GitHub Actions reusable workflow that records PR comment resolution signals into LoreKit, making the reviewer and pr-reviewer agents continuously more accurate per repository",
+  "author": { "name": "mthines" },
+  "repository": "https://github.com/mthines/agent-skills",
+  "license": "MIT",
+  "keywords": ["reviewer", "pr-review", "lorekit", "memory", "github-actions", "comment-relevance"]
+}
