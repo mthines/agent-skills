@@ -132,7 +132,7 @@ memory.list { scope: "global",               tags: ["loop::reviewer-comment-rele
 
 Derive `{owner}/{repo}` from the `origin` remote, lowercased (strip a trailing `.git`); no git remote → read `global` only. Merge both lists (`repo::` wins over `global` on key collision) and skip any lesson/memory whose `expires` is in the past. Match each lesson's `trigger-context` against the current run (sub-mode, repo signals, working-tree state). Matched lessons inform the **review pipeline** (Step 2), the **auto-fix policy** (Step 4), and the **post-fix verification** behavior.
 
-Loaded relevance memories are applied immediately after the rubric walk (before Step 2.3 filter suppression), per `comment-relevance-memory.md § Read`. Announce active suppressions and promotions in one line, e.g.: `Relevance memories active: 2 suppressions, 1 promotion (repo:mthines/console)`.
+Loaded relevance memories are applied immediately after the rubric walk (before Step 2.3 filter suppression), per `comment-relevance-memory.md § Read`. Announce active suppressions and promotions in one line, e.g.: `Relevance memories active: 2 suppressions, 1 promotion (repo:owner/repo-name)`.
 
 Concrete trigger signals to evaluate:
 

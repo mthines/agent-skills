@@ -187,14 +187,13 @@ function writeLorekit({ scope, key, relevance, resolutionMethod, reason, comment
 // ── Mode: thread-resolved ─────────────────────────────────────────────────────
 
 async function modeThreadResolved() {
-  const repo          = process.env.GH_REPO;
-  const prNumber      = process.env.PR_NUMBER;
-  const commentId     = process.env.FIRST_COMMENT_ID;
-  const commentPath   = process.env.FIRST_COMMENT_PATH;
-  const commentLine   = parseInt(process.env.FIRST_COMMENT_LINE ?? "0", 10);
-  const commentBody   = process.env.FIRST_COMMENT_BODY ?? "";
-  const commentAuthor = process.env.FIRST_COMMENT_AUTHOR ?? "";
-  const commentTs     = process.env.FIRST_COMMENT_CREATED_AT ?? new Date(0).toISOString();
+  const repo        = process.env.GH_REPO;
+  const prNumber    = process.env.PR_NUMBER;
+  const commentId   = process.env.FIRST_COMMENT_ID;
+  const commentPath = process.env.FIRST_COMMENT_PATH;
+  const commentLine = parseInt(process.env.FIRST_COMMENT_LINE ?? "0", 10);
+  const commentBody = process.env.FIRST_COMMENT_BODY ?? "";
+  const commentTs   = process.env.FIRST_COMMENT_CREATED_AT ?? new Date(0).toISOString();
 
   if (!repo || !prNumber || !commentId) {
     log("Missing required env vars for thread-resolved mode — skipping.");
@@ -203,15 +202,13 @@ async function modeThreadResolved() {
 
   log(`Classifying resolved thread: PR #${prNumber} comment ${commentId} (${commentPath}:${commentLine})`);
 
-  // Fetch replies in this thread to check for won't-fix language.
+  // Fetch replies in this thread (excluding the root comment) to check for won't-fix language.
   let replies = [];
   try {
     const allComments = ghApi(`/repos/${repo}/pulls/${prNumber}/comments`);
     replies = allComments.filter(
-      (c) => String(c.in_reply_to_id) === String(commentId) || String(c.id) === String(commentId),
+      (c) => String(c.in_reply_to_id) === String(commentId),
     );
-    // Exclude the root comment itself from won't-fix check (replies only).
-    replies = replies.filter((c) => String(c.id) !== String(commentId));
   } catch (err) {
     log("Could not fetch thread replies:", err.message);
   }

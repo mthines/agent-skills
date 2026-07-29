@@ -36,7 +36,7 @@ The three resolution outcomes that carry signal:
 
 | Outcome | Signal | How to detect |
 | --- | --- | --- |
-| **Fixed** — author pushed a commit that addresses the comment | Comment was relevant; reinforce the detection class | Author commit touches `(path, line ± 5)` after comment posted; or `implement-suggestion` applied the comment (`verdict: applied`) |
+| **Fixed** — author pushed a commit that addresses the comment | Comment was relevant; reinforce the detection class | Author commit touches `(path, line ± 10)` after comment posted; or `implement-suggestion` applied the comment (`verdict: applied`) |
 | **Won't fix** — author explicitly declines the comment | Comment was not relevant for this codebase; consider suppressing | Author replies "won't fix", "by design", "intentional", "not going to change", "nwf", "n/a"; or 👎 reaction from the author |
 | **Ignored at merge** — PR merges with the comment unresolved, no acknowledgement | Weak not-relevant signal; accumulate before suppressing | PR state transitions to `MERGED`; thread still open; no fix commit; no explicit decline |
 
@@ -272,7 +272,7 @@ When the `outcome-learning.md` gh-api measurement step fires (post-merge via
 `/review-outcomes <pr>` or at the tail of `--watch`), also emit a
 comment-relevance memory for each measured comment:
 
-- Signal (c) — fix commit touches `(path, line ± 5)` → write `relevant / fixed`.
+- Signal (c) — fix commit touches `(path, line ± 10)` → write `relevant / fixed`.
 - Signal (a) — 👎 reaction from the PR author → write `not-relevant / wont-fix`.
 - Signal (b) — author reply correcting the finding, no fix commit → write `not-relevant / wont-fix`.
 - PR merged with thread open, no fix, no decline → write `weak-not-relevant / ignored-at-merge`.
@@ -321,7 +321,7 @@ until 6).
 | `outcome-learning.md` | Post-merge gh-api signals write to BOTH `reviewer-lessons` (existing) AND `reviewer-comment-relevance` (new). |
 | `per-comment-confidence.md` | Confidence gate runs on the surviving findings only — already-dropped findings skip the gate. |
 | `finding-grounding.md` | Grounding runs on the surviving findings only. |
-| `.review.yaml` `filters:` | Manual filters in `.review.yaml` take precedence over relevance-memory drops. They run first (Step 2.3), so a memory-suppressed finding that is ALSO in `filters:` is dropped by the filter — the memory records are not consumed for that finding. |
+| `.review.yaml` `filters:` | Relevance-memory filtering runs at Step 2.2, filter suppression at Step 2.3. A finding that survives Step 2.2 (seen < 3 times, only downgraded) is still eligible for filter suppression at Step 2.3. A finding dropped at Step 2.2 never reaches Step 2.3 — filter suppression is a no-op for already-dropped findings. Both mechanisms are complementary: memory is adaptive (learned), filters are explicit (configured). |
 
 ---
 
