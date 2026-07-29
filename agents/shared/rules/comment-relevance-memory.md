@@ -176,41 +176,56 @@ same fingerprint) are surfaced as contradictions for user review, not silently r
 
 ### GitHub Actions webhook path
 
-The `.github/workflows/reviewer-comment-relevance.yml` workflow listens to two
-GitHub events and calls `scripts/record-comment-relevance.mjs` to classify and write:
+The logic lives as a **reusable GitHub Actions workflow** in this repository
+(`.github/workflows/reviewer-comment-relevance.yml`).
+Any repository using the `reviewer` or `pr-reviewer` agents can reference it
+with a single `uses:` line — no need to copy any script or workflow logic.
 
-**Trigger 1 — `pull_request_review_thread: resolved`**
+**Installation (two steps):**
 
-Fires the moment any reviewer resolves a thread on a PR.
+1. Copy `plugins/pr-relevance-memory/templates/pr-relevance-caller.yml` to
+   `YOUR_REPO/.github/workflows/pr-relevance-memory.yml`.
+   This is a ~30-line caller workflow that extracts event data from the webhook
+   payload and delegates to the reusable workflow via:
+   ```yaml
+   uses: mthines/agent-skills/.github/workflows/reviewer-comment-relevance.yml@main
+   ```
+2. Add `LOREKIT_API_KEY` to the repo's **Settings → Secrets and variables → Actions**.
+   Without it the workflow is a graceful no-op — it won't fail CI.
+
+Updates to the classification logic propagate automatically to all callers when
+the `@main` reference is used (or pin to a tag for stable behaviour).
+
+**Two triggers the caller wires up:**
+
+**`pull_request_review_thread: resolved`** (mode `thread-resolved`) —
+Fires the moment a reviewer resolves a thread.
 The script fetches the thread's replies and checks for:
 1. 👎 reaction from the PR author on the root comment → `not-relevant / wont-fix`
 2. "Won't fix / by design / n/a / out of scope" language in any reply → `not-relevant / wont-fix`
 3. A commit after the comment that touches `(path, line ± 10)` → `relevant / fixed`
-4. Thread resolved with none of the above → `relevant / fixed` (human resolved = accepted)
+4. Thread resolved with none of the above → `relevant / fixed` (human accepted)
 
-**Trigger 2 — `pull_request: closed` (merged)**
+**`pull_request: closed` (merged)** (mode `pr-merged`) —
+Fires when a PR merges.
+Sweeps all review threads, skips any that had a fix commit or a won't-fix reply
+(already captured by the first trigger), records the rest as `weak-not-relevant / ignored-at-merge`.
 
-Fires when a PR is merged.
-The script sweeps all review threads, skips any that had a fix commit or a won't-fix reply
-(already captured by Trigger 1), and records the rest as `weak-not-relevant / ignored-at-merge`.
+**What the reusable workflow does:**
+- Checks out `mthines/agent-skills` to get `scripts/record-comment-relevance.mjs`.
+- Runs it with the event-specific inputs passed by the caller.
+- Writes to LoreKit via `npx @lorekit/cli memory write`:
+  ```bash
+  npx @lorekit/cli memory write \
+    --scope "repo::{owner}/{repo}" \
+    --key "reviewer-comment-relevance::{fingerprint}" \
+    --value '{"fingerprint":"...","relevance":"...","resolution_method":"...","reason":"...","seen_count":1,"status":"active","expires":"..."}' \
+    --tags "loop::reviewer-comment-relevance,source::{resolution_method}" \
+    --source-agent "github-actions/reviewer-comment-relevance"
+  ```
+- LoreKit's server-side deduplication increments `seen_count` on re-write of the same key.
 
-**Required secret**: `LOREKIT_API_KEY` in the repository's Actions secrets.
-Without it the workflow runs but skips the write (logs a graceful no-op).
-The `GITHUB_TOKEN` auto-provided by Actions handles all `gh api` read calls.
-
-The workflow writes via `npx @lorekit/cli memory write`:
-
-```bash
-npx @lorekit/cli memory write \
-  --scope "repo::{owner}/{repo}" \
-  --key "reviewer-comment-relevance::{fingerprint}" \
-  --value '{"fingerprint":"...","relevance":"...","resolution_method":"...","reason":"...","seen_count":1,"status":"active","expires":"..."}' \
-  --tags "loop::reviewer-comment-relevance,source::{resolution_method}" \
-  --source-agent "github-actions/reviewer-comment-relevance"
-```
-
-LoreKit's server-side deduplication handles the `seen_count` increment when the same
-key is written again — no additional lookup is needed from the workflow.
+See `plugins/pr-relevance-memory/README.md` for the full installation guide and effect table.
 
 ### What `implement-suggestion` writes (Phase 7 + watch re-flag)
 

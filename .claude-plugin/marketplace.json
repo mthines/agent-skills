@@ -16,6 +16,18 @@
         "url": "https://github.com/mthines/agent-skills",
         "path": "plugins/agent-tasks-hooks"
       }
+    },
+    {
+      "name": "pr-relevance-memory",
+      "description": "GitHub Actions reusable workflow that records PR comment resolution signals into LoreKit, making the reviewer and pr-reviewer agents continuously more accurate per repository. Install the caller template (templates/pr-relevance-caller.yml) and add LOREKIT_API_KEY to your repo secrets.",
+      "version": "1.0.0",
+      "author": { "name": "mthines" },
+      "license": "MIT",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/mthines/agent-skills",
+        "path": "plugins/pr-relevance-memory"
+      }
     }
   ]
 }
