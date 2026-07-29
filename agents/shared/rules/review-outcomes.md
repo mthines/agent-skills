@@ -192,3 +192,4 @@ The bus is an optional enrichment, not a hard dependency.
 - Define the fingerprint formula authoritatively — that is `prior-comment-awareness.md` (Step 2.5b).
   This file only mandates reuse of the same formula.
 - Replace the `reviewer-lessons` scope — `review-outcomes` is a volatile intake bus; promoted lessons land in `reviewer-lessons`.
+- Replace the `reviewer-comment-relevance` memory bucket — that bucket is written in parallel by `implement-suggestion` (Phase 7 / watch) and read on every review run for direct suppression/reinforcement. The two buckets serve different purposes: `review-outcomes` feeds slow-tier promotion decisions; `reviewer-comment-relevance` provides fast, per-run relevance signals. See `agents/shared/rules/comment-relevance-memory.md`.

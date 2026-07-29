@@ -28,6 +28,7 @@ This agent's body is intentionally small. The pipeline lives in rule files:
 - `agents/shared/rules/verification-receipt.md` — executed proof for behavioral claims; drop on null result (Step 2.6b).
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ profile threshold (Step 2.7).
 - `agents/shared/rules/outcome-learning.md` — resolution-rate feedback loop; runs post-merge via `/review-outcomes`. Promotion reads from the `review-outcomes` candidate bus (see `agents/shared/rules/review-outcomes.md`) — the bus is NEVER loaded per-review (Step 0.7 in `reviewer` / the equivalent lesson read in `pr-reviewer` loads `reviewer-lessons` only).
+- `agents/shared/rules/comment-relevance-memory.md` — per-repo LoreKit memories of which comment patterns were relevant (fixed) vs. not-relevant (won't fix / ignored). Read before Step 1.1 (same fan-out as `reviewer-lessons`); written post-merge via `outcome-learning.md` gh-api signals.
 - `agents/shared/rules/comment-shape.md` — ≤ 240 chars, ≤ 2 sentences, no headings or bullets.
 - `agents/shared/rules/conventional-comments.md` — prefix table + decorations.
 - `agents/pr-reviewer/rules/line-validity.md` — RIGHT-side hunk-bounds pre-flight.
@@ -100,11 +101,27 @@ Announce the resolved target in one line:
 
 ## Step 1: Understand the change scope
 
-### 1.0 Prior-comment awareness (default ON)
+### 1.0 Prior-comment awareness + relevance memory load (default ON)
 
 See `agents/shared/rules/prior-comment-awareness.md`. Fetch existing review comments on the PR, build the dedup set and the resolved-suggestion set before any finding is produced. These are consumed at Step 2.5b (dedup against prior bot comments) and throughout Step 2 (anti-flip-flop drops).
 
 This step is **default ON** for `pr-reviewer` on all runs, including first-pass reviews (the dedup set is empty on a first pass, so the step is a no-op then but costs only one `gh api` call).
+
+Also load **comment-relevance memories** and **reviewer-lessons** in this step (narrow-to-broad fan-out, silent no-op if `memory.*` not connected):
+
+```
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::reviewer-lessons"],           limit: 50 }
+memory.list { scope: "global",               tags: ["loop::reviewer-lessons"],           limit: 50 }
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::reviewer-comment-relevance"], limit: 50 }
+memory.list { scope: "global",               tags: ["loop::reviewer-comment-relevance"], limit: 50 }
+```
+
+Derive `{owner}/{repo}` from the PR repo (`PR_REPO` or the detected origin remote), lowercased.
+Merge both lists per tag (`repo::` wins on key collision).
+Skip any entry whose `expires` is in the past.
+Loaded relevance memories are applied at Step 2.2 (before filter suppression).
+Announce active suppression memories in one line after this step:
+`Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>)`.
 
 ### 1.1 Get the diff and metadata
 
@@ -175,6 +192,7 @@ After rubric findings are collected, the pipeline runs through these gates in st
 
 ```
 rubrics produce raw findings
+  → 2.2  comment-relevance-memory.md (drop/downgrade not-relevant patterns; promote reliably-resolved ones — runs before filter suppression)
   → 2.3  review-config.md § Filters (drop findings in categories suppressed by .review.yaml — runs before holistic)
   → 2.4  holistic-review.md         (Skill("holistic-analysis", "review") — broad whole-PR, default on)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — default on)
@@ -188,6 +206,23 @@ rubrics produce raw findings
   → 2.8  comment-shape.md           (≤ 240 chars, ≤ 2 sentences, no structure)
   → 2.9  conventional-comments.md   (prefix + decoration)
 ```
+
+### 2.2 Relevance-memory filtering
+
+See `agents/shared/rules/comment-relevance-memory.md § Read`. Apply the loaded
+relevance memories from Step 1.0 against the raw finding set:
+
+- Findings whose `fingerprint` matches a `not-relevant` memory with `seen_count
+  >= 3` are **dropped** (logged as `Relevance-memory drops`).
+- Findings whose `fingerprint` matches a `not-relevant` memory with `seen_count
+  1–2` are **downgraded** to `nitpick` (logged as `Relevance-memory downgrades`).
+- Findings whose `fingerprint` matches a `relevant` memory with `seen_count >= 2`
+  are **promoted** (noted in terminal output only; never posted to GitHub as a
+  standalone annotation — the finding's own comment carries the signal).
+
+This step runs **before** Step 2.3 filter suppression so that memory-suppressed
+findings never consume a holistic-escalation slot.
+If no relevance memories were loaded at Step 1.0, this step is a no-op.
 
 ### 2.3 Filter suppression (from `.review.yaml`)
 
@@ -291,7 +326,7 @@ Output two views: a scannable summary table, then numbered detail cards using `a
 | 2  | src/bar.ts:15-18   | issue       | 90%  | `try { return await fetchUser…` |
 
 **Total: <N> comments** · <X> issue · <Y> suggestion · <Z> praise
-**Quality Gate**: produced <P>, dedupe drops <D>, agreement-promoted <A>, prior-comment dedup <PC>, anti-flip-flop <AF>, grounding drops <G>, receipt drops <R>, filter drops <FL>, confidence drops <C> (threshold <T>), shape drops <S>, final <F>
+**Quality Gate**: produced <P>, relevance-memory drops <RM>, relevance-memory downgrades <RMD>, dedupe drops <D>, agreement-promoted <A>, prior-comment dedup <PC>, anti-flip-flop <AF>, grounding drops <G>, receipt drops <R>, filter drops <FL>, confidence drops <C> (threshold <T>), shape drops <S>, final <F>
 
 ### Details
 

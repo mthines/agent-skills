@@ -305,38 +305,67 @@ See [`rules/self-improvement-loop.md#lesson-promotion`](./rules/self-improvement
 
 #### Outcome emit
 
-After writing lessons — emit outcome records to `review-outcomes`. For every comment
-processed in this run (any verdict: `applied`, `rejected-at-validation`, `deferred`), the
-outcome-emit step appends to the `review-outcomes` LoreKit bus (tag `loop::review-outcomes`)
-via `memory.write` — one fingerprinted outcome record per comment.
+After writing lessons — emit outcome records to `review-outcomes` AND write
+comment-relevance memories. These are two separate, parallel writes per processed
+comment.
+
+**Write 1 — `review-outcomes` bus** (existing): appends to the `review-outcomes` LoreKit bus
+(tag `loop::review-outcomes`) — one fingerprinted outcome record per comment.
 This feeds the shared candidate/outcome bus consumed by
 [`agents/shared/rules/outcome-learning.md`](../../../agents/shared/rules/outcome-learning.md) at promotion time.
 
-Reuse the per-comment `/critical` + `/confidence` result already in context — do not recompute.
-Derive `verdict` from the Phase 4 decision matrix:
+**Write 2 — `reviewer-comment-relevance` memory** (new): writes a relevance signal
+to the `reviewer-comment-relevance` LoreKit bucket (tag
+`loop::reviewer-comment-relevance`) for each processed comment.
+This is the primary write path that makes `reviewer` and `pr-reviewer` continuously
+better on this specific repository — each resolved or dismissed comment updates
+the per-repo signal so future reviews suppress recurring noise and reinforce
+reliably-resolved patterns.
+See [`agents/shared/rules/comment-relevance-memory.md § Write`](../../../agents/shared/rules/comment-relevance-memory.md)
+for the full record schema and scope-classification rules.
 
-| Phase 4 outcome | `verdict` value |
-| --- | --- |
-| Gate cleared, patch landed | `applied` |
-| `/critical` Must-fix raised OR `/confidence` below threshold | `rejected-at-validation` |
-| Gate cleared but scoped out / deferred | `deferred` |
-| Patch landed then reverted after CI failure | `reverted-after-ci` (written at the end of the `--watch` loop if CI failure is traced to this patch) |
+Reuse the per-comment `/critical` + `/confidence` result already in context — do not recompute.
+Derive `verdict` / `relevance` from the Phase 4 decision matrix:
+
+| Phase 4 outcome | `verdict` (review-outcomes) | `relevance` (comment-relevance) | `resolution_method` |
+| --- | --- | --- | --- |
+| Gate cleared, patch landed | `applied` | `relevant` | `fixed` |
+| `/critical` Must-fix raised OR `/confidence` below threshold | `rejected-at-validation` | `not-relevant` | `wont-fix` |
+| Gate cleared but scoped out / deferred | `deferred` | `weak-not-relevant` | `ignored-at-merge` |
+| Patch landed then reverted after CI failure | `reverted-after-ci` | `not-relevant` | `wont-fix` |
+
+For `applied` verdicts, also check the comment thread for explicit "won't fix"
+language from the author (`won't fix`, `by design`, `intentional`, `nwf`, `n/a`,
+👎 reaction):
+
+```bash
+gh api repos/$REPO/pulls/$PR_NUMBER/comments \
+  --jq ".[] | select(.in_reply_to_id == $COMMENT_ID) | .body" \
+| grep -iE "(won.?t fix|wont fix|by design|intentional|nwf|not going to|n/a)"
+```
+
+If a decline phrase is found, override `relevance: not-relevant`, `resolution_method: wont-fix`.
 
 Infer `source` from the comment author login per the heuristic in [`review-outcomes.md`](../../../agents/shared/rules/review-outcomes.md).
 
 ```
-# Append-only, non-blocking — one record per processed comment.
-# Silent no-op if LoreKit's memory.* tools are not connected.
-# Universal calibration → global; repo-specific → repo::{owner}/{repo}.
+# Write 1 — review-outcomes bus (unchanged).
+# Append-only, non-blocking. Silent no-op if LoreKit not connected.
 memory.write { scope: "<global | repo::{owner}/{repo}>", key: "review-outcomes::<fingerprint-slug>", value: "<outcome record>", tags: ["loop::review-outcomes", "source::<verdict>"], source_agent: "implement-suggestion", trigger: "outcome-emit" }
+
+# Write 2 — comment-relevance memory (new).
+# Deduplicate first; UPDATE seen_count if exists, ADD otherwise.
+# Scope: almost always repo::{owner}/{repo}; global only for universal patterns.
+memory.search { q: "<fingerprint slug>", scopes: ["repo::{owner}/{repo}", "global"], limit: 5 }
+memory.write { scope: "repo::{owner}/{repo}", key: "reviewer-comment-relevance::<fingerprint>", value: "<relevance record>", tags: ["loop::reviewer-comment-relevance", "source::<resolution_method>"], source_agent: "implement-suggestion", trigger: "outcome-emit" }
 ```
 
-LoreKit owns storage server-side and dedups on write, so there is no INDEX to
-consolidate — volatile candidates decay via their 30-day `meta:` TTL, pruned at
-promotion time (see [`review-outcomes.md`](../../../agents/shared/rules/review-outcomes.md)).
+LoreKit owns storage server-side and dedups on write.
+The `reviewer-comment-relevance` bucket has a 180-day default TTL, refreshed on each sighting.
+The `review-outcomes` bucket has a 30-day volatile TTL.
 
-This step is **append-only and non-blocking** — it MUST NOT gate or delay the Phase 7 report.
-If LoreKit's `memory.*` tools are not connected, the step is a silent no-op; the apply flow is unaffected.
+Both writes are **append-only and non-blocking** — they MUST NOT gate or delay the Phase 7 report.
+If LoreKit's `memory.*` tools are not connected, both steps are silent no-ops; the apply flow is unaffected.
 
 ## Watch Workflow (`--watch`)
 
@@ -352,8 +381,10 @@ Full loop, the poll-for-new-activity snippet, parameters (`--max-iters`,
 
 Inside each `--watch` iteration, after the per-iteration Phase 7 report:
 run the outcome-emit step (see [above](#outcome-emit)) for every comment processed in that iteration.
-This ensures that `reverted-after-ci` verdicts are captured at the end of the iteration where CI failure is detected.
-The emit is append-only and non-blocking in each iteration.
+This includes both the `review-outcomes` bus write AND the `reviewer-comment-relevance` memory write.
+This ensures that `reverted-after-ci` verdicts and relevance signals are captured at the end of the
+iteration where CI failure is detected.
+Both emits are append-only and non-blocking in each iteration.
 
 ## Free-text Workflow
 
@@ -387,11 +418,15 @@ companion**: if those tools are not connected the whole loop is a silent no-op.
 Full contract:
 [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
 
-In addition to writing `implement-suggestion-lessons`, this skill is now a **producer of the
-`review-outcomes` shared candidate/outcome bus** (see [`agents/shared/rules/review-outcomes.md`](../../../agents/shared/rules/review-outcomes.md)).
-At Phase 7 (and per-iteration inside `--watch`), it appends a fingerprinted outcome record
-for each processed comment.
-The reviewers (`reviewer`, `pr-reviewer`) consume this bus only at promotion/consolidation time — never per-review.
+In addition to writing `implement-suggestion-lessons`, this skill is a **producer of two LoreKit buckets**:
+
+1. **`review-outcomes` shared candidate/outcome bus** (see [`agents/shared/rules/review-outcomes.md`](../../../agents/shared/rules/review-outcomes.md)) — volatile 30-day TTL; consumed by `outcome-learning.md` at promotion time only.
+2. **`reviewer-comment-relevance` memory bucket** (see [`agents/shared/rules/comment-relevance-memory.md`](../../../agents/shared/rules/comment-relevance-memory.md)) — durable 180-day TTL; consumed by `reviewer` and `pr-reviewer` at the **start of every review run** (Step 0.7 / Step 1.0) to suppress recurring noise and reinforce reliably-resolved patterns. This is the primary mechanism by which the reviewer pipeline continuously improves on a specific repository.
+
+At Phase 7 (and per-iteration inside `--watch`), one fingerprinted record is written to each bucket
+per processed comment.
+Both writes are append-only and non-blocking.
+The reviewers consume `review-outcomes` only at promotion/consolidation time; they consume `reviewer-comment-relevance` on every review run.
 
 ## Hard Rules
 
@@ -421,7 +456,7 @@ The reviewers (`reviewer`, `pr-reviewer`) consume this bus only at promotion/con
 | `/critical` skill | Adversarial pre-mortem per comment | **Yes** |
 | `/confidence` skill | Gate scoring per comment | **Yes** |
 | `aw-planner` agent | Standard-lane plan authoring | Required when standard-lane fires |
-| `lorekit-memory` skill (LoreKit `memory.*` tools) | `implement-suggestion-lessons` self-improvement loop (read Phase 3, write Phase 7 / watch re-flag) | Optional — loop is a silent no-op if not connected |
+| `lorekit-memory` skill (LoreKit `memory.*` tools) | `implement-suggestion-lessons` self-improvement loop (read Phase 3, write Phase 7 / watch re-flag); `reviewer-comment-relevance` per-repo relevance memory (write Phase 7 / watch); `review-outcomes` bus (write Phase 7 / watch) | Optional — all three loops are silent no-ops if not connected |
 
 If `gh` is missing in multi-PR mode, stop and tell the user to install it.
 
