@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: Cross-review code reviewer for someone else's GitHub PR. Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) plus a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integrations). Posts a single consolidated GitHub review — one gate-status table in the body plus inline findings — directly as a visible comment. Refuses on own PR (points to `reviewer`). Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or via `Skill("pr-reviewer", "<PR-URL> [--critical] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--skip-gates]")`.
+description: Cross-review code reviewer for someone else's GitHub PR. Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Posts a single consolidated GitHub review — one gate-status table in the body plus inline findings — directly as a visible COMMENT event; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Refuses on own PR (points to `reviewer`). Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or via `Skill("pr-reviewer", "<PR-URL> [--critical] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--skip-gates]")`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill
 model: opus
 ---
@@ -79,7 +79,7 @@ rule once at the step that owns it.
 - `agents/shared/rules/comment-shape.md` — ≤ 240 chars, ≤ 2 sentences, no headings or bullets.
 - `agents/shared/rules/conventional-comments.md` — prefix table + decorations.
 - `agents/pr-reviewer/rules/line-validity.md` — RIGHT-side hunk-bounds pre-flight.
-- `agents/pr-reviewer/rules/posting-mechanics.md` — review payload construction + verification.
+- `agents/pr-reviewer/rules/posting-mechanics.md` — **legacy reference only.** This file describes the old PENDING review workflow. Its `event`-omit rule, `body == ""` assertion, and PENDING verification are superseded by the direct-posting contract in Step 4 of this agent. Do not apply its `payload_is_safe` or verification steps; use Step 4's inline pre-flight instead.
 - `agents/templates/pr-comment-card.template.md` — canonical card shape.
 
 ---
@@ -112,11 +112,15 @@ elif [[ "$ARG" =~ ^#?([0-9]+)$ ]]; then
 fi
 
 GH_REPO_FLAG=${PR_REPO:+--repo "$PR_REPO"}
-OWNER="${PR_REPO%%/*}"
-REPO="${PR_REPO##*/}"
+# RESOLVED_REPO is the single repo string used in all gh api calls.
+# When invoked with a bare #<n>, PR_REPO is empty and the current repo is resolved here.
+RESOLVED_REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
+OWNER="${RESOLVED_REPO%%/*}"
+REPO="${RESOLVED_REPO##*/}"
 ```
 
 If no PR reference found, abort: `pr-reviewer requires a PR URL, #<n>, or bare PR number — got: <args>`.
+If `RESOLVED_REPO` is empty (no PR_REPO and not in a git repo), abort: `pr-reviewer could not determine the repository — pass a full PR URL`.
 
 ---
 
@@ -146,10 +150,12 @@ the PR, build the dedup set and the resolved-suggestion set before any finding i
 
 While fetching, **also identify open unresolved bot-authored comments** for Gate 3:
 - A comment is "bot-authored" if `user.login` matches `*[bot]*`, `cursor-ai`, `claude`,
-  `copilot`, or any login that ends in `-ai` or `-bot`.
-- A comment is "unresolved" if it has no reply from the PR author dismissing it, no
-  "won't fix" / "by design" / "intentional" phrase, and no fix commit touching its line.
+  `copilot`, or any login ending in `-ai` or `-bot`.
+- A comment is "unresolved" if: the thread has no reply from the PR author, AND no
+  "won't fix" / "by design" / "intentional" / "n/a" phrase appears in any thread reply.
+  (Fix-commit detection is left to the post-merge outcome loop — do not run it here.)
 - Store these as `OPEN_BOT_COMMENTS[]`.
+- If `OPEN_BOT_COMMENTS[]` is empty, Gate 3 passes.
 
 Also load **comment-relevance memories** and **reviewer-lessons** (narrow-to-broad fan-out,
 silent no-op if `memory.*` not connected):
@@ -161,7 +167,7 @@ memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::reviewer-comment-rele
 memory.list { scope: "global",               tags: ["loop::reviewer-comment-relevance"], limit: 50 }
 ```
 
-Derive `{owner}/{repo}` from `PR_REPO`, lowercased.
+Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
 Merge both lists per tag (`repo::` wins on key collision). Skip expired entries.
 Announce: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
 
@@ -198,13 +204,16 @@ Confirm `state == "OPEN"`. If MERGED or CLOSED, ask whether to proceed.
 ### 1.2 Cache the patch list — single source of truth for line validity
 
 See `agents/pr-reviewer/rules/line-validity.md`.
+`RESOLVED_REPO` was set in Step 0 and is available here.
 
 ```bash
-RESOLVED_REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
 gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/files \
   --jq '.[] | {filename, patch}' > /tmp/pr-files.json
-HEAD_SHA=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER --jq '.head.sha')
+HEAD_SHA=$(gh pr view $PR_NUMBER $GH_REPO_FLAG --json headRefOid -q .headRefOid)
 ```
+
+`HEAD_SHA` is assigned here and used in Step 4 (review body) and Step 5 (terminal report).
+All subsequent steps (1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 2, 3, 3.5, 4) depend on Step 1.2 completing first.
 
 ### 1.3 Synthesize intent
 
@@ -245,40 +254,44 @@ Run all gate evaluations now, before the expensive holistic pass.
 Collect ALL findings before moving on — do not stop early on the first failure.
 
 **Gate 1 — Description vs. code consistency**
-Read `<pr_description>` and `<pr_diff>`. Does the description accurately reflect what the
-diff does? Flag every scope the description omits or misrepresents.
+Read the PR title and body (Step 1.1 command A) and the diff (Step 1.1 command B).
+Does the description accurately reflect what the diff does? Flag every scope the
+description omits or misrepresents.
 Finding format: one sentence per mismatch, file names only (no diff quotes).
 Result: PASS or FAIL with finding text.
 
 **Gate 2 — CI status** (verdict only — excluded from review body table)
-Read `<ci_checks>`. List every failing or still-pending check by name.
+Read the CI checks output (Step 1.1 command C). List every failing or still-pending
+check by name.
 Result: PASS (all green) or FAIL with list of failing check names.
 
 **Gate 3 — Unresolved prior bot/agent feedback**
 Use `OPEN_BOT_COMMENTS[]` from Step 1.0. Identify any prior automated review comments
-(Cursor, Claude, other agents) not yet addressed or explicitly dismissed.
+(Cursor, Claude, other agents) that have an open unresolved thread (no reply from the
+PR author, thread not dismissed).
 Finding format: one line per unresolved item — author login and brief subject.
 Result: PASS or FAIL with finding text.
 
 **Gate 4 — Self-review signals**
-Read `<pr_diff>`. Flag any of:
-- Debug logs (`console.log`, `print`, `debugger`, `fmt.Println`, etc.) on `+`-prefixed lines
-- Commented-out code blocks on `+`-prefixed lines
-- Leftover `TODO`/`FIXME`/`HACK` markers on `+`-prefixed lines
+Read the diff (Step 1.1 command B). Flag any of the following on `+`-prefixed lines:
+- Debug logs (`console.log`, `print`, `debugger`, `fmt.Println`, etc.)
+- Commented-out code blocks
+- Leftover `TODO`/`FIXME`/`HACK` markers
 - Obvious unreviewed AI output (boilerplate, placeholder text, uncustomised stubs)
 Finding format: `file:line — description`.
 Result: PASS or FAIL with finding text.
 
 **Gate 5 — Documentation adequacy**
-Read `<pr_description>` and `<pr_diff>`. Are description, inline comments, and docs
-sufficient for an independent reader to understand the change's purpose and behavior?
+Read the PR title and body (Step 1.1 command A) and the diff (Step 1.1 command B).
+Are description, inline comments, and docs sufficient for an independent reader to
+understand the change's purpose and behavior?
 Finding format: one sentence per gap.
 Result: PASS or FAIL with finding text.
 
-**Token-economy skip heuristic:** if Gates 1, 3, 4, and 5 ALL fail (and `--no-holistic`
-was not already set), skip Steps 2.4 and 2.4b (holistic passes) — the PR is clearly not
-ready, and spending holistic tokens is wasteful. Note the skip in the Quality Gate summary.
-Gate 6 (inline review) always runs regardless.
+**Token-economy skip heuristic:** if three or more of Gates 1, 3, 4, and 5 fail
+(and `--no-holistic` was not already set), skip Steps 2.4 and 2.4b (holistic passes)
+— the PR is clearly not ready and holistic tokens would be wasted. Note the skip in the
+Quality Gate summary. Gate 6 (inline review) always runs regardless of gate outcomes.
 
 ---
 
@@ -293,19 +306,24 @@ Run the pipeline as defined in `agents/shared/rules/rubric-composition.md`:
 5. Walk each rubric against the diff. Each rubric emits raw findings.
 
 **Adversarial persona lenses** — run these alongside the rubrics.
-Each persona reviews the diff independently through its own lens:
+Each persona reviews the diff independently through its own lens.
+Persona findings enter the **same raw finding stream** as rubric output and are subject
+to all downstream gates (2.2 through 2.9) including Step 2.5 dedup — treat personas as
+additional rubric lenses, not a separate output channel. This means Gate 1 findings and
+Persona 3 findings are deduped at Step 2.5 rather than posted twice.
 
 - **Persona 1 — Correctness/logic:** logic errors, edge cases, error paths, data races,
   off-by-one, incorrect assumptions about state.
 - **Persona 2 — Quality/maintainability:** complexity, naming, test coverage gaps,
   dead code, dependency direction, abstraction level violations.
 - **Persona 3 — Description accuracy:** does the PR description match what the diff
-  actually does? Cross-check with Gate 1, but go deeper on semantic intent.
+  actually does? Go deeper on semantic intent than Gate 1; Gate 1 is a structural pass,
+  Persona 3 is a semantic one.
 - **Persona 4 — External integration verifier:** activate only when the diff touches
   dependency manifests (package.json, go.mod, Cargo.toml, requirements.txt, pyproject.toml,
   pom.xml, or any lock file), API client call sites, SDK usage, MCP server/client code,
   LLM SDK calls (OpenAI, Anthropic), webhook payloads, gRPC proto files, GraphQL schemas,
-  or OpenAPI specs.
+  or OpenAPI specs. When not activated, set `INTEGRATIONS_CHECKED = "not activated"`.
   When activated:
   1. Identify every integration touched: package/library name + version in use (from manifest
      or import path in diff; if multiple versions appear, check each).
@@ -320,8 +338,7 @@ Each persona reviews the diff independently through its own lens:
      quote or link to the relevant spec section + version, confidence level.
   5. If the version cannot be determined, flag: unpinned integration version.
   6. If the spec is behind auth or not publicly accessible, note and skip.
-
-  Store Persona 4 results as `INTEGRATIONS_CHECKED[]` for the review body.
+  Store Persona 4 results as `INTEGRATIONS_CHECKED` (string) for the review body diagnostics.
 
 After rubric + persona findings are collected, the pipeline runs through these gates in
 strict order. Each gate is a drop point; no retries.
@@ -351,7 +368,7 @@ rubrics + personas produce raw findings
 | `suggestion` | 90% |
 | `question` | 90% |
 | `nitpick` | 95% |
-| `praise` | Drop from inline comments (surface in review body prose only) |
+| `praise` | Drop entirely — do not include in inline comments or review body |
 
 ### 2.2 Relevance-memory filtering
 
@@ -422,6 +439,31 @@ See `agents/shared/rules/conventional-comments.md`. Prepend category prefix; app
 
 Produce two views before posting: a summary with the gate table, then numbered detail cards.
 
+On PASS (all Gates 1/3/4/5/6 pass):
+```
+## PR Review — PR #<n> (<repo>)
+
+**Title**: <PR title>
+**Author**: @<login>
+**Base ← Head**: <base> ← <head>
+**Intent**: <one-line from Step 1.3>
+
+### Gate Status
+
+| Gate | Status |
+|---|---|
+| Description vs. code | ✅ |
+| Prior bot feedback   | ✅ |
+| Documentation        | ✅ |
+| Self-review signals  | ✅ |
+| Code review          | ✅ |
+
+**Verdict**: PASS
+
+[rest of sections follow]
+```
+
+On FAIL (one or more of Gates 1/3/4/5/6 fail):
 ```
 ## PR Review — PR #<n> (<repo>)
 
@@ -440,8 +482,13 @@ Produce two views before posting: a summary with the gate table, then numbered d
 | Self-review signals  | ✅ or ❌ | finding text or empty |
 | Code review          | ✅ or ❌ | "See inline comments" or finding text or empty |
 
-**Verdict**: PASS or FAIL — <FAILING_GATE_COUNT> gate(s) need attention.
+**Verdict**: FAIL — <FAILING_GATE_COUNT> gate(s) need attention.
 
+[rest of sections follow]
+```
+
+Both PASS and FAIL continue with:
+```
 ### Inline Findings Summary
 
 | #  | File:Line          | Category    | Conf | Anchor |
@@ -450,6 +497,7 @@ Produce two views before posting: a summary with the gate table, then numbered d
 
 **Quality Gate**: produced <P>, relevance-memory drops <RM>, filter drops <FL>,
 dedupe drops <D>, grounding drops <G>, confidence drops <C> (threshold <T>), final <F>.
+CI: PASS or FAIL (check names if failing).
 
 ### Inline Finding Details
 
@@ -483,6 +531,34 @@ Line-validity casualties are logged in the terminal Quality Gate summary for man
 ---
 
 ## Step 4: Post the review
+
+> **Note on `posting-mechanics.md`:** this file describes the old PENDING review workflow
+> and its rules (omit `event`, `body == ""`, verify `state == "PENDING"`) are superseded
+> by the direct-posting contract below. Do not apply `posting-mechanics.md`'s pre-flight
+> or verification logic here.
+
+Build the payload and run the pre-flight assertions below **before** the API call:
+
+```python
+def payload_is_safe(payload: dict) -> tuple[bool, str]:
+    if payload.get("event") != "COMMENT":
+        return (False, "event must be 'COMMENT'")
+    if not isinstance(payload.get("body", ""), str) or len(payload["body"]) == 0:
+        return (False, "body must be a non-empty string (gate table)")
+    for c in payload.get("comments", []):
+        if c.get("side") not in ("RIGHT", "LEFT"):
+            return (False, f"comment missing side field: {c.get('path')}:{c.get('line')}")
+        if not c.get("body", "").startswith((
+            "praise:", "nitpick:", "suggestion:", "issue:", "question:"
+        )):
+            return (False, f"comment body missing Conventional-Comments prefix: {c['body'][:40]}")
+        if len(c.get("body", "")) > 240:
+            return (False, f"comment body > 240 chars: {len(c['body'])}")
+    return (True, "")
+```
+
+If `payload_is_safe` returns `False`, abort and surface the reason in the terminal report.
+Do not attempt to auto-fix the payload.
 
 Post exactly one GitHub review using:
 
@@ -568,21 +644,36 @@ Rules for table cells:
 - Details column: plain text only, max 120 chars per cell. Truncate; the full finding lives in the inline comment.
 - On PASS, omit the Details column (two-column table).
 - Never add rows, sections, or prose outside the template above (except the `<details>` block).
-- Praise findings do not appear in the table or inline comments. If the review overall is an approval, add: `The approach looks solid — see inline suggestions for detail.` between the table and the `<sup>` line.
+- Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
 ### INLINE_COMMENTS_JSON format
 
-A valid JSON array. Each entry:
+A valid JSON array. Each entry **must** include `side`:
 
 ```json
 {
   "path": "relative/file/path",
   "line": <integer RIGHT-side line number>,
+  "side": "RIGHT",
+  "body": "conventional-comments formatted body"
+}
+```
+
+For multi-line comments, also include `start_line` and `start_side`:
+
+```json
+{
+  "path": "relative/file/path",
+  "start_line": <first RIGHT-side line>,
+  "start_side": "RIGHT",
+  "line": <last RIGHT-side line>,
+  "side": "RIGHT",
   "body": "conventional-comments formatted body"
 }
 ```
 
 Use `[]` if no surviving inline findings.
+The `side` field is required by the GitHub API — omitting it returns HTTP 422.
 
 ---
 
