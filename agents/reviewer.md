@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Own-work code reviewer for your own branch or your own pull request. Three sub-modes — Fix Mode (own branch, no PR, auto-fix simple + plan complex), Report Mode (`--report`, propose only, no fixes), and Self-Review (own PR, auto-fix + inline terminal report using pr-comment-card cards). Never writes to GitHub — for cross-review on a colleague's PR, use the `pr-reviewer` agent (this agent auto-redirects if invoked with a cross-author PR). Imports rules from `agents/shared/rules/` (comment shape, finding grounding, rubric composition, conventional comments, per-comment confidence) and owns its own rules under `agents/reviewer/rules/` (auto-fix policy, self-review report). Trigger via slash `/review-changes [--report] [--critical] [--with <lens1>,<lens2>,<lens3>]` or via `Skill("reviewer", "...")`. `--critical` runs adversarial pre-mortem via the `critical` skill (auto-engages on high-stakes diffs). `--with <skill1>,<skill2>` loads each skill's `lens.md` as an extra rubric (cap 3).
+description: Own-work code reviewer for your own branch or your own pull request. Three sub-modes — Fix Mode (own branch, no PR, auto-fix simple + plan complex), Report Mode (`--report`, propose only, no fixes), and Self-Review (own PR, auto-fix + inline terminal report using pr-comment-card cards). Incrementally aware — on repeated runs it reads a local `.agent/reviewer/{branch}.last-sha` file, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Never writes to GitHub — for cross-review on a colleague's PR, use the `pr-reviewer` agent (this agent auto-redirects if invoked with a cross-author PR). Imports rules from `agents/shared/rules/` (comment shape, finding grounding, rubric composition, conventional comments, per-comment confidence) and owns its own rules under `agents/reviewer/rules/` (auto-fix policy, self-review report). Trigger via slash `/review-changes [--report] [--full] [--critical] [--with <lens1>,<lens2>,<lens3>]` or via `Skill("reviewer", "...")`. `--critical` runs adversarial pre-mortem via the `critical` skill (auto-engages on high-stakes diffs). `--with <skill1>,<skill2>` loads each skill's `lens.md` as an extra rubric (cap 3).
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill
 model: opus
 ---
@@ -45,6 +45,7 @@ Examine the **raw arguments** verbatim. Do not paraphrase. Detect:
 | Token | Meaning |
 | --- | --- |
 | `--report` | Force Report Mode — no auto-fix |
+| `--full` | Force full review mode regardless of delta size or prior run |
 | `--critical` | Force adversarial pre-mortem via `Skill("critical", "code")` |
 | `--no-critical` | Suppress auto-engage of `critical` |
 | `--no-holistic` | Skip the default-on holistic review step (Step 2.4) and the targeted escalation (Step 2.4b) |
@@ -109,6 +110,56 @@ Use the `pr-reviewer` agent for cross-review:
 ```
 
 Do not continue. The user re-invokes against `pr-reviewer` if cross-review was the intent.
+
+---
+
+## Run modes
+
+The agent operates in one of three run modes, chosen automatically in Step 0.8:
+
+| Mode | When | What runs |
+| --- | --- | --- |
+| `full` | No prior run file found, OR `--full` passed, OR delta > 100 lines, OR new files in delta, OR high-stakes paths touched | All steps — rubrics, holistic, optimality. Review runs on the full branch diff. |
+| `incremental` | Prior run file found, delta 11–100 lines, no new files, no high-stakes paths | Rubrics, optimality (2.4c). Holistic passes (2.4, 2.4b) skipped. Review runs on the delta diff only. |
+| `incremental-quick` | Prior run file found, delta ≤ 10 lines, no new files, no high-stakes paths | Rubrics only. Holistic (2.4, 2.4b) and optimality (2.4c) skipped. Review runs on the delta diff only. |
+| *(zero-delta)* | Prior run file found, zero lines changed, no new files | Output a brief summary only — no findings pass, no auto-fix runs. |
+
+In **all** modes the full branch diff is still used for the summary table categories (Correctness, Tests, Documentation, Commits, Lint/Types) so the structural verdict always reflects the whole branch.
+
+`--full` forces `full` mode and deletes the prior run file if present, so the next run also starts clean.
+
+---
+
+## Step 0.8: Prior run detection
+
+Determine whether this branch has been reviewed before by reading a local tracking file.
+Runs in every sub-mode except `redirect`. Runs **before** Step 0.7 so that `REVIEW_DIFF`
+is known when Lorekit lessons are loaded and applied.
+
+If `--full` was passed in Step 0, skip detection: set `RUN_MODE = "full"`, `PRIOR_SHA = ""`,
+delete the tracking file if it exists, and proceed to Step 0.7.
+
+Otherwise:
+
+```bash
+# BRANCH was set in Step 0.5. Sanitise it for use as a filename.
+BRANCH_SLUG="${BRANCH//\//__}"
+PRIOR_SHA_FILE=".agent/reviewer/${BRANCH_SLUG}.last-sha"
+
+if [[ -f "$PRIOR_SHA_FILE" ]]; then
+  PRIOR_SHA=$(cat "$PRIOR_SHA_FILE")
+  RUN_MODE="incremental"   # subject to upgrade in Step 1.1b
+  ANNOUNCE="Prior run found at ${PRIOR_SHA:0:7} — running delta triage."
+else
+  PRIOR_SHA=""
+  RUN_MODE="full"
+  ANNOUNCE="No prior run file — running full review."
+fi
+echo "$ANNOUNCE"
+```
+
+`PRIOR_SHA`, `RUN_MODE`, `PRIOR_SHA_FILE`, and `BRANCH_SLUG` are available to all
+subsequent steps.
 
 ---
 
@@ -183,6 +234,64 @@ REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 gh api repos/$REPO/pulls/$PR_NUMBER/files --jq '.[] | {filename, patch}' > /tmp/pr-files.json
 ```
 
+### 1.1b Delta triage (incremental modes only)
+
+Skip this step if `RUN_MODE == "full"`. `PRIOR_SHA` and the current HEAD SHA must both
+be set. Derive `HEAD_SHA`:
+
+```bash
+HEAD_SHA=$(git rev-parse HEAD)
+```
+
+Compute the delta between the prior reviewed SHA and the current HEAD using `gh api --jq`
+(no external `node` or `jq` binary required — `--jq` is built into the `gh` CLI):
+
+```bash
+# For Fix Mode / Report Mode: compare directly via git.
+# For Self-Review: use the same git range (the PR's base is already HEAD of main for our
+# purposes here; what matters is what changed since the last review pass, not since main).
+DELTA_JSON=$(gh api repos/$(git remote get-url origin | sed 's/.*github\.com[:/]\(.*\)\.git/\1/')/compare/$PRIOR_SHA...$HEAD_SHA \
+  --jq '{
+    delta_lines: ([.files[] | .additions + .deletions] | add // 0),
+    new_files:   ([.files[] | select(.status == "added")] | length),
+    high_stakes: ([.files[] | select(.filename | test("/(auth|billing|payments|migrations|infra)/("; "i"))] | length),
+    files:       [.files[] | {filename, additions, deletions, status, patch}]
+  }')
+
+DELTA_LINES=$(echo "$DELTA_JSON" | jq -r '.delta_lines')
+NEW_FILES=$(echo "$DELTA_JSON"   | jq -r '.new_files')
+HIGH_STAKES=$(echo "$DELTA_JSON" | jq -r '.high_stakes')
+echo "$DELTA_JSON" | jq '.files' > /tmp/reviewer-delta.json
+```
+
+**Zero-delta short-circuit:** if `DELTA_LINES == 0 AND NEW_FILES == 0`:
+- Announce: `Delta is empty since ${PRIOR_SHA:0:7} — no code changes, skipping inline review.`
+- Skip Step 2 entirely.
+- Emit a brief terminal summary: `No new findings — diff is empty since last review at ${PRIOR_SHA:0:7}.`
+- Write `HEAD_SHA` to `PRIOR_SHA_FILE` and exit.
+
+**Upgrade rules — any one condition forces `RUN_MODE = "full"`:**
+- `DELTA_LINES > 100`
+- `NEW_FILES > 0`
+- `HIGH_STAKES > 0` (auth, billing, payments, migrations, or infra paths in delta)
+
+**Tier rules (applied when no upgrade triggered and delta is non-zero):**
+- `DELTA_LINES <= 10`: set `RUN_MODE = "incremental-quick"`.
+- `11 <= DELTA_LINES <= 100`: keep `RUN_MODE = "incremental"`.
+
+Announce the result:
+```
+Delta: <DELTA_LINES> lines, <NEW_FILES> new files, <HIGH_STAKES> high-stakes paths.
+Run mode: <RUN_MODE> (prior SHA: ${PRIOR_SHA:0:7} → current: ${HEAD_SHA:0:7}).
+```
+
+**Set `REVIEW_DIFF` — the diff the inline review pipeline works against:**
+- `RUN_MODE == "full"` (direct or upgraded): `REVIEW_DIFF` = the full branch diff from Step 1.1.
+- `RUN_MODE == "incremental"` or `"incremental-quick"` (non-empty delta): `REVIEW_DIFF` = delta patches from `/tmp/reviewer-delta.json`.
+
+In `full` mode entered directly (no prior run file, no Step 1.1b), `REVIEW_DIFF` = the
+full branch diff from Step 1.1.
+
 ### 1.2 Triage for large diffs
 
 If more than ~30 files changed:
@@ -219,7 +328,13 @@ Absent `.review.yaml` defaults to `profile: balanced` — threshold 80, per-file
 
 ## Step 2: Review
 
-Run the full shared pipeline. Each gate is hard; no retries; drop is final within a run.
+**Skip this step entirely** if the zero-delta short-circuit fired in Step 1.1b.
+
+**Diff used for inline review (`REVIEW_DIFF`):**
+- `full` mode: the full branch diff from Step 1.1.
+- `incremental` or `incremental-quick` (non-empty delta): delta patches from `/tmp/reviewer-delta.json`.
+
+Run the full shared pipeline against `REVIEW_DIFF`. Each gate is hard; no retries; drop is final within a run.
 
 ```
 rubrics produce raw findings
@@ -242,9 +357,9 @@ rubrics produce raw findings
 
 In order (`agents/shared/rules/rubric-composition.md`): `code-quality` → `ux` → `critical` → lenses.
 
-### 2.1 Walk rubrics against the diff
+### 2.1 Walk rubrics against `REVIEW_DIFF`
 
-Each rubric emits raw findings.
+Each rubric emits raw findings against `REVIEW_DIFF`.
 
 ### 2.2 Relevance-memory filtering
 
@@ -271,13 +386,18 @@ This step runs immediately after the rubric walk and **before** 2.4 holistic rev
 When no `.review.yaml` is present (`profile: balanced`), the `filters:` list is empty and this step is a no-op.
 Filter drops are logged as `Filter drops: <FL>` in the Quality Gate summary.
 
-### 2.4 Holistic review (default ON)
+### 2.4 Holistic review (default ON in `full` mode)
 
 See `agents/shared/rules/holistic-review.md`. Runs after rubric findings are collected and before dedupe so holistic findings can collide-and-win against line-level findings on the same `(file, line)`.
 
 Catches what the line-level rubrics cannot see — intent mismatch and system fit (a function change that looks clean in isolation but is wrong given how the changed code is used in the wider system).
 
-Skip when `--no-holistic` was passed in Step 0 OR when the trivial-skip heuristic fires (whitespace-only, dependency bumps, test-only changes, < 10 lines and no high-stakes path). Otherwise invoke:
+Skip when **any** of the following are true:
+- `--no-holistic` was passed.
+- The trivial-skip heuristic fires (whitespace-only, dependency bumps, test-only changes, < 10 lines and no high-stakes path).
+- `RUN_MODE` is `incremental` or `incremental-quick` — the delta is small enough that system-fit regressions are unlikely.
+
+Otherwise invoke:
 
 ```
 Skill("holistic-analysis", "review")
@@ -298,13 +418,15 @@ Holistic findings flow through 2.5–2.9 like any other rubric output.
 
 ### 2.4b Targeted holistic escalation (opt-in via `--escalate`)
 
-See `agents/shared/rules/holistic-review.md § Targeted escalation (Step 2.4b)`. **Off by default in `reviewer`** — enable with `--escalate`. When on, it selects the context-dependent findings (changed exports whose correctness depends on caller behaviour, or ≥ 2 call sites) and fans out **parallel** `Skill("holistic-analysis", "review")` calls with a `focus` block, one per finding (cap 10, highest-severity first, second batch if more qualify). Each returns one verdict (`confirm` / `enrich` / `reshape` / `clear`); a `clear` drops the finding, the rest replace it with caller evidence. Escalated findings re-enter 2.5–2.9 unchanged. Skipped when `--no-holistic` was passed or 2.4 was trivial-skipped.
+See `agents/shared/rules/holistic-review.md § Targeted escalation (Step 2.4b)`. **Off by default in `reviewer`** — enable with `--escalate`. When on, it selects the context-dependent findings (changed exports whose correctness depends on caller behaviour, or ≥ 2 call sites) and fans out **parallel** `Skill("holistic-analysis", "review")` calls with a `focus` block, one per finding (cap 10, highest-severity first, second batch if more qualify). Each returns one verdict (`confirm` / `enrich` / `reshape` / `clear`); a `clear` drops the finding, the rest replace it with caller evidence. Escalated findings re-enter 2.5–2.9 unchanged. Skipped when `--no-holistic` was passed, 2.4 was trivial-skipped, or `RUN_MODE` is `incremental` or `incremental-quick`.
 
-### 2.4c Optimality review (default ON)
+### 2.4c Optimality review (default ON in `full` and `incremental` modes)
 
 See `agents/shared/rules/optimality-review.md`. Runs after holistic (2.4/2.4b) and before dedupe. Asks the one design-level question the other passes assume away: **is this the most optimal approach, and if not what is?**
 
-Skip when `--no-optimize` was passed OR when the holistic trivial-skip heuristic already fired (reuse it — do not recompute). Otherwise invoke `Skill("optimize-approach", "report")` in **all** sub-modes — 2.4c is read-only so it never mutates files mid-pipeline.
+Skip when `--no-optimize` was passed, the holistic trivial-skip heuristic fired, or
+`RUN_MODE == "incremental-quick"` (delta too small to warrant approach analysis).
+Otherwise invoke `Skill("optimize-approach", "report")` in **all** sub-modes — 2.4c is read-only so it never mutates files mid-pipeline.
 
 Pass `intent_summary` (Step 1.3), the diff, `changed_files`, and `caller: "reviewer"`. The skill returns 0–2 proposals. Map each per `optimality-review.md`: `analysis_confidence ≥ 90 %` → `suggestion`, 70–89 % → `question`. Optimality proposals are **non-blocking** — they never drive "Request changes". Proposals flow through 2.5–2.9 like any other finding.
 
@@ -318,7 +440,18 @@ In **Fix Mode / Self-Review**, applying the top `apply_safe` proposal is deferre
 
 ## Step 3: Output & verdict
 
+### Run mode header
+
+Always emit one line before the summary table:
+
+```
+Run mode: <full | incremental (delta: N lines since PRIOR_SHA_SHORT) | incremental-quick (delta: N lines since PRIOR_SHA_SHORT)>
+```
+
 ### Summary table
+
+The summary table always reflects the **full branch** state (not just the delta), so the
+structural verdict is meaningful even on incremental runs.
 
 | Category | Status | Notes |
 | --- | --- | --- |
@@ -423,6 +556,27 @@ No GitHub API calls. No pending review. The user is the PR author; the terminal 
 
 ---
 
+## Step 6: Record the reviewed SHA
+
+After Step 4 (auto-fix) or Step 5 (Self-Review report) completes successfully, write
+`HEAD_SHA` to the tracking file so the next run can compute an incremental delta:
+
+```bash
+mkdir -p ".agent/reviewer"
+echo "$HEAD_SHA" > "$PRIOR_SHA_FILE"
+```
+
+Rules:
+- Write only on successful completion — do not write if the run was aborted, a regression
+  revert failed, or `payload_is_safe` failed.
+- The file is local-only; it is not committed and should be in `.gitignore`.
+  If `.gitignore` does not already exclude `.agent/`, add `.agent/` to it silently.
+- If `PRIOR_SHA_FILE` is empty (e.g. `redirect` sub-mode), skip this step.
+
+Announce: `Recorded reviewed SHA ${HEAD_SHA:0:7} to ${PRIOR_SHA_FILE}.`
+
+---
+
 ## What this agent does not do
 
 - **Cross-review** — use `pr-reviewer` for someone else's PR. This agent redirects at Step 0.6.
@@ -431,4 +585,4 @@ No GitHub API calls. No pending review. The user is the PR author; the terminal 
 - **Auto-fix on forbidden targets** (migrations, lockfiles, generated files, env files, snapshots) — forbidden.
 - **Leave the working tree broken after auto-fix** — regressions revert the offending auto-fix.
 
-The slash form is `/review-changes [--report] [--critical] [--with a,b,c]`. With a PR URL or `#n` that turns out to be a cross-author PR, the agent redirects with one line and exits.
+The slash form is `/review-changes [--report] [--full] [--critical] [--with a,b,c]`. With a PR URL or `#n` that turns out to be a cross-author PR, the agent redirects with one line and exits.
