@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: Cross-review code reviewer for someone else's GitHub PR. Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Posts a single consolidated GitHub review — one gate-status table in the body plus inline findings — directly as a visible COMMENT event; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Refuses on own PR (points to `reviewer`). Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or via `Skill("pr-reviewer", "<PR-URL> [--critical] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--skip-gates]")`.
+description: Cross-review code reviewer for someone else's GitHub PR. Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Posts a single consolidated GitHub review — one gate-status table in the body plus inline findings — directly as a visible COMMENT event; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Refuses on own PR (points to `reviewer`). Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or via `Skill("pr-reviewer", "<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--skip-gates]")`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill
 model: opus
 ---
@@ -41,6 +41,22 @@ This agent is **cross-review only**. For own-work review, use `reviewer`.
 - Stop and report a BLOCKED result if the inline review sub-pipeline fails twice.
 - Stop after at most 30 tool calls. If the budget is hit, report partial results and state that.
 - Never post a GitHub review that was not produced from fully consolidated results.
+
+---
+
+## Run modes
+
+The agent operates in one of three run modes, chosen automatically in Step 0.7:
+
+| Mode | When | What runs |
+|---|---|---|
+| `full` | No prior review found, OR `--full` passed, OR delta > 100 lines, OR new files in delta, OR high-stakes paths touched | All steps — rubrics, all personas, holistic broad + targeted escalation, optimality. Gate 4 scans the full PR diff. |
+| `incremental` | Prior review found, delta 11–100 lines, no new files, no high-stakes paths | Rubrics, all personas, optimality (2.4c). Holistic passes (2.4, 2.4b) skipped. Inline review runs on the delta diff only. Gate checks always run on the full PR state. |
+| `incremental-quick` | Prior review found, delta ≤ 10 lines, no new files, no high-stakes paths | Rubrics, Persona 1–3 only. Holistic (2.4, 2.4b) and optimality (2.4c) and Persona 4 skipped. Inline review runs on the delta diff only. Gate checks always run on the full PR state. |
+
+Gate checks (Step 1.8) always run against the full PR state in every mode — CI, prior bot feedback, and description adequacy apply to the whole PR regardless of how small the latest commit is. Gate 4 (self-review signals) is the only gate that scans the delta diff in incremental modes.
+
+`--full` forces `full` mode regardless of delta size.
 
 ---
 
@@ -92,6 +108,7 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 |---|---|
 | PR URL `https://github.com/<owner>/<repo>/pull/<n>` | The target PR |
 | `#<n>` or bare positive integer | PR number in current repo |
+| `--full` | Force full review mode regardless of delta size or prior run |
 | `--critical` | Force adversarial pre-mortem via `Skill("critical", "code")` |
 | `--no-critical` | Suppress auto-engage of `critical` |
 | `--no-holistic` | Skip the holistic review step (Step 2.4) and targeted escalation (Step 2.4b) |
@@ -138,6 +155,42 @@ fi
 ```
 
 Announce: `Cross-reviewing PR #<n> in <repo> by @<author>.`
+
+---
+
+## Step 0.7: Prior run detection
+
+Determine whether this PR has already been reviewed by this agent. This sets the
+run mode and, when a prior review exists, establishes the baseline SHA for the
+incremental delta.
+
+If `--full` was passed in Step 0, skip detection entirely: set `RUN_MODE = "full"`,
+`PRIOR_SHA = ""`, and proceed to Step 1.
+
+Otherwise:
+
+```bash
+ME=$(gh api user --jq .login)
+
+# Find the most recent review from this bot that carries the report marker.
+PRIOR_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
+  --jq --arg me "$ME" \
+  '[.[] | select(.user.login == $me and (.body | contains("<!-- PR_REVIEWER_REPORT -->"))) ] | last // empty')
+```
+
+**If `PRIOR_REVIEW` is empty** (no prior review found):
+- Set `RUN_MODE = "full"`.
+- Set `PRIOR_SHA = ""`.
+- Announce: `No prior review found — running full review.`
+- Proceed to Step 1.
+
+**If `PRIOR_REVIEW` is non-empty** (prior review exists):
+- Extract `PRIOR_SHA` from the review's `commit_id` field (not the body text).
+- Set `RUN_MODE = "incremental"` (subject to upgrade in Step 1.2b after delta triage).
+- Announce: `Prior review found at ${PRIOR_SHA:0:7} — running delta triage.`
+- Proceed to Step 1.
+
+`PRIOR_SHA` and `RUN_MODE` are available to all subsequent steps.
 
 ---
 
@@ -213,7 +266,68 @@ HEAD_SHA=$(gh pr view $PR_NUMBER $GH_REPO_FLAG --json headRefOid -q .headRefOid)
 ```
 
 `HEAD_SHA` is assigned here and used in Step 4 (review body) and Step 5 (terminal report).
-All subsequent steps (1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 2, 3, 3.5, 4) depend on Step 1.2 completing first.
+All subsequent steps depend on Step 1.2 completing first.
+
+### 1.2b Delta triage (incremental modes only)
+
+Skip this step if `RUN_MODE == "full"`. `PRIOR_SHA` and `HEAD_SHA` must both be set.
+
+Compute the delta between the prior review SHA and the current HEAD:
+
+```bash
+gh api repos/$RESOLVED_REPO/compare/$PRIOR_SHA...$HEAD_SHA \
+  --jq '{
+    ahead_by,
+    files: [.files[] | {filename, additions, deletions, status, patch}]
+  }' > /tmp/pr-delta.json
+
+DELTA_LINES=$(node -e "const d=require('/tmp/pr-delta.json'); console.log(d.files.reduce((s,f)=>s+f.additions+f.deletions,0))")
+NEW_FILES=$(node -e "const d=require('/tmp/pr-delta.json'); console.log(d.files.filter(f=>f.status==='added').length)")
+HIGH_STAKES=$(node -e "const d=require('/tmp/pr-delta.json'); console.log(d.files.filter(f=>/(\/auth\/|\/billing\/|\/payments\/|\/migrations\/|\/infra\/)/.test(f.filename)).length)")
+```
+
+Also check whether the PR title or body changed since `PRIOR_SHA`. If the PR description
+was updated, that's a structural change and warrants a full re-review of Gate 1 and Persona 3:
+
+```bash
+PRIOR_COMMIT_BODY=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/commits \
+  --jq --arg sha "$PRIOR_SHA" '.[] | select(.sha == $sha) | .commit.message' 2>/dev/null || echo "")
+# If PRIOR_SHA is not in the PR commit list, description change cannot be confirmed — treat as unchanged.
+DESCRIPTION_CHANGED=0
+# Compare current PR body hash to the body stored in the prior review (if parseable).
+# Simpler heuristic: if DELTA_LINES == 0 and no files changed, only metadata changed.
+```
+
+**Upgrade rules — any one condition forces `RUN_MODE = "full"`:**
+- `DELTA_LINES > 100`
+- `NEW_FILES > 0`
+- `HIGH_STAKES > 0` (auth, billing, payments, migrations, or infra paths in delta)
+- PR title or body changed since `PRIOR_SHA` (detected if the prior review body's `<sup>` line references a SHA that is in the PR's commit list AND the current PR metadata differs — fall back to treating as unchanged if uncertain)
+
+**Tier rules (applied when no upgrade triggered):**
+- `DELTA_LINES <= 10`: set `RUN_MODE = "incremental-quick"`.
+- `11 <= DELTA_LINES <= 100`: keep `RUN_MODE = "incremental"`.
+
+Announce the result:
+```
+Delta: <DELTA_LINES> lines changed, <NEW_FILES> new files, <HIGH_STAKES> high-stakes paths.
+Run mode: <RUN_MODE> (prior SHA: ${PRIOR_SHA:0:7} → current: ${HEAD_SHA:0:7}).
+```
+
+**Set `REVIEW_DIFF` — the diff the inline review pipeline will work against:**
+- `full` or `incremental-quick` upgrading to `full`: `REVIEW_DIFF` = full PR diff (Step 1.1 command B). `REVIEW_DIFF_LABEL` = `"full PR"`.
+- `incremental` or `incremental-quick`: `REVIEW_DIFF` = the delta patch from `/tmp/pr-delta.json`. `REVIEW_DIFF_LABEL` = `"delta since ${PRIOR_SHA:0:7}"`.
+
+**Update `/tmp/pr-files.json` for incremental modes:**
+In incremental and incremental-quick modes, inline comments must land on lines that exist
+in the **current full PR diff** (not just the delta), because the GitHub API validates
+against the full file patch. `/tmp/pr-files.json` already contains the full PR patch from
+Step 1.2 — do not replace it. Line validity pre-flight (Step 3.5) continues to use
+`/tmp/pr-files.json` unchanged.
+
+**Gate 4 behaviour:**
+In incremental modes, Gate 4 (self-review signals) scans `REVIEW_DIFF` (the delta),
+not the full PR diff. This is the only gate that changes scope between modes.
 
 ### 1.3 Synthesize intent
 
@@ -273,7 +387,9 @@ Finding format: one line per unresolved item — author login and brief subject.
 Result: PASS or FAIL with finding text.
 
 **Gate 4 — Self-review signals**
-Read the diff (Step 1.1 command B). Flag any of the following on `+`-prefixed lines:
+In `full` mode: read the full PR diff (Step 1.1 command B).
+In `incremental` or `incremental-quick` mode: read `REVIEW_DIFF` (the delta from Step 1.2b) — only new additions since the prior review can introduce new debug logs or stubs.
+Flag any of the following on `+`-prefixed lines:
 - Debug logs (`console.log`, `print`, `debugger`, `fmt.Println`, etc.)
 - Commented-out code blocks
 - Leftover `TODO`/`FIXME`/`HACK` markers
@@ -297,20 +413,36 @@ Quality Gate summary. Gate 6 (inline review) always runs regardless of gate outc
 
 ## Step 2: Inline review pipeline
 
+**Diff used for inline review:**
+- `full` mode: use the full PR diff (Step 1.1 command B).
+- `incremental` and `incremental-quick` modes: use `REVIEW_DIFF` (the delta from Step 1.2b).
+
+Gate checks (Step 1.8) always use the full PR diff regardless of run mode. The inline
+review pipeline below operates on `REVIEW_DIFF` only.
+
 Run the pipeline as defined in `agents/shared/rules/rubric-composition.md`:
 
-1. Load `code-quality` (always, unless trivial diff).
-2. Load `ux` (UI globs).
+1. Load `code-quality` (always, unless `REVIEW_DIFF` is trivial).
+2. Load `ux` (UI globs — against `REVIEW_DIFF`).
 3. Load `critical` (`--critical` flag OR auto-engage heuristic).
 4. Load `--with` lenses (max 3).
-5. Walk each rubric against the diff. Each rubric emits raw findings.
+5. Walk each rubric against `REVIEW_DIFF`. Each rubric emits raw findings.
 
 **Adversarial persona lenses** — run these alongside the rubrics.
-Each persona reviews the diff independently through its own lens.
+Each persona reviews `REVIEW_DIFF` independently through its own lens.
 Persona findings enter the **same raw finding stream** as rubric output and are subject
 to all downstream gates (2.2 through 2.9) including Step 2.5 dedup — treat personas as
 additional rubric lenses, not a separate output channel. This means Gate 1 findings and
 Persona 3 findings are deduped at Step 2.5 rather than posted twice.
+
+**Persona availability by run mode:**
+
+| Persona | `full` | `incremental` | `incremental-quick` |
+|---|---|---|---|
+| Persona 1 — Correctness/logic | ✅ | ✅ | ✅ |
+| Persona 2 — Quality/maintainability | ✅ | ✅ | ✅ |
+| Persona 3 — Description accuracy | ✅ | ✅ | ✅ |
+| Persona 4 — External integration verifier | ✅ | ✅ | ✗ skipped |
 
 - **Persona 1 — Correctness/logic:** logic errors, edge cases, error paths, data races,
   off-by-one, incorrect assumptions about state.
@@ -384,28 +516,35 @@ Log all applied memories in the Quality Gate summary.
 
 See `agents/shared/rules/review-config.md § Filters`. Drop findings in suppressed categories.
 
-### 2.4 Holistic review (default ON)
+### 2.4 Holistic review (default ON in `full` mode)
 
 See `agents/shared/rules/holistic-review.md`. Runs after rubric composition and before
-dedupe. Skip when `--no-holistic` was passed, the trivial-skip heuristic fires, or the
-Step 1.8 token-economy skip triggered.
+dedupe.
+
+Skip when **any** of the following are true:
+- `--no-holistic` was passed.
+- The trivial-skip heuristic fires (whitespace-only, dep-bump-only, test-only, < 10 lines and no high-stakes path).
+- The Step 1.8 token-economy skip triggered (≥ 3 gates failing).
+- `RUN_MODE` is `incremental` or `incremental-quick` — holistic passes are expensive and the delta is small enough that system-fit issues are unlikely to have regressed.
 
 For `pr-reviewer` (cross-review), map holistic finding types to:
 - `intent-mismatch` → `issue` (blocker)
 - `system-fit` (any severity) → `question` (respecting the cross-review context asymmetry)
 - `scope-creep` → `question`
 
-### 2.4b Targeted holistic escalation (default ON)
+### 2.4b Targeted holistic escalation (default ON in `full` mode)
 
 See `agents/shared/rules/holistic-review.md § Targeted escalation`. Runs after 2.4 and
-before dedupe. Default ON for `pr-reviewer`. Skip via `--no-escalate`.
+before dedupe. Default ON for `pr-reviewer`. Skip via `--no-escalate`, or when 2.4 was
+skipped (including when `RUN_MODE` is `incremental` or `incremental-quick`).
 Selects context-dependent findings (changed exports whose correctness depends on caller
 behaviour) and fans out parallel focused traces — one per finding, cap 10.
 
-### 2.4c Optimality review (default ON)
+### 2.4c Optimality review (default ON in `full` and `incremental` modes)
 
 See `agents/shared/rules/optimality-review.md`. Cross-review is **report-only** — never
-apply. Skip via `--no-optimize` or when holistic trivial-skip fired.
+apply. Skip via `--no-optimize`, when holistic trivial-skip fired, or when
+`RUN_MODE == "incremental-quick"` (the delta is too small to warrant approach analysis).
 
 Map proposals to `question` (cross-review context asymmetry).
 
@@ -438,6 +577,7 @@ See `agents/shared/rules/conventional-comments.md`. Prepend category prefix; app
 ## Step 3: Local proposal (terminal output)
 
 Produce two views before posting: a summary with the gate table, then numbered detail cards.
+Always include the run mode and delta context in the header:
 
 On PASS (all Gates 1/3/4/5/6 pass):
 ```
@@ -447,6 +587,7 @@ On PASS (all Gates 1/3/4/5/6 pass):
 **Author**: @<login>
 **Base ← Head**: <base> ← <head>
 **Intent**: <one-line from Step 1.3>
+**Run mode**: <full | incremental (delta: N lines since PRIOR_SHA_SHORT) | incremental-quick (delta: N lines since PRIOR_SHA_SHORT)>
 
 ### Gate Status
 
@@ -471,6 +612,7 @@ On FAIL (one or more of Gates 1/3/4/5/6 fail):
 **Author**: @<login>
 **Base ← Head**: <base> ← <head>
 **Intent**: <one-line from Step 1.3>
+**Run mode**: <full | incremental (delta: N lines since PRIOR_SHA_SHORT) | incremental-quick (delta: N lines since PRIOR_SHA_SHORT)>
 
 ### Gate Status
 
@@ -581,6 +723,10 @@ Confirm the response contains `state: "COMMENTED"`.
 
 ### Review body format
 
+The `<sup>` footer line varies by run mode:
+- `full` mode: `<sup>Reviewed for commit \`HEAD_SHA\`. CI status is shown in the checks section above.</sup>`
+- `incremental` or `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`). CI status is shown in the checks section above.</sup>`
+
 **On PASS** (zero failing gates, excluding Gate 2 from count):
 
 ```
@@ -595,12 +741,13 @@ Reviewed your changes and found no issues ready for human review.
 | Self-review signals  | ✅ |
 | Code review          | ✅ |
 
-<sup>Reviewed for commit `HEAD_SHA`. CI status is shown in the checks section above.</sup>
+<sup>Reviewed for commit `HEAD_SHA` [delta since `PRIOR_SHA_SHORT` in incremental modes]. CI status is shown in the checks section above.</sup>
 
 <details>
 <summary>Review diagnostics</summary>
 
-**Integrations checked:** <list of name + version + spec URL, or "not activated">
+**Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta
+**Integrations checked:** <list of name + version + spec URL, or "not activated" or "skipped (incremental-quick)">
 
 **Quality Gate:** produced <P>, relevance-memory drops <RM>, dedupe drops <D>,
 grounding drops <G>, confidence drops <C>, shape drops <S>, final <F>.
@@ -624,12 +771,13 @@ Found <FAILING_GATE_COUNT> gate(s) that need attention before human review.
 | Self-review signals  | ✅ or ❌ | finding text or empty cell |
 | Code review          | ✅ or ❌ | "See inline comments" or finding text or empty cell |
 
-<sup>Reviewed for commit `HEAD_SHA`. CI status is shown in the checks section above.</sup>
+<sup>Reviewed for commit `HEAD_SHA` [delta since `PRIOR_SHA_SHORT` in incremental modes]. CI status is shown in the checks section above.</sup>
 
 <details>
 <summary>Review diagnostics</summary>
 
-**Integrations checked:** <list of name + version + spec URL, or "not activated">
+**Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta
+**Integrations checked:** <list of name + version + spec URL, or "not activated" or "skipped (incremental-quick)">
 
 **Quality Gate:** produced <P>, relevance-memory drops <RM>, dedupe drops <D>,
 grounding drops <G>, confidence drops <C>, shape drops <S>, final <F>.
