@@ -13,6 +13,7 @@ description: >
   regenerate plan, iterate on plan.
 license: MIT
 disable-model-invocation: false
+argument-hint: '[snapshot]'
 metadata:
   author: mthines
   version: '2.2.0'
@@ -29,19 +30,13 @@ Generate `.agent/{branch-name}/plan.md` — the planner→executor handoff docum
 
 ## Snapshot mode (opt-in)
 
-**By default this skill writes only `plan.md`** (overwritten in place on each iteration). Git tracks nothing here — `.agent/` is gitignored per-developer scratch — so immutable `plan.vN.md` snapshot chains are **not** written by default: they are rarely re-read, they add directory noise, and every iteration would pay a redundant write. This is deliberate ([research §5.4](../autonomous-workflow/references/anthropic-architecture-research.md#54-what-is-not-evidence-backed): versioning is an audit-trail/review-UX feature with no measured effect on task success).
+**By default this skill writes only `plan.md`** (overwritten in place each iteration; the `version:` frontmatter is the iteration counter). `.agent/` is gitignored per-developer scratch, so immutable `plan.vN.md` snapshot chains are **not** written by default — they are rarely re-read and cost a redundant write per iteration, with no measured effect on task success ([research §5.4](../autonomous-workflow/references/anthropic-architecture-research.md#54-what-is-not-evidence-backed)).
 
-**Opt in to snapshots** by invoking `Skill("aw-create-plan", "snapshot")`. In snapshot mode the skill additionally writes an immutable `plan.v{N}.md` alongside `plan.md` (`plan.v1.md`, `plan.v2.md`, … as history), for when a durable annotated audit trail of a plan's evolution is genuinely wanted. Everything below marked **(snapshot mode)** applies only then.
+**Opt in to snapshots** with `Skill("aw-create-plan", "snapshot")` — then the skill also writes an immutable `plan.v{N}.md` alongside `plan.md` (`plan.v1.md`, `plan.v2.md`, … as history) for a durable audit trail of the plan's evolution. Everything below marked **(snapshot mode)** applies only then.
 
 ### How the mode arg is read (disambiguation)
 
-The argument slot is overloaded — some callers pass a **short mode flag**, others pass a whole **plan body**. Resolve it with this exact rule, before anything else:
-
-1. Trim the arg. **Snapshot mode is on iff the trimmed arg is exactly `snapshot` or `--snapshot`** (case-insensitive, a single bare token — no newlines).
-2. **Any other arg is default mode (no snapshot).** In particular, a multi-line arg or a full `plan.md` body is NEVER treated as a mode flag — orchestrators like [`/fix-bug`](../fix-bug/rules/autonomous-handoff.md) pass the entire plan body in this slot (`Skill("aw-create-plan", "<full plan.md body>")`), and that is default mode. This is intentional: `/fix-bug`'s fast lane opts out of snapshots anyway.
-3. An empty / absent arg is default mode.
-
-So the single token `snapshot` is the only thing that turns snapshots on; a plan body — however long — never does.
+The arg slot is overloaded — some callers pass a short mode flag, others a whole plan body. Resolve it before anything else: **snapshot mode is on iff the trimmed arg is exactly `snapshot` or `--snapshot`** (case-insensitive, a single bare token). **Every other arg — empty, or a multi-line `plan.md` body — is default mode (no snapshot).** In particular, orchestrators like [`/fix-bug`](../fix-bug/rules/autonomous-handoff.md) pass the whole plan body here (`Skill("aw-create-plan", "<full plan.md body>")`), which is default mode by design — the fast lane opts out of snapshots anyway.
 
 ---
 
@@ -443,10 +438,7 @@ After writing, verify ALL of the following. **Fix any failures immediately.**
 
 - [ ] **File location**: File(s) inside the worktree at `.agent/{branch}/` (NOT on main)
 - [ ] **plan.md written**: `.agent/{branch}/plan.md` exists and is complete
-- [ ] **(snapshot mode) Snapshot written**: `plan.vN.md` (immutable snapshot) written alongside `plan.md`
-- [ ] **(snapshot mode) Identical content**: `plan.md` and `plan.vN.md` have byte-identical bodies (the "latest == newest snapshot" invariant)
-- [ ] **(snapshot mode) Version monotonic**: `N` is exactly one greater than the highest existing `plan.v*.md` (or 1 on first run)
-- [ ] **(snapshot mode) Older versions untouched**: Pre-existing `plan.v1.md`, `plan.v2.md`, … were not edited or deleted
+- [ ] **(snapshot mode) Snapshot valid**: `plan.vN.md` written byte-identical to `plan.md`; `N` is exactly one above the highest existing `plan.v*.md` (1 on first run); pre-existing snapshots untouched
 - [ ] **Frontmatter complete**: created, version, branch, task, complexity, status, approved — all filled
 - [ ] **Version field**: `version:` is present in frontmatter and is a positive integer; on a fresh plan it is `1`; on every re-write of `plan.md` it is exactly one greater than the previous value
 - [ ] **Timestamps**: All timestamps use ISO 8601 with time (`YYYY-MM-DDTHH:MM:SSZ`)
@@ -495,10 +487,7 @@ After writing, verify ALL of the following. **Fix any failures immediately.**
 | No file paths in Patterns            | Reference specific existing files, not abstract descriptions          |
 | Requirements not tagged              | Add `[user-stated]` or `[inferred]` to every requirement              |
 | Timestamps missing time component    | Use `2026-03-07T14:30:00Z` not `2026-03-07`                           |
-| Wrote a `plan.vN.md` in default mode  | Snapshots are opt-in — write only `plan.md` unless invoked with the `snapshot` arg |
-| (snapshot mode) Wrote `plan.vN.md` but forgot to update `plan.md` | Copy the new snapshot's content over `plan.md`  |
-| (snapshot mode) Edited an existing `plan.vN.md` | Restore from git (or re-derive from history); snapshots are immutable |
-| (snapshot mode) Reused a version number | Re-run Step 1; older snapshots must never be overwritten            |
+| Snapshot mishandled | Snapshots are opt-in (`snapshot` arg) — never write `plan.vN.md` in default mode; in snapshot mode keep `plan.md` mirroring the newest `plan.vN.md`, and never edit a snapshot or reuse a version number (re-run Step 1) |
 | ACs without `AC-{n}` IDs or `covers:` annotations | Add both — rule #9 fails on an uncovered `[user-stated]` requirement |
 | `create` rows but no Existing Code Survey | Run the reuse searches, add the section — rule #10 fails otherwise |
 | Forgot `checks.yaml` (or IDs drifted from plan) | Re-run Step 2b — one entry per `AC-{n}`, IDs in sync (rule #11)   |
