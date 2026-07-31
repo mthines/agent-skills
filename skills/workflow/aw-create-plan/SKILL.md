@@ -33,6 +33,16 @@ Generate `.agent/{branch-name}/plan.md` — the planner→executor handoff docum
 
 **Opt in to snapshots** by invoking `Skill("aw-create-plan", "snapshot")`. In snapshot mode the skill additionally writes an immutable `plan.v{N}.md` alongside `plan.md` (`plan.v1.md`, `plan.v2.md`, … as history), for when a durable annotated audit trail of a plan's evolution is genuinely wanted. Everything below marked **(snapshot mode)** applies only then.
 
+### How the mode arg is read (disambiguation)
+
+The argument slot is overloaded — some callers pass a **short mode flag**, others pass a whole **plan body**. Resolve it with this exact rule, before anything else:
+
+1. Trim the arg. **Snapshot mode is on iff the trimmed arg is exactly `snapshot` or `--snapshot`** (case-insensitive, a single bare token — no newlines).
+2. **Any other arg is default mode (no snapshot).** In particular, a multi-line arg or a full `plan.md` body is NEVER treated as a mode flag — orchestrators like [`/fix-bug`](../fix-bug/rules/autonomous-handoff.md) pass the entire plan body in this slot (`Skill("aw-create-plan", "<full plan.md body>")`), and that is default mode. This is intentional: `/fix-bug`'s fast lane opts out of snapshots anyway.
+3. An empty / absent arg is default mode.
+
+So the single token `snapshot` is the only thing that turns snapshots on; a plan body — however long — never does.
+
 ---
 
 ## Prerequisites
@@ -50,10 +60,13 @@ Before invoking this skill:
 
 ### Step 1: Determine target paths (and next version, snapshot mode only)
 
-Run this command to compute the artifact directory and the files this skill
-will write — do NOT guess the branch name or the version:
+First resolve the mode per [How the mode arg is read](#how-the-mode-arg-is-read-disambiguation)
+above. Set `SNAPSHOT=1` only when the trimmed arg is exactly `snapshot` /
+`--snapshot`; otherwise leave it unset. Then compute the artifact directory and
+the files this skill will write — do NOT guess the branch name or the version:
 
 ```bash
+# SNAPSHOT=1 only in snapshot mode (arg == "snapshot"/"--snapshot"); unset otherwise.
 BRANCH=$(git branch --show-current)
 DIR=".agent/${BRANCH}"
 mkdir -p "${DIR}"
@@ -61,13 +74,16 @@ echo "DIR=${DIR}"
 echo "LATEST=${DIR}/plan.md"
 echo "CHECKS=${DIR}/checks.yaml"
 
-# Snapshot mode only — compute the next immutable version path:
-NEXT=$(ls "${DIR}" 2>/dev/null \
-  | sed -n 's/^plan\.v\([0-9][0-9]*\)\.md$/\1/p' \
-  | sort -n | tail -1)
-NEXT=$(( ${NEXT:-0} + 1 ))
-echo "VERSION=${NEXT}"
-echo "VERSIONED=${DIR}/plan.v${NEXT}.md"
+# Snapshot mode ONLY — skip this block entirely in default mode so no
+# plan.v{N}.md path is even computed (let alone written):
+if [ -n "${SNAPSHOT:-}" ]; then
+  NEXT=$(ls "${DIR}" 2>/dev/null \
+    | sed -n 's/^plan\.v\([0-9][0-9]*\)\.md$/\1/p' \
+    | sort -n | tail -1)
+  NEXT=$(( ${NEXT:-0} + 1 ))
+  echo "VERSION=${NEXT}"
+  echo "VERSIONED=${DIR}/plan.v${NEXT}.md"
+fi
 ```
 
 | Output       | Meaning                                                    |
