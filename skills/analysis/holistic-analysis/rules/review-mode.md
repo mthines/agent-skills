@@ -33,6 +33,7 @@ The calling agent passes:
 - `diff` — the full unified diff of the PR or branch under review.
 - `changed_files` — list of files in the diff (path + patch).
 - `caller` — `reviewer` (own work) or `pr-reviewer` (cross-review). Affects the framing of system-fit findings (see Output framing).
+- `max_findings` — **optional**, whole-PR mode only. Ceiling on the number of findings returned, scaled by the caller to the size of the diff (3 for ≤ 10 changed files, 6 for 11–30, 10 for > 30). Defaults to **3** when absent. It is a ceiling, not a target.
 - `focus` — **optional**. When present, the skill runs in **focused (single-target) mode**: it deepens one already-surfaced finding instead of scanning the whole diff. The calling agent's Step 2.4b escalation passes one `focus` per parallel call. Shape:
 
   ```yaml
@@ -43,7 +44,7 @@ The calling agent passes:
     finding: <the line-level claim being deepened, one sentence>
   ```
 
-  When `focus` is absent, the skill runs in **whole-PR mode** (the default flow below, ≤ 3 findings). The two modes share Phases R1–R3 but scope and finding-count differ — each phase notes the focused-mode variant inline.
+  When `focus` is absent, the skill runs in **whole-PR mode** (the default flow below, ≤ `max_findings` findings). The two modes share Phases R1–R3 but scope and finding-count differ — each phase notes the focused-mode variant inline.
 
 ## Phase R1 — Scope the execution paths
 
@@ -81,7 +82,7 @@ Each system-fit gap is one finding.
 
 ## Phase R3 — Emit findings
 
-Return at most **3 findings** (intent-match + system-fit combined). Above 3 the output is noise — pick the highest-impact items.
+Return at most **`max_findings`** findings (intent-match + system-fit combined), default **3** when the caller passed no budget. Above the budget the output is noise — pick the highest-impact items. Never pad to reach the budget: a clean 40-file PR returns zero findings.
 
 **Focused mode (`focus` present).** Return at most **1** finding — the verdict on `focus.finding` from R2. A `clear` verdict returns an empty list (the finding is dropped). The single record carries the same shape below; set `file` and `line` to `focus.file` / `focus.line` so the calling agent can re-anchor it onto the original comment.
 
@@ -129,7 +130,7 @@ Review mode is opt-out at the calling agent's layer (the calling agent enables i
 
 ## Anti-patterns
 
-- Do NOT return more than 3 findings — above that the output is noise.
+- Do NOT return more than `max_findings` findings (default 3) — above that the output is noise. Equally, do NOT pad to fill the budget.
 - Do NOT produce findings that overlap with line-level rubrics (`code-quality`, `ux`). Those are the caller's job and would be deduped out anyway.
 - Do NOT propose fixes — `system-fit` finding describes the gap; the calling agent or PR author decides how to close it.
 - Do NOT emit a confidence score per finding — that's `Skill("confidence", "code")`'s job, downstream.

@@ -103,7 +103,14 @@ Quality Gate:
   Anti-flip-flop drops:      0  (would contradict a resolved prior suggestion)
   Confidence drops:          7 (avg score: 64, threshold: 80)
   Shape drops:               2
+  Carried forward:           1  (deferred by a prior incremental run)
+  Findings cleared:          7  (survived every quality gate)
+  Deferred (over inline cap): 1  (pr-reviewer only — listed in the review body, not dropped)
   Final findings posted:     6
 ```
+
+`Findings cleared` is the honest measure of what the review found; `Final findings posted` is only how many fit inline.
+The two differ solely by `Deferred (over inline cap)`, and in `reviewer` they are always equal (no placement cap).
+A finding that cleared every gate is never subtracted anywhere else in this summary — if `Findings cleared` minus `Deferred` does not equal `Final findings posted`, the pipeline has a bug.
 
 A run that posts 6 findings out of 24 produced is healthy. A run that posts 22 out of 24 is suspicious — the gates are not biting.

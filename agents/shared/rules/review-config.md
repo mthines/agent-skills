@@ -13,8 +13,12 @@ tags:
 Both agents support per-repo (and per-subtree) configuration via a `.review.yaml` file.
 The config surface is deliberately small — one profile knob, one noise-suppressor list, one path-scoped guidance list — so that the most common customizations require minimal YAML authorship.
 
-**Back-compat guarantee:** an absent `.review.yaml` resolves to `profile: balanced`, which equals today's defaults (per-comment threshold 80, per-file caps 5 for `pr-reviewer` and 10 for `reviewer`, no filters, no path instructions).
-No behavior changes without an explicit config file.
+**Back-compat guarantee:** an absent `.review.yaml` resolves to `profile: balanced`, which equals today's defaults (per-comment threshold 80, inline placement cap 5 per file for `pr-reviewer`, none for `reviewer`, no filters, no path instructions).
+The config surface itself introduces no behaviour change: with no config file, `pr-reviewer` posts the same inline comments it always did, and the threshold is still 80.
+
+**One deliberate exception, introduced with placement (Step 2.9b):** `reviewer`'s default per-file cap moved from **10 to none**, so an absent config now reports *more* findings on a large branch than it used to.
+That is a widening, never a suppression — `reviewer` writes to the terminal, where there is no posting cost, so confidence is the only gate on what it reports.
+Nothing that clears the confidence threshold is hidden in either agent: `pr-reviewer`'s cap governs inline placement only, and overflow is deferred to the review body (`rubric-composition.md § Placement (Step 2.9b)`).
 
 ---
 
@@ -45,15 +49,19 @@ path_instructions:                       # path-scoped guidance
 `profile` is a single knob that maps to three correlated settings.
 `balanced` always equals today's defaults, ensuring back-compat.
 
-| Profile | Generation aggression | Per-comment confidence threshold | Per-file cap |
+| Profile | Generation aggression | Per-comment confidence threshold | Inline placement cap per file |
 | --- | --- | --- | --- |
-| `chill` | Low — only high-confidence, high-severity findings | 90 | 3 (`pr-reviewer`), 5 (`reviewer`) |
-| `balanced` | Medium — today's defaults | **80** | **5** (`pr-reviewer`), **10** (`reviewer`) |
-| `assertive` | High — include lower-confidence and lower-severity findings | 70 | 7 (`pr-reviewer`), 15 (`reviewer`) |
+| `chill` | Low — only high-confidence, high-severity findings | 90 | 3 (`pr-reviewer`), none (`reviewer`) |
+| `balanced` | Medium — today's defaults | **80** | **5** (`pr-reviewer`), none (`reviewer`) |
+| `assertive` | High — include lower-confidence and lower-severity findings | 70 | 7 (`pr-reviewer`), none (`reviewer`) |
+
+The cap column governs **placement only** — how many findings are posted as inline comments per file.
+It never discards a finding: overflow is deferred to the review body (`rubric-composition.md § Placement (Step 2.9b)`).
+The confidence threshold is the only setting that decides whether a finding is reported at all, which is why `reviewer` (terminal output, no posting cost) has no cap in any profile.
 
 The `balanced` row in the table is the definition of today's defaults — if any default changes in the agents, update this row to match and bump the config schema version.
 
-`assertive` operationalizes Bugbot's "we turned aggression UP" insight as an explicit opt-in: lower threshold, higher cap.
+`assertive` operationalizes Bugbot's "we turned aggression UP" insight as an explicit opt-in: lower threshold, more inline slots.
 Use only in repos with high author trust in automated review (experienced team, high review culture).
 
 `chill` is the inverse: conservative for repos where false positives are especially costly (public APIs, security-sensitive code, solo maintainer projects).
@@ -171,7 +179,7 @@ for f in $CHANGED_FILES; do
 done
 
 # If no .review.yaml found anywhere: defaults to profile: balanced
-# (threshold 80, per-file cap 5/10, no filters, no path instructions)
+# (threshold 80, inline cap 5 for pr-reviewer / none for reviewer, no filters, no path instructions)
 ```
 
 The effective config is consumed by:

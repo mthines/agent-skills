@@ -134,16 +134,40 @@ The prior-comment fetch is cheap (one `gh api` call); always re-run it rather th
 
 ---
 
+## Carry-forward of deferred findings
+
+`pr-reviewer` defers findings that clear every quality gate but exceed the inline placement caps (`rubric-composition.md § Placement (Step 2.9b)`).
+Deferral only works if the next run can still see them, and in `incremental` / `incremental-quick` mode it cannot re-derive them: those modes scan the **delta** only, so a finding deferred in run 1 on a file untouched since would be lost permanently.
+Carry-forward closes that hole.
+
+Run this immediately after the prior-comment fetch, in every mode:
+
+1. Read the prior review body (the `<!-- PR_REVIEWER_REPORT -->` comment already fetched above) and parse its `Additional findings` section.
+2. Re-admit each parsed entry into the current run's finding stream, tagged `carried-forward`, with its recorded confidence score.
+3. Drop a carried entry when **any** holds:
+   - Its `(file, line)` no longer exists in the current PR state, or the line's content changed since the review that deferred it (the finding was likely addressed).
+   - It duplicates a finding produced fresh in this run (normal dedup, `§ Dedup against prior bot comments`).
+   - It duplicates a prior **posted** comment (it was promoted inline in a later run).
+4. A carried entry skips re-generation but **not** the gates: it re-enters at 2.6 grounding and flows through receipt, confidence, and shape again, because the code may have moved under it.
+5. Placement (2.9b) then treats it like any other cleared finding, and its priority ordering is unchanged — so an unaddressed deferred `issue` outranks a fresh `nitpick` for the inline slots and eventually surfaces inline.
+
+Report the count as `Carried forward: <N>` in the Quality Gate summary.
+
+A finding can therefore be deferred across several incremental runs, but it can never be silently forgotten: it is either posted inline, still listed in the body, or dropped for a logged reason.
+
+---
+
 ## Logging
 
-The Quality Gate summary adds two new rows:
+The Quality Gate summary adds three rows:
 
 ```
 Prior-comment dedup drops: N  (already said in a prior review pass)
 Anti-flip-flop drops:      M  (would contradict a resolved prior suggestion)
+Carried forward:           K  (deferred by a prior incremental run, re-admitted)
 ```
 
-Both are emitted even when N = 0 and M = 0, so the user can see the step ran.
+All three are emitted even when N = 0, M = 0, and K = 0, so the user can see the step ran.
 
 ---
 

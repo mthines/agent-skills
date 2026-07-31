@@ -64,18 +64,31 @@ Skill("holistic-analysis", "review")
   diff: <full unified diff>
   changed_files: <list of {path, patch} entries from /tmp/pr-files.json or git>
   caller: "reviewer" | "pr-reviewer"
+  max_findings: <3 | 6 | 10 — scaled to changed-file count, see table below>
 ```
+
+Pass a `max_findings` budget scaled to the size of the diff — a flat 3 on a 60-file PR is a sampling cap, not a quality bar:
+
+| Changed files in the reviewed diff | `max_findings` |
+| --- | --- |
+| ≤ 10 | 3 |
+| 11–30 | 6 |
+| > 30 | 10 |
+
+The budget bounds the *broad* pass only, and it is a ceiling rather than a target — a large PR with one system-fit problem still returns one finding.
+Everything the pass returns re-enters the pipeline at 2.5 and is subject to grounding, receipt, confidence, and shape exactly like a rubric finding.
 
 Inputs:
 
 - `intent_summary` — produced by Step 1.3 of the calling agent.
+- `max_findings` — the size-scaled budget from the table above.
 - `diff` — full unified diff (already in scope by Step 1.1).
 - `changed_files` — list of file objects with `path` and `patch`. In `pr-reviewer`, `/tmp/pr-files.json` is the source. In `reviewer`, derive from `git diff --name-only` + `git show`.
 - `caller` — the calling agent's name (`reviewer` or `pr-reviewer`). Determines the recommended Conventional-Comments category mapping (see below).
 
 ## Targeted escalation (Step 2.4b)
 
-The Step 2.4 pass above is **broad and shallow**: one whole-PR scan, capped at 3 findings, spreading attention across the entire diff. It catches PR-wide intent mismatch and obvious system-fit, but it cannot deep-trace any single changed function's call graph. That deep trace is exactly the class the user cares about — *a function change that is clean in isolation but wrong for how the function is actually used*.
+The Step 2.4 pass above is **broad and shallow**: one whole-PR scan, capped at its `max_findings` budget (3–10 by diff size), spreading attention across the entire diff. It catches PR-wide intent mismatch and obvious system-fit, but it cannot deep-trace any single changed function's call graph. That deep trace is exactly the class the user cares about — *a function change that is clean in isolation but wrong for how the function is actually used*.
 
 Step 2.4b adds the deep tier. It runs **after** the broad 2.4 pass and the rubric findings are collected, and **before** Step 2.5 (dedupe). It takes the line-level findings that look context-dependent and fans out **parallel, single-target** holistic traces — one per finding — each scoped to that finding's symbol via the `focus` input (see `review-mode.md § Inputs`). This is the pipeline analogue of an agentic reviewer that "decides which areas need deeper investigation and follows code paths across files."
 
@@ -113,7 +126,9 @@ Each focused call returns **≤ 1 finding** — the verdict on the seeded findin
 
 ### Cost bound
 
-Escalate up to **10** findings per PR, highest-severity first. Ten — not three — because a focused single-symbol trace is far cheaper than the broad whole-PR pass, and the real ceilings already live downstream: the per-file cap (5 for `pr-reviewer`, 10 for `reviewer`), the total cap (20 for `pr-reviewer`), and the `per-comment-confidence` ≥ 80 gate that drops weak findings regardless of how many were escalated. If more than 10 qualify, run a **second parallel batch**; stop only once the surviving-comment total would exceed the posting cap (further findings cannot be posted anyway). Never silently drop a qualifying candidate — defer it and log it.
+Escalate up to **10** findings per PR, highest-severity first. Ten — not three — because a focused single-symbol trace is far cheaper than the broad whole-PR pass, and the real ceiling lives downstream: the `per-comment-confidence` ≥ threshold gate, which drops weak findings regardless of how many were escalated. If more than 10 qualify, run a **second parallel batch**; keep batching while candidates remain and the tool budget allows. Never silently drop a qualifying candidate — defer it and log it.
+
+The placement caps in `rubric-composition.md § Placement (Step 2.9b)` are **not** a reason to stop escalating. They only decide whether a cleared finding is posted inline or listed in the review body; nothing that clears the confidence gate is discarded, so an escalation is never wasted work.
 
 ### Re-entry into the pipeline
 
@@ -138,7 +153,7 @@ A run with several `clear` verdicts is healthy — escalation earning its cost b
 
 ## Output mapping (caller-aware)
 
-`holistic-analysis` returns at most 3 findings with `type` ∈ {`intent-mismatch`, `scope-creep`, `system-fit`} and `severity` ∈ {`blocker`, `major`, `minor`}.
+`holistic-analysis` returns at most `max_findings` findings (3–10, scaled to diff size) with `type` ∈ {`intent-mismatch`, `scope-creep`, `system-fit`} and `severity` ∈ {`blocker`, `major`, `minor`}.
 
 Map each finding to the calling agent's Conventional-Comments category:
 
@@ -183,7 +198,7 @@ Holistic review:
   Final:              <F> emitted
 ```
 
-A run that ran holistic and emitted 0 findings is healthy — most PRs have neither intent mismatch nor obvious system-fit gaps. A run that emitted 3 findings on a 5-file PR is suspicious — verify the holistic skill's output before posting.
+A run that ran holistic and emitted 0 findings is healthy — most PRs have neither intent mismatch nor obvious system-fit gaps. A run that emitted a full `max_findings` budget on a 5-file PR is suspicious — verify the holistic skill's output before posting. On a 40-file PR a full budget is unremarkable.
 
 ## When holistic is unavailable
 
@@ -199,4 +214,4 @@ Do not block the run. Holistic review is an enhancement; the rest of the pipelin
 
 - It does not run holistic itself. It dispatches to the skill, accepts the structured findings, and routes them through the pipeline.
 - It does not set the blocker rules — those live in each agent's verdict step.
-- It does not change the per-file cap (5 for `pr-reviewer`, 10 for `reviewer`) — holistic findings count against the same cap; if dedupe consolidates a holistic finding with a line-level finding on the same file:line, the holistic claim wins (it has the broader context).
+- It does not change the inline placement caps (`rubric-composition.md § Placement (Step 2.9b)`) — holistic findings compete for the same inline slots, and like any other cleared finding they are deferred to the review body rather than dropped when the slots run out. If dedupe consolidates a holistic finding with a line-level finding on the same file:line, the holistic claim wins (it has the broader context).

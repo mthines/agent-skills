@@ -322,7 +322,8 @@ See `agents/shared/rules/rubric-composition.md` for the lens-loading contract.
 
 See `agents/shared/rules/review-config.md`. Walk `.review.yaml` files upward from each changed file, merge in precedence order (closer file wins on `profile`; filters and path instructions union). Resolve the effective `profile`, `filters`, and `path_instructions` per changed file.
 
-Absent `.review.yaml` defaults to `profile: balanced` — threshold 80, per-file cap 10, no filters, no path instructions. No behavior change from today's defaults.
+Absent `.review.yaml` defaults to `profile: balanced` — threshold 80, no placement cap, no filters, no path instructions.
+`reviewer` writes to the terminal, not to GitHub, so no profile caps how many findings it reports: the confidence threshold is the only gate (`rubric-composition.md § Placement (Step 2.9b)`).
 
 ---
 
@@ -343,7 +344,7 @@ rubrics produce raw findings
   → 2.4  holistic-review.md         (Skill("holistic-analysis", "review") — broad whole-PR, default on)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — opt-in via --escalate)
   → 2.4c optimality-review.md      (Skill("optimize-approach", ...) — is this the best approach, default on)
-  → 2.5  rubric-composition § Consolidation (dedupe + per-file cap 10)
+  → 2.5  rubric-composition § Consolidation (dedupe + group + sort — no cap, nothing dropped)
   → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.5b prior-comment-awareness.md § Dedup (Self-Review: drop if already said)
   → 2.6  finding-grounding.md       (every backticked symbol grep-resolves)
@@ -405,9 +406,14 @@ Skill("holistic-analysis", "review")
   diff: <full unified diff>
   changed_files: <derived from git diff or /tmp/pr-files.json>
   caller: "reviewer"
+  max_findings: <3 for ≤ 10 changed files | 6 for 11–30 | 10 for > 30>
 ```
 
-The skill returns 0–3 structured findings. In `reviewer` (own work, you are the author), map to:
+`max_findings` is **not optional here**: `review-mode.md` defaults it to 3 when absent, so
+omitting it silently caps a large branch at the smallest budget. The table lives in
+`agents/shared/rules/holistic-review.md § Inputs` — keep the two in sync.
+
+The skill returns 0–`max_findings` structured findings (budget scaled to diff size: 3 for ≤ 10 changed files, 6 for 11–30, 10 for > 30). In `reviewer` (own work, you are the author), map to:
 
 - `intent-mismatch` → `issue` (blocker)
 - `system-fit` (major severity) → `issue` (blocker)
@@ -435,6 +441,9 @@ In **Fix Mode / Self-Review**, applying the top `apply_safe` proposal is deferre
 ### Remaining gates
 
 2.5 dedupe → 2.5a cross-rubric agreement → 2.5b prior-comment dedup (Self-Review) → 2.6 grounding → 2.6b verification receipt → 2.7 confidence → 2.8 shape → 2.9 Conventional Comments. See the linked shared rules.
+
+There is no Step 2.9b placement cap in `reviewer`: every finding that clears 2.7 and 2.8 is printed as a card.
+Quantity is never a reason to withhold a finding from your own review — only confidence is.
 
 ---
 
@@ -482,8 +491,11 @@ Receipt downgrades:          <RD>  (ambiguous proof → downgraded to question:)
 Filter drops:                <FL>  (suppressed by .review.yaml filters)
 Confidence drops:            <C>   (threshold: <T>)
 Shape drops:                 <S>
-Final findings:              <F>
+Final findings:              <F>   (= findings cleared; reviewer has no placement cap)
 ```
+
+`Final findings` must equal produced minus every logged drop.
+If the two disagree, findings were withheld by something other than a gate — that is a bug, not tidiness.
 
 ### Verdict
 
