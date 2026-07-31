@@ -13,6 +13,8 @@ Every inline review comment — whether posted to GitHub by `pr-reviewer` or emi
 
 Research grounding: AI-review tools that ship < 5 % false-positive rate and short, scannable comments (CodeRabbit, Greptile in their 2026 field tests) are the ones developers keep reading. Long comments are skipped; skipped comments make the entire review feel like noise.
 
+Optimality proposals (Step 2.4c) are **out of scope** for this rule: they render as cards in a report section, not as comments, and are exempt from every cap below (`optimality-review.md § Gates`).
+
 ## Hard caps
 
 | Property | Cap | On fail |

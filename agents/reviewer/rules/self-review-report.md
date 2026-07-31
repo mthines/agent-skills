@@ -53,6 +53,11 @@ The other two modes (Fix Mode on a branch with no PR, Report Mode on a branch wi
 
 <comment cards>
 
+## Optimality
+
+<optimality proposal cards from skills/quality/optimize-approach/templates/proposal.template.md —
+omit this whole section when Step 2.4c produced no proposals>
+
 ---
 
 **Verdict**: <Approve | Approve with comments | Request changes> — <score>/10
@@ -75,6 +80,9 @@ follow-up PRs.
 ### Planned (not applied)
 - <file> — <one-line description>
 
+### Optimality apply (Step 4.1b)
+- <file> — <applied | withheld: low-confidence | withheld: not-apply-safe | reverted: `<check>`>
+
 ### Verification
 - Lint: PASS / FAIL
 - Type-check: PASS / FAIL
@@ -92,7 +100,11 @@ follow-up PRs.
 | `nitpick` | Low / Nitpick |
 | `praise` | Praise |
 
+| optimality proposal (Step 2.4c) | `Optimality` — never bucketed by severity, never blocking |
+
 A bucket with no findings outputs `None.` (not omitted) so the orchestrator can reliably parse the report.
+`Optimality` is the one exception: it is omitted entirely when there are no proposals, because the lens is a quiet early-exit by design.
+Its `Optimality review (2.4c)` log block is still emitted, so a skipped run stays distinguishable from a silent one.
 
 ## Why not post pending comments here
 

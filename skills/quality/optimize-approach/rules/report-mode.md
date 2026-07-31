@@ -53,18 +53,19 @@ The `evidence` field is load-bearing: a proposal without a grep-resolvable util/
 
 ## Caller-aware framing
 
-The calling agent maps each proposal into its own Conventional-Comments category. Recommended mapping:
+A proposal is **not** a Conventional-Comments finding.
+The calling agent renders it as a card in a dedicated report section, never as an inline comment — the ten-field record does not survive a 240-character comment (see [`optimality-review.md § Where proposals surface`](../../../../agents/shared/rules/optimality-review.md)).
 
-| Caller | analysis_confidence | Category | Blocks verdict? |
-| --- | --- | --- | --- |
-| `reviewer` (own work) | ≥ 90 % | `suggestion` | no |
-| `reviewer` | 70–89 % | `question` | no |
-| `pr-reviewer` (cross-review) | ≥ 90 % | `question` | no |
-| `pr-reviewer` | 70–89 % | `question` | no |
+| Caller | Surface | Framing |
+| --- | --- | --- |
+| `reviewer` (own work) | `Optimality` section of the terminal / Self-Review report | Assert: "A better approach here is …" |
+| `pr-reviewer` (cross-review) | `Optimality review` section of the GitHub review body | Ask: "Have you considered …?" |
+
+`pr-reviewer` frames every proposal as a question regardless of confidence, respecting the cross-review context asymmetry (the reviewer has less context than the author).
 
 An optimality proposal is **always non-blocking** — it never drives "Request changes", the same rule `holistic-review` applies to `scope-creep`.
-`pr-reviewer` frames every proposal as a `question` regardless of confidence, respecting the cross-review context asymmetry (the reviewer has less context than the author).
-Below 70 % the finding is dropped (the alternative is not understood well enough to state).
+Below 70 % `analysis_confidence` the proposal is dropped here, in this skill (the alternative is not understood well enough to state).
+That is the **only** confidence gate a proposal passes: the calling agents do not re-score it with `per-comment-confidence`, and the card prints `analysis_confidence` so the reader can weigh it.
 
 ## Terminal output (standalone)
 

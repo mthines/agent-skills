@@ -343,7 +343,8 @@ rubrics produce raw findings
   → 2.3  review-config.md § Filters (drop findings in categories suppressed by .review.yaml — runs before holistic)
   → 2.4  holistic-review.md         (Skill("holistic-analysis", "review") — broad whole-PR, default on)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — opt-in via --escalate)
-  → 2.4c optimality-review.md      (Skill("optimize-approach", ...) — is this the best approach, default on)
+  → 2.4c optimality-review.md      (Skill("optimize-approach", ...) — is this the best approach, default on;
+                                    proposals exit via the report's Optimality section, not as findings)
   → 2.5  rubric-composition § Consolidation (dedupe + group + sort — no cap, nothing dropped)
   → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.5b prior-comment-awareness.md § Dedup (Self-Review: drop if already said)
@@ -434,7 +435,9 @@ Skip when `--no-optimize` was passed, the holistic trivial-skip heuristic fired,
 `RUN_MODE == "incremental-quick"` (delta too small to warrant approach analysis).
 Otherwise invoke `Skill("optimize-approach", "report")` in **all** sub-modes — 2.4c is read-only so it never mutates files mid-pipeline.
 
-Pass `intent_summary` (Step 1.3), the diff, `changed_files`, and `caller: "reviewer"`. The skill returns 0–2 proposals. Map each per `optimality-review.md`: `analysis_confidence ≥ 90 %` → `suggestion`, 70–89 % → `question`. Optimality proposals are **non-blocking** — they never drive "Request changes". Proposals flow through 2.5–2.9 like any other finding.
+Pass `intent_summary` (Step 1.3), the diff, `changed_files`, and `caller: "reviewer"`. The skill returns 0–2 proposals.
+
+Proposals are **not** findings and do not become comment cards. They render as their own cards in the report's `Optimality` section (`optimality-review.md § Where proposals surface`), so they keep dedupe (2.5), grounding (2.6) and the verification receipt (2.6b) and skip 2.7–2.9. Their confidence gate is the skill's own `analysis_confidence` ≥ 70, printed on the card. Optimality proposals are **non-blocking** — they never drive "Request changes".
 
 In **Fix Mode / Self-Review**, applying the top `apply_safe` proposal is deferred to Step 4 (see `agents/shared/rules/optimality-review.md § Apply`). **Report Mode never applies.**
 
@@ -497,6 +500,26 @@ Final findings:              <F>   (= findings cleared; reviewer has no placemen
 `Final findings` must equal produced minus every logged drop.
 If the two disagree, findings were withheld by something other than a gate — that is a bug, not tidiness.
 
+Always follow it with the optimality block, even when there are zero proposals — a silent run and a
+skipped run are different outcomes:
+
+```
+Optimality review (2.4c):
+  Status:             ran | skipped (trivial diff) | skipped (--no-optimize) | skipped (incremental-quick) | skipped (skill not installed)
+  Units judged:       <UN>
+  Optimal:            <UO>
+  Proposals:          <OP> (cap 2)
+  Applied:            <OA>  (Fix Mode / Self-Review only)
+  Withheld/reverted:  <OW>
+```
+
+### Optimality
+
+Omit this section when `<OP> == 0`. Otherwise one card per proposal from
+`skills/quality/optimize-approach/templates/proposal.template.md`, asserting the better approach
+("A better approach here is …" — own work, you have full context). Each card ends with its
+`Apply` line: `applied` / `withheld: <reason>` / `reverted: <check>` from Step 4.1b.
+
 ### Verdict
 
 The verdict is driven by the **worst blocking finding**, not an average. Default to the most permissive verdict that fits.
@@ -536,7 +559,7 @@ See `agents/reviewer/rules/auto-fix-policy.md` for the full simple-vs-complex sp
 Remove unused imports / vars; lint autofix; add obvious type annotations; fix typos; normalize whitespace; remove dead code. Note each fix briefly.
 
 ### 4.1b Optimality apply (Fix Mode + Self-Review)
-For the highest-impact optimality proposal from Step 2.4c flagged `apply_safe: true`, apply it via `Skill("optimize-approach", "apply")` — one proposal only, behind the skill's `apply_safe` + `confidence(code) ≥ 90 %` gate with scoped check and revert-on-failure. A proposal that is not apply-safe, fails the gate, or reverts stays a reported finding — never force-applied. Log the applied rewrite as an approach change.
+For the highest-impact optimality proposal from Step 2.4c flagged `apply_safe: true`, apply it via `Skill("optimize-approach", "apply")` — one proposal only, behind the skill's `apply_safe` + `confidence(code) ≥ 90 %` gate with scoped check and revert-on-failure. A proposal that is not apply-safe, fails the gate, or reverts stays a reported proposal — never force-applied. Log the applied rewrite as an approach change, and write the outcome (`applied` / `withheld: <reason>` / `reverted: <check>`) back onto the proposal's card in the Step 3 `Optimality` section and into the `Applied` / `Withheld/reverted` counters of the optimality log block.
 
 ### 4.2 Complex — plan only
 Emit the issue title + why + fix plan + files involved. Do not apply.
