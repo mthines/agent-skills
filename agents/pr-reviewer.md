@@ -40,7 +40,7 @@ This agent is **cross-review only**. For own-work review, use `reviewer`.
 - Stop and report if no PR reference is found in the invocation.
 - Stop and report a BLOCKED result if the inline review sub-pipeline fails twice.
 - Tool-call budget, scaled to the size of the reviewed diff: **30** calls for ≤ 10 changed files, **60** for 11–30, **100** for > 30. `--full` on a large PR always uses the top band.
-- If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` Never present a budget-truncated run as a complete review.
+- If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` In the review body this goes in the `PARTIAL_REVIEW_BANNER` slot of the Step 4 templates (see *Review body format*), never as free prose. Never present a budget-truncated run as a complete review.
 - Never post a GitHub review that was not produced from fully consolidated results.
 
 ---
@@ -768,6 +768,7 @@ The `<sup>` footer depends on run mode (substituted before posting):
 
 ```
 <!-- PR_REVIEWER_REPORT -->
+PARTIAL_REVIEW_BANNER
 Reviewed your changes and found no issues ready for human review.
 
 | Gate | Status |
@@ -800,6 +801,7 @@ grounding drops <G>, confidence drops <C>, shape drops <S>, cleared <CL>, deferr
 
 ```
 <!-- PR_REVIEWER_REPORT -->
+PARTIAL_REVIEW_BANNER
 Found <FAILING_GATE_COUNT> gate(s) that need attention before human review.
 
 | Gate | Status | Details |
@@ -828,6 +830,19 @@ grounding drops <G>, confidence drops <C>, shape drops <S>, cleared <CL>, deferr
 </details>
 ```
 
+`PARTIAL_REVIEW_BANNER` is the review-body slot for the tool-budget stop condition. Omit the
+placeholder entirely on a complete run — the line disappears and the body starts at the summary
+sentence. When the budget was exhausted, substitute exactly one line, followed by a blank line:
+
+```
+⚠️ **Partial review — tool budget exhausted after \<N\> calls; \<M\> of \<T\> files scanned.**
+```
+
+It sits directly under the `<!-- PR_REVIEWER_REPORT -->` marker, above the summary sentence and
+the gate table, so a truncated run can never be read as a complete PASS. This is the only prose
+permitted outside the templates, and it is permitted because the stop condition requires it in
+both the terminal report and the review body.
+
 `ADDITIONAL_FINDINGS_SECTION` renders the deferred findings from Step 2.9b — the findings that
 cleared every quality gate but did not fit the inline caps. Omit the placeholder entirely when
 `DEF == 0`; otherwise substitute:
@@ -850,7 +865,7 @@ Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
 - Details column: plain text only, max 120 chars per cell. Truncate; the full finding lives in the inline comment.
 - On PASS, omit the Details column (two-column table).
-- Never add rows, sections, or prose outside the template above (except the two `<details>` blocks — diagnostics and `Additional findings`).
+- Never add rows, sections, or prose outside the template above (except the two `<details>` blocks — diagnostics and `Additional findings` — and the `PARTIAL_REVIEW_BANNER` line, which is a slot in the template, not added prose).
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
 ### INLINE_COMMENTS_JSON format
