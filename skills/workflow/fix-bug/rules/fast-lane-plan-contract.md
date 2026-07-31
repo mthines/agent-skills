@@ -83,8 +83,10 @@ Because every Core section is present by name, the plan satisfies the `aw-create
 19. **Confidence trajectory** — analysis score + breakdown
 20. **Progress Log** *(Core)* — append-only; seeded and versioned by `aw-create-plan`
 
-`plan.vN.md` is written alongside per the `aw-create-plan` contract — same
-content, immutable snapshot.
+No `plan.vN.md` snapshot is written: the fast lane passes a plan body in the
+arg slot, which is `aw-create-plan`'s default (non-snapshot) mode. `plan.md` is
+the single file, overwritten in place; its `version:` frontmatter is the
+iteration counter.
 
 ---
 
@@ -396,9 +398,10 @@ references.
    Skill("aw-create-plan", "<full plan.md body per this contract>")
    ```
 
-   `aw-create-plan` writes `.agent/fix/<slug>/plan.md` and the next
-   `plan.vN.md` snapshot. It does NOT validate the plan body against this
-   contract — that responsibility stays with `/fix-bug`.
+   `aw-create-plan` writes `.agent/fix/<slug>/plan.md` (default mode — a plan
+   body in the arg slot is not the `snapshot` flag, so no `plan.vN.md` snapshot
+   is written). It does NOT validate the plan body against this contract — that
+   responsibility stays with `/fix-bug`.
 
 4. **Validate the plan.md** — re-read the file and confirm all 20 required
    sections (the 8 Core sections plus the bug-specific ones) are present per

@@ -43,7 +43,6 @@ Gate: walkthrough shown in chat, draft PR opened, CI watch started.
 - **Draft PR only**: never mark ready-to-merge automatically.
 - **Show the walkthrough**: blocking — output the walkthrough content in chat after PR creation.
 - **Preserve the worktree**: user may want to review or iterate locally; cleanup is Phase 7.
-- **No AI co-author tags**: NEVER add `Co-Authored-By` lines to commit messages or PR descriptions. The user owns the commits.
 
 ## Procedure (Order of Operations)
 
@@ -274,7 +273,7 @@ EOF
 )"
 ```
 
-**Always use `--draft`.** Never add `Co-Authored-By` lines.
+**Always use `--draft`.**
 
 Log to Progress Log:
 

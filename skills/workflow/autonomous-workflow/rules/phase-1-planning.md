@@ -541,7 +541,7 @@ output as follows:
 - **Proposal with `analysis_confidence ≥ 90 %`** → weigh it against the user's
   stated intent (a proposal never overrides intent). **If adopted**, revise the
   technical approach in the plan draft accordingly. If `plan.md` was already
-  written, regenerate it via `aw-create-plan` (a new `plan.vN.md`) so the
+  written, regenerate it via `aw-create-plan` (bumping the plan version) so the
   `confidence(plan)` gate below scores the revised approach.
 - **Proposal below 90 %** → a note the planner may weigh; not a required change.
 - **Empty** → the planned approach is sound; proceed to the gate.

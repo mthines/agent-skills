@@ -116,7 +116,7 @@ prompt: |
   - Worktree: <absolute-worktree-path>
 
   Follow the Phase 3 procedure. Commit at logical milestones with conventional
-  commit messages. Do NOT add Co-Authored-By lines.
+  commit messages.
 
   Sub-Agent Resource Discipline: use scoped commands only — narrow
   tsc/eslint/jest to the files/paths you touched. Do NOT run

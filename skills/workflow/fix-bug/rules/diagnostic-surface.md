@@ -140,7 +140,7 @@ The diagnoser must not propose to relax any of these without explicit user confi
 | Confidence trajectory table (in bug-notes.md) | Phase 4 (and re-runs)                                       | Append on every gate evaluation                                     |
 | Bug-fix-pack                                  | Phase 6 standard-lane                                       | Passed to `aw-planner`                                              |
 | Fast-lane plan body                           | Phase 6 fast-lane                                           | Composed in `/fix-bug` and passed to `Skill("aw-create-plan", ...)` |
-| `.agent/{branch}/plan.md` + `plan.v{N}.md`    | `aw-planner` (standard) or `aw-create-plan` (fast)          | Phase 6                                                             |
+| `.agent/{branch}/plan.md`                     | `aw-planner` (standard) or `aw-create-plan` (fast)          | Phase 6 — default mode, no `plan.v{N}.md` snapshot (opt-in only)    |
 | Draft PR + commit history                     | `aw-executor`                                               | Phase 6                                                             |
 | Verifier report                               | `bug-fix-verifier`                                          | Phase 7 (fresh context, both lanes)                                 |
 | Phase 8 verification log                      | `telemetry-verification.md`                                 | Phase 8 (post-deploy)                                               |

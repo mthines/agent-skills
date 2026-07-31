@@ -570,12 +570,19 @@ export class CheckItem extends vscode.TreeItem {
  * executor-immutable and `status:` is executor-owned, so the tree offers
  * no mutation affordances and the file is excluded from standalone delete
  * (same reasoning as `plan.md` — see extension.ts `resolveTarget`).
+ *
+ * This is the branch's **primary artifact** — the living, self-validating
+ * acceptance contract (unlike `plan.md`, which is a handoff document that
+ * goes stale). `getBranchChildren` renders it FIRST, above Plan, and it
+ * defaults to **expanded** so the individual acceptance-criterion rows
+ * (`CheckItem`) are visible in the sidebar without an extra click.
  */
 export class ChecksSummaryItem extends vscode.TreeItem {
   public readonly checkItems: CheckItem[];
 
   constructor(public readonly checksFilePath: string, public readonly checks: ParsedCheck[]) {
-    super('Checks', vscode.TreeItemCollapsibleState.Collapsed);
+    // Expanded by default: the AC rows are the primary thing to see at a glance.
+    super('Checks', vscode.TreeItemCollapsibleState.Expanded);
     this.iconPath = new vscode.ThemeIcon('checklist');
     this.checkItems = checks.map((c) => new CheckItem(c, checksFilePath));
 
@@ -1188,6 +1195,14 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
     const task = branch.task;
     const taskFilePath = path.join(branch.artifactDir, 'task.md');
 
+    // Checks FIRST — `checks.yaml` is the branch's primary, living acceptance
+    // contract (the ACs), so it sits above Tasks/Plan and expands by default
+    // (see ChecksSummaryItem). Absent file → absent node.
+    if (branch.checks.length > 0) {
+      const checksPath = path.join(branch.artifactDir, 'checks.yaml');
+      children.push(new ChecksSummaryItem(checksPath, branch.checks));
+    }
+
     if (task) {
       // Build checkbox items for each task section
       const sections = task.taskSections.map((s) => ({
@@ -1231,18 +1246,13 @@ export class AgentTasksProvider implements vscode.TreeDataProvider<AgentTaskTree
       }
     }
 
-    // Plan
+    // Plan — the planner→executor handoff document. Rendered BELOW Checks:
+    // it is a point-in-time handoff artifact, not the live contract, so it is
+    // secondary to `checks.yaml`. Collapsed by default.
     if (branch.plan) {
       const planPath = path.join(branch.artifactDir, 'plan.md');
       const versions = findPlanVersions(branch.artifactDir);
       children.push(new PlanSummaryItem(branch.plan, planPath, versions));
-    }
-
-    // Checks — the plan's executable acceptance contract, statuses flipped
-    // live by the executor's Phase 4 loop. Absent file → absent node.
-    if (branch.checks.length > 0) {
-      const checksPath = path.join(branch.artifactDir, 'checks.yaml');
-      children.push(new ChecksSummaryItem(checksPath, branch.checks));
     }
 
     // Walkthrough

@@ -249,8 +249,12 @@ Non-relaxable integrity rules:
 
 ## Universal Rules
 
-- **No AI co-author tags** — never add `Co-Authored-By` lines to commits or
-  PRs. The user owns the commits.
+- **`checks.yaml` is the living contract; `plan.md` is the handoff document.**
+  Gate Phase 4 on the checks. Read `plan.md` at Phase 3 entry, but treat it as
+  a handoff artifact, not an exhaustive spec — and when a decision or AC drifts
+  during implementation, write the change back into the affected `plan.md`
+  section (and its `checks.yaml` entry) so the plan never goes silently stale.
+  See [`phase-3-implementation.md`](../rules/phase-3-implementation.md).
 - **Companions skip silently** — log one line and continue if a companion is
   missing. Never block the workflow.
 - **Stop and ask when blocked** — don't guess on ambiguity. Especially:

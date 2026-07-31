@@ -193,7 +193,6 @@ Autonomous writes skip consent, never the privacy pre-flight (no secrets / PII i
   The grant never covers a `blocking` missing-information gap (Phase 0's
   missing-information gate): a load-bearing unknown halts and asks in every
   tier, grant or no grant.
-- **No AI co-author tags** on commits or PRs.
 
 The skill and the phase rules carry the procedures. Route, learn, and get out of
 the way.

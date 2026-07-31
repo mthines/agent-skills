@@ -398,8 +398,8 @@ export class SessionItem extends vscode.TreeItem {
     if (linkedArtifacts && hasLinkedArtifacts(linkedArtifacts)) {
       const parts: string[] = [];
       if (linkedArtifacts.taskPath) parts.push('task.md');
-      if (linkedArtifacts.planPath) parts.push('plan.md');
       if (linkedArtifacts.checksPath) parts.push('checks.yaml');
+      if (linkedArtifacts.planPath) parts.push('plan.md');
       if (linkedArtifacts.walkthroughPath) parts.push('walkthrough.md');
       if (linkedArtifacts.diagnosePaths && linkedArtifacts.diagnosePaths.length > 0) {
         const noun =
@@ -1142,11 +1142,12 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
    *
    * Order (known/recognised first, unknown last):
    *   1. task.md
-   *   2. plan.md
-   *   3. walkthrough.md
-   *   4. diagnose-*.md reports (sorted by filename)
-   *   5. Pull Request row (when branch + worktree are known)
-   *   6. Other `.md` files that agents created but the extension does not
+   *   2. checks.yaml — the primary, living acceptance contract (above plan.md)
+   *   3. plan.md
+   *   4. walkthrough.md
+   *   5. diagnose-*.md reports (sorted by filename)
+   *   6. Pull Request row (when branch + worktree are known)
+   *   7. Other `.md` files that agents created but the extension does not
    *      recognise explicitly (e.g. `specs.md`, `notes.md`), sorted by
    *      filename — always at the bottom so known entries stay prominent.
    */
@@ -1157,12 +1158,13 @@ export class SessionsProvider implements vscode.TreeDataProvider<SessionTreeItem
     if (!links) return [];
     const out: Array<LinkedArtifactItem | PrLinkItem> = [];
 
-    // Known/recognised entries first.
+    // Known/recognised entries first. Checks before Plan: `checks.yaml` is the
+    // living acceptance contract, `plan.md` a point-in-time handoff document.
     if (links.taskPath) out.push(new LinkedArtifactItem('Task', 'tasklist', links.taskPath));
-    if (links.planPath) out.push(new LinkedArtifactItem('Plan', 'notebook', links.planPath));
     if (links.checksPath) {
       out.push(new LinkedArtifactItem('Checks', 'checklist', links.checksPath));
     }
+    if (links.planPath) out.push(new LinkedArtifactItem('Plan', 'notebook', links.planPath));
     if (links.walkthroughPath) {
       out.push(new LinkedArtifactItem('Walkthrough', 'book', links.walkthroughPath));
     }

@@ -199,12 +199,14 @@ git commit -m "<type>(<scope>): <description>"
 
 - One logical change per commit.
 - Descriptive messages — explain *why* in the body when non-obvious.
-- **Never** add `Co-Authored-By` lines. See [`safety-guardrails.md`](./safety-guardrails.md).
 
-### Step 5: Update `plan.md` Progress Log (Full Mode)
+### Step 5: Keep `plan.md` honest — Progress Log + drift write-back (Full Mode)
 
-At each milestone (not after every file), append to the Progress Log in
-`.agent/{branch}/plan.md`:
+`plan.md` is only worth keeping if it is **consumed and kept current** — a
+write-once, never-re-read plan is dead weight. Two obligations:
+
+**(a) Progress Log.** At each milestone (not after every file), append to the
+Progress Log in `.agent/{branch}/plan.md`:
 
 ```markdown
 - [2026-04-29T15:42:10Z] Phase 3: Implemented ThemeContext + ThemeToggle
@@ -212,6 +214,17 @@ At each milestone (not after every file), append to the Progress Log in
 - [2026-04-29T15:51:05Z] Phase 3: ux() — invoked (2 contrast suggestions integrated)
 - [2026-04-29T15:55:12Z] Phase 3: code-quality(code) — not available, continuing
 ```
+
+**(b) Drift write-back.** When implementation reveals that a *decision* or
+*requirement* in the plan no longer matches reality — the classic stale-plan
+failure mode, from evidence drift (a decision proved wrong) or conversation
+drift (the user changed direction mid-run) — **update the affected `plan.md`
+section**, not only the Progress Log. If an Acceptance Criterion changes,
+re-derive its `checks.yaml` entry too (IDs stay in sync). A silently stale plan
+misleads the next reader (a resumed session, `confidence`, the walkthrough); a
+one-line log entry that contradicts the section body above it is worse than no
+log. Keep the edit minimal — this is not a re-plan (that is the Phase 4
+stuck-loop's job), just keeping the handoff document truthful.
 
 Use full ISO 8601 timestamps with hours, minutes, seconds.
 
@@ -349,8 +362,7 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 - [ ] UI components are locatable by role / label without `data-testid`, or any `data-testid` is committed in the source diff alongside its consumer
 - [ ] `code-quality(code)` invoked once at end of phase
 - [ ] Commits are logical, atomic, conventional
-- [ ] No `Co-Authored-By` lines
-- [ ] Progress Log updated in `.agent/{branch}/plan.md` (Full Mode)
+- [ ] Progress Log updated in `.agent/{branch}/plan.md` (Full Mode); plan/checks drift written back if a decision or AC changed
 - [ ] Ready for Phase 4 testing
 
 ## References
