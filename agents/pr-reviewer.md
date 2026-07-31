@@ -679,9 +679,15 @@ Both PASS and FAIL continue with:
 |----|--------------------|-------------|------|--------|
 | 1  | src/foo.ts:42      | suggestion  | 95%  | `const cache: Record<...> = {}` |
 
-**Quality Gate**: produced <P>, relevance-memory drops <RM>, filter drops <FL>,
-dedupe drops <D>, grounding drops <G>, confidence drops <C> (threshold <T>), final <F>.
+**Quality Gate**: produced <P>, carried forward <CF>, relevance-memory drops <RM>, filter drops <FL>,
+dedupe drops <D>, grounding drops <G>, confidence drops <C> (threshold <T>), shape drops <S>,
+cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
 CI: PASS or FAIL (check names if failing).
+
+`carried forward`, `cleared`, and `deferred over inline cap` are emitted even when they are 0,
+so the reader can see the steps ran (`per-comment-confidence.md § Logging`,
+`prior-comment-awareness.md § Logging`). `<CL> - <DEF>` must equal `<F>`; if it does not, a
+cleared finding was dropped somewhere it should not have been.
 
 ### Inline Finding Details
 
