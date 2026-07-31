@@ -77,7 +77,7 @@ Every unit `optimal` → empty list + `verdict: optimal — planned approach is 
 The planner owns adoption — plan mode proposes, it does not rewrite the plan itself.
 
 1. The planner weighs each proposal against the user's stated intent and constraints (a proposal never overrides intent).
-2. **If adopted**, the planner regenerates `plan.md` via `aw-create-plan` (a new `plan.vN.md` version), then re-runs the `confidence(plan)` gate on the revised plan. This reuses the existing plan-versioning + gate machinery — no new loop.
+2. **If adopted**, the planner regenerates `plan.md` via `aw-create-plan` (bumping the plan version), then re-runs the `confidence(plan)` gate on the revised plan. This reuses the existing plan + gate machinery — no new loop.
 3. **Bounded:** plan mode runs **once per Phase-1 planning cycle**. A re-plan triggered by an adopted proposal does **not** re-invoke plan mode on the revised plan — the revision already incorporates the better approach. This is the load-bearing guard against a propose→re-plan→propose loop.
 
 ## What plan mode does not do

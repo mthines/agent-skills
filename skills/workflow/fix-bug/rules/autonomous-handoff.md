@@ -89,8 +89,9 @@ all hold. `/fix-bug` becomes the plan author; `aw-planner` does not run.
    Skill("aw-create-plan", "<full plan.md body>")
    ```
 
-   This writes `.agent/fix/<slug>/plan.md` plus the next `plan.vN.md`
-   snapshot.
+   This writes `.agent/fix/<slug>/plan.md`. The arg is a plan body, not the
+   `snapshot` mode flag, so `aw-create-plan` runs in default mode and writes
+   **no** `plan.vN.md` snapshot (the fast lane does not need one).
 5. **Validate plan.md** — re-read the file and confirm all 20 required
    sections (the 8 `aw-create-plan` Core sections plus the bug-specific ones,
    per [`fast-lane-plan-contract.md`](./fast-lane-plan-contract.md#required-sections))

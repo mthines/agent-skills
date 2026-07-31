@@ -1,10 +1,11 @@
 /**
  * Plan-version discovery helpers.
  *
- * The `aw-create-plan` skill writes `plan.md` (latest pointer) plus an
- * immutable `plan.v{N}.md` snapshot on every invocation. This module is the
- * read-side decoder: given a branch directory, list the snapshots in version
- * order so the VS Code tree can render them.
+ * The `aw-create-plan` skill writes `plan.md` (latest pointer) on every
+ * invocation; immutable `plan.v{N}.md` snapshots are opt-in (written only in
+ * the skill's `snapshot` mode). This module is the read-side decoder: given a
+ * branch directory, list any snapshots in version order so the VS Code tree
+ * can render them.
  *
  * Pure Node.js — NO VS Code dependency, vitest-testable.
  */
