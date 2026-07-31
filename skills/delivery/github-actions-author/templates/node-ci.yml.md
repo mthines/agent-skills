@@ -107,6 +107,7 @@ jobs:
       - name: Upload coverage summary
         if: always()
         run: |
+          set -euo pipefail
           if [ -f coverage/coverage-summary.json ]; then
             {
               echo "## Coverage (Node ${{ matrix.node }})"
