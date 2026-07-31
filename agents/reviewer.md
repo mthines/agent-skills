@@ -286,7 +286,12 @@ Skill("holistic-analysis", "review")
   diff: <full unified diff>
   changed_files: <derived from git diff or /tmp/pr-files.json>
   caller: "reviewer"
+  max_findings: <3 for ≤ 10 changed files | 6 for 11–30 | 10 for > 30>
 ```
+
+`max_findings` is **not optional here**: `review-mode.md` defaults it to 3 when absent, so
+omitting it silently caps a large branch at the smallest budget. The table lives in
+`agents/shared/rules/holistic-review.md § Inputs` — keep the two in sync.
 
 The skill returns 0–`max_findings` structured findings (budget scaled to diff size: 3 for ≤ 10 changed files, 6 for 11–30, 10 for > 30). In `reviewer` (own work, you are the author), map to:
 
