@@ -73,13 +73,52 @@ After dedupe, run one explicit consolidation step:
 
 1. Group surviving findings by file.
 2. Within a file, sort by `(prefix priority, line)`. Prefix priority: `issue > suggestion > question > nitpick > praise`.
-3. Cap at **N findings per file**:
-   - `pr-reviewer` (cross-review): N = 5
-   - `reviewer` (self-review): N = 10
-4. When the cap fires, keep the top-priority findings and surface the dropped ones in the terminal output as `Cap drops: <N>` so the user knows.
-5. Cap at **20 findings total** across all files in `pr-reviewer`. No total cap in `reviewer` — local terminal output, no posting cost.
+3. **No cap fires here.** Consolidation orders findings; it never discards them.
+   Every surviving finding continues to the quality gates (2.6 grounding → 2.6b receipt → 2.7 confidence → 2.8 shape), and only those gates may drop one.
 
-Rationale for per-file cap: a PR comment with 12 inline annotations on the same file reads as a hostile review even when every individual finding is correct. The 2026 CodeRabbit / Greptile field guide flags > 5 comments per file as the threshold above which authors start to dismiss the review wholesale.
+**Why the cap is not here.** Capping at 2.5 discarded findings *before* they were scored.
+A correct, high-confidence finding could lose its slot to a weaker one that the 2.7 confidence gate then dropped anyway — so the review posted fewer findings than its own cap allowed, and the loss was invisible.
+Quantity now governs **placement**, never survival.
+
+## Placement (Step 2.9b)
+
+Runs last, after every quality gate.
+Its input is the set of findings that already cleared grounding, receipt, confidence, and shape — every one of them is worth telling the author about.
+Placement decides *where* each finding is shown. It discards nothing.
+
+| Agent | Inline per file | Inline total | Overflow behaviour |
+| --- | --- | --- | --- |
+| `reviewer` (own work, terminal output) | unlimited | unlimited | n/a — print every finding |
+| `pr-reviewer` (cross-review, posts to GitHub) | N per profile (`chill` 3 / **`balanced` 5** / `assertive` 7) | **20** | **Deferred**, never dropped — listed in the review body |
+
+Ordering for the inline slots, applied per file and then globally:
+
+1. Prefix priority: `issue > suggestion > question > nitpick`.
+2. Then descending `per-comment-confidence` Final score.
+3. Then ascending line number.
+
+`reviewer` has no placement cap at all.
+Local terminal output has no posting cost and no hostile-review effect, so the confidence threshold is the only thing that decides what the author sees.
+
+### Deferred findings (`pr-reviewer`)
+
+Everything above the inline caps goes into a **Deferred** list, rendered in the review body under an `Additional findings` section, one line each:
+
+```text
+- `src/api/client.ts:214` — issue: retry loop re-sends the request body after a 413. (confidence 92)
+```
+
+Rules:
+
+- A finding that cleared 2.7 is **never** silently discarded. Deferral is the only overflow behaviour.
+- Each deferred entry carries file, line, prefix, the one-line body, and the confidence score.
+- Deferred entries are excluded from `INLINE_COMMENTS_JSON` — they are body text, so they neither consume inline slots nor enlarge the review payload.
+- Report the count as `Deferred (over inline cap): <N>` in the Quality Gate summary.
+- On the next incremental run the deferred list is carried forward — see [`prior-comment-awareness.md § Carry-forward of deferred findings`](./prior-comment-awareness.md#carry-forward-of-deferred-findings).
+
+Rationale for the inline cap: a PR comment with 12 inline annotations on the same file reads as a hostile review even when every individual finding is correct.
+The 2026 CodeRabbit / Greptile field guide flags > 5 comments per file as the threshold above which authors start to dismiss the review wholesale.
+That is an argument about **inline density**, not about how much the reviewer is allowed to report — hence deferral rather than a drop.
 
 ## Severity mapping
 

@@ -39,7 +39,8 @@ This agent is **cross-review only**. For own-work review, use `reviewer`.
 
 - Stop and report if no PR reference is found in the invocation.
 - Stop and report a BLOCKED result if the inline review sub-pipeline fails twice.
-- Stop after at most 30 tool calls. If the budget is hit, report partial results and state that.
+- Tool-call budget, scaled to the size of the reviewed diff: **30** calls for ≤ 10 changed files, **60** for 11–30, **100** for > 30. `--full` on a large PR always uses the top band.
+- If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` Never present a budget-truncated run as a complete review.
 - Never post a GitHub review that was not produced from fully consolidated results.
 
 ---
@@ -54,6 +55,8 @@ The agent operates in one of three run modes, chosen automatically in Step 0.7:
 | `incremental` | Prior review found, delta 11–100 lines, no new files, no high-stakes paths | Rubrics, all personas, optimality (2.4c). Holistic (2.4, 2.4b) skipped. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
 | `incremental-quick` | Prior review found, delta ≤ 10 lines, no new files, no high-stakes paths | Rubrics, Persona 1–3 only. Holistic (2.4, 2.4b), optimality (2.4c), and Persona 4 skipped. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
 | *(zero-delta)* | Prior review found, zero lines changed, no new files | Gate checks only (no inline review). Announced and handled as a special case of `incremental-quick`. |
+
+Findings carried forward from a prior run's `Additional findings` list are re-admitted in **every** mode, including the incremental ones — they were already found on the full diff, so scanning only the delta does not lose them (`prior-comment-awareness.md § Carry-forward of deferred findings`).
 
 Gate checks (Step 1.8) always run against the full PR state in every mode — CI, prior bot feedback, and description adequacy apply to the whole PR regardless of how small the latest commit is. Gate 4 (self-review signals) is the only gate that scans the delta diff in incremental modes.
 
@@ -191,7 +194,11 @@ PRIOR_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
   PRIOR_SHA=$(echo "$PRIOR_REVIEW" | jq -r '.commit_id')
   ```
 - Set `RUN_MODE = "incremental"` (subject to upgrade in Step 1.2b after delta triage).
-- Announce: `Prior review found at ${PRIOR_SHA:0:7} — running delta triage.`
+- Parse the prior review body's `Additional findings` section into `CARRIED_FINDINGS` and re-admit
+  them per `agents/shared/rules/prior-comment-awareness.md § Carry-forward of deferred findings`.
+  This is mandatory in incremental modes: those modes scan the delta only, so a finding deferred by
+  an earlier run on a file untouched since would otherwise be lost permanently.
+- Announce: `Prior review found at ${PRIOR_SHA:0:7} — running delta triage (${#CARRIED_FINDINGS} deferred finding(s) carried forward).`
 - Proceed to Step 1.
 
 `PRIOR_SHA` and `RUN_MODE` are available to all subsequent steps.
@@ -360,7 +367,8 @@ See `agents/shared/rules/rubric-composition.md`. Cap 3; dedupe against auto-load
 ### 1.7 Load review config
 
 See `agents/shared/rules/review-config.md`. Absent `.review.yaml` defaults to
-`profile: balanced` — threshold 80, per-file cap 5, no filters, no path instructions.
+`profile: balanced` — threshold 80, inline placement cap 5 per file, no filters, no path instructions.
+The cap governs placement only; overflow is deferred to the review body, never dropped.
 
 ---
 
@@ -491,7 +499,7 @@ rubrics + personas produce raw findings
   → 2.4  holistic-review.md           (Skill("holistic-analysis", "review") — default on; may be skipped per 1.8 heuristic)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — default on)
   → 2.4c optimality-review.md         (Skill("optimize-approach", "report") — report-only in cross-review)
-  → 2.5  rubric-composition § Consolidation (dedupe + per-file cap 5 + total cap 20)
+  → 2.5  rubric-composition § Consolidation (dedupe + group + sort — no cap, nothing dropped)
   → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.5b prior-comment-awareness.md § Dedup (drop if already said in a prior review pass)
   → 2.6  finding-grounding.md         (every backticked symbol grep-resolves)
@@ -499,6 +507,7 @@ rubrics + personas produce raw findings
   → 2.7  per-comment-confidence.md    (Skill("confidence", "code") ≥ profile threshold, or ≥ 70 for agreement-promoted)
   → 2.8  comment-shape.md             (≤ 240 chars, ≤ 2 sentences, no structure)
   → 2.9  conventional-comments.md     (prefix + decoration)
+  → 2.9b rubric-composition § Placement (inline caps 5/file + 20 total; overflow DEFERRED to body, never dropped)
 ```
 
 ### Confidence thresholds for inline findings
@@ -560,7 +569,8 @@ Map proposals to `question` (cross-review context asymmetry).
 ### 2.5 Dedupe + consolidate
 
 See `agents/shared/rules/rubric-composition.md § Consolidation`.
-Per-file cap **5**; total cap **20**; priority-sorted (`issue > suggestion > question > nitpick`).
+Dedupe, group by file, and sort by `(prefix priority, line)` — priority order `issue > suggestion > question > nitpick`.
+**No cap fires here and nothing is discarded**; quantity is handled at Step 2.9b after the quality gates.
 On `(file, line)` collision, holistic claim wins.
 
 ### 2.6 Finding grounding
@@ -580,6 +590,18 @@ See `agents/shared/rules/comment-shape.md`. ≤ 240 chars, ≤ 2 sentences, no h
 
 See `agents/shared/rules/conventional-comments.md`. Prepend category prefix; append
 `(blocking)` / `(non-blocking)` decoration.
+
+### 2.9b Placement
+
+See `agents/shared/rules/rubric-composition.md § Placement (Step 2.9b)`. Runs **after**
+every quality gate, on findings that already cleared grounding, receipt, confidence, and shape.
+
+Inline caps: **N per file** from the resolved profile (`balanced` = 5) and **20 total**.
+Order the inline slots by prefix priority, then descending confidence score, then line number.
+
+Everything above a cap is **deferred, not dropped** — it is rendered in the review body under
+`Additional findings` and excluded from `INLINE_COMMENTS_JSON`. A finding that cleared 2.7 is
+never discarded by this step. Report `Deferred (over inline cap): <N>` in the diagnostics block.
 
 ---
 
@@ -758,14 +780,16 @@ Reviewed your changes and found no issues ready for human review.
 
 <sup>FOOTER_LINE</sup>
 
+ADDITIONAL_FINDINGS_SECTION
+
 <details>
 <summary>Review diagnostics</summary>
 
 **Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 **Integrations checked:** <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
 
-**Quality Gate:** produced <P>, relevance-memory drops <RM>, dedupe drops <D>,
-grounding drops <G>, confidence drops <C>, shape drops <S>, final <F>.
+**Quality Gate:** produced <P>, carried forward <CF>, relevance-memory drops <RM>, dedupe drops <D>,
+grounding drops <G>, confidence drops <C>, shape drops <S>, cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
 
 **Skipped files:** <list or "none">
 
@@ -788,25 +812,45 @@ Found <FAILING_GATE_COUNT> gate(s) that need attention before human review.
 
 <sup>FOOTER_LINE</sup>
 
+ADDITIONAL_FINDINGS_SECTION
+
 <details>
 <summary>Review diagnostics</summary>
 
 **Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 **Integrations checked:** <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
 
-**Quality Gate:** produced <P>, relevance-memory drops <RM>, dedupe drops <D>,
-grounding drops <G>, confidence drops <C>, shape drops <S>, final <F>.
+**Quality Gate:** produced <P>, carried forward <CF>, relevance-memory drops <RM>, dedupe drops <D>,
+grounding drops <G>, confidence drops <C>, shape drops <S>, cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
 
 **Skipped files:** <list or "none">
 
 </details>
 ```
 
+`ADDITIONAL_FINDINGS_SECTION` renders the deferred findings from Step 2.9b — the findings that
+cleared every quality gate but did not fit the inline caps. Omit the placeholder entirely when
+`DEF == 0`; otherwise substitute:
+
+```
+<details>
+<summary>Additional findings (<DEF>) — cleared review, not inlined</summary>
+
+- `src/api/client.ts:214` — issue: retry loop re-sends the request body after a 413. (confidence 92)
+- `src/api/client.ts:260` — suggestion: extract the backoff calculation; it is duplicated below. (confidence 84)
+
+</details>
+```
+
+One line per deferred finding: path:line, prefix, the one-line body, and the confidence score.
+Sort by prefix priority, then descending confidence. This section is the reason a placement cap
+is allowed to exist — never drop a cleared finding instead of listing it here.
+
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
 - Details column: plain text only, max 120 chars per cell. Truncate; the full finding lives in the inline comment.
 - On PASS, omit the Details column (two-column table).
-- Never add rows, sections, or prose outside the template above (except the `<details>` block).
+- Never add rows, sections, or prose outside the template above (except the two `<details>` blocks — diagnostics and `Additional findings`).
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
 ### INLINE_COMMENTS_JSON format
