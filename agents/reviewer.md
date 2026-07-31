@@ -437,7 +437,7 @@ Otherwise invoke `Skill("optimize-approach", "report")` in **all** sub-modes —
 
 Pass `intent_summary` (Step 1.3), the diff, `changed_files`, and `caller: "reviewer"`. The skill returns 0–2 proposals.
 
-Proposals are **not** findings and do not become comment cards. They render as their own cards in the report's `Optimality` section (`optimality-review.md § Where proposals surface`), so they keep dedupe (2.5), grounding (2.6) and the verification receipt (2.6b) and skip 2.7–2.9. Their confidence gate is the skill's own `analysis_confidence` ≥ 70, printed on the card. Optimality proposals are **non-blocking** — they never drive "Request changes".
+Proposals are **not** findings and do not become comment cards. They render as their own cards in the report's `Optimality` section (`optimality-review.md § Where proposals surface`), so they keep dedupe (2.5), grounding (2.6) and the verification receipt (2.6b) and skip 2.7–2.9. Their confidence gate is the skill's own `analysis_confidence` ≥ 85, printed on the card. Optimality proposals are **non-blocking** — they never drive "Request changes".
 
 In **Fix Mode / Self-Review**, applying the top `apply_safe` proposal is deferred to Step 4 (see `agents/shared/rules/optimality-review.md § Apply`). **Report Mode never applies.**
 

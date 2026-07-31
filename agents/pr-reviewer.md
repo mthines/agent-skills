@@ -579,7 +579,7 @@ apply. Skip via `--no-optimize`, when holistic trivial-skip fired, or when
 Proposals do **not** become inline comments. They are rendered as cards in the review body's
 `Optimality review` section (`OPTIMALITY_SECTION`), so they skip 2.7, 2.8, 2.9 and 2.9b and keep
 only dedupe (2.5), grounding (2.6), and the verification receipt (2.6b). Their confidence gate is
-the skill's own `analysis_confidence` ≥ 70.
+the skill's own `analysis_confidence` ≥ 85.
 
 Frame each proposal as a question — cross-review context asymmetry — and never let one drive the
 verdict. Emit the `Optimality review (2.4c)` log block in the diagnostics even when there are zero
@@ -898,22 +898,26 @@ are no proposals — the quiet early-exit must stay quiet. Otherwise substitute:
 
 ### Optimality proposal — src/api/client.ts:180
 
-**Axis**: codebase-fit
-**Intent**: Retry transient upstream failures.
-**Current approach**: A hand-rolled retry loop with a fixed 200 ms sleep.
-**Better approach**: Have you considered \`withRetry()\` from \`src/lib/retry.ts\`, already used by the other three clients?
-**Why better**: One backoff policy instead of four, and it already honours the abort signal.
-**Evidence**: \`withRetry\` — \`src/lib/retry.ts:14\`, 3 call sites
-**Blast radius**: \`src/api/client.ts\` only
-**Analysis confidence**: 84%
+> **Reuse \`withRetry()\` instead of hand-rolling a retry loop**
+
+| | Approach |
+| --- | --- |
+| **Now** | A hand-rolled retry loop with a fixed 200 ms sleep. |
+| **Better** | Have you considered \`withRetry()\` from \`src/lib/retry.ts\`, already used by the other three clients? |
+
+**Why it's better** · _codebase-fit_ — one backoff policy instead of four, and it already honours the abort signal.
+**Trade-off** · none material — \`withRetry\` is a drop-in with the same call shape.
+**Evidence** · \`withRetry\` — \`src/lib/retry.ts:14\`, 3 call sites
+
+<sub>Intent: Retry transient upstream failures. · Blast radius: \`src/api/client.ts\` only · Confidence: 88%</sub>
 
 </details>
 ```
 
 One card per proposal, at most 2, from
-`skills/quality/optimize-approach/templates/proposal.template.md`. Frame the better approach as a
-question — cross-review context asymmetry. Proposals are **never** posted as inline comments and
-never affect the gate table or the verdict.
+`skills/quality/optimize-approach/templates/proposal.template.md`. Keep the headline a crisp
+statement, but frame the **Better** row as a question — cross-review context asymmetry. Proposals
+are **never** posted as inline comments and never affect the gate table or the verdict.
 
 `ADDITIONAL_FINDINGS_SECTION` renders the deferred findings from Step 2.9b — the findings that
 cleared every quality gate but did not fit the inline caps. Omit the placeholder entirely when

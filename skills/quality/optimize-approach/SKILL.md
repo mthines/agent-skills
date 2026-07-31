@@ -19,7 +19,7 @@ argument-hint: '[report|apply|plan] [--no-confidence-gate]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.1'
+  version: '1.1.0'
   workflow_type: advisory
   tags:
     - optimize-approach
@@ -114,7 +114,8 @@ Before proposing, understand the change completely — never propose a "better w
 1. Grep the relevant files, callers, and any existing utility or pattern the alternative would reuse.
 2. Invoke `Skill("holistic-analysis", "refactor")` to trace the execution path of the affected unit and generate + compare approaches.
 3. Gate the chosen alternative on `Skill("confidence", "analysis")`.
-   Below 90 %, downgrade the finding to a `question` (report) or drop the apply (report instead) — never apply an approach change the analysis is unsure about.
+   **Report:** below 85 % `analysis_confidence`, drop the proposal — a sub-85 % "better way" is not understood well enough to assert as objectively better ([`rules/report-mode.md`](./rules/report-mode.md)).
+   **Apply:** requires the higher `analysis_confidence` ≥ 90 % bar as well — never apply an approach change the analysis is unsure about ([`rules/apply-mode.md`](./rules/apply-mode.md)).
 
 ### O5 — Deliver
 
