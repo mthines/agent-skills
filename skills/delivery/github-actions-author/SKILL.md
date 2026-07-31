@@ -6,7 +6,8 @@ description: >
   parallelization via matrix + artifacts, reusability (composite actions
   for steps, reusable workflows for jobs), security (SHA-pinned actions,
   least-privilege `GITHUB_TOKEN`, concurrency), and trackable errors
-  (named steps, step summaries, annotations). Two modes: `scaffold`
+  (named steps, step summaries, annotations, and stdout/stderr that always
+  reaches the run log so agents can act on failures). Two modes: `scaffold`
   (default) generates workflow YAML; `review` audits an existing
   workflow against the same rules. Use when creating CI/CD pipelines,
   optimizing slow workflows, deduping copy-pasted YAML across repos, or
@@ -18,7 +19,7 @@ argument-hint: '[scaffold|review] [<workflow-file>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: scaffolder
   tags:
     - github-actions
@@ -30,6 +31,7 @@ metadata:
     - matrix
     - security
     - oidc
+    - logging
 ---
 
 # GitHub Actions Author
@@ -41,6 +43,32 @@ practices for speed, cost, reusability, and security.
 > [`rules/*.md`](./rules/) and load on demand. Drop-in starters live in
 > [`templates/*.md`](./templates/). The decision tree for picking a
 > shape lives in [`references/decision-tree.md`](./references/decision-tree.md).
+
+---
+
+## Non-negotiable — every step's output reaches the run log
+
+This applies to **both modes** and outranks every other preference in this skill.
+
+Every command in every scaffolded or reviewed workflow must write its stdout **and** stderr to the job log.
+Output that lands only in a file, only in an artifact, only in `$GITHUB_STEP_SUMMARY`, or in `/dev/null` is invisible to `gh run view <run-id> --log-failed` — the only surface `/ci-auto-fix`, `/test-auto-fix`, `/implement-suggestion`, and an on-call human read a failure from.
+A failing step that printed nothing cannot be diagnosed or fixed by an agent; it can only be escalated.
+
+Minimum bar for every `run:` block:
+
+```yaml
+- name: Run unit tests
+  shell: bash
+  run: |
+    set -euo pipefail
+    npm test 2>&1 | tee test-output.log      # tee, never `> file`
+```
+
+Forbidden outright: `> /dev/null`, `2>/dev/null`, `cmd > out.txt 2>&1`, `--silent`, `--quiet`, `-q`, a machine-only reporter with no human output, and `|| true` without echoing the captured output and exit code.
+`tee` requires `set -o pipefail`, otherwise the step goes green on a failed command.
+
+Full rule, decision table, examples, and the review-mode grep:
+[`rules/log-output-visibility.md`](./rules/log-output-visibility.md) — read it in Phase 4 of scaffold and in every review.
 
 ---
 
@@ -72,7 +100,7 @@ Five phases. Each has a gate; do not proceed until it passes.
 | 1     | Anatomy + triggers    | [`rules/workflow-anatomy.md`](./rules/workflow-anatomy.md), [`rules/triggers-and-concurrency.md`](./rules/triggers-and-concurrency.md) | `on:` block scoped (branches + paths), concurrency set.           |
 | 2     | Speed (cache + parallel) | [`rules/caching.md`](./rules/caching.md), [`rules/parallelization.md`](./rules/parallelization.md) | Cache key is `hashFiles`-based with `restore-keys`; independent jobs run in parallel. |
 | 3     | Reusability           | [`rules/reusability.md`](./rules/reusability.md)                              | Any block used > 1 place is extracted to a composite action or reusable workflow. |
-| 4     | Security + errors     | [`rules/security.md`](./rules/security.md), [`rules/observability.md`](./rules/observability.md) | Third-party actions SHA-pinned, `permissions:` minimal, every step named, failures surface a stack-trace path. |
+| 4     | Security + errors     | [`rules/security.md`](./rules/security.md), [`rules/observability.md`](./rules/observability.md), [`rules/log-output-visibility.md`](./rules/log-output-visibility.md) | Third-party actions SHA-pinned, `permissions:` minimal, every step named, failures surface a stack-trace path, **every command's stdout + stderr reaches the run log**. |
 
 ### Phase 0 — Intent and shape
 
@@ -142,6 +170,9 @@ unless asked.
 
 3. For each rule file in [`rules/`](./rules/), mark **PASS / WARN /
    FAIL** with one line of evidence (`line N: <quote>`).
+   Log visibility is mandatory in every review — run the grep in
+   [`rules/log-output-visibility.md`](./rules/log-output-visibility.md#verification)
+   and report every unjustified hit as a **FAIL**.
 4. End with a prioritised "Top 3 fixes" list — biggest speed / cost /
    security wins first.
 5. Offer to apply the fixes if the user wants — switch to `scaffold`
@@ -163,6 +194,7 @@ Parallelization: PASS
 Reusability: WARN — install-deps duplicated across 3 jobs (lines 28, 71, 94)
 Security: FAIL — `actions/checkout@v4` tag-pinned, no SHA (line 22)
 Observability: WARN — 4 unnamed steps (lines 31, 45, 68, 102)
+Log visibility: FAIL — `npm test > test.log 2>&1` hides all output (line 57); `npm ci --silent` (line 29)
 
 Top 3 fixes:
 1. Replace `github.sha` cache key with `${{ hashFiles('package-lock.json') }}` + restore-keys (line 34) — expected 60-80% faster on cache hits.
@@ -182,7 +214,7 @@ Load on demand — do not preload.
 | 1     | [`rules/workflow-anatomy.md`](./rules/workflow-anatomy.md), [`rules/triggers-and-concurrency.md`](./rules/triggers-and-concurrency.md) |
 | 2     | [`rules/caching.md`](./rules/caching.md), [`rules/parallelization.md`](./rules/parallelization.md)                          |
 | 3     | [`rules/reusability.md`](./rules/reusability.md)                                                                            |
-| 4     | [`rules/security.md`](./rules/security.md), [`rules/observability.md`](./rules/observability.md)                            |
+| 4     | [`rules/security.md`](./rules/security.md), [`rules/observability.md`](./rules/observability.md), [`rules/log-output-visibility.md`](./rules/log-output-visibility.md) |
 
 Drop-in starters in [`templates/`](./templates/):
 
@@ -215,6 +247,11 @@ Drop-in starters in [`templates/`](./templates/):
    deploys use `cancel-in-progress: false`. No exceptions.
 8. **Name every step.** Anonymous `run:` blocks are unsearchable in logs
    and unsourceable in failure annotations.
+9. **Never swallow output.** Every command's stdout and stderr must reach
+   the run log — `tee`, never `>`; no `--silent` / `--quiet` / `/dev/null`.
+   The log is the only thing `gh run view --log-failed` returns, and it is
+   what agents act on. See
+   [`rules/log-output-visibility.md`](./rules/log-output-visibility.md).
 
 ---
 
@@ -230,6 +267,12 @@ Drop-in starters in [`templates/`](./templates/):
 - Unscoped `on: push:` triggering on every branch and every path.
 - 20 anonymous `run:` blocks with no `name:`.
 - Secrets passed as workflow inputs instead of `secrets:` map.
+- Output redirected to a file or `/dev/null` instead of `tee`-d to the log.
+- `--silent` / `--quiet` / `-q` on a step whose job is to report.
+- Machine-only reporter (JUnit/SARIF/JSON) with no human output on stdout.
+- Diagnostics uploaded as an artifact or written only to `$GITHUB_STEP_SUMMARY`.
+- `|| true` or `continue-on-error: true` with nothing echoed.
+- `tee` without `set -o pipefail` (green job, failed command).
 
 ---
 
@@ -256,6 +299,16 @@ A **scaffold** run is done when:
       dependencies", not `npm-ci`).
 - [ ] Failure paths surface to the PR via annotations or
       `$GITHUB_STEP_SUMMARY`.
+- [ ] Every command's stdout **and** stderr reaches the run log — no
+      `/dev/null`, no file-only redirection, no `--silent` / `--quiet`,
+      no machine-only reporter.
+- [ ] Every `run:` block that pipes to `tee` (or any pipe) sets
+      `set -o pipefail`.
+- [ ] Every `|| true` / `continue-on-error: true` step echoes the captured
+      output and its exit code.
+- [ ] The log-visibility grep from
+      [`rules/log-output-visibility.md`](./rules/log-output-visibility.md#verification)
+      returns no unjustified hits.
 - [ ] If using OIDC, `id-token: write` is set at the job level only.
 - [ ] User received a one-paragraph summary of what was created and
       where to commit it.
@@ -263,5 +316,6 @@ A **scaffold** run is done when:
 A **review** run is done when:
 
 - [ ] Every rule produced a PASS / WARN / FAIL with line evidence.
+- [ ] Log visibility was checked with the grep and reported explicitly.
 - [ ] Top 3 fixes are ranked by impact (speed, cost, or security).
 - [ ] User received an offer to apply the fixes interactively.

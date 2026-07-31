@@ -16,10 +16,14 @@ the failing step's name, and the line that surfaces in the PR. If
 those don't pinpoint the problem, the next click is "view raw logs"
 — and that's the failure mode you're optimising against.
 
+Prerequisite: [`log-output-visibility.md`](./log-output-visibility.md) — the annotations and summaries below are **additive**.
+None of them replace raw stdout/stderr in the job log, which is the only surface `gh run view --log-failed` returns and the only one an agent can act on.
+
 ## The four surfaces
 
 | Surface                       | Where                                                   | Use for                                                    |
 | ----------------------------- | ------------------------------------------------------- | ---------------------------------------------------------- |
+| Raw stdout/stderr             | Job log (`gh run view --log`)                           | The mandatory baseline — every command, always.            |
 | Step `name:`                  | Job timeline, PR status checks                          | What the step **does** (imperative).                       |
 | Workflow commands             | `echo "::error::msg"`                                    | Surface an error message with file/line.                   |
 | Step summary                  | `$GITHUB_STEP_SUMMARY` (markdown)                       | Rich human report shown on the run page.                   |
@@ -219,6 +223,10 @@ public repos — use sparingly, on private branches.
   comment).
 - **Job outputs treated as JSON.** They're strings. **Fix:** JSON-
   encode and `fromJSON()` downstream.
+- **Output suppressed or redirected away from the log.** Annotations and
+  summaries do not compensate. **Fix:** see
+  [`log-output-visibility.md`](./log-output-visibility.md) — `tee`, never
+  `>`; never `--silent` / `/dev/null`.
 - **No `$GITHUB_STEP_SUMMARY`.** Every run requires "view logs" to
   see what happened. **Fix:** even three lines of summary are worth
   it — coverage %, deploy URL, bundle size delta.
