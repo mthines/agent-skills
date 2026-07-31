@@ -110,9 +110,20 @@ Why bad: the install failure reason is gone, the lint failure is collapsed **and
 Before finishing a scaffold, and as a `review`-mode check, grep the workflow:
 
 ```bash
-grep -nE '(>\s*/dev/null|2>\s*/dev/null|&>\s*/dev/null|--silent|--quiet|(^|[[:space:]])-q([[:space:]]|$)|\|\|\s*true|>\s*[^|>]*\.(log|txt|json|xml))' \
-  .github/workflows/*.yml .github/actions/*/action.yml
+grep -rnE '(>[[:space:]]*/dev/null|2>[[:space:]]*/dev/null|&>[[:space:]]*/dev/null|--silent|--quiet|(^|[[:space:]])-q([[:space:]]|$)|\|\|[[:space:]]*true|>[[:space:]]*[^|>]*\.(log|txt|json|xml))' \
+  --include='*.yml' --include='*.yaml' .github
 ```
+
+Two things this form guarantees that a shell glob does not.
+
+- **It never hard-errors on a repository without composite actions.**
+  `.github/actions/*/action.yml` stays unexpanded when that directory does not exist, so the glob form exits `2` with `grep: .github/actions/*/action.yml: No such file or directory` — which an agent reads as "violations found".
+  Recursing into `.github` with `--include` exits `1` on a clean repository instead.
+- **It is portable.**
+  `\s` is a GNU extension; `[[:space:]]` is the POSIX character class and works on GNU grep and BSD/macOS grep alike.
+
+Exit codes: `0` = at least one hit (investigate each), `1` = clean, `2` = the grep invocation itself failed (fix the invocation; never read it as a FAIL).
+The recursive form scans every `*.yml` and `*.yaml` under `.github`, so it also covers `.yaml`-spelled workflows and `action.yaml` composite actions — and unrelated config such as `dependabot.yml`, which is expected to be clean.
 
 Every hit must be either removed or justified by a `tee` on the same line.
 Report each unjustified hit as **FAIL — log visibility** with its line number.
