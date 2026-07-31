@@ -69,7 +69,7 @@ An applied rewrite is recorded in the Step 4 auto-fix log as an approach change,
 ## Where proposals surface
 
 A proposal is a **design argument**, not a line-level nit.
-Its record carries ten fields (`report-mode.md § Proposal record`) and all of its value is in the comparison — current approach, better approach, evidence, blast radius.
+Its record carries a full structured comparison (`report-mode.md § Proposal record`) and all of its value is in that comparison — a one-line headline, current vs. better approach, why-better, trade-off, evidence, blast radius.
 Routing that through the inline comment stream is what made the lens ineffective: `comment-shape.md` allows ≤ 240 characters and ≤ 2 sentences, so a proposal was trimmed to a slogan or dropped outright.
 
 Proposals therefore leave the pipeline through a **dedicated long-form surface**:
@@ -104,7 +104,7 @@ Proposals keep the gates that test whether the claim is *true*, and skip the one
 1. **dedupe + consolidate (2.5)** — a proposal restating a line-level finding on the same `(file, line)` is deduped; the proposal wins the collision (broader context).
 2. **finding-grounding (2.6)** — every backticked symbol in `evidence` must grep-resolve in the changed file or in a caller surfaced by the skill's O4 trace; an ungrounded proposal is dropped.
 3. **verification-receipt (2.6b)** — a proposal making a behavioral claim ("this issues N queries per request") needs executed proof; a null result drops it.
-4. **`analysis_confidence` ≥ 70** — enforced upstream by the skill; this is the confidence gate for proposals.
+4. **`analysis_confidence` ≥ 85** — enforced upstream by the skill; this is the confidence gate for proposals. The bar is deliberately high so only decision-ready proposals surface — a hedged sub-85 % "better way" is dropped, not softened into a question.
 
 **Not applied:**
 
@@ -118,7 +118,7 @@ Proposals keep the gates that test whether the claim is *true*, and skip the one
 ### Why not per-comment-confidence
 
 `pr-reviewer` used to map every proposal to `question`, and its per-type table sets `question` at 90 %.
-A proposal the skill had already validated at, say, 78 % `analysis_confidence` then had to clear an unrelated 90 % bar, computed by a scorer that never saw the O4 trace.
+A proposal the skill had already validated at, say, 86 % `analysis_confidence` then had to clear an unrelated 90 % bar, computed by a scorer that never saw the O4 trace.
 Two independent gates on one claim, the stricter of which is the less informed, is why the lens almost never reached the author.
 One gate, owned by the analysis that produced the claim, is the correct design.
 The card still prints `analysis_confidence`, so the reader weighs it directly.
