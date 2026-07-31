@@ -14,7 +14,11 @@ Both agents support per-repo (and per-subtree) configuration via a `.review.yaml
 The config surface is deliberately small — one profile knob, one noise-suppressor list, one path-scoped guidance list — so that the most common customizations require minimal YAML authorship.
 
 **Back-compat guarantee:** an absent `.review.yaml` resolves to `profile: balanced`, which equals today's defaults (per-comment threshold 80, inline placement cap 5 per file for `pr-reviewer`, none for `reviewer`, no filters, no path instructions).
-No behavior changes without an explicit config file.
+The config surface itself introduces no behaviour change: with no config file, `pr-reviewer` posts the same inline comments it always did, and the threshold is still 80.
+
+**One deliberate exception, introduced with placement (Step 2.9b):** `reviewer`'s default per-file cap moved from **10 to none**, so an absent config now reports *more* findings on a large branch than it used to.
+That is a widening, never a suppression — `reviewer` writes to the terminal, where there is no posting cost, so confidence is the only gate on what it reports.
+Nothing that clears the confidence threshold is hidden in either agent: `pr-reviewer`'s cap governs inline placement only, and overflow is deferred to the review body (`rubric-composition.md § Placement (Step 2.9b)`).
 
 ---
 
