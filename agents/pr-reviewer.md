@@ -168,8 +168,14 @@ Determine whether this PR has already been reviewed by this agent. This sets the
 run mode and, when a prior review exists, establishes the baseline SHA for the
 incremental delta.
 
-If `--full` was passed in Step 0, skip detection entirely: set `RUN_MODE = "full"`,
-`PRIOR_SHA = ""`, and proceed to Step 1.
+If `--full` was passed in Step 0, skip **delta** detection: set `RUN_MODE = "full"` and
+`PRIOR_SHA = ""` so Step 1.2b's triage stays skipped. Still run the fetch below and still parse
+`CARRIED_FINDINGS` from the prior review body — carry-forward runs in **every** mode, including
+`--full`. A prior run's deferred findings are not re-derivable from the diff, so dropping them
+here would silently lose them in exactly the mode a human passes when they want the most
+thorough re-review. The fetch is one `gh api` call and is used for carry-forward only; it never
+sets `PRIOR_SHA` or downgrades the run mode. If no prior review exists, `CARRIED_FINDINGS` is
+empty and the run proceeds unchanged.
 
 Otherwise:
 
@@ -189,15 +195,20 @@ PRIOR_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
 - Proceed to Step 1.
 
 **If `PRIOR_REVIEW` is non-empty** (prior review exists):
-- Extract `PRIOR_SHA` from the review's `commit_id` field (not the body text).
+- Parse the prior review body's `Additional findings` section into `CARRIED_FINDINGS` and re-admit
+  them per `agents/shared/rules/prior-comment-awareness.md § Carry-forward of deferred findings`.
+  Do this in **every** mode. It is mandatory in incremental modes, which scan the delta only, so a
+  finding deferred by an earlier run on a file untouched since would otherwise be lost permanently;
+  it is equally mandatory under `--full`, where the deferred findings are likewise not re-derivable
+  from a body the current run never reads.
+- **If `--full` was passed**, stop here: leave `RUN_MODE = "full"` and `PRIOR_SHA = ""`, announce
+  `Full review forced (${#CARRIED_FINDINGS[@]} deferred finding(s) carried forward).`, and proceed
+  to Step 1. Do not set `PRIOR_SHA` — Step 1.2b's delta triage must stay skipped.
+- Otherwise, extract `PRIOR_SHA` from the review's `commit_id` field (not the body text).
   ```bash
   PRIOR_SHA=$(echo "$PRIOR_REVIEW" | jq -r '.commit_id')
   ```
 - Set `RUN_MODE = "incremental"` (subject to upgrade in Step 1.2b after delta triage).
-- Parse the prior review body's `Additional findings` section into `CARRIED_FINDINGS` and re-admit
-  them per `agents/shared/rules/prior-comment-awareness.md § Carry-forward of deferred findings`.
-  This is mandatory in incremental modes: those modes scan the delta only, so a finding deferred by
-  an earlier run on a file untouched since would otherwise be lost permanently.
 - Announce: `Prior review found at ${PRIOR_SHA:0:7} — running delta triage (${#CARRIED_FINDINGS} deferred finding(s) carried forward).`
 - Proceed to Step 1.
 
