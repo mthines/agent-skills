@@ -509,7 +509,8 @@ rubrics + personas produce raw findings
   → 2.3  review-config.md § Filters   (drop findings in categories suppressed by .review.yaml)
   → 2.4  holistic-review.md           (Skill("holistic-analysis", "review") — default on; may be skipped per 1.8 heuristic)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — default on)
-  → 2.4c optimality-review.md         (Skill("optimize-approach", "report") — report-only in cross-review)
+  → 2.4c optimality-review.md         (Skill("optimize-approach", "report") — report-only; proposals exit
+                                       via the review-body Optimality section, NOT the inline stream)
   → 2.5  rubric-composition § Consolidation (dedupe + group + sort — no cap, nothing dropped)
   → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.5b prior-comment-awareness.md § Dedup (drop if already said in a prior review pass)
@@ -575,7 +576,14 @@ See `agents/shared/rules/optimality-review.md`. Cross-review is **report-only** 
 apply. Skip via `--no-optimize`, when holistic trivial-skip fired, or when
 `RUN_MODE == "incremental-quick"` (the delta is too small to warrant approach analysis).
 
-Map proposals to `question` (cross-review context asymmetry).
+Proposals do **not** become inline comments. They are rendered as cards in the review body's
+`Optimality review` section (`OPTIMALITY_SECTION`), so they skip 2.7, 2.8, 2.9 and 2.9b and keep
+only dedupe (2.5), grounding (2.6), and the verification receipt (2.6b). Their confidence gate is
+the skill's own `analysis_confidence` ≥ 70.
+
+Frame each proposal as a question — cross-review context asymmetry — and never let one drive the
+verdict. Emit the `Optimality review (2.4c)` log block in the diagnostics even when there are zero
+proposals.
 
 ### 2.5 Dedupe + consolidate
 
@@ -683,6 +691,19 @@ Both PASS and FAIL continue with:
 dedupe drops <D>, grounding drops <G>, confidence drops <C> (threshold <T>), shape drops <S>,
 cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
 CI: PASS or FAIL (check names if failing).
+
+Optimality review (2.4c):
+  Status:             ran | skipped (trivial diff) | skipped (--no-optimize) | skipped (incremental-quick) | skipped (skill not installed)
+  Units judged:       <UN>
+  Optimal:            <UO>
+  Proposals:          <OP> (cap 2)
+  Applied:            0    (cross-review never applies)
+  Withheld/reverted:  <OW>
+
+### Optimality Review
+
+Omit this section when `<OP> == 0`. Otherwise one card per proposal, rendered from
+`skills/quality/optimize-approach/templates/proposal.template.md`.
 
 `carried forward`, `cleared`, and `deferred over inline cap` are emitted even when they are 0,
 so the reader can see the steps ran (`per-comment-confidence.md § Logging`,
@@ -798,6 +819,8 @@ Reviewed your changes and found no issues ready for human review.
 
 <sup>FOOTER_LINE</sup>
 
+OPTIMALITY_SECTION
+
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
@@ -808,6 +831,8 @@ ADDITIONAL_FINDINGS_SECTION
 
 **Quality Gate:** produced <P>, carried forward <CF>, relevance-memory drops <RM>, dedupe drops <D>,
 grounding drops <G>, confidence drops <C>, shape drops <S>, cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
+
+**Optimality review (2.4c):** <ran | skipped (reason)> — <UN> unit(s) judged, <UO> optimal, <OP> proposal(s), <OW> withheld.
 
 **Skipped files:** <list or "none">
 
@@ -831,6 +856,8 @@ Found <FAILING_GATE_COUNT> gate(s) that need attention before human review.
 
 <sup>FOOTER_LINE</sup>
 
+OPTIMALITY_SECTION
+
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
@@ -841,6 +868,8 @@ ADDITIONAL_FINDINGS_SECTION
 
 **Quality Gate:** produced <P>, carried forward <CF>, relevance-memory drops <RM>, dedupe drops <D>,
 grounding drops <G>, confidence drops <C>, shape drops <S>, cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
+
+**Optimality review (2.4c):** <ran | skipped (reason)> — <UN> unit(s) judged, <UO> optimal, <OP> proposal(s), <OW> withheld.
 
 **Skipped files:** <list or "none">
 
@@ -859,6 +888,32 @@ It sits directly under the `<!-- PR_REVIEWER_REPORT -->` marker, above the summa
 the gate table, so a truncated run can never be read as a complete PASS. This is the only prose
 permitted outside the templates, and it is permitted because the stop condition requires it in
 both the terminal report and the review body.
+
+`OPTIMALITY_SECTION` renders the Step 2.4c proposals. Omit the placeholder entirely when there
+are no proposals — the quiet early-exit must stay quiet. Otherwise substitute:
+
+```
+<details>
+<summary>Optimality review (<OP>) — is this the best approach?</summary>
+
+### Optimality proposal — src/api/client.ts:180
+
+**Axis**: codebase-fit
+**Intent**: Retry transient upstream failures.
+**Current approach**: A hand-rolled retry loop with a fixed 200 ms sleep.
+**Better approach**: Have you considered \`withRetry()\` from \`src/lib/retry.ts\`, already used by the other three clients?
+**Why better**: One backoff policy instead of four, and it already honours the abort signal.
+**Evidence**: \`withRetry\` — \`src/lib/retry.ts:14\`, 3 call sites
+**Blast radius**: \`src/api/client.ts\` only
+**Analysis confidence**: 84%
+
+</details>
+```
+
+One card per proposal, at most 2, from
+`skills/quality/optimize-approach/templates/proposal.template.md`. Frame the better approach as a
+question — cross-review context asymmetry. Proposals are **never** posted as inline comments and
+never affect the gate table or the verdict.
 
 `ADDITIONAL_FINDINGS_SECTION` renders the deferred findings from Step 2.9b — the findings that
 cleared every quality gate but did not fit the inline caps. Omit the placeholder entirely when
@@ -882,7 +937,7 @@ Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
 - Details column: plain text only, max 120 chars per cell. Truncate; the full finding lives in the inline comment.
 - On PASS, omit the Details column (two-column table).
-- Never add rows, sections, or prose outside the template above (except the two `<details>` blocks — diagnostics and `Additional findings` — and the `PARTIAL_REVIEW_BANNER` line, which is a slot in the template, not added prose).
+- Never add rows, sections, or prose outside the template above (except the three `<details>` blocks — diagnostics, `Optimality review`, and `Additional findings` — and the `PARTIAL_REVIEW_BANNER` line, which is a slot in the template, not added prose).
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
 ### INLINE_COMMENTS_JSON format

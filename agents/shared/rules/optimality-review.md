@@ -15,7 +15,7 @@ The line-level rubrics (`code-quality`, `ux`, `critical`, lenses) and the holist
 None of them asks the design-level question: **is this the most optimal way to do it, and if not what is?**
 
 This rule routes that question through `Skill("optimize-approach", "<report|apply>")`, which returns 0–2 structured proposals (or nothing when the approach is already optimal).
-Proposals flow through the rest of the pipeline (`finding-grounding`, `per-comment-confidence`, `comment-shape`, `conventional-comments`) like any other finding.
+A proposal is not a comment. It keeps the gates that test whether the claim is true (`finding-grounding`, `verification-receipt`) and surfaces as a card in a dedicated report section — see § Where proposals surface and § Gates.
 
 ## Default-on, opt-out via `--no-optimize`
 
@@ -44,7 +44,7 @@ Skill("optimize-approach", "report")
   caller: "reviewer" | "pr-reviewer"
 ```
 
-The proposals join the pipeline like any other finding. Whether any is *applied* is decided later, per caller:
+Whether a proposal is *applied* is decided later, per caller:
 
 | Caller | Sub-mode | Apply? | Where |
 | --- | --- | --- | --- |
@@ -66,29 +66,62 @@ The skill applies it behind its own `apply_safe` + `confidence(code) ≥ 90 %` g
 A rewrite that is not `apply_safe`, fails the gate, or reverts stays a proposal — it is **not** force-applied.
 An applied rewrite is recorded in the Step 4 auto-fix log as an approach change, not as a comment.
 
-## Output mapping (caller-aware)
+## Where proposals surface
 
-`optimize-approach` returns proposals with `axis` ∈ {codebase-fit, simplicity, performance, robustness} and `analysis_confidence`.
-Map each to the calling agent's Conventional-Comments category:
+A proposal is a **design argument**, not a line-level nit.
+Its record carries ten fields (`report-mode.md § Proposal record`) and all of its value is in the comparison — current approach, better approach, evidence, blast radius.
+Routing that through the inline comment stream is what made the lens ineffective: `comment-shape.md` allows ≤ 240 characters and ≤ 2 sentences, so a proposal was trimmed to a slogan or dropped outright.
 
-| Caller | analysis_confidence | Category | Blocks verdict? |
-| --- | --- | --- | --- |
-| `reviewer` (own work) | ≥ 90 % | `suggestion` | no |
-| `reviewer` | 70–89 % | `question` | no |
-| `pr-reviewer` (cross-review) | any | `question` | no |
+Proposals therefore leave the pipeline through a **dedicated long-form surface**:
 
-An applied rewrite (reviewer Fix / Self-Review) is reported in the auto-fix log as an approach change, not as a comment.
+| Caller | Surface | Rendering |
+| --- | --- | --- |
+| `pr-reviewer` | `Optimality review` section in the GitHub review body | One card per proposal from [`proposal.template.md`](../../../skills/quality/optimize-approach/templates/proposal.template.md) |
+| `reviewer` (Fix / Report Mode) | `Optimality` section of the terminal report | The same card |
+| `reviewer` (Self-Review) | `Optimality` section of the Self-Review report | The same card, plus the Step 4.1b apply outcome |
+
+Omit the section entirely when the skill returned no proposals — the quiet early-exit must stay quiet.
+Never render a proposal as an inline comment.
+
+### Framing (caller-aware)
+
+The card is prose, so framing replaces category mapping:
+
+| Caller | Framing | Blocks verdict? |
+| --- | --- | --- |
+| `reviewer` (own work) | Assert: "A better approach here is …" | no |
+| `pr-reviewer` (cross-review) | Ask: "Have you considered …?" — the reviewer has less context than the author | no |
+
 An optimality proposal is **always non-blocking** — it never drives "Request changes", the same way `scope-creep` never does.
-Below 70 % analysis confidence the proposal is dropped upstream in the skill (the alternative is not understood well enough to state).
+An applied rewrite (reviewer Fix / Self-Review) is additionally recorded in the Step 4 auto-fix log as an approach change.
 
-## Wiring into the rest of the pipeline
+## Gates
 
-Optimality proposals are not exempt from the downstream gates:
+Proposals keep the gates that test whether the claim is *true*, and skip the ones that only shape an inline comment.
 
-1. **dedupe + consolidate** — proposals enter the same dedupe pass; on a `(file, line)` collision, the broader-context claim wins.
-2. **finding-grounding** — every backticked symbol (util, pattern, caller) must grep-resolve in the changed file or a caller surfaced during the skill's O4 trace.
-3. **per-comment-confidence** — `Skill("confidence", "code")` ≥ profile threshold, same as any finding.
-4. **comment-shape** — ≤ 240 chars, ≤ 2 sentences; a proposal that needs more space is trimmed once or dropped and listed in the Quality Gate summary.
+**Still applied:**
+
+1. **dedupe + consolidate (2.5)** — a proposal restating a line-level finding on the same `(file, line)` is deduped; the proposal wins the collision (broader context).
+2. **finding-grounding (2.6)** — every backticked symbol in `evidence` must grep-resolve in the changed file or in a caller surfaced by the skill's O4 trace; an ungrounded proposal is dropped.
+3. **verification-receipt (2.6b)** — a proposal making a behavioral claim ("this issues N queries per request") needs executed proof; a null result drops it.
+4. **`analysis_confidence` ≥ 70** — enforced upstream by the skill; this is the confidence gate for proposals.
+
+**Not applied:**
+
+| Gate | Why exempt |
+| --- | --- |
+| `per-comment-confidence` (2.7) | Double-gating — see below |
+| `comment-shape` (2.8) | Body content has no length limit; a 240-char cap on a ten-field record guarantees the loss |
+| `conventional-comments` (2.9) | The card has its own structure; a category prefix on a section heading is noise |
+| Placement caps (2.9b) | Body content consumes no inline slot; the skill's own cap of 2 proposals per run is the only quantity limit |
+
+### Why not per-comment-confidence
+
+`pr-reviewer` used to map every proposal to `question`, and its per-type table sets `question` at 90 %.
+A proposal the skill had already validated at, say, 78 % `analysis_confidence` then had to clear an unrelated 90 % bar, computed by a scorer that never saw the O4 trace.
+Two independent gates on one claim, the stricter of which is the less informed, is why the lens almost never reached the author.
+One gate, owned by the analysis that produced the claim, is the correct design.
+The card still prints `analysis_confidence`, so the reader weighs it directly.
 
 ## Blocking verdict
 
@@ -97,17 +130,21 @@ This is intentional and matches `holistic-review`'s treatment of `system-fit` an
 
 ## Logging
 
-The Quality Gate summary reports:
+Every report that carries a Quality Gate summary **must** render this block, in `pr-reviewer`'s terminal report and review-body diagnostics and in `reviewer`'s terminal and Self-Review reports:
 
 ```text
 Optimality review (2.4c):
-  Status:             ran | skipped (trivial diff) | skipped (--no-optimize)
+  Status:             ran | skipped (trivial diff) | skipped (--no-optimize) | skipped (incremental-quick) | skipped (skill not installed)
   Units judged:       <N>
   Optimal:            <O>
   Proposals:          <P> (cap 2)
   Applied:            <A>  (reviewer Fix / Self-Review only)
   Withheld/reverted:  <W>
 ```
+
+Emit the block **even when `P = 0`**.
+A silent run and a skipped run are different outcomes, and without the block the reader cannot tell them apart — which is how an unwired lens goes unnoticed.
+Only the `Optimality review` **section** is conditional on `P > 0`; the log block is unconditional.
 
 A run that judged several units and emitted 0 proposals is healthy — most changes are already optimal enough.
 A run that proposes on every unit is suspicious; spot-check the anti-overlap guards before trusting it.
@@ -127,4 +164,5 @@ Do not block the run. Optimality review is an enhancement; the rest of the pipel
 - It does not run the optimality analysis itself — it dispatches to the skill and routes the structured proposals.
 - It does not set the blocker rules — those live in each agent's verdict step (and optimality never blocks).
 - It does not apply anything in `pr-reviewer` — cross-review is report-only.
+- It does not emit inline comments. Proposals surface only through the sections listed in § Where proposals surface.
 - It does not re-run the trivial-skip computation — it reuses `holistic-review`'s.
