@@ -58,6 +58,7 @@ jobs:
         if: inputs.coverage && hashFiles('coverage/coverage-summary.json') != ''
         id: cov
         run: |
+          set -euo pipefail
           PCT=$(node -e "console.log(require('./coverage/coverage-summary.json').total.lines.pct)")
           echo "pct=$PCT" >> "$GITHUB_OUTPUT"
 
@@ -104,6 +105,7 @@ jobs:
     steps:
       - name: Coverage summary
         run: |
+          set -euo pipefail
           echo "## Coverage" >> "$GITHUB_STEP_SUMMARY"
           echo "Node 20: ${{ needs.test-20.outputs.coverage-percentage }}%" >> "$GITHUB_STEP_SUMMARY"
 ```

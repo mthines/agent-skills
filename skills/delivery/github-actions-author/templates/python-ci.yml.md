@@ -78,6 +78,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          set -euo pipefail
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
@@ -109,6 +110,7 @@ jobs:
 
       - name: Install dependencies
         run: |
+          set -euo pipefail
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
@@ -118,6 +120,7 @@ jobs:
       - name: Test summary
         if: always()
         run: |
+          set -euo pipefail
           if [ -f junit.xml ]; then
             {
               echo "## Test results (Python ${{ matrix.python }})"

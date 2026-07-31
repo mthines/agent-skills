@@ -52,12 +52,14 @@ jobs:
 
       - name: Invalidate CloudFront
         run: |
+          set -euo pipefail
           aws cloudfront create-invalidation \
             --distribution-id ${{ vars.CF_DISTRIBUTION_ID }} \
             --paths '/*'
 
       - name: Record deployment URL
         run: |
+          set -euo pipefail
           echo "## Deploy complete" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "URL: https://example.com" >> "$GITHUB_STEP_SUMMARY"
