@@ -209,7 +209,7 @@ PRIOR_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
   PRIOR_SHA=$(echo "$PRIOR_REVIEW" | jq -r '.commit_id')
   ```
 - Set `RUN_MODE = "incremental"` (subject to upgrade in Step 1.2b after delta triage).
-- Announce: `Prior review found at ${PRIOR_SHA:0:7} — running delta triage (${#CARRIED_FINDINGS} deferred finding(s) carried forward).`
+- Announce: `Prior review found at ${PRIOR_SHA:0:7} — running delta triage (${#CARRIED_FINDINGS[@]} deferred finding(s) carried forward).`
 - Proceed to Step 1.
 
 `PRIOR_SHA` and `RUN_MODE` are available to all subsequent steps.
