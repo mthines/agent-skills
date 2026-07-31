@@ -908,8 +908,6 @@ Skill("create-pr")
 > **Fallback (only if `create-pr` is unavailable):** push manually with
 > `git push -u origin feat/dark-mode-toggle` and open the PR with
 > `gh pr create --draft --title "..." --body "$(cat <<'EOF' ... EOF)"`.
-> Never include AI attribution lines (`Co-Authored-By`, "Generated with
-> ...", etc.) in the title or body — the user owns the PR.
 
 ---
 

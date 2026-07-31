@@ -66,7 +66,7 @@ Companions invoked from this phase **skip silently if not installed** — see
 | Lightweight per-iteration self-reflection       | Brief self-check before each iteration — NOT a full `confidence` run |
 | Fix root causes, not symptoms                   | A passing test on a wrong fix is worse than a red one               |
 | Checks gate mechanically (Full Mode)            | Phase 4 exits when every `checks.yaml` check passes — not when "criteria feel met". Check definitions are executor-immutable; gaming a check is a hard stop |
-| Auto-replan on low confidence                   | When stuck and confidence < 90%, trigger holistic-analysis and re-invoke `aw-create-plan` to produce the next `plan.v{N+1}.md` snapshot |
+| Auto-replan on low confidence                   | When stuck and confidence < 90%, trigger holistic-analysis and re-invoke `aw-create-plan` to produce the next plan version (v{N+1}) |
 | One-shot retry only                             | After auto-replan, Phase 4 may resume at most ONCE before mandatory escalation |
 | Track everything in `plan.md` Progress Log      | Auditable trail of attempts and outcomes                            |
 
@@ -260,8 +260,6 @@ git commit -m "test(scope): add coverage for <feature>
 - Edge case coverage for Z"
 ```
 
-Never add `Co-Authored-By` lines. See [`safety-guardrails.md`](./safety-guardrails.md).
-
 ---
 
 ## Executable Checks Loop
@@ -394,7 +392,7 @@ when iterations_on_same_area == iteration_cap:
             goto: Mandatory User Escalation (below)
 
         Skill("holistic-analysis")
-        Skill("aw-create-plan")   # writes plan.v{N+1}.md + updates plan.md
+        Skill("aw-create-plan")   # overwrites plan.md, bumps to v{N+1} (snapshot only in snapshot mode)
         iterations_on_same_area = 0
         auto_replan_used = True
         Resume Phase 4 iteration loop ONCE MORE.
@@ -411,7 +409,7 @@ the next cap hit goes straight to user escalation.
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `confidence("analysis")` installed | Returns confidence score + root-cause / outcome-confidence findings      |
 | `confidence` missing        | Logs `not available, continuing`; treat as confidence < 90% (conservative default)  |
-| `holistic-analysis` installed | Re-traces execution path end-to-end; output feeds the next `aw-create-plan` invocation, which writes `plan.v{N+1}.md` and updates `plan.md` |
+| `holistic-analysis` installed | Re-traces execution path end-to-end; output feeds the next `aw-create-plan` invocation, which overwrites `plan.md` at the next version (v{N+1}) |
 | `holistic-analysis` missing | Logs `not available, continuing`; perform a manual end-to-end trace yourself        |
 
 ### Mandatory User Escalation
@@ -505,9 +503,10 @@ Skill("holistic-analysis")
 
 1. Reset `iterations_on_same_area = 0` (this is a genuinely new attempt).
 2. **Re-invoke `Skill("aw-create-plan")`** with the new mental model — the
-   skill writes the next `plan.v{N+1}.md` snapshot and overwrites `plan.md`.
-   Replace the obsolete reasoning in the new content; do not just append.
-   Earlier `plan.v*.md` snapshots are preserved untouched as audit trail.
+   skill overwrites `plan.md` at the next version (v{N+1}). Replace the obsolete
+   reasoning in the new content; do not just append. In snapshot mode a new
+   `plan.v{N+1}.md` is written and earlier snapshots are preserved untouched as
+   audit trail.
 3. Resume the iteration loop in [Step 3](#step-3-the-iteration-loop) — the
    mode-aware iteration cap applies again to the new area.
 
@@ -659,7 +658,7 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 - [ ] Per-iteration in-loop self-reflection completed after each fix
 - [ ] `confidence(analysis)` invoked automatically when cap hit
 - [ ] `holistic-analysis` invoked automatically when confidence < 90% (auto-replan)
-- [ ] `plan.v{N+1}.md` snapshot created and `plan.md` updated after auto-replan (via `aw-create-plan`)
+- [ ] `plan.md` updated to the next version (v{N+1}) after auto-replan (via `aw-create-plan`)
 - [ ] One-shot guard respected — auto_replan_used not bypassed
 - [ ] User escalation triggered when confidence >= 90% OR auto-replan exhausted
 - [ ] `lorekit(memory.write aw-lessons)` invoked at stuck-loop escalation; promotion suggested if `seen_count >= 3` (anchor: `lessons-write`)

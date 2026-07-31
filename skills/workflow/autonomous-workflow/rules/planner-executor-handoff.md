@@ -55,7 +55,12 @@ Phases 0–2 are also the cheapest to redo — no code has been written, no PR e
 
 ## Handoff contract
 
-`plan.md` is the contract. The executor's **only** input is this file plus the worktree it lives in. The [`aw-create-plan`](../../aw-create-plan/SKILL.md) template is two-tier: **Core** sections are always present; **Extended** sections appear only when their `Include when` trigger holds. The executor must not bail because an Extended section is absent — its omission is intentional.
+Two artifacts cross the boundary, with distinct jobs:
+
+- **`checks.yaml` is the living contract** — the executable acceptance criteria the executor's Phase 4 loop gates on mechanically. It self-validates against reality on every loop, so it never goes stale silently. This is the artifact the executor is *held to*.
+- **`plan.md` is the handoff document** — the decisions, requirements, and approach a cold session needs to start. It must stay self-contained (the executor and `confidence(plan)` both cold-read it), but it is a handoff artifact, **not** an exhaustive knowledge base. Keep it lean. If the executor is dispatched while the planner agent is still alive and a plan detail is genuinely unclear, it is better to **query the planner (or the user)** than to expect `plan.md` to have pre-answered every question — the split does not oblige the planner to dump its whole context into the file.
+
+`plan.md` remains the executor's primary written input (plus `checks.yaml` and the worktree). The [`aw-create-plan`](../../aw-create-plan/SKILL.md) template is two-tier: **Core** sections are always present; **Extended** sections appear only when their `Include when` trigger holds. The executor must not bail because an Extended section is absent — its omission is intentional.
 
 **Core sections — always present:**
 
@@ -212,7 +217,7 @@ The loop fires whenever the user replies `iterate` to either handoff message. Th
    | Template instructional comments | Carried in from the `aw-create-plan` template (e.g. `<!-- Why is this needed? ... -->`, `<!-- ALL requirements from Phase 0. ... -->`). Already addressed by the section content beneath them. | Ignore. |
    | User feedback comments | Added by the user inline to direct this iteration (e.g. `<!-- this also needs to handle the timeout case -->`, `<!-- use the existing logger, not a new one -->`). | **Hard constraint** — must be addressed in version N+1. |
 
-   To separate them reliably, diff against the previous immutable snapshot — `aw-create-plan` guarantees one exists for every prior version ([`aw-create-plan/SKILL.md`](../../aw-create-plan/SKILL.md)):
+   When a previous immutable snapshot exists (**snapshot mode only** — `aw-create-plan` writes `plan.v*.md` only when invoked with the `snapshot` arg, see [`aw-create-plan/SKILL.md`](../../aw-create-plan/SKILL.md#snapshot-mode-opt-in)), diff against it to separate the two kinds reliably:
 
    ```bash
    DIR=".agent/$(git branch --show-current)"
@@ -224,7 +229,7 @@ The loop fires whenever the user replies `iterate` to either handoff message. Th
 
    Every added line containing `<!--` or `-->` in that diff is user feedback introduced in this iteration. For each one, record the enclosing section heading, the comment text, and the apparent intent (e.g. "Acceptance Criteria → user comment: 'cover the offline case' → add an acceptance criterion for offline mode").
 
-   If no previous `plan.v*.md` snapshot exists (rare — only when iterating before any prior version was written), walk every `<!-- ... -->` block and flag any whose content is **directive, conversational, or critical** ("change this", "make sure X", "use Y instead", "this is wrong because…"). Treat those as user feedback; ignore template instructional prose.
+   **In default mode there is no prior snapshot** (this is the normal case), so walk every `<!-- ... -->` block in `plan.md` directly and flag any whose content is **directive, conversational, or critical** ("change this", "make sure X", "use Y instead", "this is wrong because…"). Treat those as user feedback; ignore template instructional prose.
 
 4. **Summarise what changed at the section level AND list every user comment.** Recap to the user, listing the sections that have moved relative to the planner's last-known mental model and **every** user feedback comment from step 3 with its location and how you plan to address it. Surface this summary before re-planning:
 
@@ -245,7 +250,7 @@ The loop fires whenever the user replies `iterate` to either handoff message. Th
    Reply "cancel" to abort before the new version is written.
    ```
 
-   If there are zero detected comments, state "Detected inline comments: none" explicitly — silence on this line is a bug (it means the scan was skipped). The new `plan.v{N+1}.md` must address every listed comment; the comments themselves are NOT carried forward to the new version (they've been incorporated into the content).
+   If there are zero detected comments, state "Detected inline comments: none" explicitly — silence on this line is a bug (it means the scan was skipped). The new plan version (v{N+1}) must address every listed comment; the comments themselves are NOT carried forward to the new version (they've been incorporated into the content).
 
 5. **Consistency check inside `plan.md`.** Walk the file and check internal coherence:
    - If the user edited an upstream section (Requirements, Decisions, Technical Approach) but did NOT correspondingly update a downstream section (Implementation Order, File Changes, Tests), **re-derive the downstream sections** rather than blindly preserving them. State the inferred downstream changes back to the user.
@@ -269,7 +274,7 @@ There is no hard cap on edit-driven iterations — they are user-initiated and e
 ### What this loop does NOT do
 
 - It does not silently accept user edits and skip the confidence gate. Every iteration re-runs `confidence(plan)`.
-- It does not produce additional files. `plan.md` is the single source of truth; the `version:` frontmatter field is the durable iteration counter.
+- It does not produce additional files by default. `plan.md` is the handoff document and the `version:` frontmatter field is the durable iteration counter; an immutable `plan.v{N}.md` snapshot is written only in `aw-create-plan`'s opt-in snapshot mode.
 - It does not start writing production code. The planner agent's scope still ends at the handoff message.
 
 ---

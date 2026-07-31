@@ -282,14 +282,16 @@ design patterns, API docs) during Phase 1.
 
 ## Universal Rules
 
-- **No AI co-author tags** — never add `Co-Authored-By` lines to commits or
-  PRs. The user owns the commits.
 - **Companions skip silently** — log one line and continue if a companion is
   missing. Never block the workflow.
 - **Stop and ask when blocked** — don't guess on ambiguity or fundamental
   design questions.
-- **plan.md must be self-contained** — a new session with no chat history
-  must be able to execute it. Capture every Phase 0 decision, every Phase 1
-  trade-off, every Acceptance Criterion.
+- **plan.md must be self-contained but lean** — a new session with no chat
+  history must be able to execute it, so capture every Phase 0 decision, every
+  Phase 1 trade-off, every Acceptance Criterion. It is a handoff document, not
+  a knowledge base — keep it tight (Core/Extended tiering) rather than padding
+  it against every hypothetical question. `checks.yaml` is the living contract.
+  `aw-create-plan` writes only `plan.md` by default; pass the `snapshot` arg
+  only when a durable `plan.v{N}.md` audit trail is explicitly wanted.
 
 The skill contains the detailed phase procedures. Follow them.

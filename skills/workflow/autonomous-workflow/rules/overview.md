@@ -55,8 +55,9 @@ docs, and CI auto-fix.
 
 - **Always validate first (Phase 0)**: Never skip directly to implementation.
 - **Always create worktree (Phase 2)**: Isolation is mandatory.
-- **`plan.md` is the single source of truth**: A new session must be able to
-  execute from it alone.
+- **`checks.yaml` is the living contract; `plan.md` is the handoff document**:
+  a new session must be able to execute from `plan.md` alone, and Phase 4 gates
+  on the checks.
 - **Stuck-loop has a mode-aware cap**: 3 iterations (Lite Mode) / 5 iterations
   (Full Mode) on the same failing area triggers `Skill("confidence", "analysis")`
   and the one-shot auto-replan or user escalation.

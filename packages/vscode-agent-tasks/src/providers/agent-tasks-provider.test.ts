@@ -14,6 +14,15 @@
  *   4. Ordering puts other files LAST — recognised branches are surfaced first,
  *      other files sort stably by path below them.
  *
+ * Branch-children ordering contract (cannot be tested in vitest due to vscode
+ * dependency — `getBranchChildren` imports `vscode`):
+ *   - `checks.yaml` (`ChecksSummaryItem`) is rendered FIRST, above Tasks/Plan,
+ *     because it is the branch's primary, living acceptance contract.
+ *   - `ChecksSummaryItem` defaults to `TreeItemCollapsibleState.Expanded` so the
+ *     individual AC rows (`CheckItem`) are visible without an extra click.
+ *   - `plan.md` (`PlanSummaryItem`) is rendered BELOW Checks and stays collapsed
+ *     — it is a point-in-time handoff document, secondary to the live contract.
+ *
  * TreeItem shape contract (cannot be tested in vitest due to vscode dependency):
  *   - `OtherMarkdownFileItem.contextValue` MUST be `'otherMarkdownFile'`.
  *   - `OtherMarkdownFileItem.command.command` MUST be `'agentTasks.openOtherMarkdownFile'`

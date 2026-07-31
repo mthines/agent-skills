@@ -77,20 +77,25 @@ See [overview](./overview.md) for the complete decision flow.
 
 | Artifact        | File(s)                                              | Created by                       | When                                                 |
 | --------------- | ---------------------------------------------------- | -------------------------------- | ---------------------------------------------------- |
-| **Plan**        | `.agent/{branch}/plan.md` + `plan.v{N}.md` snapshots | `Skill("aw-create-plan")`        | After Phase 2 — and again on every plan iteration    |
-| **Checks**      | `.agent/{branch}/checks.yaml`                        | `Skill("aw-create-plan")` (Step 2b) | With the plan — re-derived (statuses reset) on every plan iteration |
+| **Checks**      | `.agent/{branch}/checks.yaml`                        | `Skill("aw-create-plan")` (Step 2b) | With the plan — re-derived (statuses reset) on every plan iteration. **The living contract.** |
+| **Plan**        | `.agent/{branch}/plan.md` (+ opt-in `plan.v{N}.md` snapshots) | `Skill("aw-create-plan")` | After Phase 2 — and again on every plan iteration    |
 | **Walkthrough** | `.agent/{branch}/walkthrough.md`                     | `Skill("aw-create-walkthrough")` | Phase 6                                              |
 
-`plan.md` is the single source of truth — a new Claude session should be able
-to execute from it alone. Every invocation of `aw-create-plan` writes a new
-immutable `plan.v{N}.md` snapshot **and** overwrites `plan.md` so it always
-points at the latest version. See **Plan Versioning** below.
-
-`checks.yaml` is the plan's **executable contract** — one runnable check per
-`AC-{n}` acceptance criterion. The executor's Phase 4
+`checks.yaml` is the plan's **executable, living contract** — one runnable
+check per `AC-{n}` acceptance criterion. The executor's Phase 4
 [Executable Checks Loop](./phase-4-testing.md#executable-checks-loop) uses it
-as termination condition and progress ledger (`status:` fields). It is not
-versioned; check definitions are executor-immutable.
+as termination condition and progress ledger (`status:` fields). It is the
+artifact that **cannot go stale silently**: it passes or fails against reality
+on every executor loop, unlike prose. It is not versioned; check definitions
+are executor-immutable.
+
+`plan.md` is the planner→executor **handoff document** — a new Claude session
+should be able to execute from it alone. It is a handoff artifact, not an
+exhaustive knowledge base: keep it lean, and when something is unclear prefer
+querying the still-running planner agent (or the user) over bloating the file.
+Each invocation of `aw-create-plan` overwrites `plan.md`. By **default no
+`plan.v{N}.md` snapshot is written** — the immutable version chain is **opt-in**
+(`Skill("aw-create-plan", "snapshot")`). See **Plan Versioning** below.
 
 ## Caller-supplied context artefacts
 
@@ -138,37 +143,33 @@ through unmodified.
 
 ## Plan Versioning
 
-Every call to `Skill("aw-create-plan")` produces:
+**Default: no snapshots.** Each call to `Skill("aw-create-plan")` overwrites a
+single `plan.md`. The `version:` frontmatter field still increments on each
+re-write, so the iteration counter is preserved without a separate file.
+
+**Opt-in snapshots** (`Skill("aw-create-plan", "snapshot")`) additionally write
+an immutable `plan.v{N}.md` each iteration:
 
 | File              | Mutability  | Purpose                                                                  |
 | ----------------- | ----------- | ------------------------------------------------------------------------ |
-| `plan.v{N}.md`    | Immutable   | Snapshot of the plan at iteration `N`. Never edited or deleted.          |
-| `plan.md`         | Overwritten | Pointer to the **latest** plan content. Identical body to newest `plan.v{N}.md`. |
+| `plan.v{N}.md`    | Immutable   | **(snapshot mode)** Snapshot of the plan at iteration `N`. Never edited or deleted. |
+| `plan.md`         | Overwritten | The plan content. **(snapshot mode)** Identical body to newest `plan.v{N}.md`. |
 
-`N` is monotonic — the skill computes it by listing existing `plan.v*.md`
-files and incrementing the highest number (so the first run writes `plan.v1.md`,
-the next `plan.v2.md`, …).
-
-**Iteration triggers — invoke `aw-create-plan` again:**
-
-| Trigger                                      | Result                                  |
-| -------------------------------------------- | --------------------------------------- |
-| Initial plan creation (Phase 2)              | `plan.v1.md` + `plan.md`                |
-| User feedback after the confidence gate      | `plan.v2.md` + `plan.md`                |
-| Phase 4 auto-replan (after holistic-analysis) | `plan.v{N+1}.md` + `plan.md`           |
-| User explicitly asks to regenerate the plan  | `plan.v{N+1}.md` + `plan.md`            |
+In snapshot mode, `N` is monotonic — the skill computes it by listing existing
+`plan.v*.md` files and incrementing the highest number (so the first run writes
+`plan.v1.md`, the next `plan.v2.md`, …).
 
 **Mid-execution Progress Log appends to `plan.md`** (e.g. logging a phase
 transition, a confidence run, or a passed test) **do NOT bump the version** —
-those are journaling, not iteration. Only re-running `aw-create-plan` produces
-a new snapshot.
+those are journaling, not iteration. Only re-running `aw-create-plan` bumps it.
 
-> **Why versioned snapshots?** Iterative refinement is normal in autonomous
-> work — the plan grows as the user pushes back, as the agent discovers
-> hidden constraints, and as Phase 4 auto-replan kicks in. Snapshotting each
-> iteration preserves the audit trail (initial → user-iteration → auto-replan)
-> without forcing readers to learn the convention: `plan.md` always works,
-> and `plan.v*.md` is there for whoever needs the history.
+> **Why is snapshotting opt-in?** `.agent/` is gitignored per-developer scratch,
+> so an immutable `plan.v{N}.md` chain is a second, weaker version-control system
+> for the same file — it adds directory noise and a redundant write on every
+> iteration, and the audit trail is rarely re-read. Snapshotting has no measured
+> effect on task success ([research §5.4](../references/anthropic-architecture-research.md#54-what-is-not-evidence-backed)),
+> so it is off by default and available (`snapshot` arg) when a durable annotated
+> record of a plan's evolution is genuinely wanted.
 
 ## Quality Gate
 
@@ -187,17 +188,15 @@ This is the **only non-removable companion** in the workflow.
 
 ```
 .agent/
-├── feat-dark-mode/
-│   ├── plan.md           # Always points at the latest plan.v*.md
-│   ├── plan.v1.md        # Initial plan snapshot (immutable)
-│   ├── plan.v2.md        # User-iteration snapshot (immutable)
-│   ├── plan.v3.md        # Phase 4 auto-replan snapshot (immutable)
-│   ├── checks.yaml       # Executable acceptance checks (status ledger)
+├── feat-dark-mode/       # default mode — single plan.md
+│   ├── checks.yaml       # Executable acceptance checks (the living contract)
+│   ├── plan.md           # Planner→executor handoff document
 │   └── walkthrough.md    # Final summary (created at Phase 6)
-└── fix-auth-bug/
-    ├── plan.md           # ≡ plan.v1.md (only one iteration so far)
-    ├── plan.v1.md
-    └── checks.yaml
+└── fix-auth-bug/         # snapshot mode — immutable history kept
+    ├── checks.yaml
+    ├── plan.md           # ≡ newest plan.v*.md
+    ├── plan.v1.md        # Initial plan snapshot (immutable)
+    └── plan.v2.md        # User-iteration snapshot (immutable)
 ```
 
 > **Why `.agent/` (singular)?** It aligns with the `~/.agents/skills/`

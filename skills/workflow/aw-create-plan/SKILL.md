@@ -1,31 +1,37 @@
 ---
 name: aw-create-plan
 description: >
-  Create a comprehensive implementation plan artifact (plan.md + versioned
-  plan.vN.md snapshot + checks.yaml executable acceptance checks) in
-  `.agent/{branch}/` from the current conversation context. Captures all
+  Create the plan artifact (plan.md + checks.yaml executable acceptance checks)
+  in `.agent/{branch}/` from the current conversation context. Captures all
   Phase 0-1 discussion into a structured, self-contained document that enables
-  context recovery and session handoff. On every invocation, writes the next
-  plan.vN.md snapshot, updates plan.md to match, and re-derives checks.yaml
-  from the Acceptance Criteria. Use after planning is complete and confidence
-  gate passes — and again on every plan iteration (user-requested refinement
-  or Phase 4 auto-replan). Triggers on create plan, generate plan, write plan
-  artifact, regenerate plan, iterate on plan.
+  context recovery and session handoff. On every invocation, writes plan.md and
+  re-derives checks.yaml from the Acceptance Criteria; an immutable plan.vN.md
+  snapshot is written only in opt-in snapshot mode (`Skill("aw-create-plan",
+  "snapshot")`). Use after planning is complete and confidence gate passes —
+  and again on every plan iteration (user-requested refinement or Phase 4
+  auto-replan). Triggers on create plan, generate plan, write plan artifact,
+  regenerate plan, iterate on plan.
 license: MIT
 disable-model-invocation: false
 metadata:
   author: mthines
-  version: '2.1.0'
+  version: '2.2.0'
   workflow_type: advisory
 ---
 
 # Create Plan Artifact
 
-Generate `.agent/{branch-name}/plan.md` — the single source of truth for autonomous execution — alongside an immutable `plan.vN.md` snapshot of the same content and a `checks.yaml` of executable acceptance checks derived from the Acceptance Criteria.
+Generate `.agent/{branch-name}/plan.md` — the planner→executor handoff document — alongside `checks.yaml`, the executable acceptance checks derived from the Acceptance Criteria.
 
 **A new Claude session MUST be able to execute from `plan.md` alone without the original conversation.**
 
-**Every plan iteration produces a new `plan.vN.md` snapshot.** `plan.md` always points at the latest version; `plan.v1.md`, `plan.v2.md`, … are immutable history. `checks.yaml` is re-derived on every iteration (statuses reset to `pending`); it is not versioned.
+**`plan.md` is a handoff artifact, not an exhaustive knowledge base.** Keep it lean (see the Core/Extended tiering in Step 2). `checks.yaml` is the **living contract** — it is re-derived on every iteration (statuses reset to `pending`) and self-validates against reality on every executor loop, so it does not go stale the way prose does. When something is unclear, prefer asking the still-running planner agent (or the user) over bloating the document to answer every future question.
+
+## Snapshot mode (opt-in)
+
+**By default this skill writes only `plan.md`** (overwritten in place on each iteration). Git tracks nothing here — `.agent/` is gitignored per-developer scratch — so immutable `plan.vN.md` snapshot chains are **not** written by default: they are rarely re-read, they add directory noise, and every iteration would pay a redundant write. This is deliberate ([research §5.4](../autonomous-workflow/references/anthropic-architecture-research.md#54-what-is-not-evidence-backed): versioning is an audit-trail/review-UX feature with no measured effect on task success).
+
+**Opt in to snapshots** by invoking `Skill("aw-create-plan", "snapshot")`. In snapshot mode the skill additionally writes an immutable `plan.v{N}.md` alongside `plan.md` (`plan.v1.md`, `plan.v2.md`, … as history), for when a durable annotated audit trail of a plan's evolution is genuinely wanted. Everything below marked **(snapshot mode)** applies only then.
 
 ---
 
@@ -42,45 +48,45 @@ Before invoking this skill:
 
 ## Procedure
 
-### Step 1: Determine target paths and next version
+### Step 1: Determine target paths (and next version, snapshot mode only)
 
-Run this command to compute the artifact directory, the next version number,
-and the two files this skill will write — do NOT guess the branch name or the
-version:
+Run this command to compute the artifact directory and the files this skill
+will write — do NOT guess the branch name or the version:
 
 ```bash
 BRANCH=$(git branch --show-current)
 DIR=".agent/${BRANCH}"
 mkdir -p "${DIR}"
+echo "DIR=${DIR}"
+echo "LATEST=${DIR}/plan.md"
+echo "CHECKS=${DIR}/checks.yaml"
+
+# Snapshot mode only — compute the next immutable version path:
 NEXT=$(ls "${DIR}" 2>/dev/null \
   | sed -n 's/^plan\.v\([0-9][0-9]*\)\.md$/\1/p' \
   | sort -n | tail -1)
 NEXT=$(( ${NEXT:-0} + 1 ))
-echo "DIR=${DIR}"
 echo "VERSION=${NEXT}"
 echo "VERSIONED=${DIR}/plan.v${NEXT}.md"
-echo "LATEST=${DIR}/plan.md"
-echo "CHECKS=${DIR}/checks.yaml"
 ```
-
-Four things are determined here:
 
 | Output       | Meaning                                                    |
 | ------------ | ---------------------------------------------------------- |
-| `VERSION`    | The next version number (1 on first run, 2 on next, …)     |
-| `VERSIONED`  | The immutable snapshot path: `.agent/{branch}/plan.vN.md`  |
-| `LATEST`     | The canonical "latest" pointer: `.agent/{branch}/plan.md`  |
-| `CHECKS`     | The executable acceptance checks: `.agent/{branch}/checks.yaml` |
+| `LATEST`     | The canonical plan: `.agent/{branch}/plan.md` (always written) |
+| `CHECKS`     | The executable acceptance checks: `.agent/{branch}/checks.yaml` (always written) |
+| `VERSION`    | **(snapshot mode)** The next version number (1 on first run, 2 on next, …) |
+| `VERSIONED`  | **(snapshot mode)** The immutable snapshot path: `.agent/{branch}/plan.vN.md` |
 
 **Do NOT hardcode or guess the branch name or the version number.**
 
-### Step 2: Write the versioned snapshot AND the latest pointer
+### Step 2: Write `plan.md` (and the versioned snapshot in snapshot mode)
 
-Render the plan content using the template structure below, then write **both**
-files with **identical content**:
+Render the plan content using the template structure below, then write it:
 
-1. Write `${VERSIONED}` (e.g. `.agent/feat-x/plan.v2.md`).
-2. Write `${LATEST}` (`.agent/feat-x/plan.md`).
+1. Write `${LATEST}` (`.agent/feat-x/plan.md`) — **always**.
+2. **(snapshot mode only)** Also write `${VERSIONED}` (e.g. `.agent/feat-x/plan.v2.md`) with **byte-identical content** to `plan.md`.
+
+In default (non-snapshot) mode, only `plan.md` is written — it is overwritten in place, and the `version:` frontmatter field still increments so the iteration counter is preserved without a separate file.
 
 **The template has two tiers — emit them differently:**
 
@@ -99,13 +105,16 @@ Acceptance Criteria, the decisions a cold session would otherwise re-derive,
 the scope-bounding File Changes, the done-check Verification). The Extended
 tier earns its tokens only when the task is complex enough to need it.
 
-`plan.md` is a mirror of the newest `plan.vN.md`. Readers (executor agent,
-VS Code extension, fresh sessions) load `plan.md`. Earlier `plan.v*.md` files
-remain on disk as immutable history — never edit or delete them.
+Readers (executor agent, VS Code extension, fresh sessions) always load
+`plan.md`. **(snapshot mode)** `plan.md` is a byte-identical mirror of the
+newest `plan.vN.md`, and earlier `plan.v*.md` files remain on disk as
+immutable history — never edit or delete them.
 
-> **Rationale.** Versioned snapshots give the user a complete audit trail of
-> how the plan evolved (initial → user feedback → auto-replan → …) without
-> forcing readers to learn a versioning convention; `plan.md` always works.
+> **Rationale.** In snapshot mode the versioned files give the user a complete
+> audit trail of how the plan evolved (initial → user feedback → auto-replan →
+> …) without forcing readers to learn a versioning convention; `plan.md`
+> always works. Snapshot mode is opt-in because that audit trail is rarely
+> re-read and `.agent/` is gitignored scratch (see [Snapshot mode](#snapshot-mode-opt-in)).
 
 ### Step 2b: Derive `checks.yaml` from the Acceptance Criteria
 
@@ -156,21 +165,23 @@ no `AC-{n}` IDs, which is the marker that opts a plan out of rule #11.
 ### Step 3: Append a Progress Log entry referencing this version
 
 In the `## Progress Log` section of the plan content, the entry for *this*
-write must name the version explicitly so the trail is legible:
+write must name the version explicitly so the trail is legible. In default
+mode the version is the `version:` frontmatter value it bumped to; in snapshot
+mode it names the `plan.vN.md` file:
 
 ```markdown
-- [{TIMESTAMP}] Phase 1: plan.v1.md created (initial plan)
-- [{TIMESTAMP}] Phase 1: plan.v2.md created (iteration — user requested broader scope)
-- [{TIMESTAMP}] Phase 4: plan.v3.md created (auto-replan after holistic-analysis)
+- [{TIMESTAMP}] Phase 1: plan v1 created (initial plan)
+- [{TIMESTAMP}] Phase 1: plan v2 created (iteration — user requested broader scope)
+- [{TIMESTAMP}] Phase 4: plan v3 created (auto-replan after holistic-analysis)
 ```
 
-The same Progress Log lives in **all** versions — newer versions carry the
-full history of older versions plus their own new entry. This keeps each
-`plan.vN.md` file self-contained.
+**(snapshot mode)** The same Progress Log lives in **all** versions — newer
+versions carry the full history of older versions plus their own new entry.
+This keeps each `plan.vN.md` file self-contained.
 
 ### Step 4: Validate completeness
 
-After writing, verify against the checklist at the bottom of this skill. If any item fails, fix the offending file(s) immediately — `plan.md` and `plan.vN.md` stay byte-identical, and `checks.yaml` IDs stay in sync with the plan's Acceptance Criteria.
+After writing, verify against the checklist at the bottom of this skill. If any item fails, fix the offending file(s) immediately — in snapshot mode `plan.md` and `plan.vN.md` stay byte-identical, and `checks.yaml` IDs stay in sync with the plan's Acceptance Criteria.
 
 ---
 
@@ -412,13 +423,14 @@ approved: true
 
 ## Validation Checklist
 
-After writing both files, verify ALL of the following. **Fix any failures immediately.**
+After writing, verify ALL of the following. **Fix any failures immediately.**
 
-- [ ] **File location**: Both files inside the worktree at `.agent/{branch}/` (NOT on main)
-- [ ] **Two files written**: `plan.vN.md` (immutable snapshot) AND `plan.md` (latest pointer)
-- [ ] **Identical content**: `plan.md` and `plan.vN.md` have byte-identical bodies (the canonical "latest == newest snapshot" invariant)
-- [ ] **Version monotonic**: `N` is exactly one greater than the highest existing `plan.v*.md` (or 1 on first run)
-- [ ] **Older versions untouched**: Pre-existing `plan.v1.md`, `plan.v2.md`, … were not edited or deleted
+- [ ] **File location**: File(s) inside the worktree at `.agent/{branch}/` (NOT on main)
+- [ ] **plan.md written**: `.agent/{branch}/plan.md` exists and is complete
+- [ ] **(snapshot mode) Snapshot written**: `plan.vN.md` (immutable snapshot) written alongside `plan.md`
+- [ ] **(snapshot mode) Identical content**: `plan.md` and `plan.vN.md` have byte-identical bodies (the "latest == newest snapshot" invariant)
+- [ ] **(snapshot mode) Version monotonic**: `N` is exactly one greater than the highest existing `plan.v*.md` (or 1 on first run)
+- [ ] **(snapshot mode) Older versions untouched**: Pre-existing `plan.v1.md`, `plan.v2.md`, … were not edited or deleted
 - [ ] **Frontmatter complete**: created, version, branch, task, complexity, status, approved — all filled
 - [ ] **Version field**: `version:` is present in frontmatter and is a positive integer; on a fresh plan it is `1`; on every re-write of `plan.md` it is exactly one greater than the previous value
 - [ ] **Timestamps**: All timestamps use ISO 8601 with time (`YYYY-MM-DDTHH:MM:SSZ`)
@@ -431,7 +443,7 @@ After writing both files, verify ALL of the following. **Fix any failures immedi
 - [ ] **Implementation Order**: Numbered, atomic, verifiable steps
 - [ ] **File Changes**: Every file listed with action, path, change description, and reason
 - [ ] **Verification commands**: Both after-edit and before-PR commands identified
-- [ ] **Progress Log**: Carries the full prior history plus a new entry naming `plan.v{N}.md`
+- [ ] **Progress Log**: Carries the full prior history plus a new entry for this write (naming `plan.v{N}.md` in snapshot mode, or the `version:` it bumped to otherwise)
 
 **Executable checks artifact:**
 
@@ -467,10 +479,10 @@ After writing both files, verify ALL of the following. **Fix any failures immedi
 | No file paths in Patterns            | Reference specific existing files, not abstract descriptions          |
 | Requirements not tagged              | Add `[user-stated]` or `[inferred]` to every requirement              |
 | Timestamps missing time component    | Use `2026-03-07T14:30:00Z` not `2026-03-07`                           |
-| Wrote only `plan.md`, no `plan.vN.md` | Re-run Step 1 to compute `N`, then write the snapshot too           |
-| Wrote `plan.vN.md` but forgot to update `plan.md` | Copy the new snapshot's content over `plan.md`            |
-| Edited an existing `plan.vN.md`      | Restore from git (or re-derive from history); snapshots are immutable |
-| Reused a version number              | Re-run Step 1; older snapshots must never be overwritten              |
+| Wrote a `plan.vN.md` in default mode  | Snapshots are opt-in — write only `plan.md` unless invoked with the `snapshot` arg |
+| (snapshot mode) Wrote `plan.vN.md` but forgot to update `plan.md` | Copy the new snapshot's content over `plan.md`  |
+| (snapshot mode) Edited an existing `plan.vN.md` | Restore from git (or re-derive from history); snapshots are immutable |
+| (snapshot mode) Reused a version number | Re-run Step 1; older snapshots must never be overwritten            |
 | ACs without `AC-{n}` IDs or `covers:` annotations | Add both — rule #9 fails on an uncovered `[user-stated]` requirement |
 | `create` rows but no Existing Code Survey | Run the reuse searches, add the section — rule #10 fails otherwise |
 | Forgot `checks.yaml` (or IDs drifted from plan) | Re-run Step 2b — one entry per `AC-{n}`, IDs in sync (rule #11)   |
