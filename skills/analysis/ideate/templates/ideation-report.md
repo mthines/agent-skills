@@ -28,9 +28,9 @@
 
 ### Also cleared the bar
 
-{Only present when > 5 ideas cleared the bar. Same per-idea structure as a lead finalist, but the compact table only. These are full finalists — the split from the lead list is readability, not quality.}
+{Present whenever more ideas cleared the admission bar than appear in Lead finalists — i.e. the lead list was capped by the ~5 readability limit, an explicit `--n k`, or the 2-per-niche guard. These are full finalists; the split from the lead list is readability and diversity, not quality. Compact table only. Omit this section only when every cleared-bar idea is already a Lead finalist.}
 
-- **{idea title}** — {composite}, {one-line mechanism}. {First concrete step in one sentence.}
+- **{idea title}** — {composite}, {capped by: readability | `--n` | niche}, {one-line mechanism}. {First concrete step in one sentence.}
 
 ### Wildcard — {idea title}
 
