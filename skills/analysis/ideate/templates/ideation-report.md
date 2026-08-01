@@ -7,7 +7,11 @@
 
 ## Finalists
 
-### 1. {idea title}
+> **Quality bar:** {count} idea(s) cleared the admission bar (`Fit ≥ 6`, `Impact ≥ 6`, composite in the leading tier, survived Phase 5). The count is emergent — not a fixed target.{ Cap applied: `--n {k}`. | No `--n` cap — every idea that cleared the bar is shown.}
+
+### Lead finalists
+
+#### 1. {idea title}
 
 {2–3 sentence mechanism.}
 
@@ -18,13 +22,19 @@
 - **First concrete step:** {one paragraph — first real step, core mechanism, riskiest assumption.}
 - **Origin:** {burst {n} | evolution round {n} crossover of "{parent A}" × "{parent B}"}
 
-### 2. {idea title}
+#### 2. {idea title}
 
-{same structure}
+{same structure — repeat for every lead finalist; the number of entries follows the bar, not a fixed 3}
+
+### Also cleared the bar
+
+{Only present when > 5 ideas cleared the bar. Same per-idea structure as a lead finalist, but the compact table only. These are full finalists — the split from the lead list is readability, not quality.}
+
+- **{idea title}** — {composite}, {one-line mechanism}. {First concrete step in one sentence.}
 
 ### Wildcard — {idea title}
 
-{Highest-novelty pick, carried per the novelty-protection rule even if its composite lost.}
+{Highest-novelty pick, carried per the novelty-protection rule even if its composite lost. Note whether it also cleared the admission bar on its own.}
 
 {same structure}
 
@@ -38,9 +48,18 @@
 | ------------------- | ----- | -------------------------- |
 | {approach family}   | {n}   | {idea title}               |
 
-## Discarded but notable
+## Ideas worth revisiting
 
-- **{idea title}** — {one line on why it lost, and what would revive it.}
+The strongest ideas that did **not** clear the bar this run — kept here because a near-miss is often the most inspiring input for the next round or a shifted context.
+List up to 5, highest-potential first. For each, name the *one thing* holding it back and the concrete change that would flip it into a finalist.
+
+| Idea | Standout axis | Why it missed the bar | What would flip it |
+| ----- | -------------- | ---------------------- | ------------------- |
+| {title} | {e.g. Novelty 9/10 — highest of the non-finalists} | {the single blocking axis or gate, e.g. "Feasibility 3 — needs a capability we don't have yet"} | {the concrete unlock: a dependency shipping, a wider framing, more time, pairing with finalist X} |
+
+- **Highest-novelty near-miss:** {title} — {why it is exciting despite missing the bar, and the smallest experiment that would de-risk it}.
+- **Best cross-pollination candidate:** {title} — {which finalist it could merge with, and what the hybrid would gain}.
+- **Revisit trigger:** {the specific future condition — a launch, a constraint lifting, a budget change — under which this bench becomes worth a fresh run}.
 
 ## Run stats
 
@@ -48,6 +67,7 @@
 | -------------------------------- | ------------------------------------------ |
 | Bursts                           | {n}                                        |
 | Raw / unique ideas               | {n} / {n}                                  |
+| Finalists (cleared bar) / pool   | {n} / {n} ({emergent — `--n` cap: none | {k}}) |
 | Non-duplicate yield per burst    | {b1: n%}, {b2: n%}{, …}                    |
 | Evolution rounds                 | {n} (stopped: {round cap | flat scores | duplicate variants}) |
 | Top composite trajectory         | {r0: n.n} → {r1: n.n}{ → …}                |
