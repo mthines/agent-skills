@@ -7,7 +7,9 @@
 
 ## Finalists
 
-> **Quality bar:** {count} idea(s) cleared the admission bar (`Fit ≥ 6`, `Impact ≥ 6`, composite in the leading tier, survived Phase 5). The count is emergent — not a fixed target.{ Cap applied: `--n {k}`. | No `--n` cap — every idea that cleared the bar is shown.}
+> **Quality bar** (`Fit ≥ 6`, `Impact ≥ 6`, composite in the leading tier, survived Phase 5). The count is emergent — not a fixed target.
+> {When ≥ 1 cleared: **{count} idea(s) cleared the admission bar.**{ Cap applied: `--n {k}` — the rest appear under "Also cleared the bar". | No `--n` cap — every idea that cleared the bar is shown.}}
+> {When 0 cleared: **No idea cleared the admission bar this run.** The single closest idea is shown below as the floor-of-1 finalist, plus the novelty wildcard — treat both as "closest, not validated".}
 
 ### Lead finalists
 
