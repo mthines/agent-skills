@@ -103,8 +103,9 @@ Then apply, in order:
    Ties on Novelty break by composite.
    Label it the **wildcard** in the report.
    It never consumes a "slot" — there are no slots — so it appears in the report's Wildcard section additionally, and is *also* flagged a finalist if it cleared the bar on its own.
-6. **Niche diversity:** among admitted finalists, keep at most 2 per niche (see [`evolution-loop.md`](./evolution-loop.md) for niche construction).
-   A 3rd+ from the same niche is **not discarded** — it drops to the *strong contenders* tier the report surfaces under "Ideas worth revisiting", so a productive niche is shown, not hidden.
+6. **Niche diversity:** at most 2 admitted finalists per niche appear in the **Lead finalists** list (see [`evolution-loop.md`](./evolution-loop.md) for niche construction).
+   A 3rd+ from the same niche is **not discarded and not demoted to the bench** — it *cleared the bar*, so it is still a finalist and appears under **Also cleared the bar** (a Finalists sub-section), so a productive niche is shown, not hidden.
+   Only ideas that missed the bar go to "Ideas worth revisiting".
 7. Deep mode: the admitted finalist set is confirmed by a panel of 3 fresh judge subagents voting independently; majority keeps a finalist, and any panel member may promote one bar-missing idea back for a revote (§4.7 proposes diverse judge panels as a bias mitigation; three independent fresh contexts approximate this within a single-model setup — see the same-model caveat above).
 
 ### Count bounds
