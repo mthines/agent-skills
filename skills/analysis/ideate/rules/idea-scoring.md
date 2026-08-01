@@ -82,15 +82,46 @@ Disagreement between the two orderings of a pair = a tie; do not silently pick o
 
 ## Selection rules
 
-Select `--n` finalists (default 3) from the ranked pool:
+The finalist list is **gated on quality, not truncated to a fixed count** — its size is emergent from the pool.
+Selecting a fixed top-`k` re-imposes the arbitrary cutoff §3.2 warns against: a rich pool has deserving ideas silently dropped to hit the number, and a thin pool gets padded with mediocre ones to reach it.
+Instead, admit every idea that clears an explicit bar and let the count fall out.
 
-1. Instruct the selector verbatim: **"select the most creative ideas that satisfy the success criterion"** — the explicit "creative" instruction partially corrects the feasibility bias (§3.2).
-2. **Novelty protection:** at least one finalist must be the pool's highest-Novelty idea with Feasibility ≥ 4, even when its composite loses to safer ideas.
+### Admission bar
+
+An idea from the ranked pool is a **finalist** when it clears **all** of:
+
+1. **On-target floor** — `Fit ≥ 6` **and** `Impact ≥ 6`.
+   It must answer the selected framing and move the success criterion; this stops a novel idea that solves a *different* problem from being promoted.
+2. **Leading-tier quality** — `Composite ≥ C* − 1.0` (where `C*` is the pool's top composite) **and** `Composite ≥ 7.0` absolute.
+   The relative band keeps the set to ideas genuinely competitive with the best; the absolute floor stops a weak pool from promoting its own mediocre top.
+3. **Survives Phase 5** — produces a concrete executability probe and is not downgraded by the confidence gate (see [Finalist validation](#finalist-validation-phase-5)).
+
+Then apply, in order:
+
+4. Instruct the selector verbatim: **"select the most creative ideas that satisfy the success criterion"** — the explicit "creative" instruction partially corrects the feasibility bias (§3.2).
+5. **Novelty protection (always):** the pool's highest-Novelty idea with `Feasibility ≥ 4` is always carried, even when it misses the admission bar.
    Ties on Novelty break by composite.
    Label it the **wildcard** in the report.
-   With `--n 1`, the wildcard does not consume the single finalist slot — report it additionally in the report's Wildcard section.
-3. Never fill the finalist list with ideas from a single niche (see [`evolution-loop.md`](./evolution-loop.md) for niche construction) — two finalists max per niche.
-4. Deep mode: the finalist set is confirmed by a panel of 3 fresh judge subagents voting independently; majority keeps a finalist, and any panel member may promote one discarded idea back for a revote (§4.7 proposes diverse judge panels as a bias mitigation; three independent fresh contexts approximate this within a single-model setup — see the same-model caveat above).
+   It never consumes a "slot" — there are no slots — so it appears in the report's Wildcard section additionally, and is *also* flagged a finalist if it cleared the bar on its own.
+6. **Niche diversity:** at most 2 admitted finalists per niche appear in the **Lead finalists** list (see [`evolution-loop.md`](./evolution-loop.md) for niche construction).
+   A 3rd+ from the same niche is **not discarded and not demoted to the bench** — it *cleared the bar*, so it is still a finalist and appears under **Also cleared the bar** (a Finalists sub-section), so a productive niche is shown, not hidden.
+   Only ideas that missed the bar go to "Ideas worth revisiting".
+7. Deep mode: the admitted finalist set is confirmed by a panel of 3 fresh judge subagents voting independently; majority keeps a finalist, and any panel member may promote one bar-missing idea back for a revote (§4.7 proposes diverse judge panels as a bias mitigation; three independent fresh contexts approximate this within a single-model setup — see the same-model caveat above).
+
+### Count bounds
+
+The bar sets the count; these bounds only handle the extremes.
+
+- **Floor — always at least 1.**
+  If the bar admits nothing (thin or off-target pool), carry the single top-composite idea plus the wildcard, and state plainly in the report that no idea cleared the quality bar.
+  An honest "nothing strong yet — here is the closest" beats padding the list to look productive.
+- **No fixed ceiling; a readability tier instead.**
+  When more than 5 ideas clear the bar, the pool is genuinely rich — keep them **all**, but present the highest-composite ~5 as **Lead finalists** and the remainder as **Also cleared the bar**, both inside the report's Finalists section.
+  This split is presentation only: nothing that cleared the bar is demoted to "revisit".
+- **`--n` is an optional user cap, never the default count.**
+  With `--n k`, the Lead-finalists list is truncated to the `k` highest-composite admitted finalists (the wildcard still always appears); everything else that cleared the bar moves to "Also cleared the bar".
+  Without `--n`, the count is fully emergent.
+  `--n` can only *narrow* the lead list — it never manufactures finalists the bar did not admit.
 
 ## Finalist validation (Phase 5)
 
@@ -98,7 +129,7 @@ Pre-execution novelty scores are systematically inflated — idea rankings can f
 Before recommending, run each finalist through:
 
 1. **Executability probe.** Write one concrete paragraph: the first real step, the core mechanism, and the riskiest assumption.
-   A finalist that cannot produce a concrete first step is downgraded and replaced from the ranked pool.
+   A finalist that cannot produce a concrete first step fails admission clause 3 and simply **drops out of the finalist set** — there is no fixed count to backfill, so nothing is promoted in its place (it may still surface under "Ideas worth revisiting" if notable).
 2. **Confidence gate.** Run `Skill("confidence", "analysis")` on the recommendation package (finalists + scores + probes).
    Apply the confidence skill's thresholds:
 
@@ -116,6 +147,7 @@ Before recommending, run each finalist through:
 ## Common mistakes
 
 - Selecting the top-3 composite scores. **Fix:** apply the selection rules — composite ranking alone re-creates the feasibility bias the rubric exists to counter (§3.2).
+- Truncating the finalist list to a fixed count (3–4) when more ideas clear the bar, or padding it to that count when fewer do. **Fix:** the count is emergent from the admission bar; report every idea that clears it, and be honest when few (or none) do.
 - Letting judges see persona or seed-idea labels. **Fix:** anonymize and shuffle before judging; self-preference and social signals bias verdicts (§4.7).
 - Reporting axis scores as precise truth. **Fix:** treat scores as ordering devices; surface the confidence gate result as the reliability statement (§4.1).
 - Judging each idea once, in pool order. **Fix:** per-axis passes plus order-swapped pairs for the top half.

@@ -16,7 +16,7 @@ argument-hint: '[quick|deep] [--n <count>] [--no-framing] [<problem statement>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.1'
+  version: '1.1.0'
   workflow_type: orchestrator
   tags:
     - ideation
@@ -61,7 +61,7 @@ Parse `$ARGUMENTS`:
 
 | Flag           | Default | Meaning                                                  |
 | -------------- | ------- | -------------------------------------------------------- |
-| `--n <count>`  | 3       | Number of finalists in the report.                       |
+| `--n <count>`  | unset   | Optional **cap** on the Lead-finalists list. Unset by default — the finalist count is emergent from the quality bar (see [`idea-scoring.md`](./rules/idea-scoring.md) § Selection rules). `--n` only narrows; it never manufactures finalists the bar did not admit. |
 | `--no-framing` | off     | Skip Phase 1 (problem is already well-framed).           |
 
 Everything else in `$ARGUMENTS` is the problem statement.
@@ -79,7 +79,7 @@ First match wins:
 | 4 | User is mid-conversation and wants options fast ("any ideas?", "what do you think?").                   | `quick` |
 | 5 | Unsure.                                                                                                 | `quick`, and name the escalation path: "run `/ideate deep <problem>` for the full pipeline". |
 
-Cost expectation: a deep `--n 3` run dispatches ~17 subagents (2 bursts × 5 generators, 1 pool judge, 1 breeder, 1 variant judge, 3 panel judges, 1 pre-mortem) — prefer `quick` for casual or budget-sensitive asks.
+Cost expectation: a deep run with a typical 2–4-idea finalist band dispatches ~17 subagents (2 bursts × 5 generators, 1 pool judge, 1 breeder, 1 variant judge, 3 panel judges, 1 pre-mortem) — prefer `quick` for casual or budget-sensitive asks. A richer pool that admits more finalists adds only panel-judge cost, not generation cost.
 
 ---
 
@@ -93,7 +93,7 @@ Cost expectation: a deep `--n 3` run dispatches ~17 subagents (2 bursts × 5 gen
 | 3     | Score            | [`rules/idea-scoring.md`](./rules/idea-scoring.md)                      | Every pooled idea scored on 4 independent axes by a non-generator judge.                    |
 | 4     | Evolve           | [`rules/evolution-loop.md`](./rules/evolution-loop.md)                  | ≤ 3 rounds; stopped on flat external scores, never on self-assessed improvement.           |
 | 5     | Validate         | [`rules/idea-scoring.md`](./rules/idea-scoring.md) § Finalist validation | Every finalist has an executability probe; `confidence(analysis)` ≥ 70 on the recommendation. |
-| 6     | Report           | [`templates/ideation-report.md`](./templates/ideation-report.md)        | Report emitted; high-novelty wildcard included; verdict question asked.                     |
+| 6     | Report           | [`templates/ideation-report.md`](./templates/ideation-report.md)        | Report emitted; finalist count reflects the quality bar; high-novelty wildcard included; "Ideas worth revisiting" filled; verdict question asked. |
 | 7     | Learn            | [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md)    | Lessons written — mechanics only, never idea content.                                       |
 
 ### Phase 0 — Intake & triage
@@ -152,9 +152,10 @@ Problem framing measurably shapes ideation breadth and direction (§2.5) — ski
 3. **Diversity comes from personas and prompts, not temperature.** Temperature is a weak novelty lever with a coherence cost (§4.6).
 4. **The judge is never the generator.** Self-scoring amplifies self-bias per iteration (§4.7, §5.1).
 5. **Protect novelty at selection.** Default selection sacrifices originality for feasibility and performs near-randomly; always carry one high-novelty pick (§3.2).
-6. **Iterate by recombination across lineages, not polishing.** Cap at 3 rounds; stop on flat external scores (§5.1–§5.3).
-7. **The obvious ideas come first.** Always run a second burst seeded with "what has NOT been said yet" (§1.5).
-8. **Pre-execution novelty is inflated.** Every finalist needs a concrete first-step probe before it is recommended (§4.2).
+6. **Gate finalists on quality, not quantity.** The finalist count is emergent: report every idea that clears the admission bar, not a fixed top-3. A fixed count drops deserving ideas from a rich pool and pads a thin one (§3.2).
+7. **Iterate by recombination across lineages, not polishing.** Cap at 3 rounds; stop on flat external scores (§5.1–§5.3).
+8. **The obvious ideas come first.** Always run a second burst seeded with "what has NOT been said yet" (§1.5).
+9. **Pre-execution novelty is inflated.** Every finalist needs a concrete first-step probe before it is recommended (§4.2).
 
 ---
 
@@ -174,6 +175,8 @@ Lessons may inform mechanics — depth triage, operator effectiveness, judge cal
 - Scoring or feasibility talk during a generation pass.
 - Letting the generation context judge its own output.
 - Averaging the four axes into one number before selection, then picking the top-n — this silently discards every high-novelty idea.
+- Capping the report at a fixed 3–4 finalists regardless of how many ideas cleared the quality bar — the count is emergent, not a target.
+- Treating the "Ideas worth revisiting" section as a throwaway list — it must name why each near-miss missed and what would flip it; that is the inspiring part.
 - A 4th evolution round because it "still feels like it's improving" — self-assessed improvement is the signal that lies.
 - Storing user idea-taste as a lesson.
 
@@ -185,5 +188,6 @@ Lessons may inform mechanics — depth triage, operator effectiveness, judge cal
 - [ ] Generation and evaluation never co-occurred in one pass.
 - [ ] Pool met the unique-idea gate for the chosen depth.
 - [ ] Every finalist has all four axis scores, an executability probe, and the confidence gate result.
-- [ ] Report includes the high-novelty wildcard and the run stats (bursts, non-duplicate yield, evolution rounds, score trajectory).
+- [ ] The finalist count reflects the quality bar, not a fixed target — every idea that cleared the admission bar is reported (or capped only by an explicit `--n`).
+- [ ] Report includes the high-novelty wildcard, the run stats (bursts, non-duplicate yield, evolution rounds, score trajectory), and an "Ideas worth revisiting" section that names, per near-miss, why it missed and what would flip it.
 - [ ] User verdict requested; lessons written per the loop contract.

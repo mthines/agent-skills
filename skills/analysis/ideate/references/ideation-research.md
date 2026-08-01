@@ -121,7 +121,7 @@ Source: [Double Diamond](https://en.wikipedia.org/wiki/Double_Diamond_(design_pr
 Rietzschel, Nijstad & Stroebe (2010): after generating, people select ideas **barely better than random**, systematically preferring feasible/desirable over original — selected sets are *less original than the average of the generated pool*.
 Instructing selectors to "select creative ideas" partially corrects this.
 Sources: [Rietzschel et al. 2010, BJP](https://bpspsychub.onlinelibrary.wiley.com/doi/10.1348/000712609X414204), [review](https://research.rug.nl/en/publications/why-great-ideas-are-often-overlooked-a-review-and-theoretical-ana/) — strong (replicated line).
-**Skill consequence:** the verbatim "select the most creative" instruction, the novelty-protection wildcard, and axes scored separately — finalists are never chosen on a single averaged number alone (the composite orders the pool; the selection rules and wildcard override it).
+**Skill consequence:** the verbatim "select the most creative" instruction, the novelty-protection wildcard, and axes scored separately — finalists are never chosen on a single averaged number alone (the composite orders the pool; the selection rules and wildcard override it). The finalist *count* is likewise gated on a quality bar rather than a fixed top-N, since an arbitrary cutoff is itself a selection distortion that drops deserving ideas from a rich pool.
 
 ### §3.3 Dot voting / impact-effort
 
@@ -240,7 +240,7 @@ They are listed here so no number in the skill silently masquerades as evidence.
 | Composite weights 0.30 N / 0.25 F / 0.30 I / 0.15 Fit           | Novelty and impact weighted above feasibility to lean against the §3.2 bias; composite orders the pool only — selection rules override it. |
 | Wildcard floor: Feasibility ≥ 4                                 | Excludes only outright-impossible ideas from novelty protection; any higher floor would re-create the §3.2 bias inside the wildcard rule. |
 | Panel of 3 finalist judges (deep)                               | Smallest odd panel; §4.7 motivates panels but names no size, and same-model panels approximate — not achieve — the diversity §4.7 means. |
-| `--n 3` finalists; 3–5 HMW framings                             | Presentation-size choices.                                                                            |
+| Quality-gated finalist set (emergent count); 3–5 HMW framings   | The finalist count follows the admission bar (on-target floor + leading-tier composite + Phase 5), not a fixed N — a fixed top-N re-imposes the §3.2 arbitrary cutoff. `--n` is an optional user cap only. Admission thresholds (`Fit`/`Impact` ≥ 6, `C* − 1.0`, absolute ≥ 7.0) and the HMW count are operationalizations, not study values. |
 | Pairwise refinement for pools > 10, top half only               | Cost bound; direct rubric scoring suffices for small pools.                                           |
 | ≤ 2 finalists per niche                                         | Structural diversity guard at selection, mirroring the per-niche elitism of §5.2.                     |
 | Evolution skip: pool ≤ 6 or top composite ≥ 8.5                 | Skip when there is nothing to breed or little headroom.                                               |
