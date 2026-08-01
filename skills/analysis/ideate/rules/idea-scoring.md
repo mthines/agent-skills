@@ -129,7 +129,7 @@ Pre-execution novelty scores are systematically inflated — idea rankings can f
 Before recommending, run each finalist through:
 
 1. **Executability probe.** Write one concrete paragraph: the first real step, the core mechanism, and the riskiest assumption.
-   A finalist that cannot produce a concrete first step is downgraded and replaced from the ranked pool.
+   A finalist that cannot produce a concrete first step fails admission clause 3 and simply **drops out of the finalist set** — there is no fixed count to backfill, so nothing is promoted in its place (it may still surface under "Ideas worth revisiting" if notable).
 2. **Confidence gate.** Run `Skill("confidence", "analysis")` on the recommendation package (finalists + scores + probes).
    Apply the confidence skill's thresholds:
 
