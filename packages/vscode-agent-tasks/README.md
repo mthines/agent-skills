@@ -65,7 +65,7 @@ Sessions launched from sub-directories of a worktree (e.g. `apps/api/` inside `f
 
 ### Filtering
 
-Use the **filter icon** in the Sessions panel header (or the command **Group by Worktree**) to switch between:
+Use the **list-tree icon** in the Sessions panel header (or the command **Group by Worktree**) to switch between:
 - **All worktrees** (default) — every worktree's sessions, grouped, current first
 - **Current worktree only** — flat list of just this worktree's sessions
 
@@ -109,7 +109,7 @@ As of this release, the extension also activates via `onStartupFinished` so the 
 | `agentTasks.scope` | `"all"` | Which worktrees the Agent Tasks panel includes: `"all"` shows every worktree (grouped, current first); `"current"` shows only the current worktree. Toggle via the filter icon in the panel header. |
 | `agentTasks.hooks.enabled` | `true` | Show sessions updating live via the [`agent-tasks-hooks`](https://github.com/mthines/agent-skills/tree/main/plugins/agent-tasks-hooks) plugin. When off, the panel still works but updates lag a few seconds behind. |
 | `agentTasks.sessions.openWith` | `"resume"` | What to do when a session is clicked: `"resume"` opens a terminal in the session's original CWD and runs `claude --resume <session-id>`; `"editor"` opens the JSONL file instead. |
-| `agentTasks.sessions.scope` | `"all"` | Which worktrees the Sessions panel includes: `"all"` shows every worktree (grouped, current first); `"current"` shows only the current worktree. Toggle quickly via the filter icon in the panel header. |
+| `agentTasks.sessions.scope` | `"all"` | Which worktrees the Sessions panel includes: `"all"` shows every worktree (grouped, current first); `"current"` shows only the current worktree. Toggle quickly via the list-tree icon in the Sessions panel header. |
 | `agentTasks.sessions.prLinkage` | `true` | Show PR status badges in the Sessions panel. Requires the `gh` CLI. When off, no `gh` subprocess calls are made and all sessions show JSONL-derived status icons. |
 | `agentTasks.sessions.filter.showActive` | `true` | Show active sessions: running, waiting for input, or unread. |
 | `agentTasks.sessions.filter.showOpenPr` | `true` | Show idle sessions whose branch has an open or draft Pull Request. |

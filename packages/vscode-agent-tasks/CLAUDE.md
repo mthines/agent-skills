@@ -97,7 +97,7 @@ All settings use `agentTasks.*` (NOT `gw.*`):
 - `agentTasks.notifyUnsatisfiableCheck` — warning notification when a check transitions to `unsatisfiable` (default `true`; `fail` never notifies)
 - `agentTasks.scope` — `"all"` (default — every worktree, grouped) or `"current"` (just the active worktree, flat). Toggle via filter icon in Agent Tasks panel header.
 - `agentTasks.sessions.openWith` — `"resume"` (default — open terminal in session's `cwd` and run `claude --resume <id>`) or `"editor"` (open the JSONL transcript)
-- `agentTasks.sessions.scope` — `"all"` (default — every worktree, grouped) or `"current"` (just the active worktree). Toggle via filter icon in Sessions panel header.
+- `agentTasks.sessions.scope` — `"all"` (default — every worktree, grouped) or `"current"` (just the active worktree). Toggle via the list-tree icon in the Sessions panel header.
 
 ## Extension Manifest
 
