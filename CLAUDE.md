@@ -28,6 +28,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 ### `workflow/` — end-to-end orchestrators
 
 - `autonomous-workflow` (`auto`) — phase-based feature delivery 0–7. Opt-in `aw` dispatcher detects tier (Micro/Lite/Full) and routes single-pass vs the planner→executor split (Full only). Two-tier self-improvement hoisted to the dispatcher (universal): fast episodic-lessons tier (LoreKit `loop::aw-lessons`) promotes to the gated `diagnose` slow tier at `seen_count ≥ 3`. Loop: [`rules/self-improvement-loop.md`](./skills/workflow/autonomous-workflow/rules/self-improvement-loop.md). Plan-quality gates (v3.15): Phase 0 restate-and-diff + missing-information gate (`blocking` halts even under `--no-confirm`), Phase 1 Existing Code Survey per planned `create` (anti-reinvention, `confidence` rule #10) + `AC-{n}`/`(covers: R{m})` requirement traceability (rule #9), and an executable `checks.yaml` acceptance artifact (rule #11) the executor's Phase 4 loop gates on mechanically — definitions executor-immutable, check-gaming forbidden, `unsatisfiable` abort affordance. Artifact lightening (v3.18): `checks.yaml` is the primary living contract and `plan.md` a lean handoff document the executor writes drift back into (Phase 3); `plan.v{N}.md` snapshots are opt-in (`aw-create-plan`'s `snapshot` arg), not default; the "No AI co-author tags" rule was removed. Research basis: [`references/planning-quality-research.md`](./skills/workflow/autonomous-workflow/references/planning-quality-research.md). Design intent: [`workflow/autonomous-workflow/CLAUDE.md`](./skills/workflow/autonomous-workflow/CLAUDE.md)
+- `aw-setup` (`/`) — one-time, safely re-runnable setup for the `aw-tester` agent: detects the project's auth strategy, captures Playwright storage state, writes `.claude/aw-targets/local.yml`, validates with a smoke spec. Re-runs detect the existing aw-target and only re-prompt for what broke or changed. Lives nested at [`skills/workflow/autonomous-workflow/aw-setup/`](./skills/workflow/autonomous-workflow/aw-setup/SKILL.md) — `sync-symlinks.sh` walks `skills/` recursively, so it installs as a standalone skill
 - `aw-create-plan` (`Skill()`) — writes `plan.md` + `checks.yaml`; immutable `plan.v{N}.md` snapshots are opt-in (`snapshot` arg). `aw-create-walkthrough`, `aw-review-quality-gate` (`Skill()`) — autonomous-workflow companions
 - `batch-linear-tickets` (`/`) — batch-analyze Linear tickets by dispatching `linear-ticket-investigator` (plus `holistic-analysis` for bug tickets) per ticket, then fan out fixes; requires Linear MCP. Self-improvement: `batch-lessons` fast tier (read Phase 1 / write Phase 5) for classification + correlation; inherits `aw-lessons` via the planner/executor fan-out; promotes to `diagnose`
 - `fix-bug` (`/`) — single-bug pipeline phases 0–8. Flags: `--analyse-only`, `--force-holistic`. Self-improvement: `fix-bug-lessons` fast tier (read Phase 0.5 / write Phase 5·7·8) for its diagnostic phases; inherits `aw-lessons` via `aw-executor`; promotes to `diagnose`
@@ -96,6 +97,7 @@ They are **generated from templates**, not stored as `agents/*.md`, so searching
 - `aw` — opt-in dispatcher: reads `aw-lessons`, detects tier (Micro/Lite/Full), routes single-pass vs the planner→executor split. Source: [`templates/aw.agent.md`](./skills/workflow/autonomous-workflow/templates/aw.agent.md), installed by `install.sh` as `~/.claude/agents/aw.md`
 - `aw-planner` — Full tier, phases 0–2 (validate, plan, worktree + `plan.md`), gated on `confidence(plan) ≥ 90%`. Source: [`templates/aw-planner.agent.md`](./skills/workflow/autonomous-workflow/templates/aw-planner.agent.md), installed as `aw-planner.md`
 - `aw-executor` — Full tier, phases 3–7 (implement, test, docs, PR, CI). Source: [`templates/aw-executor.agent.md`](./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md), installed as `aw-executor.md`
+- `aw-tester` — spec-driven UI verification. Reads a `specs.md` plus an `aw-target.yml` and runs each spec against the live app via Playwright (headless by default), returning a compact pass/fail verdict block and nothing else. Dispatched from inside the executor's Phase 4 iteration loop, **before** the lint/type/test gates, so the executor can verify UI correctness without reading browser logs. `--bail-on-first-red` (default) for fast iteration, `--all` for the Phase 7 rehearsal. Its aw-target is scaffolded by the `aw-setup` skill. Source: [`templates/aw-tester.agent.md`](./skills/workflow/autonomous-workflow/templates/aw-tester.agent.md), installed as `aw-tester.md`. Self-improvement bucket: `aw-tester-lessons`
 
 The agents below live as `agents/*.md` files and are dispatched by skills:
 
@@ -146,7 +148,6 @@ nx release vscode-agent-tasks --configuration=dry-run
 - `src/lib/plugin-installer.ts` — `PluginInstaller`; first-run consent modal, version check, CLI install, sentinel write
 - `src/lib/emit-event.test.ts` — vitest unit tests for `plugins/agent-tasks-hooks/bin/emit-event.js`
 - `src/lib/gh-executor.ts` — `GhExecutor` interface + `SystemGhExecutor` default implementation (injectable for tests)
-- `src/lib/markdown-click-handler.ts` — pure single-vs-double-click debounce helper; no `vscode` import; `DOUBLE_CLICK_MS = 300`
 - `src/lib/pr-status-cache.ts` — `PrStatusCache`; fetches PR enrichment via `gh pr view`, caches per branch with 60s rate limit, no-flip guarantee
 - `src/lib/pr-status-reducer.ts` — `resolveDisplayStatus()` pure function; combines `SessionStatus` + `PrEnrichment` → `DisplayStatus`
 - `src/lib/pr-poller.ts` — `PrPoller`; polls PR status at 90s cadence, capped at 20 most-recent branches
@@ -196,19 +197,18 @@ See `plugins/pr-relevance-memory/README.md` for the two-step installation guide.
 
 ### Markdown artifact click-open model
 
-All markdown artifact rows in both trees (Agent Tasks `agentTasksExplorer` and Sessions `agentSessionsExplorer`) use a single-vs-double-click debounce routed through the shared `agentTasks.openMarkdown` command:
+There is **no** click debounce — the single-vs-double-click model was reverted in `a5a3060`, and `src/lib/markdown-click-handler.ts` no longer exists.
+Do not reintroduce either without a decision record.
 
-- **Single click** → opens the rendered markdown preview (`markdown.showPreview`).
-  The action fires after a 300 ms window with no second click, so a double click never flashes the preview.
-- **Double click** → opens a persistent, editable editor tab (`vscode.window.showTextDocument` with `{ preview: false }`).
-  Triggered when a second click on the same path arrives within 300 ms of the first.
+Two open paths, split by whether the row is a recognised artifact:
 
-This applies to plan, task, walkthrough, diagnose, and other-markdown rows.
-The 300 ms double-click window is `DOUBLE_CLICK_MS` in `src/lib/markdown-click-handler.ts`.
+- **Known artifacts** (plan, task, walkthrough, diagnose) open via the shared `agentTasks.openMarkdown` command, which honours `agentTasks.openMarkdownInPreview` (default `true` → `markdown.showPreview`; `false` → editable editor with `{ preview: false }`).
+  The setting is live, not deprecated.
+- **Other / unknown markdown rows** (`contextValue = 'otherMarkdownFile'`) open via `agentTasks.openOtherMarkdownFile` — always the editable editor tab, never the preview.
 
-The `ArtifactWatcher.openArtifact` programmatic auto-open path (triggered when a new artifact is generated by an agent) always opens an editable editor directly — it does not route through the click debounce.
+Non-Markdown artifacts (`checks.yaml`) always open as a text document regardless of the setting — the `filePath.endsWith('.md')` guard in `extension.ts` enforces this.
 
-The deprecated `agentTasks.openMarkdownInPreview` setting remains a no-op; the click model above supersedes it.
+The `ArtifactWatcher.openArtifact` programmatic auto-open path (triggered when a new artifact is generated by an agent) always opens an editable editor directly — it does not route through `agentTasks.openMarkdown`.
 
 ### Sessions panel — status model
 

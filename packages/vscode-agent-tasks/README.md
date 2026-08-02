@@ -1,17 +1,20 @@
 # Agent Tasks
 
-Visualize autonomous agent workflow artifacts (`plan.md`, `task.md`, `walkthrough.md`, `diagnose-*.md`) in the VS Code sidebar. Works with any workflow that writes artifacts to `.agent/` or `.gw/` directories — including the [`autonomous-workflow`](https://github.com/mthines/agent-skills) skill.
+Visualize autonomous agent workflow artifacts (`checks.yaml`, `plan.md`, `task.md`, `walkthrough.md`, `diagnose-*.md`) in the VS Code sidebar. Works with any workflow that writes artifacts to `.agent/` or `.gw/` directories — including the [`autonomous-workflow`](https://github.com/mthines/agent-skills) skill.
 
 ## Features
 
 - **Agent Tasks sidebar** — browse all in-flight and completed agent tasks by branch
+- **Executable checks** — `checks.yaml` renders first and expanded, one row per acceptance criterion, with a `✓ pass/total` rollup on the branch row and live status as the executor flips each check. A check going `unsatisfiable` (the executor is blocked) raises a warning notification; a failing check does not
 - **Task progress** — see phase, status (in-progress/blocked/completed), and sub-tasks at a glance
-- **Plan viewer** — inspect the plan summary, files to create/modify, and complexity estimate
+- **Plan viewer** — inspect the plan summary, files to create/modify, and complexity estimate; opt-in `plan.v{N}.md` snapshots group under "Previous Versions"
 - **Diagnose reports** — surface every `diagnose-{target}.md` produced by `/create-skill diagnose <target>` next to the plan and walkthrough, with the failure class and confidence score in the row description
 - **Walkthrough, plan, and diagnose auto-open** — when a `walkthrough.md`, `plan.md`, or new `diagnose-*.md` is created, the extension opens it automatically in Markdown Preview (each toggleable)
 - **Configurable directories** — scan `.agent/`, `.gw/`, or any custom directory name
 - **Sort** — sort by date, name, or status; ascending or descending
 - **Sessions panel** — view Claude Code session history for the current workspace and sibling worktrees; click to open the transcript or resume the session in a terminal
+- **PR status badges** — the Sessions panel enriches each branch with its Pull Request state (open, CI failing, merged, closed) via the `gh` CLI, polled every 90 s. Toggle with `agentTasks.sessions.prLinkage`
+- **Session filtering** — narrow the panel to the sessions you care about (active, open PR, merged/closed PR, idle-without-PR, stalled) via the filter icon in the panel header
 
 ## Install
 
@@ -101,9 +104,18 @@ As of this release, the extension also activates via `onStartupFinished` so the 
 | `agentTasks.autoOpenWalkthrough` | `true` | Auto-open `walkthrough.md` in Preview when created. |
 | `agentTasks.autoOpenPlan` | `true` | Auto-open `plan.md` in Preview when created. |
 | `agentTasks.autoOpenDiagnose` | `true` | Auto-open a `diagnose-{target}.md` report the first time it is created. Re-runs of `/create-skill diagnose` against the same target overwrite the report in place and do not re-open it. |
-| `agentTasks.openMarkdownInPreview` | `true` | Open artifact files in Markdown Preview mode. |
+| `agentTasks.openMarkdownInPreview` | `true` | Open known artifact files (plan/task/walkthrough/diagnose) in Markdown Preview mode. `checks.yaml` always opens as a text document; other/unknown markdown rows always open as an editable editor tab. |
+| `agentTasks.notifyUnsatisfiableCheck` | `true` | Warn when a check in `checks.yaml` transitions to `unsatisfiable` — the executor's signal that it is blocked and needs input. Failing checks are a normal part of the loop and never notify. |
+| `agentTasks.scope` | `"all"` | Which worktrees the Agent Tasks panel includes: `"all"` shows every worktree (grouped, current first); `"current"` shows only the current worktree. Toggle via the filter icon in the panel header. |
+| `agentTasks.hooks.enabled` | `true` | Show sessions updating live via the [`agent-tasks-hooks`](https://github.com/mthines/agent-skills/tree/main/plugins/agent-tasks-hooks) plugin. When off, the panel still works but updates lag a few seconds behind. |
 | `agentTasks.sessions.openWith` | `"resume"` | What to do when a session is clicked: `"resume"` opens a terminal in the session's original CWD and runs `claude --resume <session-id>`; `"editor"` opens the JSONL file instead. |
 | `agentTasks.sessions.scope` | `"all"` | Which worktrees the Sessions panel includes: `"all"` shows every worktree (grouped, current first); `"current"` shows only the current worktree. Toggle quickly via the filter icon in the panel header. |
+| `agentTasks.sessions.prLinkage` | `true` | Show PR status badges in the Sessions panel. Requires the `gh` CLI. When off, no `gh` subprocess calls are made and all sessions show JSONL-derived status icons. |
+| `agentTasks.sessions.filter.showActive` | `true` | Show active sessions: running, waiting for input, or unread. |
+| `agentTasks.sessions.filter.showOpenPr` | `true` | Show idle sessions whose branch has an open or draft Pull Request. |
+| `agentTasks.sessions.filter.showMergedClosedPr` | `false` | Show idle sessions whose Pull Request has been merged or closed. |
+| `agentTasks.sessions.filter.showIdleNoPr` | `false` | Show idle sessions whose branch has no Pull Request. |
+| `agentTasks.sessions.filter.showStalled` | `true` | Show stalled sessions (mid-turn but no recent writes). |
 
 ### Configurable directories
 
@@ -147,6 +159,18 @@ If you previously used `vscode-gw` (gw Worktrees) with Agent Tasks, the settings
 | `Agent Tasks: Refresh Sessions` | Reload the Sessions panel and rebuild the file watcher |
 | `Agent Tasks: Toggle Sessions Scope` | Switch between current-worktree and all-worktrees views |
 | `Agent Tasks: Find Session…` | Fuzzy-search every session for this workspace and open the picked one |
+| `Agent Tasks: Group by Worktree` | Switch the Sessions panel between current-worktree and all-worktrees views |
+| `Agent Tasks: Toggle Agent Tasks Scope (current / all worktrees)` | Same toggle for the Agent Tasks panel |
+| `Agent Tasks: New Claude Session` | Start a new `claude` session in the workspace root — the `+` icon in the Sessions panel header |
+| `Agent Tasks: Filter Sessions…` | Pick which session categories the panel shows (active, open PR, merged/closed PR, idle, stalled) |
+| `Agent Tasks: Show All Sessions` | Clear the filter — show every session |
+| `Agent Tasks: Show Fewer Sessions (Restore Default Filter)` | Restore the default filter set |
+| `Agent Tasks: Turn on live session updates` | Install / re-enable the `agent-tasks-hooks` plugin for real-time status |
+| `Agent Tasks: Open Pull Request` | Open the PR for the selected session's branch |
+| `Agent Tasks: Create Pull Request` | Create a PR for the selected session's branch |
+| `Agent Tasks: Reveal in Finder` | Reveal the selected row's file or directory in the OS file manager |
+| `Agent Tasks: Copy Path` | Copy the selected row's absolute path to the clipboard |
+| `Agent Tasks: Delete…` | Delete the selected artifact after confirmation (uses the trash, recoverable) |
 
 ## Logging
 
@@ -156,8 +180,10 @@ The extension writes structured timestamped logs to a dedicated output channel �
 
 The extension reads:
 
+- `checks.yaml` — the executable acceptance-check ledger written by `aw-create-plan`, one entry per acceptance criterion, whose `status:` the executor flips live (`pending | pass | fail | unsatisfiable`). This is the branch's **primary** artifact, so it renders first and expanded, with a compact `✓ pass/total` rollup on the branch row. The extension is a strictly read-only observer — check definitions are immutable to the executor, and `checks.yaml` is deliberately not deletable on its own.
 - `task.md` — task progress with phase, in-progress markers, sub-tasks, blockers, decisions
 - `plan.md` — plan frontmatter, summary, files to create/modify, complexity
+- `plan.v{N}.md` — opt-in immutable plan snapshots (written only when `aw-create-plan` runs with the `snapshot` arg), grouped newest-first under a "Previous Versions" node
 - `walkthrough.md` — post-implementation summary and files-changed table
 - `diagnose-{target}.md` — retrospective failure-analysis reports produced by `/create-skill diagnose <target>`. The row label carries the target skill name; the description shows the failure class and confidence score parsed from the header bullet list (`- Failure class: …`, `- Confidence (Step 6): N%`). Multiple targets coexist as siblings under the same branch.
 
@@ -166,4 +192,7 @@ These are written by the [`autonomous-workflow`](https://github.com/mthines/agen
 ## Requirements
 
 - VS Code 1.85.0 or later
-- A workspace with `.agent/` or `.gw/` artifact directories (or custom via `agentTasks.directories`)
+- A workspace with `.agent/` or `.gw/` artifact directories (or custom via `agentTasks.directories`) — the Sessions panel works in any workspace
+- [`gh`](https://cli.github.com) — optional, only for the Sessions panel's PR status badges. Without it a one-time notice fires and every session falls back to JSONL-derived status. Disable the feature entirely with `agentTasks.sessions.prLinkage: false`.
+- [Claude Code](https://claude.com/claude-code) — optional, for the Sessions panel and click-to-resume (`claude --resume <id>`)
+- The [`agent-tasks-hooks`](https://github.com/mthines/agent-skills/tree/main/plugins/agent-tasks-hooks) plugin — optional, for real-time session status instead of a few seconds of lag

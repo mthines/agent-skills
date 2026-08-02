@@ -4,8 +4,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Agent Skills spec](https://img.shields.io/badge/spec-Agent%20Skills-7c3aed)](https://agentskills.io/)
-[![Skills](https://img.shields.io/badge/skills-38-0a7)](#skills-at-a-glance)
-[![Agents](https://img.shields.io/badge/agents-4-0a7)](#agents-at-a-glance)
+[![Skills](https://img.shields.io/badge/skills-45-0a7)](#skills-at-a-glance)
+[![Agents](https://img.shields.io/badge/agents-10-0a7)](#agents-at-a-glance)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-supported-d97706)](https://claude.com/claude-code)
 
 A curated collection of skills, slash commands, and agents that encode how I actually ship software — distilled from real projects, not theory. They take a holistic approach to building and debugging, with three throughlines:
@@ -53,6 +53,9 @@ Symlinks every skill live into your tool — edits and `git pull` land on the ne
   - [`analysis/` — investigate data, diagnose issues](#analysis--investigate-data-diagnose-issues)
   - [`authoring/` — skills about Claude Code itself](#authoring--skills-about-claude-code-itself)
 - [Agents at a glance](#agents-at-a-glance)
+- [Requirements](#requirements)
+  - [CLI tools](#cli-tools)
+  - [MCP servers](#mcp-servers)
 - [Featured: autonomous workflow](#featured-autonomous-workflow)
 - [Usage examples](#usage-examples)
 - [Install](#install)
@@ -85,6 +88,7 @@ Coordinate other skills to ship complete changes.
 | **[fix-bug](./skills/workflow/fix-bug/SKILL.md)** | 10-phase bug pipeline: intake → triage → evidence → repro-lock → analyse → gate → handoff → verify → telemetry. Lane-split: fast for simple, standard for complex. Self-improves via `fix-bug-lessons` (read Phase 0.5 / write Phase 5·7·8) + promotion to `diagnose`. | `/` |
 | **[batch-linear-tickets](./skills/workflow/batch-linear-tickets/SKILL.md)** | Batch-analyze Linear tickets by dispatching `linear-ticket-investigator` (plus `holistic-analysis` for bug tickets) per ticket, gate user approval, then dispatch planners and executors in parallel. Requires Linear MCP. Self-improves via `batch-lessons` (classification + correlation) and inherits `aw-lessons` via the fan-out. | `/` |
 | **[implement-suggestion](./skills/workflow/implement-suggestion/SKILL.md)** | Apply reviewer suggestions across one or more PRs. Reads humans and AI bots (`claude[bot]`, `coderabbit`, `sourcery`), validates each via `/critical` + `/confidence`, applies in the existing branch. `--watch` loops on one PR until reviewers go quiet (max 5 iterations). Learns across runs via the `implement-suggestion-lessons` self-improvement loop (read Phase 3 / write Phase 7 + watch re-flag). | `/` |
+| **[/aw-setup](./skills/workflow/autonomous-workflow/aw-setup/SKILL.md)** | One-time (safely re-runnable) setup for the `aw-tester` verification agent: detects the project's auth strategy, captures storage state, writes `.claude/aw-targets/local.yml`, and validates with a smoke spec. Re-runs detect the existing aw-target and only re-prompt for what broke or changed. Requires Playwright. | `/` |
 | **[aw-create-plan](./skills/workflow/aw-create-plan/SKILL.md)** | Generates `.agent/{branch}/plan.md` — the lean planner→executor handoff document a new session can resume from — plus `checks.yaml`, the living contract of one executable check per acceptance criterion. Immutable `plan.v{N}.md` snapshots are opt-in (`snapshot` arg). | `Skill()` |
 | **[aw-create-walkthrough](./skills/workflow/aw-create-walkthrough/SKILL.md)** | Generates `.agent/{branch}/walkthrough.md` — the PR-delivery summary. | `Skill()` |
 | **[aw-review-quality-gate](./skills/workflow/aw-review-quality-gate/SKILL.md)** | Self-check quality gate for review findings: filters noise, dedupes, ranks severity. | `Skill()` |
@@ -166,19 +170,52 @@ Meta — scaffolding new skills, maintaining docs, persisting memory.
 
 Agents are specialized sub-processes with their own model and tool configuration. Dispatched by other skills, not invoked directly.
 
-The flagship `aw` agents are **generated from templates** in `skills/workflow/autonomous-workflow/templates/` (each template's filename matches its installed agent name) and symlinked into `~/.claude/agents/` by `install.sh` — they are not stored as `agents/*.md`, so search the templates directory to find them. See [Featured: autonomous workflow](#featured-autonomous-workflow) for the full picture.
+The four flagship `aw-` agents are **generated from templates** in `skills/workflow/autonomous-workflow/templates/` (each template's filename matches its installed agent name) and symlinked into `~/.claude/agents/` by `install.sh` — they are not stored as `agents/*.md`, so search the templates directory to find them. The remaining six live as `agents/*.md`. See [Featured: autonomous workflow](#featured-autonomous-workflow) for the full picture.
 
 | Agent | What it does |
 |-------|--------------|
 | **[aw](./skills/workflow/autonomous-workflow/templates/aw.agent.md)** | Opt-in dispatcher and primary entry point: reads `aw-lessons`, detects tier (Micro/Lite/Full), and routes — single-pass for Micro/Lite, the `aw-planner` → `aw-executor` split for Full. Installed as `~/.claude/agents/aw.md`. |
 | **[aw-planner](./skills/workflow/autonomous-workflow/templates/aw-planner.agent.md)** | Full-tier phases 0–2: validate, plan, create the worktree, generate `plan.md`. Gated on `confidence(plan) ≥ 90%` before handoff. Installed as `aw-planner.md`. |
 | **[aw-executor](./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md)** | Full-tier phases 3–7: implement, test, update docs, open the draft PR, watch CI. Reads `plan.md` cold. Installed as `aw-executor.md`. |
+| **[aw-tester](./skills/workflow/autonomous-workflow/templates/aw-tester.agent.md)** | Spec-driven UI verification. Reads a `specs.md` and an `aw-target.yml`, runs each spec against the live app via Playwright (headless by default), and returns a compact pass/fail verdict. Runs inside the executor's Phase 4 loop, before the lint/type/test gates. `--bail-on-first-red` (default) for fast iteration, `--all` for the Phase 7 rehearsal. Scaffold its target with [`/aw-setup`](#workflow--end-to-end-orchestrators). Installed as `aw-tester.md`. |
 | **[reviewer](./agents/reviewer.md)** | Own-work code reviewer (own branch or own PR). Three sub-modes: Fix (auto-fix simple + plan complex), Report (`--report`, propose only), Self-Review (own PR, auto-fix + inline terminal report). Never writes to GitHub — redirects to `pr-reviewer` on a cross-author PR. Orthogonal `--with <skill>` loads up to 3 additional lenses. Shared pipeline includes: `verification-receipt.md` (Step 2.6b — executed proof for behavioral claims; null = DROP), `outcome-learning.md` (resolution-rate promotion loop; consumes `review-outcomes` bus at promotion time only — never per-review), `review-outcomes.md` (shared candidate/outcome bus — produced by `implement-suggestion`, consumed at promotion time only), `review-config.md` (`.review.yaml` profile / filters; absent → `profile: balanced` = today's defaults), `prior-comment-awareness.md` (Self-Review: dedup + anti-flip-flop). |
 | **[pr-reviewer](./agents/pr-reviewer.md)** | Cross-review reviewer for someone else's PR. Authors short, grounded, confidence-gated inline comments (≤ 240 chars, ≤ 2 sentences, `Skill("confidence")` ≥ profile threshold, default 80) and (with `--publish` or an explicit authorization phrase) posts them as a PENDING review invisible to the author until you submit from the GitHub UI. Refuses on your own PR (points to `reviewer`). Two-tier holistic review: a broad whole-PR pass plus default-on **targeted escalation** (Step 2.4b) that fans out parallel single-target holistic traces on context-dependent findings (cap 10, `--no-escalate` to skip). Shared rules: `verification-receipt.md` (2.6b), `outcome-learning.md` (post-merge via `/review-outcomes`; consumes `review-outcomes` bus at promotion time only — never per-review), `review-outcomes.md` (shared candidate/outcome bus — produced by `implement-suggestion`, consumed at promotion time only), `review-config.md` (1.7 config load), `prior-comment-awareness.md` (default-on prior-comment dedup + anti-flip-flop). |
 | **[linear-ticket-investigator](./agents/linear-ticket-investigator.md)** | Reads a Linear ticket, returns an Evidence Record matching `/fix-bug` Phase 2. Customizable via a per-project [domain navigator](#linear-ticket-investigator-per-project-plug-in). |
 | **[rca-investigator](./agents/rca-investigator.md)** | Context-isolated root-cause analysis. Runs `holistic-analysis` (`fix`) + `confidence` (`analysis`) in a fresh context and returns only a distilled Root-Cause Record — the verbose walkthrough never pollutes the caller. Read-only; single source of truth stays in `holistic-analysis`. Dispatch via `Task()` for isolation. |
 | **[bug-fix-verifier](./agents/bug-fix-verifier.md)** | Independent fresh-context verifier for `/fix-bug` PRs. Runs FAIL_TO_PASS, PASS_TO_PASS, diff sanity, repro integrity. Only agent allowed to undraft. |
 | **[feature-pr-verifier](./agents/feature-pr-verifier.md)** | Feature-PR counterpart to `bug-fix-verifier`. Verifies acceptance criteria, pass-to-pass, walkthrough integrity for `autonomous-workflow` Full Mode — and re-runs `checks.yaml` checks itself, verifying check integrity (no drift, no unlogged amendments, no special-casing). |
+
+## Requirements
+
+Nothing here is needed to install the collection — the symlink chain works on a bare machine.
+These are the per-capability prerequisites: a skill that needs a tool you don't have degrades gracefully (it prints a notice and falls back, or asks you to paste the evidence by hand) rather than failing.
+
+### CLI tools
+
+| Tool | Needed by | Required? |
+| ---- | --------- | --------- |
+| [`git`](https://git-scm.com) | Everything — worktrees, branch diffs, the clone + symlink install | Yes |
+| [`gh`](https://cli.github.com) | `create-pr`, `ci-auto-fix`, `implement-suggestion`, `changelog`, `review-changes`, both reviewer agents, and the VS Code extension's PR badges | Yes, for anything that touches a PR |
+| [`node`](https://nodejs.org) ≥ 20 | `npx skills`, `npx @lorekit/cli`, the eval runners in [`scripts/eval/`](./scripts/eval/README.md) | Yes, for install and evals |
+| [`gw`](https://github.com/mthines/gw-tools) | Worktree creation in `autonomous-workflow`, `create-pr`, `fix-bug` | Optional — native `git worktree` fallback |
+| [`jq`](https://jqlang.github.io/jq/) | JSON handling in `ci-auto-fix`, `github-actions-author`, `playwright-trace-analyzer`, `e2e-*` | Optional — used where present |
+| [`claude`](https://claude.com/claude-code) | Session resume from the VS Code extension (`claude --resume <id>`), `/plugin` marketplace installs | Only for Claude Code users |
+| [`playwright`](https://playwright.dev) | `e2e-testing`, `e2e-pr-stabilizer`, `screen-recorder`, `/aw-setup`, and the `aw-tester` agent — which resolves a project-pinned, branch-local, or cached binary in that order | Yes, for browser work — installed on demand if absent |
+| [`ffmpeg`](https://ffmpeg.org) | `screen-recorder`, `video-analyser` | Yes, for those two skills |
+| [`maestro`](https://maestro.mobile.dev) + `adb` / `xcrun simctl` | `e2e-testing-mobile`, `test-auto-fix` on a Maestro stack | Yes, for mobile E2E |
+| `pnpm` 10 + `nx` 22 | Building, testing, and packaging the [VS Code extension](#vs-code-extension) — not needed to use the skills | Contributors only |
+
+### MCP servers
+
+Several skills read from an MCP server. Each one detects availability at runtime by scanning the session's tool list, and none of them hard-fail when the server is missing.
+
+| MCP server | Powers | Behaviour when absent |
+| ---------- | ------ | --------------------- |
+| **[LoreKit](https://github.com/mthines/agent-skills/blob/main/skills/authoring/persistent-memory/rules/scaling-tiers.md)** (`lorekit-memory`, install with `npx @lorekit/cli install`) | The backend for **every** self-improvement loop — `aw-lessons`, `fix-bug-lessons`, `reviewer-lessons`, `ci-auto-fix-lessons`, the `review-outcomes` bus, and the per-repo `reviewer-comment-relevance` signal | Loops run stateless: skills still work, they just stop getting better run over run |
+| **Linear** (`mcp__linear-server__*`, `mcp__claude_ai_Linear__*`) | `batch-linear-tickets`, `changelog`, `fix-bug` (ticket input route), `video-analyser` (attachment download), the `linear-ticket-investigator` agent | Prints a notice and asks you to paste the ticket contents |
+| **Dash0** (`mcp__dash0*__*`) | `fix-bug` (span / log / web-event URL resolution, Phase 8 telemetry verification), `e2e-pr-stabilizer` (historical E2E spans filtered by `git.pull_request_link`) | `fix-bug` asks you to paste the evidence; `e2e-pr-stabilizer` stops — it has no baseline to reason from |
+| **[Playwright](https://github.com/microsoft/playwright-mcp)** (`mcp__playwright__*`) | `e2e-testing` — the Planner / Generator / Healer Test Agents loop is MCP-backed | Required: `e2e-testing` is built on it. `e2e-pr-stabilizer` uses the healer *when connected* and iterates locally when not |
+| **[Maestro](https://github.com/mobile-dev-inc/maestro-mcp)** (`@mobile-dev-inc/maestro-mcp`) | `e2e-testing-mobile` — agent-driven flow generation against a booted simulator | Optional; flows are authored as YAML by hand |
 
 ## Featured: autonomous workflow
 
@@ -213,15 +250,16 @@ The rest of this section is the under-the-hood reference.
 
 `aw` is the opt-in entry point to the **`autonomous-workflow`** skill — the phase-based machinery (0–7) and companion-skill orchestration behind it. You drive `aw`; `autonomous-workflow` is how it works under the hood.
 
-### Three agents, one workflow
+### Four agents, one workflow
 
-`aw` installs as an opt-in **dispatcher** plus the two specialist agents it routes to for complex work, connected by `plan.md`:
+`aw` installs as an opt-in **dispatcher** plus the specialist agents it routes to, connected by `plan.md`:
 
 | Agent | Role | Exit gate |
 |-------|------|-----------|
 | `aw`          | Opt-in dispatcher: reads lessons, detects tier (Micro/Lite/Full), routes single-pass vs the split, owns the self-improvement loop for every tier | Task routed + exit lesson written |
 | `aw-planner`  | Full tier, 0–2 (validate, plan, worktree + `plan.md`) | `confidence(plan) ≥ 90%` |
 | `aw-executor` | Full tier, 3–7 (implement, test, docs, PR, CI) | CI green, walkthrough delivered |
+| `aw-tester`   | Spec-driven UI verification inside the executor's Phase 4 loop; runs `specs.md` against the live app via Playwright. Opt-in — needs an aw-target from [`/aw-setup`](#workflow--end-to-end-orchestrators) | Pass/fail verdict block |
 
 All share the **`aw-`** prefix ("autonomous-workflow"): deliberate namespace so they group together in `~/.claude/agents/` and disambiguate from agents installed by other skills. `aw` is adaptive — it only invokes the planner→executor split for **Full** tasks; Micro/Lite run single-pass.
 
@@ -233,7 +271,7 @@ All share the **`aw-`** prefix ("autonomous-workflow"): deliberate namespace so 
 | 1 | Planning (Existing Code Survey + traceable ACs) | `holistic-analysis`, `code-quality`, **`confidence(plan)` (mandatory)** |
 | 2 | Worktree + plan.md + checks.yaml | `aw-create-plan` (Full Mode) |
 | 3 | Implementation | `tdd`, `ux`, `code-quality` |
-| 4 | Testing (+ executable checks loop) | `confidence(analysis)`, `holistic-analysis` (auto-replan once at cap) |
+| 4 | Testing (+ executable checks loop) | `aw-tester` (UI specs, opt-in), `confidence(analysis)`, `holistic-analysis` (auto-replan once at cap) |
 | 5 | Documentation | `docs update` |
 | 6 | PR creation | `reviewer` agent (`--critical` + auto-fix-all-severities), `aw-create-walkthrough`, `create-pr` |
 | 7 | CI gate | `ci-auto-fix` |
@@ -288,6 +326,7 @@ Slash commands are typed explicitly.
 /implement-suggestion <pr-url> [<pr-url> ...]
 /create-pr
 /ci-auto-fix <run-id|pr-url>
+/aw-setup
 ```
 
 ## Install
@@ -382,7 +421,12 @@ git clone https://github.com/mthines/agent-skills.git ~/.agents/skills/mthines-a
 
 ## VS Code extension
 
-The [`vscode-agent-tasks`](./packages/vscode-agent-tasks/) package visualizes `plan.md`, `task.md`, and `walkthrough.md` in the VS Code sidebar — phase progress, decisions, blockers, and completed checkboxes update live as the agent works.
+The [`vscode-agent-tasks`](./packages/vscode-agent-tasks/) package visualizes agent workflow artifacts in the VS Code sidebar — phase progress, decisions, blockers, and completed checkboxes update live as the agent works.
+
+Two panels:
+
+- **Sessions** — every Claude Code session for the workspace and its sibling worktrees, with live run state (`running`, `needs-input`, `unread`, `stalled`, `idle`), PR status badges, filtering, and click-to-resume. PR badges call `gh pr view` and need the [`gh`](https://cli.github.com) CLI; turn them off with `agentTasks.sessions.prLinkage`.
+- **Agent Tasks** — `checks.yaml` (the executable acceptance ledger, rendered first with a `✓ pass/total` rollup), `plan.md` and any opt-in `plan.v{N}.md` snapshots, `task.md`, `walkthrough.md`, and `diagnose-*.md` reports.
 
 Install from the Marketplace by searching for **Agent Tasks** or:
 
@@ -459,13 +503,15 @@ That is the entire integration.
 ## Repository structure
 
 ```
-skills/                   44 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
+skills/                   45 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
   testing/test-auto-fix/    stack-agnostic test healer — bootstrap, classify, confidence-gate, regression-detect
 agents/                   6 agents (reviewer, pr-reviewer, linear-ticket-investigator, rca-investigator, bug-fix-verifier, feature-pr-verifier)
-plugins/                  1 Claude Code plugin (agent-tasks-hooks)
+                          the 4 aw- agents live in skills/workflow/autonomous-workflow/templates/
+plugins/                  2 plugins (agent-tasks-hooks, pr-relevance-memory)
 packages/                 VS Code extension (vscode-agent-tasks)
 .claude-plugin/           marketplace.json — plugin distribution manifest
-scripts/                  Local symlink sync (scripts/sync-symlinks.sh)
+scripts/                  sync-symlinks.sh (local install), eval/ (L1 + L2 regression evals),
+                          record-comment-relevance.mjs (PR comment → LoreKit classifier)
 ```
 
 Each skill has a `SKILL.md` manifest with YAML frontmatter (name, description, metadata) and a Markdown body with instructions. Skills with `rules/` subdirectories contain focused guidance documents that load on demand. Agents live in `agents/` because they require their own model and tool configuration.
