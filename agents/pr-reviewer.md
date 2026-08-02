@@ -245,8 +245,9 @@ memory.list { scope: "global",               tags: ["loop::reviewer-comment-rele
 
 Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
 Merge both lists per tag (`repo::` wins on key collision). Skip expired entries.
-Retain each loaded memory's `url` (LoreKit permalink) alongside its `fingerprint`,
-`relevance`, and `seen_count` — Step 2.2 links every memory that influences the review
+Retain each loaded memory's `scope` + `key` (its LoreKit coordinates) alongside its
+`fingerprint`, `relevance`, and `seen_count` — Step 2.2 builds a dashboard deep link from
+`scope` + `key` for every memory that influences the review
 (`agents/shared/rules/comment-relevance-memory.md § Linking applied memories in the report`).
 Announce: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
 
@@ -544,9 +545,9 @@ See `agents/shared/rules/comment-relevance-memory.md § Read`. Apply loaded memo
 - `relevant` with `seen_count >= 2` → **PROMOTE** (terminal output only).
 
 For every memory that fires (drop / downgrade / promote), append a record —
-`{ fingerprint, action, seen_count, url }` — to `APPLIED_MEMORIES[]` per
-`comment-relevance-memory.md § Linking applied memories in the report`. These become
-the pressable links in the Step 4 review-body diagnostics (`MEMORIES_APPLIED_SECTION`).
+`{ fingerprint, action, seen_count, scope, key }` — to `APPLIED_MEMORIES[]` per
+`comment-relevance-memory.md § Linking applied memories in the report`. Its `scope` + `key`
+build the pressable deep link in the Step 4 review-body diagnostics (`MEMORIES_APPLIED_SECTION`).
 
 Log all applied memories in the Quality Gate summary.
 
@@ -965,10 +966,12 @@ applied memory:
 - [`issue:missing-abort-signal`](<url>) — promoted, seen 3×
 ```
 
-Resolve each `<url>` per `comment-relevance-memory.md § Linking applied memories in the report`:
-the memory's `url` field first, else a link constructed from the LoreKit workspace base, else a
-plain-text `` `<scope> · <key>` `` identifier when no URL exists — never a fabricated URL. The
-bullet count MUST equal the number of memories that fired this run (drops + downgrades + promotes).
+Build each `<url>` from the memory's `scope` + `key` per
+`comment-relevance-memory.md § Linking applied memories in the report`: the `lorekit link
+"<scope>" "<key>"` CLI when available, else the documented `{base}/lore?scope=…&lesson=…`
+construction (`base` = `LOREKIT_APP_URL` or `https://lorekit.io`), else a plain-text
+`` `<scope> · <key>` `` identifier — never a fabricated URL. The bullet count MUST equal the
+number of memories that fired this run (drops + downgrades + promotes).
 
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.

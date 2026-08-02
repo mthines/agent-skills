@@ -117,10 +117,10 @@ memory.list { scope: "global",               tags: ["loop::reviewer-comment-rele
 Merge both lists (`repo::` wins on key collision).
 Skip any entry whose `expires` is in the past.
 
-**Keep the link.** Every memory object the read tools return carries a canonical
-LoreKit permalink in its `url` field. Retain that `url` alongside each entry's
-`fingerprint`, `relevance`, and `seen_count` — the report renders it as a pressable
-link for every memory that actually influences the review (see
+**Keep the coordinates.** Retain each entry's `scope` and `key` (the LoreKit
+memory coordinates) alongside its `fingerprint`, `relevance`, and `seen_count` —
+the report builds a pressable dashboard deep link from `scope` + `key` for every
+memory that actually influences the review (see
 [Linking applied memories in the report](#linking-applied-memories-in-the-report)).
 
 ### How to apply
@@ -152,7 +152,7 @@ DOWNGRADE, or PROMOTE against a real finding this run, append a record to an
 `APPLIED_MEMORIES[]` list:
 
 ```json
-{ "fingerprint": "<category>:<claim-gist>", "action": "drop | downgrade | promote", "seen_count": <n>, "url": "<permalink from read>" }
+{ "fingerprint": "<category>:<claim-gist>", "action": "drop | downgrade | promote", "seen_count": <n>, "scope": "<lorekit scope>", "key": "<lorekit key>" }
 ```
 
 A memory that was loaded but matched nothing is **not** recorded — it did not
@@ -190,20 +190,35 @@ memory-link section at all; the numeric Quality Gate counts stand alone.
 
 ### Resolving each link
 
-For each entry in `APPLIED_MEMORIES[]`, resolve its URL in this order:
+A LoreKit memory's dashboard deep link opens its detail sheet in the `/lore`
+Explorer. It is built from the memory's `scope` + `key` per LoreKit's documented
+[deep-link contract](https://lorekit.io/docs/deep-links). For each entry in
+`APPLIED_MEMORIES[]`, resolve its URL in this order:
 
-1. **Primary — the `url` field.** Use the `url` (or `permalink` / `web_url`) the
-   read tool returned verbatim. This is the canonical, pressable LoreKit permalink;
-   no construction needed.
-2. **Fallback — construct from the workspace base.** If the read result carried no
-   link field, resolve the LoreKit web base — the `LOREKIT_APP_URL` environment
-   variable, else the `web` base printed by `lorekit doctor` — and construct
-   `{base}/memories/{scope}/{key}`, replacing each `::` in the scope with `/` and
-   URL-encoding the key. Construct only when a base is actually known.
-3. **No URL available — plain text.** If neither a link field nor a base can be
-   resolved (e.g. a local `.lorekit/` workspace with no web UI), render the memory
-   as plain text `` `<scope> · <key>` `` with no hyperlink. **Never fabricate a
-   URL** — an unresolvable link is shown as text, not guessed.
+1. **Preferred — let the LoreKit CLI build it.** When the `lorekit` CLI is on
+   `PATH`, run `lorekit link "<scope>" "<key>"` (alias `url`). It prints the exact
+   URL to stdout — nothing else — and honours `LOREKIT_APP_URL` / `--base` for
+   self-hosted dashboards, so encoding is never hand-rolled:
+
+   ```bash
+   lorekit link "repo::acme/widget" "reviewer-comment-relevance::suggestion:null-check-guaranteed-upstream"
+   ```
+
+2. **Fallback — construct the URL directly.** When the CLI is unavailable,
+   build `{base}/lore?scope=<enc(scope)>&lesson=<enc({scope,key})>`, where
+   `enc(v) = encodeURIComponent(JSON.stringify(v))` (the exact inverse of the
+   dashboard's `useUrlState` read — a raw `?scope=global` silently means "all
+   scopes"), and `base` is the `LOREKIT_APP_URL` environment variable, else
+   `https://lorekit.io`. For scope `global`, key
+   `reviewer-comment-relevance::nitpick:map-vs-record-preference` this yields:
+
+   ```text
+   https://lorekit.io/lore?scope=%22global%22&lesson=%7B%22scope%22%3A%22global%22%2C%22key%22%3A%22reviewer-comment-relevance%3A%3Anitpick%3Amap-vs-record-preference%22%7D
+   ```
+
+**Never fabricate a URL** — both paths derive it deterministically from the
+memory's real `scope` + `key`; if neither `scope` nor `key` is known, render the
+memory as plain text `` `<scope> · <key>` `` with no hyperlink.
 
 ### Render shape
 
