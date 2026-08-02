@@ -9,7 +9,7 @@ Visualize autonomous agent workflow artifacts (`checks.yaml`, `plan.md`, `task.m
 - **Task progress** — see phase, status (in-progress/blocked/completed), and sub-tasks at a glance
 - **Plan viewer** — inspect the plan summary, files to create/modify, and complexity estimate; opt-in `plan.v{N}.md` snapshots group under "Previous Versions"
 - **Diagnose reports** — surface every `diagnose-{target}.md` produced by `/create-skill diagnose <target>` next to the plan and walkthrough, with the failure class and confidence score in the row description
-- **Walkthrough, plan, and diagnose auto-open** — when a `walkthrough.md`, `plan.md`, or new `diagnose-*.md` is created, the extension opens it automatically in Markdown Preview (each toggleable)
+- **Walkthrough, plan, and diagnose auto-open** — when a `walkthrough.md`, `plan.md`, or new `diagnose-*.md` is created, the extension opens it automatically in a persistent editable editor tab (each toggleable)
 - **Configurable directories** — scan `.agent/`, `.gw/`, or any custom directory name
 - **Sort** — sort by date, name, or status; ascending or descending
 - **Sessions panel** — view Claude Code session history for the current workspace and sibling worktrees; click to open the transcript or resume the session in a terminal
@@ -101,8 +101,8 @@ As of this release, the extension also activates via `onStartupFinished` so the 
 | `agentTasks.directories` | `[".agent", ".gw"]` | Directories to scan for artifacts. Order = priority. Empty array falls back to the defaults. |
 | `agentTasks.sortBy` | `"date"` | How to sort: `"date"`, `"name"`, or `"status"`. |
 | `agentTasks.sortOrder` | `"desc"` | Sort direction: `"asc"` or `"desc"`. |
-| `agentTasks.autoOpenWalkthrough` | `true` | Auto-open `walkthrough.md` in Preview when created. |
-| `agentTasks.autoOpenPlan` | `true` | Auto-open `plan.md` in Preview when created. |
+| `agentTasks.autoOpenWalkthrough` | `true` | Auto-open `walkthrough.md` in an editable editor tab when created. |
+| `agentTasks.autoOpenPlan` | `true` | Auto-open `plan.md` in an editable editor tab when created. |
 | `agentTasks.autoOpenDiagnose` | `true` | Auto-open a `diagnose-{target}.md` report the first time it is created. Re-runs of `/create-skill diagnose` against the same target overwrite the report in place and do not re-open it. |
 | `agentTasks.openMarkdownInPreview` | `true` | Open known artifact files (plan/task/walkthrough/diagnose) in Markdown Preview mode. `checks.yaml` always opens as a text document; other/unknown markdown rows always open as an editable editor tab. |
 | `agentTasks.notifyUnsatisfiableCheck` | `true` | Warn when a check in `checks.yaml` transitions to `unsatisfiable` — the executor's signal that it is blocked and needs input. Failing checks are a normal part of the loop and never notify. |
