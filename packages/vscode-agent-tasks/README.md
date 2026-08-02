@@ -65,7 +65,7 @@ Sessions launched from sub-directories of a worktree (e.g. `apps/api/` inside `f
 
 ### Filtering
 
-Use the **filter icon** in the Sessions panel header (or the command **Toggle Sessions Scope**) to switch between:
+Use the **filter icon** in the Sessions panel header (or the command **Group by Worktree**) to switch between:
 - **All worktrees** (default) — every worktree's sessions, grouped, current first
 - **Current worktree only** — flat list of just this worktree's sessions
 
@@ -157,7 +157,6 @@ If you previously used `vscode-gw` (gw Worktrees) with Agent Tasks, the settings
 | `Agent Tasks: Sort Agent Tasks` | Interactive sort picker |
 | `Agent Tasks: Focus Agent Tasks Sidebar` | Focus the sidebar panel |
 | `Agent Tasks: Refresh Sessions` | Reload the Sessions panel and rebuild the file watcher |
-| `Agent Tasks: Toggle Sessions Scope` | Switch between current-worktree and all-worktrees views |
 | `Agent Tasks: Find Session…` | Fuzzy-search every session for this workspace and open the picked one |
 | `Agent Tasks: Group by Worktree` | Switch the Sessions panel between current-worktree and all-worktrees views |
 | `Agent Tasks: Toggle Agent Tasks Scope (current / all worktrees)` | Same toggle for the Agent Tasks panel |
