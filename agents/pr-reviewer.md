@@ -95,7 +95,7 @@ rule once at the step that owns it.
 - `agents/shared/rules/verification-receipt.md` — executed proof for behavioral claims; drop on null result (Step 2.6b).
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ profile threshold (Step 2.7).
 - `agents/shared/rules/outcome-learning.md` — resolution-rate feedback loop; runs post-merge via `/review-outcomes`. Promotion reads from the `review-outcomes` candidate bus — the bus is NEVER loaded per-review.
-- `agents/shared/rules/comment-relevance-memory.md` — per-repo LoreKit memories of which comment patterns were relevant (fixed) vs. not-relevant (won't fix / ignored). Read before Step 1.1; written post-merge via `outcome-learning.md` gh-api signals.
+- `agents/shared/rules/comment-relevance-memory.md` — per-repo LoreKit memories of which comment patterns were relevant (fixed) vs. not-relevant (won't fix / ignored). Read before Step 1.1; written post-merge via `outcome-learning.md` gh-api signals. Memories that actually influence the review are rendered as pressable LoreKit links in the review-body diagnostics (Step 4).
 - `agents/shared/rules/comment-shape.md` — ≤ 240 chars, ≤ 2 sentences, no headings or bullets.
 - `agents/shared/rules/conventional-comments.md` — prefix table + decorations.
 - `agents/pr-reviewer/rules/line-validity.md` — RIGHT-side hunk-bounds pre-flight.
@@ -245,6 +245,9 @@ memory.list { scope: "global",               tags: ["loop::reviewer-comment-rele
 
 Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
 Merge both lists per tag (`repo::` wins on key collision). Skip expired entries.
+Retain each loaded memory's `url` (LoreKit permalink) alongside its `fingerprint`,
+`relevance`, and `seen_count` — Step 2.2 links every memory that influences the review
+(`agents/shared/rules/comment-relevance-memory.md § Linking applied memories in the report`).
 Announce: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
 
 ### 1.1 Fetch PR data in parallel
@@ -540,6 +543,11 @@ See `agents/shared/rules/comment-relevance-memory.md § Read`. Apply loaded memo
 - `not-relevant` with `seen_count 1–2` → **DOWNGRADE** to `nitpick`.
 - `relevant` with `seen_count >= 2` → **PROMOTE** (terminal output only).
 
+For every memory that fires (drop / downgrade / promote), append a record —
+`{ fingerprint, action, seen_count, url }` — to `APPLIED_MEMORIES[]` per
+`comment-relevance-memory.md § Linking applied memories in the report`. These become
+the pressable links in the Step 4 review-body diagnostics (`MEMORIES_APPLIED_SECTION`).
+
 Log all applied memories in the Quality Gate summary.
 
 ### 2.3 Filter suppression
@@ -832,6 +840,8 @@ ADDITIONAL_FINDINGS_SECTION
 **Quality Gate:** produced <P>, carried forward <CF>, relevance-memory drops <RM>, dedupe drops <D>,
 grounding drops <G>, confidence drops <C>, shape drops <S>, cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
 
+MEMORIES_APPLIED_SECTION
+
 **Optimality review (2.4c):** <ran | skipped (reason)> — <UN> unit(s) judged, <UO> optimal, <OP> proposal(s), <OW> withheld.
 
 **Skipped files:** <list or "none">
@@ -868,6 +878,8 @@ ADDITIONAL_FINDINGS_SECTION
 
 **Quality Gate:** produced <P>, carried forward <CF>, relevance-memory drops <RM>, dedupe drops <D>,
 grounding drops <G>, confidence drops <C>, shape drops <S>, cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
+
+MEMORIES_APPLIED_SECTION
 
 **Optimality review (2.4c):** <ran | skipped (reason)> — <UN> unit(s) judged, <UO> optimal, <OP> proposal(s), <OW> withheld.
 
@@ -937,11 +949,32 @@ One line per deferred finding: path:line, prefix, the one-line body, and the con
 Sort by prefix priority, then descending confidence. This section is the reason a placement cap
 is allowed to exist — never drop a cleared finding instead of listing it here.
 
+`MEMORIES_APPLIED_SECTION` lists the LoreKit comment-relevance memories that actually influenced
+this review — every entry in `APPLIED_MEMORIES[]` (Step 2.2) — each rendered as a pressable link
+so the reader can open the exact memory in LoreKit and see why a finding was dropped, downgraded,
+or promoted. This is the slot inside the `Review diagnostics` block, directly under the numeric
+`Quality Gate` line. Omit the placeholder entirely when `APPLIED_MEMORIES` is empty — a run that
+read memories but applied none shows only the numeric counts. Otherwise substitute, one bullet per
+applied memory:
+
+```
+**Memories applied:** (<N> LoreKit memories influenced this review)
+
+- [`suggestion:null-check-guaranteed-upstream`](<url>) — dropped, seen 4×
+- [`nitpick:map-vs-record-preference`](<url>) — downgraded, seen 2×
+- [`issue:missing-abort-signal`](<url>) — promoted, seen 3×
+```
+
+Resolve each `<url>` per `comment-relevance-memory.md § Linking applied memories in the report`:
+the memory's `url` field first, else a link constructed from the LoreKit workspace base, else a
+plain-text `` `<scope> · <key>` `` identifier when no URL exists — never a fabricated URL. The
+bullet count MUST equal the number of memories that fired this run (drops + downgrades + promotes).
+
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
 - Details column: plain text only, max 120 chars per cell. Truncate; the full finding lives in the inline comment.
 - On PASS, omit the Details column (two-column table).
-- Never add rows, sections, or prose outside the template above (except the three `<details>` blocks — diagnostics, `Optimality review`, and `Additional findings` — and the `PARTIAL_REVIEW_BANNER` line, which is a slot in the template, not added prose).
+- Never add rows, sections, or prose outside the template above (except the three `<details>` blocks — diagnostics, `Optimality review`, and `Additional findings` — the `MEMORIES_APPLIED_SECTION` slot inside the diagnostics block, and the `PARTIAL_REVIEW_BANNER` line — all of which are slots in the template, not added prose).
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
 ### INLINE_COMMENTS_JSON format

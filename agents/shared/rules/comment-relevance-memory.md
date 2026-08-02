@@ -117,6 +117,12 @@ memory.list { scope: "global",               tags: ["loop::reviewer-comment-rele
 Merge both lists (`repo::` wins on key collision).
 Skip any entry whose `expires` is in the past.
 
+**Keep the link.** Every memory object the read tools return carries a canonical
+LoreKit permalink in its `url` field. Retain that `url` alongside each entry's
+`fingerprint`, `relevance`, and `seen_count` — the report renders it as a pressable
+link for every memory that actually influences the review (see
+[Linking applied memories in the report](#linking-applied-memories-in-the-report)).
+
 ### How to apply
 
 For each loaded memory with `relevance: not-relevant` or `relevance: weak-not-relevant`:
@@ -141,6 +147,18 @@ For each loaded memory with `relevance: relevant` and `seen_count >= 2`:
   `suggestion`; add the decoration `(pattern reliably resolved, seen <n>×)` in
   the terminal output only — never posted.
 
+**Record every memory that fires.** Whenever a loaded memory produces a DROP,
+DOWNGRADE, or PROMOTE against a real finding this run, append a record to an
+`APPLIED_MEMORIES[]` list:
+
+```json
+{ "fingerprint": "<category>:<claim-gist>", "action": "drop | downgrade | promote", "seen_count": <n>, "url": "<permalink from read>" }
+```
+
+A memory that was loaded but matched nothing is **not** recorded — it did not
+influence the review. `APPLIED_MEMORIES[]` is what the report links (see
+[Linking applied memories in the report](#linking-applied-memories-in-the-report)).
+
 Log all applied memories in a `Relevance memory` row in the Quality Gate summary:
 
 ```
@@ -154,6 +172,58 @@ Announce active suppression memories in one line before the review pipeline runs
 Relevance memories active: 3 suppressions, 1 promotion (repo:mthines/console)
 ```
 So the user knows the pipeline has been influenced.
+
+---
+
+## Linking applied memories in the report
+
+When a loaded memory actually **influences** the review — it produced a DROP,
+DOWNGRADE, or PROMOTE against a real finding this run — the report MUST make it
+pressable so the reader can open the exact memory in LoreKit and see why the
+pipeline was biased. This turns "relevance-memory drops: 3" from an opaque count
+into three links the user can click through and audit.
+
+**Only applied memories are linked.** Use `APPLIED_MEMORIES[]` from the apply step.
+A memory that was loaded but fired against nothing is never linked — it did not
+influence the review. If `APPLIED_MEMORIES[]` is empty, the report shows no
+memory-link section at all; the numeric Quality Gate counts stand alone.
+
+### Resolving each link
+
+For each entry in `APPLIED_MEMORIES[]`, resolve its URL in this order:
+
+1. **Primary — the `url` field.** Use the `url` (or `permalink` / `web_url`) the
+   read tool returned verbatim. This is the canonical, pressable LoreKit permalink;
+   no construction needed.
+2. **Fallback — construct from the workspace base.** If the read result carried no
+   link field, resolve the LoreKit web base — the `LOREKIT_APP_URL` environment
+   variable, else the `web` base printed by `lorekit doctor` — and construct
+   `{base}/memories/{scope}/{key}`, replacing each `::` in the scope with `/` and
+   URL-encoding the key. Construct only when a base is actually known.
+3. **No URL available — plain text.** If neither a link field nor a base can be
+   resolved (e.g. a local `.lorekit/` workspace with no web UI), render the memory
+   as plain text `` `<scope> · <key>` `` with no hyperlink. **Never fabricate a
+   URL** — an unresolvable link is shown as text, not guessed.
+
+### Render shape
+
+One bullet per applied memory, each a Markdown link whose text names the
+`fingerprint`, the action taken, and the recurrence count — so multiple memories
+render as multiple independently-pressable links:
+
+```markdown
+**Memories applied:** (<N> LoreKit memories influenced this review)
+
+- [`suggestion:null-check-guaranteed-upstream`](https://…) — dropped, seen 4×
+- [`nitpick:map-vs-record-preference`](https://…) — downgraded, seen 2×
+- [`issue:missing-abort-signal`](https://…) — promoted, seen 3×
+```
+
+The bullet count MUST equal the number of memories that fired this run (drops +
+downgrades + promotes). A mismatch means an applied memory was dropped from the
+list instead of linked. Which report surface renders this block is the consuming
+agent's contract — `pr-reviewer` renders it inside the posted review body's
+`Review diagnostics` block (Step 4).
 
 ---
 
