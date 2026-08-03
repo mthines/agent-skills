@@ -73,9 +73,23 @@ A PR PASSES when ALL of the following are true:
 3. **Prior bot feedback** — all prior automated review comments (Cursor, Claude, other agents) are resolved or explicitly dismissed.
 4. **Self-review signals** — no debug logs, commented-out code, leftover TODO/FIXME/HACK markers on new lines, or obvious unreviewed AI stubs in the diff.
 5. **Documentation adequacy** — description, inline comments, and any docs are sufficient for an independent reader to understand the change's purpose and behavior.
-6. **Code review** — the AI persona review pass finds no blocking issues.
+6. **Code review** — the AI persona review pass finds no blocking issues. Non-blocking findings do **not** fail this gate (see *Code review gate states* below).
 
-A PR FAILS if any gate is not met.
+A PR FAILS if any of Gates 1/3/4/5 is not met, or if the Code review gate is ❌.
+
+### Code review gate states
+
+Unlike Gates 1/3/4/5 (binary ✅ / ❌), the Code review gate is **tri-state**, because criterion 6 is scoped to *blocking* issues:
+
+| Status | Condition | Verdict effect |
+|---|---|---|
+| ✅ | No inline finding survived the pipeline (Steps 2.2–2.9b). | Passes. |
+| ⚠️ | One or more findings survived, but **none is blocking**. | **Passes — soft warning only.** NOT counted in `FAILING_GATE_COUNT`; never flips the verdict to FAIL. |
+| ❌ | At least one **blocking** finding survived. | Fails — counted in `FAILING_GATE_COUNT`. |
+
+A finding is **blocking** only if it is broken behaviour, security (auth bypass / injection / secret leak / CSRF), data loss/corruption, or misimplemented intent — the same bar as the Step 3 verdict table, applied to the findings decorated `(blocking)` at Step 2.9 (`conventional-comments.md`). Everything else — `suggestion`, `question`, `nitpick`, and any non-blocking `issue` — is non-blocking and yields ⚠️ at most.
+
+The overall verdict is **FAIL** when any of Gates 1/3/4/5 fails **or** the Code review gate is ❌; otherwise **PASS** (with the Code review row showing ✅ or ⚠️).
 
 `--skip-gates` bypasses Gates 1–5 and runs only the inline review pass (Gate 6).
 
@@ -638,7 +652,9 @@ never discarded by this step. Report `Deferred (over inline cap): <N>` in the di
 Produce two views before posting: a summary with the gate table, then numbered detail cards.
 Always include the run mode and delta context in the header:
 
-On PASS (all Gates 1/3/4/5/6 pass):
+Pick the presentation by verdict (see *Code review gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when Gates 1/3/4/5 are ✅ and the Code review gate is ⚠️ (non-blocking findings only — still a PASS verdict); **FAIL** when any of Gates 1/3/4/5 fails or the Code review gate is ❌.
+
+On PASS — all clear (every gate ✅):
 ```
 ## PR Review — PR #<n> (<repo>)
 
@@ -663,7 +679,32 @@ On PASS (all Gates 1/3/4/5/6 pass):
 [rest of sections follow]
 ```
 
-On FAIL (one or more of Gates 1/3/4/5/6 fail):
+On WARN — non-blocking only (Gates 1/3/4/5 ✅, Code review ⚠️):
+```
+## PR Review — PR #<n> (<repo>)
+
+**Title**: <PR title>
+**Author**: @<login>
+**Base ← Head**: <base> ← <head>
+**Intent**: <one-line from Step 1.3>
+**Run mode**: <full | incremental (delta: N lines since PRIOR_SHA_SHORT) | incremental-quick (delta: N lines since PRIOR_SHA_SHORT)>
+
+### Gate Status
+
+| Gate | Status | Details |
+|---|---|---|
+| Description vs. code | ✅ | empty |
+| Prior bot feedback   | ✅ | empty |
+| Documentation        | ✅ | empty |
+| Self-review signals  | ✅ | empty |
+| Code review          | ⚠️ | "See inline comments" or finding text |
+
+**Verdict**: PASS — no blocking issues; <NON_BLOCKING_COUNT> non-blocking finding(s) to review.
+
+[rest of sections follow]
+```
+
+On FAIL (any of Gates 1/3/4/5 fails, or Code review is ❌):
 ```
 ## PR Review — PR #<n> (<repo>)
 
@@ -681,12 +722,14 @@ On FAIL (one or more of Gates 1/3/4/5/6 fail):
 | Prior bot feedback   | ✅ or ❌ | finding text or empty |
 | Documentation        | ✅ or ❌ | finding text or empty |
 | Self-review signals  | ✅ or ❌ | finding text or empty |
-| Code review          | ✅ or ❌ | "See inline comments" or finding text or empty |
+| Code review          | ✅, ⚠️, or ❌ | "See inline comments" or finding text or empty |
 
 **Verdict**: FAIL — <FAILING_GATE_COUNT> gate(s) need attention.
 
 [rest of sections follow]
 ```
+
+`FAILING_GATE_COUNT` counts only hard-failing gates — a ⚠️ Code review row is never included, even when another gate is ❌.
 
 Both PASS and FAIL continue with:
 ```
@@ -805,13 +848,15 @@ The `<sup>` footer line varies by run mode:
 - `full` mode: `<sup>Reviewed for commit \`HEAD_SHA\`. CI status is shown in the checks section above.</sup>`
 - `incremental` or `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`). CI status is shown in the checks section above.</sup>`
 
-The diagnostics `<details>` block is identical on PASS and FAIL — fill in the actual values.
+The diagnostics `<details>` block is identical on PASS, WARN, and FAIL — fill in the actual values.
 The `<sup>` footer depends on run mode (substituted before posting):
 - `full`: `<sup>Reviewed for commit \`HEAD_SHA\`. CI status is shown in the checks section above.</sup>`
 - `incremental` / `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`). CI status is shown in the checks section above.</sup>`
 - Zero-delta short-circuit: `<sup>No code changes since \`PRIOR_SHA_SHORT\` — gate checks only for commit \`HEAD_SHA\`. CI status is shown in the checks section above.</sup>`
 
-**On PASS** (zero failing gates, excluding Gate 2 from count):
+Pick the body by verdict, exactly as in Step 3 (see *Code review gate states*): **PASS** (all clear), **WARN** (Gates 1/3/4/5 ✅ and Code review ⚠️ — non-blocking findings only, still a PASS verdict), or **FAIL** (any of Gates 1/3/4/5 fails, or Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
+
+**On PASS** — all clear (every gate ✅):
 
 ```
 <!-- PR_REVIEWER_REPORT -->
@@ -850,7 +895,46 @@ MEMORIES_APPLIED_SECTION
 </details>
 ```
 
-**On FAIL** (one or more failing gates):
+**On WARN** — non-blocking only (Gates 1/3/4/5 ✅, Code review ⚠️):
+
+```
+<!-- PR_REVIEWER_REPORT -->
+PARTIAL_REVIEW_BANNER
+No blocking issues — <NON_BLOCKING_COUNT> non-blocking inline comment(s) to consider before merge.
+
+| Gate | Status | Details |
+|---|---|---|
+| Description vs. code | ✅ |  |
+| Prior bot feedback   | ✅ |  |
+| Documentation        | ✅ |  |
+| Self-review signals  | ✅ |  |
+| Code review          | ⚠️ | "See inline comments" or finding text |
+
+<sup>FOOTER_LINE</sup>
+
+OPTIMALITY_SECTION
+
+ADDITIONAL_FINDINGS_SECTION
+
+<details>
+<summary>Review diagnostics</summary>
+
+**Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
+**Integrations checked:** <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
+
+**Quality Gate:** produced <P>, carried forward <CF>, relevance-memory drops <RM>, dedupe drops <D>,
+grounding drops <G>, confidence drops <C>, shape drops <S>, cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
+
+MEMORIES_APPLIED_SECTION
+
+**Optimality review (2.4c):** <ran | skipped (reason)> — <UN> unit(s) judged, <UO> optimal, <OP> proposal(s), <OW> withheld.
+
+**Skipped files:** <list or "none">
+
+</details>
+```
+
+**On FAIL** (any of Gates 1/3/4/5 fails, or Code review is ❌):
 
 ```
 <!-- PR_REVIEWER_REPORT -->
@@ -863,7 +947,7 @@ Found <FAILING_GATE_COUNT> gate(s) that need attention before human review.
 | Prior bot feedback   | ✅ or ❌ | finding text or empty cell |
 | Documentation        | ✅ or ❌ | finding text or empty cell |
 | Self-review signals  | ✅ or ❌ | finding text or empty cell |
-| Code review          | ✅ or ❌ | "See inline comments" or finding text or empty cell |
+| Code review          | ✅, ⚠️, or ❌ | "See inline comments" or finding text or empty cell |
 
 <sup>FOOTER_LINE</sup>
 
