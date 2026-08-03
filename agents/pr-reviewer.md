@@ -75,11 +75,11 @@ A PR PASSES when ALL of the following are true:
 5. **Documentation adequacy** — description, inline comments, and any docs are sufficient for an independent reader to understand the change's purpose and behavior.
 6. **Code review** — the AI persona review pass finds no blocking issues. Non-blocking findings do **not** fail this gate (see *Code review gate states* below).
 
-A PR FAILS if any of Gates 1/3/4/5 is not met, or if the Code review gate is ❌.
+A PR FAILS if any of Gates 1–5 is not met (Gate 2 = CI included), or if the Code review gate (Gate 6) is ❌.
 
 ### Code review gate states
 
-Unlike Gates 1/3/4/5 (binary ✅ / ❌), the Code review gate is **tri-state**, because criterion 6 is scoped to *blocking* issues:
+Unlike Gates 1–5 (binary ✅ / ❌), the Code review gate is **tri-state**, because criterion 6 is scoped to *blocking* issues:
 
 | Status | Condition | Verdict effect |
 |---|---|---|
@@ -89,7 +89,7 @@ Unlike Gates 1/3/4/5 (binary ✅ / ❌), the Code review gate is **tri-state**, 
 
 A finding is **blocking** only if it is broken behaviour, security (auth bypass / injection / secret leak / CSRF), data loss/corruption, or misimplemented intent — the same bar as the Step 3 verdict table, applied to the findings decorated `(blocking)` at Step 2.9 (`conventional-comments.md`). Everything else — `suggestion`, `question`, `nitpick`, and any non-blocking `issue` — is non-blocking and yields ⚠️ at most.
 
-The overall verdict is **FAIL** when any of Gates 1/3/4/5 fails **or** the Code review gate is ❌; otherwise **PASS** (with the Code review row showing ✅ or ⚠️).
+The overall verdict is **FAIL** when any of Gates 1–5 fails **or** the Code review gate is ❌; otherwise **PASS** (with the Code review row showing ✅ or ⚠️). Gate 2 (CI) feeds this verdict but is surfaced in GitHub's checks section, not as a table row and not in `FAILING_GATE_COUNT` (criterion 2); the PASS/WARN/FAIL **table** presentation in Steps 3–4 is therefore chosen from the review gates (1, 3, 4, 5, and Code review) only.
 
 `--skip-gates` bypasses Gates 1–5 and runs only the inline review pass (Gate 6).
 
@@ -900,7 +900,7 @@ MEMORIES_APPLIED_SECTION
 ```
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
-No blocking issues — <NON_BLOCKING_COUNT> non-blocking inline comment(s) to consider before merge.
+No blocking issues — <NON_BLOCKING_COUNT> non-blocking finding(s) to consider before merge.
 
 | Gate | Status | Details |
 |---|---|---|
@@ -1060,7 +1060,8 @@ number of memories that fired this run (drops + downgrades + promotes).
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
 - Details column: plain text only, max 120 chars per cell. Truncate; the full finding lives in the inline comment.
-- On PASS, omit the Details column (two-column table).
+- On the all-clear PASS body (every gate ✅), omit the Details column (two-column table). The WARN body (Code review ⚠️) and the FAIL body keep the three-column table.
+- `NON_BLOCKING_COUNT` = the count of non-blocking findings that survived the pipeline (posted inline **plus** any deferred to `Additional findings`). It is the same value in the Step 3 terminal WARN verdict line and the Step 4 body WARN header, and is always described as "finding(s)", never "inline comment(s)".
 - Never add rows, sections, or prose outside the template above (except the three `<details>` blocks — diagnostics, `Optimality review`, and `Additional findings` — the `MEMORIES_APPLIED_SECTION` slot inside the diagnostics block, and the `PARTIAL_REVIEW_BANNER` line — all of which are slots in the template, not added prose).
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
