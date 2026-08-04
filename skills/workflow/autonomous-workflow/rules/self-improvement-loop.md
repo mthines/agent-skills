@@ -87,12 +87,14 @@ agents therefore lists the `mcp__lorekit__memory_*` tools it needs. If, despite
 that, the tools are absent (LoreKit not installed, or a host that does not expose
 them), the loop is a no-op — log one line and continue.
 
-**Read-only CLI fallback (reads only).** When the MCP tools are unavailable but a
-shell is (all these agents have `Bash`), lessons can still be *read* with the
-`@lorekit/cli` read commands — `npx @lorekit/cli search "<keywords>" --json` and
-`npx @lorekit/cli list --scope <scope> --json`. The CLI has **no write command**,
-so writes still require the MCP tools; when they are absent, skip the write
-silently.
+**CLI fallback (reads AND writes).** When the MCP tools are unavailable but a
+shell is (all these agents have `Bash`), the whole loop can still run through the
+`@lorekit/cli` commands. Read with `npx @lorekit/cli search "<keywords>" --json`
+and `npx @lorekit/cli list --scope <scope> --json`; write with
+`npx @lorekit/cli write "<scope>::<key>" "<body>" --tags loop::aw-lessons --source-agent <agent> --trigger <slug>`
+(an upsert — same `scope::key` overwrites in place, mirroring `memory.write`).
+Prefer the MCP tools when present; the CLI is the fallback. If neither is
+available, skip silently.
 
 **Scope** is LoreKit's partition axis — `global`, `repo::{owner}/{repo}`, or
 `branch::{owner}/{repo}::{branch}` (`::` is the only separator; segments are
