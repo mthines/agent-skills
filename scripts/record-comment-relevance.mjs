@@ -158,7 +158,7 @@ function writeLorekit({ scope, key, relevance, resolutionMethod, reason, comment
     examples: [prRef + (commentId ? ` comment ${commentId}` : "")],
     seen_count: 1,       // LoreKit CLI handles UPDATE / increment server-side on same key
     status: "active",
-    expires: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString(),
+    expires: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(),
   });
 
   const tagsArg = `loop::reviewer-comment-relevance,source::${resolutionMethod}`;

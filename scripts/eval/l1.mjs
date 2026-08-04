@@ -457,6 +457,58 @@ function checksInSync(plan, checks) {
         !/one commit per pr\b/i.test(content));
     }
   }
+
+  // G16: the `reviewer-comment-relevance` TTL is hand-mirrored across five files
+  // with no single source of truth (the executable writer needs a literal, and this
+  // repo's CLAUDE.md requires rules to be self-contained). This is the cross-file
+  // drift guard, the counterpart to G12a's lock on `review-outcomes`' 30-day TTL.
+  //
+  // CHANGING THE TTL? Update all SIX occurrences, then update `TTL_DAYS` below:
+  //   1. CLAUDE.md                                        ("durable N-day per-repo relevance signal")
+  //   2. agents/shared/rules/comment-relevance-memory.md   ("default: now + N days")
+  //   3. plugins/pr-relevance-memory/README.md             ("N-day TTL, refreshed on each sighting")
+  //   4. scripts/record-comment-relevance.mjs              (`N * 24 * 60 * 60 * 1000`)
+  //   5. skills/workflow/implement-suggestion/SKILL.md     ("N-day default TTL", "durable N-day TTL")
+  {
+    const TTL_DAYS = 60;
+    const claude = read("CLAUDE.md");
+    const crm = read("agents/shared/rules/comment-relevance-memory.md");
+    const pluginReadme = read("plugins/pr-relevance-memory/README.md");
+    const recorder = read("scripts/record-comment-relevance.mjs");
+    const isSkill3 = read("skills/workflow/implement-suggestion/SKILL.md");
+
+    s.check(`G16a CLAUDE.md states the reviewer-comment-relevance TTL as ${TTL_DAYS} days`,
+      new RegExp(`durable ${TTL_DAYS}-day per-repo relevance signal`).test(claude));
+    s.check(`G16b comment-relevance-memory.md record schema expires at +${TTL_DAYS} days`,
+      new RegExp(`default: now \\+ ${TTL_DAYS} days`).test(crm));
+    s.check(`G16c pr-relevance-memory README states a ${TTL_DAYS}-day TTL`,
+      new RegExp(`${TTL_DAYS}-day TTL`).test(pluginReadme));
+    s.check(`G16d record-comment-relevance.mjs computes expiry from ${TTL_DAYS} days`,
+      recorder.includes(`${TTL_DAYS} * 24 * 60 * 60 * 1000`));
+    s.check(`G16e implement-suggestion SKILL.md states the ${TTL_DAYS}-day TTL in both places`,
+      new RegExp(`${TTL_DAYS}-day default TTL`).test(isSkill3) &&
+      new RegExp(`durable ${TTL_DAYS}-day TTL`).test(isSkill3));
+
+    // Negative assertion: the feared drift is a PARTIAL revert, where one or two
+    // files keep the old number. Any reviewer-comment-relevance TTL statement that
+    // disagrees with TTL_DAYS must fail here.
+    const mirrors = [
+      ["CLAUDE.md", claude], ["comment-relevance-memory.md", crm],
+      ["pr-relevance-memory/README.md", pluginReadme],
+      ["record-comment-relevance.mjs", recorder],
+      ["implement-suggestion/SKILL.md", isSkill3],
+    ];
+    const stale = /(\d+)-day (?:default )?TTL|(\d+)-day per-repo relevance signal|now \+ (\d+) days|(\d+) \* 24 \* 60 \* 60 \* 1000/g;
+    for (const [label, content] of mirrors) {
+      const found = [...content.matchAll(stale)]
+        .map((m) => Number(m[1] ?? m[2] ?? m[3] ?? m[4]))
+        // 30 is `review-outcomes`' own TTL, a different bucket that legitimately
+        // co-occurs in these files; G12a owns it.
+        .filter((n) => n !== TTL_DAYS && n !== 30);
+      s.check(`G16f ${label} carries no reviewer-comment-relevance TTL other than ${TTL_DAYS}`,
+        found.length === 0, found.length ? `stale: ${[...new Set(found)].join(", ")}` : "");
+    }
+  }
 }
 
 process.exit(s.report() ? 0 : 1);
