@@ -137,12 +137,12 @@ memory.write {
 }
 ```
 
-The `loop::reviewer-comment-relevance` tag is what conveys the bucket's kind
-(`signal`) and host (`reviewer`) — do **not** pass explicit `kind` / `host`
-arguments: the live `memory.write` has no such parameters and would drop them
-(see [`memory-buckets.md`](./memory-buckets.md) — the first-class properties are
-proposed, not shipped). Once that property lands, the tag is what it is inferred
-from, so this call is unchanged.
+The `loop::reviewer-comment-relevance` tag conveys the bucket's kind (`signal`)
+and host (`reviewer`): LoreKit records both from the tag automatically (migration
+`00056`), so the tag-only call above is sufficient. You may also set them
+explicitly (`kind: "signal", host: "reviewer"`) now that they are first-class
+properties (lorekit #372) — it is optional and equivalent to the inferred form
+(see [`memory-buckets.md`](./memory-buckets.md)).
 
 `persisting` and `unaddressed` comments are **not** written — a still-open
 finding has no resolution outcome yet, and writing one would poison the signal.
