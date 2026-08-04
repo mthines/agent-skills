@@ -103,7 +103,9 @@ reviewer-comment-relevance
 
 A loop's `memory.write` may set `kind` and `host` explicitly; when omitted, LoreKit infers them from the `loop::<host>-lessons` tag (below), so a tagged write records them without extra arguments. The `loop::<host>-lessons` **tags stay** — they remain the cross-tool read filter and the back-compat contract — so the property is additive, not a rename.
 
-**Back-compat inference.** When a stored memory lacks `kind`/`host` (written before `00056`, or by an older client), LoreKit derives them from the tag so old memories gain the properties without a data migration:
+**Back-compat inference is write-time only — an old memory does not become queryable until it is next written.** `inferKindHost` runs on the write paths (`memory.write`, `POST /memories`, and the usage-event attribution); no read path infers anything. `GET /memories` returns the stored columns verbatim, and `?kind=` / `?host=` filter those stored columns, so a memory written before `00056` keeps `kind`/`host` NULL and **never matches a kind/host filter** — migration `00056` is additive and performs no backfill, by design. The row gains the pair on its next write, because `memory_write`'s upsert merges `kind = coalesce(excluded.kind, memories.kind)`. Same gap in the CLI's **remote** section (`--kind` / `--host` are forwarded to the server); only its **local/offline** rows are rescued, by a client-side mirror of this table in `normalizeEntry`. Treat kind/host filtering as covering memories written or re-written since `00056`; filter the rest client-side on the `loop::…` tag.
+
+The mapping `inferKindHost` applies at write time:
 
 | Tag | Inferred `kind` | Inferred `host` |
 | --- | --- | --- |
@@ -114,7 +116,7 @@ A loop's `memory.write` may set `kind` and `host` explicitly; when omitted, Lore
 **What the property unlocks:**
 
 - Query by kind/host directly — `GET /memories?kind=lesson&host=reviewer` (both parameters, plus `kind_mode` / `host_mode`, are in the published OpenAPI spec at `https://lorekit.io/api-docs/spec`), or `npx @lorekit/cli list --kind signal --host reviewer` (implemented in `1.32.0`, but **not listed in `list --help`** — do not read its absence from the help text as the flag not existing).
-  **The MCP `memory.list` tool is the exception: it accepts only `scope`, `tags`, and `limit`, so kind/host filtering is not reachable from an MCP client.** Filter client-side, or use the REST route. Re-check with the live tool schema before relying on it.
+  **The MCP `memory.list` tool is the exception: it accepts only `scope`, `tags`, and `limit`, so kind/host filtering is not reachable from an MCP client.** Filter client-side, or use the REST route. Re-check with the live tool schema before relying on it. Either way the filter only sees rows that carry the stored columns — see the write-time-only note above.
 - **Usage tracking** — memory operations are recorded per `kind` and per `host` (on `usage_events`), so reads, writes, and searches are attributable to a family and an owner instead of an opaque tag. LoreKit resolves the pair identically for the stored row and the analytics event (`resolveKindHost`), so an untagged-but-explicit write and a tag-only write are attributed the same way.
 - Dashboard grouping by kind. **Filtering by kind in the Explorer is not exposed yet** — its filter dimensions are still the six that [Tags & scopes](https://lorekit.io/docs/tags) enumerates (label, agent, trigger, repository, branch, pull request); neither `kind` nor `host` is among them.
 
