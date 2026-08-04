@@ -132,12 +132,17 @@ memory.write {
   key:   "reviewer-comment-relevance::<fingerprint>",
   value: "<record body: relevance, resolution_method, reason, examples, seen_count, expires>",
   tags:  ["loop::reviewer-comment-relevance", "source::<resolution_method>"],
-  kind:  "signal",                           # first-class taxonomy (LoreKit >= 00056);
-  host:  "reviewer",                         # inferred from the tag on older backends
   source_agent: "pr-reviewer",
   trigger: "re-review-reconcile"
 }
 ```
+
+The `loop::reviewer-comment-relevance` tag is what conveys the bucket's kind
+(`signal`) and host (`reviewer`) — do **not** pass explicit `kind` / `host`
+arguments: the live `memory.write` has no such parameters and would drop them
+(see [`memory-buckets.md`](./memory-buckets.md) — the first-class properties are
+proposed, not shipped). Once that property lands, the tag is what it is inferred
+from, so this call is unchanged.
 
 `persisting` and `unaddressed` comments are **not** written — a still-open
 finding has no resolution outcome yet, and writing one would poison the signal.
