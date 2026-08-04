@@ -1097,7 +1097,7 @@ This is the count of memories **read** (loaded in Step 1.0), which is always ≥
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
 - Details column: plain text only, max 120 chars per cell. Truncate; the full finding lives in the inline comment.
-- On the all-clear PASS body (every gate ✅), omit the Details column (two-column table). The WARN body (Code review ⚠️) and the FAIL body keep the three-column table.
+- On the all-clear PASS body (every gate ✅), omit the Details column (two-column table). The WARN body (any soft gate ⚠️ — Description vs. code and/or Code review) and the FAIL body keep the three-column table.
 - `WARN_GATE_COUNT` = the number of soft gates showing ⚠️ on a WARN body — Description vs. code and/or Code review, so 1 or 2. Same value in the Step 3 terminal WARN verdict line and the Step 4 body WARN header. It counts gates, not findings, so it stays correct whether the warning is a description mismatch, non-blocking code findings, or both.
 - Never add rows, sections, or prose outside the template above (except the three `<details>` blocks — diagnostics, `Optimality review`, and `Additional findings` — the `MEMORIES_APPLIED_SECTION` slot inside the diagnostics block, and the `PARTIAL_REVIEW_BANNER` line — all of which are slots in the template, not added prose).
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
