@@ -455,6 +455,7 @@ Flag any of the following when it appears on a `+`-prefixed line:
 - **Obvious unreviewed AI / placeholder output** — narrator comments ("Here's the function that…", "This code does…"), `lorem ipsum`, `foo`/`bar`/`baz` stand-ins shipped as real values, uncustomised scaffold text, or a body that plainly contradicts its surroundings.
 - **Committed secrets or local noise** — apparent hardcoded credentials/tokens/API keys on a new line, inlined `.env` values, or stray absolute local paths.
 Scope discipline: flag only what is on new (`+`) lines and unambiguous. Do not moralise about naming, structure, or approach here — a borderline judgement call belongs in Gate 6 as a finding, never in this gate. One clear signal is enough to fail it.
+Prose-vs-code carve-out: a `+` line that **names or enumerates** one of the patterns above as its subject matter — documentation, a rule file, a checklist, a test fixture, or a review agent's own marker list — is not a hit; only a line that **is** the artifact (an actual unfinished marker, an actual suppression, actual conflict residue, an actual debug call) counts. Concrete test: would deleting the pattern from this line remove leftover work, or remove the sentence's meaning? Removes leftover work → flag it. Removes the meaning → skip it. Apply the same test to every bullet above, not just the unfinished markers.
 Finding format: `file:line — description`.
 Result: PASS or FAIL with finding text.
 
