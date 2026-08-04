@@ -113,9 +113,10 @@ A loop's `memory.write` may set `kind` and `host` explicitly; when omitted, Lore
 
 **What the property unlocks:**
 
-- Query by kind/host directly — `memory.list { kind: "lesson", host: "reviewer" }`, `GET /memories?kind=lesson&host=reviewer`, or `npx @lorekit/cli list --kind signal`.
-- **Usage tracking** — memory operations are recorded per `kind` and per `host` (on `usage_events`), so reads, writes, and searches are attributable to a family and an owner instead of an opaque tag.
-- Dashboard grouping/filtering by kind, so the three families are visible instead of implied.
+- Query by kind/host directly — `GET /memories?kind=lesson&host=reviewer` (both parameters, plus `kind_mode` / `host_mode`, are in the published OpenAPI spec at `https://lorekit.io/api-docs/spec`), or `npx @lorekit/cli list --kind signal --host reviewer` (implemented in `1.32.0`, but **not listed in `list --help`** — do not read its absence from the help text as the flag not existing).
+  **The MCP `memory.list` tool is the exception: it accepts only `scope`, `tags`, and `limit`, so kind/host filtering is not reachable from an MCP client.** Filter client-side, or use the REST route. Re-check with the live tool schema before relying on it.
+- **Usage tracking** — memory operations are recorded per `kind` and per `host` (on `usage_events`), so reads, writes, and searches are attributable to a family and an owner instead of an opaque tag. LoreKit resolves the pair identically for the stored row and the analytics event (`resolveKindHost`), so an untagged-but-explicit write and a tag-only write are attributed the same way.
+- Dashboard grouping by kind. **Filtering by kind in the Explorer is not exposed yet** — its filter dimensions are still the six that [Tags & scopes](https://lorekit.io/docs/tags) enumerates (label, agent, trigger, repository, branch, pull request); neither `kind` nor `host` is among them.
 
 ---
 
