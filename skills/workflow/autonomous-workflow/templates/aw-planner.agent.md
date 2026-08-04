@@ -15,6 +15,13 @@ tools:
   - Skill
   - WebFetch
   - WebSearch
+  # LoreKit self-improvement loop — the planner READS lessons at Phase 1. Sub-agents
+  # do NOT inherit the parent session's MCP tools, so they are granted here by their
+  # Claude Code names (server-prefixed, dots→underscores) or the read silently no-ops.
+  # See rules/self-improvement-loop.md → "LoreKit in one screen".
+  - mcp__lorekit__memory_list
+  - mcp__lorekit__memory_search
+  - mcp__lorekit__memory_read
 model: opus
 ---
 

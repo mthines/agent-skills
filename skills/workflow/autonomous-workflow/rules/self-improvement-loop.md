@@ -65,12 +65,34 @@ LoreKit is a shared, persistent memory for agents, backed by an MCP server, so a
 lesson learned on one machine (or in CI) is available to every agent everywhere
 in the next session. The loop uses four tools:
 
-| Tool | Use |
-|------|-----|
-| `memory.list` | List lessons for one scope (newest first, tag filter) |
-| `memory.search` | Full-text search across scopes (supports `repo::owner/*`) |
-| `memory.read` | Read one lesson by scope + key |
-| `memory.write` | Store or update a lesson (same scope + key updates in place) |
+| Tool | Claude Code name | Use |
+|------|------------------|-----|
+| `memory.list` | `mcp__lorekit__memory_list` | List lessons for one scope (newest first, tag filter) |
+| `memory.search` | `mcp__lorekit__memory_search` | Full-text search across scopes (supports `repo::owner/*`) |
+| `memory.read` | `mcp__lorekit__memory_read` | Read one lesson by scope + key |
+| `memory.write` | `mcp__lorekit__memory_write` | Store or update a lesson (same scope + key updates in place) |
+
+**Tool naming — do not hunt for a literal `memory.*` tool.** The `memory.list`
+form is LoreKit's canonical (protocol-level) tool name and is what the pseudocode
+blocks below use. **Claude Code exposes MCP tools server-prefixed with dots
+replaced by underscores** — the actual callable names are
+`mcp__lorekit__memory_list` / `_search` / `_read` / `_write` (right column).
+There is no tool literally named `mcp__lorekit__memory.*`.
+
+**Availability — sub-agents must be granted these tools explicitly.** A sub-agent
+(`aw`, `aw-planner`, `aw-executor`, `aw-tester`, and the `reviewer` /
+`pr-reviewer` agents) gets **only** the tools listed in its own frontmatter
+`tools:` — it does **not** inherit the parent session's MCP tools. Each of those
+agents therefore lists the `mcp__lorekit__memory_*` tools it needs. If, despite
+that, the tools are absent (LoreKit not installed, or a host that does not expose
+them), the loop is a no-op — log one line and continue.
+
+**Read-only CLI fallback (reads only).** When the MCP tools are unavailable but a
+shell is (all these agents have `Bash`), lessons can still be *read* with the
+`@lorekit/cli` read commands — `npx @lorekit/cli search "<keywords>" --json` and
+`npx @lorekit/cli list --scope <scope> --json`. The CLI has **no write command**,
+so writes still require the MCP tools; when they are absent, skip the write
+silently.
 
 **Scope** is LoreKit's partition axis — `global`, `repo::{owner}/{repo}`, or
 `branch::{owner}/{repo}::{branch}` (`::` is the only separator; segments are
