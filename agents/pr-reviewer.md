@@ -270,6 +270,24 @@ memory.list { scope: "global",               tags: ["loop::reviewer-comment-rele
 
 Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
 Merge both lists per tag (`repo::` wins on key collision). Skip expired entries.
+
+**Apply `reviewer-lessons`.**
+Match each loaded lesson's `trigger-context` (the shared lesson-scope schema — file globs, task type, integration/tech names) against this run's changed paths, synthesized intent, and detected integrations.
+A matched lesson's *What to do next time* is a **consideration, not a command**: it biases rubric emphasis (Step 2), persona focus (Personas 1–4), and per-comment confidence calibration (Step 2.7) — it may never silently disable a gate, skip a step, or move a threshold.
+On a `repo::` vs. `global` collision the `repo::` lesson wins; on any conflict with the PR author's stated intent or a `.review.yaml` constraint, that constraint wins and the conflict is surfaced.
+The loaded pool is augmented by the diff-keyed `memory.search` in Step 1.2c before Step 2 consumes it.
+`reviewer-comment-relevance` memories are applied separately at Step 2.2, per `comment-relevance-memory.md § Read`.
+
+**Memory model — entrenchment guards and the no-in-run-write choice.**
+The lessons read here are advisory input only, protected by five entrenchment guards (`lorekit-setup § Entrenchment guards`):
+(1) a lesson biases a run but can never auto-change behavior — the only path to a rule, gate, or threshold change is a human-reviewed source edit;
+(2) promotion is gated on recurrence (`seen_count ≥ 3`) or an explicit `status=structural`, never a single run;
+(3) every lesson carries an `expires` and expired entries are skipped above, so stale beliefs decay instead of entrenching;
+(4) a contradiction (a pattern that flips relevance direction) is surfaced, never silently overwritten;
+(5) the privacy pre-flight is never bypassed — a candidate carrying a secret or PII is dropped, not written.
+`pr-reviewer` **never writes lessons during a review**, and this is deliberate rather than an omission: it is a fresh-eyes adversarial reviewer, and biasing it with its own single-run conclusions is exactly the self-reinforcing error the guards exist to prevent (`lorekit-setup § When to add a loop`).
+Its write signal is *resolution rate measured at merge time* — captured asynchronously by `outcome-learning.md`, the `reviewer-comment-relevance.yml` GitHub Action, and `implement-suggestion` — never by this agent in-run.
+
 Retain each loaded memory's LoreKit `scope` and `key` alongside its
 `fingerprint`, `relevance`, and `seen_count` — Step 2.2 builds a deep link from
 `scope` + `key` for every memory that influences the review
@@ -279,6 +297,7 @@ this merge/dedup (0 when connected but none matched), and `LOREKIT_CONNECTED` = 
 `memory.*` backend was reachable at all this run. Both feed the Step 4 `Review diagnostics`
 **Memories** line; the collapsed title headlines the **used** count (`MEMORIES_USED_COUNT`,
 computed at Step 2.2) — see *Review body format*.
+Announce the concrete resolved scope so the influence is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <L> reviewer-lessons matched.`
 Announce: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
 
 ### 1.1 Fetch PR data in parallel
@@ -384,6 +403,23 @@ unchanged.
 **Gate 4 behaviour:**
 In incremental modes (non-empty delta), Gate 4 (self-review signals) scans `REVIEW_DIFF`
 (the delta) not the full PR diff. This is the only gate that changes scope between modes.
+
+### 1.2c Diff-keyed lesson search (all modes)
+
+The two broad `memory.list` calls in Step 1.0 are capped at 50 per tag; on a large repository the lesson most relevant to *these* changed files can fall outside that window.
+Now that the changed-file list is known (Step 1.1 command A and Step 1.2), run one targeted `memory.search` to pull those in.
+Silent no-op if `memory.*` is not connected.
+
+Build the query from the diff's own vocabulary — the changed top-level directories, the changed file basenames (without extension), and any dependency-manifest filenames present in the diff (`package.json`, `go.mod`, `Cargo.toml`, `requirements.txt`, …).
+In `incremental` and `incremental-quick` modes, key on `REVIEW_DIFF`'s paths, not the full PR.
+
+```
+memory.search { q: "<changed dirs + basenames + manifest names>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
+```
+
+Keep only returned hits carrying the tag `loop::reviewer-lessons` or `loop::reviewer-comment-relevance`, then merge them into the pools loaded at Step 1.0 (dedupe by `scope` + `key`; `repo::` wins; skip expired).
+A hit surfaced here is applied exactly as one loaded at Step 1.0 — a `reviewer-lessons` consideration, or a `reviewer-comment-relevance` drop / downgrade / promote at Step 2.2.
+Add the number of newly-surfaced, non-duplicate entries to `MEMORIES_READ_COUNT`.
 
 ### 1.3 Synthesize intent
 

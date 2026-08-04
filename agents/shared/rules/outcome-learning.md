@@ -153,6 +153,12 @@ The full promotion threshold and directionality are defined in [`review-outcomes
 
 When promoting:
 
+**Lesson record shape.**
+Every `reviewer-lessons` write conforms to the shared lesson-scope schema owned by [`write-pipeline.md § Lesson-scope entries`](../../../skills/authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries), via the [`lesson-entry.md`](../../../skills/authoring/persistent-memory/templates/lesson-entry.md) template.
+The `value` MUST carry `trigger-context` (a concrete matching signal — a file glob, task type, or integration/tech name, never a subjective condition), `expires` (ISO 8601, default now + 90 days, refreshed on each re-sighting), `seen_count`, and `status`.
+`trigger-context` is what lets the `reviewer` / `pr-reviewer` read step match a lesson mechanically against a run (`reviewer.md` Step 0.7 / `pr-reviewer.md` Step 1.0); `expires` is entrenchment guard #3 — without it a stale lesson never decays.
+A write missing either field is malformed.
+
 ### From `applied` verdicts (positive lesson)
 
 Write to `reviewer-lessons` via LoreKit:
