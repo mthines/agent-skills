@@ -59,7 +59,7 @@ The workflow fires automatically on `pull_request_review_thread: resolved` and
 ## What accumulates in LoreKit
 
 Memories are stored under `repo::your-org/your-repo` in the
-`reviewer-comment-relevance` bucket with a 180-day TTL.
+`reviewer-comment-relevance` bucket with a 60-day TTL, refreshed on each sighting.
 
 | After N resolutions/dismissals | Effect on next review |
 |---|---|

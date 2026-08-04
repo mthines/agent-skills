@@ -86,7 +86,7 @@ Each entry stored to LoreKit carries:
   "examples": ["<owner>/<repo>#<n> comment <id>"],
   "seen_count": 1,
   "status": "active | promoted | retired",
-  "expires": "<ISO 8601, default: now + 180 days>"
+  "expires": "<ISO 8601, default: now + 60 days>"
 }
 ```
 

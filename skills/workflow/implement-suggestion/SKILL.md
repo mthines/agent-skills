@@ -361,7 +361,7 @@ memory.write { scope: "repo::{owner}/{repo}", key: "reviewer-comment-relevance::
 ```
 
 LoreKit owns storage server-side and dedups on write.
-The `reviewer-comment-relevance` bucket has a 180-day default TTL, refreshed on each sighting.
+The `reviewer-comment-relevance` bucket has a 60-day default TTL, refreshed on each sighting.
 The `review-outcomes` bucket has a 30-day volatile TTL.
 
 Both writes are **append-only and non-blocking** — they MUST NOT gate or delay the Phase 7 report.
@@ -421,7 +421,7 @@ Full contract:
 In addition to writing `implement-suggestion-lessons`, this skill is a **producer of two LoreKit buckets**:
 
 1. **`review-outcomes` shared candidate/outcome bus** (see [`agents/shared/rules/review-outcomes.md`](../../../agents/shared/rules/review-outcomes.md)) — volatile 30-day TTL; consumed by `outcome-learning.md` at promotion time only.
-2. **`reviewer-comment-relevance` memory bucket** (see [`agents/shared/rules/comment-relevance-memory.md`](../../../agents/shared/rules/comment-relevance-memory.md)) — durable 180-day TTL; consumed by `reviewer` and `pr-reviewer` at the **start of every review run** (Step 0.7 / Step 1.0) to suppress recurring noise and reinforce reliably-resolved patterns. This is the primary mechanism by which the reviewer pipeline continuously improves on a specific repository.
+2. **`reviewer-comment-relevance` memory bucket** (see [`agents/shared/rules/comment-relevance-memory.md`](../../../agents/shared/rules/comment-relevance-memory.md)) — durable 60-day TTL; consumed by `reviewer` and `pr-reviewer` at the **start of every review run** (Step 0.7 / Step 1.0) to suppress recurring noise and reinforce reliably-resolved patterns. This is the primary mechanism by which the reviewer pipeline continuously improves on a specific repository.
 
 At Phase 7 (and per-iteration inside `--watch`), one fingerprinted record is written to each bucket
 per processed comment.
