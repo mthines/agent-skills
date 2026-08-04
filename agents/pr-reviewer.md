@@ -68,18 +68,29 @@ Gate checks (Step 1.8) always run against the full PR state in every mode — CI
 
 A PR PASSES when ALL of the following are true:
 
-1. **Description vs. code** — the description accurately reflects what the diff does; an independent reader reaches the same conclusion about intent and scope from the description alone as from the diff.
+1. **Description vs. code** — the description accurately reflects what the diff does; an independent reader reaches the same conclusion about intent and scope from the description alone as from the diff. A mismatch is a **soft warning** (⚠️), not a failure — see *Gate states* below.
 2. **CI status** — all build, test, lint, and docs checks are green. (Contributes to verdict but is NOT shown as a row in the review table — CI details are redundant there; GitHub's checks section shows them.)
 3. **Prior bot feedback** — all prior automated review comments (Cursor, Claude, other agents) are resolved or explicitly dismissed.
 4. **Self-review signals** — no debug logs, commented-out code, leftover TODO/FIXME/HACK markers on new lines, or obvious unreviewed AI stubs in the diff.
 5. **Documentation adequacy** — description, inline comments, and any docs are sufficient for an independent reader to understand the change's purpose and behavior.
-6. **Code review** — the AI persona review pass finds no blocking issues. Non-blocking findings do **not** fail this gate (see *Code review gate states* below).
+6. **Code review** — the AI persona review pass finds no blocking issues. Non-blocking findings do **not** fail this gate (see *Gate states* below).
 
-A PR FAILS if any of Gates 1–5 is not met (Gate 2 = CI included), or if the Code review gate (Gate 6) is ❌.
+A PR FAILS if any of Gates 2–5 is not met (Gate 2 = CI included), or if the Code review gate (Gate 6) is ❌. Gate 1 (Description vs. code) is a soft-warning gate — a mismatch yields ⚠️ and never fails the PR.
 
-### Code review gate states
+### Gate states
 
-Unlike Gates 1–5 (binary ✅ / ❌), the Code review gate is **tri-state**, because criterion 6 is scoped to *blocking* issues:
+Gates 3, 4, and 5, plus Gate 2 (CI), are **hard** gates: binary ✅ / ❌, and any ❌ fails the PR.
+
+Two gates are **soft** — a problem yields a warning (⚠️) that never fails the PR and is never counted in `FAILING_GATE_COUNT`:
+
+**Gate 1 — Description vs. code** is two-state:
+
+| Status | Condition |
+|---|---|
+| ✅ | The description accurately reflects the diff. |
+| ⚠️ | The description omits or misrepresents a scope of the diff. Soft warning only — never fails the PR. |
+
+**Gate 6 — Code review** is tri-state, because criterion 6 is scoped to *blocking* issues:
 
 | Status | Condition | Verdict effect |
 |---|---|---|
@@ -89,7 +100,7 @@ Unlike Gates 1–5 (binary ✅ / ❌), the Code review gate is **tri-state**, be
 
 A finding is **blocking** only if it is broken behaviour, security (auth bypass / injection / secret leak / CSRF), data loss/corruption, or misimplemented intent — the same bar as the Step 3 verdict table, applied to the findings decorated `(blocking)` at Step 2.9 (`conventional-comments.md`). Everything else — `suggestion`, `question`, `nitpick`, and any non-blocking `issue` — is non-blocking and yields ⚠️ at most.
 
-The overall verdict is **FAIL** when any of Gates 1–5 fails **or** the Code review gate is ❌; otherwise **PASS** (with the Code review row showing ✅ or ⚠️). Gate 2 (CI) feeds this verdict but is surfaced in GitHub's checks section, not as a table row and not in `FAILING_GATE_COUNT` (criterion 2); the PASS/WARN/FAIL **table** presentation in Steps 3–4 is therefore chosen from the review gates (1, 3, 4, 5, and Code review) only.
+The overall verdict is **FAIL** when any of Gates 2–5 fails **or** the Code review gate is ❌; otherwise **PASS** (with the Description vs. code and Code review rows each showing ✅ or ⚠️). Gate 2 (CI) feeds this verdict but is surfaced in GitHub's checks section, not as a table row and not in `FAILING_GATE_COUNT` (criterion 2); the PASS/WARN/FAIL **table** presentation in Steps 3–4 is therefore chosen from the review gates (3, 4, 5, Description vs. code, and Code review) only.
 
 `--skip-gates` bypasses Gates 1–5 and runs only the inline review pass (Gate 6).
 
@@ -263,6 +274,9 @@ Retain each loaded memory's `scope` + `key` (its LoreKit coordinates) alongside 
 `fingerprint`, `relevance`, and `seen_count` — Step 2.2 builds a dashboard deep link from
 `scope` + `key` for every memory that influences the review
 (`agents/shared/rules/comment-relevance-memory.md § Linking applied memories in the report`).
+Set `MEMORIES_READ_COUNT` = the number of `reviewer-comment-relevance` memories retained after
+this merge/dedup (0 when `memory.*` is not connected or none matched). It surfaces in the Step 4
+`Review diagnostics` block title — see *Review body format*.
 Announce: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
 
 ### 1.1 Fetch PR data in parallel
@@ -413,7 +427,7 @@ Read the PR title and body (Step 1.1 command A) and the diff (Step 1.1 command B
 Does the description accurately reflect what the diff does? Flag every scope the
 description omits or misrepresents.
 Finding format: one sentence per mismatch, file names only (no diff quotes).
-Result: PASS or FAIL with finding text.
+Result: PASS (✅) or WARN (⚠️) with finding text — a mismatch is a soft warning, never a hard failure (see *Gate states*).
 
 **Gate 2 — CI status** (verdict only — excluded from review body table)
 Read the CI checks output (Step 1.1 command C). List every failing or still-pending
@@ -428,13 +442,19 @@ Finding format: one line per unresolved item — author login and brief subject.
 Result: PASS or FAIL with finding text.
 
 **Gate 4 — Self-review signals**
+This is a coarse safety net for the residue a careful author strips out before pushing — not a style or design review (Gate 6 owns those). It scans **only `+`-prefixed additions** for a fixed set of unambiguous "this was never self-reviewed" tells, which is exactly why it is green on almost every PR: a clean diff simply does not contain these artifacts, so the gate stays quiet and only trips when genuinely unfinished or debug material was committed. Treat a green result as "no smoking guns", not "the code is good".
 In `full` mode: read the full PR diff (Step 1.1 command B).
 In `incremental` or `incremental-quick` mode: read `REVIEW_DIFF` (the delta from Step 1.2b) — only new additions since the prior review can introduce new debug logs or stubs.
-Flag any of the following on `+`-prefixed lines:
-- Debug logs (`console.log`, `print`, `debugger`, `fmt.Println`, etc.)
-- Commented-out code blocks
-- Leftover `TODO`/`FIXME`/`HACK` markers
-- Obvious unreviewed AI output (boilerplate, placeholder text, uncustomised stubs)
+Flag any of the following when it appears on a `+`-prefixed line:
+- **Debugging leftovers** — `console.log` / `console.debug`, `print` / `pp`, `debugger`, `breakpoint()`, `binding.pry`, `fmt.Println`, `dbg!`, `System.out.println`, and similar trace calls added for local debugging.
+- **Commented-out code** — a block of real code disabled with comment syntax instead of deleted (distinct from explanatory prose comments).
+- **Unfinished markers** — `TODO`, `FIXME`, `HACK`, `XXX`, `WIP`, `TEMP`, or a `TODO(owner)` that this PR does not resolve.
+- **Merge-conflict / rebase residue** — `<<<<<<<`, `=======`, `>>>>>>>` markers left in a file.
+- **Test focus / silent skips** — `.only` / `fdescribe` / `fit` (which quietly drop the rest of the suite) and newly added `.skip` / `xit` / `@pytest.mark.skip` with no reason given.
+- **Newly added suppressions without justification** — `eslint-disable`, `// @ts-ignore` / `// @ts-nocheck`, `# noqa`, `# type: ignore`, `#nosec`, `//nolint` introduced on a new line with no explanatory comment.
+- **Obvious unreviewed AI / placeholder output** — narrator comments ("Here's the function that…", "This code does…"), `lorem ipsum`, `foo`/`bar`/`baz` stand-ins shipped as real values, uncustomised scaffold text, or a body that plainly contradicts its surroundings.
+- **Committed secrets or local noise** — apparent hardcoded credentials/tokens/API keys on a new line, inlined `.env` values, or stray absolute local paths.
+Scope discipline: flag only what is on new (`+`) lines and unambiguous. Do not moralise about naming, structure, or approach here — a borderline judgement call belongs in Gate 6 as a finding, never in this gate. One clear signal is enough to fail it.
 Finding format: `file:line — description`.
 Result: PASS or FAIL with finding text.
 
@@ -445,8 +465,9 @@ understand the change's purpose and behavior?
 Finding format: one sentence per gap.
 Result: PASS or FAIL with finding text.
 
-**Token-economy skip heuristic:** if three or more of Gates 1, 3, 4, and 5 fail
-(and `--no-holistic` was not already set), skip Steps 2.4 and 2.4b (holistic passes)
+**Token-economy skip heuristic:** if all three of Gates 3, 4, and 5 fail
+(Gate 1 is a soft warning and no longer counts toward this heuristic; and `--no-holistic`
+was not already set), skip Steps 2.4 and 2.4b (holistic passes)
 — the PR is clearly not ready and holistic tokens would be wasted. Note the skip in the
 Quality Gate summary. Gate 6 (inline review) always runs regardless of gate outcomes.
 
@@ -652,7 +673,7 @@ never discarded by this step. Report `Deferred (over inline cap): <N>` in the di
 Produce two views before posting: a summary with the gate table, then numbered detail cards.
 Always include the run mode and delta context in the header:
 
-Pick the presentation by verdict (see *Code review gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when Gates 1/3/4/5 are ✅ and the Code review gate is ⚠️ (non-blocking findings only — still a PASS verdict); **FAIL** when any of Gates 1/3/4/5 fails or the Code review gate is ❌.
+Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 2/3/4/5 all ✅) and the Code review gate is not ❌, but at least one soft gate — Description vs. code or Code review — is ⚠️ (still a PASS verdict); **FAIL** when any of Gates 2/3/4/5 fails or the Code review gate is ❌.
 
 On PASS — all clear (every gate ✅):
 ```
@@ -679,7 +700,7 @@ On PASS — all clear (every gate ✅):
 [rest of sections follow]
 ```
 
-On WARN — non-blocking only (Gates 1/3/4/5 ✅, Code review ⚠️):
+On WARN — soft warnings only (hard Gates 2/3/4/5 ✅, at least one of Description vs. code / Code review is ⚠️, none ❌):
 ```
 ## PR Review — PR #<n> (<repo>)
 
@@ -693,18 +714,18 @@ On WARN — non-blocking only (Gates 1/3/4/5 ✅, Code review ⚠️):
 
 | Gate | Status | Details |
 |---|---|---|
-| Description vs. code | ✅ | empty |
+| Description vs. code | ✅ or ⚠️ | mismatch text or empty |
 | Prior bot feedback   | ✅ | empty |
 | Documentation        | ✅ | empty |
 | Self-review signals  | ✅ | empty |
-| Code review          | ⚠️ | "See inline comments" or finding text |
+| Code review          | ✅ or ⚠️ | "See inline comments" or finding text or empty |
 
-**Verdict**: PASS — no blocking issues; <NON_BLOCKING_COUNT> non-blocking finding(s) to review.
+**Verdict**: PASS — no blocking issues; <WARN_GATE_COUNT> gate(s) flagged a warning (⚠️).
 
 [rest of sections follow]
 ```
 
-On FAIL (any of Gates 1/3/4/5 fails, or Code review is ❌):
+On FAIL (any of Gates 2/3/4/5 fails, or Code review is ❌):
 ```
 ## PR Review — PR #<n> (<repo>)
 
@@ -718,7 +739,7 @@ On FAIL (any of Gates 1/3/4/5 fails, or Code review is ❌):
 
 | Gate | Status | Details |
 |---|---|---|
-| Description vs. code | ✅ or ❌ | finding text (max 120 chars) or empty |
+| Description vs. code | ✅ or ⚠️ | mismatch text (max 120 chars) or empty |
 | Prior bot feedback   | ✅ or ❌ | finding text or empty |
 | Documentation        | ✅ or ❌ | finding text or empty |
 | Self-review signals  | ✅ or ❌ | finding text or empty |
@@ -729,7 +750,7 @@ On FAIL (any of Gates 1/3/4/5 fails, or Code review is ❌):
 [rest of sections follow]
 ```
 
-`FAILING_GATE_COUNT` counts only hard-failing gates — a ⚠️ Code review row is never included, even when another gate is ❌.
+`FAILING_GATE_COUNT` counts only hard-failing gates — a ⚠️ row (Description vs. code or Code review) is never included, even when another gate is ❌.
 
 Both PASS and FAIL continue with:
 ```
@@ -854,7 +875,7 @@ The `<sup>` footer depends on run mode (substituted before posting):
 - `incremental` / `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`). CI status is shown in the checks section above.</sup>`
 - Zero-delta short-circuit: `<sup>No code changes since \`PRIOR_SHA_SHORT\` — gate checks only for commit \`HEAD_SHA\`. CI status is shown in the checks section above.</sup>`
 
-Pick the body by verdict, exactly as in Step 3 (see *Code review gate states*): **PASS** (all clear), **WARN** (Gates 1/3/4/5 ✅ and Code review ⚠️ — non-blocking findings only, still a PASS verdict), or **FAIL** (any of Gates 1/3/4/5 fails, or Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
+Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (all clear), **WARN** (hard Gates 2/3/4/5 ✅ and at least one soft gate — Description vs. code or Code review — is ⚠️, none ❌; still a PASS verdict), or **FAIL** (any of Gates 2/3/4/5 fails, or Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
 
 **On PASS** — all clear (every gate ✅):
 
@@ -878,7 +899,7 @@ OPTIMALITY_SECTION
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
-<summary>Review diagnostics</summary>
+<summary>Review diagnostics<MEMORIES_READ_SUFFIX></summary>
 
 **Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 **Integrations checked:** <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
@@ -892,23 +913,25 @@ MEMORIES_APPLIED_SECTION
 
 **Skipped files:** <list or "none">
 
+<sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
+
 </details>
 ```
 
-**On WARN** — non-blocking only (Gates 1/3/4/5 ✅, Code review ⚠️):
+**On WARN** — soft warnings only (hard Gates 2/3/4/5 ✅, at least one of Description vs. code / Code review is ⚠️, none ❌):
 
 ```
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
-No blocking issues — <NON_BLOCKING_COUNT> non-blocking finding(s) to consider before merge.
+No blocking issues — <WARN_GATE_COUNT> gate(s) flagged a warning; details below.
 
 | Gate | Status | Details |
 |---|---|---|
-| Description vs. code | ✅ |  |
+| Description vs. code | ✅ or ⚠️ | mismatch text or empty |
 | Prior bot feedback   | ✅ |  |
 | Documentation        | ✅ |  |
 | Self-review signals  | ✅ |  |
-| Code review          | ⚠️ | "See inline comments" or finding text |
+| Code review          | ✅ or ⚠️ | "See inline comments" or finding text or empty |
 
 <sup>FOOTER_LINE</sup>
 
@@ -917,7 +940,7 @@ OPTIMALITY_SECTION
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
-<summary>Review diagnostics</summary>
+<summary>Review diagnostics<MEMORIES_READ_SUFFIX></summary>
 
 **Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 **Integrations checked:** <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
@@ -931,10 +954,12 @@ MEMORIES_APPLIED_SECTION
 
 **Skipped files:** <list or "none">
 
+<sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
+
 </details>
 ```
 
-**On FAIL** (any of Gates 1/3/4/5 fails, or Code review is ❌):
+**On FAIL** (any of Gates 2/3/4/5 fails, or Code review is ❌):
 
 ```
 <!-- PR_REVIEWER_REPORT -->
@@ -943,7 +968,7 @@ Found <FAILING_GATE_COUNT> gate(s) that need attention before human review.
 
 | Gate | Status | Details |
 |---|---|---|
-| Description vs. code | ✅ or ❌ | finding text (≤ 120 chars) or empty cell |
+| Description vs. code | ✅ or ⚠️ | mismatch text (≤ 120 chars) or empty cell |
 | Prior bot feedback   | ✅ or ❌ | finding text or empty cell |
 | Documentation        | ✅ or ❌ | finding text or empty cell |
 | Self-review signals  | ✅ or ❌ | finding text or empty cell |
@@ -956,7 +981,7 @@ OPTIMALITY_SECTION
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
-<summary>Review diagnostics</summary>
+<summary>Review diagnostics<MEMORIES_READ_SUFFIX></summary>
 
 **Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 **Integrations checked:** <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
@@ -969,6 +994,8 @@ MEMORIES_APPLIED_SECTION
 **Optimality review (2.4c):** <ran | skipped (reason)> — <UN> unit(s) judged, <UO> optimal, <OP> proposal(s), <OW> withheld.
 
 **Skipped files:** <list or "none">
+
+<sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
 
 </details>
 ```
@@ -1057,11 +1084,20 @@ construction (`base` = `LOREKIT_APP_URL` or `https://lorekit.io`), else a plain-
 `` `<scope> · <key>` `` identifier — never a fabricated URL. The bullet count MUST equal the
 number of memories that fired this run (drops + downgrades + promotes).
 
+`MEMORIES_READ_SUFFIX` is the read-count tag appended to the `Review diagnostics` `<summary>`
+title, so the reader can tell from the collapsed label whether memory informed the review:
+- When `MEMORIES_READ_COUNT > 0` (Step 1.0), substitute ` (<MEMORIES_READ_COUNT> memories read)` —
+  e.g. `Review diagnostics (2 memories read)`. Use the singular `memory` when the count is exactly 1.
+- When `MEMORIES_READ_COUNT` is 0, substitute nothing — the title stays the bare `Review diagnostics`.
+
+This is the count of memories **read** (loaded in Step 1.0), which is always ≥ the number
+**applied** shown in `MEMORIES_APPLIED_SECTION`; a run can read memories and apply none.
+
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
 - Details column: plain text only, max 120 chars per cell. Truncate; the full finding lives in the inline comment.
 - On the all-clear PASS body (every gate ✅), omit the Details column (two-column table). The WARN body (Code review ⚠️) and the FAIL body keep the three-column table.
-- `NON_BLOCKING_COUNT` = the count of non-blocking findings that survived the pipeline (posted inline **plus** any deferred to `Additional findings`). It is the same value in the Step 3 terminal WARN verdict line and the Step 4 body WARN header, and is always described as "finding(s)", never "inline comment(s)".
+- `WARN_GATE_COUNT` = the number of soft gates showing ⚠️ on a WARN body — Description vs. code and/or Code review, so 1 or 2. Same value in the Step 3 terminal WARN verdict line and the Step 4 body WARN header. It counts gates, not findings, so it stays correct whether the warning is a description mismatch, non-blocking code findings, or both.
 - Never add rows, sections, or prose outside the template above (except the three `<details>` blocks — diagnostics, `Optimality review`, and `Additional findings` — the `MEMORIES_APPLIED_SECTION` slot inside the diagnostics block, and the `PARTIAL_REVIEW_BANNER` line — all of which are slots in the template, not added prose).
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
