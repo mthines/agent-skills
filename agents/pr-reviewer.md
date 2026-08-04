@@ -900,7 +900,7 @@ OPTIMALITY_SECTION
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
-<summary>Review diagnostics<MEMORIES_READ_SUFFIX></summary>
+<summary>Review diagnosticsMEMORIES_READ_SUFFIX</summary>
 
 **Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 **Integrations checked:** <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
@@ -941,7 +941,7 @@ OPTIMALITY_SECTION
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
-<summary>Review diagnostics<MEMORIES_READ_SUFFIX></summary>
+<summary>Review diagnosticsMEMORIES_READ_SUFFIX</summary>
 
 **Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 **Integrations checked:** <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
@@ -982,7 +982,7 @@ OPTIMALITY_SECTION
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
-<summary>Review diagnostics<MEMORIES_READ_SUFFIX></summary>
+<summary>Review diagnosticsMEMORIES_READ_SUFFIX</summary>
 
 **Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 **Integrations checked:** <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
