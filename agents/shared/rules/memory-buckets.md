@@ -90,20 +90,24 @@ reviewer-comment-relevance
 
 ---
 
-## First-class properties in LoreKit (`kind` + `host`)
+## PROPOSED — first-class properties in LoreKit (`kind` + `host`)
 
-The kind and host are **tracked as first-class LoreKit properties**, not inferred from the tag string on every read.
-This document is the authoritative enum for their values.
+> **Status: proposed, not shipped. Do not write `kind` or `host` in a `memory.write` call today — LoreKit has no such parameter and the field would be dropped.**
+> Verified against two independent sources: the live `memory.write` / `memory.list` MCP schemas accept only `scope`, `key`, `value`, `tags`, `org`, `ttl_days` / `clear_ttl`, `created_at`, the `origin_*` provenance fields, `source_agent`, and `trigger`; and LoreKit's published [Tags & scopes](https://lorekit.io/docs/tags) page enumerates the Explorer's filter dimensions as exactly six — `tags`, `source_agent`, `trigger`, `origin_repo`, `origin_branch`, `origin_pr`. Neither carries `kind` or `host`.
+> Re-check those two surfaces before treating anything below as available. Until then the kind of a bucket is read **from this document**, and the tag remains the only machine-readable discriminator.
+
+The rest of this section is the design record for the proposal.
+The intent is that kind and host become **first-class LoreKit properties** rather than something inferred from the tag string on every read, with this document as the authoritative enum for their values.
 
 | Property | Values | Meaning |
 | --- | --- | --- |
 | `kind` | `lesson` \| `bus` \| `signal` | The memory's role — the three kinds above. |
 | `host` | kebab slug (`aw`, `reviewer`, `fix-bug`, `ci-auto-fix`, `ideate`, … ; `review` for the shared bus and signal) | The owning skill or agent. |
 
-Every `memory.write` from a loop sets `kind` and `host` explicitly.
-The `loop::<host>-lessons` **tags stay** — they remain the cross-tool read filter and the back-compat contract — so this is additive, not a rename.
+Under the proposal every `memory.write` from a loop would set `kind` and `host` explicitly.
+The `loop::<host>-lessons` **tags would stay** — they remain the cross-tool read filter and the back-compat contract — so the change is additive, not a rename.
 
-**Back-compat inference.** When a stored memory lacks `kind`/`host` (written before the property existed), LoreKit derives them from the tag so old memories gain the properties without a data migration:
+**Back-compat inference (also proposed).** When a stored memory lacks `kind`/`host`, LoreKit would derive them from the tag so old memories gain the properties without a data migration:
 
 | Tag | Inferred `kind` | Inferred `host` |
 | --- | --- | --- |
@@ -111,10 +115,10 @@ The `loop::<host>-lessons` **tags stay** — they remain the cross-tool read fil
 | `loop::review-outcomes` | `bus` | `review` |
 | `loop::reviewer-comment-relevance` | `signal` | `reviewer` |
 
-**What the property unlocks** (not possible when the kind is buried in a tag string):
+**What the property would unlock** (not possible while the kind is buried in a tag string):
 
-- Query by kind/host directly: `memory.list { kind: "lesson", host: "reviewer" }`, `lorekit ls --kind signal`.
-- **Usage tracking** — memory operations are recorded per `kind` and per `host`, so reads, writes, and searches are attributable to a family and an owner instead of an opaque tag.
+- Query by kind/host directly — e.g. `memory.list { kind: "lesson", host: "reviewer" }` or a `--kind signal` flag on `npx @lorekit/cli list`. Neither exists today.
+- **Usage tracking** — memory operations recorded per `kind` and per `host`, so reads, writes, and searches are attributable to a family and an owner instead of an opaque tag.
 - Dashboard grouping by kind, so the three families are visible instead of implied.
 
 ---
@@ -131,8 +135,8 @@ The bucket names are a **cross-tool contract**, not internal identifiers:
 - The L1 eval asserts lesson-scope storage against these exact tags.
 - LoreKit keys memories by `scope` + `key`; a rename orphans every memory already written under the old name — it does not migrate them.
 
-The clarity fix is the first-class `kind` + `host` **property** above plus **this document** — not a tag rename.
-The property gives you kind-first querying (`--kind lesson`) and usage tracking without forking the tag contract or orphaning stored memories.
+The clarity fix available **today** is **this document** — not a tag rename.
+The `kind` + `host` property proposed above would add kind-first querying and usage tracking on top of it, again without forking the tag contract or orphaning stored memories; until it ships, this file is the whole answer.
 If a tag rename is ever undertaken anyway, it must land in one change across the rules, the agents, the workflow, the script, the evals, and a documented migration of existing memories — and should be discussed as an ecosystem decision, not a local cleanup.
 
 ---
