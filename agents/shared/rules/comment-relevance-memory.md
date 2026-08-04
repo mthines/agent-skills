@@ -122,6 +122,8 @@ memory coordinates) alongside its `fingerprint`, `relevance`, and `seen_count` �
 the report builds a pressable dashboard deep link from `scope` + `key` for every
 memory that actually influences the review (see
 [Linking applied memories in the report](#linking-applied-memories-in-the-report)).
+`memory.list` / `memory.read` / `memory.search` return no per-memory `id`, so
+`scope` + `key` are the only identifiers a link can be built from.
 
 ### How to apply
 
@@ -185,15 +187,20 @@ into three links the user can click through and audit.
 
 **Only applied memories are linked.** Use `APPLIED_MEMORIES[]` from the apply step.
 A memory that was loaded but fired against nothing is never linked — it did not
-influence the review. If `APPLIED_MEMORIES[]` is empty, the report shows no
-memory-link section at all; the numeric Quality Gate counts stand alone.
+influence the review. If `APPLIED_MEMORIES[]` is empty, the block still renders
+its header line (`… · 0 used`) and no bullets, per
+[Render shape](#render-shape); the numeric Quality Gate counts stand alone.
 
 ### Resolving each link
 
 A LoreKit memory's dashboard deep link opens its detail sheet in the `/lore`
 Explorer. It is built from the memory's `scope` + `key` per LoreKit's documented
-[deep-link contract](https://lorekit.io/docs/deep-links). For each entry in
-`APPLIED_MEMORIES[]`, resolve its URL in this order:
+[deep-link contract](https://lorekit.io/docs/deep-links). That contract
+enumerates every Explorer parameter — `scope`, `q`, `range`, `owner`, `filters`,
+`tags`, `view`, `archived`, and `lesson` — and `lesson` is the only one that
+opens a single memory. There is no `?memoryId=` parameter, and the read tools
+expose no `id` to put in one, so never build a link from either. For each entry
+in `APPLIED_MEMORIES[]`, resolve its URL in this order:
 
 1. **Preferred — let the LoreKit CLI build it.** When the `lorekit` CLI is on
    `PATH`, run `lorekit link "<scope>" "<key>"` (alias `url`). It prints the exact
@@ -222,23 +229,25 @@ memory as plain text `` `<scope> · <key>` `` with no hyperlink.
 
 ### Render shape
 
-One bullet per applied memory, each a Markdown link whose text names the
-`fingerprint`, the action taken, and the recurrence count — so multiple memories
-render as multiple independently-pressable links:
+A persistent **Memories** block headed by the read and used counts, followed —
+only when at least one memory fired — by one bullet per applied memory. Each bullet is a
+Markdown link whose text names the `fingerprint`, the action taken, and the recurrence count,
+so multiple memories render as multiple independently-pressable links:
 
 ```markdown
-**Memories applied:** (<N> LoreKit memories influenced this review)
+**Memories** — <read> read · <used> used
 
 - [`suggestion:null-check-guaranteed-upstream`](https://…) — dropped, seen 4×
 - [`nitpick:map-vs-record-preference`](https://…) — downgraded, seen 2×
 - [`issue:missing-abort-signal`](https://…) — promoted, seen 3×
 ```
 
-The bullet count MUST equal the number of memories that fired this run (drops +
-downgrades + promotes). A mismatch means an applied memory was dropped from the
-list instead of linked. Which report surface renders this block is the consuming
-agent's contract — `pr-reviewer` renders it inside the posted review body's
-`Review diagnostics` block (Step 4).
+The bullet count MUST equal the `used` count — the number of memories that fired this run (drops +
+downgrades + promotes). A mismatch means an applied memory was dropped from the list instead of
+linked. When nothing fired, render only the header line (`… · 0 used`). Which report surface renders
+this block is the consuming agent's contract — `pr-reviewer` renders it inside the posted review
+body's `Review diagnostics` block (Step 4), where the collapsed title also headlines the `used`
+count.
 
 ---
 
