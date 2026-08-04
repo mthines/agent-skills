@@ -117,11 +117,13 @@ memory.list { scope: "global",               tags: ["loop::reviewer-comment-rele
 Merge both lists (`repo::` wins on key collision).
 Skip any entry whose `expires` is in the past.
 
-**Keep the coordinates.** Retain each entry's LoreKit `id`, `scope`, and `key`
-alongside its `fingerprint`, `relevance`, and `seen_count` — the report builds a
-pressable `?memoryId=` deep link from the `id` (falling back to `scope` + `key`)
-for every memory that actually influences the review (see
+**Keep the coordinates.** Retain each entry's `scope` and `key` (the LoreKit
+memory coordinates) alongside its `fingerprint`, `relevance`, and `seen_count` —
+the report builds a pressable dashboard deep link from `scope` + `key` for every
+memory that actually influences the review (see
 [Linking applied memories in the report](#linking-applied-memories-in-the-report)).
+`memory.list` / `memory.read` / `memory.search` return no per-memory `id`, so
+`scope` + `key` are the only identifiers a link can be built from.
 
 ### How to apply
 
@@ -190,35 +192,39 @@ memory-link section at all; the numeric Quality Gate counts stand alone.
 
 ### Resolving each link
 
-A LoreKit memory's dashboard deep link opens its detail view in the `/lore`
-Explorer. Build it from the memory's **`id`** (retained at read time) via the
-`?memoryId=` route, which resolves straight to that one memory — no `scope`
-selection or URL-encoded JSON to get wrong:
+A LoreKit memory's dashboard deep link opens its detail sheet in the `/lore`
+Explorer. It is built from the memory's `scope` + `key` per LoreKit's documented
+[deep-link contract](https://lorekit.io/docs/deep-links). That contract
+enumerates every Explorer parameter — `scope`, `q`, `range`, `owner`, `filters`,
+`tags`, `view`, `archived`, and `lesson` — and `lesson` is the only one that
+opens a single memory. There is no `?memoryId=` parameter, and the read tools
+expose no `id` to put in one, so never build a link from either. For each entry
+in `APPLIED_MEMORIES[]`, resolve its URL in this order:
 
-```text
-{base}/lore?memoryId=<id>
-```
-
-`base` is the `LOREKIT_APP_URL` environment variable, else `https://lorekit.io`.
-A memory with `id` `mem_7f3a92` yields `https://lorekit.io/lore?memoryId=mem_7f3a92`.
-
-Resolve each entry in `APPLIED_MEMORIES[]` in this order:
-
-1. **Preferred — `{base}/lore?memoryId=<id>`.** Use the memory's `id` directly.
-   The `id` is present whenever the read step retained it (it always should be).
-2. **Fallback — the LoreKit CLI.** When no `id` is available but the `lorekit`
-   CLI is on `PATH`, run `lorekit link "<scope>" "<key>"` (alias `url`); it prints
-   the exact URL to stdout and honours `LOREKIT_APP_URL` / `--base`:
+1. **Preferred — let the LoreKit CLI build it.** When the `lorekit` CLI is on
+   `PATH`, run `lorekit link "<scope>" "<key>"` (alias `url`). It prints the exact
+   URL to stdout — nothing else — and honours `LOREKIT_APP_URL` / `--base` for
+   self-hosted dashboards, so encoding is never hand-rolled:
 
    ```bash
    lorekit link "repo::acme/widget" "reviewer-comment-relevance::suggestion:null-check-guaranteed-upstream"
    ```
 
-3. **Last resort — plain text.** When neither `id` nor `scope`+`key` is known,
-   render the memory as plain text `` `<scope> · <key>` `` with no hyperlink.
+2. **Fallback — construct the URL directly.** When the CLI is unavailable,
+   build `{base}/lore?scope=<enc(scope)>&lesson=<enc({scope,key})>`, where
+   `enc(v) = encodeURIComponent(JSON.stringify(v))` (the exact inverse of the
+   dashboard's `useUrlState` read — a raw `?scope=global` silently means "all
+   scopes"), and `base` is the `LOREKIT_APP_URL` environment variable, else
+   `https://lorekit.io`. For scope `global`, key
+   `reviewer-comment-relevance::nitpick:map-vs-record-preference` this yields:
 
-**Never fabricate a URL or an `id`** — every link derives deterministically from
-the memory's real identifiers.
+   ```text
+   https://lorekit.io/lore?scope=%22global%22&lesson=%7B%22scope%22%3A%22global%22%2C%22key%22%3A%22reviewer-comment-relevance%3A%3Anitpick%3Amap-vs-record-preference%22%7D
+   ```
+
+**Never fabricate a URL** — both paths derive it deterministically from the
+memory's real `scope` + `key`; if neither `scope` nor `key` is known, render the
+memory as plain text `` `<scope> · <key>` `` with no hyperlink.
 
 ### Render shape
 
