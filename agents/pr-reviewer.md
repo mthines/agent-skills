@@ -275,8 +275,10 @@ Retain each loaded memory's `scope` + `key` (its LoreKit coordinates) alongside 
 `scope` + `key` for every memory that influences the review
 (`agents/shared/rules/comment-relevance-memory.md § Linking applied memories in the report`).
 Set `MEMORIES_READ_COUNT` = the number of `reviewer-comment-relevance` memories retained after
-this merge/dedup (0 when `memory.*` is not connected or none matched). It surfaces in the Step 4
-`Review diagnostics` block title — see *Review body format*.
+this merge/dedup (0 when connected but none matched), and `LOREKIT_CONNECTED` = whether the
+`memory.*` backend was reachable at all this run. Both feed the Step 4 `Review diagnostics`
+**Memories** line; the collapsed title headlines the **used** count (`MEMORIES_USED_COUNT`,
+computed at Step 2.2) — see *Review body format*.
 Announce: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
 
 ### 1.1 Fetch PR data in parallel
@@ -583,7 +585,7 @@ See `agents/shared/rules/comment-relevance-memory.md § Read`. Apply loaded memo
 For every memory that fires (drop / downgrade / promote), append a record —
 `{ fingerprint, action, seen_count, scope, key }` — to `APPLIED_MEMORIES[]` per
 `comment-relevance-memory.md § Linking applied memories in the report`. Its `scope` + `key`
-build the pressable deep link in the Step 4 review-body diagnostics (`MEMORIES_APPLIED_SECTION`).
+build the pressable deep link in the Step 4 review-body diagnostics (`MEMORIES_SECTION`).
 
 Log all applied memories in the Quality Gate summary.
 
@@ -900,19 +902,21 @@ OPTIMALITY_SECTION
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
-<summary>Review diagnosticsMEMORIES_READ_SUFFIX</summary>
+<summary>Review diagnosticsMEMORIES_USED_SUFFIX</summary>
 
-**Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
-**Integrations checked:** <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
+**Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 
-**Quality Gate:** produced <P>, carried forward <CF>, relevance-memory drops <RM>, dedupe drops <D>,
-grounding drops <G>, confidence drops <C>, shape drops <S>, cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
+MEMORIES_SECTION
 
-MEMORIES_APPLIED_SECTION
+**Quality** — produced <P> → posted inline <F> · cleared <CL> · carried forward <CF> · deferred <DEF>
 
-**Optimality review (2.4c):** <ran | skipped (reason)> — <UN> unit(s) judged, <UO> optimal, <OP> proposal(s), <OW> withheld.
+- dropped: relevance <RM> · dedupe <D> · grounding <G> · confidence <C> · shape <S>
 
-**Skipped files:** <list or "none">
+**Integrations** — <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
+
+**Optimality (2.4c)** — <ran | skipped (reason)> · <UN> judged · <UO> optimal · <OP> proposal(s) · <OW> withheld
+
+**Skipped files** — <list or "none">
 
 <sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
 
@@ -941,19 +945,21 @@ OPTIMALITY_SECTION
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
-<summary>Review diagnosticsMEMORIES_READ_SUFFIX</summary>
+<summary>Review diagnosticsMEMORIES_USED_SUFFIX</summary>
 
-**Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
-**Integrations checked:** <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
+**Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 
-**Quality Gate:** produced <P>, carried forward <CF>, relevance-memory drops <RM>, dedupe drops <D>,
-grounding drops <G>, confidence drops <C>, shape drops <S>, cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
+MEMORIES_SECTION
 
-MEMORIES_APPLIED_SECTION
+**Quality** — produced <P> → posted inline <F> · cleared <CL> · carried forward <CF> · deferred <DEF>
 
-**Optimality review (2.4c):** <ran | skipped (reason)> — <UN> unit(s) judged, <UO> optimal, <OP> proposal(s), <OW> withheld.
+- dropped: relevance <RM> · dedupe <D> · grounding <G> · confidence <C> · shape <S>
 
-**Skipped files:** <list or "none">
+**Integrations** — <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
+
+**Optimality (2.4c)** — <ran | skipped (reason)> · <UN> judged · <UO> optimal · <OP> proposal(s) · <OW> withheld
+
+**Skipped files** — <list or "none">
 
 <sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
 
@@ -982,19 +988,21 @@ OPTIMALITY_SECTION
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
-<summary>Review diagnosticsMEMORIES_READ_SUFFIX</summary>
+<summary>Review diagnosticsMEMORIES_USED_SUFFIX</summary>
 
-**Run mode:** <full | incremental | incremental-quick> — <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
-**Integrations checked:** <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
+**Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 
-**Quality Gate:** produced <P>, carried forward <CF>, relevance-memory drops <RM>, dedupe drops <D>,
-grounding drops <G>, confidence drops <C>, shape drops <S>, cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
+MEMORIES_SECTION
 
-MEMORIES_APPLIED_SECTION
+**Quality** — produced <P> → posted inline <F> · cleared <CL> · carried forward <CF> · deferred <DEF>
 
-**Optimality review (2.4c):** <ran | skipped (reason)> — <UN> unit(s) judged, <UO> optimal, <OP> proposal(s), <OW> withheld.
+- dropped: relevance <RM> · dedupe <D> · grounding <G> · confidence <C> · shape <S>
 
-**Skipped files:** <list or "none">
+**Integrations** — <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
+
+**Optimality (2.4c)** — <ran | skipped (reason)> · <UN> judged · <UO> optimal · <OP> proposal(s) · <OW> withheld
+
+**Skipped files** — <list or "none">
 
 <sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
 
@@ -1062,44 +1070,48 @@ One line per deferred finding: path:line, prefix, the one-line body, and the con
 Sort by prefix priority, then descending confidence. This section is the reason a placement cap
 is allowed to exist — never drop a cleared finding instead of listing it here.
 
-`MEMORIES_APPLIED_SECTION` lists the LoreKit comment-relevance memories that actually influenced
-this review — every entry in `APPLIED_MEMORIES[]` (Step 2.2) — each rendered as a pressable link
-so the reader can open the exact memory in LoreKit and see why a finding was dropped, downgraded,
-or promoted. This is the slot inside the `Review diagnostics` block, directly under the numeric
-`Quality Gate` line. Omit the placeholder entirely when `APPLIED_MEMORIES` is empty — a run that
-read memories but applied none shows only the numeric counts. Otherwise substitute, one bullet per
-applied memory:
+`MEMORIES_SECTION` is the persistent memory block inside `Review diagnostics` (replacing the old
+applied-only list). It **always renders when the LoreKit backend was reachable this run**
+(`LOREKIT_CONNECTED`), so a reader can always see both how many memories were **read** and how many
+were actually **used** — not only when something fired.
 
-```
-**Memories applied:** (<N> LoreKit memories influenced this review)
+- **Connected** — a header line, followed (only when `MEMORIES_USED_COUNT > 0`) by one bullet per
+  entry in `APPLIED_MEMORIES[]` (Step 2.2), each a pressable LoreKit link so the reader can open the
+  exact memory and see why a finding was dropped, downgraded, or promoted:
 
-- [`suggestion:null-check-guaranteed-upstream`](<url>) — dropped, seen 4×
-- [`nitpick:map-vs-record-preference`](<url>) — downgraded, seen 2×
-- [`issue:missing-abort-signal`](<url>) — promoted, seen 3×
-```
+  ```
+  **Memories** — <MEMORIES_READ_COUNT> read · <MEMORIES_USED_COUNT> used
+
+  - [`issue:missing-abort-signal`](<url>) — promoted, seen 3×
+  - [`nitpick:map-vs-record-preference`](<url>) — downgraded, seen 2×
+  ```
+
+  When `MEMORIES_USED_COUNT` is 0, render only the header line (`… read · 0 used`), no bullets.
+- **Not connected** (`memory.*` unreachable) — render exactly `**Memories** — not connected`, no bullets.
+
+`MEMORIES_READ_COUNT` (Step 1.0) is how many memories were loaded; `MEMORIES_USED_COUNT` =
+`|APPLIED_MEMORIES|`, how many actually fired (drops + downgrades + promotes). Read is always ≥
+used — a run can read memories and apply none. The bullet count MUST equal `MEMORIES_USED_COUNT`.
 
 Build each `<url>` from the memory's `scope` + `key` per
 `comment-relevance-memory.md § Linking applied memories in the report`: the `lorekit link
 "<scope>" "<key>"` CLI when available, else the documented `{base}/lore?scope=…&lesson=…`
 construction (`base` = `LOREKIT_APP_URL` or `https://lorekit.io`), else a plain-text
-`` `<scope> · <key>` `` identifier — never a fabricated URL. The bullet count MUST equal the
-number of memories that fired this run (drops + downgrades + promotes).
+`` `<scope> · <key>` `` identifier — never a fabricated URL.
 
-`MEMORIES_READ_SUFFIX` is the read-count tag appended to the `Review diagnostics` `<summary>`
-title, so the reader can tell from the collapsed label whether memory informed the review:
-- When `MEMORIES_READ_COUNT > 0` (Step 1.0), substitute ` (<MEMORIES_READ_COUNT> memories read)` —
-  e.g. `Review diagnostics (2 memories read)`. Use the singular `memory` when the count is exactly 1.
-- When `MEMORIES_READ_COUNT` is 0, substitute nothing — the title stays the bare `Review diagnostics`.
-
-This is the count of memories **read** (loaded in Step 1.0), which is always ≥ the number
-**applied** shown in `MEMORIES_APPLIED_SECTION`; a run can read memories and apply none.
+`MEMORIES_USED_SUFFIX` is the tag appended to the `Review diagnostics` `<summary>` title so the
+collapsed label headlines how many memories **influenced** the review:
+- **Connected** — substitute ` (<MEMORIES_USED_COUNT> memories used)` — e.g.
+  `Review diagnostics (2 memories used)`. Use the singular `memory` at exactly 1; keep
+  `(0 memories used)` when nothing fired.
+- **Not connected** — substitute nothing; the title stays the bare `Review diagnostics`.
 
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
 - Details column: plain text only, max 120 chars per cell. Truncate; the full finding lives in the inline comment.
 - On the all-clear PASS body (every gate ✅), omit the Details column (two-column table). The WARN body (any soft gate ⚠️ — Description vs. code and/or Code review) and the FAIL body keep the three-column table.
 - `WARN_GATE_COUNT` = the number of soft gates showing ⚠️ on a WARN body — Description vs. code and/or Code review, so 1 or 2. Same value in the Step 3 terminal WARN verdict line and the Step 4 body WARN header. It counts gates, not findings, so it stays correct whether the warning is a description mismatch, non-blocking code findings, or both.
-- Never add rows, sections, or prose outside the template above (except the three `<details>` blocks — diagnostics, `Optimality review`, and `Additional findings` — the `MEMORIES_APPLIED_SECTION` slot inside the diagnostics block, and the `PARTIAL_REVIEW_BANNER` line — all of which are slots in the template, not added prose).
+- Never add rows, sections, or prose outside the template above (except the three `<details>` blocks — diagnostics, `Optimality review`, and `Additional findings` — the `MEMORIES_SECTION` slot inside the diagnostics block, and the `PARTIAL_REVIEW_BANNER` line — all of which are slots in the template, not added prose).
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
 ### INLINE_COMMENTS_JSON format

@@ -222,23 +222,25 @@ memory as plain text `` `<scope> · <key>` `` with no hyperlink.
 
 ### Render shape
 
-One bullet per applied memory, each a Markdown link whose text names the
-`fingerprint`, the action taken, and the recurrence count — so multiple memories
-render as multiple independently-pressable links:
+A persistent **Memories** block headed by the read and used counts, followed —
+only when at least one memory fired — by one bullet per applied memory. Each bullet is a
+Markdown link whose text names the `fingerprint`, the action taken, and the recurrence count,
+so multiple memories render as multiple independently-pressable links:
 
 ```markdown
-**Memories applied:** (<N> LoreKit memories influenced this review)
+**Memories** — <read> read · <used> used
 
 - [`suggestion:null-check-guaranteed-upstream`](https://…) — dropped, seen 4×
 - [`nitpick:map-vs-record-preference`](https://…) — downgraded, seen 2×
 - [`issue:missing-abort-signal`](https://…) — promoted, seen 3×
 ```
 
-The bullet count MUST equal the number of memories that fired this run (drops +
-downgrades + promotes). A mismatch means an applied memory was dropped from the
-list instead of linked. Which report surface renders this block is the consuming
-agent's contract — `pr-reviewer` renders it inside the posted review body's
-`Review diagnostics` block (Step 4).
+The bullet count MUST equal the `used` count — the number of memories that fired this run (drops +
+downgrades + promotes). A mismatch means an applied memory was dropped from the list instead of
+linked. When nothing fired, render only the header line (`… · 0 used`). Which report surface renders
+this block is the consuming agent's contract — `pr-reviewer` renders it inside the posted review
+body's `Review diagnostics` block (Step 4), where the collapsed title also headlines the `used`
+count.
 
 ---
 
