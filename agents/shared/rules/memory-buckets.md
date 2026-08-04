@@ -132,7 +132,7 @@ The bucket names are a **cross-tool contract**, not internal identifiers:
 
 - The `loop::<host>-lessons` tag convention is defined by the external `lorekit-setup` and `lorekit-memory` skills — renaming forks from it.
 - `reviewer-comment-relevance` is written verbatim by the `reviewer-comment-relevance.yml` GitHub Action and `scripts/record-comment-relevance.mjs`.
-- The L1 eval asserts lesson-scope storage against these exact tags.
+- The L1 eval enumerates the lessons bucket names: Check E (`scripts/eval/l1.mjs`) asserts that no `memory/<bucket>/` directory is committed here, one assertion per bucket, so a rename must be mirrored into that array. Note what it does **not** do — it keys on the bucket *name*, never on the `loop::…` tag, so no check would catch a tag rename that left the names alone. Nothing in the evals pins the tag strings.
 - LoreKit keys memories by `scope` + `key`; a rename orphans every memory already written under the old name — it does not migrate them.
 
 The clarity fix available **today** is **this document** — not a tag rename.
