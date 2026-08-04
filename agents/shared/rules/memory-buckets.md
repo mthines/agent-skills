@@ -99,7 +99,7 @@ reviewer-comment-relevance
 | Property | Values | Meaning |
 | --- | --- | --- |
 | `kind` | `lesson` \| `bus` \| `signal` | The memory's role — the three kinds above. |
-| `host` | kebab slug (`aw`, `reviewer`, `fix-bug`, `ci-auto-fix`, `ideate`, … ; `review` for the shared bus and signal) | The owning skill or agent. |
+| `host` | kebab slug (`aw`, `reviewer`, `fix-bug`, `ci-auto-fix`, `ideate`, … ; `review` for the shared **bus**, `reviewer` for the **signal** — see the inference table below) | The owning skill or agent. |
 
 A loop's `memory.write` may set `kind` and `host` explicitly; when omitted, LoreKit infers them from the `loop::<host>-lessons` tag (below), so a tagged write records them without extra arguments. The `loop::<host>-lessons` **tags stay** — they remain the cross-tool read filter and the back-compat contract — so the property is additive, not a rename.
 
