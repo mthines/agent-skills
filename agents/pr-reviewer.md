@@ -1071,9 +1071,9 @@ Sort by prefix priority, then descending confidence. This section is the reason 
 is allowed to exist — never drop a cleared finding instead of listing it here.
 
 `MEMORIES_SECTION` is the persistent memory block inside `Review diagnostics` (replacing the old
-applied-only list). It **always renders when the LoreKit backend was reachable this run**
-(`LOREKIT_CONNECTED`), so a reader can always see both how many memories were **read** and how many
-were actually **used** — not only when something fired.
+applied-only list). It **always renders** — never omit the slot. `LOREKIT_CONNECTED` selects which
+of the two shapes below it takes, so a reader always sees either both counts or an explicit
+`not connected`, not only when something fired.
 
 - **Connected** — a header line, followed (only when `MEMORIES_USED_COUNT > 0`) by one bullet per
   entry in `APPLIED_MEMORIES[]` (Step 2.2), each a pressable LoreKit link so the reader can open the
