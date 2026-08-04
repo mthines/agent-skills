@@ -28,6 +28,14 @@ This separates the high-frequency write path (per-comment, per-PR) from the low-
 `review-outcomes::<fingerprint-slug>` — written via the `memory.*` MCP tools.
 It uses two LoreKit scopes:
 
+> **Tool naming & availability.** `memory.*` is LoreKit's canonical tool name;
+> **Claude Code exposes these as `mcp__lorekit__memory_list` / `_search` /
+> `_read` / `_write`** (server-prefixed, dots→underscores) — there is no literal
+> `mcp__lorekit__memory.*` tool. The `reviewer` / `pr-reviewer` agents grant
+> these in their frontmatter `tools:` because a sub-agent does **not** inherit
+> the parent session's MCP tools. If the tools are absent, the bus is a no-op
+> (see the fallback note near the end of this file).
+
 | LoreKit scope | When written | When read |
 | --- | --- | --- |
 | `global` | Default — every `implement-suggestion` run (universal calibration) | At promotion/consolidation time only |

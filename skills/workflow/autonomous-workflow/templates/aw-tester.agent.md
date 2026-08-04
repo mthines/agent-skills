@@ -12,6 +12,14 @@ tools:
   - Read
   - Bash
   - Skill
+  # LoreKit self-improvement loop — reads cross-run lessons at start, writes
+  # locator-healing lessons at end. Sub-agents do NOT inherit the parent session's
+  # MCP tools, so they are granted here by their Claude Code names (server-prefixed,
+  # dots→underscores) or the loop silently no-ops.
+  - mcp__lorekit__memory_list
+  - mcp__lorekit__memory_search
+  - mcp__lorekit__memory_read
+  - mcp__lorekit__memory_write
 model: sonnet
 ---
 

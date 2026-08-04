@@ -12,6 +12,15 @@ tools:
   - Edit
   - Write
   - Skill
+  # LoreKit self-improvement loop — the executor READS lessons (no-planner paths)
+  # and WRITES them at stuck-loop escalation (Phase 4) and end-of-run (Phase 7).
+  # Sub-agents do NOT inherit the parent session's MCP tools, so they are granted
+  # here by their Claude Code names (server-prefixed, dots→underscores) or the loop
+  # silently no-ops. See rules/self-improvement-loop.md → "LoreKit in one screen".
+  - mcp__lorekit__memory_list
+  - mcp__lorekit__memory_search
+  - mcp__lorekit__memory_read
+  - mcp__lorekit__memory_write
 model: sonnet
 ---
 

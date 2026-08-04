@@ -1,7 +1,7 @@
 ---
 name: pr-reviewer
 description: Cross-review code reviewer for someone else's GitHub PR. Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Posts a single consolidated GitHub review — one gate-status table in the body plus inline findings — directly as a visible COMMENT event; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Refuses on own PR (points to `reviewer`). Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or via `Skill("pr-reviewer", "<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--skip-gates]")`.
-tools: Read, Write, Edit, Bash, Glob, Grep, Skill
+tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write
 model: opus
 ---
 

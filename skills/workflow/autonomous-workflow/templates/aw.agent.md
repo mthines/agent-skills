@@ -22,6 +22,14 @@ tools:
   - Task
   - WebFetch
   - WebSearch
+  # LoreKit self-improvement loop (read at intake, write at exit). Sub-agents do
+  # NOT inherit the parent session's MCP tools — they must be granted here by
+  # their Claude Code names (server-prefixed, dots→underscores) or the loop
+  # silently no-ops. See rules/self-improvement-loop.md → "LoreKit in one screen".
+  - mcp__lorekit__memory_list
+  - mcp__lorekit__memory_search
+  - mcp__lorekit__memory_read
+  - mcp__lorekit__memory_write
 model: opus
 ---
 
