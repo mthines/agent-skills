@@ -121,6 +121,7 @@ rule once at the step that owns it.
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ profile threshold (Step 2.7).
 - `agents/shared/rules/outcome-learning.md` — resolution-rate feedback loop; runs post-merge via `/review-outcomes`. Promotion reads from the `review-outcomes` candidate bus — the bus is NEVER loaded per-review.
 - `agents/shared/rules/comment-relevance-memory.md` — per-repo LoreKit memories of which comment patterns were relevant (fixed) vs. not-relevant (won't fix / ignored). Read before Step 1.1; written post-merge via `outcome-learning.md` gh-api signals. Memories that actually influence the review are rendered as pressable LoreKit links in the review-body diagnostics (Step 4).
+- `agents/shared/rules/thread-resolution.md` — on a re-review, auto-resolve the agent's own prior threads that are now fixed or declined and record the outcome to `reviewer-comment-relevance` (Step 4.5). Consumes the `BOT_COMMENTS` + resolved-set from `prior-comment-awareness.md`.
 - `agents/shared/rules/comment-shape.md` — ≤ 240 chars, ≤ 2 sentences, no headings or bullets.
 - `agents/shared/rules/conventional-comments.md` — prefix table + decorations.
 - `agents/pr-reviewer/rules/line-validity.md` — RIGHT-side hunk-bounds pre-flight.
@@ -270,15 +271,41 @@ memory.list { scope: "global",               tags: ["loop::reviewer-comment-rele
 
 Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
 Merge both lists per tag (`repo::` wins on key collision). Skip expired entries.
+
+**Apply `reviewer-lessons`.**
+Match each loaded lesson's `trigger-context` (the shared lesson-scope schema — file globs, task type, integration/tech names) against this run's changed paths, synthesized intent, and detected integrations.
+A matched lesson's *What to do next time* is a **consideration, not a command**: it biases rubric emphasis (Step 2), persona focus (Personas 1–4), and per-comment confidence calibration (Step 2.7) — it may never silently disable a gate, skip a step, or move a threshold.
+On a `repo::` vs. `global` collision the `repo::` lesson wins; on any conflict with the PR author's stated intent or a `.review.yaml` constraint, that constraint wins and the conflict is surfaced.
+The loaded pool is augmented by the diff-keyed `memory.search` in Step 1.2c before Step 2 consumes it.
+`reviewer-comment-relevance` memories are applied separately at Step 2.2, per `comment-relevance-memory.md § Read`.
+
+**Memory model — entrenchment guards and the no-in-run-write choice.**
+The lessons read here are advisory input only, protected by five entrenchment guards (`lorekit-setup § Entrenchment guards`):
+(1) a lesson biases a run but can never auto-change behavior — the only path to a rule, gate, or threshold change is a human-reviewed source edit;
+(2) promotion is gated on recurrence (`seen_count ≥ 3`) or an explicit `status=structural`, never a single run;
+(3) every lesson carries an `expires` and expired entries are skipped above, so stale beliefs decay instead of entrenching;
+(4) a contradiction (a pattern that flips relevance direction) is surfaced, never silently overwritten;
+(5) the privacy pre-flight is never bypassed — a candidate carrying a secret or PII is dropped, not written.
+`pr-reviewer` **never writes lessons during a review**, and this is deliberate rather than an omission: it is a fresh-eyes adversarial reviewer, and biasing it with its own single-run conclusions is exactly the self-reinforcing error the guards exist to prevent (`lorekit-setup § When to add a loop`).
+Its write signal is *resolution rate measured at merge time* — captured asynchronously by `outcome-learning.md`, the `reviewer-comment-relevance.yml` GitHub Action, and `implement-suggestion` — never by this agent in-run.
+
 Retain each loaded memory's LoreKit `scope` and `key` alongside its
 `fingerprint`, `relevance`, and `seen_count` — Step 2.2 builds a deep link from
 `scope` + `key` for every memory that influences the review
 (`agents/shared/rules/comment-relevance-memory.md § Linking applied memories in the report`).
 Set `MEMORIES_READ_COUNT` = the number of `reviewer-comment-relevance` memories retained after
 this merge/dedup (0 when connected but none matched), and `LOREKIT_CONNECTED` = whether the
-`memory.*` backend was reachable at all this run. Both feed the Step 4 `Review diagnostics`
+`memory.*` backend was reachable at all this run.
+**This definition is authoritative and no later step widens it** — including the Step 1.2c addend.
+`MEMORIES_READ_COUNT` counts `reviewer-comment-relevance` memories only, never `reviewer-lessons`,
+because its partner `MEMORIES_USED_COUNT` is `|APPLIED_MEMORIES|`, built at Step 2.2 from relevance
+memories alone, and the two are rendered as a single `read · used` pair that must describe one
+population. Loaded `reviewer-lessons` are reported separately by the `<L> reviewer-lessons matched`
+announce line below.
+Both counters feed the Step 4 `Review diagnostics`
 **Memories** line; the collapsed title headlines the **used** count (`MEMORIES_USED_COUNT`,
 computed at Step 2.2) — see *Review body format*.
+Announce the concrete resolved scope so the influence is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <L> reviewer-lessons matched.`
 Announce: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
 
 ### 1.1 Fetch PR data in parallel
@@ -384,6 +411,27 @@ unchanged.
 **Gate 4 behaviour:**
 In incremental modes (non-empty delta), Gate 4 (self-review signals) scans `REVIEW_DIFF`
 (the delta) not the full PR diff. This is the only gate that changes scope between modes.
+
+### 1.2c Diff-keyed lesson search (all modes)
+
+The two broad `memory.list` calls in Step 1.0 are capped at 50 per tag; on a large repository the lesson most relevant to *these* changed files can fall outside that window.
+Now that the changed-file list is known (Step 1.1 command A and Step 1.2), run one targeted `memory.search` to pull those in.
+Silent no-op if `memory.*` is not connected.
+
+Build the query from the diff's own vocabulary — the changed top-level directories, the changed file basenames (without extension), and any dependency-manifest filenames present in the diff (`package.json`, `go.mod`, `Cargo.toml`, `requirements.txt`, …).
+In `incremental` and `incremental-quick` modes, key on `REVIEW_DIFF`'s paths, not the full PR.
+
+```
+memory.search { q: "<changed dirs + basenames + manifest names>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
+```
+
+Keep only returned hits carrying the tag `loop::reviewer-lessons` or `loop::reviewer-comment-relevance`, then merge them into the pools loaded at Step 1.0 (dedupe by `scope` + `key`; `repo::` wins; skip expired).
+A hit surfaced here is applied exactly as one loaded at Step 1.0 — a `reviewer-lessons` consideration, or a `reviewer-comment-relevance` drop / downgrade / promote at Step 2.2.
+Add the number of newly-surfaced, non-duplicate **`reviewer-comment-relevance`** entries to
+`MEMORIES_READ_COUNT` — Step 1.0 owns that counter's definition and it stays relevance-only.
+Newly-surfaced `reviewer-lessons` hits still join the pool and are applied exactly as Step 1.0's
+are; they are simply not counted here, and instead raise the `<L> reviewer-lessons matched` figure
+in Step 1.0's announce line.
 
 ### 1.3 Synthesize intent
 
@@ -1143,6 +1191,34 @@ For multi-line comments, also include `start_line` and `start_side`:
 
 Use `[]` if no surviving inline findings.
 The `side` field is required by the GitHub API — omitting it returns HTTP 422.
+
+---
+
+## Step 4.5: Reconcile prior threads (re-review only)
+
+See `agents/shared/rules/thread-resolution.md`. Skip entirely on a first-pass
+review (`PRIOR_REVIEW` empty in Step 0.7).
+
+On a re-review, for each of **this agent's own** prior inline comments
+(`BOT_COMMENTS` from Step 1.0), classify it against the current run's findings
+and the author's activity: **fixed** (region changed and the finding no longer
+reproduces), **declined** (author said won't-fix / 👎), **acknowledged**,
+**persisting** (the finding still reproduces this run), or **unaddressed**. Then:
+
+- **Resolve** the GitHub review thread for `fixed` / `declined` / `acknowledged`
+  comments via the `resolveReviewThread` GraphQL mutation (`gh api graphql`) — so
+  the commit-triggered re-run cleans up its own stale threads. Idempotent and
+  non-fatal; only ever resolve threads authored by `ME`. **Never** resolve a
+  `persisting` or `unaddressed` thread.
+- **Write** the outcome to the `reviewer-comment-relevance` Signal bucket for
+  `fixed` / `declined` / `acknowledged` (relevance + `resolution_method`), per
+  the schema in `comment-relevance-memory.md § Write`, with
+  `trigger: "re-review-reconcile"`. `persisting` / `unaddressed` are not written.
+
+Runs **after** Step 4 (the review is already posted) so it can never block the
+review and so the current findings are final. Log
+`Threads resolved: <F> fixed, <D> declined` and `Relevance memories written: <N>`
+in the Step 5 report.
 
 ---
 
