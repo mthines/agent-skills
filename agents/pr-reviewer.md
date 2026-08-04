@@ -294,7 +294,14 @@ Retain each loaded memory's LoreKit `scope` and `key` alongside its
 (`agents/shared/rules/comment-relevance-memory.md § Linking applied memories in the report`).
 Set `MEMORIES_READ_COUNT` = the number of `reviewer-comment-relevance` memories retained after
 this merge/dedup (0 when connected but none matched), and `LOREKIT_CONNECTED` = whether the
-`memory.*` backend was reachable at all this run. Both feed the Step 4 `Review diagnostics`
+`memory.*` backend was reachable at all this run.
+**This definition is authoritative and no later step widens it** — including the Step 1.2c addend.
+`MEMORIES_READ_COUNT` counts `reviewer-comment-relevance` memories only, never `reviewer-lessons`,
+because its partner `MEMORIES_USED_COUNT` is `|APPLIED_MEMORIES|`, built at Step 2.2 from relevance
+memories alone, and the two are rendered as a single `read · used` pair that must describe one
+population. Loaded `reviewer-lessons` are reported separately by the `<L> reviewer-lessons matched`
+announce line below.
+Both counters feed the Step 4 `Review diagnostics`
 **Memories** line; the collapsed title headlines the **used** count (`MEMORIES_USED_COUNT`,
 computed at Step 2.2) — see *Review body format*.
 Announce the concrete resolved scope so the influence is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <L> reviewer-lessons matched.`
@@ -419,7 +426,11 @@ memory.search { q: "<changed dirs + basenames + manifest names>", scopes: ["repo
 
 Keep only returned hits carrying the tag `loop::reviewer-lessons` or `loop::reviewer-comment-relevance`, then merge them into the pools loaded at Step 1.0 (dedupe by `scope` + `key`; `repo::` wins; skip expired).
 A hit surfaced here is applied exactly as one loaded at Step 1.0 — a `reviewer-lessons` consideration, or a `reviewer-comment-relevance` drop / downgrade / promote at Step 2.2.
-Add the number of newly-surfaced, non-duplicate entries to `MEMORIES_READ_COUNT`.
+Add the number of newly-surfaced, non-duplicate **`reviewer-comment-relevance`** entries to
+`MEMORIES_READ_COUNT` — Step 1.0 owns that counter's definition and it stays relevance-only.
+Newly-surfaced `reviewer-lessons` hits still join the pool and are applied exactly as Step 1.0's
+are; they are simply not counted here, and instead raise the `<L> reviewer-lessons matched` figure
+in Step 1.0's announce line.
 
 ### 1.3 Synthesize intent
 
