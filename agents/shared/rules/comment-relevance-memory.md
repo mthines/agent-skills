@@ -187,8 +187,9 @@ into three links the user can click through and audit.
 
 **Only applied memories are linked.** Use `APPLIED_MEMORIES[]` from the apply step.
 A memory that was loaded but fired against nothing is never linked — it did not
-influence the review. If `APPLIED_MEMORIES[]` is empty, the report shows no
-memory-link section at all; the numeric Quality Gate counts stand alone.
+influence the review. If `APPLIED_MEMORIES[]` is empty, the block still renders
+its header line (`… · 0 used`) and no bullets, per
+[Render shape](#render-shape); the numeric Quality Gate counts stand alone.
 
 ### Resolving each link
 
