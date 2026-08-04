@@ -121,6 +121,7 @@ rule once at the step that owns it.
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ profile threshold (Step 2.7).
 - `agents/shared/rules/outcome-learning.md` — resolution-rate feedback loop; runs post-merge via `/review-outcomes`. Promotion reads from the `review-outcomes` candidate bus — the bus is NEVER loaded per-review.
 - `agents/shared/rules/comment-relevance-memory.md` — per-repo LoreKit memories of which comment patterns were relevant (fixed) vs. not-relevant (won't fix / ignored). Read before Step 1.1; written post-merge via `outcome-learning.md` gh-api signals. Memories that actually influence the review are rendered as pressable LoreKit links in the review-body diagnostics (Step 4).
+- `agents/shared/rules/thread-resolution.md` — on a re-review, auto-resolve the agent's own prior threads that are now fixed or declined and record the outcome to `reviewer-comment-relevance` (Step 4.5). Consumes the `BOT_COMMENTS` + resolved-set from `prior-comment-awareness.md`.
 - `agents/shared/rules/comment-shape.md` — ≤ 240 chars, ≤ 2 sentences, no headings or bullets.
 - `agents/shared/rules/conventional-comments.md` — prefix table + decorations.
 - `agents/pr-reviewer/rules/line-validity.md` — RIGHT-side hunk-bounds pre-flight.
@@ -1190,6 +1191,34 @@ For multi-line comments, also include `start_line` and `start_side`:
 
 Use `[]` if no surviving inline findings.
 The `side` field is required by the GitHub API — omitting it returns HTTP 422.
+
+---
+
+## Step 4.5: Reconcile prior threads (re-review only)
+
+See `agents/shared/rules/thread-resolution.md`. Skip entirely on a first-pass
+review (`PRIOR_REVIEW` empty in Step 0.7).
+
+On a re-review, for each of **this agent's own** prior inline comments
+(`BOT_COMMENTS` from Step 1.0), classify it against the current run's findings
+and the author's activity: **fixed** (region changed and the finding no longer
+reproduces), **declined** (author said won't-fix / 👎), **acknowledged**,
+**persisting** (the finding still reproduces this run), or **unaddressed**. Then:
+
+- **Resolve** the GitHub review thread for `fixed` / `declined` / `acknowledged`
+  comments via the `resolveReviewThread` GraphQL mutation (`gh api graphql`) — so
+  the commit-triggered re-run cleans up its own stale threads. Idempotent and
+  non-fatal; only ever resolve threads authored by `ME`. **Never** resolve a
+  `persisting` or `unaddressed` thread.
+- **Write** the outcome to the `reviewer-comment-relevance` Signal bucket for
+  `fixed` / `declined` / `acknowledged` (relevance + `resolution_method`), per
+  the schema in `comment-relevance-memory.md § Write`, with
+  `trigger: "re-review-reconcile"`. `persisting` / `unaddressed` are not written.
+
+Runs **after** Step 4 (the review is already posted) so it can never block the
+review and so the current findings are final. Log
+`Threads resolved: <F> fixed, <D> declined` and `Relevance memories written: <N>`
+in the Step 5 report.
 
 ---
 

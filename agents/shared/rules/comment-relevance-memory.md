@@ -261,6 +261,7 @@ There are three write paths, each covering a different point in the PR lifecycle
 | --- | --- | --- |
 | **GitHub Actions workflow** (`reviewer-comment-relevance.yml`) | At the moment a reviewer resolves a thread; at PR merge for open threads | **Highest fidelity** — real-time, covers every thread regardless of whether an agent was involved |
 | **`implement-suggestion`** (Phase 7 / `--watch`) | After the skill applies or rejects a comment | High — has the full `/critical` + `/confidence` verdict without extra API calls |
+| **`pr-reviewer`** via `thread-resolution.md` | On every re-review (a commit-triggered second+ pass), when a prior own-thread is fixed or declined | High — real code state at re-review time; also resolves the GitHub thread (see [`thread-resolution.md`](./thread-resolution.md)). `pr-reviewer`-only — `reviewer` never writes to GitHub |
 | **`reviewer` / `pr-reviewer`** via `outcome-learning.md` | Post-merge via `/review-outcomes <pr>` or `--watch` tail step | Fallback — used when neither of the above paths were active |
 
 The paths are **additive**: the same fingerprint may be written multiple times with
