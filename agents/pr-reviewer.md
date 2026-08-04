@@ -270,9 +270,9 @@ memory.list { scope: "global",               tags: ["loop::reviewer-comment-rele
 
 Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
 Merge both lists per tag (`repo::` wins on key collision). Skip expired entries.
-Retain each loaded memory's `scope` + `key` (its LoreKit coordinates) alongside its
-`fingerprint`, `relevance`, and `seen_count` — Step 2.2 builds a dashboard deep link from
-`scope` + `key` for every memory that influences the review
+Retain each loaded memory's LoreKit `id`, `scope`, and `key` alongside its
+`fingerprint`, `relevance`, and `seen_count` — Step 2.2 builds a `?memoryId=` deep link from
+the `id` for every memory that influences the review
 (`agents/shared/rules/comment-relevance-memory.md § Linking applied memories in the report`).
 Set `MEMORIES_READ_COUNT` = the number of `reviewer-comment-relevance` memories retained after
 this merge/dedup (0 when connected but none matched), and `LOREKIT_CONNECTED` = whether the
@@ -583,9 +583,9 @@ See `agents/shared/rules/comment-relevance-memory.md § Read`. Apply loaded memo
 - `relevant` with `seen_count >= 2` → **PROMOTE** (terminal output only).
 
 For every memory that fires (drop / downgrade / promote), append a record —
-`{ fingerprint, action, seen_count, scope, key }` — to `APPLIED_MEMORIES[]` per
-`comment-relevance-memory.md § Linking applied memories in the report`. Its `scope` + `key`
-build the pressable deep link in the Step 4 review-body diagnostics (`MEMORIES_SECTION`).
+`{ id, fingerprint, action, seen_count, scope, key }` — to `APPLIED_MEMORIES[]` per
+`comment-relevance-memory.md § Linking applied memories in the report`. Its `id`
+builds the pressable `?memoryId=` deep link in the Step 4 review-body diagnostics (`MEMORIES_SECTION`).
 
 Log all applied memories in the Quality Gate summary.
 
@@ -1093,10 +1093,10 @@ were actually **used** — not only when something fired.
 `|APPLIED_MEMORIES|`, how many actually fired (drops + downgrades + promotes). Read is always ≥
 used — a run can read memories and apply none. The bullet count MUST equal `MEMORIES_USED_COUNT`.
 
-Build each `<url>` from the memory's `scope` + `key` per
-`comment-relevance-memory.md § Linking applied memories in the report`: the `lorekit link
-"<scope>" "<key>"` CLI when available, else the documented `{base}/lore?scope=…&lesson=…`
-construction (`base` = `LOREKIT_APP_URL` or `https://lorekit.io`), else a plain-text
+Build each `<url>` as `{base}/lore?memoryId=<id>` from the memory's retained `id`
+(`base` = `LOREKIT_APP_URL` or `https://lorekit.io`), per
+`comment-relevance-memory.md § Linking applied memories in the report`. When no `id` is
+available, fall back to the `lorekit link "<scope>" "<key>"` CLI, else a plain-text
 `` `<scope> · <key>` `` identifier — never a fabricated URL.
 
 `MEMORIES_USED_SUFFIX` is the tag appended to the `Review diagnostics` `<summary>` title so the
