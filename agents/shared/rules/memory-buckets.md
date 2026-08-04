@@ -86,7 +86,9 @@ reviewer-comment-relevance
 
 | Bucket | Owner rule | Producer → Consumer | Lifetime | Read |
 | --- | --- | --- | --- | --- |
-| `reviewer-comment-relevance` | [`comment-relevance-memory.md`](./comment-relevance-memory.md) | GH Action `reviewer-comment-relevance.yml` + `implement-suggestion` + `reviewer`/`pr-reviewer` post-merge fallback → `reviewer`/`pr-reviewer` | durable 60d | Every review run (`reviewer` Step 0.7 / `pr-reviewer` Step 1.0); applied at Step 2.2. |
+| `reviewer-comment-relevance` | [`comment-relevance-memory.md`](./comment-relevance-memory.md) | GH Action `reviewer-comment-relevance.yml` (**not yet committed** — see below) + `implement-suggestion` + `reviewer`/`pr-reviewer` post-merge fallback → `reviewer`/`pr-reviewer` | durable 60d | Every review run (`reviewer` Step 0.7 / `pr-reviewer` Step 1.0); applied at Step 2.2. |
+
+> **Availability note on the GH Action producer.** `.github/workflows/` in this repo currently contains only `evals-l1.yml` and `evals-l2.yml`; the reusable workflow `reviewer-comment-relevance.yml` that `plugins/pr-relevance-memory/templates/pr-relevance-caller.yml` and [`comment-relevance-memory.md`](./comment-relevance-memory.md) point at with `uses: mthines/agent-skills/.github/workflows/reviewer-comment-relevance.yml@main` has not been committed. Its classifier (`scripts/record-comment-relevance.mjs`) and the caller template both ship, so the write path is designed and callable once the workflow lands — but until it does, a caller repo wiring up that `uses:` reference will fail to resolve it, and the only live producers are `implement-suggestion` and the post-merge fallback. Re-check with `ls .github/workflows/` rather than trusting this note.
 
 ---
 
@@ -131,7 +133,7 @@ Do not, unless the whole ecosystem moves together.
 The bucket names are a **cross-tool contract**, not internal identifiers:
 
 - The `loop::<host>-lessons` tag convention is defined by the external `lorekit-setup` and `lorekit-memory` skills — renaming forks from it.
-- `reviewer-comment-relevance` is written verbatim by the `reviewer-comment-relevance.yml` GitHub Action and `scripts/record-comment-relevance.mjs`.
+- `reviewer-comment-relevance` is written verbatim by `scripts/record-comment-relevance.mjs`, by the caller template in `plugins/pr-relevance-memory/`, and by the `reviewer-comment-relevance.yml` GitHub Action those two are built around (not yet committed — see the availability note above). A rename would have to land in the shipped script and template regardless.
 - The L1 eval enumerates the lessons bucket names: Check E (`scripts/eval/l1.mjs`) asserts that no `memory/<bucket>/` directory is committed here, one assertion per bucket, so a rename must be mirrored into that array. Note what it does **not** do — it keys on the bucket *name*, never on the `loop::…` tag, so no check would catch a tag rename that left the names alone. Nothing in the evals pins the tag strings.
 - LoreKit keys memories by `scope` + `key`; a rename orphans every memory already written under the old name — it does not migrate them.
 
