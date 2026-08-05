@@ -1254,6 +1254,7 @@ collapsed label headlines how many memories **influenced** the review:
 The gate-status table now lives **inside** the `Review diagnostics` `<details>` accordion (near
 its top, immediately after the `<summary>` line and before `**Run mode**`), not at the top level
 of the review body.
+
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
 - Details column: plain text only, max 120 chars per cell.
