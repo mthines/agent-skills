@@ -114,7 +114,7 @@ Full registry in [`rules/companion-skills.md`](../rules/companion-skills.md).
 **Companions skip silently if not installed** — log
 `companion: <name> — not available, continuing` and proceed. The same
 graceful-skip rule applies to the optional **agent companions** (e.g.
-`reviewer`) listed in [`rules/companion-skills.md#agent-companions`](../rules/companion-skills.md#agent-companions).
+`pr-reviewer`) listed in [`rules/companion-skills.md#agent-companions`](../rules/companion-skills.md#agent-companions).
 
 | Phase | Companion              | Trigger                                                              | Args             |
 | ----- | ---------------------- | -------------------------------------------------------------------- | ---------------- |
