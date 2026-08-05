@@ -1006,14 +1006,14 @@ Confirm the response contains `state: "COMMENTED"`.
 ### Review body format
 
 The `<sup>` footer line varies by run mode:
-- `full` mode: `<sup>Reviewed for commit \`HEAD_SHA\`. CI status is shown in the checks section above.</sup>`
-- `incremental` or `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`). CI status is shown in the checks section above.</sup>`
+- `full` mode: `<sup>Reviewed for commit \`HEAD_SHA\`.</sup>`
+- `incremental` or `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
 
 The diagnostics `<details>` block is identical on PASS, WARN, and FAIL — fill in the actual values.
 The `<sup>` footer depends on run mode (substituted before posting):
-- `full`: `<sup>Reviewed for commit \`HEAD_SHA\`. CI status is shown in the checks section above.</sup>`
-- `incremental` / `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`). CI status is shown in the checks section above.</sup>`
-- Zero-delta short-circuit: `<sup>No code changes since \`PRIOR_SHA_SHORT\` — gate checks only for commit \`HEAD_SHA\`. CI status is shown in the checks section above.</sup>`
+- `full`: `<sup>Reviewed for commit \`HEAD_SHA\`.</sup>`
+- `incremental` / `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
+- Zero-delta short-circuit: `<sup>No code changes since \`PRIOR_SHA_SHORT\` — gate checks only for commit \`HEAD_SHA\`.</sup>`
 
 Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (all clear), **WARN** (hard Gates 2/3/4/5 ✅ and at least one soft gate — Description vs. code or Code review — is ⚠️, none ❌; still a PASS verdict), or **FAIL** (any of Gates 2/3/4/5 fails, or Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
 

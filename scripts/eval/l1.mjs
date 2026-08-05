@@ -670,6 +670,12 @@ function checksInSync(plan, checks) {
       }
       s.check("G19d pr-reviewer.md Step-4 gate tables all appear inside the Review diagnostics accordion (not at top level)",
         allTablesInsideAccordion);
+
+      // G19e: the review-body footer no longer carries the redundant CI-status sentence.
+      // The clause was dropped from every FOOTER_LINE variant; assert it is gone from the
+      // whole shipped file, not just Step 4 (the FOOTER_LINE definitions live in Step 4).
+      s.check("G19e pr-reviewer.md review-body footer dropped the 'CI status is shown' clause",
+        !prReviewer.includes("CI status is shown"));
     }
   }
 }
