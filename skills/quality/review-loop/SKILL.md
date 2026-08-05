@@ -47,7 +47,7 @@ Everything else is a flag.
 | --- | --- |
 | `--cap N` | Override the default iteration cap of 3. |
 | `--critical` | Pass `--critical` to each `pr-reviewer` call (adversarial pre-mortem). |
-| `--no-feedback` | Skip the loop; run `pr-reviewer` once and report findings without applying. |
+| `--no-feedback` | Report-only. Forces `CAP=1` and skips sub-steps B and C, so `pr-reviewer` runs once and its findings are reported without being applied or pushed. |
 
 ## Procedure
 
@@ -69,17 +69,28 @@ RESOLVED_REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
 
 If no PR reference is found, abort: `review-loop requires a PR URL or #<n>.`
 
-Set the iteration cap:
+Parse the flags and set the iteration cap:
 
 ```bash
 CAP=${cap_flag:-3}
 ITERATION=0
+
+# --no-feedback degrades the loop to a single read-only review pass.
+if [[ " $ARGUMENTS " == *" --no-feedback "* ]]; then
+  NO_FEEDBACK=1
+  CAP=1
+else
+  NO_FEEDBACK=0
+fi
 ```
 
 ### Step 1: Loop — review → apply → simplify
 
 Each iteration runs three sub-steps.
 The loop exits early when `pr-reviewer` returns a PASS with no blocking findings.
+
+When `NO_FEEDBACK == 1`, only sub-step A runs: sub-steps B and C are skipped, the
+push is skipped, and the run reports the findings without applying anything.
 
 ```text
 while ITERATION < CAP:
@@ -89,6 +100,9 @@ while ITERATION < CAP:
     run pr-reviewer(<PR>) [--critical if passed]
     if pr-reviewer verdict == PASS with no blocking findings:
         break   # early exit; branch is clean
+
+    if NO_FEEDBACK == 1:
+        break   # report-only: never apply, never simplify, never push
 
     # Sub-step B: apply findings
     Skill("implement-suggestion", "<PR-URL>")
@@ -118,7 +132,7 @@ After the loop exits (early or at cap), emit a compact summary:
 review-loop on PR #<n> (<REVIEW_RELATION>)
 
 Iterations: <N> of <CAP>
-Stop reason: <PASS-no-blockers | cap-reached>
+Stop reason: <PASS-no-blockers | cap-reached | report-only (--no-feedback)>
 
 Per-iteration summary:
   Iteration 1: <verdict>, <N findings>, <M applied by implement-suggestion>, <K simplify recipes>
