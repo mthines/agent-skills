@@ -39,7 +39,7 @@ afford to load three of them.
    NOT read `SKILL.md` as a fallback — that would defeat the token
    budget.
 5. **Lens findings flow through the existing Quality Gate.** Lens
-   criteria go through Step 2.5 (`/aw-review-quality-gate`) just like
+   criteria go through Step 2.5 (dedupe + consolidate) just like
    built-in findings. A lens cannot bypass the gate.
 6. **Lenses are additive.** The `pr-reviewer`'s existing auto-loads
    (`code-quality`, `ux`, `critical`) still fire on the same triggers.
@@ -127,13 +127,9 @@ For each `--with <name>`:
    list, apply only when at least one changed file matches.
 5. During Step 2, iterate the checklist. Each item that fails becomes a
    finding tagged `[lens:<skill-name>]`.
-6. Each lens finding flows through the Quality Gate in Step 2.5 like any
-   other finding.
-7. Step 3 lists active lenses in the summary table:
-
-   ```
-   Active lenses: ai-engineering (3/9 items flagged), tdd (0/6 items flagged)
-   ```
+6. Each lens finding is deduped and consolidated with the built-in
+   findings at Step 2.5, then flows through the rest of the Quality Gate
+   like any other finding.
 
 ## Versioning
 
