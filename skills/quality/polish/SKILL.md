@@ -113,15 +113,16 @@ Run only the passes the resolved mode selects (see the Modes table). Each pass b
 ### Pass A — `review` (modes: full, review)
 
 Invoke `pr-reviewer` against the branch's open PR.
-`pr-reviewer` is read-only — it posts a `COMMENT` review and returns findings.
+`pr-reviewer` requires a PR — it always posts one visible `COMMENT` review and returns findings.
 Polish does not apply those findings itself; surface them to the user.
 
 ```bash
-# Resolve the current branch's PR (if it exists)
+# Resolve the current branch's PR — pr-reviewer requires one.
 PR_URL=$(gh pr view --json url -q .url 2>/dev/null)
 ```
 
-If no PR is open, run a one-shot read-only review without posting:
+If no PR is open, skip Pass A and tell the user to open a draft PR first (via `/create-pr`), then re-run `polish`.
+When a PR exists, dispatch the review:
 
 ```
 Skill("pr-reviewer", "<PR-URL-or-number> [--critical if user passed it] [--no-optimize if user passed it]")
