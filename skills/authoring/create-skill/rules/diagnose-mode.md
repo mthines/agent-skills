@@ -75,7 +75,7 @@ Or via `Skill()`:
 Skill("create-skill", "diagnose <target-skill-name>")
 ```
 
-`<target-skill-name>` is the directory name under `skills/` (e.g. `autonomous-workflow`, `fix-bug`) **or** the basename of an agent under `agents/` without the `.md` suffix (e.g. `reviewer`, `bug-fix-verifier`). Step 1 disambiguates by checking both locations.
+`<target-skill-name>` is the directory name under `skills/` (e.g. `autonomous-workflow`, `fix-bug`) **or** the basename of an agent under `agents/` without the `.md` suffix (e.g. `pr-reviewer`, `bug-fix-verifier`). Step 1 disambiguates by checking both locations.
 If omitted, ask the user — do not guess.
 
 ### Optional flags
