@@ -67,7 +67,7 @@ The `± 2` tolerance handles minor line-number drift from the author's subsequen
 
 Log dedup drops:
 
-```
+```text
 [prior-comment] DROP src/foo.ts:42 — suggestion: already posted in prior review (comment #12345)
 ```
 
@@ -98,7 +98,7 @@ The agent must evaluate: "Does my new finding contradict a prior finding that wa
 If yes → **DROP** the new finding unconditionally.
 Log the drop:
 
-```
+```text
 [anti-flip-flop] DROP src/foo.ts:55 — new suggestion contradicts resolved prior comment #12345 (previously suggested `Map`, author applied it; now re-suggesting `Record`)
 ```
 
@@ -117,6 +117,14 @@ The finding may be surfaced in the terminal output for human review, but it is n
 | Author replied with acknowledgement text | Yes |
 | Author replied with disagreement / explanation and no fix | **No** — the author challenged the finding; re-flagging in a later pass is allowed |
 | 👎 reaction by the author | **No** — dismissal means the finding was wrong, not accepted; the noise lesson fires, but re-flagging is not prevented (the agent should have dropped it originally, and the outcome-learning loop handles that) |
+
+---
+
+## Sub-agent re-runs
+
+When this rule executes inside a sub-agent (e.g., a review dispatched by an orchestrator), the sub-agent does NOT receive the SessionStart memory-load priming that the main session gets.
+The sub-agent MUST therefore perform the Step 1.0 memory read itself — never assume the relevance and lesson memories were pre-loaded.
+The companion relevance-memory read (see `comment-relevance-memory.md § Read`) is a mandatory real `mcp__lorekit__memory_list` tool call; treat a thrown tool error as "not connected" for this run, but never infer disconnection without attempting the call.
 
 ---
 
@@ -159,7 +167,7 @@ A finding can therefore be deferred across several incremental runs, but it can 
 
 The Quality Gate summary adds three rows:
 
-```
+```text
 Prior-comment dedup drops: N  (already said in a prior review pass)
 Anti-flip-flop drops:      M  (would contradict a resolved prior suggestion)
 Carried forward:           K  (deferred by a prior incremental run, re-admitted)

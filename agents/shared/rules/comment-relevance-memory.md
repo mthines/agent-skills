@@ -58,7 +58,7 @@ No git remote → use `global` only.
 
 ### Key format
 
-```
+```text
 reviewer-comment-relevance::<category>:<claim-gist>
 ```
 
@@ -105,13 +105,17 @@ fixed in a later PR) are flagged as contradictions, not silently overwritten.
 Both `reviewer` (Step 0.7) and `pr-reviewer` (equivalent step before Step 1.1)
 read comment-relevance memories as part of their lesson-read fan-out.
 
-Add these two calls to the existing narrow-to-broad lesson read:
+Add these two calls to the existing narrow-to-broad lesson read.
+**This read is a mandatory attempt — issue it as a real `mcp__lorekit__memory_list` tool call, not documentation shorthand.**
+Only a real tool error (thrown exception, or tool not listed in the agent's `tools:` grant) may suppress the call; never infer "not connected" without attempting it.
+When this rule is applied inside a sub-agent, the sub-agent does NOT receive the SessionStart memory-load priming that the main session gets, so it MUST perform this read itself — never assume memories were pre-loaded.
 
-```
+```text
 # Narrow-to-broad fan-out — repo-specific wins over global on conflict.
-# Silent no-op if memory.* not connected.
-memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::reviewer-comment-relevance"], limit: 50 }
-memory.list { scope: "global",               tags: ["loop::reviewer-comment-relevance"], limit: 50 }
+# Issue each line as a real mcp__lorekit__memory_list tool call.
+# If the call itself errors, treat the backend as not connected for this run.
+mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=50
+mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-comment-relevance"] limit=50
 ```
 
 Merge both lists (`repo::` wins on key collision).
@@ -163,14 +167,15 @@ influence the review. `APPLIED_MEMORIES[]` is what the report links (see
 
 Log all applied memories in a `Relevance memory` row in the Quality Gate summary:
 
-```
+```text
 Relevance-memory drops:      <D>  (not-relevant, seen ≥ 3)
 Relevance-memory downgrades: <DG> (not-relevant, seen 1–2)
 Relevance-memory promotes:   <P>  (relevant, seen ≥ 2)
 ```
 
 Announce active suppression memories in one line before the review pipeline runs:
-```
+
+```text
 Relevance memories active: 3 suppressions, 1 promotion (repo:mthines/console)
 ```
 So the user knows the pipeline has been influenced.
@@ -352,7 +357,7 @@ regardless of what Phase 4 decided for that comment.
 
 Write the memory:
 
-```
+```text
 # Classify scope: almost always repo-specific.
 # Universal pattern (e.g. "defensive null-checks are always over-flagged"
 # regardless of codebase) → global; anything citing a repo-specific
@@ -399,7 +404,7 @@ When a `fingerprint` accumulates **≥ 3 concordant `not-relevant`** records
 
 Surface a one-line suggestion — never act silently:
 
-```
+```text
 Relevance memory "<fingerprint>" has been suppressed 3+ times in <repo>.
 Promote to a permanent repo filter?  Consider adding to .github/review.yaml:
   filters:
@@ -410,7 +415,7 @@ Promote to a permanent repo filter?  Consider adding to .github/review.yaml:
 When a `fingerprint` accumulates **≥ 3 concordant `relevant`** records, it is
 **reinforcement-eligible**:
 
-```
+```text
 Relevance memory "<fingerprint>" has been resolved 3+ times in <repo>.
 Pattern reliably gets fixed — confidence threshold can be lowered for this class.
 ```
