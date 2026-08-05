@@ -34,11 +34,10 @@ still open.
 ## When this step runs
 
 This rule is **`pr-reviewer`-only.** Resolving a GitHub thread is a write to
-GitHub, and `pr-reviewer` is the only reviewer agent that writes to GitHub.
-In self mode (`REVIEW_RELATION=self`) it emits a terminal report and may also
-open inline GitHub comments on the PR; in cross mode (`REVIEW_RELATION=cross`)
-it posts a PENDING review. Thread resolution applies to both relations on
-a re-review pass. The relevance signal from threads that were not resolved here
+GitHub, and `pr-reviewer` is the review agent that writes to GitHub.
+In both relations it posts a single visible `COMMENT` review at Step 4
+(`REVIEW_RELATION` only adjusts the framing tone), so thread resolution applies
+to both relations on a re-review pass. The relevance signal from threads that were not resolved here
 comes from the post-merge path (`outcome-learning.md`) and the GitHub Action instead.
 
 | Agent | When | Gate |

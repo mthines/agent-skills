@@ -172,6 +172,6 @@ All three are emitted even when N = 0, M = 0, and K = 0, so the user can see the
 ## What this rule does not do
 
 - Re-run outcome measurement — that is `outcome-learning.md`.
-- Change the authorization gate (`authorization-gate.md`) — posting still requires `--publish`.
-- Apply when no PR exists yet (branch-only self review — no prior GitHub state).
+- Change how the review is posted — `pr-reviewer` posts one visible `COMMENT` review at Step 4 unconditionally, with no authorization gate.
+- Apply when no PR exists yet (no prior GitHub state to reconcile).
 - Drop a finding because an author *challenged* (not accepted) a prior finding — disagreement does not prevent re-flagging; outcomes do.

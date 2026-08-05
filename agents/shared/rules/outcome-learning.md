@@ -223,6 +223,6 @@ It runs after the PR closes, not during the review.
 
 - Own the bus schema, fingerprint formula, TTL, or consolidation cadence — those live in `review-outcomes.md`.
 - Re-run or re-score in-flight comments based on outcomes.
-- Change the posting authorization gate (`authorization-gate.md`) — posting is always gated by `--publish`.
+- Change how the review is posted — `pr-reviewer` posts one visible `COMMENT` review at Step 4, and this rule runs post-merge, never at posting time.
 - Access private PR data beyond what the `gh` CLI exposes to the authenticated user.
 - Load `review-outcomes` into the per-review context (Step 0.7) — that is explicitly forbidden.

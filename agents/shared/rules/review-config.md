@@ -206,5 +206,5 @@ For backwards compatibility, a bare `per_comment_confidence_threshold: N` withou
 ## What this rule does not do
 
 - Define how rubrics are authored or loaded — that is `rubric-composition.md`.
-- Govern posting authorization — that is `authorization-gate.md`.
+- Govern how the review is posted — `pr-reviewer` posts one visible `COMMENT` review at Step 4 unconditionally, with no authorization gate.
 - Replace per-run flags — `--no-holistic`, `--no-critical`, `--with` still override on a per-invocation basis and take precedence over `.review.yaml` profile settings.
