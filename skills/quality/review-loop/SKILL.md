@@ -129,7 +129,7 @@ This is the anti-circularity guarantee.
 After the loop exits (early or at cap), emit a compact summary:
 
 ```text
-review-loop on PR #<n> (<REVIEW_RELATION>)
+review-loop on PR #<n> (<RESOLVED_REPO>)
 
 Iterations: <N> of <CAP>
 Stop reason: <PASS-no-blockers | cap-reached | report-only (--no-feedback)>
