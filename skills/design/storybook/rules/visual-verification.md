@@ -73,7 +73,7 @@ Skill("screen-recorder",
 ```
 
 The result lands under `.agent/recordings/`.
-The clip can be attached to a PR comment by `pr-reviewer`.
+Attach the clip to a PR comment yourself — `pr-reviewer` does not capture or attach media.
 
 ## When neither is needed
 
@@ -90,13 +90,13 @@ A common end-to-end pattern for a new story PR:
 2. Run Playwright CLI screenshot of `Default` and `Playground` — sanity check.
 3. If the story includes motion or transitions, also run `screen-recorder`.
 4. Open the PR via `/create-pr`.
-5. Invoke `Skill("pr-reviewer", "<pr-url>")` to capture the final screenshots, post
-   a `COMMENT` review with the inline images, and let the user submit it from GitHub.
+5. Attach the final screenshots to the PR yourself (Playwright CLI output), then
+   invoke `Skill("pr-reviewer", "<pr-url>")`, which posts its review immediately as a
+   visible `COMMENT` review — nothing is left for the user to submit.
 
 ## Validation checklist
 
-- [ ] Use Playwright CLI for sanity-check screenshots only.
-- [ ] Delegate to `pr-reviewer` for PR-attached evidence.
+- [ ] Use Playwright CLI for still screenshots — sanity checks and PR evidence alike.
 - [ ] Delegate to `screen-recorder` for any multi-frame interaction.
 - [ ] If the URL is auth-gated, pass the `storageState.json` path to
       whichever delegate runs.
