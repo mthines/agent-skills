@@ -186,12 +186,15 @@ should invoke `screen-recorder`.
   ```
 
 - `out-format` — `mp4` (GitHub previews `.mp4` inline; `.webm` is downloaded).
-- `context.pr` — the PR number, used to slug the artifact and to attach
-  the recording as a PR comment.
+- `context.pr` — the PR number, used to slug the artifact and to link
+  the recording from the review body.
 
 ### `pr-reviewer` attachment flow
 
-After the recording is produced, `pr-reviewer` attaches it as a PR comment via `gh`.
+After the recording is produced, `pr-reviewer` uploads it to a release asset and
+links it **from the review body** — `gh pr comment` and `POST /issues/{n}/comments`
+are forbidden for this agent; the only write surface is
+`POST /repos/{owner}/{repo}/pulls/{n}/reviews`.
 
 `$REC_RELEASE_TAG` must be derived before the upload step.
 Use a deterministic tag scoped to the repository and PR number so
@@ -216,17 +219,21 @@ gh release upload "$REC_RELEASE_TAG" "$REC_PATH" --clobber --repo "$REPO"
 ASSET_URL=$(gh release view "$REC_RELEASE_TAG" --repo "$REPO" --json assets \
   --jq ".assets[] | select(.name == \"$(basename "$REC_PATH")\") | .url")
 
-# Comment with embedded video
-gh pr comment "$PR_NUMBER" --body "Visual evidence: $ASSET_URL"
+# Do NOT post this with `gh pr comment`. Interpolate $ASSET_URL into the review
+# body that Step 4 sends to POST /repos/{owner}/{repo}/pulls/{n}/reviews:
+#
+#   ### Motion evidence
+#   Visual evidence: <ASSET_URL>
 ```
 
 The `screen-recorder` skill does not itself touch `gh` — `pr-reviewer`
 owns the attachment.
 This skill produces the file and returns the path via `RECORDING_PATH=`.
 
-**Note on review wiring:** `pr-reviewer` surfaces the returned `RECORDING_PATH=`
-in its `### Motion evidence` subsection and then executes the upload snippet
-as a post-review step, included in the single `COMMENT` review it posts.
+**Note on review wiring:** the upload runs **before** the review is posted, so the
+resulting `$ASSET_URL` is available when the body is assembled. `pr-reviewer`
+renders it in the `### Motion evidence` subsection of the single `COMMENT` review
+it posts — there is no separate PR comment.
 
 ## Caller 4 — `storybook`
 
