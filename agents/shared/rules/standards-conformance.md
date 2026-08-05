@@ -43,13 +43,21 @@ The walk is not restated here: it is the same `while [[ "$dir" != "." ]]` traver
 
 Load, in nearest-ancestor-first order, these document types:
 
-a. Nearest-package `CLAUDE.md` (the directory that contains the changed file's package, up to
-   the repo root).
+a. Nearest-package `CLAUDE.md` — the closest `CLAUDE.md` at or above the changed file's directory,
+   **excluding** the repo-root `CLAUDE.md`, which is always loaded via (d) instead.
 b. Any `.claude/rules/*.md` files whose frontmatter `globs:` field matches the changed file path
    (or, absent `globs:`, treat as applying to all paths).
 c. `AGENTS.md` at the repo root (if it exists).
 d. A bounded slice of the root `CLAUDE.md` (first 8,000 characters), to stay within the token
    budget while capturing project-wide prose rules.
+
+**(a) vs. (d) — the root `CLAUDE.md` is always bounded.**
+When a changed file lives at the repo root, or its nearest `CLAUDE.md` *is* the root one, (d)
+governs: load the 8,000-character slice, never the whole file, and never both.
+(a) covers non-root package `CLAUDE.md` files only.
+This is not a style preference — an unbounded root `CLAUDE.md` routinely exceeds the 30,000-character
+total cap on its own (this repository's is ~38,000 characters), which would drop every other
+governing document for the run.
 
 **Extraction filter:** from each loaded document, extract only **normative statements** —
 sentences or bullet points that contain "must", "always", "never", "prefer X over Y",
