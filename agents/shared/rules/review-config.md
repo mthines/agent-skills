@@ -29,7 +29,8 @@ Nothing that clears the confidence threshold is hidden in either relation: the c
 
 ```yaml
 # .github/review.yaml  (default location; legacy root .review.yaml still honoured)
-# All fields are optional. An absent file defaults to profile: balanced.
+# All fields are optional. With no .github/review.yaml AND no legacy root .review.yaml,
+# configuration defaults to profile: balanced.
 
 profile: chill | balanced | assertive   # default: balanced
 
