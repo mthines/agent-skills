@@ -479,7 +479,15 @@ The cap governs placement only; overflow is deferred to the review body, never d
 ### 1.7b Load standards (default ON)
 
 See `agents/shared/rules/standards-conformance.md` § Step 1.7b — Standards discovery.
-Skip when `--no-standards` was passed or when the trivial-skip heuristic already fired.
+
+First, evaluate the trivial-skip heuristic against the changed-file list and cache the boolean as
+`TRIVIAL_SKIP`.
+The conditions are defined once in `agents/shared/rules/holistic-review.md` § Trivial-skip set, and
+this step is their single evaluation point because it is the earliest consumer.
+Evaluate it even when `--no-standards` was passed, so Steps 2.4, 2.4c, and 2.4d always read a
+populated `TRIVIAL_SKIP` cache instead of recomputing the heuristic.
+
+Skip the discovery below when `--no-standards` was passed or when `TRIVIAL_SKIP` is true.
 
 Reuse `review-config.md`'s upward walk on the changed-file list (Step 1.1 / Step 1.2) to
 discover governing documents: nearest-package `CLAUDE.md`, matching `.claude/rules/*.md`,
@@ -713,9 +721,9 @@ proposals.
 
 ### 2.4d Standards conformance (default ON in `full` and `incremental` modes)
 
-See `agents/shared/rules/standards-conformance.md`. Skip via `--no-standards`, when the trivial-skip
-heuristic fired, or when `RUN_MODE == "incremental-quick"` (the delta is too small to warrant
-governing-doc comparison).
+See `agents/shared/rules/standards-conformance.md`. Skip via `--no-standards`, when the
+`TRIVIAL_SKIP` cache from Step 1.7b is true, or when `RUN_MODE == "incremental-quick"` (the delta is
+too small to warrant governing-doc comparison).
 
 Uses the `STANDARDS_DOCS` cache built in Step 1.7b.
 Emits `issue:` findings for violated "never" / "must" / "always" / "do not" / "forbidden" statements

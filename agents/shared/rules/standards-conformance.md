@@ -85,7 +85,8 @@ Never silently truncate a document mid-content.
 
 ## Trivial-skip set
 
-Reuse the trivial-skip heuristic already computed for `holistic-review` — do not recompute it.
+Reuse the `TRIVIAL_SKIP` value evaluated at Step 1.7b (conditions defined in `holistic-review.md`
+§ Trivial-skip set) — do not recompute it.
 Skip this rule (not the flag — the heuristic) on the same trivial diffs:
 pure whitespace / formatting, dependency-bump-only, test-only, and `< 10 lines changed`
 with no high-stakes path (`**/auth/**`, `**/billing/**`, `**/payments/**`,
@@ -228,7 +229,8 @@ three bodies (PASS, WARN, FAIL):
   contract.
 - It does not emit inline comments that bypass grounding — every finding needs a `path:line` cite.
 - It does not introduce a new blocking class — `(blocking)` is decorated by the existing bar only.
-- It does not re-run the trivial-skip computation — it reuses `holistic-review`'s.
+- It does not re-run the trivial-skip computation — it reads the `TRIVIAL_SKIP` cache written at
+  Step 1.7b.
 - It does not truncate silently — over-cap drops are logged by path.
 - It does not override the author's intent or `.review.yaml` entries on conflict — those win, and
   the conflict is surfaced explicitly.
