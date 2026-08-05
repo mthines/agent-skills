@@ -311,6 +311,9 @@ function checksInSync(plan, checks) {
 
   // G8d: pr-reviewer is the sole review agent; it wires 2.4b default-on with --no-escalate.
   // (reviewer agent retired — pr-reviewer self/cross relation handles both modes.)
+  // Retiring reviewer.md dropped 8 checks that tracked that file: main runs 156/156,
+  // this branch runs 148/148 (the G11 loop over [reviewer, pr-reviewer] alone lost 7,
+  // plus G8d's former reviewer assertion). Both totals are executed and green.
   s.check("G8d pr-reviewer wires 2.4b + --no-escalate",
     prReviewer.includes("2.4b") && prReviewer.includes("--no-escalate"));
 
