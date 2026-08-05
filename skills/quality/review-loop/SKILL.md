@@ -72,6 +72,21 @@ If no PR reference is found, abort: `review-loop requires a PR URL or #<n>.`
 Parse the flags and set the iteration cap:
 
 ```bash
+# Parse flags out of the argument string.
+cap_flag=""
+CRITICAL=0
+NO_FEEDBACK=0
+
+# --cap N: override the default iteration cap (accepts "--cap 5" or "--cap=5").
+if [[ " $ARGUMENTS " =~ [[:space:]]--cap[[:space:]=]+([0-9]+) ]]; then
+  cap_flag="${BASH_REMATCH[1]}"
+fi
+
+# --critical: pass the adversarial pre-mortem through to each pr-reviewer call.
+if [[ " $ARGUMENTS " == *" --critical "* ]]; then
+  CRITICAL=1
+fi
+
 CAP=${cap_flag:-3}
 ITERATION=0
 
@@ -79,8 +94,6 @@ ITERATION=0
 if [[ " $ARGUMENTS " == *" --no-feedback "* ]]; then
   NO_FEEDBACK=1
   CAP=1
-else
-  NO_FEEDBACK=0
 fi
 ```
 
@@ -97,7 +110,7 @@ while ITERATION < CAP:
     ITERATION += 1
 
     # Sub-step A: review
-    run pr-reviewer(<PR>) [--critical if passed]
+    run pr-reviewer(<PR>) [append " --critical" when CRITICAL == 1]
     if pr-reviewer verdict == PASS with no blocking findings:
         break   # early exit; branch is clean
 
