@@ -21,7 +21,7 @@ call sites listed at the bottom.
 - Contract — what callers pass
 - Caller 1 — `animations` skill
 - Caller 2 — `ux` skill
-- Caller 3 — `reviewer` agent
+- Caller 3 — `pr-reviewer` agent
 - Caller 4 — `storybook` skill
 - Downstream sink — `video-analyser` skill (record → analyse → iterate)
 - Return value contract
@@ -254,7 +254,7 @@ recordings this skill produces, and the encode defaults are tuned for
 it. The relationship is one-directional:
 
 ```text
-caller (animations / ux / reviewer)
+caller (animations / ux / pr-reviewer)
    │
    ▼  Skill("screen-recorder", { ... })
 screen-recorder ──► .agent/recordings/<slug>/<slug>.webm
@@ -350,10 +350,10 @@ When this skill's contract changes, update these call sites:
 
 - **Recording with `out-format: webm` when delivering to GitHub.**
   GitHub does not preview `.webm` inline — `.mp4` is required.
-  **Fix:** the `reviewer` caller sets `out-format: mp4` by default.
+  **Fix:** the `pr-reviewer` caller sets `out-format: mp4` by default.
 - **Calling without `caller:`.**
   The skill cannot disambiguate default behaviour (e.g., `mp4` for
-  reviewer, double-recording for `animations`).
+  pr-reviewer, double-recording for `animations`).
   **Fix:** every call site sets `caller:`.
 - **Skipping the `data-testid` ladder when `ux` calls.**
   The skill rejects brittle selectors; the `ux` caller must propose a
