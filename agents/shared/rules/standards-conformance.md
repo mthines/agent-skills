@@ -107,9 +107,10 @@ Step 1.2.
 
 ```bash
 # Step 1.7b — Standards discovery
-STANDARDS_DOCS=()        # changed_file -> [(doc_path, normative_bullets[])] cache
-STANDARDS_CHAR_COUNT=0   # running total
-STANDARDS_DROPPED=()     # paths dropped due to cap
+declare -A STANDARDS_DOCS  # changed_file -> [(doc_path, normative_bullets[])] cache
+                           # must be associative: the key is a path, not an integer index
+STANDARDS_CHAR_COUNT=0     # running total
+STANDARDS_DROPPED=()       # paths dropped due to cap (indexed: a list, not a map)
 
 for f in $CHANGED_FILES; do
   # Reuse review-config upward walk logic for governing docs:
