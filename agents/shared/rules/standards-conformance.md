@@ -102,7 +102,7 @@ Runs **immediately after Step 1.7** (review-config load), before Step 2 begins.
 Reuse the same upward-walk from `review-config.md` on the changed-file list from Step 1.1 /
 Step 1.2.
 
-```
+```bash
 # Step 1.7b — Standards discovery
 STANDARDS_DOCS=()        # accumulated (doc_path, normative_bullets[]) cache
 STANDARDS_CHAR_COUNT=0   # running total
@@ -161,7 +161,7 @@ Step 2.6 (`finding-grounding.md`).
 After emission, standards findings join the **same raw finding stream** and pass through every
 downstream gate unchanged:
 
-```
+```text
 → 2.5  rubric-composition § Consolidation (dedupe + group + sort)
 → 2.5a cross-rubric agreement
 → 2.5b prior-comment-awareness.md § Dedup
@@ -213,7 +213,7 @@ A run that discovered governing docs and emitted 0 findings is healthy — most 
 The `Review diagnostics` `<details>` block in Step 4 carries a standards diagnostics line on all
 three bodies (PASS, WARN, FAIL):
 
-```
+```text
 **Standards (2.4d)** — <ran | skipped (reason)> · <N> docs · <FE> finding(s)
 ```
 
