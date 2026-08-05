@@ -85,10 +85,10 @@ Runs last, after every quality gate.
 Its input is the set of findings that already cleared grounding, receipt, confidence, and shape — every one of them is worth telling the author about.
 Placement decides *where* each finding is shown. It discards nothing.
 
-| Agent + Relation | Inline per file | Inline total | Overflow behaviour |
+| Surface | Inline per file | Inline total | Overflow behaviour |
 | --- | --- | --- | --- |
-| `pr-reviewer` (self, terminal output) | unlimited | unlimited | n/a — print every finding |
-| `pr-reviewer` (cross, posts to GitHub) | N per profile (`chill` 3 / **`balanced` 5** / `assertive` 7) | **20** | **Deferred**, never dropped — listed in the review body |
+| `pr-reviewer` Step 3 terminal report (both relations) | unlimited | unlimited | n/a — print every finding |
+| `pr-reviewer` Step 4 GitHub review (both relations) | N per profile (`chill` 3 / **`balanced` 5** / `assertive` 7) | **20** | **Deferred**, never dropped — listed in the review body |
 
 Ordering for the inline slots, applied per file and then globally:
 
@@ -96,8 +96,9 @@ Ordering for the inline slots, applied per file and then globally:
 2. Then descending `per-comment-confidence` Final score.
 3. Then ascending line number.
 
-`pr-reviewer` in self mode has no placement cap at all.
-Local terminal output has no posting cost and no hostile-review effect, so the confidence threshold is the only thing that decides what the author sees.
+The split is terminal-vs-GitHub, not self-vs-cross.
+`pr-reviewer` runs the identical pipeline in both relations (Step 0.5) and always posts at Step 4, so the inline caps apply to every run.
+The Step 3 terminal report is uncapped in both relations: local output has no posting cost and no hostile-review effect, so the confidence threshold is the only thing that decides what the author sees there.
 
 ### Deferred findings (`pr-reviewer`)
 
