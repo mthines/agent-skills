@@ -9,7 +9,7 @@ tags:
 
 # Rubric composition
 
-Both agents load multiple review rubrics: `code-quality` (always for substantive diffs), `ux` (UI files), `critical` (high-stakes diffs or `--critical`), and up to 3 user-supplied lenses via `--with`.
+`pr-reviewer` loads multiple review rubrics: `code-quality` (always for substantive diffs), `ux` (UI files), `critical` (high-stakes diffs or `--critical`), and up to 3 user-supplied lenses via `--with`.
 
 Without a consolidation step, each rubric emits findings independently and the agent has to inline-dedupe while also writing comments. Research grounding: Qodo's 2026 "Rule System" and Greptile's multi-agent architecture both add an explicit coordinator pass — the consolidation step is what turns multi-rubric findings from noise into signal.
 

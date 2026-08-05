@@ -55,7 +55,7 @@ Any single trivial-skip condition triggers skip. If in doubt, run holistic — t
 
 ## When to run (the call)
 
-After the rubrics produce raw findings and **before** Step 2.5 (Dedupe + consolidate), so holistic findings participate in dedupe and can collide-and-win against line-level findings on the same `(file, line)`. The new step is **2.4 Holistic review** in both agents.
+After the rubrics produce raw findings and **before** Step 2.5 (Dedupe + consolidate), so holistic findings participate in dedupe and can collide-and-win against line-level findings on the same `(file, line)`. The new step is **2.4 Holistic review** in `pr-reviewer`.
 
 ```
 Skill("holistic-analysis", "review")
@@ -107,7 +107,7 @@ A finding that fails any test is left untouched and flows on to 2.5 as-is. Selec
 
 ### Fan-out (the parallel mechanism)
 
-For each selected finding, emit one `Skill("holistic-analysis", "review")` call **with a `focus` block**. Emit the calls **in a single turn** so they run concurrently — this is the parallelism; no `Task` tool is required, and both agents already have `Skill`.
+For each selected finding, emit one `Skill("holistic-analysis", "review")` call **with a `focus` block**. Emit the calls **in a single turn** so they run concurrently — this is the parallelism; no `Task` tool is required, and `pr-reviewer` already has `Skill`.
 
 ```
 # one call per selected finding, all emitted together

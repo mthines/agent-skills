@@ -9,7 +9,7 @@ tags:
 
 # Review config
 
-Both agents support per-repo (and per-subtree) configuration via a `.review.yaml` file.
+`pr-reviewer` supports per-repo (and per-subtree) configuration via a `.review.yaml` file.
 The config surface is deliberately small — one profile knob, one noise-suppressor list, one path-scoped guidance list — so that the most common customizations require minimal YAML authorship.
 
 **Back-compat guarantee:** an absent `.review.yaml` resolves to `profile: balanced`, which equals today's defaults (per-comment threshold 80, inline placement cap 5 per file in cross mode, none in self mode, no filters, no path instructions).
@@ -80,7 +80,7 @@ This is Diamond's first-class noise-suppressor mechanism — a filter entry drop
 | `trailing-commas` | Trailing comma style suggestions |
 | `prefer-const-over-let` | `const`/`let` preference findings where `let` is not mutated |
 
-Teams add their own filter names to this list; the agents treat any unknown filter name as a tag to match against the finding's category annotation.
+Teams add their own filter names to this list; `pr-reviewer` treats any unknown filter name as a tag to match against the finding's category annotation.
 Unknown filter names do not error — they are simply never matched until a rubric produces a finding tagged with that name.
 
 A finding dropped by a filter is logged:
@@ -152,9 +152,9 @@ Run this once per changed file at the start of Step 1 (change-scope understandin
 
 ---
 
-## Config loading step (both agents)
+## Config loading step
 
-Both agents load the effective config **before Step 2 (Review)**.
+`pr-reviewer` loads the effective config **before Step 2 (Review)**.
 Add this step immediately after Step 1.6 (lens loading), labelled **Step 1.7: Load review config**.
 
 ```bash

@@ -8,7 +8,7 @@ tags:
 
 # Conventional Comments
 
-Both agents emit comments that conform to the [Conventional Comments](https://conventionalcomments.org/) spec. Many repos (including dash0) require the prefix; applying it unconditionally is safe — harmless in repos that don't enforce it, load-bearing in those that do.
+`pr-reviewer` emits comments that conform to the [Conventional Comments](https://conventionalcomments.org/) spec. Many repos (including dash0) require the prefix; applying it unconditionally is safe — harmless in repos that don't enforce it, load-bearing in those that do.
 
 ## Category → prefix
 
@@ -79,6 +79,6 @@ If `False`, prepend the prefix derived from the category. This is a recoverable 
 
 ## What this rule does not enforce
 
-- Conventional Comments also defines `chore:`, `thought:`, `todo:`. The agents do not use these — they map to `nitpick` or terminal-output for terseness.
-- Multi-line bodies. Both agents constrain bodies to ≤ 2 sentences via `comment-shape.md`; Conventional Comments allows longer bodies, but the agents enforce stricter.
+- Conventional Comments also defines `chore:`, `thought:`, `todo:`. `pr-reviewer` does not use these — they map to `nitpick` or terminal-output for terseness.
+- Multi-line bodies. `pr-reviewer` constrains bodies to ≤ 2 sentences via `comment-shape.md`; Conventional Comments allows longer bodies, but the agent enforces stricter.
 - Subject vs body split. Conventional Comments allows a heading-style subject and a body underneath. Forbidden here by `comment-shape.md` (no headings, no multi-paragraph).

@@ -1,6 +1,6 @@
 ---
-for: pr-reviewer, reviewer
-description: "Canonical comment-card shape emitted by both agents. Used in the local proposal (terminal output) and as the source for the GitHub posting payload (pr-reviewer only)."
+for: pr-reviewer
+description: "Canonical comment-card shape emitted by `pr-reviewer`. Used in the local proposal (terminal output) and as the source for the GitHub posting payload."
 ---
 
 # PR Comment Card — Template
@@ -51,7 +51,7 @@ The trailing `---` separates cards. The pseudo-code block is **strongly preferre
 
 ## Validation before emit
 
-Both agents run this assertion immediately before emitting any card:
+`pr-reviewer` runs this assertion immediately before emitting any card:
 
 ```python
 import re
@@ -177,11 +177,13 @@ praise: Nice — the discriminated union on `Result<T>` makes exhaustiveness che
 ---
 ```
 
-## How the two agents use the card differently
+## How the two surfaces use the card differently
 
-| Agent | What the card becomes |
+`pr-reviewer` runs the identical pipeline in both relations; what varies is the surface, not the relation.
+
+| Surface | What the card becomes |
 | --- | --- |
-| `pr-reviewer` | The body is extracted (without `_Pseudo-code_` disclaimer, without the Code anchor) and posted to `gh api pulls/{n}/reviews` as one `comments[]` entry. The full card is also printed to the terminal proposal in Step 3. |
-| `reviewer` Self-Review | The full card is printed to the terminal. Nothing is posted. The orchestrator agent reads the cards and decides whether to address them before undrafting. |
+| Terminal proposal (Step 3) | The full card is printed, including the `_Pseudo-code_` disclaimer and the Code anchor. Nothing is posted from here. |
+| Posted review (Step 4) | The body is extracted (without the `_Pseudo-code_` disclaimer, without the Code anchor) and posted to `gh api pulls/{n}/reviews` as one `comments[]` entry. |
 
 The card is the contract. If the agent emits something that does not match this template, the renderer is broken.
