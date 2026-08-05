@@ -16,7 +16,7 @@ has already written down?**
 
 This rule produces findings when a changed file violates the repository's own governing
 documents — `CLAUDE.md`, `AGENTS.md`, path-scoped `.claude/rules/*.md` files, and explicit
-`.review.yaml` `standards:` entries.
+`standards:` entries in the review config (`.github/review.yaml`, or a subtree `.review.yaml`).
 The governing-doc line `path:line` is the grounding evidence; findings that cannot cite one
 are dropped at Step 2.6.
 
@@ -38,8 +38,9 @@ Mention it in the run announcement only when set.
 
 For each changed file, the rule reuses **`review-config.md`'s upward walk** (§ Hierarchical
 discovery / § Loading algorithm) to discover governing documents.
-The walk is not restated here: it is the same `while [[ "$dir" != "." ]]` traversal that collects
-`.review.yaml` files, re-run on the same directory tree to collect the governing docs below.
+The walk is not restated here: it is the same traversal that collects subtree `.review.yaml` files
+and the `.github/review.yaml` base (legacy root `.review.yaml` still honoured), re-run on the same
+directory tree to collect the governing docs below.
 
 Load, in nearest-ancestor-first order, these document types:
 
@@ -67,9 +68,10 @@ The distinction is intentional: this rule enforces written rules, not editorial 
 
 Discovery runs **once per changed file at Step 1** (cached as `STANDARDS_DOCS`), not per finding.
 
-### Source 2 — Opt-in via `.review.yaml` `standards:` block
+### Source 2 — Opt-in via the review config's `standards:` block
 
-When a `.review.yaml` defines a `standards:` block, each matching entry's `docs:` files are
+When the review config (`.github/review.yaml`, or a subtree `.review.yaml`) defines a `standards:`
+block, each matching entry's `docs:` files are
 loaded as standards for the globs that cover the changed file, and `must:` entries are treated as
 inline normative rules.
 The merge follows the same concatenation rule as `path_instructions`: closer-file entries are
@@ -121,8 +123,9 @@ STANDARDS_DROPPED=()       # paths dropped due to cap (indexed: a list, not a ma
 for f in $CHANGED_FILES; do
   # Reuse review-config upward walk logic for governing docs:
   discover_governing_docs "$f"   # → nearest CLAUDE.md, .claude/rules/*.md, AGENTS.md, root slice
-  # Load .review.yaml standards: entries matching the file's path
-  load_review_yaml_standards "$f"
+  # Load review-config standards: entries matching the file's path
+  # (.github/review.yaml base + subtree .review.yaml files)
+  load_review_config_standards "$f"
   # Apply 30,000-char cap nearest-first; log drops
 done
 ```
@@ -136,7 +139,7 @@ the same `(file, line)`.
 For each changed file in `REVIEW_DIFF`:
 
 1. Retrieve the `STANDARDS_DOCS[<changed file>]` entry list (built in Step 1.7b).
-2. If the cache is empty (no governing docs discovered, no matching `.review.yaml` standards),
+2. If the cache is empty (no governing docs discovered, no matching review-config `standards:`),
    skip quietly.
 3. Compare the diff's additions (`+`-prefixed lines) against the normative statements in the cache.
 4. Emit a raw finding for each **clearly violated** statement (see § Signal strength mapping).
@@ -192,16 +195,17 @@ finding in the pipeline.
 
 ## Precedence and conflict
 
-When a standards finding conflicts with the PR author's stated intent or an explicit `.review.yaml`
-`path_instructions` / `standards` entry, the author's intent and the explicit config **win**.
+When a standards finding conflicts with the PR author's stated intent or an explicit review-config
+`path_instructions` / `standards` entry (`.github/review.yaml` or a subtree `.review.yaml`), the
+author's intent and the explicit config **win**.
 
 The conflict is **surfaced, not silently enforced**: emit a note in the diagnostics block —
-`[standards-conformance] CONFLICT: <doc path:line> conflicts with author intent / .review.yaml entry — skipped.`
+`[standards-conformance] CONFLICT: <doc path:line> conflicts with author intent / review-config entry — skipped.`
 
 Auto-discovered governing-doc statements are enforced only when:
 - The violation is clearly against the text (not a matter of interpretation), and
 - The confidence meets the Step 2.7 bar for the finding's prefix (§ Signal strength mapping), and
-- No explicit author-intent or `.review.yaml` entry overrides it.
+- No explicit author-intent or review-config entry overrides it.
 
 ## Logging
 
@@ -243,5 +247,5 @@ three bodies (PASS, WARN, FAIL):
 - It does not re-run the trivial-skip computation — it reads the `TRIVIAL_SKIP` cache written at
   Step 1.7b.
 - It does not truncate silently — over-cap drops are logged by path.
-- It does not override the author's intent or `.review.yaml` entries on conflict — those win, and
+- It does not override the author's intent or review-config entries on conflict — those win, and
   the conflict is surfaced explicitly.

@@ -1,5 +1,5 @@
 ---
-title: Review config — .review.yaml profile, filters, and path instructions
+title: Review config — .github/review.yaml profile, filters, and path instructions
 impact: MEDIUM
 tags:
   - pr-reviewer
@@ -9,10 +9,14 @@ tags:
 
 # Review config
 
-`pr-reviewer` supports per-repo (and per-subtree) configuration via a `.review.yaml` file.
+`pr-reviewer` supports per-repo (and per-subtree) configuration via a review config file.
 The config surface is deliberately small — one profile knob, one noise-suppressor list, one path-scoped guidance list — so that the most common customizations require minimal YAML authorship.
 
-**Back-compat guarantee:** an absent `.review.yaml` resolves to `profile: balanced`, which equals today's defaults (per-comment threshold 80, inline placement cap 5 per file on the posted review, no filters, no path instructions).
+**Default config location:** the repo-level default config lives at `.github/review.yaml`, keeping the repo root uncluttered.
+For back-compat, if `.github/review.yaml` is absent but a legacy root `.review.yaml` exists, the root file is honoured (the root location is **DEPRECATED** but still read — not removed).
+Per-subtree overrides are still named `<subtree>/.review.yaml` (the root was the pollution concern, not deep directories).
+
+**Back-compat guarantee:** with no `.github/review.yaml` and no legacy root `.review.yaml` (subtree files may still exist), configuration resolves to `profile: balanced`, which equals today's defaults (per-comment threshold 80, inline placement cap 5 per file on the posted review, no filters, no path instructions).
 The config surface itself introduces no behaviour change: with no config file, `pr-reviewer` posts the same inline comments it always did, and the threshold is still 80.
 
 **One deliberate exception, introduced with placement (Step 2.9b):** the Step 3 terminal report has no per-file cap (local output, no posting cost) in either relation, so an absent config now reports *more* findings on a large branch than it used to.
@@ -24,7 +28,7 @@ Nothing that clears the confidence threshold is hidden in either relation: the c
 ## Config schema
 
 ```yaml
-# .review.yaml
+# .github/review.yaml  (default location; legacy root .review.yaml still honoured)
 # All fields are optional. An absent file defaults to profile: balanced.
 
 profile: chill | balanced | assertive   # default: balanced
@@ -86,7 +90,7 @@ Unknown filter names do not error — they are simply never matched until a rubr
 A finding dropped by a filter is logged:
 
 ```
-[filter] DROP src/foo.ts:42 — category "naming-nits" suppressed by .review.yaml
+[filter] DROP src/foo.ts:42 — category "naming-nits" suppressed by review config
 ```
 
 Filters are counted in the Quality Gate summary: `Filter drops: N`.
@@ -115,7 +119,8 @@ path_instructions:
 
 ## Hierarchical discovery
 
-`.review.yaml` files are discovered by traversing **upward** from the changed file to the repo root, collecting all `.review.yaml` files found along the path.
+Subtree config files are discovered by traversing **upward** from the changed file toward the repo root, collecting all `<dir>/.review.yaml` files found along the path.
+The repo-level default (`.github/review.yaml`, or the legacy root `.review.yaml`) is then prepended as the lowest-precedence base.
 This is Bugbot's model: a subtree can tighten (or loosen) rules without affecting the whole repo.
 
 ### Merge precedence
@@ -123,8 +128,9 @@ This is Bugbot's model: a subtree can tighten (or loosen) rules without affectin
 The agent resolves a single effective config by merging all discovered files, with **closer-to-the-changed-file winning** on conflict:
 
 ```
-<repo-root>/.review.yaml          ← lowest precedence (base)
-<subdir>/.review.yaml             ← overrides root for files under <subdir>/
+.github/review.yaml               ← lowest precedence (repo-level default base)
+                                     (or legacy ./.review.yaml if .github/review.yaml is absent — DEPRECATED)
+<subdir>/.review.yaml             ← overrides the default base for files under <subdir>/
 <subdir>/<nested>/.review.yaml    ← overrides both for files under <nested>/
 ```
 
@@ -132,21 +138,22 @@ Merge rules by field:
 
 | Field | Merge rule |
 | --- | --- |
-| `profile` | Closer file wins — the most specific `.review.yaml` sets the profile |
-| `filters` | **Union** — filters from all files in the hierarchy apply; a closer file cannot un-filter a category from the root |
+| `profile` | Closer file wins — the most specific `.review.yaml` (or the `.github/review.yaml` base) sets the profile |
+| `filters` | **Union** — filters from all files in the hierarchy apply; a closer file cannot un-filter a category from the base |
 | `path_instructions` | **Concatenation** — all instructions from all files apply, with closer-file instructions listed first |
 
-Example: if the root `.review.yaml` sets `profile: chill` and `src/payments/.review.yaml` sets `profile: assertive`, then files under `src/payments/` use `assertive` while all other files use `chill`.
+Example: if `.github/review.yaml` sets `profile: chill` and `src/payments/.review.yaml` sets `profile: assertive`, then files under `src/payments/` use `assertive` while all other files use `chill`.
 
 ### Loading algorithm
 
 For each changed file path `P`:
 
 1. Split `P` into its directory components.
-2. Walk upward from the file's directory to the repo root, collecting each `.review.yaml` found.
+2. Walk upward from the file's directory toward the repo root, collecting each `<dir>/.review.yaml` found.
 3. Stop at the repo root (do not cross the `.git` directory boundary).
-4. Merge the collected configs in precedence order (root last).
-5. Apply the merged config for this file's findings.
+4. Prepend the repo-level default as the lowest-precedence base: prefer `.github/review.yaml`, else fall back to a legacy root `.review.yaml` (DEPRECATED).
+5. Merge the collected configs in precedence order (default base last).
+6. Apply the merged config for this file's findings.
 
 Run this once per changed file at the start of Step 1 (change-scope understanding), not per finding.
 
@@ -165,19 +172,24 @@ CHANGED_FILES=$(git diff --name-only origin/main...HEAD 2>/dev/null || \
 declare -A FILE_CONFIGS  # path → effective profile/threshold
 
 for f in $CHANGED_FILES; do
-  # Walk upward from file's directory and collect .review.yaml files
+  # Subtree overrides (unchanged): walk up collecting <dir>/.review.yaml
   dir=$(dirname "$f")
   configs=()
   while [[ "$dir" != "." && "$dir" != "/" ]]; do
     [[ -f "$dir/.review.yaml" ]] && configs=("$dir/.review.yaml" "${configs[@]}")
     dir=$(dirname "$dir")
   done
-  [[ -f ".review.yaml" ]] && configs=(".review.yaml" "${configs[@]}")
-  # configs is now root-first (lowest precedence first) — merge later
+  # Root/default base: prefer .github/review.yaml, else legacy ./.review.yaml (deprecated)
+  if [[ -f ".github/review.yaml" ]]; then
+    configs=(".github/review.yaml" "${configs[@]}")
+  elif [[ -f ".review.yaml" ]]; then
+    configs=(".review.yaml" "${configs[@]}")   # deprecated legacy location
+  fi
+  # configs is now base-first (lowest precedence first) — merge later
   FILE_CONFIGS["$f"]="${configs[*]}"
 done
 
-# If no .review.yaml found anywhere: defaults to profile: balanced
+# If no .github/review.yaml AND no legacy root .review.yaml found: defaults to profile: balanced
 # (threshold 80, inline cap 5 for pr-reviewer / none for reviewer, no filters, no path instructions)
 ```
 
@@ -195,10 +207,10 @@ The effective config is consumed by:
 
 ```
 threshold = resolved_profile.per_comment_confidence_threshold
-            (default: 80 when .review.yaml absent or profile: balanced)
+            (default: 80 when no config is present or profile: balanced)
 ```
 
-The `per_comment_confidence_threshold` override in `.review.yaml` (previously documented in `per-comment-confidence.md`) is now superseded by the `profile` field.
+The `per_comment_confidence_threshold` override in the review config (previously documented in `per-comment-confidence.md`) is now superseded by the `profile` field.
 For backwards compatibility, a bare `per_comment_confidence_threshold: N` without a `profile:` field is honoured as a direct threshold override (equivalent to a custom profile with that threshold and the balanced caps).
 
 ---
@@ -263,4 +275,4 @@ Use `standards` when you want the reviewer to enforce a written rule as an expli
 
 - Define how rubrics are authored or loaded — that is `rubric-composition.md`.
 - Govern how the review is posted — `pr-reviewer` posts one visible `COMMENT` review at Step 4 unconditionally, with no authorization gate.
-- Replace per-run flags — `--no-holistic`, `--no-critical`, `--with` still override on a per-invocation basis and take precedence over `.review.yaml` profile settings.
+- Replace per-run flags — `--no-holistic`, `--no-critical`, `--with` still override on a per-invocation basis and take precedence over the review config's profile settings.

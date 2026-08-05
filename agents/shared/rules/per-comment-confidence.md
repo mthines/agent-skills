@@ -19,7 +19,7 @@ For each finding that survives `finding-grounding.md` (2.6) and `verification-re
 
 1. Resolve the effective confidence threshold for this finding's file.
    The threshold is set by the resolved `profile` from `review-config.md` (Step 1.7).
-   The default (absent `.review.yaml` or `profile: balanced`) is **80**.
+   The default (no review config present or `profile: balanced`) is **80**.
    See `review-config.md` for the full profile→threshold table.
 
 2. Construct a `confidence(code)` call with the finding as input:
@@ -42,7 +42,7 @@ For each finding that survives `finding-grounding.md` (2.6) and `verification-re
 | 90 | Bito / Qodo enterprise tier defaults | Drops too many true positives at typical SOTA model output quality; reserve for high-stakes-only repos |
 
 80 is the recommended setting, established by `profile: balanced` in `review-config.md`.
-Repos tune the threshold by setting `profile: chill` (90) or `profile: assertive` (70) in `.review.yaml`.
+Repos tune the threshold by setting `profile: chill` (90) or `profile: assertive` (70) in `.github/review.yaml`.
 A bare `per_comment_confidence_threshold: N` without a `profile:` field is accepted as a direct override for backwards compatibility.
 See `agents/shared/rules/review-config.md` for the full profile table and hierarchical discovery rules.
 
@@ -97,7 +97,7 @@ Quality Gate:
   Grounding drops:           3
   Receipt drops:             2  (behavioral claims with null/contradicting proof)
   Receipt downgrades:        1  (ambiguous proof → downgraded to question:)
-  Filter drops:              1  (suppressed by .review.yaml filters)
+  Filter drops:              1  (suppressed by review-config filters)
   Prior-comment dedup:       2  (already said in a prior review pass)
   Anti-flip-flop drops:      0  (would contradict a resolved prior suggestion)
   Confidence drops:          7 (avg score: 64, threshold: 80)

@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: Code reviewer for GitHub PRs — both own PRs (self-relation) and someone else's PRs (cross-relation). Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Posts a single consolidated GitHub review — one gate-status table in the body plus inline findings — directly as a visible COMMENT event; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Default-on standards-conformance lens (Step 2.4d) enforces the repo's own governing docs (CLAUDE.md, AGENTS.md, .claude/rules/*.md, .review.yaml standards:) as real findings — skip with --no-standards. Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or via `Skill("pr-reviewer", "<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`.
+description: Code reviewer for GitHub PRs — both own PRs (self-relation) and someone else's PRs (cross-relation). Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Posts a single consolidated GitHub review — one gate-status table in the body plus inline findings — directly as a visible COMMENT event; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Default-on standards-conformance lens (Step 2.4d) enforces the repo's own governing docs (CLAUDE.md, AGENTS.md, .claude/rules/*.md, review-config .github/review.yaml standards:) as real findings — skip with --no-standards. Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or via `Skill("pr-reviewer", "<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write
 model: opus
 ---
@@ -113,7 +113,7 @@ The overall verdict is **FAIL** when any of Gates 2–5 fails **or** the Code re
 The pipeline lives in rule files; the agent body is intentionally small. Read each
 rule once at the step that owns it.
 
-- `agents/shared/rules/review-config.md` — load `.review.yaml` profile, filters, path instructions (Step 1.7).
+- `agents/shared/rules/review-config.md` — load review-config profile, filters, path instructions (Step 1.7); default `.github/review.yaml`, legacy root `.review.yaml` still honoured.
 - `agents/shared/rules/prior-comment-awareness.md` — fetch existing PR comments for dedup + anti-flip-flop (Step 1.0); also used to identify open unresolved bot comments for Gate 3.
 - `agents/shared/rules/rubric-composition.md` — load + dedupe + consolidate code-quality / ux / critical / lenses.
 - `agents/shared/rules/holistic-review.md` — default-on intent-match + system-fit pass via `Skill("holistic-analysis", "review")`.
@@ -288,7 +288,7 @@ Merge both lists per tag (`repo::` wins on key collision). Skip expired entries.
 **Apply `reviewer-lessons`.**
 Match each loaded lesson's `trigger-context` (the shared lesson-scope schema — file globs, task type, integration/tech names) against this run's changed paths, synthesized intent, and detected integrations.
 A matched lesson's *What to do next time* is a **consideration, not a command**: it biases rubric emphasis (Step 2), persona focus (Personas 1–4), and per-comment confidence calibration (Step 2.7) — it may never silently disable a gate, skip a step, or move a threshold.
-On a `repo::` vs. `global` collision the `repo::` lesson wins; on any conflict with the PR author's stated intent or a `.review.yaml` constraint, that constraint wins and the conflict is surfaced.
+On a `repo::` vs. `global` collision the `repo::` lesson wins; on any conflict with the PR author's stated intent or a review-config constraint, that constraint wins and the conflict is surfaced.
 The loaded pool is augmented by the diff-keyed `memory.search` in Step 1.2c before Step 2 consumes it.
 `reviewer-comment-relevance` memories are applied separately at Step 2.2, per `comment-relevance-memory.md § Read`.
 
@@ -472,7 +472,9 @@ See `agents/shared/rules/rubric-composition.md`. Cap 3; dedupe against auto-load
 
 ### 1.7 Load review config
 
-See `agents/shared/rules/review-config.md`. Absent `.review.yaml` defaults to
+See `agents/shared/rules/review-config.md`.
+The default config location is `.github/review.yaml`; a legacy root `.review.yaml` is still honoured (DEPRECATED) when `.github/review.yaml` is absent.
+With neither present (subtree `.review.yaml` overrides may still exist), configuration defaults to
 `profile: balanced` — threshold 80, inline placement cap 5 per file, no filters, no path instructions.
 The cap governs placement only; overflow is deferred to the review body, never dropped.
 
@@ -495,8 +497,8 @@ discovery in those cases spends the 30,000-character budget building a cache not
 Reuse `review-config.md`'s upward walk on the changed-file list (Step 1.1 / Step 1.2) to
 discover governing documents: nearest-package `CLAUDE.md`, matching `.claude/rules/*.md`,
 `AGENTS.md`, and a bounded root `CLAUDE.md` slice.
-Merge any `.review.yaml` `standards:` entries whose glob covers each changed file (concatenation,
-closer-file-first, per `review-config.md § Standards`).
+Merge any review-config `standards:` entries (from `.github/review.yaml` or a subtree `.review.yaml`)
+whose glob covers each changed file (concatenation, closer-file-first, per `review-config.md § Standards`).
 Apply the 30,000-character nearest-first cap and log any dropped documents by path.
 Cache the result as `STANDARDS_DOCS` for Step 2.4d, keyed by **changed-file path** → list of
 `(doc_path, normative_bullets[])` entries.
@@ -639,7 +641,7 @@ strict order. Each gate is a drop point; no retries.
 ```
 rubrics + personas produce raw findings
   → 2.2  comment-relevance-memory.md  (drop/downgrade not-relevant patterns; promote reliably-resolved ones)
-  → 2.3  review-config.md § Filters   (drop findings in categories suppressed by .review.yaml)
+  → 2.3  review-config.md § Filters   (drop findings in categories suppressed by review config)
   → 2.4  holistic-review.md           (Skill("holistic-analysis", "review") — default on; may be skipped per 1.8 heuristic)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — default on)
   → 2.4c optimality-review.md         (Skill("optimize-approach", "report") — report-only; proposals exit
@@ -737,7 +739,7 @@ and `suggestion:` findings for violated "prefer X over Y" statements.
 Every finding carries the governing-doc `path:line` as grounding evidence and passes all downstream
 gates (2.5–2.9b) unchanged.
 
-Precedence: when a standards finding conflicts with the PR author's stated intent or a `.review.yaml`
+Precedence: when a standards finding conflicts with the PR author's stated intent or a review-config
 explicit override, the author-intent and config **win**; the conflict is surfaced in the diagnostics,
 not silently enforced.
 
@@ -885,7 +887,7 @@ Standards conformance (2.4d):
   Docs dropped (cap): <D> (listed above)
   Conflicts surfaced: <CON>
   Findings emitted:   <FE>
-When a standards finding conflicts with author-stated intent or an explicit `.review.yaml` entry,
+When a standards finding conflicts with author-stated intent or an explicit review-config entry,
 the author intent and config win; the conflict is surfaced in the diagnostics, not silently enforced.
 
 Optimality review (2.4c):

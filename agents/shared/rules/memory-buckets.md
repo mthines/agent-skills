@@ -80,7 +80,7 @@ reviewer-comment-relevance
 
 | Bucket | Owner rule | Producer → Consumer | Lifetime | Never |
 | --- | --- | --- | --- | --- |
-| `review-outcomes` | [`review-outcomes.md`](./review-outcomes.md) | `implement-suggestion` (Phase 7 + `--watch`) → promotion in [`outcome-learning.md`](./outcome-learning.md) | volatile 30d (`.review.yaml` `outcome-ttl`) | **Never loaded into a per-review run.** Fingerprint = `category:claim-gist:code-pattern`, reused from `prior-comment-awareness.md` 2.5b. |
+| `review-outcomes` | [`review-outcomes.md`](./review-outcomes.md) | `implement-suggestion` (Phase 7 + `--watch`) → promotion in [`outcome-learning.md`](./outcome-learning.md) | volatile 30d (`.github/review.yaml` `outcome-ttl`) | **Never loaded into a per-review run.** Fingerprint = `category:claim-gist:code-pattern`, reused from `prior-comment-awareness.md` 2.5b. |
 
 ### Signal (`loop::reviewer-comment-relevance`, key `reviewer-comment-relevance::<category>:<claim-gist>`)
 
