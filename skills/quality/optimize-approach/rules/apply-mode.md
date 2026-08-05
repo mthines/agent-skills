@@ -12,7 +12,7 @@ tags:
 # Apply Mode
 
 Apply the top `suboptimal` proposal to the working tree — but only behind a confidence gate, scoped to the diff's files, with revert-on-failure.
-Apply mode runs **only in own-work contexts** (`caller` ∈ {`polish` (optimize/simplify), standalone `/optimize-approach apply`}).
+Apply mode runs **only in own-work contexts** (`caller` ∈ {`polish` (optimize mode only), standalone `/optimize-approach apply`}).
 It is **never** used by `pr-reviewer` — cross-review proposes, it does not rewrite someone else's PR.
 
 This mirrors the confidence-gated self-modifying precedents already in this repo: `code-quality simplify`'s Class M apply and `test-provenance-guard --fix` both gate a code change on `confidence(code) ≥ 90 %` plus a mechanical post-check with revert.
