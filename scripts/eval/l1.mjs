@@ -588,9 +588,15 @@ function checksInSync(plan, checks) {
     const crm = read("agents/shared/rules/comment-relevance-memory.md");
     const pca = read("agents/shared/rules/prior-comment-awareness.md");
 
-    // G18a: pr-reviewer.md names the real mcp__lorekit__memory_list tool at the Step 1.0 read.
-    s.check("G18a pr-reviewer.md names mcp__lorekit__memory_list at the Step 1.0 read fan-out",
-      prReviewer.includes("mcp__lorekit__memory_list"));
+    // G18a: pr-reviewer.md issues the Step 1.0 read as a real mcp__lorekit__memory_list call.
+    // A bare includes("mcp__lorekit__memory_list") is tautological here: the base file already
+    // matches it once, in the `tools:` frontmatter (line 4), so it asserts nothing about the new
+    // Step 1.0 fan-out. Same shape as the G17c/G17e fixes above — assert a literal sentence from
+    // the rewritten block plus an occurrence floor the base revision cannot reach.
+    const memoryListMentions = prReviewer.split("mcp__lorekit__memory_list").length - 1;
+    s.check("G18a pr-reviewer.md issues the Step 1.0 read as a real mcp__lorekit__memory_list call (literal sentence + >= 5 mentions)",
+      prReviewer.includes("Issue each line below as a real `mcp__lorekit__memory_list` tool call — these are not documentation shorthand.") &&
+      memoryListMentions >= 5);
 
     // G18b: comment-relevance-memory.md names the real mcp__lorekit__memory_list tool at the read.
     s.check("G18b comment-relevance-memory.md names mcp__lorekit__memory_list at the read call site",
