@@ -487,7 +487,10 @@ this step is their single evaluation point because it is the earliest consumer.
 Evaluate it even when `--no-standards` was passed, so Steps 2.4, 2.4c, and 2.4d always read a
 populated `TRIVIAL_SKIP` cache instead of recomputing the heuristic.
 
-Skip the discovery below when `--no-standards` was passed or when `TRIVIAL_SKIP` is true.
+Skip the discovery below when `--no-standards` was passed, when `TRIVIAL_SKIP` is true, or when
+`RUN_MODE == "incremental-quick"`.
+Step 2.4d is the only consumer of `STANDARDS_DOCS` and it skips on all three conditions, so running
+discovery in those cases spends the 30,000-character budget building a cache nothing reads.
 
 Reuse `review-config.md`'s upward walk on the changed-file list (Step 1.1 / Step 1.2) to
 discover governing documents: nearest-package `CLAUDE.md`, matching `.claude/rules/*.md`,
