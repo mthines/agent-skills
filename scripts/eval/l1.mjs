@@ -625,6 +625,71 @@ function checksInSync(plan, checks) {
     s.check("G18g comment-relevance-memory.md still carries repo:: and loop::reviewer-comment-relevance",
       crm.includes("repo::") && crm.includes("loop::reviewer-comment-relevance"));
   }
+
+  // G19: the pr-reviewer posted review body uses a concise headline at the top level and the
+  // gate-status table lives only inside the Review diagnostics accordion.
+  // Reads the REAL shipped agents/pr-reviewer.md — never re-encode expected strings as
+  // a self-comparison (aw-lessons::mock-that-reimplements-the-thing-under-test).
+  // Mirrors the G18 literal-sentence + positional-slice idiom.
+  {
+    // G19a: the three concise headline sentences are present (PASS / WARN / FAIL).
+    // These are literal anchors grepped from the rewritten Step 4 section.
+    s.check("G19a pr-reviewer.md has the PASS concise headline",
+      prReviewer.includes("Reviewed your changes — no issues found."));
+
+    s.check("G19b pr-reviewer.md has the WARN concise headline led by WARN_GATE_COUNT",
+      prReviewer.includes("Reviewed your changes — no blocking issues; <WARN_GATE_COUNT> gate(s) flagged a warning.") &&
+      prReviewer.includes("See Review diagnostics."));
+
+    s.check("G19c pr-reviewer.md has the FAIL concise headline led by FAILING_GATE_COUNT",
+      prReviewer.includes("Reviewed your changes — <FAILING_GATE_COUNT> gate(s) need attention before human review.") &&
+      prReviewer.includes("<FAIL_BLOCKING_SUFFIX>"));
+
+    // G19d: in every Step-4 template block, every '| Gate | Status' line appears AFTER
+    // a '<summary>Review diagnostics' anchor — proving the table is inside the accordion,
+    // never between the <!-- PR_REVIEWER_REPORT --> marker and <sup>FOOTER_LINE</sup>.
+    // Slices only the Step-4 region (after '### Review body format', before
+    // '### INLINE_COMMENTS_JSON format') to avoid false-matching the Step-3 terminal
+    // tables at lines 818/844/870.
+    {
+      const step4Start = prReviewer.indexOf("### Review body format");
+      const step4End   = prReviewer.indexOf("### INLINE_COMMENTS_JSON format");
+      const step4      = prReviewer.slice(step4Start, step4End);
+      // Split on the opening PR_REVIEWER_REPORT marker to isolate each template block,
+      // then keep only real template blocks — those carrying the 'Reviewed your changes'
+      // headline. This drops the trailing prose (the Rules-for-table-cells section mentions
+      // the marker and the '| Gate | Status | Details |' header in backticks, which must not
+      // be mistaken for a top-level gate table).
+      const blocks     = step4.split("<!-- PR_REVIEWER_REPORT -->").slice(1)
+        .filter((b) => b.includes("Reviewed your changes"));
+      // For each block: if a gate table row is present it must appear AFTER the
+      // '<summary>Review diagnostics' line (i.e. inside the accordion).
+      let allTablesInsideAccordion = blocks.length >= 3;
+      for (const b of blocks) {
+        const gatePos = b.indexOf("| Gate | Status");
+        const diagPos = b.indexOf("<summary>Review diagnostics");
+        // Gate table present but accordion comes after (or is absent) → table is at top level.
+        if (gatePos !== -1 && (diagPos === -1 || gatePos < diagPos)) {
+          allTablesInsideAccordion = false;
+        }
+      }
+      s.check("G19d pr-reviewer.md Step-4 gate tables all appear inside the Review diagnostics accordion (not at top level)",
+        allTablesInsideAccordion);
+
+      // G19e: the review-body footer no longer carries the redundant CI-status sentence.
+      // The clause was dropped from every FOOTER_LINE variant; assert it is gone from the
+      // whole shipped file, not just Step 4 (the FOOTER_LINE definitions live in Step 4).
+      s.check("G19e pr-reviewer.md review-body footer dropped the 'CI status is shown' clause",
+        !prReviewer.includes("CI status is shown"));
+
+      // G19f: the gate table is now three columns with a per-gate Details column that shows a
+      // static description on a passing (✅) gate. Assert the '| Gate | Status | Details |'
+      // header and at least one verbatim static description string are present in Step 4.
+      s.check("G19f pr-reviewer.md Step-4 gate table is 3-column with a static description on ✅",
+        step4.includes("| Gate | Status | Details |") &&
+        step4.includes("The multi-lens review found no blocking issues."));
+    }
+  }
 }
 
 process.exit(s.report() ? 0 : 1);
