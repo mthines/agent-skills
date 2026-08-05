@@ -203,6 +203,64 @@ For backwards compatibility, a bare `per_comment_confidence_threshold: N` withou
 
 ---
 
+---
+
+## Standards
+
+`standards:` is an opt-in list of glob → standards-source entries that feed the
+`standards-conformance.md` lens (Step 2.4d).
+Each entry supplies additional normative documents or inline rules for files matching its glob.
+
+```yaml
+standards:
+  - path: "packages/api/**"          # glob the entry applies to
+    docs: ["docs/api-guidelines.md", "packages/api/CLAUDE.md"]   # loaded and enforced as standards
+    must:                             # inline normative rules (treated as "must:" statements)
+      - "Every endpoint validates input with a schema before use."
+      - "No raw SQL — use the query builder."
+```
+
+### Schema
+
+| Field | Required | Description |
+|---|---|---|
+| `path` | yes | Glob pattern matching the changed files this entry applies to |
+| `docs` | no | List of file paths to load as standards for matching changed files |
+| `must` | no | List of inline normative rule strings, each treated as a "must:" statement |
+
+At least one of `docs:` or `must:` must be present.
+
+### Merge rule
+
+`standards:` entries **concatenate** across the discovery hierarchy — identical to
+`path_instructions`.
+Entries from closer-to-the-changed-file `.review.yaml` files are listed first (higher
+precedence).
+A closer entry does not suppress a further entry; both apply.
+
+### `path_instructions` vs. `standards` — the key distinction
+
+These two config fields serve different purposes and should not be confused:
+
+**`path_instructions`** is a **confidence nudge**.
+It injects a glob-scoped instruction string into a finding's `Evidence` input at Step 2.7
+(`per-comment-confidence.md`), giving the confidence scorer additional context.
+It does not produce findings of its own; it only influences the scoring of findings that already
+exist.
+
+**`standards`** produces **real findings**.
+The standards-conformance lens (Step 2.4d) compares the diff against the normative statements
+loaded from `standards:` entries (and auto-discovered governing docs), and emits `issue:` /
+`suggestion:` findings for clearly violated rules.
+Each finding must cite the governing-doc `path:line` as grounding evidence and passes every
+downstream quality gate unchanged.
+
+Use `path_instructions` when you want the reviewer to weigh a contextual consideration during
+confidence scoring.
+Use `standards` when you want the reviewer to enforce a written rule as an explicit finding.
+
+---
+
 ## What this rule does not do
 
 - Define how rubrics are authored or loaded — that is `rubric-composition.md`.

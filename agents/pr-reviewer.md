@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: Code reviewer for GitHub PRs — both own PRs (self-relation) and someone else's PRs (cross-relation). Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Posts a single consolidated GitHub review — one gate-status table in the body plus inline findings — directly as a visible COMMENT event; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or via `Skill("pr-reviewer", "<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--skip-gates]")`.
+description: Code reviewer for GitHub PRs — both own PRs (self-relation) and someone else's PRs (cross-relation). Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Posts a single consolidated GitHub review — one gate-status table in the body plus inline findings — directly as a visible COMMENT event; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Default-on standards-conformance lens (Step 2.4d) enforces the repo's own governing docs (CLAUDE.md, AGENTS.md, .claude/rules/*.md, .review.yaml standards:) as real findings — skip with --no-standards. Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or via `Skill("pr-reviewer", "<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write
 model: opus
 ---
@@ -118,6 +118,7 @@ rule once at the step that owns it.
 - `agents/shared/rules/rubric-composition.md` — load + dedupe + consolidate code-quality / ux / critical / lenses.
 - `agents/shared/rules/holistic-review.md` — default-on intent-match + system-fit pass via `Skill("holistic-analysis", "review")`.
 - `agents/shared/rules/optimality-review.md` — default-on "is this the best approach" pass via `Skill("optimize-approach", "report")` (Step 2.4c); report-only in cross-review.
+- `agents/shared/rules/standards-conformance.md` — default-on governing-docs enforcement lens (Step 1.7b discovery + Step 2.4d lens); runs on every invocation unless `--no-standards`; produces `issue:` / `suggestion:` findings citing the governing-doc `path:line` as grounding evidence.
 - `agents/shared/rules/finding-grounding.md` — grep claimed symbols; drop on miss (Step 2.6).
 - `agents/shared/rules/verification-receipt.md` — executed proof for behavioral claims; drop on null result (Step 2.6b).
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ profile threshold (Step 2.7).
@@ -147,6 +148,7 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `--no-holistic` | Skip the holistic review step (Step 2.4) and targeted escalation (Step 2.4b) |
 | `--no-escalate` | Skip only the targeted holistic escalation (Step 2.4b) |
 | `--no-optimize` | Skip the optimality review step (Step 2.4c) |
+| `--no-standards` | Skip the standards-conformance review step (Step 2.4d) |
 | `--skip-gates` | Skip Gates 1–5, run inline review (Gate 6) only |
 | `--with a,b,c` | Up to 3 additional review lenses |
 
@@ -474,6 +476,22 @@ See `agents/shared/rules/review-config.md`. Absent `.review.yaml` defaults to
 `profile: balanced` — threshold 80, inline placement cap 5 per file, no filters, no path instructions.
 The cap governs placement only; overflow is deferred to the review body, never dropped.
 
+### 1.7b Load standards (default ON)
+
+See `agents/shared/rules/standards-conformance.md` § Step 1.7b — Standards discovery.
+Skip when `--no-standards` was passed or when the trivial-skip heuristic already fired.
+
+Reuse `review-config.md`'s upward walk on the changed-file list (Step 1.1 / Step 1.2) to
+discover governing documents: nearest-package `CLAUDE.md`, matching `.claude/rules/*.md`,
+`AGENTS.md`, and a bounded root `CLAUDE.md` slice.
+Merge any `.review.yaml` `standards:` entries whose glob covers each changed file (concatenation,
+closer-file-first, per `review-config.md § Standards`).
+Apply the 30,000-character nearest-first cap and log any dropped documents by path.
+Cache the result as `STANDARDS_DOCS` (path → normative bullets list) for Step 2.4d.
+
+Announce: `Standards discovery: <N> governing doc(s) loaded, <B> normative bullet(s) extracted.`
+When any documents are dropped: `Standards discovery: <D> doc(s) dropped (cap exceeded) — <paths>.`
+
 ---
 
 ## Step 1.8: Run pre-merge gate checks
@@ -612,6 +630,8 @@ rubrics + personas produce raw findings
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — default on)
   → 2.4c optimality-review.md         (Skill("optimize-approach", "report") — report-only; proposals exit
                                        via the review-body Optimality section, NOT the inline stream)
+  → 2.4d standards-conformance.md     (governing-docs enforcement — default on; skip via --no-standards or trivial-skip;
+                                       findings cite governing-doc path:line and pass all downstream gates)
   → 2.5  rubric-composition § Consolidation (dedupe + group + sort — no cap, nothing dropped)
   → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.5b prior-comment-awareness.md § Dedup (drop if already said in a prior review pass)
@@ -690,6 +710,25 @@ the skill's own `analysis_confidence` ≥ 85.
 Frame each proposal as a question — cross-review context asymmetry — and never let one drive the
 verdict. Emit the `Optimality review (2.4c)` log block in the diagnostics even when there are zero
 proposals.
+
+### 2.4d Standards conformance (default ON in `full` and `incremental` modes)
+
+See `agents/shared/rules/standards-conformance.md`. Skip via `--no-standards`, when the trivial-skip
+heuristic fired, or when `RUN_MODE == "incremental-quick"` (the delta is too small to warrant
+governing-doc comparison).
+
+Uses the `STANDARDS_DOCS` cache built in Step 1.7b.
+Emits `issue:` findings for violated "never" / "must" / "always" / "do not" / "forbidden" statements
+and `suggestion:` findings for violated "prefer X over Y" statements.
+Every finding carries the governing-doc `path:line` as grounding evidence and passes all downstream
+gates (2.5–2.9b) unchanged.
+
+Precedence: when a standards finding conflicts with the PR author's stated intent or a `.review.yaml`
+explicit override, the author-intent and config **win**; the conflict is surfaced in the diagnostics,
+not silently enforced.
+
+Emit the `Standards conformance (2.4d)` log block in the Quality Gate summary even when no findings
+are emitted, so a skipped run and a silent run are distinguishable.
 
 ### 2.5 Dedupe + consolidate
 
@@ -826,6 +865,9 @@ Both PASS and FAIL continue with:
 dedupe drops <D>, grounding drops <G>, confidence drops <C> (threshold <T>), shape drops <S>,
 cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
 CI: PASS or FAIL (check names if failing).
+Standards conformance (2.4d): <ran | skipped (reason)> · <N> docs · <FE> finding(s).
+When a standards finding conflicts with author-stated intent or an explicit `.review.yaml` entry,
+the author intent and config win; the conflict is surfaced in the diagnostics, not silently enforced.
 
 Optimality review (2.4c):
   Status:             ran | skipped (trivial diff) | skipped (--no-optimize) | skipped (incremental-quick) | skipped (skill not installed)
@@ -975,6 +1017,8 @@ MEMORIES_SECTION
 
 **Optimality (2.4c)** — <ran | skipped (reason)> · <UN> judged · <UO> optimal · <OP> proposal(s) · <OW> withheld
 
+**Standards (2.4d)** — <ran | skipped (reason)> · <N> docs · <FE> finding(s)
+
 **Skipped files** — <list or "none">
 
 <sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
@@ -1018,6 +1062,8 @@ MEMORIES_SECTION
 
 **Optimality (2.4c)** — <ran | skipped (reason)> · <UN> judged · <UO> optimal · <OP> proposal(s) · <OW> withheld
 
+**Standards (2.4d)** — <ran | skipped (reason)> · <N> docs · <FE> finding(s)
+
 **Skipped files** — <list or "none">
 
 <sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
@@ -1060,6 +1106,8 @@ MEMORIES_SECTION
 **Integrations** — <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
 
 **Optimality (2.4c)** — <ran | skipped (reason)> · <UN> judged · <UO> optimal · <OP> proposal(s) · <OW> withheld
+
+**Standards (2.4d)** — <ran | skipped (reason)> · <N> docs · <FE> finding(s)
 
 **Skipped files** — <list or "none">
 

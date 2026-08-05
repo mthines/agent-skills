@@ -507,6 +507,67 @@ function checksInSync(plan, checks) {
         found.length === 0, found.length ? `stale: ${[...new Set(found)].join(", ")}` : "");
     }
   }
+
+  // G17: standards-conformance.md exists and is wired into pr-reviewer.
+  // Each sub-check reads the REAL shipped file and asserts a literal anchor/string.
+  // Mirrors the G8d/G9c guard shape — never re-encode expected content inside the eval.
+  // Check-gaming is forbidden: these guards read the files under test, not a copy.
+  {
+    const sc = read("agents/shared/rules/standards-conformance.md");
+    // G17a: the rule file exists and declares itself default-on with --no-standards opt-out.
+    s.check("G17a standards-conformance.md exists and declares default-on + --no-standards opt-out",
+      sc.includes("standards-conformance") &&
+      /default.on/i.test(sc) &&
+      sc.includes("--no-standards"));
+
+    // G17b: the rule names review-config upward walk, states the 30,000-char cap,
+    // states drops are logged (never silent), and references the reused holistic-review trivial-skip.
+    s.check("G17b standards-conformance.md names review-config walk + 30000-char cap + log-drops + trivial-skip",
+      sc.includes("review-config") &&
+      (sc.includes("30,000") || sc.includes("30000")) &&
+      /log/i.test(sc) &&
+      sc.includes("trivial-skip"));
+
+    // G17c: review-config.md documents the standards: schema, its concatenation merge rule,
+    // and an explicit distinction between path_instructions (nudge) and standards (findings).
+    const rcFull = read("agents/shared/rules/review-config.md");
+    s.check("G17c review-config.md documents standards: schema + concatenation + path_instructions-vs-standards distinction",
+      rcFull.includes("standards:") &&
+      /concatenat/i.test(rcFull) &&
+      rcFull.includes("path_instructions") &&
+      rcFull.includes("standards"));
+
+    // G17d: the rule states never/must→issue and prefer→suggestion mapping,
+    // states narrative/aspirational prose is never flagged, and states doc path:line as grounding.
+    s.check("G17d standards-conformance.md states never/must→issue + prefer→suggestion + prose-never + path:line grounding",
+      /issue/i.test(sc) &&
+      /suggestion/i.test(sc) &&
+      /prefer/i.test(sc) &&
+      /narrative|aspirational/i.test(sc) &&
+      (/path:line/i.test(sc) || /grounding/i.test(sc)));
+
+    // G17e: pr-reviewer.md has a standards diagnostics line in the Review diagnostics block
+    // AND a precedence/conflict-surfacing statement.
+    s.check("G17e pr-reviewer.md has standards diagnostics line + precedence/conflict statement",
+      prReviewer.includes("Standards (2.4d)") &&
+      /precedence|conflict/i.test(prReviewer));
+
+    // G17f: pr-reviewer.md has --no-standards in the arg table AND the frontmatter description,
+    // standards-conformance.md in the Imports list, and 2.4d in the pipeline block.
+    s.check("G17f pr-reviewer.md has --no-standards (arg + frontmatter) + standards-conformance in Imports + 2.4d in pipeline",
+      prReviewer.includes("--no-standards") &&
+      prReviewer.includes("standards-conformance.md") &&
+      prReviewer.includes("2.4d"));
+
+    // G17g: CLAUDE.md and README.md each mention standards-conformance and --no-standards
+    // in the pr-reviewer context.
+    const claude = read("CLAUDE.md");
+    const readme = read("README.md");
+    s.check("G17g CLAUDE.md mentions standards-conformance + --no-standards in pr-reviewer context",
+      claude.includes("standards-conformance") && claude.includes("--no-standards"));
+    s.check("G17h README.md mentions standards-conformance + --no-standards in pr-reviewer context",
+      readme.includes("standards-conformance") && readme.includes("--no-standards"));
+  }
 }
 
 process.exit(s.report() ? 0 : 1);
