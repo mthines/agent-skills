@@ -876,7 +876,12 @@ Both PASS and FAIL continue with:
 dedupe drops <D>, grounding drops <G>, confidence drops <C> (threshold <T>), shape drops <S>,
 cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
 CI: PASS or FAIL (check names if failing).
-Standards conformance (2.4d): <ran | skipped (reason)> · <N> docs · <FE> finding(s).
+Standards conformance (2.4d):
+  Status:             ran | skipped (trivial diff) | skipped (--no-standards) | skipped (incremental-quick) | skipped (no governing docs found)
+  Docs discovered:    <N> (total normative bullets: <B>)
+  Docs dropped (cap): <D> (listed above)
+  Conflicts surfaced: <CON>
+  Findings emitted:   <FE>
 When a standards finding conflicts with author-stated intent or an explicit `.review.yaml` entry,
 the author intent and config win; the conflict is surfaced in the diagnostics, not silently enforced.
 

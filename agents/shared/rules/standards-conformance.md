@@ -196,8 +196,7 @@ Auto-discovered governing-doc statements are enforced only when:
 ## Logging
 
 Every run that reaches this step (not trivially skipped and not `--no-standards`) **must** render
-this block in the terminal Quality Gate summary and the `Review diagnostics` block of the review
-body:
+this block in the terminal Quality Gate summary:
 
 ```text
 Standards conformance (2.4d):
