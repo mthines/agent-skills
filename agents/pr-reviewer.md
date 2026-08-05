@@ -1033,13 +1033,13 @@ ADDITIONAL_FINDINGS_SECTION
 <details>
 <summary>Review diagnosticsMEMORIES_USED_SUFFIX</summary>
 
-| Gate | Status |
-|---|---|
-| Description vs. code | ✅ |
-| Prior bot feedback   | ✅ |
-| Documentation        | ✅ |
-| Self-review signals  | ✅ |
-| Code review          | ✅ |
+| Gate | Status | Details |
+|---|---|---|
+| Description vs. code | ✅ | The description matches what the diff does. |
+| Prior bot feedback   | ✅ | Earlier automated review comments are resolved. |
+| Documentation        | ✅ | The change is documented well enough to follow. |
+| Self-review signals  | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
+| Code review          | ✅ | The multi-lens review found no blocking issues. |
 
 **Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 
@@ -1080,11 +1080,11 @@ ADDITIONAL_FINDINGS_SECTION
 
 | Gate | Status | Details |
 |---|---|---|
-| Description vs. code | ✅ or ⚠️ | mismatch text or empty |
-| Prior bot feedback   | ✅ |  |
-| Documentation        | ✅ |  |
-| Self-review signals  | ✅ |  |
-| Code review          | ✅ or ⚠️ | "See inline comments" or finding text or empty |
+| Description vs. code | ✅ or ⚠️ | static description (on ✅) or mismatch text |
+| Prior bot feedback   | ✅ | Earlier automated review comments are resolved. |
+| Documentation        | ✅ | The change is documented well enough to follow. |
+| Self-review signals  | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
+| Code review          | ✅ or ⚠️ | static description (on ✅) or "See inline comments" or finding text |
 
 **Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 
@@ -1125,11 +1125,11 @@ ADDITIONAL_FINDINGS_SECTION
 
 | Gate | Status | Details |
 |---|---|---|
-| Description vs. code | ✅ or ⚠️ | mismatch text (≤ 120 chars) or empty cell |
-| Prior bot feedback   | ✅ or ❌ | finding text or empty cell |
-| Documentation        | ✅ or ❌ | finding text or empty cell |
-| Self-review signals  | ✅ or ❌ | finding text or empty cell |
-| Code review          | ✅, ⚠️, or ❌ | "See inline comments" or finding text or empty cell |
+| Description vs. code | ✅ or ⚠️ | static description (on ✅) or mismatch text (≤ 120 chars) |
+| Prior bot feedback   | ✅ or ❌ | static description (on ✅) or finding text |
+| Documentation        | ✅ or ❌ | static description (on ✅) or finding text |
+| Self-review signals  | ✅ or ❌ | static description (on ✅) or finding text |
+| Code review          | ✅, ⚠️, or ❌ | static description (on ✅) or "See inline comments" or finding text |
 
 **Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 
@@ -1257,11 +1257,24 @@ of the review body.
 
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
+- The table is always three columns — `| Gate | Status | Details |` — on the PASS (all-clear),
+  WARN, and FAIL bodies alike.
 - Details column: plain text only, max 120 chars per cell.
-  Truncate; the full finding lives in the inline comment.
-- On the all-clear PASS body (every gate ✅), omit the Details column (two-column table).
-  The WARN body (any soft gate ⚠️ — Description vs. code and/or Code review) and the FAIL body
-  keep the three-column table.
+- When a gate PASSES (✅), its Details cell shows the short static description of what the gate
+  checks, verbatim from the table below.
+- When a gate WARNS (⚠️) or FAILS (❌), its Details cell shows the specific finding text (max 120
+  chars — truncate; the full finding lives in the inline comment), exactly as before.
+
+Static descriptions (shown verbatim in the Details cell when the gate is ✅):
+
+| Gate | Static description (shown on ✅) |
+| --- | --- |
+| Description vs. code | The description matches what the diff does. |
+| Prior bot feedback | Earlier automated review comments are resolved. |
+| Documentation | The change is documented well enough to follow. |
+| Self-review signals | No debug logs, leftover TODOs, or unreviewed stubs. |
+| Code review | The multi-lens review found no blocking issues. |
+
 - Headline finding-count substitution: `N` = total surfaced findings = `F` (posted inline) +
   `DEF` (deferred); `K` = blocking count = inline findings whose prefix is `issue:`.
   These reuse the Quality-line values already computed at Step 2.9b — no separate counter.

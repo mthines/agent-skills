@@ -655,8 +655,13 @@ function checksInSync(plan, checks) {
       const step4Start = prReviewer.indexOf("### Review body format");
       const step4End   = prReviewer.indexOf("### INLINE_COMMENTS_JSON format");
       const step4      = prReviewer.slice(step4Start, step4End);
-      // Split on the opening PR_REVIEWER_REPORT marker to isolate each template block.
-      const blocks     = step4.split("<!-- PR_REVIEWER_REPORT -->").slice(1);
+      // Split on the opening PR_REVIEWER_REPORT marker to isolate each template block,
+      // then keep only real template blocks — those carrying the 'Reviewed your changes'
+      // headline. This drops the trailing prose (the Rules-for-table-cells section mentions
+      // the marker and the '| Gate | Status | Details |' header in backticks, which must not
+      // be mistaken for a top-level gate table).
+      const blocks     = step4.split("<!-- PR_REVIEWER_REPORT -->").slice(1)
+        .filter((b) => b.includes("Reviewed your changes"));
       // For each block: if a gate table row is present it must appear AFTER the
       // '<summary>Review diagnostics' line (i.e. inside the accordion).
       let allTablesInsideAccordion = blocks.length >= 3;
@@ -676,6 +681,13 @@ function checksInSync(plan, checks) {
       // whole shipped file, not just Step 4 (the FOOTER_LINE definitions live in Step 4).
       s.check("G19e pr-reviewer.md review-body footer dropped the 'CI status is shown' clause",
         !prReviewer.includes("CI status is shown"));
+
+      // G19f: the gate table is now three columns with a per-gate Details column that shows a
+      // static description on a passing (✅) gate. Assert the '| Gate | Status | Details |'
+      // header and at least one verbatim static description string are present in Step 4.
+      s.check("G19f pr-reviewer.md Step-4 gate table is 3-column with a static description on ✅",
+        step4.includes("| Gate | Status | Details |") &&
+        step4.includes("The multi-lens review found no blocking issues."));
     }
   }
 }
