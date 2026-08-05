@@ -2,7 +2,6 @@
 title: Thread resolution — auto-resolve addressed threads and record the outcome on re-review
 impact: HIGH
 tags:
-  - reviewer
   - pr-reviewer
   - incremental
   - thread-resolution

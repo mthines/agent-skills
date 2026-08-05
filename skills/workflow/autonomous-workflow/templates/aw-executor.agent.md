@@ -128,13 +128,12 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 4     | `holistic-analysis`    | Auto-replan only — `confidence(analysis) < 90%` (one-shot)       | —                |
 | 4     | `lorekit-memory`       | At stuck-loop escalation — record failing area + resolution          | `memory.write loop::aw-lessons` |
 | 5     | `docs`                 | Always (with skip conditions per phase-5 rule)                       | `update --auto`  |
-| 6     | `reviewer` *(agent)*   | Always before push — dispatched directly via the Agent tool (Fix Mode on own branch; auto-fix every Simple finding across all severities) | `--critical` + auto-fix-all prompt |
-| 6     | `aw-review-quality-gate` | After the `reviewer` agent returns findings (false-positive filter; advisory) | —          |
+| 6     | `aw-review-quality-gate` | After `create-pr`'s review-loop returns findings (false-positive filter; advisory) | —     |
 | 6     | `aw-create-walkthrough` | Full Mode only                                                      | —                |
-| 6     | `create-pr`            | Always                                                               | —                |
+| 6     | `create-pr`            | Always — push, open draft PR, run review-loop, watch CI             | —                |
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                               | `<run-id\|pr-url>` |
 | 7 (UI)| `aw-tester` *(agent)*  | After CI green — spec rehearsal against preview URL (advisory; skips if no preview URL or no specs.md) | `specs.md + preview-aw-target + --all` |
-| 7     | `reviewer` *(agent)*   | After CI green — dispatched as `subagent_type: reviewer` (PR self-review sub-mode for self-authored PRs: `--critical` + auto-fix every Simple finding regardless of severity, inline report; cross-author PRs redirect to `pr-reviewer`) | `<pr-url> --critical` + auto-fix-all prompt |
+| 7     | `review-loop` *(skill)* | After CI green — bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence (self-relation; `pr-reviewer` detects authorship automatically) | `<pr-url> --critical` |
 | 7     | `lorekit-memory`       | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `memory.write loop::aw-lessons` |
 
 ## Spec-Driven UI Verification (Phase 4, before lint/type/test)
@@ -253,7 +252,7 @@ Non-relaxable integrity rules:
 - **Abort affordance:** a check that is unsatisfiable as specified gets
   `status: unsatisfiable` and a user escalation with evidence — use this
   path; do not iterate toward a workaround.
-- **All-green is necessary, not sufficient** — the test suite, `reviewer`
+- **All-green is necessary, not sufficient** — the test suite, `review-loop`
   dispatch, and Phase 7 gates still run unchanged.
 
 ## Universal Rules

@@ -200,14 +200,14 @@ Everything else (`Demoted`, `Judgment proposals`, `Maintainability`, `Correctnes
 
 ---
 
-## Boundary with the `reviewer` agent Fix Mode
+## Boundary with the `pr-reviewer` agent self-mode auto-fix
 
-`reviewer`'s **Fix Mode** (own branch, no PR) also auto-applies fixes to owned files — its scope is lint / typo / dead-code class fixes ([`agents/reviewer/rules/auto-fix-policy.md`](../../../../agents/reviewer/rules/auto-fix-policy.md)). Both tools can land on the same lines (R35 ↔ "verbose comment", R17 remove ↔ "dead code", R2 ↔ "duplicated constant").
+`pr-reviewer` in self mode (own PR) also auto-applies fixes to owned files — its scope is lint / typo / dead-code class findings surfaced by the review pass. Both tools can land on the same lines (R35 ↔ "verbose comment", R17 remove ↔ "dead code", R2 ↔ "duplicated constant").
 
 Sequencing rule when both are invoked on the same diff:
 
-1. **`reviewer` Fix Mode runs first.** Reviewer's auto-fix set is a strict subset of what `simplify` covers, and Reviewer's checks include lint-class fixes that may shift line numbers `simplify` keys on.
-2. **`simplify` runs second.** After Reviewer finishes (or if Reviewer is not invoked at all), `simplify` operates on the post-Reviewer working tree.
+1. **`pr-reviewer` self-mode auto-fix runs first.** The review pass auto-fix set is a strict subset of what `simplify` covers, and its checks include lint-class fixes that may shift line numbers `simplify` keys on.
+2. **`simplify` runs second.** After the review pass finishes (or if it is not invoked at all), `simplify` operates on the post-review working tree.
 3. **Never invoke them in parallel.** Both write to owned files. There is no shared lock; concurrent writes produce a corrupted working tree.
 
 If a `simplify` finding's file:line was already touched by Reviewer in this session, `simplify` must re-run the review pass (Step 1) on that file before applying — the cached finding may be stale.

@@ -2,7 +2,6 @@
 title: Finding grounding — claimed symbols must exist
 impact: HIGH
 tags:
-  - reviewer
   - pr-reviewer
   - grounding
   - false-positive-control
@@ -39,7 +38,7 @@ done
 
 In PR Mode (cross-review), pull the file's patch from the already-cached `/tmp/pr-files.json` (see `pr-reviewer/rules/line-validity.md`). The patch contains both context (` `-prefix) and added (`+`-prefix) lines. Strip the `+` / ` ` prefix before grepping. Do **not** include `-`-prefix (deleted) lines — a comment pinned to the RIGHT side cannot validly name a deleted symbol.
 
-In `reviewer` Self-Review and Fix Mode, use the local working tree at HEAD.
+In `pr-reviewer` self mode (Self-Review / Fix), use the local working tree at HEAD.
 
 ## Tokens that bypass the check
 

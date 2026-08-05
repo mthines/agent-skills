@@ -387,8 +387,7 @@ comment-relevance memory for each measured comment:
 - Signal (b) — author reply correcting the finding, no fix commit → write `not-relevant / wont-fix`.
 - PR merged with thread open, no fix, no decline → write `weak-not-relevant / ignored-at-merge`.
 
-Use the same `memory.write` call format above, with `source_agent: "reviewer"` or
-`source_agent: "pr-reviewer"` and `trigger: "post-merge-outcome"`.
+Use the same `memory.write` call format above, with `source_agent: "pr-reviewer"` and `trigger: "post-merge-outcome"`.
 
 ---
 

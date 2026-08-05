@@ -322,83 +322,66 @@ Never auto-undraft. The verifier is advisory; the human is the gatekeeper.
 
 ## Auto Review
 
-After CI is green, automatically dispatch the `reviewer` agent in **PR Mode** with `--critical` and the auto-fix-everything-Simple prompt. Because Phase 7 PRs are always self-authored (aw-executor opens them), the reviewer enters **PR (self-review)** sub-mode: auto-fix runs across every severity bucket (Critical / High / Medium / Low / Nitpick / Nice-to-have), and findings are emitted as an inline terminal report (Step 5.8). No pending GitHub comments are posted. **`reviewer` is an optional agent companion**, not a skill — invocation and graceful-skip semantics differ slightly from `Skill()`-based companions.
+After CI is green, automatically run `review-loop` against the PR with `--critical`.
+Because Phase 7 PRs are always self-authored (aw-executor opens them), `pr-reviewer`
+sets `REVIEW_RELATION = self` automatically in Step 0.5.
+The loop runs `pr-reviewer` → `implement-suggestion` → `polish simplify` up to 3 iterations
+(or until PASS-no-blockers), posts a visible `COMMENT` review, and applies findings inline.
+**`review-loop` is a skill companion**, invoked via `Skill()`.
 
 | Property                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
 | Runs in Full Mode         | Yes                                                                    |
 | Runs in Lite Mode         | Yes                                                                    |
 | Skips silently if missing | Yes — log one line and continue to cleanup step                        |
-| Posts comments live?      | No — self-review sub-mode: reviewer auto-fixes and emits inline terminal report (Step 5.8) |
-| Args                      | `<pr-url> --critical` plus the auto-fix-everything-Simple instruction in the prompt body |
+| Posts comments live?      | Yes — `pr-reviewer` posts one visible `COMMENT` review per iteration   |
+| Args                      | `<pr-url> [--critical]` passed to `review-loop`                       |
 | Disable                   | Remove this section; CI green becomes the terminal gate                |
 
-**Why `--critical` here as well as in Phase 6?** Phase 6 reviews the working tree on the own branch (Fix Mode); Phase 7 reviews the merged-state of the open PR (Self-Review sub-mode). Each pass sees a different surface — Phase 6 catches issues before push, Phase 7 catches anything that emerged from CI's perspective or that the user added between Phase 6 and PR open. Both passes run the adversarial pre-mortem.
+**Why a post-CI review pass?** Phase 6 runs the review-loop before CI completes;
+Phase 7 runs it again after CI is green, when the merged state is settled and CI feedback
+may have prompted further commits. The two passes catch issues at different lifecycle points
+and together ensure the PR is clean before the user undrafts.
 
-### Step 1: Detect the `reviewer` agent
+### Step 1: Detect `review-loop`
 
-Check the three locations the harness loads agent definitions from. Stop at the first hit:
+Check for the skill in the standard locations:
 
 ```bash
-# Project-scoped (highest priority)
-[ -f ".claude/agents/reviewer.md" ] && REVIEWER_AVAILABLE=1
-
-# Cross-tool discovery dir (used by Codex, Cursor, OpenCode, …)
-[ -z "$REVIEWER_AVAILABLE" ] && [ -f "$HOME/.agents/agents/reviewer.md" ] && REVIEWER_AVAILABLE=1
-
-# Global Claude Code dir
-[ -z "$REVIEWER_AVAILABLE" ] && [ -f "$HOME/.claude/agents/reviewer.md" ] && REVIEWER_AVAILABLE=1
+[ -f "$HOME/.claude/skills/review-loop/SKILL.md" ] && REVIEW_LOOP_AVAILABLE=1
+[ -z "$REVIEW_LOOP_AVAILABLE" ] && [ -f "$HOME/.agents/skills/review-loop/SKILL.md" ] && REVIEW_LOOP_AVAILABLE=1
 ```
 
-If none of the paths resolve, log and skip:
+If not found, log and skip:
 
 ```markdown
-- [TIMESTAMP] Phase 7: reviewer — not available, continuing (install `agents/reviewer.md` from agent-skills.git into one of: `.claude/agents/`, `~/.agents/agents/`, `~/.claude/agents/`)
+- [TIMESTAMP] Phase 7: review-loop — not available, continuing (install review-loop skill from agent-skills.git)
 ```
 
 Then proceed to [Optional Post-Merge Cleanup](#optional-post-merge-cleanup).
 
-### Step 2: Dispatch the `reviewer` sub-agent
-
-Spawn one sub-agent with `subagent_type: reviewer` and pass the PR URL plus `--critical`. The reviewer will detect self-authorship via Rule 0 and enter PR (self-review) sub-mode automatically: auto-fix actionable findings across every severity bucket, then emit findings as an inline terminal report (Step 5.8).
+### Step 2: Invoke `review-loop`
 
 ```
-description: Auto-review PR after CI green (critical, autofix all)
-subagent_type: reviewer
-prompt: |
-  <pr-url> --critical
-
-  Phase 7 of the autonomous-workflow has just turned CI green on a self-authored
-  PR. Run a full PR review. The reviewer will detect self-authorship via Rule 0
-  (gh api user vs pr author) and enter PR (self-review) sub-mode automatically.
-
-  Auto-fix scope — apply auto-fix for ALL severities (Critical / High / Medium /
-  Low / Nitpick / Nice-to-have) where the auto-fix policy classifies the finding
-  as Simple (typos, unused imports, lint/format errors, dead code, comment trims
-  under R35, whitespace, obvious type annotations). Do not skip Nitpick /
-  Nice-to-have findings — the auto-fix policy's Simple-vs-Complex split is the
-  safety floor, not the severity bucket. Complex findings (signature changes,
-  public renames, >10-line edits, generated/migration/lock files) stay
-  propose-only per `agents/reviewer/rules/auto-fix-policy.md`.
-
-  --critical forces the adversarial pre-mortem via `Skill("critical", "code")`
-  even on a low-stakes diff; surface its findings inline.
-
-  Emit the inline terminal report (Step 5.8) — do not post pending GitHub
-  comments.
+Skill("review-loop", "<pr-url> --critical")
 ```
 
-Do **not** wrap the sub-agent call in a retry loop — `reviewer` owns its own validation.
+`pr-reviewer` detects self-authorship via `REVIEW_RELATION` in Step 0.5 automatically.
+The loop applies findings via `implement-suggestion` and runs `polish simplify` each iteration.
+Complex findings that the loop cannot apply are surfaced to the user inline.
+
+Do **not** wrap in a retry loop — `review-loop` owns its own iteration cap.
 
 ### Step 3: Log and hand back
 
-When the sub-agent returns, log:
+When the skill returns, log:
 
 ```markdown
-- [TIMESTAMP] Phase 7: reviewer — self-review complete (N findings; M auto-fixed; inline report above)
+- [TIMESTAMP] Phase 7: review-loop — self-review complete (N iterations; M findings applied; inline report above)
 ```
 
-Tell the user: PR URL, that the reviewer auto-fixed M issues and surfaced N findings inline above, and that they should review the Critical and High items before undrafting. Then proceed to [Optional Post-Merge Cleanup](#optional-post-merge-cleanup).
+Tell the user: PR URL, that the review-loop applied M findings and surfaced any remaining blockers inline, and that they should review before undrafting.
+Then proceed to [Optional Post-Merge Cleanup](#optional-post-merge-cleanup).
 
 ## Optional Post-Merge Cleanup
 
@@ -541,7 +524,7 @@ Disable by removing this invocation (see
 - [ ] CI is green OR user has approved stopping
 - [ ] (Optional, UI tasks) `aw-tester` spec rehearsal dispatched against preview URL; verdict surfaced or skip logged
 - [ ] (Optional, Full Mode) `feature-pr-verifier` agent dispatched after CI green; verdict surfaced or skip logged
-- [ ] (Optional) `reviewer` agent dispatched after CI green with `--critical` + auto-fix-all-Simple-severities; inline report surfaced or skip logged
+- [ ] (Optional) `review-loop` invoked after CI green with `--critical`; inline report surfaced or skip logged
 - [ ] (Optional) PR merged → worktree removed with user confirmation
 - [ ] `lorekit(memory.write aw-lessons)` invoked at end-of-run; promotion suggested if `seen_count >= 3` (anchor: `lessons-write`)
 - [ ] Final status reported to user
@@ -552,8 +535,8 @@ Disable by removing this invocation (see
 - Related rule: [phase-4-spec-verification](./phase-4-spec-verification.md) — Phase 4 spec runner (local)
 - Companion registry: [companion-skills.md](./companion-skills.md)
 - Related skill: [ci-auto-fix](../../../delivery/ci-auto-fix/SKILL.md)
+- Related skill: [review-loop](../../../quality/review-loop/SKILL.md) — optional Phase 7 auto-review (self-relation)
 - Related skill: [create-pr — Step 8 parallel pattern](../../../delivery/create-pr/SKILL.md)
 - Related agent: [aw-tester](../templates/aw-tester.agent.md) — optional Phase 7 spec rehearsal (UI tasks)
-- Related agent: [reviewer](../../../../agents/reviewer.md) — optional Phase 7 auto-review
 - Related agent: [feature-pr-verifier](../../../../agents/feature-pr-verifier.md) — optional Phase 7 auto-verify (Full Mode)
 - Without `gw`, clean up natively: `git worktree remove <path>` then `git branch -d <branch>` (Step 3 above shows the full commands).

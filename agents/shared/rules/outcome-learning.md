@@ -156,7 +156,7 @@ When promoting:
 **Lesson record shape.**
 Every `reviewer-lessons` write conforms to the shared lesson-scope schema owned by [`write-pipeline.md § Lesson-scope entries`](../../../skills/authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries), via the [`lesson-entry.md`](../../../skills/authoring/persistent-memory/templates/lesson-entry.md) template.
 The `value` MUST carry `trigger-context` (a concrete matching signal — a file glob, task type, or integration/tech name, never a subjective condition), `expires` (ISO 8601, default now + 90 days, refreshed on each re-sighting), `seen_count`, and `status`.
-`trigger-context` is what lets the `reviewer` / `pr-reviewer` read step match a lesson mechanically against a run (`reviewer.md` Step 0.7 / `pr-reviewer.md` Step 1.0); `expires` is entrenchment guard #3 — without it a stale lesson never decays.
+`trigger-context` is what lets the `pr-reviewer` read step match a lesson mechanically against a run (`pr-reviewer.md` Step 0.7 / Step 1.0); `expires` is entrenchment guard #3 — without it a stale lesson never decays.
 A write missing either field is malformed.
 
 ### From `applied` verdicts (positive lesson)
@@ -210,7 +210,7 @@ Outcome signals add a parallel gate:
 
 ## What this does not change
 
-- The existing `reviewer-lessons` fast-tier read/write contract in `reviewer.md` Step 0.7.
+- The existing `reviewer-lessons` fast-tier read/write contract in `pr-reviewer.md` Step 0.7.
 - The `seen_count` UPDATE contract (schema owned by `persistent-memory/rules/write-pipeline.md`; the loops persist it on LoreKit).
 - The two-scope lesson storage model (`global` vs repo-specific `repo::{owner}/{repo}`).
 - The per-comment confidence threshold (still 80 — outcome signals inform lessons, not the per-run gate).

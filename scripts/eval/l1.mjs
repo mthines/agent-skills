@@ -294,7 +294,6 @@ function checksInSync(plan, checks) {
   const reviewMode = read("skills/analysis/holistic-analysis/rules/review-mode.md");
   const holisticReview = read("agents/shared/rules/holistic-review.md");
   const prReviewer = read("agents/pr-reviewer.md");
-  const reviewerAgent = read("agents/reviewer.md");
 
   // G8a: review-mode declares the `focus` input with all four sub-keys.
   const focusKeys = ["file:", "line:", "symbol:", "finding:"];
@@ -310,25 +309,20 @@ function checksInSync(plan, checks) {
   s.check("G8c holistic-review escalation cap is 10, not 3",
     /up to \*\*10\*\*/.test(holisticReview));
 
-  // G8d: both agents wire Step 2.4b into their pipeline and expose the right opt flag —
-  // pr-reviewer default-on with --no-escalate, reviewer opt-in with --escalate.
+  // G8d: pr-reviewer is the sole review agent; it wires 2.4b default-on with --no-escalate.
+  // (reviewer agent retired — pr-reviewer self/cross relation handles both modes.)
   s.check("G8d pr-reviewer wires 2.4b + --no-escalate",
     prReviewer.includes("2.4b") && prReviewer.includes("--no-escalate"));
-  s.check("G8d reviewer wires 2.4b + --escalate opt-in",
-    reviewerAgent.includes("2.4b") && reviewerAgent.includes("--escalate"));
 
-  // G9: verification-receipt (Step 2.6b) is wired into BOTH agents' pipeline blocks
+  // G9: verification-receipt (Step 2.6b) is wired into pr-reviewer's pipeline block
   // in the same position (after 2.6 grounding, before 2.7 confidence).
-  // This guards against one agent drifting out of sync.
+  // pr-reviewer is the sole review agent since the reviewer agent was retired.
   const verificationReceipt = read("agents/shared/rules/verification-receipt.md");
   s.check("G9a verification-receipt.md declares Step 2.6b",
     verificationReceipt.includes("2.6b") && verificationReceipt.includes("verification-receipt"));
   s.check("G9b verification-receipt.md declares null-result DROP rule",
     /null.*DROP|DROP.*null/i.test(verificationReceipt) || verificationReceipt.includes("null result = DROP") ||
     verificationReceipt.includes("null or empty proof result DROPS"));
-  s.check("G9c reviewer.md wires 2.6b between 2.6 and 2.7",
-    /2\.6[^\n]*grounding[^\n]*\n[^\n]*2\.6b[^\n]*\n[^\n]*2\.7/m.test(reviewerAgent) ||
-    (reviewerAgent.includes("2.6b") && reviewerAgent.includes("verification-receipt")));
   s.check("G9c pr-reviewer.md wires 2.6b between 2.6 and 2.7",
     prReviewer.includes("2.6b") && prReviewer.includes("verification-receipt"));
 
@@ -343,11 +337,11 @@ function checksInSync(plan, checks) {
   s.check("G10c per-comment-confidence.md still documents threshold default of 80",
     read("agents/shared/rules/per-comment-confidence.md").includes("80"));
 
-  // G11: both agents' diagnostic-surface Phase model tables include the new phases
+  // G11: pr-reviewer's diagnostic-surface Phase model table includes the new phases
   // 1.0, 1.7, 2.5b, 2.6b — failure taxonomy is append-only; verify new rows exist.
-  const reviewerDiag = read("agents/reviewer/rules/diagnostic-surface.md");
+  // (reviewer agent retired — only pr-reviewer remains; it handles self + cross via REVIEW_RELATION.)
   const prReviewerDiag = read("agents/pr-reviewer/rules/diagnostic-surface.md");
-  for (const [label, content] of [["reviewer", reviewerDiag], ["pr-reviewer", prReviewerDiag]]) {
+  for (const [label, content] of [["pr-reviewer", prReviewerDiag]]) {
     s.check(`G11 ${label} diagnostic-surface has phase 1.7 (review config load)`,
       content.includes("1.7") && content.includes("review-config"));
     s.check(`G11 ${label} diagnostic-surface has phase 2.5b (prior-comment dedup)`,

@@ -5,7 +5,8 @@ tags:
   - pr
   - delivery
   - phase-6
-  - reviewer
+  - review-loop
+  - pr-reviewer
   - aw-create-walkthrough
   - create-pr
 ---
@@ -17,7 +18,7 @@ tags:
 - [Overview](#overview)
 - [Core Principles](#core-principles)
 - [Procedure (Order of Operations)](#procedure-order-of-operations)
-- [Pre-Push Review](#pre-push-review)
+- [Post-Draft Review](#post-draft-review)
 - [Findings Quality Gate](#findings-quality-gate)
 - [Walkthrough](#walkthrough)
 - [PR Creation](#pr-creation)
@@ -29,31 +30,30 @@ tags:
 Hand the work off to the user as a reviewable DRAFT pull request — but only after a quality review and (in Full Mode) a generated walkthrough. This phase is orchestrated almost entirely through companion skills:
 
 1. Pre-flight checks pass (build, lint, tests).
-2. The `reviewer` agent (dispatched directly via the Agent tool, `--critical`) catches quality and correctness issues before they go up.
-3. `Skill("aw-create-walkthrough")` (Full Mode) generates `.agent/{branch}/walkthrough.md`.
-4. `Skill("create-pr")` writes the narrative description, pushes, opens the draft PR, and watches CI initialization.
-5. The walkthrough content is shown inline in the conversation. **The PR is not "delivered" until the user has seen the walkthrough.**
+2. `Skill("aw-create-walkthrough")` (Full Mode) generates `.agent/{branch}/walkthrough.md`.
+3. `Skill("create-pr")` writes the narrative description, pushes, opens the draft PR, runs the `review-loop` against the draft, and watches CI initialization.
+4. The walkthrough content is shown inline in the conversation. **The PR is not "delivered" until the user has seen the walkthrough.**
 
 Gate: walkthrough shown in chat, draft PR opened, CI watch started.
 
 ## Core Principles
 
 - **Pre-flight validation**: build/lint/test must pass before invoking any companion.
-- **Review before pushing**: every PR gets the `reviewer` agent (`--critical`, auto-fix all severities) dispatched first.
+- **Draft PR first, then review**: open the draft PR, then let `create-pr` run `review-loop` against it (`pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 3 iterations).
+- **Review is read-only at the PR level**: `pr-reviewer` posts findings; `implement-suggestion` applies them; `polish simplify` cleans up. No pre-push autofix from a retired agent.
 - **Draft PR only**: never mark ready-to-merge automatically.
 - **Show the walkthrough**: blocking — output the walkthrough content in chat after PR creation.
 - **Preserve the worktree**: user may want to review or iterate locally; cleanup is Phase 7.
 
 ## Procedure (Order of Operations)
 
-| Step | Action                                                                  | Required in     |
-| ---- | ----------------------------------------------------------------------- | --------------- |
-| 1    | Pre-flight checks (clean tree, build, lint, test)                       | Full + Lite     |
-| 2    | `Agent(subagent_type: "reviewer", --critical, auto-fix all severities)` | Full + Lite     |
-| 3    | `Skill("aw-create-walkthrough")` → `.agent/{branch}/walkthrough.md`     | **Full only**   |
-| 4    | `Skill("create-pr")` → push, open draft, watch initial CI               | Full + Lite     |
-| 5    | Show `walkthrough.md` content inline in conversation                    | **Full only**   |
-| 6    | Report PR URL + summary, log Progress                                   | Full + Lite     |
+| Step | Action                                                                        | Required in     |
+| ---- | ----------------------------------------------------------------------------- | --------------- |
+| 1    | Pre-flight checks (clean tree, build, lint, test)                             | Full + Lite     |
+| 2    | `Skill("aw-create-walkthrough")` → `.agent/{branch}/walkthrough.md`           | **Full only**   |
+| 3    | `Skill("create-pr")` → push, open draft PR, run review-loop, watch initial CI | Full + Lite     |
+| 4    | Show `walkthrough.md` content inline in conversation                          | **Full only**   |
+| 5    | Report PR URL + summary, log Progress                                         | Full + Lite     |
 
 ### Step 1: Pre-Flight Validation
 
@@ -67,49 +67,31 @@ git status
 npm test && npm run build && npm run lint
 ```
 
-**If ANY check fails: stop, fix, re-run from Phase 3 or 4 as appropriate. Do NOT continue to review/PR.**
+**If ANY check fails: stop, fix, re-run from Phase 3 or 4 as appropriate. Do NOT continue to walkthrough/PR.**
 
-## Pre-Push Review
+## Post-Draft Review
 
-**Anchor:** `pre-push-review`
+After the draft PR is open, `create-pr` runs the `review-loop` skill against it (`pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 3 iterations with early exit on PASS-no-blockers). The executor invokes `create-pr` bare — `create-pr` drives the loop internally.
 
-ALWAYS dispatch the `reviewer` agent before pushing — directly via the Agent tool, not through `Skill("review-changes")`. Purpose: catch quality and correctness issues before they reach the PR. `review-changes` is a slash-only router (`disable-model-invocation: true`), so the workflow invokes the reviewer agent itself.
+The `review-loop` posts a `COMMENT` review via `pr-reviewer` (with `REVIEW_RELATION = self` since the executor authored the PR), applies findings via `implement-suggestion`, and runs `polish simplify` each iteration.
+`pr-reviewer` loads the `code-quality` rubric on substantive diffs and walks the full review checklist — not just the comment pass.
+Expect findings across correctness, holistic intent/system-fit, naming, complexity, comments, error handling, and (with `--critical`) the adversarial pre-mortem.
 
-```
-Agent(
-  description: "Pre-push self-review with critical pre-mortem",
-  subagent_type: "reviewer",
-  prompt: "Pre-push review of the working tree on the autonomous-workflow's own branch. --critical\n\nApply auto-fix for ALL severities (Critical / High / Medium / Low / Nitpick / Nice-to-have) where the auto-fix policy classifies the finding as Simple — typos, unused imports, lint/format errors, dead code, comment trims (R35), whitespace, obvious annotations. Complex findings (signature changes, public renames, >10-line edits, generated/migration/lock files) stay propose-only per `agents/reviewer/rules/auto-fix-policy.md`.\n\nFollow the agent's standard pipeline; Rule 0 detects this is your own branch and selects Fix Mode. Emit the inline terminal report at the end."
-)
-```
-
-`--critical` forces the adversarial pre-mortem via `Skill("critical", "code")` even on a low-stakes diff, and the prompt names every severity bucket so the reviewer does not skip Nitpick / Nice-to-have findings — the auto-fix-policy's Simple-vs-Complex split is the safety floor, not the severity bucket.
-
-This is the workflow's final structural review. The reviewer agent loads the
-`code-quality` rubric on substantive diffs and walks the full review
-checklist — not just the comment pass. Expect findings (and auto-fixes) across:
-
-- **Structure** — function length, nesting, single responsibility, guard clauses (Pass 1).
-- **Naming** — domain accuracy, boolean phrasing, noise words (Pass 2).
-- **Cognitive complexity** — top-to-bottom readability per function (Pass 3).
-- **Comments** — every comment earns its place, **no verbose multi-paragraph blocks** (apply **R35** to trim), no commented-out code, no orphan TODOs (Pass 4).
-- **Error handling, type-driven design, architecture, API design, correctness, testability, collaboration, future-proofing** — Passes 5–14.
-- **Adversarial pre-mortem** (`--critical`) — failure-mode taxonomy, blast radius, rollback, hidden coupling, mandatory steelman of one alternative.
-
-The autonomous-workflow runs as the PR author, so the reviewer is invoked on the own-branch (no PR yet) and lands in **Fix Mode**: simple findings auto-applied to the working tree before the PR opens; complex findings surfaced in the inline terminal report (with fix plans) for the user to act on.
+The `review-loop` skill gracefully skips if not installed — log one line and continue.
 
 | Property                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
 | Runs in Full Mode         | Yes                                                                    |
 | Runs in Lite Mode         | Yes                                                                    |
-| Skips silently if missing | Yes — if `reviewer.md` is not installed at any of `.claude/agents/reviewer.md`, `~/.agents/agents/reviewer.md`, `~/.claude/agents/reviewer.md`, log and continue with manual diff review |
-| Disable                   | Remove this section (not recommended; you lose the pre-push safety net)|
+| Skips silently if missing | Yes — if `review-loop` and `pr-reviewer` are absent, log and continue with manual diff review |
+| Disable                   | Pass `--no-quality` to `create-pr` (not recommended; you lose the post-draft safety net) |
 
 ## Findings Quality Gate
 
 **Anchor:** `findings-quality-gate`
 
-Before acting on the review output, run the optional false-positive filter over the findings list:
+`create-pr`'s `review-loop` handles the review → apply → simplify cycle.
+If needed, run the optional false-positive filter over the final findings list:
 
 ```
 Skill("aw-review-quality-gate")     # skips silently if not installed
@@ -124,7 +106,7 @@ The gate is advisory — it filters review noise; it never blocks the phase.
 | Runs in Full Mode         | Yes                                                                    |
 | Runs in Lite Mode         | Yes                                                                    |
 | Skips silently if missing | Yes — act on the raw findings list, log and continue                   |
-| Disable                   | Remove this section; the raw `reviewer` output is used directly        |
+| Disable                   | Remove this section; the raw `pr-reviewer` output is used directly     |
 
 Log to Progress Log:
 
@@ -135,22 +117,22 @@ Log to Progress Log:
 
 Handle the (filtered) review output:
 
-| Reviewer verdict       | Action                                                                            |
-| ---------------------- | --------------------------------------------------------------------------------- |
-| No blocking issues     | Continue to walkthrough / PR creation                                             |
-| Suggestions only       | Decide per suggestion: apply now, defer to follow-up, or note in PR description   |
-| Blocking issues        | Fix in this branch, re-run pre-flight checks, then re-dispatch the `reviewer` agent |
+| Verdict                | Action                                                                              |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| No blocking issues     | Continue to walkthrough / PR creation                                               |
+| Suggestions only       | Decide per suggestion: apply now, defer to follow-up, or note in PR description     |
+| Blocking issues        | Fix in this branch, re-run pre-flight checks, then re-run `review-loop`             |
 
 Log to Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 6: reviewer (pre-push, --critical) — invoked (N findings; M auto-fixed; 0 blocking)
+- [TIMESTAMP] Phase 6: review-loop — invoked (N iterations; M findings applied; 0 blocking remaining)
 ```
 
-Or, if the reviewer agent is missing:
+Or, if `review-loop` is missing:
 
 ```markdown
-- [TIMESTAMP] Phase 6: reviewer — not available, continuing (install `agents/reviewer.md` from agent-skills.git into one of: `.claude/agents/`, `~/.agents/agents/`, `~/.claude/agents/`)
+- [TIMESTAMP] Phase 6: review-loop — not available, continuing (install review-loop skill from agent-skills.git)
 ```
 
 ## Walkthrough
@@ -178,7 +160,7 @@ Log to Progress Log:
 
 ## PR Creation
 
-Invoke `create-pr` to handle the rest of the delivery in one go: a **pre-push quality pass**, narrative description generation, push, open the draft PR, watch the initial CI run, and a post-push reviewer-feedback loop.
+Invoke `create-pr` to handle the rest of the delivery in one go: narrative description generation, push, open the draft PR, run the `review-loop` against the draft, watch the initial CI run, and an external-bot reviewer-feedback loop.
 
 **Invoke it BARE — never scale it down by default:**
 
@@ -186,21 +168,20 @@ Invoke `create-pr` to handle the rest of the delivery in one go: a **pre-push qu
 Skill("create-pr")
 ```
 
-A bare `create-pr` runs its FULL default pipeline: Step 5.5 delegates to `Skill("polish")` (the `reviewer` agent auto-fixing simple findings + `code-quality` **simplify** applying Class M refactors behind a confidence gate), and Step 6.5 runs the post-push reviewer-feedback loop. **Do NOT pass `--no-review`, `--no-simplify`, `--quick`, `--no-quality`, or `--no-feedback`** unless the user explicitly asked to skip a pass. The executor MUST also keep the Phase 6 Step 2 `reviewer` (`--critical`) dispatch — the critical self-review with autofix — it is not optional.
+A bare `create-pr` runs its FULL default pipeline: push → open draft PR → Step 6.5 delegates to `Skill("review-loop")` (`pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 3 iterations) → Step 6.7 runs the external-bot reviewer-feedback loop. **Do NOT pass `--no-review`, `--no-simplify`, `--quick`, `--no-quality`, or `--no-feedback`** unless the user explicitly asked to skip a pass.
 
-> **Resource note — what the "save RAM" rule actually scopes.** This repo's resource guidance is about *execution cost only*: do not run `eslint` / `tsc` / tests **in parallel**, and do not spawn **parallel sub-agents** or **cascading full-verify rounds** (the 55+ GB OOM incident). It lets you economize *how and when* you run lint/tsc/tests (sequentially, never in parallel) — it does NOT let you skip the quality passes. create-pr's polish (reviewer auto-fix), code-quality **simplify**, and the Phase 6 critical self-review are sequential reasoning passes — the single-sequential-loop variant repo memory explicitly permits. Skipping them to "save RAM" is a category error and a Phase 6 collapse (taxonomy F5). Run the full sequential pass; only lint/tsc/test *execution* is what the RAM rule constrains.
+> **Resource note — what the "save RAM" rule actually scopes.** This repo's resource guidance is about *execution cost only*: do not run `eslint` / `tsc` / tests **in parallel**, and do not spawn **parallel sub-agents** or **cascading full-verify rounds** (the 55+ GB OOM incident). It does NOT let you skip the quality passes. `create-pr`'s `review-loop` (`pr-reviewer`, `implement-suggestion`, `polish simplify`) and the Phase 6 quality gate are sequential reasoning passes — the single-sequential-loop variant is explicitly permitted. Skipping them to "save RAM" is a category error and a Phase 6 collapse (taxonomy F5).
 
 What `create-pr` handles:
 
 | Step                          | Owner       |
 | ----------------------------- | ----------- |
-| Pre-push polish (review)      | `create-pr` → `polish` → `reviewer` agent |
-| Pre-push polish (simplify)    | `create-pr` → `polish` → `code-quality` simplify |
 | Description generation        | `create-pr` |
 | `git push -u origin`          | `create-pr` |
 | `gh pr create --draft`        | `create-pr` |
+| Post-draft review loop        | `create-pr` Step 6.5 → `review-loop` → `pr-reviewer` + `implement-suggestion` + `polish simplify` |
 | Watch initial CI              | `create-pr` |
-| Post-push reviewer-feedback   | `create-pr` Step 6.5 |
+| External-bot reviewer-feedback | `create-pr` Step 6.7 |
 
 ### Phase 6 Delivery Receipt (GATE — Full + Lite)
 
@@ -217,11 +198,11 @@ Then emit, inline, a `### Phase 6 Delivery Receipt` block with one line per requ
 
 ```
 ### Phase 6 Delivery Receipt
-- reviewer (pre-push, --critical): <N findings, M auto-fixed, B blocking | not available, continuing>
 - aw-create-walkthrough: <walkthrough.md present | Lite Mode — skipped | not available, continuing>
-- create-pr → polish (review): <verdict + auto-fixed count | not available, continuing>
-- create-pr → polish (simplify): <recipe IDs applied | none | not available, continuing>
-- create-pr → reviewer-feedback loop: <stop reason + iterations | --no-feedback (only if user asked) | not available, continuing>
+- create-pr → review-loop (pr-reviewer pass): <N iterations, M findings, B blocking remaining | not available, continuing>
+- create-pr → review-loop (implement-suggestion): <N findings applied | not available, continuing>
+- create-pr → review-loop (polish simplify): <recipe IDs applied | none | not available, continuing>
+- create-pr → external-reviewer-feedback loop: <stop reason + iterations | --no-feedback (only if user asked) | not available, continuing>
 ```
 
 If any line above would be blank because the pass did not run AND no `not available` reason applies, the pass was skipped in error: run it, then re-emit the receipt.
@@ -304,10 +285,10 @@ Then move to Phase 7 to watch CI to green.
 ## Delivery Checklist
 
 - [ ] Pre-flight validation passed (clean tree, build, lint, test)
-- [ ] `reviewer` agent dispatched (`--critical`, auto-fix all severities); blocking issues resolved
 - [ ] `Skill("aw-create-walkthrough")` invoked (Full Mode)
 - [ ] `Skill("create-pr")` invoked OR manual fallback executed
 - [ ] PR opened as draft
+- [ ] `review-loop` ran against the draft PR (via `create-pr` Step 6.5); blocking issues resolved
 - [ ] Walkthrough content shown inline in conversation (Full Mode)
 - [ ] PR URL delivered to user
 - [ ] Worktree preserved for review

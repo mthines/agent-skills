@@ -178,13 +178,12 @@ for the full registry, trigger conditions, and **how to disable any companion**.
 | 4     | `holistic-analysis`    | After confidence at Phase 4 if user asks for retry     | —                |
 | 4     | `lorekit-memory`       | At stuck-loop escalation — record failing area + resolution as a lesson | `memory.write loop::aw-lessons` |
 | 5     | `docs`                 | Always (self-improving doc loop — updates `CLAUDE.md`, `README.md`, `docs/`) | `update --auto`  |
-| 6     | `reviewer` *(agent)*   | Always before push — dispatched directly via the Agent tool (Fix Mode on own branch; auto-fix all Simple findings across every severity) | `--critical` + auto-fix-all prompt |
-| 6     | `aw-review-quality-gate` | After the `reviewer` agent returns findings — false-positive filter (advisory) | —                |
+| 6     | `aw-review-quality-gate` | After `create-pr`'s `review-loop` returns findings — false-positive filter (advisory) | —   |
 | 6     | `aw-create-walkthrough` | Full Mode only                                        | —                |
-| 6     | `create-pr`            | Always                                                 | —                |
+| 6     | `create-pr`            | Always — push, open draft PR, run review-loop, watch CI | —               |
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                 | `<run-id\|pr-url>` |
+| 7     | `review-loop` *(skill)* | After CI green — bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence (self-relation; `pr-reviewer` detects authorship automatically) | `<pr-url> --critical` |
 | 7     | `lorekit-memory`       | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `memory.write loop::aw-lessons` |
-| 7     | `reviewer` *(agent)*   | After CI green — auto-dispatch in PR Mode (self-review sub-mode for self-authored PRs: inline report + auto-fix every Simple finding regardless of severity, incl. Nitpick / Nice-to-have; cross-author PR redirects to `pr-reviewer`) | `<pr-url> --critical` + auto-fix-all prompt |
 
 ---
 
@@ -256,8 +255,8 @@ Three phases benefit from sub-agent fan-out:
 | 4 (UI)| **First:** `aw-tester` cold pass at Phase 4 entry (full sub-agent, structured verdict); subsequent iterations run the persisted `last-run.spec.ts` directly via Bash (hot loop, no sub-agent) until `green`/`inconclusive`; promote `critical-path` specs via `e2e-testing` Generator |
 | 4     | Run tests → iterate (cap: 5 same area in Full Mode) → run `checks.yaml` checks (all must pass; definitions immutable; `unsatisfiable` escalates) → `confidence(analysis)` at cap → one-shot auto-replan or escalate to user |
 | 5     | `Skill("docs", "update --auto")` always — refreshes `CLAUDE.md`, `.claude/rules/`, `README.md`, `docs/`, `CHANGELOG.md` |
-| 6     | Dispatch `reviewer` agent (`--critical`, auto-fix every Simple finding across all severities) → `Skill("aw-create-walkthrough")` → `Skill("create-pr")` |
-| 7     | Watch CI → `Skill("ci-auto-fix")` per failure (parallel) → after CI green dispatch `reviewer` agent (`<pr-url> --critical`, PR Mode self-review sub-mode: auto-fix every Simple finding incl. Nitpick / Nice-to-have, emit inline report; optional, skips if not installed) → `gw remove` after merge (optional) |
+| 6     | `Skill("aw-create-walkthrough")` → `Skill("create-pr")` (push → open draft PR → `review-loop` convergence → watch CI) |
+| 7     | Watch CI → `Skill("ci-auto-fix")` per failure (parallel) → after CI green `Skill("review-loop", "<pr-url> --critical")` (self-relation; optional, skips if not installed) → `gw remove` after merge (optional) |
 
 ### Lite Mode
 
@@ -273,7 +272,7 @@ Skip artifacts and most companions. Phase 0, Phase 2, Phase 5 (`docs update`), a
 | 4     | Test, fix failures (3-iteration limit applies)  |
 | 5     | `Skill("docs", "update --auto")`       |
 | 6     | `Skill("create-pr")`                            |
-| 7     | Watch CI, `ci-auto-fix` if needed, then auto-dispatch `reviewer` agent with `--critical` + auto-fix-all-Simple-severities prompt (skips if not installed) |
+| 7     | Watch CI, `ci-auto-fix` if needed, then `Skill("review-loop", "<pr-url> --critical")` (self-relation; skips if not installed) |
 
 ---
 
@@ -339,12 +338,11 @@ cd agent-skills
 bash scripts/sync-symlinks.sh --aw
 ```
 
-`--aw` symlinks the autonomous-workflow skill and its 12 companion skills
+`--aw` symlinks the autonomous-workflow skill and its companion skills
 into `~/.claude/skills/`, plus the `aw` / `aw-planner` / `aw-executor` agents
-into `~/.claude/agents/`. The `reviewer` agent (optional Phase 6/7 review) is
-also linked; remove its symlink and Phase 7 logs `reviewer — not available,
-continuing` and proceeds. Edits to the cloned repo are picked up live on the
-next agent turn.
+into `~/.claude/agents/`. The `review-loop` skill (Phase 6/7 review passes) is
+also linked; if absent Phase 7 logs `review-loop — not available, continuing`
+and proceeds. Edits to the cloned repo are picked up live on the next agent turn.
 
 The routing rule dispatches `aw`, which detects the tier and routes —
 Micro/Lite single-pass, or planner→executor for Full. After install, Claude
@@ -369,8 +367,9 @@ per-companion disabling, see the [README](./README.md#installation) and
 - [`ux`](../../design/ux/SKILL.md) — UI / accessibility review
 - [`holistic-analysis`](../../analysis/holistic-analysis/SKILL.md) — execution-path analysis for complex tasks
 - [`docs`](../../authoring/docs/SKILL.md) — keeps `CLAUDE.md`, `.claude/rules/`, `README.md`, and `docs/` in sync with code changes
-- [`review-changes`](../../quality/review-changes/SKILL.md) — pre-PR review
-- [`create-pr`](../../delivery/create-pr/SKILL.md) — narrative PR description + push + watch
+- [`review-changes`](../../quality/review-changes/SKILL.md) — routes to `review-loop` (convergence) or `pr-reviewer` (one-shot)
+- [`review-loop`](../../quality/review-loop/SKILL.md) — bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence loop; Phase 6/7 review passes
+- [`create-pr`](../../delivery/create-pr/SKILL.md) — narrative PR description + push + open draft PR + review-loop + watch
 - [`ci-auto-fix`](../../delivery/ci-auto-fix/SKILL.md) — diagnose and fix failed CI checks
 - `lorekit-memory` (LoreKit `memory.*` tools) — backs the `aw-lessons` and `aw-tester-lessons` fast-tier self-improvement loops. See also [`persistent-memory`](../../authoring/persistent-memory/SKILL.md) for the LoreKit backend docs (`rules/scaling-tiers.md`)
 - [`e2e-testing`](../../testing/e2e-testing/SKILL.md) — Generator for promoting `critical-path` specs to saved `*.spec.ts` at end of Phase 4
@@ -378,7 +377,7 @@ per-companion disabling, see the [README](./README.md#installation) and
 ### Related Agents
 
 - [`aw-tester`](./templates/aw-tester.agent.md) — spec-driven UI verification agent. Dispatched by the executor in Phase 4 (before lint/type/test) and optionally in Phase 7 (spec rehearsal against preview). Requires an aw-target at `.claude/aw-targets/` — run `/aw-setup` first.
-- [`reviewer`](../../../agents/reviewer.md) — optional Phase 6 pre-push review AND Phase 7 post-CI auto-review. Both passes are dispatched with `--critical` (forces the adversarial pre-mortem via `Skill("critical", "code")`) and an auto-fix-everything prompt — every Simple finding is applied to the working tree regardless of severity (Critical / High / Medium / Low / Nitpick / Nice-to-have), per `agents/reviewer/rules/auto-fix-policy.md`. Phase 6 lands in Fix Mode (own branch); Phase 7 lands in PR (self-review) sub-mode (self-authored PR — inline terminal report, no GitHub posts). On someone else's PR the reviewer redirects to the `pr-reviewer` agent. Install the agent alongside the skill and the workflow will dispatch it automatically.
+- [`pr-reviewer`](../../../agents/pr-reviewer.md) — Phase 6 and Phase 7 review passes, invoked via the `review-loop` skill. Handles both self-relation (own PR — `REVIEW_RELATION = self`) and cross-relation (someone else's PR). Stays read-only; apply passes are delegated to `implement-suggestion` and `polish simplify`.
 
 ---
 

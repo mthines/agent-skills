@@ -2,7 +2,6 @@
 title: Prior-comment awareness — dedup against existing review history + anti-flip-flop
 impact: HIGH
 tags:
-  - reviewer
   - pr-reviewer
   - dedup
   - incremental
@@ -24,10 +23,9 @@ This rule implements that same state-awareness.
 
 | Agent | When | Scope |
 | --- | --- | --- |
-| `pr-reviewer` | **Default ON** — at the start of Step 1, before any finding is produced | All incremental and first-pass runs on an existing PR |
-| `reviewer` (Self-Review sub-mode) | **Self-Review only** — at the start of Step 1.1 | Re-runs on own PR (own branch fix/report modes have no prior GitHub state) |
+| `pr-reviewer` (cross or self, PR exists) | **Default ON** — at the start of Step 1, before any finding is produced | All incremental and first-pass runs on an existing PR |
 
-For `reviewer` in Fix Mode or Report Mode (no PR exists yet), skip this step entirely.
+When a PR does not yet exist (branch-only self review without an open PR), skip this step entirely.
 
 ---
 
@@ -175,5 +173,5 @@ All three are emitted even when N = 0, M = 0, and K = 0, so the user can see the
 
 - Re-run outcome measurement — that is `outcome-learning.md`.
 - Change the authorization gate (`authorization-gate.md`) — posting still requires `--publish`.
-- Apply to Fix Mode or Report Mode in `reviewer` (no prior GitHub state exists on a branch-only review).
+- Apply when no PR exists yet (branch-only self review — no prior GitHub state).
 - Drop a finding because an author *challenged* (not accepted) a prior finding — disagreement does not prevent re-flagging; outcomes do.

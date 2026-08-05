@@ -2,7 +2,6 @@
 title: Rubric composition — load, dedupe, consolidate
 impact: HIGH
 tags:
-  - reviewer
   - pr-reviewer
   - rubric
   - multi-skill
@@ -86,10 +85,10 @@ Runs last, after every quality gate.
 Its input is the set of findings that already cleared grounding, receipt, confidence, and shape — every one of them is worth telling the author about.
 Placement decides *where* each finding is shown. It discards nothing.
 
-| Agent | Inline per file | Inline total | Overflow behaviour |
+| Agent + Relation | Inline per file | Inline total | Overflow behaviour |
 | --- | --- | --- | --- |
-| `reviewer` (own work, terminal output) | unlimited | unlimited | n/a — print every finding |
-| `pr-reviewer` (cross-review, posts to GitHub) | N per profile (`chill` 3 / **`balanced` 5** / `assertive` 7) | **20** | **Deferred**, never dropped — listed in the review body |
+| `pr-reviewer` (self, terminal output) | unlimited | unlimited | n/a — print every finding |
+| `pr-reviewer` (cross, posts to GitHub) | N per profile (`chill` 3 / **`balanced` 5** / `assertive` 7) | **20** | **Deferred**, never dropped — listed in the review body |
 
 Ordering for the inline slots, applied per file and then globally:
 
@@ -97,7 +96,7 @@ Ordering for the inline slots, applied per file and then globally:
 2. Then descending `per-comment-confidence` Final score.
 3. Then ascending line number.
 
-`reviewer` has no placement cap at all.
+`pr-reviewer` in self mode has no placement cap at all.
 Local terminal output has no posting cost and no hostile-review effect, so the confidence threshold is the only thing that decides what the author sees.
 
 ### Deferred findings (`pr-reviewer`)

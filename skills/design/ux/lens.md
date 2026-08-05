@@ -1,5 +1,5 @@
 ---
-for: reviewer
+for: pr-reviewer
 lens-version: 1
 applies-to: "**/*.tsx, **/*.jsx, **/*.vue, **/*.svelte, app/**/*.ts, app/**/*.tsx, **/screens/**, **/components/**"
 ---
@@ -8,7 +8,7 @@ applies-to: "**/*.tsx, **/*.jsx, **/*.vue, **/*.svelte, app/**/*.ts, app/**/*.ts
 
 ## Trigger
 
-Fires when the diff touches UI files (web JSX/TSX/Vue/Svelte, React Native screens, App Router screens). NOTE: the `reviewer` agent already auto-loads `ux` when UI files are present — `--with ux` is normally a no-op (deduped). This lens exists as the canonical interface and lets external review tooling consume the same checklist.
+Fires when the diff touches UI files (web JSX/TSX/Vue/Svelte, React Native screens, App Router screens). NOTE: the `pr-reviewer` agent already auto-loads `ux` when UI files are present — `--with ux` is normally a no-op (deduped). This lens exists as the canonical interface and lets external review tooling consume the same checklist.
 
 ## Checklist
 

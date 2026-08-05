@@ -32,7 +32,7 @@ The calling agent passes:
 - `intent_summary` — 2–3 line summary the reviewer produced at its Step 1.3 (PR title / body / commit messages / branch name).
 - `diff` — the full unified diff of the PR or branch under review.
 - `changed_files` — list of files in the diff (path + patch).
-- `caller` — `reviewer` (own work) or `pr-reviewer` (cross-review). Affects the framing of system-fit findings (see Output framing).
+- `caller` — the calling agent name (`"pr-reviewer"`). Also pass `REVIEW_RELATION` (`"self"` or `"cross"`) to distinguish own-PR reviews from cross-author reviews. Affects the framing of system-fit findings (see Output framing).
 - `max_findings` — **optional**, whole-PR mode only. Ceiling on the number of findings returned, scaled by the caller to the size of the diff (3 for ≤ 10 changed files, 6 for 11–30, 10 for > 30). Defaults to **3** when absent. It is a ceiling, not a target.
 - `focus` — **optional**. When present, the skill runs in **focused (single-target) mode**: it deepens one already-surfaced finding instead of scanning the whole diff. The calling agent's Step 2.4b escalation passes one `focus` per parallel call. Shape:
 
@@ -107,14 +107,14 @@ Severity rules:
 
 The calling agent maps these findings into its own Conventional Comments categories. Recommended mapping:
 
-| Caller | Type | Conventional category |
+| Caller + Relation | Type | Conventional category |
 |---|---|---|
-| `reviewer` (own work) | `intent-mismatch` | `issue` (blocker) |
-| `reviewer` | `system-fit` | `suggestion` or `issue` (major) |
-| `reviewer` | `scope-creep` | `nitpick` |
-| `pr-reviewer` (cross-review) | `intent-mismatch` | `issue` (blocker) |
-| `pr-reviewer` | `system-fit` | `question` — the agent has less context than the author; framing as a question respects that |
-| `pr-reviewer` | `scope-creep` | `question` |
+| `pr-reviewer` (self — own PR) | `intent-mismatch` | `issue` (blocker) |
+| `pr-reviewer` (self — own PR) | `system-fit` | `suggestion` or `issue` (major) |
+| `pr-reviewer` (self — own PR) | `scope-creep` | `nitpick` |
+| `pr-reviewer` (cross — someone else's PR) | `intent-mismatch` | `issue` (blocker) |
+| `pr-reviewer` (cross — someone else's PR) | `system-fit` | `question` — the agent has less context than the author; framing as a question respects that |
+| `pr-reviewer` (cross — someone else's PR) | `scope-creep` | `question` |
 
 This is a recommendation; the calling agent makes the final mapping. See `agents/shared/rules/holistic-review.md` for the wiring.
 
@@ -122,7 +122,7 @@ This is a recommendation; the calling agent makes the final mapping. See `agents
 
 - **It does not score.** Findings are emitted with severity but no 0–100 confidence. Per-comment confidence runs downstream in the calling agent.
 - **It does not propose fixes.** A `system-fit` finding names the gap; it does not write the cache invalidation code.
-- **It does not block.** The verdict decision remains with the calling agent — the four strict blocking categories in `reviewer.md` and `pr-reviewer.md` (broken behaviour, security, data loss, **misimplemented intent**) gate "Request changes". Review mode supplies evidence for the fourth.
+- **It does not block.** The verdict decision remains with the calling agent — the four strict blocking categories in `pr-reviewer.md` (broken behaviour, security, data loss, **misimplemented intent**) gate "Request changes". Review mode supplies evidence for the fourth.
 
 ## Skipping
 

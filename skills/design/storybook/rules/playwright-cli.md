@@ -170,7 +170,7 @@ which is cheaper and more reliable than diffing pixels.
 Use screenshots only when:
 
 - The user explicitly asked for a visual diff.
-- A reviewer agent or PR needs evidence.
+- The `pr-reviewer` agent or a PR needs evidence.
 - A motion / transition test cannot be captured statically — in which
   case use [`screen-recorder`](../../../analysis/screen-recorder/SKILL.md), not
   raw Playwright `screenshot`.
