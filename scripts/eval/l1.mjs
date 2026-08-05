@@ -625,6 +625,53 @@ function checksInSync(plan, checks) {
     s.check("G18g comment-relevance-memory.md still carries repo:: and loop::reviewer-comment-relevance",
       crm.includes("repo::") && crm.includes("loop::reviewer-comment-relevance"));
   }
+
+  // G19: the pr-reviewer posted review body uses a concise headline at the top level and the
+  // gate-status table lives only inside the Review diagnostics accordion.
+  // Reads the REAL shipped agents/pr-reviewer.md — never re-encode expected strings as
+  // a self-comparison (aw-lessons::mock-that-reimplements-the-thing-under-test).
+  // Mirrors the G18 literal-sentence + positional-slice idiom.
+  {
+    // G19a: the three concise headline sentences are present (PASS / WARN / FAIL).
+    // These are literal anchors grepped from the rewritten Step 4 section.
+    s.check("G19a pr-reviewer.md has the PASS concise headline",
+      prReviewer.includes("Reviewed your changes — no issues found."));
+
+    s.check("G19b pr-reviewer.md has the WARN concise headline",
+      prReviewer.includes("Reviewed your changes — no blocking issues;") &&
+      prReviewer.includes("Details in Review diagnostics."));
+
+    s.check("G19c pr-reviewer.md has the FAIL concise headline",
+      prReviewer.includes("Reviewed your changes — found") &&
+      prReviewer.includes("blocking). See inline comments."));
+
+    // G19d: in every Step-4 template block, every '| Gate | Status' line appears AFTER
+    // a '<summary>Review diagnostics' anchor — proving the table is inside the accordion,
+    // never between the <!-- PR_REVIEWER_REPORT --> marker and <sup>FOOTER_LINE</sup>.
+    // Slices only the Step-4 region (after '### Review body format', before
+    // '### INLINE_COMMENTS_JSON format') to avoid false-matching the Step-3 terminal
+    // tables at lines 818/844/870.
+    {
+      const step4Start = prReviewer.indexOf("### Review body format");
+      const step4End   = prReviewer.indexOf("### INLINE_COMMENTS_JSON format");
+      const step4      = prReviewer.slice(step4Start, step4End);
+      // Split on the opening PR_REVIEWER_REPORT marker to isolate each template block.
+      const blocks     = step4.split("<!-- PR_REVIEWER_REPORT -->").slice(1);
+      // For each block: if a gate table row is present it must appear AFTER the
+      // '<summary>Review diagnostics' line (i.e. inside the accordion).
+      let allTablesInsideAccordion = blocks.length >= 3;
+      for (const b of blocks) {
+        const gatePos = b.indexOf("| Gate | Status");
+        const diagPos = b.indexOf("<summary>Review diagnostics");
+        // Gate table present but accordion comes after (or is absent) → table is at top level.
+        if (gatePos !== -1 && (diagPos === -1 || gatePos < diagPos)) {
+          allTablesInsideAccordion = false;
+        }
+      }
+      s.check("G19d pr-reviewer.md Step-4 gate tables all appear inside the Review diagnostics accordion (not at top level)",
+        allTablesInsideAccordion);
+    }
+  }
 }
 
 process.exit(s.report() ? 0 : 1);

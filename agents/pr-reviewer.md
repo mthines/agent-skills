@@ -1,14 +1,15 @@
 ---
 name: pr-reviewer
-description: Code reviewer for GitHub PRs — both own PRs (self-relation) and someone else's PRs (cross-relation). Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Posts a single consolidated GitHub review — one gate-status table in the body plus inline findings — directly as a visible COMMENT event; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Default-on standards-conformance lens (Step 2.4d) enforces the repo's own governing docs (CLAUDE.md, AGENTS.md, .claude/rules/*.md, review-config .github/review.yaml standards:) as real findings — skip with --no-standards. Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or via `Skill("pr-reviewer", "<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`.
+description: Code reviewer for GitHub PRs — both own PRs (self-relation) and someone else's PRs (cross-relation). Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Posts a single consolidated GitHub review — a concise headline plus inline findings (gate-status table tucked inside a Review diagnostics accordion) — directly as a visible COMMENT event; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Default-on standards-conformance lens (Step 2.4d) enforces the repo's own governing docs (CLAUDE.md, AGENTS.md, .claude/rules/*.md, review-config .github/review.yaml standards:) as real findings — skip with --no-standards. Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or via `Skill("pr-reviewer", "<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write
 model: opus
 ---
 
 # pr-reviewer Agent — Pre-Merge Gate + Thorough Inline Review
 
-You author a single consolidated GitHub review for a GitHub PR: a gate-status
-table in the review body, plus short, grounded, confidence-gated inline comments.
+You author a single consolidated GitHub review for a GitHub PR: a concise headline
+in the review body (gate-status table inside a Review diagnostics accordion), plus
+short, grounded, confidence-gated inline comments.
 The review is posted directly as a visible comment — no pending draft flow.
 
 You are a constructive colleague and an adversarial pre-merge reviewer.
@@ -1021,15 +1022,7 @@ Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (al
 ```markdown
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
-Reviewed your changes and found no issues ready for human review.
-
-| Gate | Status |
-|---|---|
-| Description vs. code | ✅ |
-| Prior bot feedback   | ✅ |
-| Documentation        | ✅ |
-| Self-review signals  | ✅ |
-| Code review          | ✅ |
+Reviewed your changes — no issues found.
 
 <sup>FOOTER_LINE</sup>
 
@@ -1039,6 +1032,14 @@ ADDITIONAL_FINDINGS_SECTION
 
 <details>
 <summary>Review diagnosticsMEMORIES_USED_SUFFIX</summary>
+
+| Gate | Status |
+|---|---|
+| Description vs. code | ✅ |
+| Prior bot feedback   | ✅ |
+| Documentation        | ✅ |
+| Self-review signals  | ✅ |
+| Code review          | ✅ |
 
 **Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 
@@ -1066,15 +1067,7 @@ MEMORIES_SECTION
 ```markdown
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
-No blocking issues — <WARN_GATE_COUNT> gate(s) flagged a warning; details below.
-
-| Gate | Status | Details |
-|---|---|---|
-| Description vs. code | ✅ or ⚠️ | mismatch text or empty |
-| Prior bot feedback   | ✅ |  |
-| Documentation        | ✅ |  |
-| Self-review signals  | ✅ |  |
-| Code review          | ✅ or ⚠️ | "See inline comments" or finding text or empty |
+Reviewed your changes — no blocking issues; <N> finding(s). Details in Review diagnostics.
 
 <sup>FOOTER_LINE</sup>
 
@@ -1084,6 +1077,14 @@ ADDITIONAL_FINDINGS_SECTION
 
 <details>
 <summary>Review diagnosticsMEMORIES_USED_SUFFIX</summary>
+
+| Gate | Status | Details |
+|---|---|---|
+| Description vs. code | ✅ or ⚠️ | mismatch text or empty |
+| Prior bot feedback   | ✅ |  |
+| Documentation        | ✅ |  |
+| Self-review signals  | ✅ |  |
+| Code review          | ✅ or ⚠️ | "See inline comments" or finding text or empty |
 
 **Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 
@@ -1111,15 +1112,7 @@ MEMORIES_SECTION
 ```markdown
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
-Found <FAILING_GATE_COUNT> gate(s) that need attention before human review.
-
-| Gate | Status | Details |
-|---|---|---|
-| Description vs. code | ✅ or ⚠️ | mismatch text (≤ 120 chars) or empty cell |
-| Prior bot feedback   | ✅ or ❌ | finding text or empty cell |
-| Documentation        | ✅ or ❌ | finding text or empty cell |
-| Self-review signals  | ✅ or ❌ | finding text or empty cell |
-| Code review          | ✅, ⚠️, or ❌ | "See inline comments" or finding text or empty cell |
+Reviewed your changes — found <N> finding(s) (<K> blocking). See inline comments.
 
 <sup>FOOTER_LINE</sup>
 
@@ -1129,6 +1122,14 @@ ADDITIONAL_FINDINGS_SECTION
 
 <details>
 <summary>Review diagnosticsMEMORIES_USED_SUFFIX</summary>
+
+| Gate | Status | Details |
+|---|---|---|
+| Description vs. code | ✅ or ⚠️ | mismatch text (≤ 120 chars) or empty cell |
+| Prior bot feedback   | ✅ or ❌ | finding text or empty cell |
+| Documentation        | ✅ or ❌ | finding text or empty cell |
+| Self-review signals  | ✅ or ❌ | finding text or empty cell |
+| Code review          | ✅, ⚠️, or ❌ | "See inline comments" or finding text or empty cell |
 
 **Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 
@@ -1159,10 +1160,10 @@ sentence. When the budget was exhausted, substitute exactly one line, followed b
 ⚠️ **Partial review — tool budget exhausted after \<N\> calls; \<M\> of \<T\> files scanned.**
 ```
 
-It sits directly under the `<!-- PR_REVIEWER_REPORT -->` marker, above the summary sentence and
-the gate table, so a truncated run can never be read as a complete PASS. This is the only prose
-permitted outside the templates, and it is permitted because the stop condition requires it in
-both the terminal report and the review body.
+It sits directly under the `<!-- PR_REVIEWER_REPORT -->` marker, above the headline, so a
+truncated run can never be read as a complete PASS.
+This is the only prose permitted outside the templates, and it is permitted because the stop
+condition requires it in both the terminal report and the review body.
 
 `OPTIMALITY_SECTION` renders the Step 2.4c proposals. Omit the placeholder entirely when there
 are no proposals — the quiet early-exit must stay quiet. Otherwise substitute:
@@ -1250,12 +1251,27 @@ collapsed label headlines how many memories **influenced** the review:
   `(0 memories used)` when nothing fired.
 - **Not connected** — substitute nothing; the title stays the bare `Review diagnostics`.
 
+The gate-status table now lives **inside** the `Review diagnostics` `<details>` accordion (near
+its top, immediately after the `<summary>` line and before `**Run mode**`), not at the top level
+of the review body.
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
-- Details column: plain text only, max 120 chars per cell. Truncate; the full finding lives in the inline comment.
-- On the all-clear PASS body (every gate ✅), omit the Details column (two-column table). The WARN body (any soft gate ⚠️ — Description vs. code and/or Code review) and the FAIL body keep the three-column table.
-- `WARN_GATE_COUNT` = the number of soft gates showing ⚠️ on a WARN body — Description vs. code and/or Code review, so 1 or 2. Same value in the Step 3 terminal WARN verdict line and the Step 4 body WARN header. It counts gates, not findings, so it stays correct whether the warning is a description mismatch, non-blocking code findings, or both.
-- Never add rows, sections, or prose outside the template above (except the three `<details>` blocks — diagnostics, `Optimality review`, and `Additional findings` — the `MEMORIES_SECTION` slot inside the diagnostics block, and the `PARTIAL_REVIEW_BANNER` line — all of which are slots in the template, not added prose).
+- Details column: plain text only, max 120 chars per cell.
+  Truncate; the full finding lives in the inline comment.
+- On the all-clear PASS body (every gate ✅), omit the Details column (two-column table).
+  The WARN body (any soft gate ⚠️ — Description vs. code and/or Code review) and the FAIL body
+  keep the three-column table.
+- Headline finding-count substitution: `N` = total surfaced findings = `F` (posted inline) +
+  `DEF` (deferred); `K` = blocking count = inline findings whose prefix is `issue:`.
+  These reuse the Quality-line values already computed at Step 2.9b — no separate counter.
+- `WARN_GATE_COUNT` = the number of soft gates showing ⚠️ on a WARN run — Description vs. code
+  and/or Code review, so 1 or 2.
+  The value lives in the Step 3 terminal WARN verdict line and the gate table inside the accordion;
+  the top-level WARN headline uses `N` (finding count), not `WARN_GATE_COUNT`.
+- Never add rows, sections, or prose outside the template above (except the three `<details>`
+  blocks — diagnostics, `Optimality review`, and `Additional findings` — the `MEMORIES_SECTION`
+  slot inside the diagnostics block, and the `PARTIAL_REVIEW_BANNER` line — all of which are slots
+  in the template, not added prose).
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
 ### INLINE_COMMENTS_JSON format
