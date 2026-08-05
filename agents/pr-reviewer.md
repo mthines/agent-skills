@@ -272,18 +272,24 @@ While fetching, **also identify open unresolved bot-authored comments** for Gate
 - Store these as `OPEN_BOT_COMMENTS[]`.
 - If `OPEN_BOT_COMMENTS[]` is empty, Gate 3 passes.
 
-Also load **comment-relevance memories** and **reviewer-lessons** (narrow-to-broad fan-out,
-silent no-op if `memory.*` not connected):
+Also load **comment-relevance memories** and **reviewer-lessons** via a narrow-to-broad fan-out.
+**This read is a mandatory attempt.**
+Issue each line below as a real `mcp__lorekit__memory_list` tool call — these are not documentation shorthand.
+Only a real tool error (thrown exception, or tool not in the agent's `tools:` grant) may cause you to set `LOREKIT_CONNECTED=false`; never infer "not connected" without attempting the call.
+When this agent runs as a sub-agent, it does NOT receive the SessionStart memory-load priming that the main session gets, so it MUST perform this Step 1.0 read itself — never assume memories were pre-loaded.
 
-```
-memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::reviewer-lessons"],           limit: 50 }
-memory.list { scope: "global",               tags: ["loop::reviewer-lessons"],           limit: 50 }
-memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::reviewer-comment-relevance"], limit: 50 }
-memory.list { scope: "global",               tags: ["loop::reviewer-comment-relevance"], limit: 50 }
+```text
+# Issue each as a real mcp__lorekit__memory_list tool call (narrow-to-broad).
+# repo:: wins on key collision. Skip expired entries.
+mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-lessons"]           limit=50
+mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-lessons"]           limit=50
+mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=50
+mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-comment-relevance"] limit=50
 ```
 
 Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
-Merge both lists per tag (`repo::` wins on key collision). Skip expired entries.
+Merge both lists per tag (`repo::` wins on key collision).
+Skip expired entries.
 
 **Apply `reviewer-lessons`.**
 Match each loaded lesson's `trigger-context` (the shared lesson-scope schema — file globs, task type, integration/tech names) against this run's changed paths, synthesized intent, and detected integrations.
@@ -306,9 +312,9 @@ Retain each loaded memory's LoreKit `scope` and `key` alongside its
 `fingerprint`, `relevance`, and `seen_count` — Step 2.2 builds a deep link from
 `scope` + `key` for every memory that influences the review
 (`agents/shared/rules/comment-relevance-memory.md § Linking applied memories in the report`).
+Set `LOREKIT_CONNECTED` = `true` when the `mcp__lorekit__memory_list` call returned without a tool error (i.e., the attempt was made and succeeded); set `false` only when the tool call itself threw an error or the tool is not in the agent's `tools:` grant — never infer `false` without attempting the call.
 Set `MEMORIES_READ_COUNT` = the number of `reviewer-comment-relevance` memories retained after
-this merge/dedup (0 when connected but none matched), and `LOREKIT_CONNECTED` = whether the
-`memory.*` backend was reachable at all this run.
+this merge/dedup (0 when connected but none matched).
 **This definition is authoritative and no later step widens it** — including the Step 1.2c addend.
 `MEMORIES_READ_COUNT` counts `reviewer-comment-relevance` memories only, never `reviewer-lessons`,
 because its partner `MEMORIES_USED_COUNT` is `|APPLIED_MEMORIES|`, built at Step 2.2 from relevance
@@ -406,7 +412,8 @@ echo "$DELTA_JSON" | jq '.files' > /tmp/pr-delta.json
 - `11 <= DELTA_LINES <= 100`: keep `RUN_MODE = "incremental"`.
 
 Announce the result:
-```
+
+```text
 Delta: <DELTA_LINES> lines changed, <NEW_FILES> new files, <HIGH_STAKES> high-stakes paths.
 Run mode: <RUN_MODE> (prior SHA: ${PRIOR_SHA:0:7} → current: ${HEAD_SHA:0:7}).
 ```
@@ -427,15 +434,18 @@ In incremental modes (non-empty delta), Gate 4 (self-review signals) scans `REVI
 
 ### 1.2c Diff-keyed lesson search (all modes)
 
-The two broad `memory.list` calls in Step 1.0 are capped at 50 per tag; on a large repository the lesson most relevant to *these* changed files can fall outside that window.
-Now that the changed-file list is known (Step 1.1 command A and Step 1.2), run one targeted `memory.search` to pull those in.
-Silent no-op if `memory.*` is not connected.
+The two broad `mcp__lorekit__memory_list` calls in Step 1.0 are capped at 50 per tag; on a large repository the lesson most relevant to *these* changed files can fall outside that window.
+Now that the changed-file list is known (Step 1.1 command A and Step 1.2), run one targeted `mcp__lorekit__memory_search` to pull those in.
+Issue this as a real `mcp__lorekit__memory_search` tool call.
+Skip this step when `LOREKIT_CONNECTED` is already `false` — the Step 1.0 attempt failed, so there is no backend to search.
+Otherwise issue the call, and treat an error here as a non-blocking addend miss (do not flip `LOREKIT_CONNECTED`).
 
 Build the query from the diff's own vocabulary — the changed top-level directories, the changed file basenames (without extension), and any dependency-manifest filenames present in the diff (`package.json`, `go.mod`, `Cargo.toml`, `requirements.txt`, …).
 In `incremental` and `incremental-quick` modes, key on `REVIEW_DIFF`'s paths, not the full PR.
 
-```
-memory.search { q: "<changed dirs + basenames + manifest names>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
+```text
+# Issue as a real mcp__lorekit__memory_search tool call.
+mcp__lorekit__memory_search: q="<changed dirs + basenames + manifest names>" scopes=["repo::{owner}/{repo}", "global"] limit=10
 ```
 
 Keep only returned hits carrying the tag `loop::reviewer-lessons` or `loop::reviewer-comment-relevance`, then merge them into the pools loaded at Step 1.0 (dedupe by `scope` + `key`; `repo::` wins; skip expired).
@@ -450,7 +460,7 @@ in Step 1.0's announce line.
 
 Produce a 2–3 line intent summary from PR title, body, commit messages, and branch name.
 
-```
+```text
 Intent: This change [verb] [what] so that [why].
 [Optional second line on scope or constraint.]
 ```
@@ -638,7 +648,7 @@ Persona 3 findings are deduped at Step 2.5 rather than posted twice.
 After rubric + persona findings are collected, the pipeline runs through these gates in
 strict order. Each gate is a drop point; no retries.
 
-```
+```text
 rubrics + personas produce raw findings
   → 2.2  comment-relevance-memory.md  (drop/downgrade not-relevant patterns; promote reliably-resolved ones)
   → 2.3  review-config.md § Filters   (drop findings in categories suppressed by review config)
@@ -793,7 +803,8 @@ Always include the run mode and delta context in the header:
 Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 2/3/4/5 all ✅) and the Code review gate is not ❌, but at least one soft gate — Description vs. code or Code review — is ⚠️ (still a PASS verdict); **FAIL** when any of Gates 2/3/4/5 fails or the Code review gate is ❌.
 
 On PASS — all clear (every gate ✅):
-```
+
+```markdown
 ## PR Review — PR #<n> (<repo>)
 
 **Title**: <PR title>
@@ -818,7 +829,8 @@ On PASS — all clear (every gate ✅):
 ```
 
 On WARN — soft warnings only (hard Gates 2/3/4/5 ✅, at least one of Description vs. code / Code review is ⚠️, none ❌):
-```
+
+```markdown
 ## PR Review — PR #<n> (<repo>)
 
 **Title**: <PR title>
@@ -843,7 +855,8 @@ On WARN — soft warnings only (hard Gates 2/3/4/5 ✅, at least one of Descript
 ```
 
 On FAIL (any of Gates 2/3/4/5 fails, or Code review is ❌):
-```
+
+```markdown
 ## PR Review — PR #<n> (<repo>)
 
 **Title**: <PR title>
@@ -870,7 +883,8 @@ On FAIL (any of Gates 2/3/4/5 fails, or Code review is ❌):
 `FAILING_GATE_COUNT` counts only hard-failing gates — a ⚠️ row (Description vs. code or Code review) is never included, even when another gate is ❌.
 
 Both PASS and FAIL continue with:
-```
+
+```markdown
 ### Inline Findings Summary
 
 | #  | File:Line          | Category    | Conf | Anchor |
@@ -1004,7 +1018,7 @@ Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (al
 
 **On PASS** — all clear (every gate ✅):
 
-```
+```markdown
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
 Reviewed your changes and found no issues ready for human review.
@@ -1049,7 +1063,7 @@ MEMORIES_SECTION
 
 **On WARN** — soft warnings only (hard Gates 2/3/4/5 ✅, at least one of Description vs. code / Code review is ⚠️, none ❌):
 
-```
+```markdown
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
 No blocking issues — <WARN_GATE_COUNT> gate(s) flagged a warning; details below.
@@ -1094,7 +1108,7 @@ MEMORIES_SECTION
 
 **On FAIL** (any of Gates 2/3/4/5 fails, or Code review is ❌):
 
-```
+```markdown
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
 Found <FAILING_GATE_COUNT> gate(s) that need attention before human review.
@@ -1141,7 +1155,7 @@ MEMORIES_SECTION
 placeholder entirely on a complete run — the line disappears and the body starts at the summary
 sentence. When the budget was exhausted, substitute exactly one line, followed by a blank line:
 
-```
+```markdown
 ⚠️ **Partial review — tool budget exhausted after \<N\> calls; \<M\> of \<T\> files scanned.**
 ```
 
@@ -1153,7 +1167,7 @@ both the terminal report and the review body.
 `OPTIMALITY_SECTION` renders the Step 2.4c proposals. Omit the placeholder entirely when there
 are no proposals — the quiet early-exit must stay quiet. Otherwise substitute:
 
-```
+```markdown
 <details>
 <summary>Optimality review (<OP>) — is this the best approach?</summary>
 
@@ -1184,7 +1198,7 @@ are **never** posted as inline comments and never affect the gate table or the v
 cleared every quality gate but did not fit the inline caps. Omit the placeholder entirely when
 `DEF == 0`; otherwise substitute:
 
-```
+```markdown
 <details>
 <summary>Additional findings (<DEF>) — cleared review, not inlined</summary>
 
@@ -1203,11 +1217,11 @@ applied-only list). It **always renders** — never omit the slot. `LOREKIT_CONN
 of the two shapes below it takes, so a reader always sees either both counts or an explicit
 `not connected`, not only when something fired.
 
-- **Connected** — a header line, followed (only when `MEMORIES_USED_COUNT > 0`) by one bullet per
+- **Connected** (`LOREKIT_CONNECTED=true` — the `mcp__lorekit__memory_list` attempt succeeded) — a header line, followed (only when `MEMORIES_USED_COUNT > 0`) by one bullet per
   entry in `APPLIED_MEMORIES[]` (Step 2.2), each a pressable LoreKit link so the reader can open the
   exact memory and see why a finding was dropped, downgraded, or promoted:
 
-  ```
+  ```text
   **Memories** — <MEMORIES_READ_COUNT> read · <MEMORIES_USED_COUNT> used
 
   - [`issue:missing-abort-signal`](<url>) — promoted, seen 3×
@@ -1215,7 +1229,8 @@ of the two shapes below it takes, so a reader always sees either both counts or 
   ```
 
   When `MEMORIES_USED_COUNT` is 0, render only the header line (`… read · 0 used`), no bullets.
-- **Not connected** (`memory.*` unreachable) — render exactly `**Memories** — not connected`, no bullets.
+- **Not connected** (`LOREKIT_CONNECTED=false` — the `mcp__lorekit__memory_list` tool call itself errored, or the tool is not in the agent's `tools:` grant) — render exactly `**Memories** — not connected`, no bullets.
+  This shape MUST NOT appear when the read was merely skipped or assumed; it only appears after a genuine failed attempt.
 
 `MEMORIES_READ_COUNT` (Step 1.0) is how many memories were loaded; `MEMORIES_USED_COUNT` =
 `|APPLIED_MEMORIES|`, how many actually fired (drops + downgrades + promotes). Read is always ≥
@@ -1306,7 +1321,7 @@ in the Step 5 report.
 
 After posting:
 
-```
+```text
 Posted review on PR #<n> — gate table + <N> inline comments.
 ```
 

@@ -579,6 +579,52 @@ function checksInSync(plan, checks) {
     s.check("G17h README.md mentions standards-conformance + --no-standards in pr-reviewer context",
       readme.includes("standards-conformance") && readme.includes("--no-standards"));
   }
+
+  // G18: the pr-reviewer memory-read call sites name the real mcp__lorekit__memory_list
+  // tool and state a mandatory-attempt policy; the shared read rules mirror the same.
+  // Mirrors the G16/G17 guard shape — reads the REAL shipped files and asserts literal anchors.
+  // Never re-encode expected prose inside the eval (aw-lessons::mock-that-reimplements-the-thing-under-test).
+  {
+    const crm = read("agents/shared/rules/comment-relevance-memory.md");
+    const pca = read("agents/shared/rules/prior-comment-awareness.md");
+
+    // G18a: pr-reviewer.md issues the Step 1.0 read as a real mcp__lorekit__memory_list call.
+    // A bare includes("mcp__lorekit__memory_list") is tautological here: the base file already
+    // matches it once, in the `tools:` frontmatter (line 4), so it asserts nothing about the new
+    // Step 1.0 fan-out. Same shape as the G17c/G17e fixes above — assert a literal sentence from
+    // the rewritten block plus an occurrence floor the base revision cannot reach.
+    const memoryListMentions = prReviewer.split("mcp__lorekit__memory_list").length - 1;
+    s.check("G18a pr-reviewer.md issues the Step 1.0 read as a real mcp__lorekit__memory_list call (literal sentence + >= 5 mentions)",
+      prReviewer.includes("Issue each line below as a real `mcp__lorekit__memory_list` tool call — these are not documentation shorthand.") &&
+      memoryListMentions >= 5);
+
+    // G18b: comment-relevance-memory.md names the real mcp__lorekit__memory_list tool at the read.
+    s.check("G18b comment-relevance-memory.md names mcp__lorekit__memory_list at the read call site",
+      crm.includes("mcp__lorekit__memory_list"));
+
+    // G18c: pr-reviewer.md states a mandatory-attempt policy (the word "mandatory" near the read).
+    s.check("G18c pr-reviewer.md states mandatory-attempt policy at the Step 1.0 read",
+      /mandatory attempt/i.test(prReviewer));
+
+    // G18d: comment-relevance-memory.md states a mandatory-attempt policy.
+    s.check("G18d comment-relevance-memory.md states mandatory-attempt policy at the read",
+      /mandatory attempt/i.test(crm));
+
+    // G18e: pr-reviewer.md carries the sub-agent + SessionStart priming statement.
+    s.check("G18e pr-reviewer.md states sub-agent SessionStart priming caveat",
+      prReviewer.includes("sub-agent") && prReviewer.includes("SessionStart"));
+
+    // G18f: at least one shared rule carries the sub-agent + SessionStart statement
+    //       (comment-relevance-memory.md or prior-comment-awareness.md).
+    s.check("G18f at least one shared rule states sub-agent SessionStart priming caveat",
+      (crm.includes("sub-agent") && crm.includes("SessionStart")) ||
+      (pca.includes("sub-agent") && pca.includes("SessionStart")));
+
+    // G18g: scope/tag regression lock — the existing read semantics are unchanged.
+    //       Both repo:: and the loop::reviewer-comment-relevance tag still appear.
+    s.check("G18g comment-relevance-memory.md still carries repo:: and loop::reviewer-comment-relevance",
+      crm.includes("repo::") && crm.includes("loop::reviewer-comment-relevance"));
+  }
 }
 
 process.exit(s.report() ? 0 : 1);
