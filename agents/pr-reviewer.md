@@ -1067,7 +1067,7 @@ MEMORIES_SECTION
 ```markdown
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
-Reviewed your changes — no blocking issues; <N> finding(s). Details in Review diagnostics.
+Reviewed your changes — no blocking issues; <WARN_GATE_COUNT> gate(s) flagged a warning. See Review diagnostics.
 
 <sup>FOOTER_LINE</sup>
 
@@ -1285,8 +1285,8 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   These reuse the Quality-line values already computed at Step 2.9b — no separate counter.
 - `WARN_GATE_COUNT` = the number of soft gates showing ⚠️ on a WARN run — Description vs. code
   and/or Code review, so 1 or 2.
-  The value lives in the Step 3 terminal WARN verdict line and the gate table inside the accordion;
-  the top-level WARN headline uses `N` (finding count), not `WARN_GATE_COUNT`.
+  The top-level WARN headline leads with `WARN_GATE_COUNT`, not the finding count `N`, so it reads
+  correctly even when there are zero inline findings (a Description-vs-code-only warning).
 - Never add rows, sections, or prose outside the template above (except the three `<details>`
   blocks — diagnostics, `Optimality review`, and `Additional findings` — the `MEMORIES_SECTION`
   slot inside the diagnostics block, and the `PARTIAL_REVIEW_BANNER` line — all of which are slots

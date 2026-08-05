@@ -637,9 +637,9 @@ function checksInSync(plan, checks) {
     s.check("G19a pr-reviewer.md has the PASS concise headline",
       prReviewer.includes("Reviewed your changes — no issues found."));
 
-    s.check("G19b pr-reviewer.md has the WARN concise headline",
-      prReviewer.includes("Reviewed your changes — no blocking issues;") &&
-      prReviewer.includes("Details in Review diagnostics."));
+    s.check("G19b pr-reviewer.md has the WARN concise headline led by WARN_GATE_COUNT",
+      prReviewer.includes("Reviewed your changes — no blocking issues; <WARN_GATE_COUNT> gate(s) flagged a warning.") &&
+      prReviewer.includes("See Review diagnostics."));
 
     s.check("G19c pr-reviewer.md has the FAIL concise headline led by FAILING_GATE_COUNT",
       prReviewer.includes("Reviewed your changes — <FAILING_GATE_COUNT> gate(s) need attention before human review.") &&
