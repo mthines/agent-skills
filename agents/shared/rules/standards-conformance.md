@@ -23,8 +23,11 @@ are dropped at Step 2.6.
 ## Default-on, opt-out via `--no-standards`
 
 Standards-conformance runs on **every** invocation of `pr-reviewer` unless disabled, with a
-**quiet early-exit**: when no normative statements are found for the changed paths, or when the
-`TRIVIAL_SKIP` cache from Step 1.7b is true, the step is a silent no-op.
+**quiet early-exit**: when no normative statements are found for the changed paths, when the
+`TRIVIAL_SKIP` cache from Step 1.7b is true, or when `RUN_MODE == "incremental-quick"`, the step
+is a silent no-op.
+Those are the same three conditions Step 1.7b and Step 2.4d skip on, and the same three the
+§ Logging `Status` field reports.
 The token cost is the discovery walk (one pass, cached) plus the comparison itself; the value
 asymmetry is large — catching a diff that contradicts a well-documented project rule is worth
 many silent runs.
