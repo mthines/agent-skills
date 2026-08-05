@@ -537,7 +537,11 @@ function checksInSync(plan, checks) {
       rcFull.includes("standards:") &&
       /concatenat/i.test(rcFull) &&
       rcFull.includes("path_instructions") &&
-      rcFull.includes("standards"));
+      // The distinction itself, not merely the two words: the section heading plus the
+      // semantics that separate them (nudge-only vs. finding-producing).
+      /`path_instructions`\s+vs\.\s+`standards`/.test(rcFull) &&
+      /`path_instructions`\*\* is a \*\*confidence nudge\*\*/.test(rcFull) &&
+      /`standards`\*\* produces \*\*real findings\*\*/.test(rcFull));
 
     // G17d: the rule states never/must→issue and prefer→suggestion mapping,
     // states narrative/aspirational prose is never flagged, and states doc path:line as grounding.
