@@ -128,6 +128,7 @@ rule once at the step that owns it.
 - `agents/shared/rules/conventional-comments.md` — prefix table + decorations.
 - `agents/pr-reviewer/rules/line-validity.md` — RIGHT-side hunk-bounds pre-flight.
 - `agents/pr-reviewer/rules/posting-mechanics.md` — **legacy reference only.** This file describes the old PENDING review workflow. Its `event`-omit rule, `body == ""` assertion, and PENDING verification are superseded by the direct-posting contract in Step 4 of this agent. Do not apply its `payload_is_safe` or verification steps; use Step 4's inline pre-flight instead.
+- `agents/pr-reviewer/rules/authorization-gate.md` — **legacy reference only.** This file describes the retired `--publish` authorization gate for the old PENDING review workflow. Step 4 of this agent posts one visible `COMMENT` review unconditionally, in both relations; there is no authorization gate. Do not apply this file's token / phrase paths or its refusal template.
 - `agents/templates/pr-comment-card.template.md` — canonical card shape.
 
 ---

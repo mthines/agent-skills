@@ -1,14 +1,24 @@
 ---
-title: Authorization gate — external-system write under user identity
-impact: CRITICAL
+title: Authorization gate — external-system write under user identity (legacy)
+impact: LEGACY
 tags:
   - pr-reviewer
   - authorization
   - github-api
   - safety
+  - legacy
 ---
 
 # Authorization gate
+
+> **Legacy reference only — not imported by any agent.**
+> This rule describes the retired `--publish` authorization gate that guarded the
+> old PENDING review workflow. `pr-reviewer` Step 4 now posts exactly one visible
+> `COMMENT` review to `POST /repos/.../pulls/{n}/reviews` unconditionally, in both
+> relations, and `agents/pr-reviewer.md` does not import this file. Do not apply
+> the token path, the phrase path, or the refusal template below. Kept for
+> history alongside [`posting-mechanics.md`](./posting-mechanics.md), which is
+> legacy for the same reason.
 
 Posting to `POST /repos/.../pulls/{n}/reviews` is an **external-system write under the user's GitHub identity**. The PENDING state at GitHub (which keeps the review invisible until the user submits from the UI) is *secondary* safety — visibility limit. The *primary* gate is explicit per-call authorization captured in this sub-agent's transcript.
 
