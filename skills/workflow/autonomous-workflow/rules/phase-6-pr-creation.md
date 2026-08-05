@@ -145,6 +145,8 @@ Skill("aw-create-walkthrough")
 
 The skill gathers context from `plan.md`, git history, and test results to produce the walkthrough. It writes to `.agent/{branch}/walkthrough.md` inside the worktree.
 
+**Regenerate after the review-loop when it changed files.** The walkthrough is generated here, but `create-pr` Step 6.5 then runs `review-loop`, which applies findings and pushes new commits — so a walkthrough written before the loop describes the pre-review branch. If the `review-loop` applied any findings (`M findings applied > 0` in its Progress Log line), re-run `Skill("aw-create-walkthrough")` after the loop so the narrative matches the final pushed diff.
+
 | Property                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
 | Runs in Full Mode         | Yes                                                                    |
