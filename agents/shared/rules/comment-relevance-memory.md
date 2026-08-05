@@ -401,7 +401,7 @@ Surface a one-line suggestion — never act silently:
 
 ```
 Relevance memory "<fingerprint>" has been suppressed 3+ times in <repo>.
-Promote to a permanent repo filter?  Consider adding to .review.yaml:
+Promote to a permanent repo filter?  Consider adding to .github/review.yaml:
   filters:
     - category: <category>
       claim: "<claim-gist pattern>"
@@ -430,7 +430,7 @@ until 6).
 | `outcome-learning.md` | Post-merge gh-api signals write to BOTH `reviewer-lessons` (existing) AND `reviewer-comment-relevance` (new). |
 | `per-comment-confidence.md` | Confidence gate runs on the surviving findings only — already-dropped findings skip the gate. |
 | `finding-grounding.md` | Grounding runs on the surviving findings only. |
-| `.review.yaml` `filters:` | Relevance-memory filtering runs at Step 2.2, filter suppression at Step 2.3. A finding that survives Step 2.2 (seen < 3 times, only downgraded) is still eligible for filter suppression at Step 2.3. A finding dropped at Step 2.2 never reaches Step 2.3 — filter suppression is a no-op for already-dropped findings. Both mechanisms are complementary: memory is adaptive (learned), filters are explicit (configured). |
+| review-config `filters:` | Relevance-memory filtering runs at Step 2.2, filter suppression at Step 2.3. A finding that survives Step 2.2 (seen < 3 times, only downgraded) is still eligible for filter suppression at Step 2.3. A finding dropped at Step 2.2 never reaches Step 2.3 — filter suppression is a no-op for already-dropped findings. Both mechanisms are complementary: memory is adaptive (learned), filters are explicit (configured). |
 
 ---
 
@@ -442,5 +442,5 @@ until 6).
   aggregated counts.
 - Bypass the two-gate validation in `implement-suggestion` — relevance memories
   are advisory inputs to Phase 3 classification only.
-- Auto-edit `.review.yaml` — promotion is always surfaced as a suggestion, never
+- Auto-edit the review config (`.github/review.yaml`) — promotion is always surfaced as a suggestion, never
   applied without the user confirming.

@@ -43,7 +43,7 @@ It uses two LoreKit scopes:
 
 The `review-outcomes` bucket is **volatile**: every entry carries a `meta:` TTL of **30 days**.
 LoreKit does not auto-expire, so unpromoted candidates older than 30 days are pruned at consolidation time (prune-on-read) without review.
-30 days is the default; repositories with faster feedback loops may lower it via a `.review.yaml` `outcome-ttl` key.
+30 days is the default; repositories with faster feedback loops may lower it via a `.github/review.yaml` `outcome-ttl` key.
 
 ---
 
@@ -140,7 +140,7 @@ When a fingerprint class accumulates **≥ 3 concordant verdicts** (same-directi
 | Mixed direction (no ≥ 3 concordant) | No promotion; keep accumulating |
 
 The default threshold is 3 concordant verdicts.
-Repositories with higher signal volume may lower this to 2 via a `.review.yaml` `outcome-promotion-threshold` key.
+Repositories with higher signal volume may lower this to 2 via a `.github/review.yaml` `outcome-promotion-threshold` key.
 
 Cross-reference `outcome-learning.md` for the full promotion decision procedure — this file owns the threshold and directionality; `outcome-learning.md` owns the mechanics of writing the promoted lesson.
 

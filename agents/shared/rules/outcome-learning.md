@@ -174,7 +174,7 @@ Lesson body: "Pattern [fingerprint class] reliably gets resolved — [short desc
 memory.write { scope: "<global | repo::{owner}/{repo}>", key: "reviewer-lessons::<slug>", value: "<body>", tags: ["loop::reviewer-lessons", "source::outcome-rejected"] }
 ```
 
-Lesson body: "Pattern [fingerprint class] was rejected/reverted [N] times — over-flagging pattern: [short description]. Add to `filters:` in `.review.yaml` or lower confidence threshold."
+Lesson body: "Pattern [fingerprint class] was rejected/reverted [N] times — over-flagging pattern: [short description]. Add to `filters:` in `.github/review.yaml` or lower confidence threshold."
 
 Classify the scope: if the pattern is universal (e.g. "null-check assertions in safe-context `!` non-null assertions"), write to `global`; if repo-specific (e.g. "this repo's `EnsureMcpIntegrationId` is always guaranteed non-null by construction"), write to `repo::{owner}/{repo}`.
 
@@ -200,7 +200,7 @@ Outcome signals add a parallel gate:
 | Condition | Promotion action |
 | --- | --- |
 | ≥ 3 `applied` verdicts from `review-outcomes` (same fingerprint) | Promote to `reviewer-lessons` — this pattern reliably gets fixed |
-| ≥ 3 `rejected-at-validation` or `reverted-after-ci` verdicts (same fingerprint) | Promote as a **noise pattern** — consider adding to a `filters:` entry in `.review.yaml` |
+| ≥ 3 `rejected-at-validation` or `reverted-after-ci` verdicts (same fingerprint) | Promote as a **noise pattern** — consider adding to a `filters:` entry in `.github/review.yaml` |
 | ≥ 3 gh-api signal (c) resolution confirmations (fallback path) | Promote to `diagnose` slow tier — pattern reliably gets fixed |
 | ≥ 3 dismissals via gh-api signal (a) (same pattern, fallback path) | Promote as a **noise pattern** — consider `filters:` suppression |
 | ≥ 2 human-catch candidates of the same class | Surface as a detection candidate to the user; suggest rubric expansion |

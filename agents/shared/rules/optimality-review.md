@@ -25,8 +25,15 @@ The flag is `--no-optimize`. Mention it in the run announcement only when set.
 
 ## Trivial-skip set
 
-Skip the call (not the flag — the heuristic) on the same trivial diffs `holistic-review` skips: pure whitespace / formatting, dependency-bump-only, test-only, and `< 10 lines changed` with no high-stakes path (`**/auth/**`, `**/billing/**`, `**/payments/**`, `**/migrations/**`, `**/infra/**`).
-Reuse the heuristic already computed for `holistic-review` — do not recompute it.
+The conditions are defined once in `agents/shared/rules/holistic-review.md` § Trivial-skip set; `TRIVIAL_SKIP == true` skips the call (the heuristic, not the flag).
+Do not recompute the heuristic and do not restate its conditions here.
+Step 1.7b exists only in `pr-reviewer`, so this section names the binding point per host instead:
+
+| Host | Where `TRIVIAL_SKIP` comes from |
+| --- | --- |
+| `pr-reviewer` (either relation) | The cache evaluated once at Step 1.7b — read it, never recompute it. |
+| `polish` (`optimize` mode) | There is no Step 1.7b outside `pr-reviewer`: evaluate the referenced conditions once at the start of the pass, bind the result to `TRIVIAL_SKIP`, and read that value for the rest of the pass. |
+
 Skipping reports as `Optimality review: skipped (trivial diff).` in the Quality Gate summary.
 
 ## When to run (the call)
@@ -165,4 +172,4 @@ Do not block the run. Optimality review is an enhancement; the rest of the pipel
 - It does not set the blocker rules — those live in each agent's verdict step (and optimality never blocks).
 - It does not apply anything in `pr-reviewer` — cross-review is report-only.
 - It does not emit inline comments. Proposals surface only through the sections listed in § Where proposals surface.
-- It does not re-run the trivial-skip computation — it reuses `holistic-review`'s.
+- It does not re-run the trivial-skip computation. Under `pr-reviewer` it reads the `TRIVIAL_SKIP` cache written at Step 1.7b; under `polish` (`optimize` mode) the value is bound once at the start of the pass (§ Trivial-skip set).

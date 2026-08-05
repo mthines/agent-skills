@@ -66,7 +66,7 @@ Memories are stored under `repo::your-org/your-repo` in the
 | 1–2 × not-relevant | Finding downgraded from `issue`/`suggestion` to `nitpick` |
 | ≥ 3 × not-relevant | Finding dropped entirely (logged in Quality Gate) |
 | ≥ 2 × relevant | Finding promoted from `nitpick` to `suggestion` (terminal only) |
-| ≥ 3 × concordant either direction | Promotion suggestion surfaced — consider adding to `.review.yaml` |
+| ≥ 3 × concordant either direction | Promotion suggestion surfaced — consider adding to `.github/review.yaml` |
 
 ## Full documentation
 
