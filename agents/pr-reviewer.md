@@ -1289,6 +1289,9 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   and/or Code review, so 1 or 2.
   The top-level WARN headline leads with `WARN_GATE_COUNT`, not the finding count `N`, so it reads
   correctly even when there are zero inline findings (a Description-vs-code-only warning).
+  `WARN_GATE_COUNT` does not appear in the accordion gate table, which renders per-gate ✅/⚠️ marks
+  rather than a count; its only rendered uses are the Step 3 terminal WARN verdict line and this
+  top-level WARN headline.
 - Never add rows, sections, or prose outside the template above (except the three `<details>`
   blocks — diagnostics, `Optimality review`, and `Additional findings` — the `MEMORIES_SECTION`
   slot inside the diagnostics block, and the `PARTIAL_REVIEW_BANNER` line — all of which are slots
