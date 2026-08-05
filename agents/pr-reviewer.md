@@ -1009,7 +1009,10 @@ The `<sup>` footer line varies by run mode:
 - `full` mode: `<sup>Reviewed for commit \`HEAD_SHA\`.</sup>`
 - `incremental` or `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
 
-The diagnostics `<details>` block is identical on PASS, WARN, and FAIL — fill in the actual values.
+The diagnostics `<details>` block has the same structure on PASS, WARN, and FAIL, but each verdict
+template embeds its **own** gate-table variant — PASS renders every gate ✅, WARN renders ✅/⚠️, and
+FAIL renders ✅/⚠️/❌. Use the table from the template matching the chosen verdict; a PASS (all-✅)
+table must never be rendered on a WARN or FAIL body. Fill in the actual values.
 The `<sup>` footer depends on run mode (substituted before posting):
 - `full`: `<sup>Reviewed for commit \`HEAD_SHA\`.</sup>`
 - `incremental` / `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
