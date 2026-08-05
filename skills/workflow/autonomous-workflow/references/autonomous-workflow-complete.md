@@ -867,14 +867,16 @@ $ pnpm lint
 ✓
 ```
 
-### Review Changes (Self-Review)
+### Review Changes (Post-Draft Self-Review via review-loop)
 
 ```
-Agent(subagent_type: "reviewer", prompt: "Pre-push self-review --critical, auto-fix all Simple findings across every severity bucket")
-→ Analyzed 8 commits across 5 new files / 3 modified files
+Skill("review-loop", "<pr-url> --critical")
+→ REVIEW_RELATION: self (pr-reviewer detects authorship automatically)
+→ Iteration 1: analyzed 8 commits across 5 new files / 3 modified files
 → Coverage: 100% on new code, no regressions in existing tests
 → Consistency: matches shadcn/ui patterns and existing context layout
-→ No blocking findings; 2 advisory notes captured for the walkthrough
+→ No blocking findings; PASS — early exit after 1 iteration
+→ 2 advisory notes captured for the walkthrough
 ```
 
 ### Generate Walkthrough Artifact

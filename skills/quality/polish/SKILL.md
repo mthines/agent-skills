@@ -2,23 +2,24 @@
 name: polish
 description: >
   Re-runnable pre-PR quality gate for the current branch. Composes two existing
-  passes over the branch diff: a broad reviewer-agent pass (auto-fixes simple
-  issues, plans complex ones) and a code-quality simplify pass (applies Class M
-  mechanical refactors behind a confidence ≥ 90 % gate, reverting on failure).
-  Run bare for the full review + simplify works; scope it with `review`,
-  `simplify`, or the light `quick` mechanical pass. Commits each pass separately
-  for traceability (`--no-commit` to skip). Use standalone any time mid-development
-  to clean a branch, and note that `/create-pr` delegates to it — running the full
-  pass by default and scaling down via its `--no-review` / `--no-simplify` /
-  `--quick` flags. Triggers on "polish my branch",
-  "clean this up before the PR", "review and simplify", "tidy up", "prep my
-  branch", "/polish".
+  passes over the branch diff: a broad pr-reviewer pass (read-only review via
+  the branch's open PR, which `pr-reviewer` requires) and a code-quality
+  simplify pass
+  (applies Class M mechanical refactors behind a confidence ≥ 90 % gate,
+  reverting on failure). Run bare for the full review + simplify works; scope it
+  with `review`, `simplify`, or the light `quick` mechanical pass. Commits each
+  pass separately for traceability (`--no-commit` to skip). Use standalone any
+  time mid-development to clean a branch. Note that `/create-pr` delegates its
+  quality step to `review-loop` (the bounded convergence loop) post-draft, and
+  the `review-loop` skill calls only `polish simplify` — never full `polish`.
+  Triggers on "polish my branch", "clean this up before the PR", "review and
+  simplify", "tidy up", "prep my branch", "/polish".
 disable-model-invocation: false
 argument-hint: '[review|simplify|quick] [--no-commit] [--critical]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '2.0.0'
   workflow_type: command
   tags:
     - code-quality
@@ -27,7 +28,7 @@ metadata:
     - refactor
     - pre-pr
     - branch-cleanup
-    - reviewer-agent
+    - pr-reviewer
     - orchestrator
 ---
 
@@ -37,34 +38,34 @@ Get a branch into clean, reviewable shape **before** it goes up for review — a
 
 This skill is an **orchestrator**. It does not contain quality rules of its own; it composes two existing pieces over the current branch diff:
 
-1. The **`reviewer` agent** — broad own-work review (correctness, holistic intent/system-fit, code-quality, UX). Auto-fixes simple issues; plans complex ones.
+1. The **`pr-reviewer` agent** — broad review via the branch's open PR (read-only; findings are surfaced for you to act on, applied via `implement-suggestion`). Requires an open PR — `pr-reviewer` has no PR-less mode. If no PR is open, Pass A is skipped and you are told to open a draft PR via `/create-pr` first.
 2. The **`code-quality` skill in `simplify` mode** — applies Class M *mechanical* refactors one at a time behind `Skill("confidence", "code") ≥ 90 %` and a scoped fast-check, reverting any that fail. Class J (judgment) recipes stay as proposals.
 
-`/create-pr` delegates its pre-push quality step to this skill, so the two never drift. You can also run it standalone at any point.
+`/create-pr` delegates its post-draft quality step to `review-loop` (the bounded convergence loop), which calls only `polish simplify` — never full `polish`. You can run `polish` standalone at any point for a pre-draft local check.
 
 ## Modes
 
 Parse the **first token** of `$ARGUMENTS`. Everything else is a flag.
 
-| Mode                 | Trigger                          | What runs                                                                                                  |
-| -------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| **full** *(default)* | No mode token                    | `review` pass, then `simplify` pass. The "do the works" button.                                           |
-| `review`             | First token `review`             | Reviewer-agent pass only — auto-fix simple, plan complex.                                                  |
-| `simplify`           | First token `simplify`           | `code-quality` simplify pass only — apply Class M mechanical refactors.                                    |
-| `optimize`           | First token `optimize`           | Optimality pass only — `Skill("optimize-approach", "apply")` over the branch diff (gated approach rewrite).|
-| `quick`              | First token `quick`              | Light mechanical pass only (comments, naming, dead code). No reviewer agent, no structural refactors.     |
+| Mode                 | Trigger                          | What runs                                                                                                    |
+| -------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **full** *(default)* | No mode token                    | `review` pass (pr-reviewer, read-only), then `simplify` pass. The "do the works" button.                    |
+| `review`             | First token `review`             | `pr-reviewer` pass only — read-only review surfaced as findings for you to act on.                           |
+| `simplify`           | First token `simplify`           | `code-quality` simplify pass only — apply Class M mechanical refactors.                                      |
+| `optimize`           | First token `optimize`           | Optimality pass only — `Skill("optimize-approach", "apply")` over the branch diff (gated approach rewrite).  |
+| `quick`              | First token `quick`              | Light mechanical pass only (comments, naming, dead code). No pr-reviewer pass, no structural refactors.      |
 
-In `full` and `review` modes the optimality lens runs **inside** the reviewer pass (the `reviewer` agent runs `optimize-approach` in report mode at Step 2.4c, then applies the top approach rewrite in its Step 4 auto-fix phase). The standalone `optimize` mode above is for running only that lens without the rest of the reviewer pass.
+In `full` and `review` modes the optimality lens runs **inside** the `pr-reviewer` pass (which runs `optimize-approach` in report mode at Step 2.4c). The standalone `optimize` mode above is for running only that lens without the rest of the review pass.
 
 Flags (compose with any mode):
 
 | Flag          | Effect                                                                                                          |
 | ------------- | ------------------------------------------------------------------------------------------------------------- |
 | `--no-commit` | Leave all changes in the working tree instead of committing each pass. Use mid-development to keep iterating. |
-| `--critical`  | Pass `--critical` through to the reviewer agent (adversarial pre-mortem). Ignored by `simplify` / `quick`.    |
-| `--no-optimize` | Pass `--no-optimize` through to the reviewer agent — skip the default-on optimality lens (Step 2.4c). Ignored by `simplify` / `quick`. |
+| `--critical`  | Pass `--critical` through to the `pr-reviewer` agent (adversarial pre-mortem). Ignored by `simplify` / `quick`.    |
+| `--no-optimize` | Pass `--no-optimize` through to the `pr-reviewer` agent — skip the default-on optimality lens (Step 2.4c). Ignored by `simplify` / `quick`. |
 
-**Order is fixed in full mode: `review` first, then `simplify`.** The reviewer fixes correctness and obvious cleanups; simplify then applies structural refactors to the already-cleaner code, so confidence gates evaluate the final shape.
+**Order is fixed in full mode: `review` first, then `simplify`.** The review pass surfaces correctness and obvious cleanups; simplify then applies structural refactors to the already-cleaner code, so confidence gates evaluate the final shape.
 
 ## Step 0: Resolve mode and preconditions
 
@@ -112,27 +113,28 @@ Run only the passes the resolved mode selects (see the Modes table). Each pass b
 
 ### Pass A — `review` (modes: full, review)
 
-Dispatch the **`reviewer` agent** as a subagent. It auto-detects its sub-mode from the working tree (own branch with no PR → Fix Mode, auto-fix simple + plan complex; own PR exists → Self-Review, same auto-fix policy). It never writes to GitHub.
+Invoke `pr-reviewer` against the branch's open PR.
+`pr-reviewer` requires a PR — it always posts one visible `COMMENT` review and returns findings.
+Polish does not apply those findings itself; surface them to the user.
 
-```
-Agent(
-  subagent_type: "reviewer",
-  description: "Polish: review + auto-fix current branch",
-  prompt: |
-    Review the current branch diff against origin/main as own work.
-    Auto-fix simple issues directly in the working tree; plan (do not apply)
-    complex ones. Do not touch GitHub. Do not weaken or delete tests.
-    Return: the verdict, the list of auto-fixed items (one line each), and
-    the list of planned-but-not-applied complex items (title + why + files).
-    <pass "--critical" here only if the user passed --critical to polish>
-)
+```bash
+# Resolve the current branch's PR — pr-reviewer requires one.
+PR_URL=$(gh pr view --json url -q .url 2>/dev/null)
 ```
 
-The reviewer pass includes the **optimality lens** (report at Step 2.4c, then at most one approach rewrite applied in its Step 4 auto-fix phase behind `confidence(code) ≥ 90 %` + revert-on-failure; the rest reported). Pass `--no-optimize` through when the user set it on polish.
+If no PR is open, skip Pass A and tell the user to open a draft PR first (via `/create-pr`), then re-run `polish`.
+When a PR exists, dispatch the review:
 
-Capture from the agent's reply: the verdict, the auto-fixed list (including any applied approach rewrite), and the planned-complex list. The planned-complex items are **surfaced to the user**, not applied — they need judgment.
+```
+Skill("pr-reviewer", "<PR-URL-or-number> [--critical if user passed it] [--no-optimize if user passed it]")
+```
 
-The reviewer runs its own post-fix verification (targeted tests for changed files) and reverts any auto-fix that regresses. Do not re-run a full verify here; trust its gate.
+The `pr-reviewer` pass includes the **optimality lens** (Step 2.4c, report-only).
+Pass `--no-optimize` through when the user set it on polish.
+
+Capture from the agent's reply: the verdict and the findings list.
+Surface all findings to the user — polish does not auto-apply them.
+If you want findings applied, use `review-loop` (which calls `implement-suggestion` after each `pr-reviewer` pass) rather than `polish review`.
 
 ### Pass B — `simplify` (modes: full, simplify)
 
@@ -184,7 +186,9 @@ Unless `--no-commit` was passed, commit after each pass that produced changes, a
 
 ```bash
 # After Pass A (review):
-git add -u && git commit -m "chore: review pass (auto-fixes from reviewer)"
+# Note: pr-reviewer is read-only — no local changes to commit from Pass A.
+# Commit only if polish itself made edits (e.g. from a quick pass or simplify).
+git add -u && git commit -m "chore: review pass (findings from pr-reviewer)"
 
 # After Pass B (simplify):
 git add -u && git commit -m "chore: simplify pass (mechanical refactors)"
@@ -207,10 +211,10 @@ Print a compact summary. Match the depth to what ran.
 ```
 Polish (<mode>) on <branch>
 
-Review pass:
-  Verdict: <Approve | Approve with comments | Request changes | n/a (not run)>
-  Auto-fixed: <one line per fix, or "none">
-  Planned (needs your judgment): <one line per complex item, or "none">
+Review pass (pr-reviewer):
+  Verdict: <PASS | FAIL | n/a (not run)>
+  Findings surfaced: <N findings; apply via review-loop, or "none">
+  Needs your judgment: <one line per blocking item, or "none">
 
 Simplify pass:
   Applied: <recipe IDs + one-line each, or "none">
@@ -226,7 +230,8 @@ Optimize pass:     # only if mode == optimize
 Commits: <SHA + message per pass, or "none (--no-commit)">
 ```
 
-Surface the **planned-complex** (review) and **Class J proposals** (simplify) prominently — these are the items the user still needs to decide on. Do not silently drop them.
+Surface the **findings** (review) and **Class J proposals** (simplify) prominently — these are the items the user still needs to decide on.
+Do not silently drop them.
 
 ## Hard rules
 
@@ -238,16 +243,24 @@ Surface the **planned-complex** (review) and **Class J proposals** (simplify) pr
 - **Never stash, reset, or discard the user's uncommitted work.**
 - **One pass each per invocation. Do not loop.** If the branch still has issues after a polish run, that is a signal for the user to act on, not for the skill to grind.
 
-## Relationship to `/create-pr`
+## Relationship to `review-loop` and `/create-pr`
 
-`/create-pr` delegates its pre-push quality step to this skill:
+`review-loop` calls only `Skill("polish", "simplify")` — never full `polish` or `polish review`.
+This is the anti-circularity guarantee: `review-loop` drives `pr-reviewer` itself each iteration;
+having `polish review` re-enter `pr-reviewer` would create a dispatch cycle.
 
-| `/create-pr` invocation     | Delegates to            |
-| --------------------------- | ----------------------- |
-| `/create-pr` (default)      | `Skill("polish")` (full) |
-| `/create-pr --no-review`    | `Skill("polish", "simplify")` |
-| `/create-pr --no-simplify`  | `Skill("polish", "review")`   |
-| `/create-pr --quick`        | `Skill("polish", "quick")`    |
-| `/create-pr --no-quality`   | *(polish skipped)*      |
+`/create-pr` delegates its post-draft quality step to `review-loop` (the bounded convergence
+loop), not directly to `polish`.
+`polish` is still useful standalone as a pre-draft local check.
 
-Because the logic lives here, the standalone `/polish` command and `/create-pr`'s pre-push pass can never drift apart.
+| `review-loop` invocation             | Delegates to                    |
+| ------------------------------------ | ------------------------------- |
+| `review-loop` (each iteration step C) | `Skill("polish", "simplify")` only |
+
+| `/create-pr` flag         | Post-draft quality path                        |
+| ------------------------- | ---------------------------------------------- |
+| `/create-pr` (default)    | `Skill("review-loop")` (full convergence loop) |
+| `/create-pr --no-review`  | `Skill("polish", "simplify")` — simplify only, one pass |
+| `/create-pr --no-simplify`| `Skill("pr-reviewer")` one-shot only           |
+| `/create-pr --quick`      | `Skill("polish", "quick")` on the draft diff   |
+| `/create-pr --no-quality` | *(quality skipped)*                            |

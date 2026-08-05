@@ -7,7 +7,7 @@ description: >
   exit — analyzing each block, every contract boundary, and the full data flow.
   Three modes: "fix" (default) for bugs and broken behavior, "refactor" for
   restructuring/improvement, and "review" for PR validation (returns structured
-  intent-match + system-fit findings for the reviewer / pr-reviewer agents to
+  intent-match + system-fit findings for the `pr-reviewer` agent to
   consume — never run on its own for routine review work). Trigger ONLY
   when at least one isolated fix attempt has already failed, or the user
   explicitly requests a full execution-path analysis — phrases like
@@ -63,7 +63,7 @@ Check `$ARGUMENTS` for mode:
 |------------|---------|----------|
 | `fix`      | **yes** | Bug, broken behavior, failing test — something is wrong and needs root cause analysis |
 | `refactor` |         | Restructuring, cleanup, improvement — the code works but needs to be better |
-| `review`   |         | PR validation — does this diff implement what its description claims, and does the change make sense given how the changed code is used in the wider system? Returns structured findings for a reviewer agent to consume — **not** root-cause analysis. Streamlined three-phase flow that skips Phases 2–8; full procedure lives in [`rules/review-mode.md`](./rules/review-mode.md). |
+| `review`   |         | PR validation — does this diff implement what its description claims, and does the change make sense given how the changed code is used in the wider system? Returns structured findings for the `pr-reviewer` agent to consume — **not** root-cause analysis. Streamlined three-phase flow that skips Phases 2–8; full procedure lives in [`rules/review-mode.md`](./rules/review-mode.md). |
 
 The mode determines how certain phases are framed (noted inline below). `fix` and `refactor` walk the full eight-phase protocol in this file. `review` is a structurally different flow — see the rule file linked above.
 

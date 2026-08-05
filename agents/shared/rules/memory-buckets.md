@@ -68,7 +68,7 @@ reviewer-comment-relevance
 | `aw-tester-lessons` | `aw-tester` | spec run start → on spec-verify friction | `global` \| `repo::` | UI-verification lessons. |
 | `fix-bug-lessons` | `fix-bug` | Phase 0.5 → Phase 5·7·8 | `global` \| `repo::` | Diagnostic-phase lessons; inherits `aw-lessons` via `aw-executor`. |
 | `batch-lessons` | `batch-linear-tickets` | Phase 1 → Phase 5 | `global` \| `repo::` | Ticket classification + correlation. |
-| `reviewer-lessons` | `reviewer`, `pr-reviewer` | Step 0.7 / Step 1.0 → `reviewer` end-of-run + promotion | `global` \| `repo::` | Distilled from the `review-outcomes` bus at promotion time. |
+| `reviewer-lessons` | `pr-reviewer` | Step 0.7 / Step 1.0 → end-of-run + promotion | `global` \| `repo::` | Distilled from the `review-outcomes` bus at promotion time. |
 | `implement-suggestion-lessons` | `implement-suggestion` | Phase 3 → Phase 7 + `--watch` | `global` \| `repo::` | Classification, gate calibration, lane selection. |
 | `ci-auto-fix-lessons` | `ci-auto-fix` | Phase 3 → Phase 8·9 | **`repo::`** | More conservative: `seen_count ≥ 5` promotion; regression lessons `volatile`, 30d. |
 | `e2e-pr-stabilizer-lessons` | `e2e-pr-stabilizer` | Phase 4 → Phase 7 | `global` (race-shapes) \| `repo::` (locators) | Writes gated on telemetry ratification. |

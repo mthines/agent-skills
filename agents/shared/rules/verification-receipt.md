@@ -2,7 +2,6 @@
 title: Verification receipt — behavioral claims need executed proof
 impact: HIGH
 tags:
-  - reviewer
   - pr-reviewer
   - grounding
   - false-positive-control
@@ -21,7 +20,7 @@ Findings that survive produce a receipt that feeds directly into the `confidence
 > **Future work:** Once generation-aggression tuning (prompt reframing) is in place, the threshold on what triggers a receipt check can be relaxed for lower-severity findings.
 > The receipt gate is the *shippable static* version of code-execution verification — similar in spirit to CodeRabbit's generate-then-judge grounding, which runs sandbox execution to verify behavioral claims.
 > Bugbot does not do this today; execution verification is on their roadmap.
-> This rule gives both agents the static analogue without requiring a runtime sandbox.
+> This rule gives `pr-reviewer` the static analogue without requiring a runtime sandbox.
 
 ---
 

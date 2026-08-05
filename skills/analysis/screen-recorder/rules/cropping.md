@@ -151,7 +151,7 @@ Two opt-in transcodes are supported.
 ### `.mp4` (H.264) — for PR comment previews
 
 GitHub previews `.mp4` inline in comments; `.webm` is downloaded.
-When the caller is `reviewer` in PR Mode, transcode by default.
+When the caller is `pr-reviewer` in PR Mode, transcode by default.
 
 ```bash
 ffmpeg -y -i cropped.webm \

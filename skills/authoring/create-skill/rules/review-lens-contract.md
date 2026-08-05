@@ -1,8 +1,8 @@
 ---
-title: 'Review-Lens Contract — Letting the Reviewer Agent Borrow a Skill'
+title: 'Review-Lens Contract — Letting the pr-reviewer Agent Borrow a Skill'
 impact: HIGH
 tags:
-  - reviewer
+  - pr-reviewer
   - lens
   - token-budget
   - contract
@@ -10,41 +10,41 @@ tags:
 
 # Review-Lens Contract
 
-When the user invokes the `reviewer` agent with `--with <skill-name>`, the
+When the user invokes the `pr-reviewer` agent with `--with <skill-name>`, the
 agent loads a small, fixed-shape file called a **lens** from each named
 skill and applies it as an additional review rubric.
 This contract specifies exactly what a lens file looks like, where it
-lives, and what the reviewer is allowed to do with it.
+lives, and what the reviewing agent is allowed to do with it.
 
 The contract exists to keep the feature **token-cheap**:
 loading the entire `SKILL.md` of every referenced skill would burn 3–10 k
 tokens per review.
-A lens file is capped at ≤ 80 lines / ≤ 600 tokens — the reviewer can
+A lens file is capped at ≤ 80 lines / ≤ 600 tokens — the `pr-reviewer` can
 afford to load three of them.
 
 ## Hard rules
 
 1. **One file, one path.** A lens lives at `skills/<category>/<name>/lens.md`,
    top-level, sibling to `SKILL.md`. No nested lenses. No `rules/lens.md`.
-   The reviewer reads exactly this path and nothing else when applying the
+   The `pr-reviewer` reads exactly this path and nothing else when applying the
    lens.
 2. **Hard size cap.** ≤ 80 lines, ≤ 600 tokens. Lenses that exceed this
-   cap MUST be split or trimmed — the reviewer will refuse to load
+   cap MUST be split or trimmed — the `pr-reviewer` will refuse to load
    anything larger than 1 000 lines as a defensive guard.
-3. **Max three lenses per invocation.** The reviewer enforces
+3. **Max three lenses per invocation.** The `pr-reviewer` enforces
    `--with a,b,c` (three items max). The fourth is rejected with a clear
    error. This bounds worst-case load at ~1.8 k tokens.
-4. **No fallback to SKILL.md.** If `lens.md` is missing, the reviewer
+4. **No fallback to SKILL.md.** If `lens.md` is missing, the `pr-reviewer`
    warns once (`skill X has no lens — skipping`) and continues. It does
    NOT read `SKILL.md` as a fallback — that would defeat the token
    budget.
 5. **Lens findings flow through the existing Quality Gate.** Lens
-   criteria go through Step 2.5 (`/aw-review-quality-gate`) just like
+   criteria go through Step 2.5 (dedupe + consolidate) just like
    built-in findings. A lens cannot bypass the gate.
-6. **Lenses are additive.** The reviewer's existing auto-loads
+6. **Lenses are additive.** The `pr-reviewer`'s existing auto-loads
    (`code-quality`, `ux`, `critical`) still fire on the same triggers.
    Passing `--with code-quality` when code-quality already auto-loads is
-   a no-op (the reviewer dedupes by skill name).
+   a no-op (the `pr-reviewer` dedupes by skill name).
 
 ## File shape
 
@@ -52,7 +52,7 @@ A lens MUST conform to this exact structure:
 
 ```markdown
 ---
-for: reviewer
+for: pr-reviewer
 lens-version: 1
 applies-to: <glob list OR "always">
 ---
@@ -83,8 +83,8 @@ lens is relevant.>
 
 | Field          | Required | Notes                                                                         |
 | -------------- | -------- | ----------------------------------------------------------------------------- |
-| `for`          | yes      | Always `reviewer` for v1. Reserved field for future consumers.                |
-| `lens-version` | yes      | Schema version. Currently `1`. Reviewer rejects unknown versions.             |
+| `for`          | yes      | Always `pr-reviewer` for v1. Reserved field for future consumers.             |
+| `lens-version` | yes      | Schema version. Currently `1`. `pr-reviewer` rejects unknown versions.        |
 | `applies-to`   | yes      | Glob list (e.g. `**/*.tsx, app/**/*.ts`) or the literal string `always`.      |
 
 ### Section rules
@@ -96,7 +96,7 @@ lens is relevant.>
   a single sentence, falsifiable, and ends with an action verb. No
   nested bullets, no headings.
 - **`## Severity hints`** — optional, but recommended. Maps checklist
-  items to verdict tiers so the reviewer knows what's blocking.
+  items to verdict tiers so the `pr-reviewer` knows what's blocking.
 
 ## Writing a good lens
 
@@ -114,7 +114,7 @@ If the checklist item cannot be answered by reading a diff hunk in
 isolation, it does not belong in the lens.
 Push it back into the skill body.
 
-## What the reviewer does at runtime
+## What the pr-reviewer does at runtime
 
 For each `--with <name>`:
 
@@ -127,19 +127,15 @@ For each `--with <name>`:
    list, apply only when at least one changed file matches.
 5. During Step 2, iterate the checklist. Each item that fails becomes a
    finding tagged `[lens:<skill-name>]`.
-6. Each lens finding flows through the Quality Gate in Step 2.5 like any
-   other finding.
-7. Step 3 lists active lenses in the summary table:
-
-   ```
-   Active lenses: ai-engineering (3/9 items flagged), tdd (0/6 items flagged)
-   ```
+6. Each lens finding is deduped and consolidated with the built-in
+   findings at Step 2.5, then flows through the rest of the Quality Gate
+   like any other finding.
 
 ## Versioning
 
 `lens-version: 1` covers the contract described above.
 Future versions will be additive (new optional fields, new sections).
-A reviewer that supports version N MUST refuse to load a lens declaring
+A `pr-reviewer` that supports version N MUST refuse to load a lens declaring
 version N+1 — refuse, don't degrade silently.
 
 ## Opting an existing skill in
@@ -153,15 +149,15 @@ To make an existing skill lens-eligible:
 3. Fill in `applies-to` and the checklist.
 4. Verify the line count: `wc -l skills/<your-skill>/lens.md` must be
    ≤ 80.
-5. Test with `reviewer --pr <PR-URL> --with <your-skill>` on a known PR.
+5. Test with `/pr-review <PR-URL> --with <your-skill>` on a known PR.
 6. Add a one-line note to your skill's `SKILL.md` saying "Lens-eligible
-   for the `reviewer` agent — see `lens.md`."
+   for the `pr-reviewer` agent — see `lens.md`."
 
 ## Anti-patterns
 
 - ❌ Lens that just `@imports` the full `SKILL.md`. Defeats the budget.
 - ❌ Lens checklist items that require running code or reading other
-  files. The reviewer applies lenses against a diff only.
+  files. The `pr-reviewer` applies lenses against a diff only.
 - ❌ Lens with no `applies-to`. Always apply or always-skip — never
   ambiguous.
 - ❌ Multiple lens files per skill. One file. One path.

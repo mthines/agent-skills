@@ -143,7 +143,7 @@ docstring is overhead.
 
 ### Hard rule for auto-fix runs
 
-When the skill runs as part of an automated pass (e.g. `create-pr` Step 5.5,
+When the skill runs as part of an automated pass (e.g. `create-pr` Step 6.5,
 the `tdd` REFACTOR phase, or any non-interactive review): **never delete a
 docstring/JSDoc block as a noise-removal action**. The block is part of
 the function's API surface — IDEs read it, type stripping tools read it,

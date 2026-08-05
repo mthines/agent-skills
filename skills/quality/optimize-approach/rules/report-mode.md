@@ -62,10 +62,10 @@ The calling agent renders it as a card in a dedicated report section, never as a
 
 | Caller | Surface | Framing |
 | --- | --- | --- |
-| `reviewer` (own work) | `Optimality` section of the terminal / Self-Review report | Assert: "A better approach here is …" |
-| `pr-reviewer` (cross-review) | `Optimality review` section of the GitHub review body | Ask: "Have you considered …?" |
+| `pr-reviewer` (either relation) | `Optimality review` section of the GitHub review body | Ask: "Have you considered …?" |
 
-`pr-reviewer` frames every proposal as a question regardless of confidence, respecting the cross-review context asymmetry (the reviewer has less context than the author).
+`pr-reviewer` frames every proposal as a question unconditionally, in both relations, regardless of confidence — its Step 2.4c and `OPTIMALITY_SECTION` note carry no relation branch (`agents/pr-reviewer.md`).
+The question framing respects the review context asymmetry (the reviewer has less context than the author).
 
 An optimality proposal is **always non-blocking** — it never drives "Request changes", the same rule `holistic-review` applies to `scope-creep`.
 Below 85 % `analysis_confidence` the proposal is dropped here, in this skill (the alternative is not understood well enough to assert as objectively better).

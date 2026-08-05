@@ -2,7 +2,6 @@
 title: Review config — .review.yaml profile, filters, and path instructions
 impact: MEDIUM
 tags:
-  - reviewer
   - pr-reviewer
   - configuration
   - profile
@@ -10,15 +9,15 @@ tags:
 
 # Review config
 
-Both agents support per-repo (and per-subtree) configuration via a `.review.yaml` file.
+`pr-reviewer` supports per-repo (and per-subtree) configuration via a `.review.yaml` file.
 The config surface is deliberately small — one profile knob, one noise-suppressor list, one path-scoped guidance list — so that the most common customizations require minimal YAML authorship.
 
-**Back-compat guarantee:** an absent `.review.yaml` resolves to `profile: balanced`, which equals today's defaults (per-comment threshold 80, inline placement cap 5 per file for `pr-reviewer`, none for `reviewer`, no filters, no path instructions).
+**Back-compat guarantee:** an absent `.review.yaml` resolves to `profile: balanced`, which equals today's defaults (per-comment threshold 80, inline placement cap 5 per file on the posted review, no filters, no path instructions).
 The config surface itself introduces no behaviour change: with no config file, `pr-reviewer` posts the same inline comments it always did, and the threshold is still 80.
 
-**One deliberate exception, introduced with placement (Step 2.9b):** `reviewer`'s default per-file cap moved from **10 to none**, so an absent config now reports *more* findings on a large branch than it used to.
-That is a widening, never a suppression — `reviewer` writes to the terminal, where there is no posting cost, so confidence is the only gate on what it reports.
-Nothing that clears the confidence threshold is hidden in either agent: `pr-reviewer`'s cap governs inline placement only, and overflow is deferred to the review body (`rubric-composition.md § Placement (Step 2.9b)`).
+**One deliberate exception, introduced with placement (Step 2.9b):** the Step 3 terminal report has no per-file cap (local output, no posting cost) in either relation, so an absent config now reports *more* findings on a large branch than it used to.
+That is a widening, never a suppression — the terminal report prints every finding that clears confidence.
+Nothing that clears the confidence threshold is hidden in either relation: the cap governs inline placement on the posted review only, and overflow is deferred to the review body (`rubric-composition.md § Placement (Step 2.9b)`).
 
 ---
 
@@ -51,13 +50,13 @@ path_instructions:                       # path-scoped guidance
 
 | Profile | Generation aggression | Per-comment confidence threshold | Inline placement cap per file |
 | --- | --- | --- | --- |
-| `chill` | Low — only high-confidence, high-severity findings | 90 | 3 (`pr-reviewer`), none (`reviewer`) |
-| `balanced` | Medium — today's defaults | **80** | **5** (`pr-reviewer`), none (`reviewer`) |
-| `assertive` | High — include lower-confidence and lower-severity findings | 70 | 7 (`pr-reviewer`), none (`reviewer`) |
+| `chill` | Low — only high-confidence, high-severity findings | 90 | 3 |
+| `balanced` | Medium — today's defaults | **80** | **5** |
+| `assertive` | High — include lower-confidence and lower-severity findings | 70 | 7 |
 
-The cap column governs **placement only** — how many findings are posted as inline comments per file.
-It never discards a finding: overflow is deferred to the review body (`rubric-composition.md § Placement (Step 2.9b)`).
-The confidence threshold is the only setting that decides whether a finding is reported at all, which is why `reviewer` (terminal output, no posting cost) has no cap in any profile.
+The cap column governs **placement only** — how many findings are posted as inline comments per file on the Step 4 review. It applies to every run; `pr-reviewer` runs the identical pipeline and posts in both relations (`rubric-composition.md § Placement (Step 2.9b)`).
+It never discards a finding: overflow is deferred to the review body.
+The confidence threshold is the only setting that decides whether a finding is reported at all, which is why the Step 3 terminal report (local output, no posting cost) has no cap in any profile.
 
 The `balanced` row in the table is the definition of today's defaults — if any default changes in the agents, update this row to match and bump the config schema version.
 
@@ -81,7 +80,7 @@ This is Diamond's first-class noise-suppressor mechanism — a filter entry drop
 | `trailing-commas` | Trailing comma style suggestions |
 | `prefer-const-over-let` | `const`/`let` preference findings where `let` is not mutated |
 
-Teams add their own filter names to this list; the agents treat any unknown filter name as a tag to match against the finding's category annotation.
+Teams add their own filter names to this list; `pr-reviewer` treats any unknown filter name as a tag to match against the finding's category annotation.
 Unknown filter names do not error — they are simply never matched until a rubric produces a finding tagged with that name.
 
 A finding dropped by a filter is logged:
@@ -153,9 +152,9 @@ Run this once per changed file at the start of Step 1 (change-scope understandin
 
 ---
 
-## Config loading step (both agents)
+## Config loading step
 
-Both agents load the effective config **before Step 2 (Review)**.
+`pr-reviewer` loads the effective config **before Step 2 (Review)**.
 Add this step immediately after Step 1.6 (lens loading), labelled **Step 1.7: Load review config**.
 
 ```bash
@@ -207,5 +206,5 @@ For backwards compatibility, a bare `per_comment_confidence_threshold: N` withou
 ## What this rule does not do
 
 - Define how rubrics are authored or loaded — that is `rubric-composition.md`.
-- Govern posting authorization — that is `authorization-gate.md`.
+- Govern how the review is posted — `pr-reviewer` posts one visible `COMMENT` review at Step 4 unconditionally, with no authorization gate.
 - Replace per-run flags — `--no-holistic`, `--no-critical`, `--with` still override on a per-invocation basis and take precedence over `.review.yaml` profile settings.

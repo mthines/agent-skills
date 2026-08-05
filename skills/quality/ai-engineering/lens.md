@@ -1,5 +1,5 @@
 ---
-for: reviewer
+for: pr-reviewer
 lens-version: 1
 applies-to: "**/*-prompt.ts, **/*-prompt.tsx, **/prompts/**, **/agents/**/*.ts, **/llm/**, **/anthropic*.ts, **/openai*.ts, **/ai-sdk*.ts, **/tools/**/*.ts"
 ---

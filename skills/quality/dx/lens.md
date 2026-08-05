@@ -1,5 +1,5 @@
 ---
-for: reviewer
+for: pr-reviewer
 lens-version: 1
 applies-to: "**/cli/**, **/bin/**, **/*.sh, **/Makefile, **/Taskfile.yml, **/justfile, **/*-cli.ts, **/scripts/**"
 ---

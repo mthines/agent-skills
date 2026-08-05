@@ -1,15 +1,28 @@
 ---
-title: Posting mechanics — pending review payload and verification
-impact: CRITICAL
+title: Posting mechanics — pending review payload and verification (legacy)
+impact: LEGACY
 tags:
   - pr-reviewer
   - github-api
   - pending-review
+  - legacy
 ---
 
 # Posting mechanics
 
-After `authorization-gate.md` grants, this rule covers the exact mechanics of posting a pending review. The non-negotiables are listed first because each one corresponds to a real prior incident.
+> **Legacy reference only — not applied by any agent.**
+> This rule describes the retired PENDING review workflow. `pr-reviewer` Step 4
+> now posts exactly one visible `COMMENT` review to
+> `POST /repos/.../pulls/{n}/reviews` unconditionally, in both relations, with a
+> non-empty body. Do not apply rule 1's `event`-omit requirement, rule 3's
+> `body == ""` assertion, the `payload_is_safe` pre-flight, or the PENDING
+> verification below — use Step 4's inline pre-flight in `agents/pr-reviewer.md`
+> instead. Kept for history alongside
+> [`authorization-gate.md`](./authorization-gate.md), which is legacy for the
+> same reason. Rule 2's `gh pr comment` ban is still live, but it is owned by
+> `agents/pr-reviewer.md` § *What this agent does not do*, not by this file.
+
+This rule covers the exact mechanics of posting a pending review under the old workflow. The non-negotiables are listed first because each one corresponds to a real prior incident.
 
 ## The four non-negotiable rules
 

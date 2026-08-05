@@ -1,5 +1,5 @@
 ---
-for: reviewer
+for: pr-reviewer
 lens-version: 1
 applies-to: always
 ---

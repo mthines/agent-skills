@@ -12,7 +12,7 @@ tags:
 # Apply Mode
 
 Apply the top `suboptimal` proposal to the working tree — but only behind a confidence gate, scoped to the diff's files, with revert-on-failure.
-Apply mode runs **only in own-work contexts** (`caller` ∈ {`reviewer` Fix / Self-Review, `polish`}, or standalone `/optimize-approach apply`).
+Apply mode runs **only in own-work contexts** (`caller` ∈ {`polish` (optimize mode only), standalone `/optimize-approach apply`}).
 It is **never** used by `pr-reviewer` — cross-review proposes, it does not rewrite someone else's PR.
 
 This mirrors the confidence-gated self-modifying precedents already in this repo: `code-quality simplify`'s Class M apply and `test-provenance-guard --fix` both gate a code change on `confidence(code) ≥ 90 %` plus a mechanical post-check with revert.
@@ -53,7 +53,7 @@ The `confidence(code)` gate scores whether the *implemented rewrite* is correct;
 3. **On green** — keep the change. Record it in the run output (axis, files, one-line summary).
 4. **On red** — revert the rewrite immediately (`git checkout -- <files>` for committed baselines, or undo the edits), and downgrade to a report-mode proposal tagged `apply-reverted: <check that failed>`. Never leave the working tree broken.
 
-Apply mode does not commit. The calling context (`polish`, reviewer, or the user) owns committing — this keeps the rewrite revertible as its own reviewable unit.
+Apply mode does not commit. The calling context (`polish` or the user) owns committing — this keeps the rewrite revertible as its own reviewable unit.
 
 ## Forbidden targets
 

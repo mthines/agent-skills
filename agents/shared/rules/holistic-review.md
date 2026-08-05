@@ -2,7 +2,6 @@
 title: Holistic review — intent match + system fit (default on)
 impact: HIGH
 tags:
-  - reviewer
   - pr-reviewer
   - holistic-analysis
   - intent
@@ -20,7 +19,7 @@ This rule routes both checks through `Skill("holistic-analysis", "review")`, whi
 
 ## Default-on, opt-out via `--no-holistic`
 
-Holistic review runs on **every** invocation of `reviewer` or `pr-reviewer` unless explicitly disabled. The token cost is real (~20–60 s and one extra `Skill()` call per PR), but PR review is async and the value asymmetry is large: catching one system-fit bug is worth dozens of unnecessary holistic runs.
+Holistic review runs on **every** invocation of `pr-reviewer` unless explicitly disabled. The token cost is real (~20–60 s and one extra `Skill()` call per PR), but PR review is async and the value asymmetry is large: catching one system-fit bug is worth dozens of unnecessary holistic runs.
 
 The flag is `--no-holistic`. Mention it in the run announcement only when set.
 
@@ -56,14 +55,15 @@ Any single trivial-skip condition triggers skip. If in doubt, run holistic — t
 
 ## When to run (the call)
 
-After the rubrics produce raw findings and **before** Step 2.5 (Dedupe + consolidate), so holistic findings participate in dedupe and can collide-and-win against line-level findings on the same `(file, line)`. The new step is **2.4 Holistic review** in both agents.
+After the rubrics produce raw findings and **before** Step 2.5 (Dedupe + consolidate), so holistic findings participate in dedupe and can collide-and-win against line-level findings on the same `(file, line)`. The new step is **2.4 Holistic review** in `pr-reviewer`.
 
 ```
 Skill("holistic-analysis", "review")
   intent_summary: <2–3 lines from Step 1.3>
   diff: <full unified diff>
   changed_files: <list of {path, patch} entries from /tmp/pr-files.json or git>
-  caller: "reviewer" | "pr-reviewer"
+  caller: "pr-reviewer"
+  review_relation: "self" | "cross"
   max_findings: <3 | 6 | 10 — scaled to changed-file count, see table below>
 ```
 
@@ -83,8 +83,9 @@ Inputs:
 - `intent_summary` — produced by Step 1.3 of the calling agent.
 - `max_findings` — the size-scaled budget from the table above.
 - `diff` — full unified diff (already in scope by Step 1.1).
-- `changed_files` — list of file objects with `path` and `patch`. In `pr-reviewer`, `/tmp/pr-files.json` is the source. In `reviewer`, derive from `git diff --name-only` + `git show`.
-- `caller` — the calling agent's name (`reviewer` or `pr-reviewer`). Determines the recommended Conventional-Comments category mapping (see below).
+- `changed_files` — list of file objects with `path` and `patch`. Source is `/tmp/pr-files.json`, cached by `pr-reviewer` Step 1.2 in both relations.
+- `caller` — always `"pr-reviewer"` (the only reviewer agent). Determines the recommended Conventional-Comments category mapping (see below).
+- `review_relation` — `"self"` (own PR) or `"cross"` (someone else's PR). Determines assertion vs. question framing.
 
 ## Targeted escalation (Step 2.4b)
 
@@ -106,7 +107,7 @@ A finding that fails any test is left untouched and flows on to 2.5 as-is. Selec
 
 ### Fan-out (the parallel mechanism)
 
-For each selected finding, emit one `Skill("holistic-analysis", "review")` call **with a `focus` block**. Emit the calls **in a single turn** so they run concurrently — this is the parallelism; no `Task` tool is required, and both agents already have `Skill`.
+For each selected finding, emit one `Skill("holistic-analysis", "review")` call **with a `focus` block**. Emit the calls **in a single turn** so they run concurrently — this is the parallelism; no `Task` tool is required, and `pr-reviewer` already has `Skill`.
 
 ```
 # one call per selected finding, all emitted together
@@ -114,7 +115,8 @@ Skill("holistic-analysis", "review")
   intent_summary: <from Step 1.3>
   diff: <full unified diff>
   changed_files: <from /tmp/pr-files.json or git>
-  caller: "reviewer" | "pr-reviewer"
+  caller: "pr-reviewer"
+  review_relation: "self" | "cross"
   focus:
     file: <finding file>
     line: <finding RIGHT-side line>
@@ -157,17 +159,17 @@ A run with several `clear` verdicts is healthy — escalation earning its cost b
 
 Map each finding to the calling agent's Conventional-Comments category:
 
-| Caller | Holistic type | Category | Severity |
+| Caller + Relation | Holistic type | Category | Severity |
 | --- | --- | --- | --- |
-| `reviewer` (own work) | `intent-mismatch` | `issue` | blocker |
-| `reviewer` | `system-fit` (major) | `issue` | blocker |
-| `reviewer` | `system-fit` (minor) | `suggestion` | non-blocker |
-| `reviewer` | `scope-creep` | `nitpick` | non-blocker |
-| `pr-reviewer` (cross-review) | `intent-mismatch` | `issue` | blocker |
-| `pr-reviewer` | `system-fit` (any severity) | **`question`** | non-blocker |
-| `pr-reviewer` | `scope-creep` | `question` | non-blocker |
+| `pr-reviewer` (self — own PR) | `intent-mismatch` | `issue` | blocker |
+| `pr-reviewer` (self — own PR) | `system-fit` (major) | `issue` | blocker |
+| `pr-reviewer` (self — own PR) | `system-fit` (minor) | `suggestion` | non-blocker |
+| `pr-reviewer` (self — own PR) | `scope-creep` | `nitpick` | non-blocker |
+| `pr-reviewer` (cross — someone else's PR) | `intent-mismatch` | `issue` | blocker |
+| `pr-reviewer` (cross — someone else's PR) | `system-fit` (any severity) | **`question`** | non-blocker |
+| `pr-reviewer` (cross — someone else's PR) | `scope-creep` | `question` | non-blocker |
 
-**Why the framing differs.** In `reviewer`, the agent is reviewing your own work — you have context but may have a blind spot; an assertion ("this needs cache invalidation") is the right shape. In `pr-reviewer`, the agent has *less* context than the PR author; a question ("Does this need to invalidate the cache when admin endpoints write to the user table?") respects that asymmetry and reads as collaborative, not as bot-knows-better.
+**Why the framing differs.** In the `self` relation, the agent reviews your own work — you have full context but may have a blind spot; an assertion ("this needs cache invalidation") is the right shape. In the `cross` relation, the agent has *less* context than the PR author; a question ("Does this need to invalidate the cache when admin endpoints write to the user table?") respects that asymmetry and reads as collaborative, not as bot-knows-better.
 
 ## Wiring into the rest of the pipeline
 
@@ -178,7 +180,7 @@ Holistic findings are not exempt from the downstream gates:
 3. **per-comment-confidence** — `Skill("confidence", "code")` ≥ 80, same threshold as line-level findings.
 4. **comment-shape** — ≤ 240 chars, ≤ 2 sentences. A holistic finding that needs more space than this either (a) gets trimmed once and re-checked, or (b) gets dropped and listed in the terminal Quality Gate summary so the user can paste manually.
 
-A holistic finding that survives all four gates is emitted as a card in the local proposal (`pr-reviewer`) or the Self-Review report (`reviewer`).
+A holistic finding that survives all four gates is emitted as a card in the review body and posted to GitHub at Step 4, in both relations. It is also printed in the Step 3 terminal report, which is uncapped in both relations.
 
 ## Blocking verdict
 

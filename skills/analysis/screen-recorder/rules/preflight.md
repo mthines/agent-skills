@@ -123,7 +123,7 @@ Load the auth state and proceed? [y/N]
 ```
 
 Halt on anything other than `y`.
-If the caller is `reviewer` (PR Mode), also warn: "This clip will be
+If the caller is `pr-reviewer` (PR Mode), also warn: "This clip will be
 uploaded and embedded in a public PR comment."
 Never silently load auth state for a live URL.
 

@@ -63,7 +63,7 @@ Parse the **first token** of `$ARGUMENTS`.
 
 | Flag | Applies to | Effect |
 | --- | --- | --- |
-| `--no-confidence-gate` | `apply` | **Human-only override.** Bypasses the `confidence(code) ≥ 90 %` gate for a single `apply` run. Reserved for explicit human slash invocations — a calling agent (`reviewer`, `polish`, `aw-planner`) **never** sets it. The other apply-mode guards are **not** waived: `apply_safe`, the forbidden-targets list, the scoped check, and revert-on-failure all still apply. See [`rules/apply-mode.md`](./rules/apply-mode.md). |
+| `--no-confidence-gate` | `apply` | **Human-only override.** Bypasses the `confidence(code) ≥ 90 %` gate for a single `apply` run. Reserved for explicit human slash invocations — a calling agent (`pr-reviewer`, `polish`, `aw-planner`) **never** sets it. The other apply-mode guards are **not** waived: `apply_safe`, the forbidden-targets list, the scoped check, and revert-on-failure all still apply. See [`rules/apply-mode.md`](./rules/apply-mode.md). |
 
 ## Inputs
 
@@ -72,7 +72,7 @@ When a calling agent (reviewer / pr-reviewer / polish) invokes this skill, it pa
 - `intent_summary` — 2–3 line intent (the caller's Step 1.3 output).
 - `diff` — the full unified diff under review.
 - `changed_files` — list of `{path, patch}` entries.
-- `caller` — `reviewer` | `pr-reviewer` | `polish` | `aw-planner` (affects framing and whether apply is allowed).
+- `caller` — `pr-reviewer` | `polish` | `aw-planner` (affects framing and whether apply is allowed). For `pr-reviewer`, also pass `review_relation: "self" | "cross"` — self uses assertive framing, cross uses question framing.
 
 For `plan` mode the caller (`aw-planner`) passes a drafted plan's approach and its Existing Code Survey verdicts instead of a diff — see [`rules/plan-mode.md`](./rules/plan-mode.md) for that input shape.
 
@@ -104,7 +104,7 @@ A unit is `suboptimal` **only** when a materially better alternative exists and 
 ### O3 — Quiet early-exit
 
 If every approach unit is `optimal`, return an empty finding list and stop.
-Silence on a well-built change is the expected outcome, not a failure — it is the same "quality over quantity" contract the reviewer agents follow.
+Silence on a well-built change is the expected outcome, not a failure — it is the same "quality over quantity" contract the `pr-reviewer` agent follows.
 Still run the O5 end-of-run lesson write (a clean run is recurrence evidence for any lesson applied in O0).
 
 ### O4 — Deep understanding (suboptimal units only)

@@ -2,7 +2,6 @@
 title: Comment shape — hard caps and mechanical checks
 impact: HIGH
 tags:
-  - reviewer
   - pr-reviewer
   - comment-shape
 ---
@@ -160,13 +159,13 @@ checks free.
 
 If a finding needs more than 240 characters and 2 sentences to land, it does not belong as an inline comment. Route it to:
 
-- The terminal summary (Step 3 in either agent) for design-level concerns.
+- The terminal summary (Step 3) for design-level concerns.
 - A linked file (`docs/`, `RFC.md`) for genuinely long-form rationale.
 - A separate `question:` comment that asks for context first.
 
 ## Mechanical pre-emit check
 
-Both agents run these in order immediately before emitting / posting:
+`pr-reviewer` runs these in order immediately before emitting / posting:
 
 ```python
 import re

@@ -80,8 +80,8 @@ Infer `source` from the review comment author login:
 
 | Author pattern | Source |
 | --- | --- |
-| Current user's own `reviewer` / `pr-reviewer` agent session | `our-reviewer` or `our-pr-reviewer` |
-| `claude[bot]`, `anthropic-bot`, or session-identified as this agent | `our-reviewer` |
+| Current user's own `pr-reviewer` agent session | `our-pr-reviewer` |
+| `claude[bot]`, `anthropic-bot`, or session-identified as this agent | `our-pr-reviewer` |
 | `coderabbitai[bot]`, `github-copilot[bot]`, any `*[bot]` suffix not above | `external-bot` |
 | Human login (no `[bot]` suffix, not the current user) | `human` |
 
@@ -196,7 +196,7 @@ The bus is an optional enrichment, not a hard dependency.
 ## What this file does not do
 
 - Define the promotion decision mechanics — that is `outcome-learning.md`.
-- Define the per-review lesson read pattern — that is `reviewer.md` / `pr-reviewer.md` Step 0.7.
+- Define the per-review lesson read pattern — that is `pr-reviewer.md` Step 0.7.
 - Define the fingerprint formula authoritatively — that is `prior-comment-awareness.md` (Step 2.5b).
   This file only mandates reuse of the same formula.
 - Replace the `reviewer-lessons` scope — `review-outcomes` is a volatile intake bus; promoted lessons land in `reviewer-lessons`.

@@ -2,7 +2,6 @@
 title: Thread resolution — auto-resolve addressed threads and record the outcome on re-review
 impact: HIGH
 tags:
-  - reviewer
   - pr-reviewer
   - incremental
   - thread-resolution
@@ -35,11 +34,11 @@ still open.
 ## When this step runs
 
 This rule is **`pr-reviewer`-only.** Resolving a GitHub thread is a write to
-GitHub, and `pr-reviewer` is the only reviewer agent that writes to GitHub —
-`reviewer` (including Self-Review) never does; it emits a terminal report and
-redirects cross-author PRs to `pr-reviewer`. So `reviewer` neither resolves
-threads nor writes the relevance signal from here; on its PRs that signal comes
-from the post-merge path (`outcome-learning.md`) and the GitHub Action instead.
+GitHub, and `pr-reviewer` is the review agent that writes to GitHub.
+In both relations it posts a single visible `COMMENT` review at Step 4
+(`REVIEW_RELATION` only adjusts the framing tone), so thread resolution applies
+to both relations on a re-review pass. The relevance signal from threads that were not resolved here
+comes from the post-merge path (`outcome-learning.md`) and the GitHub Action instead.
 
 | Agent | When | Gate |
 | --- | --- | --- |
@@ -157,8 +156,8 @@ so `seen_count` increments). A prior write from the GitHub Action or
 
 ## Ordering
 
-Run this **after** the new review is posted (pr-reviewer Step 4 / reviewer
-Self-Review report), so a failure here can never block the review itself, and so
+Run this **after** the new review is posted (`pr-reviewer` Step 4, in both
+relations), so a failure here can never block the review itself, and so
 the current run's findings — needed to decide `persisting` vs `fixed` — are
 final. The sequence per re-review is: fetch prior comments
 (`prior-comment-awareness.md`) → produce and post the new review → reconcile prior

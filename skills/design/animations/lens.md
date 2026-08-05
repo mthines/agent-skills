@@ -1,5 +1,5 @@
 ---
-for: reviewer
+for: pr-reviewer
 lens-version: 1
 applies-to: "**/*.css, **/*.scss, **/*.module.css, **/*animation*.ts, **/*animation*.tsx, **/*transition*.ts, **/*transition*.tsx, **/motion/**, **/animations/**"
 ---

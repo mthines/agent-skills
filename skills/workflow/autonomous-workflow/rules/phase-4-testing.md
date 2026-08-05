@@ -324,7 +324,7 @@ The rules:
    give-up path is the single most effective anti-gaming lever; use it.
 4. **All-green is necessary, not sufficient.** Passing checks means the
    runnable contract holds — not that intent is met. The full test suite,
-   `reviewer` dispatch, and Phase 7 verifier gates all still run unchanged.
+   `pr-reviewer` dispatch, and Phase 7 verifier gates all still run unchanged.
 
 ### Logging
 

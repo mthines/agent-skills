@@ -10,8 +10,8 @@ description: >
   stagger, a scroll-driven timeline, an `@starting-style` entry, or any
   multi-frame interaction. Called by the `animations` skill to validate
   a generated animation, by the `ux` skill to capture an interaction the
-  reviewer cannot read from code, and by the `reviewer` agent to attach
-  evidence to PR comments on motion-heavy diffs. Triggers on "record
+  `pr-reviewer` cannot read from code, and by the `pr-reviewer` agent to
+  produce a local clip it can inspect on motion-heavy diffs. Triggers on "record
   this interaction", "capture this animation", "video of this section",
   "validate the transition visually", "screen recording", "/screen-recorder".
 disable-model-invocation: false
@@ -69,7 +69,8 @@ Reach for this skill when **any** of the following is true:
 Do **not** reach for this skill when:
 
 - A static screenshot is sufficient — capture a still directly (the
-  `reviewer` agent's visual pass owns PR-attached screenshots).
+  `pr-reviewer` agent's visual pass reads stills locally; it never
+  attaches them to the PR).
 - The task is to author a durable Playwright test — use the
   `e2e-testing` skill.
 - The input is an existing `trace.zip` — use
@@ -131,7 +132,7 @@ Collect, then confirm back to the user before running:
 
 Echo the resolved inputs back as a one-screen summary before Phase 2.
 
-**Caller-specific overrides.** When `caller: reviewer` and `out-format` is unspecified, default to `mp4` (GitHub previews `.mp4` inline). When `caller: animations` and the immediate next step is a `Skill("video-analyser")` invocation, keep `max-width: 768` and `keyint: 15` — they are already analyser-optimal. Pass `max-width: 0` only when a human reviewer has reported text-still-unreadable at 768 px (rare).
+**Caller-specific overrides.** When `caller: pr-reviewer` and `out-format` is unspecified, default to `mp4` (GitHub previews `.mp4` inline). When `caller: animations` and the immediate next step is a `Skill("video-analyser")` invocation, keep `max-width: 768` and `keyint: 15` — they are already analyser-optimal. Pass `max-width: 0` only when a human reviewer has reported text-still-unreadable at 768 px (rare).
 
 ---
 
@@ -223,7 +224,7 @@ Full handshake spec: [`rules/integrations.md`](./rules/integrations.md).
 | ------------- | --------------------------------------------------------------------------------- | ---------------------------------------------- |
 | `animations`  | After Phase 7 ("Measure") to attach a clip to the delivery, or when the user asks "show me". | `url`, `selector`, animation name (becomes `output-name`). |
 | `ux`          | When a finding is severity Critical / High and concerns timing, motion, focus order, or interaction feedback. | `url`, `selector`, the finding ID.             |
-| `reviewer`    | In PR Mode when the diff matches `animations` / `ux` heuristics and the PR author has not attached a recording. | `url`, `selector`, PR number (for the upload path). |
+| `pr-reviewer` | In PR Mode when the diff matches `animations` / `ux` heuristics and the PR author has not attached a recording. | `url`, `selector`, PR number (slugs the local artifact — `pr-reviewer` never uploads it). |
 | `storybook`   | When a scaffolded story includes motion or transitions that a still screenshot cannot prove (multi-frame interactions). | `url` (story permalink), `selector`, story name (becomes `output-name`). |
 
 Callers pass inputs in their `Skill()` call body; this skill never asks

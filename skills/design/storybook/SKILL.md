@@ -10,7 +10,7 @@ description: >
   namespace. Supports an opt-in, per-pathname auth flow whose
   credentials live in the OS keychain (not in the repo). Iteration loop
   uses the Playwright CLI against the running Storybook URL; visual
-  evidence delegates to the `reviewer` agent and the `screen-recorder`
+  evidence delegates to the `pr-reviewer` agent and the `screen-recorder`
   skill. Triggers on "scaffold stories", "add storybook", "story for this
   component", "interaction test for this story", "/storybook".
 argument-hint: "[component-path] [--platform web|native] [--no-interactions] [--no-playground] [--auth <profile>]"
@@ -260,7 +260,7 @@ Minimum verification, in this order:
    `npm run test-storybook`) — if the runner is wired up.
 
 For visual evidence (a screenshot or short clip of the rendered story),
-delegate to the [`reviewer`](../../../agents/reviewer.md) agent or the
+delegate to the [`pr-reviewer`](../../../agents/pr-reviewer.md) agent or the
 [`screen-recorder`](../../analysis/screen-recorder/SKILL.md) skill.
 Full handoff rules in
 [`rules/visual-verification.md`](./rules/visual-verification.md).
@@ -281,7 +281,7 @@ The skill never types credentials into the Playwright CLI directly.
 | Repo has `react-native` or `expo`                         | Set `--platform native`. Load [`rules/react-native.md`](./rules/react-native.md). |
 | Storybook URL is `http://localhost:6006/...` (or similar) | Iterate via Playwright CLI. No auth needed.                              |
 | Storybook URL is gated (login form, SSO, basic auth)      | Resolve `--auth <profile>` first. Load [`rules/auth.md`](./rules/auth.md).|
-| Visual evidence requested in the PR                       | Delegate to [`reviewer`](../../../agents/reviewer.md) or `screen-recorder`. |
+| Visual evidence requested in the PR                       | Delegate to [`pr-reviewer`](../../../agents/pr-reviewer.md) or `screen-recorder`. |
 | Component is a hook or non-visual                         | Stop. Defer to [`tdd`](../../quality/tdd/SKILL.md).                                 |
 | Storybook isn't installed                                 | Halt. Ask the user to install Storybook before re-running.               |
 
@@ -294,7 +294,7 @@ The skill never types credentials into the Playwright CLI directly.
 - [`test-provenance-guard`](../../quality/test-provenance-guard/SKILL.md) —
   run on the generated `.test.stories.tsx` to ensure the test imports
   production component code, not a private shim.
-- [`reviewer`](../../../agents/reviewer.md) — runs the visual check pass
+- [`pr-reviewer`](../../../agents/pr-reviewer.md) — runs the visual check pass
   and posts screenshots on the PR (Critical / High motion findings,
   visual diffs).
 - [`screen-recorder`](../../analysis/screen-recorder/SKILL.md) — captures short
@@ -331,7 +331,7 @@ The skill never types credentials into the Playwright CLI directly.
   loop against the running Storybook URL: snapshot mode, `--last-failed`,
   iframe routes, story permalinks, headed vs headless.
 - [`rules/visual-verification.md`](./rules/visual-verification.md) —
-  delegation rules for the `reviewer` agent and `screen-recorder`
+  delegation rules for the `pr-reviewer` agent and `screen-recorder`
   skill, when each is the right tool.
 - [`rules/anti-patterns.md`](./rules/anti-patterns.md) — full list of
   patterns to refuse.

@@ -2,7 +2,6 @@
 title: Rubric composition — load, dedupe, consolidate
 impact: HIGH
 tags:
-  - reviewer
   - pr-reviewer
   - rubric
   - multi-skill
@@ -10,7 +9,7 @@ tags:
 
 # Rubric composition
 
-Both agents load multiple review rubrics: `code-quality` (always for substantive diffs), `ux` (UI files), `critical` (high-stakes diffs or `--critical`), and up to 3 user-supplied lenses via `--with`.
+`pr-reviewer` loads multiple review rubrics: `code-quality` (always for substantive diffs), `ux` (UI files), `critical` (high-stakes diffs or `--critical`), and up to 3 user-supplied lenses via `--with`.
 
 Without a consolidation step, each rubric emits findings independently and the agent has to inline-dedupe while also writing comments. Research grounding: Qodo's 2026 "Rule System" and Greptile's multi-agent architecture both add an explicit coordinator pass — the consolidation step is what turns multi-rubric findings from noise into signal.
 
@@ -86,10 +85,10 @@ Runs last, after every quality gate.
 Its input is the set of findings that already cleared grounding, receipt, confidence, and shape — every one of them is worth telling the author about.
 Placement decides *where* each finding is shown. It discards nothing.
 
-| Agent | Inline per file | Inline total | Overflow behaviour |
+| Surface | Inline per file | Inline total | Overflow behaviour |
 | --- | --- | --- | --- |
-| `reviewer` (own work, terminal output) | unlimited | unlimited | n/a — print every finding |
-| `pr-reviewer` (cross-review, posts to GitHub) | N per profile (`chill` 3 / **`balanced` 5** / `assertive` 7) | **20** | **Deferred**, never dropped — listed in the review body |
+| `pr-reviewer` Step 3 terminal report (both relations) | unlimited | unlimited | n/a — print every finding |
+| `pr-reviewer` Step 4 GitHub review (both relations) | N per profile (`chill` 3 / **`balanced` 5** / `assertive` 7) | **20** | **Deferred**, never dropped — listed in the review body |
 
 Ordering for the inline slots, applied per file and then globally:
 
@@ -97,8 +96,9 @@ Ordering for the inline slots, applied per file and then globally:
 2. Then descending `per-comment-confidence` Final score.
 3. Then ascending line number.
 
-`reviewer` has no placement cap at all.
-Local terminal output has no posting cost and no hostile-review effect, so the confidence threshold is the only thing that decides what the author sees.
+The split is terminal-vs-GitHub, not self-vs-cross.
+`pr-reviewer` runs the identical pipeline in both relations (Step 0.5) and always posts at Step 4, so the inline caps apply to every run.
+The Step 3 terminal report is uncapped in both relations: local output has no posting cost and no hostile-review effect, so the confidence threshold is the only thing that decides what the author sees there.
 
 ### Deferred findings (`pr-reviewer`)
 

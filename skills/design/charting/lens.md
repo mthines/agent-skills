@@ -1,5 +1,5 @@
 ---
-for: reviewer
+for: pr-reviewer
 lens-version: 1
 applies-to: "**/*chart*.tsx, **/*chart*.ts, **/*graph*.tsx, **/*dashboard*.tsx, **/charts/**, **/dataviz/**, **/visualizations/**"
 ---

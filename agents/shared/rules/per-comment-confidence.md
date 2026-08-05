@@ -2,7 +2,6 @@
 title: Per-comment confidence — Skill("confidence") not LLM self-grade
 impact: HIGH
 tags:
-  - reviewer
   - pr-reviewer
   - confidence
   - self-grade

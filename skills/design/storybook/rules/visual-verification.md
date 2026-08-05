@@ -1,9 +1,9 @@
 ---
-title: Visual Verification — Delegate to reviewer / screen-recorder
+title: Visual Verification — Delegate to pr-reviewer / screen-recorder
 impact: MEDIUM
 tags:
   - storybook
-  - reviewer
+  - pr-reviewer
   - screen-recorder
   - visual-diff
   - evidence
@@ -16,18 +16,18 @@ generated artefact is visually correct.
 This skill does **not** run its own diff engine.
 It delegates to one of two existing skills:
 
-| Need                                                  | Delegate to                                          |
-| ----------------------------------------------------- | ---------------------------------------------------- |
-| Still screenshot of a story for PR evidence           | [`reviewer`](../../../../agents/reviewer.md) — PR Mode. |
-| Visual diff against a baseline (Chromatic, Loki, …)    | The repo's existing tool, not this skill.            |
+| Need                                                  | Delegate to                                            |
+| ----------------------------------------------------- | ------------------------------------------------------ |
+| Still screenshot of a story for PR evidence           | Playwright CLI (see [`playwright-cli.md`](./playwright-cli.md)) — `pr-reviewer` has no browser or screenshot capability. |
+| Visual diff against a baseline (Chromatic, Loki, …)    | The repo's existing tool, not this skill.              |
 | Short video of a multi-frame interaction              | [`screen-recorder`](../../../analysis/screen-recorder/SKILL.md). |
 | Sanity check the story compiles and renders           | Playwright CLI (see [`playwright-cli.md`](./playwright-cli.md)). |
 
-## When the `reviewer` agent runs the visual pass
+## Capturing a still screenshot for PR evidence
 
-The [`reviewer`](../../../../agents/reviewer.md) agent is the canonical
-PR-time visual reviewer in this repo.
-Hand off to it when:
+`pr-reviewer` has no browser or screenshot capability — its `tools:` list carries no browser and the agent never captures images.
+Capture the anchoring screenshot yourself via the Playwright CLI, then attach it to the PR description or comment.
+Do this when:
 
 - The PR body says "screenshots please" (or the user does).
 - The change touches motion, layout, or anything where a still
@@ -35,29 +35,16 @@ Hand off to it when:
 - The story is brand-new and needs at least one anchoring screenshot
   in the PR description.
 
-Invocation form — dispatch the `reviewer` agent with `--pr` and the
-story URLs in the prompt:
+Capture form — run the Playwright CLI against the running Storybook (see [`playwright-cli.md`](./playwright-cli.md)):
 
 ```text
-Agent(
-  subagent_type: "reviewer",
-  description: "Storybook screenshots for PR",
-  prompt: "--pr <PR-URL>
-  Capture screenshots of the new stories at:
-    - http://localhost:6006/?path=/story/components-button--default
-    - http://localhost:6006/?path=/story/components-button--playground
-  If auth-gated, reuse: .agent/storybook/.auth/default.storageState.json"
-)
+playwright screenshot \
+  "http://localhost:6006/?path=/story/components-button--default" \
+  .agent/storybook/.snapshots/button-default.png
 ```
 
-The reviewer agent posts the screenshots as part of a **pending** PR
-review — the user submits it from the GitHub UI.
-The skill never auto-submits visual reviews.
-
-If the PR is gated (Storybook target is behind auth), the reviewer
-needs the same `storageState.json` from
+If the Storybook target is behind auth, reuse the same `storageState.json` from
 [`rules/auth.md`](./auth.md).
-Pass the path explicitly in the prompt.
 
 ## When `screen-recorder` is the right tool
 
@@ -86,34 +73,30 @@ Skill("screen-recorder",
 ```
 
 The result lands under `.agent/recordings/`.
-The clip can be attached to a PR comment by the reviewer agent.
+Attach the clip to a PR comment yourself — `pr-reviewer` does not capture or attach media.
 
 ## When neither is needed
 
 If the user only wants to know "does this story compile and render at
 all?", the Playwright CLI screenshot from
 [`playwright-cli.md`](./playwright-cli.md) is sufficient.
-Do not over-deliver by spinning up the reviewer agent for a
-sanity-check screenshot.
+Do not over-deliver by spinning up `pr-reviewer` for a sanity-check screenshot.
 
 ## Composition recipe
 
 A common end-to-end pattern for a new story PR:
 
 1. Scaffold the stories (this skill's main path).
-2. Run Playwright CLI screenshot of `Default` and `Playground` —
-   sanity check.
-3. If the story includes motion or transitions, also run
-   `screen-recorder`.
+2. Run Playwright CLI screenshot of `Default` and `Playground` — sanity check.
+3. If the story includes motion or transitions, also run `screen-recorder`.
 4. Open the PR via `/create-pr`.
-5. Invoke `reviewer --pr <url>` to capture the final screenshots, post
-   a pending review with the inline images, and let the user submit
-   it from GitHub.
+5. Attach the final screenshots to the PR yourself (Playwright CLI output), then
+   invoke `Skill("pr-reviewer", "<pr-url>")`, which posts its review immediately as a
+   visible `COMMENT` review — nothing is left for the user to submit.
 
 ## Validation checklist
 
-- [ ] Use Playwright CLI for sanity-check screenshots only.
-- [ ] Delegate to `reviewer` for PR-attached evidence.
+- [ ] Use Playwright CLI for still screenshots — sanity checks and PR evidence alike.
 - [ ] Delegate to `screen-recorder` for any multi-frame interaction.
 - [ ] If the URL is auth-gated, pass the `storageState.json` path to
       whichever delegate runs.
