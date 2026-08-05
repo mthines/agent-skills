@@ -258,7 +258,7 @@ loop), not directly to `polish`.
 | `/create-pr` flag         | Post-draft quality path                        |
 | ------------------------- | ---------------------------------------------- |
 | `/create-pr` (default)    | `Skill("review-loop")` (full convergence loop) |
-| `/create-pr --no-review`  | `Skill("review-loop", "--no-feedback")`        |
+| `/create-pr --no-review`  | `Skill("polish", "simplify")` — simplify only, one pass |
 | `/create-pr --no-simplify`| `Skill("pr-reviewer")` one-shot only           |
 | `/create-pr --quick`      | `Skill("polish", "quick")` on the draft diff   |
 | `/create-pr --no-quality` | *(quality skipped)*                            |
