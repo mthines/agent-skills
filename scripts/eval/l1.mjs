@@ -553,10 +553,15 @@ function checksInSync(plan, checks) {
       (/path:line/i.test(sc) || /grounding/i.test(sc)));
 
     // G17e: pr-reviewer.md has a standards diagnostics line in the Review diagnostics block
-    // AND a precedence/conflict-surfacing statement.
-    s.check("G17e pr-reviewer.md has standards diagnostics line + precedence/conflict statement",
+    // AND the standards-specific precedence statement.
+    // A bare /precedence|conflict/ sweep is tautological here: the base file already matches it
+    // three times (Step 0.7's lesson-collision sentence, Gate 4's merge-conflict markers, and the
+    // carve-out's "conflict residue"), so it asserts nothing about the 2.4d statement. Same shape
+    // as the G17c fix above — assert the new content, not a word that was already there.
+    s.check("G17e pr-reviewer.md has standards diagnostics line + 2.4d precedence paragraph + Conflicts-surfaced counter",
       prReviewer.includes("Standards (2.4d)") &&
-      /precedence|conflict/i.test(prReviewer));
+      /Precedence: when a standards finding conflicts with the PR author's stated intent or a review-config\s+explicit override, the author-intent and config \*\*win\*\*/.test(prReviewer) &&
+      prReviewer.includes("Conflicts surfaced:"));
 
     // G17f: pr-reviewer.md has --no-standards in the arg table AND the frontmatter description,
     // standards-conformance.md in the Imports list, and 2.4d in the pipeline block.
