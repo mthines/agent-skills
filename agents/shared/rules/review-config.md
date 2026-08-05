@@ -203,8 +203,6 @@ For backwards compatibility, a bare `per_comment_confidence_threshold: N` withou
 
 ---
 
----
-
 ## Standards
 
 `standards:` is an opt-in list of glob → standards-source entries that feed the
