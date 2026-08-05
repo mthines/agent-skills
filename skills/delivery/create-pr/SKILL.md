@@ -33,7 +33,7 @@ Respect their time.
 
 ## Modes
 
-Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The pre-push quality step (Step 5.5) runs the **full review + simplify works by default**; the `--no-*` / `--quick` flags below **scale it down**. All flags compose with the default and split workflows.
+Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft quality step (Step 6.5) runs the **full review + simplify loop by default**; the `--no-*` / `--quick` flags below **scale it down**. All flags compose with the default and split workflows.
 
 | Mode / Flag    | Trigger                                            | Behaviour                                                                                                                                                                     |
 | -------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -50,7 +50,9 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The pre-push qualit
 **The external-bot feedback loop (Step 6.7) is ON by default.** After the review-loop converges, a background subagent runs `/implement-suggestion <pr> --watch`, which waits for the repo's **external** review bots (CodeRabbit, human reviewers, …) and applies their actionable feedback. It is scoped to comments posted **after** the review-loop's last push, so it does not re-apply the loop's own findings. Pass `--no-feedback` to skip it.
 
 In split mode, skip Step 5's "PR too big" trim — the split *is* the response to that signal.
-Each resulting sub-PR must still pass it on its own. With `--split`, run the resolved polish pass **once on the full branch** before computing the split (i.e. run Step 5.5 before S1), so each sub-PR inherits the cleaned-up code.
+Each resulting sub-PR must still pass it on its own.
+
+Step 6.5 cannot serve split mode: it is post-draft and its `review-loop` needs an open PR, which does not exist before S1. So with `--split`, run `Skill("polish", "simplify")` **once on the full branch** before computing the split (before S1) — it is branch-scoped and needs no PR — so each sub-PR inherits the cleaned-up code. Each sub-PR then gets the per-PR quality pass defined in [`rules/split-mode.md`](./rules/split-mode.md).
 
 ## Length budget — the hard rule
 
