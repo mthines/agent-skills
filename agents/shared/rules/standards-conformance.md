@@ -72,6 +72,8 @@ See `agents/shared/rules/review-config.md` § Standards for the full schema.
 
 The combined standards text (Source 1 + Source 2, nearest-first) is capped at **30,000
 characters** total across all loaded documents for the entire review run.
+A document that governs several changed files is listed under each of them but loaded and counted
+once.
 
 When the cap is reached:
 
@@ -105,7 +107,7 @@ Step 1.2.
 
 ```bash
 # Step 1.7b — Standards discovery
-STANDARDS_DOCS=()        # accumulated (doc_path, normative_bullets[]) cache
+STANDARDS_DOCS=()        # changed_file -> [(doc_path, normative_bullets[])] cache
 STANDARDS_CHAR_COUNT=0   # running total
 STANDARDS_DROPPED=()     # paths dropped due to cap
 
@@ -126,7 +128,7 @@ the same `(file, line)`.
 
 For each changed file in `REVIEW_DIFF`:
 
-1. Retrieve `STANDARDS_DOCS` cache for that file (built in Step 1.7b).
+1. Retrieve the `STANDARDS_DOCS[<changed file>]` entry list (built in Step 1.7b).
 2. If the cache is empty (no governing docs discovered, no matching `.review.yaml` standards),
    skip quietly.
 3. Compare the diff's additions (`+`-prefixed lines) against the normative statements in the cache.

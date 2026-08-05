@@ -495,7 +495,10 @@ discover governing documents: nearest-package `CLAUDE.md`, matching `.claude/rul
 Merge any `.review.yaml` `standards:` entries whose glob covers each changed file (concatenation,
 closer-file-first, per `review-config.md § Standards`).
 Apply the 30,000-character nearest-first cap and log any dropped documents by path.
-Cache the result as `STANDARDS_DOCS` (path → normative bullets list) for Step 2.4d.
+Cache the result as `STANDARDS_DOCS` for Step 2.4d, keyed by **changed-file path** → list of
+`(doc_path, normative_bullets[])` entries.
+A governing document that covers several changed files is listed under each of them but loaded and
+counted once against the 30,000-character cap.
 
 Announce: `Standards discovery: <N> governing doc(s) loaded, <B> normative bullet(s) extracted.`
 When any documents are dropped: `Standards discovery: <D> doc(s) dropped (cap exceeded) — <paths>.`
