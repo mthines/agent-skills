@@ -175,7 +175,7 @@ Do not silently drop them.
 | `pr-reviewer` | Sub-step A: the find pass (read-only); this skill drives re-review between iterations. |
 | `implement-suggestion` | Sub-step B: the apply pass; invoked single-shot (no `--watch`). |
 | `polish simplify` | Sub-step C: the cleanup pass; only the simplify mode, never full `polish`. |
-| `polish` | Upstream caller of this loop; this skill only invokes `Skill("polish", "simplify")`, never the bare mode. |
-| `create-pr` | Delegates post-draft review to `review-loop` after opening the draft PR. |
+| `polish` (bare) | **Downstream, not a caller.** `polish`'s Pass A invokes `pr-reviewer` directly and never calls `review-loop`; this loop only invokes `Skill("polish", "simplify")`. |
+| `create-pr` | Upstream caller — delegates post-draft review to `review-loop` after opening the draft PR. |
 | `autonomous-workflow` Phase 6/7 | Invokes `review-loop` in place of the retired `reviewer` agent dispatches. |
 | `review-changes` | Routes to `review-loop` as the primary convergence entry point. |
