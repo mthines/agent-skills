@@ -1281,7 +1281,9 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
 | Code review | The multi-lens review found no blocking issues. |
 
 - Headline finding-count substitution: `N` = total surfaced findings = `F` (posted inline) +
-  `DEF` (deferred); `K` = blocking count = inline findings whose prefix is `issue:`.
+  `DEF` (deferred); `K` = blocking count = inline findings decorated `(blocking)` per
+  `conventional-comments.md` (Step 2.9) — NOT the `issue:` prefix count, since a non-blocking
+  `issue:` is not blocking (see *Gate states*).
   These reuse the Quality-line values already computed at Step 2.9b — no separate counter.
 - `WARN_GATE_COUNT` = the number of soft gates showing ⚠️ on a WARN run — Description vs. code
   and/or Code review, so 1 or 2.
