@@ -25,8 +25,8 @@ The flag is `--no-optimize`. Mention it in the run announcement only when set.
 
 ## Trivial-skip set
 
-Skip the call (not the flag — the heuristic) on the same trivial diffs `holistic-review` skips: pure whitespace / formatting, dependency-bump-only, test-only, and `< 10 lines changed` with no high-stakes path (`**/auth/**`, `**/billing/**`, `**/payments/**`, `**/migrations/**`, `**/infra/**`).
-Reuse the `TRIVIAL_SKIP` value evaluated at Step 1.7b (conditions defined in `holistic-review.md` § Trivial-skip set) — do not recompute it.
+Reuse the `TRIVIAL_SKIP` value evaluated at Step 1.7b — do not recompute it and do not restate its conditions here.
+The conditions are defined once in `agents/shared/rules/holistic-review.md` § Trivial-skip set; `TRIVIAL_SKIP == true` skips the call (the heuristic, not the flag).
 Skipping reports as `Optimality review: skipped (trivial diff).` in the Quality Gate summary.
 
 ## When to run (the call)

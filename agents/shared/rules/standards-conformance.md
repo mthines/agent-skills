@@ -87,12 +87,10 @@ Never silently truncate a document mid-content.
 
 ## Trivial-skip set
 
-Reuse the `TRIVIAL_SKIP` value evaluated at Step 1.7b (conditions defined in `holistic-review.md`
-§ Trivial-skip set) — do not recompute it.
-Skip this rule (not the flag — the heuristic) on the same trivial diffs:
-pure whitespace / formatting, dependency-bump-only, test-only, and `< 10 lines changed`
-with no high-stakes path (`**/auth/**`, `**/billing/**`, `**/payments/**`,
-`**/migrations/**`, `**/infra/**`).
+Reuse the `TRIVIAL_SKIP` value evaluated at Step 1.7b — do not recompute it and do not restate its
+conditions here.
+The conditions are defined once in `agents/shared/rules/holistic-review.md` § Trivial-skip set;
+`TRIVIAL_SKIP == true` skips this rule (the heuristic, not the flag).
 In `incremental` modes, discovery keys on the delta paths only.
 
 Skipping reports as `Standards conformance: skipped (trivial diff).` in the Quality Gate summary.
