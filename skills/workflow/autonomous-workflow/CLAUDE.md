@@ -980,7 +980,6 @@ end-user-facing; this file is contributor-facing.
   `--critical` adversarial findings flow into the inline-report (Must-fix → Critical bucket,
   Should-fix → High bucket) rather than a separate channel. Cross-review behavior unchanged.
   Phase 7 Auto Review dispatch prompt and log updated to reflect inline-report deliverable.
-  `agents/templates/reviewer-inline-report.template.md` added to keep reviewer.md under 800 lines.
   Root cause: Phase 7 always self-authors its PRs (aw-executor opens them), so "pending review"
   was enforcement theater — comments visible only to the same user who opened the PR.
 
