@@ -24,7 +24,7 @@ are dropped at Step 2.6.
 
 Standards-conformance runs on **every** invocation of `pr-reviewer` unless disabled, with a
 **quiet early-exit**: when no normative statements are found for the changed paths, or when the
-trivial-skip heuristic fires, the step is a silent no-op.
+`TRIVIAL_SKIP` cache from Step 1.7b is true, the step is a silent no-op.
 The token cost is the discovery walk (one pass, cached) plus the comparison itself; the value
 asymmetry is large — catching a diff that contradicts a well-documented project rule is worth
 many silent runs.

@@ -693,7 +693,7 @@ dedupe.
 
 Skip when **any** of the following are true:
 - `--no-holistic` was passed.
-- The trivial-skip heuristic fires (whitespace-only, dep-bump-only, test-only, < 10 lines and no high-stakes path).
+- The `TRIVIAL_SKIP` cache from Step 1.7b is true (conditions in `agents/shared/rules/holistic-review.md` § Trivial-skip set — do not recompute them here).
 - The Step 1.8 token-economy skip triggered (≥ 3 gates failing).
 - `RUN_MODE` is `incremental` or `incremental-quick` — holistic passes are expensive and the delta is small enough that system-fit issues are unlikely to have regressed.
 
@@ -713,7 +713,7 @@ behaviour) and fans out parallel focused traces — one per finding, cap 10.
 ### 2.4c Optimality review (default ON in `full` and `incremental` modes)
 
 See `agents/shared/rules/optimality-review.md`. Cross-review is **report-only** — never
-apply. Skip via `--no-optimize`, when holistic trivial-skip fired, or when
+apply. Skip via `--no-optimize`, when the `TRIVIAL_SKIP` cache from Step 1.7b is true, or when
 `RUN_MODE == "incremental-quick"` (the delta is too small to warrant approach analysis).
 
 Proposals do **not** become inline comments. They are rendered as cards in the review body's
