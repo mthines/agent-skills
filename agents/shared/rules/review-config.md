@@ -12,12 +12,12 @@ tags:
 `pr-reviewer` supports per-repo (and per-subtree) configuration via a `.review.yaml` file.
 The config surface is deliberately small — one profile knob, one noise-suppressor list, one path-scoped guidance list — so that the most common customizations require minimal YAML authorship.
 
-**Back-compat guarantee:** an absent `.review.yaml` resolves to `profile: balanced`, which equals today's defaults (per-comment threshold 80, inline placement cap 5 per file in cross mode, none in self mode, no filters, no path instructions).
+**Back-compat guarantee:** an absent `.review.yaml` resolves to `profile: balanced`, which equals today's defaults (per-comment threshold 80, inline placement cap 5 per file on the posted review, no filters, no path instructions).
 The config surface itself introduces no behaviour change: with no config file, `pr-reviewer` posts the same inline comments it always did, and the threshold is still 80.
 
-**One deliberate exception, introduced with placement (Step 2.9b):** `pr-reviewer` self mode has no per-file cap (terminal output, no posting cost), so an absent config now reports *more* findings on a large branch than it used to.
-That is a widening, never a suppression — `pr-reviewer` (self, terminal output) writes every finding that clears confidence.
-Nothing that clears the confidence threshold is hidden in either mode: cross mode's cap governs inline placement only, and overflow is deferred to the review body (`rubric-composition.md § Placement (Step 2.9b)`).
+**One deliberate exception, introduced with placement (Step 2.9b):** the Step 3 terminal report has no per-file cap (local output, no posting cost) in either relation, so an absent config now reports *more* findings on a large branch than it used to.
+That is a widening, never a suppression — the terminal report prints every finding that clears confidence.
+Nothing that clears the confidence threshold is hidden in either relation: the cap governs inline placement on the posted review only, and overflow is deferred to the review body (`rubric-composition.md § Placement (Step 2.9b)`).
 
 ---
 
@@ -50,13 +50,13 @@ path_instructions:                       # path-scoped guidance
 
 | Profile | Generation aggression | Per-comment confidence threshold | Inline placement cap per file |
 | --- | --- | --- | --- |
-| `chill` | Low — only high-confidence, high-severity findings | 90 | 3 (cross mode), none (self mode) |
-| `balanced` | Medium — today's defaults | **80** | **5** (cross mode), none (self mode) |
-| `assertive` | High — include lower-confidence and lower-severity findings | 70 | 7 (cross mode), none (self mode) |
+| `chill` | Low — only high-confidence, high-severity findings | 90 | 3 |
+| `balanced` | Medium — today's defaults | **80** | **5** |
+| `assertive` | High — include lower-confidence and lower-severity findings | 70 | 7 |
 
-The cap column governs **placement only** — how many findings are posted as inline comments per file.
-It never discards a finding: overflow is deferred to the review body (`rubric-composition.md § Placement (Step 2.9b)`).
-The confidence threshold is the only setting that decides whether a finding is reported at all, which is why self mode (terminal output, no posting cost) has no cap in any profile.
+The cap column governs **placement only** — how many findings are posted as inline comments per file on the Step 4 review. It applies to every run; `pr-reviewer` runs the identical pipeline and posts in both relations (`rubric-composition.md § Placement (Step 2.9b)`).
+It never discards a finding: overflow is deferred to the review body.
+The confidence threshold is the only setting that decides whether a finding is reported at all, which is why the Step 3 terminal report (local output, no posting cost) has no cap in any profile.
 
 The `balanced` row in the table is the definition of today's defaults — if any default changes in the agents, update this row to match and bump the config schema version.
 
