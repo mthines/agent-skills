@@ -1112,7 +1112,7 @@ MEMORIES_SECTION
 ```markdown
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
-Reviewed your changes — found <N> finding(s) (<K> blocking). See inline comments.
+Reviewed your changes — <FAILING_GATE_COUNT> gate(s) need attention before human review.<FAIL_BLOCKING_SUFFIX>
 
 <sup>FOOTER_LINE</sup>
 
@@ -1151,6 +1151,11 @@ MEMORIES_SECTION
 
 </details>
 ```
+
+The FAIL headline leads with `FAILING_GATE_COUNT`, which is never 0 on a FAIL, so the headline always carries the failure signal even when CI or Gates 3/4/5 fail with a clean Code-review gate (zero inline findings).
+`FAIL_BLOCKING_SUFFIX` appends the blocking-finding count only when it adds signal:
+- When `K > 0`, substitute exactly ` \`<K>\` blocking finding(s) — see inline comments.` (leading space).
+- When `K == 0`, substitute nothing — never render "0 blocking" or "found 0 finding(s)".
 
 `PARTIAL_REVIEW_BANNER` is the review-body slot for the tool-budget stop condition. Omit the
 placeholder entirely on a complete run — the line disappears and the body starts at the summary
