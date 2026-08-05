@@ -3,7 +3,8 @@ name: polish
 description: >
   Re-runnable pre-PR quality gate for the current branch. Composes two existing
   passes over the branch diff: a broad pr-reviewer pass (read-only review via
-  the open draft PR, or a one-shot review pass) and a code-quality simplify pass
+  the branch's open PR, which `pr-reviewer` requires) and a code-quality
+  simplify pass
   (applies Class M mechanical refactors behind a confidence ≥ 90 % gate,
   reverting on failure). Run bare for the full review + simplify works; scope it
   with `review`, `simplify`, or the light `quick` mechanical pass. Commits each
@@ -37,7 +38,7 @@ Get a branch into clean, reviewable shape **before** it goes up for review — a
 
 This skill is an **orchestrator**. It does not contain quality rules of its own; it composes two existing pieces over the current branch diff:
 
-1. The **`pr-reviewer` agent** — broad review via the branch's open PR (read-only; findings are surfaced for you to act on, applied via `implement-suggestion`). Requires a draft PR to exist; if no PR is open, falls back to a one-shot `pr-reviewer` report.
+1. The **`pr-reviewer` agent** — broad review via the branch's open PR (read-only; findings are surfaced for you to act on, applied via `implement-suggestion`). Requires an open PR — `pr-reviewer` has no PR-less mode. If no PR is open, Pass A is skipped and you are told to open a draft PR via `/create-pr` first.
 2. The **`code-quality` skill in `simplify` mode** — applies Class M *mechanical* refactors one at a time behind `Skill("confidence", "code") ≥ 90 %` and a scoped fast-check, reverting any that fail. Class J (judgment) recipes stay as proposals.
 
 `/create-pr` delegates its post-draft quality step to `review-loop` (the bounded convergence loop), which calls only `polish simplify` — never full `polish`. You can run `polish` standalone at any point for a pre-draft local check.
