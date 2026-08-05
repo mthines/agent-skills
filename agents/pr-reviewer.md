@@ -437,7 +437,8 @@ In incremental modes (non-empty delta), Gate 4 (self-review signals) scans `REVI
 The two broad `mcp__lorekit__memory_list` calls in Step 1.0 are capped at 50 per tag; on a large repository the lesson most relevant to *these* changed files can fall outside that window.
 Now that the changed-file list is known (Step 1.1 command A and Step 1.2), run one targeted `mcp__lorekit__memory_search` to pull those in.
 Issue this as a real `mcp__lorekit__memory_search` tool call.
-If the call errors and `LOREKIT_CONNECTED` is already `false`, skip this step; otherwise treat an error here as a non-blocking addend miss (do not flip `LOREKIT_CONNECTED`).
+Skip this step when `LOREKIT_CONNECTED` is already `false` — the Step 1.0 attempt failed, so there is no backend to search.
+Otherwise issue the call, and treat an error here as a non-blocking addend miss (do not flip `LOREKIT_CONNECTED`).
 
 Build the query from the diff's own vocabulary — the changed top-level directories, the changed file basenames (without extension), and any dependency-manifest filenames present in the diff (`package.json`, `go.mod`, `Cargo.toml`, `requirements.txt`, …).
 In `incremental` and `incremental-quick` modes, key on `REVIEW_DIFF`'s paths, not the full PR.
