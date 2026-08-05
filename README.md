@@ -98,13 +98,13 @@ Decide whether something is good before you commit to it.
 | **[code-quality](./skills/quality/code-quality/SKILL.md)** | Authors and reviews code for low cognitive complexity, guard clauses, early returns, single-responsibility. Four modes: `plan`, authoring (default), `review` (proposes), `simplify` (review-then-apply mechanical refactors behind `confidence(code) ≥ 90 %`). | `auto` |
 | **[confidence](./skills/quality/confidence/SKILL.md)** | Rates confidence that work fully solves the requirement. Modes: `plan`, `code`, `analysis`. Multi-signal gate; deterministic rule checks cap LLM score. | `auto` |
 | **[critical](./skills/quality/critical/SKILL.md)** | Adversarial pre-mortem: hostile-persona walk through failure modes, blast radius, rollback, hidden coupling, and a mandatory steelman alternative. Never iterates. | `auto` |
-| **[optimize-approach](./skills/quality/optimize-approach/SKILL.md)** | The fourth review lens — "is this the most optimal approach, and if not what is?" Judges codebase-fit / simplicity / performance / robustness at the approach level (anti-overlap guards defer to `code-quality`, `critical`, `holistic-review`); quiet early-exit when optimal. `report`, gated `apply`, and `plan` (plan-time) modes. Default-on in `reviewer`, `pr-reviewer` (report-only), `polish`, and `aw-planner` Phase 1 (`plan`). Self-improving via `optimize-approach-lessons`. | `Skill()` |
-| **[polish](./skills/quality/polish/SKILL.md)** | Re-runnable pre-PR branch quality gate. Thin orchestrator over the `reviewer` agent (auto-fix simple, plan complex — includes the `optimize-approach` lens) and `code-quality` simplify (apply Class M refactors). Modes: bare → full, `review`, `simplify`, `optimize`, `quick`. Commits each pass separately. `/create-pr` delegates its pre-push step here. | `/` |
+| **[optimize-approach](./skills/quality/optimize-approach/SKILL.md)** | The fourth review lens — "is this the most optimal approach, and if not what is?" Judges codebase-fit / simplicity / performance / robustness at the approach level (anti-overlap guards defer to `code-quality`, `critical`, `holistic-review`); quiet early-exit when optimal. `report`, gated `apply`, and `plan` (plan-time) modes. Default-on in `pr-reviewer` (apply in self, report-only in cross), `polish`, and `aw-planner` Phase 1 (`plan`). Self-improving via `optimize-approach-lessons`. | `Skill()` |
+| **[polish](./skills/quality/polish/SKILL.md)** | Re-runnable pre-PR branch quality gate. Thin orchestrator over `pr-reviewer` (via `review-loop` — auto-fix simple, plan complex — includes the `optimize-approach` lens) and `code-quality` simplify (apply Class M refactors). Modes: bare → full, `review`, `simplify`, `optimize`, `quick`. Commits each pass separately. `/create-pr` delegates its post-draft quality loop to `review-loop`. | `/` |
 | **[tdd](./skills/quality/tdd/SKILL.md)** | Strict RED-GREEN-REFACTOR cycles. Writes one failing test, implements minimal code, refactors. | `auto` |
 | **[test-provenance-guard](./skills/quality/test-provenance-guard/SKILL.md)** | Detects tests that pass by construction (re-declare the SUT instead of importing it) via static + mutation checks. Self-heals by extracting inline logic and rewriting the test. | `auto` |
 | **[/ai-engineering](./skills/quality/ai-engineering/SKILL.md)** | Reviews LLM/AI application engineering across 13 concerns: prompts, caching, RAG, agents, resilience, memory, evals, safety, observability. | `/` |
 | **[/dx](./skills/quality/dx/SKILL.md)** | Reviews CLI tools, shell scripts, and developer tooling against clig.dev, 12 Factor CLI, and Heroku CLI Style Guide. | `/` |
-| **[/review-changes](./skills/quality/review-changes/SKILL.md)** | Reviews branch changes or a PR. Dispatches to the [`reviewer`](#agents-at-a-glance) agent. | `/` |
+| **[/review-changes](./skills/quality/review-changes/SKILL.md)** | Reviews branch changes or a PR. Dispatches to the [`pr-reviewer`](#agents-at-a-glance) agent (self or cross per relation). | `/` |
 
 ### `delivery/` — Git, PR, CI
 
@@ -234,7 +234,7 @@ All share the **`aw-`** prefix ("autonomous-workflow"): deliberate namespace so 
 | 3 | Implementation | `tdd`, `ux`, `code-quality` |
 | 4 | Testing (+ executable checks loop) | `confidence(analysis)`, `holistic-analysis` (auto-replan once at cap) |
 | 5 | Documentation | `docs update` |
-| 6 | PR creation | `reviewer` agent (`--critical` + auto-fix-all-severities), `aw-create-walkthrough`, `create-pr` |
+| 6 | PR creation | `review-loop` (`--critical`; `pr-reviewer` self mode → `implement-suggestion` → `polish simplify`), `aw-create-walkthrough`, `create-pr` |
 | 7 | CI gate | `ci-auto-fix` |
 
 The mode-aware stuck-loop cap at Phase 4 (3 Lite / 5 Full) is the biggest cost-saver: it prevents agents burning tokens on hallucinated fixes when their root-cause analysis is wrong.

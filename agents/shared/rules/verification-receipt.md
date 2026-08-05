@@ -2,7 +2,6 @@
 title: Verification receipt — behavioral claims need executed proof
 impact: HIGH
 tags:
-  - reviewer
   - pr-reviewer
   - grounding
   - false-positive-control

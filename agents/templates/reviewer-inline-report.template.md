@@ -1,7 +1,7 @@
 ---
-for: reviewer
+for: pr-reviewer
 step: 5.8
-description: "Inline terminal report format for PR (self-review) sub-mode."
+description: "Inline terminal report format for PR (self-review) sub-mode — relation: self."
 ---
 
 # Self-Review Report: PR #<number> (<repo>)

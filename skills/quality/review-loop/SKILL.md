@@ -81,7 +81,7 @@ ITERATION=0
 Each iteration runs three sub-steps.
 The loop exits early when `pr-reviewer` returns a PASS with no blocking findings.
 
-```
+```text
 while ITERATION < CAP:
     ITERATION += 1
 
@@ -105,17 +105,16 @@ if ITERATION == CAP and last verdict != PASS:
     report: cap reached, findings still present, surface the remaining blockers
 ```
 
-**Hard rule: never call `Skill("polish")` or `Skill("polish", "review")` from
-this loop.** Call only `Skill("polish", "simplify")`.
-Full `polish` runs a reviewer pass internally, which would re-enter `pr-reviewer`
-and create a dispatch cycle.
-`polish simplify` dispatches no reviewer — this is the anti-circularity guarantee.
+**Hard rule: the only permitted `polish` invocation is `Skill("polish", "simplify")`.**
+The `simplify` mode applies Class M mechanical refactors and dispatches no pr-reviewer.
+All other `polish` modes trigger an internal agent pass, which would create a dispatch cycle.
+This is the anti-circularity guarantee.
 
 ### Step 2: Report
 
 After the loop exits (early or at cap), emit a compact summary:
 
-```
+```text
 review-loop on PR #<n> (<REVIEW_RELATION>)
 
 Iterations: <N> of <CAP>
@@ -136,7 +135,7 @@ Do not silently drop them.
 
 ## Hard rules
 
-- **Never call `Skill("polish")` or `Skill("polish", "review")`.** Only `Skill("polish", "simplify")`.
+- **The only permitted `polish` invocation is `Skill("polish", "simplify")`.** Non-simplify modes trigger an internal agent pass and create a dispatch cycle.
 - **Never write to GitHub directly.** `pr-reviewer` posts the `COMMENT` review; this skill orchestrates only.
 - **Never undraft the PR.** This skill converges; the user makes the final undraft decision.
 - **One `implement-suggestion` per iteration, no `--watch`.** The loop drives re-review; `--watch` waits for external bots and would conflict.
@@ -149,7 +148,7 @@ Do not silently drop them.
 | `pr-reviewer` | Sub-step A: the find pass (read-only); this skill drives re-review between iterations. |
 | `implement-suggestion` | Sub-step B: the apply pass; invoked single-shot (no `--watch`). |
 | `polish simplify` | Sub-step C: the cleanup pass; only the simplify mode, never full `polish`. |
-| `polish` | Calls `review-loop` for its review role; review-loop NEVER calls full `polish` back. |
+| `polish` | Upstream caller of this loop; this skill only invokes `Skill("polish", "simplify")`, never the bare mode. |
 | `create-pr` | Delegates post-draft review to `review-loop` after opening the draft PR. |
 | `autonomous-workflow` Phase 6/7 | Invokes `review-loop` in place of the retired `reviewer` agent dispatches. |
 | `review-changes` | Routes to `review-loop` as the primary convergence entry point. |

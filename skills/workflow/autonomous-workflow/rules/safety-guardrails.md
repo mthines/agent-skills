@@ -44,7 +44,7 @@ clean recovery.
 | 3     | Working in isolated worktree. Build/lint passes after each edit. `code-quality(code)` run at end.  |
 | 4     | All tests pass AND every `checks.yaml` check passes (or `unsatisfiable` user-approved) OR user-approved stop after stuck-loop escalation. |
 | 5     | Docs reflect changes. `Skill("docs", "update --auto")` run.                               |
-| 6     | `reviewer` agent dispatched (`--critical` + auto-fix-all-Simple-severities); blocking findings resolved. Walkthrough shown. Draft PR opened via `Skill("create-pr")`. |
+| 6     | `pr-reviewer` dispatched via `review-loop` (`--critical`; self mode; auto-fix Simple findings); blocking findings resolved. Walkthrough shown. Draft PR opened via `Skill("create-pr")`. |
 | 7     | CI green OR user-approved stop. Optional `gw remove` (or `git worktree remove` + `git branch -d`) after merge. |
 
 See each `phase-N-*.md` rule for full gate details.
@@ -95,7 +95,7 @@ tests, and exploit weak comparisons to force green. These rules are
 | Definitions are executor-immutable | Only `status:` flips freely. `run:`/`setup:` amendments require a `check-run-amended` Progress Log entry. `id:`/`requirement:`/`ears:`/`expect:` — never. A diff touching them is a hard stop. |
 | Four forbidden strategies | Never green a check by modifying tests/checks, overloading comparisons, recording/replaying state, or special-casing the check's inputs. |
 | Abort affordance | A check unsatisfiable-as-specified gets `status: unsatisfiable` + user escalation with evidence — never a workaround. |
-| Necessary, not sufficient | All-green checks never waive the test suite, `reviewer` dispatch, or Phase 7 verifier. |
+| Necessary, not sufficient | All-green checks never waive the test suite, `pr-reviewer` dispatch, or Phase 7 verifier. |
 
 ---
 

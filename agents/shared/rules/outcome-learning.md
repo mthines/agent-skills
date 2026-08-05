@@ -2,7 +2,6 @@
 title: Outcome learning — resolution-rate feedback loop
 impact: HIGH
 tags:
-  - reviewer
   - pr-reviewer
   - implement-suggestion
   - self-improvement

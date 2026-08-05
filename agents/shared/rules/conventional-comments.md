@@ -2,7 +2,6 @@
 title: Conventional Comments — prefix table and decorations
 impact: MEDIUM
 tags:
-  - reviewer
   - pr-reviewer
   - conventional-comments
 ---

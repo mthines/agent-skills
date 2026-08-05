@@ -2,7 +2,6 @@
 title: Comment shape — hard caps and mechanical checks
 impact: HIGH
 tags:
-  - reviewer
   - pr-reviewer
   - comment-shape
 ---

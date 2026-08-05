@@ -80,8 +80,8 @@ replaced by underscores** — the actual callable names are
 There is no tool literally named `mcp__lorekit__memory.*`.
 
 **Availability — sub-agents must be granted these tools explicitly.** A sub-agent
-(`aw`, `aw-planner`, `aw-executor`, `aw-tester`, and the `reviewer` /
-`pr-reviewer` agents) gets **only** the tools listed in its own frontmatter
+(`aw`, `aw-planner`, `aw-executor`, `aw-tester`, and the `pr-reviewer` agent)
+gets **only** the tools listed in its own frontmatter
 `tools:` — it does **not** inherit the parent session's MCP tools. Each of those
 agents therefore lists the `mcp__lorekit__memory_*` tools it needs. If, despite
 that, the tools are absent (LoreKit not installed, or a host that does not expose
