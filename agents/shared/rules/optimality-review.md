@@ -44,27 +44,27 @@ Skill("optimize-approach", "report")
   review_relation: "self" | "cross"
 ```
 
-Whether a proposal is *applied* is decided later, per relation:
+Whether a proposal is *applied* is decided by the **caller**, never by `pr-reviewer`:
 
-| Caller + Relation | Sub-mode | Apply? | Where |
+| Caller | Relation | Apply? | Where |
 | --- | --- | --- | --- |
-| `pr-reviewer` (cross) | any | no | Cross-review never rewrites someone else's PR — proposals map to `question` |
-| `pr-reviewer` (self) | Report Mode (`--report`) | no | No auto-fix in Report Mode |
-| `pr-reviewer` (self) | Fix Mode / Self-Review | yes | Deferred to the reviewer's **Step 4 auto-fix phase** (see below) |
+| `pr-reviewer` | cross | no | Cross-review never rewrites someone else's PR — proposals surface as prose cards in the review body |
+| `pr-reviewer` | self | no | The agent is read-only in both relations (`agents/pr-reviewer.md` § What this agent does not do); an auto-fix attempt there is a guard failure |
+| `polish` (`optimize` mode) | self only | yes | The standalone approach-rewrite pass — see below |
 
-## Apply (self relation Fix / Self-Review only — Step 4)
+## Apply (`polish optimize` — never the reviewer)
 
-Applying happens in the reviewer's dedicated auto-fix phase, **after** the review pipeline has finished computing findings — never mid-pipeline.
-
-For the highest-impact proposal flagged `apply_safe: true`, the reviewer invokes:
+`pr-reviewer` runs `report` mode only and stops at the proposal.
+Applying is a separate, explicitly-invoked pass on your own branch:
 
 ```
-Skill("optimize-approach", "apply")   # one proposal only
+Skill("polish", "optimize")           # dispatches optimize-approach apply
+Skill("optimize-approach", "apply")   # one proposal only, when invoked directly
 ```
 
 The skill applies it behind its own `apply_safe` + `confidence(code) ≥ 90 %` gate, with a scoped check and revert-on-failure (see [`../../../skills/quality/optimize-approach/rules/apply-mode.md`](../../../skills/quality/optimize-approach/rules/apply-mode.md)).
 A rewrite that is not `apply_safe`, fails the gate, or reverts stays a proposal — it is **not** force-applied.
-An applied rewrite is recorded in the Step 4 auto-fix log as an approach change, not as a comment.
+A proposal that `pr-reviewer` surfaced and that you want applied goes through `implement-suggestion` like any other review finding.
 
 ## Where proposals surface
 
@@ -76,9 +76,9 @@ Proposals therefore leave the pipeline through a **dedicated long-form surface**
 
 | Caller + Relation | Surface | Rendering |
 | --- | --- | --- |
-| `pr-reviewer` (cross) | `Optimality review` section in the GitHub review body | One card per proposal from [`proposal.template.md`](../../../skills/quality/optimize-approach/templates/proposal.template.md) |
-| `pr-reviewer` (self, Fix / Report Mode) | `Optimality` section of the terminal report | The same card |
-| `pr-reviewer` (self, Self-Review) | `Optimality` section of the Self-Review report | The same card, plus the Step 4.1b apply outcome |
+| `pr-reviewer` (either relation) | `Optimality review` section in the GitHub review body | One card per proposal from [`proposal.template.md`](../../../skills/quality/optimize-approach/templates/proposal.template.md) |
+| `pr-reviewer` (either relation) | `Optimality Review` section of the Step 3 terminal report | The same card |
+| `polish` (`optimize` mode) | The pass's own terminal output | The same card, plus the apply outcome |
 
 Omit the section entirely when the skill returned no proposals — the quiet early-exit must stay quiet.
 Never render a proposal as an inline comment.
@@ -93,7 +93,7 @@ The card is prose, so framing replaces category mapping:
 | `cross` (someone else's PR) | Ask: "Have you considered …?" — the reviewer has less context than the author | no |
 
 An optimality proposal is **always non-blocking** — it never drives "Request changes", the same way `scope-creep` never does.
-An applied rewrite (reviewer Fix / Self-Review) is additionally recorded in the Step 4 auto-fix log as an approach change.
+A rewrite applied later by `polish optimize` is recorded in that pass's own output as an approach change, not as a comment.
 
 ## Gates
 
@@ -130,7 +130,7 @@ This is intentional and matches `holistic-review`'s treatment of `system-fit` an
 
 ## Logging
 
-Every report that carries a Quality Gate summary **must** render this block, in `pr-reviewer`'s terminal report and review-body diagnostics and in `reviewer`'s terminal and Self-Review reports:
+Every report that carries a Quality Gate summary **must** render this block, in `pr-reviewer`'s terminal report and review-body diagnostics and in the `polish optimize` pass output:
 
 ```text
 Optimality review (2.4c):
@@ -138,7 +138,7 @@ Optimality review (2.4c):
   Units judged:       <N>
   Optimal:            <O>
   Proposals:          <P> (cap 2)
-  Applied:            <A>  (reviewer Fix / Self-Review only)
+  Applied:            <A>  (`polish optimize` only — always 0 under `pr-reviewer`)
   Withheld/reverted:  <W>
 ```
 
