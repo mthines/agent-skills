@@ -156,8 +156,8 @@ so `seen_count` increments). A prior write from the GitHub Action or
 
 ## Ordering
 
-Run this **after** the new review is posted (pr-reviewer Step 4 / reviewer
-Self-Review report), so a failure here can never block the review itself, and so
+Run this **after** the new review is posted (`pr-reviewer` Step 4, in both
+relations), so a failure here can never block the review itself, and so
 the current run's findings — needed to decide `persisting` vs `fixed` — are
 final. The sequence per re-review is: fetch prior comments
 (`prior-comment-awareness.md`) → produce and post the new review → reconcile prior

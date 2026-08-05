@@ -83,7 +83,7 @@ Inputs:
 - `intent_summary` — produced by Step 1.3 of the calling agent.
 - `max_findings` — the size-scaled budget from the table above.
 - `diff` — full unified diff (already in scope by Step 1.1).
-- `changed_files` — list of file objects with `path` and `patch`. Source is `/tmp/pr-files.json` in cross-review mode, or `git diff --name-only` + `git show` in self-review mode.
+- `changed_files` — list of file objects with `path` and `patch`. Source is `/tmp/pr-files.json`, cached by `pr-reviewer` Step 1.2 in both relations.
 - `caller` — always `"pr-reviewer"` (the only reviewer agent). Determines the recommended Conventional-Comments category mapping (see below).
 - `review_relation` — `"self"` (own PR) or `"cross"` (someone else's PR). Determines assertion vs. question framing.
 
@@ -180,7 +180,7 @@ Holistic findings are not exempt from the downstream gates:
 3. **per-comment-confidence** — `Skill("confidence", "code")` ≥ 80, same threshold as line-level findings.
 4. **comment-shape** — ≤ 240 chars, ≤ 2 sentences. A holistic finding that needs more space than this either (a) gets trimmed once and re-checked, or (b) gets dropped and listed in the terminal Quality Gate summary so the user can paste manually.
 
-A holistic finding that survives all four gates is emitted as a card in the review body — posted to GitHub in cross-review mode, or surfaced as a terminal Self-Review report in self mode.
+A holistic finding that survives all four gates is emitted as a card in the review body and posted to GitHub at Step 4, in both relations. It is also printed in the Step 3 terminal report, which is uncapped in both relations.
 
 ## Blocking verdict
 
