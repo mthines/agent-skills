@@ -18,16 +18,16 @@ It delegates to one of two existing skills:
 
 | Need                                                  | Delegate to                                            |
 | ----------------------------------------------------- | ------------------------------------------------------ |
-| Still screenshot of a story for PR evidence           | [`pr-reviewer`](../../../../agents/pr-reviewer.md) — PR Mode. |
+| Still screenshot of a story for PR evidence           | Playwright CLI (see [`playwright-cli.md`](./playwright-cli.md)) — `pr-reviewer` has no browser or screenshot capability. |
 | Visual diff against a baseline (Chromatic, Loki, …)    | The repo's existing tool, not this skill.              |
 | Short video of a multi-frame interaction              | [`screen-recorder`](../../../analysis/screen-recorder/SKILL.md). |
 | Sanity check the story compiles and renders           | Playwright CLI (see [`playwright-cli.md`](./playwright-cli.md)). |
 
-## When `pr-reviewer` runs the visual pass
+## Capturing a still screenshot for PR evidence
 
-The [`pr-reviewer`](../../../../agents/pr-reviewer.md) agent is the canonical
-PR-time visual reviewer in this repo.
-Hand off to it when:
+`pr-reviewer` has no browser or screenshot capability — its `tools:` list carries no browser and the agent never captures images.
+Capture the anchoring screenshot yourself via the Playwright CLI, then attach it to the PR description or comment.
+Do this when:
 
 - The PR body says "screenshots please" (or the user does).
 - The change touches motion, layout, or anything where a still
@@ -35,24 +35,16 @@ Hand off to it when:
 - The story is brand-new and needs at least one anchoring screenshot
   in the PR description.
 
-Invocation form — dispatch `pr-reviewer` with the PR URL and story URLs in the prompt:
+Capture form — run the Playwright CLI against the running Storybook (see [`playwright-cli.md`](./playwright-cli.md)):
 
 ```text
-Skill("pr-reviewer", "<PR-URL>
-  Capture screenshots of the new stories at:
-    - http://localhost:6006/?path=/story/components-button--default
-    - http://localhost:6006/?path=/story/components-button--playground
-  If auth-gated, reuse: .agent/storybook/.auth/default.storageState.json")
+playwright screenshot \
+  "http://localhost:6006/?path=/story/components-button--default" \
+  .agent/storybook/.snapshots/button-default.png
 ```
 
-`pr-reviewer` posts the screenshots as part of a `COMMENT` PR review — directly
-visible, no pending workflow.
-The skill never auto-submits visual reviews.
-
-If the PR is gated (Storybook target is behind auth), `pr-reviewer`
-needs the same `storageState.json` from
+If the Storybook target is behind auth, reuse the same `storageState.json` from
 [`rules/auth.md`](./auth.md).
-Pass the path explicitly in the prompt.
 
 ## When `screen-recorder` is the right tool
 
