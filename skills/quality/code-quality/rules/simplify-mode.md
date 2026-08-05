@@ -200,17 +200,17 @@ Everything else (`Demoted`, `Judgment proposals`, `Maintainability`, `Correctnes
 
 ---
 
-## Boundary with the `pr-reviewer` agent self-mode auto-fix
+## Boundary with `implement-suggestion`
 
-`pr-reviewer` in self mode (own PR) also auto-applies fixes to owned files — its scope is lint / typo / dead-code class findings surfaced by the review pass. Both tools can land on the same lines (R35 ↔ "verbose comment", R17 remove ↔ "dead code", R2 ↔ "duplicated constant").
+`pr-reviewer` never writes: it is read-only, and an auto-fix attempt inside it is a guard failure (`agents/pr-reviewer.md` § *What this agent does not do*). The other tool that applies fixes to owned files is `implement-suggestion`, which lands the review's actionable findings — lint / typo / dead-code class included. Both tools can land on the same lines (R35 ↔ "verbose comment", R17 remove ↔ "dead code", R2 ↔ "duplicated constant").
 
-Sequencing rule when both are invoked on the same diff:
+Sequencing rule when both are invoked on the same diff — this is the order `review-loop` already runs them in:
 
-1. **`pr-reviewer` self-mode auto-fix runs first.** The review pass auto-fix set is a strict subset of what `simplify` covers, and its checks include lint-class fixes that may shift line numbers `simplify` keys on.
-2. **`simplify` runs second.** After the review pass finishes (or if it is not invoked at all), `simplify` operates on the post-review working tree.
+1. **`implement-suggestion` runs first.** The review findings it applies are a strict subset of what `simplify` covers, and they include lint-class fixes that may shift line numbers `simplify` keys on.
+2. **`simplify` runs second.** After `implement-suggestion` finishes (or if it is not invoked at all), `simplify` operates on the post-apply working tree.
 3. **Never invoke them in parallel.** Both write to owned files. There is no shared lock; concurrent writes produce a corrupted working tree.
 
-If a `simplify` finding's file:line was already touched by Reviewer in this session, `simplify` must re-run the review pass (Step 1) on that file before applying — the cached finding may be stale.
+If a `simplify` finding's file:line was already touched by `implement-suggestion` in this session, `simplify` must re-run its own review pass (Step 1) on that file before applying — the cached finding may be stale.
 
 ---
 
