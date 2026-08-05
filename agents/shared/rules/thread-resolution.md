@@ -123,17 +123,22 @@ For each `fixed` / `declined` / `acknowledged` comment, emit one
 rule, and `seen_count` UPDATE contract defined in
 [`comment-relevance-memory.md`](./comment-relevance-memory.md); this rule only
 adds the trigger. Writes are append-only, non-blocking, and a silent no-op when
-`memory.*` is not connected.
+the LoreKit memory tools are not connected.
 
-```
-memory.write {
-  scope: "repo::{owner}/{repo}",            # or "global" for a universal pattern
-  key:   "reviewer-comment-relevance::<fingerprint>",
-  value: "<record body: relevance, resolution_method, reason, examples, seen_count, expires>",
-  tags:  ["loop::reviewer-comment-relevance", "source::<resolution_method>"],
-  source_agent: "pr-reviewer",
-  trigger: "re-review-reconcile"
-}
+**The write unit is one write per comment, upserted onto the comment's fingerprint** — see [`comment-relevance-memory.md` § The write unit](./comment-relevance-memory.md#the-write-unit).
+Several comments sharing a fingerprint produce one record with `seen_count += 1`, not one record each.
+
+**This write is a mandatory attempt — issue it as a real `mcp__lorekit__memory_write` tool call, not documentation shorthand.**
+Only a real tool error (thrown exception, or the tool not listed in the agent's `tools:` grant) may suppress the call; never infer "not connected" without attempting it.
+
+```text
+mcp__lorekit__memory_write:
+  scope="repo::{owner}/{repo}"            # or "global" for a universal pattern
+  key="reviewer-comment-relevance::<fingerprint>"
+  value="<record body: relevance, resolution_method, reason, examples, seen_count, expires>"
+  tags=["loop::reviewer-comment-relevance", "source::<resolution_method>"]
+  source_agent="pr-reviewer"
+  trigger="re-review-reconcile"
 ```
 
 The `loop::reviewer-comment-relevance` tag conveys the bucket's kind (`signal`)
@@ -147,7 +152,7 @@ properties (lorekit #372) — it is optional and equivalent to the inferred form
 finding has no resolution outcome yet, and writing one would poison the signal.
 
 Deduplicate before writing exactly as `comment-relevance-memory.md § Write`
-prescribes (`memory.search` on the fingerprint, UPDATE-in-place on a re-sighting
+prescribes (a real `mcp__lorekit__memory_search` call on the fingerprint, UPDATE-in-place on a re-sighting
 so `seen_count` increments). A prior write from the GitHub Action or
 `implement-suggestion` for the same fingerprint is additive — LoreKit increments
 `seen_count`; a conflicting direction is surfaced, never silently overwritten.

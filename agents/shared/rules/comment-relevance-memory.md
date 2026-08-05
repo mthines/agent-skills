@@ -67,9 +67,24 @@ Where:
 - `claim-gist` = a 3–6 word stable slug describing the finding class (e.g.
   `null-check-guaranteed-upstream`, `map-vs-record-preference`).
 
-Keys MUST NOT encode `file:line` coordinates — those drift.
-They MUST encode the structural pattern so the signal accumulates across files
-and commits.
+Keys MUST NOT encode any per-sighting identifier.
+That prohibition covers `file:line` coordinates, comment IDs, PR numbers, commit SHAs, and reviewer identity.
+They MUST encode the structural pattern so the signal accumulates across files, commits, and pull requests.
+
+**Why — the causal chain.**
+A per-sighting identifier is unique forever, so a key containing one never collides with a later key.
+A key that never collides never triggers LoreKit's server-side dedup, so `seen_count` stays frozen at 1.
+A `seen_count` frozen at 1 never reaches the `>= 3` DROP bar or the `>= 2` PROMOTE bar, so the record can never influence a review.
+The result is a write-only record that consumes part of the per-run `limit=50` read budget for 60 days and changes nothing.
+
+Those values are still worth keeping — they just belong in `examples[]` or in the record body, never in the key.
+
+| Wrong key | Right key | Where the identifier goes |
+| --- | --- | --- |
+| `reviewer-comment-relevance::lorekit-231-3681940611` | `reviewer-comment-relevance::suggestion:null-check-guaranteed-upstream` | `examples[]`: `mthines/lorekit#231 comment 3681940611`. |
+| `reviewer-comment-relevance::suggestion:pr231-null-check` | `reviewer-comment-relevance::suggestion:null-check-guaranteed-upstream` | `examples[]`: `mthines/lorekit#231`. |
+| `reviewer-comment-relevance::issue:mthines-missing-abort-signal` | `reviewer-comment-relevance::issue:missing-abort-signal` | Nowhere — reviewer identity is not stored (see [What this rule does not do](#what-this-rule-does-not-do)). |
+| `reviewer-comment-relevance::nitpick:src-lib-cache-ts-42` | `reviewer-comment-relevance::nitpick:map-vs-record-preference` | The record body's `reason` field. |
 
 ---
 
@@ -258,9 +273,29 @@ count.
 
 ## Write — capturing resolution outcomes
 
+### The write unit
+
+The write is **triggered once per resolved comment**, and the record is **keyed per fingerprint**.
+Those are two different units, and conflating them is the single most common way to break this bucket.
+
+Consequences of that split:
+
+- N resolved comments in one run produce **between 1 and N writes** — never more than N, and never a fixed N.
+- Two comments in the same run that share a fingerprint are **ONE write** with `seen_count += 1` — never two writes, and never `seen_count += 2`.
+- N comments with N distinct fingerprints are N writes, each an ADD or an UPDATE of its own fingerprint.
+
+The decision procedure for each resolved comment:
+
+1. Derive the fingerprint `<category>:<claim-gist>` from the comment, per [Key format](#key-format).
+2. Search for an existing record on that fingerprint with `mcp__lorekit__memory_search`, scoped narrow-to-broad (`repo::{owner}/{repo}` then `global`).
+3. **No hit** → ADD: write a new record with `seen_count: 1` and `expires` at now + 60 days.
+4. **Hit with the same `relevance` direction** → UPDATE: write the same key with `seen_count += 1`, a refreshed `expires`, and the new example appended to `examples[]`.
+5. **Hit with the opposite `relevance` direction** → contradiction: write the new direction and flag the pair for user review; never silently overwrite the old direction.
+6. **Already written this run** (a second comment resolving to a fingerprint already handled at step 3 or 4) → do not write again; the step-4 increment already covers it.
+
 ### Who writes
 
-There are three write paths, each covering a different point in the PR lifecycle:
+There are four write paths, each covering a different point in the PR lifecycle:
 
 | Writer | When it fires | Signal quality |
 | --- | --- | --- |
@@ -355,7 +390,9 @@ gh api repos/$REPO/pulls/$PR_NUMBER/comments \
 If a decline phrase is found, override `relevance: not-relevant`, `resolution_method: wont-fix`
 regardless of what Phase 4 decided for that comment.
 
-Write the memory:
+Write the memory.
+**This write is a mandatory attempt — issue it as real `mcp__lorekit__memory_search` and `mcp__lorekit__memory_write` tool calls, not documentation shorthand.**
+Only a real tool error (thrown exception, or the tool not listed in the agent's `tools:` grant) may suppress the call; never infer "not connected" without attempting it.
 
 ```text
 # Classify scope: almost always repo-specific.
@@ -363,18 +400,18 @@ Write the memory:
 # regardless of codebase) → global; anything citing a repo-specific
 # symbol, path, or pattern → repo::{owner}/{repo}.
 
-# Deduplicate first.
-memory.search { q: "<fingerprint slug>", scopes: ["repo::{owner}/{repo}", "global"], limit: 5 }
+# Deduplicate first — issue this as a real mcp__lorekit__memory_search tool call.
+mcp__lorekit__memory_search: q="<fingerprint slug>" scopes=["repo::{owner}/{repo}", "global"] limit=5
 
-# Write (UPDATE if exists, ADD otherwise).
-memory.write {
-  scope: "repo::{owner}/{repo}",   # or "global" for universal patterns
-  key: "reviewer-comment-relevance::<fingerprint>",
-  value: "<record body as JSON or markdown>",
-  tags: ["loop::reviewer-comment-relevance", "source::<resolution_method>"],
-  source_agent: "implement-suggestion",
-  trigger: "outcome-emit"
-}
+# Write (UPDATE if exists, ADD otherwise) — issue this as a real
+# mcp__lorekit__memory_write tool call, one per distinct fingerprint.
+mcp__lorekit__memory_write:
+  scope="repo::{owner}/{repo}"          # or "global" for universal patterns
+  key="reviewer-comment-relevance::<fingerprint>"
+  value="<record body as JSON or markdown>"
+  tags=["loop::reviewer-comment-relevance", "source::<resolution_method>"]
+  source_agent="implement-suggestion"
+  trigger="outcome-emit"
 ```
 
 The write is **append-only and non-blocking** — it MUST NOT gate or delay the
@@ -392,7 +429,22 @@ comment-relevance memory for each measured comment:
 - Signal (b) — author reply correcting the finding, no fix commit → write `not-relevant / wont-fix`.
 - PR merged with thread open, no fix, no decline → write `weak-not-relevant / ignored-at-merge`.
 
-Use the same `memory.write` call format above, with `source_agent: "pr-reviewer"` and `trigger: "post-merge-outcome"`.
+Use the same real `mcp__lorekit__memory_search` / `mcp__lorekit__memory_write` call format above, with `source_agent: "pr-reviewer"` and `trigger: "post-merge-outcome"`.
+The same mandatory-attempt policy applies on this path.
+
+### What not to write
+
+Each row below is a shape that has been written into this bucket, or is an obvious next guess, and each fails for a mechanical reason — not a stylistic one.
+
+| Rejected shape | Example | Failure mechanism |
+| --- | --- | --- |
+| One memory per comment ID | `reviewer-comment-relevance::lorekit-231-3681940611` | The comment ID is unique forever, so the key never collides, so `seen_count` is frozen at 1 and the record never reaches the `>= 3` DROP bar or the `>= 2` PROMOTE bar. |
+| One memory per PR or per run (a digest) | `reviewer-comment-relevance::pr231-review-digest` | Four failures at once. (1) The unit is wrong — a digest keys on the run, not the finding class, so no fingerprint ever accumulates. (2) The key carries a PR number, so it never collides. (3) The read path matches a `fingerprint` against a single finding's claim, and a digest has no single fingerprint to match. (4) The per-run episodic record already has a home — the `review-outcomes` Bus (see [`review-outcomes.md`](./review-outcomes.md)) — so a digest here duplicates that bus while breaking this Signal. |
+| Reviewer name in the key | `reviewer-comment-relevance::issue:mthines-missing-abort-signal` | Splits one finding class into one record per reviewer, so each shard accumulates at a fraction of the true rate and none reaches a threshold; it also stores author identity, which [What this rule does not do](#what-this-rule-does-not-do) forbids. |
+| Path in the key | `reviewer-comment-relevance::nitpick:src-lib-cache-ts-42` | Paths and line numbers drift on every refactor, so the key stops matching the same pattern and the accumulated `seen_count` is orphaned. |
+
+Write the structural fingerprint; put the identifiers in `examples[]` or the record body.
+An `APPLIED_MEMORIES[]` entry is not a write target either — it is the in-run record of which memories fired, consumed by the report.
 
 ---
 

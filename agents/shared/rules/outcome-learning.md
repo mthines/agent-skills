@@ -160,18 +160,22 @@ A write missing either field is malformed.
 
 ### From `applied` verdicts (positive lesson)
 
-Write to `reviewer-lessons` via LoreKit:
+Write to `reviewer-lessons` via LoreKit.
+**This write is a mandatory attempt — issue it as a real `mcp__lorekit__memory_write` tool call, not documentation shorthand.**
+Only a real tool error (thrown exception, or the tool not listed in the agent's `tools:` grant) may suppress the call; never infer "not connected" without attempting it.
 
-```
-memory.write { scope: "global", key: "reviewer-lessons::<slug>", value: "<body>", tags: ["loop::reviewer-lessons", "source::outcome-applied"] }
+```text
+mcp__lorekit__memory_write: scope="global" key="reviewer-lessons::<slug>" value="<body>" tags=["loop::reviewer-lessons", "source::outcome-applied"]
 ```
 
 Lesson body: "Pattern [fingerprint class] reliably gets resolved — [short description]. Reinforce detection."
 
 ### From `rejected-at-validation` or `reverted-after-ci` verdicts (noise/negative lesson)
 
-```
-memory.write { scope: "<global | repo::{owner}/{repo}>", key: "reviewer-lessons::<slug>", value: "<body>", tags: ["loop::reviewer-lessons", "source::outcome-rejected"] }
+The same mandatory-attempt policy applies here — issue it as a real `mcp__lorekit__memory_write` tool call.
+
+```text
+mcp__lorekit__memory_write: scope="<global | repo::{owner}/{repo}>" key="reviewer-lessons::<slug>" value="<body>" tags=["loop::reviewer-lessons", "source::outcome-rejected"]
 ```
 
 Lesson body: "Pattern [fingerprint class] was rejected/reverted [N] times — over-flagging pattern: [short description]. Add to `filters:` in `.github/review.yaml` or lower confidence threshold."

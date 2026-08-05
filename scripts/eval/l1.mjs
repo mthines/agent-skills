@@ -690,6 +690,74 @@ function checksInSync(plan, checks) {
         step4.includes("The multi-lens review found no blocking issues."));
     }
   }
+
+  // G20: the reviewer-comment-relevance WRITE unit is pinned in prose and every write-path
+  // call site names the real MCP tool. PR #88 fixed this class on the READ side (G18); the
+  // WRITE side was untouched, so per-comment-id keys froze seen_count at 1.
+  // Reads the REAL shipped files and asserts literal anchors grepped out of them — never
+  // re-encode expected prose inside the eval (aw-lessons::mock-that-reimplements-the-thing-under-test).
+  // Base-revision proof (git show main:<file> | grep -cF): every literal below is base-count 0
+  // in its own file, so a bare includes() is NOT tautological here (contrast G18a, where
+  // mcp__lorekit__memory_list already had 4 base occurrences and needed an occurrence floor).
+  {
+    const crmW = read("agents/shared/rules/comment-relevance-memory.md");
+    const thr  = read("agents/shared/rules/thread-resolution.md");
+    const outl = read("agents/shared/rules/outcome-learning.md");
+
+    // G20a: the write unit names the trigger-vs-key split. Base count 0.
+    s.check("G20a comment-relevance-memory.md has '### The write unit' with the trigger-vs-key split",
+      crmW.includes("### The write unit") &&
+      crmW.includes("The write is **triggered once per resolved comment**, and the record is **keyed per fingerprint**."));
+
+    // G20b: the 1..N bound and the same-fingerprint one-write rule. Base count 0.
+    s.check("G20b comment-relevance-memory.md states the 1..N bound and the same-fingerprint ONE-write rule",
+      crmW.includes("produce **between 1 and N writes**") &&
+      crmW.includes("are **ONE write** with `seen_count += 1` — never two writes, and never `seen_count += 2`."));
+
+    // G20c: the key prohibition is widened past file:line to every per-sighting identifier,
+    // and carries the causal why-chain. Base count 0.
+    s.check("G20c comment-relevance-memory.md widens the key prohibition to every per-sighting identifier",
+      crmW.includes("Keys MUST NOT encode any per-sighting identifier.") &&
+      crmW.includes("That prohibition covers `file:line` coordinates, comment IDs, PR numbers, commit SHAs, and reviewer identity.") &&
+      crmW.includes("A `seen_count` frozen at 1 never reaches the `>= 3` DROP bar or the `>= 2` PROMOTE bar"));
+
+    // G20d: every write-path call site in comment-relevance-memory.md names the real MCP tools
+    // and no `memory.write {` / `memory.search {` pseudo-syntax survives.
+    // Base counts: mcp__lorekit__memory_write 0, mcp__lorekit__memory_search 0 — so the
+    // occurrence floors below are unreachable by the base revision by construction.
+    const crmWriteMentions  = crmW.split("mcp__lorekit__memory_write").length - 1;
+    const crmSearchMentions = crmW.split("mcp__lorekit__memory_search").length - 1;
+    s.check("G20d comment-relevance-memory.md write call sites name the real MCP tools, no pseudo-syntax left",
+      crmWriteMentions >= 3 &&
+      crmSearchMentions >= 2 &&
+      !/memory\.(write|search) \{/.test(crmW) &&
+      crmW.includes("**This write is a mandatory attempt — issue it as real `mcp__lorekit__memory_search` and `mcp__lorekit__memory_write` tool calls, not documentation shorthand.**"));
+
+    // G20e: the anti-pattern table exists with all four rejected shapes and the Bus pointer.
+    // Base count 0 for the heading and every row label.
+    s.check("G20e comment-relevance-memory.md has the 'What not to write' table with all four rejected shapes",
+      crmW.includes("### What not to write") &&
+      crmW.includes("| One memory per comment ID |") &&
+      crmW.includes("| One memory per PR or per run (a digest) |") &&
+      crmW.includes("| Reviewer name in the key |") &&
+      crmW.includes("| Path in the key |") &&
+      crmW.includes("the `review-outcomes` Bus"));
+
+    // G20f: thread-resolution.md defers to the write unit rather than restating it. Base count 0.
+    s.check("G20f thread-resolution.md defers to comment-relevance-memory.md § The write unit",
+      thr.includes("**The write unit is one write per comment, upserted onto the comment's fingerprint**") &&
+      thr.includes("(./comment-relevance-memory.md#the-write-unit)") &&
+      thr.includes("Several comments sharing a fingerprint produce one record with `seen_count += 1`, not one record each."));
+
+    // G20g: the other two write-path files name the real MCP write tool and carry no
+    // `memory.write {` pseudo-syntax. Base count 0 for mcp__lorekit__memory_write in both.
+    const outlWriteMentions = outl.split("mcp__lorekit__memory_write").length - 1;
+    s.check("G20g thread-resolution.md + outcome-learning.md name mcp__lorekit__memory_write, no pseudo-syntax left",
+      thr.includes("mcp__lorekit__memory_write") &&
+      outlWriteMentions >= 2 &&
+      !/memory\.(write|search) \{/.test(thr) &&
+      !/memory\.(write|search) \{/.test(outl));
+  }
 }
 
 process.exit(s.report() ? 0 : 1);
