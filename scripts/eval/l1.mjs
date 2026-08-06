@@ -637,13 +637,12 @@ function checksInSync(plan, checks) {
     s.check("G19a pr-reviewer.md has the PASS concise headline",
       prReviewer.includes("Reviewed your changes — no issues found."));
 
-    s.check("G19b pr-reviewer.md has the WARN concise headline led by WARN_GATE_COUNT",
-      prReviewer.includes("Reviewed your changes — no blocking issues; <WARN_GATE_COUNT> gate(s) flagged a warning.") &&
-      prReviewer.includes("See Review diagnostics."));
+    s.check("G19b pr-reviewer.md has the WARN concise headline led by WARN_GATE_COUNT and naming the warned gates",
+      prReviewer.includes("Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>."));
 
-    s.check("G19c pr-reviewer.md has the FAIL concise headline led by FAILING_GATE_COUNT",
-      prReviewer.includes("Reviewed your changes — <FAILING_GATE_COUNT> gate(s) need attention before human review.") &&
-      prReviewer.includes("<FAIL_BLOCKING_SUFFIX>"));
+    s.check("G19c pr-reviewer.md has the FAIL concise headline led by SEVERITY_TALLY and naming the blocking gates",
+      prReviewer.includes("Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review.") &&
+      prReviewer.includes("Blocking: <FAIL_REASONS>."));
 
     // G19d: in every Step-4 template block, every '| Gate | Status' line appears AFTER
     // a '<summary>Review diagnostics' anchor — proving the table is inside the accordion,

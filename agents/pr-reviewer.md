@@ -850,7 +850,7 @@ On WARN — soft warnings only (hard Gates 2/3/4/5 ✅, at least one of Descript
 | Self-review signals  | ✅ | empty |
 | Code review          | ✅ or ⚠️ | "See inline comments" or finding text or empty |
 
-**Verdict**: PASS — no blocking issues; <WARN_GATE_COUNT> gate(s) flagged a warning (⚠️).
+**Verdict**: PASS — no blocking issues, <WARN_GATE_COUNT> warning(s): <WARN_REASONS>.
 
 [rest of sections follow]
 ```
@@ -876,7 +876,7 @@ On FAIL (any of Gates 2/3/4/5 fails, or Code review is ❌):
 | Self-review signals  | ✅ or ❌ | finding text or empty |
 | Code review          | ✅, ⚠️, or ❌ | "See inline comments" or finding text or empty |
 
-**Verdict**: FAIL — <FAILING_GATE_COUNT> gate(s) need attention.
+**Verdict**: FAIL — <SEVERITY_TALLY>. Blocking: <FAIL_REASONS>.
 
 [rest of sections follow]
 ```
@@ -1070,7 +1070,7 @@ MEMORIES_SECTION
 ```markdown
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
-Reviewed your changes — no blocking issues; <WARN_GATE_COUNT> gate(s) flagged a warning. See Review diagnostics.
+Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>.
 
 <sup>FOOTER_LINE</sup>
 
@@ -1115,7 +1115,7 @@ MEMORIES_SECTION
 ```markdown
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
-Reviewed your changes — <FAILING_GATE_COUNT> gate(s) need attention before human review.<FAIL_BLOCKING_SUFFIX>
+Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review. Blocking: <FAIL_REASONS>.
 
 <sup>FOOTER_LINE</sup>
 
@@ -1155,10 +1155,41 @@ MEMORIES_SECTION
 </details>
 ```
 
-The FAIL headline leads with `FAILING_GATE_COUNT`, which is never 0 on a FAIL, so the headline always carries the failure signal even when CI or Gates 3/4/5 fail with a clean Code-review gate (zero inline findings).
-`FAIL_BLOCKING_SUFFIX` appends the blocking-finding count only when it adds signal:
-- When `K > 0`, substitute exactly ` \`<K>\` blocking finding(s) — see inline comments.` (leading space).
-- When `K == 0`, substitute nothing — never render "0 blocking" or "found 0 finding(s)".
+The FAIL headline leads with a fixed severity tally; the WARN headline leads with its warning
+count. Both then name the important bit from each flagged gate — so a reader takes in *how bad* and
+*why* in one glance without opening the accordion.
+
+`SEVERITY_TALLY` (the **FAIL** headline and the Step 3 FAIL verdict only) — the count skeleton,
+wrapped as one bold span by the headline (`**<SEVERITY_TALLY>**`), ordered CI-then-errors-then-warnings.
+Substitute `<FAILING_GATE_COUNT> error(s)`, and append `, <WARN_GATE_COUNT> warning(s)` only when
+`WARN_GATE_COUNT > 0` (omit the warnings term at 0 — never render "0 warnings"). Pluralise each
+noun against its own count (`1 error, 2 warnings`; `2 errors`). **CI (Gate 2) is not in
+`<FAILING_GATE_COUNT>`** (criterion 2), so a CI failure is *named, not counted*: prefix `CI failing`
+to the tally and drop the `<N> error(s)` term when `<FAILING_GATE_COUNT>` is 0 — so a CI-only failure
+reads `CI failing` (never `0 error(s)`), and CI plus two failing gates reads `CI failing, 2 errors`.
+Every FAIL therefore leads with at least one concrete token. The **WARN** headline does not use
+`SEVERITY_TALLY` — with no errors it renders `**<WARN_GATE_COUNT> warning(s)**` directly.
+
+`FAIL_REASONS` / `WARN_REASONS` — the important bit **distilled** from each ❌ (resp. ⚠️) gate's
+Details into a terse noun phrase (≤ 8 words), derived from the gate, never a copy of the cell;
+most-severe first, joined by `; `. `FAIL_REASONS` carries **one phrase per ❌ gate** (plus a leading
+`CI checks failing` when CI is down), so it matches the tally's *error* count — NOT the full tally:
+the warning gates are counted in the tally but named only in the accordion, never in the FAIL
+headline (so `1 error, 2 warnings` carries exactly one `FAIL_REASONS` phrase). `WARN_REASONS` carries
+one phrase per ⚠️ gate. Keep the whole line to one sentence-plus-clause; cap the reasons at ~140
+chars — if longer, keep the top two and append `; +<k> more`.
+
+| Gate | ❌ reason phrase (FAIL_REASONS) | ⚠️ note phrase (WARN_REASONS) |
+|---|---|---|
+| Prior bot feedback | `<N> unresolved bot review(s)` | — (this gate never warns) |
+| Documentation | `docs missing for <thing>` · `<N> doc gap(s)` | — |
+| Self-review signals | `debug logs left in` · `leftover TODO/stub` | — |
+| Code review | `<K> blocking finding(s) (see inline)` | `<N> non-blocking finding(s)` |
+| Description vs. code | — (soft gate — warns, never fails) | `description omits <thing>` |
+| CI (Gate 2) | `CI checks failing` — leads `FAIL_REASONS` and adds the `CI failing` token to the tally (see `SEVERITY_TALLY`); CI is never in `<FAILING_GATE_COUNT>` | — |
+
+The old `FAIL_BLOCKING_SUFFIX` slot is retired: the blocking-finding count now rides inside the
+Code-review entry of `FAIL_REASONS` (`(see inline)`), so the pointer is kept without a second clause.
 
 `PARTIAL_REVIEW_BANNER` is the review-body slot for the tool-budget stop condition. Omit the
 placeholder entirely on a complete run — the line disappears and the body starts at the summary
@@ -1288,13 +1319,14 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   `conventional-comments.md` (Step 2.9) — NOT the `issue:` prefix count, since a non-blocking
   `issue:` is not blocking (see *Gate states*).
   These reuse the Quality-line values already computed at Step 2.9b — no separate counter.
-- `WARN_GATE_COUNT` = the number of soft gates showing ⚠️ on a WARN run — Description vs. code
-  and/or Code review, so 1 or 2.
+- `WARN_GATE_COUNT` = the number of gates showing ⚠️ in this run — Description vs. code and/or
+  Code review, so 0, 1, or 2. It counts ⚠️ gates on a **FAIL** run too, not only a WARN run, so the
+  FAIL `SEVERITY_TALLY` can report warnings alongside errors.
   The top-level WARN headline leads with `WARN_GATE_COUNT`, not the finding count `N`, so it reads
   correctly even when there are zero inline findings (a Description-vs-code-only warning).
   `WARN_GATE_COUNT` does not appear in the accordion gate table, which renders per-gate ✅/⚠️ marks
-  rather than a count; its only rendered uses are the Step 3 terminal WARN verdict line and this
-  top-level WARN headline.
+  rather than a count; its rendered uses are the Step 3 terminal WARN/FAIL verdict lines and the
+  top-level WARN and FAIL headlines (the latter via `SEVERITY_TALLY`).
 - Never add rows, sections, or prose outside the template above (except the three `<details>`
   blocks — diagnostics, `Optimality review`, and `Additional findings` — the `MEMORIES_SECTION`
   slot inside the diagnostics block, and the `PARTIAL_REVIEW_BANNER` line — all of which are slots
