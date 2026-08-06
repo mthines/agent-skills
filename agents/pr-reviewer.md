@@ -1155,22 +1155,29 @@ MEMORIES_SECTION
 </details>
 ```
 
-The FAIL and WARN headlines lead with a fixed severity tally, then name the important bit from
-each flagged gate — so a reader takes in *how bad* and *why* in one glance without opening the
-accordion. Both are built from the same two placeholders:
+The FAIL headline leads with a fixed severity tally; the WARN headline leads with its warning
+count. Both then name the important bit from each flagged gate — so a reader takes in *how bad* and
+*why* in one glance without opening the accordion.
 
-`SEVERITY_TALLY` — the count skeleton, always errors-then-warnings, wrapped as one bold span by the
-headline (`**<SEVERITY_TALLY>**`). Substitute `<FAILING_GATE_COUNT> error(s)`, and append `, <WARN_GATE_COUNT> warning(s)`
-only when `WARN_GATE_COUNT > 0` (omit the warnings term at 0 — never render "0 warnings").
-Pluralise each noun against its own count (`1 error, 2 warnings`; `2 errors`). `FAILING_GATE_COUNT`
-is never 0 on a FAIL, so the tally always carries the failure signal even when only CI or Gates
-3/4/5 fail with a clean Code-review gate.
+`SEVERITY_TALLY` (the **FAIL** headline and the Step 3 FAIL verdict only) — the count skeleton,
+wrapped as one bold span by the headline (`**<SEVERITY_TALLY>**`), ordered CI-then-errors-then-warnings.
+Substitute `<FAILING_GATE_COUNT> error(s)`, and append `, <WARN_GATE_COUNT> warning(s)` only when
+`WARN_GATE_COUNT > 0` (omit the warnings term at 0 — never render "0 warnings"). Pluralise each
+noun against its own count (`1 error, 2 warnings`; `2 errors`). **CI (Gate 2) is not in
+`<FAILING_GATE_COUNT>`** (criterion 2), so a CI failure is *named, not counted*: prefix `CI failing`
+to the tally and drop the `<N> error(s)` term when `<FAILING_GATE_COUNT>` is 0 — so a CI-only failure
+reads `CI failing` (never `0 error(s)`), and CI plus two failing gates reads `CI failing, 2 errors`.
+Every FAIL therefore leads with at least one concrete token. The **WARN** headline does not use
+`SEVERITY_TALLY` — with no errors it renders `**<WARN_GATE_COUNT> warning(s)**` directly.
 
 `FAIL_REASONS` / `WARN_REASONS` — the important bit **distilled** from each ❌ (resp. ⚠️) gate's
 Details into a terse noun phrase (≤ 8 words), derived from the gate, never a copy of the cell;
-most-severe first, joined by `; `. One phrase per counted gate, so the phrase count matches the
-tally. Keep the whole line to one sentence-plus-clause; cap the reasons at ~140 chars — if longer,
-keep the top two and append `; +<k> more`.
+most-severe first, joined by `; `. `FAIL_REASONS` carries **one phrase per ❌ gate** (plus a leading
+`CI checks failing` when CI is down), so it matches the tally's *error* count — NOT the full tally:
+the warning gates are counted in the tally but named only in the accordion, never in the FAIL
+headline (so `1 error, 2 warnings` carries exactly one `FAIL_REASONS` phrase). `WARN_REASONS` carries
+one phrase per ⚠️ gate. Keep the whole line to one sentence-plus-clause; cap the reasons at ~140
+chars — if longer, keep the top two and append `; +<k> more`.
 
 | Gate | ❌ reason phrase (FAIL_REASONS) | ⚠️ note phrase (WARN_REASONS) |
 |---|---|---|
@@ -1179,7 +1186,7 @@ keep the top two and append `; +<k> more`.
 | Self-review signals | `debug logs left in` · `leftover TODO/stub` | — |
 | Code review | `<K> blocking finding(s) (see inline)` | `<N> non-blocking finding(s)` |
 | Description vs. code | — (soft gate — warns, never fails) | `description omits <thing>` |
-| CI (Gate 2) | `CI checks failing` (fallback only — CI is not in `FAILING_GATE_COUNT`, so use this phrase only when CI is the sole failure, and read the tally as `CI failing`) | — |
+| CI (Gate 2) | `CI checks failing` — leads `FAIL_REASONS` and adds the `CI failing` token to the tally (see `SEVERITY_TALLY`); CI is never in `<FAILING_GATE_COUNT>` | — |
 
 The old `FAIL_BLOCKING_SUFFIX` slot is retired: the blocking-finding count now rides inside the
 Code-review entry of `FAIL_REASONS` (`(see inline)`), so the pointer is kept without a second clause.
