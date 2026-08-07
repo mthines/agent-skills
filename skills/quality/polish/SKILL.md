@@ -123,10 +123,12 @@ PR_URL=$(gh pr view --json url -q .url 2>/dev/null)
 ```
 
 If no PR is open, skip Pass A and tell the user to open a draft PR first (via `/create-pr`), then re-run `polish`.
-When a PR exists, dispatch the review:
+When a PR exists, dispatch the review. `pr-reviewer` is an **agent** — dispatch it via
+the Agent tool (`subagent_type: "pr-reviewer"`), **not** `Skill()` (there is no
+`pr-reviewer` skill; `Skill("pr-reviewer")` errors with `Unknown skill`):
 
 ```
-Skill("pr-reviewer", "<PR-URL-or-number> [--critical if user passed it] [--no-optimize if user passed it]")
+Agent(subagent_type: "pr-reviewer", prompt: "<PR-URL-or-number> [--critical if user passed it] [--no-optimize if user passed it]")
 ```
 
 The `pr-reviewer` pass includes the **optimality lens** (Step 2.4c, report-only).
@@ -261,6 +263,6 @@ loop), not directly to `polish`.
 | ------------------------- | ---------------------------------------------- |
 | `/create-pr` (default)    | `Skill("review-loop")` (full convergence loop) |
 | `/create-pr --no-review`  | `Skill("polish", "simplify")` — simplify only, one pass |
-| `/create-pr --no-simplify`| `Skill("pr-reviewer")` one-shot only           |
+| `/create-pr --no-simplify`| `pr-reviewer` agent (Agent tool) one-shot only |
 | `/create-pr --quick`      | `Skill("polish", "quick")` on the draft diff   |
 | `/create-pr --no-quality` | *(quality skipped)*                            |

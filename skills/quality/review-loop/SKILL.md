@@ -53,6 +53,20 @@ It sequences existing pieces, each owning its own domain:
 3. `Skill("polish", "simplify")` — applies Class M mechanical refactors behind a confidence gate.
 4. On convergence — refreshes the PR description (via the shared description-contract) and, best-effort, notes the linked Linear ticket.
 
+### Dispatch mechanics — read before invoking
+
+`pr-reviewer` is an **agent**, not a skill. Dispatch it with the **Agent/Task tool**
+(`subagent_type: "pr-reviewer"`, `prompt: "<PR-URL> [--critical]"`). **Do not** call
+`Skill("pr-reviewer", …)` — there is no skill by that name and it errors with
+`Unknown skill: pr-reviewer`.
+
+`implement-suggestion` and `polish` **are** skills — invoke them with `Skill(...)`.
+If a given install has `implement-suggestion` set `disable-model-invocation: true`
+(so `Skill("implement-suggestion")` is refused), fall back to applying its
+contract inline: resolve a worktree at the PR head, apply the findings as
+commit-per-comment, push, and reply-to-and-resolve the threads yourself (the
+same work the skill's worker does) — never skip sub-step B silently.
+
 ## Modes
 
 Parse the **first positional argument** as the PR reference.
@@ -158,7 +172,10 @@ while ITERATION < CAP:
     # loop always ENDS on a review pass that validates the previous iteration's
     # fixes and resolves this agent's now-addressed threads. This is the
     # "last review just resolves comments and makes no changes" convergence pass.
-    run pr-reviewer(<PR>) [append " --critical" when CRITICAL == 1]
+    #
+    # pr-reviewer is an AGENT — dispatch via the Agent tool, NOT Skill():
+    #   Agent(subagent_type: "pr-reviewer",
+    #         prompt: "<PR-URL>" + (" --critical" if CRITICAL == 1 else ""))
     # On a re-review, pr-reviewer resolves its own addressed threads (thread-resolution.md).
 
     if NO_FEEDBACK == 1:

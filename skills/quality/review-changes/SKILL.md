@@ -34,8 +34,9 @@ fi
 # Default — convergence loop on own or specified PR
 Skill("review-loop", "<pr-url-or-number> [--critical if passed]")
 
-# Report-only (no apply) — one-shot review
-Skill("pr-reviewer", "<pr-url-or-number> [--critical if passed]")
+# Report-only (no apply) — one-shot review.
+# pr-reviewer is an AGENT — dispatch via the Agent tool, NOT Skill():
+Agent(subagent_type: "pr-reviewer", prompt: "<pr-url-or-number> [--critical if passed]")
 ```
 
 ## Usage
