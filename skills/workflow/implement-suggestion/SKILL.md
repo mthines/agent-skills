@@ -16,9 +16,13 @@ description: >
   "implement reviewer feedback", "fix PR comments", "/implement-suggestion".
   With --watch, loops the apply on a single PR — waiting for new review-bot
   comments after each push and re-applying until the reviewers go quiet (max 5
-  iterations); this is the loop /create-pr dispatches post-push.
+  iterations); this is the loop /create-pr dispatches post-push. With
+  --resolve-all (used by review-loop), it additionally replies to and resolves
+  every non-fix thread it can honestly close — answering questions, recording a
+  rationale for declined suggestions — so the PR converges to zero open threads,
+  leaving only genuine human-judgment flags (real unfixed blockers) open.
 disable-model-invocation: false
-argument-hint: '[<pr-url>|#<n>] [--critical] [--watch]'
+argument-hint: '[<pr-url>|#<n>] [--critical] [--watch] [--resolve-all]'
 license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(gw *) Read Edit Write Glob Grep Skill
 metadata:
@@ -89,6 +93,25 @@ the run loops the single-pass on one PR until the review bots go quiet (max 5
 iterations). It requires exactly one PR (multi-pr with n=1, or the active PR).
 Refuse `--watch` with more than one PR or in free-text mode. Full procedure in
 [`rules/watch-mode.md`](./rules/watch-mode.md) — load it now when `--watch` is set.
+
+**`--resolve-all` modifier** (orthogonal to mode): default is **off** — every
+caller keeps today's behaviour (non-fix comments are surfaced with their threads
+left open) unless this flag is present. `review-loop` passes it so the loop can
+converge a PR to zero open threads. When set, in addition to applying fixes the
+worker gives **every** fetched thread an explicit disposition and closes the
+ones it can honestly close:
+
+| Disposition | Thread action |
+| --- | --- |
+| Fix applied (`apply`) | reply `Addressed in <sha>` + resolve (unchanged) |
+| `question` | reply with the answer + resolve |
+| `discussion`, or an `actionable`/`nit` the gates declined | reply with the rationale (a decline) + resolve |
+| `praise` | drop silently (no thread action) |
+| Genuine human-judgment flag — a real potential issue the agent will not auto-apply **and** cannot honestly decline (e.g. a `/critical` **Must-fix** surface, or a `surface`-band actionable) | **leave open** + surface, with a reply noting why it is flagged |
+
+The last row is the safety valve: it never force-resolves a live finding, so
+this flag cannot green-wash a PR. It composes with `--watch`. Free-text mode
+ignores it (no threads to resolve).
 
 Full parsing rules live in [`rules/input-parsing.md`](./rules/input-parsing.md).
 
@@ -176,13 +199,17 @@ ledger. Matches are **advisory inputs** to Phase 3 tagging and the Phase 4 gates
 
 Tag every comment per [`rules/comment-classification.md`](./rules/comment-classification.md):
 
-| Tag           | Treatment                                                                  |
-| ------------- | -------------------------------------------------------------------------- |
-| `actionable`  | Carries to Phase 4 (validation gates).                                     |
-| `nit`         | Carries to Phase 4; higher confidence bar applies.                         |
-| `discussion`  | Skipped; surfaced in Phase 7 report.                                       |
-| `question`    | Skipped; surfaced.                                                         |
-| `praise`      | Dropped silently.                                                          |
+| Tag           | Treatment (default)                                                        | Treatment under `--resolve-all`                                             |
+| ------------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `actionable`  | Carries to Phase 4 (validation gates).                                     | Same; a declined one is reply-and-resolved in Phase 6 (rationale).          |
+| `nit`         | Carries to Phase 4; higher confidence bar applies.                         | Same; a declined one is reply-and-resolved in Phase 6 (rationale).          |
+| `discussion`  | Skipped; surfaced in Phase 7 report.                                       | Reply with the agent's take + resolve (Phase 6).                            |
+| `question`    | Skipped; surfaced.                                                         | Reply with the answer + resolve (Phase 6).                                  |
+| `praise`      | Dropped silently.                                                          | Dropped silently.                                                          |
+
+Under `--resolve-all`, `discussion` / `question` comments are **not** skipped —
+they are carried into Phase 5's pack as reply-only entries (no code change) so
+the Phase 6 worker can answer and resolve their threads.
 
 ### Phase 4 — Two-gate validation
 
@@ -223,6 +250,12 @@ Criteria section (one criterion per applied change) and a "Mode:
 existing-pr" header that signals to consumers "commit and push to the
 existing branch; do not open a new PR".
 
+When `--resolve-all` is set, also set `resolve-all: true` in the pack frontmatter
+and add the `## Reply-only` section: one entry per `question` / `discussion` /
+declined comment with its `disposition` (`answer` / `discussion` / `decline` /
+`flag`), thread ID, and the exact reply text the worker will post. The worker's
+step-6 pass consumes this section.
+
 ### Phase 6 — Handoff (lane-split)
 
 Lane is picked from the pack's complexity signals:
@@ -254,6 +287,17 @@ resolved comment) and a PR where every handled comment is resolved; only
 have no resolvable thread and are reported as such. Full contract in
 [`rules/handoff.md#worker-prompt-template`](./rules/handoff.md#worker-prompt-template).
 
+**Under `--resolve-all`**, the worker runs one extra pass after the commit/push
+pass: for every reply-only entry (`question` / `discussion`, or an `actionable` /
+`nit` the gates declined) it posts a reply — the answer for a question, the
+agent's take for a discussion, the decline rationale for a gated-out change —
+then `resolveReviewThread`. Reply-only entries have **no commit** and are pushed
+nothing. A genuine human-judgment flag is the one exception: the worker posts a
+reply noting why it is flagged and **leaves the thread open**. This pass is
+resolve-side only, so its failures are non-fatal exactly like the fix-thread
+resolves. Full contract in
+[`rules/handoff.md#worker-prompt-template`](./rules/handoff.md#worker-prompt-template).
+
 **The main agent does not edit files in Phase 6.** All applies / commits /
 pushes / thread resolutions happen inside the worker subagent so the loud loop
 (test runs, push retries) stays out of the main context.
@@ -276,6 +320,12 @@ is `<threads-resolved>/<applied-with-a-thread>` — comments whose fix landed an
 whose thread was resolved, over the applied comments that had a resolvable
 thread (`issues` / `review`-summary comments have none and are excluded from
 the denominator).
+
+Under `--resolve-all`, add an `Answered` column: `<threads-answered-and-resolved>`
+— `question` / `discussion` / declined comments closed with a reply (no commit).
+`Surfaced` then counts **only** the human-judgment flags left open on purpose; if
+`Surfaced` is `0`, the PR has zero open threads and the caller (`review-loop`) can
+exit. Report each still-open flag on its own line so it is never silently dropped.
 
 Then per PR list:
 - **Applied** — comment ID, author, one-line summary, commit SHA, thread status
@@ -441,6 +491,12 @@ The reviewers consume `review-outcomes` only at promotion/consolidation time; th
   lands and is pushed, the worker replies with the commit SHA and calls
   `resolveReviewThread`. `surface` / `skip` comments — and any comment whose
   commit did not land — stay open. Never resolve a thread whose fix is not on the remote.
+- **`--resolve-all` never green-washes.** The extra reply-and-resolve pass closes
+  only threads it can honestly close (fix landed, question answered, discussion
+  taken, change explicitly declined with a rationale). A real potential issue the
+  agent will not auto-apply **and** cannot honestly decline stays **open** and is
+  surfaced — the same invariant as `thread-resolution.md`'s "never resolve a
+  persisting/unaddressed finding". Resolving to make a loop terminate is forbidden.
 - **Worktree isolation.** Each PR gets its own `gw` worktree.
 - **Resolved threads are skipped at fetch time.**
 - **Main agent does not apply / commit / push in multi-PR mode.** Workers do.

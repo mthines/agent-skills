@@ -19,9 +19,15 @@ surfaced.
 | ------------- | ----------------- | --------------------------------------------------------------------------- |
 | `actionable`  | Yes (Phase 4)     | Proposes a specific code change or a specific behavior to add / fix / remove. |
 | `nit`         | Yes (Phase 4)     | Actionable, but explicitly low-priority. Higher confidence bar applies.    |
-| `discussion`  | No (surfaced)     | Asks a question, proposes a trade-off, or starts a conversation.            |
-| `question`    | No (surfaced)     | Pure question — reviewer wants info, not a code change.                     |
+| `discussion`  | No (surfaced)*    | Asks a question, proposes a trade-off, or starts a conversation.            |
+| `question`    | No (surfaced)*    | Pure question — reviewer wants info, not a code change.                     |
 | `praise`      | No (dropped)      | "Nice", "LGTM", "👍", "this is clean".                                      |
+
+\* Under `--resolve-all`, `discussion` / `question` do **not** stop at "surfaced":
+they carry into the pack's `## Reply-only` section so the Phase 6 worker answers
+the question (or records the agent's take) and resolves the thread. The label is
+unchanged — only the downstream treatment differs. See the SKILL's `--resolve-all`
+modifier section.
 
 ## Decision flow
 

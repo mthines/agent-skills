@@ -42,7 +42,7 @@ Skill("pr-reviewer", "<pr-url-or-number> [--critical if passed]")
 
 | Invocation | Effect |
 | --- | --- |
-| `/review-changes` | Convergence loop on the current branch's open PR — `pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 3 iterations. |
+| `/review-changes` | Convergence loop on the current branch's open PR — `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved (fix or reply). |
 | `/review-changes --report` | One-shot read-only review via `pr-reviewer` (no apply). |
 | `/review-changes --critical` | Adds adversarial pre-mortem (`Skill("critical", "code")`) to each `pr-reviewer` call. |
 | `/review-changes <PR-URL>` | Convergence loop on the specified PR (self or cross — `pr-reviewer` detects relation automatically). |
