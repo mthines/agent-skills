@@ -289,7 +289,7 @@ The decision procedure for each resolved comment:
 1. Derive the fingerprint `<category>:<claim-gist>` from the comment, per [Key format](#key-format).
 2. Search for an existing record on that fingerprint with `mcp__lorekit__memory_search`, scoped narrow-to-broad (`repo::{owner}/{repo}` then `global`).
 3. **No hit** → ADD: write a new record with `seen_count: 1` and `expires` at now + 60 days.
-4. **Hit with the same `relevance` direction** → UPDATE: write the same key with `seen_count += 1`, a refreshed `expires`, and the new example appended to `examples[]`.
+4. **Hit with the same `relevance` direction** → UPDATE: re-write the same key with a refreshed `expires` and the new example appended to `examples[]`; LoreKit's server-side dedup increments `seen_count` on the re-write — the writer never computes it into the record body.
 5. **Hit with the opposite `relevance` direction** → contradiction: write the new direction and flag the pair for user review; never silently overwrite the old direction.
 6. **Already written this run** (a second comment resolving to a fingerprint already handled at step 3 or 4) → do not write again; the step-4 increment already covers it.
 
