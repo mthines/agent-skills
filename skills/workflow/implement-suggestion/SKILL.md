@@ -17,7 +17,7 @@ description: >
   With --watch, loops the apply on a single PR — waiting for new review-bot
   comments after each push and re-applying until the reviewers go quiet (max 5
   iterations); this is the loop /create-pr dispatches post-push.
-disable-model-invocation: true
+disable-model-invocation: false
 argument-hint: '[<pr-url>|#<n>] [--critical] [--watch]'
 license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(gw *) Read Edit Write Glob Grep Skill
