@@ -291,7 +291,7 @@ The decision procedure for each resolved comment:
 3. **No hit** → ADD: write a new record with `seen_count: 1` and `expires` at now + 60 days.
 4. **Hit with the same `relevance` direction** → UPDATE: re-write the same key with a refreshed `expires` and the new example appended to `examples[]`; LoreKit's server-side dedup increments `seen_count` on the re-write — the writer never computes it into the record body.
 5. **Hit with the opposite `relevance` direction** → contradiction: write the new direction and flag the pair for user review; never silently overwrite the old direction.
-6. **Already written this run** (a second comment resolving to a fingerprint already handled at step 3 or 4) → do not write again; the step-4 increment already covers it.
+6. **Already written this run** (a second comment resolving to a fingerprint already handled at step 3, 4, or 5) → do not write again; the write already made this run covers it.
 
 ### Who writes
 
