@@ -172,10 +172,9 @@ while ITERATION < CAP:
     # loop always ENDS on a review pass that validates the previous iteration's
     # fixes and resolves this agent's now-addressed threads. This is the
     # "last review just resolves comments and makes no changes" convergence pass.
-    #
-    # pr-reviewer is an AGENT — dispatch via the Task tool, NOT Skill():
-    #   Task(subagent_type="pr-reviewer",
-    #        prompt="<PR-URL>" + (" --critical" if CRITICAL == 1 else ""))
+    review = Task(subagent_type="pr-reviewer",
+                  prompt="<PR-URL>" + (" --critical" if CRITICAL == 1 else ""))
+    # pr-reviewer is an AGENT — dispatch via the Task tool, NOT Skill("pr-reviewer").
     # On a re-review, pr-reviewer resolves its own addressed threads (thread-resolution.md).
 
     if NO_FEEDBACK == 1:
@@ -189,6 +188,9 @@ while ITERATION < CAP:
 
     # Sub-step B: apply findings AND resolve non-fix threads
     Skill("implement-suggestion", "<PR-URL> --resolve-all")
+    # If this install has implement-suggestion set disable-model-invocation:true,
+    # Skill() is refused — use the inline fallback from "Dispatch mechanics" above
+    # (apply commit-per-comment, push, reply-and-resolve yourself). Never skip B.
     # Single-shot apply — no --watch; the loop drives re-review itself.
     # --resolve-all: fixes what it can, and replies-to-and-resolves questions /
     # discussions / declined suggestions; leaves only human-judgment flags open.
