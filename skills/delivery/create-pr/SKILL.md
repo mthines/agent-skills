@@ -101,7 +101,7 @@ Otherwise, map the `create-pr` flags to the appropriate invocation. Evaluate in 
 | - | -------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------- |
 | 1 | `--quick`, or both `--no-review` **and** `--no-simplify` | `Skill("polish", "quick")`                      | Light mechanical pass (comments, naming, dead code).            |
 | 2 | `--no-review` (or legacy `--simplify` alone)             | `Skill("polish", "simplify")`                   | code-quality simplify — apply Class M refactors once.           |
-| 3 | `--no-simplify` (or legacy `--review` alone)             | `Skill("pr-reviewer", "<pr-url>")`              | `pr-reviewer` one-shot only — findings surfaced, not applied.   |
+| 3 | `--no-simplify` (or legacy `--review` alone)             | `Task(subagent_type="pr-reviewer", prompt="<pr-url>")` | `pr-reviewer` **agent** (Task tool, not `Skill()`) one-shot only — findings surfaced, not applied. |
 | 4 | **none of the above (default)**                          | `Skill("review-loop", "<pr-url>")`              | Full loop: `pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 5 iterations; converges until every review thread is resolved (fix or reply) and refreshes the PR description. |
 
 (`--no-quality` is handled above as an outright skip and never reaches this table.)
