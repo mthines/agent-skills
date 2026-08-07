@@ -277,6 +277,7 @@ Also load **comment-relevance memories** and **reviewer-lessons** via a narrow-t
 **This read is a mandatory attempt.**
 Issue each line below as a real `mcp__lorekit__memory_list` tool call — these are not documentation shorthand.
 Only a real tool error (thrown exception, or tool not in the agent's `tools:` grant) may cause you to set `LOREKIT_CONNECTED=false`; never infer "not connected" without attempting the call.
+**Retry a transient failure before declaring `false`.** A thrown MCP error on the *first* `memory_list` call is far more often a momentary timeout/transport hiccup than a real outage, and treating that single blip as terminal is what makes the `Memories — not connected` line flap between otherwise-identical runs. So when the first call throws, retry it up to **2 more times** (3 attempts total) with a short backoff before setting `LOREKIT_CONNECTED=false`. The one exception that must **not** be retried is a hard "tool unavailable" error — the tool is not in the agent's `tools:` grant, or the LoreKit MCP server did not connect this session so the tool is unregistered (surfaces as `No such tool available: mcp__lorekit__memory_list`). There is nothing to wait for, so set `false` immediately; this is a genuine "not connected", and the remedy is environmental (get the LoreKit MCP server connecting reliably), not another retry. Any attempt returning without a tool error (even an empty list) is a success: stop retrying and set `LOREKIT_CONNECTED=true`.
 When this agent runs as a sub-agent, it does NOT receive the SessionStart memory-load priming that the main session gets, so it MUST perform this Step 1.0 read itself — never assume memories were pre-loaded.
 
 ```text
@@ -313,7 +314,7 @@ Retain each loaded memory's LoreKit `scope` and `key` alongside its
 `fingerprint`, `relevance`, and `seen_count` — Step 2.2 builds a deep link from
 `scope` + `key` for every memory that influences the review
 (`agents/shared/rules/comment-relevance-memory.md § Linking applied memories in the report`).
-Set `LOREKIT_CONNECTED` = `true` when the `mcp__lorekit__memory_list` call returned without a tool error (i.e., the attempt was made and succeeded); set `false` only when the tool call itself threw an error or the tool is not in the agent's `tools:` grant — never infer `false` without attempting the call.
+Set `LOREKIT_CONNECTED` = `true` when the `mcp__lorekit__memory_list` call returned without a tool error (i.e., the attempt was made and succeeded); set `false` only when the tool call still threw an error after the retries above are exhausted, or the tool is not in the agent's `tools:` grant — never infer `false` without attempting the call, and never off a single transient throw before retrying.
 Set `MEMORIES_READ_COUNT` = the number of `reviewer-comment-relevance` memories retained after
 this merge/dedup (0 when connected but none matched).
 **This definition is authoritative and no later step widens it** — including the Step 1.2c addend.
@@ -1269,8 +1270,8 @@ of the two shapes below it takes, so a reader always sees either both counts or 
   ```
 
   When `MEMORIES_USED_COUNT` is 0, render only the header line (`… read · 0 used`), no bullets.
-- **Not connected** (`LOREKIT_CONNECTED=false` — the `mcp__lorekit__memory_list` tool call itself errored, or the tool is not in the agent's `tools:` grant) — render exactly `**Memories** — not connected`, no bullets.
-  This shape MUST NOT appear when the read was merely skipped or assumed; it only appears after a genuine failed attempt.
+- **Not connected** (`LOREKIT_CONNECTED=false` — the `mcp__lorekit__memory_list` tool call still errored after the Step 1.0 retries were exhausted, or the tool was unavailable: not in the agent's `tools:` grant, or the LoreKit MCP server did not connect this session so the tool is unregistered — `No such tool available`) — render exactly `**Memories** — not connected`, no bullets.
+  This shape MUST NOT appear when the read was merely skipped or assumed, nor off a single transient throw — it only appears after a genuine failed attempt that survived retries.
 
 `MEMORIES_READ_COUNT` (Step 1.0) is how many memories were loaded; `MEMORIES_USED_COUNT` =
 `|APPLIED_MEMORIES|`, how many actually fired (drops + downgrades + promotes). Read is always ≥
