@@ -55,8 +55,8 @@ It sequences existing pieces, each owning its own domain:
 
 ### Dispatch mechanics — read before invoking
 
-`pr-reviewer` is an **agent**, not a skill. Dispatch it with the **Agent/Task tool**
-(`subagent_type: "pr-reviewer"`, `prompt: "<PR-URL> [--critical]"`). **Do not** call
+`pr-reviewer` is an **agent**, not a skill. Dispatch it with the **Task tool**
+(`Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical]")`). **Do not** call
 `Skill("pr-reviewer", …)` — there is no skill by that name and it errors with
 `Unknown skill: pr-reviewer`.
 
@@ -173,9 +173,9 @@ while ITERATION < CAP:
     # fixes and resolves this agent's now-addressed threads. This is the
     # "last review just resolves comments and makes no changes" convergence pass.
     #
-    # pr-reviewer is an AGENT — dispatch via the Agent tool, NOT Skill():
-    #   Agent(subagent_type: "pr-reviewer",
-    #         prompt: "<PR-URL>" + (" --critical" if CRITICAL == 1 else ""))
+    # pr-reviewer is an AGENT — dispatch via the Task tool, NOT Skill():
+    #   Task(subagent_type="pr-reviewer",
+    #        prompt="<PR-URL>" + (" --critical" if CRITICAL == 1 else ""))
     # On a re-review, pr-reviewer resolves its own addressed threads (thread-resolution.md).
 
     if NO_FEEDBACK == 1:

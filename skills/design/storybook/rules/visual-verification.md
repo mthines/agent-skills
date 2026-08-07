@@ -91,8 +91,8 @@ A common end-to-end pattern for a new story PR:
 3. If the story includes motion or transitions, also run `screen-recorder`.
 4. Open the PR via `/create-pr`.
 5. Attach the final screenshots to the PR yourself (Playwright CLI output), then
-   dispatch the `pr-reviewer` **agent** via the Agent tool (`subagent_type: "pr-reviewer"`,
-   `prompt: "<pr-url>"`) — it is an agent, not a skill, so `Skill("pr-reviewer", …)`
+   dispatch the `pr-reviewer` **agent** via the Task tool (`Task(subagent_type="pr-reviewer",
+   prompt="<pr-url>")`) — it is an agent, not a skill, so `Skill("pr-reviewer", …)`
    errors. It posts its review immediately as a visible `COMMENT` review — nothing is
    left for the user to submit.
 
