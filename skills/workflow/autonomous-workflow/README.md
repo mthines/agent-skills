@@ -192,13 +192,13 @@ trigger registry is in
 | 4     | `confidence`           | Optional  | `analysis` at iteration cap (3 Lite / 5 Full) |
 | 4     | `holistic-analysis`    | Optional  | Step-back analysis after stuck-loop confidence |
 | 5     | `docs update`          | Optional  | Self-improving doc loop (keeps `CLAUDE.md`, `README.md`, and `docs/` in sync) |
-| 6     | `review-loop` *(skill)* | Optional  | Post-draft convergence loop — `pr-reviewer` (self-relation) → `implement-suggestion` → `polish simplify`, up to 3 iterations; dispatched by `create-pr` after the draft PR is open |
+| 6     | `review-loop` *(skill)* | Optional  | Post-draft convergence loop — `pr-reviewer` (self-relation) → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved (fix or reply); dispatched by `create-pr` after the draft PR is open |
 | 6     | `aw-create-walkthrough` | Optional  | Writes `.agent/{branch}/walkthrough.md`      |
 | 6     | `create-pr`            | Optional  | Narrative PR description + push + open draft PR + review-loop + watch |
 | 4     | `lorekit-memory`       | Optional  | Writes a lesson at stuck-loop escalation (`memory.write loop::aw-lessons`) |
 | 7     | `ci-auto-fix`          | Optional  | Diagnose + fix failed CI checks               |
 | 7     | `lorekit-memory`       | Optional  | End-of-run: writes durable run lessons; suggests promotion when `seen_count >= 3` |
-| 7     | `review-loop` *(skill)* | Optional  | After CI green: bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence (self-relation; `pr-reviewer` detects authorship automatically via `REVIEW_RELATION`); up to 3 iterations |
+| 7     | `review-loop` *(skill)* | Optional  | After CI green: bounded `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` convergence (self-relation; `pr-reviewer` detects authorship automatically via `REVIEW_RELATION`); up to 5 iterations, converging until every review thread is resolved (fix or reply) |
 
 **`confidence` at Phase 1 is the only non-removable companion.** Without it,
 the plan gate is gone and the workflow loses its primary safety mechanism.

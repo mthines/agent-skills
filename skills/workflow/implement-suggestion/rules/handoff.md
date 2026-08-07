@@ -180,6 +180,25 @@ Apply reviewer suggestions to an existing pull request.
    CONTINUE to the next thread. Never unwind a landed commit because a
    resolution call failed.
 
+6. RESOLVE-ALL PASS — run this step ONLY if the pack frontmatter has
+   `resolve-all: true`. It closes the non-fix threads and makes NO code changes,
+   NO commits, and NO push. For each entry in the pack's `## Reply-only`
+   section, post a reply then resolve the thread (same two `gh api` calls as
+   step 5a/5b — reply to the comment id, then `resolveReviewThread` on its
+   `threadId`), using the reply text the pack supplies:
+
+   - `question`   → the answer to the question.
+   - `discussion` → the agent's take / decision on the discussion.
+   - declined `actionable` / `nit` → the rationale for not applying (a decline).
+
+   EXCEPTION — a `human-judgment flag` entry (`disposition: flag`): post the
+   reply noting why it is flagged, then DO NOT resolve — leave the thread open.
+   These are the only threads left open under resolve-all.
+
+   Resolve-side failures here are non-fatal exactly as in step 5 — record
+   `not-resolved: <verbatim error>` and continue. If the pack has no
+   `## Reply-only` section, skip this step.
+
 ## Hard rules
 - DO NOT open a new PR. The PR exists at <pr-url>.
 - DO NOT push --force or --force-with-lease.
@@ -190,8 +209,10 @@ Apply reviewer suggestions to an existing pull request.
 - DO NOT push a partial batch. If step 3b STOPs on any comment, push nothing
   and resolve nothing — leave the completed commits local and report them as
   un-pushed.
-- DO NOT resolve a thread whose commit did not land, or a `surface` / `skip`
-  comment's thread. Only resolve threads you addressed with a landed commit.
+- DO NOT resolve a thread whose commit did not land. Only resolve a fix thread
+  you addressed with a landed commit. (Under `resolve-all`, step 6 additionally
+  resolves reply-only threads — but never a `flag` entry, and never a thread
+  whose intended fix was aborted.)
 - If push is rejected because the branch moved on the remote, STOP and
   report BEFORE resolving any thread. Do not auto-rebase. (Resolving a thread
   whose fix is not on the remote would leave a misleading trail.)
@@ -257,7 +278,9 @@ misclassified, not that the agent needs more attempts.
 - **Workers never amend prior commits.** One commit per addressed comment.
 - **Workers resolve every thread they addressed** — reply with the commit SHA,
   then `resolveReviewThread`. A landed fix whose thread is left open is a
-  reporting bug. `surface` / `skip` threads stay open.
+  reporting bug. Without `resolve-all`, `surface` / `skip` threads stay open.
+  With `resolve-all`, the step-6 pass also closes reply-only threads (answered
+  question, taken discussion, declined change); only `flag` entries stay open.
 - **Standard-lane below-gate stops.** No silent fallback to fast-lane.
 - **Main agent does not edit files in Phase 6** — all `Edit` / `Write` calls
   happen inside the worker subagent.

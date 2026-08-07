@@ -1,42 +1,57 @@
 ---
 name: review-loop
 description: >
-  Bounded review-apply-simplify convergence loop for a GitHub PR (draft PRs are
-  fine). Runs up to N=3 iterations of pr-reviewer → implement-suggestion →
-  polish simplify, with an early exit on a PASS verdict with no blocking
-  findings. Use after opening a draft PR to converge the branch to a clean
-  state before undrafting. Callers: autonomous-workflow Phase 6/7, create-pr
+  Bounded review-apply-resolve convergence loop for a GitHub PR (draft PRs are
+  fine). Runs up to N=5 iterations of pr-reviewer → implement-suggestion
+  (--resolve-all) → polish simplify, converging until every review thread is
+  resolved — through a fix OR a reply (answered question, recorded rationale) —
+  so the PR is left with zero open threads (only genuine human-judgment flags
+  stay open). On convergence it also refreshes the PR description to match the
+  shipped diff and, best-effort, notes the linked Linear ticket. Use after
+  opening a draft PR to converge the branch to a clean, review-ready state
+  before undrafting. Callers: autonomous-workflow Phase 6/7, create-pr
   (post-draft), and standalone via /review-changes. Invoke with
-  /review-loop <PR-URL|#n> [--cap N] [--critical] [--no-feedback].
+  /review-loop <PR-URL|#n> [--cap N] [--critical] [--no-feedback] [--no-refresh].
 disable-model-invocation: false
-argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--no-feedback]'
+argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--no-feedback] [--no-refresh]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: command
   tags:
     - review
     - code-quality
     - simplify
     - convergence
+    - thread-resolution
     - pr
     - orchestrator
 ---
 
-# review-loop — Bounded Review-Apply-Simplify Convergence
+# review-loop — Bounded Review-Apply-Resolve Convergence
 
 Drive a PR from its initial draft state to a clean, review-ready state by
-iterating `pr-reviewer` → `implement-suggestion` → `polish simplify` until
-the PR is clean or the cap is reached.
+iterating `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`
+until **every review thread is resolved** or the cap is reached, then refresh the
+PR description to match the shipped diff.
+
+A thread is resolved when it is **either fixed** (a code change landed) **or
+answered** (a reply — the answer to a question, the agent's take on a discussion,
+or a rationale for a declined suggestion). The only threads left open at
+convergence are genuine **human-judgment flags**: a real potential issue the
+agent will neither auto-apply nor honestly decline. That safety valve means the
+loop can never green-wash a PR by resolving a live finding — it surfaces it
+instead.
 
 This skill is an **orchestrator**.
 It contains no quality rules of its own.
-It sequences three existing pieces, each owning its own domain:
+It sequences existing pieces, each owning its own domain:
 
-1. `pr-reviewer` — finds issues (read-only; posts one `COMMENT` review).
-2. `implement-suggestion` — applies actionable review findings (single-shot, no `--watch`).
+1. `pr-reviewer` — finds issues (read-only; posts one `COMMENT` review; on a re-review resolves its own addressed threads).
+2. `implement-suggestion --resolve-all` — applies actionable findings **and** replies-to-and-resolves the non-fix threads it can honestly close (single-shot, no `--watch`).
 3. `Skill("polish", "simplify")` — applies Class M mechanical refactors behind a confidence gate.
+4. On convergence — refreshes the PR description (via the shared description-contract) and, best-effort, notes the linked Linear ticket.
 
 ## Modes
 
@@ -45,9 +60,10 @@ Everything else is a flag.
 
 | Flag | Effect |
 | --- | --- |
-| `--cap N` | Override the default iteration cap of 3. |
+| `--cap N` | Override the default iteration cap of 5. |
 | `--critical` | Pass `--critical` to each `pr-reviewer` call (adversarial pre-mortem). |
-| `--no-feedback` | Report-only. Forces `CAP=1` and skips sub-steps B and C, so `pr-reviewer` runs once and its findings are reported without being applied or pushed. |
+| `--no-feedback` | Report-only. Forces `CAP=1` and skips sub-steps B, C, and the final refresh, so `pr-reviewer` runs once and its findings are reported without being applied, resolved, or pushed. |
+| `--no-refresh` | Run the convergence loop as normal but skip the final PR-description refresh and Linear note. |
 
 ## Procedure
 
@@ -65,6 +81,8 @@ elif [[ "$ARG" =~ ^#?([0-9]+)$ ]]; then
 fi
 
 RESOLVED_REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
+OWNER="${RESOLVED_REPO%/*}"
+REPO="${RESOLVED_REPO#*/}"
 ```
 
 If no PR reference is found, abort: `review-loop requires a PR URL or #<n>.`
@@ -76,6 +94,7 @@ Parse the flags and set the iteration cap:
 cap_flag=""
 CRITICAL=0
 NO_FEEDBACK=0
+NO_REFRESH=0
 
 # --cap N: override the default iteration cap (accepts "--cap 5" or "--cap=5").
 if [[ " $ARGUMENTS " =~ [[:space:]]--cap[[:space:]=]+([0-9]+) ]]; then
@@ -87,39 +106,76 @@ if [[ " $ARGUMENTS " == *" --critical "* ]]; then
   CRITICAL=1
 fi
 
-CAP=${cap_flag:-3}
+# --no-refresh: skip the final PR-description refresh + Linear note.
+if [[ " $ARGUMENTS " == *" --no-refresh "* ]]; then
+  NO_REFRESH=1
+fi
+
+CAP=${cap_flag:-5}
 ITERATION=0
 
 # --no-feedback degrades the loop to a single read-only review pass.
 if [[ " $ARGUMENTS " == *" --no-feedback "* ]]; then
   NO_FEEDBACK=1
   CAP=1
+  NO_REFRESH=1
 fi
 ```
 
-### Step 1: Loop — review → apply → simplify
+A helper for the exit check — the count of **unresolved** review threads:
+
+```bash
+unresolved_thread_count() {
+  gh api graphql -f query='
+    query($owner:String!,$repo:String!,$pr:Int!){
+      repository(owner:$owner,name:$repo){
+        pullRequest(number:$pr){
+          reviewThreads(first:100){ nodes{ isResolved } }
+        }
+      }
+    }' -F owner="$OWNER" -F repo="$REPO" -F pr="$PR_NUMBER" \
+    --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)] | length'
+}
+```
+
+### Step 1: Loop — review → apply+resolve → simplify
 
 Each iteration runs three sub-steps.
-The loop exits early when `pr-reviewer` returns a PASS with no blocking findings.
+The loop exits when **every review thread is resolved** (`unresolved_thread_count == 0`),
+when an iteration makes **no progress** (the only threads left are ones nothing can
+resolve — human-judgment flags), or at the cap.
 
 When `NO_FEEDBACK == 1`, only sub-step A runs: sub-steps B and C are skipped, the
-push is skipped, and the run reports the findings without applying anything.
+push and the refresh are skipped, and the run reports the findings without applying
+anything.
 
 ```text
+APPLIED_TOTAL = 0
 while ITERATION < CAP:
     ITERATION += 1
 
-    # Sub-step A: review
+    # Sub-step A: review — always the first thing each iteration runs, so the
+    # loop always ENDS on a review pass that validates the previous iteration's
+    # fixes and resolves this agent's now-addressed threads. This is the
+    # "last review just resolves comments and makes no changes" convergence pass.
     run pr-reviewer(<PR>) [append " --critical" when CRITICAL == 1]
-    if pr-reviewer verdict == PASS with no blocking findings:
-        break   # early exit; branch is clean
+    # On a re-review, pr-reviewer resolves its own addressed threads (thread-resolution.md).
 
     if NO_FEEDBACK == 1:
-        break   # report-only: never apply, never simplify, never push
+        break   # report-only: never apply, never resolve, never simplify, never push
 
-    # Sub-step B: apply findings
-    Skill("implement-suggestion", "<PR-URL>")
+    # CLEAN CONVERGENCE EXIT — the only exit that means "done":
+    if pr-reviewer found no new actionable findings AND unresolved_thread_count() == 0:
+        break   # every thread resolved (fix or reply) and nothing new to fix
+
+    unresolved_before = unresolved_thread_count()
+
+    # Sub-step B: apply findings AND resolve non-fix threads
+    Skill("implement-suggestion", "<PR-URL> --resolve-all")
     # Single-shot apply — no --watch; the loop drives re-review itself.
+    # --resolve-all: fixes what it can, and replies-to-and-resolves questions /
+    # discussions / declined suggestions; leaves only human-judgment flags open.
+    APPLIED_TOTAL += (applies + answers this iteration, from its report)
 
     # Sub-step C: simplify
     Skill("polish", "simplify")
@@ -128,8 +184,16 @@ while ITERATION < CAP:
     push any local changes:
     git push
 
-if ITERATION == CAP and last verdict != PASS:
-    report: cap reached, findings still present, surface the remaining blockers
+    # No-progress guard: nothing was applied or answered AND the open-thread
+    # count did not drop → the remaining threads are human-judgment flags the
+    # loop cannot resolve. Stop early rather than spinning to the cap. (The clean
+    # convergence exit above stays the normal path — it runs one more review pass
+    # to validate before declaring done.)
+    if this iteration applied 0, answered 0, and unresolved_thread_count() >= unresolved_before:
+        break
+
+if ITERATION == CAP and unresolved_thread_count() > 0:
+    report: cap reached, threads still open, surface the remaining blockers/flags
 ```
 
 **Hard rule: the only permitted `polish` invocation is `Skill("polish", "simplify")`.**
@@ -137,44 +201,79 @@ The `simplify` mode applies Class M mechanical refactors and dispatches no pr-re
 All other `polish` modes trigger an internal agent pass, which would create a dispatch cycle.
 This is the anti-circularity guarantee.
 
-### Step 2: Report
+### Step 2: Refresh the PR description and Linear note (on convergence)
 
-After the loop exits (early or at cap), emit a compact summary:
+Skip this step entirely when `NO_REFRESH == 1`, when `NO_FEEDBACK == 1`, or when
+`APPLIED_TOTAL == 0` (the loop changed no code, so the description cannot have drifted).
+
+Otherwise, refresh the PR body so it matches the diff that actually shipped after
+the loop's fixes:
+
+1. Regenerate the title and body following the shared
+   [`description-contract.md`](../../delivery/create-pr/rules/description-contract.md)
+   — the same contract `create-pr` uses, so the refresh keeps identical quality and
+   length rules. Diff against the PR base and read the current body first; make it a
+   minimal edit, not a rewrite.
+2. Apply it:
+
+   ```bash
+   gh pr edit "$PR_NUMBER" --repo "$RESOLVED_REPO" --body "$(cat <<'EOF'
+   <refreshed narrative body>
+   EOF
+   )"
+   ```
+
+Then, **best-effort**, note the linked Linear ticket (skip silently if any part is absent):
+
+- Detect a ticket from the branch name (`.../ABC-123-...`), the PR title/body, or `gh pr view`.
+- If a ticket id is found **and** the Linear MCP tools are connected, post a short comment on the ticket linking the PR and stating that review converged (e.g. `Review loop converged — PR <url> ready for review.`).
+- Any failure here (no ticket, no MCP, API error) is logged and never fails the loop.
+
+### Step 3: Report
+
+After the loop exits (converged, no-progress, or at cap), emit a compact summary:
 
 ```text
 review-loop on PR #<n> (<RESOLVED_REPO>)
 
 Iterations: <N> of <CAP>
-Stop reason: <PASS-no-blockers | cap-reached | report-only (--no-feedback)>
+Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | report-only (--no-feedback)>
 
 Per-iteration summary:
-  Iteration 1: <verdict>, <N findings>, <M applied by implement-suggestion>, <K simplify recipes>
+  Iteration 1: <verdict>, <N findings>, <M applied>, <A answered/resolved>, <K simplify recipes>, <U threads still open>
   Iteration 2: ...
 
-Final pr-reviewer verdict: <PASS | FAIL>
-Remaining blockers (if any): <one line each>
+Open threads at exit: <count>
+  - <one line per still-open human-judgment flag / unresolved blocker>
 
+PR description: <refreshed | unchanged (no code applied) | skipped (--no-refresh)>
+Linear note: <posted <ticket> | no ticket linked | Linear MCP unavailable | skipped>
+
+Final pr-reviewer verdict: <PASS | FAIL>
 Head commit: <sha>
 ```
 
-Surface remaining blockers prominently if the cap was reached without convergence.
-Do not silently drop them.
+Surface remaining open threads prominently if the cap was reached or the
+no-progress guard tripped. Do not silently drop them — an open thread at exit is
+a human-judgment flag the user must resolve.
 
 ## Hard rules
 
 - **The only permitted `polish` invocation is `Skill("polish", "simplify")`.** Non-simplify modes trigger an internal agent pass and create a dispatch cycle.
-- **Never write to GitHub directly.** `pr-reviewer` posts the `COMMENT` review; this skill orchestrates only.
+- **Convergence never green-washes.** The loop resolves a thread only via a fix or an honest reply. A live finding the agent cannot fix or honestly decline stays open and is surfaced — the loop never resolves it to terminate. This is `implement-suggestion --resolve-all`'s safety valve, inherited here.
+- **Never write to GitHub directly, except the Step 2 description refresh.** `pr-reviewer` posts the `COMMENT` review and `implement-suggestion` resolves threads; this skill orchestrates. The one direct write it owns is the final `gh pr edit --body` refresh.
 - **Never undraft the PR.** This skill converges; the user makes the final undraft decision.
 - **One `implement-suggestion` per iteration, no `--watch`.** The loop drives re-review; `--watch` waits for external bots and would conflict.
-- **Cap is a hard limit.** If the PR is still failing at the cap, surface the findings and stop. Do not extend the cap silently.
+- **Cap is a hard limit.** If threads are still open at the cap, surface them and stop. Do not extend the cap silently.
 
 ## Relationship to other skills
 
 | Skill | Relationship |
 | --- | --- |
-| `pr-reviewer` | Sub-step A: the find pass (read-only); this skill drives re-review between iterations. |
-| `implement-suggestion` | Sub-step B: the apply pass; invoked single-shot (no `--watch`). |
+| `pr-reviewer` | Sub-step A: the find pass (read-only); resolves its own addressed threads on re-review; this skill drives re-review between iterations. |
+| `implement-suggestion --resolve-all` | Sub-step B: the apply + resolve pass; invoked single-shot (no `--watch`) with `--resolve-all` so non-fix threads (questions, discussions, declines) are answered and resolved. |
 | `polish simplify` | Sub-step C: the cleanup pass; only the simplify mode, never full `polish`. |
+| `create-pr` description-contract | Step 2 reuses [`description-contract.md`](../../delivery/create-pr/rules/description-contract.md) for the PR-description refresh — single source of truth with `create-pr`. |
 | `polish` (bare) | **Downstream, not a caller.** `polish`'s Pass A invokes `pr-reviewer` directly and never calls `review-loop`; this loop only invokes `Skill("polish", "simplify")`. |
 | `create-pr` | Upstream caller — delegates post-draft review to `review-loop` after opening the draft PR. |
 | `autonomous-workflow` Phase 6/7 | Invokes `review-loop` in place of the retired `reviewer` agent dispatches. |

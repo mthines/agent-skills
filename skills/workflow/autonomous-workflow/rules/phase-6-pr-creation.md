@@ -39,7 +39,7 @@ Gate: walkthrough shown in chat, draft PR opened, CI watch started.
 ## Core Principles
 
 - **Pre-flight validation**: build/lint/test must pass before invoking any companion.
-- **Draft PR first, then review**: open the draft PR, then let `create-pr` run `review-loop` against it (`pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 3 iterations).
+- **Draft PR first, then review**: open the draft PR, then let `create-pr` run `review-loop` against it (`pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved via fix or reply).
 - **Review is read-only at the PR level**: `pr-reviewer` posts findings; `implement-suggestion` applies them; `polish simplify` cleans up. No pre-push autofix from a retired agent.
 - **Draft PR only**: never mark ready-to-merge automatically.
 - **Show the walkthrough**: blocking — output the walkthrough content in chat after PR creation.
@@ -71,7 +71,7 @@ npm test && npm run build && npm run lint
 
 ## Post-Draft Review
 
-After the draft PR is open, `create-pr` runs the `review-loop` skill against it (`pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 3 iterations with early exit on PASS-no-blockers). The executor invokes `create-pr` bare — `create-pr` drives the loop internally.
+After the draft PR is open, `create-pr` runs the `review-loop` skill against it (`pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved via fix or reply). The executor invokes `create-pr` bare — `create-pr` drives the loop internally.
 
 The `review-loop` posts a `COMMENT` review via `pr-reviewer` (with `REVIEW_RELATION = self` since the executor authored the PR), applies findings via `implement-suggestion`, and runs `polish simplify` each iteration.
 `pr-reviewer` loads the `code-quality` rubric on substantive diffs and walks the full review checklist — not just the comment pass.
@@ -170,7 +170,7 @@ Invoke `create-pr` to handle the rest of the delivery in one go: narrative descr
 Skill("create-pr")
 ```
 
-A bare `create-pr` runs its FULL default pipeline: push → open draft PR → Step 6.5 delegates to `Skill("review-loop")` (`pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 3 iterations) → Step 6.7 runs the external-bot reviewer-feedback loop. **Do NOT pass `--no-review`, `--no-simplify`, `--quick`, `--no-quality`, or `--no-feedback`** unless the user explicitly asked to skip a pass.
+A bare `create-pr` runs its FULL default pipeline: push → open draft PR → Step 6.5 delegates to `Skill("review-loop")` (`pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved) → Step 6.7 runs the external-bot reviewer-feedback loop. **Do NOT pass `--no-review`, `--no-simplify`, `--quick`, `--no-quality`, or `--no-feedback`** unless the user explicitly asked to skip a pass.
 
 > **Resource note — what the "save RAM" rule actually scopes.** This repo's resource guidance is about *execution cost only*: do not run `eslint` / `tsc` / tests **in parallel**, and do not spawn **parallel sub-agents** or **cascading full-verify rounds** (the 55+ GB OOM incident). It does NOT let you skip the quality passes. `create-pr`'s `review-loop` (`pr-reviewer`, `implement-suggestion`, `polish simplify`) and the Phase 6 quality gate are sequential reasoning passes — the single-sequential-loop variant is explicitly permitted. Skipping them to "save RAM" is a category error and a Phase 6 collapse (taxonomy F5).
 

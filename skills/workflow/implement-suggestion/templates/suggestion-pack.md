@@ -6,6 +6,7 @@ branch: <branch-name>
 headSha: <head-sha>
 worktree: <absolute-path-to-worktree>
 lane: <fast | standard>
+resolve-all: <true | false>   # true only when --resolve-all was passed; enables the worker's step-6 reply-only pass
 generatedAt: <ISO-8601-timestamp>
 generatedBy: implement-suggestion v2.3.0
 ---
@@ -90,6 +91,22 @@ Comments dropped with one-line reason.
 - Comment <#…> by @<author> — <reason: confidence < 70% / not actionable / resolved>
 - …
 
+## Reply-only
+
+**Present only when `resolve-all: true`.** These entries make NO code change and
+NO commit — the worker's step-6 pass posts the given reply and (unless the
+disposition is `flag`) resolves the thread. Omit this section entirely when
+`resolve-all: false`.
+
+- Comment <#…> by @<author> — **disposition**: `answer` (question) — **Thread ID**: `<PRRT_…>`
+  - **Reply**: <the answer to post>
+- Comment <#…> by @<author> — **disposition**: `discussion` — **Thread ID**: `<PRRT_…>`
+  - **Reply**: <the agent's take / decision>
+- Comment <#…> by @<author> — **disposition**: `decline` — **Thread ID**: `<PRRT_…>`
+  - **Reply**: <rationale for not applying>
+- Comment <#…> by @<author> — **disposition**: `flag` (leave open) — **Thread ID**: `<PRRT_…>`
+  - **Reply**: <why this is flagged for human judgment; thread stays open>
+
 ## File Changes
 
 Aggregate file list across every `apply` decision. The worker should not
@@ -117,7 +134,8 @@ Refs: <pr-url>
 After all per-comment commits are pushed, the worker resolves each addressed
 thread (reply with the commit SHA, then `resolveReviewThread`) so the PR is
 left with every addressed comment resolved and only `surface` / `skip`
-comments still open.
+comments still open. When `resolve-all: true`, the worker then runs its
+step-6 pass over `## Reply-only`, leaving only `flag` entries open.
 
 ## Risk and Rollback
 

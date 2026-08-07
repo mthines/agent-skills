@@ -325,8 +325,9 @@ Never auto-undraft. The verifier is advisory; the human is the gatekeeper.
 After CI is green, automatically run `review-loop` against the PR with `--critical`.
 Because Phase 7 PRs are always self-authored (aw-executor opens them), `pr-reviewer`
 sets `REVIEW_RELATION = self` automatically in Step 0.5.
-The loop runs `pr-reviewer` → `implement-suggestion` → `polish simplify` up to 3 iterations
-(or until PASS-no-blockers), posts a visible `COMMENT` review, and applies findings inline.
+The loop runs `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` up to 5 iterations
+(or until every review thread is resolved via fix or reply), posts a visible `COMMENT` review, applies
+findings inline, and answers-and-resolves the non-fix threads. On convergence it refreshes the PR description.
 **`review-loop` is a skill companion**, invoked via `Skill()`.
 
 | Property                  | Value                                                                  |

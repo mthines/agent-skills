@@ -4,8 +4,9 @@ description: >
   Generate a short, narrative GitHub pull request description (≤ 25 lines, hard
   ceiling 40), push the branch, open the PR as a draft, then run the review-loop
   skill for a bounded review-apply-simplify convergence before finalizing. The
-  review-loop (pr-reviewer → implement-suggestion → polish simplify, up to 3
-  iterations) runs AFTER the draft PR is open — the single reviewer now operates
+  review-loop (pr-reviewer → implement-suggestion → polish simplify, up to 5
+  iterations, converging until every review thread is resolved via fix or reply)
+  runs AFTER the draft PR is open — the single reviewer now operates
   on PRs. Scale down with --no-review (skip the pr-reviewer pass), --no-simplify
   (skip simplify), --quick (light mechanical pass only), or --no-quality (skip
   the loop entirely). A post-push external-bot feedback loop also runs by default
@@ -37,8 +38,8 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft qual
 
 | Mode / Flag    | Trigger                                            | Behaviour                                                                                                                                                                     |
 | -------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default`      | No flag                                            | One PR for the whole branch. After opening the draft PR (Step 6), Step 6.5 runs `Skill("review-loop")` — up to 3 iterations of `pr-reviewer` → `implement-suggestion` → `polish simplify`. |
-| `split`        | `--split`, `-s`, or first positional token `split` | Analyse the branch diff, propose 2–4 dependency-ordered draft PRs (hard cap 5), execute only after user approval. Jump to the **Split Mode** section after Core Principles. |
+| `default`      | No flag                                            | One PR for the whole branch. After opening the draft PR (Step 6), Step 6.5 runs `Skill("review-loop")` — up to 5 iterations of `pr-reviewer` → `implement-suggestion` → `polish simplify`, converging until every review thread is resolved (fix or reply) and refreshing the PR description. |
+| `split`        | `--split`, `-s`, or first positional token `split` | Analyse the branch diff, propose 2–4 dependency-ordered draft PRs (hard cap 5), execute only after user approval. Jump to the **Split Mode** section after the description-contract step. |
 | `no-review`    | `--no-review`                                       | Step 6.5 drops the `pr-reviewer` pass from the loop → runs only `polish simplify` once.                                                                                     |
 | `no-simplify`  | `--no-simplify`                                     | Step 6.5 drops the simplify pass from the loop → runs only `pr-reviewer` (one-shot, no apply).                                                                              |
 | `quick`        | `--quick`                                           | Step 6.5 runs only the light mechanical pass → `Skill("polish", "quick")` (no pr-reviewer, no structural refactors).                                                        |
@@ -49,114 +50,24 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft qual
 
 **The external-bot feedback loop (Step 6.7) is ON by default.** After the review-loop converges, a background subagent runs `/implement-suggestion <pr> --watch`, which waits for the repo's **external** review bots (CodeRabbit, human reviewers, …) and applies their actionable feedback. It is scoped to comments posted **after** the review-loop's last push, so it does not re-apply the loop's own findings. Pass `--no-feedback` to skip it.
 
-In split mode, skip Step 5's "PR too big" trim — the split *is* the response to that signal.
+In split mode, skip the contract's length self-check "PR too big" trim — the split *is* the response to that signal.
 Each resulting sub-PR must still pass it on its own.
 
 Step 6.5 cannot serve split mode: it is post-draft and its `review-loop` needs an open PR, which does not exist before S1. So with `--split`, run `Skill("polish", "simplify")` **once on the full branch** before computing the split (before S1) — it is branch-scoped and needs no PR — so each sub-PR inherits the cleaned-up code. Each sub-PR then gets the per-PR quality pass defined in [`rules/split-mode.md`](./rules/split-mode.md).
 
-## Length budget — the hard rule
+## Steps 1–5: Write the title and body (shared contract)
 
-A reviewer should read the entire description in **under 30 seconds**. Concretely:
+The narrative rules, the length budget, and the five authoring steps (gather
+information → understand the narrative → choose output format → write the title →
+length self-check) live in one shared file so `create-pr` and `review-loop` write
+identical-quality descriptions: **[`rules/description-contract.md`](./rules/description-contract.md)**.
 
-- **Body target: ≤ 25 rendered lines.** Hard ceiling: 40. Tables, checklists, and blank lines all count toward this.
-- **Why: 1–2 sentences.** Not paragraphs.
-- **What changed: 2–4 bullets, one line each.** No sub-bullets, no code blocks inside bullets.
-- **How to verify: ≤ 3 lines.** Prefer a single command over prose.
-- **Notes for reviewers: optional. If present, ≤ 2 sentences.** Move implementation detail into code comments or PR review threads, not the body.
+Follow that contract to produce the title and body. Two `create-pr`-specific notes:
 
-If you can't fit the change inside this budget, the PR is probably too big — stop and offer the user `/create-pr --split` instead of expanding the description.
+- The contract's Step 5 length self-check is the same "PR too big → `/create-pr --split`" signal referenced in the Modes section; in split mode you skip it (the split *is* the response).
+- If you can't infer the *why* / *what* from the diff, ask the user — never pad with guesses.
 
-## Core Principles
-
-1. **Narrative over checklist.** Reads like prose explaining a decision, not a bullet-point manifest of every file touched.
-2. **Why first, then what, then how to verify.** Motivation drives understanding. A reviewer should be able to predict the diff after reading the description.
-3. **Group by concept, not by file.** Don't enumerate every changed file — describe the *ideas* the change introduces.
-4. **No filler.** Skip empty checklists, stock "Code follows guidelines" boxes, and boilerplate that adds noise without information.
-5. **One line per bullet.** If a bullet wants a follow-up clause, it's two changes — split or cut the second.
-
-## Step 1: Gather Information
-
-Run these in parallel:
-
-```bash
-git branch --show-current
-git log main..HEAD --oneline
-git diff main...HEAD --name-status
-git diff main...HEAD --stat
-git diff main...HEAD              # full diff — needed to understand intent
-```
-
-Also check for a PR template:
-
-```bash
-# Common template locations (check all)
-ls .github/pull_request_template.md \
-   .github/PULL_REQUEST_TEMPLATE.md \
-   .github/PULL_REQUEST_TEMPLATE/ \
-   docs/pull_request_template.md \
-   PULL_REQUEST_TEMPLATE.md 2>/dev/null
-```
-
-## Step 2: Understand the Narrative
-
-Before writing anything, answer these questions for yourself by reading the diff:
-
-- **What problem or goal motivated this change?** (the *why*)
-- **What is the core idea of the solution?** (one sentence — the *headline*)
-- **What are the 2–4 conceptual moves the diff makes?** (not files — concepts)
-- **What should a reviewer pay extra attention to?** (risk areas, judgment calls, follow-ups)
-- **How was it verified?** (tests added, manual checks, scenarios covered)
-
-If you can't answer these from the diff alone, ask the user — don't pad the description with guesses.
-
-## Step 3: Choose Output Format
-
-**Branch A — Repository has a PR template:** Use it. Fill each section with the *narrative* version (short, focused, no filler). Leave optional sections empty rather than padding with `N/A` boilerplate. Keep checkbox lists if the template has them, but only check what genuinely applies.
-
-**Branch B — No PR template:** Use the lean default below. Do not invent extra sections.
-
-### Lean default (when no template exists)
-
-```markdown
-## Why
-
-[1–2 sentences. The problem or user-visible outcome. Link the issue if there is one. Don't restate the title.]
-
-## What changed
-
-- [Conceptual change 1 — one line]
-- [Conceptual change 2 — one line]
-- [Conceptual change 3 — one line]
-
-## How to verify
-
-- [Single test command or one scenario, one line]
-
-## Notes for reviewers
-
-[Optional, ≤ 2 sentences. Skip this section entirely if there's nothing load-bearing to flag.]
-```
-
-Aim for **2–4 bullets** under "What changed". If you have 6+, the PR is too big or you're enumerating files instead of concepts.
-
-## Step 4: Write the Title
-
-- Imperative mood, specific, under ~70 chars.
-- Follow Conventional Commits if the repo uses them: `type(scope): brief description`.
-- Good: `fix(auth): refresh token when API returns 401`
-- Bad: `Bug fix`, `Various improvements`, `feat: stuff`
-
-## Step 5: Length self-check (before pushing)
-
-Count the rendered lines of the body. If it's over 25, cut. Common cuts:
-
-- **Collapse "Notes for reviewers"** unless it flags a real risk or judgment call. "We chose X because Y" usually belongs in a code comment.
-- **Drop "internal narration"** — explanations of memo deps, useEffect timing, and other implementation detail that a reviewer will read in the diff anyway.
-- **Merge bullets that share a verb.** "Added X. Added Y. Added Z." → one bullet listing the three.
-- **Cut "How to verify" prose** — one command beats three sentences.
-- **Drop sub-bullets entirely.** If a bullet needs a sub-bullet, split it into two top-level bullets or remove the detail.
-
-If you've cut as much as you can and it's still over 40 lines, the PR is too big. Stop and offer the user `/create-pr --split` before pushing.
+Then continue to Step 6 to push and open the draft PR.
 
 ## Step 6: Push and Create Draft PR
 
@@ -191,7 +102,7 @@ Otherwise, map the `create-pr` flags to the appropriate invocation. Evaluate in 
 | 1 | `--quick`, or both `--no-review` **and** `--no-simplify` | `Skill("polish", "quick")`                      | Light mechanical pass (comments, naming, dead code).            |
 | 2 | `--no-review` (or legacy `--simplify` alone)             | `Skill("polish", "simplify")`                   | code-quality simplify — apply Class M refactors once.           |
 | 3 | `--no-simplify` (or legacy `--review` alone)             | `Skill("pr-reviewer", "<pr-url>")`              | `pr-reviewer` one-shot only — findings surfaced, not applied.   |
-| 4 | **none of the above (default)**                          | `Skill("review-loop", "<pr-url>")`              | Full loop: `pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 3 iterations. |
+| 4 | **none of the above (default)**                          | `Skill("review-loop", "<pr-url>")`              | Full loop: `pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 5 iterations; converges until every review thread is resolved (fix or reply) and refreshes the PR description. |
 
 (`--no-quality` is handled above as an outright skip and never reaches this table.)
 
@@ -199,8 +110,8 @@ Pass `--critical` through to `review-loop` / `pr-reviewer` if the user passed it
 
 After the loop returns:
 
-- If the final verdict is PASS with no blockers, continue to Step 6.7 (external-bot feedback).
-- If blockers remain at the cap, surface them to the user before continuing to CI watch.
+- If the loop converged (every review thread resolved via fix or reply), continue to Step 6.7 (external-bot feedback). The loop also refreshes the PR description to match the converged diff, so do not re-edit the body here.
+- If the cap was hit with threads still open — human-judgment flags or unresolved blockers — surface them to the user before continuing to CI watch.
 
 **Hard rules for this step:**
 
@@ -362,7 +273,9 @@ Title: <imperative title>
 
 Review loop (review-loop / pr-reviewer):
   Iterations: <N> of <cap>
-  Stop reason: <PASS-no-blockers | cap-reached | skipped (--no-quality)>
+  Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | skipped (--no-quality)>
+  Open threads at exit: <count>
+  Description refreshed: <yes | unchanged | skipped>
   Final verdict: <PASS | FAIL>
 
 CI:

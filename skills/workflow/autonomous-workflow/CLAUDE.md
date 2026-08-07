@@ -196,8 +196,8 @@ Phase 6 and Phase 7 review passes use the `review-loop` skill rather than a
 retired `reviewer` agent.
 The `review-loop` skill is an optional skill companion — invoked via `Skill()`,
 graceful-skip contract the same as all companions.
-It drives `pr-reviewer` → `implement-suggestion` → `polish simplify` up to 3
-iterations, with early exit on PASS-no-blockers.
+It drives `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` up to 5
+iterations, converging until every review thread is resolved (fix or reply).
 `pr-reviewer` detects authorship via `REVIEW_RELATION` in Step 0.5 and sets
 `self` for own PRs.
 Detection is implicit — `Skill()` raises if the skill is missing; catch and log.
