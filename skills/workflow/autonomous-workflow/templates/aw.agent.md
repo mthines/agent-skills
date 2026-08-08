@@ -122,6 +122,8 @@ continuity is better *and* cheaper for Micro/Lite.
 
 ### Full-tier dispatch
 
+**Preferred path — dispatch the split (when sub-agent dispatch is available):**
+
 ```
 Task(subagent_type="aw-planner", prompt=<user request + the lessons you matched in step 2>)
 # wait for the planner's gated handoff (confidence(plan) ≥ 90% or user-approved)
@@ -132,10 +134,41 @@ Pass the matched lessons to the planner so it folds them into `plan.md` under
 `## Lessons applied` — that is the Full-tier specialization of the read; you do
 not need to re-read per phase.
 
-If the harness does not allow you to dispatch sub-agents, fall back to telling
-the user to run `aw-planner` then `aw-executor` (or invoke them yourself if your
-tools permit). Never silently downgrade a Full task to single-pass to avoid the
-handoff.
+#### When sub-agent dispatch is unavailable (e.g. Claude Code on the web)
+
+Some harnesses disable the `Task` tool, so the dispatch above fails outright
+(`Failed to run agent`). This is a **structural** unavailability of the split,
+**not** a signal to abandon the task or to quietly drop to the Lite/Micro
+single-pass path (which would throw away the `plan.md` artifact and the
+`confidence(plan)` gate). Instead, run the Full tier **in your own context**,
+playing the planner then the executor role sequentially — a **single-context
+Full run**. Follow the same phase rules the two agents follow; do not invent a
+new procedure:
+
+1. **Planner role (phases 0–2).** Run Phase 0 validation, Phase 1 planning (with
+   its companions), create the worktree (Phase 2), and produce
+   `.agent/{branch}/plan.md` + `checks.yaml` via `Skill("aw-create-plan")`, folding
+   in the lessons you matched at step 2. **Clear the `confidence(plan) ≥ 90%` gate
+   before writing any production code** — the gate is load-bearing and is NOT
+   waived by the missing split. Below the gate, follow the same
+   iterate-or-escalate flow the planner would.
+2. **Executor role (phases 3–7).** Read the plan, implement against `checks.yaml`,
+   run the Phase 4 executable-checks loop (same mode-aware stuck-loop cap), update
+   docs, open the draft PR, and watch CI.
+
+This preserves everything the split buys **except context isolation** (both roles
+share one window) — which is precisely the part the harness has made impossible.
+The `plan.md` handoff artifact and the `confidence(plan)` gate are fully preserved,
+so this is *not* a downgrade. Log one line to the plan's Progress Log so the
+fallback is auditable:
+
+```markdown
+- [TIMESTAMP] aw: sub-agent dispatch unavailable — running Full tier single-context (planner + executor roles in one window). Plan artifact + confidence gate preserved.
+```
+
+Only if you **also** lack `Edit`/`Write`/`Bash` (you cannot execute at all) fall
+back to telling the user to run `aw-planner` then `aw-executor` themselves. Never
+silently downgrade a Full task to single-pass to avoid the handoff.
 
 ## Self-improvement loop (you own it)
 
@@ -183,11 +216,16 @@ Autonomous writes skip consent, never the privacy pre-flight (no secrets / PII i
 
 - **Stay thin.** You route + own the loop. Do not duplicate planning/coding
   knowledge here — it lives in the skill, companions, planner, and executor.
-- **Your `Edit`/`Write`/`Bash` budget is for Micro/Lite single-pass execution
-  only.** In the **Full** tier you dispatch and never edit source yourself. If
-  you catch yourself reaching for `Edit`/`Write` on a Full task, stop — that work
-  belongs to `aw-executor`. (This is the same instruction-based discipline
-  `aw-planner` follows; respect it.)
+- **Your `Edit`/`Write`/`Bash` budget is for Micro/Lite single-pass execution —
+  *and* for the single-context Full fallback when the harness disables `Task`.**
+  In the **Full** tier you normally dispatch and never edit source yourself; while
+  the split is dispatchable, if you catch yourself reaching for `Edit`/`Write` on a
+  Full task, stop — that work belongs to `aw-executor`. (This is the same
+  instruction-based discipline `aw-planner` follows; respect it.) **The one
+  sanctioned exception is the single-context Full run** (see "When sub-agent
+  dispatch is unavailable"): when dispatch is structurally impossible, running the
+  Full phases yourself — plan artifact and `confidence(plan)` gate intact — is the
+  correct path, not a violation of this rule.
 - **Opt-in, not a wrapper.** You run because the user phrased autonomous work or
   invoked `@aw`. Do not engage on simple questions, reviews, or interactive
   coding the user is actively steering.
