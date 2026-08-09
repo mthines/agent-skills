@@ -5,9 +5,11 @@ description: >
   2026 best practices: caching with `hashFiles` + `restore-keys`,
   parallelization via matrix + artifacts, reusability (composite actions
   for steps, reusable workflows for jobs), security (SHA-pinned actions,
-  least-privilege `GITHUB_TOKEN`, concurrency), and trackable errors
+  least-privilege `GITHUB_TOKEN`, concurrency), trackable errors
   (named steps, step summaries, annotations, and stdout/stderr that always
-  reaches the run log so agents can act on failures). Two modes: `scaffold`
+  reaches the run log so agents can act on failures), and feedback for
+  comment-triggered runs (👀 acknowledgement reaction on start, 🚀/👎
+  outcome reaction plus a run-linked comment at the end). Two modes: `scaffold`
   (default) generates workflow YAML; `review` audits an existing
   workflow against the same rules. Use when creating CI/CD pipelines,
   optimizing slow workflows, deduping copy-pasted YAML across repos, or
@@ -19,7 +21,7 @@ argument-hint: '[scaffold|review] [<workflow-file>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.2.0'
   workflow_type: scaffolder
   tags:
     - github-actions
@@ -32,6 +34,8 @@ metadata:
     - security
     - oidc
     - logging
+    - feedback
+    - reactions
 ---
 
 # GitHub Actions Author
@@ -100,7 +104,7 @@ Five phases. Each has a gate; do not proceed until it passes.
 | 1     | Anatomy + triggers    | [`rules/workflow-anatomy.md`](./rules/workflow-anatomy.md), [`rules/triggers-and-concurrency.md`](./rules/triggers-and-concurrency.md) | `on:` block scoped (branches + paths), concurrency set.           |
 | 2     | Speed (cache + parallel) | [`rules/caching.md`](./rules/caching.md), [`rules/parallelization.md`](./rules/parallelization.md) | Cache key is `hashFiles`-based with `restore-keys`; independent jobs run in parallel. |
 | 3     | Reusability           | [`rules/reusability.md`](./rules/reusability.md)                              | Any block used > 1 place is extracted to a composite action or reusable workflow. |
-| 4     | Security + errors     | [`rules/security.md`](./rules/security.md), [`rules/observability.md`](./rules/observability.md), [`rules/log-output-visibility.md`](./rules/log-output-visibility.md) | Third-party actions SHA-pinned, `permissions:` minimal, every step named, failures surface a stack-trace path, **every command's stdout + stderr reaches the run log**. |
+| 4     | Security + errors     | [`rules/security.md`](./rules/security.md), [`rules/observability.md`](./rules/observability.md), [`rules/log-output-visibility.md`](./rules/log-output-visibility.md), [`rules/feedback.md`](./rules/feedback.md) | Third-party actions SHA-pinned, `permissions:` minimal, every step named, failures surface a stack-trace path, **every command's stdout + stderr reaches the run log**, and any comment-triggered workflow — including a `workflow_dispatch` a comment or bot fired, but not one fired from the Actions UI — acknowledges (👀) and reports its outcome (🚀/👎 + run link). |
 
 ### Phase 0 — Intent and shape
 
@@ -109,8 +113,11 @@ Ask in **one** batched message:
 1. **Workflow purpose** — one sentence. CI, deploy, release, scheduled,
    manual, or composite/reusable shared piece?
 2. **Trigger surface** — push, pull_request, schedule, workflow_dispatch,
-   or workflow_call? Which branches? Which path globs (to skip irrelevant
-   runs)?
+   workflow_call, or a comment / slash command (`issue_comment`,
+   `pull_request_review_comment`, `pull_request_review`)? Which branches?
+   Which path globs (to skip irrelevant runs)? Comment-triggered runs
+   additionally require acknowledgement + outcome feedback — see
+   [`rules/feedback.md`](./rules/feedback.md).
 3. **Stack** — Node (npm/yarn/pnpm/bun), Python (pip/uv/poetry), Go,
    Rust, Java/Gradle, Docker, mixed?
 4. **Shape** — single job, matrix (axes?), build-then-test (artifact
@@ -214,7 +221,7 @@ Load on demand — do not preload.
 | 1     | [`rules/workflow-anatomy.md`](./rules/workflow-anatomy.md), [`rules/triggers-and-concurrency.md`](./rules/triggers-and-concurrency.md) |
 | 2     | [`rules/caching.md`](./rules/caching.md), [`rules/parallelization.md`](./rules/parallelization.md)                          |
 | 3     | [`rules/reusability.md`](./rules/reusability.md)                                                                            |
-| 4     | [`rules/security.md`](./rules/security.md), [`rules/observability.md`](./rules/observability.md), [`rules/log-output-visibility.md`](./rules/log-output-visibility.md) |
+| 4     | [`rules/security.md`](./rules/security.md), [`rules/observability.md`](./rules/observability.md), [`rules/log-output-visibility.md`](./rules/log-output-visibility.md), [`rules/feedback.md`](./rules/feedback.md) |
 
 Drop-in starters in [`templates/`](./templates/):
 
@@ -252,6 +259,14 @@ Drop-in starters in [`templates/`](./templates/):
    The log is the only thing `gh run view --log-failed` returns, and it is
    what agents act on. See
    [`rules/log-output-visibility.md`](./rules/log-output-visibility.md).
+10. **Comment-triggered runs must give feedback.** A workflow with no PR
+    status check (`issue_comment`, `pull_request_review_comment`,
+    `pull_request_review`, or a `workflow_dispatch` a comment or bot fired)
+    is invisible. Acknowledge as the **first** step, then report the outcome
+    on **both** paths — a 🚀/👍 reaction on success, a 👎 reaction plus a
+    comment linking the run on failure. `pull_request_review` has no
+    reactable comment, so it uses a single sticky PR comment for both beats.
+    See [`rules/feedback.md`](./rules/feedback.md).
 
 ---
 
@@ -273,6 +288,10 @@ Drop-in starters in [`templates/`](./templates/):
 - Diagnostics uploaded as an artifact or written only to `$GITHUB_STEP_SUMMARY`.
 - `|| true` or `continue-on-error: true` with nothing echoed.
 - `tee` without `set -o pipefail` (green job, failed command).
+- Comment/slash-command workflow that never reacts to the triggering comment (user can't tell it ran).
+- Feedback only on success — a failed comment-triggered run left with no reaction or comment.
+- Failure reaction (👎) with no comment linking the run (user knows it broke, not where).
+- Reacting to a comment before gating the command by author / prefix (any user drives the bot).
 
 ---
 
@@ -309,6 +328,19 @@ A **scaffold** run is done when:
 - [ ] The log-visibility grep from
       [`rules/log-output-visibility.md`](./rules/log-output-visibility.md#verification)
       returns no unjustified hits.
+- [ ] If comment-triggered and producing no PR status check — `issue_comment`,
+      `pull_request_review_comment`, `pull_request_review`, or a
+      `workflow_dispatch` a comment or bot fired, per the trigger table in
+      [`rules/feedback.md`](./rules/feedback.md#when-this-rule-applies) — the
+      workflow acknowledges as its first step and reports the outcome on both
+      paths, with `issues: write` / `pull-requests: write` granted and the
+      command gated before it acknowledges. Where the trigger carries a
+      reactable comment that means a 👀 reaction first, then a 🚀/👍 reaction
+      on success and a 👎 reaction plus a run-linked comment on failure.
+      A `pull_request_review` trigger carries none — GitHub exposes no
+      reactions endpoint for a review — so it uses a single sticky PR comment
+      for both beats. A `workflow_dispatch` fired from the Actions UI has no
+      triggering comment and is out of scope.
 - [ ] If using OIDC, `id-token: write` is set at the job level only.
 - [ ] User received a one-paragraph summary of what was created and
       where to commit it.
