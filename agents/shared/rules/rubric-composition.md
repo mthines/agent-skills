@@ -88,9 +88,12 @@ Placement decides *where* each finding is shown. It discards nothing.
 | Surface | Inline per file | Inline total | Overflow behaviour |
 | --- | --- | --- | --- |
 | `pr-reviewer` Step 3 terminal report (both relations) | unlimited | unlimited | n/a — print every finding |
-| `pr-reviewer` Step 4 GitHub review (both relations) | N per profile (`chill` 3 / **`balanced` 5** / `assertive` 7) | **20** | **Deferred**, never dropped — listed in the review body |
+| `pr-reviewer` Step 4 GitHub review (both relations) | **N per profile (non-blocking only)** (`chill` 3 / **`balanced` 5** / `assertive` 7) | **20 (non-blocking only)** | **Deferred**, never dropped — listed in the review body |
 
-Ordering for the inline slots, applied per file and then globally:
+**Blocking findings are exempt from both caps.** A finding decorated `(blocking)` (`conventional-comments.md`) — broken behaviour, security, data loss, or misimplemented intent — is **always** posted inline and is **never** deferred, regardless of the per-file or the total cap. The caps govern **non-blocking** findings only.
+This is the point of the caps: they exist to stop a wall of nitpicks reading as a hostile review, not to hide a blocker. A genuinely weak PR should surface *every* blocker at the code, however many there are — capping those would bury exactly the findings the author most needs to see. Only non-blocking overflow is deferred to the body.
+
+Ordering — blocking findings are placed first (never deferred), then the remaining inline slots are filled by non-blocking findings under the caps, applied per file and then globally:
 
 1. Prefix priority: `issue > suggestion > question > nitpick`.
 2. Then descending `per-comment-confidence` Final score.
@@ -111,6 +114,7 @@ Everything above the inline caps goes into a **Deferred** list, rendered in the 
 Rules:
 
 - A finding that cleared 2.7 is **never** silently discarded. Deferral is the only overflow behaviour.
+- **A `(blocking)` finding is never in the deferred list** — it is always inline (see the cap-exemption above), so the `Additional findings` section holds only non-blocking overflow.
 - Each deferred entry carries file, line, prefix, the one-line body, and the confidence score.
 - Deferred entries are excluded from `INLINE_COMMENTS_JSON` — they are body text, so they neither consume inline slots nor enlarge the review payload.
 - Report the count as `Deferred (over inline cap): <N>` in the Quality Gate summary.

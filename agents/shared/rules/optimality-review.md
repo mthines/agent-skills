@@ -88,7 +88,30 @@ Proposals therefore leave the pipeline through a **dedicated long-form surface**
 | `polish` (`optimize` mode) | The pass's own terminal output | The same card, plus the apply outcome |
 
 Omit the section entirely when the skill returned no proposals — the quiet early-exit must stay quiet.
-Never render a proposal as an inline comment.
+Never render a proposal's **full argument** as an inline comment — the ten-field comparison does not survive the 240-char inline shape. A very-high-confidence proposal may, in addition to its body card, leave a short inline **pointer** to that card — see § Inline pointer for high-confidence proposals.
+
+## Inline pointer for high-confidence proposals
+
+A proposal that is both decision-ready and grounded in a specific line is easy to miss when it lives only in a review-body section the author has to scroll to. When the skill is very confident and the proposal has a concrete anchor, leave a one-line inline signpost at that anchor so the author meets it at the code, then follows it to the full comparison.
+
+Emit an inline pointer for a proposal when **both** hold:
+
+1. `analysis_confidence >= 95` (deliberately above the 85 surface bar — a pointer competes for an inline slot, so reserve it for proposals the skill is nearly certain about); and
+2. the proposal has a resolvable primary anchor — a `path:line` from its card heading that passes line-validity (`pr-reviewer/rules/line-validity.md`, Step 3.5). No valid anchor → card only, no pointer.
+
+The pointer body is a single non-blocking `suggestion:` that names the direction and routes to the card, e.g.:
+
+```text
+suggestion: A better approach may fit here — see the Optimality review in the review summary for the full before/after. (non-blocking)
+```
+
+Pointer rules:
+
+- **One pointer per qualifying proposal**, so at most 2 per run (the proposal cap). The full card still renders in `OPTIMALITY_SECTION` — the pointer never replaces it.
+- The pointer **is** an inline comment, so it passes `comment-shape.md` (2.8), `conventional-comments.md` (2.9), and line-validity (3.5) — it is naturally compliant (`suggestion:` prefix, one sentence, ≤ 240 chars).
+- The pointer is **exempt** from the per-comment-confidence gate (2.7) — its gate is the proposal's own `analysis_confidence >= 95` — and from the placement caps (2.9b): it is tied to its card, not competing in the general inline budget, and being non-blocking it does not benefit from the blocking exemption either. It simply always posts when it qualifies.
+- The pointer is **non-blocking** and never affects the verdict — same as every optimality proposal.
+- Count pointers as `Inline pointers: <N>` in the § Logging block; they are **not** counted in the reviewer's `produced` / `cleared` / `posted inline` quality line, which tracks line-level and persona findings only.
 
 ### Framing (caller-aware)
 
@@ -145,6 +168,7 @@ Optimality review (2.4c):
   Units judged:       <N>
   Optimal:            <O>
   Proposals:          <P> (cap 2)
+  Inline pointers:    <PTR> (analysis_confidence ≥ 95 with a resolvable anchor; pr-reviewer only)
   Applied:            <A>  (`polish optimize` only — always 0 under `pr-reviewer`)
   Withheld/reverted:  <W>
 ```
@@ -171,5 +195,5 @@ Do not block the run. Optimality review is an enhancement; the rest of the pipel
 - It does not run the optimality analysis itself — it dispatches to the skill and routes the structured proposals.
 - It does not set the blocker rules — those live in each agent's verdict step (and optimality never blocks).
 - It does not apply anything in `pr-reviewer` — cross-review is report-only.
-- It does not emit inline comments. Proposals surface only through the sections listed in § Where proposals surface.
+- It does not emit a proposal's full argument as an inline comment — that surfaces only through the sections in § Where proposals surface. A qualifying high-confidence proposal additionally leaves a short inline **pointer** to its card (§ Inline pointer for high-confidence proposals); the pointer is a signpost, not the proposal.
 - It does not re-run the trivial-skip computation. Under `pr-reviewer` it reads the `TRIVIAL_SKIP` cache written at Step 1.7b; under `polish` (`optimize` mode) the value is bound once at the start of the pass (§ Trivial-skip set).
