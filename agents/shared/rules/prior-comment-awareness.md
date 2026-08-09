@@ -180,8 +180,8 @@ Each carried entry gets exactly one disposition:
 | Condition | Disposition |
 | --- | --- |
 | The owning step ran this pass and reproduced the entry | **REPLACE** — the fresh entry wins; the carried copy is discarded (it is the same finding, freshly grounded). |
-| The owning step ran this pass and did **not** reproduce it | **RESOLVE** — drop it, and log `resolved since <PRIOR_SHA_SHORT>`. This is the only path that removes a finding from the body. |
-| The owning step was **skipped** this pass (2.4c/2.4d under `incremental-quick`, holistic under an incremental mode, `--no-optimize` / `--no-standards` / `--skip-gates`) | **CARRY** — re-render the prior entry verbatim in this run's body, suffixed `(carried from <PRIOR_SHA_SHORT>)`. Never let a skipped step read as a clean result. |
+| The owning step ran this pass and did **not** reproduce it | **RESOLVE** — drop it, and log `resolved since <PRIOR_REVIEW_SHA_SHORT>`. This is the only path that removes a finding from the body. |
+| The owning step was **skipped** this pass (2.4c/2.4d under `incremental-quick`, holistic under an incremental mode, `--no-optimize` / `--no-standards` / `--skip-gates`) | **CARRY** — re-render the prior entry verbatim in this run's body, suffixed `(carried from <PRIOR_REVIEW_SHA_SHORT>)`. Never let a skipped step read as a clean result. |
 | The entry cannot be mapped to an owning step (unparseable or from an older template) | **DROP** with a log line; never re-render an entry you cannot attribute. |
 
 Owning steps: gate rows → Step 1.8; optimality cards → Step 2.4c; standards findings → Step 2.4d; `Skipped files` → Step 1.2 / 2; `PARTIAL_REVIEW_BANNER` → the step that set it.
@@ -190,7 +190,7 @@ Hard rules:
 
 1. **A carried gate row never sets a gate's status.** Step 1.8 evaluates every gate against the **current** PR state in every run mode, exactly as it does today. `PRIOR_GATE_STATE` is context for the *Details* text and for the resolve/carry decision — it can neither fail a passing gate nor pass a failing one.
 2. **A carried entry never changes the verdict on its own.** Optimality has never blocked the verdict and still does not; standards findings keep their existing non-blocking behaviour.
-3. **Carrying is not re-asserting.** A carried entry is re-rendered because its owning step did not run, not because it was re-verified. The `(carried from …)` suffix is mandatory so the author can tell the two apart.
+3. **Carrying is not re-asserting.** A carried entry is re-rendered because its owning step did not run, not because it was re-verified. The `(carried from …)` suffix is mandatory so the author can tell the two apart. It renders `PRIOR_REVIEW_SHA_SHORT` — the prior review's `commit_id`, set in every mode — never `PRIOR_SHA`, which is empty under `--full`.
 4. **A `RESOLVE` requires the owning step to have actually run.** A step that was skipped can never resolve anything — that is the `CARRY` row, and conflating the two is how a still-broken gate silently disappears from the body.
 
 Report the counts as `Anchorless carried: <C> · resolved: <R>` in the Quality Gate summary.

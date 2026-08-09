@@ -231,11 +231,21 @@ PRIOR_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
 **If `PRIOR_REVIEW` is empty** (no prior review found):
 - Set `RUN_MODE = "full"`.
 - Set `PRIOR_SHA = ""`.
+- Set `PRIOR_REVIEW_SHA = ""`.
 - Set `PRIOR_DIAGNOSTICS = {}` (all sub-lists empty).
 - Announce: `No prior review found — running full review.`
 - Proceed to Step 1.
 
 **If `PRIOR_REVIEW` is non-empty** (prior review exists):
+- Extract `PRIOR_REVIEW_SHA` from the review's `commit_id` field, in **every** mode:
+  ```bash
+  PRIOR_REVIEW_SHA=$(echo "$PRIOR_REVIEW" | jq -r '.commit_id')
+  ```
+  `PRIOR_REVIEW_SHA` is the provenance of the carried body and is always set once a prior review
+  exists; `PRIOR_SHA` is the delta-triage baseline and stays empty under `--full`. Keep them
+  separate: `PRIOR_REVIEW_SHA_SHORT` (`${PRIOR_REVIEW_SHA:0:7}`) is what the mandatory
+  `(carried from …)` suffix renders, so the suffix never degrades to `(carried from )` in a mode
+  that skips delta triage.
 - Parse the prior review body's `Additional findings` section into `CARRIED_FINDINGS` and re-admit
   them per `agents/shared/rules/prior-comment-awareness.md § Carry-forward of deferred findings`.
   Do this in **every** mode. It is mandatory in incremental modes, which scan the delta only, so a
@@ -256,7 +266,7 @@ PRIOR_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
 - Announce: `Prior review found at ${PRIOR_SHA:0:7} — running delta triage (${#CARRIED_FINDINGS[@]} deferred finding(s) carried forward).`
 - Proceed to Step 1.
 
-`PRIOR_SHA`, `RUN_MODE` and `PRIOR_DIAGNOSTICS` are available to all subsequent steps.
+`PRIOR_SHA`, `PRIOR_REVIEW_SHA`, `RUN_MODE` and `PRIOR_DIAGNOSTICS` are available to all subsequent steps.
 `ME` was set in Step 0.5 and is reused here — do not call `gh api user` again.
 
 ### Parsing `PRIOR_DIAGNOSTICS`
@@ -1299,7 +1309,7 @@ is allowed to exist — never drop a cleared finding instead of listing it here.
 `prior-comment-awareness.md § Carry-forward of anchorless findings` render in their own section —
 a carried gate finding in the gate-status table's Details cell, a carried optimality card in
 `OPTIMALITY_SECTION`, a carried standards finding wherever this run would have rendered a fresh
-one — each suffixed ` (carried from <PRIOR_SHA_SHORT>)`. The suffix is mandatory: it is the only
+one — each suffixed ` (carried from <PRIOR_REVIEW_SHA_SHORT>)`. The suffix is mandatory: it is the only
 thing distinguishing a finding this run verified from one it merely preserved because the owning
 step was skipped. A carried entry never changes the gate table's ✅/⚠️/❌ status, which Step 1.8
 always sets from the current PR state, and never affects the verdict.
