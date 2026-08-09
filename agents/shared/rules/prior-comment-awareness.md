@@ -69,13 +69,16 @@ THREADS_QUERY='
 CURSOR=""
 THREADS_COMPLETE=true
 while :; do
-  if ! gh api graphql -f query="$THREADS_QUERY" \
+  # Capture the page, then append it with an explicit newline: `gh api graphql`
+  # emits no trailing newline, so appending its stdout directly would run page 2
+  # onto page 1's line.
+  if ! PAGE=$(gh api graphql -f query="$THREADS_QUERY" \
        -F owner="$OWNER" -F repo="$REPO_NAME" -F pr="$PR_NUMBER" \
-       -F cursor="${CURSOR:-null}" >> /tmp/review-thread-pages.json; then
+       -F cursor="${CURSOR:-null}"); then
     THREADS_COMPLETE=false
     break
   fi
-  PAGE=$(tail -n 1 /tmp/review-thread-pages.json)
+  printf '%s\n' "$PAGE" >> /tmp/review-thread-pages.json
   HAS_NEXT=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<< "$PAGE")
   CURSOR=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<< "$PAGE")
   [ "$HAS_NEXT" = "true" ] || break
