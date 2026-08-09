@@ -224,12 +224,15 @@ steps:
 
   - name: Run command
     env: { GH_TOKEN: ${{ github.token }} }
-    run: ./scripts/preview.sh 2>&1 | tee preview.log
+    run: |
+      set -euo pipefail
+      ./scripts/preview.sh 2>&1 | tee preview.log
 
   - name: Report success
     if: success()
     env: { GH_TOKEN: ${{ github.token }} }
     run: |
+      set -euo pipefail
       gh api --method POST \
         "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
         -f content='rocket' 2>&1 | tee reaction-ok.log
@@ -240,6 +243,7 @@ steps:
       GH_TOKEN: ${{ github.token }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     run: |
+      set -euo pipefail
       gh api --method POST \
         "/repos/${{ github.repository }}/issues/comments/${{ github.event.comment.id }}/reactions" \
         -f content='-1' 2>&1 | tee reaction-fail.log
