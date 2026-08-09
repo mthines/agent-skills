@@ -279,7 +279,7 @@ diff. Parse the prior body (the same `PRIOR_REVIEW` object already fetched, `.bo
 | Variable | Source section in the prior body | Contents |
 | --- | --- | --- |
 | `PRIOR_GATE_STATE[]` | the gate-status table inside `<details><summary>Review diagnostics…` | One entry per row whose Status is `❌` or `⚠️`: `{gate, status, details}`. Rows showing `✅` are not carried. |
-| `PRIOR_OPTIMALITY[]` | `OPTIMALITY_SECTION` cards | One entry per proposal: `{title, rationale}`. |
+| `PRIOR_OPTIMALITY[]` | `OPTIMALITY_SECTION` cards | One entry per proposal: `{anchor, card_markdown}`, where `card_markdown` is the **whole card captured verbatim** — headline, the Now / Better table, `Why it's better`, `Trade-off`, `Evidence`, and the `Intent · Blast radius · Confidence` footer. A CARRY re-renders that block unchanged and appends the suffix to its headline, so no row may be summarised away at parse time. |
 | `PRIOR_STANDARDS` | the `**Standards (2.4d)**` log line only | `{ran, docs_scanned, finding_count}` — the 2.4d run-state. Individual standards findings are **not** parsed here: 2.4d findings pass gates 2.5–2.9b and land inline or overflow into `Additional findings`, which `CARRIED_FINDINGS` already carries. |
 | `PRIOR_SKIPPED_FILES[]` | the `**Skipped files**` line | File paths, or empty on `none`. |
 | `PRIOR_PARTIAL` | `PARTIAL_REVIEW_BANNER` | `true` when the prior run posted a partial-review banner, else `false`. |
