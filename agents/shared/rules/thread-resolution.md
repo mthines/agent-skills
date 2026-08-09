@@ -89,9 +89,15 @@ comment to its thread first. All calls go through `gh api` (Bash) — no new too
 
 **Reuse the Step 1.0 fetch.** `prior-comment-awareness.md § Thread state` already wrote
 `/tmp/review-threads.json` at the start of the run, with the same query and a completed
-pagination walk. Read that file instead of re-querying; re-run step 1 below only when the
-file is absent (the Step 1.0 fetch failed) or the run has posted a review since — resolving
-a thread this run already resolved is a safe no-op either way.
+pagination walk. Read that file instead of re-querying.
+Re-run step 1 below in exactly two cases: the file is absent (the Step 1.0 fetch never ran),
+or its `complete` field is `false` (the Step 1.0 walk stopped early).
+Posting the review at Step 4 is **not** a re-fetch trigger.
+The only threads the Step 1.0 snapshot can be missing are the ones this run's own review just
+created, and those are never resolution candidates here — step 2 below reconciles only threads
+whose root comment is a **prior** comment.
+That is what makes this a call moved earlier rather than a call added.
+Re-resolving a thread this run already resolved is a safe no-op either way.
 
 ```bash
 # 1. List the PR's review threads with their resolved state and member comment ids.
