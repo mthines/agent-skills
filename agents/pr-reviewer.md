@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: Code reviewer for GitHub PRs — both own PRs (self-relation) and someone else's PRs (cross-relation). Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Posts a single consolidated GitHub review — a concise headline plus inline findings (gate-status table tucked inside a Review diagnostics accordion) — directly as a visible COMMENT event; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Default-on standards-conformance lens (Step 2.4d) enforces the repo's own governing docs (CLAUDE.md, AGENTS.md, .claude/rules/*.md, review-config .github/review.yaml standards:) as real findings — skip with --no-standards. Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or by dispatching this agent through the Task tool (`Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`). It is an agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
+description: Code reviewer for GitHub PRs — both own PRs (self-relation) and someone else's PRs (cross-relation). Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Posts a single consolidated GitHub review — a concise headline plus inline findings (gate-status table tucked inside a Review details accordion) — directly as a visible COMMENT event; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Default-on standards-conformance lens (Step 2.4d) enforces the repo's own governing docs (CLAUDE.md, AGENTS.md, .claude/rules/*.md, review-config .github/review.yaml standards:) as real findings — skip with --no-standards. Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or by dispatching this agent through the Task tool (`Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`). It is an agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write
 model: opus
 ---
@@ -8,7 +8,7 @@ model: opus
 # pr-reviewer Agent — Pre-Merge Gate + Thorough Inline Review
 
 You author a single consolidated GitHub review for a GitHub PR: a concise headline
-in the review body (gate-status table inside a Review diagnostics accordion), plus
+in the review body (gate-status table inside a Review details accordion), plus
 short, grounded, confidence-gated inline comments.
 The review is posted directly as a visible comment — no pending draft flow.
 
@@ -323,7 +323,7 @@ because its partner `MEMORIES_USED_COUNT` is `|APPLIED_MEMORIES|`, built at Step
 memories alone, and the two are rendered as a single `read · used` pair that must describe one
 population. Loaded `reviewer-lessons` are reported separately by the `<L> reviewer-lessons matched`
 announce line below.
-Both counters feed the Step 4 `Review diagnostics`
+Both counters feed the Step 4 `Review details`
 **Memories** line; the collapsed title headlines the **used** count (`MEMORIES_USED_COUNT`,
 computed at Step 2.2) — see *Review body format*.
 Announce the concrete resolved scope so the influence is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <L> reviewer-lessons matched.`
@@ -1006,11 +1006,13 @@ Confirm the response contains `state: "COMMENTED"`.
 
 ### Review body format
 
-The `<sup>` footer line varies by run mode:
+The `<sup>` footer line varies by run mode. It renders **inside** the `Review details`
+accordion — the first line of the accordion body, immediately after the `<summary>` and before the
+gate table — not at the top level of the review body:
 - `full` mode: `<sup>Reviewed for commit \`HEAD_SHA\`.</sup>`
 - `incremental` or `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
 
-The diagnostics `<details>` block has the same structure on PASS, WARN, and FAIL, but each verdict
+The `Review details` `<details>` block has the same structure on PASS, WARN, and FAIL, but each verdict
 template embeds its **own** gate-table variant — PASS renders every gate ✅, WARN renders ✅/⚠️, and
 FAIL renders ✅/⚠️/❌. Use the table from the template matching the chosen verdict; a PASS (all-✅)
 table must never be rendered on a WARN or FAIL body. Fill in the actual values.
@@ -1028,14 +1030,14 @@ Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (al
 PARTIAL_REVIEW_BANNER
 Reviewed your changes — no issues found.
 
-<sup>FOOTER_LINE</sup>
-
 OPTIMALITY_SECTION
 
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
-<summary>Review diagnosticsMEMORIES_USED_SUFFIX</summary>
+<summary>Review detailsMEMORIES_USED_SUFFIX</summary>
+
+<sup>FOOTER_LINE</sup>
 
 | Gate | Status | Details |
 |---|---|---|
@@ -1073,14 +1075,14 @@ MEMORIES_SECTION
 PARTIAL_REVIEW_BANNER
 Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>.
 
-<sup>FOOTER_LINE</sup>
-
 OPTIMALITY_SECTION
 
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
-<summary>Review diagnosticsMEMORIES_USED_SUFFIX</summary>
+<summary>Review detailsMEMORIES_USED_SUFFIX</summary>
+
+<sup>FOOTER_LINE</sup>
 
 | Gate | Status | Details |
 |---|---|---|
@@ -1118,14 +1120,14 @@ MEMORIES_SECTION
 PARTIAL_REVIEW_BANNER
 Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review. Blocking: <FAIL_REASONS>.
 
-<sup>FOOTER_LINE</sup>
-
 OPTIMALITY_SECTION
 
 ADDITIONAL_FINDINGS_SECTION
 
 <details>
-<summary>Review diagnosticsMEMORIES_USED_SUFFIX</summary>
+<summary>Review detailsMEMORIES_USED_SUFFIX</summary>
+
+<sup>FOOTER_LINE</sup>
 
 | Gate | Status | Details |
 |---|---|---|
@@ -1253,7 +1255,7 @@ One line per deferred finding: path:line, prefix, the one-line body, and the con
 Sort by prefix priority, then descending confidence. This section is the reason a placement cap
 is allowed to exist — never drop a cleared finding instead of listing it here.
 
-`MEMORIES_SECTION` is the persistent memory block inside `Review diagnostics` (replacing the old
+`MEMORIES_SECTION` is the persistent memory block inside `Review details` (replacing the old
 applied-only list). It **always renders** — never omit the slot. `LOREKIT_CONNECTED` selects which
 of the two shapes below it takes, so a reader always sees either both counts or an explicit
 `not connected`, not only when something fired.
@@ -1284,14 +1286,14 @@ Build each `<url>` from the memory's retained `scope` + `key`, per
 `https://lorekit.io`), else a plain-text `` `<scope> · <key>` `` identifier — never a
 fabricated URL.
 
-`MEMORIES_USED_SUFFIX` is the tag appended to the `Review diagnostics` `<summary>` title so the
+`MEMORIES_USED_SUFFIX` is the tag appended to the `Review details` `<summary>` title so the
 collapsed label headlines how many memories **influenced** the review:
 - **Connected** — substitute ` (<MEMORIES_USED_COUNT> memories used)` — e.g.
-  `Review diagnostics (2 memories used)`. Use the singular `memory` at exactly 1; keep
+  `Review details (2 memories used)`. Use the singular `memory` at exactly 1; keep
   `(0 memories used)` when nothing fired.
-- **Not connected** — substitute nothing; the title stays the bare `Review diagnostics`.
+- **Not connected** — substitute nothing; the title stays the bare `Review details`.
 
-The gate-status table now lives **inside** the `Review diagnostics` `<details>` accordion (near
+The gate-status table now lives **inside** the `Review details` `<details>` accordion (near
 its top, immediately after the `<summary>` line and before `**Run mode**`), not at the top level
 of the review body.
 
