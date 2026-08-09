@@ -340,8 +340,14 @@ While fetching, **also identify open unresolved bot-authored comments** for Gate
   (Fix-commit detection is left to the post-merge outcome loop — do not run it here.)
 - Only when thread state is unavailable, fall back to the reply-text heuristic in
   `prior-comment-awareness.md § Fallback resolution heuristic`, and record that the
-  fallback was used.
-- Store the still-unresolved ones as `OPEN_BOT_COMMENTS[]`.
+  fallback was used. The fallback result feeds **dedup and anti-flip-flop only**. It
+  never admits a comment to `OPEN_BOT_COMMENTS[]`, because Gate 3 must not fail on a
+  thread whose real state could not be read (see *Gate 3*) — a lossy prose test is not
+  evidence that a finding is still open.
+- Store as `OPEN_BOT_COMMENTS[]` only the comments whose thread state **was** read and is
+  `isResolved == false`. Every comment whose state was unavailable or unpaged is counted
+  separately and reported as `thread state unavailable — <N> comment(s) unverified` in
+  Gate 3's Details cell.
 - If `OPEN_BOT_COMMENTS[]` is empty, Gate 3 passes.
 
 Also load **comment-relevance memories** and **reviewer-lessons** via a narrow-to-broad fan-out.
