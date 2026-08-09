@@ -95,16 +95,37 @@ a thread this run already resolved is a safe no-op either way.
 
 ```bash
 # 1. List the PR's review threads with their resolved state and member comment ids.
-gh api graphql -f query='
-  query($owner:String!,$repo:String!,$pr:Int!){
+#    This is character-for-character the query and pagination walk in
+#    `prior-comment-awareness.md § fetch existing PR comment state`, so the two
+#    produce the same `/tmp/review-threads.json`. Edit them together.
+OWNER="${REPO%%/*}"
+REPO_NAME="${REPO##*/}"
+THREADS_QUERY='
+  query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
     repository(owner:$owner,name:$repo){
       pullRequest(number:$pr){
-        reviewThreads(first:100){
-          nodes{ id isResolved comments(first:1){ nodes{ databaseId } } }
+        reviewThreads(first:100, after:$cursor){
+          pageInfo{ hasNextPage endCursor }
+          nodes{ id isResolved comments(first:100){ nodes{ databaseId } } }
         }
       }
     }
-  }' -F owner="$OWNER" -F repo="$REPO" -F pr="$PR_NUMBER" > /tmp/review-threads.json
+  }'
+
+: > /tmp/review-thread-pages.json
+CURSOR=""
+while :; do
+  gh api graphql -f query="$THREADS_QUERY" \
+    -F owner="$OWNER" -F repo="$REPO_NAME" -F pr="$PR_NUMBER" \
+    -F cursor="${CURSOR:-null}" >> /tmp/review-thread-pages.json || break
+  PAGE=$(tail -n 1 /tmp/review-thread-pages.json)
+  HAS_NEXT=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<< "$PAGE")
+  CURSOR=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<< "$PAGE")
+  [ "$HAS_NEXT" = "true" ] || break
+done
+
+jq -s '{nodes: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' \
+  /tmp/review-thread-pages.json > /tmp/review-threads.json
 
 # 2. For a prior comment classified fixed/declined/acknowledged, find its thread
 #    id where isResolved == false and the thread's root comment databaseId matches
