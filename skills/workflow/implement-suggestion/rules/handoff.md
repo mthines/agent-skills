@@ -167,10 +167,19 @@ Apply reviewer suggestions to an existing pull request.
         }' -f threadId="<threadId>"
       ```
 
-   If `threadId` is null (an `issues` comment or a top-level `review` summary —
-   these have no resolvable thread), SKIP the reply + resolve for that entry and
-   note it as "no thread to resolve" in your report. Do NOT resolve threads for
+   If `threadId` is null (an `issues` comment, a top-level `review` summary, or
+   a `report-*` entry expanded from a reviewer report — these have no resolvable
+   thread), SKIP the reply + resolve for that entry and note it as
+   "no thread to resolve" in your report. Do NOT resolve threads for
    `surface` / `skip` comments — only the ones you actually addressed.
+
+   A `report-*` entry is never resolvable and must not be counted as an
+   unresolved failure either: the finding lives in a review body, and the trail
+   that it was addressed is the fix commit citing it. `pr-reviewer`'s next pass
+   re-checks its own body-only findings and drops the ones that are gone
+   (`agents/shared/rules/prior-comment-awareness.md § Carry-forward of
+   anchorless findings`), which is what closes the loop instead of a thread
+   resolution.
 
    Resolve-side failures do NOT abort — the commits are already on the remote,
    so unlike step 3b there is nothing to hold back. If a reply or

@@ -118,6 +118,7 @@ rule once at the step that owns it.
 
 - `agents/shared/rules/review-config.md` — load review-config profile, filters, path instructions (Step 1.7); default `.github/review.yaml`, legacy root `.review.yaml` still honoured.
 - `agents/shared/rules/prior-comment-awareness.md` — fetch existing PR comments for dedup + anti-flip-flop (Step 1.0); also used to identify open unresolved bot comments for Gate 3.
+- `agents/shared/rules/reviewer-report-ingest.md` — the shared parse grammar for a `<!-- PR_REVIEWER_REPORT -->` review body (Step 0.7); also consumed by `implement-suggestion`, so the grammar lives in one place.
 - `agents/shared/rules/rubric-composition.md` — load + dedupe + consolidate code-quality / ux / critical / lenses.
 - `agents/shared/rules/holistic-review.md` — default-on intent-match + system-fit pass via `Skill("holistic-analysis", "review")`.
 - `agents/shared/rules/optimality-review.md` — default-on "is this the best approach" pass via `Skill("optimize-approach", "report")` (Step 2.4c); report-only in cross-review.
@@ -276,7 +277,14 @@ PRIOR_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
 `Additional findings` is not the only part of a prior review body that a re-review needs. Every
 other finding the prior run produced without an inline anchor lives in the body too — inside the
 `Review details` accordion and its sibling sections — and none of it is re-derivable from the
-diff. Parse the prior body (the same `PRIOR_REVIEW` object already fetched, `.body`) into:
+diff.
+
+The body's section grammar — how a report is identified, which sections exist, and what may be
+extracted from each — is defined once in
+[`agents/shared/rules/reviewer-report-ingest.md`](./shared/rules/reviewer-report-ingest.md) and
+shared with `implement-suggestion`, which ingests the same body to fix these findings. Apply that
+grammar to the prior body (the same `PRIOR_REVIEW` object already fetched, `.body`), then map the
+parsed sections onto this agent's variables:
 
 | Variable | Source section in the prior body | Contents |
 | --- | --- | --- |
