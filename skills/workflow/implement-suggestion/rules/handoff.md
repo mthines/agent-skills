@@ -169,9 +169,9 @@ Apply reviewer suggestions to an existing pull request.
 
    If `threadId` is null (an `issues` comment, a top-level `review` summary, or
    a `report-*` entry expanded from a reviewer report — these have no resolvable
-   thread), SKIP the reply + resolve for that entry and note it as "no thread to
-   resolve" in your report. Do NOT resolve threads for `surface` / `skip`
-   comments — only the ones you actually addressed.
+   thread), SKIP the reply + resolve for that entry and note it as
+   "no thread to resolve" in your report. Do NOT resolve threads for
+   `surface` / `skip` comments — only the ones you actually addressed.
 
    A `report-*` entry is never resolvable and must not be counted as an
    unresolved failure either: the finding lives in a review body, and the trail
