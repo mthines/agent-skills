@@ -34,7 +34,12 @@ When a PR does not yet exist (branch-only self review without an open PR), skip 
 Run once at Step 1, after Step 0.5 (authorship check) and before Step 1.1 (diff acquisition):
 
 ```bash
+# REPO is the `owner/repo` string the REST paths below need.
+# The GraphQL query needs the two halves separately — bind both here so this
+# block runs standalone, and never pass `owner/repo` as the `repo` argument.
 REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
+OWNER="${REPO%%/*}"
+REPO_NAME="${REPO##*/}"
 BOT_LOGIN=$(gh api user --jq .login)
 
 # All existing review comments on this PR (all authors)
@@ -56,7 +61,7 @@ gh api graphql -f query='
         }
       }
     }
-  }' -F owner="$OWNER" -F repo="$REPO" -F pr="$PR_NUMBER" > /tmp/review-threads.json
+  }' -F owner="$OWNER" -F repo="$REPO_NAME" -F pr="$PR_NUMBER" > /tmp/review-threads.json
 ```
 
 Store `BOT_COMMENTS`, `/tmp/prior-comments.json` and `/tmp/review-threads.json` for use in the thread-state, dedup and anti-flip-flop checks below.
