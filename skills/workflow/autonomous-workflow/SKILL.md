@@ -13,7 +13,7 @@ argument-hint: '<task-description> [--no-confirm] [--critical]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.18.0'
+  version: '3.19.0'
   workflow_type: orchestrator
   tags:
     - autonomous

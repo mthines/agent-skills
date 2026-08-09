@@ -781,10 +781,14 @@ end-user-facing; this file is contributor-facing.
   *available* split (the guard is "can I dispatch?", not preference). The "tell the
   user to run the agents themselves" text is demoted to a last resort for when
   `Edit`/`Write`/`Bash` are *also* unavailable. Coupled surfaces updated in
-  lockstep: `templates/aw.agent.md` (Full-tier dispatch section + the
-  `Edit`/`Write` Hard rule now conditions on dispatch availability), and this
-  file's thin-router invariant, split-is-Full-only design-intent invariant, and
-  the `aw` dispatcher smoke test (step 3 now exercises the single-context path).
+  lockstep: `templates/aw.agent.md` (Full-tier dispatch section, the Routing
+  table's Full row, and the `Edit`/`Write` Hard rule — all three now condition on
+  dispatch availability), `templates/routing.rule.md` (dispatch-unavailable branch
+  pointing at that section), `SKILL.md` (v3.19.0; the Templates section states the
+  single-context Full fallback and links the agent definition for the procedure),
+  and this file's thin-router invariant, split-is-Full-only design-intent
+  invariant, and the `aw` dispatcher smoke test (step 3 now exercises the
+  single-context path).
   Deliberately NOT changed: the tier-detection table (L1 Check B keeps it
   byte-identical to `SKILL.md` Step 1), the preferred dispatch-the-split path when
   `Task` is available, and every `checks.yaml` / `confidence(plan)` integrity rule.
