@@ -82,8 +82,33 @@ Without these the reactions API returns `403` — a common silent breakage.
 ## Implementation with `gh api`
 
 `gh` is preinstalled on GitHub-hosted runners and reads `GH_TOKEN`.
-The triggering comment id is `${{ github.event.comment.id }}`; the
-issue/PR number is `${{ github.event.issue.number }}`.
+
+### Pick the reaction route from the trigger — the id namespaces are disjoint
+
+An `issue_comment` id and a `pull_request_review_comment` id live in
+**different namespaces**, and each 404s on the other's route.
+A pull request **review** has no reactions endpoint at all.
+Read the row for your trigger before you copy any snippet below.
+
+| Trigger                        | Comment id                                            | Reaction route                                                | PR / issue number                            |
+| ------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------- |
+| `issue_comment`                | `${{ github.event.comment.id }}`                       | `/repos/{owner}/{repo}/issues/comments/{id}/reactions`          | `${{ github.event.issue.number }}`            |
+| `pull_request_review_comment`  | `${{ github.event.comment.id }}`                       | `/repos/{owner}/{repo}/pulls/comments/{id}/reactions`           | `${{ github.event.pull_request.number }}`     |
+| `pull_request_review`          | none — the payload carries `github.event.review.id`    | none — react to nothing; post the outcome as a PR comment on `/repos/{owner}/{repo}/issues/{pr}/comments` | `${{ github.event.pull_request.number }}` |
+| `workflow_dispatch` (comment/bot-fired) | none — the dispatching bot passes it, e.g. `${{ inputs.comment_id }}` | the route matching the id the caller passed (`issues` or `pulls`) | pass it as an input too, e.g. `${{ inputs.pr_number }}` |
+
+Confirm the row once with a read-only probe before you rely on it:
+
+```bash
+# Substitute a real id. Exactly one of these returns 200; the other returns 404.
+gh api "/repos/$OWNER/$REPO/issues/comments/$ID/reactions"
+gh api "/repos/$OWNER/$REPO/pulls/comments/$ID/reactions"
+```
+
+Every snippet below uses the `issue_comment` row.
+For `pull_request_review_comment`, swap `issues/comments` for
+`pulls/comments` and `github.event.issue.number` for
+`github.event.pull_request.number`.
 
 ### Gate the command first (security)
 
@@ -179,6 +204,9 @@ comments in one place. Use it when you also want a progress comment.
 ```
 
 SHA-pin it like any third-party action ([`security.md`](./security.md)).
+`comment-id` on this action addresses an **issue** comment only, so it
+cannot acknowledge a `pull_request_review_comment` — use the `gh api`
+`pulls/comments` route above for that trigger.
 
 ## Examples
 
@@ -254,6 +282,10 @@ completely invisible — no reaction, no comment, no link.
 - **A fresh comment per progress tick.** Notification spam.
   **Fix:** one sticky comment, updated in place
   (`create-or-update-comment`).
+- **Using `/issues/comments/{id}/reactions` for a review comment.** The id
+  404s — the two namespaces are disjoint, and a review has no reactions
+  endpoint at all. **Fix:** pick the route from the per-trigger table in
+  [Implementation with `gh api`](#implementation-with-gh-api).
 - **Assuming the comment is on a PR.** `issue_comment` also fires on
   plain issues. **Fix:** gate on `github.event.issue.pull_request` when
   the command only makes sense on a PR.
