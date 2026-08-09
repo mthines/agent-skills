@@ -322,15 +322,32 @@ Announce: `Prior diagnostics: <G> open gate finding(s), <O> optimality proposal(
 ### 1.0 Prior-comment awareness + relevance memory load (default ON)
 
 See `agents/shared/rules/prior-comment-awareness.md`. Fetch existing review comments on
-the PR, build the dedup set and the resolved-suggestion set before any finding is produced.
+the PR **and the PR's review-thread state**, then build the dedup set and the
+resolved-suggestion set before any finding is produced.
+
+The thread-state query (`reviewThreads { id isResolved }`, paged past 100) is the same one
+Step 4.5 runs — fetching it here moves the call earlier rather than adding one, and Step 4.5
+reuses `/tmp/review-threads.json`. `RESOLVED_THREAD_IDS` and `COMMENT_TO_THREAD` come from it.
 
 While fetching, **also identify open unresolved bot-authored comments** for Gate 3:
 - A comment is "bot-authored" if `user.login` matches `*[bot]*`, `cursor-ai`, `claude`,
   `copilot`, or any login ending in `-ai` or `-bot`.
-- A comment is "unresolved" if: the thread has no reply from the PR author, AND no
-  "won't fix" / "by design" / "intentional" / "n/a" phrase appears in any thread reply.
+- A comment is **resolved** when its thread's `isResolved` is true. Read the flag; never
+  infer resolution from the wording of a reply. An automated fixer replies in its own
+  words and resolves the thread — it neither matches a keyword list nor replies as the PR
+  author, so a prose test reports it unresolved forever
+  (`prior-comment-awareness.md § Thread state`).
   (Fix-commit detection is left to the post-merge outcome loop — do not run it here.)
-- Store these as `OPEN_BOT_COMMENTS[]`.
+- Only when thread state is unavailable, fall back to the reply-text heuristic in
+  `prior-comment-awareness.md § Fallback resolution heuristic`, and record that the
+  fallback was used. The fallback result feeds **dedup and anti-flip-flop only**. It
+  never admits a comment to `OPEN_BOT_COMMENTS[]`, because Gate 3 must not fail on a
+  thread whose real state could not be read (see *Gate 3*) — a lossy prose test is not
+  evidence that a finding is still open.
+- Store as `OPEN_BOT_COMMENTS[]` only the comments whose thread state **was** read and is
+  `isResolved == false`. Every comment whose state was unavailable or unpaged is counted
+  separately and reported as `thread state unavailable — <N> comment(s) unverified` in
+  Gate 3's Details cell.
 - If `OPEN_BOT_COMMENTS[]` is empty, Gate 3 passes.
 
 Also load **comment-relevance memories** and **reviewer-lessons** via a narrow-to-broad fan-out.
@@ -606,10 +623,22 @@ Result: PASS (all green) or FAIL with list of failing check names.
 
 **Gate 3 — Unresolved prior bot/agent feedback**
 Use `OPEN_BOT_COMMENTS[]` from Step 1.0. Identify any prior automated review comments
-(Cursor, Claude, other agents) that have an open unresolved thread (no reply from the
-PR author, thread not dismissed).
+(Cursor, Claude, other agents) whose review thread is still open — `isResolved == false`
+and the thread not dismissed.
 Finding format: one line per unresolved item — author login and brief subject.
 Result: PASS or FAIL with finding text.
+
+Two rules keep this gate honest:
+
+- **A resolved thread never fails this gate**, regardless of who resolved it or how the
+  reply was worded. A fixer that addresses a finding and resolves its thread has resolved
+  it — that is the whole signal.
+- **An unknown thread never fails it either.** If thread state was unavailable or the
+  thread map is incomplete (`hasNextPage` could not be paged), the affected comments are
+  **not** admitted to `OPEN_BOT_COMMENTS[]`; the gate keeps its ✅ and its Details carry
+  `thread state unavailable — <N> comment(s) unverified`. A tooling gap is not the PR's
+  fault, and failing on one gives the author nothing to fix. Gate 3 stays binary ✅ / ❌
+  (see *Gate states*) — this rule changes what enters the gate, not the gate's shape.
 
 **Gate 4 — Self-review signals**
 This is a coarse safety net for the residue a careful author strips out before pushing — not a style or design review (Gate 6 owns those). It scans **only `+`-prefixed additions** for a fixed set of unambiguous "this was never self-reviewed" tells, which is exactly why it is green on almost every PR: a clean diff simply does not contain these artifacts, so the gate stays quiet and only trips when genuinely unfinished or debug material was committed. Treat a green result as "no smoking guns", not "the code is good".
@@ -1384,6 +1413,11 @@ Rules for table cells:
 - Details column: plain text only, max 120 chars per cell.
 - When a gate PASSES (✅), its Details cell shows the short static description of what the gate
   checks, verbatim from the table below.
+  One exception: when Gate 3 passed on **unverified** thread state (state unavailable or the thread
+  map incomplete — see *Gate 3*), its Details cell holds
+  `thread state unavailable — <N> comment(s) unverified` instead of the static description. This is
+  the only ✅ cell that is not the verbatim static text, and it never changes the ✅ status or the
+  variant selection.
 - When a gate WARNS (⚠️) or FAILS (❌), its Details cell shows the specific finding text (max 120
   chars — truncate; the full finding lives in the inline comment), exactly as before.
 - `⏭️` is a valid Status value in **every** body variant — PASS, WARN, and FAIL — in addition to the

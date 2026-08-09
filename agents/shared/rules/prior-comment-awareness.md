@@ -34,7 +34,12 @@ When a PR does not yet exist (branch-only self review without an open PR), skip 
 Run once at Step 1, after Step 0.5 (authorship check) and before Step 1.1 (diff acquisition):
 
 ```bash
+# REPO is the `owner/repo` string the REST paths below need.
+# The GraphQL query needs the two halves separately — bind both here so this
+# block runs standalone, and never pass `owner/repo` as the `repo` argument.
 REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
+OWNER="${REPO%%/*}"
+REPO_NAME="${REPO##*/}"
 BOT_LOGIN=$(gh api user --jq .login)
 
 # All existing review comments on this PR (all authors)
@@ -45,11 +50,90 @@ gh api repos/$REPO/pulls/$PR_NUMBER/comments \
 # Comments authored by this agent (bot login)
 BOT_COMMENTS=$(jq --arg login "$BOT_LOGIN" '[.[] | select(.user_login == $login)]' /tmp/prior-comments.json)
 
-# Resolved threads (those with a reply or a 👍 reaction on the bot's comment)
-# Use the already-documented outcome-learning.md Step 2 pattern for resolution check
+# Thread state — the authoritative resolved/unresolved signal. See § Thread state below.
+# `reviewThreads` caps at 100 and `--paginate` does not work for GraphQL, so walk
+# `endCursor` until `hasNextPage` is false and concatenate the pages.
+THREADS_QUERY='
+  query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
+    repository(owner:$owner,name:$repo){
+      pullRequest(number:$pr){
+        reviewThreads(first:100, after:$cursor){
+          pageInfo{ hasNextPage endCursor }
+          nodes{ id isResolved comments(first:100){ nodes{ databaseId } } }
+        }
+      }
+    }
+  }'
+
+: > /tmp/review-thread-pages.json
+CURSOR=""
+THREADS_COMPLETE=true
+while :; do
+  # Capture the page, then append it with an explicit newline: `gh api graphql`
+  # emits no trailing newline, so appending its stdout directly would run page 2
+  # onto page 1's line.
+  if ! PAGE=$(gh api graphql -f query="$THREADS_QUERY" \
+       -F owner="$OWNER" -F repo="$REPO_NAME" -F pr="$PR_NUMBER" \
+       -F cursor="${CURSOR:-null}"); then
+    THREADS_COMPLETE=false
+    break
+  fi
+  printf '%s\n' "$PAGE" >> /tmp/review-thread-pages.json
+  HAS_NEXT=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<< "$PAGE")
+  CURSOR=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<< "$PAGE")
+  [ "$HAS_NEXT" = "true" ] || break
+done
+
+# One merged document with every page's nodes, in the shape the checks below read.
+# `complete` persists THREADS_COMPLETE into the file. An aborted walk leaves the pages
+# file empty, so without this flag the merged result `{nodes: []}` is indistinguishable
+# from a PR that genuinely has no threads — and THREADS_COMPLETE is a shell variable that
+# does not survive to Step 4.5, which reads only the file.
+jq -s --argjson complete "$THREADS_COMPLETE" \
+  '{complete: $complete, nodes: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' \
+  /tmp/review-thread-pages.json > /tmp/review-threads.json
 ```
 
-Store `BOT_COMMENTS` and `/tmp/prior-comments.json` for use in the dedup and anti-flip-flop checks below.
+`THREADS_COMPLETE=false` means the walk stopped early, and it is persisted as `"complete": false` in `/tmp/review-threads.json`.
+Every reader — this rule's checks and `thread-resolution.md` at Step 4.5 alike — must treat a map with `complete: false` as **incomplete** per *Pagination guard* below, never as "no more threads".
+
+Store `BOT_COMMENTS`, `/tmp/prior-comments.json` and `/tmp/review-threads.json` for use in the thread-state, dedup and anti-flip-flop checks below.
+
+---
+
+## Thread state — resolution is read, never inferred
+
+A review thread's `isResolved` flag is the **authoritative** signal that a comment has been dealt with. Read it; never infer resolution from the prose of a reply.
+
+The query above is the same one `thread-resolution.md § Resolve the thread` runs at Step 4.5 and the same one `implement-suggestion` runs at its Phase 2. On a re-review the call moves earlier rather than being added — Step 4.5 reuses `/tmp/review-threads.json` instead of re-querying.
+
+From the result build:
+
+1. `RESOLVED_THREAD_IDS: Set<string>` — every thread `id` with `isResolved == true`.
+2. `COMMENT_TO_THREAD: Map<databaseId, {threadId, isResolved}>` — every comment in every thread.
+
+**Pagination guard.** `reviewThreads` caps at `first: 100` and `--paginate` does not work for GraphQL. When `pageInfo.hasNextPage` is true, page with `endCursor` until it is false. If paging cannot complete, treat the map as **incomplete** and say so in the run — an unseen thread must never be silently assumed unresolved, because that turns a resolved conversation into a gate failure.
+
+**Fallback.** If the GraphQL call fails outright (permissions, API error), log
+`[thread-state] GraphQL unavailable — falling back to reply-text heuristic` and use the heuristic in `§ Fallback resolution heuristic`. Never fail the run on this, and never treat an API error as "everything is unresolved".
+
+### Why prose matching is not enough
+
+Automated fixers reply and resolve; they do not phrase their replies to match a keyword list, and they are not the PR author:
+
+- `implement-suggestion` posts a free-form decline — `suggestion-pack.md`: **Reply**: `<rationale for not applying>` — and then resolves the thread.
+- Its reply is authored by the bot, not the PR author.
+
+A resolution test built on "a reply from the PR author containing one of four phrases" therefore returns *unresolved* for a thread that is demonstrably resolved, on every subsequent pass, forever. Reading `isResolved` removes the whole class.
+
+### Fallback resolution heuristic
+
+Used **only** when thread state is unavailable. A thread counts as resolved when either:
+
+- the PR author replied in the thread, or
+- any reply contains "won't fix" / "by design" / "intentional" / "n/a".
+
+This is the pre-existing heuristic, retained verbatim as a degraded path. It is lossy in exactly the way described above; when it is in use, say so in the gate's Details text so a failure is attributable to the fallback rather than to the PR.
 
 ---
 

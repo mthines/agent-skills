@@ -87,18 +87,71 @@ GitHub review threads are resolved through the GraphQL `resolveReviewThread`
 mutation; the thread's node id is not on the REST comment object, so map from the
 comment to its thread first. All calls go through `gh api` (Bash) — no new tool.
 
+**Reuse the Step 1.0 fetch.** `prior-comment-awareness.md § Thread state` already wrote
+`/tmp/review-threads.json` at the start of the run, with the same query and a completed
+pagination walk. Read that file instead of re-querying.
+Re-run step 1 below in exactly two cases: the file is absent (the Step 1.0 fetch never ran),
+or its `complete` field is `false` (the Step 1.0 walk stopped early).
+Posting the review at Step 4 is **not** a re-fetch trigger.
+The only threads the Step 1.0 snapshot can be missing are the ones this run's own review just
+created, and those are never resolution candidates here — step 2 below reconciles only threads
+whose root comment is a **prior** comment.
+That is what makes this a call moved earlier rather than a call added.
+Re-resolving a thread this run already resolved is a safe no-op either way.
+
 ```bash
 # 1. List the PR's review threads with their resolved state and member comment ids.
-gh api graphql -f query='
-  query($owner:String!,$repo:String!,$pr:Int!){
+#    This is character-for-character the query and pagination walk in
+#    `prior-comment-awareness.md § fetch existing PR comment state`, so the two
+#    produce the same `/tmp/review-threads.json`. Edit them together.
+# Derive both halves from RESOLVED_REPO (`owner/repo`, set in `pr-reviewer` Step 0) rather
+# than from REPO: Step 0 binds REPO to the bare repository name, so `${REPO%%/*}` would
+# yield the repo name as the owner unless some earlier rule happened to rebind it.
+OWNER="${RESOLVED_REPO%%/*}"
+REPO_NAME="${RESOLVED_REPO##*/}"
+THREADS_QUERY='
+  query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
     repository(owner:$owner,name:$repo){
       pullRequest(number:$pr){
-        reviewThreads(first:100){
-          nodes{ id isResolved comments(first:1){ nodes{ databaseId } } }
+        reviewThreads(first:100, after:$cursor){
+          pageInfo{ hasNextPage endCursor }
+          nodes{ id isResolved comments(first:100){ nodes{ databaseId } } }
         }
       }
     }
-  }' -F owner="$OWNER" -F repo="$REPO" -F pr="$PR_NUMBER" > /tmp/review-threads.json
+  }'
+
+: > /tmp/review-thread-pages.json
+CURSOR=""
+THREADS_COMPLETE=true
+while :; do
+  # Capture the page, then append it with an explicit newline: `gh api graphql`
+  # emits no trailing newline, so appending its stdout directly would run page 2
+  # onto page 1's line.
+  if ! PAGE=$(gh api graphql -f query="$THREADS_QUERY" \
+       -F owner="$OWNER" -F repo="$REPO_NAME" -F pr="$PR_NUMBER" \
+       -F cursor="${CURSOR:-null}"); then
+    THREADS_COMPLETE=false
+    break
+  fi
+  printf '%s\n' "$PAGE" >> /tmp/review-thread-pages.json
+  HAS_NEXT=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<< "$PAGE")
+  CURSOR=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<< "$PAGE")
+  [ "$HAS_NEXT" = "true" ] || break
+done
+
+# One merged document with every page's nodes, in the shape the checks below read.
+# `complete` persists THREADS_COMPLETE into the file. An aborted walk leaves the pages
+# file empty, so without this flag the merged result `{nodes: []}` is indistinguishable
+# from a PR that genuinely has no threads — and THREADS_COMPLETE is a shell variable that
+# does not survive to Step 4.5, which reads only the file.
+jq -s --argjson complete "$THREADS_COMPLETE" \
+  '{complete: $complete, nodes: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' \
+  /tmp/review-thread-pages.json > /tmp/review-threads.json
+
+# complete == false means the walk stopped early — treat the thread map as
+# incomplete and resolve nothing on the strength of it, never as "no more threads".
+# This is the same flag the reuse check above reads off /tmp/review-threads.json.
 
 # 2. For a prior comment classified fixed/declined/acknowledged, find its thread
 #    id where isResolved == false and the thread's root comment databaseId matches
