@@ -702,6 +702,9 @@ rubrics + personas produce raw findings
   → 2.5  rubric-composition § Consolidation (dedupe + group + sort — no cap, nothing dropped)
   → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.5b prior-comment-awareness.md § Dedup (drop if already said in a prior review pass)
+  → 2.5c prior-comment-awareness.md § Carry-forward of anchorless findings (dispose every
+                                       PRIOR_DIAGNOSTICS entry: REPLACE / RESOLVE / CARRY / DROP;
+                                       a RESOLVE requires the owning step to have run this pass)
   → 2.6  finding-grounding.md         (every backticked symbol grep-resolves)
   → 2.6b verification-receipt.md      (behavioral claims need executed proof; null result = DROP)
   → 2.7  per-comment-confidence.md    (Skill("confidence", "code") ≥ profile threshold, or ≥ 70 for agreement-promoted)
