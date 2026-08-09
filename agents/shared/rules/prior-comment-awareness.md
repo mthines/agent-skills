@@ -85,11 +85,17 @@ while :; do
 done
 
 # One merged document with every page's nodes, in the shape the checks below read.
-jq -s '{nodes: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' \
+# `complete` persists THREADS_COMPLETE into the file. An aborted walk leaves the pages
+# file empty, so without this flag the merged result `{nodes: []}` is indistinguishable
+# from a PR that genuinely has no threads — and THREADS_COMPLETE is a shell variable that
+# does not survive to Step 4.5, which reads only the file.
+jq -s --argjson complete "$THREADS_COMPLETE" \
+  '{complete: $complete, nodes: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' \
   /tmp/review-thread-pages.json > /tmp/review-threads.json
 ```
 
-`THREADS_COMPLETE=false` means the walk stopped early — treat the thread map as **incomplete** per *Pagination guard* below, never as "no more threads".
+`THREADS_COMPLETE=false` means the walk stopped early, and it is persisted as `"complete": false` in `/tmp/review-threads.json`.
+Every reader — this rule's checks and `thread-resolution.md` at Step 4.5 alike — must treat a map with `complete: false` as **incomplete** per *Pagination guard* below, never as "no more threads".
 
 Store `BOT_COMMENTS`, `/tmp/prior-comments.json` and `/tmp/review-threads.json` for use in the thread-state, dedup and anti-flip-flop checks below.
 

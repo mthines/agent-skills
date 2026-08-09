@@ -138,11 +138,17 @@ while :; do
 done
 
 # One merged document with every page's nodes, in the shape the checks below read.
-jq -s '{nodes: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' \
+# `complete` persists THREADS_COMPLETE into the file. An aborted walk leaves the pages
+# file empty, so without this flag the merged result `{nodes: []}` is indistinguishable
+# from a PR that genuinely has no threads — and THREADS_COMPLETE is a shell variable that
+# does not survive to Step 4.5, which reads only the file.
+jq -s --argjson complete "$THREADS_COMPLETE" \
+  '{complete: $complete, nodes: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' \
   /tmp/review-thread-pages.json > /tmp/review-threads.json
 
-# THREADS_COMPLETE=false means the walk stopped early — treat the thread map as
+# complete == false means the walk stopped early — treat the thread map as
 # incomplete and resolve nothing on the strength of it, never as "no more threads".
+# This is the same flag the reuse check above reads off /tmp/review-threads.json.
 
 # 2. For a prior comment classified fixed/declined/acknowledged, find its thread
 #    id where isResolved == false and the thread's root comment databaseId matches
