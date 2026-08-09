@@ -1376,6 +1376,11 @@ Rules for table cells:
   checks, verbatim from the table below.
 - When a gate WARNS (⚠️) or FAILS (❌), its Details cell shows the specific finding text (max 120
   chars — truncate; the full finding lives in the inline comment), exactly as before.
+- `⏭️` is a valid Status value in **every** body variant — PASS, WARN, and FAIL — in addition to the
+  values each variant's table shows. It appears only under `--skip-gates`, for Gates 1 / 3 / 4 / 5,
+  and its Details cell holds the carried prior text plus its `(carried from …)` suffix when Step 2.5c
+  dispositioned the row `CARRY`, and `not evaluated this run` otherwise (see *Gate states*).
+  A `⏭️` row never counts toward `FAILING_GATE_COUNT` and never selects the WARN or FAIL variant.
 
 Static descriptions (shown verbatim in the Details cell when the gate is ✅):
 
