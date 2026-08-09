@@ -179,6 +179,15 @@ current user's own comments and noise bots (`dependabot`, `github-actions`)
 are filtered. Exclude resolved threads. Honor `commentFilter` from Phase 0
 if present.
 
+A review body carrying `<!-- PR_REVIEWER_REPORT -->` is handled specially: it is
+never self-filtered (the reviewer and this skill often share one GitHub App
+identity), and it is **expanded** into one ledger entry per finding — deferred
+findings, gate findings, and optimality proposals all live only in that body.
+The parse grammar is shared with `pr-reviewer` itself
+([`agents/shared/rules/reviewer-report-ingest.md`](../../../agents/shared/rules/reviewer-report-ingest.md));
+the expansion contract is in
+[`rules/comment-fetching.md § Reviewer-report expansion`](./rules/comment-fetching.md).
+
 ### Phase 3 — Classify
 
 <a id="lessons-read"></a>
@@ -549,3 +558,8 @@ Templates:
    biases classification, gate calibration, and lane selection from prior runs — but a lesson
    never relaxes a gate or a hard rule. Only a recurrence-proven lesson (`seen_count >= 3`) earns
    a confidence-gated, user-approved change to the skill's source.
+7. **A review is a report, not a comment.** A `pr-reviewer` body carries findings that exist
+   nowhere else — gate findings have no inline anchor, optimality proposals are never posted
+   inline, and deferred findings only ever appear in the body. Phase 2 expands it into one entry
+   per finding and never self-filters it. Everything expanded still runs the full pipeline: the
+   reviewer's own confidence score is evidence for Phase 4, never a way around it.

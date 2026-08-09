@@ -33,6 +33,41 @@ modifier section.
 
 For each comment, walk these in order. First match wins.
 
+### 0. Reviewer-report entries — classify by prefix, not by prose
+
+An entry whose `origin == "pr-reviewer-report"` (expanded in Phase 2 per
+[`comment-fetching.md § Reviewer-report expansion`](./comment-fetching.md))
+already carries a Conventional-Comments `prefix`. That prefix is the reviewer's
+own declared intent — strictly better signal than re-deriving intent from the
+wording — so it wins outright and the heuristics below are skipped:
+
+| `source` | `prefix` | Label |
+| ---------- | ---------- | ------- |
+| `report-finding` | `issue` | `actionable` |
+| `report-finding` | `suggestion` | `actionable` |
+| `report-finding` | `nitpick` | `nit` |
+| `report-finding` | `question` | `question` |
+| `report-finding` | `praise` | `praise` |
+| `report-finding` | missing / unrecognised | fall through to steps 1–5 |
+| `report-gate` | — | `discussion` (never auto-applied — see below) |
+| `report-optimality` | — | `discussion` (never auto-applied — see below) |
+
+`report-gate` and `report-optimality` are pinned to `discussion` deliberately:
+
+- A **gate finding** is a PR-level verdict ("documentation missing", "unresolved
+  bot feedback"), not a line-level edit. There is nothing mechanical to apply.
+- An **optimality proposal** is report-only by construction
+  (`agents/shared/rules/optimality-review.md` — cross-review never applies one).
+  Adopting one is an architectural decision that belongs to a human.
+
+Both still reach the user: under `--resolve-all` they carry into the pack's
+reply-only section, and in the default mode they are surfaced in the Phase 7
+report. To act on one, the user re-runs scoped to it — the same escalation path
+as any other surfaced comment.
+
+`mixedIntent` does not apply to report entries: expansion already split the
+report into one finding per entry.
+
 ### 1. `praise`
 
 Comment body matches **only** one of:

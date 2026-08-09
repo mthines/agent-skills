@@ -54,6 +54,23 @@ Inputs the gate sees:
 
 `/confidence` returns a score in `[0, 100]`. Use the decision matrix below.
 
+### A reviewer-report entry carries its own score — treat it as evidence, not as a verdict
+
+An entry expanded from a `pr-reviewer` report (`origin == "pr-reviewer-report"`)
+carries `reportedConfidence`: the score the reviewer's own per-comment gate
+assigned it. Feed it to `/confidence` as one more input alongside the code and
+the `/critical` findings.
+
+It never replaces the gate. The reviewer scored the finding against the diff at
+`reviewedSha`; this run applies a change to the worktree **now**, and the two
+questions are not the same one. Substituting the carried score would let a
+finding reach `apply` without any gate having looked at the current code —
+exactly the failure the two-gate rule exists to prevent.
+
+A large gap between `reportedConfidence` and the fresh `/confidence` score is
+itself a signal worth recording in the pack: it usually means the code moved
+under the finding.
+
 ## Decision matrix
 
 | `/confidence` score | `nit` comment | `actionable` comment |
