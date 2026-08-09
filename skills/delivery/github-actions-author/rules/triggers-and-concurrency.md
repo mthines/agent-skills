@@ -89,6 +89,27 @@ on:
 Adds a "Run workflow" button to the Actions UI. Always add to deploy
 and release workflows for re-runs without pushing a tag.
 
+## Comment / slash-command triggers
+
+```yaml
+on:
+  issue_comment:
+    types: [created]
+```
+
+`issue_comment` fires on both issues and PRs; gate on
+`github.event.issue.pull_request` when the command only makes sense on a
+PR. These triggers fire for anyone with read access — gate on
+`author_association` and the command prefix before doing any work (see
+[`security.md`](./security.md)).
+
+Unlike `push` / `pull_request`, a comment-triggered run produces **no PR
+status check**, so it is invisible unless it reports back. Every
+comment/manual-triggered workflow **must** acknowledge the triggering
+comment with a 👀 reaction as its first step and report its outcome
+(🚀/👍 on success, 👎 + a run-linked comment on failure) — see
+[`feedback.md`](./feedback.md).
+
 ## Schedule
 
 ```yaml
