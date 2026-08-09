@@ -20,10 +20,12 @@ stares at a comment with no indication that anything is happening — no
 status check, no spinner, nothing.
 If the run silently fails, they never find out.
 
-**Rule:** every workflow triggered by a human comment or manual action
-that produces no obvious PR status check **must** give feedback on the
-triggering comment — an acknowledgement when it starts, and an outcome
-when it ends.
+**Rule:** every workflow triggered by a comment — directly, or through a
+`workflow_dispatch` that a comment or a bot fired — and that produces no
+obvious PR status check **must** give feedback on the triggering comment:
+an acknowledgement when it starts, and an outcome when it ends.
+A `workflow_dispatch` fired from the Actions UI has no triggering comment,
+so it is out of scope.
 
 ## When this rule applies
 

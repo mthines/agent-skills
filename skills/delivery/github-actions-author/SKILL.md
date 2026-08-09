@@ -8,7 +8,7 @@ description: >
   least-privilege `GITHUB_TOKEN`, concurrency), trackable errors
   (named steps, step summaries, annotations, and stdout/stderr that always
   reaches the run log so agents can act on failures), and feedback for
-  comment/manual triggers (👀 acknowledgement reaction on start, 🚀/👎
+  comment-triggered runs (👀 acknowledgement reaction on start, 🚀/👎
   outcome reaction plus a run-linked comment at the end). Two modes: `scaffold`
   (default) generates workflow YAML; `review` audits an existing
   workflow against the same rules. Use when creating CI/CD pipelines,
@@ -104,7 +104,7 @@ Five phases. Each has a gate; do not proceed until it passes.
 | 1     | Anatomy + triggers    | [`rules/workflow-anatomy.md`](./rules/workflow-anatomy.md), [`rules/triggers-and-concurrency.md`](./rules/triggers-and-concurrency.md) | `on:` block scoped (branches + paths), concurrency set.           |
 | 2     | Speed (cache + parallel) | [`rules/caching.md`](./rules/caching.md), [`rules/parallelization.md`](./rules/parallelization.md) | Cache key is `hashFiles`-based with `restore-keys`; independent jobs run in parallel. |
 | 3     | Reusability           | [`rules/reusability.md`](./rules/reusability.md)                              | Any block used > 1 place is extracted to a composite action or reusable workflow. |
-| 4     | Security + errors     | [`rules/security.md`](./rules/security.md), [`rules/observability.md`](./rules/observability.md), [`rules/log-output-visibility.md`](./rules/log-output-visibility.md), [`rules/feedback.md`](./rules/feedback.md) | Third-party actions SHA-pinned, `permissions:` minimal, every step named, failures surface a stack-trace path, **every command's stdout + stderr reaches the run log**, and any comment/manual-triggered workflow acknowledges (👀) and reports its outcome (🚀/👎 + run link). |
+| 4     | Security + errors     | [`rules/security.md`](./rules/security.md), [`rules/observability.md`](./rules/observability.md), [`rules/log-output-visibility.md`](./rules/log-output-visibility.md), [`rules/feedback.md`](./rules/feedback.md) | Third-party actions SHA-pinned, `permissions:` minimal, every step named, failures surface a stack-trace path, **every command's stdout + stderr reaches the run log**, and any comment-triggered workflow — including a `workflow_dispatch` a comment or bot fired, but not one fired from the Actions UI — acknowledges (👀) and reports its outcome (🚀/👎 + run link). |
 
 ### Phase 0 — Intent and shape
 
@@ -327,11 +327,16 @@ A **scaffold** run is done when:
 - [ ] The log-visibility grep from
       [`rules/log-output-visibility.md`](./rules/log-output-visibility.md#verification)
       returns no unjustified hits.
-- [ ] If comment/manual-triggered (no PR status check), the workflow
-      acknowledges with a 👀 reaction as its first step and reports the
-      outcome on both paths — a 🚀/👍 reaction on success, a 👎 reaction
-      plus a run-linked comment on failure — with `issues: write` /
-      `pull-requests: write` granted and the command gated before it reacts.
+- [ ] If comment-triggered and producing no PR status check — `issue_comment`,
+      `pull_request_review_comment`, `pull_request_review`, or a
+      `workflow_dispatch` a comment or bot fired, per the trigger table in
+      [`rules/feedback.md`](./rules/feedback.md#when-this-rule-applies) — the
+      workflow acknowledges on the triggering comment with a 👀 reaction as
+      its first step and reports the outcome on both paths — a 🚀/👍 reaction
+      on success, a 👎 reaction plus a run-linked comment on failure — with
+      `issues: write` / `pull-requests: write` granted and the command gated
+      before it reacts. A `workflow_dispatch` fired from the Actions UI has no
+      triggering comment and is out of scope.
 - [ ] If using OIDC, `id-token: write` is set at the job level only.
 - [ ] User received a one-paragraph summary of what was created and
       where to commit it.

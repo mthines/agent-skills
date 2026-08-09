@@ -105,7 +105,9 @@ PR. These triggers fire for anyone with read access — gate on
 
 Unlike `push` / `pull_request`, a comment-triggered run produces **no PR
 status check**, so it is invisible unless it reports back. Every
-comment/manual-triggered workflow **must** acknowledge the triggering
+comment-triggered workflow — including a `workflow_dispatch` that a
+comment or a bot fired, but not one fired from the Actions UI, which has
+no triggering comment — **must** acknowledge the triggering
 comment with a 👀 reaction as its first step and report its outcome
 (🚀/👍 on success, 👎 + a run-linked comment on failure) — see
 [`feedback.md`](./feedback.md).
