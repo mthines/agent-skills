@@ -280,7 +280,7 @@ diff. Parse the prior body (the same `PRIOR_REVIEW` object already fetched, `.bo
 | --- | --- | --- |
 | `PRIOR_GATE_STATE[]` | the gate-status table inside `<details><summary>Review diagnostics…` | One entry per row whose Status is `❌` or `⚠️`: `{gate, status, details}`. Rows showing `✅` are not carried. |
 | `PRIOR_OPTIMALITY[]` | `OPTIMALITY_SECTION` cards | One entry per proposal: `{title, rationale}`. |
-| `PRIOR_STANDARDS[]` | the `**Standards (2.4d)**` line plus any standards finding rendered in the body | `{doc_path_line, statement}` per finding. |
+| `PRIOR_STANDARDS` | the `**Standards (2.4d)**` log line only | `{ran, docs_scanned, finding_count}` — the 2.4d run-state. Individual standards findings are **not** parsed here: 2.4d findings pass gates 2.5–2.9b and land inline or overflow into `Additional findings`, which `CARRIED_FINDINGS` already carries. |
 | `PRIOR_SKIPPED_FILES[]` | the `**Skipped files**` line | File paths, or empty on `none`. |
 | `PRIOR_PARTIAL` | `PARTIAL_REVIEW_BANNER` | `true` when the prior run posted a partial-review banner, else `false`. |
 
@@ -299,7 +299,7 @@ Parsing rules:
   survives into this run's body when Step 1.8 / 2.4c / 2.4d confirm it or when the owning step was
   skipped this run.
 
-Announce: `Prior diagnostics: <G> open gate finding(s), <O> optimality proposal(s), <S> standards finding(s) carried into this run.`
+Announce: `Prior diagnostics: <G> open gate finding(s), <O> optimality proposal(s), 2.4d run-state <ran|not run> carried into this run.`
 
 ---
 
@@ -1308,8 +1308,8 @@ is allowed to exist — never drop a cleared finding instead of listing it here.
 **Carried anchorless entries.** Entries carried from the prior review body per
 `prior-comment-awareness.md § Carry-forward of anchorless findings` render in their own section —
 a carried gate finding in the gate-status table's Details cell, a carried optimality card in
-`OPTIMALITY_SECTION`, a carried standards finding wherever this run would have rendered a fresh
-one — each suffixed ` (carried from <PRIOR_REVIEW_SHA_SHORT>)`. The suffix is mandatory: it is the only
+`OPTIMALITY_SECTION`, a carried 2.4d run-state on the `**Standards (2.4d)**` log line — each
+suffixed ` (carried from <PRIOR_REVIEW_SHA_SHORT>)`. The suffix is mandatory: it is the only
 thing distinguishing a finding this run verified from one it merely preserved because the owning
 step was skipped. A carried entry never changes the gate table's ✅/⚠️/❌ status, which Step 1.8
 always sets from the current PR state, and never affects the verdict.

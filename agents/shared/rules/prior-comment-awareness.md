@@ -168,8 +168,8 @@ A finding can therefore be deferred across several incremental runs, but it can 
 `Additional findings` is not the only body-only output of a review pass.
 A gate finding has **no inline anchor by design** — a `❌` on *Prior bot feedback*, *Documentation*, or *Self-review signals* exists only as a row in the gate-status table inside the `Review diagnostics` accordion.
 Optimality proposals (2.4c) are rendered as body cards and never inline.
-Standards findings (2.4d) cite a governing-doc `path:line` that is usually not in the diff at all.
-None of these are re-derivable from the delta, and two of the three steps that produce them are **skipped** in `incremental-quick`.
+The `**Standards (2.4d)**` log line records whether that lens ran at all; its individual findings go inline or into `Additional findings`, so they travel with `CARRIED_FINDINGS` and are not re-parsed here.
+None of these are re-derivable from the delta, and 2.4c and 2.4d are both **skipped** in `incremental-quick`.
 Without this rule a re-review silently drops every one of them, and the PR conversation loses context the author still needs.
 
 Run this at **Step 2.5c**, in every mode, over the `PRIOR_DIAGNOSTICS` parsed at `pr-reviewer.md § Step 0.7 → Parsing PRIOR_DIAGNOSTICS`.
