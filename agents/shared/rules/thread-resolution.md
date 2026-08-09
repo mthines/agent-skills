@@ -115,10 +115,12 @@ THREADS_QUERY='
 : > /tmp/review-thread-pages.json
 CURSOR=""
 while :; do
-  gh api graphql -f query="$THREADS_QUERY" \
+  # gh api graphql emits no trailing newline — capture the page, then append it
+  # with an explicit newline so page 2 does not land on page 1's line.
+  PAGE=$(gh api graphql -f query="$THREADS_QUERY" \
     -F owner="$OWNER" -F repo="$REPO_NAME" -F pr="$PR_NUMBER" \
-    -F cursor="${CURSOR:-null}" >> /tmp/review-thread-pages.json || break
-  PAGE=$(tail -n 1 /tmp/review-thread-pages.json)
+    -F cursor="${CURSOR:-null}") || break
+  printf '%s\n' "$PAGE" >> /tmp/review-thread-pages.json
   HAS_NEXT=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<< "$PAGE")
   CURSOR=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<< "$PAGE")
   [ "$HAS_NEXT" = "true" ] || break
