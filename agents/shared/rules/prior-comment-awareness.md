@@ -133,7 +133,10 @@ Used **only** when thread state is unavailable. A thread counts as resolved when
 - the PR author replied in the thread, or
 - any reply contains "won't fix" / "by design" / "intentional" / "n/a".
 
-This is the pre-existing heuristic, retained verbatim as a degraded path. It is lossy in exactly the way described above; when it is in use, say so in the gate's Details text so a failure is attributable to the fallback rather than to the PR.
+This is the pre-existing heuristic, retained verbatim as a degraded path, and it is lossy in exactly the way described above.
+Because of that it has a **narrow consumer set**: it feeds the dedup and anti-flip-flop checks only.
+It never admits a comment to `OPEN_BOT_COMMENTS[]`, so it can neither pass nor fail Gate 3 — a comment whose real thread state could not be read is reported as unverified instead (`pr-reviewer.md` Step 1.0 and *Gate 3*).
+Still say in the run that the fallback is in use, so a reader knows the dedup and anti-flip-flop decisions on this PR rest on a lossy signal rather than on read thread state.
 
 ---
 
