@@ -393,7 +393,12 @@ When editing this skill, do not break these — they're load-bearing:
 - **`aw` is a thin, opt-in router.** It detects the tier and routes (single-pass
   for Micro/Lite, planner→executor for Full) and owns the universal lessons loop.
   It must not accrue domain knowledge, must not force Full on light tasks, and
-  must not silently wrap casual edits. The planner/executor split is Full-only.
+  must not silently wrap casual edits. The planner/executor split is Full-only —
+  **except** when the harness disables sub-agent dispatch (`Task`), where `aw`
+  runs the Full phases single-context (planner + executor roles in one window)
+  rather than downgrading to Lite. That fallback preserves the `plan.md` artifact
+  and the `confidence(plan)` gate; it is the one place `aw` uses `Edit`/`Write` on
+  a Full task, and it must never be used to sidestep an *available* split.
 - **Episodic lessons are advisory-only.** An `aw-lessons` lesson biases the plan
   but never silently changes a gate, skips a phase, or alters a cap. The only
   path from a lesson to changed behavior is a confidence-gated, user-approved
@@ -530,6 +535,12 @@ Design rules that keep this from rotting:
   Full (loses the documented context-isolation win), and do not route Micro/Lite
   through the split (pure handoff overhead). The two specialist agents remain
   the Full-tier realization; `aw` is the router + Micro/Lite single-pass runner.
+  **The single-context Full fallback is the sole exception**, and only when the
+  split is *structurally* unavailable (the harness disables `Task`, e.g. Claude
+  Code on the web): there `aw` plays both roles in one window, keeping the
+  `plan.md` artifact + `confidence(plan)` gate but conceding context isolation
+  (which the harness has already made impossible). It is never a license to skip
+  an available split — the check is "can I dispatch?", not "do I feel like it?".
 - **Micro reuses the Lite phase path.** Micro is a routing tier, not a fourth
   set of phase rules — it follows Lite's phase behavior with planning and quality
   companions skipped. This keeps the phase rules from needing a third column.
@@ -714,8 +725,14 @@ they must be exercised live (markdown can't prove them). Run this after editing
 3. **Full routing (nested dispatch — the R1 risk):** invoke `@aw` on a 4-file /
    architectural task. Expect: `Tier: Full`, then `aw` **dispatches `aw-planner`**
    (a gated `plan.md` appears), then **`aw-executor`**. If the harness refuses
-   nested sub-agent dispatch, `aw` must fall back to telling you to run them —
-   confirm it does **not** silently downgrade to single-pass.
+   nested sub-agent dispatch (e.g. Claude Code on the web, where `Task` is
+   disabled), `aw` must run the **single-context Full** fallback: play the planner
+   role in-context to produce a gated `plan.md` + `checks.yaml`, clear
+   `confidence(plan) ≥ 90%`, then play the executor role through Phases 3–7 — all
+   in the one window. Confirm it produces `plan.md` and clears the gate, and that
+   it does **not** silently downgrade to the Lite/Micro single-pass path (no plan,
+   no gate). Only when `Edit`/`Write`/`Bash` are *also* unavailable should it fall
+   back to telling you to run the two agents yourself.
 4. **Universal loop + two-scope writes (the R2 risk):** run two checks against
    LoreKit (`memory.search { q, scopes: ["repo::{owner}/*", "global"], tags: ["loop::aw-lessons"] }` to inspect).
    - **Universal lesson:** after a run where the lesson is generic (e.g. trigger-context like `*.tsx` or `monorepo refactor`), confirm the lesson was written to the **`global`** scope (tag `loop::aw-lessons`) and NOT to `repo::{owner}/{repo}`. If it landed in the repo scope, the classifier mis-routed a universal lesson.
@@ -746,6 +763,35 @@ end-user-facing; this file is contributor-facing.
 ---
 
 ## History
+
+- **v3.19.0** — Single-context Full fallback for harnesses without sub-agent
+  dispatch (e.g. Claude Code on the web, where `Task` is disabled). Before this,
+  `aw`'s Full-tier fallback was under-specified and self-contradictory: the
+  dispatch section said "invoke them yourself if your tools permit" while the Hard
+  rules forbade `aw` from ever using `Edit`/`Write` on a Full task, so an `aw` run
+  in the cloud env hit `Failed to run agent` and had to improvise a justification
+  before doing the work in-context. This makes that emergent behavior the
+  **sanctioned, reproducible path**: when the split is *structurally* unavailable,
+  `aw` runs the Full phases in one window — playing the planner role (Phases 0–2,
+  producing `plan.md` + `checks.yaml`, clearing `confidence(plan) ≥ 90%`) then the
+  executor role (Phases 3–7). It preserves the plan artifact and the confidence
+  gate — the two load-bearing wins of the split — and concedes only context
+  isolation, which the harness has already made impossible. It is explicitly
+  **not** a downgrade to Lite/Micro single-pass, and never a license to skip an
+  *available* split (the guard is "can I dispatch?", not preference). The "tell the
+  user to run the agents themselves" text is demoted to a last resort for when
+  `Edit`/`Write`/`Bash` are *also* unavailable. Coupled surfaces updated in
+  lockstep: `templates/aw.agent.md` (Full-tier dispatch section, the Routing
+  table's Full row, and the `Edit`/`Write` Hard rule — all three now condition on
+  dispatch availability), `templates/routing.rule.md` (dispatch-unavailable branch
+  pointing at that section), `SKILL.md` (v3.19.0; the Templates section states the
+  single-context Full fallback and links the agent definition for the procedure),
+  and this file's thin-router invariant, split-is-Full-only design-intent
+  invariant, and the `aw` dispatcher smoke test (step 3 now exercises the
+  single-context path).
+  Deliberately NOT changed: the tier-detection table (L1 Check B keeps it
+  byte-identical to `SKILL.md` Step 1), the preferred dispatch-the-split path when
+  `Task` is available, and every `checks.yaml` / `confidence(plan)` integrity rule.
 
 - **v3.18.0** — Artifact lightening: checks-primary, lean plan, opt-in snapshots.
   Rebalanced the Full-Mode artifacts around the two-jobs distinction above

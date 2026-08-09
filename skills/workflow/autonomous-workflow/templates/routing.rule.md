@@ -31,6 +31,24 @@ off to `aw-planner` → `aw-executor`. This replaces the old "dispatch the plann
 first" rule — routing through `aw` fixes the case where a Lite task (which has
 no `plan.md`) was sent to the planner anyway.
 
+**If sub-agent dispatch is unavailable (e.g. Claude Code on the web, where the
+`Task` tool is disabled)** you cannot dispatch `aw` as a sub-agent. Do not drop
+the request — load the workflow and play the dispatcher role yourself in-context:
+
+```
+Skill("autonomous-workflow")
+```
+
+Then follow its tier detection and route. Micro/Lite run single-pass as usual;
+for **Full**, run the **single-context Full** path (planner role → gated `plan.md`
++ `checks.yaml` → executor role through Phases 3–7 in the one window). This keeps
+the plan artifact and the `confidence(plan)` gate; it is not a downgrade to Lite.
+
+> `SKILL.md` is a thin index: it summarises the single-context Full fallback and
+> points onward for the detail. The step-by-step procedure lives in the `aw` agent
+> definition (`templates/aw.agent.md`), section **"When sub-agent dispatch is
+> unavailable"** — read that section for the phase-by-phase fallback.
+
 You may also dispatch `aw-planner` / `aw-executor` directly when you already know
 the task is Full and want to skip tier detection.
 
