@@ -947,7 +947,8 @@ Both PASS and FAIL continue with:
 
 **Quality Gate**: produced <P>, carried forward <CF>, relevance-memory drops <RM>, filter drops <FL>,
 dedupe drops <D>, grounding drops <G>, confidence drops <C> (threshold <T>), shape drops <S>,
-cleared <CL>, deferred over inline cap <DEF>, posted inline <F>.
+cleared <CL>, deferred over inline cap <DEF>, posted inline <F>,
+anchorless carried <AC>, anchorless resolved <AR>.
 CI: PASS or FAIL (check names if failing).
 Standards conformance (2.4d):
   Status:             ran | skipped (trivial diff) | skipped (--no-standards) | skipped (incremental-quick) | skipped (no governing docs found)
@@ -971,7 +972,11 @@ Optimality review (2.4c):
 Omit this section when `<OP> == 0`. Otherwise one card per proposal, rendered from
 `skills/quality/optimize-approach/templates/proposal.template.md`.
 
-`carried forward`, `cleared`, and `deferred over inline cap` are emitted even when they are 0,
+`anchorless carried <AC>` and `anchorless resolved <AR>` are the `Anchorless carried: <C> · resolved: <R>`
+counts from `prior-comment-awareness.md § Carry-forward of anchorless findings`; this terminal block is
+their only rendering slot — the posted body has none, and Step 4 forbids prose outside its template.
+
+`carried forward`, `cleared`, `deferred over inline cap`, `anchorless carried`, and `anchorless resolved` are emitted even when they are 0,
 so the reader can see the steps ran (`per-comment-confidence.md § Logging`,
 `prior-comment-awareness.md § Logging`). `<CL> - <DEF>` must equal `<F>`; if it does not, a
 cleared finding was dropped somewhere it should not have been.

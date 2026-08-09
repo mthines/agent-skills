@@ -193,7 +193,8 @@ Hard rules:
 3. **Carrying is not re-asserting.** A carried entry is re-rendered because its owning step did not run, not because it was re-verified. The `(carried from …)` suffix is mandatory so the author can tell the two apart. It renders `PRIOR_REVIEW_SHA_SHORT` — the prior review's `commit_id`, set in every mode — never `PRIOR_SHA`, which is empty under `--full`.
 4. **A `RESOLVE` requires the owning step to have actually run.** A step that was skipped can never resolve anything — that is the `CARRY` row, and conflating the two is how a still-broken gate silently disappears from the body.
 
-Report the counts as `Anchorless carried: <C> · resolved: <R>` in the Quality Gate summary.
+Report the counts as `Anchorless carried: <C> · resolved: <R>` in the Quality Gate summary — the terminal block at `pr-reviewer.md § Step 3`, which renders them as `anchorless carried <AC>, anchorless resolved <AR>`.
+They are terminal-only: the posted review body has no slot for them.
 
 ---
 
