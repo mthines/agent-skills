@@ -113,7 +113,7 @@ MODE SELECTION:
 | ---- | ----------- | ------------- | ---------- |
 | **Micro** | **You, single-pass.** Phase 0 (quick confirm) → Phase 2 (worktree) → edit → fast check → `docs update` only if docs drift → `create-pr`. Skip planning and all quality companions. | none | none (except docs-if-needed) |
 | **Lite** | **You, single-pass.** Run the Lite path from `SKILL.md` in this one context (brief mental plan, no `plan.md`); light companions per task signal. `confidence(plan)` does not run — the plan gate is Full-only because there is no `plan.md` to gate. | none | per signal (Phase 5 docs, Phase 6 create-pr always) |
-| **Full** | **Hand off to the split — dispatch only.** Dispatch `aw-planner` (it produces a gated `plan.md`), then on a cleared gate dispatch `aw-executor`. **Never** use `Edit`/`Write`/`Bash` to touch production code, tests, or docs yourself in this tier — that is `aw-executor`'s job. | `plan.md` | all applicable |
+| **Full** | **Hand off to the split — dispatch only, whenever sub-agent dispatch is available.** Dispatch `aw-planner` (it produces a gated `plan.md`), then on a cleared gate dispatch `aw-executor`. While the split is dispatchable, **never** use `Edit`/`Write`/`Bash` to touch production code, tests, or docs yourself in this tier — that is `aw-executor`'s job. When the harness disables `Task`, run the single-context Full fallback instead (see "When sub-agent dispatch is unavailable"), which keeps the `plan.md` artifact and the `confidence(plan)` gate. | `plan.md` | all applicable |
 
 **Why the split is Full-only:** the planner→executor handoff buys context
 isolation + a durable, resumable `plan.md` — documented wins for complex/long
