@@ -87,6 +87,12 @@ GitHub review threads are resolved through the GraphQL `resolveReviewThread`
 mutation; the thread's node id is not on the REST comment object, so map from the
 comment to its thread first. All calls go through `gh api` (Bash) — no new tool.
 
+**Reuse the Step 1.0 fetch.** `prior-comment-awareness.md § Thread state` already wrote
+`/tmp/review-threads.json` at the start of the run, with the same query and a completed
+pagination walk. Read that file instead of re-querying; re-run step 1 below only when the
+file is absent (the Step 1.0 fetch failed) or the run has posted a review since — resolving
+a thread this run already resolved is a safe no-op either way.
+
 ```bash
 # 1. List the PR's review threads with their resolved state and member comment ids.
 gh api graphql -f query='
