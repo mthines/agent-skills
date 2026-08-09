@@ -44,11 +44,10 @@ for **Full**, run the **single-context Full** path (planner role → gated `plan
 + `checks.yaml` → executor role through Phases 3–7 in the one window). This keeps
 the plan artifact and the `confidence(plan)` gate; it is not a downgrade to Lite.
 
-> `SKILL.md` is a thin index and describes only the preferred Full routing (hand
-> off to `aw-planner` → `aw-executor`). The single-context Full procedure it
-> points at lives in the `aw` agent definition (`templates/aw.agent.md`), section
-> **"When sub-agent dispatch is unavailable"** — read that section, not `SKILL.md`,
-> for the step-by-step fallback.
+> `SKILL.md` is a thin index: it summarises the single-context Full fallback and
+> points onward for the detail. The step-by-step procedure lives in the `aw` agent
+> definition (`templates/aw.agent.md`), section **"When sub-agent dispatch is
+> unavailable"** — read that section for the phase-by-phase fallback.
 
 You may also dispatch `aw-planner` / `aw-executor` directly when you already know
 the task is Full and want to skip tier detection.
