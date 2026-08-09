@@ -331,11 +331,14 @@ A **scaffold** run is done when:
       `pull_request_review_comment`, `pull_request_review`, or a
       `workflow_dispatch` a comment or bot fired, per the trigger table in
       [`rules/feedback.md`](./rules/feedback.md#when-this-rule-applies) — the
-      workflow acknowledges on the triggering comment with a 👀 reaction as
-      its first step and reports the outcome on both paths — a 🚀/👍 reaction
-      on success, a 👎 reaction plus a run-linked comment on failure — with
-      `issues: write` / `pull-requests: write` granted and the command gated
-      before it reacts. A `workflow_dispatch` fired from the Actions UI has no
+      workflow acknowledges as its first step and reports the outcome on both
+      paths, with `issues: write` / `pull-requests: write` granted and the
+      command gated before it acknowledges. Where the trigger carries a
+      reactable comment that means a 👀 reaction first, then a 🚀/👍 reaction
+      on success and a 👎 reaction plus a run-linked comment on failure.
+      A `pull_request_review` trigger carries none — GitHub exposes no
+      reactions endpoint for a review — so it uses a single sticky PR comment
+      for both beats. A `workflow_dispatch` fired from the Actions UI has no
       triggering comment and is out of scope.
 - [ ] If using OIDC, `id-token: write` is set at the job level only.
 - [ ] User received a one-paragraph summary of what was created and

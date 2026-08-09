@@ -20,12 +20,16 @@ stares at a comment with no indication that anything is happening — no
 status check, no spinner, nothing.
 If the run silently fails, they never find out.
 
-**Rule:** every workflow triggered by a comment — directly, or through a
-`workflow_dispatch` that a comment or a bot fired — and that produces no
-obvious PR status check **must** give feedback on the triggering comment:
-an acknowledgement when it starts, and an outcome when it ends.
-A `workflow_dispatch` fired from the Actions UI has no triggering comment,
-so it is out of scope.
+**Rule:** every workflow triggered by a comment or a review — directly, or
+through a `workflow_dispatch` that a comment or a bot fired — and that
+produces no obvious PR status check **must** report back: an
+acknowledgement when it starts, and an outcome when it ends.
+Deliver both on the triggering comment whenever there is one.
+A `pull_request_review` trigger has none — GitHub exposes no reactions
+endpoint for a review — so it acknowledges and reports with a single
+sticky PR comment instead, updated in place (see the route table below).
+A `workflow_dispatch` fired from the Actions UI has no triggering comment
+at all, so it is out of scope.
 
 ## When this rule applies
 
