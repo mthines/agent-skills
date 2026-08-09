@@ -27,7 +27,8 @@ acknowledgement when it starts, and an outcome when it ends.
 Deliver both on the triggering comment whenever there is one.
 A `pull_request_review` trigger has none — GitHub exposes no reactions
 endpoint for a review — so it acknowledges and reports with a single
-sticky PR comment instead, updated in place (see the route table below).
+sticky PR comment instead, found by marker and updated in place
+(see [The sticky comment](#the-sticky-comment-for-a-review-trigger)).
 A `workflow_dispatch` fired from the Actions UI has no triggering comment
 at all, so it is out of scope.
 
@@ -100,7 +101,7 @@ Read the row for your trigger before you copy any snippet below.
 | ------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------- |
 | `issue_comment`                | `${{ github.event.comment.id }}`                       | `/repos/{owner}/{repo}/issues/comments/{id}/reactions`          | `${{ github.event.issue.number }}`            |
 | `pull_request_review_comment`  | `${{ github.event.comment.id }}`                       | `/repos/{owner}/{repo}/pulls/comments/{id}/reactions`           | `${{ github.event.pull_request.number }}`     |
-| `pull_request_review`          | none — the payload carries `github.event.review.id`    | none — react to nothing; post the outcome as a PR comment on `/repos/{owner}/{repo}/issues/{pr}/comments` | `${{ github.event.pull_request.number }}` |
+| `pull_request_review`          | none — the payload carries `github.event.review.id`    | none — use the sticky PR comment below instead of a reaction | `${{ github.event.pull_request.number }}` |
 | `workflow_dispatch` (comment/bot-fired) | none — the dispatching bot passes it, e.g. `${{ inputs.comment_id }}` | the route matching the id the caller passed (`issues` or `pulls`) | pass it as an input too, e.g. `${{ inputs.pr_number }}` |
 
 Confirm the row once with a read-only probe before you rely on it:
@@ -115,6 +116,49 @@ Every snippet below uses the `issue_comment` row.
 For `pull_request_review_comment`, swap `issues/comments` for
 `pulls/comments` and `github.event.issue.number` for
 `github.event.pull_request.number`.
+
+### The sticky comment for a review trigger
+
+A trigger with no reactable comment needs a surface that can be written
+once and rewritten on every later beat.
+That is one PR comment, found by a hidden marker and updated in place.
+Three routes, all on the **issue** namespace because a PR is an issue:
+
+| Step | Route |
+| ---- | ----- |
+| Find it | `GET /repos/{owner}/{repo}/issues/{pr}/comments`, then match on the marker |
+| Create it (first beat only) | `POST /repos/{owner}/{repo}/issues/{pr}/comments` |
+| Update it (every later beat) | `PATCH /repos/{owner}/{repo}/issues/comments/{id}` |
+
+Put the find-or-create in one step and reuse it for all three beats:
+
+```yaml
+- name: Acknowledge (sticky comment)
+  env:
+    GH_TOKEN: ${{ github.token }}
+    PR: ${{ github.event.pull_request.number }}
+    MARKER: '<!-- deploy-status -->'
+    RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+  run: |
+    set -euo pipefail
+    ID=$(gh api "/repos/${{ github.repository }}/issues/$PR/comments" --paginate \
+      --jq "[.[] | select(.body | startswith(\"$MARKER\"))] | .[0].id // empty")
+    BODY=$(printf '%s\n👀 Command picked up — [view run](%s)' "$MARKER" "$RUN_URL")
+    if [ -n "$ID" ]; then
+      gh api --method PATCH \
+        "/repos/${{ github.repository }}/issues/comments/$ID" \
+        -f body="$BODY" 2>&1 | tee sticky.log
+    else
+      ID=$(gh api --method POST \
+        "/repos/${{ github.repository }}/issues/$PR/comments" \
+        -f body="$BODY" --jq '.id' | tee sticky.log)
+    fi
+    echo "STICKY_ID=$ID" >> "$GITHUB_ENV"
+```
+
+The later beats reuse `STICKY_ID` and `PATCH` the same comment, so the
+run leaves exactly one comment behind however many beats it reports.
+The same recipe is the progress comment of beat 2 for **any** trigger.
 
 ### Gate the command first (security)
 
