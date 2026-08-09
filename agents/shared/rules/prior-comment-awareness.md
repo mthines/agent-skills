@@ -163,17 +163,51 @@ A finding can therefore be deferred across several incremental runs, but it can 
 
 ---
 
+## Carry-forward of anchorless findings
+
+`Additional findings` is not the only body-only output of a review pass.
+A gate finding has **no inline anchor by design** — a `❌` on *Prior bot feedback*, *Documentation*, or *Self-review signals* exists only as a row in the gate-status table inside the `Review diagnostics` accordion.
+Optimality proposals (2.4c) are rendered as body cards and never inline.
+Standards findings (2.4d) cite a governing-doc `path:line` that is usually not in the diff at all.
+None of these are re-derivable from the delta, and two of the three steps that produce them are **skipped** in `incremental-quick`.
+Without this rule a re-review silently drops every one of them, and the PR conversation loses context the author still needs.
+
+Run this immediately after the deferred-finding carry-forward, in every mode, over the `PRIOR_DIAGNOSTICS` parsed at `pr-reviewer.md § Step 0.7 → Parsing PRIOR_DIAGNOSTICS`.
+
+Each carried entry gets exactly one disposition:
+
+| Condition | Disposition |
+| --- | --- |
+| The owning step ran this pass and reproduced the entry | **REPLACE** — the fresh entry wins; the carried copy is discarded (it is the same finding, freshly grounded). |
+| The owning step ran this pass and did **not** reproduce it | **RESOLVE** — drop it, and log `resolved since <PRIOR_SHA_SHORT>`. This is the only path that removes a finding from the body. |
+| The owning step was **skipped** this pass (2.4c/2.4d under `incremental-quick`, holistic under an incremental mode, `--no-optimize` / `--no-standards` / `--skip-gates`) | **CARRY** — re-render the prior entry verbatim in this run's body, suffixed `(carried from <PRIOR_SHA_SHORT>)`. Never let a skipped step read as a clean result. |
+| The entry cannot be mapped to an owning step (unparseable or from an older template) | **DROP** with a log line; never re-render an entry you cannot attribute. |
+
+Owning steps: gate rows → Step 1.8; optimality cards → Step 2.4c; standards findings → Step 2.4d; `Skipped files` → Step 1.2 / 2; `PARTIAL_REVIEW_BANNER` → the step that set it.
+
+Hard rules:
+
+1. **A carried gate row never sets a gate's status.** Step 1.8 evaluates every gate against the **current** PR state in every run mode, exactly as it does today. `PRIOR_GATE_STATE` is context for the *Details* text and for the resolve/carry decision — it can neither fail a passing gate nor pass a failing one.
+2. **A carried entry never changes the verdict on its own.** Optimality has never blocked the verdict and still does not; standards findings keep their existing non-blocking behaviour.
+3. **Carrying is not re-asserting.** A carried entry is re-rendered because its owning step did not run, not because it was re-verified. The `(carried from …)` suffix is mandatory so the author can tell the two apart.
+4. **A `RESOLVE` requires the owning step to have actually run.** A step that was skipped can never resolve anything — that is the `CARRY` row, and conflating the two is how a still-broken gate silently disappears from the body.
+
+Report the counts as `Anchorless carried: <C> · resolved: <R>` in the Quality Gate summary.
+
+---
+
 ## Logging
 
-The Quality Gate summary adds three rows:
+The Quality Gate summary adds four rows:
 
 ```text
 Prior-comment dedup drops: N  (already said in a prior review pass)
 Anti-flip-flop drops:      M  (would contradict a resolved prior suggestion)
 Carried forward:           K  (deferred by a prior incremental run, re-admitted)
+Anchorless carried:        C  · resolved: R  (gate / optimality / standards findings from the prior body)
 ```
 
-All three are emitted even when N = 0, M = 0, and K = 0, so the user can see the step ran.
+All four are emitted even when N = 0, M = 0, K = 0, C = 0, and R = 0, so the user can see the step ran.
 
 ---
 
