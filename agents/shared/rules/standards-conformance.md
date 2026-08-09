@@ -229,7 +229,7 @@ A silent run and a skipped run are different outcomes; without the block the rea
 them apart.
 A run that discovered governing docs and emitted 0 findings is healthy — most diffs conform.
 
-The `Review diagnostics` `<details>` block in Step 4 carries a standards diagnostics line on all
+The `Review details` `<details>` block in Step 4 carries a standards diagnostics line on all
 three bodies (PASS, WARN, FAIL):
 
 ```text
