@@ -1407,6 +1407,11 @@ Rules for table cells:
 - Details column: plain text only, max 120 chars per cell.
 - When a gate PASSES (✅), its Details cell shows the short static description of what the gate
   checks, verbatim from the table below.
+  One exception: when Gate 3 passed on **unverified** thread state (state unavailable or the thread
+  map incomplete — see *Gate 3*), its Details cell holds
+  `thread state unavailable — <N> comment(s) unverified` instead of the static description. This is
+  the only ✅ cell that is not the verbatim static text, and it never changes the ✅ status or the
+  variant selection.
 - When a gate WARNS (⚠️) or FAILS (❌), its Details cell shows the specific finding text (max 120
   chars — truncate; the full finding lives in the inline comment), exactly as before.
 - `⏭️` is a valid Status value in **every** body variant — PASS, WARN, and FAIL — in addition to the
