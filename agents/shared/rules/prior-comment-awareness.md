@@ -51,7 +51,9 @@ gh api repos/$REPO/pulls/$PR_NUMBER/comments \
 BOT_COMMENTS=$(jq --arg login "$BOT_LOGIN" '[.[] | select(.user_login == $login)]' /tmp/prior-comments.json)
 
 # Thread state — the authoritative resolved/unresolved signal. See § Thread state below.
-gh api graphql -f query='
+# `reviewThreads` caps at 100 and `--paginate` does not work for GraphQL, so walk
+# `endCursor` until `hasNextPage` is false and concatenate the pages.
+THREADS_QUERY='
   query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
     repository(owner:$owner,name:$repo){
       pullRequest(number:$pr){
@@ -61,8 +63,30 @@ gh api graphql -f query='
         }
       }
     }
-  }' -F owner="$OWNER" -F repo="$REPO_NAME" -F pr="$PR_NUMBER" > /tmp/review-threads.json
+  }'
+
+: > /tmp/review-thread-pages.json
+CURSOR=""
+THREADS_COMPLETE=true
+while :; do
+  if ! gh api graphql -f query="$THREADS_QUERY" \
+       -F owner="$OWNER" -F repo="$REPO_NAME" -F pr="$PR_NUMBER" \
+       -F cursor="${CURSOR:-null}" >> /tmp/review-thread-pages.json; then
+    THREADS_COMPLETE=false
+    break
+  fi
+  PAGE=$(tail -n 1 /tmp/review-thread-pages.json)
+  HAS_NEXT=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' <<< "$PAGE")
+  CURSOR=$(jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' <<< "$PAGE")
+  [ "$HAS_NEXT" = "true" ] || break
+done
+
+# One merged document with every page's nodes, in the shape the checks below read.
+jq -s '{nodes: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' \
+  /tmp/review-thread-pages.json > /tmp/review-threads.json
 ```
+
+`THREADS_COMPLETE=false` means the walk stopped early — treat the thread map as **incomplete** per *Pagination guard* below, never as "no more threads".
 
 Store `BOT_COMMENTS`, `/tmp/prior-comments.json` and `/tmp/review-threads.json` for use in the thread-state, dedup and anti-flip-flop checks below.
 
