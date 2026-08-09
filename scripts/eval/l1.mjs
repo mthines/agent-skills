@@ -552,7 +552,7 @@ function checksInSync(plan, checks) {
       /narrative|aspirational/i.test(sc) &&
       (/path:line/i.test(sc) || /grounding/i.test(sc)));
 
-    // G17e: pr-reviewer.md has a standards diagnostics line in the Review diagnostics block
+    // G17e: pr-reviewer.md has a standards diagnostics line in the Review details block
     // AND the standards-specific precedence statement.
     // A bare /precedence|conflict/ sweep is tautological here: the base file already matches it
     // three times (Step 0.7's lesson-collision sentence, Gate 4's merge-conflict markers, and the
@@ -627,7 +627,7 @@ function checksInSync(plan, checks) {
   }
 
   // G19: the pr-reviewer posted review body uses a concise headline at the top level and the
-  // gate-status table lives only inside the Review diagnostics accordion.
+  // gate-status table lives only inside the Review details accordion.
   // Reads the REAL shipped agents/pr-reviewer.md — never re-encode expected strings as
   // a self-comparison (aw-lessons::mock-that-reimplements-the-thing-under-test).
   // Mirrors the G18 literal-sentence + positional-slice idiom.
@@ -645,8 +645,8 @@ function checksInSync(plan, checks) {
       prReviewer.includes("Blocking: <FAIL_REASONS>."));
 
     // G19d: in every Step-4 template block, every '| Gate | Status' line appears AFTER
-    // a '<summary>Review diagnostics' anchor — proving the table is inside the accordion,
-    // never between the <!-- PR_REVIEWER_REPORT --> marker and <sup>FOOTER_LINE</sup>.
+    // a '<summary>Review details' anchor — proving the table is inside the accordion,
+    // never at the top level between the <!-- PR_REVIEWER_REPORT --> marker and the accordion.
     // Slices only the Step-4 region (after '### Review body format', before
     // '### INLINE_COMMENTS_JSON format') to avoid false-matching the Step-3 terminal
     // tables at lines 818/844/870.
@@ -662,17 +662,17 @@ function checksInSync(plan, checks) {
       const blocks     = step4.split("<!-- PR_REVIEWER_REPORT -->").slice(1)
         .filter((b) => b.includes("Reviewed your changes"));
       // For each block: if a gate table row is present it must appear AFTER the
-      // '<summary>Review diagnostics' line (i.e. inside the accordion).
+      // '<summary>Review details' line (i.e. inside the accordion).
       let allTablesInsideAccordion = blocks.length >= 3;
       for (const b of blocks) {
         const gatePos = b.indexOf("| Gate | Status");
-        const diagPos = b.indexOf("<summary>Review diagnostics");
+        const diagPos = b.indexOf("<summary>Review details");
         // Gate table present but accordion comes after (or is absent) → table is at top level.
         if (gatePos !== -1 && (diagPos === -1 || gatePos < diagPos)) {
           allTablesInsideAccordion = false;
         }
       }
-      s.check("G19d pr-reviewer.md Step-4 gate tables all appear inside the Review diagnostics accordion (not at top level)",
+      s.check("G19d pr-reviewer.md Step-4 gate tables all appear inside the Review details accordion (not at top level)",
         allTablesInsideAccordion);
 
       // G19e: the review-body footer no longer carries the redundant CI-status sentence.
@@ -687,6 +687,24 @@ function checksInSync(plan, checks) {
       s.check("G19f pr-reviewer.md Step-4 gate table is 3-column with a static description on ✅",
         step4.includes("| Gate | Status | Details |") &&
         step4.includes("The multi-lens review found no blocking issues."));
+
+      // G19g: the '<sup>FOOTER_LINE</sup>' commit line renders INSIDE the accordion in every
+      // Step-4 template block — after the '<summary>Review details' line and before the gate
+      // table — never at the top level. Guards the requested move of the commit line into the
+      // Review details block. Per block: FOOTER_LINE must sit between the summary and the table.
+      let allFootersInsideAccordion = blocks.length >= 3;
+      for (const b of blocks) {
+        const diagPos   = b.indexOf("<summary>Review details");
+        const footerPos  = b.indexOf("<sup>FOOTER_LINE</sup>");
+        const gatePos   = b.indexOf("| Gate | Status");
+        // Footer must be present, after the accordion summary, and before the gate table.
+        if (footerPos === -1 || diagPos === -1 ||
+            footerPos < diagPos || (gatePos !== -1 && footerPos > gatePos)) {
+          allFootersInsideAccordion = false;
+        }
+      }
+      s.check("G19g pr-reviewer.md Step-4 commit footer (FOOTER_LINE) renders inside the Review details accordion",
+        allFootersInsideAccordion);
     }
   }
 }

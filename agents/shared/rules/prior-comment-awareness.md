@@ -166,7 +166,7 @@ A finding can therefore be deferred across several incremental runs, but it can 
 ## Carry-forward of anchorless findings
 
 `Additional findings` is not the only body-only output of a review pass.
-A gate finding has **no inline anchor by design** — a `❌` on *Prior bot feedback*, *Documentation*, or *Self-review signals* exists only as a row in the gate-status table inside the `Review diagnostics` accordion.
+A gate finding has **no inline anchor by design** — a `❌` on *Prior bot feedback*, *Documentation*, or *Self-review signals* exists only as a row in the gate-status table inside the `Review details` accordion.
 Optimality proposals (2.4c) are rendered as body cards and never inline.
 The `**Standards (2.4d)**` log line records whether that lens ran at all; its individual findings go inline or into `Additional findings`, so they travel with `CARRIED_FINDINGS` and are not re-parsed here.
 None of these are re-derivable from the delta, and 2.4c and 2.4d are both **skipped** in `incremental-quick`.

@@ -251,7 +251,7 @@ The bullet count MUST equal the `used` count — the number of memories that fir
 downgrades + promotes). A mismatch means an applied memory was dropped from the list instead of
 linked. When nothing fired, render only the header line (`… · 0 used`). Which report surface renders
 this block is the consuming agent's contract — `pr-reviewer` renders it inside the posted review
-body's `Review diagnostics` block (Step 4), where the collapsed title also headlines the `used`
+body's `Review details` block (Step 4), where the collapsed title also headlines the `used`
 count.
 
 ---
