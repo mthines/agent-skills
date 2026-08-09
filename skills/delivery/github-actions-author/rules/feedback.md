@@ -46,18 +46,25 @@ at all, so it is out of scope.
 
 Every comment-triggered workflow follows the same shape.
 
+Which surface each beat writes to depends on the trigger — read
+[Pick the reaction route from the trigger](#pick-the-reaction-route-from-the-trigger--the-id-namespaces-are-disjoint)
+once, then apply the beats below on that surface.
+
 1. **Acknowledge — first step, before any real work.**
-   React to the triggering comment with 👀 (`eyes`) the moment the run
-   starts, so the user knows it was picked up.
+   Signal "picked up" the moment the run starts: 👀 (`eyes`) on the
+   triggering comment where the trigger has one, otherwise the sticky PR
+   comment.
    This must be the **first** step after gating (below), not the last —
-   a reaction that only lands after a 4-minute build is useless.
+   an acknowledgement that only lands after a 4-minute build is useless.
 2. **Progress (optional).** For long runs, create **one** sticky status
    comment and update it in place (never post a fresh comment per tick —
    that is notification spam).
 3. **Report outcome — always, on both paths.**
-   On success, add a 🚀/🎉/👍 reaction.
-   On failure, add a 👎 reaction **and** post a comment with the reason
-   and a link to the run, so the user can act without hunting.
+   On success, a 🚀/🎉/👍 reaction, or the sticky comment rewritten to say
+   so.
+   On failure, a 👎 reaction **and** a comment with the reason and a link
+   to the run — or the same two facts in the sticky comment — so the user
+   can act without hunting.
 
 ## Reaction vocabulary
 
@@ -323,7 +330,8 @@ completely invisible — no reaction, no comment, no link.
 ## Common mistakes
 
 - **Feedback only at the end.** The user is blind during the run.
-  **Fix:** react 👀 as the **first** step.
+  **Fix:** acknowledge as the **first** step, on the surface the trigger
+  provides.
 - **No failure branch.** Success is signalled, failure is silent.
   **Fix:** an `if: failure()` step that reacts **and** links the run.
 - **Failure reaction with no run link.** User knows it broke, not where.

@@ -8,8 +8,8 @@ description: >
   least-privilege `GITHUB_TOKEN`, concurrency), trackable errors
   (named steps, step summaries, annotations, and stdout/stderr that always
   reaches the run log so agents can act on failures), and feedback for
-  comment-triggered runs (👀 acknowledgement reaction on start, 🚀/👎
-  outcome reaction plus a run-linked comment at the end). Two modes: `scaffold`
+  comment-triggered runs (acknowledge on start and report the outcome at the
+  end, on the surface the trigger provides). Two modes: `scaffold`
   (default) generates workflow YAML; `review` audits an existing
   workflow against the same rules. Use when creating CI/CD pipelines,
   optimizing slow workflows, deduping copy-pasted YAML across repos, or
@@ -104,7 +104,7 @@ Five phases. Each has a gate; do not proceed until it passes.
 | 1     | Anatomy + triggers    | [`rules/workflow-anatomy.md`](./rules/workflow-anatomy.md), [`rules/triggers-and-concurrency.md`](./rules/triggers-and-concurrency.md) | `on:` block scoped (branches + paths), concurrency set.           |
 | 2     | Speed (cache + parallel) | [`rules/caching.md`](./rules/caching.md), [`rules/parallelization.md`](./rules/parallelization.md) | Cache key is `hashFiles`-based with `restore-keys`; independent jobs run in parallel. |
 | 3     | Reusability           | [`rules/reusability.md`](./rules/reusability.md)                              | Any block used > 1 place is extracted to a composite action or reusable workflow. |
-| 4     | Security + errors     | [`rules/security.md`](./rules/security.md), [`rules/observability.md`](./rules/observability.md), [`rules/log-output-visibility.md`](./rules/log-output-visibility.md), [`rules/feedback.md`](./rules/feedback.md) | Third-party actions SHA-pinned, `permissions:` minimal, every step named, failures surface a stack-trace path, **every command's stdout + stderr reaches the run log**, and any comment-triggered workflow — including a `workflow_dispatch` a comment or bot fired, but not one fired from the Actions UI — acknowledges (👀) and reports its outcome (🚀/👎 + run link). |
+| 4     | Security + errors     | [`rules/security.md`](./rules/security.md), [`rules/observability.md`](./rules/observability.md), [`rules/log-output-visibility.md`](./rules/log-output-visibility.md), [`rules/feedback.md`](./rules/feedback.md) | Third-party actions SHA-pinned, `permissions:` minimal, every step named, failures surface a stack-trace path, **every command's stdout + stderr reaches the run log**, and any comment-triggered workflow — including a `workflow_dispatch` a comment or bot fired, but not one fired from the Actions UI — acknowledges as its first step and reports its outcome on both paths, on the surface its trigger provides (per the route table in [`rules/feedback.md`](./rules/feedback.md)). |
 
 ### Phase 0 — Intent and shape
 
@@ -263,10 +263,10 @@ Drop-in starters in [`templates/`](./templates/):
     status check (`issue_comment`, `pull_request_review_comment`,
     `pull_request_review`, or a `workflow_dispatch` a comment or bot fired)
     is invisible. Acknowledge as the **first** step, then report the outcome
-    on **both** paths — a 🚀/👍 reaction on success, a 👎 reaction plus a
-    comment linking the run on failure. `pull_request_review` has no
-    reactable comment, so it uses a single sticky PR comment for both beats.
-    See [`rules/feedback.md`](./rules/feedback.md).
+    on **both** paths, and always link the run on failure. The surface is
+    per-trigger — a reaction where the trigger carries a comment, a sticky PR
+    comment where it does not. See
+    [`rules/feedback.md`](./rules/feedback.md).
 
 ---
 
@@ -288,10 +288,11 @@ Drop-in starters in [`templates/`](./templates/):
 - Diagnostics uploaded as an artifact or written only to `$GITHUB_STEP_SUMMARY`.
 - `|| true` or `continue-on-error: true` with nothing echoed.
 - `tee` without `set -o pipefail` (green job, failed command).
-- Comment/slash-command workflow that never reacts to the triggering comment (user can't tell it ran).
-- Feedback only on success — a failed comment-triggered run left with no reaction or comment.
-- Failure reaction (👎) with no comment linking the run (user knows it broke, not where).
-- Reacting to a comment before gating the command by author / prefix (any user drives the bot).
+- Comment-triggered workflow that never acknowledges its trigger (user can't tell it ran).
+- Feedback only on success — a failed comment-triggered run left with no outcome signal.
+- Failure signalled with no link to the run (user knows it broke, not where).
+- Acknowledging before gating the command by author / prefix (any user drives the bot).
+- Reacting on `/issues/comments/{id}` for a review comment, or expecting to react to a `pull_request_review` at all.
 
 ---
 
@@ -333,14 +334,12 @@ A **scaffold** run is done when:
       `workflow_dispatch` a comment or bot fired, per the trigger table in
       [`rules/feedback.md`](./rules/feedback.md#when-this-rule-applies) — the
       workflow acknowledges as its first step and reports the outcome on both
-      paths, with `issues: write` / `pull-requests: write` granted and the
-      command gated before it acknowledges. Where the trigger carries a
-      reactable comment that means a 👀 reaction first, then a 🚀/👍 reaction
-      on success and a 👎 reaction plus a run-linked comment on failure.
-      A `pull_request_review` trigger carries none — GitHub exposes no
-      reactions endpoint for a review — so it uses a single sticky PR comment
-      for both beats. A `workflow_dispatch` fired from the Actions UI has no
-      triggering comment and is out of scope.
+      paths, always linking the run on failure, with `issues: write` /
+      `pull-requests: write` granted and the command gated before it
+      acknowledges. The surface for each beat comes from the route table in
+      [`rules/feedback.md`](./rules/feedback.md#pick-the-reaction-route-from-the-trigger--the-id-namespaces-are-disjoint),
+      not from this checklist. A `workflow_dispatch` fired from the Actions UI
+      has no triggering comment and is out of scope.
 - [ ] If using OIDC, `id-token: write` is set at the job level only.
 - [ ] User received a one-paragraph summary of what was created and
       where to commit it.
