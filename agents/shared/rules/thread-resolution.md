@@ -104,8 +104,11 @@ Re-resolving a thread this run already resolved is a safe no-op either way.
 #    This is character-for-character the query and pagination walk in
 #    `prior-comment-awareness.md § fetch existing PR comment state`, so the two
 #    produce the same `/tmp/review-threads.json`. Edit them together.
-OWNER="${REPO%%/*}"
-REPO_NAME="${REPO##*/}"
+# Derive both halves from RESOLVED_REPO (`owner/repo`, set in `pr-reviewer` Step 0) rather
+# than from REPO: Step 0 binds REPO to the bare repository name, so `${REPO%%/*}` would
+# yield the repo name as the owner unless some earlier rule happened to rebind it.
+OWNER="${RESOLVED_REPO%%/*}"
+REPO_NAME="${RESOLVED_REPO##*/}"
 THREADS_QUERY='
   query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
     repository(owner:$owner,name:$repo){
