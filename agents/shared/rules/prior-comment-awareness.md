@@ -172,7 +172,8 @@ Standards findings (2.4d) cite a governing-doc `path:line` that is usually not i
 None of these are re-derivable from the delta, and two of the three steps that produce them are **skipped** in `incremental-quick`.
 Without this rule a re-review silently drops every one of them, and the PR conversation loses context the author still needs.
 
-Run this immediately after the deferred-finding carry-forward, in every mode, over the `PRIOR_DIAGNOSTICS` parsed at `pr-reviewer.md § Step 0.7 → Parsing PRIOR_DIAGNOSTICS`.
+Run this at **Step 2.5c**, in every mode, over the `PRIOR_DIAGNOSTICS` parsed at `pr-reviewer.md § Step 0.7 → Parsing PRIOR_DIAGNOSTICS`.
+It runs there — not next to the deferred-finding carry-forward at Step 0.7 — because every disposition below is decided against this run's outcomes from Step 1.8, Step 2.4c, and Step 2.4d, none of which exist yet at Step 0.7.
 
 Each carried entry gets exactly one disposition:
 
