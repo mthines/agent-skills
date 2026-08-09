@@ -114,9 +114,9 @@ Ask in **one** batched message:
    manual, or composite/reusable shared piece?
 2. **Trigger surface** — push, pull_request, schedule, workflow_dispatch,
    workflow_call, or a comment / slash command (`issue_comment`,
-   `pull_request_review_comment`)? Which branches? Which path globs (to
-   skip irrelevant runs)? Comment/manual triggers additionally require
-   reaction + status feedback — see
+   `pull_request_review_comment`, `pull_request_review`)? Which branches?
+   Which path globs (to skip irrelevant runs)? Comment-triggered runs
+   additionally require acknowledgement + outcome feedback — see
    [`rules/feedback.md`](./rules/feedback.md).
 3. **Stack** — Node (npm/yarn/pnpm/bun), Python (pip/uv/poetry), Go,
    Rust, Java/Gradle, Docker, mixed?
@@ -259,13 +259,14 @@ Drop-in starters in [`templates/`](./templates/):
    The log is the only thing `gh run view --log-failed` returns, and it is
    what agents act on. See
    [`rules/log-output-visibility.md`](./rules/log-output-visibility.md).
-10. **Comment/manual triggers must give feedback.** A workflow with no PR
-    status check (`issue_comment`, `pull_request_review_comment`, a
-    comment-driven `workflow_dispatch`) is invisible. Acknowledge with a
-    👀 reaction as the **first** step, then report the outcome on **both**
-    paths — a 🚀/👍 reaction on success, a 👎 reaction plus a comment
-    linking the run on failure. See
-    [`rules/feedback.md`](./rules/feedback.md).
+10. **Comment-triggered runs must give feedback.** A workflow with no PR
+    status check (`issue_comment`, `pull_request_review_comment`,
+    `pull_request_review`, or a `workflow_dispatch` a comment or bot fired)
+    is invisible. Acknowledge as the **first** step, then report the outcome
+    on **both** paths — a 🚀/👍 reaction on success, a 👎 reaction plus a
+    comment linking the run on failure. `pull_request_review` has no
+    reactable comment, so it uses a single sticky PR comment for both beats.
+    See [`rules/feedback.md`](./rules/feedback.md).
 
 ---
 
