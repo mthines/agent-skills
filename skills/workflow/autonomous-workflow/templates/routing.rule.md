@@ -41,10 +41,14 @@ Skill("autonomous-workflow")
 
 Then follow its tier detection and route. Micro/Lite run single-pass as usual;
 for **Full**, run the **single-context Full** path (planner role → gated `plan.md`
-+ `checks.yaml` → executor role through Phases 3–7 in the one window), exactly as
-the `aw` agent's "When sub-agent dispatch is unavailable" section prescribes. This
-keeps the plan artifact and the `confidence(plan)` gate; it is not a downgrade to
-Lite.
++ `checks.yaml` → executor role through Phases 3–7 in the one window). This keeps
+the plan artifact and the `confidence(plan)` gate; it is not a downgrade to Lite.
+
+> `SKILL.md` is a thin index and describes only the preferred Full routing (hand
+> off to `aw-planner` → `aw-executor`). The single-context Full procedure it
+> points at lives in the `aw` agent definition (`templates/aw.agent.md`), section
+> **"When sub-agent dispatch is unavailable"** — read that section, not `SKILL.md`,
+> for the step-by-step fallback.
 
 You may also dispatch `aw-planner` / `aw-executor` directly when you already know
 the task is Full and want to skip tier detection.

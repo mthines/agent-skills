@@ -311,6 +311,17 @@ automatically; borderline plans pause for user approval. The design rationale
 the full handoff contract is in
 [`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md).
 
+**When the harness disables sub-agent dispatch** (no `Task` tool — e.g. Claude
+Code on the web), the split is structurally unavailable and Full does **not**
+drop to the Micro/Lite single-pass path. `aw` runs a **single-context Full**
+instead: it plays the planner role (Phases 0–2, producing `plan.md` +
+`checks.yaml` and clearing `confidence(plan) ≥ 90%`) then the executor role
+(Phases 3–7) in one window, preserving the plan artifact and the confidence gate
+and conceding only context isolation. The step-by-step procedure — and the rule
+that this is never a licence to skip an *available* split — lives in
+[`templates/aw.agent.md`](./templates/aw.agent.md) under "When sub-agent dispatch
+is unavailable".
+
 **UI verification prerequisite:** run `/aw-setup` once per project before the
 first autonomous UI task. This scaffolds `.claude/aw-targets/local.yml` and
 validates it with a smoke spec. The planner halts and prompts if no aw-target
