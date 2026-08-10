@@ -111,7 +111,7 @@ Pointer rules:
 - The pointer **is** an inline comment, so it passes `comment-shape.md` (2.8), `conventional-comments.md` (2.9), and line-validity (3.5) — it is naturally compliant (`suggestion:` prefix, one sentence, ≤ 240 chars).
 - The pointer is **exempt** from the per-comment-confidence gate (2.7) — its gate is the proposal's own `analysis_confidence >= 95` — and from the placement caps (2.9b): it is tied to its card, not competing in the general inline budget, and being non-blocking it does not benefit from the blocking exemption either. It simply always posts when it qualifies.
 - The pointer is **non-blocking** and never affects the verdict — same as every optimality proposal.
-- Count pointers as `Inline pointers: <N>` in the § Logging block; they are **not** counted in the reviewer's `produced` / `cleared` / `posted inline` quality line, which tracks line-level and persona findings only.
+- Count pointers as `Inline pointers: <N>` in the § Logging block; they are **not** counted in the reviewer's `produced` / `cleared` / `posted inline` quality line, which tracks line-level and persona findings only. Because a pointer *is* a real posted inline comment, wherever a caller reports a count of comments it posted inline (e.g. `pr-reviewer` Step 5's report), it MUST show the pointer count alongside — `<F> inline comments + <OPTR> optimality pointer(s)` — so the posted total is never understated by the quality line's exclusion.
 
 ### Framing (caller-aware)
 

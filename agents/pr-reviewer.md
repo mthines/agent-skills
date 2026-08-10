@@ -226,11 +226,14 @@ Otherwise:
 
 ```bash
 # ME was already set in Step 0.5 — reuse it, do not call gh api user again.
+# Export it so the embedded jq reads it as env.ME. `gh api` has NO `--arg` flag — it takes a
+# single positional --jq expression — so `--jq --arg me "$ME"` does not run (gh treats --arg/me/$ME
+# as stray positional args). Inject via the environment instead.
+export ME
 
 # Find the most recent review from this bot that carries the report marker.
 PRIOR_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
-  --jq --arg me "$ME" \
-  '[.[] | select(.user.login == $me and (.body | contains("<!-- PR_REVIEWER_REPORT -->"))) ] | last // empty')
+  --jq '[.[] | select(.user.login == env.ME and ((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->"))) ] | last // empty')
 ```
 
 **If `PRIOR_REVIEW` is empty** (no prior review found):
@@ -272,9 +275,9 @@ PRIOR_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
   to find the last full pass and how many incremental runs have happened since:
   ```bash
   PRIOR_REPORTS=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
-    --jq --arg me "$ME" '
+    --jq '
       [ .[]
-        | select(.user.login == $me and ((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->")))
+        | select(.user.login == env.ME and ((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->")))
         | { sha: .commit_id, full: ((.body // "") | test("\\*\\*Run mode\\*\\* — full")) } ]')
 
   # commit_id of the most recent full-mode report; "" when none is detectable.
@@ -293,8 +296,13 @@ PRIOR_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
 - Announce: `Prior review found at ${PRIOR_SHA:0:7} — running delta triage (${#CARRIED_FINDINGS[@]} deferred finding(s) carried forward).`
 - Proceed to Step 1.
 
-`PRIOR_SHA`, `PRIOR_REVIEW_SHA`, `RUN_MODE`, `PRIOR_DIAGNOSTICS`, `LAST_FULL_SHA` and `INCR_RUNS_SINCE_FULL` are available to all subsequent steps.
-`ME` was set in Step 0.5 and is reused here — do not call `gh api user` again.
+`PRIOR_SHA`, `PRIOR_REVIEW_SHA`, `RUN_MODE` and `PRIOR_DIAGNOSTICS` are available to all subsequent steps.
+`LAST_FULL_SHA` and `INCR_RUNS_SINCE_FULL` are set **only on this path** — the prior-review,
+non-`--full` branch — so they are unset on a first run and under `--full`. That is safe: their only
+consumer is Step 1.2b's delta triage, which is itself skipped in exactly those two cases (first run
+is `full`; `--full` skips triage), so nothing reads an unset value.
+`ME` was set in Step 0.5, exported above for the embedded jq, and reused here — do not call
+`gh api user` again.
 
 ### Parsing `PRIOR_DIAGNOSTICS`
 
@@ -1243,6 +1251,15 @@ MEMORIES_SECTION
 </details>
 ```
 
+**Advisory clause on the PASS headline.** A PASS can still carry a `LOW_CONFIDENCE_SECTION` (every
+gate ✅, yet near-miss `issue`/`suggestion` findings were deferred — advisory findings never affect
+a gate). So the bare `no issues found.` would read as contradicting the advisory `issue:` entries
+just below it. When `CADV > 0`, append ` <CADV> advisory finding(s) below the confidence bar (see
+Low-confidence findings).` to the PASS headline; the `Reviewed your changes — no issues found.` base
+is preserved (nothing blocking or inline survived), so the reader learns advisory findings exist
+without the headline overstating cleanliness. When `CADV == 0` the headline stays exactly
+`Reviewed your changes — no issues found.`
+
 **On WARN** — soft warnings only (hard Gates 2/3/4/5 ✅, at least one of Description vs. code / Code review is ⚠️, none ❌):
 
 ```markdown
@@ -1619,8 +1636,13 @@ in the Step 5 report.
 After posting:
 
 ```text
-Posted review on PR #<n> — gate table + <N> inline comments.
+Posted review on PR #<n> — gate table + <N> inline comments (+ <OPTR> optimality pointer(s)).
 ```
+
+`<N>` is the quality-line `posted inline` count (line-level + persona findings). When `OPTR > 0`,
+append `+ <OPTR> optimality pointer(s)` so the reported total is not understated — an optimality
+pointer is a real posted inline comment even though the quality line excludes it
+(`optimality-review.md § Inline pointer`). Omit the parenthetical when `OPTR == 0`.
 
 Include:
 - Confirmed state (`COMMENTED`).
