@@ -31,7 +31,39 @@ For each finding that survives `finding-grounding.md` (2.6) and `verification-re
      - Can the PR author act on it without additional context?
      - Does posting this comment improve the PR more than it adds noise?
 3. Run `Skill("confidence", "code")`.
-4. If the returned **Final** score is `< threshold`, drop the comment. Log the drop with the score and the effective threshold.
+4. Apply the drop/defer decision below on the returned **Final** score. Log the outcome with the score and the effective threshold.
+
+## Drop vs. defer — the near-miss band
+
+A finding scoring just under the bar is not noise; it is a real observation the scorer is not yet confident enough to inline. Dropping it silently is how a genuine weakness disappears from one review and reappears "new" in the next — the single most common cause of a reviewer that "keeps finding more stuff it could have caught the first time".
+
+So a near-miss `issue` or `suggestion` is **deferred to an advisory surface, not dropped**. Define the defer floor:
+
+```python
+def defer_floor(threshold: int) -> int:
+    # near-miss band is [defer_floor, threshold); default threshold 80 → band [65, 80)
+    return max(threshold - 15, 65)
+```
+
+For a finding that survived `finding-grounding.md` (2.6) and `verification-receipt.md` (2.6b), on its **Final** score:
+
+| Final score | `issue` / `suggestion` | `question` / `nitpick` |
+| --- | --- | --- |
+| `>= threshold` | **clears** — eligible to post inline (2.8 → 2.9 → 2.9b) | **clears** |
+| `defer_floor <= Final < threshold` | **defer** to the review body's `Low-confidence findings` advisory section — never inline, never dropped | **drop** (a low-confidence nitpick/question is genuinely not worth surfacing) |
+| `Final < defer_floor` | **drop** | **drop** |
+
+Only `issue` and `suggestion` are deferred — they are the finding types whose loss actually costs the author. A sub-threshold `question` or `nitpick` is still dropped, because a hedged nitpick surfaced anywhere is noise.
+
+**Advisory findings are a distinct class, not "cleared".** They:
+
+- never post inline and never consume an inline slot;
+- bypass `comment-shape.md` (2.8), `conventional-comments.md` (2.9), and placement (2.9b) — they render only in the body's `Low-confidence findings` `<details>` section;
+- are **never** auto-applied by `implement-suggestion` — they are advisory (below the confidence bar), and `reviewer-report-ingest.md` marks the section non-actionable;
+- never affect any gate, the `FAILING_GATE_COUNT`, or the verdict;
+- are **not** carried forward — a full re-review re-derives them from the diff, so an incremental run that skips them loses nothing durable.
+
+This keeps the `Findings cleared` / `Deferred (over inline cap)` / `Final findings posted` identity below untouched: advisory findings are neither `cleared` nor over-cap-deferred, so they are tracked on their own `Confidence-deferred (advisory)` counter and excluded from `<CL> - <DEF> == <F>`.
 
 ## Why 80, not 70
 
@@ -84,7 +116,7 @@ review pass
   → emit / post
 ```
 
-Each step is a hard gate. A finding that fails any of them is dropped, with the drop logged in the terminal Quality Gate summary.
+Each step is a hard gate. A finding that fails any of them is dropped, with the drop logged in the terminal Quality Gate summary — with one exception: at 2.7 a near-miss `issue` or `suggestion` (score in `[defer_floor, threshold)`) is deferred to the `Low-confidence findings` advisory section rather than dropped (see § Drop vs. defer).
 
 ## Logging
 
@@ -101,6 +133,7 @@ Quality Gate:
   Prior-comment dedup:       2  (already said in a prior review pass)
   Anti-flip-flop drops:      0  (would contradict a resolved prior suggestion)
   Confidence drops:          7 (avg score: 64, threshold: 80)
+  Confidence-deferred (advisory): 2  (issue/suggestion in [65,80) — advisory body section, not dropped)
   Shape drops:               2
   Carried forward:           1  (deferred by a prior incremental run)
   Findings cleared:          7  (survived every quality gate)

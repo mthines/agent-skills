@@ -62,11 +62,22 @@ a finding.
 | Gate-status table | the `\| Gate \| Status \| Details \|` table inside `<details><summary>Review details…` | one unit per row whose Status is `❌` or `⚠️`: `{gate, status, details}`. `✅` rows carry no finding. | **No** — gate findings have no `path:line` |
 | Optimality cards | `<summary>Optimality review (<N>) — is this the best approach?</summary>` | one unit per `### Optimality proposal — <path>:<line>` heading, captured **verbatim** as a whole block: headline, Now / Better table, `Why it's better`, `Trade-off`, `Evidence`, and the `Intent · Blast radius · Confidence` footer | Yes — `path:line` in the card heading |
 | Additional findings | `<summary>Additional findings (<N>) — cleared review, not inlined</summary>` | one unit per bullet: `` `<path>:<line>` — <prefix>: <body> (confidence <N>) `` | Yes |
+| Low-confidence findings | `<summary>Low-confidence findings (<N>) — advisory, below the confidence bar</summary>` | one unit per bullet: `` `<path>:<line>` — <prefix>: <body> (confidence <N>) `` | Yes |
 | Run mode | `**Run mode** —` | `{mode, delta_lines}` | n/a |
 | Standards log | `**Standards (2.4d)** —` | `{ran, docs_scanned, finding_count}` — run-state only | n/a |
 | Optimality log | `**Optimality (2.4c)** —` | `{ran, judged, optimal, proposals, withheld}` — run-state only | n/a |
 | Skipped files | `**Skipped files** —` | file paths, empty on `none` | n/a |
 | Footer SHA | `<sup>Reviewed for commit \`<sha>\`` / `<sup>Incremental review for commit \`<sha>\`` | the reviewed SHA | n/a |
+
+### Low-confidence findings are advisory, never actionable
+
+The `Low-confidence findings` section holds `issue` / `suggestion` findings that were grounded and receipt-checked but scored just under the per-comment confidence bar (`per-comment-confidence.md § Drop vs. defer`). The grammar parses them like any other anchored unit, but the **consumer contract is that they are advisory**: `implement-suggestion` MUST NOT auto-apply them, because the reviewer itself was not confident enough to inline them. A consumer may surface them to a human, never act on them unattended.
+
+**Not carried forward — by design.** `pr-reviewer`'s Step 0.7 `PRIOR_DIAGNOSTICS` mapping table has **no row** for this section, and that absence is intentional, not an omission: advisory findings are the one anchorless body output that is **not** carried into a re-review. A full re-review re-derives them from the diff, and an incremental run that skips them loses nothing durable (unlike deferred `Additional findings`, gate rows, or optimality cards, which are not re-derivable and therefore *are* carried). A consumer parsing this section must not expect a matching `PRIOR_DIAGNOSTICS` row.
+
+### The optimality inline pointer is an ordinary inline comment
+
+A high-confidence optimality proposal (`optimality-review.md § Inline pointer`) may leave a short inline `suggestion:` pointer at the proposal's anchor. That pointer is a normal inline comment fetched from `pulls/<n>/comments`, not a body section — do not mine the `Optimality cards` block for it, and do not double-count the pointer against its card.
 
 ### Standards findings are not a body section
 
