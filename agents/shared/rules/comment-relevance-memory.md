@@ -367,7 +367,7 @@ Sweeps all review threads, skips any that had a fix commit or a won't-fix reply
   ```bash
   npx @lorekit/cli memory write \
     --scope "repo::{owner}/{repo}" \
-    --key "reviewer-comment-relevance::{fingerprint}" \
+    --key "reviewer-comment-relevance::{category}:{claim-gist}" \
     --value '{"fingerprint":"...","relevance":"...","resolution_method":"...","reason":"...","seen_count":1,"status":"active","expires":"..."}' \
     --tags "loop::reviewer-comment-relevance,source::{resolution_method}" \
     --source-agent "github-actions/reviewer-comment-relevance"
@@ -418,7 +418,7 @@ memory.search { q: "<fingerprint slug>", scopes: ["repo::{owner}/{repo}", "globa
 # Write (UPDATE if exists, ADD otherwise).
 memory.write {
   scope: "repo::{owner}/{repo}",   # or "global" for universal patterns
-  key: "reviewer-comment-relevance::<fingerprint>",
+  key: "reviewer-comment-relevance::<category>:<claim-gist>",   # NO pr#/comment-id/sha — see § Key format
   value: "<record body as JSON or markdown>",
   tags: ["loop::reviewer-comment-relevance", "source::<resolution_method>"],
   source_agent: "implement-suggestion",

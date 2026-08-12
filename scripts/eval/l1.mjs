@@ -356,6 +356,20 @@ function checksInSync(plan, checks) {
     !crm.includes("(pr)?\\d{3,}") && crm.includes("Digits inside a gist are legitimate"));
   s.check("G9d thread-resolution warns against coordinate keys in the pr-reviewer write path",
     /NO pr#\/comment-id\/sha/.test(threadRes) && threadRes.includes("<category>:<claim-gist>"));
+  // The ban must cover EVERY write path, not just pr-reviewer's. A bare `::<fingerprint>`
+  // placeholder left in any memory.write template is an open invitation to re-encode a
+  // coordinate, which is how the drift reached dash0hq/dash0 in the first place. Assert the
+  // expanded placeholder is present AND the bare one is gone, per writing agent.
+  const implSuggestion = read("skills/workflow/implement-suggestion/SKILL.md");
+  for (const [label, doc] of [
+    ["implement-suggestion/SKILL.md", implSuggestion],
+    ["comment-relevance-memory.md", crm],
+    ["thread-resolution.md", threadRes],
+  ]) {
+    s.check(`G9d ${label} spells the relevance key as <category>:<claim-gist>, never a bare <fingerprint>`,
+      doc.includes("reviewer-comment-relevance::<category>:<claim-gist>") &&
+      !doc.includes("reviewer-comment-relevance::<fingerprint>"));
+  }
 
   // G10: review-config.md declares that absent .review.yaml defaults to profile: balanced,
   // and that balanced = today's defaults (threshold 80, per-file caps 5/10).

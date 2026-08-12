@@ -416,7 +416,10 @@ memory.write { scope: "<global | repo::{owner}/{repo}>", key: "review-outcomes::
 # Deduplicate first; UPDATE seen_count if exists, ADD otherwise.
 # Scope: almost always repo::{owner}/{repo}; global only for universal patterns.
 memory.search { q: "<fingerprint slug>", scopes: ["repo::{owner}/{repo}", "global"], limit: 5 }
-memory.write { scope: "repo::{owner}/{repo}", key: "reviewer-comment-relevance::<fingerprint>", value: "<relevance record>", tags: ["loop::reviewer-comment-relevance", "source::<resolution_method>"], source_agent: "implement-suggestion", trigger: "outcome-emit" }
+# The key is EXACTLY `<category>:<claim-gist>` — never a pr#, comment id, SHA, or file:line.
+# A coordinate key is unique per occurrence, so seen_count never accumulates and the signal
+# is inert. Put coordinates in the record's `examples` field. Self-check: comment-relevance-memory.md § Key format.
+memory.write { scope: "repo::{owner}/{repo}", key: "reviewer-comment-relevance::<category>:<claim-gist>", value: "<relevance record>", tags: ["loop::reviewer-comment-relevance", "source::<resolution_method>"], source_agent: "implement-suggestion", trigger: "outcome-emit" }
 ```
 
 LoreKit owns storage server-side and dedups on write.
