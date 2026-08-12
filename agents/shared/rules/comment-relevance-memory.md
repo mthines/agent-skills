@@ -147,6 +147,17 @@ magnitude in words (`four-gib-allocation-cap`, not `4294967296-byte-cap`), which
 is the better gist anyway. If you have encoded a coordinate, move it to the
 record's `examples` field.
 
+**Existing rows are not migrated.** Most rows written before this rule carry a
+bare gist with no `<category>:` segment (at the time of writing, 59 of 70 rows in
+`repo::mthines/agent-skills`). Re-keying them in place is deliberately **not**
+attempted: a bulk rewrite would have to re-derive `category` from comment bodies
+that are no longer fetched, and a wrong guess is worse than no row. Instead the
+old keys are left to lapse — they are never re-sighted under the new derivation,
+so their TTL expires them, while the correctly-keyed row for the same finding
+class accumulates from `seen_count: 1`. Expect a one-TTL window in which a
+finding class is represented by both an old and a new row; suppression simply
+takes longer to arm for those classes and nothing is lost.
+
 ---
 
 ## Relevance memory record schema
