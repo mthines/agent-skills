@@ -130,14 +130,22 @@ a claim.
 | - | -------------------- | ------- |
 | 1 | `/\bpr[-_#]?\d+/i` | `pr16855`, `pr-103` |
 | 2 | `/#\d+/` | `#16855` |
-| 3 | `/\d{6,}/` | comment ids, thread ids, run ids |
-| 4 | `/\b(?=[0-9a-f]{7,}\b)[0-9a-f]*[0-9][0-9a-f]*\b/i` | commit SHAs (hex run carrying a digit) |
+| 3 | `/\d{9,}/` | comment ids, thread ids, run ids |
+| 4 | `/\b(?=[0-9a-f]{7,40}\b)(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]+\b/i` | commit SHAs (7–40 char hex run carrying **both** a letter and a digit) |
 | 5 | more than one `:` in the segment after the bucket prefix | `file:line` |
 
 No row fires on a digit that belongs to the claim: rows 1–2 require a `pr`/`#`
-prefix, row 3 needs a 6-digit run (an HTTP status, byte size, or timeout never
-reaches one), and row 4 needs a 7-character hex run containing a digit. If you
-have encoded a coordinate, move it to the record's `examples` field.
+prefix, row 4 needs a hex run carrying both a letter and a digit (requiring only a
+digit would re-match any 7-digit number, since digits are hex characters — that is
+why `1048576` is clean, and why a hypothetical all-numeric short SHA is accepted
+rather than widen the row back out), and row 3's bound
+is set at 9 because that is where GitHub's numeric ids start (comment, review,
+and run ids are 9–10 digits) and above where real claims land — `65535` (port),
+`86400` (seconds), `120000` (ms), and `1048576` (bytes) are all shorter. If a
+claim genuinely needs a 9-digit-or-longer number, do not encode it: spell the
+magnitude in words (`four-gib-allocation-cap`, not `4294967296-byte-cap`), which
+is the better gist anyway. If you have encoded a coordinate, move it to the
+record's `examples` field.
 
 ---
 
