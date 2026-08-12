@@ -347,6 +347,13 @@ function checksInSync(plan, checks) {
     /❌ WRONG/.test(crm) && /reviewer-comment-relevance::pr\d+-\d+/.test(crm));
   s.check("G9d comment-relevance-memory carries the pre-write coordinate self-check",
     crm.includes("Self-check before every write") && /encoded a coordinate/.test(crm));
+  // The self-check must key on coordinate SHAPES, not on any run of digits. `fingerprint()`
+  // in scripts/record-comment-relevance.mjs preserves digits, so a bare `\d{3,}` test fires
+  // on legitimate gists (`issue:500-responses-not-retried`) — the agent would strip the digits
+  // while the script keeps them, re-creating the agent/script key split this rule exists to
+  // close. Lock both halves: the over-broad test is gone, and the carve-out is stated.
+  s.check("G9d comment-relevance self-check does not fire on digits inside a claim gist",
+    !crm.includes("(pr)?\\d{3,}") && crm.includes("Digits inside a gist are legitimate"));
   s.check("G9d thread-resolution warns against coordinate keys in the pr-reviewer write path",
     /NO pr#\/comment-id\/sha/.test(threadRes) && threadRes.includes("<category>:<claim-gist>"));
 

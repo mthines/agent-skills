@@ -97,9 +97,28 @@ the same deterministic transform `scripts/record-comment-relevance.mjs`'s
 slug wobble; deriving mechanically makes the same comment yield the same key
 every time, so LoreKit's server-side dedup increments `seen_count` in place.
 
-**Self-check before every write:** if the key you are about to write matches
-`/(pr)?\d{3,}/` or contains more than one `:` in the segment after the bucket
-prefix, STOP — you have encoded a coordinate. Re-derive `<category>:<claim-gist>`.
+**Digits inside a gist are legitimate.** `fingerprint()` preserves them, so
+`issue:500-responses-not-retried` and `suggestion:4096-byte-buffer-configurable`
+are correct keys. Do not strip a number that is part of the claim — stripping it
+makes the agent's key diverge from the script's for the same comment, which is
+the exact split this rule exists to prevent. Only *coordinate shapes* are banned.
+
+**Self-check before every write:** STOP and re-derive `<category>:<claim-gist>` if
+the key you are about to write hits any row below — each matches a coordinate, not
+a claim.
+
+| # | Test against the key | Catches |
+| - | -------------------- | ------- |
+| 1 | `/\bpr[-_#]?\d+/i` | `pr16855`, `pr-103` |
+| 2 | `/#\d+/` | `#16855` |
+| 3 | `/\d{6,}/` | comment ids, thread ids, run ids |
+| 4 | `/\b(?=[0-9a-f]{7,}\b)[0-9a-f]*[0-9][0-9a-f]*\b/i` | commit SHAs (hex run carrying a digit) |
+| 5 | more than one `:` in the segment after the bucket prefix | `file:line` |
+
+No row fires on a digit that belongs to the claim: rows 1–2 require a `pr`/`#`
+prefix, row 3 needs a 6-digit run (an HTTP status, byte size, or timeout never
+reaches one), and row 4 needs a 7-character hex run containing a digit. If you
+have encoded a coordinate, move it to the record's `examples` field.
 
 ---
 
