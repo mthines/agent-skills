@@ -64,8 +64,10 @@ reviewer-comment-relevance::<category>:<claim-gist>
 
 Where:
 - `category` = the Conventional Comments prefix (e.g. `suggestion`, `issue`, `nitpick`).
-- `claim-gist` = a 3–6 word stable slug describing the finding class (e.g.
-  `null-check-guaranteed-upstream`, `map-vs-record-preference`).
+- `claim-gist` = the first 6 surviving words of the comment body, in source order,
+  kebab-joined (e.g. `null-check-guaranteed-upstream`, `map-vs-record-preference`).
+  "Surviving" is defined by the algorithm below — it is a mechanical truncation,
+  not a summary you compose.
 
 The key MUST be **exactly two colon-separated segments after the bucket prefix**:
 `<category>:<claim-gist>`. Nothing else.
@@ -89,13 +91,30 @@ reviewer-comment-relevance::pr16855-3758467267-clinerules-link-not-added
 reviewer-comment-relevance::pr16855-3758467267-clinerules-link-not-added-wontfix
 ```
 
-**Derive the key mechanically, not from memory of the comment.** Compute
-`category` from the Conventional Comments prefix and `claim-gist` as a 3–6 word
-kebab slug of the substantive claim (strip code spans, URLs, and stop-words) —
-the same deterministic transform `scripts/record-comment-relevance.mjs`'s
-`fingerprint()` implements. Re-deriving descriptively per run is what makes the
-slug wobble; deriving mechanically makes the same comment yield the same key
-every time, so LoreKit's server-side dedup increments `seen_count` in place.
+**Derive the key mechanically, not from memory of the comment.**
+`fingerprint()` in [`scripts/record-comment-relevance.mjs`](../../../scripts/record-comment-relevance.mjs)
+is the **normative implementation** — the GitHub Actions write path runs it, so an
+agent that derives differently produces a second key for the same comment and the
+`seen_count` splits. Follow its steps exactly; do not paraphrase the comment.
+
+1. `category` — the Conventional Comments prefix at the start of the body
+   (`issue`, `suggestion`, `nitpick`, `nit`, `question`, `praise`, `chore`),
+   matched case-insensitively and followed by `:` or `(`. `nit` normalises to
+   `nitpick`. **No prefix ⇒ `suggestion`**, not "no category".
+2. `claim-gist` — from the body, in this order: drop fenced code blocks, then
+   inline code spans, then URLs; replace every non-alphanumeric character with a
+   space; lowercase; delete the stop-words (the script's list is normative — do
+   not re-invent it); collapse whitespace.
+3. Take the **first 6 surviving words in source order** and kebab-join them. This
+   is positional truncation, not selection of the 6 most meaningful words — the
+   leading `issue`/`suggestion` word survives the stop-list and will normally be
+   the first token, which is expected and matches the script.
+4. Nothing survives ⇒ `general-finding`.
+
+Re-deriving descriptively per run is what makes the slug wobble; running this
+transform makes the same comment yield the same key every time, so LoreKit's
+server-side dedup increments `seen_count` in place. When the body is long or
+ambiguous, execute `fingerprint()` rather than emulating it.
 
 **Digits inside a gist are legitimate.** `fingerprint()` preserves them, so
 `issue:500-responses-not-retried` and `suggestion:4096-byte-buffer-configurable`
