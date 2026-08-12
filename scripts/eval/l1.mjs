@@ -366,9 +366,12 @@ function checksInSync(plan, checks) {
     ["comment-relevance-memory.md", crm],
     ["thread-resolution.md", threadRes],
   ]) {
-    s.check(`G9d ${label} spells the relevance key as <category>:<claim-gist>, never a bare <fingerprint>`,
+    // Ban BOTH placeholder spellings: the markdown templates use `<fingerprint>` and the
+    // GitHub Actions CLI snippet uses `{fingerprint}`. Guarding only the angle form leaves
+    // the brace form free to regress the same defect.
+    s.check(`G9d ${label} spells the relevance key as <category>:<claim-gist>, never a bare fingerprint placeholder`,
       doc.includes("reviewer-comment-relevance::<category>:<claim-gist>") &&
-      !doc.includes("reviewer-comment-relevance::<fingerprint>"));
+      !/reviewer-comment-relevance::[<{]fingerprint[>}]/.test(doc));
   }
 
   // G10: review-config.md declares that absent .review.yaml defaults to profile: balanced,
