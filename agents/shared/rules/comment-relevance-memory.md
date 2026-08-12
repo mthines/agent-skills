@@ -67,9 +67,39 @@ Where:
 - `claim-gist` = a 3–6 word stable slug describing the finding class (e.g.
   `null-check-guaranteed-upstream`, `map-vs-record-preference`).
 
-Keys MUST NOT encode `file:line` coordinates — those drift.
-They MUST encode the structural pattern so the signal accumulates across files
-and commits.
+The key MUST be **exactly two colon-separated segments after the bucket prefix**:
+`<category>:<claim-gist>`. Nothing else.
+
+Keys MUST NOT encode **any coordinate** — not `file:line`, and not a PR number,
+comment id, commit SHA, thread id, or run index. Every coordinate drifts or is
+unique-per-occurrence, which silently breaks the accumulation this whole loop
+depends on: a key that is unique per comment never reaches `seen_count ≥ 3`, so
+suppression never fires and the memory is inert. Coordinates belong in the
+record's `examples` field (see the schema below), never in the key.
+
+```text
+# ✅ RIGHT — a structural fingerprint that accumulates across files, commits, and PRs
+reviewer-comment-relevance::suggestion:clinerules-link-not-added
+reviewer-comment-relevance::issue:null-check-guaranteed-upstream
+
+# ❌ WRONG — encodes PR + comment-id coordinates; unique per occurrence, never accumulates.
+#    This is the observed drift that produced 2–3 duplicate rows per comment on
+#    dash0hq/dash0 and left the relevance loop non-functional there.
+reviewer-comment-relevance::pr16855-3758467267-clinerules-link-not-added
+reviewer-comment-relevance::pr16855-3758467267-clinerules-link-not-added-wontfix
+```
+
+**Derive the key mechanically, not from memory of the comment.** Compute
+`category` from the Conventional Comments prefix and `claim-gist` as a 3–6 word
+kebab slug of the substantive claim (strip code spans, URLs, and stop-words) —
+the same deterministic transform `scripts/record-comment-relevance.mjs`'s
+`fingerprint()` implements. Re-deriving descriptively per run is what makes the
+slug wobble; deriving mechanically makes the same comment yield the same key
+every time, so LoreKit's server-side dedup increments `seen_count` in place.
+
+**Self-check before every write:** if the key you are about to write matches
+`/(pr)?\d{3,}/` or contains more than one `:` in the segment after the bucket
+prefix, STOP — you have encoded a coordinate. Re-derive `<category>:<claim-gist>`.
 
 ---
 

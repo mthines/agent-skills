@@ -331,6 +331,25 @@ function checksInSync(plan, checks) {
   s.check("G9c pr-reviewer.md wires 2.6b between 2.6 and 2.7",
     prReviewer.includes("2.6b") && prReviewer.includes("verification-receipt"));
 
+  // G9d: comment-relevance keys must be a pure `<category>:<claim-gist>` fingerprint —
+  // NEVER a coordinate (pr#/comment-id/sha/file:line). Coordinate keys are unique per
+  // occurrence, so seen_count never accumulates and the relevance loop goes inert; this
+  // is the observed drift that left ~40 duplicate rows on dash0hq/dash0. The rule and the
+  // pr-reviewer write path must both carry the broadened prohibition + the ❌ anti-pattern
+  // exemplar, so the agent cannot read "MUST NOT encode file:line" narrowly and think a
+  // pr{N}-{commentId} key is allowed. Lock the guidance in place (presence, not absence —
+  // the ❌ example intentionally contains a coordinate key).
+  const crm = read("agents/shared/rules/comment-relevance-memory.md");
+  const threadRes = read("agents/shared/rules/thread-resolution.md");
+  s.check("G9d comment-relevance-memory broadens the coordinate ban beyond file:line",
+    /PR number,\s+comment id/.test(crm) && /never in the key/.test(crm));
+  s.check("G9d comment-relevance-memory shows the pr{N}-{commentId} anti-pattern as ❌ WRONG",
+    /❌ WRONG/.test(crm) && /reviewer-comment-relevance::pr\d+-\d+/.test(crm));
+  s.check("G9d comment-relevance-memory carries the pre-write coordinate self-check",
+    crm.includes("Self-check before every write") && /encoded a coordinate/.test(crm));
+  s.check("G9d thread-resolution warns against coordinate keys in the pr-reviewer write path",
+    /NO pr#\/comment-id\/sha/.test(threadRes) && threadRes.includes("<category>:<claim-gist>"));
+
   // G10: review-config.md declares that absent .review.yaml defaults to profile: balanced,
   // and that balanced = today's defaults (threshold 80, per-file caps 5/10).
   // Back-compat: any behavior change without a config file is a guard failure.
