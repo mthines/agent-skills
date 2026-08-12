@@ -189,8 +189,8 @@ memory.write {
 }
 ```
 
-The `<fingerprint>` is `<category>:<claim-gist>` and **nothing else** — never a
-`pr{N}-{commentId}` or any other coordinate. Encoding coordinates makes the key
+The key's fingerprint segment is `<category>:<claim-gist>` and **nothing else** —
+never a `pr{N}-{commentId}` or any other coordinate. Encoding coordinates makes the key
 unique per occurrence, so `seen_count` never accumulates and the signal is inert
 (this is the drift that produced duplicate rows on `dash0hq/dash0`). Put the PR
 and comment id in the record's `examples` field. See the ✅/❌ examples and
