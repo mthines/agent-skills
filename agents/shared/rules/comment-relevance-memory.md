@@ -64,12 +64,99 @@ reviewer-comment-relevance::<category>:<claim-gist>
 
 Where:
 - `category` = the Conventional Comments prefix (e.g. `suggestion`, `issue`, `nitpick`).
-- `claim-gist` = a 3–6 word stable slug describing the finding class (e.g.
-  `null-check-guaranteed-upstream`, `map-vs-record-preference`).
+- `claim-gist` = the first 6 surviving words of the comment body, in source order,
+  kebab-joined (e.g. `null-check-guaranteed-upstream`, `map-vs-record-preference`).
+  "Surviving" is defined by the algorithm below — it is a mechanical truncation,
+  not a summary you compose.
 
-Keys MUST NOT encode `file:line` coordinates — those drift.
-They MUST encode the structural pattern so the signal accumulates across files
-and commits.
+The key MUST be **exactly two colon-separated segments after the bucket prefix**:
+`<category>:<claim-gist>`. Nothing else.
+
+Keys MUST NOT encode **any coordinate** — not `file:line`, and not a PR number,
+comment id, commit SHA, thread id, or run index. Every coordinate drifts or is
+unique-per-occurrence, which silently breaks the accumulation this whole loop
+depends on: a key that is unique per comment never reaches `seen_count ≥ 3`, so
+suppression never fires and the memory is inert. Coordinates belong in the
+record's `examples` field (see the schema below), never in the key.
+
+```text
+# ✅ RIGHT — a structural fingerprint that accumulates across files, commits, and PRs
+reviewer-comment-relevance::suggestion:clinerules-link-not-added
+reviewer-comment-relevance::issue:null-check-guaranteed-upstream
+
+# ❌ WRONG — encodes PR + comment-id coordinates; unique per occurrence, never accumulates.
+#    This is the observed drift that produced 2–3 duplicate rows per comment on
+#    dash0hq/dash0 and left the relevance loop non-functional there.
+reviewer-comment-relevance::pr16855-3758467267-clinerules-link-not-added
+reviewer-comment-relevance::pr16855-3758467267-clinerules-link-not-added-wontfix
+```
+
+**Derive the key mechanically, not from memory of the comment.**
+`fingerprint()` in [`scripts/record-comment-relevance.mjs`](../../../scripts/record-comment-relevance.mjs)
+is the **normative implementation** — the GitHub Actions write path runs it, so an
+agent that derives differently produces a second key for the same comment and the
+`seen_count` splits. Follow its steps exactly; do not paraphrase the comment.
+
+1. `category` — the Conventional Comments prefix at the start of the body
+   (`issue`, `suggestion`, `nitpick`, `nit`, `question`, `praise`, `chore`),
+   matched case-insensitively and followed by `:` or `(`. `nit` normalises to
+   `nitpick`. **No prefix ⇒ `suggestion`**, not "no category".
+2. `claim-gist` — from the body, in this order: drop fenced code blocks, then
+   inline code spans, then URLs; replace every non-alphanumeric character with a
+   space; lowercase; delete the stop-words (the script's list is normative — do
+   not re-invent it); collapse whitespace.
+3. Take the **first 6 surviving words in source order** and kebab-join them. This
+   is positional truncation, not selection of the 6 most meaningful words — the
+   leading `issue`/`suggestion` word survives the stop-list and will normally be
+   the first token, which is expected and matches the script.
+4. Nothing survives ⇒ `general-finding`.
+
+Re-deriving descriptively per run is what makes the slug wobble; running this
+transform makes the same comment yield the same key every time, so LoreKit's
+server-side dedup increments `seen_count` in place. When the body is long or
+ambiguous, execute `fingerprint()` rather than emulating it.
+
+**Digits inside a gist are legitimate.** `fingerprint()` preserves them, so
+`issue:500-responses-not-retried` and `suggestion:4096-byte-buffer-configurable`
+are correct keys. Do not strip a number that is part of the claim — stripping it
+makes the agent's key diverge from the script's for the same comment, which is
+the exact split this rule exists to prevent. Only *coordinate shapes* are banned.
+
+**Self-check before every write:** STOP and re-derive `<category>:<claim-gist>` if
+the key you are about to write hits any row below — each matches a coordinate, not
+a claim.
+
+| # | Test against the key | Catches |
+| - | -------------------- | ------- |
+| 1 | `/\bpr[-_#]?\d+/i` | `pr16855`, `pr-103` |
+| 2 | `/#\d+/` | `#16855` |
+| 3 | `/\d{9,}/` | comment ids, thread ids, run ids |
+| 4 | `/\b(?=[0-9a-f]{7,40}\b)(?=[0-9a-f]*[a-f])(?=[0-9a-f]*[0-9])[0-9a-f]+\b/i` | commit SHAs (7–40 char hex run carrying **both** a letter and a digit) |
+| 5 | more than one `:` in the segment after the bucket prefix | `file:line` |
+
+No row fires on a digit that belongs to the claim: rows 1–2 require a `pr`/`#`
+prefix, row 4 needs a hex run carrying both a letter and a digit (requiring only a
+digit would re-match any 7-digit number, since digits are hex characters — that is
+why `1048576` is clean, and why a hypothetical all-numeric short SHA is accepted
+rather than widen the row back out), and row 3's bound
+is set at 9 because that is where GitHub's numeric ids start (comment, review,
+and run ids are 9–10 digits) and above where real claims land — `65535` (port),
+`86400` (seconds), `120000` (ms), and `1048576` (bytes) are all shorter. If a
+claim genuinely needs a 9-digit-or-longer number, do not encode it: spell the
+magnitude in words (`four-gib-allocation-cap`, not `4294967296-byte-cap`), which
+is the better gist anyway. If you have encoded a coordinate, move it to the
+record's `examples` field.
+
+**Existing rows are not migrated.** Most rows written before this rule carry a
+bare gist with no `<category>:` segment (at the time of writing, 59 of 70 rows in
+`repo::mthines/agent-skills`). Re-keying them in place is deliberately **not**
+attempted: a bulk rewrite would have to re-derive `category` from comment bodies
+that are no longer fetched, and a wrong guess is worse than no row. Instead the
+old keys are left to lapse — they are never re-sighted under the new derivation,
+so their TTL expires them, while the correctly-keyed row for the same finding
+class accumulates from `seen_count: 1`. Expect a one-TTL window in which a
+finding class is represented by both an old and a new row; suppression simply
+takes longer to arm for those classes and nothing is lost.
 
 ---
 
@@ -318,7 +405,7 @@ Sweeps all review threads, skips any that had a fix commit or a won't-fix reply
   ```bash
   npx @lorekit/cli memory write \
     --scope "repo::{owner}/{repo}" \
-    --key "reviewer-comment-relevance::{fingerprint}" \
+    --key "reviewer-comment-relevance::{category}:{claim-gist}" \
     --value '{"fingerprint":"...","relevance":"...","resolution_method":"...","reason":"...","seen_count":1,"status":"active","expires":"..."}' \
     --tags "loop::reviewer-comment-relevance,source::{resolution_method}" \
     --source-agent "github-actions/reviewer-comment-relevance"
@@ -369,7 +456,7 @@ memory.search { q: "<fingerprint slug>", scopes: ["repo::{owner}/{repo}", "globa
 # Write (UPDATE if exists, ADD otherwise).
 memory.write {
   scope: "repo::{owner}/{repo}",   # or "global" for universal patterns
-  key: "reviewer-comment-relevance::<fingerprint>",
+  key: "reviewer-comment-relevance::<category>:<claim-gist>",   # NO pr#/comment-id/sha — see § Key format
   value: "<record body as JSON or markdown>",
   tags: ["loop::reviewer-comment-relevance", "source::<resolution_method>"],
   source_agent: "implement-suggestion",

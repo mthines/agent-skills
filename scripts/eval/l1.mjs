@@ -331,6 +331,49 @@ function checksInSync(plan, checks) {
   s.check("G9c pr-reviewer.md wires 2.6b between 2.6 and 2.7",
     prReviewer.includes("2.6b") && prReviewer.includes("verification-receipt"));
 
+  // G9d: comment-relevance keys must be a pure `<category>:<claim-gist>` fingerprint —
+  // NEVER a coordinate (pr#/comment-id/sha/file:line). Coordinate keys are unique per
+  // occurrence, so seen_count never accumulates and the relevance loop goes inert; this
+  // is the observed drift that left ~40 duplicate rows on dash0hq/dash0. The rule and the
+  // pr-reviewer write path must both carry the broadened prohibition + the ❌ anti-pattern
+  // exemplar, so the agent cannot read "MUST NOT encode file:line" narrowly and think a
+  // pr{N}-{commentId} key is allowed. Lock the guidance in place (presence, not absence —
+  // the ❌ example intentionally contains a coordinate key).
+  const crm = read("agents/shared/rules/comment-relevance-memory.md");
+  const threadRes = read("agents/shared/rules/thread-resolution.md");
+  s.check("G9d comment-relevance-memory broadens the coordinate ban beyond file:line",
+    /PR number,\s+comment id/.test(crm) && /never in the key/.test(crm));
+  s.check("G9d comment-relevance-memory shows the pr{N}-{commentId} anti-pattern as ❌ WRONG",
+    /❌ WRONG/.test(crm) && /reviewer-comment-relevance::pr\d+-\d+/.test(crm));
+  s.check("G9d comment-relevance-memory carries the pre-write coordinate self-check",
+    crm.includes("Self-check before every write") && /encoded a coordinate/.test(crm));
+  // The self-check must key on coordinate SHAPES, not on any run of digits. `fingerprint()`
+  // in scripts/record-comment-relevance.mjs preserves digits, so a bare `\d{3,}` test fires
+  // on legitimate gists (`issue:500-responses-not-retried`) — the agent would strip the digits
+  // while the script keeps them, re-creating the agent/script key split this rule exists to
+  // close. Lock both halves: the over-broad test is gone, and the carve-out is stated.
+  s.check("G9d comment-relevance self-check does not fire on digits inside a claim gist",
+    !crm.includes("(pr)?\\d{3,}") && crm.includes("Digits inside a gist are legitimate"));
+  s.check("G9d thread-resolution warns against coordinate keys in the pr-reviewer write path",
+    /NO pr#\/comment-id\/sha/.test(threadRes) && threadRes.includes("<category>:<claim-gist>"));
+  // The ban must cover EVERY write path, not just pr-reviewer's. A bare `::<fingerprint>`
+  // placeholder left in any memory.write template is an open invitation to re-encode a
+  // coordinate, which is how the drift reached dash0hq/dash0 in the first place. Assert the
+  // expanded placeholder is present AND the bare one is gone, per writing agent.
+  const implSuggestion = read("skills/workflow/implement-suggestion/SKILL.md");
+  for (const [label, doc] of [
+    ["implement-suggestion/SKILL.md", implSuggestion],
+    ["comment-relevance-memory.md", crm],
+    ["thread-resolution.md", threadRes],
+  ]) {
+    // Ban BOTH placeholder spellings: the markdown templates use `<fingerprint>` and the
+    // GitHub Actions CLI snippet uses `{fingerprint}`. Guarding only the angle form leaves
+    // the brace form free to regress the same defect.
+    s.check(`G9d ${label} spells the relevance key as <category>:<claim-gist>, never a bare fingerprint placeholder`,
+      doc.includes("reviewer-comment-relevance::<category>:<claim-gist>") &&
+      !/reviewer-comment-relevance::[<{]fingerprint[>}]/.test(doc));
+  }
+
   // G10: review-config.md declares that absent .review.yaml defaults to profile: balanced,
   // and that balanced = today's defaults (threshold 80, per-file caps 5/10).
   // Back-compat: any behavior change without a config file is a guard failure.

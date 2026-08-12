@@ -181,13 +181,20 @@ adds the trigger. Writes are append-only, non-blocking, and a silent no-op when
 ```
 memory.write {
   scope: "repo::{owner}/{repo}",            # or "global" for a universal pattern
-  key:   "reviewer-comment-relevance::<fingerprint>",
+  key:   "reviewer-comment-relevance::<category>:<claim-gist>",   # NO pr#/comment-id/sha — see below
   value: "<record body: relevance, resolution_method, reason, examples, seen_count, expires>",
   tags:  ["loop::reviewer-comment-relevance", "source::<resolution_method>"],
   source_agent: "pr-reviewer",
   trigger: "re-review-reconcile"
 }
 ```
+
+The key's fingerprint segment is `<category>:<claim-gist>` and **nothing else** —
+never a `pr{N}-{commentId}` or any other coordinate. Encoding coordinates makes the key
+unique per occurrence, so `seen_count` never accumulates and the signal is inert
+(this is the drift that produced duplicate rows on `dash0hq/dash0`). Put the PR
+and comment id in the record's `examples` field. See the ✅/❌ examples and
+self-check in [`comment-relevance-memory.md` § Key format](./comment-relevance-memory.md#key-format).
 
 The `loop::reviewer-comment-relevance` tag conveys the bucket's kind (`signal`)
 and host (`reviewer`): LoreKit records both from the tag automatically (migration
