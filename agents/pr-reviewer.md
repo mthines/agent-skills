@@ -1209,7 +1209,7 @@ Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (al
 ```markdown
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
-Reviewed your changes — no issues found.
+✅ Reviewed your changes — no issues found. Nice work!
 
 OPTIMALITY_SECTION
 
@@ -1251,14 +1251,20 @@ MEMORIES_SECTION
 </details>
 ```
 
+**Positive-close on the PASS headline.** The clean-PASS headline is deliberately warm — a leading
+`✅` and a short `Nice work!` close — so a clean review lands as a small reward for the author, not a
+flat verdict. This tone is reserved for the all-clear PASS (every gate ✅, nothing inline); WARN and
+FAIL headlines stay neutral. Keep the checkmark and the `Nice work!` close verbatim; do not add extra
+emoji or exclamation beyond them.
+
 **Advisory clause on the PASS headline.** A PASS can still carry a `LOW_CONFIDENCE_SECTION` (every
 gate ✅, yet near-miss `issue`/`suggestion` findings were deferred — advisory findings never affect
 a gate). So the bare `no issues found.` would read as contradicting the advisory `issue:` entries
 just below it. When `CADV > 0`, append ` <CADV> advisory finding(s) below the confidence bar (see
-Low-confidence findings).` to the PASS headline; the `Reviewed your changes — no issues found.` base
-is preserved (nothing blocking or inline survived), so the reader learns advisory findings exist
-without the headline overstating cleanliness. When `CADV == 0` the headline stays exactly
-`Reviewed your changes — no issues found.`
+Low-confidence findings).` after the `Nice work!` close; the `✅ Reviewed your changes — no issues
+found. Nice work!` base is preserved (nothing blocking or inline survived), so the reader learns
+advisory findings exist without the headline overstating cleanliness. When `CADV == 0` the headline
+stays exactly `✅ Reviewed your changes — no issues found. Nice work!`
 
 **On WARN** — soft warnings only (hard Gates 2/3/4/5 ✅, at least one of Description vs. code / Code review is ⚠️, none ❌):
 
