@@ -677,8 +677,8 @@ function checksInSync(plan, checks) {
   {
     // G19a: the three concise headline sentences are present (PASS / WARN / FAIL).
     // These are literal anchors grepped from the rewritten Step 4 section.
-    s.check("G19a pr-reviewer.md has the PASS concise headline with a positive checkmark close",
-      prReviewer.includes("✅ Reviewed your changes — no issues found. Nice work!"));
+    s.check("G19a pr-reviewer.md has the PASS concise headline with an affirming checkmark lead",
+      prReviewer.includes("✅ Reviewed your changes — no issues found."));
 
     s.check("G19b pr-reviewer.md has the WARN concise headline led by WARN_GATE_COUNT and naming the warned gates",
       prReviewer.includes("Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>."));
