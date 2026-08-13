@@ -1209,7 +1209,7 @@ Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (al
 ```markdown
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
-Reviewed your changes — no issues found.
+✅ Reviewed your changes — no issues found.
 
 OPTIMALITY_SECTION
 
@@ -1251,14 +1251,20 @@ MEMORIES_SECTION
 </details>
 ```
 
+**Affirming checkmark on the PASS headline.** The clean-PASS headline leads with a `✅` so a clean
+review reads as a subtle, confirming reward for the author rather than a flat verdict. The checkmark
+carries the affirmation; the wording stays factual — no praise phrase, no extra emoji or exclamation.
+This affirming lead is reserved for the all-clear PASS (every gate ✅, nothing inline); WARN and FAIL
+headlines stay neutral.
+
 **Advisory clause on the PASS headline.** A PASS can still carry a `LOW_CONFIDENCE_SECTION` (every
 gate ✅, yet near-miss `issue`/`suggestion` findings were deferred — advisory findings never affect
 a gate). So the bare `no issues found.` would read as contradicting the advisory `issue:` entries
 just below it. When `CADV > 0`, append ` <CADV> advisory finding(s) below the confidence bar (see
-Low-confidence findings).` to the PASS headline; the `Reviewed your changes — no issues found.` base
-is preserved (nothing blocking or inline survived), so the reader learns advisory findings exist
+Low-confidence findings).` to the PASS headline; the `✅ Reviewed your changes — no issues found.`
+base is preserved (nothing blocking or inline survived), so the reader learns advisory findings exist
 without the headline overstating cleanliness. When `CADV == 0` the headline stays exactly
-`Reviewed your changes — no issues found.`
+`✅ Reviewed your changes — no issues found.`
 
 **On WARN** — soft warnings only (hard Gates 2/3/4/5 ✅, at least one of Description vs. code / Code review is ⚠️, none ❌):
 
