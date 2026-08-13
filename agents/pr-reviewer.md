@@ -380,6 +380,15 @@ While fetching, **also identify open unresolved bot-authored comments** for Gate
   `isResolved == false`. Every comment whose state was unavailable or unpaged is counted
   separately and reported as `thread state unavailable — <N> comment(s) unverified` in
   Gate 3's Details cell.
+- For each stored entry, capture three fields so Gate 3 can render an actionable, linkable
+  checklist (see *Gate 3* and `UNRESOLVED_THREADS_SECTION`): `path:line` (the anchor), `url`
+  (the comment's `html_url` permalink from `/tmp/prior-comments.json`), and `ask` — the comment's
+  own lead line, **truncated, not paraphrased**: take its first sentence (or its `suggestion:` /
+  `issue:` conventional-comment line), strip noise like `(non-blocking)`, and cut to ~12 words with
+  a trailing `…` if longer. Using the thread's own words — never the reviewer's summary of another
+  bot — means the author reads here exactly what they'll meet when they click through, and the
+  reviewer never puts words in another bot's mouth. Only the root comment of each thread needs an
+  entry; skip reply comments (`in_reply_to_id` set).
 - If `OPEN_BOT_COMMENTS[]` is empty, Gate 3 passes.
 
 Also load **comment-relevance memories** and **reviewer-lessons** via a narrow-to-broad fan-out.
@@ -679,7 +688,14 @@ Result: PASS (all green) or FAIL with list of failing check names.
 Use `OPEN_BOT_COMMENTS[]` from Step 1.0. Identify any prior automated review comments
 (Cursor, Claude, other agents) whose review thread is still open — `isResolved == false`
 and the thread not dismissed.
-Finding format: one line per unresolved item — author login and brief subject.
+Finding format: one line per unresolved item, rendered as a **clickable entry with the thread's
+own lead line** `- [\`<path>:<line>\`](<url>) — <ask>` using the three fields captured in Step 1.0
+(`path:line`, `url`, `ask`). This is what makes the gate actionable: the author clicks straight
+through to each thread and reads in one line what it wants — instead of a bare `path:line` they
+have to hunt for.
+When Gate 3 fails, this same list is surfaced **outside** the accordion via
+`UNRESOLVED_THREADS_SECTION` (below) so it is visible in the collapsed review; the accordion's
+Gate 3 Details cell then stays terse — `<N> unresolved bot thread(s) — see "To unblock" above`.
 Result: PASS or FAIL with finding text.
 
 Two rules keep this gate honest:
@@ -1320,6 +1336,8 @@ MEMORIES_SECTION
 PARTIAL_REVIEW_BANNER
 Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review. Blocking: <FAIL_REASONS>.
 
+UNRESOLVED_THREADS_SECTION
+
 OPTIMALITY_SECTION
 
 ADDITIONAL_FINDINGS_SECTION
@@ -1334,7 +1352,7 @@ LOW_CONFIDENCE_SECTION
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ✅ or ⚠️ | static description (on ✅) or mismatch text (≤ 120 chars) |
-| Prior bot feedback   | ✅ or ❌ | static description (on ✅) or finding text |
+| Prior bot feedback   | ✅ or ❌ | static description (on ✅) or `<N> unresolved bot thread(s) — see "To unblock" above` (the linked checklist lives in `UNRESOLVED_THREADS_SECTION`, not this cell) |
 | Documentation        | ✅ or ❌ | static description (on ✅) or finding text |
 | Self-review signals  | ✅ or ❌ | static description (on ✅) or finding text |
 | Code review          | ✅, ⚠️, or ❌ | static description (on ✅) or "See inline comments" or finding text |
@@ -1408,6 +1426,33 @@ It sits directly under the `<!-- PR_REVIEWER_REPORT -->` marker, above the headl
 truncated run can never be read as a complete PASS.
 This is the only prose permitted outside the templates, and it is permitted because the stop
 condition requires it in both the terminal report and the review body.
+
+`UNRESOLVED_THREADS_SECTION` renders the Gate 3 unblock checklist **outside the accordion** so
+it is visible in the collapsed review — the whole point is that a reader who only sees the
+headline (`Blocking: <N> unresolved bot review threads`) still learns *which* threads and *what
+each wants* without expanding anything, and can click straight to each one. Render it **only when
+Gate 3 (`Prior bot feedback`) is ❌**; omit the placeholder entirely otherwise (it never appears
+on a PASS/WARN, and never in the WARN template — Gate 3 failing always routes to the FAIL
+template). Substitute one entry per item in `OPEN_BOT_COMMENTS[]` (order: same file grouped, then
+by line), using the `path:line`, `url`, and `ask` fields from Step 1.0:
+
+```markdown
+**To unblock — resolve or reply to these <N> bot threads:**
+
+- [ ] [\`packages/cli/README.md:680\`](<url>) — bound \`LocalStore.search\` the way \`RemoteStore\` is
+- [ ] [\`packages/cli/src/install.mjs:291\`](<url>) — add the missing parity test for the event roster
+- [ ] [\`packages/cli/src/core/lessons.mjs:843\`](<url>) — cap \`LocalStore.search\` per-prompt walk
+- [ ] [\`packages/evals/test/cross-package-imports.test.mjs:81\`](<url>) — assert the mirror the docblock promises
+```
+
+Rules for this section:
+- **Every `path:line` is a Markdown link** to the thread's `html_url`, with the truncated `ask`
+  after an em-dash and a `- [ ]` checkbox so the author can tick items off. If an item's `url` is
+  missing (older fetch, or the permalink could not be read), render its `path:line` as inline code
+  with no link rather than a broken link, and keep the `ask`.
+- **Actionable-only** — the unresolved threads and nothing else; never restate the gate table,
+  tally, or other findings. It is a rendering of Gate 3 state, not a new finding, so it is never
+  auto-applied or ingested (`reviewer-report-ingest.md`).
 
 `OPTIMALITY_SECTION` renders the Step 2.4c proposals. Omit the placeholder entirely when there
 are no proposals — the quiet early-exit must stay quiet. Otherwise substitute:

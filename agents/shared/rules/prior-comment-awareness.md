@@ -42,9 +42,11 @@ OWNER="${REPO%%/*}"
 REPO_NAME="${REPO##*/}"
 BOT_LOGIN=$(gh api user --jq .login)
 
-# All existing review comments on this PR (all authors)
+# All existing review comments on this PR (all authors).
+# `html_url` is the permalink to the comment thread — kept so Gate 3 can render each
+# unresolved thread as a clickable `[path:line](url)` link the author can jump straight to.
 gh api repos/$REPO/pulls/$PR_NUMBER/comments \
-  --jq '.[] | {id, path, line, body, user_login: .user.login, in_reply_to_id}' \
+  --jq '.[] | {id, path, line, body, user_login: .user.login, in_reply_to_id, html_url: .html_url}' \
   > /tmp/prior-comments.json
 
 # Comments authored by this agent (bot login)

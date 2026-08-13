@@ -79,6 +79,11 @@ The `Low-confidence findings` section holds `issue` / `suggestion` findings that
 
 A high-confidence optimality proposal (`optimality-review.md § Inline pointer`) may leave a short inline `suggestion:` pointer at the proposal's anchor. That pointer is a normal inline comment fetched from `pulls/<n>/comments`, not a body section — do not mine the `Optimality cards` block for it, and do not double-count the pointer against its card.
 
+### The unblock checklist is not a body section
+
+The `**To unblock — resolve or reply to these <N> bot threads:**` list (`pr-reviewer.md §
+UNRESOLVED_THREADS_SECTION`) is a presentational rendering of Gate 3 state, not an extractable section: it has no row in the table above, so the "match by literal heading" rule already skips it. Never mine its linked `path:line` bullets for findings — that would double-count the gate and re-ingest *other bots'* comments as `pr-reviewer`'s own.
+
 ### Standards findings are not a body section
 
 The `**Standards (2.4d)**` line is a **log line, not a finding list**. Step 2.4d findings pass the
