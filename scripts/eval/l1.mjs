@@ -6,7 +6,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, Suite } from "./lib.mjs";
+import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, extractSection, Suite } from "./lib.mjs";
 
 const AW = join(REPO_ROOT, "skills/workflow/autonomous-workflow");
 const s = new Suite("L1 deterministic contract checks");
@@ -694,9 +694,9 @@ function checksInSync(plan, checks) {
     // '### INLINE_COMMENTS_JSON format') to avoid false-matching the Step-3 terminal
     // tables at lines 818/844/870.
     {
-      const step4Start = prReviewer.indexOf("### Review body format");
-      const step4End   = prReviewer.indexOf("### INLINE_COMMENTS_JSON format");
-      const step4      = prReviewer.slice(step4Start, step4End);
+      // sliceBetween guards both anchors: a moved/deleted anchor throws a clear
+      // error instead of a raw indexOf(-1) silently widening the slice.
+      const step4      = sliceBetween(prReviewer, "### Review body format", "### INLINE_COMMENTS_JSON format");
       // Split on the opening PR_REVIEWER_REPORT marker to isolate each template block,
       // then keep only real template blocks — those carrying the 'Reviewed your changes'
       // headline. This drops the trailing prose (the Rules-for-table-cells section mentions
@@ -757,13 +757,10 @@ function checksInSync(plan, checks) {
   // never re-encode expected strings as a self-comparison
   // (aw-lessons::mock-that-reimplements-the-thing-under-test). Mirrors the G18/G19 idiom.
   {
-    const step12cStart = prReviewer.indexOf("### 1.2c Diff-keyed lesson search");
-    const step12cEnd   = prReviewer.indexOf("### 1.3 Synthesize intent");
-    // Same `>= 0` guard as step10 / step13 below: an unresolved anchor must yield "" and fail the
-    // checks, not silently widen the haystack to (nearly) the whole file and keep them green.
-    const step12c      = step12cStart >= 0 && step12cEnd > step12cStart
-      ? prReviewer.slice(step12cStart, step12cEnd)
-      : "";
+    // sliceBetween guards both anchors: an unresolved anchor throws a clear error
+    // instead of a raw indexOf(-1) silently widening the haystack to (nearly) the
+    // whole file and keeping the checks green.
+    const step12c      = sliceBetween(prReviewer, "### 1.2c Diff-keyed lesson search", "### 1.3 Synthesize intent");
 
     // G20a: the query-construction prose enumerates the changed-symbol-names field.
     s.check("G20a pr-reviewer.md Step 1.2c query includes a changed-symbol-names field",
@@ -797,11 +794,7 @@ function checksInSync(plan, checks) {
     //       edit does not conflate the two caps. Scoped to the Step 1.0 block for the same reason
     //       G20c is scoped to its fence: a `limit=50` anywhere else in the file must not satisfy a
     //       claim about Step 1.0. An unresolvable slice fails rather than passing vacuously.
-    const step10Start = prReviewer.indexOf("### 1.0 Prior-comment awareness");
-    const step10End   = prReviewer.indexOf("### 1.1 Fetch PR data in parallel");
-    const step10      = step10Start >= 0 && step10End > step10Start
-      ? prReviewer.slice(step10Start, step10End)
-      : "";
+    const step10      = sliceBetween(prReviewer, "### 1.0 Prior-comment awareness", "### 1.1 Fetch PR data in parallel");
     s.check("G20e pr-reviewer.md Step 1.0 list cap of 50 is unchanged",
       /memory_list:.*limit=50/.test(step10));
 
@@ -820,11 +813,7 @@ function checksInSync(plan, checks) {
     //       expands the bound value instead of re-deriving it. Without this the two prose halves
     //       can drift back apart, which is the exact defect the hoist was introduced to remove.
     //       Both halves are asserted from their OWN slice, never from the whole file.
-    const step13Start = prReviewer.indexOf("### 1.3 Synthesize intent");
-    const step13End   = prReviewer.indexOf("### 1.4 Triage for large PRs");
-    const step13      = step13Start >= 0 && step13End > step13Start
-      ? prReviewer.slice(step13Start, step13End)
-      : "";
+    const step13      = sliceBetween(prReviewer, "### 1.3 Synthesize intent", "### 1.4 Triage for large PRs");
     const diag13Row = prReviewerDiag
       .split("\n")
       .find((l) => l.startsWith("| 1.3 | Intent synthesis")) || "";
@@ -846,6 +835,94 @@ function checksInSync(plan, checks) {
     s.check("G20h review-mode intent_summary bullet describes Step 1.3 as expanding INTENT_PHRASE",
       intentSummaryBullet.includes("INTENT_PHRASE") &&
       intentSummaryBullet.includes("Step 1.2c"));
+  }
+}
+
+// ── G21: code-review-retrieval-relevance L2 suite wiring ──
+// Reads the REAL shipped files and asserts literal anchors grepped OUT of them —
+// never re-encode expected strings inside the eval (aw-lessons::mock-that-reimplements).
+// Pairs positive + negative halves. Guard bites on revert (aw-lessons::prove-the-guard-bites).
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+
+  const l2 = read("scripts/eval/l2.mjs");
+  const golden = read("scripts/eval/golden/code-review-retrieval-relevance.jsonl");
+  const notes  = read("scripts/eval/golden/code-review-retrieval-relevance.NOTES.md");
+  const l2yml  = read(".github/workflows/evals-l2.yml");
+  const readme = read("scripts/eval/README.md");
+
+  // G21a: l2.mjs SUITES contains the new suite entry with the D1 rubric file + section.
+  // Scoped to the code-review-retrieval-relevance suite object so the file/section
+  // anchors are asserted INSIDE that entry — a bare whole-file includes would stay
+  // green if agents/pr-reviewer.md ever appeared in another suite's rubric.
+  const d1Suite = (l2.match(
+    /name:\s*"code-review-retrieval-relevance"[\s\S]*?rubric:\s*\{[^}]*\}/,
+  ) || [""])[0];
+  s.check("G21a l2.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + section)",
+    d1Suite.includes("agents/pr-reviewer.md") &&
+    d1Suite.includes("## Step 1: Fetch all inputs + load memories"));
+
+  // G21b: golden JSONL exists and every non-empty line is valid JSON (locks the
+  // test-plan claim that all lines parse). A bare non-empty count would pass on a
+  // truncated/corrupt line; JSON.parse per line actually validates parseability.
+  const goldenLines = golden.split("\n").filter(Boolean);
+  let goldenAllParse = goldenLines.length >= 1;
+  for (const ln of goldenLines) {
+    try { JSON.parse(ln); } catch { goldenAllParse = false; break; }
+  }
+  s.check("G21b golden JSONL exists and every line is valid JSON", goldenAllParse);
+
+  // G21c: the loud BOOTSTRAP marker literal is present in the NOTES file.
+  s.check("G21c loud BOOTSTRAP marker literal is present in the NOTES file",
+    notes.includes("BOOTSTRAP SEED — NOT A REAL BASELINE"));
+
+  // G21d: evals-l2.yml paths lists agents/pr-reviewer.md (the live rubric source for the new suite).
+  s.check("G21d evals-l2.yml paths lists agents/pr-reviewer.md",
+    l2yml.includes("agents/pr-reviewer.md"));
+
+  // G21e: README carries the methodology NOTE for this suite (promotion → golden case),
+  // not merely the suite table row. Assert on the note's own heading literal so a table
+  // row alone can't satisfy it.
+  s.check("G21e README carries the per-suite methodology note (promotion → golden case) for code-review-retrieval-relevance",
+    readme.includes("### `code-review-retrieval-relevance` — methodology note"));
+
+  // G21f (regression lock): the six pre-existing suite names are still present in l2.mjs
+  // (negative half: the edit added, did not replace).
+  for (const name of ["tier-routing", "bug-class", "complexity-triage", "aw-should-trigger",
+    "optimize-approach-optimality", "reviewer-agreement-bump"]) {
+    s.check(`G21f l2.mjs still contains pre-existing suite '${name}' (add-not-replace)`,
+      l2.includes(`name: "${name}"`));
+  }
+
+  // G21g: EVERY L2 suite with a non-null rubric.section must extract a NON-EMPTY body
+  // (more than just its heading line). This is the "the eval actually contains a rubric"
+  // guard — it would have caught the empty-rubric defect where a `## ` section immediately
+  // followed by a `### ` subheading extracted only the 43-char title (zero body), feeding
+  // the model an empty rubric. It runs the SAME shared extractSection l2.mjs feeds the model
+  // (imported from lib.mjs), so a regression in that function — e.g. reverting the
+  // heading-level-aware cut back to a cut-at-any-heading — fails this guard. The suite list
+  // is parsed live out of l2.mjs so the guard can never drift from the shipped suites.
+  const BODY_MIN = 80; // a real rubric body dwarfs this; a bare title never reaches it.
+  const rubricEntries = [...l2.matchAll(
+    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*section:\s*(null|"([^"]+)")\s*\}/g,
+  )].map((m) => ({ file: m[1], section: m[2] === "null" ? null : m[3] }));
+  s.check("G21g parsed at least the 7 shipped rubric entries from l2.mjs",
+    rubricEntries.length >= 7);
+  for (const { file, section } of rubricEntries) {
+    if (section === null) continue; // whole-file rubrics have no heading to strip.
+    // Guard the extraction: a renamed/moved rubric heading makes extractSection throw.
+    // Catch it so this surfaces as a red G21g check with a report, rather than an
+    // uncaught throw that aborts the entire L1 run before s.report() runs.
+    let body = "";
+    let extractErr = null;
+    try {
+      body = extractSection(file, section).slice(section.length).trim();
+    } catch (e) {
+      extractErr = e instanceof Error ? e.message : String(e);
+    }
+    s.check(`G21g L2 rubric '${section}' in ${file} extracts a non-empty body (> heading line)`,
+      extractErr === null && body.length > BODY_MIN,
+      extractErr ?? `body length ${body.length} <= ${BODY_MIN}`);
   }
 }
 

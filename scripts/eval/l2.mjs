@@ -15,7 +15,7 @@
 // the shipped instructions — not a copy.
 import { readFileSync, existsSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { REPO_ROOT } from "./lib.mjs";
+import { REPO_ROOT, extractSection } from "./lib.mjs";
 
 const SUITES = [
   {
@@ -66,6 +66,14 @@ const SUITES = [
     inputKey: "input", inputLabel: "Scenario",
     choices: ["promoted", "not-promoted"],
   },
+  {
+    name: "code-review-retrieval-relevance",
+    golden: "golden/code-review-retrieval-relevance.jsonl",
+    rubric: { file: "agents/pr-reviewer.md", section: "## Step 1: Fetch all inputs + load memories" },
+    instruction: "You are pr-reviewer at Step 1. Using ONLY the Step 1 memory-read procedure below (Step 1.0 mcp__lorekit__memory_list + Step 1.2c mcp__lorekit__memory_search), decide whether the described candidate memory would be surfaced by the documented read for the given PR diff. Reply 'surface' if the documented read would return it, or 'skip' if it would not.",
+    inputKey: "input", inputLabel: "Candidate + diff",
+    choices: ["surface", "skip"],
+  },
 ];
 
 const MODEL = process.env.EVAL_MODEL || "claude-sonnet-4-6";
@@ -78,15 +86,8 @@ if (!KEY) {
   process.exit(0);
 }
 
-function extractSection(file, section) {
-  const txt = readFileSync(join(REPO_ROOT, file), "utf8");
-  if (!section) return txt.trim();
-  const i = txt.indexOf(section);
-  if (i < 0) throw new Error(`section "${section}" not found in ${file}`);
-  const after = txt.slice(i + section.length);
-  const next = /\n#{1,6}\s/.exec(after); // cut at the next heading of any level
-  return (section + (next ? after.slice(0, next.index) : after)).trim();
-}
+// extractSection is heading-level-aware and shared from lib.mjs so l1.mjs's G21g
+// "eval actually contains a rubric" guard exercises the exact extraction this runs.
 
 async function ask(system, input) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {

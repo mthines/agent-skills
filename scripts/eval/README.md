@@ -69,6 +69,7 @@ choice against the human label. Classification → exact-match, **no LLM-as-judg
 | `aw-should-trigger` | should the routing rule auto-trigger? | the whole routing rule | trigger / skip |
 | `reviewer-agreement-bump` | is the surviving finding agreement-promoted? | reviewer `## Cross-rubric agreement` | promoted / not-promoted |
 | `optimize-approach-optimality` | is this approach optimal or suboptimal? | optimize-approach `optimality-rubric.md` (whole file) | optimal / suboptimal |
+| `code-review-retrieval-relevance` | would the documented Step 1.0 + 1.2c read surface this candidate memory for the given PR diff? | `agents/pr-reviewer.md` `## Step 1: Fetch all inputs + load memories` | surface / skip |
 
 ```bash
 node scripts/eval/l2.mjs                 # all suites
@@ -93,9 +94,30 @@ EVAL_MODEL=… EVAL_GATE=70 node scripts/eval/l2.mjs
 ### The link to self-improvement
 
 A promotion-eligible lesson (`seen_count ≥ 3`) is a recurring failure — exactly
-what a golden case should encode. When a lesson is promoted via `diagnose`,
-add the case here so the fix is locked. The `diagnostic-surface.md` failure
-taxonomies are a proto-spec for this golden set.
+what a golden case should encode.
+When a lesson is promoted via `diagnose`, add the case here so the fix is locked.
+The `diagnostic-surface.md` failure taxonomies are a proto-spec for this golden set.
+
+### `code-review-retrieval-relevance` — methodology note
+
+This suite measures whether `pr-reviewer`'s documented Step 1.0 (`mcp__lorekit__memory_list`)
++ Step 1.2c (`mcp__lorekit__memory_search`, enriched query) read surfaces the lessons
+that should fire for a given PR diff + candidate memory pool.
+
+Ground truth is **defined by the outcome signal** — `loop::reviewer-lessons` /
+`loop::reviewer-comment-relevance` tags + `origin_pr` + `seen_count >= 3` marks a
+promotion-grade should-fire lesson.
+Labels are derived from this signal, not from re-running the read being measured.
+
+**When a lesson is promoted via `diagnose`, add a golden case so the fix is locked.**
+Specifically: when a `loop::reviewer-lessons` or `loop::reviewer-comment-relevance` entry
+reaches `seen_count >= 3` and is promoted through the slow tier (`/create-skill diagnose`),
+record the lesson's trigger context as a new `{"id","input","expected","notes"}` line in
+`golden/code-review-retrieval-relevance.jsonl` with `expected: "surface"`.
+
+The current golden set is a **BOOTSTRAP SEED — NOT A REAL BASELINE**.
+See `golden/code-review-retrieval-relevance.NOTES.md` for the full caveat and ground-truth definition.
+Do not tighten the `EVAL_GATE` floor until the golden set reaches ≥ 50 real-corpus cases.
 
 ## CI — two requireable checks
 
