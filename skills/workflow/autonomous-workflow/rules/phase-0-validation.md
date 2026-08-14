@@ -89,9 +89,57 @@ Cover four buckets:
 - "How will we know this is complete?"
 - "What tests must pass?"
 
+### Step 3a: Scope Alignment
+
+**Anchor:** `scope-alignment`
+
+When the [`interview`](../../../analysis/interview/SKILL.md) companion is
+installed and `--no-interview` was not passed, delegate the restate-and-diff
+(Step 3b) and the Missing-Information Gate (Step 3c) to it:
+
+    Skill("interview")
+
+`interview` is the single source of truth for those two mechanisms. It restates
+and diffs the request, researches the codebase so questions are specific,
+classifies every unknown `blocking` vs `advisory`, interviews the user only for
+load-bearing unknowns (adaptive — silent on a crisp request), and writes
+`.agent/{branch}/brief.md` plus a readiness verdict.
+
+Default-on behavior by tier:
+
+| Tier         | Runs interview?                                                       |
+| ------------ | -------------------------------------------------------------------- |
+| Full         | Yes, by default. `--no-interview` skips it; `--interview` forces it. |
+| Lite / Micro | No by default (small, well-specified). `--interview` forces it.      |
+
+Consume the result:
+
+- **`ready` / `ready-with-assumptions`** — lift the restatement, deltas, and
+  assumptions from `brief.md` into Step 4; **skip the inline Step 3b/3c
+  procedure** (the brief already performed it). Phase 1 reads the brief to seed
+  Requirements, Acceptance Criteria, and the Existing Code Survey (see
+  [`phase-1-planning.md#scope-brief`](./phase-1-planning.md#scope-brief)).
+- **`blocked`** — a load-bearing unknown is unresolved. Halt and ask, **even
+  under `--no-confirm`**. The Missing-Information hard invariant is preserved by
+  the delegation, never waived by it.
+
+Graceful degradation — if the companion is missing or `--no-interview` was
+passed, log one line and **run the inline Step 3b and Step 3c below unchanged**
+(they are the fallback; the phase's gates are identical either way):
+
+```markdown
+- [TIMESTAMP] Phase 0: interview — not available (or --no-interview), running inline Step 3b/3c
+```
+
+Disable by removing this invocation (see
+[`companion-skills.md`](./companion-skills.md#registry)).
+
 ### Step 3b: Restate and Diff the Requirements
 
 **Anchor:** `restate-and-diff`
+
+> Skip this step if Step 3a ran `interview` with a non-`blocked` verdict — lift
+> the deltas from `brief.md`. Perform it inline only in the fallback path.
 
 Before presenting understanding, restate every requirement **in your own
 words** and diff the restatement against the user's words. The gap between
@@ -115,6 +163,9 @@ diff was skipped — re-walk the user's words clause by clause.
 
 **Anchor:** `missing-information-gate`
 
+> Skip this step if Step 3a ran `interview` with a non-`blocked` verdict — the
+> brief already classified every unknown. Perform it inline only in the fallback path.
+
 Enumerate the information you **need but do not have**, and classify each item.
 This is the guess-vs-ask gate: agents measurably hallucinate missing
 requirements instead of asking, and self-reported confidence is a poor trigger
@@ -123,7 +174,7 @@ for asking — an explicit enumeration is the plan-time substitute.
 | Class                 | Criterion                                                                                                   | Action                          |
 | --------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------- |
 | `blocking`            | Absence changes the **observable behavior** of the result — data handling, security, error semantics, integration contracts, anything irreversible | **Halt and ask.** Never guess.  |
-| `assume-and-proceed`  | Absence affects polish, not behavior — naming, placement, cosmetic defaults                                  | State the assumption explicitly in Step 4 and proceed |
+| `advisory`  | Absence affects polish, not behavior — naming, placement, cosmetic defaults                                  | State the assumption explicitly in Step 4 and proceed |
 
 Detection prompts: Is any behavior unspecified for an input that can occur? Is
 error handling undefined? Is an external system named without its contract? Do
@@ -179,7 +230,7 @@ Wait for user response. Do NOT proceed until:
 If the user's invocation contains an explicit autonomy grant — the phrase "proceed without confirmation" (or an equivalently explicit grant) or the `--no-confirm` flag — do NOT wait: post the Step 4 understanding summary (including any open questions, answered with your stated best-guess assumptions), emit the MODE SELECTION block, and proceed immediately to Phase 1.
 The grant must be explicit in the invocation — never infer it from tone, urgency, or task simplicity.
 Default behavior without a grant is unchanged: wait for the user's explicit "proceed".
-**Exception — the grant does not cover `blocking` gaps.** If Step 3c classified any missing-information item as `blocking`, halt and ask regardless of the grant: the grant waives the confirmation wait, never a load-bearing unknown. Only `assume-and-proceed` items may be answered with stated assumptions under the grant.
+**Exception — the grant does not cover `blocking` gaps.** If Step 3c classified any missing-information item as `blocking`, halt and ask regardless of the grant: the grant waives the confirmation wait, never a load-bearing unknown. Only `advisory` items may be answered with stated assumptions under the grant.
 
 If the user clarifies or corrects:
 
@@ -272,8 +323,9 @@ MODE SELECTION:
 Before leaving Phase 0:
 
 - [ ] User request fully understood
+- [ ] Scope alignment: `interview` companion ran (Full tier default, unless `--no-interview`) with a non-`blocked` verdict, OR inline Step 3b/3c used and the fallback logged (anchor: `scope-alignment`)
 - [ ] Requirements restated in own words and diffed against the user's words; every delta surfaced (anchor: `restate-and-diff`)
-- [ ] Missing information enumerated and classified `blocking` / `assume-and-proceed`; no unresolved `blocking` item — even under `--no-confirm` (anchor: `missing-information-gate`)
+- [ ] Missing information enumerated and classified `blocking` / `advisory`; no unresolved `blocking` item — even under `--no-confirm` (anchor: `missing-information-gate`)
 - [ ] All ambiguities clarified
 - [ ] Scope explicitly confirmed
 - [ ] Acceptance criteria defined

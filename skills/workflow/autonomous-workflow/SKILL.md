@@ -9,11 +9,11 @@ description: >
   isolation", "in a worktree", or independent feature work. Invoke with
   /autonomous-workflow.
 disable-model-invocation: false
-argument-hint: '<task-description> [--no-confirm] [--critical]'
+argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no-interview]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.19.0'
+  version: '3.20.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -162,6 +162,7 @@ for the full registry, trigger conditions, and **how to disable any companion**.
 
 | Phase | Companion              | Trigger                                                | Args             |
 | ----- | ---------------------- | ------------------------------------------------------ | ---------------- |
+| 0     | `interview`            | Full Mode default-on (adaptive — silent on a crisp request; skip on `--no-interview`, force on `--interview`). SSOT for restate-and-diff + Missing-Information Gate; writes `.agent/{branch}/brief.md` + readiness verdict | — |
 | 1     | `lorekit-memory`       | Always — read accumulated workflow lessons before design (fast-tier self-improvement) | `memory.list loop::aw-lessons` |
 | 1     | `holistic-analysis`    | Complex / multi-domain / unfamiliar task               | —                |
 | 1     | `code-quality`         | Always (informs design)                                | `plan`           |
@@ -248,7 +249,7 @@ Three phases benefit from sub-agent fan-out:
 | Phase | Action                                                                                          |
 | ----- | ----------------------------------------------------------------------------------------------- |
 | Setup | MODE SELECTION + prerequisite check                                                             |
-| 0     | Restate-and-diff the requirements, run the missing-information gate (`blocking` halts even under `--no-confirm`), ask clarifying questions, get explicit "proceed" |
+| 0     | Scope alignment via `interview` (Full default; `--no-interview` falls back to inline) — restate-and-diff, missing-information gate (`blocking` halts even under `--no-confirm`), clarifying questions, `brief.md`; get explicit "proceed" |
 | 1     | Analyze codebase (dependency-graph localization first; parallel `Explore` if complex), Existing Code Survey per planned `create`, traceable EARS-shaped ACs, design with `code-quality(plan)`, `optimize-approach(plan)` approach check, `confidence(plan)` gate |
 | 2     | `gw add`, `gw cd`, install deps, `Skill("aw-create-plan")` inside worktree (writes `plan.md` + `checks.yaml`)   |
 | 3     | Code per `plan.md` → companions per task type (`tdd`, `ux`) → fast-check after each edit; `code-quality(code)` once at end |

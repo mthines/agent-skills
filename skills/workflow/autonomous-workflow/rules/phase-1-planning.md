@@ -117,6 +117,33 @@ Disable by removing this invocation (see
 
 ---
 
+## Scope Brief
+
+**Anchor:** `scope-brief`
+
+If Phase 0 Step 3a ran the [`interview`](../../../analysis/interview/SKILL.md)
+companion, read the brief it wrote before drafting the design — do not re-derive
+scope the interview already settled:
+
+```
+Read .agent/{branch}/brief.md
+```
+
+Seed the plan from it:
+
+- `Restatement` + requirement bullets → `## Requirements` (carry the
+  `[user-stated]` / `[inferred]` tags; `confidence(plan)` rule #9 coverage is
+  checked against them).
+- `In scope` / `Out of scope (non-goals)` → the plan's scope boundaries.
+- `Success criteria` → seed the Acceptance Criteria (Step 2d²).
+- `Affected areas` → seed the Existing Code Survey.
+- `Assumptions (advisory)` → carry forward; do not silently re-decide them.
+
+If no brief exists (interview not run, or `--no-interview`), proceed from the
+Phase 0 conversation as before — this section is a no-op without a brief.
+
+---
+
 ## Parallel Research
 
 **Anchor:** `parallel-research`
@@ -616,6 +643,7 @@ contract and message format.
 ## Planning Checklist
 
 - [ ] `lorekit(memory.list loop::aw-lessons)` read narrow-to-broad (repo:: then global); matching lessons applied as constraints (anchor: `lessons-read`)
+- [ ] Scope brief read from `.agent/{branch}/brief.md` if Phase 0 ran `interview`; plan seeded from it, not re-derived (anchor: `scope-brief`)
 - [ ] Codebase analyzed (structure, patterns, stack) — dependency-graph localization (def/ref walk) before keyword sweep
 - [ ] Parallel `Explore` sub-agents used if complexity triggered (anchor: `parallel-research`)
 - [ ] `holistic-analysis` invoked if complexity triggered (anchor: `complex-task-detection`)

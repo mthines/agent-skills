@@ -764,6 +764,39 @@ end-user-facing; this file is contributor-facing.
 
 ## History
 
+- **v3.20.0** — Scope-alignment interview companion (Phase 0). Wired the new
+  [`interview`](../../analysis/interview/SKILL.md) skill in as a **default-on,
+  adaptive** Phase 0 companion (Full Mode; `--no-interview` skips, `--interview`
+  forces even on Micro/Lite). `interview` is now the **single source of truth**
+  for restate-and-diff + the Missing-Information Gate: Phase 0 Step 3a delegates
+  both to `Skill("interview")`, which researches the codebase, classifies every
+  unknown `blocking` vs `advisory`, interviews the user only for load-bearing
+  unknowns (silent on a crisp request), and writes `.agent/{branch}/brief.md` +
+  a readiness verdict. Phase 1's new `## Scope Brief` step seeds Requirements /
+  ACs / Existing Code Survey from the brief instead of re-deriving scope. The
+  inline Step 3b/3c procedure is preserved verbatim as the **graceful-degradation
+  fallback** (companion missing or `--no-interview`); the gates are identical
+  either way, and a `blocked` verdict enforces the load-bearing-unknown hard
+  invariant (halts even under `--no-confirm`). Reconciled the gate vocabulary:
+  the incumbent `assume-and-proceed` class was renamed **`assume-and-proceed` →
+  `advisory`** across `phase-0-validation.md`, `diagnostic-surface.md`,
+  `aw-planner.agent.md`, `planning-quality-research.md`, and this file so both
+  the skill and the workflow speak one vocabulary (no eval or anchor referenced
+  the old token). Coupled surfaces updated in lockstep: `phase-0-validation.md`
+  (Step 3a + `scope-alignment` anchor + checklist + 3b/3c fallback pointers),
+  `phase-1-planning.md` (`## Scope Brief` + `scope-brief` anchor + checklist),
+  `companion-skills.md` (Phase 0 registry row + disable link),
+  `templates/aw-planner.agent.md` (Phase 0 companion row + gate delegation note),
+  `templates/aw.agent.md` (flag pass-through + Micro/Lite force path),
+  `diagnostic-surface.md` (Phase 0 guard row + new typical gaps),
+  `SKILL.md` (companion table + Phase 0 quick-ref + `argument-hint` flags +
+  version 3.20.0), `README.md` (companion table), and the root `CLAUDE.md` /
+  `README.md` inventory (`interview` entry de-caveated to "wired"). `interview`
+  degrades silently if not installed — the inline gate is untouched, and
+  `confidence(plan)` remains the only non-removable companion. Deliberately NOT
+  changed: the Phase 0/2 mandatory invariants, the `blocking`-halts-under-
+  `--no-confirm` hard invariant, and every `checks.yaml` / `confidence` rule.
+
 - **v3.19.0** — Single-context Full fallback for harnesses without sub-agent
   dispatch (e.g. Claude Code on the web, where `Task` is disabled). Before this,
   `aw`'s Full-tier fallback was under-specified and self-contradictory: the
@@ -883,7 +916,7 @@ end-user-facing; this file is contributor-facing.
   (2024–2026 web-research pass; see that file for citations and caveats):
   - **Phase 0:** Step 3b restate-and-diff (surface spec-perception deltas
     before presenting understanding) and Step 3c Missing-Information Gate
-    (`blocking` vs `assume-and-proceed`; `blocking` halts even under
+    (`blocking` vs `advisory`; `blocking` halts even under
     `--no-confirm` — new hard invariant).
   - **Phase 1:** dependency-graph-first localization in Step 1; Existing Code
     Survey (recorded reuse searches + `EXTEND`/`WRAP`/`BUILD NEW` verdict per

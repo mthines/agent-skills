@@ -179,6 +179,7 @@ trigger registry is in
 
 | Phase | Companion              | Required? | What it does                                  |
 | ----- | ---------------------- | --------- | --------------------------------------------- |
+| 0     | `interview`            | Optional  | Default-on scope alignment in Full Mode (adaptive — silent on a crisp request; `--no-interview` skips, `--interview` forces). Restate-and-diff + missing-information gate; writes `brief.md` |
 | 1     | `lorekit-memory`       | Optional  | Reads `loop::aw-lessons` — applies prior workflow lessons as plan constraints (fast-tier self-improvement) |
 | 1     | `holistic-analysis`    | Optional  | Multi-domain execution-path tracing           |
 | 1     | `code-quality`         | Optional  | Design-quality review (informs the plan)      |

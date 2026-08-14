@@ -187,7 +187,7 @@ The transferable idea: **behavioral divergence across samples is the abstain sig
 *Caveat: guarantee holds under exchangeability; input-generation without oracles is under-specified.*
 
 **Proposal 4.3a — an explicit "Missing Information" gate in Phase 0.**
-Add a required sub-step to [`phase-0-validation.md`](../rules/phase-0-validation.md): before presenting understanding, the planner enumerates the **information it needs but does not have** (unspecified behaviors, undefined error handling, unnamed integration points, ambiguous terms) and classifies each as `blocking` or `assume-and-proceed`.
+Add a required sub-step to [`phase-0-validation.md`](../rules/phase-0-validation.md): before presenting understanding, the planner enumerates the **information it needs but does not have** (unspecified behaviors, undefined error handling, unnamed integration points, ambiguous terms) and classifies each as `blocking` or `advisory`.
 Any `blocking` item halts and asks — even under the `--no-confirm` escape hatch.
 Rationale: the current escape hatch says "answer open questions with best-guess assumptions," which is exactly the hallucinate-missing-requirements failure mode when the gap is load-bearing.
 The gate distinguishes "guess the button color" (assume) from "guess whether payments are idempotent" (block).

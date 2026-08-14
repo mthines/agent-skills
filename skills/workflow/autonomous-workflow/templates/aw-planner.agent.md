@@ -105,6 +105,7 @@ Full registry in [`rules/companion-skills.md`](../rules/companion-skills.md).
 
 | Phase | Companion           | Trigger                                          | Args              |
 | ----- | ------------------- | ------------------------------------------------ | ----------------- |
+| 0     | `interview`         | Full Mode default-on (adaptive; skip `--no-interview`, force `--interview`) — restate-and-diff + Missing-Information Gate SSOT; writes `brief.md` | — |
 | 1     | `lorekit-memory`    | Always — load prior workflow lessons before design | `memory.list loop::aw-lessons` |
 | 1     | `holistic-analysis` | Complex / multi-domain / unfamiliar task         | —                 |
 | 1     | `code-quality`      | Always (informs design)                          | `plan`            |
@@ -138,9 +139,13 @@ them (procedures live in the phase rules; research basis in
    words, diff against the user's words, surface every delta before
    presenting understanding.
 2. **Missing-Information Gate (Phase 0).** Enumerate what you need but don't
-   have; classify `blocking` vs `assume-and-proceed`. A `blocking` gap halts
+   have; classify `blocking` vs `advisory`. A `blocking` gap halts
    and asks **even under `--no-confirm`** — the grant waives the wait, never
    a load-bearing unknown.
+   *(Gates 1–2 are the `interview` companion's job when it is installed: Phase 0
+   Step 3a delegates both to `Skill("interview")`, which writes `brief.md`. Same
+   output, one source of truth; the inline procedure is the fallback. A `blocked`
+   verdict enforces this gate.)*
 3. **Existing Code Survey (Phase 1).** Every planned `create` gets a recorded
    reuse search (def/ref walk first, keywords second) and a verdict —
    `EXTEND` / `WRAP` / `BUILD NEW`. `confidence(plan)` rule #10 fails a
