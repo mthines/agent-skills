@@ -65,6 +65,26 @@ export function frontmatter(file) {
 
 export const rel = (p) => relative(REPO_ROOT, p);
 
+/**
+ * Slice `text` between two string anchors, guarding against a missing anchor.
+ * Returns the substring from the start of `startAnchor` up to (but not including)
+ * `endAnchor`. Throws a clear error if either anchor is absent — a raw
+ * `text.slice(indexOf(a), indexOf(b))` silently misbehaves when `indexOf` returns
+ * -1 (the slice starts from the end / widens unexpectedly), which would let a
+ * moved-or-deleted anchor pass a contract check by accident.
+ * @param {string} text
+ * @param {string} startAnchor  first anchor; the slice begins at its first occurrence
+ * @param {string} endAnchor    second anchor; the slice ends just before its first occurrence
+ * @returns {string}
+ */
+export function sliceBetween(text, startAnchor, endAnchor) {
+  const start = text.indexOf(startAnchor);
+  if (start < 0) throw new Error(`sliceBetween: start anchor not found: ${JSON.stringify(startAnchor)}`);
+  const end = text.indexOf(endAnchor, start);
+  if (end < 0) throw new Error(`sliceBetween: end anchor not found after start: ${JSON.stringify(endAnchor)}`);
+  return text.slice(start, end);
+}
+
 // --- tiny test-runner so checks read like assertions and roll up to one exit code ---
 export class Suite {
   constructor(name) { this.name = name; this.pass = 0; this.fail = 0; this.failures = []; }

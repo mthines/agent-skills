@@ -6,7 +6,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, Suite } from "./lib.mjs";
+import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, Suite } from "./lib.mjs";
 
 const AW = join(REPO_ROOT, "skills/workflow/autonomous-workflow");
 const s = new Suite("L1 deterministic contract checks");
@@ -694,9 +694,9 @@ function checksInSync(plan, checks) {
     // '### INLINE_COMMENTS_JSON format') to avoid false-matching the Step-3 terminal
     // tables at lines 818/844/870.
     {
-      const step4Start = prReviewer.indexOf("### Review body format");
-      const step4End   = prReviewer.indexOf("### INLINE_COMMENTS_JSON format");
-      const step4      = prReviewer.slice(step4Start, step4End);
+      // sliceBetween guards both anchors: a moved/deleted anchor throws a clear
+      // error instead of a raw indexOf(-1) silently widening the slice.
+      const step4      = sliceBetween(prReviewer, "### Review body format", "### INLINE_COMMENTS_JSON format");
       // Split on the opening PR_REVIEWER_REPORT marker to isolate each template block,
       // then keep only real template blocks — those carrying the 'Reviewed your changes'
       // headline. This drops the trailing prose (the Rules-for-table-cells section mentions
@@ -757,13 +757,10 @@ function checksInSync(plan, checks) {
   // never re-encode expected strings as a self-comparison
   // (aw-lessons::mock-that-reimplements-the-thing-under-test). Mirrors the G18/G19 idiom.
   {
-    const step12cStart = prReviewer.indexOf("### 1.2c Diff-keyed lesson search");
-    const step12cEnd   = prReviewer.indexOf("### 1.3 Synthesize intent");
-    // Same `>= 0` guard as step10 / step13 below: an unresolved anchor must yield "" and fail the
-    // checks, not silently widen the haystack to (nearly) the whole file and keep them green.
-    const step12c      = step12cStart >= 0 && step12cEnd > step12cStart
-      ? prReviewer.slice(step12cStart, step12cEnd)
-      : "";
+    // sliceBetween guards both anchors: an unresolved anchor throws a clear error
+    // instead of a raw indexOf(-1) silently widening the haystack to (nearly) the
+    // whole file and keeping the checks green.
+    const step12c      = sliceBetween(prReviewer, "### 1.2c Diff-keyed lesson search", "### 1.3 Synthesize intent");
 
     // G20a: the query-construction prose enumerates the changed-symbol-names field.
     s.check("G20a pr-reviewer.md Step 1.2c query includes a changed-symbol-names field",
@@ -797,11 +794,7 @@ function checksInSync(plan, checks) {
     //       edit does not conflate the two caps. Scoped to the Step 1.0 block for the same reason
     //       G20c is scoped to its fence: a `limit=50` anywhere else in the file must not satisfy a
     //       claim about Step 1.0. An unresolvable slice fails rather than passing vacuously.
-    const step10Start = prReviewer.indexOf("### 1.0 Prior-comment awareness");
-    const step10End   = prReviewer.indexOf("### 1.1 Fetch PR data in parallel");
-    const step10      = step10Start >= 0 && step10End > step10Start
-      ? prReviewer.slice(step10Start, step10End)
-      : "";
+    const step10      = sliceBetween(prReviewer, "### 1.0 Prior-comment awareness", "### 1.1 Fetch PR data in parallel");
     s.check("G20e pr-reviewer.md Step 1.0 list cap of 50 is unchanged",
       /memory_list:.*limit=50/.test(step10));
 
@@ -820,11 +813,7 @@ function checksInSync(plan, checks) {
     //       expands the bound value instead of re-deriving it. Without this the two prose halves
     //       can drift back apart, which is the exact defect the hoist was introduced to remove.
     //       Both halves are asserted from their OWN slice, never from the whole file.
-    const step13Start = prReviewer.indexOf("### 1.3 Synthesize intent");
-    const step13End   = prReviewer.indexOf("### 1.4 Triage for large PRs");
-    const step13      = step13Start >= 0 && step13End > step13Start
-      ? prReviewer.slice(step13Start, step13End)
-      : "";
+    const step13      = sliceBetween(prReviewer, "### 1.3 Synthesize intent", "### 1.4 Triage for large PRs");
     const diag13Row = prReviewerDiag
       .split("\n")
       .find((l) => l.startsWith("| 1.3 | Intent synthesis")) || "";
