@@ -805,7 +805,7 @@ function checksInSync(plan, checks) {
     //       new query fields, not just "changed paths". G20a–G20e lock agents/pr-reviewer.md only,
     //       so without this the mirrored row can silently revert. Non-tautological: the base row
     //       carries neither literal.
-    const diag12cRow = read("agents/pr-reviewer/rules/diagnostic-surface.md")
+    const diag12cRow = prReviewerDiag
       .split("\n")
       .find((l) => l.startsWith("| 1.2c | Diff-keyed lesson search")) || "";
     s.check("G20f diagnostic-surface 1.2c row names the changed-symbol and intent+integrations fields",
@@ -821,7 +821,7 @@ function checksInSync(plan, checks) {
     const step13      = step13Start >= 0 && step13End > step13Start
       ? prReviewer.slice(step13Start, step13End)
       : "";
-    const diag13Row = read("agents/pr-reviewer/rules/diagnostic-surface.md")
+    const diag13Row = prReviewerDiag
       .split("\n")
       .find((l) => l.startsWith("| 1.3 | Intent synthesis")) || "";
     s.check("G20g Step 1.2c binds INTENT_PHRASE as the single derivation point and Step 1.3 expands it",
