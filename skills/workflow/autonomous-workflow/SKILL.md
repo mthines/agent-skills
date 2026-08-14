@@ -13,7 +13,7 @@ argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no
 license: MIT
 metadata:
   author: mthines
-  version: '3.20.0'
+  version: '3.21.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -198,6 +198,7 @@ for the full registry, trigger conditions, and **how to disable any companion**.
 6. **Companions are optional** — never block on a missing companion.
 7. **Stop and ask when blocked** — don't guess on ambiguity. A `blocking` missing-information gap (Phase 0 Step 3c) halts even under `--no-confirm`.
 8. **Acceptance criteria are traceable and executable** in Full Mode — `AC-{n}` IDs cover every user-stated requirement (rule #9), planned `create`s carry an Existing Code Survey verdict (rule #10), and `checks.yaml` (rule #11) is Phase 4's mechanical termination condition. Check definitions are executor-immutable; all-green is necessary, never sufficient.
+9. **User-requested changes are never scope creep** — a change the user asks for is a new requirement, welcome at any lifecycle point including **after the work is "done"**. Fold post-completion improvements in (re-detect the tier for the delta, reuse the existing branch/PR); the scope-creep guard restrains only *your own* unrequested expansion. See [`rules/safety-guardrails.md`](./rules/safety-guardrails.md#user-requested-changes-are-never-scope-creep).
 
 ---
 

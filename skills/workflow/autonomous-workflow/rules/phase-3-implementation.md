@@ -226,6 +226,13 @@ one-line log entry that contradicts the section body above it is worse than no
 log. Keep the edit minimal — this is not a re-plan (that is the Phase 4
 stuck-loop's job), just keeping the handoff document truthful.
 
+A user-requested change that arrives mid-run is conversation drift, **not scope
+creep** — fold it into the plan and implement it; never bounce it back as
+out-of-scope (see
+[`safety-guardrails.md#user-requested-changes-are-never-scope-creep`](./safety-guardrails.md#user-requested-changes-are-never-scope-creep)).
+If the change is large enough to need re-planning (architectural / cross-cutting),
+hand back to the planner rather than absorbing it as a minimal drift edit.
+
 Use full ISO 8601 timestamps with hours, minutes, seconds.
 
 ### Step 6: Periodic Broader Validation

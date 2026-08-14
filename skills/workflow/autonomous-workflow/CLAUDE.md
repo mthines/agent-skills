@@ -764,6 +764,40 @@ end-user-facing; this file is contributor-facing.
 
 ## History
 
+- **v3.21.0** — User-requested changes are never scope creep (post-completion
+  improvements welcome). Field report: after a Full run finished (draft PR
+  open), the user proposed an improvement having seen the whole feature; the
+  dispatcher **accepted the idea but declined to act on it, tagging it "scope
+  creep"** — forcing the user to insist before it was implemented. Root cause:
+  the only scope-creep guidance was the `safety-guardrails.md` "When to Stop and
+  Ask" trigger #3 ("Scope creep detected"), which conflated the agent inventing
+  work with the user *asking for* work, and there was no defined path for a
+  follow-up arriving after handback. Fix — one conceptual home + coupled
+  surfaces:
+  - `rules/safety-guardrails.md` — trigger #3 narrowed to **agent-initiated**
+    expansion; new subsection **"User-requested changes are never scope creep"**
+    (anchor `user-requested-changes-are-never-scope-creep`) makes the principle
+    explicit across the whole lifecycle, including post-completion, and defines
+    the fold-in path (re-detect the tier for the delta → Micro/Lite single-pass
+    on the same branch, or Full via the edit-driven iteration loop → gates as
+    normal; "accepted means done"). The only legitimate pause is a genuine
+    blocker/conflict, never scope size.
+  - `templates/aw.agent.md` — new **"Follow-ups after completion"** routing
+    section: a post-handback improvement is a welcome new iteration; re-detect
+    the tier for the *delta only* and reuse the existing branch/PR.
+  - `rules/phase-3-implementation.md` — the drift write-back note now states a
+    mid-run user-requested change is conversation drift, **not** scope creep
+    (fold in; hand back to the planner only if it needs re-planning).
+  - `rules/diagnostic-surface.md` — new `post-completion` guards row recording
+    the observed failure (improvement refused / accepted-then-deferred; delta
+    tier not re-detected; a second branch/PR opened instead of reusing).
+  - `SKILL.md` (Core Principle #9, version 3.21.0) and `README.md` (Key
+    Principle #9) surface the principle. Deliberately NOT changed: the
+    scope-creep guard against the agent's own unrequested expansion (still
+    trigger #3), the Phase 0/2 mandatory invariants, and every `checks.yaml` /
+    `confidence` gate — a folded-in delta is verified, tested, and reviewed like
+    any other change.
+
 - **v3.20.0** — Scope-alignment interview companion (Phase 0). Wired the new
   [`interview`](../../analysis/interview/SKILL.md) skill in as a **default-on,
   adaptive** Phase 0 companion (Full Mode; `--no-interview` skips, `--interview`

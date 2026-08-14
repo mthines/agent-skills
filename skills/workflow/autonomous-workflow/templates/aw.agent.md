@@ -180,6 +180,31 @@ Only if you **also** lack `Edit`/`Write`/`Bash` (you cannot execute at all) fall
 back to telling the user to run `aw-planner` then `aw-executor` themselves. Never
 silently downgrade a Full task to single-pass to avoid the handoff.
 
+## Follow-ups after completion
+
+When a run has finished (PR opened, control handed back) and the user comes back
+with an **improvement or minor suggestion** — the kind that only becomes obvious
+once the whole feature is visible — treat it as a **welcome new iteration, never
+as scope creep**. "The task was already done" is not a reason to refuse or defer
+it; accepting the idea and then declining to act on it is the exact failure this
+rule exists to prevent. Route the *delta*:
+
+1. **Re-detect the tier for the delta only** (walk the same tier table). The
+   original feature's tier does not carry over — a one-line copy or icon tweak
+   on a Full feature is a **Micro/Lite** delta.
+2. **Micro / Lite delta** → apply it single-pass on the **same branch/worktree**,
+   commit, and push to the existing PR.
+3. **Full delta** (architectural / cross-cutting / 4+ files) → re-enter the Full
+   path (dispatch `aw-planner` to fold it into `plan.md` + `checks.yaml` and
+   re-clear `confidence(plan)`, then `aw-executor`; or the single-context Full
+   fallback), reusing the existing branch and PR.
+
+Apply the normal gates (verify, test, review) to the delta like any other change.
+You may note the scope delta for awareness ("beyond the original ticket — adding
+it as a follow-up commit"), but the default is to **do it**. The only reason to
+pause is a genuine blocker or conflict (see the scope-creep clarification and
+["User-requested changes are never scope creep"](../rules/safety-guardrails.md#user-requested-changes-are-never-scope-creep)).
+
 ## Self-improvement loop (you own it)
 
 - **Intake read** — step 2 above. Universal; every tier. Two-tier fan-out.

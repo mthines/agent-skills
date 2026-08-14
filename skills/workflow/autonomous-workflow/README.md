@@ -331,6 +331,12 @@ untouched — only new artifacts land in `.agent/`. Migrate manually with
    requirement maps to an `AC-{n}` criterion, and `checks.yaml` lets Phase 4
    gate on runnable checks instead of judgment. All-green checks are
    necessary, never sufficient.
+9. **User-requested changes are never scope creep** — a change the user asks
+   for is a new requirement, welcome at any lifecycle point, including **after
+   the work is "done"**. Post-completion improvements are folded in (re-detect
+   the tier for the delta, reuse the existing branch/PR), never refused as
+   out-of-scope. The scope-creep guard restrains only the agent's *own*
+   unrequested expansion.
 
 ---
 

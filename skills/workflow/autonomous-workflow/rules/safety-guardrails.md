@@ -150,7 +150,12 @@ Log:
 
 1. Requirements ambiguous mid-implementation.
 2. Fundamental blocker encountered.
-3. Scope creep detected.
+3. **Agent-initiated** scope creep detected — *you* are about to expand
+   beyond the requested change on your own initiative (a refactor no one
+   asked for, a "while I'm here" cleanup, a speculative abstraction). This
+   trigger is about restraining **your own** expansion. It is **not** a
+   reason to refuse work the **user** asks for — see
+   [User-requested changes are never scope creep](#user-requested-changes-are-never-scope-creep) below.
 4. Tests reveal misunderstanding.
 5. Resource limits approaching.
 6. Stuck-loop cap hit (3 iterations in Lite Mode / 5 in Full Mode) and auto-replan already used.
@@ -176,6 +181,41 @@ Log:
 
 Should I proceed with [recommended] or [alternative]?"
 ```
+
+### User-requested changes are never scope creep
+
+**Anchor:** `user-requested-changes-are-never-scope-creep`
+
+"Scope creep" is a guard against **you** inventing work. A change the **user**
+explicitly asks for is, by definition, in scope — it is a new requirement, not
+creep. Never refuse or defer a user-requested change on scope-creep grounds.
+This holds at **every** point in the lifecycle, including **after the work is
+"done"** (PR opened, control handed back):
+
+- A user proposing an improvement once they can see the **holistic picture of
+  the finished feature** is exactly when the best refinements surface — the
+  workflow must welcome them, not treat "the task is complete" as a closed door.
+- The correct response to a post-completion improvement is to **fold it in**,
+  not to reject it. Re-detect the tier **for the delta only** (a one-line copy
+  tweak is Micro even if the original feature was Full), then:
+  - **Micro / Lite delta** → apply it single-pass on the same branch, commit,
+    and push to the existing PR.
+  - **Full delta** (architectural, cross-cutting, or 4+ files) → run it through
+    the [edit-driven iteration loop](./planner-executor-handoff.md#edit-driven-iteration-loop):
+    fold the improvement into `plan.md` + `checks.yaml` as a new version,
+    re-clear `confidence(plan)`, then execute the delta.
+- You **may** note the scope delta for the user's awareness ("this is beyond
+  the original ticket — folding it in as a follow-up commit on this PR"), and
+  you **should** still apply the normal gates (the change is verified, tested,
+  and reviewed like any other). What you must **not** do is accept the idea and
+  then decline to act on it, or bounce it back as out-of-scope. Accepted means
+  done.
+
+The one legitimate reason to pause on a user-requested improvement is a genuine
+**blocker or conflict** (it collides with an existing constraint, it is
+technically infeasible as stated, or it needs a decision only the user can
+make) — surface that via [How to Ask](#how-to-ask). Scope size alone is never
+that reason.
 
 ---
 
