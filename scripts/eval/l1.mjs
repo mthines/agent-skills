@@ -790,9 +790,16 @@ function checksInSync(plan, checks) {
       /memory_search:.*limit=(1[5-9]|20)\b/.test(step12c));
 
     // G20e: Step 1.0's list cap of 50 is explicitly left unchanged — regression lock so a future
-    //       edit does not conflate the two caps. The Step 1.0 read still lists at limit=50.
+    //       edit does not conflate the two caps. Scoped to the Step 1.0 block for the same reason
+    //       G20c is scoped to its fence: a `limit=50` anywhere else in the file must not satisfy a
+    //       claim about Step 1.0. An unresolvable slice fails rather than passing vacuously.
+    const step10Start = prReviewer.indexOf("### 1.0 Prior-comment awareness");
+    const step10End   = prReviewer.indexOf("### 1.1 Fetch PR data in parallel");
+    const step10      = step10Start >= 0 && step10End > step10Start
+      ? prReviewer.slice(step10Start, step10End)
+      : "";
     s.check("G20e pr-reviewer.md Step 1.0 list cap of 50 is unchanged",
-      /memory_list:.*limit=50/.test(prReviewer));
+      /memory_list:.*limit=50/.test(step10));
 
     // G20f: the docs-drift sweep — the diagnostic-surface phase-model row for 1.2c names the two
     //       new query fields, not just "changed paths". G20a–G20e lock agents/pr-reviewer.md only,
