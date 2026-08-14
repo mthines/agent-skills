@@ -585,13 +585,22 @@ Issue this as a real `mcp__lorekit__memory_search` tool call.
 Skip this step when `LOREKIT_CONNECTED` is already `false` — the Step 1.0 attempt failed, so there is no backend to search.
 Otherwise issue the call, and treat an error here as a non-blocking addend miss (do not flip `LOREKIT_CONNECTED`).
 
-Build the query from the diff's own vocabulary — the changed top-level directories, the changed file basenames (without extension), and any dependency-manifest filenames present in the diff (`package.json`, `go.mod`, `Cargo.toml`, `requirements.txt`, …).
-In `incremental` and `incremental-quick` modes, key on `REVIEW_DIFF`'s paths, not the full PR.
+Build the query from the diff's own vocabulary, concatenating these five field groups (space-separated) into one query string:
+
+1. **Changed top-level directories** — the first path segment of each changed file.
+2. **Changed file basenames** — each changed file's basename without its extension.
+3. **Dependency-manifest filenames** present in the diff (`package.json`, `go.mod`, `Cargo.toml`, `requirements.txt`, …).
+4. **Changed symbol names** — the function, type, class, and export identifiers that the diff added or modified. Extract them from the `+`-side of the hunks (e.g. a `+function fooBar(`, `+export const baz`, `+type Qux =`, `+class Widget`, `+def handler(` line yields `fooBar`, `baz`, `Qux`, `Widget`, `handler`). Dedupe; cap at the 20 most-changed identifiers so the query stays focused. This is the field that lets a lesson keyed to a renamed or newly-introduced symbol surface even when its directory and basename tokens do not match.
+5. **Synthesized intent + integrations** — the one-line intent phrase produced from the PR title, body, commit messages, and branch name (the same synthesis Step 1.3 performs; run it here from that PR metadata, which is already available), plus any external-integration names detected in the diff (SDK, service, or API identifiers — e.g. `stripe`, `s3`, `oauth`, `graphql`). This is the field that lets an intent-keyed lesson (e.g. "how to review auth changes") and paraphrased lessons match even when no changed symbol or path token overlaps.
+
+In `incremental` and `incremental-quick` modes, key groups 1, 2, and 4 on `REVIEW_DIFF`'s paths and hunks, not the full PR; groups 3 and 5 stay whole-PR.
 
 ```text
 # Issue as a real mcp__lorekit__memory_search tool call.
-mcp__lorekit__memory_search: q="<changed dirs + basenames + manifest names>" scopes=["repo::{owner}/{repo}", "global"] limit=10
+mcp__lorekit__memory_search: q="<changed dirs + basenames + manifest names + changed symbol names + synthesized intent + integrations>" scopes=["repo::{owner}/{repo}", "global"] limit=15
 ```
+
+The `limit` is `15` (raised from `10`): search results are already relevance-ranked, so the marginal entries stay on-topic, and the five-field enriched query widens what *can* match — a modest `+5` captures the paraphrase-only and intent-only lessons the new symbol/intent fields surface without materially growing the merged pool the reviewer must weigh. This is independent of Step 1.0's `list` cap of `50`, which is deliberately left unchanged.
 
 Keep only returned hits carrying the tag `loop::reviewer-lessons` or `loop::reviewer-comment-relevance`, then merge them into the pools loaded at Step 1.0 (dedupe by `scope` + `key`; `repo::` wins; skip expired).
 A hit surfaced here is applied exactly as one loaded at Step 1.0 — a `reviewer-lessons` consideration, or a `reviewer-comment-relevance` drop / downgrade / promote at Step 2.2.

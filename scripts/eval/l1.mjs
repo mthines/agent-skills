@@ -750,6 +750,45 @@ function checksInSync(plan, checks) {
         allFootersInsideAccordion);
     }
   }
+
+  // G20: the pr-reviewer Step 1.2c diff-keyed lesson search enriches its query with the changed
+  // symbol names and the synthesized intent + integrations, and raises the search limit past 10.
+  // Reads the REAL shipped agents/pr-reviewer.md and asserts literal anchors grepped from it —
+  // never re-encode expected strings as a self-comparison
+  // (aw-lessons::mock-that-reimplements-the-thing-under-test). Mirrors the G18/G19 idiom.
+  {
+    const step12cStart = prReviewer.indexOf("### 1.2c Diff-keyed lesson search");
+    const step12cEnd   = prReviewer.indexOf("### 1.3 Synthesize intent");
+    const step12c      = prReviewer.slice(step12cStart, step12cEnd);
+
+    // G20a: the query-construction prose enumerates the changed-symbol-names field.
+    s.check("G20a pr-reviewer.md Step 1.2c query includes a changed-symbol-names field",
+      step12c.includes("Changed symbol names") &&
+      step12c.includes("added or modified"));
+
+    // G20b: the query-construction prose enumerates the synthesized-intent + integrations field,
+    //       and ties it to the Step 1.3 synthesis.
+    s.check("G20b pr-reviewer.md Step 1.2c query includes a synthesized-intent + integrations field",
+      step12c.includes("Synthesized intent + integrations") &&
+      step12c.includes("Step 1.3"));
+
+    // G20c: the runnable q= example carries both new field groups (not just the prose above it).
+    s.check("G20c pr-reviewer.md Step 1.2c q= example lists the symbol + intent + integrations groups",
+      step12c.includes("changed symbol names") &&
+      step12c.includes("synthesized intent") &&
+      step12c.includes("integrations"));
+
+    // G20d: the search limit was raised past 10 — no `limit=10` survives in the block, and a
+    //       higher limit in the 15–20 band is present on the memory_search call.
+    s.check("G20d pr-reviewer.md Step 1.2c memory_search limit raised past 10 into the 15–20 band",
+      !step12c.includes("limit=10") &&
+      /memory_search:.*limit=(1[5-9]|20)\b/.test(step12c));
+
+    // G20e: Step 1.0's list cap of 50 is explicitly left unchanged — regression lock so a future
+    //       edit does not conflate the two caps. The Step 1.0 read still lists at limit=50.
+    s.check("G20e pr-reviewer.md Step 1.0 list cap of 50 is unchanged",
+      /memory_list:.*limit=50/.test(prReviewer));
+  }
 }
 
 process.exit(s.report() ? 0 : 1);
