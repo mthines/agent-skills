@@ -773,10 +773,15 @@ function checksInSync(plan, checks) {
       step12c.includes("Step 1.3"));
 
     // G20c: the runnable q= example carries both new field groups (not just the prose above it).
+    //       Scope the assertion to the fenced `q=` line itself — asserting over the whole
+    //       step12c slice lets the prose above satisfy it (e.g. after a casing change), which
+    //       is the tautology class this repo's guards must not fall into.
+    const qLine = (step12c.match(/^mcp__lorekit__memory_search: q=.*$/m) || [""])[0];
     s.check("G20c pr-reviewer.md Step 1.2c q= example lists the symbol + intent + integrations groups",
-      step12c.includes("changed symbol names") &&
-      step12c.includes("synthesized intent") &&
-      step12c.includes("integrations"));
+      qLine.length > 0 &&
+      qLine.includes("changed symbol names") &&
+      qLine.includes("synthesized intent") &&
+      qLine.includes("integrations"));
 
     // G20d: the search limit was raised past 10 — no `limit=10` survives in the block, and a
     //       higher limit in the 15–20 band is present on the memory_search call.
