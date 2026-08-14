@@ -852,14 +852,25 @@ function checksInSync(plan, checks) {
   const readme = read("scripts/eval/README.md");
 
   // G21a: l2.mjs SUITES contains the new suite entry with the D1 rubric file + section.
+  // Scoped to the code-review-retrieval-relevance suite object so the file/section
+  // anchors are asserted INSIDE that entry — a bare whole-file includes would stay
+  // green if agents/pr-reviewer.md ever appeared in another suite's rubric.
+  const d1Suite = (l2.match(
+    /name:\s*"code-review-retrieval-relevance"[\s\S]*?rubric:\s*\{[^}]*\}/,
+  ) || [""])[0];
   s.check("G21a l2.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + section)",
-    l2.includes("code-review-retrieval-relevance") &&
-    l2.includes("agents/pr-reviewer.md") &&
-    l2.includes("## Step 1: Fetch all inputs + load memories"));
+    d1Suite.includes("agents/pr-reviewer.md") &&
+    d1Suite.includes("## Step 1: Fetch all inputs + load memories"));
 
-  // G21b: golden JSONL exists and is non-empty (at least one parseable line).
-  s.check("G21b golden JSONL exists and is non-empty",
-    golden.split("\n").filter(Boolean).length >= 1);
+  // G21b: golden JSONL exists and every non-empty line is valid JSON (locks the
+  // test-plan claim that all lines parse). A bare non-empty count would pass on a
+  // truncated/corrupt line; JSON.parse per line actually validates parseability.
+  const goldenLines = golden.split("\n").filter(Boolean);
+  let goldenAllParse = goldenLines.length >= 1;
+  for (const ln of goldenLines) {
+    try { JSON.parse(ln); } catch { goldenAllParse = false; break; }
+  }
+  s.check("G21b golden JSONL exists and every line is valid JSON", goldenAllParse);
 
   // G21c: the loud BOOTSTRAP marker literal is present in the NOTES file.
   s.check("G21c loud BOOTSTRAP marker literal is present in the NOTES file",
@@ -869,9 +880,11 @@ function checksInSync(plan, checks) {
   s.check("G21d evals-l2.yml paths lists agents/pr-reviewer.md",
     l2yml.includes("agents/pr-reviewer.md"));
 
-  // G21e: README carries the methodology note for this suite (promotion → golden case).
+  // G21e: README carries the methodology NOTE for this suite (promotion → golden case),
+  // not merely the suite table row. Assert on the note's own heading literal so a table
+  // row alone can't satisfy it.
   s.check("G21e README carries the per-suite methodology note (promotion → golden case) for code-review-retrieval-relevance",
-    readme.includes("code-review-retrieval-relevance"));
+    readme.includes("### `code-review-retrieval-relevance` — methodology note"));
 
   // G21f (regression lock): the six pre-existing suite names are still present in l2.mjs
   // (negative half: the edit added, did not replace).
@@ -897,9 +910,19 @@ function checksInSync(plan, checks) {
     rubricEntries.length >= 7);
   for (const { file, section } of rubricEntries) {
     if (section === null) continue; // whole-file rubrics have no heading to strip.
-    const body = extractSection(file, section).slice(section.length).trim();
+    // Guard the extraction: a renamed/moved rubric heading makes extractSection throw.
+    // Catch it so this surfaces as a red G21g check with a report, rather than an
+    // uncaught throw that aborts the entire L1 run before s.report() runs.
+    let body = "";
+    let extractErr = null;
+    try {
+      body = extractSection(file, section).slice(section.length).trim();
+    } catch (e) {
+      extractErr = e instanceof Error ? e.message : String(e);
+    }
     s.check(`G21g L2 rubric '${section}' in ${file} extracts a non-empty body (> heading line)`,
-      body.length > BODY_MIN, `body length ${body.length} <= ${BODY_MIN}`);
+      extractErr === null && body.length > BODY_MIN,
+      extractErr ?? `body length ${body.length} <= ${BODY_MIN}`);
   }
 }
 
