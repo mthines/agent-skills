@@ -18,7 +18,7 @@ A candidate memory is `skip` when:
 - Its `tag` is outside the Step 1.0 read scope for `pr-reviewer` (e.g. `loop::fix-bug-lessons`), AND
 - It is not reachable by the Step 1.2c enriched search for the given diff.
 
-The outcome signal is: `loop::review-outcomes` / `loop::reviewer-comment-relevance` tags + `origin_pr` + `seen_count >= 3` marks a promotion-grade should-fire lesson.
+The outcome signal is: `loop::reviewer-lessons` / `loop::reviewer-comment-relevance` tags + `origin_pr` + `seen_count >= 3` marks a promotion-grade should-fire lesson.
 Labels are derived from this signal, NOT from re-running the Step 1.0 / Step 1.2c read being measured.
 
 ## What this suite measures
