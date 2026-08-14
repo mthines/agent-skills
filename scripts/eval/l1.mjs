@@ -831,6 +831,17 @@ function checksInSync(plan, checks) {
       step13.includes("do not re-derive it") &&
       diag12cRow.includes("INTENT_PHRASE") &&
       diag13Row.includes("INTENT_PHRASE"));
+
+    // G20h: the second mirrored surface for the hoist — holistic-analysis review-mode's
+    //       `intent_summary` input bullet. It is the only downstream consumer that restates
+    //       Step 1.3's DERIVATION rather than its output, so it is the one the hoist can
+    //       invalidate; without a guard it silently reverts. Scoped to that one bullet.
+    const intentSummaryBullet = reviewMode
+      .split("\n")
+      .find((l) => l.startsWith("- `intent_summary`")) || "";
+    s.check("G20h review-mode intent_summary bullet describes Step 1.3 as expanding INTENT_PHRASE",
+      intentSummaryBullet.includes("INTENT_PHRASE") &&
+      intentSummaryBullet.includes("Step 1.2c"));
   }
 }
 
