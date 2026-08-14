@@ -793,6 +793,17 @@ function checksInSync(plan, checks) {
     //       edit does not conflate the two caps. The Step 1.0 read still lists at limit=50.
     s.check("G20e pr-reviewer.md Step 1.0 list cap of 50 is unchanged",
       /memory_list:.*limit=50/.test(prReviewer));
+
+    // G20f: the docs-drift sweep — the diagnostic-surface phase-model row for 1.2c names the two
+    //       new query fields, not just "changed paths". G20a–G20e lock agents/pr-reviewer.md only,
+    //       so without this the mirrored row can silently revert. Non-tautological: the base row
+    //       carries neither literal.
+    const diag12cRow = read("agents/pr-reviewer/rules/diagnostic-surface.md")
+      .split("\n")
+      .find((l) => l.startsWith("| 1.2c | Diff-keyed lesson search")) || "";
+    s.check("G20f diagnostic-surface 1.2c row names the changed-symbol and intent+integrations fields",
+      diag12cRow.includes("changed symbol names") &&
+      diag12cRow.includes("synthesized intent + integrations"));
   }
 }
 
