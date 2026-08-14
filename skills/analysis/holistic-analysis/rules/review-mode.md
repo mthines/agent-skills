@@ -28,7 +28,7 @@ The output is **structured findings** the calling agent consumes — not root-ca
 
 The calling agent passes:
 
-- `intent_summary` — 2–3 line summary the `pr-reviewer` produced at its Step 1.3 (PR title / body / commit messages / branch name).
+- `intent_summary` — 2–3 line summary the `pr-reviewer` produced at its Step 1.3 by expanding `INTENT_PHRASE`, the one-line phrase bound at its Step 1.2c from the PR title, body, commit messages, and branch name.
 - `diff` — the full unified diff of the PR or branch under review.
 - `changed_files` — list of files in the diff (path + patch).
 - `caller` — the calling agent name (`"pr-reviewer"`). Also pass `REVIEW_RELATION` (`"self"` or `"cross"`) to distinguish own-PR reviews from cross-author reviews. Affects the framing of system-fit findings (see Output framing).

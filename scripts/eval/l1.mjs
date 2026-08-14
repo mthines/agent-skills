@@ -750,6 +750,103 @@ function checksInSync(plan, checks) {
         allFootersInsideAccordion);
     }
   }
+
+  // G20: the pr-reviewer Step 1.2c diff-keyed lesson search enriches its query with the changed
+  // symbol names and the synthesized intent + integrations, and raises the search limit past 10.
+  // Reads the REAL shipped agents/pr-reviewer.md and asserts literal anchors grepped from it —
+  // never re-encode expected strings as a self-comparison
+  // (aw-lessons::mock-that-reimplements-the-thing-under-test). Mirrors the G18/G19 idiom.
+  {
+    const step12cStart = prReviewer.indexOf("### 1.2c Diff-keyed lesson search");
+    const step12cEnd   = prReviewer.indexOf("### 1.3 Synthesize intent");
+    // Same `>= 0` guard as step10 / step13 below: an unresolved anchor must yield "" and fail the
+    // checks, not silently widen the haystack to (nearly) the whole file and keep them green.
+    const step12c      = step12cStart >= 0 && step12cEnd > step12cStart
+      ? prReviewer.slice(step12cStart, step12cEnd)
+      : "";
+
+    // G20a: the query-construction prose enumerates the changed-symbol-names field.
+    s.check("G20a pr-reviewer.md Step 1.2c query includes a changed-symbol-names field",
+      step12c.includes("Changed symbol names") &&
+      step12c.includes("added or modified"));
+
+    // G20b: the query-construction prose enumerates the synthesized-intent + integrations field,
+    //       and ties it to the Step 1.3 synthesis.
+    s.check("G20b pr-reviewer.md Step 1.2c query includes a synthesized-intent + integrations field",
+      step12c.includes("Synthesized intent + integrations") &&
+      step12c.includes("Step 1.3"));
+
+    // G20c: the runnable q= example carries both new field groups (not just the prose above it).
+    //       Scope the assertion to the fenced `q=` line itself — asserting over the whole
+    //       step12c slice lets the prose above satisfy it (e.g. after a casing change), which
+    //       is the tautology class this repo's guards must not fall into.
+    const qLine = (step12c.match(/^mcp__lorekit__memory_search: q=.*$/m) || [""])[0];
+    s.check("G20c pr-reviewer.md Step 1.2c q= example lists the symbol + intent + integrations groups",
+      qLine.length > 0 &&
+      qLine.includes("changed symbol names") &&
+      qLine.includes("synthesized intent") &&
+      qLine.includes("integrations"));
+
+    // G20d: the search limit was raised past 10 — no `limit=10` survives in the block, and a
+    //       higher limit in the 15–20 band is present on the memory_search call.
+    s.check("G20d pr-reviewer.md Step 1.2c memory_search limit raised past 10 into the 15–20 band",
+      !step12c.includes("limit=10") &&
+      /memory_search:.*limit=(1[5-9]|20)\b/.test(step12c));
+
+    // G20e: Step 1.0's list cap of 50 is explicitly left unchanged — regression lock so a future
+    //       edit does not conflate the two caps. Scoped to the Step 1.0 block for the same reason
+    //       G20c is scoped to its fence: a `limit=50` anywhere else in the file must not satisfy a
+    //       claim about Step 1.0. An unresolvable slice fails rather than passing vacuously.
+    const step10Start = prReviewer.indexOf("### 1.0 Prior-comment awareness");
+    const step10End   = prReviewer.indexOf("### 1.1 Fetch PR data in parallel");
+    const step10      = step10Start >= 0 && step10End > step10Start
+      ? prReviewer.slice(step10Start, step10End)
+      : "";
+    s.check("G20e pr-reviewer.md Step 1.0 list cap of 50 is unchanged",
+      /memory_list:.*limit=50/.test(step10));
+
+    // G20f: the docs-drift sweep — the diagnostic-surface phase-model row for 1.2c names the two
+    //       new query fields, not just "changed paths". G20a–G20e lock agents/pr-reviewer.md only,
+    //       so without this the mirrored row can silently revert. Non-tautological: the base row
+    //       carries neither literal.
+    const diag12cRow = prReviewerDiag
+      .split("\n")
+      .find((l) => l.startsWith("| 1.2c | Diff-keyed lesson search")) || "";
+    s.check("G20f diagnostic-surface 1.2c row names the changed-symbol and intent+integrations fields",
+      diag12cRow.includes("changed symbol names") &&
+      diag12cRow.includes("synthesized intent + integrations"));
+
+    // G20g: the INTENT_PHRASE hoist itself — Step 1.2c is the single derivation point and Step 1.3
+    //       expands the bound value instead of re-deriving it. Without this the two prose halves
+    //       can drift back apart, which is the exact defect the hoist was introduced to remove.
+    //       Both halves are asserted from their OWN slice, never from the whole file.
+    const step13Start = prReviewer.indexOf("### 1.3 Synthesize intent");
+    const step13End   = prReviewer.indexOf("### 1.4 Triage for large PRs");
+    const step13      = step13Start >= 0 && step13End > step13Start
+      ? prReviewer.slice(step13Start, step13End)
+      : "";
+    const diag13Row = prReviewerDiag
+      .split("\n")
+      .find((l) => l.startsWith("| 1.3 | Intent synthesis")) || "";
+    s.check("G20g Step 1.2c binds INTENT_PHRASE as the single derivation point and Step 1.3 expands it",
+      step12c.includes("INTENT_PHRASE") &&
+      step12c.includes("single derivation point") &&
+      /Expand `INTENT_PHRASE`/.test(step13) &&
+      step13.includes("do not re-derive it") &&
+      diag12cRow.includes("INTENT_PHRASE") &&
+      diag13Row.includes("INTENT_PHRASE"));
+
+    // G20h: the second mirrored surface for the hoist — holistic-analysis review-mode's
+    //       `intent_summary` input bullet. It is the only downstream consumer that restates
+    //       Step 1.3's DERIVATION rather than its output, so it is the one the hoist can
+    //       invalidate; without a guard it silently reverts. Scoped to that one bullet.
+    const intentSummaryBullet = reviewMode
+      .split("\n")
+      .find((l) => l.startsWith("- `intent_summary`")) || "";
+    s.check("G20h review-mode intent_summary bullet describes Step 1.3 as expanding INTENT_PHRASE",
+      intentSummaryBullet.includes("INTENT_PHRASE") &&
+      intentSummaryBullet.includes("Step 1.2c"));
+  }
 }
 
 process.exit(s.report() ? 0 : 1);
