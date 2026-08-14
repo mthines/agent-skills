@@ -120,6 +120,16 @@ isolation + a durable, resumable `plan.md` — documented wins for complex/long
 tasks, and pure overhead (extra tokens, a cold-read) for short ones. Single-pass
 continuity is better *and* cheaper for Micro/Lite.
 
+**Scope alignment (`--interview` / `--no-interview`):** Full tier runs the
+[`interview`](../../../analysis/interview/SKILL.md) companion in Phase 0 by
+default (adaptive — it stays silent on a crisp request), producing
+`.agent/{branch}/brief.md`. `aw-planner` owns this, so on the dispatch path you
+just **pass the flags straight through**. `--no-interview` skips it (the planner
+falls back to its inline restate-and-diff + Missing-Information Gate);
+`--interview` forces it even on Micro/Lite — there, run `Skill("interview")`
+yourself in Phase 0 before editing. In the single-context Full fallback you run
+it as part of the planner-role Phase 0.
+
 ### Full-tier dispatch
 
 **Preferred path — dispatch the split (when sub-agent dispatch is available):**
