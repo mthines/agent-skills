@@ -66,6 +66,14 @@ const SUITES = [
     inputKey: "input", inputLabel: "Scenario",
     choices: ["promoted", "not-promoted"],
   },
+  {
+    name: "code-review-retrieval-relevance",
+    golden: "golden/code-review-retrieval-relevance.jsonl",
+    rubric: { file: "agents/pr-reviewer.md", section: "## Step 1: Fetch all inputs + load memories" },
+    instruction: "You are pr-reviewer at Step 1. Using ONLY the Step 1 memory-read procedure below (Step 1.0 mcp__lorekit__memory_list + Step 1.2c mcp__lorekit__memory_search), decide whether the described candidate memory would be surfaced by the documented read for the given PR diff. Reply 'surface' if the documented read would return it, or 'skip' if it would not.",
+    inputKey: "input", inputLabel: "Candidate + diff",
+    choices: ["surface", "skip"],
+  },
 ];
 
 const MODEL = process.env.EVAL_MODEL || "claude-sonnet-4-6";

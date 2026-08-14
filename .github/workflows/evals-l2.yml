@@ -20,6 +20,7 @@ on:
       - "skills/workflow/autonomous-workflow/SKILL.md"
       - "skills/workflow/autonomous-workflow/rules/phase-0-validation.md"
       - "skills/workflow/fix-bug/SKILL.md"
+      - "agents/pr-reviewer.md"
       # eval harness + golden sets
       - "scripts/eval/l2.mjs"
       - "scripts/eval/lib.mjs"

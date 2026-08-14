@@ -838,4 +838,48 @@ function checksInSync(plan, checks) {
   }
 }
 
+// ── G21: code-review-retrieval-relevance L2 suite wiring ──
+// Reads the REAL shipped files and asserts literal anchors grepped OUT of them —
+// never re-encode expected strings inside the eval (aw-lessons::mock-that-reimplements).
+// Pairs positive + negative halves. Guard bites on revert (aw-lessons::prove-the-guard-bites).
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+
+  const l2 = read("scripts/eval/l2.mjs");
+  const golden = read("scripts/eval/golden/code-review-retrieval-relevance.jsonl");
+  const notes  = read("scripts/eval/golden/code-review-retrieval-relevance.NOTES.md");
+  const l2yml  = read(".github/workflows/evals-l2.yml");
+  const readme = read("scripts/eval/README.md");
+
+  // G21a: l2.mjs SUITES contains the new suite entry with the D1 rubric file + section.
+  s.check("G21a l2.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + section)",
+    l2.includes("code-review-retrieval-relevance") &&
+    l2.includes("agents/pr-reviewer.md") &&
+    l2.includes("## Step 1: Fetch all inputs + load memories"));
+
+  // G21b: golden JSONL exists and is non-empty (at least one parseable line).
+  s.check("G21b golden JSONL exists and is non-empty",
+    golden.split("\n").filter(Boolean).length >= 1);
+
+  // G21c: the loud BOOTSTRAP marker literal is present in the NOTES file.
+  s.check("G21c loud BOOTSTRAP marker literal is present in the NOTES file",
+    notes.includes("BOOTSTRAP SEED — NOT A REAL BASELINE"));
+
+  // G21d: evals-l2.yml paths lists agents/pr-reviewer.md (the live rubric source for the new suite).
+  s.check("G21d evals-l2.yml paths lists agents/pr-reviewer.md",
+    l2yml.includes("agents/pr-reviewer.md"));
+
+  // G21e: README carries the methodology note for this suite (promotion → golden case).
+  s.check("G21e README carries the per-suite methodology note (promotion → golden case) for code-review-retrieval-relevance",
+    readme.includes("code-review-retrieval-relevance"));
+
+  // G21f (regression lock): the six pre-existing suite names are still present in l2.mjs
+  // (negative half: the edit added, did not replace).
+  for (const name of ["tier-routing", "bug-class", "complexity-triage", "aw-should-trigger",
+    "optimize-approach-optimality", "reviewer-agreement-bump"]) {
+    s.check(`G21f l2.mjs still contains pre-existing suite '${name}' (add-not-replace)`,
+      l2.includes(`name: "${name}"`));
+  }
+}
+
 process.exit(s.report() ? 0 : 1);
