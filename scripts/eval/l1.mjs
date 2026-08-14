@@ -811,6 +811,26 @@ function checksInSync(plan, checks) {
     s.check("G20f diagnostic-surface 1.2c row names the changed-symbol and intent+integrations fields",
       diag12cRow.includes("changed symbol names") &&
       diag12cRow.includes("synthesized intent + integrations"));
+
+    // G20g: the INTENT_PHRASE hoist itself — Step 1.2c is the single derivation point and Step 1.3
+    //       expands the bound value instead of re-deriving it. Without this the two prose halves
+    //       can drift back apart, which is the exact defect the hoist was introduced to remove.
+    //       Both halves are asserted from their OWN slice, never from the whole file.
+    const step13Start = prReviewer.indexOf("### 1.3 Synthesize intent");
+    const step13End   = prReviewer.indexOf("### 1.4 Triage for large PRs");
+    const step13      = step13Start >= 0 && step13End > step13Start
+      ? prReviewer.slice(step13Start, step13End)
+      : "";
+    const diag13Row = read("agents/pr-reviewer/rules/diagnostic-surface.md")
+      .split("\n")
+      .find((l) => l.startsWith("| 1.3 | Intent synthesis")) || "";
+    s.check("G20g Step 1.2c binds INTENT_PHRASE as the single derivation point and Step 1.3 expands it",
+      step12c.includes("INTENT_PHRASE") &&
+      step12c.includes("single derivation point") &&
+      /Expand `INTENT_PHRASE`/.test(step13) &&
+      step13.includes("do not re-derive it") &&
+      diag12cRow.includes("INTENT_PHRASE") &&
+      diag13Row.includes("INTENT_PHRASE"));
   }
 }
 
