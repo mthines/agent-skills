@@ -759,7 +759,11 @@ function checksInSync(plan, checks) {
   {
     const step12cStart = prReviewer.indexOf("### 1.2c Diff-keyed lesson search");
     const step12cEnd   = prReviewer.indexOf("### 1.3 Synthesize intent");
-    const step12c      = prReviewer.slice(step12cStart, step12cEnd);
+    // Same `>= 0` guard as step10 / step13 below: an unresolved anchor must yield "" and fail the
+    // checks, not silently widen the haystack to (nearly) the whole file and keep them green.
+    const step12c      = step12cStart >= 0 && step12cEnd > step12cStart
+      ? prReviewer.slice(step12cStart, step12cEnd)
+      : "";
 
     // G20a: the query-construction prose enumerates the changed-symbol-names field.
     s.check("G20a pr-reviewer.md Step 1.2c query includes a changed-symbol-names field",
