@@ -6,7 +6,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, Suite } from "./lib.mjs";
+import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, extractSection, Suite } from "./lib.mjs";
 
 const AW = join(REPO_ROOT, "skills/workflow/autonomous-workflow");
 const s = new Suite("L1 deterministic contract checks");
@@ -879,6 +879,27 @@ function checksInSync(plan, checks) {
     "optimize-approach-optimality", "reviewer-agreement-bump"]) {
     s.check(`G21f l2.mjs still contains pre-existing suite '${name}' (add-not-replace)`,
       l2.includes(`name: "${name}"`));
+  }
+
+  // G21g: EVERY L2 suite with a non-null rubric.section must extract a NON-EMPTY body
+  // (more than just its heading line). This is the "the eval actually contains a rubric"
+  // guard — it would have caught the empty-rubric defect where a `## ` section immediately
+  // followed by a `### ` subheading extracted only the 43-char title (zero body), feeding
+  // the model an empty rubric. It runs the SAME shared extractSection l2.mjs feeds the model
+  // (imported from lib.mjs), so a regression in that function — e.g. reverting the
+  // heading-level-aware cut back to a cut-at-any-heading — fails this guard. The suite list
+  // is parsed live out of l2.mjs so the guard can never drift from the shipped suites.
+  const BODY_MIN = 80; // a real rubric body dwarfs this; a bare title never reaches it.
+  const rubricEntries = [...l2.matchAll(
+    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*section:\s*(null|"([^"]+)")\s*\}/g,
+  )].map((m) => ({ file: m[1], section: m[2] === "null" ? null : m[3] }));
+  s.check("G21g parsed at least the 7 shipped rubric entries from l2.mjs",
+    rubricEntries.length >= 7);
+  for (const { file, section } of rubricEntries) {
+    if (section === null) continue; // whole-file rubrics have no heading to strip.
+    const body = extractSection(file, section).slice(section.length).trim();
+    s.check(`G21g L2 rubric '${section}' in ${file} extracts a non-empty body (> heading line)`,
+      body.length > BODY_MIN, `body length ${body.length} <= ${BODY_MIN}`);
   }
 }
 

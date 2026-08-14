@@ -15,7 +15,7 @@
 // the shipped instructions — not a copy.
 import { readFileSync, existsSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { REPO_ROOT } from "./lib.mjs";
+import { REPO_ROOT, extractSection } from "./lib.mjs";
 
 const SUITES = [
   {
@@ -86,15 +86,8 @@ if (!KEY) {
   process.exit(0);
 }
 
-function extractSection(file, section) {
-  const txt = readFileSync(join(REPO_ROOT, file), "utf8");
-  if (!section) return txt.trim();
-  const i = txt.indexOf(section);
-  if (i < 0) throw new Error(`section "${section}" not found in ${file}`);
-  const after = txt.slice(i + section.length);
-  const next = /\n#{1,6}\s/.exec(after); // cut at the next heading of any level
-  return (section + (next ? after.slice(0, next.index) : after)).trim();
-}
+// extractSection is heading-level-aware and shared from lib.mjs so l1.mjs's G21g
+// "eval actually contains a rubric" guard exercises the exact extraction this runs.
 
 async function ask(system, input) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
