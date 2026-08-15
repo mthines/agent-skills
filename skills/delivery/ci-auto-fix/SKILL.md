@@ -89,6 +89,12 @@ If `$ARGUMENTS` is empty, do not ask the user — resolve automatically:
 3. Print the resolved target before continuing:
    `Auto-detected target: <PR URL or run ID> on branch <branch>`.
 
+## Step 0: Resolve your GitHub access path
+
+Before any GitHub step, resolve which path you have — `gh` CLI, `mcp__github__*` tools, or neither — per **[`agents/shared/rules/github-access.md`](../../../agents/shared/rules/github-access.md)**. Resolve once, state the path you took, and use it for the whole run.
+
+`gh` is **absent in Claude Code cloud sessions**, so the commands written below are the `gh`-path form; on the MCP path use the verb mapping in that file rather than attempting them. With **neither** path, GitHub steps cannot be performed: say so precisely, do the `git` work you can, and hand the rest back — never report a step you could not perform as blocked-by-something-else.
+
 ## Phase 1 — Identify the failure
 
 Based on the input:

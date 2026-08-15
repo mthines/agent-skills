@@ -26,6 +26,22 @@ tools:
   - mcp__lorekit__memory_search
   - mcp__lorekit__memory_read
   - mcp__lorekit__memory_write
+  # GitHub access. A sub-agent inherits NEITHER the parent's `gh` binary NOR the
+  # parent's MCP tools, so these must be granted here or every GitHub step fails
+  # with no path — the agent then reports the task "blocked" while the caller,
+  # which does have access, sees no reason it should be. Resolution order and the
+  # gh->MCP verb mapping: agents/shared/rules/github-access.md
+  - mcp__github__pull_request_read
+  - mcp__github__create_pull_request
+  - mcp__github__update_pull_request
+  - mcp__github__add_issue_comment
+  - mcp__github__pull_request_review_write
+  - mcp__github__add_comment_to_pending_review
+  - mcp__github__resolve_review_thread
+  - mcp__github__get_job_logs
+  - mcp__github__actions_list
+  - mcp__github__actions_run_trigger
+  - mcp__github__get_me
 model: opus
 ---
 
