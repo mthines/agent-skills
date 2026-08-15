@@ -193,56 +193,33 @@ Corroboration is any **one** of:
 | `implement-suggestion` recorded `verdict: applied` for the fingerprint | A gated apply landed the change; the `review-outcomes` bus carries it. |
 | The author replied with an acknowledgement — see the phrase set below | The author's own words. |
 
-#### Acknowledgement phrase set
+#### What counts as an acknowledgement
 
-The decline path ships a real matcher (`WONT_FIX_RE`, `scripts/record-comment-relevance.mjs`), and
-this signal is now load-bearing, so it gets one too. Apply the three rules in order — the order is
-the whole matcher, because two of the three exist to stop an acknowledgement test producing the
-inversion it was written to prevent.
+This rule is read **by a model**, at runtime, on one reply at a time. It is a judgement call with a
+conservative default, and deliberately not a matcher: an earlier version tried to pin the decision
+down mechanically here, and every clause added to it opened a new gap, because prose is the wrong
+medium for an algorithm whose reader is not executing one. Keep this as judgement. The deterministic
+half belongs in the script, below.
 
-**1. Decline wins.** Test `WONT_FIX_RE` first. A reply matching **both** is a decline, never an
-acknowledgement. Partial fixes are the reason: *"Fixed the lint nit; the null-check is by design"* and *"Updated the
-copy — the rest is out of scope"* both match the set (`fixed`, `updated`) **and** `WONT_FIX_RE`, and
-reading them as acknowledgements writes `relevant / fixed` for a finding the author rejected, while
-the Action writes `not-relevant / wont-fix` for the same reply — one fingerprint, two opposite
-records.
+Ask: **does this reply claim the finding was already handled?**
 
-Note the examples must contain a phrase from rule 2's set to reach this rule at all; a pure decline
-never matches rule 2 and never gets here. (*"Good catch, but this is by design"* was the original
-motivating case; once `good catch` left the set it stopped being reachable, so it is no longer the
-example.)
+- **A decline wins.** If the reply declines the finding — won't fix, by design, intentional, out of
+  scope — it is a decline, not an acknowledgement, even when it also reports a partial fix.
+  *"Fixed the lint nit; the null-check is by design"* is a decline.
+- **Negated or hedged-negative is not an acknowledgement.** *"I haven't updated this"*, *"not
+  resolved yet"*, *"I don't think this is done"*.
+- **Future or conditional is not an acknowledgement.** *"I'll address this in a follow-up"*, *"will
+  be fixed separately"*, *"to be done in #123"* — the work was moved out of this PR, not completed.
+- **Hedged-positive is an acknowledgement.** *"Looks fixed to me"*, *"believe that's addressed"* —
+  the author is claiming it was handled.
+- **When you cannot tell, it is not an acknowledgement.** Record `indeterminate` rather than guessing
+  a direction. That is the whole reason the non-directional value exists.
 
-**2. Match the phrase set**, case-insensitively, on **whole word tokens** (so `prefixed` and
-`redone` do not match): `fixed`, `done`, `addressed`, `resolved`, `updated`.
-
-`good catch` / `nice catch` are deliberately **not** in the set. They are decline openers at least as
-often as acknowledgements, so rule 1 would be carrying them alone; a phrase that needs another rule
-to be safe does not belong in the set.
-
-**3. Disqualify the match on negation or deferral.** Rules 2 and 3 are one conjoined test, not two
-sequenced ones — rule 3 needs the match rule 2 located. Both disqualifiers are scoped to a **token
-window**, which is what makes them executable:
-
-- **Negation.** Disqualify when one of `not`, `n't`, `never`, `no`, `cannot`, `can't` appears in the
-  **five word tokens preceding the matched phrase**, without crossing a sentence boundary (`.`, `!`,
-  `?`, newline). Tokenize the same way rule 2 does — whole words — so `no` does not fire inside
-  *"Now fixed."* and `cannot` is visible as its own token in *"This cannot be fixed cheaply."*
-  Additionally disqualify when the phrase sits in a complement clause under `think`, `believe`,
-  `sure`, `seem`, or `look` (*"I don't think this is done"*, *"I'm not sure that's fixed"*), where
-  the negator is in the matrix clause and a window test alone would miss it.
-- **Deferral.** Disqualify when the phrase is future or conditional: `will`, `'ll`, `going to`,
-  `to be`, `plan to`, `in a follow-up`, `separately`, `next PR`, or a bare issue reference (`#123`)
-  in the same five-token window. *"I'll get this addressed in a follow-up"*, *"will be fixed
-  separately"*, and *"to be done in #123"* otherwise pass every other rule and record
-  `relevant / fixed` for work explicitly deferred **out of** this PR.
-
-`still not` and `not yet` are not listed separately — both contain `not`, which the window already
-catches. Enumerating them would suggest the list is by example rather than by rule.
-
-**Sync with `thread-resolution.md`.** Its `acknowledged` row classifies in-run on the same evidence
-and must cite this set rather than restate it. Two matchers on one concept is exactly the drift the
-check-4 coupling in `comment-relevance-memory.md` documents — and this section naming that hazard
-while creating a 3-vs-5 divergence would be the clearest possible instance of it.
+The deterministic counterpart is `scripts/record-comment-relevance.mjs`, which has no model and does
+need a real matcher. It is not required to reproduce these judgements exactly, and this section is
+not a specification of it — the two paths measure different runs and may legitimately disagree at
+the margin. What they must share is the **decline-wins** precedence, because a disagreement there
+produces two opposite records on one fingerprint.
 
 **With a region touch but none of the three, write no directional record.** Do not fall through to
 `weak-not-relevant / ignored-at-merge` either: an open thread whose region was edited is genuinely
