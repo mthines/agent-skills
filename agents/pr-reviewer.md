@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: Code reviewer for GitHub PRs — both own PRs (self-relation) and someone else's PRs (cross-relation). Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Posts a single consolidated GitHub review — a concise headline plus inline findings (gate-status table tucked inside a Review details accordion) — directly as a visible COMMENT event; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Default-on standards-conformance lens (Step 2.4d) enforces the repo's own governing docs (CLAUDE.md, AGENTS.md, .claude/rules/*.md, review-config .github/review.yaml standards:) as real findings — skip with --no-standards. Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or by dispatching this agent through the Task tool (`Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`). It is an agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
+description: Code reviewer for GitHub PRs — both own PRs (self-relation) and someone else's PRs (cross-relation). Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Posts across two objects: a sticky report comment (one PR issue comment per PR, rewritten in place each run — headline, gate-status table inside a Review details accordion, plus a hidden run ledger) and append-only inline findings on a visible COMMENT review, posted only when there are new inline findings, it is the first run, the verdict worsened, or a new blocking finding appeared; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Default-on standards-conformance lens (Step 2.4d) enforces the repo's own governing docs (CLAUDE.md, AGENTS.md, .claude/rules/*.md, review-config .github/review.yaml standards:) as real findings — skip with --no-standards. Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or by dispatching this agent through the Task tool (`Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`). It is an agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write
 model: opus
 ---
@@ -272,7 +272,8 @@ every rule below means by "the prior report".
 - Set `PRIOR_SHA = ""`.
 - Set `PRIOR_REVIEW_SHA = ""`.
 - Set `PRIOR_DIAGNOSTICS = {}` (all sub-lists empty).
-- Set `STICKY_COMMENT_ID = ""` and `PRIOR_VERDICT = ""` and `PRIOR_OPEN_THREAD_IDS = []`.
+- Set `STICKY_COMMENT_ID = ""`, `PRIOR_VERDICT = ""`, `PRIOR_OPEN_THREAD_IDS = []`, and
+  `PRIOR_BLOCKING_FINGERPRINTS = []`.
 - Announce: `No prior review found — running full review.`
 - Proceed to Step 1.
 
@@ -291,7 +292,10 @@ every rule below means by "the prior report".
   `commit_id`:
   ```bash
   PRIOR_REVIEW_SHA=$(jq -r '.runs | last.sha // ""' <<< "${LEDGER:-{\"runs\":[]\}}")
-  [ -z "$PRIOR_REVIEW_SHA" ] && PRIOR_REVIEW_SHA=$(sed -n 's/.*review for commit `\([0-9a-f]\{7,40\}\)`.*/\1/p' <<< "$PRIOR_BODY" | tail -1)
+  # Matches all three footer forms — "Reviewed for commit `x`", "Incremental review for
+  # commit `x`", and the zero-delta "… gate checks only for commit `x`" — by anchoring on
+  # `commit \`<sha>\`` alone. Anchoring on "review for commit" missed two of the three.
+  [ -z "$PRIOR_REVIEW_SHA" ] && PRIOR_REVIEW_SHA=$(sed -n 's/.*commit `\([0-9a-f]\{7,40\}\)`.*/\1/p' <<< "$PRIOR_BODY" | tail -1)
   [ -z "$PRIOR_REVIEW_SHA" ] && PRIOR_REVIEW_SHA=$(jq -r '.commit_id // ""' <<< "$PRIOR_REVIEW")
   ```
   `PRIOR_REVIEW_SHA` is the provenance of the carried body and is always set once a prior report
@@ -299,8 +303,16 @@ every rule below means by "the prior report".
   separate: `PRIOR_REVIEW_SHA_SHORT` (`${PRIOR_REVIEW_SHA:0:7}`) is what the mandatory
   `(carried from …)` suffix renders, so the suffix never degrades to `(carried from )` in a mode
   that skips delta triage.
-- Read `PRIOR_VERDICT` from the ledger's newest entry (`PASS` / `WARN` / `FAIL`, `""` when the
-  ledger is absent or unparseable). Step 4's escalation rule compares against it.
+- Read `PRIOR_VERDICT`, `PRIOR_OPEN_THREAD_IDS` and `PRIOR_BLOCKING_FINGERPRINTS` from the ledger's
+  newest entry — respectively `verdict` (`PASS` / `WARN` / `FAIL`, `""` when the ledger is absent or
+  unparseable), `open_bot_comment_ids` (`[]` when absent) and `blocking_fingerprints` (`[]` when
+  absent). All three feed Step 4: the first two the escalation rule, the second also the
+  `resolved since` counter on the unblock checklist.
+  **Read them here, above the `--full` stop below.** Their consumers are Step 2.9c and Step 4, and
+  neither is skipped under `--full` — unlike `LAST_FULL_SHA` / `INCR_RUNS_SINCE_FULL`, whose only
+  consumer (Step 1.2b) *is* skipped, which is what makes leaving those unset safe. Reading these
+  after the stop would leave them unbound on exactly the mode a human passes for the most thorough
+  re-review.
 - Parse the prior report body's `Additional findings` section into `CARRIED_FINDINGS` and re-admit
   them per `agents/shared/rules/prior-comment-awareness.md § Carry-forward of deferred findings`.
   Do this in **every** mode. It is mandatory in incremental modes, which scan the delta only, so a
@@ -332,9 +344,6 @@ every rule below means by "the prior report".
   unparseable ledger (a legacy review-body report, a hand-edited sticky, an older template) yields
   an empty `LAST_FULL_SHA`, which forces `full` in Step 1.2b — the safe direction, so the deep
   lenses cannot be starved indefinitely by a ledger this agent could not read.
-- Read `PRIOR_OPEN_THREAD_IDS` from the ledger's newest entry (`open_bot_comment_ids`, absent on a
-  legacy report ⇒ empty). Step 4 diffs it against this run's set to render the `resolved since`
-  count on the unblock checklist.
 - Set `RUN_MODE = "incremental"` (subject to upgrade in Step 1.2b after delta triage).
 - Announce: `Prior review found at ${PRIOR_SHA:0:7} — running delta triage (${#CARRIED_FINDINGS[@]} deferred finding(s) carried forward).`
 - Proceed to Step 1.
@@ -403,12 +412,13 @@ single HTML comment, invisible in rendered Markdown, written as the last line of
 | Field | Meaning |
 | --- | --- |
 | `v` | Schema version — `1`. A reader that does not recognise the version treats the ledger as absent. |
-| `runs[]` | One entry per completed run, **oldest first**. Appended by Step 4, never rewritten. |
+| `runs[]` | One entry per completed run, **oldest first**. Step 4 appends one entry and otherwise only ever *narrows* older ones — dropping the two bulky per-run fields below and trimming from the front. An older entry's `sha` / `mode` / `verdict` / `at` are never altered. |
 | `runs[].sha` | The `HEAD_SHA` that run reviewed. Feeds `PRIOR_SHA`, `PRIOR_REVIEW_SHA`, and `LAST_FULL_SHA`. |
 | `runs[].mode` | `full` / `incremental` / `incremental-quick` — the resolved `RUN_MODE`. Drives `INCR_RUNS_SINCE_FULL`. |
 | `runs[].verdict` | `PASS` / `WARN` / `FAIL` — feeds Step 4's escalation rule via `PRIOR_VERDICT`. |
 | `runs[].at` | UTC ISO-8601 timestamp of the run. |
 | `runs[].open_bot_comment_ids` | The Gate 3 open-thread set (`OPEN_BOT_COMMENTS[]` comment ids) at that run. **Newest entry only** — Step 4 strips it from older entries when appending, so the ledger stays bounded. Feeds the `resolved since` count. |
+| `runs[].blocking_fingerprints` | The `category:claim-gist` fingerprints of that run's `(blocking)` findings — the same fingerprint form `comment-relevance-memory.md` uses, never a `file:line`. **Newest entry only**, stripped from older entries like the field above. Feeds Step 4b condition 4; without it there is no record of the prior run's blocking set, since blocking findings are cap-exempt and so never reach `Additional findings`. |
 
 Bounding rules, applied by Step 4 on every append:
 - Keep at most **50** entries; drop from the front. The deep-lens counters only need the runs since
@@ -1068,10 +1078,21 @@ Non-blocking findings above a cap are **deferred, not dropped** — rendered in 
 never discarded by this step, and a blocking finding is never deferred. Report
 `Deferred (over inline cap): <N>` in the diagnostics block.
 
-### 2.9c Reconcile prior threads (re-review only)
+---
+
+## Step 2.9c: Reconcile prior threads (re-review only)
 
 See `agents/shared/rules/thread-resolution.md`. Skip entirely on a first-pass review
 (`PRIOR_REVIEW` empty in Step 0.7).
+
+**This is a top-level step, deliberately not a subsection of Step 2.** Step 2 is skipped wholesale
+when the zero-delta short-circuit fires (Step 1.2b), and a zero-delta run happens **only** on a
+re-review — precisely the population this step exists for. The commonest shape is an author who
+resolves threads and re-runs the reviewer without pushing code, which is exactly what `review-loop`
+produces on convergence. Nesting this under Step 2 would silently exempt those runs from
+reconciliation, from the Gate 3 refresh, and from the `reviewer-comment-relevance` write, while
+`diagnostic-surface.md` still promised them "every re-review". It therefore runs after Step 2
+**whether or not Step 2 itself ran**, including on the zero-delta path.
 
 Findings are final as of 2.9b, which is the precondition this step needs to tell `persisting` from
 `fixed`. It runs **here — before the verdict (Step 3) and before posting (Step 4)** — rather than
@@ -1092,6 +1113,9 @@ Then update Gate 3's input:
 - Re-evaluate Gate 3 from the updated set, exactly as Step 1.8 does. This is not a second, laxer
   gate: Gate 3's own rule is that *a resolved thread never fails this gate*, and these threads are
   now resolved. If the set is emptied, Gate 3 flips to ✅ and the verdict follows normally.
+  **Except under `--skip-gates`**, where Step 1.8 never ran and Gate 3 is `⏭️`: update
+  `OPEN_BOT_COMMENTS[]` and `RESOLVED_SINCE_PRIOR` as usual, but leave the gate `⏭️`. Re-evaluating
+  it here would resurrect a gate the invocation explicitly turned off.
 - Recompute `RESOLVED_SINCE_PRIOR` = `|PRIOR_OPEN_THREAD_IDS − OPEN_BOT_COMMENTS ids|` for the
   checklist's `resolved since` counter. It counts every thread closed since the prior report —
   by this step, by the author, or by another fixer — not only the ones this step resolved.
@@ -1101,8 +1125,11 @@ unavailable — is logged and the run continues with the **pre-reconciliation** 
 and Gate 3 status. Moving this step earlier must not give it the power to stop a review; the review
 is what the author is waiting for.
 
-Log `Threads resolved: <F> fixed, <D> declined` and `Relevance memories written: <N>` in the Step 3
-diagnostics block.
+Log `Threads resolved: <F> fixed, <D> declined` and `Relevance memories written: <N>` in the Step 5
+report — its `Include:` list is free-form and has room for them. Step 3's Quality Gate block is a
+fixed enumeration with no slot for either counter; do not wedge them in there.
+
+---
 
 ---
 
@@ -1303,16 +1330,19 @@ Bind the three values Step 4 introduces before rendering:
 | `VERDICT` | `PASS` / `WARN` / `FAIL` — the verdict chosen in Step 3, the same one that selects the body template. |
 | `HEAD_SHA_SHORT` | `${HEAD_SHA:0:7}` (Step 1.2). |
 | `OPEN_BOT_COMMENT_IDS_JSON` | A JSON array of the comment ids in `OPEN_BOT_COMMENTS[]` **as it stands after Step 2.9c** — `[]` when the gate is clean. This is what the next run diffs to compute `RESOLVED_SINCE_PRIOR`. |
+| `BLOCKING_FINGERPRINTS_JSON` | A JSON array of the `category:claim-gist` fingerprints of this run's `(blocking)` findings (Step 2.9), `[]` when none. This is what the next run's Step 4b condition 4 diffs against. |
 
 Render `REPORT_BODY` per *Review body format* below, append the ledger line, then:
 
 ```bash
 # Append this run to the ledger, strip open_bot_comment_ids from older entries, cap at 50.
 NEW_LEDGER=$(jq -c --arg sha "$HEAD_SHA" --arg mode "$RUN_MODE" --arg verdict "$VERDICT" \
-  --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson ids "$OPEN_BOT_COMMENT_IDS_JSON" '
+  --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson ids "$OPEN_BOT_COMMENT_IDS_JSON" \
+  --argjson blocking "$BLOCKING_FINGERPRINTS_JSON" '
   {v: 1, runs: (
-    ((.runs // []) | map(del(.open_bot_comment_ids)))
-    + [{sha: $sha, mode: $mode, verdict: $verdict, at: $at, open_bot_comment_ids: $ids}]
+    ((.runs // []) | map(del(.open_bot_comment_ids, .blocking_fingerprints)))
+    + [{sha: $sha, mode: $mode, verdict: $verdict, at: $at,
+        open_bot_comment_ids: $ids, blocking_fingerprints: $blocking}]
     | .[-50:]
   )}' <<< "${LEDGER:-{\"runs\":[]\}}")
 
@@ -1366,7 +1396,10 @@ Post a review when **any** of these holds:
 3. The verdict worsened: `RANK[VERDICT] > RANK[PRIOR_VERDICT]` where `RANK = {PASS: 0, WARN: 1,
    FAIL: 2}`. An empty `PRIOR_VERDICT` (absent or unparseable ledger) counts as worsened — degrade
    toward notifying.
-4. A `(blocking)` finding exists this run whose fingerprint was not in the prior run's blocking set.
+4. A `(blocking)` finding exists this run whose `category:claim-gist` fingerprint is not in
+   `PRIOR_BLOCKING_FINGERPRINTS` (the prior run's blocking set, from the ledger). An empty
+   `PRIOR_BLOCKING_FINGERPRINTS` with blocking findings this run satisfies the condition — but
+   condition 1 already fires there, since a blocking finding is cap-exempt and always inline.
 
 Otherwise **post no review** — patch the sticky and stop. This is the case that removes the noise:
 an iteration that fixes things and finds nothing new leaves one edited comment and no new object.
@@ -1669,7 +1702,8 @@ Rules for this section:
   the next patch, and would contradict Gate 3's ❌ while it survived. Do not reintroduce checkboxes.
 - **`RESOLVED_SINCE_PRIOR` reports progress instead of the list carrying it.** Render the `<sup>`
   clause only when `RESOLVED_SINCE_PRIOR > 0`; omit it entirely otherwise (never `0 resolved`).
-  Use the singular `thread` at exactly 1.
+  Use the singular `thread` at exactly 1. When Gate 3 is ✅ this whole section is omitted, so the
+  counter moves into Gate 3's Details cell instead — see *Rules for table cells*.
 - **Actionable-only** — the unresolved threads and nothing else; never restate the gate table,
   tally, or other findings. It is a rendering of Gate 3 state, not a new finding, so it is never
   auto-applied or ingested (`reviewer-report-ingest.md`).
@@ -1801,11 +1835,16 @@ Rules for table cells:
 - Details column: plain text only, max 120 chars per cell.
 - When a gate PASSES (✅), its Details cell shows the short static description of what the gate
   checks, verbatim from the table below.
-  One exception: when Gate 3 passed on **unverified** thread state (state unavailable or the thread
-  map incomplete — see *Gate 3*), its Details cell holds
-  `thread state unavailable — <N> comment(s) unverified` instead of the static description. This is
-  the only ✅ cell that is not the verbatim static text, and it never changes the ✅ status or the
-  variant selection.
+  Two exceptions, both on Gate 3, and neither changes the ✅ status or the variant selection:
+  - When Gate 3 passed on **unverified** thread state (state unavailable or the thread map
+    incomplete — see *Gate 3*), its Details cell holds
+    `thread state unavailable — <N> comment(s) unverified` instead of the static description.
+  - When Gate 3 passed and `RESOLVED_SINCE_PRIOR > 0`, its Details cell holds
+    `All bot threads resolved — <RESOLVED_SINCE_PRIOR> closed since \`<PRIOR_REVIEW_SHA_SHORT>\`.`
+    `UNRESOLVED_THREADS_SECTION` — where the counter normally renders — is omitted whenever Gate 3
+    is ✅, so without this the run that clears the **last** open thread reports no progress at all,
+    which is the run with the most progress to report. The unverified text wins if both apply: an
+    unread thread map is the more important thing to say.
 - When a gate WARNS (⚠️) or FAILS (❌), its Details cell shows the specific finding text (max 120
   chars — truncate; the full finding lives in the inline comment), exactly as before.
 - `⏭️` is a valid Status value in **every** body variant — PASS, WARN, and FAIL — in addition to the

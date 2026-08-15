@@ -76,10 +76,11 @@ while :; do
         --jq "[.[] | select(.created_at > \"$SINCE\")] | length")
   NEW_REVIEWS=$(gh api "/repos/$OWNER/$REPO/pulls/$NUMBER/reviews" \
         --jq "[.[] | select(.submitted_at > \"$SINCE\")] | length")
-  # created_at OR updated_at: a rewritten-in-place reviewer report is new feedback
-  # even though the comment itself is old. See "Edited reports count as feedback".
+  # updated_at, not created_at: a rewritten-in-place reviewer report is new feedback even
+  # though the comment itself is old. GitHub guarantees updated_at >= created_at, so this
+  # subsumes the created_at test. See "Edited reports count as feedback".
   NEW_ISSUE=$(gh api "/repos/$OWNER/$REPO/issues/$NUMBER/comments" \
-        --jq "[.[] | select(.created_at > \"$SINCE\" or .updated_at > \"$SINCE\")] | length")
+        --jq "[.[] | select(.updated_at > \"$SINCE\")] | length")
   if [ $((NEW + NEW_REVIEWS + NEW_ISSUE)) -gt 0 ]; then echo "NEW_FEEDBACK"; break; fi
   [ $(( $(date +%s) - START )) -ge $INTERVAL ] && { echo "NO_FEEDBACK"; break; }
   sleep $POLL
@@ -102,7 +103,8 @@ body-only — gate rows, optimality cards, deferred `Additional findings` — wh
 class this skill was extended to ingest (*Reviewer-report expansion* in
 [`comment-fetching.md`](./comment-fetching.md)). The loop would report `reviewers quiet` and stop
 with those findings unaddressed, and the stop reason would look like success. Hence the
-`or .updated_at > SINCE` clause above.
+switch to `updated_at` above, which GitHub guarantees is `>= created_at` and so covers newly-created
+comments too.
 
 The cost is one extra pass when a human merely edits a typo in their own comment; Phases 2–4 then
 find nothing actionable and the loop stops with `nothing actionable left`. Stopping early on real

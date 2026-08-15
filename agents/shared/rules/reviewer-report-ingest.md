@@ -101,7 +101,7 @@ a finding.
 | Standards log | `**Standards (2.4d)** —` | `{ran, docs_scanned, finding_count}` — run-state only | n/a |
 | Optimality log | `**Optimality (2.4c)** —` | `{ran, judged, optimal, proposals, withheld}` — run-state only | n/a |
 | Skipped files | `**Skipped files** —` | file paths, empty on `none` | n/a |
-| Footer SHA | `<sup>Reviewed for commit \`<sha>\`` / `<sup>Incremental review for commit \`<sha>\`` | the reviewed SHA | n/a |
+| Footer SHA | `<sup>Reviewed for commit \`<sha>\`` / `<sup>Incremental review for commit \`<sha>\`` / `<sup>No code changes since \`<prior>\` — gate checks only for commit \`<sha>\`` | the reviewed SHA — **all three** run-mode forms. Match on `commit \`<sha>\`` alone, never on a leading phrase: anchoring on `review for commit` matches only the incremental form and silently misses the other two. This section is load-bearing provenance for a sticky, which has no `commit_id`. | n/a |
 
 ### Low-confidence findings are advisory, never actionable
 
