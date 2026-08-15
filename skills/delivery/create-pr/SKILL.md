@@ -21,7 +21,7 @@ argument-hint: '[--split] [--quick] [--no-review] [--no-simplify] [--no-quality]
 license: MIT
 metadata:
   author: mthines
-  version: '3.1.0'
+  version: '3.2.0'
   workflow_type: command
 ---
 
@@ -108,10 +108,13 @@ Otherwise, map the `create-pr` flags to the appropriate invocation. Evaluate in 
 
 Pass `--critical` through to `review-loop` / `pr-reviewer` if the user passed it to `create-pr`.
 
+**Rows 3 and 4 both need sub-agent dispatch.** `pr-reviewer` is `Task`-only and has no in-context substitute ([`review-loop` § Dispatch mechanics](../../quality/review-loop/SKILL.md#dispatch-mechanics--read-before-invoking)). Before taking either row, confirm the `Task` tool is available. If it is not, do **not** attempt the dispatch and do not silently fall through to row 2 — record the outcome as `NOT REVIEWED` and carry it into Step 10.
+
 After the loop returns:
 
 - If the loop converged (every review thread resolved via fix or reply), continue to Step 6.7 (external-bot feedback). The loop also refreshes the PR description to match the converged diff, so do not re-edit the body here.
 - If the cap was hit with threads still open — human-judgment flags or unresolved blockers — surface them to the user before continuing to CI watch.
+- **If the loop returned a skip** (sub-agent dispatch unavailable), the PR has **not been reviewed**. Continue to Step 6.7 and CI watch, but carry `NOT REVIEWED` into the Step 10 report verbatim. Never describe such a PR as converged, clean, or review-ready — an unreviewed PR reported as reviewed is the one failure this contract exists to prevent.
 
 **Hard rules for this step:**
 
@@ -167,32 +170,47 @@ Dispatched background external-reviewer-feedback loop (PR: <pr-url>). Continuing
 
 The job isn't done when the PR is created. Block on CI so the user doesn't have to come back to a red PR later.
 
-```bash
-sleep 10                                          # let workflows register
-timeout 540 gh pr checks <pr-number> --watch      # one attempt, 9-min cap; non-zero exit if any failed
-```
+**Two harness facts govern this step. Get them wrong and the watch hangs instead of waiting.**
 
-`--watch` waits for queued/running checks and exits with the final aggregate status. If the exit code is 0, jump to Step 10. Otherwise continue.
+1. **The Bash tool's default timeout is 120 000 ms; 600 000 ms is the opt-in maximum.** A long `timeout N` inside the command is irrelevant if the *tool call* is killed first — the agent then sees an opaque tool timeout with no exit code, and every rule below becomes unreachable. **Issue the watch call with the tool's `timeout` parameter explicitly set to `600000`.** Setting it is not optional; omitting it caps the watch at 2 minutes.
+2. **Shell state does not persist between Bash calls.** Each call is a fresh shell, so the attempt budget cannot live in an environment variable. It lives in a file.
 
-**Why 540 and not a single long block.** The agent harness caps a Bash call well below 30 minutes (Claude Code's tool ceiling is 600 s). A `timeout 1800` never reaches its own `exit 124` handler — the harness kills the call first, so the expiry path is dead code and the agent sees only an opaque tool timeout. Each attempt must therefore fit **under** the harness ceiling.
-
-**The total wait is a counted budget, not a single call.** Re-watching is allowed, but only against an explicit attempt counter — an uncounted "re-watch on timeout" is an unbounded loop:
+### The watch call
 
 ```bash
-CI_WATCH_ATTEMPTS=${CI_WATCH_ATTEMPTS:-0}          # PR-scoped; carries across Steps 7-9 and Phase 7
-CI_WATCH_MAX=4                                     # 4 x 9 min = 36-min total budget
+# Issue this Bash call with the tool parameter timeout: 600000.
+# 540 < 600 so `timeout` fires first and we get a real exit 124.
+timeout 540 gh pr checks <pr-number> --watch
 ```
+
+Do **not** prefix a `sleep` to let workflows register — foreground `sleep` is blocked in some harnesses and it burns budget for nothing. `--watch` already polls for checks that have not appeared yet.
+
+### The attempt budget (file-backed, tier-independent)
+
+```bash
+STATE=".agent/ci-watch-<pr-number>.state"          # plain file; NO plan.md or Full tier required
+mkdir -p .agent && touch "$STATE"
+```
+
+The file carries three keys, rewritten after every attempt:
+
+| Key | Meaning |
+| --- | ------- |
+| `attempts` | How many watch attempts this PR has spent. Max **4** (≈ 36 min total) |
+| `observed_sha` | The head SHA the last terminal result was observed at |
+| `observed_state` | `green` / `failing` / `pending` at that SHA |
+
+A file rather than the Progress Log **deliberately**: the Progress Log lives in `.agent/{branch}/plan.md`, which only exists in Full tier, and `create-pr` runs standalone and from Micro/Lite `aw` runs where there is no plan. A budget that silently vanishes on three of four paths is not a budget.
 
 | Attempt outcome | Next step |
 | --------------- | --------- |
-| Exit 0 | CI green — jump to Step 10 |
-| Non-zero, not 124 | A check failed — go to Step 8 |
-| Exit 124 (timed out) **and** `CI_WATCH_ATTEMPTS < CI_WATCH_MAX` | Increment the counter and watch once more |
-| Exit 124 **and** the budget is spent | **Stop.** Run `gh pr checks <pr-number>` once, report the still-pending checks, and escalate — never watch again |
+| Exit 0 | CI green — record `observed_sha` + `observed_state=green`, jump to Step 10 |
+| Exit 124 and `attempts < 4` | Increment `attempts`, watch once more |
+| Exit 124 and `attempts == 4` | **Stop.** Run `gh pr checks <pr-number>` once, report the still-pending checks, escalate — never watch again |
+| Exit 127, or any non-zero with no check output | **Tooling failure, not a CI failure.** `timeout` is absent on stock macOS (use `gtimeout`), and `gh` auth/network errors also exit non-zero. Report the command failure; do **not** fan out CI-log triage against a run that never failed |
+| Any other non-zero, with check output naming failed checks | A check genuinely failed — go to Step 8 |
 
-Record each attempt in the Progress Log (`ci-watch attempt N/4`) so Phase 7 can see the budget was already spent and does not restart it.
-
-If `gh pr checks` reports no checks at all after a minute, this repo probably doesn't run CI on PRs — also jump to Step 10.
+If `gh pr checks` reports no checks at all on the first attempt, this repo probably doesn't run CI on PRs — jump to Step 10.
 
 ## Step 8: Triage Failures (delegate log-reading to subagents)
 
@@ -229,7 +247,7 @@ Use the returned `category` to decide the path:
   ```bash
   gh run rerun <run-id> --failed
   ```
-  Then re-watch with `timeout 540 gh pr checks <pr-number> --watch`, **drawing from the same `CI_WATCH_ATTEMPTS` budget as Step 7** — a rerun does not reset it. At most one rerun per check, and if the watch budget is already spent, report and escalate instead of watching again.
+  Then re-watch with `timeout 540 gh pr checks <pr-number> --watch` (tool `timeout: 600000`), **drawing from the same `.agent/ci-watch-<pr-number>.state` budget as Step 7** — a rerun does not reset `attempts`. At most one rerun per check, and if the budget is spent, report and escalate instead of watching again. A `ci-auto-fix` subagent that watches on your behalf spends from the same file.
 
 ## Step 9: Apply Fixes
 
@@ -289,7 +307,7 @@ Title: <imperative title>
 
 Review loop (review-loop / pr-reviewer):
   Iterations: <N> of <cap>
-  Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | skipped (--no-quality)>
+  Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | skipped (--no-quality) | NOT REVIEWED (sub-agent dispatch unavailable)>
   Open threads at exit: <count>
   Description refreshed: <yes | unchanged | skipped>
   Final verdict: <PASS | FAIL>

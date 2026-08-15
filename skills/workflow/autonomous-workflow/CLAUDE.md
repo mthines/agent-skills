@@ -377,7 +377,10 @@ When editing this skill, do not break these — they're load-bearing:
   hard tool prerequisite is `gh` (for Phases 6 and 7).
 - **The system-prompt for the agent template stays lean.** It references
   `SKILL.md` for procedures rather than duplicating them. If the agent
-  template grows beyond ~250 lines of system prompt, it's drifting.
+  template grows beyond ~250 lines of system prompt, it's drifting. **The `aw`
+  dispatcher has a stricter ceiling of ~200** (router + loop only) — the two
+  numbers are a deliberate layering, not a contradiction: 250 is the default for
+  any agent template, 200 is the tighter bound the thin-router role earns.
 - **The diagnostic surface is the contract that makes this skill diagnosable.**
   Removing or breaking [`rules/diagnostic-surface.md`](./rules/diagnostic-surface.md)
   silently downgrades `/create-skill diagnose autonomous-workflow` to its

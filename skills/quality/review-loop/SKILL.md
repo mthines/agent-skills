@@ -288,7 +288,7 @@ After the loop exits (converged, no-progress, or at cap), emit a compact summary
 review-loop on PR #<n> (<RESOLVED_REPO>)
 
 Iterations: <N> of <CAP>
-Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | report-only (--no-feedback)>
+Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable)>
 
 Per-iteration summary:
   Iteration 1: <verdict>, <N findings>, <M applied>, <A answered/resolved>, <K simplify recipes>, <U threads still open>

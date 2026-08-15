@@ -48,25 +48,37 @@ Gate: CI green OR user-approved stop. Worktree cleanup is optional and never aut
 After Phase 6, you should already have the PR URL and number. Start watching:
 
 ```bash
-# Watch all checks on the PR — one bounded attempt (see budget below)
+# Watch all checks on the PR — one bounded attempt (see budget below).
+# Issue this Bash call with the tool parameter timeout: 600000.
+# The tool's DEFAULT is 120000, which would kill the watch at 2 minutes.
 timeout 540 gh pr checks <pr-number> --watch
 
-# Or watch a single workflow run by id
+# Or watch a single workflow run by id (same tool timeout)
 timeout 540 gh run watch <run-id>
 ```
 
-**The watch is bounded and the budget is PR-scoped, not phase-scoped.** Two rules, both load-bearing:
+**The watch is bounded, and the budget is PR-scoped rather than phase-scoped.** Three rules, all load-bearing:
 
-1. **Every attempt fits under the harness ceiling.** A Claude Code Bash call is capped at 600 s, so an unbounded `--watch` (or a `timeout 1800`) is killed by the harness before any expiry handling runs — the agent then sees an opaque timeout with no instruction, which is how this step turns into a silent hang. Use `timeout 540` per attempt.
-2. **`create-pr` already spent part of the budget.** [`create-pr` Step 7](../../../delivery/create-pr/SKILL.md) watches the same checks on the same PR and logs `ci-watch attempt N/4`. Phase 7 **continues that counter — it does not restart it.** Read the Progress Log first:
+1. **Every attempt fits under the harness cap, and the cap must be opted into.** A Claude Code Bash call defaults to 120 s and maxes at 600 s. An unbounded `--watch`, a `timeout 1800`, or a `timeout 540` issued at the default tool timeout are all killed before any expiry handling runs — the agent then sees an opaque timeout with no instruction, which is how this step becomes a silent hang. Pass `timeout: 600000` and keep the inner `timeout` below it.
+2. **`create-pr` already spent part of the budget.** [`create-pr` Step 7](../../../delivery/create-pr/SKILL.md) watches the same checks on the same PR against `.agent/ci-watch-<pr-number>.state`. Phase 7 reads that file and **continues the counter — it never restarts it.**
+3. **A terminal result is only valid at the SHA it was observed at.** `create-pr` Step 6.7 dispatches a background `implement-suggestion --watch` that keeps pushing, and Step 9's `ci-auto-fix` subagents push fixes — both explicitly in parallel with the main thread. So "CI was green" is a claim about a commit, not about the PR.
 
-| Progress Log state | Phase 7 Step 1 does |
-| ------------------ | ------------------- |
-| `create-pr` drove the checks to a terminal state (all green, or a failure already triaged) | **Skip the watch entirely** — go straight to the outcome table below |
-| Budget partly spent (`attempt N/4`, `N < 4`), checks still pending | Resume watching with the remaining attempts |
-| Budget spent (`attempt 4/4`) | **Do not watch again.** Run `gh pr checks <pr-number>` once, report pending checks, escalate |
+**Before skipping anything, compare SHAs — mechanically, not by judgment:**
 
-This is the fix for the one place Phases 6 and 7 genuinely duplicated work: the two `review-loop` passes review different diffs and are deliberate (see [Auto Review](#auto-review)), but the CI watch was uncoordinated.
+```bash
+CURRENT_SHA=$(git rev-parse HEAD)
+# observed_sha comes from .agent/ci-watch-<pr-number>.state
+```
+
+| State file says | `observed_sha` vs `CURRENT_SHA` | Phase 7 Step 1 does |
+| --------------- | ------------------------------- | ------------------- |
+| Terminal (`green` or triaged failure) | **equal** | **Skip the watch** — go to the outcome table below |
+| Terminal | **different** (branch moved since) | **Watch again.** The recorded result describes a commit that is no longer head; reporting it would mark an unobserved commit green |
+| Pending, `attempts < 4` | any | Resume watching with the remaining attempts |
+| `attempts == 4` | any | **Do not watch again.** Run `gh pr checks <pr-number>` once, report pending checks, escalate |
+| No state file (Phase 7 reached without `create-pr`) | — | Start a fresh budget at `attempts=0` |
+
+This is the fix for the one place Phases 6 and 7 genuinely duplicated work. The two `review-loop` passes review different diffs and are deliberate (see [Auto Review](#auto-review)) — only the CI watch was uncoordinated.
 
 | Outcome             | Next step                                                              |
 | ------------------- | ---------------------------------------------------------------------- |
