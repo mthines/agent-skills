@@ -200,11 +200,17 @@ When this rule is applied inside a sub-agent, the sub-agent does NOT receive the
 ```text
 # Narrow-to-broad fan-out — repo-specific wins over global on conflict.
 # Issue each line as a real mcp__lorekit__memory_list tool call.
-# view="summary" returns the index (key, tags, updated_at, value_bytes, preview),
-# which is all a relevance verdict needs — the fingerprint lives in the key.
+# view="summary" returns the index (key, tags, updated_at, value_bytes, preview)
+# instead of every body — see the availability note directly below.
 mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=50 view="summary"
 mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-comment-relevance"] limit=50 view="summary"
 ```
+
+**`view` requires LoreKit ≥ the release carrying lorekit#464.** Read the live
+`mcp__lorekit__memory_list` schema first; if it does not list `view`, omit the parameter and take
+the full bodies. A tool error naming `view` as unknown is handled the same way — retry that one
+call without it. Neither case is evidence the backend is down, so neither may count toward the
+retry budget below or set the backend not-connected.
 
 **On a tool error, retry before declaring the backend down.** A thrown MCP error on the first call
 is far more often a momentary transport hiccup than a real outage, and treating one blip as

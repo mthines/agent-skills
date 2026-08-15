@@ -419,9 +419,24 @@ the observed ~1.9 KB median body a saturated fan-out is ~380 KB of context — a
 entries a typical run actually returns is ~110 KB — spent before the diff has been read, to answer
 a question (*which* memories apply to this change) that the key, tags, and preview already answer.
 The summary form costs ~250 bytes per entry: ~50 KB saturated, ~15 KB typical. Bodies are fetched
-at Step 1.2d, once the changed files and `INTENT_PHRASE` exist to shortlist against. If the LoreKit
-server predates `view` support it ignores the parameter and returns full entries; that is a
-degradation in cost, not in correctness, so never retry without it.
+at Step 1.2d, once the changed files and `INTENT_PHRASE` exist to shortlist against.
+
+**`view` is a capability, not a guarantee — probe once, then commit.** It requires LoreKit
+**≥ the release carrying lorekit#464**; older servers do not have it. Two failure shapes, handled
+differently, and neither may cost you `LOREKIT_CONNECTED`:
+
+- **The tool's input schema does not list `view`.** Check the live `mcp__lorekit__memory_list`
+  schema before the first call. If `view` is absent, set `SUMMARY_VIEW = false` and issue all four
+  calls WITHOUT it. Do not send an unknown key to a strict-schema tool.
+- **The call throws specifically because of `view`** (an unknown/unexpected-argument error naming
+  it). Set `SUMMARY_VIEW = false`, retry that same call once without `view`, and carry on. This
+  retry is **not** one of the three transport retries and a schema rejection is **never** evidence
+  the backend is down — flipping `LOREKIT_CONNECTED` here would turn a missing optimisation into a
+  total memory outage.
+
+When `SUMMARY_VIEW` is `false` the four calls return full bodies, exactly as they did before this
+pipeline existed. That is a cost regression, not a correctness one: skip Step 1.2d entirely (the
+bodies are already in hand), and match at Step 1.2e against them directly.
 
 **Memory model — entrenchment guards and the no-in-run-write choice.**
 The lessons read here are advisory input only, protected by five entrenchment guards (`lorekit-setup § Entrenchment guards`):
@@ -445,11 +460,12 @@ this merge/dedup (0 when connected but none matched).
 because its partner `MEMORIES_USED_COUNT` is `|APPLIED_MEMORIES|`, built at Step 2.2 from relevance
 memories alone, and the two are rendered as a single `read · used` pair that must describe one
 population. Loaded `reviewer-lessons` are reported separately by the `<L> reviewer-lessons matched`
-announce line below.
+announce line, which is emitted at Step 1.2e — matching has not happened yet at this step, so the
+count does not exist here.
 Both counters feed the Step 4 `Review details`
 **Memories** line; the collapsed title headlines the **used** count (`MEMORIES_USED_COUNT`,
 computed at Step 2.2) — see *Review body format*.
-Announce the concrete resolved scope so the influence is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <L> reviewer-lessons matched.`
+Announce the concrete resolved scope so the read is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <N> entries indexed.` The matched-lesson count is announced at Step 1.2e, once matching has run.
 Announce: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
 
 ### 1.1 Fetch PR data in parallel
@@ -586,16 +602,13 @@ In incremental modes (non-empty delta), Gate 4 (self-review signals) scans `REVI
 
 The two broad `mcp__lorekit__memory_list` calls in Step 1.0 are capped at 50 per tag; on a large repository the lesson most relevant to *these* changed files can fall outside that window.
 Now that the changed-file list is known (Step 1.1 command A and Step 1.2), run one targeted `mcp__lorekit__memory_search` to pull those in.
-Issue this as a real `mcp__lorekit__memory_search` tool call.
-Skip this step when `LOREKIT_CONNECTED` is already `false` — the Step 1.0 attempt failed, so there is no backend to search.
-Otherwise issue the call, and treat an error here as a non-blocking addend miss (do not flip `LOREKIT_CONNECTED`).
 
-**Derive `INTENT_PHRASE` FIRST, before the connection check above can skip anything.** Group 5
-below binds it, and Step 1.3 expands rather than re-derives it — but it is a property of the PR, not
-of LoreKit, and a core review variable must not inherit a memory backend's availability. So build
-the five field groups unconditionally, bind `INTENT_PHRASE`, and only then decide whether to issue
-the search. When the search is skipped or errors, `INTENT_PHRASE` is already set and Step 1.3
-proceeds normally.
+**Build the five field groups and bind `INTENT_PHRASE` FIRST — unconditionally, before any
+connection check below can skip anything.** Step 1.3 expands `INTENT_PHRASE` rather than
+re-deriving it, and it is a property of the PR, not of LoreKit: a core review variable must not
+inherit a memory backend's availability. Build the groups, bind the phrase, and only then decide
+whether to issue the search. When the search is skipped or errors, `INTENT_PHRASE` is already set
+and Step 1.3 proceeds normally.
 
 Build the query from the diff's own vocabulary, concatenating these five field groups (space-separated) into one query string:
 
@@ -608,6 +621,10 @@ Build the query from the diff's own vocabulary, concatenating these five field g
 In `incremental` and `incremental-quick` modes, key groups 1, 2, and 4 on `REVIEW_DIFF`'s paths and hunks, not the full PR; groups 3 and 5 stay whole-PR.
 This deliberately narrows the previous rule, which keyed **every** field on `REVIEW_DIFF`: groups 3 and 5 describe PR-level facts, not delta-level ones — a PR that bumped a dependency manifest is still a dependency-bump PR while the reviewer looks at a delta that touches no manifest, and its intent does not change per push.
 Scoping them to the delta would drop the manifest and intent tokens on every incremental pass after the first, which is exactly when the diff-keyed search is the reviewer's only chance to surface a lesson Step 1.0's top-50 window missed.
+
+With `INTENT_PHRASE` bound, now issue the search — skip it when `LOREKIT_CONNECTED` is already
+`false` (the Step 1.0 attempt failed, so there is no backend to search), and otherwise treat an
+error here as a non-blocking addend miss that does NOT flip `LOREKIT_CONNECTED`.
 
 ```text
 # Issue as a real mcp__lorekit__memory_search tool call.
@@ -622,13 +639,16 @@ Add the number of newly-surfaced, non-duplicate **`reviewer-comment-relevance`**
 `MEMORIES_READ_COUNT` — Step 1.0 owns that counter's definition and it stays relevance-only.
 Newly-surfaced `reviewer-lessons` hits still join the pool and are applied exactly as Step 1.0's
 are; they are simply not counted here, and instead raise the `<L> reviewer-lessons matched` figure
-in Step 1.0's announce line.
+announced at Step 1.2e.
 
 ### 1.2d Resolve the bodies that matter
 
-Step 1.0 loaded the memory **index** (`view: "summary"`): every entry's `key`, `tags`,
-`updated_at`, `value_bytes` and a 200-character `preview`, but no bodies. This step fetches the
-bodies worth having.
+**Skip this entire step when `SUMMARY_VIEW` is `false`** — Step 1.0 already returned full bodies,
+so there is nothing to resolve.
+
+Otherwise Step 1.0 loaded the memory **index**: every entry's `key`, `tags`, `updated_at`,
+`value_bytes` and a 200-character `preview`, but no bodies. This step fetches the bodies worth
+having.
 
 It runs **here, not at Step 1.0**, because every key the shortlist matches on is produced by the
 steps in between: the changed-file list (Step 1.1 command A and Step 1.2), the changed symbol names
@@ -651,9 +671,17 @@ mcp__lorekit__memory_read: scope="<the entry's scope>" key="<the entry's key>"
 
 **Budget**, scaled to the same diff-size bands as the tool-call budget so the memory read never
 crowds out the review itself: at most **5** reads for ≤ 10 changed files, **10** for 11–30, **15**
-for > 30. When more entries are candidates than the band allows, keep the most recently updated and
-treat the remainder as unread. Report a truncated shortlist in the terminal report so the ceiling is
-visible rather than silent.
+for > 30. When more entries are candidates than the band allows, fill the budget in this order and
+treat the remainder as unread:
+
+1. `reviewer-comment-relevance` entries whose fingerprint matches a raw finding — a missing verdict
+   changes what gets POSTED, while a missing lesson only changes emphasis;
+2. hits returned by the Step 1.2c search, in the order it returned them — that order is
+   relevance-ranked against this diff, and discarding it for recency would throw away the one
+   ranking signal this pipeline has;
+3. everything else, most recently updated first.
+
+Report a truncated shortlist in the terminal report so the ceiling is visible rather than silent.
 
 One entry class never needs a fetch and must not consume the budget: an entry whose `preview` is
 already the whole body (`value_bytes` ≤ 200).
@@ -661,9 +689,8 @@ already the whole body (`value_bytes` ≤ 200).
 **`reviewer-comment-relevance` entries DO need their bodies.** The key carries only the fingerprint
 (`<category>:<claim-gist>`); `relevance`, `seen_count`, `resolution_method` and `status` all live in
 the record body, and Step 2.2 cannot apply a drop / downgrade / promote without them. Fetch every
-relevance entry whose fingerprint matches a raw finding — count those against the same budget, and
-prefer them over `reviewer-lessons` candidates when the budget binds, because a missing relevance
-verdict changes what gets POSTED while a missing lesson only changes emphasis.
+relevance entry whose fingerprint matches a raw finding; they count against the same budget and
+take priority 1 in the fill order above.
 
 A failed `memory_read` is a non-blocking miss: drop that one entry, do not flip `LOREKIT_CONNECTED`,
 and carry on. This is the ONLY defined call site for `mcp__lorekit__memory_read` in this agent — do
@@ -676,6 +703,8 @@ A matched lesson's *What to do next time* is a **consideration, not a command**:
 On a `repo::` vs. `global` collision the `repo::` lesson wins; on any conflict with the PR author's stated intent or a review-config constraint, that constraint wins and the conflict is surfaced.
 The pool matched here already includes the diff-keyed `memory.search` hits from Step 1.2c and the bodies resolved at Step 1.2d.
 `reviewer-comment-relevance` memories are applied separately at Step 2.2, per `comment-relevance-memory.md § Read`.
+
+Announce the outcome now that it exists: `Memory scope: repo::<owner>/<repo> + global — <L> reviewer-lessons matched.`
 
 ### 1.3 Synthesize intent
 
