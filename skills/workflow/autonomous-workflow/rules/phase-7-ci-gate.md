@@ -68,7 +68,7 @@ The poll is a [shared rule with one owner](../../../delivery/create-pr/rules/reg
 
 | Poll outcome | Phase 7 does |
 | ------------ | ------------ |
-| `registered` | Watch, bounded, per the block below |
+| `registered` | **Re-read the Step 1 table above** — checks now exist, so it can classify them. Terminal ones skip the watch; pending ones fall through to the bounded block below |
 | `tooling-failure` | Report and escalate. Do **not** route to Auto Fix |
 | `no-ci` | Genuinely no CI on this repo — note it and treat as success |
 

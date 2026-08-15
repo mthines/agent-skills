@@ -980,10 +980,13 @@ function checksInSync(plan, checks) {
 
       // (2) Poll blocks — a loop that sleeps around a network call.
       const isPoll = /\b(while|until)\b/.test(block) && /\bsleep\b/.test(block) &&
-        /\b(gh|curl)\b/.test(block);
+        /\b(gh|curl|wget|aws|kubectl|az|gcloud)\b/.test(block);   // any remote call, per the invariant
       if (!isPoll) continue;
-      // Skip blocks already counted as a watch command above.
-      if (lines.slice(b0, b1).some(isWatchCmd)) continue;
+      // A fence may hold BOTH a watch command and a separate poll loop; count each.
+      // Only skip when the poll shape is the watch line itself.
+      const pollIsJustTheWatch = lines.slice(b0, b1).filter((l) => l.trim()).every(
+        (l) => isWatchCmd(l) || /^\s*#/.test(l));
+      if (pollIsJustTheWatch) continue;
       sites++;
       const wrapper = block.match(/^\s*timeout\s+(\d+)\s+bash\s+-c/m);
       const wrapped = wrapper !== null && Number(wrapper[1]) < 600;

@@ -242,17 +242,30 @@ After pushing, monitor the check:
    # back-to-back calls would exhaust the retries before it could happen.
    # The sleep is inside a capped loop, so it is not a bare sleep.
    timeout 90 bash -c '
-     SHA=$(git rev-parse HEAD)
+     SHA=$(git rev-parse HEAD); TMP=$(mktemp)
      while :; do
-       NEW_RUN_ID=$(gh run list --branch <current-branch> --limit 5 \
+       # stderr -> variable, stdout -> file. Do NOT test $? here: the status of
+       # `gh ... | head -1` is head`s, which is 0 even when gh dies.
+       err=$(gh run list --branch <current-branch> --limit 5 \
          --json databaseId,headSha,status \
-         --jq ".[] | select(.headSha == \"$SHA\") | .databaseId" | head -1)
-       [ -n "$NEW_RUN_ID" ] && { echo "$NEW_RUN_ID"; exit 0; }
+         --jq ".[] | select(.headSha == \"$SHA\") | .databaseId" 2>&1 >"$TMP")
+       # gh spoke = gh failed. An empty result with NO stderr is "not registered
+       # yet"; an empty result WITH stderr is a broken gh, and looping on it
+       # would burn the whole budget and then escalate the wrong cause.
+       [ -n "$err" ] && { echo "$err" >&2; rm -f "$TMP"; exit 3; }
+       NEW_RUN_ID=$(head -1 "$TMP")
+       [ -n "$NEW_RUN_ID" ] && { echo "$NEW_RUN_ID"; rm -f "$TMP"; exit 0; }
        sleep 5
      done'
    ```
 
-   Exit 124 = no run for this SHA after 90 s; retry the whole block at most twice more, then report and escalate.
+   | Exit | Outcome | Next |
+   | ---- | ------- | ---- |
+   | 0 | `registered` | `NEW_RUN_ID` is on stdout — watch it |
+   | 3 | `tooling-failure` | `gh` itself failed. Report **that** and escalate — do not retry, and do not report it as "no run found" |
+   | 124 | `not-yet-registered` | No run for this SHA after 90 s. Retry the whole block at most twice more, then report and escalate |
+
+   Same classifier as [`registration-poll.md`](../create-pr/rules/registration-poll.md#the-poll), and for the same reason: an unrecognised `gh` error is never benign, and empty output alone cannot tell "nothing yet" from "nothing works".
 
 2. For reference, the unfiltered listing:
    ```bash
