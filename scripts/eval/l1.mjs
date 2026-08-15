@@ -926,4 +926,146 @@ function checksInSync(plan, checks) {
   }
 }
 
+// Shared by G22 and G23. Deliberately ONE definition: this predicate was
+// copy-pasted across the two checks, and widening one without the other would
+// let a block be counted by G22 while G23 silently stopped guarding it — the
+// same restated-value defect these checks exist to catch.
+const isPollBlock = (block) =>
+  /\b(while|until)\b/.test(block) && /\bsleep\b/.test(block) &&
+  /\b(gh|curl|wget|aws|kubectl|az|gcloud)\b/.test(block);
+
+// ── Check G22: every external-wait site is bounded at BOTH levels ──
+// The `diagnostic-surface.md` invariant has two clauses and checking only the
+// first is the documented trap: an in-command `timeout 540` issued at the Bash
+// tool's DEFAULT (120000 ms) is still killed before its own exit 124 fires.
+//
+// Sites are identified by SHAPE inside fenced code blocks, not by variable name:
+//   - a `gh … --watch` / `gh run watch` command line, or
+//   - a poll block: a fence containing a loop keyword AND a sleep AND a network call.
+// Keying on a shape rather than an identifier means a poll loop written with any
+// variable name is still seen, and an unrelated snippet is not miscounted.
+// `references/` is excluded — it quotes the unbounded forms as examples of the bug.
+{
+  const PROXIMITY = 6;
+  const EXPECTED_SITES = 9; // pinned, not a floor — adding or deleting a site must trip this.
+  const files = [
+    ...walk(join(REPO_ROOT, "skills")),
+    ...walk(join(REPO_ROOT, "agents")),
+  ].filter((f) => !f.includes("/references/"));
+
+  const isWatchCmd = (l) => /gh\s+(?:pr\s+checks[^\n]*--watch|run\s+watch)/.test(l);
+  let sites = 0;
+
+  for (const f of files) {
+    const lines = readFileSync(f, "utf8").split("\n");
+    const text = lines.join("\n");
+    // Collect fenced blocks as [startIdx, endIdx) line ranges.
+    const blocks = [];
+    let open = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*```/.test(lines[i])) {
+        if (open === -1) open = i;
+        else { blocks.push([open + 1, i]); open = -1; }
+      }
+    }
+
+    for (const [b0, b1] of blocks) {
+      const block = lines.slice(b0, b1).join("\n");
+
+      // (1) Watch commands — one site per matching line.
+      for (let i = b0; i < b1; i++) {
+        if (!isWatchCmd(lines[i])) continue;
+        sites++;
+        const m = lines[i].match(/^\s*(?:timeout\s+(\d+)\s+)?gh\b/);
+        const inner = m && m[1] ? Number(m[1]) : null;
+        s.check(`G22 ${rel(f)}:${i + 1} watch is bounded in-command (timeout N, N < 600)`,
+          inner !== null && inner < 600,
+          inner === null ? `unbounded: ${lines[i].trim()}` : `timeout ${inner} >= harness cap`);
+        s.check(`G22 ${rel(f)}:${i + 1} declares the per-call tool timeout (600000) within ${PROXIMITY} lines`,
+          lines.slice(Math.max(0, i - PROXIMITY), i).join("\n").includes("600000"),
+          "an inner timeout alone still dies at the 120000 ms tool default");
+      }
+
+      // (2) Poll blocks — a loop that sleeps around a network call.
+      if (!isPollBlock(block)) continue;
+      // A fence may hold BOTH a watch command and a separate poll loop; each is
+      // counted. (isPoll needs a loop keyword AND a sleep, which a watch command
+      // line never has, so this cannot double-count a single watch.)
+      sites++;
+      const wrapper = block.match(/^\s*timeout\s+(\d+)\s+bash\s+-c/m);
+      const wrapped = wrapper !== null && Number(wrapper[1]) < 600;
+      if (wrapped) {
+        s.check(`G22 ${rel(f)}:${b0 + 1} poll block is wrapped in a timeout below the harness cap`, true);
+      } else {
+        // A bare poll's only bounds are the tool timeout plus an interval kept
+        // under it — so assert the CLAMP INSTRUCTION, not merely the example
+        // literal, which a comment on the snippet line would satisfy on its own.
+        s.check(`G22 ${rel(f)}:${b0 + 1} bare poll documents an --interval clamp instruction`,
+          lines.some((l) => /--interval/.test(l) && /\b540\b/.test(l)),
+          "needs a line instructing the clamp (--interval and 540 together); an example " +
+          "literal, or the word 'clamp' about some other flag, does not constrain a " +
+          "user-supplied interval");
+      }
+      s.check(`G22 ${rel(f)}:${b0 + 1} poll block declares the per-call tool timeout (600000) within ${PROXIMITY} lines`,
+        lines.slice(Math.max(0, b0 - PROXIMITY), b0 + 2).join("\n").includes("600000"),
+        "a poll bounded only internally still dies at the 120000 ms tool default");
+    }
+  }
+  s.check(`G22 guards exactly ${EXPECTED_SITES} external-wait sites`,
+    sites === EXPECTED_SITES, `found ${sites}`);
+}
+
+// ── Check G23: every polling block classifies tool failure as failure ──
+// G22 guards BOUNDING. Nothing guarded CLASSIFICATION, and L1 was green in every
+// round of PR #111 in which a classification defect shipped — three of them, each
+// the same shape: a remote call whose empty output was read as a benign "nothing
+// yet" regardless of whether the tool had actually failed. A broken `gh` prints
+// to stderr and nothing to stdout, so `$(gh …)` yields "" exactly as a legitimate
+// empty result does; a loop that cannot tell them apart burns its budget and then
+// escalates the wrong cause, or reports "quiet" when it is simply blind.
+//
+// The rule, stated in registration-poll.md: an unrecognised tool error is never
+// benign. This asserts it mechanically — every fenced poll block must contain a
+// non-benign default: a `case` whose `*)` arm exits non-zero, or an explicit
+// stderr/failure arm.
+{
+  const files = [
+    ...walk(join(REPO_ROOT, "skills")),
+    ...walk(join(REPO_ROOT, "agents")),
+  ].filter((f) => !f.includes("/references/"));
+
+  let guarded = 0;
+  for (const f of files) {
+    const lines = readFileSync(f, "utf8").split("\n");
+    const blocks = [];
+    let open = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*```/.test(lines[i])) {
+        if (open === -1) open = i;
+        else { blocks.push([open + 1, i]); open = -1; }
+      }
+    }
+    for (const [b0, b1] of blocks) {
+      const block = lines.slice(b0, b1).join("\n");
+      if (!isPollBlock(block)) continue;
+      guarded++;
+      // Accept either shape: a case default that exits non-zero, or an explicit
+      // "the tool wrote to stderr / the call failed" arm.
+      // MUST be anchored: a specific arm such as `*authentication*)` also ends
+      // in `*)`, so an unanchored match is satisfied by a non-default arm while
+      // the real default stays benign — the exact bug this check exists to find.
+      const caseDefault = /^\s*\*\)[^\n]*exit\s+[1-9]/m.test(block);
+      const stderrArm = /\[\s*-[sn]\s+"?\$\{?(err|ERR)/i.test(block) ||
+        /\|\|\s*\{[^}]*(exit\s+[1-9]|POLL_ERROR)/.test(block);
+      s.check(
+        `G23 ${rel(f)}:${b0 + 1} poll block treats a tool failure as failure, not as "nothing yet"`,
+        caseDefault || stderrArm,
+        "empty output alone cannot distinguish a broken tool from a legitimately " +
+        "empty result — add a non-benign default (case *) exit N, or a stderr arm)",
+      );
+    }
+  }
+  s.check("G23 guards exactly 3 polling blocks", guarded === 3, `found ${guarded}`);
+}
+
 process.exit(s.report() ? 0 : 1);

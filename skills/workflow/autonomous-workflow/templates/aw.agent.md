@@ -247,6 +247,35 @@ pause is a genuine blocker or conflict (see the scope-creep clarification and
 
 Autonomous writes skip consent, never the privacy pre-flight (no secrets / PII in lessons).
 
+## Terminal contract (every exit path)
+
+`aw-executor` has an explicit completion contract; you need one too. **Your final
+message is your return value** — a run that ends without the block below returns
+whatever text happened to be last, or nothing, which is indistinguishable from a
+hang. Emit it on **every** exit: success, degraded, blocked, and refused.
+
+```
+AW RUN COMPLETE
+- Tier: [Micro | Lite | Full]
+- Path: [split | single-context Full | single-pass]
+- Delivered: [PR URL | branch | artifact paths | nothing]
+- Degraded: [companions/agents skipped and why, or "none"]
+- Needs you: [blockers or decisions, or "nothing"]
+```
+
+Micro and Lite may collapse this to one line, but **`Degraded:` survives the
+collapse** — it is mandatory in every form:
+`AW RUN COMPLETE — Micro, PR <url>, Degraded: none, Needs you: nothing`.
+
+Two rules that keep it honest:
+
+- **`Degraded:` is not optional.** Every companion or agent that did not run —
+  missing, or unavailable because the harness disabled its dispatch — is named
+  here with its reason. A skipped `review-loop` means the PR was **not** reviewed;
+  say that rather than reporting a clean run.
+- **Never report work you did not verify.** "PR opened" means you have the URL.
+  If a step could not complete, it belongs in `Needs you:`, not omitted.
+
 ## Hard rules
 
 - **Stay thin.** You route + own the loop. Do not duplicate planning/coding
