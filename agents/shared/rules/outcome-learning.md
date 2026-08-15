@@ -49,7 +49,7 @@ After a PR is merged (or on-demand via `/review-outcomes <pr>`), measure the fol
 | --- | --- | --- |
 | **(a) Dismissed / 👎-reacted** | Author found the comment unhelpful or wrong | `gh api .../reactions` returns 👎 from PR author |
 | **(b) Author reply correcting the finding** | Finding was wrong for a stated reason | Thread contains an author reply, no follow-up commit touching the line |
-| **(c) Author pushed a fix touching the commented line** | Finding was acted on | A commit after the review comment touches `(path, line ± 5)` |
+| **(c) Author pushed a fix touching the commented line** | Finding was acted on | A commit after the review comment touches `(path, line ± 5)` **and** the thread is resolved. A region touch alone is not this signal — see *Signal (c) requires corroboration*. |
 
 Signal (c) is the primary gh-api resolution signal — it is the Bugbot metric.
 Signals (a) and (b) are the noise signals — they teach the agent where it over-flags.
@@ -109,7 +109,43 @@ gh api repos/$REPO/commits/$SHA \
 # If the patch hunk includes line ± 5 → resolution confirmed
 ```
 
-Signal (c) requires at least one commit SHA that touches `(path, line ± 5)` after the comment was posted.
+Signal (c) requires at least one commit SHA that touches `(path, line ± 5)` after the comment was
+posted — **and** corroboration that the finding was actually addressed.
+
+#### Signal (c) requires corroboration
+
+A commit touching the region is evidence that the author *edited near the finding*, not that they
+*fixed it*. Treating the touch alone as `relevant / fixed` is the same vacuous inference
+`thread-resolution.md § \`fixed\` requires that this run re-scanned the region` removes from the
+in-run path: clause 1 without clause 2.
+
+It matters more here than it looks, because the in-run fix **deliberately routes threads to this
+path**. A candidate the re-scan predicate downgrades is left `unaddressed` and open, precisely so a
+human decides. If a bare region touch then writes `relevant / fixed` at merge, the false record the
+in-run guard prevented lands anyway, one step later — and the guard buys a thread that stays open
+but no protection for the durable signal it was written to protect.
+
+Corroboration is any **one** of:
+
+| Corroborating signal | Why it is evidence |
+| --- | --- |
+| The thread is **resolved** (`isResolved == true`) | Someone — author, reviewer, or fixer — asserted it was dealt with. This is the authority `prior-comment-awareness.md § Thread state` already designates. |
+| `implement-suggestion` recorded `verdict: applied` for the fingerprint | A gated apply landed the change; the `review-outcomes` bus carries it. |
+| The author replied with an acknowledgement ("fixed", "done", "addressed") | The author's own words. |
+
+**With a region touch but none of the three, write nothing.** Do not fall through to
+`weak-not-relevant / ignored-at-merge` either: an open thread whose region was edited is genuinely
+*indeterminate*, and guessing in either direction poisons the signal — `relevant / fixed` rewards a
+finding that may still be live, `weak-not-relevant` punishes one that may have been fixed. Log it as
+`[outcome] INDETERMINATE <path>:<line> — region touched, thread open, no acknowledgement` and move
+on. A signal bucket is allowed to have gaps; it is not allowed to have invented entries.
+
+This also corrects the `pr-merged` sweep's skip rule in
+[`comment-relevance-memory.md`](./comment-relevance-memory.md): it skips threads "that had a fix
+commit … (already captured by the first trigger)", but the first trigger is
+`pull_request_review_thread: resolved`, which never fired for a thread that was never resolved. Those
+threads are indeterminate, not captured — so the sweep must skip them **as indeterminate**, not as
+already-recorded.
 
 ### Step 5 — Human-missed detection candidates
 
@@ -201,7 +237,7 @@ Outcome signals add a parallel gate:
 | --- | --- |
 | ≥ 3 `applied` verdicts from `review-outcomes` (same fingerprint) | Promote to `reviewer-lessons` — this pattern reliably gets fixed |
 | ≥ 3 `rejected-at-validation` or `reverted-after-ci` verdicts (same fingerprint) | Promote as a **noise pattern** — consider adding to a `filters:` entry in `.github/review.yaml` |
-| ≥ 3 gh-api signal (c) resolution confirmations (fallback path) | Promote to `diagnose` slow tier — pattern reliably gets fixed |
+| ≥ 3 gh-api signal (c) resolution confirmations (fallback path) — each **corroborated** per *Signal (c) requires corroboration*; indeterminate touches never count | Promote to `diagnose` slow tier — pattern reliably gets fixed |
 | ≥ 3 dismissals via gh-api signal (a) (same pattern, fallback path) | Promote as a **noise pattern** — consider `filters:` suppression |
 | ≥ 2 human-catch candidates of the same class | Surface as a detection candidate to the user; suggest rubric expansion |
 

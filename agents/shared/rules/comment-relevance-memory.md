@@ -36,7 +36,7 @@ The three resolution outcomes that carry signal:
 
 | Outcome | Signal | How to detect |
 | --- | --- | --- |
-| **Fixed** — author pushed a commit that addresses the comment | Comment was relevant; reinforce the detection class | Author commit touches `(path, line ± 10)` after comment posted; or `implement-suggestion` applied the comment (`verdict: applied`) |
+| **Fixed** — author pushed a commit that addresses the comment | Comment was relevant; reinforce the detection class | `implement-suggestion` applied the comment (`verdict: applied`); or an author commit touches `(path, line ± 10)` after the comment **and** the thread is resolved or the author acknowledged it. A region touch with the thread still open is **indeterminate** — record nothing (`outcome-learning.md § Signal (c) requires corroboration`). |
 | **Won't fix** — author explicitly declines the comment | Comment was not relevant for this codebase; consider suppressing | Author replies "won't fix", "by design", "intentional", "not going to change", "nwf", "n/a"; or 👎 reaction from the author |
 | **Ignored at merge** — PR merges with the comment unresolved, no acknowledgement | Weak not-relevant signal; accumulate before suppressing | PR state transitions to `MERGED`; thread still open; no fix commit; no explicit decline |
 
@@ -445,10 +445,23 @@ The script fetches the thread's replies and checks for:
 3. A commit after the comment that touches `(path, line ± 10)` → `relevant / fixed`
 4. Thread resolved with none of the above → `relevant / fixed` (human accepted)
 
+Checks 3 and 4 are sound **in this mode** because the trigger is the resolution event itself, so the
+thread is resolved by construction — the corroboration `outcome-learning.md § Signal (c) requires
+corroboration` demands is present. The same region-touch test is **not** sound on the post-merge
+fallback path, which has no such guarantee.
+
 **`pull_request: closed` (merged)** (mode `pr-merged`) —
 Fires when a PR merges.
-Sweeps all review threads, skips any that had a fix commit or a won't-fix reply
-(already captured by the first trigger), records the rest as `weak-not-relevant / ignored-at-merge`.
+Sweeps all review threads and records `weak-not-relevant / ignored-at-merge` for the ones that
+merged unresolved with no fix and no decline.
+
+Two exclusions, and they are different:
+- A thread that was **resolved** before merge was already captured by the first trigger — skip it,
+  it has a record.
+- A thread that merged **unresolved but with a commit touching its region** was *not* captured (the
+  first trigger never fired for it) and is **indeterminate** — skip it with **no record at all**.
+  Do not write `ignored-at-merge` for it: the region was edited, so "ignored" is a claim the
+  evidence does not support. See `outcome-learning.md § Signal (c) requires corroboration`.
 
 **What the reusable workflow does:**
 - Checks out `mthines/agent-skills` to get `scripts/record-comment-relevance.mjs`.
@@ -526,7 +539,7 @@ When the `outcome-learning.md` gh-api measurement step fires (post-merge via
 `/review-outcomes <pr>` or at the tail of `--watch`), also emit a
 comment-relevance memory for each measured comment:
 
-- Signal (c) — fix commit touches `(path, line ± 10)` → write `relevant / fixed`.
+- Signal (c) — fix commit touches `(path, line ± 10)` **and** the thread is resolved, `implement-suggestion` recorded `verdict: applied`, or the author acknowledged → write `relevant / fixed`. A bare region touch on an open thread is indeterminate: **write nothing** (`outcome-learning.md § Signal (c) requires corroboration`). This path is the one the in-run re-scan predicate routes downgraded threads into, so an uncorroborated write here would land exactly the record that guard prevents.
 - Signal (a) — 👎 reaction from the PR author → write `not-relevant / wont-fix`.
 - Signal (b) — author reply correcting the finding, no fix commit → write `not-relevant / wont-fix`.
 - PR merged with thread open, no fix, no decline → write `weak-not-relevant / ignored-at-merge`.

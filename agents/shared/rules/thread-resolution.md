@@ -120,7 +120,7 @@ so `fixed` fires there exactly as it should. Reading the predicate as "no findin
 ⇒ no `fixed`" would disable the primary resolve path on precisely the runs where
 it is most correct.
 
-Three paths fail the predicate, and it covers all three without enumerating them:
+Four paths fail the predicate, and it covers all four without enumerating them:
 
 | Path | Conjunct that fails | Effect |
 | --- | --- | --- |
