@@ -544,11 +544,19 @@ function checksInSync(plan, checks) {
 
     // (b) Producer coverage, for real: each non-directional method needs a table row
     // with a non-empty "Written by" cell. Enum membership must NOT satisfy this.
-    const producerRow = (m) =>
-      new RegExp(`^\\|[^|]*\\|\\s*([^|]*\\S[^|]*)\\|\\s*\`${m}\`\\s*\\|`, "m").test(crm);
-    s.check("G24b every non-directional resolution_method has a producer row with a named writer",
-      ["uncorroborated-touch", "thread-state-unknown",
-       "acknowledged-no-fix-found", "no-anchor-unverifiable"].every(producerRow));
+    // The writer cell must either name a rule file or be the exact reserved literal.
+    // Non-emptiness is not enough: "no producer yet" spreading to a method that HAS
+    // one would otherwise stay green.
+    const RESERVED = "**no producer yet**";
+    const writerCell = (m) => {
+      const row = crm.match(new RegExp(`^\\|[^|]*\\|([^|]*)\\|\\s*\`${m}\`\\s*\\|`, "m"));
+      return row ? row[1].trim() : null;
+    };
+    const NAMED = ["uncorroborated-touch", "thread-state-unknown", "acknowledged-no-fix-found"];
+    s.check("G24b every produced resolution_method names a rule file as its writer",
+      NAMED.every((m) => { const c = writerCell(m); return !!c && /\.md/.test(c) && c !== RESERVED; }));
+    s.check("G24b2 no-anchor-unverifiable is marked reserved, not given a false writer",
+      (writerCell("no-anchor-unverifiable") || "").startsWith(RESERVED));
 
     s.check("G24c relevance enum carries the non-directional value",
       /"relevance":\s*"[^"]*\bindeterminate\b[^"]*"/.test(crm));
@@ -570,19 +578,58 @@ function checksInSync(plan, checks) {
     const ackSection = (ol.match(/#### What counts as an acknowledgement[\s\S]*?(?=\n#### |\n### |\n## )/) || [""])[0];
     s.check("G24f the acknowledgement rule states decline-precedence",
       /decline wins/i.test(ackSection));
-    s.check("G24g the acknowledgement rule has not been re-specified as a tokenizer",
-      ackSection.length > 0 &&
-      !/token window|word tokens|negator|complement clause|tokeniz/i.test(ackSection));
+    // Positive shape assertion. A denylist of tokenizer vocabulary is routed around by
+    // paraphrase; requiring the judgement shape is not.
+    const bullets = (ackSection.match(/^- \*\*/gm) || []).length;
+    s.check("G24g the acknowledgement rule keeps its judgement shape (bulleted criteria + default)",
+      bullets >= 4 &&
+      /cannot tell|when you can.t tell/i.test(ackSection) &&
+      /indeterminate/i.test(ackSection) &&
+      !/token window|word tokens|negator|complement clause|tokeniz|split the reply/i.test(ackSection));
 
     // (h) WONT_FIX_RE's alternatives must be bounded. Unbounded ones fire inside
     // ordinary words and file paths ("unintentional", "by designers", "bin/a.js"),
     // and a decline match vetoes an acknowledgement. Assert on the assignment line
     // only, so a doc comment mentioning the literal cannot satisfy this.
     const reLine = (rec.match(/^const WONT_FIX_RE\s*=.*$/m) || [""])[0];
-    s.check("G24h WONT_FIX_RE bounds every alternative that can match inside a word or path",
-      /\\bintentional\\b/.test(reLine) &&
-      /\\bn\\\/a\\b/.test(reLine) &&
-      /\\bby\\s\+design\\b/.test(reLine));
+    const body = (reLine.match(/=\s*\/(.*)\/[a-z]*;/) || [])[1] || "";
+    // Derive the alternative list rather than naming a subset: an earlier version
+    // asserted three of four and stayed green when the fourth regressed.
+    const alts = body ? body.split("|") : [];
+    // (i) Decline-precedence is the one contract both paths must share. G24f asserts the
+    // prose half; this asserts the executable half, which is the one that fails silently.
+    // Scope to the function bodies, not a repo-wide count: the definition itself
+    // satisfies any count-based test, so a version that deleted both call sites
+    // stayed green.
+    const fnBody = (name) => {
+      const i = rec.indexOf(`function ${name}(`);
+      if (i < 0) return "";
+      const j = rec.indexOf("\nfunction ", i + 1);
+      return rec.slice(i, j < 0 ? rec.length : j);
+    };
+    s.check("G24i both script modes still apply decline detection",
+      /hasWontFixReply\s*\(/.test(fnBody("modeThreadResolved")) &&
+      /hasWontFixReply\s*\(/.test(fnBody("modePrMerged")));
+
+    // (j) The #indeterminate key shape. This is the check whose absence let a key-shape
+    // contract ship with four write sites and none of them mentioning it.
+    const emitters = ["uncorroborated-touch", "thread-state-unknown", "acknowledged-no-fix-found"];
+    s.check("G24j every indeterminate emitter's write site names the #indeterminate key",
+      emitters.every((m) => {
+        const hay = ol.includes(m) ? ol : crm;
+        const i = hay.indexOf(m);
+        return i > -1 && hay.slice(Math.max(0, i - 600), i + 600).includes("#indeterminate");
+      }));
+    // Scope to the WRITE section: the suffixed key also appears in § Key format, so a
+    // repo-wide substring test stayed green with the write templates unsuffixed —
+    // which is exactly the state that shipped.
+    const writeSection = crm.slice(crm.indexOf("Use the same `memory.write` call format above"));
+    s.check("G24k the write section states the directional/indeterminate key split",
+      writeSection.length > 0 &&
+      /reviewer-comment-relevance::<category>:<claim-gist>#indeterminate/.test(writeSection));
+
+    s.check("G24h every WONT_FIX_RE alternative is bounded on both sides",
+      alts.length >= 8 && alts.every((a) => a.startsWith("\\b") && a.endsWith("\\b")));
   }
 
   // G16: the `reviewer-comment-relevance` TTL is hand-mirrored across five files

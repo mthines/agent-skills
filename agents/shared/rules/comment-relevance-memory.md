@@ -262,10 +262,19 @@ Four properties, and the first is structural rather than procedural:
    sighting is an ordinary ADD or UPDATE on the directional key and does not consult the
    indeterminate row.
 
-4. **It never changes a finding.** It must not drop, downgrade, or promote anything at Step 2.2.
-   Note the precise scope: `§ Read` loads by **tag**, so an `indeterminate` row *is* fetched and does
-   consume a `MEMORY_READ_BUDGET` slot and a `MEMORIES_READ_COUNT` increment — `relevance` lives in
-   the body and is unknowable before the fetch. What it never does is influence the outcome.
+4. **It never changes a finding**, and it never costs a body fetch. It must not drop, downgrade, or
+   promote anything at Step 2.2 — and because property 1 puts the direction in the **key**, that is
+   now decidable before any fetch, unlike a directional row whose `relevance` lives in the body.
+
+   So `§ Read` **filters `#indeterminate` keys out at list time**: they are excluded from the merged
+   pool, never counted in `MEMORIES_READ_COUNT`, and never charged a `MEMORY_READ_BUDGET` slot. They
+   would otherwise compete for the same `limit=50` per scope as rows that can actually fire.
+   The diagnostic below reads them in its own bounded call at consolidation time, not per-review.
+
+   Note the two identifiers this splits: the record's `fingerprint` **field** stays unsuffixed, so
+   an indeterminate and a directional record for the same claim share a `fingerprint` and differ
+   only by key. Any matching done pre-fetch is on the **key**; anything correlating the two is on the
+   `fingerprint`.
 
 Because the two keys are independent, the indeterminate count also **survives** the first directional
 sighting — which is what makes the diagnostic below work at all. Keep `reason` and `examples`
@@ -579,10 +588,11 @@ things, both REST-derivable:
   anchor (`line` and `original_line` both null), so the guard's `line > 0` clause fails, the touch
   check never runs, and the thread is swept as `ignored-at-merge` however the author dealt with it.
   It is equally indeterminate and belongs in `no-anchor-unverifiable` (§ `indeterminate`) — but
-  **nothing may write it yet.** The sweep is the Action path, and property 4 forbids that path
-  emitting any indeterminate until it reads before writing; the agent gh-api path has no bullet for
-  the file-level case, and its signal (c) is keyed on `(path, line ± 5)`, which a file-level comment
-  cannot satisfy. The value is reserved, its producer is the same script change the Known gap
+  **nothing writes it yet.** The sweep is the Action path, which has no indeterminate branch at all;
+  the agent gh-api path has no bullet for the file-level case, and its signal (c) is keyed on
+  `(path, line ± 5)`, which a file-level comment cannot satisfy. (The separate key in property 1
+  removes the *read-before-write* constraint an earlier draft imposed here — a suffixed write cannot
+  clobber a directional row — so what is missing is a producer, not permission.) The value is reserved, its producer is the same script change the Known gap
   already tracks, and the table marks it *no producer yet* rather than naming one that cannot
   legally emit it.
 
@@ -646,7 +656,7 @@ comment thread:
 # Has the author or a team member explicitly declined?
 gh api repos/$REPO/pulls/$PR_NUMBER/comments \
   --jq ".[] | select(.in_reply_to_id == $COMMENT_ID) | .body" \
-| grep -iE "(won.?t fix|wont fix|\bby design\b|\bintentional\b|\bnwf\b|not going to|\bn/a\b|out of scope)"
+| grep -iE "(won.?t fix|wont fix|by design|intentional|nwf|not going to|n/a|out of scope|as designed|working as intended)"
 ```
 
 If a decline phrase is found, override `relevance: not-relevant`, `resolution_method: wont-fix`
@@ -684,17 +694,34 @@ When the `outcome-learning.md` gh-api measurement step fires (post-merge via
 `/review-outcomes <pr>` or at the tail of `--watch`), also emit a
 comment-relevance memory for each measured comment:
 
-- Signal (c) — fix commit touches `(path, line ± 5)` **and** the thread is resolved, `implement-suggestion` recorded `verdict: applied`, or the author acknowledged → write `relevant / fixed`. A bare region touch on an open thread is **indeterminate**: write `indeterminate / uncorroborated-touch`, not a directional record and not nothing (`outcome-learning.md § Signal (c) requires corroboration`, § `indeterminate` above). This path is the one the in-run re-scan predicate routes downgraded threads into, so an uncorroborated **directional** write here would land exactly the record that guard prevents.
+- Signal (c) — fix commit touches `(path, line ± 5)` **and** the thread is resolved, `implement-suggestion` recorded `verdict: applied`, or the author acknowledged → write `relevant / fixed`. A bare region touch on an open thread is **indeterminate**: write `indeterminate / uncorroborated-touch` to the **`#indeterminate` key**, not a directional record and not nothing (`outcome-learning.md § Signal (c) requires corroboration`, § `indeterminate` above). This path is the one the in-run re-scan predicate routes downgraded threads into, so an uncorroborated **directional** write here would land exactly the record that guard prevents.
 - Signal (a) — 👎 reaction from the PR author → write `not-relevant / wont-fix`.
-- Signal (b) — author reply correcting the finding **that is not an acknowledgement** (`outcome-learning.md § Acknowledgement phrase set`), no fix commit → write `not-relevant / wont-fix`. Without the acknowledgement test this bullet reproduces the inversion Step 3 was rewritten to prevent: an author who replies "fixed" and lands the fix outside the window recorded as a dismissal.
-- Author **acknowledged** but no fix commit in range → write `indeterminate / acknowledged-no-fix-found`. Neither (b) nor (c): the author says it was handled and this path cannot see where.
-- PR merged with thread open, no fix, no decline → write `weak-not-relevant / ignored-at-merge`. **Requires thread state to have been read.** If the Step 3b walk could not complete, the thread is not known to be open — write `indeterminate / thread-state-unknown` instead (`outcome-learning.md § Step 3b`). This bullet is the second thread-state-dependent write the guard binds.
+- Signal (b) — author reply correcting the finding **that is not an acknowledgement** (`outcome-learning.md § What counts as an acknowledgement`), no fix commit → write `not-relevant / wont-fix`. Without the acknowledgement test this bullet reproduces the inversion Step 3 was rewritten to prevent: an author who replies "fixed" and lands the fix outside the window recorded as a dismissal.
+- Author **acknowledged** but no fix commit in range → write `indeterminate / acknowledged-no-fix-found` to the **`#indeterminate` key**. Neither (b) nor (c): the author says it was handled and this path cannot see where.
+- PR merged with thread open, no fix, no decline → write `weak-not-relevant / ignored-at-merge`. **Requires thread state to have been read.** If the Step 3b walk could not complete, the thread is not known to be open — write `indeterminate / thread-state-unknown` to the **`#indeterminate` key** instead (`outcome-learning.md § Step 3b`). This bullet is the second thread-state-dependent write the guard binds.
 
-Use the same `memory.write` call format above, with `source_agent: "pr-reviewer"` and `trigger: "post-merge-outcome"`.
+Use the same `memory.write` call format above, with `source_agent: "pr-reviewer"` and
+`trigger: "post-merge-outcome"` — **except for the key on an `indeterminate` write.**
+
+```text
+directional   →  reviewer-comment-relevance::<category>:<claim-gist>
+indeterminate →  reviewer-comment-relevance::<category>:<claim-gist>#indeterminate
+```
+
+This is not a stylistic variation. The suffix is what keeps an indeterminate record off the
+directional row; writing one to the unsuffixed key makes it an UPDATE, and the UPDATE contract
+increments `seen_count` unconditionally, so two indeterminates plus one real sighting cross the
+`≥ 3` bar one observation early (§ `indeterminate`, property 1). Every site that emits
+`uncorroborated-touch`, `thread-state-unknown`, `acknowledged-no-fix-found`, or
+`no-anchor-unverifiable` uses the suffixed key; every directional site uses the plain one.
 
 ---
 
 ## Promotion rule
+
+Both gates below count records on the **directional key**. An `indeterminate` record shares a
+`fingerprint` with its directional sibling but sits on a different key, so it is never counted —
+that is property 2, restated here because these gates are worded on `fingerprint`.
 
 When a `fingerprint` accumulates **≥ 3 concordant `not-relevant`** records
 (same direction — all `not-relevant` or `weak-not-relevant`), the pattern is

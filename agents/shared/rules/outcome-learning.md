@@ -48,7 +48,7 @@ After a PR is merged (or on-demand via `/review-outcomes <pr>`), measure the fol
 | Signal | Meaning | How to detect |
 | --- | --- | --- |
 | **(a) Dismissed / 👎-reacted** | Author found the comment unhelpful or wrong | `gh api .../reactions` returns 👎 from PR author |
-| **(b) Author reply correcting the finding** | Finding was wrong for a stated reason | Thread contains an author reply that is **not** an acknowledgement (§ Acknowledgement phrase set), and no follow-up commit touching the line |
+| **(b) Author reply correcting the finding** | Finding was wrong for a stated reason | Thread contains an author reply that is **not** an acknowledgement (§ What counts as an acknowledgement), and no follow-up commit touching the line |
 | **(c) Author pushed a fix touching the commented line** | Finding was acted on | A commit after the review comment touches `(path, line ± 5)` **and** the thread is resolved. A region touch alone is not this signal — see *Signal (c) requires corroboration*. |
 
 Signal (c) is the primary gh-api resolution signal — it is the Bugbot metric.
@@ -101,7 +101,7 @@ gh api repos/$REPO/pulls/$PR_NUMBER/comments \
   --jq ".[] | select(.in_reply_to_id == $COMMENT_ID) | {user_login: .user.login, body}"
 ```
 
-If a reply exists from the PR author, **is not an acknowledgement** (§ Acknowledgement phrase set),
+If a reply exists from the PR author, **is not an acknowledgement** (§ What counts as an acknowledgement),
 AND no fix commit touches the commented line (Step 4 returns empty) → signal (b): the finding was
 challenged without action.
 
@@ -113,7 +113,8 @@ corroboration at Step 4 and a decline here; only the content test keeps the two 
 
 An author reply that **is** an acknowledgement, with no fix commit in range, is neither (b) nor (c):
 it is a third indeterminate case with its own method: record
-`indeterminate` / `acknowledged-no-fix-found` rather than guessing a direction. `uncorroborated-touch`
+`indeterminate` / `acknowledged-no-fix-found` on the `#indeterminate` key
+(``comment-relevance-memory.md § `indeterminate` ``) rather than guessing a direction. `uncorroborated-touch`
 would be a misnomer — there is no touch.
 
 ### Step 3b — Thread resolution state (needed by signal (c))
@@ -152,7 +153,7 @@ inherits nothing from signal (c)'s rule. With an unknown state, **neither** may 
 gap into a stream of false `ignored-at-merge` records — which is the failure this rule exists to
 prevent, and it lands through that bullet rather than through signal (c).
 
-Log `[outcome] thread state unavailable — <N> comment(s) indeterminate`, and record them as
+Log `[outcome] thread state unavailable — <N> comment(s) indeterminate`, and record them on the `#indeterminate` key as
 `indeterminate` / **`thread-state-unknown`** — not `uncorroborated-touch`, which asserts the thread
 was read and found open (``comment-relevance-memory.md § `indeterminate` ``).
 
@@ -191,7 +192,7 @@ Corroboration is any **one** of:
 | --- | --- |
 | The thread is **resolved** (`isResolved == true`), from `COMMENT_TO_THREAD` (Step 3b) | Someone — author, reviewer, or fixer — asserted it was dealt with. This is the authority `prior-comment-awareness.md § Thread state` already designates; Step 3b is where this path obtains it. |
 | `implement-suggestion` recorded `verdict: applied` for the fingerprint | A gated apply landed the change; the `review-outcomes` bus carries it. |
-| The author replied with an acknowledgement — see the phrase set below | The author's own words. |
+| The author replied with an acknowledgement — see § What counts as an acknowledgement below | The author's own words. |
 
 #### What counts as an acknowledgement
 
@@ -203,9 +204,19 @@ half belongs in the script, below.
 
 Ask: **does this reply claim the finding was already handled?**
 
-- **A decline wins.** If the reply declines the finding — won't fix, by design, intentional, out of
-  scope — it is a decline, not an acknowledgement, even when it also reports a partial fix.
-  *"Fixed the lint nit; the null-check is by design"* is a decline.
+- **A decline wins.** If the reply declines the finding, it is a decline and not an acknowledgement,
+  even when it also reports a partial fix. *"Fixed the lint nit; the null-check is by design"* is a
+  decline. Decline language, as a **model-readable list** — this is the agent-facing statement the
+  in-run path (`thread-resolution.md`) and the degraded heuristic (`prior-comment-awareness.md`)
+  both point at, so it is enumerated here once rather than left as a pointer to a regex those
+  readers do not execute:
+
+  > won't fix · wont fix · by design · as designed · working as intended · intentional ·
+  > not going to (change) · out of scope · nwf · n/a
+
+  `WONT_FIX_RE` in `scripts/record-comment-relevance.mjs` is the deterministic counterpart of this
+  list and stays the authority for the script. Judge the *intent*, not the literal string: a reply
+  that plainly declines without using any of these words is still a decline.
 - **Negated or hedged-negative is not an acknowledgement.** *"I haven't updated this"*, *"not
   resolved yet"*, *"I don't think this is done"*.
 - **Future or conditional is not an acknowledgement.** *"I'll address this in a follow-up"*, *"will
@@ -227,7 +238,8 @@ produces two opposite records on one fingerprint.
 finding that may still be live, `weak-not-relevant` punishes one that may have been fixed. A signal
 bucket is allowed to have gaps; it is not allowed to have invented entries.
 
-Record it as `relevance: indeterminate`, `resolution_method: uncorroborated-touch`
+Record it as `relevance: indeterminate`, `resolution_method: uncorroborated-touch`, on the
+`#indeterminate` key (``comment-relevance-memory.md § `indeterminate` ``, property 1)
 (``comment-relevance-memory.md § `indeterminate` ``), and log
 `[outcome] INDETERMINATE <path>:<line> — region touched, thread read as open, no acknowledgement`.
 Use this method only when the thread state was actually read; an unreadable state is

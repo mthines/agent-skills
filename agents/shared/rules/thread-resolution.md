@@ -71,16 +71,20 @@ the two differ, the predicate wins.
 | Status | Condition | Thread action | Memory write |
 | --- | --- | --- | --- |
 | **fixed** | The commented region changed after the comment was posted (a commit touched `(path, line ± 5)`) AND the current run does **not** re-produce a finding with the same fingerprint at/near that location. **Requires that this run re-scanned the region, and that no 2.5b dedup drop matches the thread** — see the two sections below. | **Resolve** | `relevant` / `fixed` |
-| **declined** | The author replied with decline language — `WONT_FIX_RE` (`scripts/record-comment-relevance.mjs`) is authoritative and is what rule 1 of the acknowledgement matcher vetoes on; do not restate its alternatives here — or 👎-reacted the comment | **Resolve** | `not-relevant` / `wont-fix` |
-| **acknowledged** | The author replied with an acknowledgement — the phrase set, decline-precedence and negation rules in [`outcome-learning.md § Acknowledgement phrase set`](./outcome-learning.md) are authoritative; do not restate them here — and the thread is on a line the delta touched | **Resolve** | `relevant` / `fixed` |
+| **declined** | The author replied with decline language — the model-readable list is in [`outcome-learning.md § What counts as an acknowledgement`](./outcome-learning.md) (`WONT_FIX_RE` is its deterministic counterpart, authoritative for the script), and a decline outranks an acknowledgement; do not restate the list here — or 👎-reacted the comment | **Resolve** | `not-relevant` / `wont-fix` |
+| **acknowledged** | The author replied with an acknowledgement — judge it per [`outcome-learning.md § What counts as an acknowledgement`](./outcome-learning.md), which is authoritative; do not restate its criteria here — and the thread is on a line the delta touched | **Resolve** | `relevant` / `fixed` |
 | **persisting** | The current run re-produces the same finding (the issue is still there) — read **before** Step 2.5b's prior-comment dedup, or off a matching dedup drop; see *`persisting` must be read before prior-comment dedup* | **Leave open** | none (the finding carries forward and stays posted) |
 | **unaddressed** | None of the above — the line is untouched, no reply, and the delta did not cover it (so the current pass could not re-confirm it); **also** every `fixed` candidate downgraded by the re-scan predicate, whose line *was* touched | **Leave open** | none — absence of a re-scan is not evidence of resolution |
 
-The `declined` and `acknowledged` rows both defer to matchers rather than restating them, and they
-must stay coupled: a reply that trips the decline matcher is *not* an acknowledgement (rule 1), so a
-phrase in one matcher and not the other drops the comment to `unaddressed` — thread left open, no
-write. `out of scope` was exactly that gap while this row listed four phrases and rule 1 vetoed on
-ten.
+Both rows defer rather than restate, and **decline outranks acknowledgement** on this path as on the
+post-merge one — that precedence is the one thing the deterministic and judgement paths are required
+to share (`outcome-learning.md § What counts as an acknowledgement`). The two may otherwise differ at
+the margin: they classify different evidence at different times, and neither is a specification of
+the other.
+
+Precedence is what must not drift. A reply this path treats as a decline and the other treats as an
+acknowledgement produces two opposite records on one fingerprint; a reply neither recognises simply
+falls to `unaddressed`, which is the safe direction.
 
 Three hard rules:
 

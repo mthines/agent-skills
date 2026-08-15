@@ -133,7 +133,7 @@ A resolution test built on "a reply from the PR author containing one of four ph
 Used **only** when thread state is unavailable. A thread counts as resolved when either:
 
 - the PR author replied in the thread, or
-- any reply matches `WONT_FIX_RE` (`scripts/record-comment-relevance.mjs` — the single decline matcher; not restated here, so this degraded path cannot drift from the primary one).
+- any reply is a decline per [`outcome-learning.md § What counts as an acknowledgement`](./outcome-learning.md) (`WONT_FIX_RE` is the script's counterpart); not restated here, so this degraded path cannot drift from the primary one.
 
 This is the pre-existing heuristic, retained verbatim as a degraded path, and it is lossy in exactly the way described above.
 Because of that it has a **narrow consumer set**: it feeds the dedup and anti-flip-flop checks only.

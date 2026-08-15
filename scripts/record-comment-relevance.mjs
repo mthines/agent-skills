@@ -95,17 +95,22 @@ function fingerprint(commentBody) {
 /**
  * Detect "won't fix" language in a list of comment replies.
  *
- * Every alternative that could match inside a word or a file path carries \b:
- *   intentional  - else matches inside "unintentional"  ("That was unintentional - fixed in abc1234")
- *   by design    - else matches "by designers"           ("Reviewed by designers, then fixed")
- *   n/a          - else matches inside any path fragment ("Fixed, see src/bin/a.js")
- *   nwf          - else matches inside a longer token
+ * EVERY alternative carries \b on both sides. Enumerating "the ones that could
+ * match inside a word" is how this regex was wrong three times running - each fix
+ * bounded the reported instance and left the class. Bound them all; the cost of a
+ * boundary on a phrase that did not need one is zero.
+ *   intentional        - else matches inside "unintentional"  ("That was unintentional - fixed")
+ *   by design          - else matches "by designers"          ("Reviewed by designers, then fixed")
+ *   n/a                - else matches inside a path fragment  ("Fixed, see src/bin/a.js")
+ *   as designed        - else matches "was designed"          ("This was designed upstream - fixed")
+ *   wont fix           - else matches "wont fixate"           ("I wont fixate on this, addressed it")
+ *   nwf                - else matches inside a longer token
  * These were latent while this regex governed only the decline path. They became
  * inversions once a decline match gained precedence over an acknowledgement
  * (outcome-learning.md, "What counts as an acknowledgement"): each one turns an
  * ordinary "fixed it" reply into not-relevant/wont-fix for a fix that landed.
  */
-const WONT_FIX_RE = /won.?t\s+fix|wont\s+fix|\bby\s+design\b|\bintentional\b|not\s+going\s+to|\bnwf\b|\bn\/a\b|out\s+of\s+scope|as\s+designed|working\s+as\s+intended/i;
+const WONT_FIX_RE = /\bwon.?t\s+fix\b|\bwont\s+fix\b|\bby\s+design\b|\bintentional\b|\bnot\s+going\s+to\b|\bnwf\b|\bn\/a\b|\bout\s+of\s+scope\b|\bas\s+designed\b|\bworking\s+as\s+intended\b/i;
 
 function hasWontFixReply(replies) {
   return replies.some((r) => WONT_FIX_RE.test(r.body ?? ""));
