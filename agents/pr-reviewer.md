@@ -43,6 +43,9 @@ Step 0.5).
 - Stop and report if no PR reference is found in the invocation.
 - Stop and report a BLOCKED result if the inline review sub-pipeline fails twice.
 - Tool-call budget, scaled to the size of the reviewed diff: **30** calls for ≤ 10 changed files, **60** for 11–30, **100** for > 30. `--full` on a large PR always uses the top band.
+- Memory-read budget, **inside** that total and scaled to the same bands: **4** `memory_list` calls (Step 1.0) + **1** `memory_search` (Step 1.2c) + a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` calls — so **10** of 30, **15** of 60, or **20** of 100.
+  `MEMORY_READ_BUDGET` is a **single pool spanning both read sites**: Step 1.2d (lesson bodies) and Step 2.2 (relevance bodies, per `comment-relevance-memory.md § Read`). Step 1.2d spends at most **half** of it, rounded down, so a lesson-heavy shortlist can never starve the relevance verdicts that decide what gets posted; Step 2.2 may spend the whole remainder, including anything 1.2d left unused. Decrement the pool as calls are made and stop at zero at either site.
+  The reads trade call count for context: the four lists are summary-only (~15 KB for a typical fan-out instead of ~110 KB), and only shortlisted entries are ever expanded, so a review that matches nothing spends 5 calls and ~15 KB rather than 5 calls and ~110 KB.
 - If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` In the review body this goes in the `PARTIAL_REVIEW_BANNER` slot of the Step 4 templates (see *Review body format*), never as free prose. Never present a budget-truncated run as a complete review.
 - Never post a GitHub review that was not produced from fully consolidated results.
 
@@ -401,22 +404,49 @@ When this agent runs as a sub-agent, it does NOT receive the SessionStart memory
 ```text
 # Issue each as a real mcp__lorekit__memory_list tool call (narrow-to-broad).
 # repo:: wins on key collision. Skip expired entries.
-mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-lessons"]           limit=50
-mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-lessons"]           limit=50
-mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=50
-mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-comment-relevance"] limit=50
+# view="summary" returns key + tags + updated_at + value_bytes + a 200-char preview,
+# NOT the body — this is the index; Step 1.2d resolves the bodies that matter.
+mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-lessons"]           limit=50 view="summary"
+mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-lessons"]           limit=50 view="summary"
+mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=50 view="summary"
+mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-comment-relevance"] limit=50 view="summary"
 ```
 
 Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
 Merge both lists per tag (`repo::` wins on key collision).
 Skip expired entries.
 
-**Apply `reviewer-lessons`.**
-Match each loaded lesson's `trigger-context` (the shared lesson-scope schema — file globs, task type, integration/tech names) against this run's changed paths, synthesized intent, and detected integrations.
-A matched lesson's *What to do next time* is a **consideration, not a command**: it biases rubric emphasis (Step 2), persona focus (Personas 1–4), and per-comment confidence calibration (Step 2.7) — it may never silently disable a gate, skip a step, or move a threshold.
-On a `repo::` vs. `global` collision the `repo::` lesson wins; on any conflict with the PR author's stated intent or a review-config constraint, that constraint wins and the conflict is surfaced.
-The loaded pool is augmented by the diff-keyed `memory.search` in Step 1.2c before Step 2 consumes it.
-`reviewer-comment-relevance` memories are applied separately at Step 2.2, per `comment-relevance-memory.md § Read`.
+**Why `view: "summary"`.** These four calls return up to **200** entries (50 per tag per scope). At
+the observed ~1.9 KB median body a saturated fan-out is ~380 KB of context — and even the ~61
+entries a typical run actually returns is ~110 KB — spent before the diff has been read, to answer
+a question (*which* memories apply to this change) that the key, tags, and preview already answer.
+The summary form costs ~250 bytes per entry: ~50 KB saturated, ~15 KB typical. Bodies are fetched
+at Step 1.2d, once the changed files and `INTENT_PHRASE` exist to shortlist against.
+
+**`view` is a capability, not a guarantee — probe once, then commit.** It requires LoreKit
+**≥ the release carrying lorekit#464**; older servers do not have it.
+
+Bind `SUMMARY_VIEW` before the first call and never re-evaluate it mid-fan-out, so all four calls
+and every later step agree on one answer:
+
+- **`true`** — the live `mcp__lorekit__memory_list` schema lists `view`. Send `view="summary"` on
+  all four calls. This is the default outcome on a current server.
+- **`false`** — either failure shape below fired. The calls return full bodies.
+
+The two failure shapes are handled differently, and neither may cost you `LOREKIT_CONNECTED`:
+
+- **The tool's input schema does not list `view`.** Check the live `mcp__lorekit__memory_list`
+  schema before the first call. If `view` is absent, set `SUMMARY_VIEW = false` and issue all four
+  calls WITHOUT it. Do not send an unknown key to a strict-schema tool.
+- **The call throws specifically because of `view`** (an unknown/unexpected-argument error naming
+  it). Set `SUMMARY_VIEW = false`, retry that same call once without `view`, and carry on. This
+  retry is **not** one of the three transport retries and a schema rejection is **never** evidence
+  the backend is down — flipping `LOREKIT_CONNECTED` here would turn a missing optimisation into a
+  total memory outage.
+
+When `SUMMARY_VIEW` is `false` the four calls return full bodies, exactly as they did before this
+pipeline existed. That is a cost regression, not a correctness one: skip Step 1.2d entirely (the
+bodies are already in hand), and match at Step 1.2e against them directly.
 
 **Memory model — entrenchment guards and the no-in-run-write choice.**
 The lessons read here are advisory input only, protected by five entrenchment guards (`lorekit-setup § Entrenchment guards`):
@@ -438,14 +468,19 @@ this merge/dedup (0 when connected but none matched).
 **This definition is authoritative and no later step widens it** — including the Step 1.2c addend.
 `MEMORIES_READ_COUNT` counts `reviewer-comment-relevance` memories only, never `reviewer-lessons`,
 because its partner `MEMORIES_USED_COUNT` is `|APPLIED_MEMORIES|`, built at Step 2.2 from relevance
-memories alone, and the two are rendered as a single `read · used` pair that must describe one
-population. Loaded `reviewer-lessons` are reported separately by the `<L> reviewer-lessons matched`
-announce line below.
+memories alone, and the two are rendered as a single `indexed · used` pair that must describe one
+population. It is `indexed`, not `read`, because under `SUMMARY_VIEW` these entries were listed but
+their bodies were not fetched — calling that "read" would overstate what the reviewer actually
+consulted. When `SUMMARY_VIEW` is false the entries genuinely were read in full, but the label
+stays `indexed` so the figure means the same thing in every run.
+Loaded `reviewer-lessons` are reported separately by the `<L> reviewer-lessons matched`
+announce line, which is emitted at Step 1.2e — matching has not happened yet at this step, so the
+count does not exist here.
 Both counters feed the Step 4 `Review details`
 **Memories** line; the collapsed title headlines the **used** count (`MEMORIES_USED_COUNT`,
 computed at Step 2.2) — see *Review body format*.
-Announce the concrete resolved scope so the influence is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <L> reviewer-lessons matched.`
-Announce: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
+Announce the concrete resolved scope so the read is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <N> entries indexed.` The matched-lesson count is announced at Step 1.2e, once matching has run.
+The `<D> suppressions, <P> promotions` figures are NOT announced here: they come from `relevance` and `seen_count` in record BODIES, which are not fetched until Step 2.2. Step 2.2 announces them once they exist.
 
 ### 1.1 Fetch PR data in parallel
 
@@ -581,9 +616,13 @@ In incremental modes (non-empty delta), Gate 4 (self-review signals) scans `REVI
 
 The two broad `mcp__lorekit__memory_list` calls in Step 1.0 are capped at 50 per tag; on a large repository the lesson most relevant to *these* changed files can fall outside that window.
 Now that the changed-file list is known (Step 1.1 command A and Step 1.2), run one targeted `mcp__lorekit__memory_search` to pull those in.
-Issue this as a real `mcp__lorekit__memory_search` tool call.
-Skip this step when `LOREKIT_CONNECTED` is already `false` — the Step 1.0 attempt failed, so there is no backend to search.
-Otherwise issue the call, and treat an error here as a non-blocking addend miss (do not flip `LOREKIT_CONNECTED`).
+
+**Build the five field groups and bind `INTENT_PHRASE` FIRST — unconditionally, before any
+connection check below can skip anything.** Step 1.3 expands `INTENT_PHRASE` rather than
+re-deriving it, and it is a property of the PR, not of LoreKit: a core review variable must not
+inherit a memory backend's availability. Build the groups, bind the phrase, and only then decide
+whether to issue the search. When the search is skipped or errors, `INTENT_PHRASE` is already set
+and Step 1.3 proceeds normally.
 
 Build the query from the diff's own vocabulary, concatenating these five field groups (space-separated) into one query string:
 
@@ -596,6 +635,10 @@ Build the query from the diff's own vocabulary, concatenating these five field g
 In `incremental` and `incremental-quick` modes, key groups 1, 2, and 4 on `REVIEW_DIFF`'s paths and hunks, not the full PR; groups 3 and 5 stay whole-PR.
 This deliberately narrows the previous rule, which keyed **every** field on `REVIEW_DIFF`: groups 3 and 5 describe PR-level facts, not delta-level ones — a PR that bumped a dependency manifest is still a dependency-bump PR while the reviewer looks at a delta that touches no manifest, and its intent does not change per push.
 Scoping them to the delta would drop the manifest and intent tokens on every incremental pass after the first, which is exactly when the diff-keyed search is the reviewer's only chance to surface a lesson Step 1.0's top-50 window missed.
+
+With `INTENT_PHRASE` bound, now issue the search — skip it when `LOREKIT_CONNECTED` is already
+`false` (the Step 1.0 attempt failed, so there is no backend to search), and otherwise treat an
+error here as a non-blocking addend miss that does NOT flip `LOREKIT_CONNECTED`.
 
 ```text
 # Issue as a real mcp__lorekit__memory_search tool call.
@@ -610,12 +653,93 @@ Add the number of newly-surfaced, non-duplicate **`reviewer-comment-relevance`**
 `MEMORIES_READ_COUNT` — Step 1.0 owns that counter's definition and it stays relevance-only.
 Newly-surfaced `reviewer-lessons` hits still join the pool and are applied exactly as Step 1.0's
 are; they are simply not counted here, and instead raise the `<L> reviewer-lessons matched` figure
-in Step 1.0's announce line.
+announced at Step 1.2e.
+
+### 1.2d Resolve the bodies that matter
+
+**Skip this entire step when `SUMMARY_VIEW` is `false`** — Step 1.0 already returned full bodies,
+so there is nothing to resolve.
+
+Otherwise Step 1.0 loaded the memory **index**: every entry's `key`, `tags`, `updated_at`,
+`value_bytes` and a 200-character `preview`, but no bodies. This step fetches the bodies worth
+having.
+
+It runs **here, not at Step 1.0**, because every key the shortlist matches on is produced by the
+steps in between: the changed-file list (Step 1.1 command A and Step 1.2), the changed symbol names
+and detected integrations (Step 1.2c groups 1–5), and `INTENT_PHRASE` (bound at Step 1.2c). Fetched
+at Step 1.0 the shortlist would have nothing to match against and would select nothing.
+
+**Shortlist.** Mark an entry a candidate when its `key` slug, its `tags`, or its `preview` mentions
+any of: a changed top-level directory, a changed file basename, a changed symbol name, a detected
+integration, or `INTENT_PHRASE`. Include every hit the Step 1.2c search surfaced, which is already
+relevance-ranked. Be generous — this filter exists to drop the obviously-unrelated, not to make the
+final call; a candidate that turns out not to match once its body is read simply falls out at
+Step 1.2e below.
+
+**Fetch.**
+
+```text
+# One call per candidate. Issue as a real mcp__lorekit__memory_read tool call.
+mcp__lorekit__memory_read: scope="<the entry's scope>" key="<the entry's key>"
+```
+
+**Budget.** This step may spend at most **half of `MEMORY_READ_BUDGET`, rounded down** — 2 reads on
+a ≤ 10-file diff, 5 on 11–30, 7 on > 30. The other half is reserved for the relevance bodies at
+Step 2.2, which decide what actually gets posted; a lesson-heavy shortlist must never starve them.
+Decrement the shared pool by what you spend here, and leave the remainder to Step 2.2.
+
+When more entries are candidates than that allows, fill the budget in this order and treat the
+remainder as unread:
+
+1. hits returned by the Step 1.2c search, in the order it returned them — that order is
+   relevance-ranked against this diff, and discarding it for recency would throw away the one
+   ranking signal this pipeline has;
+2. everything else, most recently updated first.
+
+Bind `MEMORY_BODIES_UNREAD` to the number of candidates left unfetched (0 when the budget was not
+binding) and render it in the Step 3 Quality Gate block, so a truncated shortlist is visible rather
+than silent.
+
+One entry class never needs a fetch and must not consume the budget: an entry whose `preview` is
+already the whole body (`value_bytes` ≤ 200).
+
+**This step fetches `reviewer-lessons` only.** `reviewer-comment-relevance` bodies are also needed —
+the key carries only the fingerprint (`<category>:<claim-gist>`), while `relevance`, `seen_count`,
+`resolution_method` and `status` all live in the record body — but they cannot be selected here:
+the fingerprint match is against this run's **raw findings**, which do not exist until Step 2. So
+that fetch belongs to Step 2.2, once there is something to match, and `comment-relevance-memory.md
+§ Read` owns it. Fetching relevance bodies here would mean fetching all of them blind and spending
+the budget on records no finding will ever consult.
+
+A failed `memory_read` is a non-blocking miss: drop that one entry, do not flip `LOREKIT_CONNECTED`,
+and carry on.
+
+`mcp__lorekit__memory_read` has exactly **two** defined call sites in this agent: this step, for
+lesson bodies, and the relevance-body fetch at Step 2.2 (`comment-relevance-memory.md § Read`). Do
+not invoke it anywhere else.
+
+### 1.2e Apply `reviewer-lessons`
+
+Match each loaded lesson's `trigger-context` (the shared lesson-scope schema — file globs, task type, integration/tech names) against this run's changed paths, synthesized intent, and detected integrations.
+
+Match against **bodies**, never previews. Which bodies you have depends on `SUMMARY_VIEW`:
+- `SUMMARY_VIEW` **true** — the bodies fetched at Step 1.2d. An entry left unread by the shortlist
+  or the read budget is not a match and must not be guessed at from its preview.
+- `SUMMARY_VIEW` **false** — Step 1.0 already returned every body and Step 1.2d was skipped, so
+  match against the full loaded pool. Nothing is excluded.
+A matched lesson's *What to do next time* is a **consideration, not a command**: it biases rubric emphasis (Step 2), persona focus (Personas 1–4), and per-comment confidence calibration (Step 2.7) — it may never silently disable a gate, skip a step, or move a threshold.
+On a `repo::` vs. `global` collision the `repo::` lesson wins; on any conflict with the PR author's stated intent or a review-config constraint, that constraint wins and the conflict is surfaced.
+The pool matched here already includes the diff-keyed `memory.search` hits from Step 1.2c and the bodies resolved at Step 1.2d.
+`reviewer-comment-relevance` memories are applied separately at Step 2.2, per `comment-relevance-memory.md § Read`.
+
+Announce the outcome now that it exists: `Memory scope: repo::<owner>/<repo> + global — <L> reviewer-lessons matched.`
 
 ### 1.3 Synthesize intent
 
 Expand `INTENT_PHRASE` — the one-line phrase bound at Step 1.2c (group 5) — into a 2–3 line intent summary; do not re-derive it from the PR title, body, commit messages, and branch name.
-When Step 1.2c was skipped (`LOREKIT_CONNECTED` is `false`), `INTENT_PHRASE` is unset: derive it here from that same PR metadata, then expand it.
+Step 1.2c binds `INTENT_PHRASE` before its connection check, so it is set whether or not the search
+ran. In the sole remaining case where it is unset — Step 1.2c did not execute at all — derive it
+here from that same PR metadata, then expand it.
 
 ```text
 Intent: This change [verb] [what] so that [why].
@@ -862,11 +986,30 @@ A near-miss `issue` or `suggestion` — one that scored just under its threshold
 
 ### 2.2 Relevance-memory filtering
 
-See `agents/shared/rules/comment-relevance-memory.md § Read`. Apply loaded memories:
+See `agents/shared/rules/comment-relevance-memory.md § Read`.
+
+**First, resolve the relevance bodies.** The raw findings now exist, so the fingerprint match is
+finally possible — this is the step that owns that fetch, and Step 1.2d deliberately did not do it.
+For each loaded `reviewer-comment-relevance` entry whose fingerprint matches a raw finding, fetch
+its body with `mcp__lorekit__memory_read` (`scope` + `key`), because `relevance`, `seen_count`,
+`resolution_method` and `status` all live there and none of them is in the key.
+
+- **Skip the fetch** when `SUMMARY_VIEW` is `false` (Step 1.0 already returned full bodies) or when
+  `value_bytes` ≤ 200 (the `preview` was the whole record). Neither case consumes budget.
+- **Budget:** spend what remains of the shared `MEMORY_READ_BUDGET` after Step 1.2d — the whole
+  remainder is available here, including anything 1.2d left unused.
+- An entry whose body was not fetched — a failed read, or the pool exhausted — has no verdict.
+  Treat it as absent: it must not drop, downgrade, or promote anything, and it must never be
+  guessed at from its preview. Add each such entry to `MEMORY_BODIES_UNREAD`.
+- A failed read is non-blocking and never flips `LOREKIT_CONNECTED`.
+
+**Then apply the verdicts:**
 
 - `not-relevant` with `seen_count >= 3` → **DROP** the finding.
 - `not-relevant` with `seen_count 1–2` → **DOWNGRADE** to `nitpick`.
 - `relevant` with `seen_count >= 2` → **PROMOTE** (terminal output only).
+
+Announce, now that the figures exist: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
 
 For every memory that fires (drop / downgrade / promote), append a record —
 `{ fingerprint, action, seen_count, scope, key }` — to `APPLIED_MEMORIES[]` per
@@ -1097,7 +1240,12 @@ Both PASS and FAIL continue with:
 dedupe drops <D>, grounding drops <G>, confidence drops <C> (threshold <T>),
 confidence-deferred (advisory) <CADV>, shape drops <S>,
 cleared <CL>, deferred over inline cap <DEF>, posted inline <F>,
-anchorless carried <AC>, anchorless resolved <AR>.
+anchorless carried <AC>, anchorless resolved <AR>,
+memory bodies unread <MEMORY_BODIES_UNREAD>.
+`<MEMORY_BODIES_UNREAD>` counts every candidate whose body the shared `MEMORY_READ_BUDGET` could
+not fetch, at BOTH read sites: Step 1.2d lesson bodies that therefore could not match at 1.2e, and
+Step 2.2 relevance bodies that therefore produced no drop / downgrade / promote. It is 0 when the
+pool never bound and when `SUMMARY_VIEW` is false (every body was already loaded).
 `<CADV>` (near-miss issue/suggestion routed to the advisory body section) is reported separately
 and is NOT part of the `<CL> − <DEF> == <F>` identity — advisory findings never cleared 2.7.
 CI: PASS or FAIL (check names if failing).
@@ -1554,19 +1702,19 @@ of the two shapes below it takes, so a reader always sees either both counts or 
   exact memory and see why a finding was dropped, downgraded, or promoted:
 
   ```text
-  **Memories** — <MEMORIES_READ_COUNT> read · <MEMORIES_USED_COUNT> used
+  **Memories** — <MEMORIES_READ_COUNT> indexed · <MEMORIES_USED_COUNT> used
 
   - [`issue:missing-abort-signal`](<url>) — promoted, seen 3×
   - [`nitpick:map-vs-record-preference`](<url>) — downgraded, seen 2×
   ```
 
-  When `MEMORIES_USED_COUNT` is 0, render only the header line (`… read · 0 used`), no bullets.
+  When `MEMORIES_USED_COUNT` is 0, render only the header line (`… indexed · 0 used`), no bullets.
 - **Not connected** (`LOREKIT_CONNECTED=false` — the `mcp__lorekit__memory_list` tool call still errored after the Step 1.0 retries were exhausted, or the tool was unavailable: not in the agent's `tools:` grant, or the LoreKit MCP server did not connect this session so the tool is unregistered — `No such tool available`) — render exactly `**Memories** — not connected`, no bullets.
   This shape MUST NOT appear when the read was merely skipped or assumed, nor off a single transient throw — it only appears after a genuine failed attempt that survived retries.
 
-`MEMORIES_READ_COUNT` (Step 1.0) is how many memories were loaded; `MEMORIES_USED_COUNT` =
-`|APPLIED_MEMORIES|`, how many actually fired (drops + downgrades + promotes). Read is always ≥
-used — a run can read memories and apply none. The bullet count MUST equal `MEMORIES_USED_COUNT`.
+`MEMORIES_READ_COUNT` (Step 1.0) is how many relevance memories were loaded into the index;
+`MEMORIES_USED_COUNT` = `|APPLIED_MEMORIES|`, how many actually fired (drops + downgrades +
+promotes). Indexed is always ≥ used — a run can index memories and apply none. The bullet count MUST equal `MEMORIES_USED_COUNT`.
 
 Build each `<url>` from the memory's retained `scope` + `key`, per
 `comment-relevance-memory.md § Linking applied memories in the report` — the
