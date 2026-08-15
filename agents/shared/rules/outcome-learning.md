@@ -48,7 +48,7 @@ After a PR is merged (or on-demand via `/review-outcomes <pr>`), measure the fol
 | Signal | Meaning | How to detect |
 | --- | --- | --- |
 | **(a) Dismissed / 👎-reacted** | Author found the comment unhelpful or wrong | `gh api .../reactions` returns 👎 from PR author |
-| **(b) Author reply correcting the finding** | Finding was wrong for a stated reason | Thread contains an author reply, no follow-up commit touching the line |
+| **(b) Author reply correcting the finding** | Finding was wrong for a stated reason | Thread contains an author reply that is **not** an acknowledgement (§ Acknowledgement phrase set), and no follow-up commit touching the line |
 | **(c) Author pushed a fix touching the commented line** | Finding was acted on | A commit after the review comment touches `(path, line ± 5)` **and** the thread is resolved. A region touch alone is not this signal — see *Signal (c) requires corroboration*. |
 
 Signal (c) is the primary gh-api resolution signal — it is the Bugbot metric.
@@ -65,9 +65,10 @@ These become new **detection candidates** — patterns to watch for in future ru
 Use `gh api` (read-only).
 Run after merge, or on-demand.
 
-**This sequence is REST plus one GraphQL call.** Steps 1–5 are REST, but signal (c)'s primary
+**This sequence is REST plus one paginated GraphQL query.** Steps 1–5 are REST, but signal (c)'s primary
 corroboration is thread resolution, and `isResolved` is a GraphQL `reviewThreads` field that no REST
-endpoint exposes. Step 3b acquires it. Without that step an agent following this sequence literally
+endpoint exposes. Step 3b acquires it, in as many pages as the PR has threads — one call is the minimum, not the
+budget. Without that step an agent following this sequence literally
 cannot evaluate the corroboration signal (c) requires, so signal (c) would never fire — a far larger
 behaviour change than "requires corroboration", and a silent one.
 
@@ -100,7 +101,19 @@ gh api repos/$REPO/pulls/$PR_NUMBER/comments \
   --jq ".[] | select(.in_reply_to_id == $COMMENT_ID) | {user_login: .user.login, body}"
 ```
 
-If a reply exists from the PR author AND no fix commit touches the commented line (Step 4 returns empty) → signal (b): the finding was challenged without action.
+If a reply exists from the PR author, **is not an acknowledgement** (§ Acknowledgement phrase set),
+AND no fix commit touches the commented line (Step 4 returns empty) → signal (b): the finding was
+challenged without action.
+
+**The acknowledgement test is what stops this signal inverting.** Without it, any author reply plus
+an untouched `± 5` window reads as a dismissal — so an author who replies "fixed" and lands the fix
+somewhere the window does not reach records as `not-relevant / wont-fix`, the exact opposite of what
+happened, feeding the suppression gate against a finding that was acted on. The same reply text is
+corroboration at Step 4 and a decline here; only the content test keeps the two consistent.
+
+An author reply that **is** an acknowledgement, with no fix commit in range, is neither (b) nor (c):
+it is `indeterminate` / `uncorroborated-touch`'s sibling case — the author says it was handled and
+this path cannot see where. Record it as `indeterminate` rather than guessing a direction.
 
 ### Step 3b — Thread resolution state (needed by signal (c))
 
@@ -118,10 +131,25 @@ OWNER="${REPO%%/*}"; REPO_NAME="${REPO##*/}"
 Build `COMMENT_TO_THREAD` from the result, the same map that rule builds.
 
 **If the walk cannot complete** (permissions, API error, unpaged remainder), treat every affected
-comment's resolution state as **unknown** — never as unresolved. An unknown state fails corroboration,
-so those comments become indeterminate and are not written, per § Signal (c) requires corroboration.
-Log `[outcome] thread state unavailable — <N> comment(s) indeterminate`. Guessing "unresolved" here
-would convert a tooling gap into a stream of false `ignored-at-merge` records.
+comment's resolution state as **unknown** — never as unresolved. Detect this from `"complete": false`
+in `/tmp/review-threads.json`: the reused block persists its `THREADS_COMPLETE` flag into the file
+precisely because an aborted walk otherwise yields `{nodes: []}`, which is indistinguishable from a
+PR with no threads (`prior-comment-awareness.md § Thread state`). Every reader of that file must key
+on the flag; this step is one of them. An unknown state fails corroboration, so those
+comments become indeterminate per § Signal (c) requires corroboration.
+
+**The guard binds both thread-state-dependent writes, not just signal (c).** Signal (c) is one
+consumer; the other is the `ignored-at-merge` bullet in
+[`comment-relevance-memory.md § What reviewer / pr-reviewer write`](./comment-relevance-memory.md),
+whose condition is "PR merged with thread open" — also an assertion about thread state, and one that
+inherits nothing from signal (c)'s rule. With an unknown state, **neither** may be written: not
+`relevant / fixed`, and not `ignored-at-merge` either. Guessing "unresolved" would convert a tooling
+gap into a stream of false `ignored-at-merge` records — which is the failure this rule exists to
+prevent, and it lands through that bullet rather than through signal (c).
+
+Log `[outcome] thread state unavailable — <N> comment(s) indeterminate`, and record them as
+`indeterminate` / `uncorroborated-touch` where a region touch is present
+(``comment-relevance-memory.md § `indeterminate` ``).
 
 ### Step 4 — Signal (c): author pushed a fix touching the commented line
 
@@ -158,14 +186,32 @@ Corroboration is any **one** of:
 | --- | --- |
 | The thread is **resolved** (`isResolved == true`), from `COMMENT_TO_THREAD` (Step 3b) | Someone — author, reviewer, or fixer — asserted it was dealt with. This is the authority `prior-comment-awareness.md § Thread state` already designates; Step 3b is where this path obtains it. |
 | `implement-suggestion` recorded `verdict: applied` for the fingerprint | A gated apply landed the change; the `review-outcomes` bus carries it. |
-| The author replied with an acknowledgement ("fixed", "done", "addressed") | The author's own words. |
+| The author replied with an acknowledgement — see the phrase set below | The author's own words. |
 
-**With a region touch but none of the three, write nothing.** Do not fall through to
+#### Acknowledgement phrase set
+
+The decline path ships a real matcher (`WONT_FIX_RE`,
+`scripts/record-comment-relevance.mjs`), and this signal is now load-bearing, so it gets one too. A
+reply from the **PR author** counts as an acknowledgement when it matches, case-insensitively, any
+of: `fixed`, `done`, `addressed`, `resolved`, `good catch`, `nice catch`, `updated`. Match on the
+reply body, not on a substring of a larger word.
+
+Keep this set in sync with `thread-resolution.md`'s `acknowledged` row, which classifies in-run on
+the same evidence. The two are separate matchers on one concept, and the check-4 coupling in
+`comment-relevance-memory.md` is what drift between two such matchers looks like.
+
+**With a region touch but none of the three, write no directional record.** Do not fall through to
 `weak-not-relevant / ignored-at-merge` either: an open thread whose region was edited is genuinely
 *indeterminate*, and guessing in either direction poisons the signal — `relevant / fixed` rewards a
-finding that may still be live, `weak-not-relevant` punishes one that may have been fixed. Log it as
-`[outcome] INDETERMINATE <path>:<line> — region touched, thread open, no acknowledgement` and move
-on. A signal bucket is allowed to have gaps; it is not allowed to have invented entries.
+finding that may still be live, `weak-not-relevant` punishes one that may have been fixed. A signal
+bucket is allowed to have gaps; it is not allowed to have invented entries.
+
+Record it as `relevance: indeterminate`, `resolution_method: uncorroborated-touch`
+(``comment-relevance-memory.md § `indeterminate` ``), and log
+`[outcome] INDETERMINATE <path>:<line> — region touched, thread open, no acknowledgement`.
+The record counts toward neither promotion gate and never influences a review; it exists so the gap
+is countable. A log line alone is ephemeral, so a repo where corroboration never fires would look
+identical to a repo with no activity.
 
 This also corrects the `pr-merged` sweep's skip rule in
 [`comment-relevance-memory.md`](./comment-relevance-memory.md): it skips threads "that had a fix
