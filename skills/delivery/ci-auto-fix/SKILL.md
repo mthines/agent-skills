@@ -240,11 +240,17 @@ After pushing, monitor the check:
    gh run list --branch <current-branch> --limit 5
    ```
 
-3. Watch the run until completion, bounded at 30 minutes:
+3. Watch the run until completion, bounded per attempt:
    ```bash
-   timeout 1800 gh run watch <new-run-id>
+   # Issue this Bash call with the tool parameter timeout: 600000.
+   # The tool default is 120000; a `timeout` larger than the tool cap never
+   # fires its own exit 124 — the harness kills the call first and the expiry
+   # handling below becomes dead code.
+   timeout 540 gh run watch <new-run-id>
    ```
-   If `timeout` expires (exit code 124), run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate. Same bounded-poll pattern as the reviewer-feedback watch loop in [`../../workflow/implement-suggestion/rules/watch-mode.md`](../../workflow/implement-suggestion/rules/watch-mode.md).
+   If `timeout` expires (exit code 124), watch again — **at most 4 attempts, counted within this invocation** — then run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate.
+
+   **Your cap is your own.** You watch a run for a commit *you* just pushed, so you never inherit or spend a caller's budget, and you write no shared state. Report your outcome and let the caller act on it.
 
 4. Check the result:
    ```bash

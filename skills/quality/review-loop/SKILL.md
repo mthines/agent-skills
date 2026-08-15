@@ -17,7 +17,7 @@ argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--no-feedback] [--no-refresh
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.2.0'
   workflow_type: command
   tags:
     - review
@@ -60,6 +60,29 @@ It sequences existing pieces, each owning its own domain:
 `Skill("pr-reviewer", …)` — there is no skill by that name and it errors with
 `Unknown skill: pr-reviewer`.
 
+**When sub-agent dispatch is unavailable.** Some harnesses disable the `Task`
+tool, so that dispatch fails outright (`Failed to run agent`). `pr-reviewer` has
+**no `Skill()` form and no in-context substitute** — its review independence comes
+from running in a fresh, isolated context, so "play the role yourself" would
+produce a self-review wearing a reviewer's label, which is worse than no review.
+
+Check for it in [Step 0](#step-0-resolve-the-pr-and-preconditions) and **self-report
+a clean skip** rather than letting the caller discover it as a mid-loop tool error:
+
+```markdown
+- [TIMESTAMP] review-loop — skipped (sub-agent dispatch unavailable; pr-reviewer requires it)
+```
+
+Return that skip as the loop's terminal result. Do **not** retry the dispatch and
+do **not** silently continue to sub-steps B and C — without a review pass there are
+no findings to apply, and running `polish simplify` alone would misreport an
+unreviewed PR as converged.
+
+The check is best-effort, not certain: there is no capability-introspection API, and
+a refused dispatch may surface as an uncatchable harness error. Its value is
+**placement** — one clean logged deviation at Step 0 instead of a mid-Phase-6 error
+the caller has to interpret.
+
 `implement-suggestion` and `polish` **are** skills — invoke them with `Skill(...)`.
 If a given install has `implement-suggestion` set `disable-model-invocation: true`
 (so `Skill("implement-suggestion")` is refused), fall back to applying its
@@ -100,6 +123,12 @@ REPO="${RESOLVED_REPO#*/}"
 ```
 
 If no PR reference is found, abort: `review-loop requires a PR URL or #<n>.`
+
+**Precondition — sub-agent dispatch.** The loop's first sub-step dispatches the
+`pr-reviewer` agent, which has no non-`Task` substitute (see
+[Dispatch mechanics](#dispatch-mechanics--read-before-invoking)). Confirm the `Task`
+tool is available **before** entering the loop; if it is not, emit the skip line from
+that section and return, without running sub-steps B or C on their own.
 
 Parse the flags and set the iteration cap:
 
@@ -256,7 +285,7 @@ After the loop exits (converged, no-progress, or at cap), emit a compact summary
 review-loop on PR #<n> (<RESOLVED_REPO>)
 
 Iterations: <N> of <CAP>
-Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | report-only (--no-feedback)>
+Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable)>
 
 Per-iteration summary:
   Iteration 1: <verdict>, <N findings>, <M applied>, <A answered/resolved>, <K simplify recipes>, <U threads still open>

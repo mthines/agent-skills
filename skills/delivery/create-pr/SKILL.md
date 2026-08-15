@@ -21,7 +21,7 @@ argument-hint: '[--split] [--quick] [--no-review] [--no-simplify] [--no-quality]
 license: MIT
 metadata:
   author: mthines
-  version: '3.0.0'
+  version: '3.1.0'
   workflow_type: command
 ---
 
@@ -108,10 +108,13 @@ Otherwise, map the `create-pr` flags to the appropriate invocation. Evaluate in 
 
 Pass `--critical` through to `review-loop` / `pr-reviewer` if the user passed it to `create-pr`.
 
+**Rows 3 and 4 both need sub-agent dispatch.** `pr-reviewer` is `Task`-only with no in-context substitute. Confirm `Task` is available before taking either row; if it is not, do not attempt the dispatch and do not silently fall through to row 2 — record `NOT REVIEWED` and carry it into Step 10.
+
 After the loop returns:
 
 - If the loop converged (every review thread resolved via fix or reply), continue to Step 6.7 (external-bot feedback). The loop also refreshes the PR description to match the converged diff, so do not re-edit the body here.
 - If the cap was hit with threads still open — human-judgment flags or unresolved blockers — surface them to the user before continuing to CI watch.
+- **If the loop returned a skip**, the PR has **not been reviewed**. Continue, but carry `NOT REVIEWED` into the Step 10 report verbatim. Never describe such a PR as converged, clean, or review-ready.
 
 **Hard rules for this step:**
 
@@ -167,16 +170,53 @@ Dispatched background external-reviewer-feedback loop (PR: <pr-url>). Continuing
 
 The job isn't done when the PR is created. Block on CI so the user doesn't have to come back to a red PR later.
 
+**Two harness facts govern this step. Get either wrong and the watch hangs instead of waiting.**
+
+1. **The Bash tool's timeout defaults to 120 000 ms; 600 000 ms is the opt-in maximum.** A long `timeout N` *inside* the command is irrelevant if the tool call is killed first — the agent then sees an opaque tool timeout with no exit code, and every rule below becomes unreachable. **Issue each watch call with the tool's `timeout` parameter explicitly set to `600000`.** Setting it is not optional; omitting it caps the watch at 2 minutes regardless of the inner `timeout`.
+2. **`gh pr checks` exits non-zero while checks are merely pending** (exit 8), printing them to stdout. Non-zero does **not** mean failure here, so classify on the exit code plus a literal stderr match — never on "was there output".
+
+### Step 7a: wait for checks to register
+
+`--watch` does not wait for checks that do not exist yet — with none registered it exits immediately with `no checks reported on the '<branch>' branch`. Registration takes seconds, so poll for it. Do not use a bare `sleep` (blocked in some harnesses); a *bounded* poll loop is the sanctioned form:
+
 ```bash
-sleep 10                                          # let workflows register
-timeout 1800 gh pr checks <pr-number> --watch     # blocks until every check completes (30-min cap); non-zero exit if any failed
+# Issue this Bash call with the tool parameter timeout: 600000.
+timeout 90 bash -c '
+  while :; do
+    err=$(gh pr checks <pr-number> 2>&1 >/dev/null) && break      # 0 = all terminal
+    lc=$(printf %s "$err" | tr "[:upper:]" "[:lower:]")           # gh capitalises some of these
+    case "$lc" in
+      *"no checks reported"*|*"no commit found"*) sleep 5 ;;      # not registered / push not propagated
+      *"could not resolve"*|*authentication*|*"bad credentials"*|*"rate limit"*|*"command not found"*)
+                                    echo "$err" >&2; exit 3 ;;    # tooling failure
+      *)                                            break ;;      # registered and pending — that is all we asked
+    esac
+  done
+  exit 0'                                                          # never leak the last command status
 ```
 
-`--watch` waits for queued/running checks and exits with the final aggregate status. If the exit code is 0, jump to Step 10. Otherwise continue.
+| Poll exit | Meaning | Next |
+| --------- | ------- | ---- |
+| 0 | Checks exist (terminal or pending) | Go to Step 7b |
+| 3 | `gh` itself failed | Report the tooling failure and escalate. Do **not** conclude anything about CI |
+| 124 | 90 s of `no checks reported` | Retry the poll, up to **3 polls total**. After the third, this repo does not run CI on PRs — jump to Step 10, unless `gh run list --branch <branch>` shows runs **awaiting maintainer approval** (outside-contributor PRs), in which case report that and escalate |
 
-The `timeout 1800` cap keeps a hung or queued-forever check from blocking the skill indefinitely — same idea as the bounded poll in the watch loop ([`../../workflow/implement-suggestion/rules/watch-mode.md`](../../workflow/implement-suggestion/rules/watch-mode.md)). If it expires (exit code 124), run `gh pr checks <pr-number>` once, report the still-pending checks to the user, and escalate instead of re-watching.
+### Step 7b: watch to completion
 
-If `gh pr checks` reports no checks at all after a minute, this repo probably doesn't run CI on PRs — also jump to Step 10.
+```bash
+# Issue this Bash call with the tool parameter timeout: 600000.
+# 540 < 600 so `timeout` fires first and yields a real exit 124.
+timeout 540 gh pr checks <pr-number> --watch
+```
+
+| Exit | Next |
+| ---- | ---- |
+| 0 | CI green — jump to Step 10 |
+| 124 | Timed out with checks still running — watch again, up to **4 attempts total** (≈ 36 min). After the fourth, run `gh pr checks <pr-number>` once, report the still-pending checks, and escalate — never watch again |
+| 127, or stderr matching `command not found` / `could not resolve` / `authentication` / `rate limit` | **Tooling failure, not a CI failure** (`timeout` is absent on stock macOS — use `gtimeout`). Report it; do **not** fan out CI-log triage against a run that never failed |
+| Any other non-zero | A check genuinely failed — go to Step 8 |
+
+**Count both caps within this skill invocation** — you are one agent in one context, so track them as you would any loop counter. Increment *before* comparing: a counter still at 0 compared against `< 4` runs five attempts, not four. There is deliberately **no shared counter across skills or subagents** — see the note in [`phase-7-ci-gate.md`](../../workflow/autonomous-workflow/rules/phase-7-ci-gate.md) on why Phase 7 queries CI state instead of inheriting a budget.
 
 ## Step 8: Triage Failures (delegate log-reading to subagents)
 
@@ -213,7 +253,7 @@ Use the returned `category` to decide the path:
   ```bash
   gh run rerun <run-id> --failed
   ```
-  Then re-watch with `timeout 1800 gh pr checks <pr-number> --watch` (same 30-minute cap and expiry handling as Step 7). At most one rerun per check.
+  Then re-watch with `timeout 540 gh pr checks <pr-number> --watch` (tool `timeout: 600000`), drawing from the same 4-attempt cap you have been counting in Step 7b — a rerun does not reset it. At most one rerun per check.
 
 ## Step 9: Apply Fixes
 
@@ -273,7 +313,7 @@ Title: <imperative title>
 
 Review loop (review-loop / pr-reviewer):
   Iterations: <N> of <cap>
-  Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | skipped (--no-quality)>
+  Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | skipped (--no-quality) | NOT REVIEWED (sub-agent dispatch unavailable)>
   Open threads at exit: <count>
   Description refreshed: <yes | unchanged | skipped>
   Final verdict: <PASS | FAIL>

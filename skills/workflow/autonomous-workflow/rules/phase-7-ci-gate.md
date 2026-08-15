@@ -47,13 +47,41 @@ Gate: CI green OR user-approved stop. Worktree cleanup is optional and never aut
 
 After Phase 6, you should already have the PR URL and number. Start watching:
 
-```bash
-# Watch all checks on the PR until they all complete
-gh pr checks <pr-number> --watch
+**Ask CI what it is doing before watching it.** `create-pr` Step 7 already watched these checks, and the background `implement-suggestion --watch` and any `ci-auto-fix` subagents may have pushed since. Rather than inheriting a budget or a recorded verdict from those runs — which would be a claim about *some* commit, not necessarily the current head — make one cheap, stateless query:
 
-# Or watch a single workflow run by id
-gh run watch <run-id>
+```bash
+# No --watch: returns immediately with the state of the CURRENT head.
+gh pr checks <pr-number>
 ```
+
+| What it reports | Phase 7 Step 1 does |
+| --------------- | ------------------- |
+| All checks terminal and passing | **Skip the watch** — go to Step 4 (report success) |
+| All terminal, some failing | **Skip the watch** — go to Step 2 (triage) |
+| Any still pending | Watch, bounded, per the block below |
+| No checks at all | Likely no CI configured — note it and treat as success |
+
+This replaces carrying watch state across the Phase 6 → Phase 7 boundary. A query is correct by construction at the current head; a remembered verdict is only correct until someone pushes, and several things in Phase 6/7 push in parallel.
+
+```bash
+# Watch all checks on the PR — one bounded attempt.
+# Issue this Bash call with the tool parameter timeout: 600000.
+# The tool's DEFAULT is 120000, which would kill the watch at 2 minutes and
+# leave the exit-code handling below unreachable.
+timeout 540 gh pr checks <pr-number> --watch
+
+# Or watch a single workflow run by id (same tool timeout)
+timeout 540 gh run watch <run-id>
+```
+
+| Exit | Next |
+| ---- | ---- |
+| 0 | All checks succeeded — go to Step 4 |
+| 124 | Still running — watch again, **at most 4 attempts total** (≈ 36 min), counted within this phase. Then run `gh pr checks <pr-number>` once, report the pending checks, and escalate |
+| 127, or stderr matching `command not found` / `could not resolve` / `authentication` / `rate limit` | **Tooling failure, not a CI failure** — `timeout` is absent on stock macOS (use `gtimeout`). Report the command failure; do **not** route to Auto Fix |
+| Any other non-zero | A check genuinely failed — go to Step 2 |
+
+**No budget is shared with `create-pr` or with any subagent.** Each counts its own attempts inside its own invocation. Phase 7 may therefore re-watch checks `create-pr` already watched — that costs time, never correctness, and the stateless query above makes it rare. An earlier design threaded a counter through a state file across both phases and the `ci-auto-fix` fan-out; it produced racing writers, a counter that could be read before it was written, and a skip that could report an unobserved commit as green. Do not reintroduce it.
 
 | Outcome             | Next step                                                              |
 | ------------------- | ---------------------------------------------------------------------- |
@@ -134,7 +162,14 @@ prompt: |
 
   Follow the ci-auto-fix skill's instructions. Apply the minimal fix, commit,
   push, and watch until CI completes. Honor its guardrails — no --no-verify,
-  no continue-on-error, no disabling checks.
+  no continue-on-error, no disabling checks. Bound your own watch (4 attempts,
+  each `timeout 540` issued at tool timeout 600000); you have no shared budget
+  with this phase and write no shared state.
+
+  Return only:
+  - outcome: green | still-failing | timed-out | gave-up   (your own vocabulary — do not translate it)
+  - what_was_fixed: one line
+  - remaining_error: one short paragraph if still red, else empty
 
   Sub-Agent Resource Discipline: use scoped commands only — narrow
   tsc/eslint/jest to the files/paths you touched. Do NOT run

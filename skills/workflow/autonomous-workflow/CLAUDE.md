@@ -764,6 +764,48 @@ end-user-facing; this file is contributor-facing.
 
 ## History
 
+- **v3.22.0** — Bounded waits, a stateless CI gate, an honest `review-loop` skip,
+  and a terminal contract for `aw`. Field report: `aw` runs on Claude Code for
+  web/mobile stall — long silent stretches, never terminating until the user
+  interrupts. Diagnosis, including the record of a rejected design, in
+  [`references/cloud-stalling-analysis.md`](./references/cloud-stalling-analysis.md).
+  - **Every wait is bounded at both levels.** The subtle half: the Bash tool
+    *defaults* to 120 000 ms and 600 000 is opt-in, so `timeout 1800` and
+    `timeout 540` fail identically unless the call also passes
+    `timeout: 600000` — the harness kills it before the inner `timeout` fires
+    and the documented `exit 124` handling is dead code. All seven watch sites
+    now state both, enforced per-site by new L1 check **G22** (proximity-scoped
+    so a second site cannot free-ride on a first's mention; count pinned;
+    mutation-tested four ways).
+  - **Phase 7 queries CI state instead of carrying it.** One stateless
+    `gh pr checks` (no `--watch`) at the current head decides whether to watch
+    at all. Retry caps are counted **within one skill invocation**; nothing is
+    shared across phases or subagents. New hard invariant *watch state is
+    queried, never carried* records why, because the first implementation of
+    this change did the opposite and had to be reverted (see below).
+  - **`gh pr checks` semantics are now stated** — it exits non-zero while merely
+    pending (so classification is by exit code plus literal stderr match, never
+    by output volume), and it does not wait for checks that do not exist yet
+    (so a bounded registration poll precedes the watch; the old bare `sleep 10`
+    was silently covering this).
+  - **`review-loop` self-reports a clean skip** when sub-agent dispatch is
+    unavailable, with a `NOT REVIEWED` slot in `create-pr`'s report. Deliberately
+    not an in-context substitute — `pr-reviewer`'s independence comes from the
+    isolated context.
+  - **`aw` gained `AW RUN COMPLETE`** with a mandatory `Degraded:` line, present
+    even in the Micro/Lite one-line collapse.
+  - **Deliberately not built:** a capability probe (its premise — that Claude
+    Code on the web disables `Task` — was falsified by probing; `Task` was
+    available and `gh` was not; and a probe gating quality companions fails
+    *open*), a `gh`→MCP degradation matrix (a second source of truth that would
+    drift), and a compaction re-anchor (never observed, Full-tier only).
+  - **A rejected design is recorded, not just removed.** The first attempt
+    threaded a shared watch budget through a state file across `create-pr`,
+    Phase 7 and the `ci-auto-fix` fan-out. It took six review rounds, was merged
+    with ten live findings still open, and was reverted. Its failure shape —
+    cross-context mutable state coordinated by prose, in files edited one at a
+    time — is documented in the reference so it is not reinvented.
+
 - **v3.21.0** — User-requested changes are never scope creep (post-completion
   improvements welcome). Field report: after a Full run finished (draft PR
   open), the user proposed an improvement having seen the whole feature; the
