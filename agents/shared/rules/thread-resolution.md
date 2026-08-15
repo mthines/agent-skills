@@ -57,15 +57,18 @@ not re-fetch or re-derive them.
 For every comment in `BOT_COMMENTS` (this agent's own prior inline comments) that
 sits on an **unresolved** GitHub thread, assign exactly one status. Reuse the
 `prior-comment-awareness.md § What "accepted / resolved" includes` table for the
-signals; this rule only adds what to DO with each.
+signals; this rule only adds what to DO with each — with one **override**: that
+table's *"Author pushed a commit touching `(path, line ± 5)` after comment ⇒ Yes"*
+row carries no re-scan clause, and the re-scan predicate below narrows it. Where
+the two differ, the predicate wins.
 
 | Status | Condition | Thread action | Memory write |
 | --- | --- | --- | --- |
-| **fixed** | The commented region changed after the comment was posted (a commit touched `(path, line ± 5)`) AND the current run does **not** re-produce a finding with the same fingerprint at/near that location. **Requires a finding set that was actually produced** — see *No finding set, no `fixed`* below. | **Resolve** | `relevant` / `fixed` |
+| **fixed** | The commented region changed after the comment was posted (a commit touched `(path, line ± 5)`) AND the current run does **not** re-produce a finding with the same fingerprint at/near that location. **Requires that this run re-scanned the region, and that no 2.5b dedup drop matches the thread** — see the two sections below. | **Resolve** | `relevant` / `fixed` |
 | **declined** | The author replied "won't fix" / "by design" / "intentional" / "n/a", or 👎-reacted the comment | **Resolve** | `not-relevant` / `wont-fix` |
 | **acknowledged** | The author replied "fixed" / "done" / "addressed" and the thread is on a line the delta touched | **Resolve** | `relevant` / `fixed` |
-| **persisting** | The current run re-produces the same finding (the issue is still there) | **Leave open** | none (the finding carries forward and stays posted) |
-| **unaddressed** | None of the above — the line is untouched, no reply, and the delta did not cover it (so the current pass could not re-confirm it) | **Leave open** | none — absence of a re-scan is not evidence of resolution |
+| **persisting** | The current run re-produces the same finding (the issue is still there) — read **before** Step 2.5b's prior-comment dedup, or off a matching dedup drop; see *`persisting` must be read before prior-comment dedup* | **Leave open** | none (the finding carries forward and stays posted) |
+| **unaddressed** | None of the above — the line is untouched, no reply, and the delta did not cover it (so the current pass could not re-confirm it); **also** every `fixed` candidate downgraded by the re-scan predicate, whose line *was* touched | **Leave open** | none — absence of a re-scan is not evidence of resolution |
 
 Three hard rules:
 
@@ -74,46 +77,96 @@ Three hard rules:
 - **Never resolve a `persisting` or `unaddressed` thread.** Resolving a thread
   whose issue is still live would hide a real finding — the exact failure this
   feature must not cause. When in doubt, leave it open.
-- **No finding set, no `fixed`.** See below.
+- **No re-scan, no `fixed`; a deduped re-production is `persisting`.** See the two sections below.
 
-### No finding set, no `fixed`
+### `fixed` requires that this run re-scanned the region
 
-`fixed` is a two-clause test, and the second clause — *the current run does not
-re-produce the finding* — is only evidence when the current run **looked**. On a
-run that produced no findings at all, it is vacuously true, and every candidate
-thread whose region was touched silently classifies as `fixed`.
+`fixed` is a two-clause test, and clause 2 — *the current run does not re-produce
+the finding* — is evidence **only if this run looked at that region**. Where it did
+not, clause 2 is vacuously true and every candidate whose line was touched
+classifies as `fixed`, gets resolved, and writes a false `relevant` / `fixed`
+record into the durable relevance signal. That is the "hide a real finding"
+failure the hard rule above forbids.
 
-This is reachable, and on the commonest re-review shape. When the zero-delta
-short-circuit fires (`pr-reviewer.md` Step 1.2b, `REVIEW_DIFF == ""`), Step 2 is
-skipped and the finding set is **empty, not final**. `persisting` can then never
-fire. So a thread a previous run correctly held open as `persisting` — the author
-pushed a commit touching the region without fixing the issue — flips to `fixed` on
-the next zero-delta re-run, the thread is resolved, and a false `relevant` /
-`fixed` record is written to `reviewer-comment-relevance`. That is precisely the
-"hide a real finding" failure the rule above forbids, and the `unaddressed` row's
-own rationale already names the situation: *absence of a re-scan is not evidence
-of resolution*.
+Clause 1 does not save it: it is *"a commit touched `(path, line ± 5)` **after the
+comment was posted**"* (`prior-comment-awareness.md § What "accepted / resolved"
+includes`), which can be satisfied by a commit from several runs ago. It says
+nothing about what **this** run examined.
 
-**Rule.** When the current run produced no finding set — the zero-delta path, or
-any run where Step 2 did not execute — classify every `fixed` candidate as
-**`unaddressed`** instead. Only the reply-driven statuses may resolve on such a
-run:
+**Rule — the re-scan predicate.** For each candidate, `fixed` additionally requires
+that `(path, line ± 5)` falls inside the diff this run actually scanned
+(`REVIEW_DIFF`, per the run mode). When it does not, classify the thread
+`unaddressed` and leave it open.
 
-| Status | Needs a finding set? | On a no-finding-set run |
+This is deliberately about *scanning*, not about *findings existing*. An empty
+finding set on a clean `full` scan is the normal terminal state of a converging PR
+(Gate 6 ✅, "no inline finding survived the pipeline") — that run **did** re-scan,
+so `fixed` fires there exactly as it should. Reading the predicate as "no findings
+⇒ no `fixed`" would disable the primary resolve path on precisely the runs where
+it is most correct.
+
+Three paths fail the predicate, and it covers all three without enumerating them:
+
+| Path | Why it fails | Effect |
 | --- | --- | --- |
-| `fixed` | **Yes** — clause 2 is the re-scan | Downgrade to `unaddressed`; leave open |
-| `persisting` | Yes | Cannot fire; irrelevant (the `fixed` candidates it would have caught are now `unaddressed`) |
-| `declined` | No — the author replied / 👎-reacted | Resolve as normal |
-| `acknowledged` | No — the author replied | Resolve as normal |
-| `unaddressed` | No | Leave open as normal |
+| Zero-delta short-circuit (`REVIEW_DIFF == ""`) | Nothing was scanned | Every `fixed` candidate → `unaddressed` |
+| `incremental` / `incremental-quick`, region outside the delta | `REVIEW_DIFF` is the delta only, so that region was never re-read — while clause 1 can still be true from an earlier commit | That candidate → `unaddressed`; in-delta candidates are unaffected |
+| Budget-exhausted partial run (`PARTIAL_REVIEW_BANNER`, "M of T files scanned") | The region's file was never reached | That candidate → `unaddressed` |
 
-`declined` and `acknowledged` are safe because their evidence is the author's own
-words, which do not depend on this run having scanned anything.
+`unaddressed` is the right target in each: its own rationale is *absence of a
+re-scan is not evidence of resolution*, which is literally this condition.
 
-The cost of this rule is a thread that really was fixed staying open until the
-next run that scans code — one extra checklist line. The cost of not having it is
-a live finding silently resolved and mislabelled in the durable relevance signal.
-Those are not close.
+**The reply-driven statuses are unaffected**, because their evidence is the
+author's own words rather than a scan:
+
+| Status | Evidence | Under a failed re-scan predicate |
+| --- | --- | --- |
+| `fixed` | This run's re-scan | → `unaddressed`; leave open |
+| `persisting` | This run's re-scan (see below) | Cannot fire; the candidates it would have caught are now `unaddressed` |
+| `declined` | Author replied won't-fix / 👎-reacted | Resolve as normal |
+| `acknowledged` | Author replied "done" — **but see the delta conjunct below** | Resolve when its own condition holds |
+| `unaddressed` | — | Leave open as normal |
+
+`acknowledged`'s condition also requires *"the thread is on a line the delta
+touched"*, so on a zero-delta run it cannot fire either. That fails **closed** —
+no thread is wrongly resolved — but it means `declined` is in practice the only
+resolver on a zero-delta re-run, and an author who replies "done" without pushing
+will see Gate 3 stay ❌ until a code push arrives. That is the intended
+conservative behaviour, not an oversight.
+
+The cost of this rule is a genuinely-fixed thread staying open until a run that
+re-reads its region — one extra checklist line. The cost of not having it is a live
+finding silently resolved and mislabelled in a durable signal. Those are not close.
+
+### `persisting` must be read before prior-comment dedup
+
+`persisting` is defined as *"the current run re-produces the same finding"*, and
+`pr-reviewer.md` Step 2.9c anchors on findings being final as of 2.9b. Taken
+literally that is unfirable, and the failure is silent.
+
+Step 2.5b applies `prior-comment-awareness.md § Dedup against prior bot comments`,
+whose first row is: *same `(path, line ± 2)` and same Conventional-Comments prefix
+⇒ **DROP** the new finding — it was already said*. A still-live finding
+re-produced at the same place is therefore removed **before** the 2.9b set exists.
+So on a full, fully-scanning re-review: the finding is re-produced, deduped away,
+`persisting` cannot fire, clause 1 is true (the author touched the line), clause 2
+is vacuously true against a set the finding was deleted from — and the thread is
+resolved as `fixed` while the issue is still there. No zero-delta involved.
+
+That the `persisting` row's own Memory-write cell reads *"none (the finding carries
+forward and stays posted)"* shows the design expects the dedup drop; the two
+statements cannot both be read off the final set.
+
+**Rule.** Evaluate `persisting` against the finding set **as it stands before
+Step 2.5b's prior-comment dedup**. Equivalently, and more cheaply: a 2.5b dedup
+drop whose fingerprint matches a candidate thread's own root comment **is** a
+positive `persisting` signal for that thread. The dedup log line already records
+exactly this — `[prior-comment] DROP src/foo.ts:42 — suggestion: already posted in
+prior review (comment #12345)` — so no new computation is needed, only that the
+drop is not thrown away.
+
+A thread with a matching dedup drop is `persisting`: leave it open, write nothing.
+It must never reach the `fixed` branch, whatever clause 1 says.
 
 The fingerprint is the same `category:claim-gist` used by
 `comment-relevance-memory.md` — derived from the prior comment's Conventional

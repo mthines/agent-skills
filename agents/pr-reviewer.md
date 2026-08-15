@@ -1255,13 +1255,25 @@ reconciliation, from the Gate 3 refresh, and from the `reviewer-comment-relevanc
 Findings are final as of 2.9b, which is the precondition this step needs to tell `persisting` from
 `fixed`.
 
-**On the zero-delta path that precondition does not hold, and `fixed` must be downgraded.** Step 2
-is skipped there, so the finding set is **empty, not final**: `persisting` cannot fire, and `fixed`'s
-second clause (*the current run does not re-produce the finding*) is vacuously true. Classify every
-`fixed` candidate as `unaddressed` on any run where Step 2 did not execute, and let only the
-reply-driven statuses (`declined`, `acknowledged`) resolve — their evidence is the author's own
-words and needs no scan. Full rule and rationale: `thread-resolution.md § No finding set, no
-\`fixed\``. It runs **here — before the verdict (Step 3) and before posting (Step 4)** — rather than
+**Two corrections to that precondition, both mandatory** (`thread-resolution.md`, the two sections
+after the status table):
+
+1. **`fixed` requires that this run re-scanned the region.** Clause 2 of `fixed` — *the current run
+   does not re-produce the finding* — is evidence only where this run looked. Require
+   `(path, line ± 5)` to fall inside `REVIEW_DIFF`; otherwise classify `unaddressed` and leave the
+   thread open. This covers the zero-delta path (`REVIEW_DIFF == ""`), an incremental run whose
+   delta does not reach the region, and a budget-exhausted partial run — without special-casing any
+   of them. It is **not** "no findings ⇒ no `fixed`": a clean `full` scan produces an empty finding
+   set and is exactly when `fixed` should fire.
+2. **A 2.5b dedup drop matching a candidate thread is `persisting`.** Step 2.5b drops a re-produced
+   finding at the same `(path, line ± 2)` and prefix *before* the 2.9b set exists, so `persisting`
+   read off the final set can never fire — and the candidate then falls through to `fixed` while the
+   issue is still live. Read `persisting` against the pre-dedup set, or off the dedup log line,
+   which already records the match.
+
+`declined` and `acknowledged` are unaffected by (1): their evidence is the author's own words.
+Note that `acknowledged` additionally requires a delta-touched line, so on a zero-delta run
+`declined` is in practice the only status that resolves. It runs **here — before the verdict (Step 3) and before posting (Step 4)** — rather than
 after posting, because Gate 3 and the unblock checklist are rendered from `OPEN_BOT_COMMENTS[]`,
 and resolving threads after that rendering publishes a checklist naming threads this very run
 closed seconds later. The author then reads a stale worklist and only sees the truth on the next
@@ -1600,6 +1612,21 @@ so the notification is worth the interrupt:
 `VERDICT == WARN`. `FAIL_REASONS` carries one phrase per ❌ gate, of which a WARN run has none — so
 using it unconditionally renders a bare `— .` on a PASS → WARN escalation, which is a reachable
 case under condition 3 and an interrupt with no stated reason.
+
+**Never use the "Verdict moved" form when `PRIOR_VERDICT` is empty.** Condition 3 counts an empty
+`PRIOR_VERDICT` as worsened, and `VERDICT == PASS` then satisfies it — which is not exotic: it is
+the legacy-sticky **migration run**. Step 0.7's fallback finds the report in a `reviews` body, which
+by construction has no ledger, so `PRIOR_VERDICT` is `""` on every legacy PR exactly once. The
+escalation form would render both slots blank — `⚠️ Verdict moved  → PASS at \`abc1234\` — .` — a
+warning triangle on a passing review with no prior and no reason. Route that case to its own form
+instead:
+
+```markdown
+Reviewed `<HEAD_SHA_SHORT>` — <VERDICT>, no prior report on record. [Full report](<STICKY_URL>)
+```
+
+Use it whenever condition 3 fired on an empty `PRIOR_VERDICT`, at any verdict. The escalation form
+is reserved for a genuine transition between two **known** verdicts.
 
 `STICKY_URL` is bound from the 4a response's `html_url`, in whichever branch ran. It is the only
 link in the pointer body, so a run that somehow reaches 4b without it must omit the trailing
