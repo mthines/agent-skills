@@ -177,32 +177,17 @@ The job isn't done when the PR is created. Block on CI so the user doesn't have 
 
 ### Step 7a: wait for checks to register
 
-`--watch` does not wait for checks that do not exist yet — with none registered it exits immediately with `no checks reported on the '<branch>' branch`. Registration takes seconds, so poll for it. Do not use a bare `sleep` (blocked in some harnesses); a *bounded* poll loop is the sanctioned form:
+`--watch` does not wait for checks that do not exist yet, and registration takes seconds after a push. Run the shared poll — **do not restate it here**:
 
-```bash
-# Issue this Bash call with the tool parameter timeout: 600000.
-timeout 90 bash -c '
-  while :; do
-    err=$(gh pr checks <pr-number> 2>&1 >/dev/null); rc=$?
-    # Branch on the EXIT CODE first — it is the reliable signal.
-    #   0 = every check terminal and passing
-    #   8 = checks exist and are pending   <- registered, which is all this poll asks
-    #   1 = a check failed (also registered)
-    [ "$rc" -eq 0 ] || [ "$rc" -eq 8 ] || [ "$rc" -eq 1 ] && break
-    lc=$(printf %s "$err" | tr "[:upper:]" "[:lower:]")
-    case "$lc" in
-      *"no checks reported"*|*"no commit found"*|*"no pull requests found"*) sleep 5 ;;
-      *) echo "$err" >&2; exit 3 ;;   # DEFAULT IS FAILURE: an unrecognised gh error is never benign
-    esac
-  done
-  exit 0'                             # never leak the last command status
-```
+**→ [`rules/registration-poll.md`](./rules/registration-poll.md)**
 
-| Poll exit | Meaning | Next |
-| --------- | ------- | ---- |
-| 0 | Checks exist (terminal or pending) | Go to Step 7b |
-| 3 | `gh` itself failed | Report the tooling failure and escalate. Do **not** conclude anything about CI |
-| 124 | 90 s of `no checks reported` | Retry the poll, up to **3 polls total**. After the third, this repo does not run CI on PRs — jump to Step 10, unless `gh run list --branch <branch>` shows runs **awaiting maintainer approval** (outside-contributor PRs), in which case report that and escalate |
+Map its caller-neutral outcomes onto this step:
+
+| Poll outcome | Step 7 does |
+| ------------ | ----------- |
+| `registered` | Go to Step 7b |
+| `tooling-failure` | Report the failure and escalate. Do **not** conclude anything about CI, and do **not** go to Step 8 |
+| `no-ci` (after 3 polls, no runs awaiting approval) | This repo does not run CI on PRs — jump to Step 10 |
 
 ### Step 7b: watch to completion
 

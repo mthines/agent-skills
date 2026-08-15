@@ -88,7 +88,7 @@ Two facts the rules depended on without stating:
 
 **Fixed:**
 
-1. **Every wait bounded at both levels** — inner `timeout` under the cap *and* the explicit `timeout: 600000` tool parameter, at all **eight** sites — including `implement-suggestion`'s poll loop, which the first version of the guard could not see — enforced per-site by L1 check `G22` (proximity-scoped, count pinned; mutation-tested).
+1. **Every wait bounded at both levels** — inner `timeout` under the cap *and* the explicit `timeout: 600000` tool parameter, at all **nine** sites — including `implement-suggestion`'s poll loop, which the first version of the guard could not see — enforced per-site by L1 check `G22` (proximity-scoped, count pinned; mutation-tested).
 2. **Correct `gh pr checks` handling** — a bounded registration poll before watching, and classification by exit code plus literal stderr match rather than output volume.
 3. **Phase 7 queries CI state** (`gh pr checks`, no `--watch`) instead of carrying a verdict across the phase boundary.
 4. **`review-loop` self-reports a clean skip** when sub-agent dispatch is unavailable, with a `NOT REVIEWED` slot in every caller's report. Deliberately *not* an in-context substitute: `pr-reviewer`'s independence comes from the isolated context, so playing the role would be a self-review wearing a reviewer's label.

@@ -237,13 +237,22 @@ After pushing, monitor the check:
    timing it (the same fix [`e2e-pr-stabilizer`](../../testing/e2e-pr-stabilizer/rules/verification-loop.md) already uses):
 
    ```bash
-   NEW_RUN_ID=$(gh run list --branch <current-branch> --limit 5 \
-     --json databaseId,headSha,status \
-     --jq ".[] | select(.headSha == \"$(git rev-parse HEAD)\") | .databaseId" \
-     | head -1)
+   # Issue this Bash call with the tool parameter timeout: 600000.
+   # Bounded loop with a real interval — registration takes seconds, so six
+   # back-to-back calls would exhaust the retries before it could happen.
+   # The sleep is inside a capped loop, so it is not a bare sleep.
+   timeout 90 bash -c '
+     SHA=$(git rev-parse HEAD)
+     while :; do
+       NEW_RUN_ID=$(gh run list --branch <current-branch> --limit 5 \
+         --json databaseId,headSha,status \
+         --jq ".[] | select(.headSha == \"$SHA\") | .databaseId" | head -1)
+       [ -n "$NEW_RUN_ID" ] && { echo "$NEW_RUN_ID"; exit 0; }
+       sleep 5
+     done'
    ```
 
-   Empty result = not registered yet; re-run this same command (bounded, up to 6 times) rather than sleeping blind.
+   Exit 124 = no run for this SHA after 90 s; retry the whole block at most twice more, then report and escalate.
 
 2. For reference, the unfiltered listing:
    ```bash
@@ -259,6 +268,8 @@ After pushing, monitor the check:
    timeout 540 gh run watch <new-run-id>
    ```
    If `timeout` expires (exit code 124), watch again — **at most 2 attempts per fix-push cycle, and at most 6 across the whole invocation**. Then run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate.
+
+   **Print each attempt** as `ci-watch attempt N/2 (cycle) · M/6 (invocation)` and carry those lines into your report. The invocation cap spans multiple Phase 8 iterations — a longer span than any single reasoning step — so it must be written down at the moment it changes, not remembered.
 
    **State the scope, because two are in play.** Each Phase 8 iteration pushes a new commit and therefore watches a *new* run — a new wait, not a continuation — so a purely per-invocation cap would starve iterations 2–4 of any watch at all. A purely per-cycle cap of 4 would allow 4 × 4 = 16 watches (≈ 2.4 h). The pair above bounds both: per-cycle so each fix gets a fair look, and an invocation ceiling so the total cannot run away.
 

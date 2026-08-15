@@ -926,76 +926,85 @@ function checksInSync(plan, checks) {
   }
 }
 
-// ── Check G22: every CI-watch invocation is bounded at BOTH levels ──
-// The `diagnostic-surface.md` invariant "every wait on an external system is
-// bounded" has two clauses, and checking only the first is the documented trap:
-// an in-command `timeout 540` issued at the Bash tool's DEFAULT (120000 ms) is
-// still killed before its own exit 124 fires, so the expiry handling is dead
-// code and the run hangs. This asserts both, PER SITE:
-//   (a) the command carries an inner `timeout N` with N < 600, and
-//   (b) `600000` appears within PROXIMITY lines ABOVE that command — per site,
-//       not per file, so a second site cannot free-ride on the first's mention.
-// `references/` is excluded: those files quote the unbounded forms as examples
-// of the bug being fixed.
+// ── Check G22: every external-wait site is bounded at BOTH levels ──
+// The `diagnostic-surface.md` invariant has two clauses and checking only the
+// first is the documented trap: an in-command `timeout 540` issued at the Bash
+// tool's DEFAULT (120000 ms) is still killed before its own exit 124 fires.
+//
+// Sites are identified by SHAPE inside fenced code blocks, not by variable name:
+//   - a `gh … --watch` / `gh run watch` command line, or
+//   - a poll block: a fence containing a loop keyword AND a sleep AND a network call.
+// Keying on a shape rather than an identifier means a poll loop written with any
+// variable name is still seen, and an unrelated snippet is not miscounted.
+// `references/` is excluded — it quotes the unbounded forms as examples of the bug.
 {
-  const WATCH = /^\s*(?:timeout\s+(\d+)\s+)?(?:gh\s+(?:pr\s+checks|run\s+watch)|bash\s+-c|PR_URL)\b/;
-  // Three shapes count, matching the invariant's enumerated set: a `gh … --watch`,
-  // a `bash -c` poll wrapper, and a bare fenced poll loop that sleeps (the shape
-  // `implement-suggestion/rules/watch-mode.md` uses — previously invisible here,
-  // which is how the system's highest-traffic wait went unguarded).
-  const isWatch = (l) =>
-    /gh\s+(?:pr\s+checks[^\n]*--watch|run\s+watch)/.test(l) ||
-    /\bbash\s+-c\b/.test(l) ||
-    /^\s*PR_URL=/.test(l);
+  const PROXIMITY = 6;
+  const EXPECTED_SITES = 9; // pinned, not a floor — adding or deleting a site must trip this.
   const files = [
     ...walk(join(REPO_ROOT, "skills")),
     ...walk(join(REPO_ROOT, "agents")),
   ].filter((f) => !f.includes("/references/"));
 
-  const PROXIMITY = 6;
-  const EXPECTED_SITES = 8; // pinned, not a floor — deleting a site must trip this.
+  const isWatchCmd = (l) => /gh\s+(?:pr\s+checks[^\n]*--watch|run\s+watch)/.test(l);
   let sites = 0;
+
   for (const f of files) {
     const lines = readFileSync(f, "utf8").split("\n");
+    const text = lines.join("\n");
+    // Collect fenced blocks as [startIdx, endIdx) line ranges.
+    const blocks = [];
+    let open = -1;
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (!isWatch(line) || !WATCH.test(line)) continue;
-      // A `bash -c` wrapper counts only when it is genuinely a poll loop — a loop
-      // keyword plus a sleep nearby. Without this the matcher would fail G22 on any
-      // unrelated `bash -c` one-liner a future skill documents.
-      if (/\bbash\s+-c\b/.test(line) && !/gh\s+(?:pr\s+checks|run\s+watch)/.test(line)) {
-        const block = lines.slice(i, i + 12).join("\n");
-        if (!/\b(until|while)\b/.test(block) || !/\bsleep\b/.test(block)) continue;
+      if (/^\s*```/.test(lines[i])) {
+        if (open === -1) open = i;
+        else { blocks.push([open + 1, i]); open = -1; }
       }
-      // A bare fenced poll loop has no wrapping `timeout`; its only bound is the tool
-      // timeout plus an interval kept under it. Assert those two instead of an inner one.
-      if (/^\s*PR_URL=/.test(line)) {
-        const block = lines.slice(i, i + 20).join("\n");
-        if (!/\bsleep\b/.test(block)) continue;
+    }
+
+    for (const [b0, b1] of blocks) {
+      const block = lines.slice(b0, b1).join("\n");
+
+      // (1) Watch commands — one site per matching line.
+      for (let i = b0; i < b1; i++) {
+        if (!isWatchCmd(lines[i])) continue;
         sites++;
-        s.check(`G22 ${rel(f)}:${i + 1} bare poll loop clamps its interval below the tool cap`,
-          /INTERVAL\s*<=\s*540|clamped to .?540/.test(block) || /INTERVAL=([0-9]|[1-9][0-9]|[1-4][0-9]{2}|5[0-3][0-9]|540)\b/.test(block),
-          "an INTERVAL above 540 s is killed by the harness before the loop's own bound fires");
+        const m = lines[i].match(/^\s*(?:timeout\s+(\d+)\s+)?gh\b/);
+        const inner = m && m[1] ? Number(m[1]) : null;
+        s.check(`G22 ${rel(f)}:${i + 1} watch is bounded in-command (timeout N, N < 600)`,
+          inner !== null && inner < 600,
+          inner === null ? `unbounded: ${lines[i].trim()}` : `timeout ${inner} >= harness cap`);
         s.check(`G22 ${rel(f)}:${i + 1} declares the per-call tool timeout (600000) within ${PROXIMITY} lines`,
           lines.slice(Math.max(0, i - PROXIMITY), i).join("\n").includes("600000"),
-          "a poll loop bounded only internally still dies at the 120000 ms tool default");
-        continue;
+          "an inner timeout alone still dies at the 120000 ms tool default");
       }
+
+      // (2) Poll blocks — a loop that sleeps around a network call.
+      const isPoll = /\b(while|until)\b/.test(block) && /\bsleep\b/.test(block) &&
+        /\b(gh|curl)\b/.test(block);
+      if (!isPoll) continue;
+      // Skip blocks already counted as a watch command above.
+      if (lines.slice(b0, b1).some(isWatchCmd)) continue;
       sites++;
-      const inner = line.match(WATCH)[1];
-      s.check(
-        `G22 ${rel(f)}:${i + 1} watch is bounded in-command (timeout N, N < 600)`,
-        inner !== undefined && Number(inner) < 600,
-        inner === undefined ? `unbounded: ${line.trim()}` : `timeout ${inner} >= harness cap`,
-      );
-      s.check(
-        `G22 ${rel(f)}:${i + 1} declares the per-call tool timeout (600000) within ${PROXIMITY} lines`,
-        lines.slice(Math.max(0, i - PROXIMITY), i).join("\n").includes("600000"),
-        "an inner timeout alone still dies at the 120000 ms tool default",
-      );
+      const wrapper = block.match(/^\s*timeout\s+(\d+)\s+bash\s+-c/m);
+      const wrapped = wrapper !== null && Number(wrapper[1]) < 600;
+      if (wrapped) {
+        s.check(`G22 ${rel(f)}:${b0 + 1} poll block is wrapped in a timeout below the harness cap`, true);
+      } else {
+        // A bare poll's only bounds are the tool timeout plus an interval kept
+        // under it — so assert the CLAMP INSTRUCTION, not merely the example
+        // literal, which a comment on the snippet line would satisfy on its own.
+        s.check(`G22 ${rel(f)}:${b0 + 1} bare poll documents an --interval clamp instruction`,
+          lines.some((l) => /--interval/.test(l) && /\b540\b/.test(l)),
+          "needs a line instructing the clamp (--interval and 540 together); an example " +
+          "literal, or the word 'clamp' about some other flag, does not constrain a " +
+          "user-supplied interval");
+      }
+      s.check(`G22 ${rel(f)}:${b0 + 1} poll block declares the per-call tool timeout (600000) within ${PROXIMITY} lines`,
+        lines.slice(Math.max(0, b0 - PROXIMITY), b0 + 2).join("\n").includes("600000"),
+        "a poll bounded only internally still dies at the 120000 ms tool default");
     }
   }
-  s.check(`G22 guards exactly ${EXPECTED_SITES} CI-watch sites`,
+  s.check(`G22 guards exactly ${EXPECTED_SITES} external-wait sites`,
     sites === EXPECTED_SITES, `found ${sites}`);
 }
 

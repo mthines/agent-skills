@@ -60,10 +60,17 @@ gh pr checks <pr-number>
 | All terminal, some failing | **Skip the watch** — go to Step 2 (triage) |
 | Any still pending | Watch, bounded, per the block below |
 | Nothing, **and the query errored** (exit 127, or stderr naming auth / network / rate limit / not-logged-in) | **Tooling failure, not "no CI".** Report it and escalate. An error prints to stderr and nothing to stdout, so it is indistinguishable from "no checks" unless you look |
-| Nothing, query succeeded, **and Phase 6 just pushed** | **Not registered yet, not "no CI".** Run [`create-pr` Step 7a](../../../delivery/create-pr/SKILL.md)'s bounded registration poll, then re-read this table. Registration takes seconds and Phase 7 runs immediately after a push |
-| Nothing after the registration poll gives up | Check `gh run list --branch <branch>` for runs **awaiting maintainer approval** (outside-contributor PRs hold runs indefinitely) — if any, report and escalate. Only with none is this genuinely a repo without CI: note it and treat as success |
+| Nothing, query succeeded, **and Phase 6 just pushed** | **Not registered yet, not "no CI".** Run the shared [registration poll](../../../delivery/create-pr/rules/registration-poll.md#the-poll), then map its outcome with the table below. Registration takes seconds, and Phase 7 runs immediately after a push |
 
-**"No checks reported" is three different states**, and collapsing them into success is how a green report gets written for a PR whose CI was never observed. `create-pr` Step 7a exists for exactly this reason; do not restate it here, call it.
+**"No checks reported" is three different states**, and collapsing them into success is how a green report gets written for a PR whose CI was never observed.
+
+The poll is a [shared rule with one owner](../../../delivery/create-pr/rules/registration-poll.md) — call it, never restate it. Map its [caller-neutral outcomes](../../../delivery/create-pr/rules/registration-poll.md#outcomes-caller-neutral) onto this phase:
+
+| Poll outcome | Phase 7 does |
+| ------------ | ------------ |
+| `registered` | Watch, bounded, per the block below |
+| `tooling-failure` | Report and escalate. Do **not** route to Auto Fix |
+| `no-ci` | Genuinely no CI on this repo — note it and treat as success |
 
 This replaces carrying watch state across the Phase 6 → Phase 7 boundary. A query is correct by construction at the current head; a remembered verdict is only correct until someone pushes, and several things in Phase 6/7 push in parallel.
 
