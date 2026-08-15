@@ -243,18 +243,22 @@ After pushing, monitor the check:
    # The sleep is inside a capped loop, so it is not a bare sleep.
    timeout 90 bash -c '
      SHA=$(git rev-parse HEAD); TMP=$(mktemp)
+     # TERM must be listed: bash runs the EXIT trap on a signal only when that
+     # signal is trapped, and `timeout` sends TERM on the 124 path.
+     trap "rm -f \"$TMP\"" EXIT INT TERM
      while :; do
-       # stderr -> variable, stdout -> file. Do NOT test $? here: the status of
-       # `gh ... | head -1` is head`s, which is 0 even when gh dies.
+       # stderr -> variable, stdout -> file. `head -1` is deliberately on its own
+       # line below: folding it back into this call would make $? head`s status,
+       # which is 0 even when gh dies.
        err=$(gh run list --branch <current-branch> --limit 5 \
          --json databaseId,headSha,status \
          --jq ".[] | select(.headSha == \"$SHA\") | .databaseId" 2>&1 >"$TMP")
        # gh spoke = gh failed. An empty result with NO stderr is "not registered
        # yet"; an empty result WITH stderr is a broken gh, and looping on it
        # would burn the whole budget and then escalate the wrong cause.
-       [ -n "$err" ] && { echo "$err" >&2; rm -f "$TMP"; exit 3; }
+       [ -n "$err" ] && { echo "$err" >&2; exit 3; }
        NEW_RUN_ID=$(head -1 "$TMP")
-       [ -n "$NEW_RUN_ID" ] && { echo "$NEW_RUN_ID"; rm -f "$TMP"; exit 0; }
+       [ -n "$NEW_RUN_ID" ] && { echo "$NEW_RUN_ID"; exit 0; }
        sleep 5
      done'
    ```
@@ -263,9 +267,9 @@ After pushing, monitor the check:
    | ---- | ------- | ---- |
    | 0 | `registered` | `NEW_RUN_ID` is on stdout — watch it |
    | 3 | `tooling-failure` | `gh` itself failed. Report **that** and escalate — do not retry, and do not report it as "no run found" |
-   | 124 | `not-yet-registered` | No run for this SHA after 90 s. Retry the whole block at most twice more, then report and escalate |
+   | 124 | `no-run-yet` | No run for this SHA after 90 s. Retry the whole block at most twice more, then report and escalate |
 
-   Same classifier as [`registration-poll.md`](../create-pr/rules/registration-poll.md#the-poll), and for the same reason: an unrecognised `gh` error is never benign, and empty output alone cannot tell "nothing yet" from "nothing works".
+   Same **classifier** as [`registration-poll.md`](../create-pr/rules/registration-poll.md#the-poll) — an unrecognised `gh` error is never benign, and empty output alone cannot tell "nothing yet" from "nothing works". **Different outcome set**: this block renders its own 124 as `no-run-yet` because the retry policy lives here, whereas the shared rule keeps its 124 internal. Do not reuse that rule's outcome names.
 
 2. For reference, the unfiltered listing:
    ```bash

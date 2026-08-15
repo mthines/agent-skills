@@ -174,9 +174,9 @@ prompt: |
 
   Follow the ci-auto-fix skill's instructions. Apply the minimal fix, commit,
   push, and watch until CI completes. Honor its guardrails — no --no-verify,
-  no continue-on-error, no disabling checks. Bound your own watch (4 attempts,
-  each `timeout 540` issued at tool timeout 600000); you have no shared budget
-  with this phase and write no shared state.
+  no continue-on-error, no disabling checks. Bound your own watch using the caps
+  in your own skill — do not take a number from this prompt; you have no shared
+  budget with this phase and write no shared state.
 
   Return only:
   - outcome: green | escalated | regression-reverted | max-iterations

@@ -773,7 +773,7 @@ end-user-facing; this file is contributor-facing.
     *defaults* to 120 000 ms and 600 000 is opt-in, so `timeout 1800` and
     `timeout 540` fail identically unless the call also passes
     `timeout: 600000` — the harness kills it before the inner `timeout` fires
-    and the documented `exit 124` handling is dead code. All seven watch sites
+    and the documented `exit 124` handling is dead code. All nine external-wait sites
     now state both, enforced per-site by new L1 check **G22** (proximity-scoped
     so a second site cannot free-ride on a first's mention; count pinned;
     mutation-tested four ways).

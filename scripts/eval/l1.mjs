@@ -982,11 +982,9 @@ function checksInSync(plan, checks) {
       const isPoll = /\b(while|until)\b/.test(block) && /\bsleep\b/.test(block) &&
         /\b(gh|curl|wget|aws|kubectl|az|gcloud)\b/.test(block);   // any remote call, per the invariant
       if (!isPoll) continue;
-      // A fence may hold BOTH a watch command and a separate poll loop; count each.
-      // Only skip when the poll shape is the watch line itself.
-      const pollIsJustTheWatch = lines.slice(b0, b1).filter((l) => l.trim()).every(
-        (l) => isWatchCmd(l) || /^\s*#/.test(l));
-      if (pollIsJustTheWatch) continue;
+      // A fence may hold BOTH a watch command and a separate poll loop; each is
+      // counted. (isPoll needs a loop keyword AND a sleep, which a watch command
+      // line never has, so this cannot double-count a single watch.)
       sites++;
       const wrapper = block.match(/^\s*timeout\s+(\d+)\s+bash\s+-c/m);
       const wrapped = wrapper !== null && Number(wrapper[1]) < 600;
