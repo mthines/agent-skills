@@ -926,4 +926,48 @@ function checksInSync(plan, checks) {
   }
 }
 
+// ── Check G22: every CI-watch invocation is bounded at BOTH levels ──
+// The `diagnostic-surface.md` invariant "every wait on an external system is bounded"
+// has two clauses, and checking only the first is the documented trap: an in-command
+// `timeout 540` issued at the Bash tool's DEFAULT (120000 ms) is still killed before
+// its own exit 124 fires, so the expiry handling is dead code and the run hangs.
+// This guard asserts both: (a) the command carries an inner `timeout N` with N < 600,
+// and (b) the file states the per-call tool timeout `600000` so the agent opts in.
+// `references/` is excluded — those files quote the unbounded forms as examples of
+// the bug being fixed.
+{
+  const WATCH = /^\s*(?:#\s*)?(?:timeout\s+(\d+)\s+)?gh\s+(?:pr\s+checks|run\s+watch)\b[^\n]*/;
+  const isWatch = (l) => /gh\s+(?:pr\s+checks[^\n]*--watch|run\s+watch)/.test(l);
+  const files = [
+    ...walk(join(REPO_ROOT, "skills")),
+    ...walk(join(REPO_ROOT, "agents")),
+  ].filter((f) => !f.includes("/references/"));
+
+  let sites = 0;
+  for (const f of files) {
+    const text = readFileSync(f, "utf8");
+    const lines = text.split("\n");
+    // Only command lines count — prose and table cells mentioning the command do not.
+    const cmdLines = lines.filter((l) => isWatch(l) && /^\s*(?:timeout\s+\d+\s+)?gh\s/.test(l));
+    if (cmdLines.length === 0) continue;
+    const declaresToolTimeout = text.includes("600000");
+    for (const line of cmdLines) {
+      sites++;
+      const m = line.match(WATCH);
+      const inner = m && m[1] ? Number(m[1]) : null;
+      s.check(
+        `G22 ${rel(f)}: watch command is bounded in-command (timeout N, N < 600)`,
+        inner !== null && inner < 600,
+        inner === null ? `unbounded: ${line.trim()}` : `timeout ${inner} >= harness cap`,
+      );
+    }
+    s.check(
+      `G22 ${rel(f)}: declares the per-call tool timeout (600000)`,
+      declaresToolTimeout,
+      "an inner timeout alone still dies at the 120000 ms tool default",
+    );
+  }
+  s.check("G22 found the known CI-watch sites to guard", sites >= 5, `found ${sites}`);
+}
+
 process.exit(s.report() ? 0 : 1);

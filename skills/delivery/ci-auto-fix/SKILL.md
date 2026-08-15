@@ -248,7 +248,11 @@ After pushing, monitor the check:
    # expiry handling below becomes dead code.
    timeout 540 gh run watch <new-run-id>
    ```
-   If `timeout` expires (exit code 124), run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate. When invoked from `create-pr` Step 9 or autonomous-workflow Phase 7, re-watch attempts draw from the caller's `.agent/ci-watch-<pr-number>.state` budget — do not start a fresh one.
+   If `timeout` expires (exit code 124), run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate.
+
+   **Shared watch budget.** If the invocation passed a `CI_WATCH_STATE=<abs-path>` line, re-watch attempts draw from that file (`attempts` key, max 4) instead of starting a fresh budget. If no path was passed — a standalone `/ci-auto-fix` — use your own local counter with the same cap. Do not guess the path or the caller: acting on a budget you were not given is how two components silently spend each other's allowance.
+
+   **Each fix-push cycle resets the budget.** Your watch follows a *new commit*, which is a new wait, not a continuation of the caller's wait on the old one. On every push, set `observed_sha` to the new PR head and reset `attempts` to `0`. Without this, two `ci-auto-fix` handoffs can drain the caller's 4 attempts on their own iterations and leave Phase 7 refusing to watch a PR whose CI was never actually waited on.
 
 4. Check the result:
    ```bash

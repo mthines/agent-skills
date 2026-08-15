@@ -183,34 +183,49 @@ The job isn't done when the PR is created. Block on CI so the user doesn't have 
 timeout 540 gh pr checks <pr-number> --watch
 ```
 
-Do **not** prefix a `sleep` to let workflows register — foreground `sleep` is blocked in some harnesses and it burns budget for nothing. `--watch` already polls for checks that have not appeared yet.
+Do **not** prefix a `sleep` to let workflows register — foreground `sleep` is blocked in some harnesses. `--watch` does **not** wait for checks that do not exist yet: with none registered it exits non-zero immediately with `no checks reported on the '<branch>' branch`. That case is handled as its own row below (a bounded immediate retry), **not** by sleeping and not by concluding the repo has no CI.
 
 ### The attempt budget (file-backed, tier-independent)
 
 ```bash
-STATE=".agent/ci-watch-<pr-number>.state"          # plain file; NO plan.md or Full tier required
-mkdir -p .agent && touch "$STATE"
+# Anchor to the repo root — a subagent may run from a different worktree,
+# and a relative .agent/ would silently start a fresh budget there.
+STATE="$(git rev-parse --show-toplevel)/.agent/ci-watch-<pr-number>.state"
+mkdir -p "$(dirname "$STATE")" && touch "$STATE"
 ```
 
-The file carries three keys, rewritten after every attempt:
+**Wire format: one `key=value` per line, no quoting, no nesting.** Both `create-pr` and Phase 7 read and write it with plain shell, so the format must be trivially parseable by each:
+
+```bash
+get() { grep -E "^$1=" "$STATE" | tail -1 | cut -d= -f2-; }        # empty if unset
+put() { local k=$1 v=$2; sed -i.bak "/^$k=/d" "$STATE" 2>/dev/null; echo "$k=$v" >> "$STATE"; }
+```
 
 | Key | Meaning |
 | --- | ------- |
-| `attempts` | How many watch attempts this PR has spent. Max **4** (≈ 36 min total) |
-| `observed_sha` | The head SHA the last terminal result was observed at |
+| `attempts` | Watch attempts spent **at `observed_sha`**. Max **4** (≈ 36 min). Reset to `0` whenever the head SHA changes — a new commit is a new wait, not a continuation |
+| `observed_sha` | The **PR head** SHA the last result was observed at (remote, see below) |
 | `observed_state` | `green` / `failing` / `pending` at that SHA |
 
 A file rather than the Progress Log **deliberately**: the Progress Log lives in `.agent/{branch}/plan.md`, which only exists in Full tier, and `create-pr` runs standalone and from Micro/Lite `aw` runs where there is no plan. A budget that silently vanishes on three of four paths is not a budget.
 
+**Record the remote head, never the local one.** Step 6.7's background watch loop and Step 9's `ci-auto-fix` subagents push from their own contexts, so this thread's `git rev-parse HEAD` can be stale while the PR head has moved. Comparing a local SHA against a remote one is worse than comparing neither:
+
+```bash
+PR_HEAD=$(gh pr view <pr-number> --json headRefOid -q .headRefOid)
+```
+
 | Attempt outcome | Next step |
 | --------------- | --------- |
-| Exit 0 | CI green — record `observed_sha` + `observed_state=green`, jump to Step 10 |
+| Exit 0 | CI green — `put observed_sha "$PR_HEAD"`, `put observed_state green`, jump to Step 10 |
+| Non-zero **and** stderr matches `no checks reported` **and** `attempts < 3` | **Checks have not registered yet** — increment `attempts` and re-invoke the watch immediately. Do not sleep, do not conclude anything |
+| Non-zero **and** stderr matches `no checks reported` **and** `attempts >= 3` | This repo genuinely doesn't run CI on PRs — jump to Step 10 |
 | Exit 124 and `attempts < 4` | Increment `attempts`, watch once more |
 | Exit 124 and `attempts == 4` | **Stop.** Run `gh pr checks <pr-number>` once, report the still-pending checks, escalate — never watch again |
-| Exit 127, or any non-zero with no check output | **Tooling failure, not a CI failure.** `timeout` is absent on stock macOS (use `gtimeout`), and `gh` auth/network errors also exit non-zero. Report the command failure; do **not** fan out CI-log triage against a run that never failed |
-| Any other non-zero, with check output naming failed checks | A check genuinely failed — go to Step 8 |
+| Exit 127, or stderr matching `command not found` / `could not resolve` / `authentication` | **Tooling failure, not a CI failure.** `timeout` is absent on stock macOS (use `gtimeout`); `gh` auth and network errors also exit non-zero. Report the command failure; do **not** fan out CI-log triage against a run that never failed |
+| Any other non-zero | A check genuinely failed — go to Step 8 |
 
-If `gh pr checks` reports no checks at all on the first attempt, this repo probably doesn't run CI on PRs — jump to Step 10.
+Classify on the **exit code plus a literal stderr match**, never on "how much output there was" — output volume is a judgment call and this table exists to remove judgment.
 
 ## Step 8: Triage Failures (delegate log-reading to subagents)
 
@@ -261,6 +276,7 @@ prompt: |
 
   PR: <pr-url>
   Failing check: <check-name>
+  CI_WATCH_STATE=<absolute path from `git rev-parse --show-toplevel`/.agent/ci-watch-<pr-number>.state>
   Triage summary (from prior subagent): <paste category + suggested_fix + error_excerpt>
 
   Follow the /ci-auto-fix skill's instructions. Apply the minimal fix, commit,

@@ -63,19 +63,26 @@ timeout 540 gh run watch <run-id>
 2. **`create-pr` already spent part of the budget.** [`create-pr` Step 7](../../../delivery/create-pr/SKILL.md) watches the same checks on the same PR against `.agent/ci-watch-<pr-number>.state`. Phase 7 reads that file and **continues the counter — it never restarts it.**
 3. **A terminal result is only valid at the SHA it was observed at.** `create-pr` Step 6.7 dispatches a background `implement-suggestion --watch` that keeps pushing, and Step 9's `ci-auto-fix` subagents push fixes — both explicitly in parallel with the main thread. So "CI was green" is a claim about a commit, not about the PR.
 
-**Before skipping anything, compare SHAs — mechanically, not by judgment:**
+**Before skipping anything, compare SHAs — mechanically, not by judgment. Compare the PR's head, not your local one:**
 
 ```bash
-CURRENT_SHA=$(git rev-parse HEAD)
-# observed_sha comes from .agent/ci-watch-<pr-number>.state
+STATE="$(git rev-parse --show-toplevel)/.agent/ci-watch-<pr-number>.state"
+
+# The PR head, NOT `git rev-parse HEAD`. The pushers named in rule 3 run in
+# their own worktrees and subagent contexts, so their commits reach the remote
+# without advancing this thread's local HEAD. A local comparison would report
+# "unchanged" for a branch that has moved — the exact failure this guard exists
+# to prevent, wearing a guard's clothes.
+PR_HEAD=$(gh pr view <pr-number> --json headRefOid -q .headRefOid)
 ```
 
-| State file says | `observed_sha` vs `CURRENT_SHA` | Phase 7 Step 1 does |
-| --------------- | ------------------------------- | ------------------- |
+| State file says | `observed_sha` vs `PR_HEAD` | Phase 7 Step 1 does |
+| --------------- | --------------------------- | ------------------- |
 | Terminal (`green` or triaged failure) | **equal** | **Skip the watch** — go to the outcome table below |
-| Terminal | **different** (branch moved since) | **Watch again.** The recorded result describes a commit that is no longer head; reporting it would mark an unobserved commit green |
-| Pending, `attempts < 4` | any | Resume watching with the remaining attempts |
-| `attempts == 4` | any | **Do not watch again.** Run `gh pr checks <pr-number>` once, report pending checks, escalate |
+| Terminal | **different** (branch moved since) | **Watch again**, resetting `attempts` to `0` — a new commit is a new wait. The recorded result describes a commit that is no longer head; reporting it would mark an unobserved commit green |
+| Pending, `attempts < 4`, SHA equal | — | Resume watching with the remaining attempts |
+| `attempts == 4`, SHA **equal** | — | **Do not watch again.** Run `gh pr checks <pr-number>` once, report pending checks, escalate |
+| `attempts == 4`, SHA **different** | — | Reset `attempts` to `0` and watch — the spent budget belonged to the previous commit |
 | No state file (Phase 7 reached without `create-pr`) | — | Start a fresh budget at `attempts=0` |
 
 This is the fix for the one place Phases 6 and 7 genuinely duplicated work. The two `review-loop` passes review different diffs and are deliberate (see [Auto Review](#auto-review)) — only the CI watch was uncoordinated.
@@ -156,6 +163,7 @@ prompt: |
   PR: <pr-url>
   Failing check: <check-name>
   Run id: <run-id>
+  CI_WATCH_STATE=<absolute path from `git rev-parse --show-toplevel`/.agent/ci-watch-<pr-number>.state>
 
   Follow the ci-auto-fix skill's instructions. Apply the minimal fix, commit,
   push, and watch until CI completes. Honor its guardrails — no --no-verify,
