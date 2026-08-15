@@ -79,10 +79,11 @@ PR_HEAD=$(gh pr view <pr-number> --json headRefOid -q .headRefOid)
 | State file says | `observed_sha` vs `PR_HEAD` | Phase 7 Step 1 does |
 | --------------- | --------------------------- | ------------------- |
 | Terminal (`green` or triaged failure) | **equal** | **Skip the watch** — go to the outcome table below |
-| Terminal | **different** (branch moved since) | **Watch again**, resetting `attempts` to `0` — a new commit is a new wait. The recorded result describes a commit that is no longer head; reporting it would mark an unobserved commit green |
+| Terminal | **different** (branch moved since) | **Watch again**, resetting both counters to `0` — a new commit is a new wait. The recorded result describes a commit that is no longer head; reporting it would mark an unobserved commit green |
 | Pending, `attempts < 4`, SHA equal | — | Resume watching with the remaining attempts |
 | `attempts == 4`, SHA **equal** | — | **Do not watch again.** Run `gh pr checks <pr-number>` once, report pending checks, escalate |
-| `attempts == 4`, SHA **different** | — | Reset `attempts` to `0` and watch — the spent budget belonged to the previous commit |
+| `attempts == 4`, SHA **different** | — | Reset both counters to `0` and watch — the spent budget belonged to the previous commit |
+| State file exists but `observed_sha` is **empty** | undecidable | **Treat as budget-spent-at-unknown-SHA: do not reset.** An empty SHA means the writer did not follow the record-on-every-attempt rule, so "different" cannot be distinguished from "already spent here". Honour `attempts` as-is and escalate if it is `4`. Resetting on this state is exactly how Phase 7 re-spends a budget `create-pr` already exhausted |
 | No state file (Phase 7 reached without `create-pr`) | — | Start a fresh budget at `attempts=0` |
 
 This is the fix for the one place Phases 6 and 7 genuinely duplicated work. The two `review-loop` passes review different diffs and are deliberate (see [Auto Review](#auto-review)) — only the CI watch was uncoordinated.

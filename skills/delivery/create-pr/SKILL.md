@@ -183,7 +183,17 @@ The job isn't done when the PR is created. Block on CI so the user doesn't have 
 timeout 540 gh pr checks <pr-number> --watch
 ```
 
-Do **not** prefix a `sleep` to let workflows register — foreground `sleep` is blocked in some harnesses. `--watch` does **not** wait for checks that do not exist yet: with none registered it exits non-zero immediately with `no checks reported on the '<branch>' branch`. That case is handled as its own row below (a bounded immediate retry), **not** by sleeping and not by concluding the repo has no CI.
+Do **not** prefix a bare `sleep` — a bare foreground `sleep` is blocked in some harnesses. But `--watch` does **not** wait for checks that do not exist yet: with none registered it exits non-zero immediately with `no checks reported on the '<branch>' branch`, in milliseconds. Registration genuinely takes seconds, so retrying *immediately* just burns the retry allowance inside the registration window and lands on a false "this repo has no CI".
+
+Wait for registration with a **bounded poll loop** — permitted by the bounded-wait invariant precisely because it has a cap, unlike a bare sleep:
+
+```bash
+# Issue this Bash call with the tool parameter timeout: 600000.
+# One call, real wall-clock, hard 90 s ceiling.
+timeout 90 bash -c 'until gh pr checks <pr-number> >/dev/null 2>&1; do sleep 5; done'
+```
+
+Exit 0 → checks registered, proceed to the watch. Exit 124 → still nothing after 90 s; that counts as one `registration_attempts` and is the only thing that may eventually conclude "no CI".
 
 ### The attempt budget (file-backed, tier-independent)
 
@@ -198,14 +208,30 @@ mkdir -p "$(dirname "$STATE")" && touch "$STATE"
 
 ```bash
 get() { grep -E "^$1=" "$STATE" | tail -1 | cut -d= -f2-; }        # empty if unset
-put() { local k=$1 v=$2; sed -i.bak "/^$k=/d" "$STATE" 2>/dev/null; echo "$k=$v" >> "$STATE"; }
+# Write to a temp file and mv — mv is atomic within a filesystem, so a
+# concurrent writer cannot interleave a half-written file. Step 9 and Phase 7
+# both fan out parallel subagents that hold this path.
+put() {
+  local k=$1 v=$2 tmp
+  tmp=$(mktemp "$STATE.XXXXXX")
+  grep -v -E "^$k=" "$STATE" > "$tmp" 2>/dev/null || true
+  echo "$k=$v" >> "$tmp"
+  mv -f "$tmp" "$STATE"
+}
 ```
+
+Atomic writes narrow the race; they do not remove it (two writers can still lose an update). **The orchestrator is the single writer of `attempts`.** A subagent handed `CI_WATCH_STATE` reports its watch outcome back and lets the dispatching thread reconcile — it does not increment the shared counter itself.
+
+**Two counters, because two different waits are being measured.** Sharing one is the trap: registration retries would eat the completion budget on slow-CI repos, and completion retries would later be misread as "no CI".
 
 | Key | Meaning |
 | --- | ------- |
-| `attempts` | Watch attempts spent **at `observed_sha`**. Max **4** (≈ 36 min). Reset to `0` whenever the head SHA changes — a new commit is a new wait, not a continuation |
-| `observed_sha` | The **PR head** SHA the last result was observed at (remote, see below) |
+| `attempts` | **Completion** watch attempts at `observed_sha` — waiting for running checks to finish. Max **4** (≈ 36 min) |
+| `registration_attempts` | **Registration** polls — waiting for checks to exist at all. Max **3**. Never consumes `attempts` |
+| `observed_sha` | The **PR head** SHA of the most recent attempt (remote, see below) |
 | `observed_state` | `green` / `failing` / `pending` at that SHA |
+
+Both counters reset to `0` whenever `observed_sha` changes — a new commit is a new wait, not a continuation.
 
 A file rather than the Progress Log **deliberately**: the Progress Log lives in `.agent/{branch}/plan.md`, which only exists in Full tier, and `create-pr` runs standalone and from Micro/Lite `aw` runs where there is no plan. A budget that silently vanishes on three of four paths is not a budget.
 
@@ -215,15 +241,22 @@ A file rather than the Progress Log **deliberately**: the Progress Log lives in 
 PR_HEAD=$(gh pr view <pr-number> --json headRefOid -q .headRefOid)
 ```
 
+**Write `observed_sha` and `observed_state` on *every* attempt, before evaluating the row below — not only on success.** A run that spends its whole budget and records no SHA leaves the next reader (Phase 7) unable to tell "budget spent here" from "different commit", so it resets and re-spends a budget that was already gone. Recording only the happy path is how a spent budget silently becomes a fresh one:
+
+```bash
+put observed_sha "$PR_HEAD"
+put observed_state pending     # overwritten by the row's own verdict below
+```
+
 | Attempt outcome | Next step |
 | --------------- | --------- |
-| Exit 0 | CI green — `put observed_sha "$PR_HEAD"`, `put observed_state green`, jump to Step 10 |
-| Non-zero **and** stderr matches `no checks reported` **and** `attempts < 3` | **Checks have not registered yet** — increment `attempts` and re-invoke the watch immediately. Do not sleep, do not conclude anything |
-| Non-zero **and** stderr matches `no checks reported` **and** `attempts >= 3` | This repo genuinely doesn't run CI on PRs — jump to Step 10 |
+| Exit 0 | CI green — `put observed_state green`, jump to Step 10 |
+| Registration poll exited 124 **and** `registration_attempts < 3` | Checks not registered yet — increment `registration_attempts`, poll again. **Does not touch `attempts`** |
+| Registration poll exited 124 **and** `registration_attempts == 3` | After ≈ 4½ minutes of polling, this repo genuinely doesn't run CI on PRs — jump to Step 10 |
 | Exit 124 and `attempts < 4` | Increment `attempts`, watch once more |
-| Exit 124 and `attempts == 4` | **Stop.** Run `gh pr checks <pr-number>` once, report the still-pending checks, escalate — never watch again |
+| Exit 124 and `attempts == 4` | **Stop.** Run `gh pr checks <pr-number>` once, report the still-pending checks, `put observed_state pending`, escalate — never watch again |
 | Exit 127, or stderr matching `command not found` / `could not resolve` / `authentication` | **Tooling failure, not a CI failure.** `timeout` is absent on stock macOS (use `gtimeout`); `gh` auth and network errors also exit non-zero. Report the command failure; do **not** fan out CI-log triage against a run that never failed |
-| Any other non-zero | A check genuinely failed — go to Step 8 |
+| Any other non-zero | A check genuinely failed — `put observed_state failing`, go to Step 8 |
 
 Classify on the **exit code plus a literal stderr match**, never on "how much output there was" — output volume is a judgment call and this table exists to remove judgment.
 

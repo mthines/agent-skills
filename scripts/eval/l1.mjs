@@ -936,38 +936,43 @@ function checksInSync(plan, checks) {
 // `references/` is excluded — those files quote the unbounded forms as examples of
 // the bug being fixed.
 {
-  const WATCH = /^\s*(?:#\s*)?(?:timeout\s+(\d+)\s+)?gh\s+(?:pr\s+checks|run\s+watch)\b[^\n]*/;
+  const WATCH = /^\s*(?:timeout\s+(\d+)\s+)?gh\s+(?:pr\s+checks|run\s+watch)\b/;
   const isWatch = (l) => /gh\s+(?:pr\s+checks[^\n]*--watch|run\s+watch)/.test(l);
   const files = [
     ...walk(join(REPO_ROOT, "skills")),
     ...walk(join(REPO_ROOT, "agents")),
   ].filter((f) => !f.includes("/references/"));
 
+  // Clause (b) is checked PER SITE, not per file: a file with two watch sites
+  // must not let one site's declaration cover the other. The declaration has to
+  // sit within PROXIMITY lines above the command so it reads as that command's
+  // instruction rather than as unrelated prose elsewhere in the file.
+  const PROXIMITY = 6;
+  const EXPECTED_SITES = 6; // pinned, not a floor — deleting a site must trip this.
   let sites = 0;
   for (const f of files) {
-    const text = readFileSync(f, "utf8");
-    const lines = text.split("\n");
-    // Only command lines count — prose and table cells mentioning the command do not.
-    const cmdLines = lines.filter((l) => isWatch(l) && /^\s*(?:timeout\s+\d+\s+)?gh\s/.test(l));
-    if (cmdLines.length === 0) continue;
-    const declaresToolTimeout = text.includes("600000");
-    for (const line of cmdLines) {
+    const lines = readFileSync(f, "utf8").split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // Only command lines count — prose and table cells mentioning it do not.
+      if (!isWatch(line) || !WATCH.test(line)) continue;
       sites++;
-      const m = line.match(WATCH);
-      const inner = m && m[1] ? Number(m[1]) : null;
+      const inner = line.match(WATCH)[1];
       s.check(
-        `G22 ${rel(f)}: watch command is bounded in-command (timeout N, N < 600)`,
-        inner !== null && inner < 600,
-        inner === null ? `unbounded: ${line.trim()}` : `timeout ${inner} >= harness cap`,
+        `G22 ${rel(f)}:${i + 1} watch is bounded in-command (timeout N, N < 600)`,
+        inner !== undefined && Number(inner) < 600,
+        inner === undefined ? `unbounded: ${line.trim()}` : `timeout ${inner} >= harness cap`,
+      );
+      const near = lines.slice(Math.max(0, i - PROXIMITY), i).join("\n");
+      s.check(
+        `G22 ${rel(f)}:${i + 1} declares the per-call tool timeout (600000) within ${PROXIMITY} lines`,
+        near.includes("600000"),
+        "an inner timeout alone still dies at the 120000 ms tool default",
       );
     }
-    s.check(
-      `G22 ${rel(f)}: declares the per-call tool timeout (600000)`,
-      declaresToolTimeout,
-      "an inner timeout alone still dies at the 120000 ms tool default",
-    );
   }
-  s.check("G22 found the known CI-watch sites to guard", sites >= 5, `found ${sites}`);
+  s.check(`G22 guards exactly ${EXPECTED_SITES} CI-watch sites`,
+    sites === EXPECTED_SITES, `found ${sites}`);
 }
 
 process.exit(s.report() ? 0 : 1);
