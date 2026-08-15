@@ -588,18 +588,38 @@ function checksInSync(plan, checks) {
 
     // (j) The open-thread set must mean "pending". Two contracts hold that invariant,
     // and both were absent when a real PR accumulated 20 unclosable threads across six
-    // passes: an `obsolete` disposition for findings whose subject was deleted, and a
-    // resolve path that is not gh-only (posting and resolving do not fail together).
+    // passes. These assert the RELATION, not the presence of two strings in a 450-line
+    // file: an earlier version stayed green when the obsolete row's `and` was flipped to
+    // `or` and when the whole alternate-write-path paragraph was deleted.
     const tr2 = read("agents/shared/rules/thread-resolution.md");
     const pca = read("agents/shared/rules/prior-comment-awareness.md");
+    const prm = read("agents/pr-reviewer.md");
+
+    const obsRow = (tr2.match(/^\|\s*\*\*obsolete\*\*.*$/m) || [""])[0];
     s.check("G24j thread-resolution defines an obsolete disposition that resolves",
-      /^\|\s*\*\*obsolete\*\*.*\*\*Resolve\*\*/m.test(tr2));
-    s.check("G24k obsolete requires both isOutdated and non-reproduction",
-      /isOutdated/.test(tr2) && /re-produce the finding anywhere/i.test(tr2));
+      /\*\*Resolve\*\*/.test(obsRow));
+    // Conjunction, in the row itself — `or` must fail.
+    s.check("G24k obsolete conjoins isOutdated with non-reproduction, and requires the re-scan predicate",
+      /isOutdated/.test(obsRow) && /\*\*and\*\*/.test(obsRow) && !/\*\*or\*\*/.test(obsRow) &&
+      /re-scan predicate/i.test(obsRow));
+    // The predicate must actually be stated for obsolete, not only for fixed.
+    const obsSection = (tr2.match(/### `obsolete`[\s\S]*?(?=\n### |\n## )/) || [""])[0];
+    s.check("G24k2 the obsolete section names both re-scan conjuncts and the pre-dedup read",
+      /SCANNED_FILES/.test(obsSection) && /REVIEW_DIFF/.test(obsSection) &&
+      /2\.5b|pre-dedup/i.test(obsSection));
+
     s.check("G24l the thread query captures isOutdated for both readers",
       /isResolved isOutdated/.test(pca) && /isResolved isOutdated/.test(tr2));
-    s.check("G24m resolution is not specified as gh-only",
-      /RESOLUTION_UNAVAILABLE/.test(tr2) && /RESOLUTION_UNAVAILABLE/.test(read("agents/pr-reviewer.md")));
+
+    // The carve-out must SET the flag (not "never set" it), defer the path decision to
+    // github-access.md, and the agent must not report the removed threads as closed.
+    s.check("G24m the no-resolve-path carve-out is stated affirmatively and defers the path to github-access",
+      /\bset `RESOLUTION_UNAVAILABLE = true`/i.test(tr2) &&
+      !/\b(never|do not|don't) set `RESOLUTION_UNAVAILABLE/i.test(tr2) &&
+      /github-access\.md/.test(tr2));
+    s.check("G24m2 carve-out removals are excluded from the resolved-since counter",
+      /RESOLUTION_UNAVAILABLE` carve-out are excluded/.test(prm) &&
+      /certified done but still open/.test(prm));
 
     // (g) Every WONT_FIX_RE alternative bounded, derived from the regex rather than a
     // named subset — an earlier version asserted three of four and missed the fourth.
