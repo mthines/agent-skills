@@ -517,6 +517,63 @@ function checksInSync(plan, checks) {
     }
   }
 
+  // G24: the relevance-bucket contracts this repo hand-mirrors across rule files.
+  // Same class as G16 (cross-file drift with no single source of truth), but for the
+  // three contracts added when signal (c) gained corroboration:
+  //   a. the `relevance` / `resolution_method` enums vs. their documented producers
+  //   b. "cite, don't restate" — thread-resolution must LINK the matchers, not copy them
+  //   c. the acknowledgement matcher's rule order (decline first, then match, then disqualify)
+  //
+  // (b) is the load-bearing one: the two rows in thread-resolution.md's status table
+  // defer to `WONT_FIX_RE` and to the acknowledgement phrase set precisely because
+  // restating either produced a real divergence (`out of scope` matched one matcher and
+  // not the other, dropping the comment to `unaddressed` with no write). Copying the
+  // phrases back in is the regression this check exists to catch.
+  {
+    const ol = read("agents/shared/rules/outcome-learning.md");
+    const crm = read("agents/shared/rules/comment-relevance-memory.md");
+    const tr = read("agents/shared/rules/thread-resolution.md");
+
+    const METHODS = [
+      "fixed", "wont-fix", "ignored-at-merge",
+      "uncorroborated-touch", "thread-state-unknown",
+      "acknowledged-no-fix-found", "no-anchor-unverifiable",
+    ];
+    const enumLine = (crm.match(/"resolution_method":\s*"([^"]+)"/) || [])[1] || "";
+    const declared = enumLine.split("|").map((x) => x.trim()).filter(Boolean);
+    s.check("G24a resolution_method enum matches the documented producer set",
+      METHODS.length === declared.length && METHODS.every((m) => declared.includes(m)));
+
+    s.check("G24b every non-directional resolution_method has a producer documented in a rule file",
+      ["uncorroborated-touch", "thread-state-unknown", "acknowledged-no-fix-found",
+       "no-anchor-unverifiable"].every((m) => ol.includes(m) || crm.includes(m)));
+
+    s.check("G24c relevance enum carries the non-directional value",
+      /"relevance":\s*"[^"]*\bindeterminate\b[^"]*"/.test(crm));
+
+    // "cite, don't restate": the two deferring rows must link out and must NOT carry the
+    // literal phrase lists they used to duplicate.
+    const ackRow = (tr.match(/^\|\s*\*\*acknowledged\*\*.*$/m) || [""])[0];
+    const decRow = (tr.match(/^\|\s*\*\*declined\*\*.*$/m) || [""])[0];
+    s.check("G24d thread-resolution's acknowledged row cites the phrase set instead of restating it",
+      /outcome-learning\.md/.test(ackRow) && !/"done"/.test(ackRow) && !/"addressed"/.test(ackRow));
+    s.check("G24e thread-resolution's declined row cites WONT_FIX_RE instead of restating it",
+      /WONT_FIX_RE/.test(decRow) && !/"by design"/.test(decRow));
+
+    // Rule order: decline precedence must be stated before the phrase set is matched.
+    const iDecline = ol.indexOf("**1. Decline wins.**");
+    const iMatch = ol.indexOf("**2. Match the phrase set**");
+    const iDisq = ol.indexOf("**3. Disqualify the match");
+    s.check("G24f acknowledgement matcher states its three rules in order",
+      iDecline > -1 && iMatch > iDecline && iDisq > iMatch);
+
+    // `intentional` must keep its word boundaries: without the leading \b it matches
+    // inside "unintentional", and rule 1 gives a decline match veto over acknowledgement.
+    const rec = read("scripts/record-comment-relevance.mjs");
+    s.check("G24g WONT_FIX_RE bounds `intentional` so it cannot match inside `unintentional`",
+      /\\bintentional\\b/.test(rec));
+  }
+
   // G16: the `reviewer-comment-relevance` TTL is hand-mirrored across five files
   // with no single source of truth (the executable writer needs a literal, and this
   // repo's CLAUDE.md requires rules to be self-contained). This is the cross-file

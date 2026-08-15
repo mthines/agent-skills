@@ -201,24 +201,43 @@ the whole matcher, because two of the three exist to stop an acknowledgement tes
 inversion it was written to prevent.
 
 **1. Decline wins.** Test `WONT_FIX_RE` first. A reply matching **both** is a decline, never an
-acknowledgement. Politeness openers are the reason: *"Good catch, but this is by design"* and
-*"Nice catch — intentional though"* are declines that open with praise, and reading them as
-acknowledgements writes `relevant / fixed` for a finding the author rejected, while the Action
-writes `not-relevant / wont-fix` for the same reply — one fingerprint, two opposite records.
+acknowledgement. Partial fixes are the reason: *"Fixed the lint nit; the null-check is by design"* and *"Updated the
+copy — the rest is out of scope"* both match the set (`fixed`, `updated`) **and** `WONT_FIX_RE`, and
+reading them as acknowledgements writes `relevant / fixed` for a finding the author rejected, while
+the Action writes `not-relevant / wont-fix` for the same reply — one fingerprint, two opposite
+records.
 
-**2. Negation disqualifies.** A phrase preceded by a negator within the same clause — `not`, `n't`,
-`never`, `no`, `still not`, `not yet` — does not count. Without this, `resolved` matches *"not
-resolved yet"*, `done` matches *"still not done"*, `updated` matches *"I haven't updated this"*, and
-`addressed` matches *"not addressed"*. Every one of those is an acknowledgement-shaped false
-positive producing `relevant / fixed` for a live finding — the same direction of error as the bug
-this signal exists to fix.
+Note the examples must contain a phrase from rule 2's set to reach this rule at all; a pure decline
+never matches rule 2 and never gets here. (*"Good catch, but this is by design"* was the original
+motivating case; once `good catch` left the set it stopped being reachable, so it is no longer the
+example.)
 
-**3. Then match the phrase set**, case-insensitively, as whole words (so `prefixed` and `redone` do
-not match): `fixed`, `done`, `addressed`, `resolved`, `updated`.
+**2. Match the phrase set**, case-insensitively, on **whole word tokens** (so `prefixed` and
+`redone` do not match): `fixed`, `done`, `addressed`, `resolved`, `updated`.
 
 `good catch` / `nice catch` are deliberately **not** in the set. They are decline openers at least as
 often as acknowledgements, so rule 1 would be carrying them alone; a phrase that needs another rule
 to be safe does not belong in the set.
+
+**3. Disqualify the match on negation or deferral.** Rules 2 and 3 are one conjoined test, not two
+sequenced ones — rule 3 needs the match rule 2 located. Both disqualifiers are scoped to a **token
+window**, which is what makes them executable:
+
+- **Negation.** Disqualify when one of `not`, `n't`, `never`, `no`, `cannot`, `can't` appears in the
+  **five word tokens preceding the matched phrase**, without crossing a sentence boundary (`.`, `!`,
+  `?`, newline). Tokenize the same way rule 2 does — whole words — so `no` does not fire inside
+  *"Now fixed."* and `cannot` is visible as its own token in *"This cannot be fixed cheaply."*
+  Additionally disqualify when the phrase sits in a complement clause under `think`, `believe`,
+  `sure`, `seem`, or `look` (*"I don't think this is done"*, *"I'm not sure that's fixed"*), where
+  the negator is in the matrix clause and a window test alone would miss it.
+- **Deferral.** Disqualify when the phrase is future or conditional: `will`, `'ll`, `going to`,
+  `to be`, `plan to`, `in a follow-up`, `separately`, `next PR`, or a bare issue reference (`#123`)
+  in the same five-token window. *"I'll get this addressed in a follow-up"*, *"will be fixed
+  separately"*, and *"to be done in #123"* otherwise pass every other rule and record
+  `relevant / fixed` for work explicitly deferred **out of** this PR.
+
+`still not` and `not yet` are not listed separately — both contain `not`, which the window already
+catches. Enumerating them would suggest the list is by example rather than by rule.
 
 **Sync with `thread-resolution.md`.** Its `acknowledged` row classifies in-run on the same evidence
 and must cite this set rather than restate it. Two matchers on one concept is exactly the drift the

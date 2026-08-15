@@ -94,8 +94,16 @@ function fingerprint(commentBody) {
 
 /**
  * Detect "won't fix" language in a list of comment replies.
+ *
+ * `intentional` carries \b on both sides: without the leading boundary it matches
+ * inside "unintentional", so "That was unintentional - fixed in abc1234" reads as a
+ * decline. That was a latent nuisance while this regex governed only the decline
+ * path; it became an inversion once the acknowledgement matcher gained
+ * decline-precedence (outcome-learning.md "Acknowledgement phrase set", rule 1),
+ * because a decline match now vetoes an acknowledgement and records
+ * not-relevant/wont-fix for a finding the author just fixed.
  */
-const WONT_FIX_RE = /won.?t\s+fix|wont\s+fix|by\s+design|intentional|not\s+going\s+to|nwf\b|n\/a\b|out\s+of\s+scope|as\s+designed|working\s+as\s+intended/i;
+const WONT_FIX_RE = /won.?t\s+fix|wont\s+fix|by\s+design|\bintentional\b|not\s+going\s+to|nwf\b|n\/a\b|out\s+of\s+scope|as\s+designed|working\s+as\s+intended/i;
 
 function hasWontFixReply(replies) {
   return replies.some((r) => WONT_FIX_RE.test(r.body ?? ""));

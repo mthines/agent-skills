@@ -185,7 +185,7 @@ Each entry stored to LoreKit carries:
   "fingerprint": "<category>:<claim-gist>",
   "relevance": "relevant | not-relevant | weak-not-relevant | indeterminate",
   "reason": "<one-line: why this verdict was reached — resolution method>",
-  "resolution_method": "fixed | wont-fix | ignored-at-merge | uncorroborated-touch | thread-state-unknown | acknowledged-no-fix-found",
+  "resolution_method": "fixed | wont-fix | ignored-at-merge | uncorroborated-touch | thread-state-unknown | acknowledged-no-fix-found | no-anchor-unverifiable",
   "examples": ["<owner>/<repo>#<n> comment <id>"],
   "seen_count": 1,
   "status": "active | promoted | retired",
@@ -193,23 +193,35 @@ Each entry stored to LoreKit carries:
 }
 ```
 
-The `seen_count` field follows the standard UPDATE contract: every re-sighting
-of the same `fingerprint` with the same `relevance` direction increments
-`seen_count` by 1 and refreshes `expires`.
+The `seen_count` field follows the standard UPDATE contract in
+[`write-pipeline.md § Lesson-scope entries`](../../../skills/authoring/persistent-memory/rules/write-pipeline.md),
+which is unconditional and is not restated here. Two cases that contract does not
+decide, and this bucket does:
+
+- A re-sighting in the **opposite** direction is a contradiction (below), not an increment.
+- A directional sighting over an `indeterminate` row **resets** `seen_count` to 1
+  (§ `indeterminate`, property 2).
 Opposite-direction sightings (a previously "not-relevant" pattern that gets
 fixed in a later PR) are flagged as contradictions, not silently overwritten.
 
 ### `indeterminate` — a record that counts toward nothing
 
 `indeterminate` is the fourth relevance value and the only **non-directional** one. It is written
-when the evidence is real but does not decide direction. Three cases produce it, and each keeps its
+when the evidence is real but does not decide direction. Four cases produce it, and each keeps its
 own `resolution_method` — collapsing them would discard the distinction the guards exist to preserve:
 
 | Case | Written by | `resolution_method` |
 | --- | --- | --- |
 | Region touch, thread **read as open**, no corroboration | `outcome-learning.md § Signal (c) requires corroboration` | `uncorroborated-touch` |
-| Thread state **could not be read** (incomplete walk), region touch present | `outcome-learning.md § Step 3b` | `thread-state-unknown` |
+| Thread state **could not be read** (incomplete walk) — with or without a region touch | `outcome-learning.md § Step 3b` | `thread-state-unknown` |
 | Author **acknowledged**, no fix commit in range | `outcome-learning.md § Step 3` | `acknowledged-no-fix-found` |
+| Root comment has **no line anchor** (file-level), so no touch check can run | the `pr-merged` sweep | `no-anchor-unverifiable` |
+
+The second row deliberately carries **no** touch condition. Step 3b records every affected comment,
+and the write the guard was widened to cover — `ignored-at-merge`, whose precondition is "merged with
+thread open, **no fix**, no decline" — has no region touch by construction. A touch qualifier there
+would leave that exact case with no method to emit, and an implementer would fall back to
+`ignored-at-merge`, reinstating the false-record stream the guard exists to stop.
 
 The first two are deliberately distinct. Step 3b's whole rule is *treat an unreadable state as
 unknown, never as unresolved*; recording both as `uncorroborated-touch` would erase at the record
@@ -224,8 +236,18 @@ Three hard properties:
 
 1. **It counts toward neither promotion gate.** Not the `≥ 3 concordant not-relevant` suppression
    bar, not the `≥ 3 concordant relevant` reinforcement bar. It is diagnostic only.
-2. **It is never a contradiction.** Having no direction, it cannot oppose one; a later directional
-   sighting of the same fingerprint supersedes it without flagging.
+2. **It is never a contradiction, and supersession resets the counter.** Having no direction, it
+   cannot oppose one; a later directional sighting of the same fingerprint supersedes it without
+   flagging. That supersession **MUST set `seen_count` to 1** and clear the indeterminate
+   `resolution_method` — it is a first directional sighting, not a re-sighting.
+
+   Without that reset, property 1 fails through the counter rather than through the gates. The key
+   carries no relevance segment, so a directional write onto a key holding indeterminates is an
+   UPDATE, and the UPDATE contract (`write-pipeline.md`) increments **unconditionally** — LoreKit
+   increments server-side on key collision. Two indeterminates plus one genuine
+   `not-relevant / wont-fix` would land at `seen_count: 3` and DROP that finding class repo-wide off
+   a single real observation; on the `relevant` side it would clear the PROMOTE bar just as cheaply.
+   Counting toward no gate has to mean the counter too.
 3. **It never changes a finding.** It must not drop, downgrade, or promote anything at Step 2.2.
    Note the precise scope: `§ Read` loads by **tag**, so an `indeterminate` row *is* fetched and does
    consume a `MEMORY_READ_BUDGET` slot and a `MEMORIES_READ_COUNT` increment — `relevance` lives in
@@ -234,8 +256,13 @@ Three hard properties:
    `reviewer-comment-relevance::<category>:<claim-gist>` with **no relevance segment**, and the write
    is UPDATE-if-exists. So writing `indeterminate` for a fingerprint that already holds
    `relevant, seen_count: 4, status: promoted` would replace the direction on that key and disarm a
-   promoted pattern — the opposite of "counts toward nothing". The `memory.search` dedup step already
-   runs before every write: **skip the write entirely on a directional hit.** Property 2's
+   promoted pattern — the opposite of "counts toward nothing". **Skip the write entirely on a directional hit.** The `memory.search` dedup step runs before every
+   write on the two **agent** paths (the gh-api fallback and `implement-suggestion`); resolve the hit
+   with `memory_read` to learn its `relevance`, which lives in the body and is unknowable from a
+   search hit alone. The **GitHub Action** path does not search at all — it calls
+   `npx @lorekit/cli memory write` directly — so it **must not emit `indeterminate`** until it reads
+   before writing. That matters for the *Known gap* below, whose proposed fix would give that script
+   an indeterminate path and silently void this property. Property 2's
    supersession is one-way — directional supersedes indeterminate, never the reverse.
 
 Its whole purpose is to make a silent gap countable. Treat a fingerprint accumulating
@@ -531,15 +558,21 @@ cannot account for otherwise.
 things, both REST-derivable:
 
 - A thread with a **won't-fix reply** (`WONT_FIX_RE`) — the decline is the record.
-- A thread with a **commit touching its region** since the comment — but only when the root comment
-  has a resolvable anchor (`path` non-empty and `line > 0`, where `line` falls back to
-  `original_line`). A **file-level** comment has a `path` but no line anchor (`line` and `original_line` both null), so the touch check never runs for it and it
-  is always swept as `ignored-at-merge`, however the author dealt with it. This skip is load-bearing in
-  a way it was not before: such a thread is **indeterminate**, not "already captured". The region
-  was edited, so `ignored-at-merge` is a claim the evidence does not support; and the first trigger
-  (`thread-resolved`) never fired for it unless it was also resolved. Skipping it writes nothing,
-  which is the correct outcome — see
-  ``outcome-learning.md § Signal (c) requires corroboration``.
+- A thread with a **commit touching its region** since the comment, when the root comment has a
+  resolvable anchor (`path` non-empty and `line > 0`, `line` falling back to `original_line`).
+
+  This skip is load-bearing in a way it was not before: such a thread is **indeterminate**, not
+  "already captured". Its region was edited, so `ignored-at-merge` is a claim the evidence does not
+  support, and the first trigger (`thread-resolved`) never fired for it unless it was also resolved.
+  Skipping it writes no *directional* record, which is the correct outcome for the sweep — the
+  indeterminate record is written by the gh-api path instead
+  (``outcome-learning.md § Signal (c) requires corroboration``).
+
+  **A file-level comment is a different case and is not skipped.** It carries a `path` but no line
+  anchor (`line` and `original_line` both null), so the guard's `line > 0` clause fails, the touch
+  check never runs, and the thread is swept as `ignored-at-merge` however the author dealt with it.
+  It is equally indeterminate and belongs in `no-anchor-unverifiable` (§ `indeterminate`); the sweep
+  as committed cannot record that, because it never evaluates a touch for it.
 
 **Known gap — resolved-with-no-touch double-writes.** The sweep has **no resolved-state check**, and
 cannot get one from the endpoint it reads: the script fetches `/pulls/{n}/comments`, and GitHub does
