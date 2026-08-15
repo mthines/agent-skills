@@ -962,6 +962,14 @@ function checksInSync(plan, checks) {
       const line = lines[i];
       // Only command lines count — prose and table cells mentioning it do not.
       if (!isWatch(line) || !WATCH.test(line)) continue;
+      // A `bash -c` wrapper only counts when it is genuinely a poll loop — a
+      // loop keyword plus a sleep within the next few lines. Without this the
+      // matcher would fail G22 on any unrelated `bash -c` one-liner a future
+      // skill documents, and break the pinned site count with it.
+      if (/\bbash\s+-c\b/.test(line) && !/gh\s+(?:pr\s+checks|run\s+watch)/.test(line)) {
+        const block = lines.slice(i, i + 12).join("\n");
+        if (!/\b(until|while)\b/.test(block) || !/\bsleep\b/.test(block)) continue;
+      }
       sites++;
       const inner = line.match(WATCH)[1];
       s.check(

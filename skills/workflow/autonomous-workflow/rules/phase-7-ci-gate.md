@@ -175,7 +175,17 @@ prompt: |
   whole-project npm run lint, npx tsc --noEmit (without project refs), npm test
   (without --testPathPattern), or npm run build. The orchestrator runs
   whole-project verification after all sub-agents return.
+
+  CI_WATCH_STATE is informational only — never write to it.
+
+  Return only:
+  - outcome: fixed | still-failing | gave-up
+  - watched_sha: the PR head SHA your watch actually observed
+  - attempts_used: how many watch attempts you spent
+  - remaining_error: one short paragraph if still red, else empty
 ```
+
+**Reconcile when they return** — you are the single writer of the state file, using the same rule as [`create-pr` Step 9](../../../delivery/create-pr/SKILL.md): if the PR head moved, `put observed_sha` to the new head and reset both counters (a new commit is a new wait); if it did not, debit `attempts` by the reported total.
 
 Log to Progress Log:
 

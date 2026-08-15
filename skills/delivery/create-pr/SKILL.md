@@ -187,24 +187,29 @@ Do **not** prefix a bare `sleep` — a bare foreground `sleep` is blocked in som
 
 Wait for registration with a **bounded poll loop** — permitted by the bounded-wait invariant precisely because it has a cap, unlike a bare sleep:
 
+This poll answers **one** question — "do checks exist yet?" — and never a CI verdict. Deciding pending-vs-failing is `--watch`'s job. That distinction is load-bearing: bare `gh pr checks` exits **non-zero while checks are merely pending**, and prints them to stdout, so a non-zero exit with *empty stderr* means "registered and running" — the normal case, and a `break`, not an error. Keeping stderr is what separates that from an auth or network failure.
+
 ```bash
 # Issue this Bash call with the tool parameter timeout: 600000.
 # One call, real wall-clock, hard 90 s ceiling.
-# Keep stderr: only "no checks reported" is a registration wait. Discarding it
-# would make an auth or network failure look like a repo with no CI.
 timeout 90 bash -c '
-  until err=$(gh pr checks <pr-number> 2>&1 >/dev/null); do
+  while :; do
+    err=$(gh pr checks <pr-number> 2>&1 >/dev/null) && break   # 0 = all terminal
     case "$err" in
-      *"no checks reported"*) sleep 5 ;;
-      *) echo "$err" >&2; exit 3 ;;        # tooling failure, not a registration wait
+      *"no checks reported"*)                            sleep 5 ;;   # not registered yet
+      *"could not resolve"*|*authentication*|*"command not found"*)
+                                         echo "$err" >&2; exit 3 ;;   # tooling failure
+      *)                                                   break ;;   # registered, pending
     esac
   done
-  sleep 5; gh pr checks <pr-number> >/dev/null 2>&1'   # confirm: catch a second workflow registering late
+  sleep 5; gh pr checks <pr-number> >/dev/null 2>&1; exit 0'  # confirm a late second workflow; never leak its status
 ```
+
+The trailing `exit 0` is load-bearing: without it the confirming call's status becomes the wrapper's status, and "registered but pending" would surface as a failed poll.
 
 | Poll exit | Meaning | Next |
 | --------- | ------- | ---- |
-| 0 | Checks registered and stable across a confirming poll | Proceed to the watch |
+| 0 | Checks exist (terminal **or** pending) and survived a confirming poll | Proceed to the watch |
 | 3 | `gh` itself failed (auth, network, rate limit) | **Tooling failure row** — do not count a `registration_attempts`, do not conclude anything about CI |
 | 124 | 90 s elapsed with nothing but `no checks reported` | Counts as one `registration_attempts`. This is the **only** exit that may eventually conclude "no CI" |
 
@@ -335,10 +340,24 @@ prompt: |
   - outcome: fixed | still-failing | gave-up
   - what_was_fixed: one line
   - iterations: how many fix-push-watch cycles you used
+  - watched_sha: the PR head SHA your watch actually observed
+  - attempts_used: how many watch attempts you spent
   - remaining_error: one short paragraph if still red, else empty
 ```
 
 Don't wrap the subagent in another loop — it has its own internal iteration cap.
+
+**Reconcile the watch state when the subagents return.** They are forbidden from writing `.agent/ci-watch-<pr-number>.state` (racing writers would record one of two commits), so you are the only one who can — and a field nobody reconciles is a field the subagent will stop reporting:
+
+```bash
+NEW_HEAD=$(gh pr view <pr-number> --json headRefOid -q .headRefOid)
+if [ "$NEW_HEAD" != "$(get observed_sha)" ]; then
+  put observed_sha "$NEW_HEAD"; put observed_state pending
+  put attempts 0; put registration_attempts 0     # new commit = new wait
+fi
+```
+
+If the head did **not** move (no subagent pushed), debit `attempts` by the total `attempts_used` reported instead. Skipping this leaves the state file pointing at the pre-fix commit — fail-safe, since Phase 7 then re-watches rather than skipping, but the cross-boundary budget stops functioning.
 
 **Judgment-required failures — keep in the main thread.** `/confidence` reviews *this* conversation's reasoning, so a subagent can't run it. With the triage summary already in hand:
 

@@ -250,7 +250,9 @@ After pushing, monitor the check:
    ```
    If `timeout` expires (exit code 124), run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate.
 
-   **Shared watch budget — read-only.** If the invocation passed a `CI_WATCH_STATE=<abs-path>` line, **read** that file to learn your remaining allowance (`attempts` key, max 4). **Never write to it.** The dispatching orchestrator is the single writer; when you are one of several subagents fanned out in the same turn, two of you writing `observed_sha` would record one of two commits and let the caller skip a watch for a commit whose checks were never observed. Do not guess the path or the caller either: acting on a budget you were not given is how two components silently spend each other's allowance.
+   **Shared watch budget — never read as your allowance, never written.** Use **your own local counter** (max 4) for your own watches, unconditionally. If the invocation passed a `CI_WATCH_STATE=<abs-path>` line, treat it as **informational only** — context about what the caller already spent, never a cap on you. Your watch follows a commit **you just pushed**, which the caller's counter predates; reading it as an allowance would leave you unable to verify your own fix the moment the caller had spent its four attempts.
+
+   **Never write to that file.** The dispatching orchestrator is the single writer; when you are one of several subagents fanned out in the same turn, two of you writing `observed_sha` would record one of two commits and let the caller skip a watch for a commit whose checks were never observed. Do not guess the path or the caller either: acting on a budget you were not given is how two components silently spend each other's allowance.
 
    Report your outcome instead, and let the caller reconcile. Include these fields verbatim in your return block:
 
