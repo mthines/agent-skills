@@ -200,10 +200,23 @@ When this rule is applied inside a sub-agent, the sub-agent does NOT receive the
 ```text
 # Narrow-to-broad fan-out — repo-specific wins over global on conflict.
 # Issue each line as a real mcp__lorekit__memory_list tool call.
-# If the call itself errors, treat the backend as not connected for this run.
-mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=50
-mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-comment-relevance"] limit=50
+# view="summary" returns the index (key, tags, updated_at, value_bytes, preview),
+# which is all a relevance verdict needs — the fingerprint lives in the key.
+mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=50 view="summary"
+mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-comment-relevance"] limit=50 view="summary"
 ```
+
+**On a tool error, retry before declaring the backend down.** A thrown MCP error on the first call
+is far more often a momentary transport hiccup than a real outage, and treating one blip as
+terminal is what makes the `Memories — not connected` line flap between otherwise-identical runs.
+Retry up to **2 more times** (3 attempts total) with a short backoff, then treat the backend as not
+connected. The one error that must NOT be retried is a hard "tool unavailable" (the tool is absent
+from the caller's `tools:` grant, or the LoreKit MCP server did not connect this session — it
+surfaces as `No such tool available: mcp__lorekit__memory_list`): there is nothing to wait for, the
+remedy is environmental, and it is a genuine "not connected". Any attempt that returns without a
+tool error — **including an empty list** — is a success; stop retrying. This is the same contract
+`pr-reviewer.md § Step 1.0` states, restated here rather than cross-referenced because a caller
+applying this rule standalone must not end up with a weaker one.
 
 Merge both lists (`repo::` wins on key collision).
 Skip any entry whose `expires` is in the past.

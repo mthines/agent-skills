@@ -62,13 +62,20 @@ reviewer-comment-relevance
 
 ### Lessons (`loop::<host>-lessons`, key `<host>-lessons::<slug>`)
 
+The **Host** column is the LoreKit `host` VALUE — the string a `memory.write` stores and a
+`?host=` / `--host` / `memory.list host:` filter matches. It is derived from the bucket tag by
+`inferKindHost` (`loop::<x>-lessons` → `host = <x>`), so it is always the tag's `<x>` segment and
+never the name of the agent that happens to own the bucket. Where the two differ the owning agent
+is named in parentheses; setting `host` to the agent name instead would split the bucket across two
+hosts and silently halve every usage roll-up.
+
 | Bucket | Host | Read → Write | Scope default | Notes |
 | --- | --- | --- | --- | --- |
 | `aw-lessons` | `aw` dispatcher (shared by `aw-planner` / `aw-executor`) | dispatcher start → on friction | `global` \| `repo::` | Universal loop hoisted to the dispatcher; promotes to `diagnose`. |
 | `aw-tester-lessons` | `aw-tester` | spec run start → on spec-verify friction | `global` \| `repo::` | UI-verification lessons. |
 | `fix-bug-lessons` | `fix-bug` | Phase 0.5 → Phase 5·7·8 | `global` \| `repo::` | Diagnostic-phase lessons; inherits `aw-lessons` via `aw-executor`. |
 | `batch-lessons` | `batch-linear-tickets` | Phase 1 → Phase 5 | `global` \| `repo::` | Ticket classification + correlation. |
-| `reviewer-lessons` | `pr-reviewer` | Step 0.7 / Step 1.0 → end-of-run + promotion | `global` \| `repo::` | Distilled from the `review-outcomes` bus at promotion time. |
+| `reviewer-lessons` | `reviewer` (agent: `pr-reviewer`) | Step 0.7 / Step 1.0 → end-of-run + promotion | `global` \| `repo::` | Distilled from the `review-outcomes` bus at promotion time. |
 | `implement-suggestion-lessons` | `implement-suggestion` | Phase 3 → Phase 7 + `--watch` | `global` \| `repo::` | Classification, gate calibration, lane selection. |
 | `ci-auto-fix-lessons` | `ci-auto-fix` | Phase 3 → Phase 8·9 | **`repo::`** | More conservative: `seen_count ≥ 5` promotion; regression lessons `volatile`, 30d. |
 | `e2e-pr-stabilizer-lessons` | `e2e-pr-stabilizer` | Phase 4 → Phase 7 | `global` (race-shapes) \| `repo::` (locators) | Writes gated on telemetry ratification. |
@@ -116,7 +123,8 @@ The mapping `inferKindHost` applies at write time:
 **What the property unlocks:**
 
 - Query by kind/host directly — `GET /memories?kind=lesson&host=reviewer` (both parameters, plus `kind_mode` / `host_mode`, are in the published OpenAPI spec at `https://lorekit.io/api-docs/spec`), or `npx @lorekit/cli list --kind signal --host reviewer` (implemented in `1.32.0`, but **not listed in `list --help`** — do not read its absence from the help text as the flag not existing).
-  **The MCP `memory.list` tool is the exception: it accepts only `scope`, `tags`, and `limit`, so kind/host filtering is not reachable from an MCP client.** Filter client-side, or use the REST route. Re-check with the live tool schema before relying on it. Either way the filter only sees rows that carry the stored columns — see the write-time-only note above.
+  **The MCP `memory.list` tool accepts `kind` and `host` too** (lorekit #464), alongside `scope`, `tags`, `limit`, `cursor`, `order` and `view` — so an MCP client no longer has to list a whole scope and filter client-side. On the `order: "rank"` path the taxonomy filters are applied *before* scoring, so the bounded candidate window is filled with the bucket you asked for. Re-check with the live tool schema before relying on it. Either way the filter only sees rows that carry the stored columns — see the write-time-only note above, which is why a tag filter remains the safer choice for buckets with pre-`00056` history.
+- **Cheap discovery reads** — MCP `memory.list` takes `view: "summary"` (lorekit #464), which omits each entry's `value` and returns `value_bytes` + a 200-character `preview` instead. A full-body list of 50 entries is ~95 KB of agent context at the observed ~1.9 KB median lesson; the summary form is ~12 KB. Use it when the question is *which* memories apply, then `memory.read` the handful that matched.
 - **Usage tracking** — memory operations are recorded per `kind` and per `host` (on `usage_events`), so reads, writes, and searches are attributable to a family and an owner instead of an opaque tag. LoreKit resolves the pair identically for the stored row and the analytics event (`resolveKindHost`), so an untagged-but-explicit write and a tag-only write are attributed the same way.
 - Dashboard grouping by kind. **Filtering by kind in the Explorer is not exposed yet** — its filter dimensions are still the six that [Tags & scopes](https://lorekit.io/docs/tags) enumerates (label, agent, trigger, repository, branch, pull request); neither `kind` nor `host` is among them.
 

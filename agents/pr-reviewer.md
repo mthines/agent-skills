@@ -43,6 +43,7 @@ Step 0.5).
 - Stop and report if no PR reference is found in the invocation.
 - Stop and report a BLOCKED result if the inline review sub-pipeline fails twice.
 - Tool-call budget, scaled to the size of the reviewed diff: **30** calls for ≤ 10 changed files, **60** for 11–30, **100** for > 30. `--full` on a large PR always uses the top band.
+- Memory-read budget, inside that total: **4** `memory_list` calls (Step 1.0) + **1** `memory_search` (Step 1.2c) + at most **10** `memory_read` calls (Step 1.0b) = **15**. The Step 1.0b reads trade call count for context: the four summary lists cost ~12 KB instead of ~110 KB, and only matched entries are ever expanded, so a review that matches nothing spends 5 calls rather than the previous 5 calls and 110 KB.
 - If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` In the review body this goes in the `PARTIAL_REVIEW_BANNER` slot of the Step 4 templates (see *Review body format*), never as free prose. Never present a budget-truncated run as a complete review.
 - Never post a GitHub review that was not produced from fully consolidated results.
 
@@ -401,18 +402,61 @@ When this agent runs as a sub-agent, it does NOT receive the SessionStart memory
 ```text
 # Issue each as a real mcp__lorekit__memory_list tool call (narrow-to-broad).
 # repo:: wins on key collision. Skip expired entries.
-mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-lessons"]           limit=50
-mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-lessons"]           limit=50
-mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=50
-mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-comment-relevance"] limit=50
+# view="summary" returns key + tags + updated_at + value_bytes + a 200-char preview,
+# NOT the body — this is the index, and Step 1.0b resolves the bodies that matter.
+mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-lessons"]           limit=50 view="summary"
+mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-lessons"]           limit=50 view="summary"
+mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=50 view="summary"
+mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-comment-relevance"] limit=50 view="summary"
 ```
 
 Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
 Merge both lists per tag (`repo::` wins on key collision).
 Skip expired entries.
 
+**Why `view: "summary"`.** These four calls return up to 200 entries. At the observed ~1.9 KB
+median body that is ~110 KB of context spent before the diff has been read, to answer a question —
+*which* memories apply to this change — that the key, tags, and preview already answer. The summary
+form makes the same fan-out ~12 KB. Bodies are fetched in Step 1.0b, only for the entries that
+survive matching. If the LoreKit server predates `view` support it ignores the parameter and
+returns full entries; that is a degradation in cost, not in correctness, so never retry without it.
+
+#### 1.0b Resolve the bodies that matter
+
+`view: "summary"` gives every entry's `key`, `tags`, `updated_at`, `value_bytes` and a
+200-character `preview`. That is enough to SHORTLIST, not enough to apply: a lesson's
+`trigger-context` and its *What to do next time* both live in the body, so the full match in
+*Apply `reviewer-lessons`* below runs against bodies, not previews.
+
+**Shortlist, then fetch.** Mark an entry a candidate when its `key` slug, its `tags`, or its
+`preview` mentions any of: a changed top-level directory, a changed file basename, a changed symbol
+name, a detected integration, or the PR's synthesized intent. Be generous — this filter exists to
+drop the obviously-unrelated, not to make the final call, and a candidate that turns out not to
+match after its body is read simply falls out at the *Apply* step below. Then fetch each
+candidate's body:
+
+```text
+# One call per matched entry. Issue as a real mcp__lorekit__memory_read tool call.
+mcp__lorekit__memory_read: scope="<the entry's scope>" key="<the entry's key>"
+```
+
+Bound this at **10 reads**. If more than 10 entries are candidates, keep the 10 whose `updated_at`
+is most recent and treat the remainder as unread — a reviewer that needs more than ten prior
+lessons to review one diff is not being helped by the eleventh, and the bound is what keeps the
+summary read from simply deferring the cost it was meant to remove. Report a truncated shortlist in
+the terminal report so the ceiling is visible rather than silent.
+
+Two entries never need a body fetch and must not consume the budget:
+- an entry whose `preview` is the whole body (`value_bytes` ≤ 200) — the summary already carried it;
+- a `reviewer-comment-relevance` entry being used only for its `relevance` / `seen_count` verdict
+  at Step 2.2, which the fingerprint in its `key` already supplies.
+
+A failed `memory_read` is a non-blocking miss: drop that one entry, do not flip
+`LOREKIT_CONNECTED`, and carry on. This is the ONLY defined call site for
+`mcp__lorekit__memory_read` in this agent — do not invoke it anywhere else.
+
 **Apply `reviewer-lessons`.**
-Match each loaded lesson's `trigger-context` (the shared lesson-scope schema — file globs, task type, integration/tech names) against this run's changed paths, synthesized intent, and detected integrations.
+Match each loaded lesson's `trigger-context` (the shared lesson-scope schema — file globs, task type, integration/tech names) against this run's changed paths, synthesized intent, and detected integrations. Only lessons whose body was fetched at Step 1.0b can be matched here — an entry left unread by the shortlist or the 10-read bound is not a match, and must not be guessed at from its preview.
 A matched lesson's *What to do next time* is a **consideration, not a command**: it biases rubric emphasis (Step 2), persona focus (Personas 1–4), and per-comment confidence calibration (Step 2.7) — it may never silently disable a gate, skip a step, or move a threshold.
 On a `repo::` vs. `global` collision the `repo::` lesson wins; on any conflict with the PR author's stated intent or a review-config constraint, that constraint wins and the conflict is surfaced.
 The loaded pool is augmented by the diff-keyed `memory.search` in Step 1.2c before Step 2 consumes it.
@@ -585,6 +629,13 @@ Issue this as a real `mcp__lorekit__memory_search` tool call.
 Skip this step when `LOREKIT_CONNECTED` is already `false` — the Step 1.0 attempt failed, so there is no backend to search.
 Otherwise issue the call, and treat an error here as a non-blocking addend miss (do not flip `LOREKIT_CONNECTED`).
 
+**Derive `INTENT_PHRASE` FIRST, before the connection check above can skip anything.** Group 5
+below binds it, and Step 1.3 expands rather than re-derives it — but it is a property of the PR, not
+of LoreKit, and a core review variable must not inherit a memory backend's availability. So build
+the five field groups unconditionally, bind `INTENT_PHRASE`, and only then decide whether to issue
+the search. When the search is skipped or errors, `INTENT_PHRASE` is already set and Step 1.3
+proceeds normally.
+
 Build the query from the diff's own vocabulary, concatenating these five field groups (space-separated) into one query string:
 
 1. **Changed top-level directories** — the first path segment of each changed file.
@@ -615,7 +666,9 @@ in Step 1.0's announce line.
 ### 1.3 Synthesize intent
 
 Expand `INTENT_PHRASE` — the one-line phrase bound at Step 1.2c (group 5) — into a 2–3 line intent summary; do not re-derive it from the PR title, body, commit messages, and branch name.
-When Step 1.2c was skipped (`LOREKIT_CONNECTED` is `false`), `INTENT_PHRASE` is unset: derive it here from that same PR metadata, then expand it.
+Step 1.2c binds `INTENT_PHRASE` before its connection check, so it is set whether or not the search
+ran. In the sole remaining case where it is unset — Step 1.2c did not execute at all — derive it
+here from that same PR metadata, then expand it.
 
 ```text
 Intent: This change [verb] [what] so that [why].
