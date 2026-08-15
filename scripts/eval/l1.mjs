@@ -260,6 +260,18 @@ function checksInSync(plan, checks) {
   s.check("G6 rubric-composition 80 → 70 promotion language present",
     rcmd.includes("80") && rcmd.includes("70") && /agreement.promoted/i.test(rcmd));
 
+  // G6b: Materiality routing — cosmetic non-blocking findings defer off the inline path
+  // (breaks the doc-nitpick re-review cascade), and the deferral is counted in <DEF> so the
+  // <CL> − <DEF> == <F> identity is preserved (no new advisory counter that could drift).
+  s.check("G6b rubric-composition has Materiality routing (cosmetic defers off inline)",
+    /##+\s+Materiality routing/.test(rcmd) && rcmd.includes("cosmetic"));
+  s.check("G6b materiality routing preserves the <CL> − <DEF> == <F> identity",
+    /Materiality routing[\s\S]*?<DEF>|counted in `<DEF>`/.test(rcmd));
+  // G6c: Consolidation collapses cross-surface parity findings into one enumerated finding,
+  // so a consistency fix cannot leave a sibling to re-flag on the next push (cascade guard).
+  s.check("G6c rubric-composition consolidation collapses parity findings across siblings",
+    /parity findings across sibling surfaces/i.test(rcmd) && /enumerate/i.test(rcmd));
+
   // G7: every refactor recipe (R\d+) in refactor-recipes.md's Contents list appears
   // in exactly one of the M or J rows of the Recipe Class table. The "simplify" mode
   // auto-applies Class M recipes; an unclassified recipe silently defaults to J, but

@@ -951,6 +951,7 @@ See `agents/shared/rules/rubric-composition.md § Consolidation`.
 Dedupe, group by file, and sort by `(prefix priority, line)` — priority order `issue > suggestion > question > nitpick`.
 **No cap fires here and nothing is discarded**; quantity is handled at Step 2.9b after the quality gates.
 On `(file, line)` collision, holistic claim wins.
+Consolidation also **collapses cross-surface parity findings into one enumerated finding** (`§ Consolidation pass`): a consistency issue ("documented here but not in the sibling") must name every surface to align rather than surface one-per-review, so fixing it never leaves a neighbour looking uneven for the next push to re-flag.
 
 ### 2.6 Finding grounding
 
@@ -994,6 +995,14 @@ Non-blocking findings above a cap are **deferred, not dropped** — rendered in 
 `Additional findings` and excluded from `INLINE_COMMENTS_JSON`. A finding that cleared 2.7 is
 never discarded by this step, and a blocking finding is never deferred. Report
 `Deferred (over inline cap): <N>` in the diagnostics block.
+
+Non-blocking findings also split by **materiality** (`rubric-composition.md § Materiality routing`):
+a `cosmetic` finding — pure wording / parity / formatting, held to this bar strictly on a
+docs/comment-only `incremental` or `incremental-quick` delta — is **deferred to `Additional findings`
+regardless of remaining slots**, so it never posts inline, never opens a review thread, and never
+gates a re-review. `material` findings (coverage gaps, wrong/misleading comments, factual errors)
+route normally. Cosmetic deferrals are counted in `<DEF>`, so the `<CL> − <DEF> == <F>` identity is
+unchanged.
 
 ---
 
