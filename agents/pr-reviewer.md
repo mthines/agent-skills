@@ -989,8 +989,8 @@ governing **non-blocking findings only**. A `(blocking)` finding (broken behavio
 loss, misimplemented intent) is exempt from both caps: it is always posted inline and never
 deferred, so a genuinely weak PR surfaces every blocker at the code no matter how many there are
 (`rubric-composition.md § Placement`). Place blocking findings first, then fill the remaining slots
-with non-blocking findings ordered by prefix priority, then descending confidence score, then line
-number.
+with non-blocking findings ordered by prefix priority, then material before cosmetic, then descending
+confidence score, then line number.
 
 Non-blocking findings above a cap are **deferred, not dropped** — rendered in the review body under
 `Additional findings` and excluded from `INLINE_COMMENTS_JSON`. A finding that cleared 2.7 is
@@ -1100,7 +1100,7 @@ Both PASS and FAIL continue with:
 | 1  | src/foo.ts:42      | suggestion  | 95%  | `const cache: Record<...> = {}` |
 
 **Quality Gate**: produced <P>, carried forward <CF>, relevance-memory drops <RM>, filter drops <FL>,
-dedupe drops <D>, grounding drops <G>, confidence drops <C> (threshold <T>),
+materiality drops <MD>, dedupe drops <D>, grounding drops <G>, confidence drops <C> (threshold <T>),
 confidence-deferred (advisory) <CADV>, shape drops <S>,
 cleared <CL>, deferred over inline cap <DEF>, posted inline <F>,
 anchorless carried <AC>, anchorless resolved <AR>.
