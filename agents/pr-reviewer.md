@@ -629,7 +629,11 @@ fi
 - Set `RUN_MODE = "incremental-quick"`.
 - Set `REVIEW_DIFF = ""` (empty — no code to review).
 - Announce: `Delta is empty — skipping inline review, running gate checks only.`
-- Skip Step 2 entirely; proceed directly to Step 1.8 (gate checks), then Step 3 (no inline findings).
+- Skip Step 2 entirely; proceed to Step 1.8 (gate checks), then **Step 2.9c** (thread
+  reconciliation — it runs on this path; see its preamble), then Step 3 (no inline findings).
+  A zero-delta run happens only on a re-review, so it is exactly the population 2.9c exists for —
+  routing straight to Step 3 here would bypass reconciliation, the Gate 3 refresh, and the
+  `reviewer-comment-relevance` write on every `review-loop` convergence run.
 
 **Tier rules (applied when no upgrade triggered and delta is non-zero):**
 - `DELTA_LINES <= 10`: set `RUN_MODE = "incremental-quick"`.
@@ -841,7 +845,8 @@ Quality Gate summary. Gate 6 (inline review) always runs regardless of gate outc
 ## Step 2: Inline review pipeline
 
 **Skip this step entirely** if the zero-delta short-circuit fired in Step 1.2b
-(`REVIEW_DIFF == ""`). Proceed directly to Step 1.8 with no inline findings.
+(`REVIEW_DIFF == ""`). Proceed to Step 1.8 with no inline findings, then to Step 2.9c —
+which is a **top-level step, not part of Step 2**, and runs whether or not Step 2 ran.
 
 **Diff used for inline review (`REVIEW_DIFF`):**
 - `RUN_MODE == "full"` entered directly (first run, `--full`, or any upgrade rule): `REVIEW_DIFF` = the full PR diff from Step 1.1 command B.
