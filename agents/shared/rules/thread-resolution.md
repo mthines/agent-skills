@@ -153,8 +153,14 @@ author's own words rather than a scan:
 touched"*, so on a zero-delta run it cannot fire either. That fails **closed** —
 no thread is wrongly resolved — but it means `declined` is in practice the only
 resolver on a zero-delta re-run, and an author who replies "done" without pushing
-will see Gate 3 stay ❌ until a code push arrives. That is the intended
+will see the thread stay open until a code push arrives. That is the intended
 conservative behaviour, not an oversight.
+
+The cost of that conservatism is bounded by Gate 3's grading (`pr-reviewer.md § Gate
+states`): the "done" reply makes the thread `answered`, so it holds the gate at ⚠️
+rather than ❌. The thread stays open and stays on the checklist — the reply is not
+treated as proof of a fix — but an unverified claim of doneness no longer fails the
+PR on its own.
 
 The cost of this rule is a genuinely-fixed thread staying open until a run that
 re-reads its region — one extra checklist line. The cost of not having it is a live
@@ -358,6 +364,13 @@ fails this gate* (`pr-reviewer.md § Gate 3`). These threads are now resolved, s
 gate against the updated set applies the existing rule to fresher input — it does not introduce a
 second, weaker standard. A `persisting` or `unaddressed` thread is never resolved, so it can never
 be removed from the gate this way.
+
+Re-evaluate the **full tri-state**, not just the empty/non-empty split: removing the last
+blocking-and-unanswered entry downgrades ❌ to ⚠️ even when other threads remain open. A thread
+classified `declined` or `acknowledged` whose mutation **failed** stays in the open set, but is
+marked `answered` for the grading — GitHub still shows it open so it must still be listed, yet the
+ask has demonstrably been engaged with, and a failed mutation is this agent's problem rather than
+the author's.
 
 **Except under `--skip-gates`**, where Step 1.8 never ran and Gate 3 is `⏭️`: update the open set
 and the `resolved since` counter as usual, but leave the gate `⏭️`. Re-evaluating it there would

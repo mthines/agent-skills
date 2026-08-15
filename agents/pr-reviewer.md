@@ -83,18 +83,18 @@ A PR PASSES when ALL of the following are true:
 
 1. **Description vs. code** — the description accurately reflects what the diff does; an independent reader reaches the same conclusion about intent and scope from the description alone as from the diff. A mismatch is a **soft warning** (⚠️), not a failure — see *Gate states* below.
 2. **CI status** — all build, test, lint, and docs checks are green. (Contributes to verdict but is NOT shown as a row in the review table — CI details are redundant there; GitHub's checks section shows them.)
-3. **Prior bot feedback** — all prior automated review comments (Cursor, Claude, other agents) are resolved or explicitly dismissed.
+3. **Prior bot feedback** — all prior automated review comments (Cursor, Claude, other agents) are resolved or explicitly dismissed. An open thread whose ask is non-blocking, or which has already been answered on-thread, is a **soft warning** (⚠️) — only an *unanswered blocking* ask fails this gate. See *Gate states* below.
 4. **Self-review signals** — no debug logs, commented-out code, leftover TODO/FIXME/HACK markers on new lines, or obvious unreviewed AI stubs in the diff.
 5. **Documentation adequacy** — description, inline comments, and any docs are sufficient for an independent reader to understand the change's purpose and behavior.
 6. **Code review** — the AI persona review pass finds no blocking issues. Non-blocking findings do **not** fail this gate (see *Gate states* below).
 
-A PR FAILS if any of Gates 2–5 is not met (Gate 2 = CI included), or if the Code review gate (Gate 6) is ❌. Gate 1 (Description vs. code) is a soft-warning gate — a mismatch yields ⚠️ and never fails the PR.
+A PR FAILS if Gate 2 (CI), Gate 4, or Gate 5 is not met, or if the Prior bot feedback (Gate 3) or Code review (Gate 6) gate is ❌. Gate 1 (Description vs. code) is a soft-warning gate — a mismatch yields ⚠️ and never fails the PR; Gates 3 and 6 are tri-state and reach ❌ only on a *blocking* item.
 
 ### Gate states
 
-Gates 3, 4, and 5, plus Gate 2 (CI), are **hard** gates: binary ✅ / ❌, and any ❌ fails the PR.
+Gates 4 and 5, plus Gate 2 (CI), are **hard** gates: binary ✅ / ❌, and any ❌ fails the PR.
 
-Two gates are **soft** — a problem yields a warning (⚠️) that never fails the PR and is never counted in `FAILING_GATE_COUNT`:
+The other three are **graded** — a non-blocking problem yields a warning (⚠️) that never fails the PR and is never counted in `FAILING_GATE_COUNT`. Gate 1 is two-state (it can only warn); Gates 3 and 6 are tri-state and reach ❌ only on a blocking item:
 
 **Gate 1 — Description vs. code** is two-state:
 
@@ -102,6 +102,28 @@ Two gates are **soft** — a problem yields a warning (⚠️) that never fails 
 |---|---|
 | ✅ | The description accurately reflects the diff. |
 | ⚠️ | The description omits or misrepresents a scope of the diff. Soft warning only — never fails the PR. |
+
+**Gate 3 — Prior bot feedback** is tri-state, on the same *blocking* bar as Gate 6:
+
+| Status | Condition | Verdict effect |
+|---|---|---|
+| ✅ | `OPEN_BOT_COMMENTS[]` is empty — every prior bot thread is resolved. | Passes. |
+| ⚠️ | Threads are open, but none is both **blocking** and **unanswered**. | **Passes — soft warning only.** NOT counted in `FAILING_GATE_COUNT`; never flips the verdict to FAIL. |
+| ❌ | At least one open thread carries a **blocking** ask that nobody has answered. | Fails — counted in `FAILING_GATE_COUNT`. |
+
+An open thread is **answered** when it has at least one reply after its root comment — a fix
+announcement, a rationale for declining, a counter-argument — or when this run's Step 2.9c
+classified it `declined` / `acknowledged` but the `resolveReviewThread` mutation failed. An
+answered thread is bookkeeping: the ask has been engaged with and only the Resolve click is
+missing, which is not a defect in the PR. The unblock checklist renders on ⚠️ exactly as it does
+on ❌, so no open thread disappears from the report — only the verdict changes.
+
+Reading the flag alone was the older, stricter rule, and it fails a PR for something the author
+cannot fix: a bot's `nitpick:` nobody clicked Resolve on, a suggestion already declined
+on-thread with a rationale, a finding fixed in a later commit whose thread this run had no
+permission to resolve. Gate 3 already refuses to fail on a thread whose state it could not read,
+for exactly that reason (*an unknown thread never fails it either*, below); grading by severity
+applies the same principle to threads whose state it can read.
 
 **Gate 6 — Code review** is tri-state, because criterion 6 is scoped to *blocking* issues:
 
@@ -113,7 +135,9 @@ Two gates are **soft** — a problem yields a warning (⚠️) that never fails 
 
 A finding is **blocking** only if it is broken behaviour, security (auth bypass / injection / secret leak / CSRF), data loss/corruption, or misimplemented intent — the same bar as the Step 3 verdict table, applied to the findings decorated `(blocking)` at Step 2.9 (`conventional-comments.md`). Everything else — `suggestion`, `question`, `nitpick`, and any non-blocking `issue` — is non-blocking and yields ⚠️ at most.
 
-The overall verdict is **FAIL** when any of Gates 2–5 fails **or** the Code review gate is ❌; otherwise **PASS** (with the Description vs. code and Code review rows each showing ✅ or ⚠️). Gate 2 (CI) feeds this verdict but is surfaced in GitHub's checks section, not as a table row and not in `FAILING_GATE_COUNT` (criterion 2); the PASS/WARN/FAIL **table** presentation in Steps 3–4 is therefore chosen from the review gates (3, 4, 5, Description vs. code, and Code review) only.
+**Gate 3 applies that same bar to the other bot's own decoration** — its `(blocking)` marker, its `issue:` conventional-comment prefix, or an equivalent explicit severity label it supplied — and never to a fresh adjudication of the finding by this reviewer. Reading another bot's comment and deciding for it how serious it *really* is puts words in its mouth, which Step 1.0 already forbids for the `ask` text. An undecorated or unparseable ask is read as **non-blocking**, the same way an unreadable thread state is read as not-open: the reviewer never manufactures a severity it cannot evidence. If that ask is in fact serious, this run's own review pass finds it and files it under Gate 6, where it blocks on this reviewer's own evidence.
+
+The overall verdict is **FAIL** when Gate 2 (CI), Gate 4, or Gate 5 fails **or** the Prior bot feedback or Code review gate is ❌; otherwise **PASS** (with the Description vs. code, Prior bot feedback, and Code review rows each showing ✅ or ⚠️). Gate 2 (CI) feeds this verdict but is surfaced in GitHub's checks section, not as a table row and not in `FAILING_GATE_COUNT` (criterion 2); the PASS/WARN/FAIL **table** presentation in Steps 3–4 is therefore chosen from the review gates (3, 4, 5, Description vs. code, and Code review) only.
 
 `--skip-gates` bypasses Gates 1–5 and runs only the inline review pass (Gate 6).
 Those gates then render `⏭️` in every gate table, with the Details cell holding the carried prior text plus its `(carried from …)` suffix when Step 2.5c dispositioned the row `CARRY`, and `not evaluated this run` otherwise.
@@ -278,7 +302,7 @@ every rule below means by "the prior report".
 - Set `STICKY_COMMENT_ID = ""`, `PRIOR_VERDICT = ""`, `PRIOR_OPEN_THREAD_IDS = []`, and
   `PRIOR_BLOCKING_FINGERPRINTS = []`.
 - Set `RESOLVED_SINCE_PRIOR = 0`. It is otherwise assigned only in Step 2.9c, which is skipped on a
-  first pass — yet three render sites read it unconditionally, and a first-pass run with Gate 3 ❌
+  first pass — yet three render sites read it unconditionally, and a first-pass run with Gate 3 ⚠️ or ❌
   (other bots' threads open, which is common) reaches the checklist with nothing bound. `0`
   suppresses the counter everywhere, which is the correct reading: nothing has been resolved since
   a prior report that does not exist.
@@ -476,16 +500,31 @@ While fetching, **also identify open unresolved bot-authored comments** for Gate
   `isResolved == false`. Every comment whose state was unavailable or unpaged is counted
   separately and reported as `thread state unavailable — <N> comment(s) unverified` in
   Gate 3's Details cell.
-- For each stored entry, capture three fields so Gate 3 can render an actionable, linkable
-  checklist (see *Gate 3* and `UNRESOLVED_THREADS_SECTION`): `path:line` (the anchor), `url`
+- For each stored entry, capture five fields — three so Gate 3 can render an actionable, linkable
+  checklist (see *Gate 3* and `UNRESOLVED_THREADS_SECTION`), two so it can grade the gate:
+  `path:line` (the anchor), `url`
   (the comment's `html_url` permalink from `/tmp/prior-comments.json`), and `ask` — the comment's
   own lead line, **truncated, not paraphrased**: take its first sentence (or its `suggestion:` /
   `issue:` conventional-comment line), strip noise like `(non-blocking)`, and cut to ~12 words with
   a trailing `…` if longer. Using the thread's own words — never the reviewer's summary of another
   bot — means the author reads here exactly what they'll meet when they click through, and the
   reviewer never puts words in another bot's mouth. Only the root comment of each thread needs an
-  entry; skip reply comments (`in_reply_to_id` set).
-- If `OPEN_BOT_COMMENTS[]` is empty, Gate 3 passes.
+  entry; skip reply comments (`in_reply_to_id` set) — but see `answered` below, which is read
+  from their existence.
+- Also capture the two grading fields Gate 3's tri-state consumes (*Gate states*):
+  - `blocking` — true only when the comment carries an explicit blocking decoration of its own: a
+    `(blocking)` marker, an `issue:` conventional-comment prefix, or an equivalent severity label
+    the authoring bot supplied. **Read this off the raw comment body before the `ask` truncation
+    strips `(non-blocking)`** — that strip is cosmetic and would otherwise destroy the very signal
+    the gate grades on. Anything undecorated or unparseable is `false`; never infer severity by
+    reading the code the comment points at (*Gate states*).
+  - `answered` — true when the thread has at least one comment with `in_reply_to_id` pointing at
+    the root, by any author, or when Step 2.9c classified the thread `declined` / `acknowledged`
+    and its resolve mutation failed. The reply's *wording* is never parsed: a reply is engagement
+    whatever it says, and the prose test this gate already rejects for resolution
+    (`prior-comment-awareness.md § Thread state`) is no better at judging engagement.
+- If `OPEN_BOT_COMMENTS[]` is empty, Gate 3 passes (✅). A non-empty set is graded ⚠️ or ❌ from
+  `blocking` and `answered` at Step 1.8.
 
 Also load **comment-relevance memories** and **reviewer-lessons** via a narrow-to-broad fan-out.
 **This read is a mandatory attempt.**
@@ -928,12 +967,27 @@ own lead line** `- [\`<path>:<line>\`](<url>) — <ask>` using the three fields 
 (`path:line`, `url`, `ask`). This is what makes the gate actionable: the author clicks straight
 through to each thread and reads in one line what it wants — instead of a bare `path:line` they
 have to hunt for.
-When Gate 3 fails, this same list is surfaced **outside** the accordion via
-`UNRESOLVED_THREADS_SECTION` (below) so it is visible in the collapsed review; the accordion's
-Gate 3 Details cell then stays terse — `<N> unresolved bot thread(s) — see "To unblock" above`.
-Result: PASS or FAIL with finding text.
+Whenever any thread is open — on ⚠️ as well as ❌ — this same list is surfaced **outside** the
+accordion via `UNRESOLVED_THREADS_SECTION` (below) so it is visible in the collapsed review; the
+accordion's Gate 3 Details cell then stays terse — `<N> unresolved bot thread(s) — see the thread list
+above`.
 
-Two rules keep this gate honest:
+Result: PASS (✅), WARN (⚠️), or FAIL (❌), graded from the `blocking` and `answered` fields
+captured in Step 1.0 (*Gate states*):
+
+- ✅ — `OPEN_BOT_COMMENTS[]` is empty.
+- ❌ — at least one entry has `blocking == true` **and** `answered == false`.
+- ⚠️ — otherwise: threads are open, but every one of them is non-blocking, already answered, or
+  both.
+
+Grading by severity is what stops this gate failing a PR for work that is already done or was
+never required — a `nitpick:` nobody clicked Resolve on, a suggestion declined on-thread with a
+rationale, a finding fixed in a later commit whose thread this run had no permission to resolve.
+None of those give the author anything to fix, which is the same test the *unknown thread* rule
+below already applies. What ⚠️ does not do is hide them: the checklist renders identically, and
+the WARN headline names the gate.
+
+Three rules keep this gate honest:
 
 - **A resolved thread never fails this gate**, regardless of who resolved it or how the
   reply was worded. A fixer that addresses a finding and resolves its thread has resolved
@@ -942,8 +996,13 @@ Two rules keep this gate honest:
   thread map is incomplete (`hasNextPage` could not be paged), the affected comments are
   **not** admitted to `OPEN_BOT_COMMENTS[]`; the gate keeps its ✅ and its Details carry
   `thread state unavailable — <N> comment(s) unverified`. A tooling gap is not the PR's
-  fault, and failing on one gives the author nothing to fix. Gate 3 stays binary ✅ / ❌
-  (see *Gate states*) — this rule changes what enters the gate, not the gate's shape.
+  fault, and failing on one gives the author nothing to fix. This rule changes what enters
+  the gate; the ⚠️ / ❌ grading above decides what an entry that *did* get in is worth.
+- **Only an explicit blocking decoration reaches ❌.** Severity comes from the other bot's own
+  marker, never from this reviewer re-reading the code to decide how serious another bot's
+  finding really is (*Gate states*). An undecorated ask grades non-blocking. This is deliberately
+  lossy in the safe direction: a genuinely serious problem the other bot under-decorated is still
+  found by this run's own review pass and blocks under Gate 6, on evidence this reviewer owns.
 
 **Gate 4 — Self-review signals**
 This is a coarse safety net for the residue a careful author strips out before pushing — not a style or design review (Gate 6 owns those). It scans **only `+`-prefixed additions** for a fixed set of unambiguous "this was never self-reviewed" tells, which is exactly why it is green on almost every PR: a clean diff simply does not contain these artifacts, so the gate stays quiet and only trips when genuinely unfinished or debug material was committed. Treat a green result as "no smoking guns", not "the code is good".
@@ -1314,9 +1373,15 @@ Then update Gate 3's input:
 - Remove from `OPEN_BOT_COMMENTS[]` every entry whose `resolveReviewThread` mutation **actually
   succeeded**. A mutation that errored leaves the thread open on GitHub, so its entry stays in the
   set — the checklist must describe GitHub's state, not this agent's intent.
-- Re-evaluate Gate 3 from the updated set, exactly as Step 1.8 does. This is not a second, laxer
+- Re-evaluate Gate 3 from the updated set, exactly as Step 1.8 does — including the ⚠️ / ❌
+  grading, since removing the last *blocking unanswered* entry can downgrade ❌ to ⚠️ without
+  emptying the set. This is not a second, laxer
   gate: Gate 3's own rule is that *a resolved thread never fails this gate*, and these threads are
   now resolved. If the set is emptied, Gate 3 flips to ✅ and the verdict follows normally.
+  A thread this step classified `declined` or `acknowledged` whose resolve mutation **failed**
+  stays in the set, but Step 1.0's `answered` field is set true for it — GitHub still shows it
+  open, so the checklist must still list it, yet the ask has demonstrably been engaged with and
+  a failed mutation is this agent's problem, not the author's.
   **Except under `--skip-gates`**, where Step 1.8 never ran and Gate 3 is `⏭️`: update
   `OPEN_BOT_COMMENTS[]` and `RESOLVED_SINCE_PRIOR` as usual, but leave the gate `⏭️`. Re-evaluating
   it here would resurrect a gate the invocation explicitly turned off.
@@ -1340,7 +1405,7 @@ fixed enumeration with no slot for either counter; do not wedge them in there.
 Produce two views before posting: a summary with the gate table, then numbered detail cards.
 Always include the run mode and delta context in the header:
 
-Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 2/3/4/5 all ✅) and the Code review gate is not ❌, but at least one soft gate — Description vs. code or Code review — is ⚠️ (still a PASS verdict); **FAIL** when any of Gates 2/3/4/5 fails or the Code review gate is ❌.
+Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 2/4/5 all ✅) and neither tri-state gate — Prior bot feedback, Code review — is ❌, but at least one graded gate — Description vs. code, Prior bot feedback, or Code review — is ⚠️ (still a PASS verdict); **FAIL** when any of Gates 2/4/5 fails or the Prior bot feedback or Code review gate is ❌.
 
 On PASS — all clear (every gate ✅):
 
@@ -1368,7 +1433,7 @@ On PASS — all clear (every gate ✅):
 [rest of sections follow]
 ```
 
-On WARN — soft warnings only (hard Gates 2/3/4/5 ✅, at least one of Description vs. code / Code review is ⚠️, none ❌):
+On WARN — soft warnings only (hard Gates 2/4/5 ✅, at least one of Description vs. code / Prior bot feedback / Code review is ⚠️, none ❌):
 
 ```markdown
 ## PR Review — PR #<n> (<repo>)
@@ -1384,7 +1449,7 @@ On WARN — soft warnings only (hard Gates 2/3/4/5 ✅, at least one of Descript
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ✅ or ⚠️ | mismatch text or empty |
-| Prior bot feedback   | ✅ | empty |
+| Prior bot feedback   | ✅ or ⚠️ | open-thread count or empty |
 | Documentation        | ✅ | empty |
 | Self-review signals  | ✅ | empty |
 | Code review          | ✅ or ⚠️ | "See inline comments" or finding text or empty |
@@ -1394,7 +1459,7 @@ On WARN — soft warnings only (hard Gates 2/3/4/5 ✅, at least one of Descript
 [rest of sections follow]
 ```
 
-On FAIL (any of Gates 2/3/4/5 fails, or Code review is ❌):
+On FAIL (any of Gates 2/4/5 fails, or Prior bot feedback / Code review is ❌):
 
 ```markdown
 ## PR Review — PR #<n> (<repo>)
@@ -1410,7 +1475,7 @@ On FAIL (any of Gates 2/3/4/5 fails, or Code review is ❌):
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ✅ or ⚠️ | mismatch text (max 120 chars) or empty |
-| Prior bot feedback   | ✅ or ❌ | finding text or empty |
+| Prior bot feedback   | ✅, ⚠️, or ❌ | finding text or empty |
 | Documentation        | ✅ or ❌ | finding text or empty |
 | Self-review signals  | ✅ or ❌ | finding text or empty |
 | Code review          | ✅, ⚠️, or ❌ | "See inline comments" or finding text or empty |
@@ -1692,7 +1757,7 @@ The `<sup>` footer depends on run mode (substituted before posting):
 - `incremental` / `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
 - Zero-delta short-circuit: `<sup>No code changes since \`PRIOR_SHA_SHORT\` — gate checks only for commit \`HEAD_SHA\`.</sup>`
 
-Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (all clear), **WARN** (hard Gates 2/3/4/5 ✅ and at least one soft gate — Description vs. code or Code review — is ⚠️, none ❌; still a PASS verdict), or **FAIL** (any of Gates 2/3/4/5 fails, or Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
+Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (all clear), **WARN** (hard Gates 2/4/5 ✅ and at least one graded gate — Description vs. code, Prior bot feedback, or Code review — is ⚠️, none ❌; still a PASS verdict), or **FAIL** (any of Gates 2/4/5 fails, or Prior bot feedback / Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
 
 **On PASS** — all clear (every gate ✅):
 
@@ -1756,12 +1821,14 @@ base is preserved (nothing blocking or inline survived), so the reader learns ad
 without the headline overstating cleanliness. When `CADV == 0` the headline stays exactly
 `✅ Reviewed your changes — no issues found.`
 
-**On WARN** — soft warnings only (hard Gates 2/3/4/5 ✅, at least one of Description vs. code / Code review is ⚠️, none ❌):
+**On WARN** — soft warnings only (hard Gates 2/4/5 ✅, at least one of Description vs. code / Prior bot feedback / Code review is ⚠️, none ❌):
 
 ```markdown
 <!-- PR_REVIEWER_REPORT -->
 PARTIAL_REVIEW_BANNER
 Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>.
+
+UNRESOLVED_THREADS_SECTION
 
 OPTIMALITY_SECTION
 
@@ -1777,7 +1844,7 @@ LOW_CONFIDENCE_SECTION
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ✅ or ⚠️ | static description (on ✅) or mismatch text |
-| Prior bot feedback   | ✅ | Earlier automated review comments are resolved. |
+| Prior bot feedback   | ✅ or ⚠️ | static description (on ✅) or `<N> unresolved bot thread(s) — see the thread list above` |
 | Documentation        | ✅ | The change is documented well enough to follow. |
 | Self-review signals  | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
 | Code review          | ✅ or ⚠️ | static description (on ✅) or "See inline comments" or finding text |
@@ -1803,7 +1870,7 @@ MEMORIES_SECTION
 </details>
 ```
 
-**On FAIL** (any of Gates 2/3/4/5 fails, or Code review is ❌):
+**On FAIL** (any of Gates 2/4/5 fails, or Prior bot feedback / Code review is ❌):
 
 ```markdown
 <!-- PR_REVIEWER_REPORT -->
@@ -1826,7 +1893,7 @@ LOW_CONFIDENCE_SECTION
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ✅ or ⚠️ | static description (on ✅) or mismatch text (≤ 120 chars) |
-| Prior bot feedback   | ✅ or ❌ | static description (on ✅) or `<N> unresolved bot thread(s) — see "To unblock" above` (the linked checklist lives in `UNRESOLVED_THREADS_SECTION`, not this cell) |
+| Prior bot feedback   | ✅, ⚠️, or ❌ | static description (on ✅) or `<N> unresolved bot thread(s) — see the thread list above` (the linked checklist lives in `UNRESOLVED_THREADS_SECTION`, not this cell) |
 | Documentation        | ✅ or ❌ | static description (on ✅) or finding text |
 | Self-review signals  | ✅ or ❌ | static description (on ✅) or finding text |
 | Code review          | ✅, ⚠️, or ❌ | static description (on ✅) or "See inline comments" or finding text |
@@ -1878,7 +1945,7 @@ chars — if longer, keep the top two and append `; +<k> more`.
 
 | Gate | ❌ reason phrase (FAIL_REASONS) | ⚠️ note phrase (WARN_REASONS) |
 |---|---|---|
-| Prior bot feedback | `<N> unresolved bot review(s)` | — (this gate never warns) |
+| Prior bot feedback | `<K> unanswered blocking bot thread(s)` | `<N> open bot thread(s)` |
 | Documentation | `docs missing for <thing>` · `<N> doc gap(s)` | — |
 | Self-review signals | `debug logs left in` · `leftover TODO/stub` | — |
 | Code review | `<K> blocking finding(s) (see inline)` | `<N> non-blocking finding(s)` |
@@ -1901,25 +1968,41 @@ truncated run can never be read as a complete PASS.
 This is the only prose permitted outside the templates, and it is permitted because the stop
 condition requires it in both the terminal report and the review body.
 
-`UNRESOLVED_THREADS_SECTION` renders the Gate 3 unblock checklist **outside the accordion** so
+`UNRESOLVED_THREADS_SECTION` renders the Gate 3 open-thread checklist **outside the accordion** so
 it is visible in the collapsed review — the whole point is that a reader who only sees the
-headline (`Blocking: <N> unresolved bot review threads`) still learns *which* threads and *what
-each wants* without expanding anything, and can click straight to each one. Render it **only when
-Gate 3 (`Prior bot feedback`) is ❌**; omit the placeholder entirely otherwise (it never appears
-on a PASS/WARN, and never in the WARN template — Gate 3 failing always routes to the FAIL
-template). Substitute one entry per item in `OPEN_BOT_COMMENTS[]` **as it stands after Step 2.9c**
+headline still learns *which* threads and *what
+each wants* without expanding anything, and can click straight to each one. Render it **whenever
+Gate 3 (`Prior bot feedback`) is ⚠️ or ❌** — i.e. whenever `OPEN_BOT_COMMENTS[]` is non-empty —
+in the FAIL template *and* the WARN template alike; omit the placeholder entirely on ✅ and `⏭️`.
+Downgrading a non-blocking open thread to ⚠️ must not make it invisible: the verdict softens, the
+worklist does not shrink, so this section follows the open set rather than the verdict.
+Substitute one entry per item in `OPEN_BOT_COMMENTS[]` **as it stands after Step 2.9c**
 (order: same file grouped, then by line), using the `path:line`, `url`, and `ask` fields from
-Step 1.0:
+Step 1.0.
+
+The heading takes one of two forms, chosen by the gate's status — the only thing that varies with
+severity, because "to unblock" is a false instruction for threads that are not blocking anything:
 
 ```markdown
-**To unblock — resolve or reply to these <N> bot threads:** <sup><RESOLVED_SINCE_PRIOR> resolved since \`<PRIOR_REVIEW_SHA_SHORT>\`</sup>
+**To unblock — resolve or reply to these <N> bot threads (<K> blocking):** <sup><RESOLVED_SINCE_PRIOR> resolved since \`<PRIOR_REVIEW_SHA_SHORT>\`</sup>
 
 - [\`packages/cli/README.md:680\`](<url>) — bound \`LocalStore.search\` the way \`RemoteStore\` is
 - [\`packages/cli/src/install.mjs:291\`](<url>) — add the missing parity test for the event roster
 - [\`packages/cli/src/core/lessons.mjs:843\`](<url>) — cap \`LocalStore.search\` per-prompt walk
 ```
 
+On ⚠️ the same list renders under the neutral heading instead:
+
+```markdown
+**Open bot threads — <N> still open, none blocking:** <sup><RESOLVED_SINCE_PRIOR> resolved since \`<PRIOR_REVIEW_SHA_SHORT>\`</sup>
+```
+
 Rules for this section:
+- **The heading is the only severity-dependent part.** `<N>` is the full open count in both forms
+  and the bullet list always renders every open thread; only the framing changes. On ❌ use the
+  `To unblock` form, where `<K>` = the blocking unanswered threads — the subset that actually moves
+  the verdict. On ⚠️ use the `Open bot threads` form. Never render `none blocking` on a ❌, and
+  never drop a thread from the list because it is non-blocking.
 - **Every `path:line` is a Markdown link** to the thread's `html_url`, with the truncated `ask`
   after an em-dash. If an item's `url` is missing (older fetch, or the permalink could not be read),
   render its `path:line` as inline code with no link rather than a broken link, and keep the `ask`.
@@ -1929,7 +2012,8 @@ Rules for this section:
 - **Plain bullets, not task-list checkboxes.** The list is machine-owned: it is regenerated from
   `isResolved` on every run, so a `- [ ]` box would offer a control whose tick means nothing
   (`isResolved` is the authority — `prior-comment-awareness.md § Thread state`), gets overwritten by
-  the next patch, and would contradict Gate 3's ❌ while it survived. Do not reintroduce checkboxes.
+  the next patch, and would contradict Gate 3's ❌ or ⚠️ while it survived. Do not reintroduce
+  checkboxes.
 - **`RESOLVED_SINCE_PRIOR` reports progress instead of the list carrying it.** Render the `<sup>`
   clause only when `RESOLVED_SINCE_PRIOR > 0`; omit it entirely otherwise (never `0 resolved`).
   Use the singular `thread` at exactly 1. When Gate 3 is ✅ this whole section is omitted, so the
@@ -2077,6 +2161,10 @@ Rules for table cells:
     unread thread map is the more important thing to say.
 - When a gate WARNS (⚠️) or FAILS (❌), its Details cell shows the specific finding text (max 120
   chars — truncate; the full finding lives in the inline comment), exactly as before.
+  Gate 3 is the one exception in both non-passing states: its cell stays terse —
+  `<N> unresolved bot thread(s) — see the thread list above` — because the finding text is the
+  linked checklist, which lives in `UNRESOLVED_THREADS_SECTION` and would not survive the 120-char
+  cap. The pointer wording is the same on ⚠️ and ❌; only the section's heading differs.
 - `⏭️` is a valid Status value in **every** body variant — PASS, WARN, and FAIL — in addition to the
   values each variant's table shows. It appears only under `--skip-gates`, for Gates 1 / 3 / 4 / 5,
   and its Details cell holds the carried prior text plus its `(carried from …)` suffix when Step 2.5c
@@ -2098,9 +2186,9 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   `conventional-comments.md` (Step 2.9) — NOT the `issue:` prefix count, since a non-blocking
   `issue:` is not blocking (see *Gate states*).
   These reuse the Quality-line values already computed at Step 2.9b — no separate counter.
-- `WARN_GATE_COUNT` = the number of gates showing ⚠️ in this run — Description vs. code and/or
-  Code review, so 0, 1, or 2. It counts ⚠️ gates on a **FAIL** run too, not only a WARN run, so the
-  FAIL `SEVERITY_TALLY` can report warnings alongside errors.
+- `WARN_GATE_COUNT` = the number of gates showing ⚠️ in this run — Description vs. code, Prior bot
+  feedback, and/or Code review, so 0 to 3. It counts ⚠️ gates on a **FAIL** run too, not only a
+  WARN run, so the FAIL `SEVERITY_TALLY` can report warnings alongside errors.
   The top-level WARN headline leads with `WARN_GATE_COUNT`, not the finding count `N`, so it reads
   correctly even when there are zero inline findings (a Description-vs-code-only warning).
   `WARN_GATE_COUNT` does not appear in the accordion gate table, which renders per-gate ✅/⚠️ marks

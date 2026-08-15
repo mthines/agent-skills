@@ -17,7 +17,8 @@ A `pr-reviewer` run produces one consolidated report. Its inline comments are ad
 lives*):
 
 - gate findings, which have **no inline anchor by design** — a `❌` on *Prior bot feedback*,
-  *Documentation*, or *Self-review signals* exists only as a row in the gate-status table;
+  *Documentation*, or *Self-review signals* (or a `⚠️` on the tri-state *Prior bot feedback*)
+  exists only as a row in the gate-status table;
 - optimality proposals (Step 2.4c), which are body cards and are **never** posted inline;
 - deferred findings (Step 2.9b), which cleared every quality gate but did not fit the inline caps.
 
@@ -114,10 +115,11 @@ The `Low-confidence findings` section holds `issue` / `suggestion` findings that
 
 A high-confidence optimality proposal (`optimality-review.md § Inline pointer`) may leave a short inline `suggestion:` pointer at the proposal's anchor. That pointer is a normal inline comment fetched from `pulls/<n>/comments`, not a body section — do not mine the `Optimality cards` block for it, and do not double-count the pointer against its card.
 
-### The unblock checklist is not a body section
+### The open-threads checklist is not a body section
 
-The `**To unblock — resolve or reply to these <N> bot threads:**` list (`pr-reviewer.md §
-UNRESOLVED_THREADS_SECTION`) is a presentational rendering of Gate 3 state, not an extractable section: it has no row in the table above, so the "match by literal heading" rule already skips it. Never mine its linked `path:line` bullets for findings — that would double-count the gate and re-ingest *other bots'* comments as `pr-reviewer`'s own.
+The `**To unblock — resolve or reply to these <N> bot threads (<K> blocking):**` list — and its
+⚠️-state twin `**Open bot threads — <N> still open, none blocking:**` (`pr-reviewer.md §
+UNRESOLVED_THREADS_SECTION`) — is a presentational rendering of Gate 3 state, not an extractable section: neither heading has a row in the table above, so the "match by literal heading" rule already skips both. Never mine its linked `path:line` bullets for findings — that would double-count the gate and re-ingest *other bots'* comments as `pr-reviewer`'s own.
 
 The list is **derived, not durable**: it is regenerated from live `isResolved` state on every run and
 rendered as plain bullets, with resolved entries removed rather than ticked. A consumer must not
