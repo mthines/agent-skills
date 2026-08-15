@@ -90,14 +90,14 @@ done
 # `complete` persists THREADS_COMPLETE into the file. An aborted walk leaves the pages
 # file empty, so without this flag the merged result `{nodes: []}` is indistinguishable
 # from a PR that genuinely has no threads — and THREADS_COMPLETE is a shell variable that
-# does not survive to Step 4.5, which reads only the file.
+# does not survive to Step 2.9c, which reads only the file.
 jq -s --argjson complete "$THREADS_COMPLETE" \
   '{complete: $complete, nodes: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' \
   /tmp/review-thread-pages.json > /tmp/review-threads.json
 ```
 
 `THREADS_COMPLETE=false` means the walk stopped early, and it is persisted as `"complete": false` in `/tmp/review-threads.json`.
-Every reader — this rule's checks and `thread-resolution.md` at Step 4.5 alike — must treat a map with `complete: false` as **incomplete** per *Pagination guard* below, never as "no more threads".
+Every reader — this rule's checks and `thread-resolution.md` at Step 2.9c alike — must treat a map with `complete: false` as **incomplete** per *Pagination guard* below, never as "no more threads".
 
 Store `BOT_COMMENTS`, `/tmp/prior-comments.json` and `/tmp/review-threads.json` for use in the thread-state, dedup and anti-flip-flop checks below.
 
@@ -107,7 +107,7 @@ Store `BOT_COMMENTS`, `/tmp/prior-comments.json` and `/tmp/review-threads.json` 
 
 A review thread's `isResolved` flag is the **authoritative** signal that a comment has been dealt with. Read it; never infer resolution from the prose of a reply.
 
-The query above is the same one `thread-resolution.md § Resolve the thread` runs at Step 4.5 and the same one `implement-suggestion` runs at its Phase 2. On a re-review the call moves earlier rather than being added — Step 4.5 reuses `/tmp/review-threads.json` instead of re-querying.
+The query above is the same one `thread-resolution.md § Resolve the thread` runs at Step 2.9c and the same one `implement-suggestion` runs at its Phase 2. On a re-review the call moves earlier rather than being added — Step 2.9c reuses `/tmp/review-threads.json` instead of re-querying.
 
 From the result build:
 
@@ -213,7 +213,7 @@ The finding may be surfaced in the terminal output for human review, but it is n
 
 When this rule executes inside a sub-agent (e.g., a review dispatched by an orchestrator), the sub-agent does NOT receive the SessionStart memory-load priming that the main session gets.
 The sub-agent MUST therefore perform the Step 1.0 memory read itself — never assume the relevance and lesson memories were pre-loaded.
-The companion relevance-memory read (see `comment-relevance-memory.md § Read`) is a mandatory real `mcp__lorekit__memory_list` tool call; treat a thrown tool error as "not connected" for this run, but never infer disconnection without attempting the call.
+The companion relevance-memory read (see `comment-relevance-memory.md § Read`) is a mandatory real `mcp__lorekit__memory_list` tool call. Never infer disconnection without attempting the call, and never off a single transient throw: retry a thrown error up to 2 more times (3 attempts total) with a short backoff before treating the backend as not connected, exactly as `comment-relevance-memory.md § Read` and `pr-reviewer.md § Step 1.0` prescribe. A hard "tool unavailable" error is the one exception and is terminal immediately.
 
 ---
 
@@ -237,7 +237,7 @@ Carry-forward closes that hole.
 
 Run this immediately after the prior-comment fetch, in every mode:
 
-1. Read the prior review body (the `<!-- PR_REVIEWER_REPORT -->` comment already fetched above) and parse its `Additional findings` section.
+1. Read the prior report body (`PRIOR_BODY` — the sticky comment, or a legacy review body, already fetched at Step 0.7) and parse its `Additional findings` section.
 2. Re-admit each parsed entry into the current run's finding stream, tagged `carried-forward`, with its recorded confidence score.
 3. Drop a carried entry when **any** holds:
    - Its `(file, line)` no longer exists in the current PR state, or the line's content changed since the review that deferred it (the finding was likely addressed).
@@ -306,6 +306,6 @@ All four are emitted even when N = 0, M = 0, K = 0, C = 0, and R = 0, so the use
 ## What this rule does not do
 
 - Re-run outcome measurement — that is `outcome-learning.md`.
-- Change how the review is posted — `pr-reviewer` posts one visible `COMMENT` review at Step 4 unconditionally, with no authorization gate.
+- Change how the review is posted — `pr-reviewer` Step 4 rewrites the sticky report unconditionally and posts a visible `COMMENT` review under Step 4b's conditions, with no authorization gate.
 - Apply when no PR exists yet (no prior GitHub state to reconcile).
 - Drop a finding because an author *challenged* (not accepted) a prior finding — disagreement does not prevent re-flagging; outcomes do.

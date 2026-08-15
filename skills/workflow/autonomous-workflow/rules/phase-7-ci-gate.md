@@ -47,13 +47,53 @@ Gate: CI green OR user-approved stop. Worktree cleanup is optional and never aut
 
 After Phase 6, you should already have the PR URL and number. Start watching:
 
-```bash
-# Watch all checks on the PR until they all complete
-gh pr checks <pr-number> --watch
+**Ask CI what it is doing before watching it.** `create-pr` Step 7 already watched these checks, and the background `implement-suggestion --watch` and any `ci-auto-fix` subagents may have pushed since. Rather than inheriting a budget or a recorded verdict from those runs — which would be a claim about *some* commit, not necessarily the current head — make one cheap, stateless query:
 
-# Or watch a single workflow run by id
-gh run watch <run-id>
+```bash
+# No --watch: returns immediately with the state of the CURRENT head.
+gh pr checks <pr-number>
 ```
+
+| What it reports | Phase 7 Step 1 does |
+| --------------- | ------------------- |
+| All checks terminal and passing | **Skip the watch** — go to Step 4 (report success). If the repo uses `workflow_run`-triggered checks, a merge queue, or re-run-on-comment, re-query once before reporting: a check can report terminal and then re-run |
+| All terminal, some failing | **Skip the watch** — go to Step 2 (triage) |
+| Any still pending | Watch, bounded, per the block below |
+| Nothing, **and the query errored** (exit 127, or stderr naming auth / network / rate limit / not-logged-in) | **Tooling failure, not "no CI".** Report it and escalate. An error prints to stderr and nothing to stdout, so it is indistinguishable from "no checks" unless you look |
+| Nothing, query succeeded, **and Phase 6 just pushed** | **Not registered yet, not "no CI".** Run the shared [registration poll](../../../delivery/create-pr/rules/registration-poll.md#the-poll), then map its outcome with the table below. Registration takes seconds, and Phase 7 runs immediately after a push |
+
+**"No checks reported" is three different states**, and collapsing them into success is how a green report gets written for a PR whose CI was never observed.
+
+The poll is a [shared rule with one owner](../../../delivery/create-pr/rules/registration-poll.md) — call it, never restate it. Map its [caller-neutral outcomes](../../../delivery/create-pr/rules/registration-poll.md#outcomes-caller-neutral) onto this phase:
+
+| Poll outcome | Phase 7 does |
+| ------------ | ------------ |
+| `registered` | **Re-read the Step 1 table above** — checks now exist, so it can classify them. Terminal ones skip the watch; pending ones fall through to the bounded block below |
+| `tooling-failure` | Report and escalate. Do **not** route to Auto Fix |
+| `no-ci` | Genuinely no CI on this repo — note it and treat as success |
+
+This replaces carrying watch state across the Phase 6 → Phase 7 boundary. A query is correct by construction at the current head; a remembered verdict is only correct until someone pushes, and several things in Phase 6/7 push in parallel.
+
+```bash
+# Watch all checks on the PR — one bounded attempt.
+# Issue this Bash call with the tool parameter timeout: 600000.
+# The tool's DEFAULT is 120000, which would kill the watch at 2 minutes and
+# leave the exit-code handling below unreachable.
+timeout 540 gh pr checks <pr-number> --watch
+
+# Or watch a single workflow run by id.
+# Same rule, restated rather than inherited: issue with tool timeout: 600000.
+timeout 540 gh run watch <run-id>
+```
+
+| Exit | Next |
+| ---- | ---- |
+| 0 | All checks succeeded — go to Step 4 |
+| 124 | Still running — watch again, **at most 4 attempts total** (≈ 36 min), counted within this phase. Then run `gh pr checks <pr-number>` once, report the pending checks, and escalate |
+| 127, or stderr matching `command not found` / `could not resolve` / `authentication` / `rate limit` | **Tooling failure, not a CI failure** — `timeout` is absent on stock macOS (use `gtimeout`). Report the command failure; do **not** route to Auto Fix |
+| Any other non-zero | A check genuinely failed — go to Step 2 |
+
+**No budget is shared with `create-pr` or with any subagent.** Each counts its own attempts inside its own invocation. Phase 7 may therefore re-watch checks `create-pr` already watched — that costs time, never correctness, and the stateless query above makes it rare. An earlier design threaded a counter through a state file across both phases and the `ci-auto-fix` fan-out; it produced racing writers, a counter that could be read before it was written, and a skip that could report an unobserved commit as green. Do not reintroduce it.
 
 | Outcome             | Next step                                                              |
 | ------------------- | ---------------------------------------------------------------------- |
@@ -134,7 +174,17 @@ prompt: |
 
   Follow the ci-auto-fix skill's instructions. Apply the minimal fix, commit,
   push, and watch until CI completes. Honor its guardrails — no --no-verify,
-  no continue-on-error, no disabling checks.
+  no continue-on-error, no disabling checks. Bound your own watch using the caps
+  in your own skill — do not take a number from this prompt; you have no shared
+  budget with this phase and write no shared state.
+
+  Return only:
+  - outcome: green | escalated | regression-reverted | max-iterations
+    (ci-auto-fix's own Phase 9 Outcome values, verbatim — do not translate them.
+     `regression-reverted` is safety-relevant: it means your fix made CI worse and
+     was rolled back. It must reach the caller intact, not flattened into a failure.)
+  - what_was_fixed: one line
+  - remaining_error: one short paragraph if still red, else empty
 
   Sub-Agent Resource Discipline: use scoped commands only — narrow
   tsc/eslint/jest to the files/paths you touched. Do NOT run

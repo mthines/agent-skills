@@ -35,14 +35,14 @@ still open.
 
 This rule is **`pr-reviewer`-only.** Resolving a GitHub thread is a write to
 GitHub, and `pr-reviewer` is the review agent that writes to GitHub.
-In both relations it posts a single visible `COMMENT` review at Step 4
-(`REVIEW_RELATION` only adjusts the framing tone), so thread resolution applies
-to both relations on a re-review pass. The relevance signal from threads that were not resolved here
+In both relations it rewrites the sticky report and, when Step 4b's conditions are
+met, posts a single visible `COMMENT` review (`REVIEW_RELATION` only adjusts the
+framing tone), so thread resolution applies to both relations on a re-review pass. The relevance signal from threads that were not resolved here
 comes from the post-merge path (`outcome-learning.md`) and the GitHub Action instead.
 
 | Agent | When | Gate |
 | --- | --- | --- |
-| `pr-reviewer` | On every re-review (a prior `<!-- PR_REVIEWER_REPORT -->` review exists — `PRIOR_REVIEW` non-empty in Step 0.7) | Resolution + write always run; posting the new review is unaffected |
+| `pr-reviewer` | Step 2.9c, on every re-review (a prior `<!-- PR_REVIEWER_REPORT -->` report exists — `PRIOR_REVIEW` non-empty in Step 0.7) | Resolution + write always run; a failure here never blocks the review |
 
 It **never** runs on a first-pass review (no prior threads to reconcile).
 
@@ -92,10 +92,9 @@ comment to its thread first. All calls go through `gh api` (Bash) — no new too
 pagination walk. Read that file instead of re-querying.
 Re-run step 1 below in exactly two cases: the file is absent (the Step 1.0 fetch never ran),
 or its `complete` field is `false` (the Step 1.0 walk stopped early).
-Posting the review at Step 4 is **not** a re-fetch trigger.
-The only threads the Step 1.0 snapshot can be missing are the ones this run's own review just
-created, and those are never resolution candidates here — step 2 below reconciles only threads
-whose root comment is a **prior** comment.
+Running at Step 2.9c, this run's own review has not been posted yet, so the snapshot cannot be
+missing anything relevant: step 2 below reconciles only threads whose root comment is a **prior**
+comment.
 That is what makes this a call moved earlier rather than a call added.
 Re-resolving a thread this run already resolved is a safe no-op either way.
 
@@ -144,7 +143,7 @@ done
 # `complete` persists THREADS_COMPLETE into the file. An aborted walk leaves the pages
 # file empty, so without this flag the merged result `{nodes: []}` is indistinguishable
 # from a PR that genuinely has no threads — and THREADS_COMPLETE is a shell variable that
-# does not survive to Step 4.5, which reads only the file.
+# does not survive to Step 2.9c, which reads only the file.
 jq -s --argjson complete "$THREADS_COMPLETE" \
   '{complete: $complete, nodes: [.[].data.repository.pullRequest.reviewThreads.nodes[]]}' \
   /tmp/review-thread-pages.json > /tmp/review-threads.json
@@ -216,12 +215,34 @@ so `seen_count` increments). A prior write from the GitHub Action or
 
 ## Ordering
 
-Run this **after** the new review is posted (`pr-reviewer` Step 4, in both
-relations), so a failure here can never block the review itself, and so
-the current run's findings — needed to decide `persisting` vs `fixed` — are
-final. The sequence per re-review is: fetch prior comments
-(`prior-comment-awareness.md`) → produce and post the new review → reconcile prior
-threads (this rule).
+Run this at **`pr-reviewer` Step 2.9c** — after 2.9b (the current run's findings are
+final, which is what `persisting` vs `fixed` needs) and **before** Step 3's verdict
+and Step 4's posting.
+
+The sequence per re-review is: fetch prior comments (`prior-comment-awareness.md`) →
+produce findings → **reconcile prior threads (this rule)** → verdict → post.
+
+**Why before posting, not after.** Gate 3 and the unblock checklist
+(`pr-reviewer.md § UNRESOLVED_THREADS_SECTION`) are rendered from `OPEN_BOT_COMMENTS[]`.
+Resolving threads after that rendering publishes a checklist naming threads the same run
+closed moments later, so the author reads a worklist that was already stale when it was
+written and only sees the truth one review later. Reconciling first removes the lag.
+
+**Failure is never fatal, and never blocks.** The property that made "run it last" attractive
+is preserved explicitly instead of positionally: any error here — a GraphQL failure, an
+incomplete thread map, LoreKit unavailable — is logged, and the run continues with the
+**pre-reconciliation** `OPEN_BOT_COMMENTS[]` and Gate 3 status. This step may make a review
+more accurate; it may never stop one.
+
+**Only successful resolutions count.** Remove a comment from `OPEN_BOT_COMMENTS[]` only when its
+`resolveReviewThread` mutation actually succeeded. A mutation that errored leaves the thread open
+on GitHub, and the checklist must describe GitHub's state rather than this agent's intent.
+
+**Re-evaluating Gate 3 is not a laxer gate.** Gate 3's own rule is that *a resolved thread never
+fails this gate* (`pr-reviewer.md § Gate 3`). These threads are now resolved, so re-reading the
+gate against the updated set applies the existing rule to fresher input — it does not introduce a
+second, weaker standard. A `persisting` or `unaddressed` thread is never resolved, so it can never
+be removed from the gate this way.
 
 ---
 
@@ -230,7 +251,11 @@ threads (this rule).
 - Resolve a thread whose finding still reproduces — `persisting` always stays open.
 - Touch a thread the agent did not author.
 - Post any new comment or reply — it only resolves threads and writes memory.
-- Change the posting authorization gate — the new review still posts under the
-  agent's normal contract; thread resolution is a separate, self-authored action.
+- Change the posting contract — the sticky is still rewritten and the review still
+  posts under Step 4's normal rules; thread resolution is a separate, self-authored action.
+- Block, delay, or fail a review. It runs before posting to keep Gate 3 honest, not to
+  gate it: on any error the run continues with the pre-reconciliation state.
+- Decide the verdict. It updates Gate 3's **input**; Step 1.8's rule and Step 3's verdict
+  logic are unchanged.
 - Replace the post-merge outcome sweep (`outcome-learning.md`) or the GitHub
   Action write path — it is an additional, earlier producer of the same signal.
