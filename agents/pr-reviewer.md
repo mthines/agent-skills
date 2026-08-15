@@ -1306,14 +1306,30 @@ closed seconds later. The author then reads a stale worklist and only sees the t
 review. Reconciling first removes that lag entirely.
 
 For each of **this agent's own** prior inline comments (`BOT_COMMENTS` from Step 1.0), classify it
-**fixed** / **declined** / **acknowledged** / **persisting** / **unaddressed**, resolve the threads
-for the first three, and write the relevance outcome — all per `thread-resolution.md`.
+**fixed** / **declined** / **acknowledged** / **obsolete** / **persisting** / **unaddressed**,
+resolve the threads for the first four, and write the relevance outcome — all per
+`thread-resolution.md`.
+
+**The open set must mean "pending".** A thread survives this step only if it is still live work.
+`obsolete` exists because a finding whose subject was deleted is none of fixed, declined or
+persisting — it stopped applying — and without it those threads accumulate forever.
+
+**Resolution uses whichever GitHub write path this run has** — `gh api graphql`, or a GitHub MCP
+resolve-thread tool if that is what is in the grant. When neither exists, set
+`RESOLUTION_UNAVAILABLE = true` and **still remove the resolvable threads from
+`OPEN_BOT_COMMENTS[]`** before the Gate 3 re-evaluation below. Posting and resolving do not fail
+together: a run can add threads through an app token while having no way to close them, and Gate 3
+then fails on a set no author action can shrink. Report the count.
 
 Then update Gate 3's input:
 
-- Remove from `OPEN_BOT_COMMENTS[]` every entry whose `resolveReviewThread` mutation **actually
-  succeeded**. A mutation that errored leaves the thread open on GitHub, so its entry stays in the
-  set — the checklist must describe GitHub's state, not this agent's intent.
+- Remove from `OPEN_BOT_COMMENTS[]` every entry whose resolve call **actually succeeded**. A call
+  that errored leaves the thread open on GitHub, so its entry stays in the set — the checklist must
+  describe GitHub's state, not this agent's intent.
+- **Except under `RESOLUTION_UNAVAILABLE`**, where no call was possible: remove every entry this run
+  classified `fixed` / `declined` / `acknowledged` / `obsolete` anyway. Those threads stay open on
+  GitHub and the report says so, but they must not block — the run has certified them done, and a
+  gate that cannot be cleared by any author action is worse than a gate that does not run.
 - Re-evaluate Gate 3 from the updated set, exactly as Step 1.8 does. This is not a second, laxer
   gate: Gate 3's own rule is that *a resolved thread never fails this gate*, and these threads are
   now resolved. If the set is emptied, Gate 3 flips to ✅ and the verdict follows normally.
@@ -1329,7 +1345,7 @@ unavailable — is logged and the run continues with the **pre-reconciliation** 
 and Gate 3 status. Moving this step earlier must not give it the power to stop a review; the review
 is what the author is waiting for.
 
-Log `Threads resolved: <F> fixed, <D> declined` and `Relevance memories written: <N>` in the Step 5
+Log `Threads resolved: <F> fixed, <D> declined, <O> obsolete` — plus `<U> resolvable but not closed (no resolve path)` when `RESOLUTION_UNAVAILABLE` — and `Relevance memories written: <N>` in the Step 5
 report — its `Include:` list is free-form and has room for them. Step 3's Quality Gate block is a
 fixed enumeration with no slot for either counter; do not wedge them in there.
 

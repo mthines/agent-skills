@@ -586,6 +586,21 @@ function checksInSync(plan, checks) {
     s.check("G24i2 the ignored-at-merge bullet excludes acknowledgements in its own condition",
       /- PR merged with thread open[^\n]*no acknowledgement/.test(crm2));
 
+    // (j) The open-thread set must mean "pending". Two contracts hold that invariant,
+    // and both were absent when a real PR accumulated 20 unclosable threads across six
+    // passes: an `obsolete` disposition for findings whose subject was deleted, and a
+    // resolve path that is not gh-only (posting and resolving do not fail together).
+    const tr2 = read("agents/shared/rules/thread-resolution.md");
+    const pca = read("agents/shared/rules/prior-comment-awareness.md");
+    s.check("G24j thread-resolution defines an obsolete disposition that resolves",
+      /^\|\s*\*\*obsolete\*\*.*\*\*Resolve\*\*/m.test(tr2));
+    s.check("G24k obsolete requires both isOutdated and non-reproduction",
+      /isOutdated/.test(tr2) && /re-produce the finding anywhere/i.test(tr2));
+    s.check("G24l the thread query captures isOutdated for both readers",
+      /isResolved isOutdated/.test(pca) && /isResolved isOutdated/.test(tr2));
+    s.check("G24m resolution is not specified as gh-only",
+      /RESOLUTION_UNAVAILABLE/.test(tr2) && /RESOLUTION_UNAVAILABLE/.test(read("agents/pr-reviewer.md")));
+
     // (g) Every WONT_FIX_RE alternative bounded, derived from the regex rather than a
     // named subset — an earlier version asserted three of four and missed the fourth.
     const reLine = (rec.match(/^const WONT_FIX_RE\s*=.*$/m) || [""])[0];

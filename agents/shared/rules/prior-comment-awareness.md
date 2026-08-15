@@ -61,7 +61,7 @@ THREADS_QUERY='
       pullRequest(number:$pr){
         reviewThreads(first:100, after:$cursor){
           pageInfo{ hasNextPage endCursor }
-          nodes{ id isResolved comments(first:100){ nodes{ databaseId } } }
+          nodes{ id isResolved isOutdated comments(first:100){ nodes{ databaseId } } }
         }
       }
     }
@@ -112,7 +112,12 @@ The query above is the same one `thread-resolution.md § Resolve the thread` run
 From the result build:
 
 1. `RESOLVED_THREAD_IDS: Set<string>` — every thread `id` with `isResolved == true`.
-2. `COMMENT_TO_THREAD: Map<databaseId, {threadId, isResolved}>` — every comment in every thread.
+2. `COMMENT_TO_THREAD: Map<databaseId, {threadId, isResolved, isOutdated}>` — every comment in every thread.
+
+`isOutdated` is true when the diff hunk the thread anchors to no longer exists at the current head.
+It is **not** a resolution signal on its own — a hunk also goes outdated when the author edits around
+a still-live finding — but paired with "the finding does not re-produce anywhere" it identifies a
+finding whose subject was deleted (`thread-resolution.md § \`obsolete\``).
 
 **Pagination guard.** `reviewThreads` caps at `first: 100` and `--paginate` does not work for GraphQL. When `pageInfo.hasNextPage` is true, page with `endCursor` until it is false. If paging cannot complete, treat the map as **incomplete** and say so in the run — an unseen thread must never be silently assumed unresolved, because that turns a resolved conversation into a gate failure.
 
