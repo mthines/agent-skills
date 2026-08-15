@@ -16,10 +16,16 @@ On a re-review — the commit-triggered second (third, …) pass over a PR the a
 already reviewed — the agent reconciles its **own** prior inline comments against
 the current state of the code, then does two things for each one:
 
-1. **Resolves the GitHub review thread** when the comment has been addressed or
-   explicitly declined, so a re-run cleans up after itself instead of leaving a
-   growing pile of stale open threads (the behaviour a human reviewer — and
-   Cursor's reviewer — is expected to have).
+1. **Resolves the GitHub review thread** when the comment has been addressed,
+   explicitly declined, or has stopped applying, so a re-run cleans up after itself
+   instead of leaving a growing pile of stale open threads (the behaviour a human
+   reviewer — and Cursor's reviewer — is expected to have).
+
+   **The open set must mean "pending".** A thread stays open if and only if it is
+   still live work. Anything else — fixed, declined, acknowledged, or obsolete —
+   gets closed on the next pass. A reader who cannot trust that invariant has to
+   re-read every open thread to find the ones that matter, which is the same cost
+   as having no thread state at all.
 2. **Writes the resolution outcome to LoreKit** (`reviewer-comment-relevance`,
    the per-repo Signal bucket), so the fixed / declined / ignored signal
    accumulates and future reviews on this repo get progressively less noisy.
@@ -71,19 +77,100 @@ the two differ, the predicate wins.
 | Status | Condition | Thread action | Memory write |
 | --- | --- | --- | --- |
 | **fixed** | The commented region changed after the comment was posted (a commit touched `(path, line ± 5)`) AND the current run does **not** re-produce a finding with the same fingerprint at/near that location. **Requires that this run re-scanned the region, and that no 2.5b dedup drop matches the thread** — see the two sections below. | **Resolve** | `relevant` / `fixed` |
-| **declined** | The author replied "won't fix" / "by design" / "intentional" / "n/a", or 👎-reacted the comment | **Resolve** | `not-relevant` / `wont-fix` |
-| **acknowledged** | The author replied "fixed" / "done" / "addressed" and the thread is on a line the delta touched | **Resolve** | `relevant` / `fixed` |
+| **declined** | The author replied with decline language — the model-readable list is in [`outcome-learning.md § What counts as an acknowledgement`](./outcome-learning.md) (`WONT_FIX_RE` is its deterministic counterpart, authoritative for the script), and a decline outranks an acknowledgement; do not restate the list here — or 👎-reacted the comment | **Resolve** | `not-relevant` / `wont-fix` |
+| **acknowledged** | The author replied with an acknowledgement — judge it per [`outcome-learning.md § What counts as an acknowledgement`](./outcome-learning.md), which is authoritative; do not restate its criteria here — and the thread is on a line the delta touched | **Resolve** | `relevant` / `fixed` |
+| **obsolete** | GitHub reports the thread `isOutdated` — the diff hunk it anchors to no longer exists — **and** the current run does not re-produce the finding anywhere. **Carries the same re-scan predicate and pre-dedup read as `fixed`** — see the sections below; without them this status is `fixed`'s vacuous-clause-2 bug with a different name. The subject went away; the finding was neither fixed nor declined, it stopped applying. | **Resolve** | none — see below |
 | **persisting** | The current run re-produces the same finding (the issue is still there) — read **before** Step 2.5b's prior-comment dedup, or off a matching dedup drop; see *`persisting` must be read before prior-comment dedup* | **Leave open** | none (the finding carries forward and stays posted) |
 | **unaddressed** | None of the above — the line is untouched, no reply, and the delta did not cover it (so the current pass could not re-confirm it); **also** every `fixed` candidate downgraded by the re-scan predicate, whose line *was* touched | **Leave open** | none — absence of a re-scan is not evidence of resolution |
 
-Three hard rules:
+Both rows defer rather than restate, and **decline outranks acknowledgement** on this path as on the
+post-merge one — that precedence is the one thing the deterministic and judgement paths are required
+to share (`outcome-learning.md § What counts as an acknowledgement`). The two may otherwise differ at
+the margin: they classify different evidence at different times, and neither is a specification of
+the other.
+
+Precedence is what must not drift. A reply this path treats as a decline and the other treats as an
+acknowledgement produces two opposite records on one fingerprint; a reply neither recognises simply
+falls to `unaddressed`, which is the safe direction.
+
+**Status precedence.** Evaluate in this order and take the first that matches:
+`declined` → `acknowledged` → `persisting` → `obsolete` → `fixed` → `unaddressed`.
+`persisting` outranks `obsolete` so a re-produced finding can never be closed as
+"the subject went away"; `unaddressed` is last and absorbs everything the predicates
+reject.
+
+Four hard rules:
 
 - **Only ever touch threads this agent authored.** Never resolve a human's or a
   different bot's thread. Match on `user.login == BOT_LOGIN`.
 - **Never resolve a `persisting` or `unaddressed` thread.** Resolving a thread
   whose issue is still live would hide a real finding — the exact failure this
   feature must not cause. When in doubt, leave it open.
-- **No re-scan, no `fixed`; a deduped re-production is `persisting`.** See the two sections below.
+- **No re-scan, no `fixed`; a deduped re-production is `persisting`.** See the sections below.
+- **Never resolve as `obsolete` a finding this run re-produced.** The anchor going away is
+  not the finding going away.
+
+### `obsolete` — the finding stopped applying
+
+`fixed`, `declined` and `acknowledged` all assert something about how the finding was
+*dealt with*. A fourth case has none of those and is not `unaddressed` either: the code
+the finding was about no longer exists, so the finding has no subject. Deleting a whole
+section, dropping a feature, or reverting a file all produce it.
+
+GitHub already computes this. A review thread carries `isOutdated` — true when the diff
+hunk it anchors to is gone from the current head. Add it to the Step 1.0 thread query
+(`prior-comment-awareness.md § fetch existing PR comment state`) alongside `isResolved`:
+
+```text
+nodes{ id isResolved isOutdated comments(first:100){ nodes{ databaseId } } }
+```
+
+**Both conjuncts are required.** `isOutdated` alone is not enough — a hunk can move
+because the author edited *around* a still-live finding, and GitHub marks that outdated
+too. So also require that the current run does not re-produce the finding **anywhere in
+the diff**, not merely at the old anchor. A finding that reappears at a new location is
+`persisting`; the code moved, the problem did not.
+
+**And conjunct 2 needs exactly the protections `fixed`'s does — it is the same clause.**
+*"The current run does not re-produce the finding"* is evidence only if the run looked,
+and only if the finding was not deleted from the set before it was read. Without both,
+`obsolete` reintroduces the bug the two sections below exist to close:
+
+- **Re-scan predicate.** Require `(path, line ± 5)` inside `REVIEW_DIFF` **and**
+  `path ∈ SCANNED_FILES`. On a zero-delta run Step 2 never executes, so **zero findings
+  are produced and conjunct 2 is satisfied by every thread** — every `isOutdated` thread
+  would resolve. That is the modal re-review, the shape `review-loop` produces on
+  convergence. The same hole exists for an out-of-delta region on an incremental run,
+  which is precisely the "author edited around a live finding" case this status was
+  written to exclude.
+- **Pre-dedup read.** Read conjunct 2 against the finding set **before** Step 2.5b's
+  prior-comment dedup, exactly as `persisting` is. Against the final set a deduped
+  re-production reads as "not re-produced anywhere", so a still-live finding whose
+  comment was deduped away resolves as `obsolete` on a full, fully-scanning run.
+
+When the predicate fails, classify `unaddressed` and leave the thread open — the same
+disposition `fixed` takes, for the same reason. A genuinely deleted subject almost always
+sits in `REVIEW_DIFF` on a full pass, so the strict form costs nearly nothing on the case
+this status is actually for.
+
+`obsolete` writes **no relevance record**. That is the point of the status: the outcome
+carries no signal about whether the finding was any good. It was never accepted and never
+declined — the question was withdrawn. Recording it as `fixed` would reward a detection
+nobody acted on; recording it as `not-relevant` would punish one nobody rejected.
+
+**Known gap — the Action can still write one.** `scripts/record-comment-relevance.mjs`
+fires on `pull_request_review_thread: resolved` and has no way to know *why* a thread was
+resolved: its region-touch branch matches (a deletion always touches the line) and its
+terminal branch is "resolved with none of the above ⇒ `relevant / fixed`". So in a repo
+running the `pr-relevance-memory` caller, resolving a thread as `obsolete` produces exactly
+the record this paragraph forbids. Latent here — the reusable workflow is still uncommitted
+— and real for consumers. Closing it needs the resolver to signal intent to the webhook
+(a marker reply, or a `resolution_method` the Action can read), which is a script change,
+not a doc change. The direction is noise-amplification rather than suppression, so it does
+not gate a merge; it is recorded so the next change to that script knows.
+
+Log it distinctly so a growing count is visible: `[thread] OBSOLETE <path>:<line> — anchor
+gone at <sha>, finding not re-produced`.
 
 ### `fixed` requires that this run re-scanned the region
 
@@ -144,6 +231,7 @@ author's own words rather than a scan:
 | Status | Evidence | Under a failed re-scan predicate |
 | --- | --- | --- |
 | `fixed` | This run's re-scan | → `unaddressed`; leave open |
+| `obsolete` | This run's re-scan (conjunct 2) | → `unaddressed`; leave open |
 | `persisting` | This run's re-scan (see below) | Cannot fire; the candidates it would have caught are now `unaddressed` |
 | `declined` | Author replied won't-fix / 👎-reacted | Resolve as normal |
 | `acknowledged` | Author replied "done" — **but see the delta conjunct below** | Resolve when its own condition holds |
@@ -206,7 +294,29 @@ Comments prefix and its one-line claim, never from `file:line`.
 
 GitHub review threads are resolved through the GraphQL `resolveReviewThread`
 mutation; the thread's node id is not on the REST comment object, so map from the
-comment to its thread first. All calls go through `gh api` (Bash) — no new tool.
+comment to its thread first.
+
+**Resolve your GitHub path first**, per
+[`github-access.md`](./github-access.md) — it owns the `gh` / MCP / neither decision and maps
+resolving a thread to `resolve_review_thread`. Do not restate that mapping here; the snippet below is
+the `gh` form.
+
+**What is specific to this step is what Gate 3 does when there is no path at all.** Posting and
+resolving do not fail together: a run can add threads through an app token while having no way to
+close them, so it accumulates threads on every pass and closes none. Observed on
+`mthines/agent-skills#116` — six passes, open-thread count 5 → 9 → 12 → 17 → 20, every report saying
+"this run does not resolve threads" and every listed finding already addressed by the diff.
+
+So when `github-access.md` resolves to **No path**, set `RESOLUTION_UNAVAILABLE = true`, log
+`[thread] resolution unavailable — <N> thread(s) classified resolvable but not closed`, and
+**exclude those threads from `OPEN_BOT_COMMENTS[]`** for the Gate 3 re-evaluation at Step 2.9c. The
+run has classified them `fixed` / `declined` / `acknowledged` / `obsolete`; failing the gate on
+threads it has itself certified as done makes the gate unclearable by any author action, which is
+strictly worse than not running it.
+
+This does **not** loosen `github-access.md § No path` rule 3 — never claim a thread was resolved when
+the call did not happen. The threads stay open on GitHub, the report says so, and the next run with a
+working path closes them. What changes is only that they stop blocking a gate they cannot clear.
 
 **Reuse the Step 1.0 fetch.** `prior-comment-awareness.md § Thread state` already wrote
 `/tmp/review-threads.json` at the start of the run, with the same query and a completed
@@ -235,7 +345,7 @@ THREADS_QUERY='
       pullRequest(number:$pr){
         reviewThreads(first:100, after:$cursor){
           pageInfo{ hasNextPage endCursor }
-          nodes{ id isResolved comments(first:100){ nodes{ databaseId } } }
+          nodes{ id isResolved isOutdated comments(first:100){ nodes{ databaseId } } }
         }
       }
     }
@@ -284,8 +394,9 @@ gh api graphql -f query='
 
 Resolution is **idempotent and non-fatal**: a thread already resolved is skipped,
 and a mutation error (permissions, a thread that vanished) is logged and never
-fails the review. Count resolutions in the Quality Gate summary as
-`Threads resolved: <fixed> fixed, <declined> declined`.
+fails the review. Report resolutions in the **Step 5** report (not the Step 3 Quality Gate block, which is a
+fixed enumeration with no slot) as `Threads resolved: <F> fixed, <D> declined, <A> acknowledged,
+<O> obsolete`.
 
 ---
 

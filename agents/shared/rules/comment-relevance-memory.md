@@ -36,9 +36,24 @@ The three resolution outcomes that carry signal:
 
 | Outcome | Signal | How to detect |
 | --- | --- | --- |
-| **Fixed** — author pushed a commit that addresses the comment | Comment was relevant; reinforce the detection class | `implement-suggestion` applied the comment (`verdict: applied`); or an author commit touches `(path, line ± 10)` after the comment **and** the thread is resolved or the author acknowledged it. A region touch with the thread still open is **indeterminate** — record nothing (`outcome-learning.md § Signal (c) requires corroboration`). |
-| **Won't fix** — author explicitly declines the comment | Comment was not relevant for this codebase; consider suppressing | Author replies "won't fix", "by design", "intentional", "not going to change", "nwf", "n/a"; or 👎 reaction from the author |
+| **Fixed** — author pushed a commit that addresses the comment | Comment was relevant; reinforce the detection class | `implement-suggestion` applied the comment (`verdict: applied`); or an author commit touches the commented region after the comment **and** the thread is resolved or the author acknowledged it. A region touch with the thread still open is **uncorroborated** — no record is written for it. |
+| **Won't fix** — author explicitly declines the comment | Comment was not relevant for this codebase; consider suppressing | Author reply matches `WONT_FIX_RE` (`scripts/record-comment-relevance.mjs`, authoritative — not restated here); or 👎 reaction from the author |
 | **Ignored at merge** — PR merges with the comment unresolved, no acknowledgement | Weak not-relevant signal; accumulate before suppressing | PR state transitions to `MERGED`; thread still open; no fix commit; no explicit decline |
+
+**Line tolerance is per-producer, and the differing values are not a mistake.** Three statements of
+it exist, and they are not all the same kind:
+
+| Statement | Value | Backed by |
+| --- | --- | --- |
+| GitHub Action | `± 10` | `hasFixCommit`, `scripts/record-comment-relevance.mjs` — real code |
+| Agent gh-api fallback | `± 5` | `outcome-learning.md § Step 4` — **prose**: the `# comment` states it; the `gh api` call extracts `{patch}` and compares nothing |
+| In-run reconciliation | `± 5` | `thread-resolution.md` and `prior-comment-awareness.md` — **prose only, no implementation** |
+
+Only row 1 is executable. Rows 2 and 3 are prose, agreeing with each other by authorship rather than
+derivation, and nothing would fail if either changed — so both are drift candidates, not just the
+third. Row 1 may legitimately differ from them: it measures a different run.
+
+Do not "reconcile" these to a single number without changing the corresponding implementation.
 
 ---
 
@@ -177,9 +192,14 @@ Each entry stored to LoreKit carries:
 }
 ```
 
-The `seen_count` field follows the standard UPDATE contract: every re-sighting
-of the same `fingerprint` with the same `relevance` direction increments
-`seen_count` by 1 and refreshes `expires`.
+The `seen_count` field follows the standard UPDATE contract in
+[`write-pipeline.md § Lesson-scope entries`](../../../skills/authoring/persistent-memory/rules/write-pipeline.md),
+which is unconditional and is not restated here. This bucket **overrides** it in one case and sits
+outside it in another — both stated here because the owning contract does not carve them out:
+
+- **Override:** a re-sighting in the **opposite** direction is a contradiction (below), not an increment. The owning contract would increment; this bucket does not.
+- **Outside it:** a case with no decidable direction produces **no record at all**, so there is no
+  UPDATE for the contract to apply to (`outcome-learning.md § Signal (c) requires corroboration`).
 Opposite-direction sightings (a previously "not-relevant" pattern that gets
 fixed in a later PR) are flagged as contradictions, not silently overwritten.
 
@@ -450,6 +470,11 @@ thread is resolved by construction and the corroboration
 ``outcome-learning.md § Signal (c) requires corroboration`` demands is present. The same region-touch
 test is **not** sound on the post-merge fallback path, which has no such guarantee.
 
+The same `WONT_FIX_RE` drift reaches **check 3** whenever the declined thread's region was also
+edited — and declines commonly arrive with nearby edits. Check 3 still satisfies the corroboration
+rule (resolved **and** touched), so it is sound as defined; but "sound" is not an exemption from the
+matcher drift below.
+
 **Check 4 is not signal (c) at all** and that argument does not reach it. There is no region touch,
 so resolution is the *sole* evidence rather than corroboration of anything. It is retained as
 pre-existing behaviour, but note what it infers over: `pr-reviewer` Step 2.9c resolves threads it
@@ -467,21 +492,36 @@ cannot account for otherwise.
 things, both REST-derivable:
 
 - A thread with a **won't-fix reply** (`WONT_FIX_RE`) — the decline is the record.
-- A thread with a **commit touching its region** since the comment. This skip is now load-bearing in
-  a way it was not before: such a thread is **indeterminate**, not "already captured". The region
-  was edited, so `ignored-at-merge` is a claim the evidence does not support; and the first trigger
-  (`thread-resolved`) never fired for it unless it was also resolved. Skipping it writes nothing,
-  which is the correct outcome — see
-  ``outcome-learning.md § Signal (c) requires corroboration``.
+- A thread with a **commit touching its region** since the comment, when the root comment has a
+  resolvable anchor (`path` non-empty and `line > 0`, `line` falling back to `original_line`).
+
+  This skip is load-bearing in a way it was not before: such a thread's outcome is **unknown**, not
+  "already captured". Its region was edited, so `ignored-at-merge` is a claim the evidence does not
+  support, and the first trigger (`thread-resolved`) never fired for it unless it was also resolved.
+  Skipping it writes nothing, which is the correct outcome
+  (``outcome-learning.md § Signal (c) requires corroboration``).
+
+  **A file-level comment is a different case and is not skipped.** It carries a `path` but no line
+  anchor (`line` and `original_line` both null), so the guard's `line > 0` clause fails, the touch
+  check never runs, and the thread is swept as `ignored-at-merge` however the author dealt with it.
+  Its outcome is unknown, but the sweep **does write** — execution falls past the guard and records
+  `weak-not-relevant / ignored-at-merge` with a `path:0` anchor, however the author dealt with it.
+  That is a directional record on undecidable evidence, and it is the one place the committed script
+  still does what the corroboration rule forbids. Tracked in the Known gap below; closing it is the
+  same script change.
 
 **Known gap — resolved-with-no-touch double-writes.** The sweep has **no resolved-state check**, and
 cannot get one from the endpoint it reads: the script fetches `/pulls/{n}/comments`, and GitHub does
 not expose thread resolution in the REST comments list (the script says so at its own skip block).
-So a thread that was **resolved with no region touch and no matching decline phrase** — precisely
-`thread-resolved` mode's check 4, the "human accepted" fallthrough — takes `relevant / fixed` from
-the first trigger and then `weak-not-relevant / ignored-at-merge` from this sweep, on the same
-fingerprint. Two opposite directional records for one thread; per § Contradiction handling they
-surface as a contradiction rather than resolving.
+So a thread resolved with **no region touch** is recorded twice, on the same fingerprint:
+
+- **Resolved with no matching decline phrase** — `thread-resolved` mode's check 4, the "human
+  accepted" fallthrough — takes `relevant / fixed` from the first trigger and then
+  `weak-not-relevant / ignored-at-merge` from this sweep. Two **opposite** directional records; per
+  § Relevance memory record schema they surface as a contradiction rather than resolving.
+- **Declined by a 👎 reaction rather than a reply** — check 1 — takes `not-relevant / wont-fix` and
+  is *also* swept, because the sweep inspects replies and never reactions. Same direction, so no
+  contradiction, but one event counts twice toward the `≥ 3` suppression bar.
 
 This predates the corroboration rule and is **not** fixed here. Closing it needs the same GraphQL
 `reviewThreads` query `outcome-learning.md § Step 3b` adds — a change to the committed script, not
@@ -530,7 +570,7 @@ comment thread:
 # Has the author or a team member explicitly declined?
 gh api repos/$REPO/pulls/$PR_NUMBER/comments \
   --jq ".[] | select(.in_reply_to_id == $COMMENT_ID) | .body" \
-| grep -iE "(won.?t fix|wont fix|by design|intentional|nwf|not going to|n/a)"
+| grep -iE "(won.?t fix|wont fix|by design|intentional|nwf|not going to|n/a|out of scope|as designed|working as intended)"
 ```
 
 If a decline phrase is found, override `relevance: not-relevant`, `resolution_method: wont-fix`
@@ -568,12 +608,42 @@ When the `outcome-learning.md` gh-api measurement step fires (post-merge via
 `/review-outcomes <pr>` or at the tail of `--watch`), also emit a
 comment-relevance memory for each measured comment:
 
-- Signal (c) — fix commit touches `(path, line ± 10)` **and** the thread is resolved, `implement-suggestion` recorded `verdict: applied`, or the author acknowledged → write `relevant / fixed`. A bare region touch on an open thread is indeterminate: **write nothing** (`outcome-learning.md § Signal (c) requires corroboration`). This path is the one the in-run re-scan predicate routes downgraded threads into, so an uncorroborated write here would land exactly the record that guard prevents.
+- Signal (c) — fix commit touches `(path, line ± 5)` **and** the thread is resolved, `implement-suggestion` recorded `verdict: applied`, or the author acknowledged → write `relevant / fixed`. A bare region touch on an open thread is **uncorroborated**: **write no record** (`outcome-learning.md § Signal (c) requires corroboration`). This path is the one the in-run re-scan predicate routes downgraded threads into, so an uncorroborated **directional** write here would land exactly the record that guard prevents.
 - Signal (a) — 👎 reaction from the PR author → write `not-relevant / wont-fix`.
-- Signal (b) — author reply correcting the finding, no fix commit → write `not-relevant / wont-fix`.
-- PR merged with thread open, no fix, no decline → write `weak-not-relevant / ignored-at-merge`.
+- Signal (b) — author reply correcting the finding **that is not an acknowledgement** (`outcome-learning.md § What counts as an acknowledgement`), no fix commit → write `not-relevant / wont-fix`. Without the acknowledgement test this bullet reproduces the inversion Step 3 was rewritten to prevent: an author who replies "fixed" and lands the fix outside the window recorded as a dismissal.
+- Author **acknowledged** but no fix commit in range → **write no record**, and log
+  `[outcome] UNCORROBORATED <path>:<line> — author acknowledged, no fix commit in range`. Neither
+  (b) nor (c): the author says it was handled and this path cannot see where. **This bullet must
+  stay above the next one**, whose condition it satisfies in full — an acknowledgement is not a
+  decline, a fix outside `± 5` is "no fix", and the thread is open at merge. Delete this carve-out
+  and an author who replied "fixed" is recorded `ignored-at-merge`, a dismissal feeding the
+  suppression gate. That is the inversion `outcome-learning.md § Step 3` exists to prevent, arriving
+  through this bullet instead of through signal (b).
+- PR merged with thread open, no fix, no decline, **and no acknowledgement** → write `weak-not-relevant / ignored-at-merge`. **Requires thread state to have been read.** If the Step 3b walk could not complete, the thread is not known to be open — **write no record** instead (`outcome-learning.md § Step 3b`). This bullet is the second thread-state-dependent write the guard binds.
 
 Use the same `memory.write` call format above, with `source_agent: "pr-reviewer"` and `trigger: "post-merge-outcome"`.
+
+---
+
+## Entrenchment guards
+
+`lorekit-setup § Wiring checklist` requires a loop to state these so a future maintainer does not
+optimise them away. They are what stop this bucket reinforcing its own errors:
+
+1. **Records are advisory, never auto-applied.** A relevance memory biases Step 2.2 — it may drop,
+   downgrade, or promote a *finding*. It may never disable a gate, change a threshold, or skip a
+   step. The only path to changed behaviour is the human-reviewed suggestion in § Promotion rule.
+2. **Recurrence gates promotion, not a single run** (`seen_count >= 3` concordant, same direction).
+3. **Every record expires** (60 days, refreshed on each sighting), so a stale belief decays instead
+   of entrenching.
+4. **Contradiction is surfaced, never silently overwritten** — an opposite-direction sighting is a
+   reviewed decision, not an increment.
+5. **The privacy pre-flight is never bypassed** — a candidate carrying a secret or PII is dropped.
+6. **No record is written when direction cannot be decided.** A bucket may have gaps; it may not
+   have invented entries, and it may not hold rows that no read step consumes. An earlier draft
+   added a non-directional value for this case; it had four write sites and no reader, and the
+   wiring checklist's read/write/promote triad is what showed it could never have one. The
+   observation goes to the run log (`outcome-learning.md § Signal (c) requires corroboration`).
 
 ---
 

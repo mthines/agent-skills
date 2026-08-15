@@ -1373,22 +1373,39 @@ after the status table):
    which already records the match.
 
 `declined` and `acknowledged` are unaffected by (1): their evidence is the author's own words.
-Note that `acknowledged` additionally requires a delta-touched line, so on a zero-delta run
-`declined` is in practice the only status that resolves. It runs **here — before the verdict (Step 3) and before posting (Step 4)** — rather than
+Note that `acknowledged` additionally requires a delta-touched line, and `obsolete` carries the same
+re-scan predicate as `fixed`, so on a zero-delta run `declined` is in practice the only status that
+resolves. It runs **here — before the verdict (Step 3) and before posting (Step 4)** — rather than
 after posting, because Gate 3 and the unblock checklist are rendered from `OPEN_BOT_COMMENTS[]`,
 and resolving threads after that rendering publishes a checklist naming threads this very run
 closed seconds later. The author then reads a stale worklist and only sees the truth on the next
 review. Reconciling first removes that lag entirely.
 
 For each of **this agent's own** prior inline comments (`BOT_COMMENTS` from Step 1.0), classify it
-**fixed** / **declined** / **acknowledged** / **persisting** / **unaddressed**, resolve the threads
-for the first three, and write the relevance outcome — all per `thread-resolution.md`.
+**fixed** / **declined** / **acknowledged** / **obsolete** / **persisting** / **unaddressed**,
+resolve the threads for the first four, and write the relevance outcome — all per
+`thread-resolution.md`.
+
+**The open set must mean "pending".** A thread survives this step only if it is still live work.
+`obsolete` exists because a finding whose subject was deleted is none of fixed, declined or
+persisting — it stopped applying — and without it those threads accumulate forever.
+
+**Resolution uses whichever GitHub write path this run has** — `gh api graphql`, or a GitHub MCP
+resolve-thread tool if that is what is in the grant. When neither exists, set
+`RESOLUTION_UNAVAILABLE = true` and **still remove the resolvable threads from
+`OPEN_BOT_COMMENTS[]`** before the Gate 3 re-evaluation below. Posting and resolving do not fail
+together: a run can add threads through an app token while having no way to close them, and Gate 3
+then fails on a set no author action can shrink. Report the count.
 
 Then update Gate 3's input:
 
-- Remove from `OPEN_BOT_COMMENTS[]` every entry whose `resolveReviewThread` mutation **actually
-  succeeded**. A mutation that errored leaves the thread open on GitHub, so its entry stays in the
-  set — the checklist must describe GitHub's state, not this agent's intent.
+- Remove from `OPEN_BOT_COMMENTS[]` every entry whose resolve call **actually succeeded**. A call
+  that errored leaves the thread open on GitHub, so its entry stays in the set — the checklist must
+  describe GitHub's state, not this agent's intent.
+- **Except under `RESOLUTION_UNAVAILABLE`**, where no call was possible: remove every entry this run
+  classified `fixed` / `declined` / `acknowledged` / `obsolete` anyway. Those threads stay open on
+  GitHub and the report says so, but they must not block — the run has certified them done, and a
+  gate that cannot be cleared by any author action is worse than a gate that does not run.
 - Re-evaluate Gate 3 from the updated set, exactly as Step 1.8 does — including the ⚠️ / ❌
   grading, since removing the last *blocking unanswered* entry can downgrade ❌ to ⚠️ without
   emptying the set. This is not a second, laxer
@@ -1401,7 +1418,12 @@ Then update Gate 3's input:
   **Except under `--skip-gates`**, where Step 1.8 never ran and Gate 3 is `⏭️`: update
   `OPEN_BOT_COMMENTS[]` and `RESOLVED_SINCE_PRIOR` as usual, but leave the gate `⏭️`. Re-evaluating
   it here would resurrect a gate the invocation explicitly turned off.
-- Recompute `RESOLVED_SINCE_PRIOR` = `|PRIOR_OPEN_THREAD_IDS − OPEN_BOT_COMMENTS ids|` for the
+- Recompute `RESOLVED_SINCE_PRIOR` = the number of `PRIOR_OPEN_THREAD_IDS` that are **actually
+  closed on GitHub** — a successful resolve call this run, or observed `isResolved` at Step 1.0.
+  **Threads removed by the `RESOLUTION_UNAVAILABLE` carve-out are excluded**: they are still open,
+  and counting them turns "we could not close these" into "we closed these". Do not compute it as a
+  set difference against `OPEN_BOT_COMMENTS`, which cannot tell a resolution from a removal. It is
+  for the
   checklist's `resolved since` counter. It counts every thread closed since the prior report —
   by this step, by the author, or by another fixer — not only the ones this step resolved.
 
@@ -1410,7 +1432,7 @@ unavailable — is logged and the run continues with the **pre-reconciliation** 
 and Gate 3 status. Moving this step earlier must not give it the power to stop a review; the review
 is what the author is waiting for.
 
-Log `Threads resolved: <F> fixed, <D> declined` and `Relevance memories written: <N>` in the Step 5
+Log `Threads resolved: <F> fixed, <D> declined, <O> obsolete` — plus `<U> resolvable but not closed (no resolve path)` when `RESOLUTION_UNAVAILABLE` — and `Relevance memories written: <N>` in the Step 5
 report — its `Include:` list is free-form and has room for them. Step 3's Quality Gate block is a
 fixed enumeration with no slot for either counter; do not wedge them in there.
 
@@ -2169,6 +2191,11 @@ Rules for table cells:
   - When Gate 3 passed on **unverified** thread state (state unavailable or the thread map
     incomplete — see *Gate 3*), its Details cell holds
     `thread state unavailable — <N> comment(s) unverified` instead of the static description.
+  - When Gate 3 passed under `RESOLUTION_UNAVAILABLE`, its Details cell holds
+    `<N> thread(s) certified done but still open — no resolve path this run.` **This wins over both
+    other exceptions.** The threads are open on GitHub; a cell claiming otherwise is the same
+    report-disagrees-with-GitHub failure the carve-out exists to surface, inverted. This is also the
+    only place the count reaches the author — the Step 5 terminal report is not a surface they see.
   - When Gate 3 passed and `RESOLVED_SINCE_PRIOR > 0`, its Details cell holds
     `All bot threads resolved — <RESOLVED_SINCE_PRIOR> closed since \`<PRIOR_REVIEW_SHA_SHORT>\`.`
     `UNRESOLVED_THREADS_SECTION` — where the counter normally renders — is omitted whenever Gate 3

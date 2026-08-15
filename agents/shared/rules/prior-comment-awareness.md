@@ -61,7 +61,7 @@ THREADS_QUERY='
       pullRequest(number:$pr){
         reviewThreads(first:100, after:$cursor){
           pageInfo{ hasNextPage endCursor }
-          nodes{ id isResolved comments(first:100){ nodes{ databaseId } } }
+          nodes{ id isResolved isOutdated comments(first:100){ nodes{ databaseId } } }
         }
       }
     }
@@ -112,7 +112,12 @@ The query above is the same one `thread-resolution.md § Resolve the thread` run
 From the result build:
 
 1. `RESOLVED_THREAD_IDS: Set<string>` — every thread `id` with `isResolved == true`.
-2. `COMMENT_TO_THREAD: Map<databaseId, {threadId, isResolved}>` — every comment in every thread.
+2. `COMMENT_TO_THREAD: Map<databaseId, {threadId, isResolved, isOutdated}>` — every comment in every thread.
+
+`isOutdated` is true when the diff hunk the thread anchors to no longer exists at the current head.
+It is **not** a resolution signal on its own — a hunk also goes outdated when the author edits around
+a still-live finding — but paired with "the finding does not re-produce anywhere" it identifies a
+finding whose subject was deleted (`thread-resolution.md § \`obsolete\``).
 
 **Pagination guard.** `reviewThreads` caps at `first: 100` and `--paginate` does not work for GraphQL. When `pageInfo.hasNextPage` is true, page with `endCursor` until it is false. If paging cannot complete, treat the map as **incomplete** and say so in the run — an unseen thread must never be silently assumed unresolved, because that turns a resolved conversation into a gate failure.
 
@@ -126,16 +131,16 @@ Automated fixers reply and resolve; they do not phrase their replies to match a 
 - `implement-suggestion` posts a free-form decline — `suggestion-pack.md`: **Reply**: `<rationale for not applying>` — and then resolves the thread.
 - Its reply is authored by the bot, not the PR author.
 
-A resolution test built on "a reply from the PR author containing one of four phrases" therefore returns *unresolved* for a thread that is demonstrably resolved, on every subsequent pass, forever. Reading `isResolved` removes the whole class.
+A resolution test built on "a reply from the PR author containing a decline phrase" therefore returns *unresolved* for a thread that is demonstrably resolved, on every subsequent pass, forever. Reading `isResolved` removes the whole class.
 
 ### Fallback resolution heuristic
 
 Used **only** when thread state is unavailable. A thread counts as resolved when either:
 
 - the PR author replied in the thread, or
-- any reply contains "won't fix" / "by design" / "intentional" / "n/a".
+- any reply is a decline per [`outcome-learning.md § What counts as an acknowledgement`](./outcome-learning.md) (`WONT_FIX_RE` is the script's counterpart); not restated here, so this degraded path cannot drift from the primary one.
 
-This is the pre-existing heuristic, retained verbatim as a degraded path, and it is lossy in exactly the way described above.
+This is the pre-existing heuristic as a degraded path — its decline half now defers to the single list rather than restating four phrases — and it is lossy in exactly the way described above.
 Because of that it has a **narrow consumer set**: it feeds the dedup and anti-flip-flop checks only.
 It never admits a comment to `OPEN_BOT_COMMENTS[]`, so it can neither pass nor fail Gate 3 — a comment whose real thread state could not be read is reported as unverified instead (`pr-reviewer.md` Step 1.0 and *Gate 3*).
 Still say in the run that the fallback is in use, so a reader knows the dedup and anti-flip-flop decisions on this PR rest on a lossy signal rather than on read thread state.

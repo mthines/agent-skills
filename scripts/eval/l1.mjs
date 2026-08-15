@@ -517,6 +517,138 @@ function checksInSync(plan, checks) {
     }
   }
 
+  // G24: the relevance-bucket contracts this repo hand-mirrors across rule files.
+  // Same class as G16 (cross-file drift, no single source of truth).
+  //
+  // Every check here must FAIL on the regression it names, not on a proxy. Five
+  // earlier versions did not, each for its own reason: one asserted enum membership
+  // under a name promising producer coverage; two matched only double-quoted phrase
+  // restatements; one counted a symbol repo-wide so the function definition satisfied
+  // it with both call sites deleted; one matched a key anywhere in a file that also
+  // defines it. If you add a check here, mutate the contract and confirm it goes red.
+  {
+    const ol = read("agents/shared/rules/outcome-learning.md");
+    const tr = read("agents/shared/rules/thread-resolution.md");
+    const rec = read("scripts/record-comment-relevance.mjs");
+
+    // (a) "Cite, don't restate": the two deferring rows in thread-resolution must link
+    // out and must not carry the phrase lists they used to duplicate — quoted or not.
+    const ackRow = (tr.match(/^\|\s*\*\*acknowledged\*\*.*$/m) || [""])[0];
+    const decRow = (tr.match(/^\|\s*\*\*declined\*\*.*$/m) || [""])[0];
+    const ackPhrases = (ackRow.match(/\b(fixed|done|addressed|resolved|updated)\b/gi) || []).length;
+    const decPhrases = (decRow.match(/\b(won.?t fix|by design|intentional|out of scope|n\/a|nwf|as designed)\b/gi) || []).length;
+    s.check("G24a acknowledged row links the judgement rule and does not restate a phrase list",
+      /outcome-learning\.md/.test(ackRow) && ackPhrases <= 1);
+    s.check("G24b declined row cites the judgement rule and does not restate the alternatives",
+      /outcome-learning\.md/.test(decRow) && decPhrases === 0);
+
+    // (c) The agent-facing rule is a JUDGEMENT rule, not a tokenizer. Positive shape
+    // assertion: a denylist of tokenizer vocabulary is routed around by paraphrase.
+    const ackSection = (ol.match(/#### What counts as an acknowledgement[\s\S]*?(?=\n#### |\n### |\n## )/) || [""])[0];
+    const bullets = (ackSection.match(/^- \*\*/gm) || []).length;
+    s.check("G24c the acknowledgement rule states decline-precedence",
+      /decline wins/i.test(ackSection));
+    s.check("G24d the acknowledgement rule keeps its judgement shape (bulleted criteria + default)",
+      bullets >= 4 &&
+      /cannot tell|when you can.t tell/i.test(ackSection) &&
+      !/token window|word tokens|negator|complement clause|tokeniz|split the reply/i.test(ackSection));
+
+    // (e) Decline-precedence is the one contract both paths must share. G24c asserts the
+    // prose half in outcome-learning; this asserts it in thread-resolution, which makes
+    // the claim, and (f) asserts the executable half, which fails silently.
+    s.check("G24e thread-resolution states decline-precedence for the in-run path",
+      /decline outranks an acknowledgement/i.test(tr));
+
+    // Scope to each function's own body. `fnBody` must handle `async function`: an
+    // earlier version terminated on "\nfunction " only, so modeThreadResolved's window
+    // ran to EOF, swallowed modePrMerged, and stayed green when its own call was cut.
+    const fnBody = (name) => {
+      const i = rec.search(new RegExp(`^(?:async\\s+)?function ${name}\\(`, "m"));
+      if (i < 0) return "";
+      const rest = rec.slice(i + 1);
+      const j = rest.search(/^(?:async\s+)?function \w+\(/m);
+      return j < 0 ? rec.slice(i) : rec.slice(i, i + 1 + j);
+    };
+    s.check("G24f both script modes still apply decline detection",
+      /hasWontFixReply\s*\(/.test(fnBody("modeThreadResolved")) &&
+      /hasWontFixReply\s*\(/.test(fnBody("modePrMerged")));
+
+    // (i) The acknowledged-no-fix carve-out must exist AND precede the ignored-at-merge
+    // bullet whose condition it satisfies in full. Deleting it (which I did) sends an
+    // author who replied "fixed" into `weak-not-relevant / ignored-at-merge` — a
+    // dismissal feeding the suppression gate, the inversion the acknowledgement test
+    // exists to prevent, arriving through the sibling bullet.
+    const crm2 = read("agents/shared/rules/comment-relevance-memory.md");
+    const iAck = crm2.indexOf("- Author **acknowledged** but no fix commit in range");
+    const iIgn = crm2.indexOf("- PR merged with thread open");
+    s.check("G24i the acknowledged-no-fix carve-out exists and precedes ignored-at-merge",
+      iAck > -1 && iIgn > -1 && iAck < iIgn);
+    s.check("G24i2 the ignored-at-merge bullet excludes acknowledgements in its own condition",
+      /- PR merged with thread open[^\n]*no acknowledgement/.test(crm2));
+
+    // (j) The open-thread set must mean "pending". Two contracts hold that invariant,
+    // and both were absent when a real PR accumulated 20 unclosable threads across six
+    // passes. These assert the RELATION, not the presence of two strings in a 450-line
+    // file: an earlier version stayed green when the obsolete row's `and` was flipped to
+    // `or` and when the whole alternate-write-path paragraph was deleted.
+    const tr2 = read("agents/shared/rules/thread-resolution.md");
+    const pca = read("agents/shared/rules/prior-comment-awareness.md");
+    const prm = read("agents/pr-reviewer.md");
+
+    const obsRow = (tr2.match(/^\|\s*\*\*obsolete\*\*.*$/m) || [""])[0];
+    s.check("G24j thread-resolution defines an obsolete disposition that resolves",
+      /\*\*Resolve\*\*/.test(obsRow));
+    // Conjunction, in the row itself — `or` must fail.
+    s.check("G24k obsolete conjoins isOutdated with non-reproduction, and requires the re-scan predicate",
+      /isOutdated/.test(obsRow) && /\*\*and\*\*/.test(obsRow) && !/\*\*or\*\*/.test(obsRow) &&
+      /re-scan predicate/i.test(obsRow));
+    // The predicate must actually be stated for obsolete, not only for fixed.
+    const obsSection = (tr2.match(/### `obsolete`[\s\S]*?(?=\n### |\n## )/) || [""])[0];
+    s.check("G24k2 the obsolete section names both re-scan conjuncts and the pre-dedup read",
+      /SCANNED_FILES/.test(obsSection) && /REVIEW_DIFF/.test(obsSection) &&
+      /2\.5b|pre-dedup/i.test(obsSection));
+
+    s.check("G24l the thread query captures isOutdated for both readers",
+      /isResolved isOutdated/.test(pca) && /isResolved isOutdated/.test(tr2));
+
+    // The carve-out must SET the flag (not "never set" it), defer the path decision to
+    // github-access.md, and the agent must not report the removed threads as closed.
+    s.check("G24m the no-resolve-path carve-out is stated affirmatively and defers the path to github-access",
+      /\bset `RESOLUTION_UNAVAILABLE = true`/i.test(tr2) &&
+      !/\b(never|do not|don't) set `RESOLUTION_UNAVAILABLE/i.test(tr2) &&
+      /github-access\.md/.test(tr2));
+    s.check("G24m2 carve-out removals are excluded from the resolved-since counter",
+      /RESOLUTION_UNAVAILABLE` carve-out are excluded/.test(prm) &&
+      /certified done but still open/.test(prm));
+
+    // (g) Every WONT_FIX_RE alternative bounded, derived from the regex rather than a
+    // named subset — an earlier version asserted three of four and missed the fourth.
+    const reLine = (rec.match(/^const WONT_FIX_RE\s*=.*$/m) || [""])[0];
+    const body = (reLine.match(/=\s*\/(.*)\/[a-z]*;/) || [])[1] || "";
+    const alts = body ? body.split("|") : [];
+    s.check("G24g every WONT_FIX_RE alternative is bounded on both sides",
+      alts.length >= 8 && alts.every((a) => a.startsWith("\\b") && a.endsWith("\\b")));
+
+    // (h) The model-readable decline list and WONT_FIX_RE are hand-mirrored. Compare as
+    // sets so a deletion or addition on either side goes red — the drift that produced
+    // the `as designed` inversion.
+    const norm = (x) => x.replace(/\\b/g, "").replace(/\\s\+/g, " ").replace(/\\\//g, "/")
+                         .replace(/\(.*?\)/g, "").replace(/[^a-z /]/gi, "").trim().toLowerCase();
+    const fromRe = new Set(alts.map(norm).filter(Boolean));
+    // The blockquote is indented inside a list item, so anchor on optional leading space.
+    const quote = (ol.match(/^[ \t]*> [^\n]*·[\s\S]*?(?=\n[ \t]*\n)/m) || [""])[0];
+    const fromProse = new Set(quote.split(/[·\n>]/).map(norm).filter(Boolean));
+    // BOTH directions. A one-way subset test leaves the direction that matters green:
+    // a phrase the model-readable list treats as a decline but WONT_FIX_RE misses is the
+    // exact coupling this PR documents (a decline that misses the regex resolves the
+    // thread and records relevant/fixed for a finding the author rejected).
+    const covers = (x, set) => [...set].some((y) => y.includes(x) || x.includes(y));
+    s.check("G24h the model-readable decline list and WONT_FIX_RE's alternatives agree both ways",
+      fromRe.size >= 8 && fromProse.size >= 8 &&
+      [...fromRe].every((a) => covers(a, fromProse)) &&
+      [...fromProse].every((b) => covers(b, fromRe)));
+  }
+
   // G16: the `reviewer-comment-relevance` TTL is hand-mirrored across five files
   // with no single source of truth (the executable writer needs a literal, and this
   // repo's CLAUDE.md requires rules to be self-contained). This is the cross-file
