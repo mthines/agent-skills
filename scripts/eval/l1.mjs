@@ -1084,4 +1084,53 @@ const isPollBlock = (block) =>
   s.check("G23 guards exactly 3 polling blocks", guarded === 3, `found ${guarded}`);
 }
 
+// ── Check G24: any agent that does GitHub work can actually reach GitHub ──
+// A sub-agent inherits NEITHER the parent's `gh` binary NOR the parent's MCP
+// tools — its access is exactly its own `tools:` frontmatter. Observed in the
+// field: an agent dispatched to open a PR reported the task BLOCKED, in a session
+// where the parent's MCP tools worked fine; the parent then did it in one call.
+// Same cause: `pr-reviewer` made 26 `gh` calls with zero GitHub tools granted,
+// so on a cloud session it could not post a single one of its reviews.
+//
+// If an agent's body invokes GitHub, its frontmatter must grant a way to get there.
+{
+  const agentFiles = [
+    // Real agent definitions only: agents/*.md. `agents/rules/` and
+    // `agents/templates/` are prose and boilerplate, not dispatchable agents.
+    ...walk(join(REPO_ROOT, "agents"))
+      .filter((f) => !f.includes("/rules/") && !f.includes("/templates/")),
+    ...walk(join(REPO_ROOT, "skills/workflow/autonomous-workflow/templates"))
+      .filter((f) => f.endsWith(".agent.md")),
+  ];
+  let checked = 0;
+  for (const f of agentFiles) {
+    const text = readFileSync(f, "utf8");
+    const fmEnd = text.indexOf("\n---", 4);
+    if (fmEnd === -1) continue;
+    const fm = text.slice(0, fmEnd);
+    const body = text.slice(fmEnd);
+    // Two ways an agent needs GitHub access, and the second is the one that bit:
+    //   (1) its own body runs `gh ...`
+    //   (2) it invokes a skill that does — that skill executes IN THIS AGENT'S
+    //       context, with this agent's tools, so delegating does not delegate access.
+    const ghCalls = (body.match(/\bgh\s+(pr|api|run|repo|search|auth)\b/g) || []).length;
+    // Matches both `Skill("create-pr")` and the backticked name used in the
+    // agents' companion tables — either way the skill runs in this agent's context.
+    const GH_SKILLS = /(?:Skill\(\s*["']|`)(create-pr|ci-auto-fix|review-loop|implement-suggestion)(?:["']|`)/;
+    const viaSkill = GH_SKILLS.test(body);
+    if (ghCalls === 0 && !viaSkill) continue;
+    checked++;
+    const why = ghCalls > 0
+      ? `makes ${ghCalls} gh calls`
+      : "invokes a GitHub-using skill, which runs in its context";
+    s.check(
+      `G24 ${rel(f)} ${why}, so its frontmatter must grant GitHub tools`,
+      /mcp__github__/.test(fm),
+      "grant mcp__github__* in tools: — a sub-agent inherits neither gh nor the " +
+      "parent's MCP tools, so without this it reports the task blocked",
+    );
+  }
+  s.check("G24 found the GitHub-using agents to guard", checked >= 3, `found ${checked}`);
+}
+
 process.exit(s.report() ? 0 : 1);

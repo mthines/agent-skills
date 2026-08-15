@@ -55,6 +55,12 @@ Each resulting sub-PR must still pass it on its own.
 
 Step 6.5 cannot serve split mode: it is post-draft and its `review-loop` needs an open PR, which does not exist before S1. So with `--split`, run `Skill("polish", "simplify")` **once on the full branch** before computing the split (before S1) — it is branch-scoped and needs no PR — so each sub-PR inherits the cleaned-up code. Each sub-PR then gets the per-PR quality pass defined in [`rules/split-mode.md`](./rules/split-mode.md).
 
+## Step 0: Resolve your GitHub access path
+
+Before any GitHub step, resolve which path you have — `gh` CLI, `mcp__github__*` tools, or neither — per **[`agents/shared/rules/github-access.md`](../../../agents/shared/rules/github-access.md)**. Resolve once, state the path you took, and use it for the whole run.
+
+`gh` is **absent in Claude Code cloud sessions**, so the commands written below are the `gh`-path form; on the MCP path use the verb mapping in that file rather than attempting them. With **neither** path, GitHub steps cannot be performed: say so precisely, do the `git` work you can, and hand the rest back — never report a step you could not perform as blocked-by-something-else.
+
 ## Steps 1–5: Write the title and body (shared contract)
 
 The narrative rules, the length budget, and the five authoring steps (gather
