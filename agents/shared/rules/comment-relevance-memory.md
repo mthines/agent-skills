@@ -221,6 +221,25 @@ applying this rule standalone must not end up with a weaker one.
 Merge both lists (`repo::` wins on key collision).
 Skip any entry whose `expires` is in the past.
 
+**Then resolve the bodies.** `view: "summary"` returns the index, and the index is NOT enough to
+apply a verdict: the key carries only the fingerprint (`<category>:<claim-gist>`), while
+`relevance`, `seen_count`, `resolution_method` and `status` all live in the record body. So for
+every entry whose fingerprint matches one of this run's raw findings, fetch the body before
+applying anything:
+
+```text
+# One call per fingerprint-matched entry.
+mcp__lorekit__memory_read: scope="<the entry's scope>" key="<the entry's key>"
+```
+
+Skip the fetch only when `value_bytes` ≤ 200, in which case the `preview` already carried the whole
+record. A failed read drops that one entry and is non-blocking — never treat it as a disconnection.
+An entry whose body was not fetched has no verdict and must not produce a drop, downgrade, or
+promote; treat it as absent rather than guessing from the preview. Callers that bound this fetch
+(as `pr-reviewer.md § 1.2d` does) should prefer relevance entries over lessons when the bound
+binds, because a missing relevance verdict changes what gets POSTED while a missing lesson only
+changes emphasis.
+
 **Keep the coordinates.** Retain each entry's `scope` and `key` (the LoreKit
 memory coordinates) alongside its `fingerprint`, `relevance`, and `seen_count` —
 the report builds a pressable dashboard deep link from `scope` + `key` for every
