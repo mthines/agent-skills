@@ -112,8 +112,9 @@ happened, feeding the suppression gate against a finding that was acted on. The 
 corroboration at Step 4 and a decline here; only the content test keeps the two consistent.
 
 An author reply that **is** an acknowledgement, with no fix commit in range, is neither (b) nor (c):
-it is `indeterminate` / `uncorroborated-touch`'s sibling case — the author says it was handled and
-this path cannot see where. Record it as `indeterminate` rather than guessing a direction.
+it is a third indeterminate case with its own method: record
+`indeterminate` / `acknowledged-no-fix-found` rather than guessing a direction. `uncorroborated-touch`
+would be a misnomer — there is no touch.
 
 ### Step 3b — Thread resolution state (needed by signal (c))
 
@@ -138,8 +139,12 @@ PR with no threads (`prior-comment-awareness.md § Thread state`). Every reader 
 on the flag; this step is one of them. An unknown state fails corroboration, so those
 comments become indeterminate per § Signal (c) requires corroboration.
 
-**The guard binds both thread-state-dependent writes, not just signal (c).** Signal (c) is one
-consumer; the other is the `ignored-at-merge` bullet in
+**The guard binds both thread-state-dependent writes, not just signal (c).** These two are the
+complete set of writes whose *predicate* names thread state; signal (a) is reaction-only and signal
+(b) is reply-text-only, so neither is bound. Two further sites — the `reviewer-lessons` resolution
+lesson and the `≥ 3 signal (c) confirmations` promotion row — are *downstream* of signal (c) firing
+and are therefore transitively protected, not separately guarded. Signal (c) is one direct consumer;
+the other is the `ignored-at-merge` bullet in
 [`comment-relevance-memory.md § What reviewer / pr-reviewer write`](./comment-relevance-memory.md),
 whose condition is "PR merged with thread open" — also an assertion about thread state, and one that
 inherits nothing from signal (c)'s rule. With an unknown state, **neither** may be written: not
@@ -148,8 +153,8 @@ gap into a stream of false `ignored-at-merge` records — which is the failure t
 prevent, and it lands through that bullet rather than through signal (c).
 
 Log `[outcome] thread state unavailable — <N> comment(s) indeterminate`, and record them as
-`indeterminate` / `uncorroborated-touch` where a region touch is present
-(``comment-relevance-memory.md § `indeterminate` ``).
+`indeterminate` / **`thread-state-unknown`** — not `uncorroborated-touch`, which asserts the thread
+was read and found open (``comment-relevance-memory.md § `indeterminate` ``).
 
 ### Step 4 — Signal (c): author pushed a fix touching the commented line
 
@@ -190,15 +195,35 @@ Corroboration is any **one** of:
 
 #### Acknowledgement phrase set
 
-The decline path ships a real matcher (`WONT_FIX_RE`,
-`scripts/record-comment-relevance.mjs`), and this signal is now load-bearing, so it gets one too. A
-reply from the **PR author** counts as an acknowledgement when it matches, case-insensitively, any
-of: `fixed`, `done`, `addressed`, `resolved`, `good catch`, `nice catch`, `updated`. Match on the
-reply body, not on a substring of a larger word.
+The decline path ships a real matcher (`WONT_FIX_RE`, `scripts/record-comment-relevance.mjs`), and
+this signal is now load-bearing, so it gets one too. Apply the three rules in order — the order is
+the whole matcher, because two of the three exist to stop an acknowledgement test producing the
+inversion it was written to prevent.
 
-Keep this set in sync with `thread-resolution.md`'s `acknowledged` row, which classifies in-run on
-the same evidence. The two are separate matchers on one concept, and the check-4 coupling in
-`comment-relevance-memory.md` is what drift between two such matchers looks like.
+**1. Decline wins.** Test `WONT_FIX_RE` first. A reply matching **both** is a decline, never an
+acknowledgement. Politeness openers are the reason: *"Good catch, but this is by design"* and
+*"Nice catch — intentional though"* are declines that open with praise, and reading them as
+acknowledgements writes `relevant / fixed` for a finding the author rejected, while the Action
+writes `not-relevant / wont-fix` for the same reply — one fingerprint, two opposite records.
+
+**2. Negation disqualifies.** A phrase preceded by a negator within the same clause — `not`, `n't`,
+`never`, `no`, `still not`, `not yet` — does not count. Without this, `resolved` matches *"not
+resolved yet"*, `done` matches *"still not done"*, `updated` matches *"I haven't updated this"*, and
+`addressed` matches *"not addressed"*. Every one of those is an acknowledgement-shaped false
+positive producing `relevant / fixed` for a live finding — the same direction of error as the bug
+this signal exists to fix.
+
+**3. Then match the phrase set**, case-insensitively, as whole words (so `prefixed` and `redone` do
+not match): `fixed`, `done`, `addressed`, `resolved`, `updated`.
+
+`good catch` / `nice catch` are deliberately **not** in the set. They are decline openers at least as
+often as acknowledgements, so rule 1 would be carrying them alone; a phrase that needs another rule
+to be safe does not belong in the set.
+
+**Sync with `thread-resolution.md`.** Its `acknowledged` row classifies in-run on the same evidence
+and must cite this set rather than restate it. Two matchers on one concept is exactly the drift the
+check-4 coupling in `comment-relevance-memory.md` documents — and this section naming that hazard
+while creating a 3-vs-5 divergence would be the clearest possible instance of it.
 
 **With a region touch but none of the three, write no directional record.** Do not fall through to
 `weak-not-relevant / ignored-at-merge` either: an open thread whose region was edited is genuinely
@@ -208,7 +233,9 @@ bucket is allowed to have gaps; it is not allowed to have invented entries.
 
 Record it as `relevance: indeterminate`, `resolution_method: uncorroborated-touch`
 (``comment-relevance-memory.md § `indeterminate` ``), and log
-`[outcome] INDETERMINATE <path>:<line> — region touched, thread open, no acknowledgement`.
+`[outcome] INDETERMINATE <path>:<line> — region touched, thread read as open, no acknowledgement`.
+Use this method only when the thread state was actually read; an unreadable state is
+`thread-state-unknown` (Step 3b).
 The record counts toward neither promotion gate and never influences a review; it exists so the gap
 is countable. A log line alone is ephemeral, so a repo where corroboration never fires would look
 identical to a repo with no activity.

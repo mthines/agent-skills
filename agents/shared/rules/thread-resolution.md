@@ -72,7 +72,7 @@ the two differ, the predicate wins.
 | --- | --- | --- | --- |
 | **fixed** | The commented region changed after the comment was posted (a commit touched `(path, line ± 5)`) AND the current run does **not** re-produce a finding with the same fingerprint at/near that location. **Requires that this run re-scanned the region, and that no 2.5b dedup drop matches the thread** — see the two sections below. | **Resolve** | `relevant` / `fixed` |
 | **declined** | The author replied "won't fix" / "by design" / "intentional" / "n/a", or 👎-reacted the comment | **Resolve** | `not-relevant` / `wont-fix` |
-| **acknowledged** | The author replied "fixed" / "done" / "addressed" and the thread is on a line the delta touched | **Resolve** | `relevant` / `fixed` |
+| **acknowledged** | The author replied with an acknowledgement — the phrase set, decline-precedence and negation rules in [`outcome-learning.md § Acknowledgement phrase set`](./outcome-learning.md) are authoritative; do not restate them here — and the thread is on a line the delta touched | **Resolve** | `relevant` / `fixed` |
 | **persisting** | The current run re-produces the same finding (the issue is still there) — read **before** Step 2.5b's prior-comment dedup, or off a matching dedup drop; see *`persisting` must be read before prior-comment dedup* | **Leave open** | none (the finding carries forward and stays posted) |
 | **unaddressed** | None of the above — the line is untouched, no reply, and the delta did not cover it (so the current pass could not re-confirm it); **also** every `fixed` candidate downgraded by the re-scan predicate, whose line *was* touched | **Leave open** | none — absence of a re-scan is not evidence of resolution |
 
