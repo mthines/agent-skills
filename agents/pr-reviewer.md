@@ -878,6 +878,7 @@ Log all applied memories in the Quality Gate summary.
 ### 2.3 Filter suppression
 
 See `agents/shared/rules/review-config.md § Filters`. Drop findings in suppressed categories.
+Also drop cosmetic `nitpick` / `suggestion` findings on a docs/comment-only `incremental` or `incremental-quick` delta (the materiality filter, `rubric-composition.md § Materiality routing`), logged as `Materiality drops` — a pre-clearing drop, so it never enters `<CL>` and the `<CL> − <DEF> == <F>` identity is untouched.
 
 ### 2.4 Holistic review (default ON in `full` mode)
 
@@ -997,13 +998,8 @@ never discarded by this step, and a blocking finding is never deferred. Report
 `Deferred (over inline cap): <N>` in the diagnostics block.
 
 Non-blocking findings also carry a **materiality** dimension (`rubric-composition.md § Materiality routing`).
-`cosmetic` findings — pure wording, parity, or formatting — are the lowest-priority non-blocking
-findings, so they sort last within their prefix and overflow the caps first.
-On a docs/comment-only `incremental` or `incremental-quick` delta a cosmetic `nitpick` or `suggestion`
-is dropped as noise (the below-bar-nitpick disposition), so it never opens a review thread that a
-later push must clear, while `material` findings (coverage gaps, wrong or misleading comments,
-factual errors) route normally — adding no counter and leaving the `<CL> − <DEF> == <F>` identity
-untouched.
+At placement, `material` findings sort before `cosmetic` ones within a prefix, so cosmetic findings take an inline slot last and overflow into `Additional findings` first.
+The docs-only cosmetic drop happens earlier, at the 2.3 filtering stage (pre-clearing, logged as `Materiality drops`), so no *cleared* finding is dropped here and the `<CL> − <DEF> == <F>` identity is untouched.
 
 ---
 

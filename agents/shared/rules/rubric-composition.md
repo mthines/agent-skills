@@ -137,13 +137,16 @@ Non-blocking findings carry a **materiality** dimension, orthogonal to confidenc
 - **material** — asserts a real defect the author would want to fix: a test or coverage gap, a *wrong* or *misleading* comment, doc, or name, a factual error, or a genuine simplification.
 - **cosmetic** — asserts no defect, only a preference about *form*: wording parity between surfaces ("spell it out like the sibling"), reflow, whitespace, formatting, or restating the same rule more verbosely.
 
-Cosmetic findings are the **lowest-priority** non-blocking findings: within their prefix they sort last in placement (§ Placement), so they are the last to occupy a scarce inline slot and the first to overflow the caps into `Additional findings`.
-This routing needs no new counter and no new body section: it reuses the ordering and deferral the caps already apply.
+Materiality changes routing in two ways, neither of which touches the `<CL> − <DEF> == <F>` identity.
 
-On `incremental` and `incremental-quick` runs whose `REVIEW_DIFF` touches only Markdown (`.md` / `.mdx`) or comment lines, a cosmetic `nitpick` or `suggestion` is **dropped as noise**, the same disposition and accounting `per-comment-confidence.md` gives a below-bar nitpick, rather than posted.
-This is the exact case where an inline cosmetic nit otherwise spawns another on the next push, because the reviewer re-runs on every push and aligning surface A makes sibling B read as uneven.
-Dropping it breaks that cascade without a new counter or body section, and it still appears in the uncapped Step 3 terminal report.
-A *factual* doc error is material and posts normally, and blocking findings are never cosmetic.
+At **placement** (§ Placement), material findings sort before cosmetic ones within a prefix, so a scarce inline slot goes to a real defect first and cosmetic findings overflow into `Additional findings` first.
+This is an ordering tiebreak only: it drops nothing and defers nothing new.
+
+On `incremental` and `incremental-quick` runs whose `REVIEW_DIFF` touches only Markdown (`.md` / `.mdx`) or comment lines, a cosmetic `nitpick` or `suggestion` is **dropped at the filtering stage** (2.3), before it reaches the confidence gate, and logged as a `Materiality drops` count.
+Because it never clears 2.7 it never enters `<CL>`, so the identity holds and the "a cleared finding is never silently discarded" rule (§ Deferred findings) — which governs findings that *did* clear — is not engaged.
+This is a pre-clearing drop, the same disposition class as a `review-config` filter suppression, not a drop of a cleared finding at placement.
+It targets the exact case where an inline cosmetic nit otherwise spawns another on the next push, because the reviewer re-runs on every push and aligning surface A makes sibling B read as uneven.
+A *factual* doc error is material and is never dropped, and blocking findings are never cosmetic.
 
 ## Severity mapping
 
