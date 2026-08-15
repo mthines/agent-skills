@@ -325,6 +325,76 @@ Land these as separate PRs per fix, not one sweep — and add the new numbers to
 
 ---
 
+## Adversarial review (critical/plan)
+
+**Target:** the R1–R7 remediation plan above.
+**Persona:** Hostile staff engineer, pre-mortem — the fix set shipped and made things worse.
+**Grounding actions run:** probed the live toolset for `Task`/Agent availability; resolved all six file paths the plan references; `wc -l` on `aw.agent.md` against its stated ceiling; grepped `fix-bug/SKILL.md` for `aw-create-plan` coupling; ran `node scripts/eval/l1.mjs`.
+
+### Must-fix
+
+1. **The `Task`-unavailability premise is falsified in the very environment this document is about** — *assumption: "Claude Code on the web disables the `Task` tool"* ([`CLAUDE.md`](../CLAUDE.md) v3.19.0 history; restated in RC-2 above).
+   In the live cloud session that produced this analysis, the Agent tool **is present**, with `aw`, `aw-planner`, `aw-executor`, and `pr-reviewer` all dispatchable.
+   The premise was inherited from v3.19.0 and from a `loop::aw-lessons` lesson recorded on `dash0/dash0` — a *different* harness the lesson itself describes as "a Claude Code session/CLI variant without sub-agent support."
+   RC-2 asserted it for Claude Cloud without probing. It is the plan's second-largest root cause and it may be treating a condition that no longer exists. Everything downstream of it (R1's `subagent_dispatch` flag, R2's degradation matrix) is built on it.
+
+2. **The plan has no off-switch and no rollback** — *assumption: "these are safe because they're markdown."*
+   [`CLAUDE.md`](../CLAUDE.md) states edits are "picked up live on the next agent turn" via the symlink chain, and distribution is `sync-symlinks.sh` / `npx skills add` with no version pinning and no staged rollout.
+   No fix in R1–R7 proposes a flag (`--no-probe`), a kill switch, or a version gate. A user hitting a bad probe mid-run has exactly one remedy: `git revert` and re-pull.
+   This is the same defect I charged the plan's target with — I criticised missing counters and then specified seven behaviors with no escape hatch.
+
+3. **R1's probe is a single point of failure that fails silently toward *less* review.**
+   If `which gh` succeeds but `gh auth status` fails, or PATH differs under a session hook, the probe returns a false negative and **every laptop run degrades to the cloud path** — `pr-reviewer` skipped, `feature-pr-verifier` skipped, bounded polls instead of real CI waits.
+   The failure is plausible-looking: runs still complete and still open PRs. They just stop being reviewed. A capability probe that gates quality companions must fail *closed* (assume capable, escalate on error), not open.
+
+4. **The plan changes exactly the two behaviors the repo says cannot be verified by reading source, and adds no test.**
+   [`CLAUDE.md`](../CLAUDE.md)'s `aw` smoke test states: *"Steps 3 and 4 are the gate — they cover the only two behaviors that reading the source cannot verify"* — those steps are nested dispatch/single-context fallback (R1, R2, R6) and the lessons loop.
+   L1 is static and cannot test runtime dispatch; L2 tests rubric decisions, not orchestration.
+   The `L1: 204/204` reported when this document was committed proves link and contract integrity **only** — it is not evidence any stall is fixed, and should not be read as validation.
+
+### Should-fix
+
+5. **R3 reproduces the defect it diagnoses.** RC-4's complaint is that no rule bounds the *composite*. R3 adds a fourth independent budget (re-watch attempts) alongside Phase 7's 2-handoff `ci-auto-fix` cap and `create-pr`'s "at most one rerun per check" — none of which are aware of each other. Three budgets that compose to an unbounded total is the original bug with more bookkeeping. The fix needs **one** PR-scoped delivery budget, not another local counter.
+
+6. **R1 contaminates `fix-bug`.** `fix-bug`'s fast lane invokes `aw-create-plan` directly ([`fix-bug/SKILL.md:12`](../../fix-bug/SKILL.md)) — it is explicitly the *no-planner* path. Adding capability-probe emission to `aw-create-plan` gives `fix-bug` a probe it never asked for, and L1 G2 already asserts the fast-lane plan is a superset of Core-8. Put the probe in the agents, never in the plan generator.
+
+7. **The dispatcher is already over its own ceiling, and four fixes add to it.** [`CLAUDE.md`](../CLAUDE.md) sets a "~200-line system prompt" ceiling for `aw` and warns that exceeding it means "drifting toward a god-agent." `aw.agent.md` is **245 body lines today** — already 22% over. R1, R2, R5, and R6 all add text to it. The plan violates a stated hard invariant of the thing it is fixing.
+
+8. **R2's degradation matrix is a second source of truth.** "What does `pr-reviewer` need in order to be meaningful?" is already answered in `pr-reviewer`'s own definition. A central matrix restating it for seven agents will drift, and the repo's coupled-documentation convention would then require updating an eighth surface on every agent change.
+
+### Nice-to-have
+
+9. **R4 and R6 are scope creep against the reported symptom.** The user reported stalling and inconsistent returns. R4's cap-tuning addresses over-reviewing; R6's compaction protocol addresses a failure mode that was inferred from context-size reasoning and never observed in a transcript. Both may be right; neither is *asked for*.
+
+10. **The intermittency table in [Why it is intermittent](#why-it-is-intermittent) is unfalsified speculation presented as analysis.** It predicts a per-tier distribution from mechanism, with no run data behind it. It should be labelled a hypothesis and used to design a reproduction, not offered as a finding.
+
+11. **R6 covers at most a third of runs.** It anchors on `checks.yaml` and the Progress Log, both Full-only. Lite and Micro have neither and would still resume blind after compaction.
+
+### Steelman alternative
+
+**Alternative:** Stop teaching seven skills about the environment. Make the cloud **look like** a laptop — ship a `gh` shim on `PATH` that translates the ~12 verbs actually used into `mcp__github__*` calls (and fails with one loud line on the rest), installed via the existing `session-start-hook` mechanism. Pair it with exactly one code change: a non-`Task` fallback for `pr-reviewer` in [`review-loop`](../../../quality/review-loop/SKILL.md).
+
+**Why it might be better:**
+
+- **Deletes the largest root cause without touching 169 call sites.** RC-1 evaporates: `gh pr view`, `gh pr create`, `gh api` all just work, in *every* skill — `create-pr`, `ci-auto-fix`, `implement-suggestion`, `pr-reviewer` — not only in `aw`.
+- **No probe, so must-fix #3 cannot happen.** There is no capability flag to false-negative, and therefore no silent global downgrade of review quality.
+- **No second source of truth**, so should-fix #8 disappears, and the skills stay environment-agnostic — which is their actual design intent.
+- **Rollback is removing one file from `PATH`**, answering must-fix #2 directly.
+- Collapses R1 + R2 + most of R7 into one artifact, leaving roughly three fixes instead of seven.
+
+**Why we should reconsider:**
+
+Honestly — **we should.** The gh half of the plan is better solved by a shim than by capability-awareness, and I did not consider it before proposing R1.
+
+Two caveats keep part of the original plan alive:
+
+- A shim cannot fix `gh pr checks --watch` streaming semantics against the 10-minute tool ceiling, so **R3 survives** (as a single PR-scoped budget, per should-fix #5).
+- A shim is a script, and [`CLAUDE.md`](../CLAUDE.md) records a "skills stay markdown-only" contract (v3.8 history). It would have to live in `scripts/` or `plugins/` — which is where `record-comment-relevance.mjs` and the hook plugins already live, so the contract is about *skills*, not the repo. This is a placement question, not a blocker.
+
+**Net:** the plan as written is over-engineered for the evidence behind it. Before building any of it, get one real transcript of a stalled cloud run — must-fix #1 means we may currently be fixing the wrong thing.
+
+---
+
 ## Non-causes ruled out
 
 Checked and found **not** responsible:
