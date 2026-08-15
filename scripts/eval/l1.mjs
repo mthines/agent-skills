@@ -926,6 +926,14 @@ function checksInSync(plan, checks) {
   }
 }
 
+// Shared by G22 and G23. Deliberately ONE definition: this predicate was
+// copy-pasted across the two checks, and widening one without the other would
+// let a block be counted by G22 while G23 silently stopped guarding it — the
+// same restated-value defect these checks exist to catch.
+const isPollBlock = (block) =>
+  /\b(while|until)\b/.test(block) && /\bsleep\b/.test(block) &&
+  /\b(gh|curl|wget|aws|kubectl|az|gcloud)\b/.test(block);
+
 // ── Check G22: every external-wait site is bounded at BOTH levels ──
 // The `diagnostic-surface.md` invariant has two clauses and checking only the
 // first is the documented trap: an in-command `timeout 540` issued at the Bash
@@ -979,9 +987,7 @@ function checksInSync(plan, checks) {
       }
 
       // (2) Poll blocks — a loop that sleeps around a network call.
-      const isPoll = /\b(while|until)\b/.test(block) && /\bsleep\b/.test(block) &&
-        /\b(gh|curl|wget|aws|kubectl|az|gcloud)\b/.test(block);   // any remote call, per the invariant
-      if (!isPoll) continue;
+      if (!isPollBlock(block)) continue;
       // A fence may hold BOTH a watch command and a separate poll loop; each is
       // counted. (isPoll needs a loop keyword AND a sleep, which a watch command
       // line never has, so this cannot double-count a single watch.)
@@ -1041,13 +1047,14 @@ function checksInSync(plan, checks) {
     }
     for (const [b0, b1] of blocks) {
       const block = lines.slice(b0, b1).join("\n");
-      const isPoll = /\b(while|until)\b/.test(block) && /\bsleep\b/.test(block) &&
-        /\b(gh|curl|wget|aws|kubectl|az|gcloud)\b/.test(block);
-      if (!isPoll) continue;
+      if (!isPollBlock(block)) continue;
       guarded++;
       // Accept either shape: a case default that exits non-zero, or an explicit
       // "the tool wrote to stderr / the call failed" arm.
-      const caseDefault = /\*\)[^\n]*exit\s+[1-9]/.test(block);
+      // MUST be anchored: a specific arm such as `*authentication*)` also ends
+      // in `*)`, so an unanchored match is satisfied by a non-default arm while
+      // the real default stays benign — the exact bug this check exists to find.
+      const caseDefault = /^\s*\*\)[^\n]*exit\s+[1-9]/m.test(block);
       const stderrArm = /\[\s*-[sn]\s+"?\$\{?(err|ERR)/i.test(block) ||
         /\|\|\s*\{[^}]*(exit\s+[1-9]|POLL_ERROR)/.test(block);
       s.check(
@@ -1058,7 +1065,7 @@ function checksInSync(plan, checks) {
       );
     }
   }
-  s.check("G23 found the polling blocks to guard", guarded >= 3, `found ${guarded}`);
+  s.check("G23 guards exactly 3 polling blocks", guarded === 3, `found ${guarded}`);
 }
 
 process.exit(s.report() ? 0 : 1);

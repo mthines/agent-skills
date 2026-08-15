@@ -76,6 +76,12 @@ Poll instead of sleeping the full interval — proceed as soon as a bot posts, s
 PR_URL="<pr-url>"; SINCE="<baseline-timestamp>"; INTERVAL=300; POLL=30   # INTERVAL <= 540
 read OWNER REPO NUMBER < <(echo "$PR_URL" \
   | sed -E 's|https://github.com/([^/]+)/([^/]+)/pull/([0-9]+).*|\1 \2 \3|')
+# DO NOT wrap this block in `bash -c '...'` when "harmonising" it with the poll
+# loops in registration-poll.md / ci-auto-fix. It contains single quotes in two
+# places (the trap below and the sed above); an enclosing bash -c '...' would be
+# terminated by either, silently breaking both. Those siblings avoid apostrophes
+# deliberately. This block is correct only as a bare fence, bounded by the tool
+# timeout plus the interval clamp.
 START=$(date +%s); ERR=$(mktemp); trap 'rm -f "$ERR"' EXIT INT TERM
 
 # A failing `gh api` prints nothing to stdout, so an unguarded $(...) yields "",
@@ -90,9 +96,9 @@ count() {                       # $1 = api path, $2 = timestamp field
 }
 
 while :; do
-  NEW=$(count "/repos/$OWNER/$REPO/pulls/$NUMBER/comments" created_at)   || { echo "POLL_ERROR"; cat "$ERR" >&2; break; }
-  NEW_REVIEWS=$(count "/repos/$OWNER/$REPO/pulls/$NUMBER/reviews" submitted_at) || { echo "POLL_ERROR"; cat "$ERR" >&2; break; }
-  NEW_ISSUE=$(count "/repos/$OWNER/$REPO/issues/$NUMBER/comments" created_at)   || { echo "POLL_ERROR"; cat "$ERR" >&2; break; }
+  NEW=$(count "/repos/$OWNER/$REPO/pulls/$NUMBER/comments" created_at)   || { echo "POLL_ERROR"; { [ -s "$ERR" ] && cat "$ERR" >&2 || echo "gh returned no usable count" >&2; }; break; }
+  NEW_REVIEWS=$(count "/repos/$OWNER/$REPO/pulls/$NUMBER/reviews" submitted_at) || { echo "POLL_ERROR"; { [ -s "$ERR" ] && cat "$ERR" >&2 || echo "gh returned no usable count" >&2; }; break; }
+  NEW_ISSUE=$(count "/repos/$OWNER/$REPO/issues/$NUMBER/comments" created_at)   || { echo "POLL_ERROR"; { [ -s "$ERR" ] && cat "$ERR" >&2 || echo "gh returned no usable count" >&2; }; break; }
   if [ $((NEW + NEW_REVIEWS + NEW_ISSUE)) -gt 0 ]; then echo "NEW_FEEDBACK"; break; fi
   [ $(( $(date +%s) - START )) -ge $INTERVAL ] && { echo "NO_FEEDBACK"; break; }
   sleep $POLL
