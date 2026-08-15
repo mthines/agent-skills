@@ -74,6 +74,11 @@ After dedupe, run one explicit consolidation step:
 2. Within a file, sort by `(prefix priority, line)`. Prefix priority: `issue > suggestion > question > nitpick > praise`.
 3. **No cap fires here.** Consolidation orders findings; it never discards them.
    Every surviving finding continues to the quality gates (2.6 grounding → 2.6b receipt → 2.7 confidence → 2.8 shape), and only those gates may drop one.
+4. **Collapse parity findings across sibling surfaces.**
+   When a finding's basis is *cross-surface consistency* — "X is documented but sibling Y is not", "spell out the rule like the neighbour does", the same constant, rule, or annotation restated in several places — emit **one** finding that enumerates every surface to align, never one finding per surface.
+   A consistency finding must grep its sibling surfaces before it is emitted and name all of them.
+   Reporting the first instance alone makes the author fix surface A, which then reads as uneven against surface B on the next review, and because the reviewer re-runs on every push, that is a self-perpetuating cascade of one cosmetic round per commit.
+   The single enumerated finding is fixed once, and the cascade never starts.
 
 **Why the cap is not here.** Capping at 2.5 discarded findings *before* they were scored.
 A correct, high-confidence finding could lose its slot to a weaker one that the 2.7 confidence gate then dropped anyway — so the review posted fewer findings than its own cap allowed, and the loss was invisible.
@@ -96,8 +101,9 @@ This is the point of the caps: they exist to stop a wall of nitpicks reading as 
 Ordering — blocking findings are placed first (never deferred), then the remaining inline slots are filled by non-blocking findings under the caps, applied per file and then globally:
 
 1. Prefix priority: `issue > suggestion > question > nitpick`.
-2. Then descending `per-comment-confidence` Final score.
-3. Then ascending line number.
+2. Then **material** before **cosmetic** (§ Materiality routing), so a scarce inline slot goes to a real defect before a matter of form.
+3. Then descending `per-comment-confidence` Final score.
+4. Then ascending line number.
 
 The split is terminal-vs-GitHub, not self-vs-cross.
 `pr-reviewer` runs the identical pipeline in both relations (Step 0.5) and always posts at Step 4, so the inline caps apply to every run.
@@ -123,6 +129,24 @@ Rules:
 Rationale for the inline cap: a PR comment with 12 inline annotations on the same file reads as a hostile review even when every individual finding is correct.
 The 2026 CodeRabbit / Greptile field guide flags > 5 comments per file as the threshold above which authors start to dismiss the review wholesale.
 That is an argument about **inline density**, not about how much the reviewer is allowed to report — hence deferral rather than a drop.
+
+### Materiality routing
+
+Non-blocking findings carry a **materiality** dimension, orthogonal to confidence: a finding can be correct (high confidence) and still not be worth surfacing.
+
+- **material** — asserts a real defect the author would want to fix: a test or coverage gap, a *wrong* or *misleading* comment, doc, or name, a factual error, or a genuine simplification.
+- **cosmetic** — asserts no defect, only a preference about *form*: wording parity between surfaces ("spell it out like the sibling"), reflow, whitespace, formatting, or restating the same rule more verbosely.
+
+Materiality changes routing in two ways, neither of which touches the `<CL> − <DEF> == <F>` identity.
+
+At **placement** (§ Placement), material findings sort before cosmetic ones within a prefix, so a scarce inline slot goes to a real defect first and cosmetic findings overflow into `Additional findings` first.
+This is an ordering tiebreak only: it drops nothing and defers nothing new.
+
+On `incremental` and `incremental-quick` runs whose `REVIEW_DIFF` touches only Markdown (`.md` / `.mdx`) or comment lines, a cosmetic `nitpick` or `suggestion` is **dropped at the filtering stage** (2.3), before it reaches the confidence gate, and logged as a `Materiality drops` count.
+Because it never clears 2.7 it never enters `<CL>`, so the identity holds and the "a cleared finding is never silently discarded" rule (§ Deferred findings) — which governs findings that *did* clear — is not engaged.
+This is a pre-clearing drop, the same disposition class as a `review-config` filter suppression, not a drop of a cleared finding at placement.
+It targets the exact case where an inline cosmetic nit otherwise spawns another on the next push, because the reviewer re-runs on every push and aligning surface A makes sibling B read as uneven.
+A *factual* doc error is material and is never dropped, and blocking findings are never cosmetic.
 
 ## Severity mapping
 

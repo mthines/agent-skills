@@ -260,6 +260,22 @@ function checksInSync(plan, checks) {
   s.check("G6 rubric-composition 80 → 70 promotion language present",
     rcmd.includes("80") && rcmd.includes("70") && /agreement.promoted/i.test(rcmd));
 
+  // G6b: Materiality routing — non-blocking findings split material/cosmetic; cosmetic sorts after
+  // material at placement, and on a docs-only incremental delta is dropped at the PRE-CLEARING
+  // filtering stage (2.3) so it never enters <CL> and the <CL> − <DEF> == <F> identity holds. Both
+  // assertions are scoped to the section slice so gutting the section fails the check.
+  const matSec = (rcmd.match(/###\s+Materiality routing[\s\S]*?(?=\n##\s)/) || [""])[0];
+  s.check("G6b rubric-composition § Materiality routing classifies material vs cosmetic + orders them",
+    /cosmetic/i.test(matSec) && /material/i.test(matSec) && /sort before|material findings sort/i.test(matSec));
+  s.check("G6b materiality cosmetic drop is pre-clearing (never enters <CL>, identity intact)",
+    /filtering stage/i.test(matSec) && /never enters `<CL>`/i.test(matSec));
+  // G6c: Consolidation collapses cross-surface parity findings into one enumerated finding, so a
+  // consistency fix cannot leave a sibling to re-flag on the next push (cascade guard). Scoped to
+  // the § Consolidation pass slice so gutting item 4 fails the check (matched G6b's scoping).
+  const consSec = (rcmd.match(/##\s+Consolidation pass[\s\S]*?(?=\n##\s)/) || [""])[0];
+  s.check("G6c rubric-composition consolidation collapses parity findings across siblings",
+    /parity findings across sibling surfaces/i.test(consSec) && /enumerate/i.test(consSec));
+
   // G7: every refactor recipe (R\d+) in refactor-recipes.md's Contents list appears
   // in exactly one of the M or J rows of the Recipe Class table. The "simplify" mode
   // auto-applies Class M recipes; an unclassified recipe silently defaults to J, but
