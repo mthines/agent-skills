@@ -936,8 +936,14 @@ function checksInSync(plan, checks) {
 // `references/` is excluded — those files quote the unbounded forms as examples of
 // the bug being fixed.
 {
-  const WATCH = /^\s*(?:timeout\s+(\d+)\s+)?gh\s+(?:pr\s+checks|run\s+watch)\b/;
-  const isWatch = (l) => /gh\s+(?:pr\s+checks[^\n]*--watch|run\s+watch)/.test(l);
+  // Two shapes count as an external-wait site, matching the invariant's enumerated
+  // set in diagnostic-surface.md: a `gh … --watch` / `gh run watch`, AND a poll loop
+  // that sleeps. The poll form was previously invisible here — the one new wait this
+  // change introduced was the one its own enforcement could not see.
+  const WATCH = /^\s*(?:timeout\s+(\d+)\s+)?(?:gh\s+(?:pr\s+checks|run\s+watch)|bash\s+-c)\b/;
+  const isWatch = (l) =>
+    /gh\s+(?:pr\s+checks[^\n]*--watch|run\s+watch)/.test(l) ||
+    /\bbash\s+-c\b/.test(l); // bounded poll loop wrapper
   const files = [
     ...walk(join(REPO_ROOT, "skills")),
     ...walk(join(REPO_ROOT, "agents")),
@@ -948,7 +954,7 @@ function checksInSync(plan, checks) {
   // sit within PROXIMITY lines above the command so it reads as that command's
   // instruction rather than as unrelated prose elsewhere in the file.
   const PROXIMITY = 6;
-  const EXPECTED_SITES = 6; // pinned, not a floor — deleting a site must trip this.
+  const EXPECTED_SITES = 7; // pinned, not a floor — deleting a site must trip this.
   let sites = 0;
   for (const f of files) {
     const lines = readFileSync(f, "utf8").split("\n");

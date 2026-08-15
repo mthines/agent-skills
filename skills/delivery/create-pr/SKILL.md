@@ -190,10 +190,25 @@ Wait for registration with a **bounded poll loop** — permitted by the bounded-
 ```bash
 # Issue this Bash call with the tool parameter timeout: 600000.
 # One call, real wall-clock, hard 90 s ceiling.
-timeout 90 bash -c 'until gh pr checks <pr-number> >/dev/null 2>&1; do sleep 5; done'
+# Keep stderr: only "no checks reported" is a registration wait. Discarding it
+# would make an auth or network failure look like a repo with no CI.
+timeout 90 bash -c '
+  until err=$(gh pr checks <pr-number> 2>&1 >/dev/null); do
+    case "$err" in
+      *"no checks reported"*) sleep 5 ;;
+      *) echo "$err" >&2; exit 3 ;;        # tooling failure, not a registration wait
+    esac
+  done
+  sleep 5; gh pr checks <pr-number> >/dev/null 2>&1'   # confirm: catch a second workflow registering late
 ```
 
-Exit 0 → checks registered, proceed to the watch. Exit 124 → still nothing after 90 s; that counts as one `registration_attempts` and is the only thing that may eventually conclude "no CI".
+| Poll exit | Meaning | Next |
+| --------- | ------- | ---- |
+| 0 | Checks registered and stable across a confirming poll | Proceed to the watch |
+| 3 | `gh` itself failed (auth, network, rate limit) | **Tooling failure row** — do not count a `registration_attempts`, do not conclude anything about CI |
+| 124 | 90 s elapsed with nothing but `no checks reported` | Counts as one `registration_attempts`. This is the **only** exit that may eventually conclude "no CI" |
+
+Before concluding "no CI" at `registration_attempts == 3`, distinguish **no workflows configured** from **workflows awaiting approval** — a PR from a first-time or outside contributor has its runs held pending maintainer approval, and `gh pr checks` reports nothing for as long as that takes. `gh run list --branch <branch>` shows the held runs where `gh pr checks` shows none. If runs exist but are awaiting approval, report that to the user and escalate; do **not** report success.
 
 ### The attempt budget (file-backed, tier-independent)
 
