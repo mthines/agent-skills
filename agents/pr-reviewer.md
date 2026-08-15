@@ -424,8 +424,16 @@ The summary form costs ~250 bytes per entry: ~50 KB saturated, ~15 KB typical. B
 at Step 1.2d, once the changed files and `INTENT_PHRASE` exist to shortlist against.
 
 **`view` is a capability, not a guarantee — probe once, then commit.** It requires LoreKit
-**≥ the release carrying lorekit#464**; older servers do not have it. Two failure shapes, handled
-differently, and neither may cost you `LOREKIT_CONNECTED`:
+**≥ the release carrying lorekit#464**; older servers do not have it.
+
+Bind `SUMMARY_VIEW` before the first call and never re-evaluate it mid-fan-out, so all four calls
+and every later step agree on one answer:
+
+- **`true`** — the live `mcp__lorekit__memory_list` schema lists `view`. Send `view="summary"` on
+  all four calls. This is the default outcome on a current server.
+- **`false`** — either failure shape below fired. The calls return full bodies.
+
+The two failure shapes are handled differently, and neither may cost you `LOREKIT_CONNECTED`:
 
 - **The tool's input schema does not list `view`.** Check the live `mcp__lorekit__memory_list`
   schema before the first call. If `view` is absent, set `SUMMARY_VIEW = false` and issue all four
@@ -472,7 +480,7 @@ Both counters feed the Step 4 `Review details`
 **Memories** line; the collapsed title headlines the **used** count (`MEMORIES_USED_COUNT`,
 computed at Step 2.2) — see *Review body format*.
 Announce the concrete resolved scope so the read is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <N> entries indexed.` The matched-lesson count is announced at Step 1.2e, once matching has run.
-The `<D> suppressions, <P> promotions` figures are NOT announced here: they come from `relevance` and `seen_count` in record BODIES, which are not fetched until Step 2.2. Step 2.2 announces them once they exist: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
+The `<D> suppressions, <P> promotions` figures are NOT announced here: they come from `relevance` and `seen_count` in record BODIES, which are not fetched until Step 2.2. Step 2.2 announces them once they exist.
 
 ### 1.1 Fetch PR data in parallel
 
@@ -978,11 +986,30 @@ A near-miss `issue` or `suggestion` — one that scored just under its threshold
 
 ### 2.2 Relevance-memory filtering
 
-See `agents/shared/rules/comment-relevance-memory.md § Read`. Apply loaded memories:
+See `agents/shared/rules/comment-relevance-memory.md § Read`.
+
+**First, resolve the relevance bodies.** The raw findings now exist, so the fingerprint match is
+finally possible — this is the step that owns that fetch, and Step 1.2d deliberately did not do it.
+For each loaded `reviewer-comment-relevance` entry whose fingerprint matches a raw finding, fetch
+its body with `mcp__lorekit__memory_read` (`scope` + `key`), because `relevance`, `seen_count`,
+`resolution_method` and `status` all live there and none of them is in the key.
+
+- **Skip the fetch** when `SUMMARY_VIEW` is `false` (Step 1.0 already returned full bodies) or when
+  `value_bytes` ≤ 200 (the `preview` was the whole record). Neither case consumes budget.
+- **Budget:** spend what remains of the shared `MEMORY_READ_BUDGET` after Step 1.2d — the whole
+  remainder is available here, including anything 1.2d left unused.
+- An entry whose body was not fetched — a failed read, or the pool exhausted — has no verdict.
+  Treat it as absent: it must not drop, downgrade, or promote anything, and it must never be
+  guessed at from its preview. Add each such entry to `MEMORY_BODIES_UNREAD`.
+- A failed read is non-blocking and never flips `LOREKIT_CONNECTED`.
+
+**Then apply the verdicts:**
 
 - `not-relevant` with `seen_count >= 3` → **DROP** the finding.
 - `not-relevant` with `seen_count 1–2` → **DOWNGRADE** to `nitpick`.
 - `relevant` with `seen_count >= 2` → **PROMOTE** (terminal output only).
+
+Announce, now that the figures exist: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
 
 For every memory that fires (drop / downgrade / promote), append a record —
 `{ fingerprint, action, seen_count, scope, key }` — to `APPLIED_MEMORIES[]` per
@@ -1215,9 +1242,10 @@ confidence-deferred (advisory) <CADV>, shape drops <S>,
 cleared <CL>, deferred over inline cap <DEF>, posted inline <F>,
 anchorless carried <AC>, anchorless resolved <AR>,
 memory bodies unread <MEMORY_BODIES_UNREAD>.
-`<MEMORY_BODIES_UNREAD>` is Step 1.2d's truncated shortlist — candidates whose bodies the read
-budget could not fetch, and which therefore could not match at Step 1.2e. It is 0 when the budget
-was not binding and when `SUMMARY_VIEW` is false (every body was already loaded).
+`<MEMORY_BODIES_UNREAD>` counts every candidate whose body the shared `MEMORY_READ_BUDGET` could
+not fetch, at BOTH read sites: Step 1.2d lesson bodies that therefore could not match at 1.2e, and
+Step 2.2 relevance bodies that therefore produced no drop / downgrade / promote. It is 0 when the
+pool never bound and when `SUMMARY_VIEW` is false (every body was already loaded).
 `<CADV>` (near-miss issue/suggestion routed to the advisory body section) is reported separately
 and is NOT part of the `<CL> − <DEF> == <F>` identity — advisory findings never cleared 2.7.
 CI: PASS or FAIL (check names if failing).

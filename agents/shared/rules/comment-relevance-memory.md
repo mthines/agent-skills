@@ -241,10 +241,17 @@ mcp__lorekit__memory_read: scope="<the entry's scope>" key="<the entry's key>"
 This fetch happens **after** the run's raw findings exist, because the selector is a fingerprint
 match against them — there is nothing to match earlier. In `pr-reviewer` that is Step 2.2.
 
-Skip the fetch only when `value_bytes` ≤ 200, in which case the `preview` already carried the whole
-record. A failed read drops that one entry and is non-blocking — never treat it as a disconnection.
-An entry whose body was not fetched has no verdict and must not produce a drop, downgrade, or
-promote; treat it as absent rather than guessing from the preview.
+Skip the fetch entirely in two cases, neither of which consumes budget:
+
+- **The list read was not a summary read.** If the caller omitted `view` — because the server does
+  not support it, or because it chose not to — the bodies are already in hand and there is nothing
+  to resolve. In `pr-reviewer` this is `SUMMARY_VIEW == false`.
+- **`value_bytes` ≤ 200**, in which case the `preview` already carried the whole record.
+
+A failed read drops that one entry and is non-blocking — never treat it as a disconnection.
+An entry whose body was not fetched — a failed read, or an exhausted budget — has no verdict and
+must not produce a drop, downgrade, or promote; treat it as absent rather than guessing from the
+preview.
 
 **Budget.** A caller that bounds its memory reads should give this fetch the larger share. In
 `pr-reviewer` the two read sites draw on one shared `MEMORY_READ_BUDGET`: Step 1.2d (lesson bodies)
