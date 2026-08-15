@@ -65,6 +65,12 @@ These become new **detection candidates** — patterns to watch for in future ru
 Use `gh api` (read-only).
 Run after merge, or on-demand.
 
+**This sequence is REST plus one GraphQL call.** Steps 1–5 are REST, but signal (c)'s primary
+corroboration is thread resolution, and `isResolved` is a GraphQL `reviewThreads` field that no REST
+endpoint exposes. Step 3b acquires it. Without that step an agent following this sequence literally
+cannot evaluate the corroboration signal (c) requires, so signal (c) would never fire — a far larger
+behaviour change than "requires corroboration", and a silent one.
+
 ### Step 1 — Resolve the comment list
 
 ```bash
@@ -96,6 +102,27 @@ gh api repos/$REPO/pulls/$PR_NUMBER/comments \
 
 If a reply exists from the PR author AND no fix commit touches the commented line (Step 4 returns empty) → signal (b): the finding was challenged without action.
 
+### Step 3b — Thread resolution state (needed by signal (c))
+
+The **same** query `prior-comment-awareness.md § fetch existing PR comment state` runs, including its
+`endCursor` pagination walk — do not re-derive it, and do not drop the walk (`reviewThreads` caps at
+100 and `--paginate` does not work for GraphQL):
+
+```bash
+OWNER="${REPO%%/*}"; REPO_NAME="${REPO##*/}"
+# Walk reviewThreads(first:100, after:$cursor) until hasNextPage is false, exactly as
+# prior-comment-awareness.md § Thread state does, and merge the pages.
+# Build COMMENT_TO_THREAD: Map<databaseId, {threadId, isResolved}>.
+```
+
+Build `COMMENT_TO_THREAD` from the result, the same map that rule builds.
+
+**If the walk cannot complete** (permissions, API error, unpaged remainder), treat every affected
+comment's resolution state as **unknown** — never as unresolved. An unknown state fails corroboration,
+so those comments become indeterminate and are not written, per § Signal (c) requires corroboration.
+Log `[outcome] thread state unavailable — <N> comment(s) indeterminate`. Guessing "unresolved" here
+would convert a tooling gap into a stream of false `ignored-at-merge` records.
+
 ### Step 4 — Signal (c): author pushed a fix touching the commented line
 
 ```bash
@@ -116,7 +143,7 @@ posted — **and** corroboration that the finding was actually addressed.
 
 A commit touching the region is evidence that the author *edited near the finding*, not that they
 *fixed it*. Treating the touch alone as `relevant / fixed` is the same vacuous inference
-`thread-resolution.md § \`fixed\` requires that this run re-scanned the region` removes from the
+``thread-resolution.md § `fixed` requires that this run re-scanned the region`` removes from the
 in-run path: clause 1 without clause 2.
 
 It matters more here than it looks, because the in-run fix **deliberately routes threads to this
@@ -129,7 +156,7 @@ Corroboration is any **one** of:
 
 | Corroborating signal | Why it is evidence |
 | --- | --- |
-| The thread is **resolved** (`isResolved == true`) | Someone — author, reviewer, or fixer — asserted it was dealt with. This is the authority `prior-comment-awareness.md § Thread state` already designates. |
+| The thread is **resolved** (`isResolved == true`), from `COMMENT_TO_THREAD` (Step 3b) | Someone — author, reviewer, or fixer — asserted it was dealt with. This is the authority `prior-comment-awareness.md § Thread state` already designates; Step 3b is where this path obtains it. |
 | `implement-suggestion` recorded `verdict: applied` for the fingerprint | A gated apply landed the change; the `review-outcomes` bus carries it. |
 | The author replied with an acknowledgement ("fixed", "done", "addressed") | The author's own words. |
 
