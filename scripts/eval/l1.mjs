@@ -926,4 +926,67 @@ function checksInSync(plan, checks) {
   }
 }
 
+// ── Check G22: every CI-watch invocation is bounded at BOTH levels ──
+// The `diagnostic-surface.md` invariant "every wait on an external system is bounded"
+// has two clauses, and checking only the first is the documented trap: an in-command
+// `timeout 540` issued at the Bash tool's DEFAULT (120000 ms) is still killed before
+// its own exit 124 fires, so the expiry handling is dead code and the run hangs.
+// This guard asserts both: (a) the command carries an inner `timeout N` with N < 600,
+// and (b) the file states the per-call tool timeout `600000` so the agent opts in.
+// `references/` is excluded — those files quote the unbounded forms as examples of
+// the bug being fixed.
+{
+  // Two shapes count as an external-wait site, matching the invariant's enumerated
+  // set in diagnostic-surface.md: a `gh … --watch` / `gh run watch`, AND a poll loop
+  // that sleeps. The poll form was previously invisible here — the one new wait this
+  // change introduced was the one its own enforcement could not see.
+  const WATCH = /^\s*(?:timeout\s+(\d+)\s+)?(?:gh\s+(?:pr\s+checks|run\s+watch)|bash\s+-c)\b/;
+  const isWatch = (l) =>
+    /gh\s+(?:pr\s+checks[^\n]*--watch|run\s+watch)/.test(l) ||
+    /\bbash\s+-c\b/.test(l); // bounded poll loop wrapper
+  const files = [
+    ...walk(join(REPO_ROOT, "skills")),
+    ...walk(join(REPO_ROOT, "agents")),
+  ].filter((f) => !f.includes("/references/"));
+
+  // Clause (b) is checked PER SITE, not per file: a file with two watch sites
+  // must not let one site's declaration cover the other. The declaration has to
+  // sit within PROXIMITY lines above the command so it reads as that command's
+  // instruction rather than as unrelated prose elsewhere in the file.
+  const PROXIMITY = 6;
+  const EXPECTED_SITES = 7; // pinned, not a floor — deleting a site must trip this.
+  let sites = 0;
+  for (const f of files) {
+    const lines = readFileSync(f, "utf8").split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // Only command lines count — prose and table cells mentioning it do not.
+      if (!isWatch(line) || !WATCH.test(line)) continue;
+      // A `bash -c` wrapper only counts when it is genuinely a poll loop — a
+      // loop keyword plus a sleep within the next few lines. Without this the
+      // matcher would fail G22 on any unrelated `bash -c` one-liner a future
+      // skill documents, and break the pinned site count with it.
+      if (/\bbash\s+-c\b/.test(line) && !/gh\s+(?:pr\s+checks|run\s+watch)/.test(line)) {
+        const block = lines.slice(i, i + 12).join("\n");
+        if (!/\b(until|while)\b/.test(block) || !/\bsleep\b/.test(block)) continue;
+      }
+      sites++;
+      const inner = line.match(WATCH)[1];
+      s.check(
+        `G22 ${rel(f)}:${i + 1} watch is bounded in-command (timeout N, N < 600)`,
+        inner !== undefined && Number(inner) < 600,
+        inner === undefined ? `unbounded: ${line.trim()}` : `timeout ${inner} >= harness cap`,
+      );
+      const near = lines.slice(Math.max(0, i - PROXIMITY), i).join("\n");
+      s.check(
+        `G22 ${rel(f)}:${i + 1} declares the per-call tool timeout (600000) within ${PROXIMITY} lines`,
+        near.includes("600000"),
+        "an inner timeout alone still dies at the 120000 ms tool default",
+      );
+    }
+  }
+  s.check(`G22 guards exactly ${EXPECTED_SITES} CI-watch sites`,
+    sites === EXPECTED_SITES, `found ${sites}`);
+}
+
 process.exit(s.report() ? 0 : 1);

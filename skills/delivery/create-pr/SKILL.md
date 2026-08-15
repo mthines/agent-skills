@@ -21,7 +21,7 @@ argument-hint: '[--split] [--quick] [--no-review] [--no-simplify] [--no-quality]
 license: MIT
 metadata:
   author: mthines
-  version: '3.0.0'
+  version: '3.2.0'
   workflow_type: command
 ---
 
@@ -108,10 +108,13 @@ Otherwise, map the `create-pr` flags to the appropriate invocation. Evaluate in 
 
 Pass `--critical` through to `review-loop` / `pr-reviewer` if the user passed it to `create-pr`.
 
+**Rows 3 and 4 both need sub-agent dispatch.** `pr-reviewer` is `Task`-only and has no in-context substitute ([`review-loop` § Dispatch mechanics](../../quality/review-loop/SKILL.md#dispatch-mechanics--read-before-invoking)). Before taking either row, confirm the `Task` tool is available. If it is not, do **not** attempt the dispatch and do not silently fall through to row 2 — record the outcome as `NOT REVIEWED` and carry it into Step 10.
+
 After the loop returns:
 
 - If the loop converged (every review thread resolved via fix or reply), continue to Step 6.7 (external-bot feedback). The loop also refreshes the PR description to match the converged diff, so do not re-edit the body here.
 - If the cap was hit with threads still open — human-judgment flags or unresolved blockers — surface them to the user before continuing to CI watch.
+- **If the loop returned a skip** (sub-agent dispatch unavailable), the PR has **not been reviewed**. Continue to Step 6.7 and CI watch, but carry `NOT REVIEWED` into the Step 10 report verbatim. Never describe such a PR as converged, clean, or review-ready — an unreviewed PR reported as reviewed is the one failure this contract exists to prevent.
 
 **Hard rules for this step:**
 
@@ -167,16 +170,119 @@ Dispatched background external-reviewer-feedback loop (PR: <pr-url>). Continuing
 
 The job isn't done when the PR is created. Block on CI so the user doesn't have to come back to a red PR later.
 
+**Two harness facts govern this step. Get them wrong and the watch hangs instead of waiting.**
+
+1. **The Bash tool's default timeout is 120 000 ms; 600 000 ms is the opt-in maximum.** A long `timeout N` inside the command is irrelevant if the *tool call* is killed first — the agent then sees an opaque tool timeout with no exit code, and every rule below becomes unreachable. **Issue the watch call with the tool's `timeout` parameter explicitly set to `600000`.** Setting it is not optional; omitting it caps the watch at 2 minutes.
+2. **Shell state does not persist between Bash calls.** Each call is a fresh shell, so the attempt budget cannot live in an environment variable. It lives in a file.
+
+### The watch call
+
 ```bash
-sleep 10                                          # let workflows register
-timeout 1800 gh pr checks <pr-number> --watch     # blocks until every check completes (30-min cap); non-zero exit if any failed
+# Issue this Bash call with the tool parameter timeout: 600000.
+# 540 < 600 so `timeout` fires first and we get a real exit 124.
+timeout 540 gh pr checks <pr-number> --watch
 ```
 
-`--watch` waits for queued/running checks and exits with the final aggregate status. If the exit code is 0, jump to Step 10. Otherwise continue.
+Do **not** prefix a bare `sleep` — a bare foreground `sleep` is blocked in some harnesses. But `--watch` does **not** wait for checks that do not exist yet: with none registered it exits non-zero immediately with `no checks reported on the '<branch>' branch`, in milliseconds. Registration genuinely takes seconds, so retrying *immediately* just burns the retry allowance inside the registration window and lands on a false "this repo has no CI".
 
-The `timeout 1800` cap keeps a hung or queued-forever check from blocking the skill indefinitely — same idea as the bounded poll in the watch loop ([`../../workflow/implement-suggestion/rules/watch-mode.md`](../../workflow/implement-suggestion/rules/watch-mode.md)). If it expires (exit code 124), run `gh pr checks <pr-number>` once, report the still-pending checks to the user, and escalate instead of re-watching.
+Wait for registration with a **bounded poll loop** — permitted by the bounded-wait invariant precisely because it has a cap, unlike a bare sleep:
 
-If `gh pr checks` reports no checks at all after a minute, this repo probably doesn't run CI on PRs — also jump to Step 10.
+This poll answers **one** question — "do checks exist yet?" — and never a CI verdict. Deciding pending-vs-failing is `--watch`'s job. That distinction is load-bearing: bare `gh pr checks` exits **non-zero while checks are merely pending**, and prints them to stdout, so a non-zero exit with *empty stderr* means "registered and running" — the normal case, and a `break`, not an error. Keeping stderr is what separates that from an auth or network failure.
+
+```bash
+# Issue this Bash call with the tool parameter timeout: 600000.
+# One call, real wall-clock, hard 90 s ceiling.
+timeout 90 bash -c '
+  while :; do
+    err=$(gh pr checks <pr-number> 2>&1 >/dev/null) && break   # 0 = all terminal
+    # Lowercase before matching: `case` globs are case-sensitive and gh
+    # capitalises some of these ("Could not resolve to a Repository").
+    lc=$(printf %s "$err" | tr "[:upper:]" "[:lower:]")
+    case "$lc" in
+      *"no checks reported"*|*"no commit found"*)        sleep 5 ;;   # not registered / push not propagated
+      *"could not resolve"*|*authentication*|*"bad credentials"*|\
+      *"rate limit"*|*"command not found"*)
+                                         echo "$err" >&2; exit 3 ;;   # tooling failure
+      *)                                                   break ;;   # registered, pending
+    esac
+  done
+  sleep 5; gh pr checks <pr-number> >/dev/null 2>&1; exit 0'  # confirm a late second workflow; never leak its status
+```
+
+The trailing `exit 0` is load-bearing: without it the confirming call's status becomes the wrapper's status, and "registered but pending" would surface as a failed poll.
+
+| Poll exit | Meaning | Next |
+| --------- | ------- | ---- |
+| 0 | Checks exist (terminal **or** pending) and survived a confirming poll | Proceed to the watch |
+| 3 | `gh` itself failed (auth, network, rate limit) | **Tooling failure row** — do not count a `registration_attempts`, do not conclude anything about CI |
+| 124 | 90 s elapsed with nothing but `no checks reported` | Counts as one `registration_attempts`. This is the **only** exit that may eventually conclude "no CI" |
+
+Before concluding "no CI" at `registration_attempts == 3`, distinguish **no workflows configured** from **workflows awaiting approval** — a PR from a first-time or outside contributor has its runs held pending maintainer approval, and `gh pr checks` reports nothing for as long as that takes. `gh run list --branch <branch>` shows the held runs where `gh pr checks` shows none. If runs exist but are awaiting approval, report that to the user and escalate; do **not** report success.
+
+### The attempt budget (file-backed, tier-independent)
+
+```bash
+# Anchor to the repo root — a subagent may run from a different worktree,
+# and a relative .agent/ would silently start a fresh budget there.
+STATE="$(git rev-parse --show-toplevel)/.agent/ci-watch-<pr-number>.state"
+mkdir -p "$(dirname "$STATE")" && touch "$STATE"
+```
+
+**Wire format: one `key=value` per line, no quoting, no nesting.** Both `create-pr` and Phase 7 read and write it with plain shell, so the format must be trivially parseable by each:
+
+```bash
+get() { grep -E "^$1=" "$STATE" | tail -1 | cut -d= -f2-; }        # empty if unset
+# Write to a temp file and mv — mv is atomic within a filesystem, so a
+# concurrent writer cannot interleave a half-written file. Step 9 and Phase 7
+# both fan out parallel subagents that hold this path.
+put() {
+  local k=$1 v=$2 tmp
+  tmp=$(mktemp "$STATE.XXXXXX")
+  grep -v -E "^$k=" "$STATE" > "$tmp" 2>/dev/null || true
+  echo "$k=$v" >> "$tmp"
+  mv -f "$tmp" "$STATE"
+}
+```
+
+Atomic writes narrow the race; they do not remove it (two writers can still lose an update). **The orchestrator is the single writer of `attempts`.** A subagent handed `CI_WATCH_STATE` reports its watch outcome back and lets the dispatching thread reconcile — it does not increment the shared counter itself.
+
+**Two counters, because two different waits are being measured.** Sharing one is the trap: registration retries would eat the completion budget on slow-CI repos, and completion retries would later be misread as "no CI".
+
+| Key | Meaning |
+| --- | ------- |
+| `attempts` | **Completion** watch attempts at `observed_sha` — waiting for running checks to finish. Max **4** (≈ 36 min) |
+| `registration_attempts` | **Registration** polls — waiting for checks to exist at all. Max **3**. Never consumes `attempts` |
+| `observed_sha` | The **PR head** SHA of the most recent attempt (remote, see below) |
+| `observed_state` | `green` / `failing` / `pending` at that SHA |
+
+Both counters reset to `0` whenever `observed_sha` changes — a new commit is a new wait, not a continuation.
+
+A file rather than the Progress Log **deliberately**: the Progress Log lives in `.agent/{branch}/plan.md`, which only exists in Full tier, and `create-pr` runs standalone and from Micro/Lite `aw` runs where there is no plan. A budget that silently vanishes on three of four paths is not a budget.
+
+**Record the remote head, never the local one.** Step 6.7's background watch loop and Step 9's `ci-auto-fix` subagents push from their own contexts, so this thread's `git rev-parse HEAD` can be stale while the PR head has moved. Comparing a local SHA against a remote one is worse than comparing neither:
+
+```bash
+PR_HEAD=$(gh pr view <pr-number> --json headRefOid -q .headRefOid)
+```
+
+**Write `observed_sha` and `observed_state` on *every* attempt, before evaluating the row below — not only on success.** A run that spends its whole budget and records no SHA leaves the next reader (Phase 7) unable to tell "budget spent here" from "different commit", so it resets and re-spends a budget that was already gone. Recording only the happy path is how a spent budget silently becomes a fresh one:
+
+```bash
+put observed_sha "$PR_HEAD"
+put observed_state pending     # overwritten by the row's own verdict below
+```
+
+| Attempt outcome | Next step |
+| --------------- | --------- |
+| Exit 0 | CI green — `put observed_state green`, jump to Step 10 |
+| Registration poll exited 124 **and** `registration_attempts < 3` | Checks not registered yet — increment `registration_attempts`, poll again. **Does not touch `attempts`** |
+| Registration poll exited 124 **and** `registration_attempts == 3` | After ≈ 4½ minutes of polling, this repo genuinely doesn't run CI on PRs — jump to Step 10 |
+| Exit 124 and `attempts < 4` | Increment `attempts`, watch once more |
+| Exit 124 and `attempts == 4` | **Stop.** Run `gh pr checks <pr-number>` once, report the still-pending checks, `put observed_state pending`, escalate — never watch again |
+| Exit 127, or stderr matching `command not found` / `could not resolve` / `authentication` | **Tooling failure, not a CI failure.** `timeout` is absent on stock macOS (use `gtimeout`); `gh` auth and network errors also exit non-zero. Report the command failure; do **not** fan out CI-log triage against a run that never failed |
+| Any other non-zero | A check genuinely failed — `put observed_state failing`, go to Step 8 |
+
+Classify on the **exit code plus a literal stderr match**, never on "how much output there was" — output volume is a judgment call and this table exists to remove judgment.
 
 ## Step 8: Triage Failures (delegate log-reading to subagents)
 
@@ -213,7 +319,7 @@ Use the returned `category` to decide the path:
   ```bash
   gh run rerun <run-id> --failed
   ```
-  Then re-watch with `timeout 1800 gh pr checks <pr-number> --watch` (same 30-minute cap and expiry handling as Step 7). At most one rerun per check.
+  Then re-watch with `timeout 540 gh pr checks <pr-number> --watch` (tool `timeout: 600000`), **drawing from the same `.agent/ci-watch-<pr-number>.state` budget as Step 7** — a rerun does not reset `attempts`. At most one rerun per check, and if the budget is spent, report and escalate instead of watching again. A `ci-auto-fix` subagent that watches on your behalf spends from the same file.
 
 ## Step 9: Apply Fixes
 
@@ -227,6 +333,7 @@ prompt: |
 
   PR: <pr-url>
   Failing check: <check-name>
+  CI_WATCH_STATE=<absolute path from `git rev-parse --show-toplevel`/.agent/ci-watch-<pr-number>.state>
   Triage summary (from prior subagent): <paste category + suggested_fix + error_excerpt>
 
   Follow the /ci-auto-fix skill's instructions. Apply the minimal fix, commit,
@@ -237,16 +344,34 @@ prompt: |
   - outcome: fixed | still-failing | gave-up
   - what_was_fixed: one line
   - iterations: how many fix-push-watch cycles you used
+  - watched_sha: the PR head SHA your watch actually observed
+  - attempts_used: how many watch attempts you spent
   - remaining_error: one short paragraph if still red, else empty
 ```
 
 Don't wrap the subagent in another loop — it has its own internal iteration cap.
+
+**Reconcile the watch state when the subagents return.** They are forbidden from writing `.agent/ci-watch-<pr-number>.state` (racing writers would record one of two commits), so you are the only one who can — and a field nobody reconciles is a field the subagent will stop reporting:
+
+```bash
+NEW_HEAD=$(gh pr view <pr-number> --json headRefOid -q .headRefOid)
+if [ "$NEW_HEAD" != "$(get observed_sha)" ]; then
+  put observed_sha "$NEW_HEAD"; put observed_state pending
+  put registration_attempts 0
+  # Not 0: the subagents' attempts were spent watching THIS new head.
+  put attempts "<total attempts_used reported>"
+fi
+```
+
+If the head did **not** move (no subagent pushed), debit `attempts` by the total `attempts_used` reported instead. Skipping this leaves the state file pointing at the pre-fix commit — fail-safe, since Phase 7 then re-watches rather than skipping, but the cross-boundary budget stops functioning.
 
 **Judgment-required failures — keep in the main thread.** `/confidence` reviews *this* conversation's reasoning, so a subagent can't run it. With the triage summary already in hand:
 
 1. Run `/confidence` against the failure summary + the relevant diff slice.
 2. If confidence ≥ 80% on a specific fix → apply it locally yourself, then hand the push-and-rewatch off to a `/ci-auto-fix` subagent (same template as above).
 3. If confidence < 80% → stop. Report the failing check, the error excerpt from the triage report, what you considered, and why you didn't auto-fix. Leave the PR for the user.
+
+Step 2's handoff returns the same `watched_sha` / `attempts_used` fields — **apply the same reconciliation above when it returns.** A dispatch path whose return nobody consumes is how the state file goes stale while looking maintained.
 
 **Cap: 2 `/ci-auto-fix` subagent handoffs per PR.** Each handoff already burns a full internal retry budget. If CI is still red after that, it's not mechanical — stop and report.
 
@@ -273,7 +398,7 @@ Title: <imperative title>
 
 Review loop (review-loop / pr-reviewer):
   Iterations: <N> of <cap>
-  Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | skipped (--no-quality)>
+  Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | skipped (--no-quality) | NOT REVIEWED (sub-agent dispatch unavailable)>
   Open threads at exit: <count>
   Description refreshed: <yes | unchanged | skipped>
   Final verdict: <PASS | FAIL>
