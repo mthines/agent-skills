@@ -201,8 +201,14 @@ author's own words rather than a scan:
 touched"*, so on a zero-delta run it cannot fire either. That fails **closed** —
 no thread is wrongly resolved — but it means `declined` is in practice the only
 resolver on a zero-delta re-run, and an author who replies "done" without pushing
-will see Gate 3 stay ❌ until a code push arrives. That is the intended
+will see the thread stay open until a code push arrives. That is the intended
 conservative behaviour, not an oversight.
+
+The cost of that conservatism is bounded by Gate 3's grading (`pr-reviewer.md § Gate
+states`): the "done" reply makes the thread `answered`, so it holds the gate at ⚠️
+rather than ❌. The thread stays open and stays on the checklist — the reply is not
+treated as proof of a fix — but an unverified claim of doneness no longer fails the
+PR on its own.
 
 The cost of this rule is a genuinely-fixed thread staying open until a run that
 re-reads its region — one extra checklist line. The cost of not having it is a live
@@ -250,33 +256,27 @@ GitHub review threads are resolved through the GraphQL `resolveReviewThread`
 mutation; the thread's node id is not on the REST comment object, so map from the
 comment to its thread first.
 
-**Use whichever authenticated GitHub write path this run actually has.** `gh api graphql`
-is the reference form and the snippet below assumes it, but it must not be the *only*
-form, because the posting path and the resolving path do not fail together:
+**Resolve your GitHub path first**, per
+[`github-access.md`](./github-access.md) — it owns the `gh` / MCP / neither decision and maps
+resolving a thread to `resolve_review_thread`. Do not restate that mapping here; the snippet below is
+the `gh` form.
 
-| Path | Mechanism |
-| --- | --- |
-| `gh` on `PATH`, authenticated | `gh api graphql` — the snippet below |
-| A GitHub MCP server in the agent's grant | its resolve-review-thread tool, with the same node id |
-| Neither | resolution is **unavailable** — see below |
+**What is specific to this step is what Gate 3 does when there is no path at all.** Posting and
+resolving do not fail together: a run can add threads through an app token while having no way to
+close them, so it accumulates threads on every pass and closes none. Observed on
+`mthines/agent-skills#116` — six passes, open-thread count 5 → 9 → 12 → 17 → 20, every report saying
+"this run does not resolve threads" and every listed finding already addressed by the diff.
 
-This is not hypothetical. A run whose `gh` is missing can still post reviews and inline
-comments through an app token, so it **adds** threads on every pass and **closes** none.
-Observed on `mthines/agent-skills#116`: six passes, the open-thread count went 5 → 9 → 12
-→ 17 → 20, every report saying "this run does not resolve threads" and every finding in
-the list already addressed by the diff.
+So when `github-access.md` resolves to **No path**, set `RESOLUTION_UNAVAILABLE = true`, log
+`[thread] resolution unavailable — <N> thread(s) classified resolvable but not closed`, and
+**exclude those threads from `OPEN_BOT_COMMENTS[]`** for the Gate 3 re-evaluation at Step 2.9c. The
+run has classified them `fixed` / `declined` / `acknowledged` / `obsolete`; failing the gate on
+threads it has itself certified as done makes the gate unclearable by any author action, which is
+strictly worse than not running it.
 
-**When no resolve path exists, say so and do not let Gate 3 fail on it.** Set
-`RESOLUTION_UNAVAILABLE = true`, log `[thread] resolution unavailable — <N> thread(s)
-classified resolvable but not closed`, and **exclude those threads from
-`OPEN_BOT_COMMENTS[]`** for the Gate 3 re-evaluation at Step 2.9c. The run knows they are
-fixed, declined, acknowledged, or obsolete; failing the gate on threads it has itself
-certified as done makes the gate unclearable by any author action, which is strictly worse
-than not running it. Surface the count in the report so the tooling gap is visible instead
-of masquerading as PR debt.
-
-The threads still stay open on GitHub — this agent cannot close them — but they stop
-blocking, and the next run with a working path closes them.
+This does **not** loosen `github-access.md § No path` rule 3 — never claim a thread was resolved when
+the call did not happen. The threads stay open on GitHub, the report says so, and the next run with a
+working path closes them. What changes is only that they stop blocking a gate they cannot clear.
 
 **Reuse the Step 1.0 fetch.** `prior-comment-awareness.md § Thread state` already wrote
 `/tmp/review-threads.json` at the start of the run, with the same query and a completed
@@ -434,6 +434,13 @@ fails this gate* (`pr-reviewer.md § Gate 3`). These threads are now resolved, s
 gate against the updated set applies the existing rule to fresher input — it does not introduce a
 second, weaker standard. A `persisting` or `unaddressed` thread is never resolved, so it can never
 be removed from the gate this way.
+
+Re-evaluate the **full tri-state**, not just the empty/non-empty split: removing the last
+blocking-and-unanswered entry downgrades ❌ to ⚠️ even when other threads remain open. A thread
+classified `declined` or `acknowledged` whose mutation **failed** stays in the open set, but is
+marked `answered` for the grading — GitHub still shows it open so it must still be listed, yet the
+ask has demonstrably been engaged with, and a failed mutation is this agent's problem rather than
+the author's.
 
 **Except under `--skip-gates`**, where Step 1.8 never ran and Gate 3 is `⏭️`: update the open set
 and the `resolved since` counter as usual, but leave the gate `⏭️`. Re-evaluating it there would

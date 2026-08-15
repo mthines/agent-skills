@@ -1052,6 +1052,52 @@ function checksInSync(plan, checks) {
       extractErr === null && body.length > BODY_MIN,
       extractErr ?? `body length ${body.length} <= ${BODY_MIN}`);
   }
+
+}
+
+// ── G24: Gate 3 (Prior bot feedback) tri-state + open-thread checklist heading contract ──
+// The two checklist headings are an EXACT-STRING contract between the renderer
+// (pr-reviewer.md § UNRESOLVED_THREADS_SECTION) and its documented consumer
+// (reviewer-report-ingest.md § the open-threads checklist is not a body section). That rule
+// skips these blocks by literal heading match, so a reworded heading on either side silently
+// promotes a presentational block to an ingestable one — re-ingesting OTHER bots' comments as
+// pr-reviewer's own findings. Nothing else locks that pair.
+// The headings are EXTRACTED from the renderer and compared against the consumer, never
+// re-encoded here (aw-lessons::mock-that-reimplements-the-thing-under-test).
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const prReviewer = read("agents/pr-reviewer.md");
+  const prReviewerDiag = read("agents/pr-reviewer/rules/diagnostic-surface.md");
+  const ingest = read("agents/shared/rules/reviewer-report-ingest.md");
+
+  // G24a: Step 1.8 grades on BOTH discriminants and enumerates all three states. A revert to
+  // the old binary gate drops the `blocking`/`answered` conjunct and reds here.
+  const gate3 = sliceBetween(prReviewer,
+    "**Gate 3 — Unresolved prior bot/agent feedback**", "**Gate 4 — Self-review signals**");
+  s.check("G24a pr-reviewer.md Step 1.8 grades Gate 3 on blocking AND answered, across ✅/⚠️/❌",
+    gate3.includes("`blocking == true` **and** `answered == false`") &&
+    ["- ✅ —", "- ⚠️ —", "- ❌ —"].every((marker) => gate3.includes(marker)));
+
+  // G24b: lift both heading literals out of the renderer (matched by prefix, compared through
+  // the closing `:**`), then assert each appears verbatim in the consumer.
+  const headings = [...prReviewer.matchAll(/^\*\*(?:To unblock|Open bot threads)[^\n]*?:\*\*/gm)]
+    .map((m) => m[0]);
+  s.check("G24b pr-reviewer.md declares both open-thread checklist headings (❌ and ⚠️ forms)",
+    headings.length === 2 &&
+    headings.some((h) => h.startsWith("**To unblock")) &&
+    headings.some((h) => h.startsWith("**Open bot threads")),
+    `found ${headings.length}: ${headings.join(" | ") || "none"}`);
+  for (const h of headings) {
+    s.check(`G24b reviewer-report-ingest.md carries the renderer's heading verbatim: ${h.slice(0, 34)}…`,
+      ingest.includes(h));
+  }
+
+  // G24c: the three Gate-3 failure modes are registered in the diagnostic surface, so a
+  // regression has a named bucket instead of silently becoming "expected behaviour".
+  for (const fm of ["F-nonblocking-thread-fails-gate-3", "F-gate-3-severity-reinvented",
+    "F-warn-hides-open-threads"]) {
+    s.check(`G24c diagnostic-surface.md registers ${fm}`, prReviewerDiag.includes(fm));
+  }
 }
 
 // Shared by G22 and G23. Deliberately ONE definition: this predicate was
@@ -1194,6 +1240,55 @@ const isPollBlock = (block) =>
     }
   }
   s.check("G23 guards exactly 3 polling blocks", guarded === 3, `found ${guarded}`);
+}
+
+// ── Check G24: any agent that does GitHub work can actually reach GitHub ──
+// A sub-agent inherits NEITHER the parent's `gh` binary NOR the parent's MCP
+// tools — its access is exactly its own `tools:` frontmatter. Observed in the
+// field: an agent dispatched to open a PR reported the task BLOCKED, in a session
+// where the parent's MCP tools worked fine; the parent then did it in one call.
+// Same cause: `pr-reviewer` made 26 `gh` calls with zero GitHub tools granted,
+// so on a cloud session it could not post a single one of its reviews.
+//
+// If an agent's body invokes GitHub, its frontmatter must grant a way to get there.
+{
+  const agentFiles = [
+    // Real agent definitions only: agents/*.md. `agents/rules/` and
+    // `agents/templates/` are prose and boilerplate, not dispatchable agents.
+    ...walk(join(REPO_ROOT, "agents"))
+      .filter((f) => !f.includes("/rules/") && !f.includes("/templates/")),
+    ...walk(join(REPO_ROOT, "skills/workflow/autonomous-workflow/templates"))
+      .filter((f) => f.endsWith(".agent.md")),
+  ];
+  let checked = 0;
+  for (const f of agentFiles) {
+    const text = readFileSync(f, "utf8");
+    const fmEnd = text.indexOf("\n---", 4);
+    if (fmEnd === -1) continue;
+    const fm = text.slice(0, fmEnd);
+    const body = text.slice(fmEnd);
+    // Two ways an agent needs GitHub access, and the second is the one that bit:
+    //   (1) its own body runs `gh ...`
+    //   (2) it invokes a skill that does — that skill executes IN THIS AGENT'S
+    //       context, with this agent's tools, so delegating does not delegate access.
+    const ghCalls = (body.match(/\bgh\s+(pr|api|run|repo|search|auth)\b/g) || []).length;
+    // Matches both `Skill("create-pr")` and the backticked name used in the
+    // agents' companion tables — either way the skill runs in this agent's context.
+    const GH_SKILLS = /(?:Skill\(\s*["']|`)(create-pr|ci-auto-fix|review-loop|implement-suggestion)(?:["']|`)/;
+    const viaSkill = GH_SKILLS.test(body);
+    if (ghCalls === 0 && !viaSkill) continue;
+    checked++;
+    const why = ghCalls > 0
+      ? `makes ${ghCalls} gh calls`
+      : "invokes a GitHub-using skill, which runs in its context";
+    s.check(
+      `G24 ${rel(f)} ${why}, so its frontmatter must grant GitHub tools`,
+      /mcp__github__/.test(fm),
+      "grant mcp__github__* in tools: — a sub-agent inherits neither gh nor the " +
+      "parent's MCP tools, so without this it reports the task blocked",
+    );
+  }
+  s.check("G24 found the GitHub-using agents to guard", checked >= 3, `found ${checked}`);
 }
 
 process.exit(s.report() ? 0 : 1);
