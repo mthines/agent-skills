@@ -127,9 +127,15 @@ In the cloud the `gh api` calls inside that loop all fail, so `NEW`/`NEW_REVIEWS
 Worst case: 25 minutes of silent sleeping, guaranteed to accomplish nothing.
 The harness guidance for this environment forbids exactly this pattern; the skill predates it.
 
-### RC-4 — The two most expensive loops each run twice per PR
+### RC-4 — The composite cost of the delivery tail is uncapped
 
-Phase 6 and Phase 7 both invoke the full review convergence, and both watch CI:
+> **Correction.** An earlier draft of this section called the two `review-loop` passes redundant.
+> They are not.
+> [`phase-7-ci-gate.md`](../rules/phase-7-ci-gate.md) documents the rationale explicitly: Phase 6 reviews the pre-CI diff, Phase 7 reviews after CI is green *and after `ci-auto-fix` may have pushed further commits*.
+> They review **different diffs at different lifecycle points**, and collapsing them would leave `ci-auto-fix` commits unreviewed.
+> The real defect is that nobody caps the **composite**, and that in a degraded environment both passes fail identically.
+
+Phase 6 and Phase 7 each invoke the full review convergence, and each watch CI:
 
 ```
 Phase 6 → create-pr
@@ -144,10 +150,12 @@ Phase 7   ├─ Step 1     gh pr checks --watch    (unbounded)  ← second CI w
 Each `review-loop` iteration is itself `pr-reviewer` + a full 7-phase `implement-suggestion` + `polish simplify`.
 The composite worst case is **10 review iterations and two CI watches after the code is already written**.
 
-[`phase-6-pr-creation.md`](../rules/phase-6-pr-creation.md) states *"One `review-loop` invocation per PR creation — the loop has its own cap"*, but that rule is scoped to `create-pr` and Phase 7 adds a second invocation outside its jurisdiction.
-Nothing caps the composite.
+[`phase-6-pr-creation.md`](../rules/phase-6-pr-creation.md) states *"One `review-loop` invocation per PR creation — the loop has its own cap"*, but that rule is scoped to `create-pr`; Phase 7's second invocation is outside its jurisdiction and no rule bounds the sum.
 
-On a laptop this is merely slow. In the cloud, where every underlying `gh` call fails, it is 10 iterations of failure-and-improvise.
+The **CI watch**, unlike the review passes, genuinely is uncoordinated duplication: `create-pr` Step 7 and Phase 7 Step 1 watch the same checks on the same PR with no shared budget and no record that the other ran.
+
+On a laptop the review cost is merely slow, and is buying real coverage.
+In the cloud, where every underlying `gh` call fails, it is 10 iterations of failure-and-improvise buying nothing.
 
 ### RC-5 — The dispatcher has no terminal contract
 
@@ -237,10 +245,14 @@ Without the mapping the agent re-derives it 169 times.
 3. Change the documented recovery from *re-watch* to **report-and-escalate**. One watch attempt per PR; on expiry, print the pending checks and hand control back.
 4. Delete the `sleep`-poll from `watch-mode.md` for cloud environments — when `capabilities.subagent_dispatch` is false or `gh_cli` is false, the watch loop cannot work and must self-skip with a logged line rather than sleep through five intervals.
 
-### R4 — One review-loop per PR, one CI watch per PR
+### R4 — Cap the composite, deduplicate only the CI watch
 
-Make Phase 7's Auto Review a **no-op when Phase 6's `review-loop` already converged**, and Phase 7 Step 1 a no-op when `create-pr` Step 7 already resolved CI.
-Record both in the Progress Log so the check is mechanical rather than a judgment call.
+**Do not** collapse the two `review-loop` passes — they review different diffs (see RC-4).
+Instead:
+
+1. **Deduplicate the CI watch only.** Phase 7 Step 1 becomes a no-op when `create-pr` Step 7 already drove the same checks to a terminal state, recorded in the Progress Log.
+2. **Give Phase 7's pass a smaller cap.** It reviews a delta (post-CI commits), not the whole PR, so `--cap 2` is proportionate where Phase 6's `--cap 5` is not.
+3. **Skip Phase 7's pass when the delta is empty** — if `ci-auto-fix` pushed nothing between Phase 6's convergence and CI green, there is no new diff to review. This is a mechanical check (`git rev-parse` comparison), not a judgment call, and it preserves the coverage the second pass exists for.
 
 ### R5 — Give `aw` an explicit terminal contract
 
@@ -269,6 +281,47 @@ on resuming after compaction, **before any other action**, read `.agent/{branch}
 The `task-tool-unavailable-blocks-review-loop-pr-reviewer` lesson is `status: structural` with `seen_count: 2`.
 It is promotion-eligible now on the `structural` tag alone.
 Run `/create-skill diagnose autonomous-workflow --symptom "Task-tool absence discovered at Phase 6 instead of Phase 0"` so R1 and R2 land through the gated slow tier rather than as an unreviewed edit.
+
+---
+
+## Side effects and risks of the remediation
+
+Every fix above has a cost.
+The laptop path works today — these changes are all net-negative for it unless scoped carefully.
+
+### The dominant risk: optimising for the cloud degrades the laptop
+
+`gh`, `Task`, and long blocking waits are all **present and correct** on a developer machine, which is still the primary environment.
+Four of the seven fixes change behavior for *both* environments.
+Every one of them should be **conditioned on the probe result**, not applied unconditionally.
+
+| Fix | Negative side effect | Mitigation |
+| --- | -------------------- | ---------- |
+| **R1** probe | A throwaway `Task` dispatch on **every** run, including Micro, where it can cost more than the task itself. A refused dispatch may be an uncatchable harness error rather than a return value. | Probe lazily — only before the first real `Task` site — and cache the result for the run. Never probe on Micro. |
+| **R1** caching in `plan.md` | `.agent/` is gitignored per-developer scratch. A plan written in the cloud and resumed on a laptop (or the reverse) carries **stale capabilities** and would degrade a fully-capable environment. | Treat the block as a hint with a `probed_at` timestamp; re-probe on executor entry rather than trusting the cached value. |
+| **R1** depth blindness | A probe from `aw` at depth 1 succeeds while the actual failure is at **depth 3** (`aw` → `aw-executor` → `review-loop` → `pr-reviewer`). A single probe returns a false green. | Probe at each dispatching layer, or record the *depth* at which dispatch was confirmed. |
+| **R2** in-context role play | Directly contradicts `create-pr` Step 8's rationale — *"CI logs are huge […] don't pull them into the main thread"* — and the Sub-Agent Resource Discipline. Pulling `ci-auto-fix` and log triage in-context **increases** context pressure in single-context Full, which is exactly where RC-6 says pressure is already fatal. **R2 and R6 work against each other.** | Restrict in-context role play to procedures with bounded output (`aw-tester`). Keep log-heavy work out; summarise from `get_job_logs` with an explicit line budget instead. |
+| **R2** `gh`→MCP mapping | The mapping is not total. `gh pr checks --watch` has **no** streaming MCP equivalent, and MCP GitHub access is scoped to allow-listed repos, so a mapping that silently works in one repo fails in another. | Map only the verbs that have true equivalents; make the unmappable ones (`--watch`) an explicit capability gap that triggers the bounded-poll path, not a silent substitution. |
+| **R3** `timeout 540` | Real CI frequently exceeds 9 minutes. A hard 9-minute cap with terminal expiry means the workflow **escalates to the user on every slow-CI repo** — converting a working laptop flow into a nagging one. This is the single most likely regression in the set. | Keep the per-call cap under the tool ceiling but allow a **bounded number of re-watches** (e.g. 4 × 9 min = 36 min budget, counted and logged). The defect today is the *absent counter*, not the waiting itself. |
+| **R3** deleting the sleep-poll | `watch-mode`'s entire purpose is waiting for external reviewers. Self-skipping in the cloud means cloud PRs **never absorb CodeRabbit or human feedback** — a capability loss, not just a stall fix. | Replace the poll with the harness-native event path where one exists (this environment ships `subscribe_pr_activity` with event-driven wakes, purpose-built for it). Self-skip only when neither polling nor events are available. |
+| **R4** capping Phase 7's pass | Lowering the cap or skipping on an empty delta risks under-reviewing when `ci-auto-fix` pushed a **substantive** fix rather than a formatting nit. | Gate on delta *size*, not just presence: an empty delta skips, a non-trivial delta keeps the full cap. |
+| **R5** terminal block | Output noise on Micro, where the summary may exceed the change itself. Cannot be enforced statically — no L1 eval can assert on runtime output. | Emit a one-line form for Micro/Lite, the full block for Full. Accept that this one is convention, not contract. |
+| **R6** compaction re-anchor | Only works in **Full** — Lite and Micro have no `plan.md` and therefore no Progress Log to re-anchor on. Worse, the Progress Log is prose written by the agent and is **not reliably complete**; re-anchoring on an over-optimistic log could resume *past* an unfinished phase and silently skip testing. | Anchor on `checks.yaml` statuses (mechanical, self-validating) as the primary signal and the Progress Log only as a tiebreak. Resume at the **earliest phase not provably complete** — redoing work is safe, skipping it is not. |
+| **R7** diagnose promotion | `diagnose` enforces **one proposal per report** ([`diagnose-mode.md`](../../../authoring/create-skill/rules/diagnose-mode.md)). R1 and R2 are two proposals and cannot be bundled into one run. | Run `diagnose` twice — probe first, degradation matrix second — or accept them as one "environment-capability" gap and let the gate judge. |
+
+### Cross-cutting: lockstep-update risk
+
+This repo's convention is that coupled surfaces move together — the stuck-loop cap alone spans **11 files**.
+R3 touches `phase-7-ci-gate.md`, `create-pr`, `watch-mode.md`, and `ci-auto-fix`; R1 touches all four agent templates plus `aw-create-plan`, `prerequisites.md`, and `diagnostic-surface.md`.
+
+L1's link/anchor integrity checks will catch broken anchors but **not** semantic drift between surfaces that now disagree about a timeout value.
+Land these as separate PRs per fix, not one sweep — and add the new numbers to the coupled-surfaces list in [`CLAUDE.md`](../CLAUDE.md) so the next editor updates them together.
+
+### What is safe to do first
+
+**R5** (terminal contract) and the **CI-watch deduplication half of R4** are low-risk, environment-neutral, and independently valuable.
+**R1** scoped as a lazy, non-cached probe is the high-leverage one and should land next, alone.
+**R3** deserves the most care — it is the fix most likely to regress the working laptop path.
 
 ---
 
