@@ -74,7 +74,11 @@ After dedupe, run one explicit consolidation step:
 2. Within a file, sort by `(prefix priority, line)`. Prefix priority: `issue > suggestion > question > nitpick > praise`.
 3. **No cap fires here.** Consolidation orders findings; it never discards them.
    Every surviving finding continues to the quality gates (2.6 grounding → 2.6b receipt → 2.7 confidence → 2.8 shape), and only those gates may drop one.
-4. **Collapse parity findings across sibling surfaces.** When a finding's basis is *cross-surface consistency* — "X is documented but sibling Y is not", "spell out the rule like the neighbour does", the same constant / rule / annotation restated in several places — emit **one** finding that enumerates every surface to align, never one finding per surface. A consistency finding must grep its sibling surfaces before it is emitted and name all of them. Reporting the first instance alone makes the author fix surface A, which then reads as uneven against surface B on the next review — and because the reviewer re-runs on every push, that is a self-perpetuating cascade of one cosmetic round per commit. The single enumerated finding is fixed once, and the cascade never starts.
+4. **Collapse parity findings across sibling surfaces.**
+   When a finding's basis is *cross-surface consistency* — "X is documented but sibling Y is not", "spell out the rule like the neighbour does", the same constant, rule, or annotation restated in several places — emit **one** finding that enumerates every surface to align, never one finding per surface.
+   A consistency finding must grep its sibling surfaces before it is emitted and name all of them.
+   Reporting the first instance alone makes the author fix surface A, which then reads as uneven against surface B on the next review, and because the reviewer re-runs on every push, that is a self-perpetuating cascade of one cosmetic round per commit.
+   The single enumerated finding is fixed once, and the cascade never starts.
 
 **Why the cap is not here.** Capping at 2.5 discarded findings *before* they were scored.
 A correct, high-confidence finding could lose its slot to a weaker one that the 2.7 confidence gate then dropped anyway — so the review posted fewer findings than its own cap allowed, and the loss was invisible.
@@ -97,8 +101,9 @@ This is the point of the caps: they exist to stop a wall of nitpicks reading as 
 Ordering — blocking findings are placed first (never deferred), then the remaining inline slots are filled by non-blocking findings under the caps, applied per file and then globally:
 
 1. Prefix priority: `issue > suggestion > question > nitpick`.
-2. Then descending `per-comment-confidence` Final score.
-3. Then ascending line number.
+2. Then **material** before **cosmetic** (§ Materiality routing), so a scarce inline slot goes to a real defect before a matter of form.
+3. Then descending `per-comment-confidence` Final score.
+4. Then ascending line number.
 
 The split is terminal-vs-GitHub, not self-vs-cross.
 `pr-reviewer` runs the identical pipeline in both relations (Step 0.5) and always posts at Step 4, so the inline caps apply to every run.
@@ -115,7 +120,6 @@ Everything above the inline caps goes into a **Deferred** list, rendered in the 
 Rules:
 
 - A finding that cleared 2.7 is **never** silently discarded. Deferral is the only overflow behaviour.
-- **Non-blocking `cosmetic` findings are deferred here too**, regardless of the cap (see `§ Materiality routing`). They are the one non-*overflow* reason a cleared finding lands in this list; they are still counted in `<DEF>`, so the `<CL> − <DEF> == <F>` identity is unchanged.
 - **A `(blocking)` finding is never in the deferred list** — it is always inline (see the cap-exemption above), so the `Additional findings` section holds only non-blocking overflow.
 - Each deferred entry carries file, line, prefix, the one-line body, and the confidence score.
 - Deferred entries are excluded from `INLINE_COMMENTS_JSON` — they are body text, so they neither consume inline slots nor enlarge the review payload.
@@ -128,14 +132,18 @@ That is an argument about **inline density**, not about how much the reviewer is
 
 ### Materiality routing
 
-Non-blocking findings split by **materiality**, a dimension orthogonal to confidence. A finding can be *correct* (high confidence) and still not be worth an inline comment.
+Non-blocking findings carry a **materiality** dimension, orthogonal to confidence: a finding can be correct (high confidence) and still not be worth surfacing.
 
-- **material** — asserts a real defect the author would want to fix: a test/coverage gap, a *wrong* or *misleading* comment / doc / name, a factual error, a genuine simplification or bug-adjacent risk. Routed normally — inline under the caps, else deferred as overflow.
-- **cosmetic** — asserts no defect, only a preference about *form*: wording parity between surfaces ("spell it out like the sibling"), reflow, whitespace, formatting, or restating the same rule more verbosely. A cosmetic finding is **deferred to `Additional findings` regardless of remaining inline slots** — it never posts inline, so it never opens a review thread and never gates a re-review.
+- **material** — asserts a real defect the author would want to fix: a test or coverage gap, a *wrong* or *misleading* comment, doc, or name, a factual error, or a genuine simplification.
+- **cosmetic** — asserts no defect, only a preference about *form*: wording parity between surfaces ("spell it out like the sibling"), reflow, whitespace, formatting, or restating the same rule more verbosely.
 
-Why route cosmetic findings off the inline path: a cosmetic fix predictably *creates the next cosmetic finding* — aligning surface A makes sibling B read as uneven — and because the reviewer re-runs on every push, each inline cosmetic thread costs a full review round to resolve. Deferring surfaces the observation without minting a thread the author must clear. Confidence is the wrong filter here: a parity nitpick is usually correct; it is simply not worth a round-trip. Blocking findings are never cosmetic and never deferred.
+Cosmetic findings are the **lowest-priority** non-blocking findings: within their prefix they sort last in placement (§ Placement), so they are the last to occupy a scarce inline slot and the first to overflow the caps into `Additional findings`.
+This routing needs no new counter and no new body section: it reuses the ordering and deferral the caps already apply.
 
-**Docs / comment-only deltas.** In `incremental` and `incremental-quick` runs whose `REVIEW_DIFF` touches only Markdown (`.md` / `.mdx`) or comment lines, hold `nitpick` / `suggestion` findings to the materiality bar strictly: a *factual* doc error is material and posts normally, but pure wording / parity / formatting is cosmetic and defers. This is the exact case — a tiny doc-fix delta — where an inline cosmetic nitpick otherwise spawns another on the next push, the cascade [§ Consolidation pass](#consolidation-pass) prevents on the first pass.
+On `incremental` and `incremental-quick` runs whose `REVIEW_DIFF` touches only Markdown (`.md` / `.mdx`) or comment lines, a cosmetic `nitpick` or `suggestion` is **dropped as noise**, the same disposition and accounting `per-comment-confidence.md` gives a below-bar nitpick, rather than posted.
+This is the exact case where an inline cosmetic nit otherwise spawns another on the next push, because the reviewer re-runs on every push and aligning surface A makes sibling B read as uneven.
+Dropping it breaks that cascade without a new counter or body section, and it still appears in the uncapped Step 3 terminal report.
+A *factual* doc error is material and posts normally, and blocking findings are never cosmetic.
 
 ## Severity mapping
 

@@ -260,13 +260,16 @@ function checksInSync(plan, checks) {
   s.check("G6 rubric-composition 80 → 70 promotion language present",
     rcmd.includes("80") && rcmd.includes("70") && /agreement.promoted/i.test(rcmd));
 
-  // G6b: Materiality routing — cosmetic non-blocking findings defer off the inline path
-  // (breaks the doc-nitpick re-review cascade), and the deferral is counted in <DEF> so the
-  // <CL> − <DEF> == <F> identity is preserved (no new advisory counter that could drift).
-  s.check("G6b rubric-composition has Materiality routing (cosmetic defers off inline)",
-    /##+\s+Materiality routing/.test(rcmd) && rcmd.includes("cosmetic"));
-  s.check("G6b materiality routing preserves the <CL> − <DEF> == <F> identity",
-    /Materiality routing[\s\S]*?<DEF>|counted in `<DEF>`/.test(rcmd));
+  // G6b: Materiality routing — cosmetic non-blocking findings ride the EXISTING ordering +
+  // below-bar-nitpick disposition (sort last / overflow first; dropped as noise on a docs-only
+  // incremental delta), so the doc-nitpick re-review cascade is broken with no new counter and
+  // the <CL> − <DEF> == <F> identity is untouched. Scope the assertion to the section slice so
+  // gutting the section (or re-pointing it at a counter) fails the check.
+  const matSec = (rcmd.match(/###\s+Materiality routing[\s\S]*?(?=\n##\s)/) || [""])[0];
+  s.check("G6b rubric-composition § Materiality routing routes cosmetic findings off the inline path",
+    /cosmetic/i.test(matSec) && /(lowest-priority|sort last)/i.test(matSec) && /dropped as noise/i.test(matSec));
+  s.check("G6b materiality routing adds no counter (identity untouched)",
+    /no new counter/i.test(matSec));
   // G6c: Consolidation collapses cross-surface parity findings into one enumerated finding,
   // so a consistency fix cannot leave a sibling to re-flag on the next push (cascade guard).
   s.check("G6c rubric-composition consolidation collapses parity findings across siblings",

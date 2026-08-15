@@ -996,13 +996,14 @@ Non-blocking findings above a cap are **deferred, not dropped** — rendered in 
 never discarded by this step, and a blocking finding is never deferred. Report
 `Deferred (over inline cap): <N>` in the diagnostics block.
 
-Non-blocking findings also split by **materiality** (`rubric-composition.md § Materiality routing`):
-a `cosmetic` finding — pure wording / parity / formatting, held to this bar strictly on a
-docs/comment-only `incremental` or `incremental-quick` delta — is **deferred to `Additional findings`
-regardless of remaining slots**, so it never posts inline, never opens a review thread, and never
-gates a re-review. `material` findings (coverage gaps, wrong/misleading comments, factual errors)
-route normally. Cosmetic deferrals are counted in `<DEF>`, so the `<CL> − <DEF> == <F>` identity is
-unchanged.
+Non-blocking findings also carry a **materiality** dimension (`rubric-composition.md § Materiality routing`).
+`cosmetic` findings — pure wording, parity, or formatting — are the lowest-priority non-blocking
+findings, so they sort last within their prefix and overflow the caps first.
+On a docs/comment-only `incremental` or `incremental-quick` delta a cosmetic `nitpick` or `suggestion`
+is dropped as noise (the below-bar-nitpick disposition), so it never opens a review thread that a
+later push must clear, while `material` findings (coverage gaps, wrong or misleading comments,
+factual errors) route normally — adding no counter and leaving the `<CL> − <DEF> == <F>` identity
+untouched.
 
 ---
 
