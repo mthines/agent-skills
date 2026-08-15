@@ -11,9 +11,10 @@ tags:
 
 # Reviewer report ingest
 
-A `pr-reviewer` run posts one consolidated review. Its inline comments are addressable through
+A `pr-reviewer` run produces one consolidated report. Its inline comments are addressable through
 `gh api repos/<owner>/<repo>/pulls/<n>/comments`, but a large share of what the run produced lives
-**only in the review body**:
+**only in the report body** — the sticky comment, or a legacy review body (see *Where the report
+lives*):
 
 - gate findings, which have **no inline anchor by design** — a `❌` on *Prior bot feedback*,
   *Documentation*, or *Self-review signals* exists only as a row in the gate-status table;
@@ -73,7 +74,7 @@ A sticky body ends with one HTML comment holding this agent's per-run history, s
 body in place destroys the history that counting review objects used to provide:
 
 ```text
-<!-- PR_REVIEWER_LEDGER {"v":1,"runs":[{"sha":"…","mode":"full","verdict":"FAIL","at":"…","open_bot_comment_ids":[…]}]} -->
+<!-- PR_REVIEWER_LEDGER {"v":1,"runs":[{"sha":"…","mode":"full","verdict":"FAIL","at":"…","open_bot_comment_ids":[…],"blocking_fingerprints":[…]}]} -->
 ```
 
 The schema is owned by [`pr-reviewer.md § The run ledger`](../../pr-reviewer.md); this grammar only

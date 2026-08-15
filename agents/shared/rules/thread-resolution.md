@@ -61,19 +61,59 @@ signals; this rule only adds what to DO with each.
 
 | Status | Condition | Thread action | Memory write |
 | --- | --- | --- | --- |
-| **fixed** | The commented region changed after the comment was posted (a commit touched `(path, line ± 5)`) AND the current run does **not** re-produce a finding with the same fingerprint at/near that location | **Resolve** | `relevant` / `fixed` |
+| **fixed** | The commented region changed after the comment was posted (a commit touched `(path, line ± 5)`) AND the current run does **not** re-produce a finding with the same fingerprint at/near that location. **Requires a finding set that was actually produced** — see *No finding set, no `fixed`* below. | **Resolve** | `relevant` / `fixed` |
 | **declined** | The author replied "won't fix" / "by design" / "intentional" / "n/a", or 👎-reacted the comment | **Resolve** | `not-relevant` / `wont-fix` |
 | **acknowledged** | The author replied "fixed" / "done" / "addressed" and the thread is on a line the delta touched | **Resolve** | `relevant` / `fixed` |
 | **persisting** | The current run re-produces the same finding (the issue is still there) | **Leave open** | none (the finding carries forward and stays posted) |
 | **unaddressed** | None of the above — the line is untouched, no reply, and the delta did not cover it (so the current pass could not re-confirm it) | **Leave open** | none — absence of a re-scan is not evidence of resolution |
 
-Two hard rules:
+Three hard rules:
 
 - **Only ever touch threads this agent authored.** Never resolve a human's or a
   different bot's thread. Match on `user.login == BOT_LOGIN`.
 - **Never resolve a `persisting` or `unaddressed` thread.** Resolving a thread
   whose issue is still live would hide a real finding — the exact failure this
   feature must not cause. When in doubt, leave it open.
+- **No finding set, no `fixed`.** See below.
+
+### No finding set, no `fixed`
+
+`fixed` is a two-clause test, and the second clause — *the current run does not
+re-produce the finding* — is only evidence when the current run **looked**. On a
+run that produced no findings at all, it is vacuously true, and every candidate
+thread whose region was touched silently classifies as `fixed`.
+
+This is reachable, and on the commonest re-review shape. When the zero-delta
+short-circuit fires (`pr-reviewer.md` Step 1.2b, `REVIEW_DIFF == ""`), Step 2 is
+skipped and the finding set is **empty, not final**. `persisting` can then never
+fire. So a thread a previous run correctly held open as `persisting` — the author
+pushed a commit touching the region without fixing the issue — flips to `fixed` on
+the next zero-delta re-run, the thread is resolved, and a false `relevant` /
+`fixed` record is written to `reviewer-comment-relevance`. That is precisely the
+"hide a real finding" failure the rule above forbids, and the `unaddressed` row's
+own rationale already names the situation: *absence of a re-scan is not evidence
+of resolution*.
+
+**Rule.** When the current run produced no finding set — the zero-delta path, or
+any run where Step 2 did not execute — classify every `fixed` candidate as
+**`unaddressed`** instead. Only the reply-driven statuses may resolve on such a
+run:
+
+| Status | Needs a finding set? | On a no-finding-set run |
+| --- | --- | --- |
+| `fixed` | **Yes** — clause 2 is the re-scan | Downgrade to `unaddressed`; leave open |
+| `persisting` | Yes | Cannot fire; irrelevant (the `fixed` candidates it would have caught are now `unaddressed`) |
+| `declined` | No — the author replied / 👎-reacted | Resolve as normal |
+| `acknowledged` | No — the author replied | Resolve as normal |
+| `unaddressed` | No | Leave open as normal |
+
+`declined` and `acknowledged` are safe because their evidence is the author's own
+words, which do not depend on this run having scanned anything.
+
+The cost of this rule is a thread that really was fixed staying open until the
+next run that scans code — one extra checklist line. The cost of not having it is
+a live finding silently resolved and mislabelled in the durable relevance signal.
+Those are not close.
 
 The fingerprint is the same `category:claim-gist` used by
 `comment-relevance-memory.md` — derived from the prior comment's Conventional
@@ -243,6 +283,11 @@ fails this gate* (`pr-reviewer.md § Gate 3`). These threads are now resolved, s
 gate against the updated set applies the existing rule to fresher input — it does not introduce a
 second, weaker standard. A `persisting` or `unaddressed` thread is never resolved, so it can never
 be removed from the gate this way.
+
+**Except under `--skip-gates`**, where Step 1.8 never ran and Gate 3 is `⏭️`: update the open set
+and the `resolved since` counter as usual, but leave the gate `⏭️`. Re-evaluating it there would
+resurrect a gate the invocation explicitly turned off. The carve-out is owned by
+`pr-reviewer.md § Step 2.9c`; it is restated here so this rule does not read as complete without it.
 
 ---
 

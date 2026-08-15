@@ -277,6 +277,11 @@ every rule below means by "the prior report".
 - Set `PRIOR_DIAGNOSTICS = {}` (all sub-lists empty).
 - Set `STICKY_COMMENT_ID = ""`, `PRIOR_VERDICT = ""`, `PRIOR_OPEN_THREAD_IDS = []`, and
   `PRIOR_BLOCKING_FINGERPRINTS = []`.
+- Set `RESOLVED_SINCE_PRIOR = 0`. It is otherwise assigned only in Step 2.9c, which is skipped on a
+  first pass — yet three render sites read it unconditionally, and a first-pass run with Gate 3 ❌
+  (other bots' threads open, which is common) reaches the checklist with nothing bound. `0`
+  suppresses the counter everywhere, which is the correct reading: nothing has been resolved since
+  a prior report that does not exist.
 - Announce: `No prior review found — running full review.`
 - Proceed to Step 1.
 
@@ -301,7 +306,11 @@ every rule below means by "the prior report".
   [ -z "$PRIOR_REVIEW_SHA" ] && PRIOR_REVIEW_SHA=$(sed -n 's/.*commit `\([0-9a-f]\{7,40\}\)`.*/\1/p' <<< "$PRIOR_BODY" | tail -1)
   [ -z "$PRIOR_REVIEW_SHA" ] && PRIOR_REVIEW_SHA=$(jq -r '.commit_id // ""' <<< "$PRIOR_REVIEW")
   ```
-  `PRIOR_REVIEW_SHA` is the provenance of the carried body and is always set once a prior report
+  If all three miss — a hand-edited sticky with no ledger, no parseable footer, and (being an issue
+  comment) no `commit_id` — set `PRIOR_REVIEW_SHA = "unknown"` and render the suffix as
+  `(carried from an unknown revision)`. That is honest about the gap; the empty `(carried from )`
+  is not, and is what the paragraph below forbids.
+  `PRIOR_REVIEW_SHA` is the provenance of the carried body and is set whenever a prior report
   exists; `PRIOR_SHA` is the delta-triage baseline and stays empty under `--full`. Keep them
   separate: `PRIOR_REVIEW_SHA_SHORT` (`${PRIOR_REVIEW_SHA:0:7}`) is what the mandatory
   `(carried from …)` suffix renders, so the suffix never degrades to `(carried from )` in a mode
@@ -409,7 +418,7 @@ recoverable by counting review objects has to be carried **inside** the body. Th
 single HTML comment, invisible in rendered Markdown, written as the last line of the body by Step 4.
 
 ```text
-<!-- PR_REVIEWER_LEDGER {"v":1,"runs":[{"sha":"a1b2c3d…","mode":"full","verdict":"FAIL","at":"2026-08-15T09:12:00Z","open_bot_comment_ids":[123,456]}]} -->
+<!-- PR_REVIEWER_LEDGER {"v":1,"runs":[{"sha":"a1b2c3d…","mode":"full","verdict":"FAIL","at":"2026-08-15T09:12:00Z","open_bot_comment_ids":[123,456],"blocking_fingerprints":["issue:retry-resends-body-after-413"]}]} -->
 ```
 
 | Field | Meaning |
@@ -426,12 +435,13 @@ single HTML comment, invisible in rendered Markdown, written as the last line of
 Bounding rules, applied by Step 4 on every append:
 - Keep at most **50** entries; drop from the front. The deep-lens counters only need the runs since
   the last `full`, and a PR that outlives 50 reviews has bigger problems than a truncated ledger.
-- Keep `open_bot_comment_ids` on the newest entry only.
+- Keep `open_bot_comment_ids` and `blocking_fingerprints` on the newest entry only. Both are the bulky per-run fields; the `jq` in Step 4a strips both from older entries on every append.
 
 A ledger that is absent, version-mismatched, or unparseable degrades to "no history": `LAST_FULL_SHA`
 empty (⇒ Step 1.2b forces `full`), `PRIOR_VERDICT` empty (⇒ Step 4 treats the run as an escalation
-and posts a review), `PRIOR_OPEN_THREAD_IDS` empty (⇒ no `resolved since` count). Every degradation
-is toward doing more work and saying more, never toward silence.
+and posts a review), `PRIOR_OPEN_THREAD_IDS` empty (⇒ no `resolved since` count), and
+`PRIOR_BLOCKING_FINGERPRINTS` empty (⇒ Step 4b condition 4 treats every blocking finding as new,
+which posts). Every degradation is toward doing more work and saying more, never toward silence.
 
 ---
 
@@ -1243,7 +1253,15 @@ reconciliation, from the Gate 3 refresh, and from the `reviewer-comment-relevanc
 **whether or not Step 2 itself ran**, including on the zero-delta path.
 
 Findings are final as of 2.9b, which is the precondition this step needs to tell `persisting` from
-`fixed`. It runs **here — before the verdict (Step 3) and before posting (Step 4)** — rather than
+`fixed`.
+
+**On the zero-delta path that precondition does not hold, and `fixed` must be downgraded.** Step 2
+is skipped there, so the finding set is **empty, not final**: `persisting` cannot fire, and `fixed`'s
+second clause (*the current run does not re-produce the finding*) is vacuously true. Classify every
+`fixed` candidate as `unaddressed` on any run where Step 2 did not execute, and let only the
+reply-driven statuses (`declined`, `acknowledged`) resolve — their evidence is the author's own
+words and needs no scan. Full rule and rationale: `thread-resolution.md § No finding set, no
+\`fixed\``. It runs **here — before the verdict (Step 3) and before posting (Step 4)** — rather than
 after posting, because Gate 3 and the unblock checklist are rendered from `OPEN_BOT_COMMENTS[]`,
 and resolving threads after that rendering publishes a checklist naming threads this very run
 closed seconds later. The author then reads a stale worklist and only sees the truth on the next
@@ -1276,8 +1294,6 @@ is what the author is waiting for.
 Log `Threads resolved: <F> fixed, <D> declined` and `Relevance memories written: <N>` in the Step 5
 report — its `Include:` list is free-form and has room for them. Step 3's Quality Gate block is a
 fixed enumeration with no slot for either counter; do not wedge them in there.
-
----
 
 ---
 
@@ -1480,7 +1496,7 @@ Bind the three values Step 4 introduces before rendering:
 
 | Variable | Value |
 | --- | --- |
-| `VERDICT` | `PASS` / `WARN` / `FAIL` — the verdict chosen in Step 3, the same one that selects the body template. |
+| `VERDICT` | `PASS` / `WARN` / `FAIL` — the **presentation variant** chosen in Step 3, the one that selects the body template. Not the printed advisory verdict: Step 3's WARN template prints `**Verdict**: PASS — no blocking issues, <N> warning(s)`, and recording that `PASS` here would collapse `RANK = {PASS:0, WARN:1, FAIL:2}` so a PASS → WARN escalation never notifies. |
 | `HEAD_SHA_SHORT` | `${HEAD_SHA:0:7}` (Step 1.2). |
 | `OPEN_BOT_COMMENT_IDS_JSON` | A JSON array of the comment ids in `OPEN_BOT_COMMENTS[]` **as it stands after Step 2.9c** — `[]` when the gate is clean. This is what the next run diffs to compute `RESOLVED_SINCE_PRIOR`. |
 | `BLOCKING_FINGERPRINTS_JSON` | A JSON array of the `category:claim-gist` fingerprints of this run's `(blocking)` findings (Step 2.9), `[]` when none. This is what the next run's Step 4b condition 4 diffs against. |
@@ -1488,7 +1504,7 @@ Bind the three values Step 4 introduces before rendering:
 Render `REPORT_BODY` per *Review body format* below, append the ledger line, then:
 
 ```bash
-# Append this run to the ledger, strip open_bot_comment_ids from older entries, cap at 50.
+# Append this run to the ledger, strip the two per-run fields from older entries, cap at 50.
 NEW_LEDGER=$(jq -c --arg sha "$HEAD_SHA" --arg mode "$RUN_MODE" --arg verdict "$VERDICT" \
   --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson ids "$OPEN_BOT_COMMENT_IDS_JSON" \
   --argjson blocking "$BLOCKING_FINGERPRINTS_JSON" '
@@ -1501,12 +1517,13 @@ NEW_LEDGER=$(jq -c --arg sha "$HEAD_SHA" --arg mode "$RUN_MODE" --arg verdict "$
 
 printf '%s\n\n<!-- PR_REVIEWER_LEDGER %s -->\n' "$REPORT_BODY" "$NEW_LEDGER" > /tmp/report-body.md
 
+# Capture html_url in both branches — Step 4b's POINTER_BODY links to it.
 if [ -n "$STICKY_COMMENT_ID" ]; then
-  gh api repos/$RESOLVED_REPO/issues/comments/$STICKY_COMMENT_ID \
-    --method PATCH --field body=@/tmp/report-body.md
+  STICKY_URL=$(gh api repos/$RESOLVED_REPO/issues/comments/$STICKY_COMMENT_ID \
+    --method PATCH --field body=@/tmp/report-body.md --jq .html_url)
 else
-  gh api repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments \
-    --method POST --field body=@/tmp/report-body.md
+  STICKY_URL=$(gh api repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments \
+    --method POST --field body=@/tmp/report-body.md --jq .html_url)
 fi
 ```
 
@@ -1576,10 +1593,17 @@ On an escalation with nothing inline, substitute the escalation form instead, na
 so the notification is worth the interrupt:
 
 ```markdown
-⚠️ Verdict moved <PRIOR_VERDICT> → <VERDICT> at `<HEAD_SHA_SHORT>` — <FAIL_REASONS>. [Full report](<STICKY_URL>)
+⚠️ Verdict moved <PRIOR_VERDICT> → <VERDICT> at `<HEAD_SHA_SHORT>` — <ESCALATION_REASONS>. [Full report](<STICKY_URL>)
 ```
 
-`STICKY_URL` is the sticky comment's `html_url` from the 4a response.
+`ESCALATION_REASONS` is `FAIL_REASONS` when `VERDICT == FAIL` and `WARN_REASONS` when
+`VERDICT == WARN`. `FAIL_REASONS` carries one phrase per ❌ gate, of which a WARN run has none — so
+using it unconditionally renders a bare `— .` on a PASS → WARN escalation, which is a reachable
+case under condition 3 and an interrupt with no stated reason.
+
+`STICKY_URL` is bound from the 4a response's `html_url`, in whichever branch ran. It is the only
+link in the pointer body, so a run that somehow reaches 4b without it must omit the trailing
+`Full report` link clause entirely rather than emit a broken link.
 
 The five non-negotiables:
 1. `event` is always `"COMMENT"` — never `"APPROVE"`, `"REQUEST_CHANGES"`, or omitted.
