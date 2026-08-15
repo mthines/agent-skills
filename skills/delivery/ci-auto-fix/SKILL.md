@@ -240,29 +240,11 @@ After pushing, monitor the check:
    gh run list --branch <current-branch> --limit 5
    ```
 
-3. Watch the run until completion, bounded per attempt:
+3. Watch the run until completion, bounded at 30 minutes:
    ```bash
-   # Issue this Bash call with the tool parameter timeout: 600000.
-   # The tool default is 120000; a `timeout` larger than the tool cap never
-   # fires its own exit 124 — the harness kills the call first and the
-   # expiry handling below becomes dead code.
-   timeout 540 gh run watch <new-run-id>
+   timeout 1800 gh run watch <new-run-id>
    ```
-   If `timeout` expires (exit code 124), run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate.
-
-   **Shared watch budget — never read as your allowance, never written.** Use **your own local counter** (max 4) for your own watches, unconditionally. If the invocation passed a `CI_WATCH_STATE=<abs-path>` line, treat it as **informational only** — context about what the caller already spent, never a cap on you. Your watch follows a commit **you just pushed**, which the caller's counter predates; reading it as an allowance would leave you unable to verify your own fix the moment the caller had spent its four attempts.
-
-   **Never write to that file.** The dispatching orchestrator is the single writer; when you are one of several subagents fanned out in the same turn, two of you writing `observed_sha` would record one of two commits and let the caller skip a watch for a commit whose checks were never observed. Do not guess the path or the caller either: acting on a budget you were not given is how two components silently spend each other's allowance.
-
-   Report your outcome instead, and let the caller reconcile. Include these fields verbatim in your return block:
-
-   ```
-   watched_sha: <the PR head SHA your watch actually observed>
-   attempts_used: <how many watch attempts you spent>
-   outcome: green | still-failing | timed-out | gave-up
-   ```
-
-   **Each fix-push cycle is a new wait** — your watch follows a *new commit*, not a continuation of the caller's wait on the old one, so `attempts_used` should reset per push in your own local count. The caller applies that reasoning when it reconciles (`observed_sha` changes ⇒ counters reset). Without the reasoning living somewhere, two `ci-auto-fix` handoffs drain the caller's 4 attempts on their own iterations and leave Phase 7 refusing to watch a PR whose CI was never actually waited on. Without it living in the *caller*, racing subagents corrupt the shared file. It belongs in the caller.
+   If `timeout` expires (exit code 124), run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate. Same bounded-poll pattern as the reviewer-feedback watch loop in [`../../workflow/implement-suggestion/rules/watch-mode.md`](../../workflow/implement-suggestion/rules/watch-mode.md).
 
 4. Check the result:
    ```bash
