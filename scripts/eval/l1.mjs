@@ -520,116 +520,78 @@ function checksInSync(plan, checks) {
   // G24: the relevance-bucket contracts this repo hand-mirrors across rule files.
   // Same class as G16 (cross-file drift, no single source of truth).
   //
-  // Every check here is written to FAIL on the regression it names, not on a proxy.
-  // Two earlier versions did not: one asserted enum membership under a name promising
-  // producer coverage (so blanking both producer sites still passed), and two matched
-  // only double-quoted phrase restatements (so an unquoted copy still passed). If you
-  // add a check, mutate the contract and confirm it goes red before trusting it.
+  // Every check here must FAIL on the regression it names, not on a proxy. Five
+  // earlier versions did not, each for its own reason: one asserted enum membership
+  // under a name promising producer coverage; two matched only double-quoted phrase
+  // restatements; one counted a symbol repo-wide so the function definition satisfied
+  // it with both call sites deleted; one matched a key anywhere in a file that also
+  // defines it. If you add a check here, mutate the contract and confirm it goes red.
   {
     const ol = read("agents/shared/rules/outcome-learning.md");
-    const crm = read("agents/shared/rules/comment-relevance-memory.md");
     const tr = read("agents/shared/rules/thread-resolution.md");
     const rec = read("scripts/record-comment-relevance.mjs");
 
-    // (a) The resolution_method enum, pinned against a literal. Named for what it does.
-    const METHODS = [
-      "fixed", "wont-fix", "ignored-at-merge",
-      "uncorroborated-touch", "thread-state-unknown",
-      "acknowledged-no-fix-found", "no-anchor-unverifiable",
-    ];
-    const enumLine = (crm.match(/"resolution_method":\s*"([^"]+)"/) || [])[1] || "";
-    const declared = enumLine.split("|").map((x) => x.trim()).filter(Boolean);
-    s.check("G24a resolution_method enum equals the expected seven values",
-      METHODS.length === declared.length && METHODS.every((m) => declared.includes(m)));
-
-    // (b) Producer coverage, for real: each non-directional method needs a table row
-    // with a non-empty "Written by" cell. Enum membership must NOT satisfy this.
-    // The writer cell must either name a rule file or be the exact reserved literal.
-    // Non-emptiness is not enough: "no producer yet" spreading to a method that HAS
-    // one would otherwise stay green.
-    const RESERVED = "**no producer yet**";
-    const writerCell = (m) => {
-      const row = crm.match(new RegExp(`^\\|[^|]*\\|([^|]*)\\|\\s*\`${m}\`\\s*\\|`, "m"));
-      return row ? row[1].trim() : null;
-    };
-    const NAMED = ["uncorroborated-touch", "thread-state-unknown", "acknowledged-no-fix-found"];
-    s.check("G24b every produced resolution_method names a rule file as its writer",
-      NAMED.every((m) => { const c = writerCell(m); return !!c && /\.md/.test(c) && c !== RESERVED; }));
-    s.check("G24b2 no-anchor-unverifiable is marked reserved, not given a false writer",
-      (writerCell("no-anchor-unverifiable") || "").startsWith(RESERVED));
-
-    s.check("G24c relevance enum carries the non-directional value",
-      /"relevance":\s*"[^"]*\bindeterminate\b[^"]*"/.test(crm));
-
-    // (d/e) "Cite, don't restate": the two deferring rows must link out AND must not
-    // carry the phrase lists they used to duplicate — quoted or not.
+    // (a) "Cite, don't restate": the two deferring rows in thread-resolution must link
+    // out and must not carry the phrase lists they used to duplicate — quoted or not.
     const ackRow = (tr.match(/^\|\s*\*\*acknowledged\*\*.*$/m) || [""])[0];
     const decRow = (tr.match(/^\|\s*\*\*declined\*\*.*$/m) || [""])[0];
     const ackPhrases = (ackRow.match(/\b(fixed|done|addressed|resolved|updated)\b/gi) || []).length;
-    const decPhrases = (decRow.match(/\b(won.?t fix|by design|intentional|out of scope|n\/a|nwf)\b/gi) || []).length;
-    s.check("G24d acknowledged row links the judgement rule and does not restate a phrase list",
+    const decPhrases = (decRow.match(/\b(won.?t fix|by design|intentional|out of scope|n\/a|nwf|as designed)\b/gi) || []).length;
+    s.check("G24a acknowledged row links the judgement rule and does not restate a phrase list",
       /outcome-learning\.md/.test(ackRow) && ackPhrases <= 1);
-    s.check("G24e declined row cites WONT_FIX_RE and does not restate its alternatives",
-      /WONT_FIX_RE/.test(decRow) && decPhrases === 0);
+    s.check("G24b declined row cites the judgement rule and does not restate the alternatives",
+      /outcome-learning\.md/.test(decRow) && decPhrases === 0);
 
-    // (f) The agent-facing rule is a JUDGEMENT rule, not a tokenizer. This is the
-    // contract that replaced the three-rule matcher: decline-precedence is shared with
-    // the script, and the prose-parser machinery must not come back.
+    // (c) The agent-facing rule is a JUDGEMENT rule, not a tokenizer. Positive shape
+    // assertion: a denylist of tokenizer vocabulary is routed around by paraphrase.
     const ackSection = (ol.match(/#### What counts as an acknowledgement[\s\S]*?(?=\n#### |\n### |\n## )/) || [""])[0];
-    s.check("G24f the acknowledgement rule states decline-precedence",
-      /decline wins/i.test(ackSection));
-    // Positive shape assertion. A denylist of tokenizer vocabulary is routed around by
-    // paraphrase; requiring the judgement shape is not.
     const bullets = (ackSection.match(/^- \*\*/gm) || []).length;
-    s.check("G24g the acknowledgement rule keeps its judgement shape (bulleted criteria + default)",
+    s.check("G24c the acknowledgement rule states decline-precedence",
+      /decline wins/i.test(ackSection));
+    s.check("G24d the acknowledgement rule keeps its judgement shape (bulleted criteria + default)",
       bullets >= 4 &&
       /cannot tell|when you can.t tell/i.test(ackSection) &&
-      /indeterminate/i.test(ackSection) &&
       !/token window|word tokens|negator|complement clause|tokeniz|split the reply/i.test(ackSection));
 
-    // (h) WONT_FIX_RE's alternatives must be bounded. Unbounded ones fire inside
-    // ordinary words and file paths ("unintentional", "by designers", "bin/a.js"),
-    // and a decline match vetoes an acknowledgement. Assert on the assignment line
-    // only, so a doc comment mentioning the literal cannot satisfy this.
-    const reLine = (rec.match(/^const WONT_FIX_RE\s*=.*$/m) || [""])[0];
-    const body = (reLine.match(/=\s*\/(.*)\/[a-z]*;/) || [])[1] || "";
-    // Derive the alternative list rather than naming a subset: an earlier version
-    // asserted three of four and stayed green when the fourth regressed.
-    const alts = body ? body.split("|") : [];
-    // (i) Decline-precedence is the one contract both paths must share. G24f asserts the
-    // prose half; this asserts the executable half, which is the one that fails silently.
-    // Scope to the function bodies, not a repo-wide count: the definition itself
-    // satisfies any count-based test, so a version that deleted both call sites
-    // stayed green.
+    // (e) Decline-precedence is the one contract both paths must share. G24c asserts the
+    // prose half in outcome-learning; this asserts it in thread-resolution, which makes
+    // the claim, and (f) asserts the executable half, which fails silently.
+    s.check("G24e thread-resolution states decline-precedence for the in-run path",
+      /decline outranks an acknowledgement/i.test(tr));
+
+    // Scope to each function's own body. `fnBody` must handle `async function`: an
+    // earlier version terminated on "\nfunction " only, so modeThreadResolved's window
+    // ran to EOF, swallowed modePrMerged, and stayed green when its own call was cut.
     const fnBody = (name) => {
-      const i = rec.indexOf(`function ${name}(`);
+      const i = rec.search(new RegExp(`^(?:async\\s+)?function ${name}\\(`, "m"));
       if (i < 0) return "";
-      const j = rec.indexOf("\nfunction ", i + 1);
-      return rec.slice(i, j < 0 ? rec.length : j);
+      const rest = rec.slice(i + 1);
+      const j = rest.search(/^(?:async\s+)?function \w+\(/m);
+      return j < 0 ? rec.slice(i) : rec.slice(i, i + 1 + j);
     };
-    s.check("G24i both script modes still apply decline detection",
+    s.check("G24f both script modes still apply decline detection",
       /hasWontFixReply\s*\(/.test(fnBody("modeThreadResolved")) &&
       /hasWontFixReply\s*\(/.test(fnBody("modePrMerged")));
 
-    // (j) The #indeterminate key shape. This is the check whose absence let a key-shape
-    // contract ship with four write sites and none of them mentioning it.
-    const emitters = ["uncorroborated-touch", "thread-state-unknown", "acknowledged-no-fix-found"];
-    s.check("G24j every indeterminate emitter's write site names the #indeterminate key",
-      emitters.every((m) => {
-        const hay = ol.includes(m) ? ol : crm;
-        const i = hay.indexOf(m);
-        return i > -1 && hay.slice(Math.max(0, i - 600), i + 600).includes("#indeterminate");
-      }));
-    // Scope to the WRITE section: the suffixed key also appears in § Key format, so a
-    // repo-wide substring test stayed green with the write templates unsuffixed —
-    // which is exactly the state that shipped.
-    const writeSection = crm.slice(crm.indexOf("Use the same `memory.write` call format above"));
-    s.check("G24k the write section states the directional/indeterminate key split",
-      writeSection.length > 0 &&
-      /reviewer-comment-relevance::<category>:<claim-gist>#indeterminate/.test(writeSection));
-
-    s.check("G24h every WONT_FIX_RE alternative is bounded on both sides",
+    // (g) Every WONT_FIX_RE alternative bounded, derived from the regex rather than a
+    // named subset — an earlier version asserted three of four and missed the fourth.
+    const reLine = (rec.match(/^const WONT_FIX_RE\s*=.*$/m) || [""])[0];
+    const body = (reLine.match(/=\s*\/(.*)\/[a-z]*;/) || [])[1] || "";
+    const alts = body ? body.split("|") : [];
+    s.check("G24g every WONT_FIX_RE alternative is bounded on both sides",
       alts.length >= 8 && alts.every((a) => a.startsWith("\\b") && a.endsWith("\\b")));
+
+    // (h) The model-readable decline list and WONT_FIX_RE are hand-mirrored. Compare as
+    // sets so a deletion or addition on either side goes red — the drift that produced
+    // the `as designed` inversion.
+    const norm = (x) => x.replace(/\\b/g, "").replace(/\\s\+/g, " ").replace(/\\\//g, "/")
+                         .replace(/\(.*?\)/g, "").replace(/[^a-z /]/gi, "").trim().toLowerCase();
+    const fromRe = new Set(alts.map(norm).filter(Boolean));
+    // The blockquote is indented inside a list item, so anchor on optional leading space.
+    const quote = (ol.match(/^[ \t]*> [^\n]*·[\s\S]*?(?=\n[ \t]*\n)/m) || [""])[0];
+    const fromProse = new Set(quote.split(/[·\n>]/).map(norm).filter(Boolean));
+    s.check("G24h the model-readable decline list matches WONT_FIX_RE's alternatives",
+      fromRe.size >= 8 && [...fromRe].every((a) => [...fromProse].some((b) => b.includes(a) || a.includes(b))));
   }
 
   // G16: the `reviewer-comment-relevance` TTL is hand-mirrored across five files

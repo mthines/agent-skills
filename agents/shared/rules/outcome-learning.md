@@ -112,10 +112,7 @@ happened, feeding the suppression gate against a finding that was acted on. The 
 corroboration at Step 4 and a decline here; only the content test keeps the two consistent.
 
 An author reply that **is** an acknowledgement, with no fix commit in range, is neither (b) nor (c):
-it is a third indeterminate case with its own method: record
-`indeterminate` / `acknowledged-no-fix-found` on the `#indeterminate` key
-(``comment-relevance-memory.md § `indeterminate` ``) rather than guessing a direction. `uncorroborated-touch`
-would be a misnomer — there is no touch.
+it decides nothing, so no record is written for it either.
 
 ### Step 3b — Thread resolution state (needed by signal (c))
 
@@ -153,9 +150,7 @@ inherits nothing from signal (c)'s rule. With an unknown state, **neither** may 
 gap into a stream of false `ignored-at-merge` records — which is the failure this rule exists to
 prevent, and it lands through that bullet rather than through signal (c).
 
-Log `[outcome] thread state unavailable — <N> comment(s) indeterminate`, and record them on the `#indeterminate` key as
-`indeterminate` / **`thread-state-unknown`** — not `uncorroborated-touch`, which asserts the thread
-was read and found open (``comment-relevance-memory.md § `indeterminate` ``).
+Log `[outcome] thread state unavailable — <N> comment(s) indeterminate`, and write no record for them.
 
 ### Step 4 — Signal (c): author pushed a fix touching the commented line
 
@@ -223,8 +218,8 @@ Ask: **does this reply claim the finding was already handled?**
   be fixed separately"*, *"to be done in #123"* — the work was moved out of this PR, not completed.
 - **Hedged-positive is an acknowledgement.** *"Looks fixed to me"*, *"believe that's addressed"* —
   the author is claiming it was handled.
-- **When you cannot tell, it is not an acknowledgement.** Record `indeterminate` rather than guessing
-  a direction. That is the whole reason the non-directional value exists.
+- **When you cannot tell, it is not an acknowledgement.** The conservative default is the point: an
+  unrecognised reply leaves the thread open for a human, which is the safe direction.
 
 The deterministic counterpart is `scripts/record-comment-relevance.mjs`, which has no model and does
 need a real matcher. It is not required to reproduce these judgements exactly, and this section is
@@ -232,21 +227,21 @@ not a specification of it — the two paths measure different runs and may legit
 the margin. What they must share is the **decline-wins** precedence, because a disagreement there
 produces two opposite records on one fingerprint.
 
-**With a region touch but none of the three, write no directional record.** Do not fall through to
+**With a region touch but none of the three, write nothing.** Do not fall through to
 `weak-not-relevant / ignored-at-merge` either: an open thread whose region was edited is genuinely
 *indeterminate*, and guessing in either direction poisons the signal — `relevant / fixed` rewards a
 finding that may still be live, `weak-not-relevant` punishes one that may have been fixed. A signal
 bucket is allowed to have gaps; it is not allowed to have invented entries.
 
-Record it as `relevance: indeterminate`, `resolution_method: uncorroborated-touch`, on the
-`#indeterminate` key (``comment-relevance-memory.md § `indeterminate` ``, property 1)
-(``comment-relevance-memory.md § `indeterminate` ``), and log
-`[outcome] INDETERMINATE <path>:<line> — region touched, thread read as open, no acknowledgement`.
-Use this method only when the thread state was actually read; an unreadable state is
-`thread-state-unknown` (Step 3b).
-The record counts toward neither promotion gate and never influences a review; it exists so the gap
-is countable. A log line alone is ephemeral, so a repo where corroboration never fires would look
-identical to a repo with no activity.
+Log `[outcome] UNCORROBORATED <path>:<line> — region touched, thread read as open, no acknowledgement`
+and move on.
+
+**The observation belongs in the run log, not in the bucket.** An earlier draft stored these as a
+fourth, non-directional `relevance` value so the gap would be countable. It had four write sites and
+no reader, and could not have had one: `lorekit-setup § Wiring checklist` requires every bucket
+record to have a read step, a write step, and a promotion gate, and a record that by definition
+decides nothing satisfies none of the three. A lessons bucket holds advisory input to a run; "we
+could not tell" is telemetry, and telemetry goes to the run output.
 
 This also corrects the `pr-merged` sweep's skip rule in
 [`comment-relevance-memory.md`](./comment-relevance-memory.md): it skips threads "that had a fix
