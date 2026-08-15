@@ -43,7 +43,9 @@ Step 0.5).
 - Stop and report if no PR reference is found in the invocation.
 - Stop and report a BLOCKED result if the inline review sub-pipeline fails twice.
 - Tool-call budget, scaled to the size of the reviewed diff: **30** calls for ≤ 10 changed files, **60** for 11–30, **100** for > 30. `--full` on a large PR always uses the top band.
-- Memory-read budget, **inside** that total and scaled to the same bands: **4** `memory_list` calls (Step 1.0) + **1** `memory_search` (Step 1.2c) + at most **5 / 10 / 15** `memory_read` calls (Step 1.2d) — so **10** of 30, **15** of 60, or **20** of 100. The reads trade call count for context: the four lists are summary-only (~15 KB for a typical fan-out instead of ~110 KB), and only shortlisted entries are ever expanded, so a review that matches nothing spends 5 calls and ~15 KB rather than 5 calls and ~110 KB.
+- Memory-read budget, **inside** that total and scaled to the same bands: **4** `memory_list` calls (Step 1.0) + **1** `memory_search` (Step 1.2c) + a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` calls — so **10** of 30, **15** of 60, or **20** of 100.
+  `MEMORY_READ_BUDGET` is a **single pool spanning both read sites**: Step 1.2d (lesson bodies) and Step 2.2 (relevance bodies, per `comment-relevance-memory.md § Read`). Step 1.2d spends at most **half** of it, rounded down, so a lesson-heavy shortlist can never starve the relevance verdicts that decide what gets posted; Step 2.2 may spend the whole remainder, including anything 1.2d left unused. Decrement the pool as calls are made and stop at zero at either site.
+  The reads trade call count for context: the four lists are summary-only (~15 KB for a typical fan-out instead of ~110 KB), and only shortlisted entries are ever expanded, so a review that matches nothing spends 5 calls and ~15 KB rather than 5 calls and ~110 KB.
 - If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` In the review body this goes in the `PARTIAL_REVIEW_BANNER` slot of the Step 4 templates (see *Review body format*), never as free prose. Never present a budget-truncated run as a complete review.
 - Never post a GitHub review that was not produced from fully consolidated results.
 
@@ -470,7 +472,7 @@ Both counters feed the Step 4 `Review details`
 **Memories** line; the collapsed title headlines the **used** count (`MEMORIES_USED_COUNT`,
 computed at Step 2.2) — see *Review body format*.
 Announce the concrete resolved scope so the read is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <N> entries indexed.` The matched-lesson count is announced at Step 1.2e, once matching has run.
-Announce: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
+The `<D> suppressions, <P> promotions` figures are NOT announced here: they come from `relevance` and `seen_count` in record BODIES, which are not fetched until Step 2.2. Step 2.2 announces them once they exist: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
 
 ### 1.1 Fetch PR data in parallel
 
@@ -673,10 +675,13 @@ Step 1.2e below.
 mcp__lorekit__memory_read: scope="<the entry's scope>" key="<the entry's key>"
 ```
 
-**Budget**, scaled to the same diff-size bands as the tool-call budget so the memory read never
-crowds out the review itself: at most **5** reads for ≤ 10 changed files, **10** for 11–30, **15**
-for > 30. When more entries are candidates than the band allows, fill the budget in this order and
-treat the remainder as unread:
+**Budget.** This step may spend at most **half of `MEMORY_READ_BUDGET`, rounded down** — 2 reads on
+a ≤ 10-file diff, 5 on 11–30, 7 on > 30. The other half is reserved for the relevance bodies at
+Step 2.2, which decide what actually gets posted; a lesson-heavy shortlist must never starve them.
+Decrement the shared pool by what you spend here, and leave the remainder to Step 2.2.
+
+When more entries are candidates than that allows, fill the budget in this order and treat the
+remainder as unread:
 
 1. hits returned by the Step 1.2c search, in the order it returned them — that order is
    relevance-ranked against this diff, and discarding it for recency would throw away the one

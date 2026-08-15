@@ -238,13 +238,20 @@ applying anything:
 mcp__lorekit__memory_read: scope="<the entry's scope>" key="<the entry's key>"
 ```
 
+This fetch happens **after** the run's raw findings exist, because the selector is a fingerprint
+match against them — there is nothing to match earlier. In `pr-reviewer` that is Step 2.2.
+
 Skip the fetch only when `value_bytes` ≤ 200, in which case the `preview` already carried the whole
 record. A failed read drops that one entry and is non-blocking — never treat it as a disconnection.
 An entry whose body was not fetched has no verdict and must not produce a drop, downgrade, or
-promote; treat it as absent rather than guessing from the preview. Callers that bound this fetch
-(as `pr-reviewer.md § 1.2d` does) should prefer relevance entries over lessons when the bound
-binds, because a missing relevance verdict changes what gets POSTED while a missing lesson only
-changes emphasis.
+promote; treat it as absent rather than guessing from the preview.
+
+**Budget.** A caller that bounds its memory reads should give this fetch the larger share. In
+`pr-reviewer` the two read sites draw on one shared `MEMORY_READ_BUDGET`: Step 1.2d (lesson bodies)
+may spend at most half of it, and this fetch may spend the whole remainder, including anything 1.2d
+left unused. The asymmetry is deliberate — a missing relevance verdict changes what gets POSTED,
+while a missing lesson only changes emphasis. When the pool is exhausted, the unfetched entries are
+simply absent, per the rule above.
 
 **Keep the coordinates.** Retain each entry's `scope` and `key` (the LoreKit
 memory coordinates) alongside its `fingerprint`, `relevance`, and `seen_count` —
