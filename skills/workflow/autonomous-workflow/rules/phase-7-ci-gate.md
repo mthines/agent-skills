@@ -78,9 +78,9 @@ PR_HEAD=$(gh pr view <pr-number> --json headRefOid -q .headRefOid)
 
 | State file says | `observed_sha` vs `PR_HEAD` | Phase 7 Step 1 does |
 | --------------- | --------------------------- | ------------------- |
-| Terminal (`green` or triaged failure) | **equal** | **Skip the watch** — go to the outcome table below |
-| Terminal | **different** (branch moved since) | **Watch again**, resetting both counters to `0` — a new commit is a new wait. The recorded result describes a commit that is no longer head; reporting it would mark an unobserved commit green |
-| Pending, `attempts < 4`, SHA equal | — | Resume watching with the remaining attempts |
+| `observed_state` is `green` or `failing` (both terminal) | **equal** | **Skip the watch** — go to the outcome table below. `failing` means `create-pr` already triaged it; pick up at [Auto Fix](#auto-fix) rather than re-watching |
+| Terminal (`green` / `failing`) | **different** (branch moved since) | **Watch again**, resetting both counters to `0` — a new commit is a new wait. The recorded result describes a commit that is no longer head; reporting it would mark an unobserved commit green |
+| `observed_state` is `pending`, `attempts < 4`, SHA equal | — | Resume watching with the remaining attempts |
 | `attempts == 4`, SHA **equal** | — | **Do not watch again.** Run `gh pr checks <pr-number>` once, report pending checks, escalate |
 | `attempts == 4`, SHA **different** | — | Reset both counters to `0` and watch — the spent budget belonged to the previous commit |
 | State file exists but `observed_sha` is **empty** | undecidable | **Watch exactly once, then apply the normal rows.** An empty SHA means the writer did not follow the record-on-every-attempt rule (or predates it), so "different commit" cannot be distinguished from "budget already spent here". Do **not** reset the counters — resetting is how Phase 7 re-spends a budget `create-pr` already exhausted — but do **not** skip to escalation either: one bounded attempt, recorded properly, is a strictly better failure than never watching a branch that may have moved. After that attempt `observed_sha` is populated and every row above decides normally |
@@ -90,6 +90,7 @@ This is the fix for the one place Phases 6 and 7 genuinely duplicated work. The 
 
 | Outcome             | Next step                                                              |
 | ------------------- | ---------------------------------------------------------------------- |
+| Exit 127, or stderr matching `command not found` / `could not resolve` / `authentication` / `rate limit` | **Tooling failure, not a CI failure** — `timeout` is absent on stock macOS (use `gtimeout`). Report the command failure; do **not** route to Auto Fix. Mirrors [`create-pr` Step 7](../../../delivery/create-pr/SKILL.md) |
 | All checks succeed  | Go to Step 4 (report success), then optional cleanup                   |
 | One check fails     | Go to Auto Fix                                                         |
 | Multiple fail       | Go to Parallel CI Fixes                                                |
@@ -179,13 +180,13 @@ prompt: |
   CI_WATCH_STATE is informational only — never write to it.
 
   Return only:
-  - outcome: fixed | still-failing | gave-up
+  - outcome: green | still-failing | timed-out | gave-up   (ci-auto-fix's own vocabulary — do not translate it)
   - watched_sha: the PR head SHA your watch actually observed
   - attempts_used: how many watch attempts you spent
   - remaining_error: one short paragraph if still red, else empty
 ```
 
-**Reconcile when they return** — you are the single writer of the state file, using the same rule as [`create-pr` Step 9](../../../delivery/create-pr/SKILL.md): if the PR head moved, `put observed_sha` to the new head and reset both counters (a new commit is a new wait); if it did not, debit `attempts` by the reported total.
+**Reconcile when they return** — you are the single writer of the state file. Use the rule defined in [`create-pr` Step 9](../../../delivery/create-pr/SKILL.md), which is the owning surface; do not restate it differently here. In short: if the PR head moved, `put observed_sha` to the new head, reset `registration_attempts` to `0`, and set `attempts` to the reported `attempts_used` total (**not** `0` — those watches were spent on the new head); if it did not move, add the reported total to `attempts`. Either way `attempts` only ever rises toward the cap.
 
 Log to Progress Log:
 

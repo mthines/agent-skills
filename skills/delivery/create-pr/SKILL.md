@@ -272,12 +272,14 @@ put observed_sha "$PR_HEAD"
 put observed_state pending     # overwritten by the row's own verdict below
 ```
 
+**Increment the relevant counter immediately after each attempt returns, before consulting this table.** Comparing an un-incremented counter (or one left unset by `touch`) runs one attempt more than the cap says — `attempts` at 0 with `< 4` yields five watches, not four.
+
 | Attempt outcome | Next step |
 | --------------- | --------- |
 | Exit 0 | CI green — `put observed_state green`, jump to Step 10 |
-| Registration poll exited 124 **and** `registration_attempts < 3` | Checks not registered yet — increment `registration_attempts`, poll again. **Does not touch `attempts`** |
+| Registration poll exited 124 **and** `registration_attempts < 3` | Checks not registered yet — poll again. **Does not touch `attempts`** |
 | Registration poll exited 124 **and** `registration_attempts == 3` | After ≈ 4½ minutes of polling, this repo genuinely doesn't run CI on PRs — jump to Step 10 |
-| Exit 124 and `attempts < 4` | Increment `attempts`, watch once more |
+| Exit 124 and `attempts < 4` | Watch once more |
 | Exit 124 and `attempts == 4` | **Stop.** Run `gh pr checks <pr-number>` once, report the still-pending checks, `put observed_state pending`, escalate — never watch again |
 | Exit 127, or stderr matching `command not found` / `could not resolve` / `authentication` | **Tooling failure, not a CI failure.** `timeout` is absent on stock macOS (use `gtimeout`); `gh` auth and network errors also exit non-zero. Report the command failure; do **not** fan out CI-log triage against a run that never failed |
 | Any other non-zero | A check genuinely failed — `put observed_state failing`, go to Step 8 |
@@ -319,7 +321,7 @@ Use the returned `category` to decide the path:
   ```bash
   gh run rerun <run-id> --failed
   ```
-  Then re-watch with `timeout 540 gh pr checks <pr-number> --watch` (tool `timeout: 600000`), **drawing from the same `.agent/ci-watch-<pr-number>.state` budget as Step 7** — a rerun does not reset `attempts`. At most one rerun per check, and if the budget is spent, report and escalate instead of watching again. A `ci-auto-fix` subagent that watches on your behalf spends from the same file.
+  Then re-watch with `timeout 540 gh pr checks <pr-number> --watch` (tool `timeout: 600000`), **drawing from the same `.agent/ci-watch-<pr-number>.state` budget as Step 7** — a rerun does not reset `attempts`. At most one rerun per check, and if the budget is spent, report and escalate instead of watching again. A `ci-auto-fix` subagent does **not** spend from this file — it watches a commit it just pushed, using its own local counter, and reports `attempts_used` back for you to reconcile (Step 9).
 
 ## Step 9: Apply Fixes
 
@@ -363,7 +365,7 @@ if [ "$NEW_HEAD" != "$(get observed_sha)" ]; then
 fi
 ```
 
-If the head did **not** move (no subagent pushed), debit `attempts` by the total `attempts_used` reported instead. Skipping this leaves the state file pointing at the pre-fix commit — fail-safe, since Phase 7 then re-watches rather than skipping, but the cross-boundary budget stops functioning.
+If the head did **not** move (no subagent pushed), **add** the reported total to `attempts` — the counter rises toward the cap of 4, so a subagent's watches are recorded by incrementing, never by subtracting. Skipping this leaves the state file pointing at the pre-fix commit — fail-safe, since Phase 7 then re-watches rather than skipping, but the cross-boundary budget stops functioning.
 
 **Judgment-required failures — keep in the main thread.** `/confidence` reviews *this* conversation's reasoning, so a subagent can't run it. With the triage summary already in hand:
 

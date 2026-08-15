@@ -782,7 +782,7 @@ end-user-facing; this file is contributor-facing.
     Step 7 used `timeout 1800`, which exceeds Claude Code's 600 s Bash cap — the
     harness killed the call before `exit 124`, so the documented expiry handling
     was dead code and the agent saw only an opaque timeout. Step 7 now uses
-    `timeout 540` against an explicit PR-scoped `CI_WATCH_ATTEMPTS` budget
+    `timeout 540` against an explicit PR-scoped budget (the `attempts` key in `.agent/ci-watch-<pr>.state`)
     (4 attempts ≈ 36 min total, *more* real wait than the broken 1800), and the
     Step 8 flake path draws from the same counter instead of resetting it.
     `phase-7-ci-gate.md` Step 1 had **no** bound at all; it is now bounded by the

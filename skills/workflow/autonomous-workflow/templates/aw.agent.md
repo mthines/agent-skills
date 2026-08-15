@@ -263,7 +263,8 @@ AW RUN COMPLETE
 - Needs you: [blockers or decisions, or "nothing"]
 ```
 
-Micro and Lite may collapse this to one line (`AW RUN COMPLETE — Micro, PR <url>, nothing needed`).
+Micro and Lite may collapse this to one line, but **`Degraded:` survives the collapse** — it is mandatory in every form:
+`AW RUN COMPLETE — Micro, PR <url>, degraded: none, nothing needed`.
 Full always emits the full block.
 
 Two rules that make it honest:

@@ -213,7 +213,7 @@ That is why the same skill "works sometimes" — the failure lives in the delive
 > | --- | ------ | ---- |
 > | R1 capability probe | **Not implemented** | Premise falsified (must-fix #1); probe fails open (must-fix #3); steelman supersedes the `gh` half |
 > | R2 degradation matrix | **Not implemented** | Second source of truth (should-fix #8); superseded by the shim |
-> | R3 bounded waits | **Implemented**, revised | Single PR-scoped `CI_WATCH_ATTEMPTS` budget, not a fourth local counter (should-fix #5) |
+> | R3 bounded waits | **Implemented**, revised | Single PR-scoped budget (`attempts` in `.agent/ci-watch-<pr>.state`), not a fourth local counter (should-fix #5) |
 > | R4 CI-watch dedup | **Implemented**, halved | CI watch deduplicated; the two `review-loop` passes left alone — they are not duplication |
 > | R5 `aw` terminal contract | **Implemented** | Plus a mandatory `Degraded:` line |
 > | R6 compaction re-anchor | **Not implemented** | Never observed; covers ≤ ⅓ of runs (nice-to-have #11) |
