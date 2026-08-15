@@ -21,7 +21,7 @@ argument-hint: '[--split] [--quick] [--no-review] [--no-simplify] [--no-quality]
 license: MIT
 metadata:
   author: mthines
-  version: '3.0.0'
+  version: '3.1.0'
   workflow_type: command
 ---
 
@@ -169,12 +169,28 @@ The job isn't done when the PR is created. Block on CI so the user doesn't have 
 
 ```bash
 sleep 10                                          # let workflows register
-timeout 1800 gh pr checks <pr-number> --watch     # blocks until every check completes (30-min cap); non-zero exit if any failed
+timeout 540 gh pr checks <pr-number> --watch      # one attempt, 9-min cap; non-zero exit if any failed
 ```
 
 `--watch` waits for queued/running checks and exits with the final aggregate status. If the exit code is 0, jump to Step 10. Otherwise continue.
 
-The `timeout 1800` cap keeps a hung or queued-forever check from blocking the skill indefinitely — same idea as the bounded poll in the watch loop ([`../../workflow/implement-suggestion/rules/watch-mode.md`](../../workflow/implement-suggestion/rules/watch-mode.md)). If it expires (exit code 124), run `gh pr checks <pr-number>` once, report the still-pending checks to the user, and escalate instead of re-watching.
+**Why 540 and not a single long block.** The agent harness caps a Bash call well below 30 minutes (Claude Code's tool ceiling is 600 s). A `timeout 1800` never reaches its own `exit 124` handler — the harness kills the call first, so the expiry path is dead code and the agent sees only an opaque tool timeout. Each attempt must therefore fit **under** the harness ceiling.
+
+**The total wait is a counted budget, not a single call.** Re-watching is allowed, but only against an explicit attempt counter — an uncounted "re-watch on timeout" is an unbounded loop:
+
+```bash
+CI_WATCH_ATTEMPTS=${CI_WATCH_ATTEMPTS:-0}          # PR-scoped; carries across Steps 7-9 and Phase 7
+CI_WATCH_MAX=4                                     # 4 x 9 min = 36-min total budget
+```
+
+| Attempt outcome | Next step |
+| --------------- | --------- |
+| Exit 0 | CI green — jump to Step 10 |
+| Non-zero, not 124 | A check failed — go to Step 8 |
+| Exit 124 (timed out) **and** `CI_WATCH_ATTEMPTS < CI_WATCH_MAX` | Increment the counter and watch once more |
+| Exit 124 **and** the budget is spent | **Stop.** Run `gh pr checks <pr-number>` once, report the still-pending checks, and escalate — never watch again |
+
+Record each attempt in the Progress Log (`ci-watch attempt N/4`) so Phase 7 can see the budget was already spent and does not restart it.
 
 If `gh pr checks` reports no checks at all after a minute, this repo probably doesn't run CI on PRs — also jump to Step 10.
 
@@ -213,7 +229,7 @@ Use the returned `category` to decide the path:
   ```bash
   gh run rerun <run-id> --failed
   ```
-  Then re-watch with `timeout 1800 gh pr checks <pr-number> --watch` (same 30-minute cap and expiry handling as Step 7). At most one rerun per check.
+  Then re-watch with `timeout 540 gh pr checks <pr-number> --watch`, **drawing from the same `CI_WATCH_ATTEMPTS` budget as Step 7** — a rerun does not reset it. At most one rerun per check, and if the watch budget is already spent, report and escalate instead of watching again.
 
 ## Step 9: Apply Fixes
 

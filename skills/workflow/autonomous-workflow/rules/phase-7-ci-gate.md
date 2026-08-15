@@ -48,12 +48,25 @@ Gate: CI green OR user-approved stop. Worktree cleanup is optional and never aut
 After Phase 6, you should already have the PR URL and number. Start watching:
 
 ```bash
-# Watch all checks on the PR until they all complete
-gh pr checks <pr-number> --watch
+# Watch all checks on the PR — one bounded attempt (see budget below)
+timeout 540 gh pr checks <pr-number> --watch
 
 # Or watch a single workflow run by id
-gh run watch <run-id>
+timeout 540 gh run watch <run-id>
 ```
+
+**The watch is bounded and the budget is PR-scoped, not phase-scoped.** Two rules, both load-bearing:
+
+1. **Every attempt fits under the harness ceiling.** A Claude Code Bash call is capped at 600 s, so an unbounded `--watch` (or a `timeout 1800`) is killed by the harness before any expiry handling runs — the agent then sees an opaque timeout with no instruction, which is how this step turns into a silent hang. Use `timeout 540` per attempt.
+2. **`create-pr` already spent part of the budget.** [`create-pr` Step 7](../../../delivery/create-pr/SKILL.md) watches the same checks on the same PR and logs `ci-watch attempt N/4`. Phase 7 **continues that counter — it does not restart it.** Read the Progress Log first:
+
+| Progress Log state | Phase 7 Step 1 does |
+| ------------------ | ------------------- |
+| `create-pr` drove the checks to a terminal state (all green, or a failure already triaged) | **Skip the watch entirely** — go straight to the outcome table below |
+| Budget partly spent (`attempt N/4`, `N < 4`), checks still pending | Resume watching with the remaining attempts |
+| Budget spent (`attempt 4/4`) | **Do not watch again.** Run `gh pr checks <pr-number>` once, report pending checks, escalate |
+
+This is the fix for the one place Phases 6 and 7 genuinely duplicated work: the two `review-loop` passes review different diffs and are deliberate (see [Auto Review](#auto-review)), but the CI watch was uncoordinated.
 
 | Outcome             | Next step                                                              |
 | ------------------- | ---------------------------------------------------------------------- |
