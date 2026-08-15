@@ -848,6 +848,8 @@ Flag uncertainty if PR body is empty or commits are generic.
 ### 1.4 Triage for large PRs
 
 If `changedFiles > 30`: skip auto-generated files, lock files, vendored code. Note skipped files.
+Skipped files stay in `REVIEW_DIFF` but are **excluded from `SCANNED_FILES`** (Step 2) — nobody read
+them, so Step 2.9c must not treat a thread on one of them as re-scanned.
 
 ### 1.5 Pre-existing-issue separation
 
@@ -988,6 +990,22 @@ which is a **top-level step, not part of Step 2**, and runs whether or not Step 
 
 Gate checks (Step 1.8) always use the **full PR diff** regardless of `REVIEW_DIFF`. The inline
 review pipeline below operates on `REVIEW_DIFF` only.
+
+**Bind `SCANNED_FILES` as the walk proceeds.** Start it empty and append each path the moment the
+pipeline actually reads that file. It is the record of what this run *examined*, which is not the
+same as `REVIEW_DIFF` — the set of what it *could have* examined — and the two diverge on exactly
+the runs where the difference matters:
+
+- **Step 1.4 triage** skips auto-generated, lock, and vendored files on a > 30-file PR. Those stay
+  in `REVIEW_DIFF` and are only "noted", so they must never enter `SCANNED_FILES`.
+- **Budget exhaustion** stops the walk mid-way (*Stop conditions*: `<M> of <T> files scanned`).
+  `SCANNED_FILES` then holds the `M` that were reached, and nothing else. This is the only durable
+  record of that fact — `PARTIAL_REVIEW_BANNER` is a rendered string, not state.
+- **Zero-delta** never enters the pipeline, so `SCANNED_FILES` stays empty.
+
+Step 2.9c's re-scan predicate reads it. Without it that predicate degrades to a `REVIEW_DIFF`
+membership test, which on a partial or triaged run passes for files nobody read — reopening the hole
+the predicate exists to close.
 
 Run the pipeline as defined in `agents/shared/rules/rubric-composition.md`:
 
@@ -1259,12 +1277,14 @@ Findings are final as of 2.9b, which is the precondition this step needs to tell
 after the status table):
 
 1. **`fixed` requires that this run re-scanned the region.** Clause 2 of `fixed` — *the current run
-   does not re-produce the finding* — is evidence only where this run looked. Require
-   `(path, line ± 5)` to fall inside `REVIEW_DIFF`; otherwise classify `unaddressed` and leave the
-   thread open. This covers the zero-delta path (`REVIEW_DIFF == ""`), an incremental run whose
-   delta does not reach the region, and a budget-exhausted partial run — without special-casing any
-   of them. It is **not** "no findings ⇒ no `fixed`": a clean `full` scan produces an empty finding
-   set and is exactly when `fixed` should fire.
+   does not re-produce the finding* — is evidence only where this run looked. Require **both**
+   `(path, line ± 5)` inside `REVIEW_DIFF` **and** `path ∈ SCANNED_FILES`; otherwise classify
+   `unaddressed` and leave the thread open. Both conjuncts are load-bearing: `REVIEW_DIFF` excludes
+   what was out of scope, `SCANNED_FILES` excludes what was in scope but never read — a Step 1.4
+   triage skip or a budget-exhausted walk. Together they cover the zero-delta path, an incremental
+   run whose delta does not reach the region, a triaged large PR, and a partial run, without
+   special-casing any of them. It is **not** "no findings ⇒ no `fixed`": a clean `full` scan
+   produces an empty finding set and is exactly when `fixed` should fire.
 2. **A 2.5b dedup drop matching a candidate thread is `persisting`.** Step 2.5b drops a re-produced
    finding at the same `(path, line ± 2)` and prefix *before* the 2.9b set exists, so `persisting`
    read off the final set can never fire — and the candidate then falls through to `fixed` while the

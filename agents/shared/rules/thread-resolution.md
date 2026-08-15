@@ -50,6 +50,12 @@ It consumes the `BOT_COMMENTS` set and the resolved/accepted detection already
 built by [`prior-comment-awareness.md`](./prior-comment-awareness.md) — it does
 not re-fetch or re-derive them.
 
+It also consumes two `pr-reviewer` variables for the re-scan predicate below:
+`REVIEW_DIFF` (bound at Step 1.2b from the run mode — full PR diff in `full`, the
+delta in the incremental modes, empty on zero-delta) and `SCANNED_FILES` (bound at
+Step 2 as the walk proceeds; excludes Step 1.4 triage skips and everything past a
+budget-exhausted stop).
+
 ---
 
 ## Classify each prior own-comment
@@ -94,9 +100,18 @@ includes`), which can be satisfied by a commit from several runs ago. It says
 nothing about what **this** run examined.
 
 **Rule — the re-scan predicate.** For each candidate, `fixed` additionally requires
-that `(path, line ± 5)` falls inside the diff this run actually scanned
-(`REVIEW_DIFF`, per the run mode). When it does not, classify the thread
-`unaddressed` and leave it open.
+**both**:
+
+- `(path, line ± 5)` falls inside `REVIEW_DIFF` — the diff this run had in scope,
+  per the run mode; **and**
+- `path ∈ SCANNED_FILES` — the set of files the inline pipeline actually read,
+  accumulated as the Step 2 walk proceeds (`pr-reviewer.md § Step 2`).
+
+When either fails, classify the thread `unaddressed` and leave it open.
+
+Both conjuncts are needed, because *in scope* and *read* are different sets.
+`REVIEW_DIFF` is bound once from the run mode and is never narrowed afterwards, so
+on its own it reports a file as scanned when nobody opened it.
 
 This is deliberately about *scanning*, not about *findings existing*. An empty
 finding set on a clean `full` scan is the normal terminal state of a converging PR
@@ -107,14 +122,21 @@ it is most correct.
 
 Three paths fail the predicate, and it covers all three without enumerating them:
 
-| Path | Why it fails | Effect |
+| Path | Conjunct that fails | Effect |
 | --- | --- | --- |
-| Zero-delta short-circuit (`REVIEW_DIFF == ""`) | Nothing was scanned | Every `fixed` candidate → `unaddressed` |
-| `incremental` / `incremental-quick`, region outside the delta | `REVIEW_DIFF` is the delta only, so that region was never re-read — while clause 1 can still be true from an earlier commit | That candidate → `unaddressed`; in-delta candidates are unaffected |
-| Budget-exhausted partial run (`PARTIAL_REVIEW_BANNER`, "M of T files scanned") | The region's file was never reached | That candidate → `unaddressed` |
+| Zero-delta short-circuit | Both — `REVIEW_DIFF == ""` and `SCANNED_FILES` is empty | Every `fixed` candidate → `unaddressed` |
+| `incremental` / `incremental-quick`, region outside the delta | `REVIEW_DIFF` — the delta only, so that region was never in scope, while clause 1 can still be true from an earlier commit | That candidate → `unaddressed`; in-delta candidates unaffected |
+| Budget-exhausted partial run (`<M>` of `<T>` files scanned) | `SCANNED_FILES` — the file is in `REVIEW_DIFF` but the walk stopped before reaching it | That candidate → `unaddressed`; the `M` reached files are unaffected |
+| Step 1.4 triage skip on a > 30-file PR (auto-generated / lock / vendored) | `SCANNED_FILES` — the file stays in `REVIEW_DIFF` but is deliberately never read | That candidate → `unaddressed` |
 
 `unaddressed` is the right target in each: its own rationale is *absence of a
 re-scan is not evidence of resolution*, which is literally this condition.
+
+The last two rows are why the predicate cannot be a `REVIEW_DIFF` test alone.
+Budget exhaustion and triage both leave a file in `REVIEW_DIFF` while guaranteeing
+nobody read it, and a long-running PR — the kind the deep-lens refresh forces back
+to `full`, and the kind with the most prior threads to reconcile — is exactly where
+both are most likely.
 
 **The reply-driven statuses are unaffected**, because their evidence is the
 author's own words rather than a scan:
