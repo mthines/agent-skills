@@ -940,6 +940,52 @@ function checksInSync(plan, checks) {
       extractErr === null && body.length > BODY_MIN,
       extractErr ?? `body length ${body.length} <= ${BODY_MIN}`);
   }
+
+}
+
+// ── G24: Gate 3 (Prior bot feedback) tri-state + open-thread checklist heading contract ──
+// The two checklist headings are an EXACT-STRING contract between the renderer
+// (pr-reviewer.md § UNRESOLVED_THREADS_SECTION) and its documented consumer
+// (reviewer-report-ingest.md § the open-threads checklist is not a body section). That rule
+// skips these blocks by literal heading match, so a reworded heading on either side silently
+// promotes a presentational block to an ingestable one — re-ingesting OTHER bots' comments as
+// pr-reviewer's own findings. Nothing else locks that pair.
+// The headings are EXTRACTED from the renderer and compared against the consumer, never
+// re-encoded here (aw-lessons::mock-that-reimplements-the-thing-under-test).
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const prReviewer = read("agents/pr-reviewer.md");
+  const prReviewerDiag = read("agents/pr-reviewer/rules/diagnostic-surface.md");
+  const ingest = read("agents/shared/rules/reviewer-report-ingest.md");
+
+  // G24a: Step 1.8 grades on BOTH discriminants and enumerates all three states. A revert to
+  // the old binary gate drops the `blocking`/`answered` conjunct and reds here.
+  const gate3 = sliceBetween(prReviewer,
+    "**Gate 3 — Unresolved prior bot/agent feedback**", "**Gate 4 — Self-review signals**");
+  s.check("G24a pr-reviewer.md Step 1.8 grades Gate 3 on blocking AND answered, across ✅/⚠️/❌",
+    gate3.includes("`blocking == true` **and** `answered == false`") &&
+    ["- ✅ —", "- ⚠️ —", "- ❌ —"].every((marker) => gate3.includes(marker)));
+
+  // G24b: lift both heading literals out of the renderer (matched by prefix, compared through
+  // the closing `:**`), then assert each appears verbatim in the consumer.
+  const headings = [...prReviewer.matchAll(/^\*\*(?:To unblock|Open bot threads)[^\n]*?:\*\*/gm)]
+    .map((m) => m[0]);
+  s.check("G24b pr-reviewer.md declares both open-thread checklist headings (❌ and ⚠️ forms)",
+    headings.length === 2 &&
+    headings.some((h) => h.startsWith("**To unblock")) &&
+    headings.some((h) => h.startsWith("**Open bot threads")),
+    `found ${headings.length}: ${headings.join(" | ") || "none"}`);
+  for (const h of headings) {
+    s.check(`G24b reviewer-report-ingest.md carries the renderer's heading verbatim: ${h.slice(0, 34)}…`,
+      ingest.includes(h));
+  }
+
+  // G24c: the three Gate-3 failure modes are registered in the diagnostic surface, so a
+  // regression has a named bucket instead of silently becoming "expected behaviour".
+  for (const fm of ["F-nonblocking-thread-fails-gate-3", "F-gate-3-severity-reinvented",
+    "F-warn-hides-open-threads"]) {
+    s.check(`G24c diagnostic-surface.md registers ${fm}`, prReviewerDiag.includes(fm));
+  }
 }
 
 // Shared by G22 and G23. Deliberately ONE definition: this predicate was
