@@ -135,7 +135,7 @@ in `/tmp/review-threads.json`: the reused block persists its `THREADS_COMPLETE` 
 precisely because an aborted walk otherwise yields `{nodes: []}`, which is indistinguishable from a
 PR with no threads (`prior-comment-awareness.md § Thread state`). Every reader of that file must key
 on the flag; this step is one of them. An unknown state fails corroboration, so those
-comments become indeterminate per § Signal (c) requires corroboration.
+comments become uncorroborated per § Signal (c) requires corroboration.
 
 **The guard binds both thread-state-dependent writes, not just signal (c).** These two are the
 complete set of writes whose *predicate* names thread state; signal (a) is reaction-only and signal
@@ -150,7 +150,7 @@ inherits nothing from signal (c)'s rule. With an unknown state, **neither** may 
 gap into a stream of false `ignored-at-merge` records — which is the failure this rule exists to
 prevent, and it lands through that bullet rather than through signal (c).
 
-Log `[outcome] thread state unavailable — <N> comment(s) indeterminate`, and write no record for them.
+Log `[outcome] thread state unavailable — <N> comment(s) uncorroborated`, and write no record for them.
 
 ### Step 4 — Signal (c): author pushed a fix touching the commented line
 
@@ -229,7 +229,7 @@ produces two opposite records on one fingerprint.
 
 **With a region touch but none of the three, write nothing.** Do not fall through to
 `weak-not-relevant / ignored-at-merge` either: an open thread whose region was edited is genuinely
-*indeterminate*, and guessing in either direction poisons the signal — `relevant / fixed` rewards a
+*undecidable*, and guessing in either direction poisons the signal — `relevant / fixed` rewards a
 finding that may still be live, `weak-not-relevant` punishes one that may have been fixed. A signal
 bucket is allowed to have gaps; it is not allowed to have invented entries.
 
@@ -247,8 +247,8 @@ This also corrects the `pr-merged` sweep's skip rule in
 [`comment-relevance-memory.md`](./comment-relevance-memory.md): it skips threads "that had a fix
 commit … (already captured by the first trigger)", but the first trigger is
 `pull_request_review_thread: resolved`, which never fired for a thread that was never resolved. Those
-threads are indeterminate, not captured — so the sweep must skip them **as indeterminate**, not as
-already-recorded.
+those threads are uncorroborated, not captured — so the sweep must skip them **as uncorroborated**,
+not as already-recorded.
 
 ### Step 5 — Human-missed detection candidates
 
@@ -340,7 +340,7 @@ Outcome signals add a parallel gate:
 | --- | --- |
 | ≥ 3 `applied` verdicts from `review-outcomes` (same fingerprint) | Promote to `reviewer-lessons` — this pattern reliably gets fixed |
 | ≥ 3 `rejected-at-validation` or `reverted-after-ci` verdicts (same fingerprint) | Promote as a **noise pattern** — consider adding to a `filters:` entry in `.github/review.yaml` |
-| ≥ 3 gh-api signal (c) resolution confirmations (fallback path) — each **corroborated** per *Signal (c) requires corroboration*; indeterminate touches never count | Promote to `diagnose` slow tier — pattern reliably gets fixed |
+| ≥ 3 gh-api signal (c) resolution confirmations (fallback path) — each **corroborated** per *Signal (c) requires corroboration*; uncorroborated touches never count | Promote to `diagnose` slow tier — pattern reliably gets fixed |
 | ≥ 3 dismissals via gh-api signal (a) (same pattern, fallback path) | Promote as a **noise pattern** — consider `filters:` suppression |
 | ≥ 2 human-catch candidates of the same class | Surface as a detection candidate to the user; suggest rubric expansion |
 

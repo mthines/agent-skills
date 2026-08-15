@@ -504,11 +504,11 @@ things, both REST-derivable:
   **A file-level comment is a different case and is not skipped.** It carries a `path` but no line
   anchor (`line` and `original_line` both null), so the guard's `line > 0` clause fails, the touch
   check never runs, and the thread is swept as `ignored-at-merge` however the author dealt with it.
-  Its outcome is unknown, and no record is written for it — the same disposition as every other
-  uncorroborated case. It is named in the Known gap so the silence is deliberate rather than
-  accidental. The value is reserved, its producer is the same script change the Known gap
-  already tracks, and the table marks it *no producer yet* rather than naming one that cannot
-  legally emit it.
+  Its outcome is unknown, but the sweep **does write** — execution falls past the guard and records
+  `weak-not-relevant / ignored-at-merge` with a `path:0` anchor, however the author dealt with it.
+  That is a directional record on undecidable evidence, and it is the one place the committed script
+  still does what the corroboration rule forbids. Tracked in the Known gap below; closing it is the
+  same script change.
 
 **Known gap — resolved-with-no-touch double-writes.** The sweep has **no resolved-state check**, and
 cannot get one from the endpoint it reads: the script fetches `/pulls/{n}/comments`, and GitHub does
@@ -611,7 +611,15 @@ comment-relevance memory for each measured comment:
 - Signal (c) — fix commit touches `(path, line ± 5)` **and** the thread is resolved, `implement-suggestion` recorded `verdict: applied`, or the author acknowledged → write `relevant / fixed`. A bare region touch on an open thread is **uncorroborated**: **write no record** (`outcome-learning.md § Signal (c) requires corroboration`). This path is the one the in-run re-scan predicate routes downgraded threads into, so an uncorroborated **directional** write here would land exactly the record that guard prevents.
 - Signal (a) — 👎 reaction from the PR author → write `not-relevant / wont-fix`.
 - Signal (b) — author reply correcting the finding **that is not an acknowledgement** (`outcome-learning.md § What counts as an acknowledgement`), no fix commit → write `not-relevant / wont-fix`. Without the acknowledgement test this bullet reproduces the inversion Step 3 was rewritten to prevent: an author who replies "fixed" and lands the fix outside the window recorded as a dismissal.
-- PR merged with thread open, no fix, no decline → write `weak-not-relevant / ignored-at-merge`. **Requires thread state to have been read.** If the Step 3b walk could not complete, the thread is not known to be open — **write no record** instead (`outcome-learning.md § Step 3b`). This bullet is the second thread-state-dependent write the guard binds.
+- Author **acknowledged** but no fix commit in range → **write no record**, and log
+  `[outcome] UNCORROBORATED <path>:<line> — author acknowledged, no fix commit in range`. Neither
+  (b) nor (c): the author says it was handled and this path cannot see where. **This bullet must
+  stay above the next one**, whose condition it satisfies in full — an acknowledgement is not a
+  decline, a fix outside `± 5` is "no fix", and the thread is open at merge. Delete this carve-out
+  and an author who replied "fixed" is recorded `ignored-at-merge`, a dismissal feeding the
+  suppression gate. That is the inversion `outcome-learning.md § Step 3` exists to prevent, arriving
+  through this bullet instead of through signal (b).
+- PR merged with thread open, no fix, no decline, **and no acknowledgement** → write `weak-not-relevant / ignored-at-merge`. **Requires thread state to have been read.** If the Step 3b walk could not complete, the thread is not known to be open — **write no record** instead (`outcome-learning.md § Step 3b`). This bullet is the second thread-state-dependent write the guard binds.
 
 Use the same `memory.write` call format above, with `source_agent: "pr-reviewer"` and `trigger: "post-merge-outcome"`.
 

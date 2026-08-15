@@ -573,6 +573,19 @@ function checksInSync(plan, checks) {
       /hasWontFixReply\s*\(/.test(fnBody("modeThreadResolved")) &&
       /hasWontFixReply\s*\(/.test(fnBody("modePrMerged")));
 
+    // (i) The acknowledged-no-fix carve-out must exist AND precede the ignored-at-merge
+    // bullet whose condition it satisfies in full. Deleting it (which I did) sends an
+    // author who replied "fixed" into `weak-not-relevant / ignored-at-merge` — a
+    // dismissal feeding the suppression gate, the inversion the acknowledgement test
+    // exists to prevent, arriving through the sibling bullet.
+    const crm2 = read("agents/shared/rules/comment-relevance-memory.md");
+    const iAck = crm2.indexOf("- Author **acknowledged** but no fix commit in range");
+    const iIgn = crm2.indexOf("- PR merged with thread open");
+    s.check("G24i the acknowledged-no-fix carve-out exists and precedes ignored-at-merge",
+      iAck > -1 && iIgn > -1 && iAck < iIgn);
+    s.check("G24i2 the ignored-at-merge bullet excludes acknowledgements in its own condition",
+      /- PR merged with thread open[^\n]*no acknowledgement/.test(crm2));
+
     // (g) Every WONT_FIX_RE alternative bounded, derived from the regex rather than a
     // named subset — an earlier version asserted three of four and missed the fourth.
     const reLine = (rec.match(/^const WONT_FIX_RE\s*=.*$/m) || [""])[0];
@@ -590,8 +603,15 @@ function checksInSync(plan, checks) {
     // The blockquote is indented inside a list item, so anchor on optional leading space.
     const quote = (ol.match(/^[ \t]*> [^\n]*·[\s\S]*?(?=\n[ \t]*\n)/m) || [""])[0];
     const fromProse = new Set(quote.split(/[·\n>]/).map(norm).filter(Boolean));
-    s.check("G24h the model-readable decline list matches WONT_FIX_RE's alternatives",
-      fromRe.size >= 8 && [...fromRe].every((a) => [...fromProse].some((b) => b.includes(a) || a.includes(b))));
+    // BOTH directions. A one-way subset test leaves the direction that matters green:
+    // a phrase the model-readable list treats as a decline but WONT_FIX_RE misses is the
+    // exact coupling this PR documents (a decline that misses the regex resolves the
+    // thread and records relevant/fixed for a finding the author rejected).
+    const covers = (x, set) => [...set].some((y) => y.includes(x) || x.includes(y));
+    s.check("G24h the model-readable decline list and WONT_FIX_RE's alternatives agree both ways",
+      fromRe.size >= 8 && fromProse.size >= 8 &&
+      [...fromRe].every((a) => covers(a, fromProse)) &&
+      [...fromProse].every((b) => covers(b, fromRe)));
   }
 
   // G16: the `reviewer-comment-relevance` TTL is hand-mirrored across five files
