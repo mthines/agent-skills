@@ -263,12 +263,13 @@ AW RUN COMPLETE
 - Needs you: [blockers or decisions, or "nothing"]
 ```
 
-Micro and Lite may collapse this to one line (`AW RUN COMPLETE — Micro, PR <url>, nothing needed`).
-Full always emits the full block.
+Micro and Lite may collapse this to one line, but **`Degraded:` survives the
+collapse** — it is mandatory in every form:
+`AW RUN COMPLETE — Micro, PR <url>, Degraded: none, Needs you: nothing`.
 
-Two rules that make it honest:
+Two rules that keep it honest:
 
-- **`Degraded:` is not optional.** Every companion or agent that was skipped —
+- **`Degraded:` is not optional.** Every companion or agent that did not run —
   missing, or unavailable because the harness disabled its dispatch — is named
   here with its reason. A skipped `review-loop` means the PR was **not** reviewed;
   say that rather than reporting a clean run.

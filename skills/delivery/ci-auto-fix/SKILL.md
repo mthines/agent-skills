@@ -15,7 +15,7 @@ argument-hint: '[<pr-url>|<run-id>]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.2.0'
+  version: '3.3.0'
   workflow_type: command
   tags:
     - ci
@@ -230,12 +230,48 @@ Only proceed to push if local verification passes.
 
 After pushing, monitor the check:
 
-1. Wait briefly for the workflow to trigger:
+1. Find the new workflow run — **select on the head SHA, do not sleep and hope.**
+   A bare `sleep` is blocked in some harnesses, and a fixed 10 s is a race: if
+   registration takes longer, the listing returns the *previous* commit's runs and
+   you watch a stale run to green. Filtering by SHA removes the race instead of
+   timing it (the same fix [`e2e-pr-stabilizer`](../../testing/e2e-pr-stabilizer/rules/verification-loop.md) already uses):
+
    ```bash
-   sleep 10
+   # Issue this Bash call with the tool parameter timeout: 600000.
+   # Bounded loop with a real interval — registration takes seconds, so six
+   # back-to-back calls would exhaust the retries before it could happen.
+   # The sleep is inside a capped loop, so it is not a bare sleep.
+   timeout 90 bash -c '
+     SHA=$(git rev-parse HEAD); TMP=$(mktemp)
+     # TERM must be listed: bash runs the EXIT trap on a signal only when that
+     # signal is trapped, and `timeout` sends TERM on the 124 path.
+     trap "rm -f \"$TMP\"" EXIT INT TERM
+     while :; do
+       # stderr -> variable, stdout -> file. `head -1` is deliberately on its own
+       # line below: folding it back into this call would make $? head`s status,
+       # which is 0 even when gh dies.
+       err=$(gh run list --branch <current-branch> --limit 5 \
+         --json databaseId,headSha,status \
+         --jq ".[] | select(.headSha == \"$SHA\") | .databaseId" 2>&1 >"$TMP")
+       # gh spoke = gh failed. An empty result with NO stderr is "not registered
+       # yet"; an empty result WITH stderr is a broken gh, and looping on it
+       # would burn the whole budget and then escalate the wrong cause.
+       [ -n "$err" ] && { echo "$err" >&2; exit 3; }
+       NEW_RUN_ID=$(head -1 "$TMP")
+       [ -n "$NEW_RUN_ID" ] && { echo "$NEW_RUN_ID"; exit 0; }
+       sleep 5
+     done'
    ```
 
-2. Find the new workflow run:
+   | Exit | Outcome | Next |
+   | ---- | ------- | ---- |
+   | 0 | `registered` | `NEW_RUN_ID` is on stdout — watch it |
+   | 3 | `tooling-failure` | `gh` itself failed. Report **that** and escalate — do not retry, and do not report it as "no run found" |
+   | 124 | `no-run-yet` | No run for this SHA after 90 s. Retry the whole block at most twice more, then report and escalate |
+
+   Same **classifier** as [`registration-poll.md`](../create-pr/rules/registration-poll.md#the-poll) — an unrecognised `gh` error is never benign, and empty output alone cannot tell "nothing yet" from "nothing works". **Different outcome set**: this block renders its own 124 as `no-run-yet` because the retry policy lives here, whereas the shared rule keeps its 124 internal. Do not reuse that rule's outcome names.
+
+2. For reference, the unfiltered listing:
    ```bash
    gh run list --branch <current-branch> --limit 5
    ```
@@ -244,25 +280,17 @@ After pushing, monitor the check:
    ```bash
    # Issue this Bash call with the tool parameter timeout: 600000.
    # The tool default is 120000; a `timeout` larger than the tool cap never
-   # fires its own exit 124 — the harness kills the call first and the
-   # expiry handling below becomes dead code.
+   # fires its own exit 124 — the harness kills the call first and the expiry
+   # handling below becomes dead code.
    timeout 540 gh run watch <new-run-id>
    ```
-   If `timeout` expires (exit code 124), run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate.
+   If `timeout` expires (exit code 124), watch again — **at most 2 attempts per fix-push cycle, and at most 6 across the whole invocation**. Then run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate.
 
-   **Shared watch budget — never read as your allowance, never written.** Use **your own local counter** (max 4) for your own watches, unconditionally. If the invocation passed a `CI_WATCH_STATE=<abs-path>` line, treat it as **informational only** — context about what the caller already spent, never a cap on you. Your watch follows a commit **you just pushed**, which the caller's counter predates; reading it as an allowance would leave you unable to verify your own fix the moment the caller had spent its four attempts.
+   **Print each attempt** as `ci-watch attempt N/2 (cycle) · M/6 (invocation)` and carry those lines into your report. The invocation cap spans multiple Phase 8 iterations — a longer span than any single reasoning step — so it must be written down at the moment it changes, not remembered.
 
-   **Never write to that file.** The dispatching orchestrator is the single writer; when you are one of several subagents fanned out in the same turn, two of you writing `observed_sha` would record one of two commits and let the caller skip a watch for a commit whose checks were never observed. Do not guess the path or the caller either: acting on a budget you were not given is how two components silently spend each other's allowance.
+   **State the scope, because two are in play.** Each Phase 8 iteration pushes a new commit and therefore watches a *new* run — a new wait, not a continuation — so a purely per-invocation cap would starve iterations 2–4 of any watch at all. A purely per-cycle cap of 4 would allow 4 × 4 = 16 watches (≈ 2.4 h). The pair above bounds both: per-cycle so each fix gets a fair look, and an invocation ceiling so the total cannot run away.
 
-   Report your outcome instead, and let the caller reconcile. Include these fields verbatim in your return block:
-
-   ```
-   watched_sha: <the PR head SHA your watch actually observed>
-   attempts_used: <how many watch attempts you spent>
-   outcome: green | still-failing | timed-out | gave-up
-   ```
-
-   **Each fix-push cycle is a new wait** — your watch follows a *new commit*, not a continuation of the caller's wait on the old one, so `attempts_used` should reset per push in your own local count. The caller applies that reasoning when it reconciles (`observed_sha` changes ⇒ counters reset). Without the reasoning living somewhere, two `ci-auto-fix` handoffs drain the caller's 4 attempts on their own iterations and leave Phase 7 refusing to watch a PR whose CI was never actually waited on. Without it living in the *caller*, racing subagents corrupt the shared file. It belongs in the caller.
+   **Your cap is your own.** You watch a run for a commit *you* just pushed, so you never inherit or spend a caller's budget, and you write no shared state. Report your outcome and let the caller act on it.
 
 4. Check the result:
    ```bash

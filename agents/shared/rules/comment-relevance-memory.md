@@ -200,13 +200,65 @@ When this rule is applied inside a sub-agent, the sub-agent does NOT receive the
 ```text
 # Narrow-to-broad fan-out — repo-specific wins over global on conflict.
 # Issue each line as a real mcp__lorekit__memory_list tool call.
-# If the call itself errors, treat the backend as not connected for this run.
-mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=50
-mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-comment-relevance"] limit=50
+# view="summary" returns the index (key, tags, updated_at, value_bytes, preview)
+# instead of every body — see the availability note directly below.
+mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=50 view="summary"
+mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-comment-relevance"] limit=50 view="summary"
 ```
+
+**`view` requires LoreKit ≥ the release carrying lorekit#464.** Read the live
+`mcp__lorekit__memory_list` schema first; if it does not list `view`, omit the parameter and take
+the full bodies. A tool error naming `view` as unknown is handled the same way — retry that one
+call without it. Neither case is evidence the backend is down, so neither may count toward the
+retry budget below or set the backend not-connected.
+
+**On a tool error, retry before declaring the backend down.** A thrown MCP error on the first call
+is far more often a momentary transport hiccup than a real outage, and treating one blip as
+terminal is what makes the `Memories — not connected` line flap between otherwise-identical runs.
+Retry up to **2 more times** (3 attempts total) with a short backoff, then treat the backend as not
+connected. The one error that must NOT be retried is a hard "tool unavailable" (the tool is absent
+from the caller's `tools:` grant, or the LoreKit MCP server did not connect this session — it
+surfaces as `No such tool available: mcp__lorekit__memory_list`): there is nothing to wait for, the
+remedy is environmental, and it is a genuine "not connected". Any attempt that returns without a
+tool error — **including an empty list** — is a success; stop retrying. This is the same contract
+`pr-reviewer.md § Step 1.0` states, restated here rather than cross-referenced because a caller
+applying this rule standalone must not end up with a weaker one.
 
 Merge both lists (`repo::` wins on key collision).
 Skip any entry whose `expires` is in the past.
+
+**Then resolve the bodies.** `view: "summary"` returns the index, and the index is NOT enough to
+apply a verdict: the key carries only the fingerprint (`<category>:<claim-gist>`), while
+`relevance`, `seen_count`, `resolution_method` and `status` all live in the record body. So for
+every entry whose fingerprint matches one of this run's raw findings, fetch the body before
+applying anything:
+
+```text
+# One call per fingerprint-matched entry.
+mcp__lorekit__memory_read: scope="<the entry's scope>" key="<the entry's key>"
+```
+
+This fetch happens **after** the run's raw findings exist, because the selector is a fingerprint
+match against them — there is nothing to match earlier. In `pr-reviewer` that is Step 2.2.
+
+Skip the fetch entirely in two cases, neither of which consumes budget:
+
+- **The list read was not a summary read.** If the caller omitted `view` — because the server does
+  not support it, or because it chose not to — the bodies are already in hand and there is nothing
+  to resolve. In `pr-reviewer` this is `SUMMARY_VIEW == false`.
+- **`value_bytes` ≤ 200**, in which case the `preview` already carried the whole record.
+
+A failed read drops that one entry and is non-blocking — never treat it as a disconnection.
+An entry whose body was not fetched — a failed read, or an exhausted budget — has no verdict and
+must not produce a drop, downgrade, or promote; treat it as absent rather than guessing from the
+preview.
+
+**Budget.** A caller that bounds its memory reads should give this fetch the larger share. In
+`pr-reviewer` the two read sites draw on one shared `MEMORY_READ_BUDGET`: Step 1.2d (lesson bodies)
+may spend at most half of it, and this fetch may spend the whole remainder, including anything 1.2d
+left unused. The asymmetry is deliberate — a missing relevance verdict changes what gets POSTED,
+while a missing lesson only changes emphasis. When the pool is exhausted, the unfetched entries are
+simply absent, per the rule above.
 
 **Keep the coordinates.** Retain each entry's `scope` and `key` (the LoreKit
 memory coordinates) alongside its `fingerprint`, `relevance`, and `seen_count` —

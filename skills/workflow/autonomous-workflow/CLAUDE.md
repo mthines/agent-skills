@@ -377,10 +377,7 @@ When editing this skill, do not break these — they're load-bearing:
   hard tool prerequisite is `gh` (for Phases 6 and 7).
 - **The system-prompt for the agent template stays lean.** It references
   `SKILL.md` for procedures rather than duplicating them. If the agent
-  template grows beyond ~250 lines of system prompt, it's drifting. **The `aw`
-  dispatcher has a stricter ceiling of ~200** (router + loop only) — the two
-  numbers are a deliberate layering, not a contradiction: 250 is the default for
-  any agent template, 200 is the tighter bound the thin-router role earns.
+  template grows beyond ~250 lines of system prompt, it's drifting.
 - **The diagnostic surface is the contract that makes this skill diagnosable.**
   Removing or breaking [`rules/diagnostic-surface.md`](./rules/diagnostic-surface.md)
   silently downgrades `/create-skill diagnose autonomous-workflow` to its
@@ -767,48 +764,47 @@ end-user-facing; this file is contributor-facing.
 
 ## History
 
-- **v3.22.0** — Bounded waits, an honest `review-loop` skip, and a terminal
-  contract for `aw`. Field report: `aw` runs on Claude Code for web/mobile stall
-  — long silent stretches, and the run never terminates until the user
-  interrupts. Diagnosis in
-  [`references/cloud-stalling-analysis.md`](./references/cloud-stalling-analysis.md),
-  which also carries the adversarial review of its own remediation plan. **Only
-  the verified subset landed here**; the capability probe, the degradation
-  matrix, and the compaction re-anchor did not, because the adversarial pass
-  falsified the premise they rest on (the `Task` tool **is** available in the
-  probed cloud session) and surfaced a better alternative for the `gh` half (a
-  shim, not capability-awareness). Three fixes, each independently verified:
-  - **Every wait is bounded and fits under the harness ceiling.** `create-pr`
-    Step 7 used `timeout 1800`, which exceeds Claude Code's 600 s Bash cap — the
-    harness killed the call before `exit 124`, so the documented expiry handling
-    was dead code and the agent saw only an opaque timeout. Step 7 now uses
-    `timeout 540` against an explicit PR-scoped `CI_WATCH_ATTEMPTS` budget
-    (4 attempts ≈ 36 min total, *more* real wait than the broken 1800), and the
-    Step 8 flake path draws from the same counter instead of resetting it.
-    `phase-7-ci-gate.md` Step 1 had **no** bound at all; it is now bounded by the
-    same budget and **skips entirely when `create-pr` already drove the checks to
-    a terminal state** — the one place Phases 6 and 7 genuinely duplicated work.
-    (The two `review-loop` passes are *not* duplication and were left alone: they
-    review different diffs — see [Auto Review](./rules/phase-7-ci-gate.md#auto-review).)
-  - **`review-loop` self-reports a clean skip when sub-agent dispatch is
-    unavailable.** `pr-reviewer` is `Task`-only and, unlike `implement-suggestion`,
-    had no documented fallback — so the loop failed as a mid-Phase-6 tool error the
-    caller had to interpret. It now checks the precondition in Step 0 and returns a
-    logged deviation. Deliberately **not** an in-context substitute: `pr-reviewer`'s
-    independence comes from the isolated context, so playing the role would produce
-    a self-review wearing a reviewer's label. Closes the ask in the `structural`
-    `aw-lessons` lesson `task-tool-unavailable-blocks-review-loop-pr-reviewer`.
-  - **`aw` gained a terminal contract.** `aw-executor` had an explicit completion
-    contract; the dispatcher had none, and for a sub-agent the final message *is*
-    the return value — so a run could end with nothing, indistinguishable from a
-    hang. New `AW RUN COMPLETE` block on every exit path, with a mandatory
-    `Degraded:` line so a skipped `review-loop` is reported rather than a PR being
-    described as reviewed when it was not.
-  - Two new hard invariants in `diagnostic-surface.md` (bounded external waits;
-    a run reports what it skipped) plus Phase 7 guard/failure rows.
-  - **Known debt, recorded not fixed:** `aw.agent.md` is now over the ~200-line
-    system-prompt ceiling this file sets. The terminal contract was kept compact,
-    but the file needs a trim pass.
+- **v3.22.0** — Bounded waits, a stateless CI gate, an honest `review-loop` skip,
+  and a terminal contract for `aw`. Field report: `aw` runs on Claude Code for
+  web/mobile stall — long silent stretches, never terminating until the user
+  interrupts. Diagnosis, including the record of a rejected design, in
+  [`references/cloud-stalling-analysis.md`](./references/cloud-stalling-analysis.md).
+  - **Every wait is bounded at both levels.** The subtle half: the Bash tool
+    *defaults* to 120 000 ms and 600 000 is opt-in, so `timeout 1800` and
+    `timeout 540` fail identically unless the call also passes
+    `timeout: 600000` — the harness kills it before the inner `timeout` fires
+    and the documented `exit 124` handling is dead code. All nine external-wait sites
+    now state both, enforced per-site by new L1 check **G22** (proximity-scoped
+    so a second site cannot free-ride on a first's mention; count pinned;
+    mutation-tested four ways).
+  - **Phase 7 queries CI state instead of carrying it.** One stateless
+    `gh pr checks` (no `--watch`) at the current head decides whether to watch
+    at all. Retry caps are counted **within one skill invocation**; nothing is
+    shared across phases or subagents. New hard invariant *watch state is
+    queried, never carried* records why, because the first implementation of
+    this change did the opposite and had to be reverted (see below).
+  - **`gh pr checks` semantics are now stated** — it exits non-zero while merely
+    pending (so classification is by exit code plus literal stderr match, never
+    by output volume), and it does not wait for checks that do not exist yet
+    (so a bounded registration poll precedes the watch; the old bare `sleep 10`
+    was silently covering this).
+  - **`review-loop` self-reports a clean skip** when sub-agent dispatch is
+    unavailable, with a `NOT REVIEWED` slot in `create-pr`'s report. Deliberately
+    not an in-context substitute — `pr-reviewer`'s independence comes from the
+    isolated context.
+  - **`aw` gained `AW RUN COMPLETE`** with a mandatory `Degraded:` line, present
+    even in the Micro/Lite one-line collapse.
+  - **Deliberately not built:** a capability probe (its premise — that Claude
+    Code on the web disables `Task` — was falsified by probing; `Task` was
+    available and `gh` was not; and a probe gating quality companions fails
+    *open*), a `gh`→MCP degradation matrix (a second source of truth that would
+    drift), and a compaction re-anchor (never observed, Full-tier only).
+  - **A rejected design is recorded, not just removed.** The first attempt
+    threaded a shared watch budget through a state file across `create-pr`,
+    Phase 7 and the `ci-auto-fix` fan-out. It took six review rounds, was merged
+    with ten live findings still open, and was reverted. Its failure shape —
+    cross-context mutable state coordinated by prose, in files edited one at a
+    time — is documented in the reference so it is not reinvented.
 
 - **v3.21.0** — User-requested changes are never scope creep (post-completion
   improvements welcome). Field report: after a Full run finished (draft PR

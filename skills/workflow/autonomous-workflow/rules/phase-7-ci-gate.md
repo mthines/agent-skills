@@ -47,46 +47,53 @@ Gate: CI green OR user-approved stop. Worktree cleanup is optional and never aut
 
 After Phase 6, you should already have the PR URL and number. Start watching:
 
+**Ask CI what it is doing before watching it.** `create-pr` Step 7 already watched these checks, and the background `implement-suggestion --watch` and any `ci-auto-fix` subagents may have pushed since. Rather than inheriting a budget or a recorded verdict from those runs — which would be a claim about *some* commit, not necessarily the current head — make one cheap, stateless query:
+
 ```bash
-# Watch all checks on the PR — one bounded attempt (see budget below).
+# No --watch: returns immediately with the state of the CURRENT head.
+gh pr checks <pr-number>
+```
+
+| What it reports | Phase 7 Step 1 does |
+| --------------- | ------------------- |
+| All checks terminal and passing | **Skip the watch** — go to Step 4 (report success). If the repo uses `workflow_run`-triggered checks, a merge queue, or re-run-on-comment, re-query once before reporting: a check can report terminal and then re-run |
+| All terminal, some failing | **Skip the watch** — go to Step 2 (triage) |
+| Any still pending | Watch, bounded, per the block below |
+| Nothing, **and the query errored** (exit 127, or stderr naming auth / network / rate limit / not-logged-in) | **Tooling failure, not "no CI".** Report it and escalate. An error prints to stderr and nothing to stdout, so it is indistinguishable from "no checks" unless you look |
+| Nothing, query succeeded, **and Phase 6 just pushed** | **Not registered yet, not "no CI".** Run the shared [registration poll](../../../delivery/create-pr/rules/registration-poll.md#the-poll), then map its outcome with the table below. Registration takes seconds, and Phase 7 runs immediately after a push |
+
+**"No checks reported" is three different states**, and collapsing them into success is how a green report gets written for a PR whose CI was never observed.
+
+The poll is a [shared rule with one owner](../../../delivery/create-pr/rules/registration-poll.md) — call it, never restate it. Map its [caller-neutral outcomes](../../../delivery/create-pr/rules/registration-poll.md#outcomes-caller-neutral) onto this phase:
+
+| Poll outcome | Phase 7 does |
+| ------------ | ------------ |
+| `registered` | **Re-read the Step 1 table above** — checks now exist, so it can classify them. Terminal ones skip the watch; pending ones fall through to the bounded block below |
+| `tooling-failure` | Report and escalate. Do **not** route to Auto Fix |
+| `no-ci` | Genuinely no CI on this repo — note it and treat as success |
+
+This replaces carrying watch state across the Phase 6 → Phase 7 boundary. A query is correct by construction at the current head; a remembered verdict is only correct until someone pushes, and several things in Phase 6/7 push in parallel.
+
+```bash
+# Watch all checks on the PR — one bounded attempt.
 # Issue this Bash call with the tool parameter timeout: 600000.
-# The tool's DEFAULT is 120000, which would kill the watch at 2 minutes.
+# The tool's DEFAULT is 120000, which would kill the watch at 2 minutes and
+# leave the exit-code handling below unreachable.
 timeout 540 gh pr checks <pr-number> --watch
 
-# Or watch a single workflow run by id (same tool timeout)
+# Or watch a single workflow run by id.
+# Same rule, restated rather than inherited: issue with tool timeout: 600000.
 timeout 540 gh run watch <run-id>
 ```
 
-**The watch is bounded, and the budget is PR-scoped rather than phase-scoped.** Three rules, all load-bearing:
+| Exit | Next |
+| ---- | ---- |
+| 0 | All checks succeeded — go to Step 4 |
+| 124 | Still running — watch again, **at most 4 attempts total** (≈ 36 min), counted within this phase. Then run `gh pr checks <pr-number>` once, report the pending checks, and escalate |
+| 127, or stderr matching `command not found` / `could not resolve` / `authentication` / `rate limit` | **Tooling failure, not a CI failure** — `timeout` is absent on stock macOS (use `gtimeout`). Report the command failure; do **not** route to Auto Fix |
+| Any other non-zero | A check genuinely failed — go to Step 2 |
 
-1. **Every attempt fits under the harness cap, and the cap must be opted into.** A Claude Code Bash call defaults to 120 s and maxes at 600 s. An unbounded `--watch`, a `timeout 1800`, or a `timeout 540` issued at the default tool timeout are all killed before any expiry handling runs — the agent then sees an opaque timeout with no instruction, which is how this step becomes a silent hang. Pass `timeout: 600000` and keep the inner `timeout` below it.
-2. **`create-pr` already spent part of the budget.** [`create-pr` Step 7](../../../delivery/create-pr/SKILL.md) watches the same checks on the same PR against `.agent/ci-watch-<pr-number>.state`. Phase 7 reads that file and **continues the counter — it never restarts it.**
-3. **A terminal result is only valid at the SHA it was observed at.** `create-pr` Step 6.7 dispatches a background `implement-suggestion --watch` that keeps pushing, and Step 9's `ci-auto-fix` subagents push fixes — both explicitly in parallel with the main thread. So "CI was green" is a claim about a commit, not about the PR.
-
-**Before skipping anything, compare SHAs — mechanically, not by judgment. Compare the PR's head, not your local one:**
-
-```bash
-STATE="$(git rev-parse --show-toplevel)/.agent/ci-watch-<pr-number>.state"
-
-# The PR head, NOT `git rev-parse HEAD`. The pushers named in rule 3 run in
-# their own worktrees and subagent contexts, so their commits reach the remote
-# without advancing this thread's local HEAD. A local comparison would report
-# "unchanged" for a branch that has moved — the exact failure this guard exists
-# to prevent, wearing a guard's clothes.
-PR_HEAD=$(gh pr view <pr-number> --json headRefOid -q .headRefOid)
-```
-
-| State file says | `observed_sha` vs `PR_HEAD` | Phase 7 Step 1 does |
-| --------------- | --------------------------- | ------------------- |
-| Terminal (`green` or triaged failure) | **equal** | **Skip the watch** — go to the outcome table below |
-| Terminal | **different** (branch moved since) | **Watch again**, resetting both counters to `0` — a new commit is a new wait. The recorded result describes a commit that is no longer head; reporting it would mark an unobserved commit green |
-| Pending, `attempts < 4`, SHA equal | — | Resume watching with the remaining attempts |
-| `attempts == 4`, SHA **equal** | — | **Do not watch again.** Run `gh pr checks <pr-number>` once, report pending checks, escalate |
-| `attempts == 4`, SHA **different** | — | Reset both counters to `0` and watch — the spent budget belonged to the previous commit |
-| State file exists but `observed_sha` is **empty** | undecidable | **Watch exactly once, then apply the normal rows.** An empty SHA means the writer did not follow the record-on-every-attempt rule (or predates it), so "different commit" cannot be distinguished from "budget already spent here". Do **not** reset the counters — resetting is how Phase 7 re-spends a budget `create-pr` already exhausted — but do **not** skip to escalation either: one bounded attempt, recorded properly, is a strictly better failure than never watching a branch that may have moved. After that attempt `observed_sha` is populated and every row above decides normally |
-| No state file (Phase 7 reached without `create-pr`) | — | Start a fresh budget at `attempts=0` |
-
-This is the fix for the one place Phases 6 and 7 genuinely duplicated work. The two `review-loop` passes review different diffs and are deliberate (see [Auto Review](#auto-review)) — only the CI watch was uncoordinated.
+**No budget is shared with `create-pr` or with any subagent.** Each counts its own attempts inside its own invocation. Phase 7 may therefore re-watch checks `create-pr` already watched — that costs time, never correctness, and the stateless query above makes it rare. An earlier design threaded a counter through a state file across both phases and the `ci-auto-fix` fan-out; it produced racing writers, a counter that could be read before it was written, and a skip that could report an unobserved commit as green. Do not reintroduce it.
 
 | Outcome             | Next step                                                              |
 | ------------------- | ---------------------------------------------------------------------- |
@@ -164,28 +171,27 @@ prompt: |
   PR: <pr-url>
   Failing check: <check-name>
   Run id: <run-id>
-  CI_WATCH_STATE=<absolute path from `git rev-parse --show-toplevel`/.agent/ci-watch-<pr-number>.state>
 
   Follow the ci-auto-fix skill's instructions. Apply the minimal fix, commit,
   push, and watch until CI completes. Honor its guardrails — no --no-verify,
-  no continue-on-error, no disabling checks.
+  no continue-on-error, no disabling checks. Bound your own watch using the caps
+  in your own skill — do not take a number from this prompt; you have no shared
+  budget with this phase and write no shared state.
+
+  Return only:
+  - outcome: green | escalated | regression-reverted | max-iterations
+    (ci-auto-fix's own Phase 9 Outcome values, verbatim — do not translate them.
+     `regression-reverted` is safety-relevant: it means your fix made CI worse and
+     was rolled back. It must reach the caller intact, not flattened into a failure.)
+  - what_was_fixed: one line
+  - remaining_error: one short paragraph if still red, else empty
 
   Sub-Agent Resource Discipline: use scoped commands only — narrow
   tsc/eslint/jest to the files/paths you touched. Do NOT run
   whole-project npm run lint, npx tsc --noEmit (without project refs), npm test
   (without --testPathPattern), or npm run build. The orchestrator runs
   whole-project verification after all sub-agents return.
-
-  CI_WATCH_STATE is informational only — never write to it.
-
-  Return only:
-  - outcome: fixed | still-failing | gave-up
-  - watched_sha: the PR head SHA your watch actually observed
-  - attempts_used: how many watch attempts you spent
-  - remaining_error: one short paragraph if still red, else empty
 ```
-
-**Reconcile when they return** — you are the single writer of the state file, using the same rule as [`create-pr` Step 9](../../../delivery/create-pr/SKILL.md): if the PR head moved, `put observed_sha` to the new head and reset both counters (a new commit is a new wait); if it did not, debit `attempts` by the reported total.
 
 Log to Progress Log:
 

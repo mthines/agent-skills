@@ -66,21 +66,22 @@ tool, so that dispatch fails outright (`Failed to run agent`). `pr-reviewer` has
 from running in a fresh, isolated context, so "play the role yourself" would
 produce a self-review wearing a reviewer's label, which is worse than no review.
 
-Detect this in [Step 0](#step-0-resolve-the-pr-and-preconditions) and **self-report
+Check for it in [Step 0](#step-0-resolve-the-pr-and-preconditions) and **self-report
 a clean skip** rather than letting the caller discover it as a mid-loop tool error:
 
 ```markdown
 - [TIMESTAMP] review-loop — skipped (sub-agent dispatch unavailable; pr-reviewer requires it)
 ```
 
-Then return the skip as the loop's terminal result. Do **not** retry the dispatch,
-do **not** work around it, and do **not** silently continue to sub-steps B and C —
-without a review pass there are no findings to apply, and running `polish simplify`
-alone would misreport an unreviewed PR as converged.
+Return that skip as the loop's terminal result. Do **not** retry the dispatch and
+do **not** silently continue to sub-steps B and C — without a review pass there are
+no findings to apply, and running `polish simplify` alone would misreport an
+unreviewed PR as converged.
 
-This is a **deviation, not a failure**: the caller (autonomous-workflow Phase 6/7,
-`create-pr` Step 6.5) logs it and proceeds. Callers that can reach a review another
-way should say so in their own report rather than claiming the PR was reviewed.
+The check is best-effort, not certain: there is no capability-introspection API, and
+a refused dispatch may surface as an uncatchable harness error. Its value is
+**placement** — one clean logged deviation at Step 0 instead of a mid-Phase-6 error
+the caller has to interpret.
 
 `implement-suggestion` and `polish` **are** skills — invoke them with `Skill(...)`.
 If a given install has `implement-suggestion` set `disable-model-invocation: true`
@@ -123,15 +124,18 @@ REPO="${RESOLVED_REPO#*/}"
 
 If no PR reference is found, abort: `review-loop requires a PR URL or #<n>.`
 
-**Precondition — sub-agent dispatch.** The loop's first sub-step dispatches the
-`pr-reviewer` agent, which has no non-`Task` substitute (see
-[Dispatch mechanics](#dispatch-mechanics--read-before-invoking)). Confirm the
-`Task` tool is available **before** entering the loop. If it is not, emit the
-skip line from that section and return — do not enter Step 1, and do not run
-sub-steps B or C on their own.
+**Precondition — sub-agent dispatch (best-effort).** The loop's first sub-step dispatches
+the `pr-reviewer` agent, which has no non-`Task` substitute (see
+[Dispatch mechanics](#dispatch-mechanics--read-before-invoking)). Before entering the
+loop, check whether `Task` appears in your available tools; if it plainly does not,
+emit the skip line from that section and return, without running sub-steps B or C.
 
-Checking here rather than at first use is deliberate: the caller then gets one
-clean, logged deviation instead of a mid-Phase-6 tool error it has to interpret.
+**This check cannot be made certain**, and the contract does not pretend otherwise:
+there is no capability-introspection API, and on some harnesses a refused dispatch
+surfaces as an uncatchable error rather than a return value. When the check is
+inconclusive, attempt the dispatch — and if it fails, emit the same skip line rather
+than retrying or working around it. The value is **placement**: one clean logged
+deviation instead of a mid-Phase-6 error the caller must interpret.
 
 Parse the flags and set the iteration cap:
 
