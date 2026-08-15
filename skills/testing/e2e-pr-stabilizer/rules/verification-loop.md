@@ -57,11 +57,8 @@ NEW_RUN_ID=$(gh run list --branch "<branch>" --limit 5 \
   --jq ".[] | select(.headSha == \"$(git rev-parse HEAD)\") | .databaseId" \
   | head -1)
 
-# 3. Watch it to completion — bounded.
-# Issue this Bash call with the tool parameter timeout: 600000 (default is
-# 120000). On exit 124, report the pending jobs and escalate; never re-watch
-# unbounded.
-timeout 540 gh run watch "$NEW_RUN_ID" --exit-status
+# 3. Watch it to completion.
+gh run watch "$NEW_RUN_ID" --exit-status
 ```
 
 `--exit-status` makes `gh` exit non-zero on failure.

@@ -145,12 +145,8 @@ After all PRs are open, watch CI **from the bottom of the stack upward**:
 ```bash
 # Independent PRs (no `Stacks on` in the proposal) — watch in parallel
 # Stacked PRs — watch the bottom; only move up once it's green
-# Bounded: issue this Bash call with the tool parameter timeout: 600000
-# (the tool default is 120000). Same budget contract as create-pr Step 7.
-timeout 540 gh pr checks <bottom-pr> --watch
+gh pr checks <bottom-pr> --watch
 ```
-
-On exit 124, re-watch only against the `.agent/ci-watch-<pr-number>.state` budget (max 4 attempts); when it is spent, report the pending checks and escalate rather than watching again.
 
 Auto-fix per default-mode Steps 8–9 only on the bottom PR while the stack is still red.
 **If the bottom PR receives an auto-fix commit, every stacked PR above it now points at a stale tip.** Rebase each upward PR onto the new bottom-PR head before watching it:
