@@ -195,9 +195,13 @@ This poll answers **one** question — "do checks exist yet?" — and never a CI
 timeout 90 bash -c '
   while :; do
     err=$(gh pr checks <pr-number> 2>&1 >/dev/null) && break   # 0 = all terminal
-    case "$err" in
-      *"no checks reported"*)                            sleep 5 ;;   # not registered yet
-      *"could not resolve"*|*authentication*|*"command not found"*)
+    # Lowercase before matching: `case` globs are case-sensitive and gh
+    # capitalises some of these ("Could not resolve to a Repository").
+    lc=$(printf %s "$err" | tr "[:upper:]" "[:lower:]")
+    case "$lc" in
+      *"no checks reported"*|*"no commit found"*)        sleep 5 ;;   # not registered / push not propagated
+      *"could not resolve"*|*authentication*|*"bad credentials"*|\
+      *"rate limit"*|*"command not found"*)
                                          echo "$err" >&2; exit 3 ;;   # tooling failure
       *)                                                   break ;;   # registered, pending
     esac
@@ -353,7 +357,9 @@ Don't wrap the subagent in another loop — it has its own internal iteration ca
 NEW_HEAD=$(gh pr view <pr-number> --json headRefOid -q .headRefOid)
 if [ "$NEW_HEAD" != "$(get observed_sha)" ]; then
   put observed_sha "$NEW_HEAD"; put observed_state pending
-  put attempts 0; put registration_attempts 0     # new commit = new wait
+  put registration_attempts 0
+  # Not 0: the subagents' attempts were spent watching THIS new head.
+  put attempts "<total attempts_used reported>"
 fi
 ```
 
@@ -364,6 +370,8 @@ If the head did **not** move (no subagent pushed), debit `attempts` by the total
 1. Run `/confidence` against the failure summary + the relevant diff slice.
 2. If confidence ≥ 80% on a specific fix → apply it locally yourself, then hand the push-and-rewatch off to a `/ci-auto-fix` subagent (same template as above).
 3. If confidence < 80% → stop. Report the failing check, the error excerpt from the triage report, what you considered, and why you didn't auto-fix. Leave the PR for the user.
+
+Step 2's handoff returns the same `watched_sha` / `attempts_used` fields — **apply the same reconciliation above when it returns.** A dispatch path whose return nobody consumes is how the state file goes stale while looking maintained.
 
 **Cap: 2 `/ci-auto-fix` subagent handoffs per PR.** Each handoff already burns a full internal retry budget. If CI is still red after that, it's not mechanical — stop and report.
 
