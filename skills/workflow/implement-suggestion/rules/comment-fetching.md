@@ -135,11 +135,21 @@ findings, most of which have no inline anchor and therefore appear nowhere in
 classification in Phase 3 (almost always `discussion`, the multi-paragraph
 default), never reaches the gates, and every finding in it is silently dropped.
 
-When a `reviews` entry's body contains the literal marker
-`<!-- PR_REVIEWER_REPORT -->`, parse it with
+When a fetched body contains the literal marker `<!-- PR_REVIEWER_REPORT -->`, parse it with
 [`agents/shared/rules/reviewer-report-ingest.md`](../../../../agents/shared/rules/reviewer-report-ingest.md)
 — the shared grammar, also used by `pr-reviewer` itself — and **expand** it into
 one synthetic ledger entry per finding. Do not re-derive the grammar here.
+
+**Check both hosts.** `pr-reviewer` keeps the report in a **sticky issue comment**, rewritten in
+place each run; only PRs last reviewed before that change carry it in a `reviews` body
+(`reviewer-report-ingest.md § Where the report lives`). So scan `issues/<n>/comments` **and**
+`reviews` for the marker. When both hit, take the **sticky** and ignore the legacy review bodies —
+they are stale history, and expanding them would re-admit findings the sticky has since resolved.
+Scanning only `reviews`, as an earlier version of this rule did, finds nothing on a current PR and
+drops the whole report silently.
+
+Ignore the trailing `<!-- PR_REVIEWER_LEDGER … -->` block: it is `pr-reviewer`-private run history,
+not a finding, and must never be expanded into a ledger entry or written back.
 
 | Parsed section | Expands to | `source` | Anchor |
 | ---------------- | ------------ | ---------- | -------- |
@@ -226,8 +236,10 @@ spot mis-filtering.
 
 ### Carve-out — never self-filter a reviewer report
 
-A review body carrying `<!-- PR_REVIEWER_REPORT -->` is **always included**,
-even when its author is the current user.
+Any body carrying `<!-- PR_REVIEWER_REPORT -->` is **always included**, even when its author is the
+current user — the sticky issue comment as much as a legacy review body. The sticky makes this
+carve-out matter more, not less: it is an *issue comment* authored by the bot, exactly the shape the
+self-filter is designed to drop.
 
 This is not a hypothetical. When `pr-reviewer` and `implement-suggestion` are
 dispatched by the same automation they authenticate as the **same GitHub App**,
@@ -253,7 +265,7 @@ Concretely:
 | --------------------------------------------------------------------------------------------- | ---------------------- |
 | Human teammate                                                                                | **Include**            |
 | AI code-review bot — `claude[bot]`, `coderabbitai[bot]`, `sourcery-ai[bot]`, `sweep-ai[bot]`  | **Include**            |
-| The current user (`gh auth status` login)                                                     | **Exclude** by default — self-notes, not feedback. Surface count in Phase 7. **Except** a body carrying `<!-- PR_REVIEWER_REPORT -->`, which is always included (see *Carve-out* above). |
+| The current user (`gh auth status` login)                                                     | **Exclude** by default — self-notes, not feedback. Surface count in Phase 7. **Except** any body carrying `<!-- PR_REVIEWER_REPORT -->` — sticky issue comment or legacy review body alike — which is always included (see *Carve-out* above). |
 | Noise bots — `dependabot[bot]`, `renovate[bot]`                                               | **Exclude** unless the body contains a fenced `suggestion` block          |
 | CI summary bots — `github-actions[bot]`                                                       | **Exclude** unless the body contains a fenced `suggestion` block          |
 

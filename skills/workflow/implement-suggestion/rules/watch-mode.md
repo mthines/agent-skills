@@ -98,7 +98,10 @@ count() {                       # $1 = api path, $2 = timestamp field
 while :; do
   NEW=$(count "/repos/$OWNER/$REPO/pulls/$NUMBER/comments" created_at)   || { echo "POLL_ERROR"; { [ -s "$ERR" ] && cat "$ERR" >&2 || echo "gh returned no usable count" >&2; }; break; }
   NEW_REVIEWS=$(count "/repos/$OWNER/$REPO/pulls/$NUMBER/reviews" submitted_at) || { echo "POLL_ERROR"; { [ -s "$ERR" ] && cat "$ERR" >&2 || echo "gh returned no usable count" >&2; }; break; }
-  NEW_ISSUE=$(count "/repos/$OWNER/$REPO/issues/$NUMBER/comments" created_at)   || { echo "POLL_ERROR"; { [ -s "$ERR" ] && cat "$ERR" >&2 || echo "gh returned no usable count" >&2; }; break; }
+  # updated_at, not created_at: a rewritten-in-place reviewer report is new feedback even
+  # though the comment itself is old. GitHub guarantees updated_at >= created_at, so this
+  # subsumes the created_at test. See "Edited reports count as feedback".
+  NEW_ISSUE=$(count "/repos/$OWNER/$REPO/issues/$NUMBER/comments" updated_at)   || { echo "POLL_ERROR"; { [ -s "$ERR" ] && cat "$ERR" >&2 || echo "gh returned no usable count" >&2; }; break; }
   if [ $((NEW + NEW_REVIEWS + NEW_ISSUE)) -gt 0 ]; then echo "NEW_FEEDBACK"; break; fi
   [ $(( $(date +%s) - START )) -ge $INTERVAL ] && { echo "NO_FEEDBACK"; break; }
   sleep $POLL
@@ -110,6 +113,24 @@ done
 - `NO_FEEDBACK` → on iteration 1, still run one pass (there may be feedback that predates the loop, e.g. a bot that reviewed before the watch started); on later iterations, stop with reason "reviewers quiet".
 
 Note the `comments` / `reviews` / `issues` counts above are a *liveness probe* (did anyone post?). The actual actionable/nit classification and filtering still happens in Phases 2–4 of the pass — the probe only decides whether to run a pass, not what to apply.
+
+### Edited reports count as feedback
+
+`pr-reviewer` keeps its report in a **sticky comment it rewrites in place** every run, and posts a
+review only when it has new inline findings or the verdict worsened (`pr-reviewer.md § Step 4b`).
+An edit moves `updated_at`, never `created_at`.
+
+A probe filtering on `created_at` alone therefore misses a re-review whose only new output is
+body-only — gate rows, optimality cards, deferred `Additional findings` — which is precisely the
+class this skill was extended to ingest (*Reviewer-report expansion* in
+[`comment-fetching.md`](./comment-fetching.md)). The loop would report `reviewers quiet` and stop
+with those findings unaddressed, and the stop reason would look like success. Hence the
+switch to `updated_at` above, which GitHub guarantees is `>= created_at` and so covers newly-created
+comments too.
+
+The cost is one extra pass when a human merely edits a typo in their own comment; Phases 2–4 then
+find nothing actionable and the loop stops with `nothing actionable left`. Stopping early on real
+feedback is the worse failure, so the probe errs toward running.
 
 ## Report (watch mode)
 
