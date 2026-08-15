@@ -17,7 +17,7 @@ Defaults (override via flags):
 | Parameter        | Flag                  | Default |
 | ---------------- | --------------------- | ------- |
 | Max iterations   | `--max-iters <n>`     | `5`     |
-| Poll interval    | `--interval <secs>`   | `300` (5 min) |
+| Poll interval    | `--interval <secs>`   | `300` (5 min); **clamped to `540`** — above that the harness kills the call before the loop's own bound fires |
 
 Hard cap: `--max-iters` may not exceed `10`. Clamp silently.
 
@@ -64,10 +64,16 @@ changes the current iteration's gates.
 
 ## Waiting for new review activity
 
-Poll instead of sleeping the full interval — proceed as soon as a bot posts, so a fast reviewer doesn't cost a full 5 minutes. Run this as a single Bash call per wait step (internal loop, so it is not a bare `sleep`):
+Poll instead of sleeping the full interval — proceed as soon as a bot posts, so a fast reviewer doesn't cost a full 5 minutes. Run this as a single Bash call per wait step (internal loop, so it is not a bare `sleep`).
+
+**Two bounds are required, and the second is the one that is easy to miss.** The Bash tool's timeout **defaults to 120 000 ms** and maxes at 600 000 ms, so a loop whose own `INTERVAL` exceeds 120 s is killed by the harness before its `NO_FEEDBACK` break can fire — the internal bound becomes dead code and the wait looks like a hang. Therefore:
+
+- **Issue this Bash call with the tool parameter `timeout: 600000`.**
+- **Clamp `--interval` to 540 seconds** (below the 600 s tool cap). Values above 540 are clamped silently, the same way `--max-iters` is clamped to 10.
 
 ```bash
-PR_URL="<pr-url>"; SINCE="<baseline-timestamp>"; INTERVAL=300; POLL=30
+# Issue this Bash call with the tool parameter timeout: 600000.
+PR_URL="<pr-url>"; SINCE="<baseline-timestamp>"; INTERVAL=300; POLL=30   # INTERVAL <= 540
 read OWNER REPO NUMBER < <(echo "$PR_URL" \
   | sed -E 's|https://github.com/([^/]+)/([^/]+)/pull/([0-9]+).*|\1 \2 \3|')
 START=$(date +%s)

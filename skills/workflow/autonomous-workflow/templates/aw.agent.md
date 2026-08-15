@@ -265,7 +265,7 @@ AW RUN COMPLETE
 
 Micro and Lite may collapse this to one line, but **`Degraded:` survives the
 collapse** — it is mandatory in every form:
-`AW RUN COMPLETE — Micro, PR <url>, degraded: none, nothing needed`.
+`AW RUN COMPLETE — Micro, PR <url>, Degraded: none, Needs you: nothing`.
 
 Two rules that keep it honest:
 

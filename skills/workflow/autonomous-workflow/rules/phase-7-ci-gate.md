@@ -56,10 +56,14 @@ gh pr checks <pr-number>
 
 | What it reports | Phase 7 Step 1 does |
 | --------------- | ------------------- |
-| All checks terminal and passing | **Skip the watch** — go to Step 4 (report success) |
+| All checks terminal and passing | **Skip the watch** — go to Step 4 (report success). If the repo uses `workflow_run`-triggered checks, a merge queue, or re-run-on-comment, re-query once before reporting: a check can report terminal and then re-run |
 | All terminal, some failing | **Skip the watch** — go to Step 2 (triage) |
 | Any still pending | Watch, bounded, per the block below |
-| No checks at all | Likely no CI configured — note it and treat as success |
+| Nothing, **and the query errored** (exit 127, or stderr naming auth / network / rate limit / not-logged-in) | **Tooling failure, not "no CI".** Report it and escalate. An error prints to stderr and nothing to stdout, so it is indistinguishable from "no checks" unless you look |
+| Nothing, query succeeded, **and Phase 6 just pushed** | **Not registered yet, not "no CI".** Run [`create-pr` Step 7a](../../../delivery/create-pr/SKILL.md)'s bounded registration poll, then re-read this table. Registration takes seconds and Phase 7 runs immediately after a push |
+| Nothing after the registration poll gives up | Check `gh run list --branch <branch>` for runs **awaiting maintainer approval** (outside-contributor PRs hold runs indefinitely) — if any, report and escalate. Only with none is this genuinely a repo without CI: note it and treat as success |
+
+**"No checks reported" is three different states**, and collapsing them into success is how a green report gets written for a PR whose CI was never observed. `create-pr` Step 7a exists for exactly this reason; do not restate it here, call it.
 
 This replaces carrying watch state across the Phase 6 → Phase 7 boundary. A query is correct by construction at the current head; a remembered verdict is only correct until someone pushes, and several things in Phase 6/7 push in parallel.
 
@@ -70,7 +74,8 @@ This replaces carrying watch state across the Phase 6 → Phase 7 boundary. A qu
 # leave the exit-code handling below unreachable.
 timeout 540 gh pr checks <pr-number> --watch
 
-# Or watch a single workflow run by id (same tool timeout)
+# Or watch a single workflow run by id.
+# Same rule, restated rather than inherited: issue with tool timeout: 600000.
 timeout 540 gh run watch <run-id>
 ```
 
@@ -167,7 +172,10 @@ prompt: |
   with this phase and write no shared state.
 
   Return only:
-  - outcome: green | still-failing | timed-out | gave-up   (your own vocabulary — do not translate it)
+  - outcome: green | escalated | regression-reverted | max-iterations
+    (ci-auto-fix's own Phase 9 Outcome values, verbatim — do not translate them.
+     `regression-reverted` is safety-relevant: it means your fix made CI worse and
+     was rolled back. It must reach the caller intact, not flattened into a failure.)
   - what_was_fixed: one line
   - remaining_error: one short paragraph if still red, else empty
 

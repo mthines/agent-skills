@@ -150,7 +150,7 @@ After all PRs are open, watch CI **from the bottom of the stack upward**:
 timeout 540 gh pr checks <bottom-pr> --watch
 ```
 
-On exit 124, watch again up to 4 attempts total, then report the pending checks and escalate rather than watching indefinitely.
+On exit 124, watch again up to 4 attempts **per PR in the stack** — not 4 shared across it, which would leave the upper PRs no watch at all. Then report that PR's pending checks and escalate rather than watching indefinitely.
 
 Auto-fix per default-mode Steps 8–9 only on the bottom PR while the stack is still red.
 **If the bottom PR receives an auto-fix commit, every stacked PR above it now points at a stale tip.** Rebase each upward PR onto the new bottom-PR head before watching it:

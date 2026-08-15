@@ -15,7 +15,7 @@ argument-hint: '[<pr-url>|<run-id>]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.2.0'
+  version: '3.3.0'
   workflow_type: command
   tags:
     - ci
@@ -230,12 +230,22 @@ Only proceed to push if local verification passes.
 
 After pushing, monitor the check:
 
-1. Wait briefly for the workflow to trigger:
+1. Find the new workflow run — **select on the head SHA, do not sleep and hope.**
+   A bare `sleep` is blocked in some harnesses, and a fixed 10 s is a race: if
+   registration takes longer, the listing returns the *previous* commit's runs and
+   you watch a stale run to green. Filtering by SHA removes the race instead of
+   timing it (the same fix [`e2e-pr-stabilizer`](../../testing/e2e-pr-stabilizer/rules/verification-loop.md) already uses):
+
    ```bash
-   sleep 10
+   NEW_RUN_ID=$(gh run list --branch <current-branch> --limit 5 \
+     --json databaseId,headSha,status \
+     --jq ".[] | select(.headSha == \"$(git rev-parse HEAD)\") | .databaseId" \
+     | head -1)
    ```
 
-2. Find the new workflow run:
+   Empty result = not registered yet; re-run this same command (bounded, up to 6 times) rather than sleeping blind.
+
+2. For reference, the unfiltered listing:
    ```bash
    gh run list --branch <current-branch> --limit 5
    ```
@@ -248,7 +258,9 @@ After pushing, monitor the check:
    # handling below becomes dead code.
    timeout 540 gh run watch <new-run-id>
    ```
-   If `timeout` expires (exit code 124), watch again — **at most 4 attempts, counted within this invocation** — then run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate.
+   If `timeout` expires (exit code 124), watch again — **at most 2 attempts per fix-push cycle, and at most 6 across the whole invocation**. Then run `gh run view <new-run-id>` to capture pending jobs, report them, and escalate.
+
+   **State the scope, because two are in play.** Each Phase 8 iteration pushes a new commit and therefore watches a *new* run — a new wait, not a continuation — so a purely per-invocation cap would starve iterations 2–4 of any watch at all. A purely per-cycle cap of 4 would allow 4 × 4 = 16 watches (≈ 2.4 h). The pair above bounds both: per-cycle so each fix gets a fair look, and an invocation ceiling so the total cannot run away.
 
    **Your cap is your own.** You watch a run for a commit *you* just pushed, so you never inherit or spend a caller's budget, and you write no shared state. Report your outcome and let the caller act on it.
 

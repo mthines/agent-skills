@@ -124,11 +124,18 @@ REPO="${RESOLVED_REPO#*/}"
 
 If no PR reference is found, abort: `review-loop requires a PR URL or #<n>.`
 
-**Precondition — sub-agent dispatch.** The loop's first sub-step dispatches the
-`pr-reviewer` agent, which has no non-`Task` substitute (see
-[Dispatch mechanics](#dispatch-mechanics--read-before-invoking)). Confirm the `Task`
-tool is available **before** entering the loop; if it is not, emit the skip line from
-that section and return, without running sub-steps B or C on their own.
+**Precondition — sub-agent dispatch (best-effort).** The loop's first sub-step dispatches
+the `pr-reviewer` agent, which has no non-`Task` substitute (see
+[Dispatch mechanics](#dispatch-mechanics--read-before-invoking)). Before entering the
+loop, check whether `Task` appears in your available tools; if it plainly does not,
+emit the skip line from that section and return, without running sub-steps B or C.
+
+**This check cannot be made certain**, and the contract does not pretend otherwise:
+there is no capability-introspection API, and on some harnesses a refused dispatch
+surfaces as an uncatchable error rather than a return value. When the check is
+inconclusive, attempt the dispatch — and if it fails, emit the same skip line rather
+than retrying or working around it. The value is **placement**: one clean logged
+deviation instead of a mid-Phase-6 error the caller must interpret.
 
 Parse the flags and set the iteration cap:
 

@@ -938,16 +938,22 @@ function checksInSync(plan, checks) {
 // `references/` is excluded: those files quote the unbounded forms as examples
 // of the bug being fixed.
 {
-  const WATCH = /^\s*(?:timeout\s+(\d+)\s+)?(?:gh\s+(?:pr\s+checks|run\s+watch)|bash\s+-c)\b/;
+  const WATCH = /^\s*(?:timeout\s+(\d+)\s+)?(?:gh\s+(?:pr\s+checks|run\s+watch)|bash\s+-c|PR_URL)\b/;
+  // Three shapes count, matching the invariant's enumerated set: a `gh … --watch`,
+  // a `bash -c` poll wrapper, and a bare fenced poll loop that sleeps (the shape
+  // `implement-suggestion/rules/watch-mode.md` uses — previously invisible here,
+  // which is how the system's highest-traffic wait went unguarded).
   const isWatch = (l) =>
-    /gh\s+(?:pr\s+checks[^\n]*--watch|run\s+watch)/.test(l) || /\bbash\s+-c\b/.test(l);
+    /gh\s+(?:pr\s+checks[^\n]*--watch|run\s+watch)/.test(l) ||
+    /\bbash\s+-c\b/.test(l) ||
+    /^\s*PR_URL=/.test(l);
   const files = [
     ...walk(join(REPO_ROOT, "skills")),
     ...walk(join(REPO_ROOT, "agents")),
   ].filter((f) => !f.includes("/references/"));
 
   const PROXIMITY = 6;
-  const EXPECTED_SITES = 7; // pinned, not a floor — deleting a site must trip this.
+  const EXPECTED_SITES = 8; // pinned, not a floor — deleting a site must trip this.
   let sites = 0;
   for (const f of files) {
     const lines = readFileSync(f, "utf8").split("\n");
@@ -960,6 +966,20 @@ function checksInSync(plan, checks) {
       if (/\bbash\s+-c\b/.test(line) && !/gh\s+(?:pr\s+checks|run\s+watch)/.test(line)) {
         const block = lines.slice(i, i + 12).join("\n");
         if (!/\b(until|while)\b/.test(block) || !/\bsleep\b/.test(block)) continue;
+      }
+      // A bare fenced poll loop has no wrapping `timeout`; its only bound is the tool
+      // timeout plus an interval kept under it. Assert those two instead of an inner one.
+      if (/^\s*PR_URL=/.test(line)) {
+        const block = lines.slice(i, i + 20).join("\n");
+        if (!/\bsleep\b/.test(block)) continue;
+        sites++;
+        s.check(`G22 ${rel(f)}:${i + 1} bare poll loop clamps its interval below the tool cap`,
+          /INTERVAL\s*<=\s*540|clamped to .?540/.test(block) || /INTERVAL=([0-9]|[1-9][0-9]|[1-4][0-9]{2}|5[0-3][0-9]|540)\b/.test(block),
+          "an INTERVAL above 540 s is killed by the harness before the loop's own bound fires");
+        s.check(`G22 ${rel(f)}:${i + 1} declares the per-call tool timeout (600000) within ${PROXIMITY} lines`,
+          lines.slice(Math.max(0, i - PROXIMITY), i).join("\n").includes("600000"),
+          "a poll loop bounded only internally still dies at the 120000 ms tool default");
+        continue;
       }
       sites++;
       const inner = line.match(WATCH)[1];

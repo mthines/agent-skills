@@ -183,16 +183,19 @@ The job isn't done when the PR is created. Block on CI so the user doesn't have 
 # Issue this Bash call with the tool parameter timeout: 600000.
 timeout 90 bash -c '
   while :; do
-    err=$(gh pr checks <pr-number> 2>&1 >/dev/null) && break      # 0 = all terminal
-    lc=$(printf %s "$err" | tr "[:upper:]" "[:lower:]")           # gh capitalises some of these
+    err=$(gh pr checks <pr-number> 2>&1 >/dev/null); rc=$?
+    # Branch on the EXIT CODE first — it is the reliable signal.
+    #   0 = every check terminal and passing
+    #   8 = checks exist and are pending   <- registered, which is all this poll asks
+    #   1 = a check failed (also registered)
+    [ "$rc" -eq 0 ] || [ "$rc" -eq 8 ] || [ "$rc" -eq 1 ] && break
+    lc=$(printf %s "$err" | tr "[:upper:]" "[:lower:]")
     case "$lc" in
-      *"no checks reported"*|*"no commit found"*) sleep 5 ;;      # not registered / push not propagated
-      *"could not resolve"*|*authentication*|*"bad credentials"*|*"rate limit"*|*"command not found"*)
-                                    echo "$err" >&2; exit 3 ;;    # tooling failure
-      *)                                            break ;;      # registered and pending — that is all we asked
+      *"no checks reported"*|*"no commit found"*|*"no pull requests found"*) sleep 5 ;;
+      *) echo "$err" >&2; exit 3 ;;   # DEFAULT IS FAILURE: an unrecognised gh error is never benign
     esac
   done
-  exit 0'                                                          # never leak the last command status
+  exit 0'                             # never leak the last command status
 ```
 
 | Poll exit | Meaning | Next |
@@ -216,7 +219,9 @@ timeout 540 gh pr checks <pr-number> --watch
 | 127, or stderr matching `command not found` / `could not resolve` / `authentication` / `rate limit` | **Tooling failure, not a CI failure** (`timeout` is absent on stock macOS — use `gtimeout`). Report it; do **not** fan out CI-log triage against a run that never failed |
 | Any other non-zero | A check genuinely failed — go to Step 8 |
 
-**Count both caps within this skill invocation** — you are one agent in one context, so track them as you would any loop counter. Increment *before* comparing: a counter still at 0 compared against `< 4` runs five attempts, not four. There is deliberately **no shared counter across skills or subagents** — see the note in [`phase-7-ci-gate.md`](../../workflow/autonomous-workflow/rules/phase-7-ci-gate.md) on why Phase 7 queries CI state instead of inheriting a budget.
+**Count both caps within this skill invocation, and write each attempt down.** Print `ci-watch attempt N/4` (or `registration poll N/3`) as you make it, and carry those lines into the Step 10 report. Externalising the count into the transcript is the point: prose asking an agent to *remember* a number across a step transition and a subagent fan-out is fragile, whereas prose asking it to *record* one is not. Increment *before* comparing — a counter still at 0 compared against `< 4` runs five attempts, not four.
+
+There is deliberately **no shared counter across skills or subagents.** Miscounting a local cap costs one extra 9-minute watch or one early escalation; miscounting a shared one produced a false green. That trade — a correctness risk converted into a latency risk — is why the shared budget was removed; see [`phase-7-ci-gate.md`](../../workflow/autonomous-workflow/rules/phase-7-ci-gate.md).
 
 ## Step 8: Triage Failures (delegate log-reading to subagents)
 
@@ -319,6 +324,7 @@ Review loop (review-loop / pr-reviewer):
   Final verdict: <PASS | FAIL>
 
 CI:
+  Watch attempts: <the `ci-watch attempt N/4` lines you printed, or "none needed">
   Final status: <green | which checks red>
   Auto-fixed: <one line per fix, or "none">
   Iterations: <total /ci-auto-fix subagent dispatches>

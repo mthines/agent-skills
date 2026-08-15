@@ -19,16 +19,21 @@ This is a **reference** — the diagnosis and the record of what was tried. The 
 
 ## Executive summary
 
-The stall is **not** a planner→executor handoff defect. That contract is sound.
+The stall is **not** a planner→executor handoff defect.
+That contract is sound.
 
-It is the workflow assuming a local developer laptop. Two assumptions are wired into the hot path and are false in the cloud:
+It is the workflow assuming a local developer laptop.
+Two assumptions are wired into the hot path and are false in the cloud:
 
 | Assumption | Cloud reality | Blast radius |
 | ---------- | ------------- | ------------ |
 | `gh` CLI exists and is authenticated | **Absent.** GitHub is reachable only via `mcp__github__*` | ~169 `gh` invocations across `autonomous-workflow`, `create-pr`, `review-loop`, `implement-suggestion`, `ci-auto-fix`, and the agents |
 | A Bash call may block for 30 minutes | The Bash tool **defaults to 120 s** and caps at 600 s | Every CI watch and poll loop |
 
-The second is the one that produces the silent hang, and it has a subtlety that cost several review rounds to pin down: **`timeout 1800` and `timeout 540` fail for the same reason** if the tool call itself is issued at the default timeout. The harness kills the call before the inner `timeout` fires, so the documented `exit 124` handling is dead code and the agent sees an opaque timeout with no instruction. Fixing the number without fixing the *level* changes nothing.
+The second is the one that produces the silent hang.
+It has a subtlety that cost several review rounds to pin down: **`timeout 1800` and `timeout 540` fail for the same reason** if the tool call itself is issued at the default timeout.
+The harness kills the call before the inner `timeout` fires, so the documented `exit 124` handling is dead code and the agent sees an opaque timeout with no instruction.
+Fixing the number without fixing the *level* changes nothing.
 
 ---
 
@@ -57,7 +62,10 @@ The Bash tool contract states `timeout` is *"in milliseconds: default 120000, ma
 
 - [`create-pr`](../../../delivery/create-pr/SKILL.md) Step 7 used `timeout 1800`; the tool caps at 600 s, so the expiry path never ran. Step 8's flake path then said to *re-watch* with the same cap — unbounded alternation, no counter.
 - [`phase-7-ci-gate.md`](../rules/phase-7-ci-gate.md) Step 1 had **no** bound at all.
-- The `implement-suggestion --watch` poll sleeps up to 25 minutes producing nothing; in the cloud its `gh api` calls all fail, so it is *guaranteed* to burn the full interval.
+- The `implement-suggestion --watch` poll sleeps up to 25 minutes producing nothing.
+  Its `INTERVAL=300` also exceeds the 120 s tool default, so the harness killed the call before the loop's own `NO_FEEDBACK` break could fire — the internal bound was dead code.
+  In the cloud its `gh api` calls all fail too, so it was *guaranteed* to burn the full interval.
+  Now bounded: the call declares `timeout: 600000` and `--interval` is clamped to 540 s.
 
 ### RC-3 — `gh pr checks` semantics were not accounted for anywhere
 
