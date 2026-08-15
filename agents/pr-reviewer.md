@@ -458,8 +458,12 @@ this merge/dedup (0 when connected but none matched).
 **This definition is authoritative and no later step widens it** — including the Step 1.2c addend.
 `MEMORIES_READ_COUNT` counts `reviewer-comment-relevance` memories only, never `reviewer-lessons`,
 because its partner `MEMORIES_USED_COUNT` is `|APPLIED_MEMORIES|`, built at Step 2.2 from relevance
-memories alone, and the two are rendered as a single `read · used` pair that must describe one
-population. Loaded `reviewer-lessons` are reported separately by the `<L> reviewer-lessons matched`
+memories alone, and the two are rendered as a single `indexed · used` pair that must describe one
+population. It is `indexed`, not `read`, because under `SUMMARY_VIEW` these entries were listed but
+their bodies were not fetched — calling that "read" would overstate what the reviewer actually
+consulted. When `SUMMARY_VIEW` is false the entries genuinely were read in full, but the label
+stays `indexed` so the figure means the same thing in every run.
+Loaded `reviewer-lessons` are reported separately by the `<L> reviewer-lessons matched`
 announce line, which is emitted at Step 1.2e — matching has not happened yet at this step, so the
 count does not exist here.
 Both counters feed the Step 4 `Review details`
@@ -674,31 +678,42 @@ crowds out the review itself: at most **5** reads for ≤ 10 changed files, **10
 for > 30. When more entries are candidates than the band allows, fill the budget in this order and
 treat the remainder as unread:
 
-1. `reviewer-comment-relevance` entries whose fingerprint matches a raw finding — a missing verdict
-   changes what gets POSTED, while a missing lesson only changes emphasis;
-2. hits returned by the Step 1.2c search, in the order it returned them — that order is
+1. hits returned by the Step 1.2c search, in the order it returned them — that order is
    relevance-ranked against this diff, and discarding it for recency would throw away the one
    ranking signal this pipeline has;
-3. everything else, most recently updated first.
+2. everything else, most recently updated first.
 
-Report a truncated shortlist in the terminal report so the ceiling is visible rather than silent.
+Bind `MEMORY_BODIES_UNREAD` to the number of candidates left unfetched (0 when the budget was not
+binding) and render it in the Step 3 Quality Gate block, so a truncated shortlist is visible rather
+than silent.
 
 One entry class never needs a fetch and must not consume the budget: an entry whose `preview` is
 already the whole body (`value_bytes` ≤ 200).
 
-**`reviewer-comment-relevance` entries DO need their bodies.** The key carries only the fingerprint
-(`<category>:<claim-gist>`); `relevance`, `seen_count`, `resolution_method` and `status` all live in
-the record body, and Step 2.2 cannot apply a drop / downgrade / promote without them. Fetch every
-relevance entry whose fingerprint matches a raw finding; they count against the same budget and
-take priority 1 in the fill order above.
+**This step fetches `reviewer-lessons` only.** `reviewer-comment-relevance` bodies are also needed —
+the key carries only the fingerprint (`<category>:<claim-gist>`), while `relevance`, `seen_count`,
+`resolution_method` and `status` all live in the record body — but they cannot be selected here:
+the fingerprint match is against this run's **raw findings**, which do not exist until Step 2. So
+that fetch belongs to Step 2.2, once there is something to match, and `comment-relevance-memory.md
+§ Read` owns it. Fetching relevance bodies here would mean fetching all of them blind and spending
+the budget on records no finding will ever consult.
 
 A failed `memory_read` is a non-blocking miss: drop that one entry, do not flip `LOREKIT_CONNECTED`,
-and carry on. This is the ONLY defined call site for `mcp__lorekit__memory_read` in this agent — do
+and carry on.
+
+`mcp__lorekit__memory_read` has exactly **two** defined call sites in this agent: this step, for
+lesson bodies, and the relevance-body fetch at Step 2.2 (`comment-relevance-memory.md § Read`). Do
 not invoke it anywhere else.
 
 ### 1.2e Apply `reviewer-lessons`
 
-Match each loaded lesson's `trigger-context` (the shared lesson-scope schema — file globs, task type, integration/tech names) against this run's changed paths, synthesized intent, and detected integrations. Only lessons whose body was fetched at Step 1.2d can be matched here — an entry left unread by the shortlist or the read budget is not a match, and must not be guessed at from its preview.
+Match each loaded lesson's `trigger-context` (the shared lesson-scope schema — file globs, task type, integration/tech names) against this run's changed paths, synthesized intent, and detected integrations.
+
+Match against **bodies**, never previews. Which bodies you have depends on `SUMMARY_VIEW`:
+- `SUMMARY_VIEW` **true** — the bodies fetched at Step 1.2d. An entry left unread by the shortlist
+  or the read budget is not a match and must not be guessed at from its preview.
+- `SUMMARY_VIEW` **false** — Step 1.0 already returned every body and Step 1.2d was skipped, so
+  match against the full loaded pool. Nothing is excluded.
 A matched lesson's *What to do next time* is a **consideration, not a command**: it biases rubric emphasis (Step 2), persona focus (Personas 1–4), and per-comment confidence calibration (Step 2.7) — it may never silently disable a gate, skip a step, or move a threshold.
 On a `repo::` vs. `global` collision the `repo::` lesson wins; on any conflict with the PR author's stated intent or a review-config constraint, that constraint wins and the conflict is surfaced.
 The pool matched here already includes the diff-keyed `memory.search` hits from Step 1.2c and the bodies resolved at Step 1.2d.
@@ -1193,7 +1208,11 @@ Both PASS and FAIL continue with:
 dedupe drops <D>, grounding drops <G>, confidence drops <C> (threshold <T>),
 confidence-deferred (advisory) <CADV>, shape drops <S>,
 cleared <CL>, deferred over inline cap <DEF>, posted inline <F>,
-anchorless carried <AC>, anchorless resolved <AR>.
+anchorless carried <AC>, anchorless resolved <AR>,
+memory bodies unread <MEMORY_BODIES_UNREAD>.
+`<MEMORY_BODIES_UNREAD>` is Step 1.2d's truncated shortlist — candidates whose bodies the read
+budget could not fetch, and which therefore could not match at Step 1.2e. It is 0 when the budget
+was not binding and when `SUMMARY_VIEW` is false (every body was already loaded).
 `<CADV>` (near-miss issue/suggestion routed to the advisory body section) is reported separately
 and is NOT part of the `<CL> − <DEF> == <F>` identity — advisory findings never cleared 2.7.
 CI: PASS or FAIL (check names if failing).
@@ -1650,19 +1669,19 @@ of the two shapes below it takes, so a reader always sees either both counts or 
   exact memory and see why a finding was dropped, downgraded, or promoted:
 
   ```text
-  **Memories** — <MEMORIES_READ_COUNT> read · <MEMORIES_USED_COUNT> used
+  **Memories** — <MEMORIES_READ_COUNT> indexed · <MEMORIES_USED_COUNT> used
 
   - [`issue:missing-abort-signal`](<url>) — promoted, seen 3×
   - [`nitpick:map-vs-record-preference`](<url>) — downgraded, seen 2×
   ```
 
-  When `MEMORIES_USED_COUNT` is 0, render only the header line (`… read · 0 used`), no bullets.
+  When `MEMORIES_USED_COUNT` is 0, render only the header line (`… indexed · 0 used`), no bullets.
 - **Not connected** (`LOREKIT_CONNECTED=false` — the `mcp__lorekit__memory_list` tool call still errored after the Step 1.0 retries were exhausted, or the tool was unavailable: not in the agent's `tools:` grant, or the LoreKit MCP server did not connect this session so the tool is unregistered — `No such tool available`) — render exactly `**Memories** — not connected`, no bullets.
   This shape MUST NOT appear when the read was merely skipped or assumed, nor off a single transient throw — it only appears after a genuine failed attempt that survived retries.
 
-`MEMORIES_READ_COUNT` (Step 1.0) is how many memories were loaded; `MEMORIES_USED_COUNT` =
-`|APPLIED_MEMORIES|`, how many actually fired (drops + downgrades + promotes). Read is always ≥
-used — a run can read memories and apply none. The bullet count MUST equal `MEMORIES_USED_COUNT`.
+`MEMORIES_READ_COUNT` (Step 1.0) is how many relevance memories were loaded into the index;
+`MEMORIES_USED_COUNT` = `|APPLIED_MEMORIES|`, how many actually fired (drops + downgrades +
+promotes). Indexed is always ≥ used — a run can index memories and apply none. The bullet count MUST equal `MEMORIES_USED_COUNT`.
 
 Build each `<url>` from the memory's retained `scope` + `key`, per
 `comment-relevance-memory.md § Linking applied memories in the report` — the
