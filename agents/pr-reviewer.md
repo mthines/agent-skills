@@ -115,7 +115,9 @@ An open thread is **answered** when it has at least one reply after its root com
 announcement, a rationale for declining, a counter-argument — or when this run's Step 2.9c
 classified it `declined` / `acknowledged` but the `resolveReviewThread` mutation failed. An
 answered thread is bookkeeping: the ask has been engaged with and only the Resolve click is
-missing, which is not a defect in the PR. The unblock checklist renders on ⚠️ exactly as it does
+missing, which is not a defect in the PR. A reply by the thread's **own** author is not
+engagement and does not count — see Step 1.0's `answered` field for why that case needs no
+carve-out. The open-threads checklist renders on ⚠️ exactly as it does
 on ❌, so no open thread disappears from the report — only the verdict changes.
 
 Reading the flag alone was the older, stricter rule, and it fails a PR for something the author
@@ -515,14 +517,26 @@ While fetching, **also identify open unresolved bot-authored comments** for Gate
   - `blocking` — true only when the comment carries an explicit blocking decoration of its own: a
     `(blocking)` marker, an `issue:` conventional-comment prefix, or an equivalent severity label
     the authoring bot supplied. **Read this off the raw comment body before the `ask` truncation
-    strips `(non-blocking)`** — that strip is cosmetic and would otherwise destroy the very signal
-    the gate grades on. Anything undecorated or unparseable is `false`; never infer severity by
+    runs** — that truncation strips conventional-comment severity decorations as cosmetic noise
+    (`(non-blocking)` and `(blocking)` alike, since both are metadata rather than the ask), so
+    reading it afterwards would grade on a string the renderer has already emptied of the signal.
+    Anything undecorated or unparseable is `false`; never infer severity by
     reading the code the comment points at (*Gate states*).
   - `answered` — true when the thread has at least one comment with `in_reply_to_id` pointing at
-    the root, by any author, or when Step 2.9c classified the thread `declined` / `acknowledged`
-    and its resolve mutation failed. The reply's *wording* is never parsed: a reply is engagement
+    the root **whose author is not the root comment's own author**, or when Step 2.9c classified
+    the thread `declined` / `acknowledged` and its resolve mutation failed (that classification's
+    evidence is the PR author's words, so it is someone else's engagement too). The reply's
+    *wording* is never parsed: a reply is engagement
     whatever it says, and the prose test this gate already rejects for resolution
     (`prior-comment-awareness.md § Thread state`) is no better at judging engagement.
+    **Self-replies do not count.** The rationale for downgrading an answered thread is that
+    someone engaged with the ask and only the Resolve click is missing; a bot replying to its own
+    thread to restate that the finding still stands satisfies a naive "any author" test while
+    falsifying that rationale, and would downgrade a live blocking ask to ⚠️. The one case this
+    might seem to lose — a bot superseding or withdrawing its own finding — is already handled
+    upstream and better: a bot that withdraws also **resolves** the thread, which removes it from
+    `OPEN_BOT_COMMENTS[]` entirely, so it never reaches this test. A self-reply that leaves the
+    thread open is, by the authoring bot's own action, still open.
 - If `OPEN_BOT_COMMENTS[]` is empty, Gate 3 passes (✅). A non-empty set is graded ⚠️ or ❌ from
   `blocking` and `answered` at Step 1.8.
 
@@ -1029,8 +1043,10 @@ understand the change's purpose and behavior?
 Finding format: one sentence per gap.
 Result: PASS or FAIL with finding text.
 
-**Token-economy skip heuristic:** if all three of Gates 3, 4, and 5 fail
-(Gate 1 is a soft warning and no longer counts toward this heuristic; and `--no-holistic`
+**Token-economy skip heuristic:** if all three of Gates 3 (❌ only), 4, and 5 fail
+(Gate 1 is a soft warning and no longer counts toward this heuristic, and neither does a ⚠️
+Gate 3 — the heuristic's premise is that the PR is clearly not ready, and ⚠️ is a passing
+state; and `--no-holistic`
 was not already set), skip Steps 2.4 and 2.4b (holistic passes)
 — the PR is clearly not ready and holistic tokens would be wasted. Note the skip in the
 Quality Gate summary. Gate 6 (inline review) always runs regardless of gate outcomes.
@@ -1485,7 +1501,7 @@ On FAIL (any of Gates 2/4/5 fails, or Prior bot feedback / Code review is ❌):
 [rest of sections follow]
 ```
 
-`FAILING_GATE_COUNT` counts only hard-failing gates — a ⚠️ row (Description vs. code or Code review) is never included, even when another gate is ❌.
+`FAILING_GATE_COUNT` counts only hard-failing gates — a ⚠️ row (Description vs. code, Prior bot feedback, or Code review) is never included, even when another gate is ❌.
 
 Both PASS and FAIL continue with:
 
