@@ -230,6 +230,8 @@ mkdir -p "$(dirname "$STATE")" && touch "$STATE"
 
 **Wire format: one `key=value` per line, no quoting, no nesting.** Both `create-pr` and Phase 7 read and write it with plain shell, so the format must be trivially parseable by each:
 
+**These two helpers are a snippet, not persistent state.** Fact 2 above applies to them as well: a function defined in one Bash call does not exist in the next. Paste both definitions into *every* call that uses them (or inline the `grep`/`printf` directly) — a later `put observed_sha` that assumes an earlier definition is a command-not-found, and the write silently never happens.
+
 ```bash
 get() { grep -E "^$1=" "$STATE" | tail -1 | cut -d= -f2-; }        # empty if unset
 # Write to a temp file and mv — mv is atomic within a filesystem, so a
