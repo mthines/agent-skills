@@ -130,6 +130,7 @@ Quality Gate:
   Receipt drops:             2  (behavioral claims with null/contradicting proof)
   Receipt downgrades:        1  (ambiguous proof → downgraded to question:)
   Filter drops:              1  (suppressed by review-config filters)
+  Materiality drops:         0  (cosmetic nitpick/suggestion dropped on a docs-only incremental delta — pre-clearing)
   Prior-comment dedup:       2  (already said in a prior review pass)
   Anti-flip-flop drops:      0  (would contradict a resolved prior suggestion)
   Confidence drops:          7 (avg score: 64, threshold: 80)

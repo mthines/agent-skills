@@ -1137,6 +1137,7 @@ Log all applied memories in the Quality Gate summary.
 ### 2.3 Filter suppression
 
 See `agents/shared/rules/review-config.md § Filters`. Drop findings in suppressed categories.
+Also drop cosmetic `nitpick` / `suggestion` findings on a docs/comment-only `incremental` or `incremental-quick` delta (the materiality filter, `rubric-composition.md § Materiality routing`), logged as `Materiality drops` — a pre-clearing drop, so it never enters `<CL>` and the `<CL> − <DEF> == <F>` identity is untouched.
 
 ### 2.4 Holistic review (default ON in `full` mode)
 
@@ -1210,6 +1211,7 @@ See `agents/shared/rules/rubric-composition.md § Consolidation`.
 Dedupe, group by file, and sort by `(prefix priority, line)` — priority order `issue > suggestion > question > nitpick`.
 **No cap fires here and nothing is discarded**; quantity is handled at Step 2.9b after the quality gates.
 On `(file, line)` collision, holistic claim wins.
+Consolidation also **collapses cross-surface parity findings into one enumerated finding** (`§ Consolidation pass`): a consistency issue ("documented here but not in the sibling") must name every surface to align rather than surface one-per-review, so fixing it never leaves a neighbour looking uneven for the next push to re-flag.
 
 ### 2.6 Finding grounding
 
@@ -1246,13 +1248,17 @@ governing **non-blocking findings only**. A `(blocking)` finding (broken behavio
 loss, misimplemented intent) is exempt from both caps: it is always posted inline and never
 deferred, so a genuinely weak PR surfaces every blocker at the code no matter how many there are
 (`rubric-composition.md § Placement`). Place blocking findings first, then fill the remaining slots
-with non-blocking findings ordered by prefix priority, then descending confidence score, then line
-number.
+with non-blocking findings ordered by prefix priority, then material before cosmetic, then descending
+confidence score, then line number.
 
 Non-blocking findings above a cap are **deferred, not dropped** — rendered in the review body under
 `Additional findings` and excluded from `INLINE_COMMENTS_JSON`. A finding that cleared 2.7 is
 never discarded by this step, and a blocking finding is never deferred. Report
 `Deferred (over inline cap): <N>` in the diagnostics block.
+
+Non-blocking findings also carry a **materiality** dimension (`rubric-composition.md § Materiality routing`).
+At placement, `material` findings sort before `cosmetic` ones within a prefix, so cosmetic findings take an inline slot last and overflow into `Additional findings` first.
+The docs-only cosmetic drop happens earlier, at the 2.3 filtering stage (pre-clearing, logged as `Materiality drops`), so no *cleared* finding is dropped here and the `<CL> − <DEF> == <F>` identity is untouched.
 
 ---
 
@@ -1426,7 +1432,7 @@ Both PASS and FAIL continue with:
 | 1  | src/foo.ts:42      | suggestion  | 95%  | `const cache: Record<...> = {}` |
 
 **Quality Gate**: produced <P>, carried forward <CF>, relevance-memory drops <RM>, filter drops <FL>,
-dedupe drops <D>, grounding drops <G>, confidence drops <C> (threshold <T>),
+materiality drops <MD>, dedupe drops <D>, grounding drops <G>, confidence drops <C> (threshold <T>),
 confidence-deferred (advisory) <CADV>, shape drops <S>,
 cleared <CL>, deferred over inline cap <DEF>, posted inline <F>,
 anchorless carried <AC>, anchorless resolved <AR>,
