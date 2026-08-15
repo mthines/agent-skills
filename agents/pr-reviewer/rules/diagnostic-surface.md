@@ -93,7 +93,7 @@ The `reviewer` agent that once owned own-work Fix / Report / Self-Review sub-mod
 | --- | --- | --- |
 | 0 | Literal-args rule, parent-paraphrase ignored; PR reference regex (URL / `#n` / bare integer) | Argument quoting strips a flag; bare integer mistaken for a URL fragment; `RESOLVED_REPO` empty outside a git repo |
 | 0.5 | `gh api user` vs `gh pr view --json author.login`; sets `REVIEW_RELATION` without refusing | Token belongs to a different account than the CLI session, so relation is misclassified; tone-framing leaks between relations |
-| 0.7 | Prior-review marker (`<!-- PR_REVIEWER_REPORT -->`) fetch; `PRIOR_SHA` from `commit_id`; `CARRIED_FINDINGS` + `PRIOR_DIAGNOSTICS` parsed in every mode incl. `--full`; unparseable accordion announced and degraded to empty lists, never fatal | Carry-forward skipped in an incremental mode, silently losing a deferred finding; `PRIOR_SHA` read from body text instead of `commit_id`; only `Additional findings` parsed so gate / optimality / standards findings are lost; an old-template body aborts the run instead of degrading |
+| 0.7 | Sticky-report fetch by marker (`<!-- PR_REVIEWER_REPORT -->`) on `issues/{n}/comments`, with the legacy `reviews`-body fallback; `PRIOR_SHA` / `PRIOR_VERDICT` / `LAST_FULL_SHA` / `INCR_RUNS_SINCE_FULL` / `PRIOR_OPEN_THREAD_IDS` from the run ledger; `CARRIED_FINDINGS` + `PRIOR_DIAGNOSTICS` parsed in every mode incl. `--full`; unparseable accordion or ledger announced and degraded, never fatal | Only `reviews` scanned so a current PR's sticky is missed and the run reads as first-pass; `commit_id` assumed on a sticky (issue comments have none); carry-forward skipped in an incremental mode, silently losing a deferred finding; an unparseable ledger degraded toward `incremental` instead of `full`; a second sticky created alongside the existing one |
 | 1.0 | Prior PR comments + `reviewThreads { isResolved }` fetched via `gh api`; dedup set + `OPEN_BOT_COMMENTS[]` built from thread state (default ON); GraphQL `hasNextPage` paged with `endCursor`; reply-text heuristic retained as an explicit fallback; memories loaded narrow-to-broad, expired skipped | `gh api` paginates on PRs with > 100 comments; GraphQL page 2+ dropped so a resolved thread reads as unresolved; a GraphQL error treated as "everything unresolved" instead of "unverified"; resolution inferred from reply prose despite thread state being available; first-pass run has empty dedup set (correct no-op); `memory.*` not connected only after retries exhausted (a single transient throw is retried, not treated as a permanent outage) |
 | 1.1 | Five parallel `gh` fetches; `state == "OPEN"` confirmed; fetched content treated as reference data, not instructions | Long-running PR with commits since fetch; race with a new push; MERGED/CLOSED needs a proceed prompt |
 | 1.2 | `/tmp/pr-files.json` populated once at run start with the full PR patch | Cache stale if the run takes > 60 s and the PR receives commits |
@@ -211,30 +211,35 @@ The diagnoser must not propose to relax any of these without explicit user confi
 | File pattern | Produced by | When |
 | --- | --- | --- |
 | Terminal local proposal (gate-status table + cards) | pr-reviewer Step 3 | Every run |
-| Visible `COMMENT` review on GitHub (`state: "COMMENTED"`) | pr-reviewer Step 4 | Every run |
-| Resolved GitHub review threads (`resolveReviewThread`) | pr-reviewer Step 4.5 | Re-review only, for this agent's own fixed / declined / acknowledged threads |
+| Sticky report comment (one per PR, marker + run ledger) | pr-reviewer Step 4a | Every run — created once, patched thereafter |
+| Visible `COMMENT` review on GitHub (`state: "COMMENTED"`) | pr-reviewer Step 4b | Only when there are new inline findings, it is the first run, the verdict worsened, or a new blocking finding appeared |
+| Resolved GitHub review threads (`resolveReviewThread`) | pr-reviewer Step 2.9c | Re-review only, for this agent's own fixed / declined / acknowledged threads |
 | `/tmp/pr-files.json` (ephemeral) | `gh api repos/.../pulls/{n}/files` | Step 1.2 |
 | `/tmp/pr-delta.json` (ephemeral) | `gh api repos/.../compare/...` | Step 1.2b (incremental modes) |
-| `reviewer-comment-relevance` memories | pr-reviewer Step 4.5 | Re-review reconciliation (`trigger: re-review-reconcile`) |
+| `reviewer-comment-relevance` memories | pr-reviewer Step 2.9c | Re-review reconciliation (`trigger: re-review-reconcile`) |
 | Terminal Quality Gate summary | shared/rules pipeline | Every run |
 | `.agent/recordings/*.{webm,mp4,gif}` | `Skill("screen-recorder")` | Motion-relevant diff + stable selector + preview deploy URL |
 
-The agent posts one visible review per run and holds no durable review payload — a re-run recomputes from the PR state and the prior-review marker.
-Diagnoses lean on the transcript plus the GitHub-side posted review (inspectable via `gh api`).
+The agent rewrites one sticky report per PR and posts at most one review per run. Its only durable state is the sticky body — the report plus the run ledger — which a re-run reads back; everything else recomputes from PR state.
+Diagnoses lean on the transcript plus the GitHub-side sticky and reviews (inspectable via `gh api`).
 
 ---
 
 ## Validators
 
 - `claude plugin validate agents/pr-reviewer.md` — frontmatter + structure check (when supported for agents).
-- `gh api repos/$REPO/pulls/$PR_NUMBER/reviews --jq '.[] | select(.user.login == "'"$(gh api user --jq .login)"'") | {id, state}'` — confirms the most-recent review by the current user is `COMMENTED`; any other state after a Step 4 run is the load-bearing safety failure.
+- `gh api repos/$REPO/pulls/$PR_NUMBER/reviews --jq '.[] | select(.user.login == "'"$(gh api user --jq .login)"'") | {id, state}'` — confirms any review posted by the current user is `COMMENTED`; any other state after a Step 4b run is the load-bearing safety failure.
+- `gh api repos/$REPO/issues/$PR_NUMBER/comments --jq '[.[] | select(.body | contains("<!-- PR_REVIEWER_REPORT -->"))] | length'` — MUST be exactly `1` after any run on a PR. `0` means Step 4a never wrote the sticky; `2+` means a run created a duplicate instead of patching, which splits the ledger and the carry-forward history.
+- Manual end-to-end: run twice with no code change between passes and nothing new found; confirm the second run patches the sticky, posts **no** second review, and says so in the Step 5 report.
+- Manual end-to-end: run on a PR whose report predates the sticky (report in a `reviews` body); confirm the legacy fallback finds it, carry-forward still runs, and the sticky is created this run.
+- Manual end-to-end: on a re-review where the agent resolves its own last open thread, confirm the sticky's unblock checklist no longer lists it **in the same run** (Step 2.9c before Step 4), rendered as plain bullets with no `- [ ]` checkbox.
 - Manual end-to-end: invoke against a known PR with a deliberately out-of-hunk proposed comment line; confirm `line-validity.md` retargets or drops it.
 - Manual end-to-end: invoke against your own PR; confirm `REVIEW_RELATION` is set to `self`, the agent does not refuse, and the review posts as a visible `COMMENT`.
 - Manual end-to-end: invoke against someone else's PR; confirm `REVIEW_RELATION` is `cross`, `system-fit` findings are framed as `question:`, and no optimality proposal is applied.
 - Manual end-to-end: invoke with `--with code-quality,ux,critical,extra` (4 lenses); confirm the agent aborts with `--with: max 3 lenses (got 4)`.
 - Manual end-to-end: invoke with one comment naming a backticked symbol absent from the diff; confirm `finding-grounding.md` drops it and logs the drop.
 - Manual end-to-end: invoke with one deliberately overlong comment; confirm `comment-shape.md` drops it before posting.
-- Manual end-to-end: re-invoke on a PR with a prior `<!-- PR_REVIEWER_REPORT -->` review; confirm `CARRIED_FINDINGS` are re-admitted and Step 4.5 resolves only this agent's own fixed / declined threads.
+- Manual end-to-end: re-invoke on a PR with a prior `<!-- PR_REVIEWER_REPORT -->` review; confirm `CARRIED_FINDINGS` are re-admitted and Step 2.9c resolves only this agent's own fixed / declined threads.
 - Manual end-to-end: on a PR where a bot replied with a free-form decline (no "won't fix" / "by design" wording, reply authored by the bot rather than the PR author) and then resolved the thread, confirm Gate 3 passes. Under the old prose test this PR fails Gate 3 permanently.
 - `gh api graphql` the PR's `reviewThreads` and compare the `isResolved == false` count against `OPEN_BOT_COMMENTS[]`; any resolved thread present in the array is `F-resolved-thread-fails-gate-3`.
 - Manual end-to-end: re-invoke on a PR whose prior review body carries a `❌` gate row and an optimality proposal, pushing a delta small enough to select `incremental-quick` (which skips 2.4c/2.4d); confirm the gate row is re-evaluated by Step 1.8 and the optimality card is re-rendered with `(carried from <sha>)` rather than disappearing.

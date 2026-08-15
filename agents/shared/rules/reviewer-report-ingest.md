@@ -38,14 +38,48 @@ the body template changes, and the failure is silent on both sides.
 
 ## Identifying a report
 
-A review body is a `pr-reviewer` report when — and only when — it contains the literal marker:
+A body is a `pr-reviewer` report when — and only when — it contains the literal marker:
 
 ```text
 <!-- PR_REVIEWER_REPORT -->
 ```
 
 The marker is emitted as the first line of every body template (`pr-reviewer.md § Step 4 → Review
-body format`). Never identify a report by author login, by review state, or by prose.
+body format`). Never identify a report by author login, by comment kind, or by prose.
+
+### Where the report lives
+
+The marker is the identity; the host is not. A consumer must look in **both** places:
+
+| Host | Endpoint | When |
+| --- | --- | --- |
+| **Sticky comment** (current) | `GET /issues/{n}/comments` | Every PR reviewed by the sticky-report version. One per PR, rewritten in place each run. |
+| **Review body** (legacy) | `GET /pulls/{n}/reviews` | PRs last reviewed before the sticky existed. Read-only history — never patched, never re-posted. |
+
+A PR mid-migration can hold both: legacy review bodies from earlier runs plus a sticky created on
+the first run after the change. **The sticky wins** — it is the only body still being updated, so a
+legacy body is used only when no sticky exists.
+
+Two consequences for parsing:
+
+- A sticky is an issue comment and therefore has **no `commit_id` field**. Provenance comes from the
+  ledger's newest `runs[].sha`, falling back to the `Footer SHA` section. Never assume `commit_id`.
+- A sticky body carries a trailing `<!-- PR_REVIEWER_LEDGER … -->` block (below). It is metadata,
+  not a section — never surface it as a finding.
+
+### The run ledger
+
+A sticky body ends with one HTML comment holding this agent's per-run history, since rewriting the
+body in place destroys the history that counting review objects used to provide:
+
+```text
+<!-- PR_REVIEWER_LEDGER {"v":1,"runs":[{"sha":"…","mode":"full","verdict":"FAIL","at":"…","open_bot_comment_ids":[…]}]} -->
+```
+
+The schema is owned by [`pr-reviewer.md § The run ledger`](../../pr-reviewer.md); this grammar only
+declares that it exists, that it is `pr-reviewer`-private state, and that an unrecognised `v`, an
+absent block, or a parse failure is treated as "no history" rather than as an error. A consumer other
+than `pr-reviewer` has no reason to read it and must not write it.
 
 ---
 
@@ -83,6 +117,11 @@ A high-confidence optimality proposal (`optimality-review.md § Inline pointer`)
 
 The `**To unblock — resolve or reply to these <N> bot threads:**` list (`pr-reviewer.md §
 UNRESOLVED_THREADS_SECTION`) is a presentational rendering of Gate 3 state, not an extractable section: it has no row in the table above, so the "match by literal heading" rule already skips it. Never mine its linked `path:line` bullets for findings — that would double-count the gate and re-ingest *other bots'* comments as `pr-reviewer`'s own.
+
+The list is **derived, not durable**: it is regenerated from live `isResolved` state on every run and
+rendered as plain bullets, with resolved entries removed rather than ticked. A consumer must not
+treat its shrinking as a finding being dropped, must not parse it as a task list, and must not write
+to it — a `- [x]` in this list would contradict the `isResolved` authority that produced it.
 
 ### Standards findings are not a body section
 
