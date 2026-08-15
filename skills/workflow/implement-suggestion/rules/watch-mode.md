@@ -76,14 +76,23 @@ Poll instead of sleeping the full interval — proceed as soon as a bot posts, s
 PR_URL="<pr-url>"; SINCE="<baseline-timestamp>"; INTERVAL=300; POLL=30   # INTERVAL <= 540
 read OWNER REPO NUMBER < <(echo "$PR_URL" \
   | sed -E 's|https://github.com/([^/]+)/([^/]+)/pull/([0-9]+).*|\1 \2 \3|')
-START=$(date +%s)
+START=$(date +%s); ERR=$(mktemp); trap 'rm -f "$ERR"' EXIT INT TERM
+
+# A failing `gh api` prints nothing to stdout, so an unguarded $(...) yields "",
+# which arithmetic reads as 0 — indistinguishable from "no new comments". That
+# would report the reviewers quiet whenever gh is broken. Fail loudly instead.
+count() {                       # $1 = api path, $2 = timestamp field
+  local n
+  n=$(gh api "$1" --jq "[.[] | select(.$2 > \"$SINCE\")] | length" 2>"$ERR")
+  [ -s "$ERR" ] && return 1     # gh spoke on stderr = gh failed
+  case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  printf %s "$n"
+}
+
 while :; do
-  NEW=$(gh api "/repos/$OWNER/$REPO/pulls/$NUMBER/comments" \
-        --jq "[.[] | select(.created_at > \"$SINCE\")] | length")
-  NEW_REVIEWS=$(gh api "/repos/$OWNER/$REPO/pulls/$NUMBER/reviews" \
-        --jq "[.[] | select(.submitted_at > \"$SINCE\")] | length")
-  NEW_ISSUE=$(gh api "/repos/$OWNER/$REPO/issues/$NUMBER/comments" \
-        --jq "[.[] | select(.created_at > \"$SINCE\")] | length")
+  NEW=$(count "/repos/$OWNER/$REPO/pulls/$NUMBER/comments" created_at)   || { echo "POLL_ERROR"; cat "$ERR" >&2; break; }
+  NEW_REVIEWS=$(count "/repos/$OWNER/$REPO/pulls/$NUMBER/reviews" submitted_at) || { echo "POLL_ERROR"; cat "$ERR" >&2; break; }
+  NEW_ISSUE=$(count "/repos/$OWNER/$REPO/issues/$NUMBER/comments" created_at)   || { echo "POLL_ERROR"; cat "$ERR" >&2; break; }
   if [ $((NEW + NEW_REVIEWS + NEW_ISSUE)) -gt 0 ]; then echo "NEW_FEEDBACK"; break; fi
   [ $(( $(date +%s) - START )) -ge $INTERVAL ] && { echo "NO_FEEDBACK"; break; }
   sleep $POLL
@@ -91,6 +100,7 @@ done
 ```
 
 - `NEW_FEEDBACK` → run the pass.
+- `POLL_ERROR` → **`gh` failed; this is not "reviewers quiet".** Report the stderr and escalate. Never treat a broken probe as an absence of feedback — that silently converts a tooling failure into "the bots had nothing to say".
 - `NO_FEEDBACK` → on iteration 1, still run one pass (there may be feedback that predates the loop, e.g. a bot that reviewed before the watch started); on later iterations, stop with reason "reviewers quiet".
 
 Note the `comments` / `reviews` / `issues` counts above are a *liveness probe* (did anyone post?). The actual actionable/nit classification and filtering still happens in Phases 2–4 of the pass — the probe only decides whether to run a pass, not what to apply.

@@ -1009,4 +1009,56 @@ function checksInSync(plan, checks) {
     sites === EXPECTED_SITES, `found ${sites}`);
 }
 
+// ── Check G23: every polling block classifies tool failure as failure ──
+// G22 guards BOUNDING. Nothing guarded CLASSIFICATION, and L1 was green in every
+// round of PR #111 in which a classification defect shipped — three of them, each
+// the same shape: a remote call whose empty output was read as a benign "nothing
+// yet" regardless of whether the tool had actually failed. A broken `gh` prints
+// to stderr and nothing to stdout, so `$(gh …)` yields "" exactly as a legitimate
+// empty result does; a loop that cannot tell them apart burns its budget and then
+// escalates the wrong cause, or reports "quiet" when it is simply blind.
+//
+// The rule, stated in registration-poll.md: an unrecognised tool error is never
+// benign. This asserts it mechanically — every fenced poll block must contain a
+// non-benign default: a `case` whose `*)` arm exits non-zero, or an explicit
+// stderr/failure arm.
+{
+  const files = [
+    ...walk(join(REPO_ROOT, "skills")),
+    ...walk(join(REPO_ROOT, "agents")),
+  ].filter((f) => !f.includes("/references/"));
+
+  let guarded = 0;
+  for (const f of files) {
+    const lines = readFileSync(f, "utf8").split("\n");
+    const blocks = [];
+    let open = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (/^\s*```/.test(lines[i])) {
+        if (open === -1) open = i;
+        else { blocks.push([open + 1, i]); open = -1; }
+      }
+    }
+    for (const [b0, b1] of blocks) {
+      const block = lines.slice(b0, b1).join("\n");
+      const isPoll = /\b(while|until)\b/.test(block) && /\bsleep\b/.test(block) &&
+        /\b(gh|curl|wget|aws|kubectl|az|gcloud)\b/.test(block);
+      if (!isPoll) continue;
+      guarded++;
+      // Accept either shape: a case default that exits non-zero, or an explicit
+      // "the tool wrote to stderr / the call failed" arm.
+      const caseDefault = /\*\)[^\n]*exit\s+[1-9]/.test(block);
+      const stderrArm = /\[\s*-[sn]\s+"?\$\{?(err|ERR)/i.test(block) ||
+        /\|\|\s*\{[^}]*(exit\s+[1-9]|POLL_ERROR)/.test(block);
+      s.check(
+        `G23 ${rel(f)}:${b0 + 1} poll block treats a tool failure as failure, not as "nothing yet"`,
+        caseDefault || stderrArm,
+        "empty output alone cannot distinguish a broken tool from a legitimately " +
+        "empty result — add a non-benign default (case *) exit N, or a stderr arm)",
+      );
+    }
+  }
+  s.check("G23 found the polling blocks to guard", guarded >= 3, `found ${guarded}`);
+}
+
 process.exit(s.report() ? 0 : 1);
