@@ -1820,6 +1820,8 @@ Then run this pre-flight on the rendered body **before** the write. It mirrors `
 mechanical assertion at the call site is not.
 
 ```python
+import re
+
 def report_body_is_safe(body: str) -> tuple[bool, str]:
     if "<!-- PR_REVIEWER_REPORT -->" not in body:
         return (False, "REPORT_BODY is missing the report marker")
@@ -1828,7 +1830,10 @@ def report_body_is_safe(body: str) -> tuple[bool, str]:
     if "<details open>" in body:
         return (False, "the accordion is pre-expanded (F-report-accordion-expanded)")
     # The accordion is the collapse. Its absence is the single most common regression.
-    if "<summary>Review details" not in body or "<details>" not in body:
+    # Test the two tokens as ONE element: an `Additional findings` or `Low-confidence findings`
+    # `<details>` above a bare summary satisfies both tokens independently. Same adjacency
+    # the static guard G24b asserts (`/<details>\s*\n<summary>Review details/`).
+    if not re.search(r"<details>\s*\n<summary>Review details", body):
         return (False, "REPORT_BODY has no `Review details` accordion (F-report-accordion-flattened)")
     # Everything the accordion owns must sit inside it, not above it.
     # Split on the accordion's own summary, not on the first `<details>` — that one is
