@@ -51,7 +51,7 @@ Step 0.5).
 - Memory-read budget, **inside** that total and scaled to the same bands: **4** `memory_list` calls (Step 1.0) + **1** `memory_search` (Step 1.2c) + a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` calls — so **10** of 30, **15** of 60, or **20** of 100.
   `MEMORY_READ_BUDGET` is a **single pool spanning both read sites**: Step 1.2d (lesson bodies) and Step 2.2 (relevance bodies, per `comment-relevance-memory.md § Read`). Step 1.2d spends at most **half** of it, rounded down, so a lesson-heavy shortlist can never starve the relevance verdicts that decide what gets posted; Step 2.2 may spend the whole remainder, including anything 1.2d left unused. Decrement the pool as calls are made and stop at zero at either site.
   The reads trade call count for context: the four lists are summary-only (~15 KB for a typical fan-out instead of ~110 KB), and only shortlisted entries are ever expanded, so a review that matches nothing spends 5 calls and ~15 KB rather than 5 calls and ~110 KB.
-- If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` In the review body this goes in the `PARTIAL_REVIEW_BANNER` slot of the Step 4 templates (see *Review body format*), never as free prose. Never present a budget-truncated run as a complete review.
+- If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` In the review body this goes in the `PARTIAL_REVIEW_BANNER` slot of the Step 4 templates (see *REPORT_BODY format (the sticky comment)*), never as free prose. Never present a budget-truncated run as a complete review.
 - Never post a GitHub review that was not produced from fully consolidated results.
 
 ---
@@ -567,7 +567,7 @@ Neither has a carried-render slot in Step 4, and neither may be given one.
 
 Parsing rules:
 
-- Match sections by their literal headings as emitted in *Step 4 → Review body format*. A heading
+- Match sections by their literal headings as emitted in *Step 4 → REPORT_BODY format (the sticky comment)*. A heading
   that is absent yields an empty list — never guess, and never infer a finding from prose.
 - A section the current run will not recompute (for example `Optimality (2.4c)` under
   `incremental-quick`, which skips 2.4c) MUST still be parsed here. Step 4 re-renders it verbatim
@@ -768,7 +768,7 @@ Loaded `reviewer-lessons` are reported separately by the `<L> reviewer-lessons m
 announce line, which is emitted at Step 1.2e — matching has not happened yet at this step, so the
 count does not exist here.
 Both counters feed the Step 4 `Review details`
-**Memories** line (`MEMORIES_USED_COUNT` is computed at Step 2.2) — see *Review body format*.
+**Memories** line (`MEMORIES_USED_COUNT` is computed at Step 2.2) — see *REPORT_BODY format (the sticky comment)*.
 Neither reaches the collapsed `<summary>`, which carries the open-threads count and nothing else.
 Announce the concrete resolved scope so the read is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <N> entries indexed.` The matched-lesson count is announced at Step 1.2e, once matching has run.
 The `<D> suppressions, <P> promotions` figures are NOT announced here: they come from `relevance` and `seen_count` in record BODIES, which are not fetched until Step 2.2. Step 2.2 announces them once they exist.
@@ -1794,7 +1794,58 @@ Bind the three values Step 4 introduces before rendering:
 | `OPEN_BOT_COMMENT_IDS_JSON` | A JSON array of the comment ids in `OPEN_BOT_COMMENTS[]` **as it stands after Step 2.9c** — `[]` when the gate is clean. This is what the next run diffs to compute `RESOLVED_SINCE_PRIOR`. |
 | `BLOCKING_FINGERPRINTS_JSON` | A JSON array of the `category:claim-gist` fingerprints of this run's `(blocking)` findings (Step 2.9), `[]` when none. This is what the next run's Step 4b condition 4 diffs against. |
 
-Render `REPORT_BODY` per *Review body format* below, append the ledger line, then:
+#### Render `REPORT_BODY` verbatim — do not compose it from memory
+
+Open *REPORT_BODY format (the sticky comment)* below, find the template matching the Step 3 verdict
+(PASS / WARN / FAIL), and **copy it literally**, substituting only the named placeholders. This
+instruction lives here, at the point of use, because the templates sit ~280 lines further down a
+2700-line file and every observed regression has the same shape: the run recalls roughly what a
+report looks like and writes that instead.
+
+Concretely, all of these are guard failures, not stylistic latitude:
+
+| Drift | What it produces |
+| --- | --- |
+| Dropping the `<details>` / `<summary>Review details…</summary>` wrapper | `F-report-accordion-flattened` — the whole report renders expanded |
+| Rewording a `<summary>`, heading, or headline | breaks `reviewer-report-ingest.md`, which matches these by literal text |
+| Opening the headline with the pointer's ``Reviewed `<sha>` —`` | `F-report-in-review-body` — that opening belongs to Step 4b |
+| Adding a section the template does not have (`**Verdict**`, `**CI**`, `**Prior findings**`) | prose outside the template; the advisory verdict is terminal-only |
+| Emitting `<sup>FOOTER_LINE</sup>` at the top level | it belongs inside the accordion, first line after the `<summary>` |
+
+If the run's findings do not fit a template slot, that is not licence to invent one — drop the
+content or route it to the section that owns it.
+
+Then run this pre-flight on the rendered body **before** the write. It mirrors `payload_is_safe`
+(Step 4b) and exists for the same reason: prose instructions 280 lines away are advisory, a
+mechanical assertion at the call site is not.
+
+```python
+def report_body_is_safe(body: str) -> tuple[bool, str]:
+    if "<!-- PR_REVIEWER_REPORT -->" not in body:
+        return (False, "REPORT_BODY is missing the report marker")
+    # The accordion is the collapse. Its absence is the single most common regression.
+    if "<summary>Review details" not in body or "<details>" not in body:
+        return (False, "REPORT_BODY has no `Review details` accordion (F-report-accordion-flattened)")
+    if "<details open>" in body:
+        return (False, "the accordion is pre-expanded (F-report-accordion-expanded)")
+    # Everything the accordion owns must sit inside it, not above it.
+    head = body.split("<details>", 1)[0]
+    for owned in ("| Gate | Status | Details |", "**Run mode**", "**Memories**",
+                  "**Quality**", "**Skipped files**", "<sup>Reviewed for commit",
+                  "<sup>Incremental review for commit"):
+        if owned in head:
+            return (False, f"{owned!r} rendered above the accordion (F-report-accordion-flattened)")
+    # The Step 3 advisory verdict is terminal-only and never written to a posted body.
+    if "**Verdict**" in body:
+        return (False, "the advisory verdict is terminal-only, never in the posted report")
+    return (True, "")
+```
+
+On a `False`, do **not** post: re-render from the template and re-check. A body that cannot pass
+after one re-render is reported verbatim to the user with the failing reason, and the run posts
+nothing rather than publishing a malformed report.
+
+Append the ledger line to the passing body, then:
 
 ```bash
 # Append this run to the ledger, strip the two per-run fields from older entries, cap at 50.
@@ -2063,13 +2114,17 @@ The five non-negotiables:
 
 Confirm the 4b response contains `state: "COMMENTED"` when a review was posted.
 
-### Review body format
+### REPORT_BODY format (the sticky comment)
 
-This is `REPORT_BODY` — the body of the **sticky comment** (Step 4a), not the review's pointer body
-(Step 4b). Every template below is rendered fresh each run and replaces the sticky's previous
-content wholesale; the ledger line is appended after it. "Review body" is retained as the name of
-this format for continuity with `reviewer-report-ingest.md`, which parses the same grammar wherever
-the report is hosted.
+This is `REPORT_BODY` — the body of the **sticky comment** (Step 4a). It is **not** the review's
+pointer body (Step 4b), and no template on this page may be posted as a review body. Every template
+below is rendered fresh each run and replaces the sticky's previous content wholesale; the ledger
+line is appended after it.
+
+**This section was called "Review body format", and that name was the bug.** An agent composing a
+review body looked up "review body format", found these templates, and posted the report as the
+review body — `F-report-in-review-body`, handed to it by the heading. The old name is not coming
+back; `reviewer-report-ingest.md` cites this section by its current title.
 
 The `<sup>` footer line varies by run mode. It renders **inside** the `Review details`
 accordion — the first line of the accordion body, immediately after the `<summary>` and before the

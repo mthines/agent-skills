@@ -46,8 +46,9 @@ A body is a `pr-reviewer` report when — and only when — it contains the lite
 <!-- PR_REVIEWER_REPORT -->
 ```
 
-The marker is emitted as the first line of every body template (`pr-reviewer.md § Step 4 → Review
-body format`). Never identify a report by author login, by comment kind, or by prose.
+The marker is emitted as the first line of every body template
+(`pr-reviewer.md § Step 4 → REPORT_BODY format (the sticky comment)`).
+Never identify a report by author login, by comment kind, or by prose.
 
 ### Where the report lives
 

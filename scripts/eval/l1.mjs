@@ -844,7 +844,7 @@ function checksInSync(plan, checks) {
     {
       // sliceBetween guards both anchors: a moved/deleted anchor throws a clear
       // error instead of a raw indexOf(-1) silently widening the slice.
-      const step4      = sliceBetween(prReviewer, "### Review body format", "### INLINE_COMMENTS_JSON format");
+      const step4      = sliceBetween(prReviewer, "### REPORT_BODY format (the sticky comment)", "### INLINE_COMMENTS_JSON format");
       // Split on the opening PR_REVIEWER_REPORT marker to isolate each template block,
       // then keep only real template blocks — those carrying the 'Reviewed your changes'
       // headline. This drops the trailing prose (the Rules-for-table-cells section mentions
@@ -1161,6 +1161,54 @@ function checksInSync(plan, checks) {
         !/<details open>/.test(b));
     }
   }
+  // G24p: the report regressed in the wild even with a correct spec, because the templates sit
+  // ~280 lines below the posting step and nothing at the call site demanded a literal copy.
+  // These three guards lock the fixes: the heading no longer misdirects, the verbatim contract
+  // lives AT Step 4a, and a mechanical pre-flight runs on the rendered body before the write.
+  {
+    // (a) The heading that used to hand the agent F-report-in-review-body must stay renamed,
+    // and no file may reintroduce the old name as a live cross-reference.
+    s.check("G24p the report-template section is not named after the review body",
+      prReviewer.includes("### REPORT_BODY format (the sticky comment)") &&
+      !/^### Review body format/m.test(prReviewer));
+    for (const f of ["agents/pr-reviewer.md", "agents/shared/rules/reviewer-report-ingest.md"]) {
+      const paras = read(f).split(/\n\s*\n/);
+      const stale = paras.filter((p) => /§ Step 4 → Review body format|per \*Review body format\*|see \*Review body format\*/.test(p));
+      s.check(`G24p ${f} cites the template section by its current title`, stale.length === 0,
+        stale[0]?.slice(0, 90));
+    }
+
+    // (b) The verbatim contract is AT the posting step, not only in the format section. Assert
+    // by POSITION: it must sit between Step 4a's heading and the templates it governs.
+    const p4a = prReviewer.indexOf("### 4a.");
+    const pVerb = prReviewer.indexOf("#### Render `REPORT_BODY` verbatim");
+    const pTmpl = prReviewer.indexOf("### REPORT_BODY format (the sticky comment)");
+    s.check("G24p the verbatim-render contract sits inside Step 4a, before the templates",
+      p4a !== -1 && pVerb > p4a && pVerb < pTmpl, `4a@${p4a} verbatim@${pVerb} templates@${pTmpl}`);
+    s.check("G24p the verbatim contract names the observed drift shapes",
+      /F-report-accordion-flattened/.test(prReviewer.slice(pVerb, pTmpl)) &&
+      /F-report-in-review-body/.test(prReviewer.slice(pVerb, pTmpl)));
+
+    // (c) The runtime pre-flight exists, is defined before the write, and actually asserts each
+    // thing it claims to. A stub that returns True would satisfy a mere name check.
+    const pf = sliceBetween(prReviewer, "def report_body_is_safe", "```");
+    s.check("G24p report_body_is_safe is defined at Step 4a", pf.length > 0);
+    for (const [claim, re] of [
+      ["the report marker", /PR_REVIEWER_REPORT/],
+      ["the Review details accordion", /<summary>Review details/],
+      ["the open attribute", /<details open>/],
+      ["accordion-owned lines above the accordion", /Gate \| Status \| Details/],
+      ["the terminal-only advisory verdict", /\*\*Verdict\*\*/],
+    ]) {
+      s.check(`G24p report_body_is_safe checks ${claim}`, re.test(pf), pf.slice(0, 80));
+    }
+    s.check("G24p a failing report body is re-rendered, never posted",
+      /do \*\*not\*\* post: re-render from the template/.test(prReviewer));
+    s.check("G24p diagnostic-surface registers the compose-from-memory failure mode",
+      prReviewerDiag.includes("F-report-body-composed-from-memory") &&
+      prReviewerDiag.includes("report_body_is_safe"));
+  }
+
   // G24n: retiring a render slot leaves prose elsewhere describing it. That drift is what the
   // last three review rounds kept finding by hand — a rule pointing at a slot that no longer
   // exists reads as authoritative and is unexecutable. Scan the pr-reviewer surface for phrases
@@ -1254,7 +1302,7 @@ function checksInSync(plan, checks) {
     (prReviewer.match(/<!-- PR_REVIEWER_POINTER -->/g) || []).length >= 2 &&
     step07Fetches.includes("PR_REVIEWER_POINTER"));
   const pointerForms = [...sliceBetween(prReviewer, "`POINTER_BODY` is one marker line",
-    "### Review body format").matchAll(/```markdown\n([\s\S]*?)```/g)].map((m) => m[1]);
+    "### REPORT_BODY format (the sticky comment)").matchAll(/```markdown\n([\s\S]*?)```/g)].map((m) => m[1]);
   s.check("G24h every pointer body form carries the pointer marker",
     pointerForms.length >= 4 && pointerForms.every((f) => f.includes("<!-- PR_REVIEWER_POINTER -->")),
     `${pointerForms.filter((f) => !f.includes("<!-- PR_REVIEWER_POINTER -->")).length} of ${pointerForms.length} unmarked`);
