@@ -1852,7 +1852,9 @@ def report_body_is_safe(body: str) -> tuple[bool, str]:
 
 On a `False`, do **not** post: re-render from the template and re-check. A body that cannot pass
 after one re-render is reported verbatim to the user with the failing reason, and the run posts
-nothing rather than publishing a malformed report.
+**no report** rather than publishing a malformed one — the sticky is left as it was. This drops
+only the report: the Step 4b review object is separate, so any inline findings still post, exactly
+as on the unwritable-sticky path (§ *When the sticky cannot be written*).
 
 Append the ledger line to the passing body, then:
 
