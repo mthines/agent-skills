@@ -1841,7 +1841,7 @@ def report_body_is_safe(body: str) -> tuple[bool, str]:
                   "**Quality**", "**Open bot threads (", "**Integrations**",
                   "**Optimality (2.4c)**", "**Standards (2.4d)**", "**Skipped files**",
                   "<sup>Reviewed for commit", "<sup>Incremental review for commit",
-                  "<sup>Reviewed by the"):
+                  "<sup>No code changes since", "<sup>Reviewed by the"):
         if owned in head:
             return (False, f"{owned!r} rendered above the accordion (F-report-accordion-flattened)")
     # The Step 3 advisory verdict is terminal-only and never written to a posted body.
@@ -2144,6 +2144,7 @@ accordion — the first line of the accordion body, immediately after the `<summ
 gate table — not at the top level of the review body:
 - `full` mode: `<sup>Reviewed for commit \`HEAD_SHA\`.</sup>`
 - `incremental` or `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
+- Zero-delta short-circuit: `<sup>No code changes since \`PRIOR_SHA_SHORT\` — gate checks only for commit \`HEAD_SHA\`.</sup>`
 
 The `Review details` `<details>` block has the same structure on PASS, WARN, and FAIL, but each verdict
 template embeds its **own** gate-table variant — PASS renders every gate ✅, WARN renders ✅/⚠️, and
