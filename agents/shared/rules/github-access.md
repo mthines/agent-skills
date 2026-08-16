@@ -26,8 +26,19 @@ The skills were written assuming the first. When it is absent, the documented re
 Probe with a **repo-scoped API call against the repository you are about to work on** — never with `gh auth status`:
 
 ```bash
-command -v gh >/dev/null 2>&1 && gh api "repos/$RESOLVED_REPO" --jq .full_name >/dev/null 2>&1 && echo GH_OK
+# TARGET_REPO is owner/name for the repo this run touches. Callers name it differently
+# (`RESOLVED_REPO` in pr-reviewer / review-loop, nothing at all in others), so derive it here
+# rather than assuming a caller variable is bound — an unset one probes `repos/` and 404s,
+# which reports "no gh" on a session where gh works.
+TARGET_REPO="${TARGET_REPO:-${RESOLVED_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}}"
+
+if command -v gh >/dev/null 2>&1 && [ -n "$TARGET_REPO" ] \
+  && gh api "repos/$TARGET_REPO" --jq .full_name >/dev/null 2>&1; then
+  echo GH_OK
+fi
 ```
+
+**If `TARGET_REPO` cannot be determined yet** — no checkout, and the repository arrives later in the run — the probe is *undecided*, not failed. Do not record "no `gh`": defer the probe to the first step that knows the repository, and run it then. A 404 on `repos/` is an unbound variable, never an access verdict.
 
 | Result | Your path | What to do |
 | ------ | --------- | ---------- |

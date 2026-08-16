@@ -312,10 +312,38 @@ same grammar — and set `STICKY_COMMENT_ID` empty so Step 4 **creates** the sti
 `Legacy review-body report found — migrating to a sticky comment this run.` The old review bodies are
 left untouched; they are history, and rewriting another object's past is not this agent's business.
 
-Bind `PRIOR_REVIEW` to whichever was found (`STICKY` first, then `LEGACY_REVIEW`); it is the object
-every rule below means by "the prior report".
+**Ledger-only fallback (degraded-pointer PRs).** A run whose access path could not write the sticky
+posts a `DEGRADED_POINTER_BODY` instead (Step 4a → *When the sticky cannot be written*): no report
+body, but a real ledger. It is marked `<!-- PR_REVIEWER_POINTER -->` precisely so this step can find
+it — the two fetches above key on the *report* marker, which a pointer does not carry. Look for it
+only when both came up empty:
 
-**If `PRIOR_REVIEW` is empty** (no prior report found in either shape):
+```bash
+if [ -z "$STICKY" ] && [ -z "$LEGACY_REVIEW" ] && [ "${STICKY_READ_FAILED:-false}" != "true" ]; then
+  POINTER_LEDGER_BODY=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews --paginate \
+    --jq '[.[] | select(((.body // "") | contains("<!-- PR_REVIEWER_POINTER -->"))
+                    and ((.body // "") | contains("<!-- PR_REVIEWER_LEDGER "))) ]
+          | last.body // empty')
+fi
+```
+
+When it is non-empty, this is **not** a first run and must not be announced as one. Parse `LEDGER`
+from it exactly as below and bind `PRIOR_SHA`, `PRIOR_REVIEW_SHA`, `PRIOR_VERDICT`,
+`PRIOR_OPEN_THREAD_IDS` and `PRIOR_BLOCKING_FINGERPRINTS` from it, then:
+- Leave `PRIOR_REVIEW` empty — there is no report body to parse — so `CARRIED_FINDINGS` and
+  `PRIOR_DIAGNOSTICS` stay empty. Announce
+  `Ledger recovered from a degraded pointer at ${PRIOR_SHA:0:7} — no prior report body, so nothing is carried forward.`
+  A run that silently dropped carry-forward would look identical to one that had nothing to carry.
+- Set `STICKY_COMMENT_ID` empty: if the access path can create a sticky this run, Step 4a creates
+  one and the PR returns to the normal model.
+- A `truncated` ledger has no `runs[].mode` history, so `LAST_FULL_SHA` is empty and Step 1.2b
+  forces `full`. That is the intended direction, not a defect to work around.
+
+Bind `PRIOR_REVIEW` to whichever *report body* was found (`STICKY` first, then `LEGACY_REVIEW`); it
+is the object every rule below means by "the prior report". A recovered pointer ledger is not a
+prior report and never binds it.
+
+**If `PRIOR_REVIEW` is empty and no pointer ledger was recovered** (no prior run found in any shape):
 - Set `RUN_MODE = "full"`.
 - Set `PRIOR_SHA = ""`.
 - Set `PRIOR_REVIEW_SHA = ""`.
@@ -336,7 +364,10 @@ every rule below means by "the prior report".
   PRIOR_BODY=$(jq -r '.body' <<< "$PRIOR_REVIEW")
 
   # The ledger block, or "" when absent / unparseable (legacy report, hand-edited sticky).
-  LEDGER=$(sed -n 's/.*<!-- PR_REVIEWER_LEDGER //p' <<< "$PRIOR_BODY" | sed 's/ -->.*//' \
+  # LEDGER_SOURCE is the report body here, and POINTER_LEDGER_BODY on the ledger-only path
+  # above — the extraction is identical, so it is written once.
+  LEDGER_SOURCE="${PRIOR_BODY:-$POINTER_LEDGER_BODY}"
+  LEDGER=$(sed -n 's/.*<!-- PR_REVIEWER_LEDGER //p' <<< "$LEDGER_SOURCE" | sed 's/ -->.*//' \
     | jq -c '.' 2>/dev/null || echo "")
   ```
 - Extract `PRIOR_REVIEW_SHA` in **every** mode. A sticky is an issue comment and has **no**
@@ -1002,9 +1033,10 @@ own lead line** `- [\`<path>:<line>\`](<url>) — <ask>` using the three fields 
 through to each thread and reads in one line what it wants — instead of a bare `path:line` they
 have to hunt for.
 Whenever any thread is open — on ⚠️ as well as ❌ — this same list is surfaced **outside** the
-accordion via `UNRESOLVED_THREADS_SECTION` (below) so it is visible in the collapsed review; the
-accordion's Gate 3 Details cell then stays terse — `<N> unresolved bot thread(s) — see the thread list
-above`.
+accordion via `UNRESOLVED_THREADS_SECTION` (below), in its own collapsed block whose `<summary>`
+carries the open and blocking counts: the counts read without expanding anything, the per-thread
+bullets are one click away. The accordion's Gate 3 Details cell then stays terse —
+`<N> unresolved bot thread(s) — see the thread list above`.
 
 Result: PASS (✅), WARN (⚠️), or FAIL (❌), graded from the `blocking` and `answered` fields
 captured in Step 1.0 (*Gate states*):
@@ -1717,20 +1749,56 @@ note that **no branch permits a second full report**:
 | No GitHub access path | Nothing is posted. `github-access.md § No path` applies: say so precisely, never claim the report was updated. |
 
 **The delta logic survives every branch**, because it depends on the ledger, not on the report
-prose. Whenever the sticky cannot be rewritten, append the same
-`<!-- PR_REVIEWER_LEDGER … -->` block computed above to whichever object this run *does* post — the
-review pointer body (Step 4b) — and nothing else from `REPORT_BODY`. Step 0.7 already reads a
-ledger from a review body (the legacy fallback), so the next run recovers `PRIOR_SHA`,
-`PRIOR_VERDICT`, `PRIOR_OPEN_THREAD_IDS` and `PRIOR_BLOCKING_FINGERPRINTS` exactly as it would from
-a sticky: incremental mode, `resolved since`, escalation detection and blocking-fingerprint diffing
-all keep working. A one-line pointer plus a hidden ledger is a few hundred bytes; a full report is
-the noise this whole model exists to remove.
+prose. Whenever the sticky cannot be rewritten, carry a **`DEGRADED_LEDGER`** on the review pointer
+body (Step 4b) — and nothing else from `REPORT_BODY`.
+
+`DEGRADED_LEDGER` is the same block computed above, reduced to what the next run actually reads
+off a pointer:
+
+```bash
+# Newest run only, flagged truncated. The full 50-run history is a sticky affordance:
+# it exists to be rewritten in place, and a pointer is append-only.
+DEGRADED_LEDGER=$(jq -c '{v: 1, truncated: true, runs: (.runs | .[-1:])}' <<< "$NEW_LEDGER")
+
+# An open-thread set can be large (one id per open thread). Drop it rather than the block.
+if [ "$(printf %s "$DEGRADED_LEDGER" | wc -c)" -gt 1200 ]; then
+  DEGRADED_LEDGER=$(jq -c '.runs[0].open_bot_comment_ids = [] | .ids_dropped = true' <<< "$DEGRADED_LEDGER")
+fi
+```
+
+What each consumer gets from it, and what it costs:
+
+| Consumer | From a sticky ledger | From `DEGRADED_LEDGER` |
+| --- | --- | --- |
+| `PRIOR_SHA` / `PRIOR_REVIEW_SHA` (incremental mode) | newest `runs[].sha` | same — unaffected |
+| `PRIOR_VERDICT` (escalation) | newest `runs[].verdict` | same — unaffected |
+| `PRIOR_BLOCKING_FINGERPRINTS` | newest entry | same — unaffected |
+| `PRIOR_OPEN_THREAD_IDS` (`resolved since`) | newest entry | same, unless `ids_dropped` — then `[]`, and `RESOLVED_SINCE_PRIOR` renders 0 (the counter is suppressed at 0, so nothing false is printed) |
+| `LAST_FULL_SHA` / `INCR_RUNS_SINCE_FULL` (deep-lens refresh) | full history | absent → empty `LAST_FULL_SHA` → Step 1.2b forces `full`, which is the documented safe direction |
+
+**A pointer that carries a ledger is marked, and Step 0.7 looks for it.** `DEGRADED_POINTER_BODY`
+deliberately does *not* carry `<!-- PR_REVIEWER_REPORT -->` (it is not a report), so the two
+marker-keyed fetches in Step 0.7 would never see it. It carries `<!-- PR_REVIEWER_POINTER -->`
+instead, and Step 0.7's third fetch reads the ledger from it — see *Step 0.7 → Ledger-only
+fallback*. That fallback recovers the ledger and nothing else: a pointer has no report body, so
+`CARRIED_FINDINGS` and `PRIOR_DIAGNOSTICS` stay empty and the run says so. Deferred and anchorless
+findings are lost on that path — an honest cost of an access path that cannot update a comment,
+and the reason the degraded path is a fallback rather than a mode.
+
+**A run that posts no review updates no ledger.** Step 4b is conditional, so a degraded run with
+nothing new to say writes nothing at all, and the next run reads the ledger from the last pointer
+that *was* posted. That is stale, never wrong: an older `PRIOR_SHA` widens the delta (more review,
+not less) and an older `PRIOR_VERDICT` can only over-notify. Never post a review solely to refresh
+the ledger — that would reintroduce the notification noise this model removes.
 
 ### 4b. Post the review (conditionally)
 
 Build the payload and run the pre-flight assertions below **before** the API call:
 
 ```python
+import re
+
+
 def payload_is_safe(payload: dict) -> tuple[bool, str]:
     if payload.get("event") != "COMMENT":
         return (False, "event must be 'COMMENT'")
@@ -1738,10 +1806,17 @@ def payload_is_safe(payload: dict) -> tuple[bool, str]:
         return (False, "body must be a non-empty string (pointer line)")
     if "<!-- PR_REVIEWER_REPORT -->" in payload["body"]:
         return (False, "review body carries the report marker — the report belongs in the sticky")
-    # 600 for an ordinary pointer; 900 for the degraded pointer, which also carries the ledger.
-    limit = 900 if "<!-- PR_REVIEWER_LEDGER" in payload["body"] else 600
-    if len(payload["body"]) > limit:
-        return (False, f"review body is a pointer, not a report: {len(payload['body'])} chars")
+    # The budget governs the PROSE a reader sees. Measure with the machine-readable ledger
+    # block removed: it is invisible in the rendered comment, and sizing the cap around it
+    # would reject the long-lived PRs the degraded pointer exists to serve.
+    prose = re.sub(r"<!-- PR_REVIEWER_LEDGER .*? -->", "", payload["body"], flags=re.S).strip()
+    if len(prose) > 600:
+        return (False, f"review body is a pointer, not a report: {len(prose)} chars of prose")
+    # The ledger itself is still bounded — a pointer carries DEGRADED_LEDGER (newest run only),
+    # never the 50-run history, which only a rewritable sticky can hold.
+    ledger = re.search(r"<!-- PR_REVIEWER_LEDGER (.*?) -->", payload["body"], flags=re.S)
+    if ledger and len(ledger.group(1)) > 1500:
+        return (False, f"pointer ledger is not truncated: {len(ledger.group(1))} chars")
     for c in payload.get("comments", []):
         if c.get("side") not in ("RIGHT", "LEFT"):
             return (False, f"comment missing side field: {c.get('path')}:{c.get('line')}")
@@ -1822,18 +1897,26 @@ path. It is the ordinary pointer plus the headline it could not deliver, plus th
 never the report:
 
 ```markdown
+<!-- PR_REVIEWER_POINTER -->
 Reviewed `<HEAD_SHA_SHORT>` — <HEADLINE_LINE> <N> finding(s) inline. Report not updated in place on this access path.
 
-<!-- PR_REVIEWER_LEDGER {"v":1,"runs":[…]} -->
+<!-- PR_REVIEWER_LEDGER {"v":1,"truncated":true,"runs":[{…newest run only…}]} -->
 ```
 
 `HEADLINE_LINE` is the single verdict sentence from `REPORT_BODY` — the first non-marker,
 non-banner line — and nothing after it: no gate table, no sections, no accordion, and never the
 `<!-- PR_REVIEWER_REPORT -->` marker (the pre-flight rejects it, and a marker here would make the
-next run treat this pointer as the prior report body). The ledger block is the only other content,
-and it is what keeps the delta logic intact — see *When the sticky cannot be written*.
-The `payload_is_safe` ceiling is already 900 chars for a body carrying a ledger block (600 for an
-ordinary pointer), so this form passes the pre-flight while a pasted report still does not.
+next run treat this pointer as the prior report body).
+
+The two HTML comments are load-bearing, not decoration:
+- `<!-- PR_REVIEWER_POINTER -->` is how Step 0.7's ledger-only fallback finds this object. Without
+  it the ledger is written where nothing looks, and every degraded run reads as a first run.
+- `<!-- PR_REVIEWER_LEDGER … -->` carries `DEGRADED_LEDGER` — the newest run only — never the
+  full history (*When the sticky cannot be written*).
+
+The pre-flight measures the 600-char pointer budget against the **prose with the ledger block
+stripped**, and separately caps the ledger at 1500 chars, so this form passes on a PR with any
+number of prior runs while a pasted report still does not.
 
 `STICKY_URL` is bound from the 4a response's `html_url`, in whichever branch ran. It is the only
 link in the pointer body, so a run that somehow reaches 4b without it must omit the trailing

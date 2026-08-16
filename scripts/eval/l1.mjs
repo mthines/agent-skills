@@ -1128,10 +1128,24 @@ function checksInSync(plan, checks) {
   s.check("G24f pr-reviewer.md documents the un-writable-sticky path without a second report",
     /When the sticky cannot be written/.test(prReviewer) &&
     /DEGRADED_POINTER_BODY/.test(prReviewer));
-  // G24g: prior-run detection must not be login-keyed — an unresolvable `/user` would otherwise
-  // read as "no prior report" and duplicate the sticky on every run.
-  s.check("G24g pr-reviewer.md finds the sticky by marker, not by author login",
-    !/select\(\.user\.login == env\.ME and[^\n]*PR_REVIEWER_REPORT/.test(prReviewer));
+  // G24h: prior-run detection must not be login-keyed — an unresolvable `/user` would otherwise
+  // read as "no prior report" and duplicate the sticky on every run. Assert on the WHOLE
+  // Step 0.7 fetch region rather than on one clause shape: a predicate is order-free
+  // (`select((.body | contains(…)) and .user.login == env.ME)` is the same bug rearranged),
+  // so any mention of the login inside these fetches is the regression.
+  const step07 = sliceBetween(prReviewer,
+    "## Step 0.7: Prior run detection", "### Parsing `PRIOR_DIAGNOSTICS`");
+  const step07Fetches = [...step07.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]).join("\n");
+  s.check("G24h pr-reviewer.md finds the sticky by marker, not by author login",
+    step07Fetches.includes("PR_REVIEWER_REPORT") && !/user\.login|env\.ME/.test(step07Fetches),
+    step07Fetches.includes("PR_REVIEWER_REPORT") ? "login key present in a Step 0.7 fetch" : "no marker-keyed fetch found");
+  // The pointer written by the degraded path must be findable by the fallback that reads it.
+  s.check("G24h the degraded pointer marker is both written and looked for",
+    (prReviewer.match(/<!-- PR_REVIEWER_POINTER -->/g) || []).length >= 2 &&
+    step07Fetches.includes("PR_REVIEWER_POINTER"));
+  // The pointer ledger is truncated: a 50-run history cannot ride on an append-only object.
+  s.check("G24h the degraded pointer carries a truncated ledger, not the full history",
+    /DEGRADED_LEDGER/.test(prReviewer) && /truncated/.test(prReviewer));
   for (const fm of ["F-report-in-review-body", "F-duplicate-report-posted",
     "F-open-threads-expanded-by-default"]) {
     s.check(`G24f diagnostic-surface.md registers ${fm}`, prReviewerDiag.includes(fm));
