@@ -1161,6 +1161,54 @@ function checksInSync(plan, checks) {
         !/<details open>/.test(b));
     }
   }
+  // G24n: retiring a render slot leaves prose elsewhere describing it. That drift is what the
+  // last three review rounds kept finding by hand — a rule pointing at a slot that no longer
+  // exists reads as authoritative and is unexecutable. Scan the pr-reviewer surface for phrases
+  // that only make sense under a retired design, allowing the paragraphs that explicitly mark
+  // them retired.
+  {
+    const RETIRED_PHRASES = [
+      [/collapsed (?:title|label) headlines/i, "the summary no longer headlines the memories count"],
+      [/(?:top-level|one-line) notice/i, "the standalone open-threads notice line is retired"],
+      [/memories used\)/, "MEMORIES_USED_SUFFIX is retired"],
+    ];
+    // A paragraph is exempt when it is the retirement note itself.
+    const exempt = (p) => /retired|Earlier revisions|do not reintroduce|cautionary/i.test(p);
+    const surface = [
+      "agents/pr-reviewer.md",
+      "agents/pr-reviewer/rules/diagnostic-surface.md",
+      "agents/shared/rules/reviewer-report-ingest.md",
+      "agents/shared/rules/thread-resolution.md",
+    ];
+    for (const f of surface) {
+      const paras = read(f).split(/\n\s*\n/);
+      for (const [re, why] of RETIRED_PHRASES) {
+        const bad = paras.filter((p) => re.test(p) && !exempt(p));
+        s.check(`G24n ${f} carries no live reference to a retired slot (${why})`,
+          bad.length === 0, bad[0]?.slice(0, 100));
+      }
+    }
+    // CLAUDE.md / README.md hold the whole agent description on ONE line, so paragraph-level
+    // exemption cannot discriminate there. Pin the exact retired spellings instead.
+    for (const f of ["CLAUDE.md", "README.md"]) {
+      const t = readFileSync(join(REPO_ROOT, f), "utf8");
+      for (const lit of ["`none blocking` on ⚠️", "one-line notice's framing",
+        "top-level notice"]) {
+        s.check(`G24n ${f} does not describe the retired open-threads notice (${lit})`,
+          !t.includes(lit));
+      }
+    }
+    // F3's shape: a pluralisation rule for a noun the substituted string does not contain.
+    // Scoped to the RESOLVED_SINCE_SUFFIX bullet — the identical sentence on
+    // OPEN_THREADS_SUFFIX is correct there, because that suffix does render "open bot thread(s)".
+    {
+      const bullet = sliceBetween(prReviewer,
+        "- **`RESOLVED_SINCE_SUFFIX` reports progress here", "- **Every `path:line` is a Markdown link**");
+      s.check("G24n found the RESOLVED_SINCE_SUFFIX bullet", bullet.length > 0);
+      s.check("G24n the RESOLVED_SINCE_SUFFIX rule does not pluralise a noun it never renders",
+        !/singular\s*\n?\s*`thread`/.test(bullet), bullet.slice(0, 90));
+    }
+  }
   s.check("G24b pr-reviewer.md registers both accordion-regression failure modes",
     /F-report-accordion-flattened/.test(prReviewer) &&
     /F-report-accordion-expanded/.test(prReviewer));

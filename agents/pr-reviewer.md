@@ -768,8 +768,8 @@ Loaded `reviewer-lessons` are reported separately by the `<L> reviewer-lessons m
 announce line, which is emitted at Step 1.2e — matching has not happened yet at this step, so the
 count does not exist here.
 Both counters feed the Step 4 `Review details`
-**Memories** line; the collapsed title headlines the **used** count (`MEMORIES_USED_COUNT`,
-computed at Step 2.2) — see *Review body format*.
+**Memories** line (`MEMORIES_USED_COUNT` is computed at Step 2.2) — see *Review body format*.
+Neither reaches the collapsed `<summary>`, which carries the open-threads count and nothing else.
 Announce the concrete resolved scope so the read is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <N> entries indexed.` The matched-lesson count is announced at Step 1.2e, once matching has run.
 The `<D> suppressions, <P> promotions` figures are NOT announced here: they come from `relevance` and `seen_count` in record BODIES, which are not fetched until Step 2.2. Step 2.2 announces them once they exist.
 
@@ -2374,9 +2374,10 @@ Rules for the list:
   because it is non-blocking; only the suffix's framing changes with severity.
 - **`RESOLVED_SINCE_SUFFIX` reports progress here, next to the list it describes.** Substitute
   ` <sup><RESOLVED_SINCE_PRIOR> resolved since \`<PRIOR_REVIEW_SHA_SHORT>\`</sup>` only when
-  `RESOLVED_SINCE_PRIOR > 0`; substitute nothing otherwise (never `0 resolved`). Use the singular
-  `thread` at exactly 1. It stays off the `<summary>`, which takes plain text only and is reserved
-  for the worklist count. When Gate 3 is ✅ this whole slot is omitted, so the counter moves into
+  `RESOLVED_SINCE_PRIOR > 0`; substitute nothing otherwise (never `0 resolved`). The clause names
+  no noun — it reads `4 resolved since \`abc1234\`` — so there is nothing to pluralise and `1
+  resolved since` is correct at exactly 1. It stays off the `<summary>`, which takes plain text only
+  and is reserved for the worklist count. When Gate 3 is ✅ this whole slot is omitted, so the counter moves into
   Gate 3's Details cell instead — see *Rules for table cells*.
 - **Every `path:line` is a Markdown link** to the thread's `html_url`, with the truncated `ask`
   after an em-dash. If an item's `url` is missing (older fetch, or the permalink could not be read),
@@ -2576,8 +2577,8 @@ Rules for table cells:
   Gate 3 is the one exception in both non-passing states: its cell stays terse —
   `<N> unresolved bot thread(s) — see the thread list below` — because the finding text is the
   linked checklist, which lives in `OPEN_THREADS_LIST` a few lines further down this same accordion
-  and would not survive the 120-char cap. The pointer wording is the same on ⚠️ and ❌; only the
-  top-level notice's framing differs.
+  and would not survive the 120-char cap. The pointer wording is the same on ⚠️ and ❌; only
+  `OPEN_THREADS_SUFFIX` on the summary changes framing between them.
 - `⏭️` is a valid Status value in **every** body variant — PASS, WARN, and FAIL — in addition to the
   values each variant's table shows. It appears only under `--skip-gates`, for Gates 1 / 3 / 4 / 5,
   and its Details cell holds the carried prior text plus its `(carried from …)` suffix when Step 2.5c
