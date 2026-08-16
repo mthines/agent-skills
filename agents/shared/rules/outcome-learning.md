@@ -80,10 +80,20 @@ REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 # Same identity ladder as prior-comment-awareness.md: `/user` is not repo-scoped and 401s under
 # an App installation token or a per-call credential proxy (`github-access.md § Identity`).
 # Rung 2 reads the login off this agent's own report comment on this PR.
-BOT_LOGIN="${BOT_LOGIN:-$(gh api user --jq .login 2>/dev/null || echo "")}"
+BOT_LOGIN="${BOT_LOGIN:-${PRIOR_REPORT_AUTHOR:-$(gh api user --jq .login 2>/dev/null || echo "")}}"
 if [ -z "$BOT_LOGIN" ]; then
+  # Standalone (no caller-bound PRIOR_REPORT_AUTHOR): look in BOTH hosts. The sticky lives on
+  # issues/comments, while a legacy report body and a degraded pointer live on pulls/reviews —
+  # and those are the paths where rung 1 fails too, so scanning issue comments alone aborts the
+  # pass on exactly the runs that need the fallback.
   BOT_LOGIN=$(gh api repos/$REPO/issues/$PR_NUMBER/comments --paginate \
     --jq '[.[] | select((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->"))] | last.user.login // empty')
+fi
+if [ -z "$BOT_LOGIN" ]; then
+  BOT_LOGIN=$(gh api repos/$REPO/pulls/$PR_NUMBER/reviews --paginate \
+    --jq '[.[] | select(((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->"))
+                     or ((.body // "") | contains("<!-- PR_REVIEWER_POINTER -->")))]
+          | last.user.login // empty')
 fi
 # Unresolved identity means "cannot attribute comments", not "no comments": promotion runs on an
 # empty candidate set and would quietly learn nothing. Abort this pass and say so instead.

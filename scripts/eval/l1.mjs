@@ -1154,6 +1154,16 @@ function checksInSync(plan, checks) {
   // The pointer ledger is truncated: a 50-run history cannot ride on an append-only object.
   s.check("G24h the degraded pointer carries a truncated ledger, not the full history",
     /DEGRADED_LEDGER/.test(prReviewer) && /truncated/.test(prReviewer));
+  // The recovered-pointer branch is a re-review: it must bind the run-mode inputs Step 1.2b reads,
+  // and it must feed the identity ladder — it is the one path where `/user` also fails.
+  const pointerBranch = sliceBetween(step07,
+    "**Ledger-only fallback (degraded-pointer PRs).**", "**`IS_RE_REVIEW`");
+  for (const v of ["RUN_MODE", "PRIOR_SHA", "LAST_FULL_SHA", "INCR_RUNS_SINCE_FULL"]) {
+    s.check(`G24h the recovered-pointer branch binds ${v}`, pointerBranch.includes(v));
+  }
+  s.check("G24h PRIOR_REPORT_AUTHOR covers all three prior-run shapes",
+    /PRIOR_REPORT_AUTHOR=[\s\S]{0,200}STICKY[\s\S]{0,80}LEGACY_REVIEW[\s\S]{0,80}POINTER_REVIEW/
+      .test(prReviewer));
   for (const fm of ["F-report-in-review-body", "F-duplicate-report-posted",
     "F-open-threads-expanded-by-default"]) {
     s.check(`G24f diagnostic-surface.md registers ${fm}`, prReviewerDiag.includes(fm));

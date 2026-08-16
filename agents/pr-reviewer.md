@@ -286,15 +286,22 @@ Otherwise:
 # creates a fresh report on a PR that already has one.
 # `last` is defensive — there must only ever be one, and Step 4 adopts the newest if a
 # duplicate was somehow created.
-STICKY=$(gh api repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments --paginate \
-  --jq '[.[] | select((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->")) ] | last // empty')
+if STICKY=$(gh api repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments --paginate \
+  --jq '[.[] | select((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->")) ] | last // empty'); then
+  STICKY_READ_FAILED=false
+else
+  STICKY_READ_FAILED=true
+  STICKY=""
+fi
 STICKY_COMMENT_ID=$(jq -r '.id // empty' <<< "${STICKY:-{\}}")
 ```
 
-**A failed read is not an empty read.** If the comments call errors (non-zero exit, or any response
-that is not a JSON array), set `STICKY_READ_FAILED=true` and carry it into Step 4a — do **not** bind
-`STICKY_COMMENT_ID=""` and proceed, which converts a transient API error into a duplicate report.
-Retry once; if it still fails, Step 4a takes the no-duplicate path.
+**A failed read is not an empty read.** The two are indistinguishable in the output — `--jq` reduces
+a successful read to a single object or an empty string, never to an array — so the **exit status is
+the only signal**, which is why the call is wrapped in `if` above rather than inspected afterwards.
+Retry once on failure; if it still fails, keep `STICKY_READ_FAILED=true` and carry it into Step 4a,
+which takes the no-duplicate path. Never bind `STICKY_COMMENT_ID=""` and proceed on a failed read:
+that converts a transient API error into a duplicate report.
 
 **Legacy fallback (pre-sticky PRs).** Before the sticky existed, the report was the body of the
 review itself. A PR reviewed by that version has no sticky, so when `STICKY` is empty, look for the
@@ -320,10 +327,14 @@ only when both came up empty:
 
 ```bash
 if [ -z "$STICKY" ] && [ -z "$LEGACY_REVIEW" ] && [ "${STICKY_READ_FAILED:-false}" != "true" ]; then
-  POINTER_LEDGER_BODY=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews --paginate \
+  # Keep the WHOLE object, not just `.body`: its `.user.login` is this agent's own login and
+  # feeds PRIOR_REPORT_AUTHOR below. This is the one path where `/user` is also unavailable,
+  # so discarding the object here is what would leave the identity ladder with no rung left.
+  POINTER_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews --paginate \
     --jq '[.[] | select(((.body // "") | contains("<!-- PR_REVIEWER_POINTER -->"))
                     and ((.body // "") | contains("<!-- PR_REVIEWER_LEDGER "))) ]
-          | last.body // empty')
+          | last // empty')
+  POINTER_LEDGER_BODY=$(jq -r '.body // empty' <<< "${POINTER_REVIEW:-{\}}")
 fi
 ```
 
@@ -336,8 +347,15 @@ from it exactly as below and bind `PRIOR_SHA`, `PRIOR_REVIEW_SHA`, `PRIOR_VERDIC
   A run that silently dropped carry-forward would look identical to one that had nothing to carry.
 - Set `STICKY_COMMENT_ID` empty: if the access path can create a sticky this run, Step 4a creates
   one and the PR returns to the normal model.
-- A `truncated` ledger has no `runs[].mode` history, so `LAST_FULL_SHA` is empty and Step 1.2b
-  forces `full`. That is the intended direction, not a defect to work around.
+- **Bind the run-mode inputs, exactly as the prior-report branch does** — this path is a re-review
+  and must not leave them unset:
+  - Under `--full`: `RUN_MODE = "full"`, `PRIOR_SHA = ""` (delta triage stays skipped).
+  - Otherwise: `PRIOR_SHA = "$PRIOR_REVIEW_SHA"` and `RUN_MODE = "incremental"`, subject to
+    Step 1.2b's upgrade.
+  - `LAST_FULL_SHA = ""` and `INCR_RUNS_SINCE_FULL = 0`. A `truncated` ledger carries one entry and
+    no `mode` history, and an empty `LAST_FULL_SHA` is precisely what makes Step 1.2b promote the
+    run to `full` — the documented safe direction. Bind them rather than leaving them unset: Step
+    1.2b reads both, and an unset value is not the same as a bound empty one.
 
 Bind `PRIOR_REVIEW` to whichever *report body* was found (`STICKY` first, then `LEGACY_REVIEW`); it
 is the object every rule below means by "the prior report". A recovered pointer ledger is not a
@@ -359,7 +377,11 @@ fi
 legacy review, or pointer), or `""` when none was:
 
 ```bash
-PRIOR_REPORT_AUTHOR=$(jq -r '.user.login // empty' <<< "${STICKY:-${LEGACY_REVIEW:-{\}}}")
+# All three shapes, in the same precedence as the fetches above. The pointer rung is the
+# load-bearing one: it is the only path where `/user` is unavailable AND there is no report
+# object, so omitting it leaves the identity ladder with nothing and BOT_COMMENTS empty.
+PRIOR_REPORT_AUTHOR=$(jq -r '.user.login // empty' \
+  <<< "${STICKY:-${LEGACY_REVIEW:-${POINTER_REVIEW:-{\}}}}")
 ```
 
 It is this agent's own login, read off its own prior artifact, and it is the second rung of the
@@ -470,13 +492,17 @@ the run had everything it needed to refresh.
 - Proceed to Step 1.
 
 `PRIOR_SHA`, `PRIOR_REVIEW_SHA`, `RUN_MODE` and `PRIOR_DIAGNOSTICS` are available to all subsequent steps.
-`LAST_FULL_SHA` and `INCR_RUNS_SINCE_FULL` are set **only on this path** — the prior-review,
-non-`--full` branch — so they are unset on a first run and under `--full`. That is safe: their only
-consumer is Step 1.2b's delta triage, which is itself skipped in exactly those two cases (first run
-is `full`; `--full` skips triage), so nothing reads an unset value.
-`ME` is **not** read in this step: both fetches match on the report marker alone (see above), so
+`LAST_FULL_SHA` and `INCR_RUNS_SINCE_FULL` are bound on **both re-review paths** — the prior-report,
+non-`--full` branch (from the ledger's `runs[]`) and the recovered-pointer branch (to `""` / `0`,
+since a truncated ledger has no history). They stay unset only where nothing reads them: a first run
+(`full`) and `--full`, both of which skip Step 1.2b's delta triage, their only consumer. The
+pointer branch is *not* one of those cases — it runs delta triage like any other re-review, which is
+why it binds them explicitly rather than relying on the two-case argument.
+`ME` is **not** read in this step: all three fetches match on a marker alone (see above), so
 prior-run detection keeps working on an access path where `/user` is unreachable. Do not reintroduce
-a `.user.login` filter here, and do not call `gh api user` again anywhere in the run.
+a `.user.login` filter here, and do not call `gh api user` again anywhere in the run. Reading
+`.user.login` **off** a found object is a different thing and is required — see
+`PRIOR_REPORT_AUTHOR`.
 
 ### Parsing `PRIOR_DIAGNOSTICS`
 
