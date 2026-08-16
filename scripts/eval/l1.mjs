@@ -1194,7 +1194,12 @@ function checksInSync(plan, checks) {
     // (c) The runtime pre-flight exists, is defined before the write, and actually asserts each
     // thing it claims to. A stub that returns True would satisfy a mere name check.
     const pf = sliceBetween(prReviewer, "def report_body_is_safe", "```");
-    s.check("G24p report_body_is_safe is defined at Step 4a", pf.length > 0);
+    // Assert the POSITION the name claims, not a length: sliceBetween THROWS on a missing
+    // anchor, so `pf.length > 0` can never report false and guards nothing. Bound the
+    // definition between Step 4a's heading and the templates, exactly as (b) does.
+    const pPf = prReviewer.indexOf("def report_body_is_safe");
+    s.check("G24p report_body_is_safe is defined at Step 4a, before the templates",
+      p4a !== -1 && pPf > p4a && pPf < pTmpl, `4a@${p4a} pre-flight@${pPf} templates@${pTmpl}`);
     for (const [claim, re] of [
       ["the report marker", /PR_REVIEWER_REPORT/],
       ["the Review details accordion", /<summary>Review details/],
