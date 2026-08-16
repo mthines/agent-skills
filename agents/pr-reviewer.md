@@ -1831,7 +1831,10 @@ def report_body_is_safe(body: str) -> tuple[bool, str]:
     if "<summary>Review details" not in body or "<details>" not in body:
         return (False, "REPORT_BODY has no `Review details` accordion (F-report-accordion-flattened)")
     # Everything the accordion owns must sit inside it, not above it.
-    head = body.split("<details>", 1)[0]
+    # Split on the accordion's own summary, not on the first `<details>` — that one is
+    # OPTIMALITY_SECTION or ADDITIONAL_FINDINGS_SECTION when present, and owned lines
+    # between it and the accordion would escape the check. G19d slices the same way.
+    head = body.split("<summary>Review details", 1)[0]
     for owned in ("| Gate | Status | Details |", "**Run mode**", "**Memories**",
                   "**Quality**", "**Skipped files**", "<sup>Reviewed for commit",
                   "<sup>Incremental review for commit"):
