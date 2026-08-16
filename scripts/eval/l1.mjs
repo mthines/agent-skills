@@ -1075,9 +1075,9 @@ function checksInSync(plan, checks) {
 
 }
 
-// ── G24: Gate 3 (Prior bot feedback) tri-state + open-thread checklist heading contract ──
-// The two checklist headings are an EXACT-STRING contract between the renderer
-// (pr-reviewer.md § UNRESOLVED_THREADS_SECTION) and its documented consumer
+// ── G24: Gate 3 (Prior bot feedback) tri-state + open-thread rendering contract ──
+// The summary counter and the list heading are an EXACT-STRING contract between the renderer
+// (pr-reviewer.md § The Gate 3 open threads) and its documented consumer
 // (reviewer-report-ingest.md § the open-threads checklist is not a body section). That rule
 // skips these blocks by literal heading match, so a reworded heading on either side silently
 // promotes a presentational block to an ingestable one — re-ingesting OTHER bots' comments as

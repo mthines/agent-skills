@@ -455,7 +455,7 @@ The sequence per re-review is: fetch prior comments (`prior-comment-awareness.md
 produce findings → **reconcile prior threads (this rule)** → verdict → post.
 
 **Why before posting, not after.** Gate 3 and the unblock checklist
-(`pr-reviewer.md § UNRESOLVED_THREADS_SECTION`) are rendered from `OPEN_BOT_COMMENTS[]`.
+(`pr-reviewer.md § The Gate 3 open threads`) are rendered from `OPEN_BOT_COMMENTS[]`.
 Resolving threads after that rendering publishes a checklist naming threads the same run
 closed moments later, so the author reads a worklist that was already stale when it was
 written and only sees the truth one review later. Reconciling first removes the lag.
