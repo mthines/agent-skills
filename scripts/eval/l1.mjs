@@ -1101,19 +1101,23 @@ function checksInSync(plan, checks) {
   // G24b: the checklist is a collapsed <details> whose <summary> IS the counter line. Lift both
   // summary literals out of the renderer, then assert each appears verbatim in the consumer —
   // the consumer skips this block by matching that text, so a silent rename breaks the skip.
+  // Capture the summary text WITHOUT the closing tag: the renderer appends the optional
+  // RESOLVED_SINCE_SUFFIX before </summary>, so the shared literal is a prefix, not a whole line.
   const headings = [...prReviewer.matchAll(
-    /^<summary>(?:To unblock|Open bot threads)[^\n]*?<\/summary>/gm)].map((m) => m[0]);
+    /^<summary>(?:To unblock|Open bot threads)[^\n]*?(?=RESOLVED_SINCE_SUFFIX|<\/summary>)/gm)]
+    .map((m) => m[0]);
   s.check("G24b pr-reviewer.md declares both open-thread checklist summaries (❌ and ⚠️ forms)",
     headings.length === 2 &&
     headings.some((h) => h.startsWith("<summary>To unblock")) &&
     headings.some((h) => h.startsWith("<summary>Open bot threads")),
     `found ${headings.length}: ${headings.join(" | ") || "none"}`);
   for (const h of headings) {
-    // The trailing RESOLVED_SINCE_SUFFIX slot is optional at render time, so the consumer
-    // matches the stable prefix; compare on that same prefix.
-    const stable = h.replace("RESOLVED_SINCE_SUFFIX", "");
-    s.check(`G24b reviewer-report-ingest.md carries the renderer's summary verbatim: ${stable.slice(0, 34)}…`,
-      ingest.includes(stable));
+    s.check(`G24b reviewer-report-ingest.md carries the renderer's summary verbatim: ${h.slice(0, 34)}…`,
+      ingest.includes(h));
+    // …and quotes it as a PREFIX. A literal quoted through </summary> is unmatchable on a run that
+    // rendered the progress clause, which sits before the closing tag.
+    s.check(`G24b the consumer quotes the summary as a prefix, not through </summary>: ${h.slice(0, 34)}…`,
+      !ingest.includes(`${h}</summary>`));
   }
   // The block must never be pre-expanded: `<details open>` here would restore the space problem
   // the collapse was introduced to fix.
@@ -1136,8 +1140,12 @@ function checksInSync(plan, checks) {
   const step07 = sliceBetween(prReviewer,
     "## Step 0.7: Prior run detection", "### Parsing `PRIOR_DIAGNOSTICS`");
   const step07Fetches = [...step07.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]).join("\n");
+  // Reading `.user.login` OUT of a found object is fine (PRIOR_REPORT_AUTHOR does exactly that);
+  // FILTERING on it is the bug. Match the login inside any `select(...)`, nesting one level, so a
+  // reordered predicate — `select((.body | contains(…)) and .user.login == env.ME)` — still reds.
+  const loginFilter = /select\((?:[^()]|\([^()]*\))*user\.login/.test(step07Fetches);
   s.check("G24h pr-reviewer.md finds the sticky by marker, not by author login",
-    step07Fetches.includes("PR_REVIEWER_REPORT") && !/user\.login|env\.ME/.test(step07Fetches),
+    step07Fetches.includes("PR_REVIEWER_REPORT") && !loginFilter && !/env\.ME/.test(step07Fetches),
     step07Fetches.includes("PR_REVIEWER_REPORT") ? "login key present in a Step 0.7 fetch" : "no marker-keyed fetch found");
   // The pointer written by the degraded path must be findable by the fallback that reads it.
   s.check("G24h the degraded pointer marker is both written and looked for",

@@ -76,7 +76,18 @@ behaviour change than "requires corroboration", and a silent one.
 
 ```bash
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
-BOT_LOGIN=$(gh api user --jq .login)
+
+# Same identity ladder as prior-comment-awareness.md: `/user` is not repo-scoped and 401s under
+# an App installation token or a per-call credential proxy (`github-access.md § Identity`).
+# Rung 2 reads the login off this agent's own report comment on this PR.
+BOT_LOGIN="${BOT_LOGIN:-$(gh api user --jq .login 2>/dev/null || echo "")}"
+if [ -z "$BOT_LOGIN" ]; then
+  BOT_LOGIN=$(gh api repos/$REPO/issues/$PR_NUMBER/comments --paginate \
+    --jq '[.[] | select((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->"))] | last.user.login // empty')
+fi
+# Unresolved identity means "cannot attribute comments", not "no comments": promotion runs on an
+# empty candidate set and would quietly learn nothing. Abort this pass and say so instead.
+[ -z "$BOT_LOGIN" ] && { echo "outcome-learning: bot identity unresolved — skipping this pass"; exit 0; }
 
 # All review comments by the current user on this PR
 gh api repos/$REPO/pulls/$PR_NUMBER/comments \

@@ -48,7 +48,7 @@ comes from the post-merge path (`outcome-learning.md`) and the GitHub Action ins
 
 | Agent | When | Gate |
 | --- | --- | --- |
-| `pr-reviewer` | Step 2.9c, on every re-review (a prior `<!-- PR_REVIEWER_REPORT -->` report exists — `PRIOR_REVIEW` non-empty in Step 0.7) | Resolution + write always run; a failure here never blocks the review |
+| `pr-reviewer` | Step 2.9c, on every re-review (`IS_RE_REVIEW == true` in Step 0.7 — a prior sticky, a legacy report body, **or** a recovered pointer ledger; not the narrower `PRIOR_REVIEW`, which is empty on the pointer path) | Resolution + write always run; a failure here never blocks the review |
 
 It **never** runs on a first-pass review (no prior threads to reconcile).
 

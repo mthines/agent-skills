@@ -343,6 +343,38 @@ Bind `PRIOR_REVIEW` to whichever *report body* was found (`STICKY` first, then `
 is the object every rule below means by "the prior report". A recovered pointer ledger is not a
 prior report and never binds it.
 
+**`IS_RE_REVIEW` is the "has this PR been reviewed before" flag** — set it here, and gate re-review
+behaviour on it rather than on `PRIOR_REVIEW`:
+
+```bash
+# True when ANY prior-run evidence was found: a sticky, a legacy report body, or a pointer ledger.
+if [ -n "$PRIOR_REVIEW" ] || [ -n "$POINTER_LEDGER_BODY" ]; then
+  IS_RE_REVIEW=true
+else
+  IS_RE_REVIEW=false
+fi
+```
+
+**Bind `PRIOR_REPORT_AUTHOR` here too** — the `.user.login` of whichever object was found (sticky,
+legacy review, or pointer), or `""` when none was:
+
+```bash
+PRIOR_REPORT_AUTHOR=$(jq -r '.user.login // empty' <<< "${STICKY:-${LEGACY_REVIEW:-{\}}}")
+```
+
+It is this agent's own login, read off its own prior artifact, and it is the second rung of the
+identity ladder in `prior-comment-awareness.md § fetch existing PR comment state` — the one that
+keeps dedup, anti-flip-flop and Step 2.9c working when `/user` is unreachable. Export it before
+Step 1.0 runs that rule.
+
+The two variables answer different questions and are not interchangeable: `PRIOR_REVIEW` means
+*"there is a prior report body to parse"* (carry-forward, `PRIOR_DIAGNOSTICS`), while
+`IS_RE_REVIEW` means *"this PR has been reviewed before"* (thread reconciliation, `resolved since`).
+They diverge on exactly one path — the recovered pointer, where the second is true and the first is
+empty. Keying Step 2.9c off `PRIOR_REVIEW` there would skip reconciliation on a genuine re-review:
+no threads resolved, `RESOLVED_SINCE_PRIOR` never bound, and Gate 3 graded against a stale open set
+the run had everything it needed to refresh.
+
 **If `PRIOR_REVIEW` is empty and no pointer ledger was recovered** (no prior run found in any shape):
 - Set `RUN_MODE = "full"`.
 - Set `PRIOR_SHA = ""`.
@@ -350,6 +382,7 @@ prior report and never binds it.
 - Set `PRIOR_DIAGNOSTICS = {}` (all sub-lists empty).
 - Set `STICKY_COMMENT_ID = ""`, `PRIOR_VERDICT = ""`, `PRIOR_OPEN_THREAD_IDS = []`, and
   `PRIOR_BLOCKING_FINGERPRINTS = []`.
+- Set `IS_RE_REVIEW = false`.
 - Set `RESOLVED_SINCE_PRIOR = 0`. It is otherwise assigned only in Step 2.9c, which is skipped on a
   first pass — yet three render sites read it unconditionally, and a first-pass run with Gate 3 ⚠️ or ❌
   (other bots' threads open, which is common) reaches the checklist with nothing bound. `0`
@@ -1391,8 +1424,11 @@ The docs-only cosmetic drop happens earlier, at the 2.3 filtering stage (pre-cle
 
 ## Step 2.9c: Reconcile prior threads (re-review only)
 
-See `agents/shared/rules/thread-resolution.md`. Skip entirely on a first-pass review
-(`PRIOR_REVIEW` empty in Step 0.7).
+See `agents/shared/rules/thread-resolution.md`. Skip entirely on a first-pass review — that is
+`IS_RE_REVIEW == false` in Step 0.7, **not** an empty `PRIOR_REVIEW`. The two differ on the
+recovered-pointer path, where there is no prior report body but the PR has certainly been reviewed
+before, and skipping there would leave the run reconciling nothing and `RESOLVED_SINCE_PRIOR`
+unbound.
 
 **This is a top-level step, deliberately not a subsection of Step 2.** Step 2 is skipped wholesale
 when the zero-delta short-circuit fires (Step 1.2b), and a zero-delta run happens **only** on a
@@ -1760,11 +1796,29 @@ off a pointer:
 # it exists to be rewritten in place, and a pointer is append-only.
 DEGRADED_LEDGER=$(jq -c '{v: 1, truncated: true, runs: (.runs | .[-1:])}' <<< "$NEW_LEDGER")
 
-# An open-thread set can be large (one id per open thread). Drop it rather than the block.
-if [ "$(printf %s "$DEGRADED_LEDGER" | wc -c)" -gt 1200 ]; then
+# Reduction ladder, applied in order and only as far as needed, against the SAME 1500-char
+# limit the Step 4b pre-flight enforces. Both list fields are unbounded — one entry per open
+# thread, one per blocking finding — so a ladder that stops after the first cannot guarantee
+# the payload passes, and the run would abort on exactly the crowded PR it is serving.
+fits() { [ "$(printf %s "$1" | wc -c)" -le 1500 ]; }
+
+if ! fits "$DEGRADED_LEDGER"; then
   DEGRADED_LEDGER=$(jq -c '.runs[0].open_bot_comment_ids = [] | .ids_dropped = true' <<< "$DEGRADED_LEDGER")
 fi
+if ! fits "$DEGRADED_LEDGER"; then
+  DEGRADED_LEDGER=$(jq -c '.runs[0].blocking_fingerprints = [] | .fingerprints_dropped = true' <<< "$DEGRADED_LEDGER")
+fi
+if ! fits "$DEGRADED_LEDGER"; then
+  # Floor: the four scalars the delta baseline actually needs. This always fits.
+  DEGRADED_LEDGER=$(jq -c '{v: 1, truncated: true, ids_dropped: true, fingerprints_dropped: true,
+    runs: [.runs[0] | {sha, mode, verdict, at}]}' <<< "$DEGRADED_LEDGER")
+fi
 ```
+
+The floor is bounded by construction — a sha, a mode word, a verdict word and a timestamp — so the
+ladder terminates and the pre-flight can never reject a pointer this agent built. Each rung is
+recorded in the block (`ids_dropped`, `fingerprints_dropped`) so the next run can tell an
+intentionally emptied field from one that was genuinely empty.
 
 What each consumer gets from it, and what it costs:
 
@@ -1772,7 +1826,7 @@ What each consumer gets from it, and what it costs:
 | --- | --- | --- |
 | `PRIOR_SHA` / `PRIOR_REVIEW_SHA` (incremental mode) | newest `runs[].sha` | same — unaffected |
 | `PRIOR_VERDICT` (escalation) | newest `runs[].verdict` | same — unaffected |
-| `PRIOR_BLOCKING_FINGERPRINTS` | newest entry | same — unaffected |
+| `PRIOR_BLOCKING_FINGERPRINTS` (Step 4b condition 4) | newest entry | same, unless `fingerprints_dropped` — then `[]`, so every blocking finding next run reads as new and the review posts. Over-notifying, never silence |
 | `PRIOR_OPEN_THREAD_IDS` (`resolved since`) | newest entry | same, unless `ids_dropped` — then `[]`, and `RESOLVED_SINCE_PRIOR` renders 0 (the counter is suppressed at 0, so nothing false is printed) |
 | `LAST_FULL_SHA` / `INCR_RUNS_SINCE_FULL` (deep-lens refresh) | full history | absent → empty `LAST_FULL_SHA` → Step 1.2b forces `full`, which is the documented safe direction |
 

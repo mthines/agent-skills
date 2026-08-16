@@ -40,7 +40,16 @@ Run once at Step 1, after Step 0.5 (authorship check) and before Step 1.1 (diff 
 REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
 OWNER="${REPO%%/*}"
 REPO_NAME="${REPO##*/}"
-BOT_LOGIN=$(gh api user --jq .login)
+# Identity ladder. `gh api user` hits `/user`, which is NOT repo-scoped and 401s under a GitHub
+# App installation token or a per-call credential proxy (`github-access.md § Identity`), so an
+# unguarded call here silently yields "" — and every `select(.user_login == "")` below then
+# matches nothing, which reads as "this agent has never commented on this PR". Dedup, the
+# anti-flip-flop check and Step 2.9c all no-op on a PR full of this agent's own threads.
+BOT_LOGIN="${BOT_LOGIN:-$(gh api user --jq .login 2>/dev/null || echo "")}"
+# Fallback: this agent's own prior report on THIS PR carries its login. The caller binds
+# PRIOR_REPORT_AUTHOR when it found a sticky, a legacy report body, or a pointer (pr-reviewer
+# Step 0.7); it costs no extra API call.
+[ -z "$BOT_LOGIN" ] && BOT_LOGIN="${PRIOR_REPORT_AUTHOR:-}"
 
 # All existing review comments on this PR (all authors).
 # `html_url` is the permalink to the comment thread — kept so Gate 3 can render each
@@ -50,7 +59,15 @@ gh api repos/$REPO/pulls/$PR_NUMBER/comments \
   > /tmp/prior-comments.json
 
 # Comments authored by this agent (bot login)
-BOT_COMMENTS=$(jq --arg login "$BOT_LOGIN" '[.[] | select(.user_login == $login)]' /tmp/prior-comments.json)
+if [ -n "$BOT_LOGIN" ]; then
+  BOT_COMMENTS=$(jq --arg login "$BOT_LOGIN" '[.[] | select(.user_login == $login)]' /tmp/prior-comments.json)
+  BOT_IDENTITY_UNKNOWN=false
+else
+  # Both rungs failed. That is only reachable when this agent has posted no report on this PR
+  # either — i.e. a genuine first pass, where an empty set is the correct answer, not a failure.
+  BOT_COMMENTS='[]'
+  BOT_IDENTITY_UNKNOWN=true
+fi
 
 # Thread state — the authoritative resolved/unresolved signal. See § Thread state below.
 # `reviewThreads` caps at 100 and `--paginate` does not work for GraphQL, so walk
@@ -166,6 +183,15 @@ Log dedup drops:
 ```
 
 Count in the Quality Gate summary: `Prior-comment dedup drops: N`.
+
+**`BOT_IDENTITY_UNKNOWN == true` is disclosed, never silent.** Dedup, the anti-flip-flop check and
+thread reconciliation all read `BOT_COMMENTS`, so an empty set from an unresolved identity would
+present as "nothing was ever posted here" and let the run re-post findings the PR already carries.
+When the flag is set, log `[prior-comment] bot identity unresolved — dedup and anti-flip-flop
+operate on an empty prior set` and carry it into the run's report. It is expected on a first pass
+(where the empty set is simply correct) and a defect anywhere else — the identity ladder's second
+rung reads the login off this agent's own prior report, so a PR it has reviewed before always
+resolves.
 
 ---
 
