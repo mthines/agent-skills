@@ -1835,9 +1835,13 @@ def report_body_is_safe(body: str) -> tuple[bool, str]:
     # OPTIMALITY_SECTION or ADDITIONAL_FINDINGS_SECTION when present, and owned lines
     # between it and the accordion would escape the check. G19d slices the same way.
     head = body.split("<summary>Review details", 1)[0]
+    # Every line the accordion owns, including the Gate 3 list and the four trailing
+    # diagnostics bullets — an omission here lets that line render at the top level and pass.
     for owned in ("| Gate | Status | Details |", "**Run mode**", "**Memories**",
-                  "**Quality**", "**Skipped files**", "<sup>Reviewed for commit",
-                  "<sup>Incremental review for commit"):
+                  "**Quality**", "**Open bot threads (", "**Integrations**",
+                  "**Optimality (2.4c)**", "**Standards (2.4d)**", "**Skipped files**",
+                  "<sup>Reviewed for commit", "<sup>Incremental review for commit",
+                  "<sup>Reviewed by the"):
         if owned in head:
             return (False, f"{owned!r} rendered above the accordion (F-report-accordion-flattened)")
     # The Step 3 advisory verdict is terminal-only and never written to a posted body.
