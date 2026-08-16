@@ -1141,23 +1141,42 @@ function checksInSync(plan, checks) {
     "## Step 0.7: Prior run detection", "### Parsing `PRIOR_DIAGNOSTICS`");
   const step07Fetches = [...step07.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]).join("\n");
   // Reading `.user.login` OUT of a found object is fine (PRIOR_REPORT_AUTHOR does exactly that);
-  // FILTERING on it is the bug. Match the login inside any `select(...)`, nesting one level, so a
-  // reordered predicate — `select((.body | contains(…)) and .user.login == env.ME)` — still reds.
-  const loginFilter = /select\((?:[^()]|\([^()]*\))*user\.login/.test(step07Fetches);
+  // FILTERING on it is the bug. A regex cannot express "inside a select() at any nesting depth" —
+  // an earlier bounded-depth version let `select(((.body | contains(…))) and .user.login == …)`
+  // through — so scan to the matching close paren instead.
+  const selectBodies = (src) => {
+    const out = [];
+    for (let i = src.indexOf("select("); i >= 0; i = src.indexOf("select(", i + 1)) {
+      let depth = 0;
+      for (let j = i + "select".length; j < src.length; j++) {
+        if (src[j] === "(") depth++;
+        else if (src[j] === ")" && --depth === 0) { out.push(src.slice(i, j + 1)); break; }
+      }
+    }
+    return out;
+  };
+  const loginFilter = selectBodies(step07Fetches).some((b) => /user\.login/.test(b));
   s.check("G24h pr-reviewer.md finds the sticky by marker, not by author login",
     step07Fetches.includes("PR_REVIEWER_REPORT") && !loginFilter && !/env\.ME/.test(step07Fetches),
     step07Fetches.includes("PR_REVIEWER_REPORT") ? "login key present in a Step 0.7 fetch" : "no marker-keyed fetch found");
-  // The pointer written by the degraded path must be findable by the fallback that reads it.
-  s.check("G24h the degraded pointer marker is both written and looked for",
+  // The pointer written by Step 4b must be findable by the fallback that reads it — and EVERY
+  // pointer form must carry the marker, or the identity ladder and the prior-run evidence go
+  // missing on exactly the access paths that depend on them.
+  s.check("G24h the pointer marker is both written and looked for",
     (prReviewer.match(/<!-- PR_REVIEWER_POINTER -->/g) || []).length >= 2 &&
     step07Fetches.includes("PR_REVIEWER_POINTER"));
+  const pointerForms = [...sliceBetween(prReviewer, "`POINTER_BODY` is one marker line",
+    "### Review body format").matchAll(/```markdown\n([\s\S]*?)```/g)].map((m) => m[1]);
+  s.check("G24h every pointer body form carries the pointer marker",
+    pointerForms.length >= 4 && pointerForms.every((f) => f.includes("<!-- PR_REVIEWER_POINTER -->")),
+    `${pointerForms.filter((f) => !f.includes("<!-- PR_REVIEWER_POINTER -->")).length} of ${pointerForms.length} unmarked`);
   // The pointer ledger is truncated: a 50-run history cannot ride on an append-only object.
   s.check("G24h the degraded pointer carries a truncated ledger, not the full history",
     /DEGRADED_LEDGER/.test(prReviewer) && /truncated/.test(prReviewer));
   // The recovered-pointer branch is a re-review: it must bind the run-mode inputs Step 1.2b reads,
   // and it must feed the identity ladder — it is the one path where `/user` also fails.
   const pointerBranch = sliceBetween(step07,
-    "**Ledger-only fallback (degraded-pointer PRs).**", "**`IS_RE_REVIEW`");
+    "**Pointer fallback (this agent's own review pointers).**", "**`IS_RE_REVIEW`");
   for (const v of ["RUN_MODE", "PRIOR_SHA", "LAST_FULL_SHA", "INCR_RUNS_SINCE_FULL"]) {
     s.check(`G24h the recovered-pointer branch binds ${v}`, pointerBranch.includes(v));
   }

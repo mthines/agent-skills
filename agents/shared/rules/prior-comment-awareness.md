@@ -188,10 +188,17 @@ Count in the Quality Gate summary: `Prior-comment dedup drops: N`.
 thread reconciliation all read `BOT_COMMENTS`, so an empty set from an unresolved identity would
 present as "nothing was ever posted here" and let the run re-post findings the PR already carries.
 When the flag is set, log `[prior-comment] bot identity unresolved — dedup and anti-flip-flop
-operate on an empty prior set` and carry it into the run's report. It is expected on a first pass
-(where the empty set is simply correct) and a defect anywhere else — the identity ladder's second
-rung reads the login off this agent's own prior report, so a PR it has reviewed before always
-resolves.
+operate on an empty prior set` and carry it into the run's report.
+
+It has two reachable causes, and only the first is benign:
+- **A genuine first pass** — no prior report, no prior pointer, nothing to dedup against. The empty
+  set is simply correct.
+- **A prior-run read that failed** — `PRIOR_REPORT_AUTHOR` is bound from whatever the caller found
+  (`pr-reviewer` Step 0.7), so a PR with prior runs resolves *unless the lookups themselves failed*.
+  Then the identity is unknown on a PR that does have prior comments, and dedup silently no-ops:
+  findings already on the PR get re-posted. This is why the flag is disclosed rather than logged and
+  forgotten — the run must say that its dedup was blind, so a duplicate comment reads as a known
+  degradation instead of a reviewer that changed its mind.
 
 ---
 

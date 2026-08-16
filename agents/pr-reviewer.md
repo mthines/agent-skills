@@ -308,7 +308,10 @@ review itself. A PR reviewed by that version has no sticky, so when `STICKY` is 
 old shape once before concluding this is a first run:
 
 ```bash
-if [ -z "$STICKY" ] && [ "${STICKY_READ_FAILED:-false}" != "true" ]; then
+# NOT gated on STICKY_READ_FAILED: this is a different endpoint. A failed `issues/comments`
+# read says nothing about `pulls/reviews`, and suppressing this fetch on it is how a transient
+# error turns a reviewed PR into a first-pass run.
+if [ -z "$STICKY" ]; then
   LEGACY_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews --paginate \
     --jq '[.[] | select((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->")) ] | last // empty')
 fi
@@ -319,37 +322,45 @@ same grammar — and set `STICKY_COMMENT_ID` empty so Step 4 **creates** the sti
 `Legacy review-body report found — migrating to a sticky comment this run.` The old review bodies are
 left untouched; they are history, and rewriting another object's past is not this agent's business.
 
-**Ledger-only fallback (degraded-pointer PRs).** A run whose access path could not write the sticky
-posts a `DEGRADED_POINTER_BODY` instead (Step 4a → *When the sticky cannot be written*): no report
-body, but a real ledger. It is marked `<!-- PR_REVIEWER_POINTER -->` precisely so this step can find
-it — the two fetches above key on the *report* marker, which a pointer does not carry. Look for it
-only when both came up empty:
+**Pointer fallback (this agent's own review pointers).** Every review this agent posts carries
+`<!-- PR_REVIEWER_POINTER -->` (Step 4b), and the degraded variant additionally carries a ledger.
+Either way the pointer is proof the PR has been reviewed before, and its `.user.login` is this
+agent's own login — the two things the fetches above cannot supply when `issues/comments` is
+unreadable or the report lives nowhere. Look for it when neither report shape was found:
 
 ```bash
-if [ -z "$STICKY" ] && [ -z "$LEGACY_REVIEW" ] && [ "${STICKY_READ_FAILED:-false}" != "true" ]; then
-  # Keep the WHOLE object, not just `.body`: its `.user.login` is this agent's own login and
-  # feeds PRIOR_REPORT_AUTHOR below. This is the one path where `/user` is also unavailable,
-  # so discarding the object here is what would leave the identity ladder with no rung left.
+# Also NOT gated on STICKY_READ_FAILED — same endpoint argument as the legacy fetch.
+if [ -z "$STICKY" ] && [ -z "$LEGACY_REVIEW" ]; then
+  # Keep the WHOLE object, not just `.body`: its `.user.login` feeds PRIOR_REPORT_AUTHOR below.
+  # The ledger is optional here — an ordinary pointer has none, and it is still valid evidence
+  # of a prior run and still a valid identity source.
   POINTER_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews --paginate \
-    --jq '[.[] | select(((.body // "") | contains("<!-- PR_REVIEWER_POINTER -->"))
-                    and ((.body // "") | contains("<!-- PR_REVIEWER_LEDGER "))) ]
-          | last // empty')
-  POINTER_LEDGER_BODY=$(jq -r '.body // empty' <<< "${POINTER_REVIEW:-{\}}")
+    --jq '[.[] | select((.body // "") | contains("<!-- PR_REVIEWER_POINTER -->")) ] | last // empty')
+  # The ledger body, only from a pointer that actually carries one.
+  POINTER_LEDGER_BODY=$(jq -r 'select((.body // "") | contains("<!-- PR_REVIEWER_LEDGER ")) | .body // empty' \
+    <<< "${POINTER_REVIEW:-{\}}")
 fi
 ```
 
-When it is non-empty, this is **not** a first run and must not be announced as one. Parse `LEDGER`
-from it exactly as below and bind `PRIOR_SHA`, `PRIOR_REVIEW_SHA`, `PRIOR_VERDICT`,
-`PRIOR_OPEN_THREAD_IDS` and `PRIOR_BLOCKING_FINGERPRINTS` from it, then:
+When `POINTER_REVIEW` is non-empty, this is **not** a first run and must not be announced as one.
+When it also carries a ledger (`POINTER_LEDGER_BODY` non-empty), parse `LEDGER` from it exactly as
+below and bind `PRIOR_SHA`, `PRIOR_REVIEW_SHA`, `PRIOR_VERDICT`, `PRIOR_OPEN_THREAD_IDS` and
+`PRIOR_BLOCKING_FINGERPRINTS` from it. When it does not — an ordinary pointer, whose report lives in
+a sticky this run could not read — treat the ledger as absent (`PRIOR_VERDICT = ""`,
+`PRIOR_OPEN_THREAD_IDS = []`, `PRIOR_BLOCKING_FINGERPRINTS = []`, `PRIOR_SHA = ""`,
+`RUN_MODE = "full"`), which degrades toward more review and more notification. Then, in both cases:
 - Leave `PRIOR_REVIEW` empty — there is no report body to parse — so `CARRIED_FINDINGS` and
-  `PRIOR_DIAGNOSTICS` stay empty. Announce
-  `Ledger recovered from a degraded pointer at ${PRIOR_SHA:0:7} — no prior report body, so nothing is carried forward.`
+  `PRIOR_DIAGNOSTICS` stay empty. Announce, per variant:
+  - with a ledger: `Ledger recovered from a degraded pointer at ${PRIOR_SHA:0:7} — no prior report body, so nothing is carried forward.`
+  - without one: `Prior review pointer found, but its report could not be read — running full, with no carry-forward.`
+
   A run that silently dropped carry-forward would look identical to one that had nothing to carry.
 - Set `STICKY_COMMENT_ID` empty: if the access path can create a sticky this run, Step 4a creates
   one and the PR returns to the normal model.
 - **Bind the run-mode inputs, exactly as the prior-report branch does** — this path is a re-review
   and must not leave them unset:
-  - Under `--full`: `RUN_MODE = "full"`, `PRIOR_SHA = ""` (delta triage stays skipped).
+  - Under `--full`, or when the pointer carried no ledger: `RUN_MODE = "full"`, `PRIOR_SHA = ""`
+    (delta triage stays skipped — with no baseline there is nothing to diff against).
   - Otherwise: `PRIOR_SHA = "$PRIOR_REVIEW_SHA"` and `RUN_MODE = "incremental"`, subject to
     Step 1.2b's upgrade.
   - `LAST_FULL_SHA = ""` and `INCR_RUNS_SINCE_FULL = 0`. A `truncated` ledger carries one entry and
@@ -358,15 +369,23 @@ from it exactly as below and bind `PRIOR_SHA`, `PRIOR_REVIEW_SHA`, `PRIOR_VERDIC
     1.2b reads both, and an unset value is not the same as a bound empty one.
 
 Bind `PRIOR_REVIEW` to whichever *report body* was found (`STICKY` first, then `LEGACY_REVIEW`); it
-is the object every rule below means by "the prior report". A recovered pointer ledger is not a
-prior report and never binds it.
+is the object every rule below means by "the prior report". A recovered pointer is not a prior
+report and never binds it.
+
+**When the sticky read failed and nothing else was found**, the prior-run state is *unknown*, not
+absent — the one endpoint that could have proved a prior run is the one that errored. Set
+`PRIOR_RUN_STATE_UNKNOWN=true`, `RUN_MODE = "full"`, and announce
+`Prior-run state unknown — the PR's comments could not be read; running full, with no carry-forward.`
+Never emit the first-pass announcement here: it asserts something this run could not check, and
+Step 4a is already on the no-duplicate path for the same reason.
 
 **`IS_RE_REVIEW` is the "has this PR been reviewed before" flag** — set it here, and gate re-review
 behaviour on it rather than on `PRIOR_REVIEW`:
 
 ```bash
-# True when ANY prior-run evidence was found: a sticky, a legacy report body, or a pointer ledger.
-if [ -n "$PRIOR_REVIEW" ] || [ -n "$POINTER_LEDGER_BODY" ]; then
+# True when ANY prior-run evidence was found: a sticky, a legacy report body, or a pointer
+# (with or without a ledger — the pointer itself is the evidence).
+if [ -n "$PRIOR_REVIEW" ] || [ -n "$POINTER_REVIEW" ]; then
   IS_RE_REVIEW=true
 else
   IS_RE_REVIEW=false
@@ -392,8 +411,7 @@ Step 1.0 runs that rule.
 The two variables answer different questions and are not interchangeable: `PRIOR_REVIEW` means
 *"there is a prior report body to parse"* (carry-forward, `PRIOR_DIAGNOSTICS`), while
 `IS_RE_REVIEW` means *"this PR has been reviewed before"* (thread reconciliation, `resolved since`).
-They diverge on exactly one path — the recovered pointer, where the second is true and the first is
-empty. Keying Step 2.9c off `PRIOR_REVIEW` there would skip reconciliation on a genuine re-review:
+They diverge on the pointer paths, where the second is true and the first is empty. Keying Step 2.9c off `PRIOR_REVIEW` there would skip reconciliation on a genuine re-review:
 no threads resolved, `RESOLVED_SINCE_PRIOR` never bound, and Gate 3 graded against a stale open set
 the run had everything it needed to refresh.
 
@@ -1805,14 +1823,15 @@ note that **no branch permits a second full report**:
 | --- | --- |
 | `gh` path, sticky found | `PATCH` it (above). |
 | `gh` path, no sticky and `STICKY_READ_FAILED != true` | `POST` one (above). |
-| `STICKY_READ_FAILED == true` | **Post no report object at all.** The read failed, so this run cannot tell whether a sticky exists, and creating one is a coin-flip on duplicating it. Keep the run's inline findings (Step 4b still applies), render `REPORT_BODY` into the Step 5 terminal report, and state `Sticky not updated — could not read the PR's comments (<error>).` |
+| `STICKY_READ_FAILED == true` | **Post no report object at all.** The read failed, so this run cannot tell whether a sticky exists, and creating one is a coin-flip on duplicating it. Keep the run's inline findings — Step 4b still applies and posts `DEGRADED_POINTER_BODY`, so the ledger is carried forward on this branch too — render `REPORT_BODY` into the Step 5 terminal report, and state `Sticky not updated — could not read the PR's comments (<error>).` |
 | MCP path, no sticky exists | Create it once with `add_issue_comment`. |
 | MCP path, sticky exists but no comment-update tool is available (`github-access.md § Gaps`) | **Do not create a second one.** Post the compact `DEGRADED_POINTER_BODY` (Step 4b) instead and state `Sticky exists but this access path cannot edit an issue comment — report not updated in place.` |
 | No GitHub access path | Nothing is posted. `github-access.md § No path` applies: say so precisely, never claim the report was updated. |
 
 **The delta logic survives every branch**, because it depends on the ledger, not on the report
-prose. Whenever the sticky cannot be rewritten, carry a **`DEGRADED_LEDGER`** on the review pointer
-body (Step 4b) — and nothing else from `REPORT_BODY`.
+prose. Whenever the sticky cannot be rewritten — in **either** non-writing branch above, the failed
+read and the un-patchable path alike — the review posted this run is `DEGRADED_POINTER_BODY`,
+carrying a **`DEGRADED_LEDGER`** and nothing else from `REPORT_BODY`.
 
 `DEGRADED_LEDGER` is the same block computed above, reduced to what the next run actually reads
 off a pointer:
@@ -1939,16 +1958,24 @@ gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
   --raw-field comments='INLINE_COMMENTS_JSON'
 ```
 
-`POINTER_BODY` is one line, and never a second copy of the report:
+`POINTER_BODY` is one marker line plus one prose line, and never a second copy of the report:
 
 ```markdown
+<!-- PR_REVIEWER_POINTER -->
 Reviewed `<HEAD_SHA_SHORT>` — <N> finding(s) inline. [Full report](<STICKY_URL>)
 ```
+
+**Every** pointer carries `<!-- PR_REVIEWER_POINTER -->`, not just the degraded one. It is the only
+thing on a review object that identifies it as this agent's, and two things depend on that: the
+identity ladder reads `.user.login` off it when `/user` is unreachable, and Step 0.7 can recognise a
+previously-reviewed PR from the `pulls/reviews` endpoint when `issues/comments` cannot be read. An
+unmarked pointer is invisible to both, on exactly the access paths that need them.
 
 On an escalation with nothing inline, substitute the escalation form instead, naming what got worse
 so the notification is worth the interrupt:
 
 ```markdown
+<!-- PR_REVIEWER_POINTER -->
 ⚠️ Verdict moved <PRIOR_VERDICT> → <VERDICT> at `<HEAD_SHA_SHORT>` — <ESCALATION_REASONS>. [Full report](<STICKY_URL>)
 ```
 
@@ -1966,6 +1993,7 @@ warning triangle on a passing review with no prior and no reason. Route that cas
 instead:
 
 ```markdown
+<!-- PR_REVIEWER_POINTER -->
 Reviewed `<HEAD_SHA_SHORT>` — <VERDICT>, no prior report on record. [Full report](<STICKY_URL>)
 ```
 

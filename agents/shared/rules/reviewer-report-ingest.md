@@ -62,6 +62,13 @@ A PR mid-migration can hold both: legacy review bodies from earlier runs plus a 
 the first run after the change. **The sticky wins** — it is the only body still being updated, so a
 legacy body is used only when no sticky exists.
 
+**A review pointer is not a third host.** Every review `pr-reviewer` posts carries
+`<!-- PR_REVIEWER_POINTER -->` and a one-line body pointing at the report; it is never a report and
+carries no sections, so a consumer must not parse it with this grammar. Two things may still be read
+off it, and only these two: its `.user.login` (the agent's own login) and, when the sticky could not
+be written that run, a trailing `<!-- PR_REVIEWER_LEDGER … -->` block — which is `pr-reviewer`-private
+state, as below. Treating a pointer as a report yields a "report" whose every section is empty.
+
 Two consequences for parsing:
 
 - A sticky is an issue comment and therefore has **no `commit_id` field**. Provenance comes from the
