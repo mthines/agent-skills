@@ -1823,11 +1823,13 @@ mechanical assertion at the call site is not.
 def report_body_is_safe(body: str) -> tuple[bool, str]:
     if "<!-- PR_REVIEWER_REPORT -->" not in body:
         return (False, "REPORT_BODY is missing the report marker")
+    # Order matters: `<details open>` contains no bare `<details>`, so the pre-expanded case must
+    # be caught first or it reports the wrong failure and F-report-accordion-expanded never fires.
+    if "<details open>" in body:
+        return (False, "the accordion is pre-expanded (F-report-accordion-expanded)")
     # The accordion is the collapse. Its absence is the single most common regression.
     if "<summary>Review details" not in body or "<details>" not in body:
         return (False, "REPORT_BODY has no `Review details` accordion (F-report-accordion-flattened)")
-    if "<details open>" in body:
-        return (False, "the accordion is pre-expanded (F-report-accordion-expanded)")
     # Everything the accordion owns must sit inside it, not above it.
     head = body.split("<details>", 1)[0]
     for owned in ("| Gate | Status | Details |", "**Run mode**", "**Memories**",
