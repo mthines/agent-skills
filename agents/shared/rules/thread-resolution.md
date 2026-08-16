@@ -48,7 +48,7 @@ comes from the post-merge path (`outcome-learning.md`) and the GitHub Action ins
 
 | Agent | When | Gate |
 | --- | --- | --- |
-| `pr-reviewer` | Step 2.9c, on every re-review (a prior `<!-- PR_REVIEWER_REPORT -->` report exists — `PRIOR_REVIEW` non-empty in Step 0.7) | Resolution + write always run; a failure here never blocks the review |
+| `pr-reviewer` | Step 2.9c, on every re-review (`IS_RE_REVIEW == true` in Step 0.7 — a prior sticky, a legacy report body, **or** a recovered pointer ledger; not the narrower `PRIOR_REVIEW`, which is empty on the pointer path) | Resolution + write always run; a failure here never blocks the review |
 
 It **never** runs on a first-pass review (no prior threads to reconcile).
 
@@ -455,7 +455,7 @@ The sequence per re-review is: fetch prior comments (`prior-comment-awareness.md
 produce findings → **reconcile prior threads (this rule)** → verdict → post.
 
 **Why before posting, not after.** Gate 3 and the unblock checklist
-(`pr-reviewer.md § UNRESOLVED_THREADS_SECTION`) are rendered from `OPEN_BOT_COMMENTS[]`.
+(`pr-reviewer.md § The Gate 3 open threads`) are rendered from `OPEN_BOT_COMMENTS[]`.
 Resolving threads after that rendering publishes a checklist naming threads the same run
 closed moments later, so the author reads a worklist that was already stale when it was
 written and only sees the truth one review later. Reconciling first removes the lag.

@@ -1,7 +1,7 @@
 ---
 name: pr-reviewer
 description: Code reviewer for GitHub PRs — both own PRs (self-relation) and someone else's PRs (cross-relation). Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Posts across two objects: a sticky report comment (one PR issue comment per PR, rewritten in place each run — headline, gate-status table inside a Review details accordion, plus a hidden run ledger) and append-only inline findings on a visible COMMENT review, posted only when there are new inline findings, it is the first run, the verdict worsened, or a new blocking finding appeared; no draft/pending workflow. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Default-on standards-conformance lens (Step 2.4d) enforces the repo's own governing docs (CLAUDE.md, AGENTS.md, .claude/rules/*.md, review-config .github/review.yaml standards:) as real findings — skip with --no-standards. Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or by dispatching this agent through the Task tool (`Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`). It is an agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
-tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write, mcp__github__pull_request_read, mcp__github__create_pull_request, mcp__github__update_pull_request, mcp__github__add_issue_comment, mcp__github__pull_request_review_write, mcp__github__add_comment_to_pending_review, mcp__github__resolve_review_thread, mcp__github__get_job_logs, mcp__github__actions_list, mcp__github__actions_run_trigger, mcp__github__get_me
+tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write, mcp__github__pull_request_read, mcp__github__create_pull_request, mcp__github__update_pull_request, mcp__github__add_issue_comment, mcp__github__issue_read, mcp__github__pull_request_review_write, mcp__github__add_comment_to_pending_review, mcp__github__resolve_review_thread, mcp__github__get_job_logs, mcp__github__actions_list, mcp__github__actions_run_trigger, mcp__github__get_me
 model: opus
 ---
 
@@ -219,15 +219,31 @@ If `RESOLVED_REPO` is empty (no PR_REPO and not in a git repo), abort: `pr-revie
 ## Step 0.5: Authorship pre-check — set review relation
 
 ```bash
-ME=$(gh api user --jq .login)
+# /user is NOT repo-scoped, so it 401s under a GitHub App installation token and under a
+# wrapped `gh` that injects a per-call repo-scoped credential — both of which are ordinary
+# hosted-runner setups, not exotic ones. Treat a failure as "identity unknown", never as "".
+ME=$(gh api user --jq .login 2>/dev/null || echo "")
 AUTHOR=$(gh pr view $PR_NUMBER $GH_REPO_FLAG --json author --jq .author.login)
 
-if [[ "$ME" == "$AUTHOR" ]]; then
+if [[ -z "$ME" ]]; then
+  REVIEW_RELATION="cross"
+elif [[ "$ME" == "$AUTHOR" ]]; then
   REVIEW_RELATION="self"
 else
   REVIEW_RELATION="cross"
 fi
 ```
+
+**An empty `ME` is a supported state, not an error.** It costs exactly one thing — the relation
+defaults to `cross`, whose only effect is tone (the pipeline, findings, gates and verdict are
+identical in both relations), so the degradation is cosmetic. Announce it as
+`Identity unavailable (\`/user\` not reachable on this access path) — assuming relation: cross.`
+so the tone choice is explained rather than looking arbitrary.
+
+**Nothing else may key off `ME`.** In particular, prior-run detection (Step 0.7) matches the report
+**by its marker, never by author login** — `reviewer-report-ingest.md § Identifying a report` says
+so, and an `ME` that silently resolved to `""` is precisely how a login-keyed `select` matches
+nothing, reports "no prior review", and posts a second report on a PR that already has one.
 
 **Relation-aware tone.** Both relations run the identical pipeline — same
 findings, same per-comment confidence gates, same verdict.
@@ -263,28 +279,41 @@ report exists, `CARRIED_FINDINGS` and `PRIOR_DIAGNOSTICS` are empty and the run 
 Otherwise:
 
 ```bash
-# ME was already set in Step 0.5 — reuse it, do not call gh api user again.
-# Export it so the embedded jq reads it as env.ME. `gh api` has NO `--arg` flag — it takes a
-# single positional --jq expression — so `--jq --arg me "$ME"` does not run (gh treats --arg/me/$ME
-# as stray positional args). Inject via the environment instead.
-export ME
-
-# The sticky report comment: this bot's issue comment carrying the report marker.
+# The sticky report comment: the issue comment carrying the report marker.
+# Matched by MARKER ONLY — never by author login. The marker is the identity
+# (`reviewer-report-ingest.md § Identifying a report`), and `ME` is unavailable on some access
+# paths (Step 0.5), where a login-keyed filter silently matches nothing and every run then
+# creates a fresh report on a PR that already has one.
 # `last` is defensive — there must only ever be one, and Step 4 adopts the newest if a
 # duplicate was somehow created.
-STICKY=$(gh api repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments --paginate \
-  --jq '[.[] | select(.user.login == env.ME and ((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->"))) ] | last // empty')
+if STICKY=$(gh api repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments --paginate \
+  --jq '[.[] | select((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->")) ] | last // empty'); then
+  STICKY_READ_FAILED=false
+else
+  STICKY_READ_FAILED=true
+  STICKY=""
+fi
 STICKY_COMMENT_ID=$(jq -r '.id // empty' <<< "${STICKY:-{\}}")
 ```
+
+**A failed read is not an empty read.** The two are indistinguishable in the output — `--jq` reduces
+a successful read to a single object or an empty string, never to an array — so the **exit status is
+the only signal**, which is why the call is wrapped in `if` above rather than inspected afterwards.
+Retry once on failure; if it still fails, keep `STICKY_READ_FAILED=true` and carry it into Step 4a,
+which takes the no-duplicate path. Never bind `STICKY_COMMENT_ID=""` and proceed on a failed read:
+that converts a transient API error into a duplicate report.
 
 **Legacy fallback (pre-sticky PRs).** Before the sticky existed, the report was the body of the
 review itself. A PR reviewed by that version has no sticky, so when `STICKY` is empty, look for the
 old shape once before concluding this is a first run:
 
 ```bash
+# NOT gated on STICKY_READ_FAILED: this is a different endpoint. A failed `issues/comments`
+# read says nothing about `pulls/reviews`, and suppressing this fetch on it is how a transient
+# error turns a reviewed PR into a first-pass run.
 if [ -z "$STICKY" ]; then
-  LEGACY_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
-    --jq '[.[] | select(.user.login == env.ME and ((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->"))) ] | last // empty')
+  LEGACY_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews --paginate \
+    --jq '[.[] | select((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->")) ] | last // empty')
 fi
 ```
 
@@ -293,22 +322,130 @@ same grammar — and set `STICKY_COMMENT_ID` empty so Step 4 **creates** the sti
 `Legacy review-body report found — migrating to a sticky comment this run.` The old review bodies are
 left untouched; they are history, and rewriting another object's past is not this agent's business.
 
-Bind `PRIOR_REVIEW` to whichever was found (`STICKY` first, then `LEGACY_REVIEW`); it is the object
-every rule below means by "the prior report".
+**Pointer fallback (this agent's own review pointers).** Every review this agent posts carries
+`<!-- PR_REVIEWER_POINTER -->` (Step 4b), and the degraded variant additionally carries a ledger.
+Either way the pointer is proof the PR has been reviewed before, and its `.user.login` is this
+agent's own login — the two things the fetches above cannot supply when `issues/comments` is
+unreadable or the report lives nowhere. Look for it when neither report shape was found:
 
-**If `PRIOR_REVIEW` is empty** (no prior report found in either shape):
+```bash
+# Also NOT gated on STICKY_READ_FAILED — same endpoint argument as the legacy fetch.
+if [ -z "$STICKY" ] && [ -z "$LEGACY_REVIEW" ]; then
+  # Keep the WHOLE object, not just `.body`: its `.user.login` feeds PRIOR_REPORT_AUTHOR below.
+  # The ledger is optional here — an ordinary pointer has none, and it is still valid evidence
+  # of a prior run and still a valid identity source.
+  POINTER_REVIEW=$(gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews --paginate \
+    --jq '[.[] | select((.body // "") | contains("<!-- PR_REVIEWER_POINTER -->")) ] | last // empty')
+  # The ledger body, only from a pointer that actually carries one.
+  POINTER_LEDGER_BODY=$(jq -r 'select((.body // "") | contains("<!-- PR_REVIEWER_LEDGER ")) | .body // empty' \
+    <<< "${POINTER_REVIEW:-{\}}")
+fi
+```
+
+When `POINTER_REVIEW` is non-empty, this is **not** a first run and must not be announced as one.
+When it also carries a ledger (`POINTER_LEDGER_BODY` non-empty), parse `LEDGER` from it exactly as
+below and bind `PRIOR_SHA`, `PRIOR_REVIEW_SHA`, `PRIOR_VERDICT`, `PRIOR_OPEN_THREAD_IDS` and
+`PRIOR_BLOCKING_FINGERPRINTS` from it. When it does not — an ordinary pointer, whose report lives in
+a sticky this run could not read — treat the ledger as absent (`PRIOR_VERDICT = ""`,
+`PRIOR_OPEN_THREAD_IDS = []`, `PRIOR_BLOCKING_FINGERPRINTS = []`, `PRIOR_SHA = ""`,
+`RUN_MODE = "full"`), which degrades toward more review and more notification. Then, in both cases:
+- Leave `PRIOR_REVIEW` empty — there is no report body to parse — so `CARRIED_FINDINGS` and
+  `PRIOR_DIAGNOSTICS` stay empty. Announce, per variant:
+  - with a ledger: `Ledger recovered from a degraded pointer at ${PRIOR_SHA:0:7} — no prior report body, so nothing is carried forward.`
+  - without one: `Prior review pointer found, but its report could not be read — running full, with no carry-forward.`
+
+  A run that silently dropped carry-forward would look identical to one that had nothing to carry.
+- Set `STICKY_COMMENT_ID` empty: if the access path can create a sticky this run, Step 4a creates
+  one and the PR returns to the normal model.
+- **Bind the run-mode inputs, exactly as the prior-report branch does** — this path is a re-review
+  and must not leave them unset:
+  - Under `--full`, or when the pointer carried no ledger: `RUN_MODE = "full"`, `PRIOR_SHA = ""`
+    (delta triage stays skipped — with no baseline there is nothing to diff against).
+  - Otherwise: `PRIOR_SHA = "$PRIOR_REVIEW_SHA"` and `RUN_MODE = "incremental"`, subject to
+    Step 1.2b's upgrade.
+  - `LAST_FULL_SHA = ""` and `INCR_RUNS_SINCE_FULL = 0`. A `truncated` ledger carries one entry and
+    no `mode` history, and an empty `LAST_FULL_SHA` is precisely what makes Step 1.2b promote the
+    run to `full` — the documented safe direction. Bind them rather than leaving them unset: Step
+    1.2b reads both, and an unset value is not the same as a bound empty one.
+
+Bind `PRIOR_REVIEW` to whichever *report body* was found (`STICKY` first, then `LEGACY_REVIEW`); it
+is the object every rule below means by "the prior report". A recovered pointer is not a prior
+report and never binds it.
+
+**When the sticky read failed and nothing else was found**, the prior-run state is *unknown*, not
+absent — the one endpoint that could have proved a prior run is the one that errored:
+
+```bash
+if [ "${STICKY_READ_FAILED:-false}" = "true" ] && [ -z "$PRIOR_REVIEW" ] && [ -z "$POINTER_REVIEW" ]; then
+  PRIOR_RUN_STATE_UNKNOWN=true
+else
+  PRIOR_RUN_STATE_UNKNOWN=false
+fi
+```
+
+It is bound on every path because three steps read it, and each would otherwise assert something
+this run could not check:
+
+| Reader | Behaviour when `true` |
+| --- | --- |
+| The no-prior-run branch below | Takes its bindings, but **not** its announcement: emit `Prior-run state unknown — the PR's comments could not be read; running full, with no carry-forward.` instead of `No prior review found`, and force `RUN_MODE = "full"` rather than inferring it from an absent baseline. |
+| Step 4a (§ *When the sticky cannot be written*) | Already routed by `STICKY_READ_FAILED` to the no-duplicate path; this flag is why that row exists — a sticky may well exist, unseen. |
+| Step 5 | Reports `prior-run state unknown` beside the sticky line, so a run that reviewed a PR blind is legible as such rather than as a first pass. |
+
+**`IS_RE_REVIEW` is the "has this PR been reviewed before" flag** — set it here, and gate re-review
+behaviour on it rather than on `PRIOR_REVIEW`:
+
+```bash
+# True when ANY prior-run evidence was found: a sticky, a legacy report body, or a pointer
+# (with or without a ledger — the pointer itself is the evidence).
+if [ -n "$PRIOR_REVIEW" ] || [ -n "$POINTER_REVIEW" ]; then
+  IS_RE_REVIEW=true
+else
+  IS_RE_REVIEW=false
+fi
+```
+
+**Bind `PRIOR_REPORT_AUTHOR` here too** — the `.user.login` of whichever object was found (sticky,
+legacy review, or pointer), or `""` when none was:
+
+```bash
+# All three shapes, in the same precedence as the fetches above. The pointer rung is the
+# load-bearing one: it is the only path where `/user` is unavailable AND there is no report
+# object, so omitting it leaves the identity ladder with nothing and BOT_COMMENTS empty.
+PRIOR_REPORT_AUTHOR=$(jq -r '.user.login // empty' \
+  <<< "${STICKY:-${LEGACY_REVIEW:-${POINTER_REVIEW:-{\}}}}")
+```
+
+It is this agent's own login, read off its own prior artifact, and it is the second rung of the
+identity ladder in `prior-comment-awareness.md § fetch existing PR comment state` — the one that
+keeps dedup, anti-flip-flop and Step 2.9c working when `/user` is unreachable. Export it before
+Step 1.0 runs that rule.
+
+The two variables answer different questions and are not interchangeable: `PRIOR_REVIEW` means
+*"there is a prior report body to parse"* (carry-forward, `PRIOR_DIAGNOSTICS`), while
+`IS_RE_REVIEW` means *"this PR has been reviewed before"* (thread reconciliation, `resolved since`).
+They diverge on the pointer paths, where the second is true and the first is empty. Keying Step 2.9c off `PRIOR_REVIEW` there would skip reconciliation on a genuine re-review:
+no threads resolved, `RESOLVED_SINCE_PRIOR` never bound, and Gate 3 graded against a stale open set
+the run had everything it needed to refresh.
+
+**If `PRIOR_REVIEW` is empty and no pointer was found** (no prior run found in any shape):
 - Set `RUN_MODE = "full"`.
 - Set `PRIOR_SHA = ""`.
 - Set `PRIOR_REVIEW_SHA = ""`.
 - Set `PRIOR_DIAGNOSTICS = {}` (all sub-lists empty).
 - Set `STICKY_COMMENT_ID = ""`, `PRIOR_VERDICT = ""`, `PRIOR_OPEN_THREAD_IDS = []`, and
   `PRIOR_BLOCKING_FINGERPRINTS = []`.
+- Set `IS_RE_REVIEW = false`.
 - Set `RESOLVED_SINCE_PRIOR = 0`. It is otherwise assigned only in Step 2.9c, which is skipped on a
   first pass — yet three render sites read it unconditionally, and a first-pass run with Gate 3 ⚠️ or ❌
   (other bots' threads open, which is common) reaches the checklist with nothing bound. `0`
   suppresses the counter everywhere, which is the correct reading: nothing has been resolved since
   a prior report that does not exist.
-- Announce: `No prior review found — running full review.`
+- Announce, and this is the one line `PRIOR_RUN_STATE_UNKNOWN` changes:
+  - `false` (every lookup succeeded and found nothing): `No prior review found — running full review.`
+  - `true` (a lookup failed): `Prior-run state unknown — the PR's comments could not be read; running full, with no carry-forward.`
+    Never the first-pass line: absence was not established, and Step 4a is on the no-duplicate path
+    for the same reason.
 - Proceed to Step 1.
 
 **If `PRIOR_REVIEW` is non-empty** (prior report exists):
@@ -317,7 +454,10 @@ every rule below means by "the prior report".
   PRIOR_BODY=$(jq -r '.body' <<< "$PRIOR_REVIEW")
 
   # The ledger block, or "" when absent / unparseable (legacy report, hand-edited sticky).
-  LEDGER=$(sed -n 's/.*<!-- PR_REVIEWER_LEDGER //p' <<< "$PRIOR_BODY" | sed 's/ -->.*//' \
+  # LEDGER_SOURCE is the report body here, and POINTER_LEDGER_BODY on the ledger-only path
+  # above — the extraction is identical, so it is written once.
+  LEDGER_SOURCE="${PRIOR_BODY:-$POINTER_LEDGER_BODY}"
+  LEDGER=$(sed -n 's/.*<!-- PR_REVIEWER_LEDGER //p' <<< "$LEDGER_SOURCE" | sed 's/ -->.*//' \
     | jq -c '.' 2>/dev/null || echo "")
   ```
 - Extract `PRIOR_REVIEW_SHA` in **every** mode. A sticky is an issue comment and has **no**
@@ -387,12 +527,17 @@ every rule below means by "the prior report".
 - Proceed to Step 1.
 
 `PRIOR_SHA`, `PRIOR_REVIEW_SHA`, `RUN_MODE` and `PRIOR_DIAGNOSTICS` are available to all subsequent steps.
-`LAST_FULL_SHA` and `INCR_RUNS_SINCE_FULL` are set **only on this path** — the prior-review,
-non-`--full` branch — so they are unset on a first run and under `--full`. That is safe: their only
-consumer is Step 1.2b's delta triage, which is itself skipped in exactly those two cases (first run
-is `full`; `--full` skips triage), so nothing reads an unset value.
-`ME` was set in Step 0.5, exported above for the embedded jq, and reused here — do not call
-`gh api user` again.
+`LAST_FULL_SHA` and `INCR_RUNS_SINCE_FULL` are bound on **both re-review paths** — the prior-report,
+non-`--full` branch (from the ledger's `runs[]`) and the recovered-pointer branch (to `""` / `0`,
+since a truncated ledger has no history). They stay unset only where nothing reads them: a first run
+(`full`) and `--full`, both of which skip Step 1.2b's delta triage, their only consumer. The
+pointer branch is *not* one of those cases — it runs delta triage like any other re-review, which is
+why it binds them explicitly rather than relying on the two-case argument.
+`ME` is **not** read in this step: all three fetches match on a marker alone (see above), so
+prior-run detection keeps working on an access path where `/user` is unreachable. Do not reintroduce
+a `.user.login` filter here, and do not call `gh api user` again anywhere in the run. Reading
+`.user.login` **off** a found object is a different thing and is required — see
+`PRIOR_REPORT_AUTHOR`.
 
 ### Parsing `PRIOR_DIAGNOSTICS`
 
@@ -503,7 +648,7 @@ While fetching, **also identify open unresolved bot-authored comments** for Gate
   separately and reported as `thread state unavailable — <N> comment(s) unverified` in
   Gate 3's Details cell.
 - For each stored entry, capture five fields — three so Gate 3 can render an actionable, linkable
-  checklist (see *Gate 3* and `UNRESOLVED_THREADS_SECTION`), two so it can grade the gate:
+  checklist (see *Gate 3* and `OPEN_THREADS_LIST`), two so it can grade the gate:
   `path:line` (the anchor), `url`
   (the comment's `html_url` permalink from `/tmp/prior-comments.json`), and `ask` — the comment's
   own lead line, **truncated, not paraphrased**: take its first sentence (or its `suggestion:` /
@@ -623,8 +768,8 @@ Loaded `reviewer-lessons` are reported separately by the `<L> reviewer-lessons m
 announce line, which is emitted at Step 1.2e — matching has not happened yet at this step, so the
 count does not exist here.
 Both counters feed the Step 4 `Review details`
-**Memories** line; the collapsed title headlines the **used** count (`MEMORIES_USED_COUNT`,
-computed at Step 2.2) — see *Review body format*.
+**Memories** line (`MEMORIES_USED_COUNT` is computed at Step 2.2) — see *Review body format*.
+Neither reaches the collapsed `<summary>`, which carries the open-threads count and nothing else.
 Announce the concrete resolved scope so the read is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <N> entries indexed.` The matched-lesson count is announced at Step 1.2e, once matching has run.
 The `<D> suppressions, <P> promotions` figures are NOT announced here: they come from `relevance` and `seen_count` in record BODIES, which are not fetched until Step 2.2. Step 2.2 announces them once they exist.
 
@@ -981,10 +1126,14 @@ own lead line** `- [\`<path>:<line>\`](<url>) — <ask>` using the three fields 
 (`path:line`, `url`, `ask`). This is what makes the gate actionable: the author clicks straight
 through to each thread and reads in one line what it wants — instead of a bare `path:line` they
 have to hunt for.
-Whenever any thread is open — on ⚠️ as well as ❌ — this same list is surfaced **outside** the
-accordion via `UNRESOLVED_THREADS_SECTION` (below) so it is visible in the collapsed review; the
-accordion's Gate 3 Details cell then stays terse — `<N> unresolved bot thread(s) — see the thread list
-above`.
+Whenever any thread is open — on ⚠️ as well as ❌ — this list renders **inside** the `Review
+details` accordion, as `OPEN_THREADS_LIST` immediately below the gate table, and the accordion's
+own `<summary>` carries `OPEN_THREADS_SUFFIX` — the open count, plus the blocking subset on ❌.
+That split is the whole contract: the reader learns *that* threads are open and *how many block*
+from the one line that is visible while the report is collapsed, and the per-thread bullets —
+which on a long-running PR grow to dozens of lines and crowd the report off the screen — are one
+click away behind that same line. The accordion's Gate 3 Details cell then stays terse —
+`<N> unresolved bot thread(s) — see the thread list below`.
 
 Result: PASS (✅), WARN (⚠️), or FAIL (❌), graded from the `blocking` and `answered` fields
 captured in Step 1.0 (*Gate states*):
@@ -1339,8 +1488,11 @@ The docs-only cosmetic drop happens earlier, at the 2.3 filtering stage (pre-cle
 
 ## Step 2.9c: Reconcile prior threads (re-review only)
 
-See `agents/shared/rules/thread-resolution.md`. Skip entirely on a first-pass review
-(`PRIOR_REVIEW` empty in Step 0.7).
+See `agents/shared/rules/thread-resolution.md`. Skip entirely on a first-pass review — that is
+`IS_RE_REVIEW == false` in Step 0.7, **not** an empty `PRIOR_REVIEW`. The two differ on the
+recovered-pointer path, where there is no prior report body but the PR has certainly been reviewed
+before, and skipping there would leave the run reconciling nothing and `RESOLVED_SINCE_PRIOR`
+unbound.
 
 **This is a top-level step, deliberately not a subsection of Step 2.** Step 2 is skipped wholesale
 when the zero-delta short-circuit fires (Step 1.2b), and a zero-delta run happens **only** on a
@@ -1672,16 +1824,118 @@ Exactly **one** sticky per PR. If Step 0.7 somehow found more than one marker-be
 the newest and leave the others — never delete a comment, and never create a second sticky when one
 exists.
 
+#### The report has exactly one host
+
+`REPORT_BODY` — anything carrying `<!-- PR_REVIEWER_REPORT -->` — goes into the sticky issue comment
+and **nowhere else**. It is never placed in a review body, never in a reply on an inline thread, and
+never posted twice in one run. A review body is append-only, so a report placed there is a permanent
+snapshot: twenty runs leave twenty contradictory full reports, the oldest of which is the one a
+reader meets first, and the "one edited comment" model is gone even though every other rule was
+followed. Step 4b's pre-flight rejects the payload mechanically; this is the rule it enforces.
+
+#### When the sticky cannot be written
+
+The two writes above are a repo-scoped `POST` and `PATCH` on `/issues/{n}/comments`. Resolve the
+access path once per `agents/shared/rules/github-access.md § Step 0`, then apply this table — and
+note that **no branch permits a second full report**:
+
+| Situation | Do this |
+| --- | --- |
+| `gh` path, sticky found | `PATCH` it (above). |
+| `gh` path, no sticky and `STICKY_READ_FAILED != true` | `POST` one (above). |
+| `STICKY_READ_FAILED == true` | **Post no report object at all.** The read failed, so this run cannot tell whether a sticky exists, and creating one is a coin-flip on duplicating it. Keep the run's inline findings — Step 4b still applies and posts `DEGRADED_POINTER_BODY`, so the ledger is carried forward on this branch too — render `REPORT_BODY` into the Step 5 terminal report, and state `Sticky not updated — could not read the PR's comments (<error>).` |
+| MCP path, no sticky exists | Create it once with `add_issue_comment`. |
+| MCP path, sticky exists but no comment-update tool is available (`github-access.md § Gaps`) | **Do not create a second one.** Post the compact `DEGRADED_POINTER_BODY` (Step 4b) instead and state `Sticky exists but this access path cannot edit an issue comment — report not updated in place.` |
+| No GitHub access path | Nothing is posted. `github-access.md § No path` applies: say so precisely, never claim the report was updated. |
+
+**The delta logic survives every branch**, because it depends on the ledger, not on the report
+prose. Whenever the sticky cannot be rewritten — in **either** non-writing branch above, the failed
+read and the un-patchable path alike — the review posted this run is `DEGRADED_POINTER_BODY`,
+carrying a **`DEGRADED_LEDGER`** and nothing else from `REPORT_BODY`.
+
+`DEGRADED_LEDGER` is the same block computed above, reduced to what the next run actually reads
+off a pointer:
+
+```bash
+# Newest run only, flagged truncated. The full 50-run history is a sticky affordance:
+# it exists to be rewritten in place, and a pointer is append-only.
+DEGRADED_LEDGER=$(jq -c '{v: 1, truncated: true, runs: (.runs | .[-1:])}' <<< "$NEW_LEDGER")
+
+# Reduction ladder, applied in order and only as far as needed, against the SAME 1500-char
+# limit the Step 4b pre-flight enforces. Both list fields are unbounded — one entry per open
+# thread, one per blocking finding — so a ladder that stops after the first cannot guarantee
+# the payload passes, and the run would abort on exactly the crowded PR it is serving.
+fits() { [ "$(printf %s "$1" | wc -c)" -le 1500 ]; }
+
+if ! fits "$DEGRADED_LEDGER"; then
+  DEGRADED_LEDGER=$(jq -c '.runs[0].open_bot_comment_ids = [] | .ids_dropped = true' <<< "$DEGRADED_LEDGER")
+fi
+if ! fits "$DEGRADED_LEDGER"; then
+  DEGRADED_LEDGER=$(jq -c '.runs[0].blocking_fingerprints = [] | .fingerprints_dropped = true' <<< "$DEGRADED_LEDGER")
+fi
+if ! fits "$DEGRADED_LEDGER"; then
+  # Floor: the four scalars the delta baseline actually needs. This always fits.
+  DEGRADED_LEDGER=$(jq -c '{v: 1, truncated: true, ids_dropped: true, fingerprints_dropped: true,
+    runs: [.runs[0] | {sha, mode, verdict, at}]}' <<< "$DEGRADED_LEDGER")
+fi
+```
+
+The floor is bounded by construction — a sha, a mode word, a verdict word and a timestamp — so the
+ladder terminates and the pre-flight can never reject a pointer this agent built. Each rung is
+recorded in the block (`ids_dropped`, `fingerprints_dropped`) so the next run can tell an
+intentionally emptied field from one that was genuinely empty.
+
+What each consumer gets from it, and what it costs:
+
+| Consumer | From a sticky ledger | From `DEGRADED_LEDGER` |
+| --- | --- | --- |
+| `PRIOR_SHA` / `PRIOR_REVIEW_SHA` (incremental mode) | newest `runs[].sha` | same — unaffected |
+| `PRIOR_VERDICT` (escalation) | newest `runs[].verdict` | same — unaffected |
+| `PRIOR_BLOCKING_FINGERPRINTS` (Step 4b condition 4) | newest entry | same, unless `fingerprints_dropped` — then `[]`, so every blocking finding next run reads as new and the review posts. Over-notifying, never silence |
+| `PRIOR_OPEN_THREAD_IDS` (`resolved since`) | newest entry | same, unless `ids_dropped` — then `[]`, and `RESOLVED_SINCE_PRIOR` renders 0 (the counter is suppressed at 0, so nothing false is printed) |
+| `LAST_FULL_SHA` / `INCR_RUNS_SINCE_FULL` (deep-lens refresh) | full history | absent → empty `LAST_FULL_SHA` → Step 1.2b forces `full`, which is the documented safe direction |
+
+**A pointer that carries a ledger is marked, and Step 0.7 looks for it.** `DEGRADED_POINTER_BODY`
+deliberately does *not* carry `<!-- PR_REVIEWER_REPORT -->` (it is not a report), so the two
+marker-keyed fetches in Step 0.7 would never see it. It carries `<!-- PR_REVIEWER_POINTER -->`
+instead, and Step 0.7's third fetch reads the ledger from it — see *Step 0.7 → Ledger-only
+fallback*. That fallback recovers the ledger and nothing else: a pointer has no report body, so
+`CARRIED_FINDINGS` and `PRIOR_DIAGNOSTICS` stay empty and the run says so. Deferred and anchorless
+findings are lost on that path — an honest cost of an access path that cannot update a comment,
+and the reason the degraded path is a fallback rather than a mode.
+
+**A run that posts no review updates no ledger.** Step 4b is conditional, so a degraded run with
+nothing new to say writes nothing at all, and the next run reads the ledger from the last pointer
+that *was* posted. That is stale, never wrong: an older `PRIOR_SHA` widens the delta (more review,
+not less) and an older `PRIOR_VERDICT` can only over-notify. Never post a review solely to refresh
+the ledger — that would reintroduce the notification noise this model removes.
+
 ### 4b. Post the review (conditionally)
 
 Build the payload and run the pre-flight assertions below **before** the API call:
 
 ```python
+import re
+
+
 def payload_is_safe(payload: dict) -> tuple[bool, str]:
     if payload.get("event") != "COMMENT":
         return (False, "event must be 'COMMENT'")
     if not isinstance(payload.get("body", ""), str) or len(payload["body"]) == 0:
         return (False, "body must be a non-empty string (pointer line)")
+    if "<!-- PR_REVIEWER_REPORT -->" in payload["body"]:
+        return (False, "review body carries the report marker — the report belongs in the sticky")
+    # The budget governs the PROSE a reader sees. Measure with the machine-readable ledger
+    # block removed: it is invisible in the rendered comment, and sizing the cap around it
+    # would reject the long-lived PRs the degraded pointer exists to serve.
+    prose = re.sub(r"<!-- PR_REVIEWER_LEDGER .*? -->", "", payload["body"], flags=re.S).strip()
+    if len(prose) > 600:
+        return (False, f"review body is a pointer, not a report: {len(prose)} chars of prose")
+    # The ledger itself is still bounded — a pointer carries DEGRADED_LEDGER (newest run only),
+    # never the 50-run history, which only a rewritable sticky can hold.
+    ledger = re.search(r"<!-- PR_REVIEWER_LEDGER (.*?) -->", payload["body"], flags=re.S)
+    if ledger and len(ledger.group(1)) > 1500:
+        return (False, f"pointer ledger is not truncated: {len(ledger.group(1))} chars")
     for c in payload.get("comments", []):
         if c.get("side") not in ("RIGHT", "LEFT"):
             return (False, f"comment missing side field: {c.get('path')}:{c.get('line')}")
@@ -1724,16 +1978,24 @@ gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
   --raw-field comments='INLINE_COMMENTS_JSON'
 ```
 
-`POINTER_BODY` is one line, and never a second copy of the report:
+`POINTER_BODY` is one marker line plus one prose line, and never a second copy of the report:
 
 ```markdown
+<!-- PR_REVIEWER_POINTER -->
 Reviewed `<HEAD_SHA_SHORT>` — <N> finding(s) inline. [Full report](<STICKY_URL>)
 ```
+
+**Every** pointer carries `<!-- PR_REVIEWER_POINTER -->`, not just the degraded one. It is the only
+thing on a review object that identifies it as this agent's, and two things depend on that: the
+identity ladder reads `.user.login` off it when `/user` is unreachable, and Step 0.7 can recognise a
+previously-reviewed PR from the `pulls/reviews` endpoint when `issues/comments` cannot be read. An
+unmarked pointer is invisible to both, on exactly the access paths that need them.
 
 On an escalation with nothing inline, substitute the escalation form instead, naming what got worse
 so the notification is worth the interrupt:
 
 ```markdown
+<!-- PR_REVIEWER_POINTER -->
 ⚠️ Verdict moved <PRIOR_VERDICT> → <VERDICT> at `<HEAD_SHA_SHORT>` — <ESCALATION_REASONS>. [Full report](<STICKY_URL>)
 ```
 
@@ -1751,11 +2013,38 @@ warning triangle on a passing review with no prior and no reason. Route that cas
 instead:
 
 ```markdown
+<!-- PR_REVIEWER_POINTER -->
 Reviewed `<HEAD_SHA_SHORT>` — <VERDICT>, no prior report on record. [Full report](<STICKY_URL>)
 ```
 
 Use it whenever condition 3 fired on an empty `PRIOR_VERDICT`, at any verdict. The escalation form
 is reserved for a genuine transition between two **known** verdicts.
+
+`DEGRADED_POINTER_BODY` is the pointer used when Step 4a could not write the sticky on this access
+path. It is the ordinary pointer plus the headline it could not deliver, plus the hidden ledger —
+never the report:
+
+```markdown
+<!-- PR_REVIEWER_POINTER -->
+Reviewed `<HEAD_SHA_SHORT>` — <HEADLINE_LINE> <N> finding(s) inline. Report not updated in place on this access path.
+
+<!-- PR_REVIEWER_LEDGER {"v":1,"truncated":true,"runs":[{…newest run only…}]} -->
+```
+
+`HEADLINE_LINE` is the single verdict sentence from `REPORT_BODY` — the first non-marker,
+non-banner line — and nothing after it: no gate table, no sections, no accordion, and never the
+`<!-- PR_REVIEWER_REPORT -->` marker (the pre-flight rejects it, and a marker here would make the
+next run treat this pointer as the prior report body).
+
+The two HTML comments are load-bearing, not decoration:
+- `<!-- PR_REVIEWER_POINTER -->` is how Step 0.7's ledger-only fallback finds this object. Without
+  it the ledger is written where nothing looks, and every degraded run reads as a first run.
+- `<!-- PR_REVIEWER_LEDGER … -->` carries `DEGRADED_LEDGER` — the newest run only — never the
+  full history (*When the sticky cannot be written*).
+
+The pre-flight measures the 600-char pointer budget against the **prose with the ledger block
+stripped**, and separately caps the ledger at 1500 chars, so this form passes on a PR with any
+number of prior runs while a pasted report still does not.
 
 `STICKY_URL` is bound from the 4a response's `html_url`, in whichever branch ran. It is the only
 link in the pointer body, so a run that somehow reaches 4b without it must omit the trailing
@@ -1768,7 +2057,9 @@ The five non-negotiables:
 3. On API failure, do not fall back — report verbatim and stop.
 4. Never post more than one review per run, and never more than one sticky per PR.
 5. Never skip the sticky patch. The review is conditional; the report is not — the sticky must
-   describe the current run in every case, including a run that posts no review.
+   describe the current run in every case, including a run that posts no review. The single
+   exception is an access path that cannot write it (§ *When the sticky cannot be written*), and
+   that path posts **no** report copy anywhere — it never relocates the report into the review body.
 
 Confirm the 4b response contains `state: "COMMENTED"` when a review was posted.
 
@@ -1811,7 +2102,7 @@ ADDITIONAL_FINDINGS_SECTION
 LOW_CONFIDENCE_SECTION
 
 <details>
-<summary>Review detailsMEMORIES_USED_SUFFIX</summary>
+<summary>Review details</summary>
 
 <sup>FOOTER_LINE</sup>
 
@@ -1866,8 +2157,6 @@ without the headline overstating cleanliness. When `CADV == 0` the headline stay
 PARTIAL_REVIEW_BANNER
 Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>.
 
-UNRESOLVED_THREADS_SECTION
-
 OPTIMALITY_SECTION
 
 ADDITIONAL_FINDINGS_SECTION
@@ -1875,17 +2164,19 @@ ADDITIONAL_FINDINGS_SECTION
 LOW_CONFIDENCE_SECTION
 
 <details>
-<summary>Review detailsMEMORIES_USED_SUFFIX</summary>
+<summary>Review detailsOPEN_THREADS_SUFFIX</summary>
 
 <sup>FOOTER_LINE</sup>
 
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ✅ or ⚠️ | static description (on ✅) or mismatch text |
-| Prior bot feedback   | ✅ or ⚠️ | static description (on ✅) or `<N> unresolved bot thread(s) — see the thread list above` |
+| Prior bot feedback   | ✅ or ⚠️ | static description (on ✅) or `<N> unresolved bot thread(s) — see the thread list below` |
 | Documentation        | ✅ | The change is documented well enough to follow. |
 | Self-review signals  | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
 | Code review          | ✅ or ⚠️ | static description (on ✅) or "See inline comments" or finding text |
+
+OPEN_THREADS_LIST
 
 **Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 
@@ -1915,8 +2206,6 @@ MEMORIES_SECTION
 PARTIAL_REVIEW_BANNER
 Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review. Blocking: <FAIL_REASONS>.
 
-UNRESOLVED_THREADS_SECTION
-
 OPTIMALITY_SECTION
 
 ADDITIONAL_FINDINGS_SECTION
@@ -1924,17 +2213,19 @@ ADDITIONAL_FINDINGS_SECTION
 LOW_CONFIDENCE_SECTION
 
 <details>
-<summary>Review detailsMEMORIES_USED_SUFFIX</summary>
+<summary>Review detailsOPEN_THREADS_SUFFIX</summary>
 
 <sup>FOOTER_LINE</sup>
 
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ✅ or ⚠️ | static description (on ✅) or mismatch text (≤ 120 chars) |
-| Prior bot feedback   | ✅, ⚠️, or ❌ | static description (on ✅) or `<N> unresolved bot thread(s) — see the thread list above` (the linked checklist lives in `UNRESOLVED_THREADS_SECTION`, not this cell) |
+| Prior bot feedback   | ✅, ⚠️, or ❌ | static description (on ✅) or `<N> unresolved bot thread(s) — see the thread list below` (the linked checklist is `OPEN_THREADS_LIST`, not this cell) |
 | Documentation        | ✅ or ❌ | static description (on ✅) or finding text |
 | Self-review signals  | ✅ or ❌ | static description (on ✅) or finding text |
 | Code review          | ✅, ⚠️, or ❌ | static description (on ✅) or "See inline comments" or finding text |
+
+OPEN_THREADS_LIST
 
 **Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 
@@ -2006,41 +2297,88 @@ truncated run can never be read as a complete PASS.
 This is the only prose permitted outside the templates, and it is permitted because the stop
 condition requires it in both the terminal report and the review body.
 
-`UNRESOLVED_THREADS_SECTION` renders the Gate 3 open-thread checklist **outside the accordion** so
-it is visible in the collapsed review — the whole point is that a reader who only sees the
-headline still learns *which* threads and *what
-each wants* without expanding anything, and can click straight to each one. Render it **whenever
-Gate 3 (`Prior bot feedback`) is ⚠️ or ❌** — i.e. whenever `OPEN_BOT_COMMENTS[]` is non-empty —
-in the FAIL template *and* the WARN template alike; omit the placeholder entirely on ✅ and `⏭️`.
-Downgrading a non-blocking open thread to ⚠️ must not make it invisible: the verdict softens, the
-worklist does not shrink, so this section follows the open set rather than the verdict.
-Substitute one entry per item in `OPEN_BOT_COMMENTS[]` **as it stands after Step 2.9c**
-(order: same file grouped, then by line), using the `path:line`, `url`, and `ask` fields from
-Step 1.0.
+### The Gate 3 open threads: the count on the summary, the list in the accordion
 
-The heading takes one of two forms, chosen by the gate's status — the only thing that varies with
-severity, because "to unblock" is a false instruction for threads that are not blocking anything:
+Gate 3's open-thread state renders across **two** slots, and the split is the contract:
+
+| Slot | Where | What it carries |
+| --- | --- | --- |
+| `OPEN_THREADS_SUFFIX` | appended to the `Review details` `<summary>` — **always visible** | the open count and, on ❌, the blocking subset |
+| `OPEN_THREADS_LIST` | **inside** the accordion, immediately after the gate table | the per-thread bullets and the `resolved since` progress |
+
+**The counter rides on the `<summary>` rather than on a line of its own.** The summary is already
+visible when the report is collapsed *and* it is the control the reader clicks, so putting the count
+there costs zero vertical space and makes the label name its own destination. A separate notice
+paragraph would restate what the headline already says (`FAIL_REASONS` / `WARN_REASONS` carry a
+Prior-bot-feedback phrase in both non-passing states) and would point one line down the page at the
+accordion — two sentences to convey a click target that is already on screen. Do not reintroduce
+one.
+
+Render **both** slots whenever Gate 3 (`Prior bot feedback`) is ⚠️ or ❌ — i.e. whenever
+`OPEN_BOT_COMMENTS[]` is non-empty — in the FAIL template *and* the WARN template alike; substitute
+**both** as empty on ✅ and `⏭️`, leaving the bare `<summary>Review details</summary>`. Rendering one
+without the other is a guard failure (`F-open-threads-slot-orphaned`): a suffix alone advertises a
+list that is not there, and a list alone is invisible in the collapsed report.
+
+Downgrading a non-blocking open thread to ⚠️ must not make it invisible: the verdict softens, the
+worklist does not shrink, so both slots follow the open set rather than the verdict.
+
+#### `OPEN_THREADS_SUFFIX` — the counter on the summary
+
+Substitute one of two forms, chosen by the gate's status — the blocking subset is named only when
+there is one, because `(0 blocking)` is noise on a gate that is not blocking anything:
 
 ```markdown
-**To unblock — resolve or reply to these <N> bot threads (<K> blocking):** <sup><RESOLVED_SINCE_PRIOR> resolved since \`<PRIOR_REVIEW_SHA_SHORT>\`</sup>
+ — <N> open bot threads (<K> blocking)
+```
+
+On ⚠️ (nothing blocking), the parenthetical is dropped:
+
+```markdown
+ — <N> open bot threads
+```
+
+Rules for the suffix:
+- **It is a suffix, not a line.** It renders inside the `<summary>` tag, directly after
+  `Review details`, producing e.g. `Review details — 2 open bot threads (1 blocking)`. Plain text
+  only — no `<sup>`, no bold, no nested block elements, none of which GitHub renders in a
+  `<summary>`.
+- **`<N>` is the full open count**, never the blocking subset — the worklist size is what the
+  reader is being told. `<K>` is the blocking unanswered subset, the part that actually moves the
+  verdict. Use the singular `thread` at exactly 1. Never render `(0 blocking)`.
+- **Nothing else may be appended to the summary.** It has exactly one job: name the actionable
+  worklist inside. Run-state diagnostics — memories, run mode, quality, integrations, optimality,
+  standards — render as their own lines *inside* the accordion and never as summary tags. The
+  retired `MEMORIES_USED_SUFFIX` is the cautionary case: it duplicated `MEMORIES_SECTION`'s own
+  header and spent the report's one scannable line on `(0 memories used)`.
+
+#### `OPEN_THREADS_LIST` — the bullets, inside the accordion
+
+Substitute one entry per item in `OPEN_BOT_COMMENTS[]` **as it stands after Step 2.9c**
+(order: same file grouped, then by line), using the `path:line`, `url`, and `ask` fields from
+Step 1.0:
+
+```markdown
+**Open bot threads (<N>)**RESOLVED_SINCE_SUFFIX
 
 - [\`packages/cli/README.md:680\`](<url>) — bound \`LocalStore.search\` the way \`RemoteStore\` is
 - [\`packages/cli/src/install.mjs:291\`](<url>) — add the missing parity test for the event roster
 - [\`packages/cli/src/core/lessons.mjs:843\`](<url>) — cap \`LocalStore.search\` per-prompt walk
 ```
 
-On ⚠️ the same list renders under the neutral heading instead:
-
-```markdown
-**Open bot threads — <N> still open, none blocking:** <sup><RESOLVED_SINCE_PRIOR> resolved since \`<PRIOR_REVIEW_SHA_SHORT>\`</sup>
-```
-
-Rules for this section:
-- **The heading is the only severity-dependent part.** `<N>` is the full open count in both forms
-  and the bullet list always renders every open thread; only the framing changes. On ❌ use the
-  `To unblock` form, where `<K>` = the blocking unanswered threads — the subset that actually moves
-  the verdict. On ⚠️ use the `Open bot threads` form. Never render `none blocking` on a ❌, and
-  never drop a thread from the list because it is non-blocking.
+Rules for the list:
+- **No nested `<details>`.** It is already inside the `Review details` accordion; a second collapse
+  would put the worklist two clicks from the reader. The bold lead line is its whole heading, and
+  `<N>` there is the same full open count as `OPEN_THREADS_SUFFIX` — the two must agree.
+- **The list always renders every open thread**, on ⚠️ exactly as on ❌. Never drop a thread from it
+  because it is non-blocking; only the suffix's framing changes with severity.
+- **`RESOLVED_SINCE_SUFFIX` reports progress here, next to the list it describes.** Substitute
+  ` <sup><RESOLVED_SINCE_PRIOR> resolved since \`<PRIOR_REVIEW_SHA_SHORT>\`</sup>` only when
+  `RESOLVED_SINCE_PRIOR > 0`; substitute nothing otherwise (never `0 resolved`). The clause names
+  no noun — it reads `4 resolved since \`abc1234\`` — so there is nothing to pluralise and `1
+  resolved since` is correct at exactly 1. It stays off the `<summary>`, which takes plain text only
+  and is reserved for the worklist count. When Gate 3 is ✅ this whole slot is omitted, so the counter moves into
+  Gate 3's Details cell instead — see *Rules for table cells*.
 - **Every `path:line` is a Markdown link** to the thread's `html_url`, with the truncated `ask`
   after an em-dash. If an item's `url` is missing (older fetch, or the permalink could not be read),
   render its `path:line` as inline code with no link rather than a broken link, and keep the `ask`.
@@ -2052,10 +2390,6 @@ Rules for this section:
   (`isResolved` is the authority — `prior-comment-awareness.md § Thread state`), gets overwritten by
   the next patch, and would contradict Gate 3's ❌ or ⚠️ while it survived. Do not reintroduce
   checkboxes.
-- **`RESOLVED_SINCE_PRIOR` reports progress instead of the list carrying it.** Render the `<sup>`
-  clause only when `RESOLVED_SINCE_PRIOR > 0`; omit it entirely otherwise (never `0 resolved`).
-  Use the singular `thread` at exactly 1. When Gate 3 is ✅ this whole section is omitted, so the
-  counter moves into Gate 3's Details cell instead — see *Rules for table cells*.
 - **Actionable-only** — the unresolved threads and nothing else; never restate the gate table,
   tally, or other findings. It is a rendering of Gate 3 state, not a new finding, so it is never
   auto-applied or ingested (`reviewer-report-ingest.md`).
@@ -2169,16 +2503,52 @@ Build each `<url>` from the memory's retained `scope` + `key`, per
 `https://lorekit.io`), else a plain-text `` `<scope> · <key>` `` identifier — never a
 fabricated URL.
 
-`MEMORIES_USED_SUFFIX` is the tag appended to the `Review details` `<summary>` title so the
-collapsed label headlines how many memories **influenced** the review:
-- **Connected** — substitute ` (<MEMORIES_USED_COUNT> memories used)` — e.g.
-  `Review details (2 memories used)`. Use the singular `memory` at exactly 1; keep
-  `(0 memories used)` when nothing fired.
-- **Not connected** — substitute nothing; the title stays the bare `Review details`.
+**`MEMORIES_USED_SUFFIX` is retired — do not reintroduce it.** It appended
+` (<N> memories used)` to the `Review details` `<summary>`, which restated the header
+`MEMORIES_SECTION` already renders a few lines below it and spent the report's one scannable line
+on a number that is `0` on most runs. Memory state is run-state diagnostics, the same class as
+`**Run mode**` and `**Standards (2.4d)**`, and it renders where they do: inside the accordion, via
+`MEMORIES_SECTION`. The `<summary>` carries `OPEN_THREADS_SUFFIX` and nothing else.
 
-The gate-status table now lives **inside** the `Review details` `<details>` accordion (near
-its top, immediately after the `<summary>` line and before `**Run mode**`), not at the top level
-of the review body.
+#### The `Review details` accordion is always rendered, and always collapsed
+
+Three rules, all mechanical, and none of them optional:
+
+1. **The accordion is never omitted.** Every body variant — PASS, WARN, FAIL — wraps its
+   diagnostics in a literal `<details>` / `<summary>Review details…</summary>` / `</details>`
+   block. A run that flattens the gate table, `**Run mode**`, `MEMORIES_SECTION`, the `**Quality**`
+   line or any other diagnostic into the top level of the body has emitted a different document
+   than the template, and it is a guard failure (`F-report-accordion-flattened`) even when every
+   individual line is correct. This is the single most common way the report regresses: the model
+   re-composes the body from memory, keeps the content, and drops the wrapper — turning a
+   three-line report into a screenful.
+2. **The accordion never carries the `open` attribute.** Write `<details>`, never
+   `<details open>`. Its whole purpose is that the report reads short by default and expands on
+   demand; a verdict is announced by the headline, the `<summary>` counter, and the inline
+   comments, never by pre-expanding the diagnostics. This holds on FAIL exactly as on PASS
+   (`F-report-accordion-expanded`).
+3. **The body order inside the accordion is fixed:** `<summary>` → `<sup>FOOTER_LINE</sup>` →
+   gate-status table → `OPEN_THREADS_LIST` → `**Run mode**` → `MEMORIES_SECTION` → `**Quality**`
+   → `**Integrations**` → `**Optimality (2.4c)**` → `**Standards (2.4d)**` → `**Skipped files**`
+   → the agent-link `<sup>` footer. The gate table sits near the top, immediately after the
+   `<summary>` and its footer line, not at the top level of the body.
+
+Everything that is *not* in that list stays outside the accordion, and the visible surface of a
+report is therefore bounded to five things: the marker, an optional `PARTIAL_REVIEW_BANNER`, the
+headline, the collapsed `<summary>` lines of the four `<details>` blocks, and the trailing
+`<!-- PR_REVIEWER_LEDGER … -->` block. On a clean PASS with no optimality, deferred or advisory
+sections, that is **one visible line of prose plus one collapsed summary**.
+
+Two things the agent does not author may also appear at the top level, and neither is a violation:
+a trailing attribution footer appended by the posting harness (e.g. a `---` rule followed by a
+_Generated by …_ line), and GitHub's own comment chrome. Do not try to suppress or reproduce
+either; just never add prose of your own alongside them.
+
+**No standalone notice line.** Earlier revisions rendered a one-line `UNRESOLVED_THREADS_SECTION`
+between the headline and the accordion. It is retired: the headline's `FAIL_REASONS` /
+`WARN_REASONS` already name the Prior-bot-feedback gate, and the count now rides on the
+`<summary>` the reader is going to click anyway, so the extra line said the same thing a third
+time and pointed one line down the page. Adding it back is `F-open-threads-slot-orphaned`.
 
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
@@ -2198,16 +2568,17 @@ Rules for table cells:
     only place the count reaches the author — the Step 5 terminal report is not a surface they see.
   - When Gate 3 passed and `RESOLVED_SINCE_PRIOR > 0`, its Details cell holds
     `All bot threads resolved — <RESOLVED_SINCE_PRIOR> closed since \`<PRIOR_REVIEW_SHA_SHORT>\`.`
-    `UNRESOLVED_THREADS_SECTION` — where the counter normally renders — is omitted whenever Gate 3
+    `OPEN_THREADS_LIST` — where the counter normally renders — is omitted whenever Gate 3
     is ✅, so without this the run that clears the **last** open thread reports no progress at all,
     which is the run with the most progress to report. The unverified text wins if both apply: an
     unread thread map is the more important thing to say.
 - When a gate WARNS (⚠️) or FAILS (❌), its Details cell shows the specific finding text (max 120
   chars — truncate; the full finding lives in the inline comment), exactly as before.
   Gate 3 is the one exception in both non-passing states: its cell stays terse —
-  `<N> unresolved bot thread(s) — see the thread list above` — because the finding text is the
-  linked checklist, which lives in `UNRESOLVED_THREADS_SECTION` and would not survive the 120-char
-  cap. The pointer wording is the same on ⚠️ and ❌; only the section's heading differs.
+  `<N> unresolved bot thread(s) — see the thread list below` — because the finding text is the
+  linked checklist, which lives in `OPEN_THREADS_LIST` a few lines further down this same accordion
+  and would not survive the 120-char cap. The pointer wording is the same on ⚠️ and ❌; only
+  `OPEN_THREADS_SUFFIX` on the summary changes framing between them.
 - `⏭️` is a valid Status value in **every** body variant — PASS, WARN, and FAIL — in addition to the
   values each variant's table shows. It appears only under `--skip-gates`, for Gates 1 / 3 / 4 / 5,
   and its Details cell holds the carried prior text plus its `(carried from …)` suffix when Step 2.5c
@@ -2238,9 +2609,12 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   rather than a count; its rendered uses are the Step 3 terminal WARN/FAIL verdict lines and the
   top-level WARN and FAIL headlines (the latter via `SEVERITY_TALLY`).
 - Never add rows, sections, or prose outside the template above (except the four `<details>`
-  blocks — diagnostics, `Optimality review`, `Additional findings`, and `Low-confidence findings` —
-  the `MEMORIES_SECTION` slot inside the diagnostics block, and the `PARTIAL_REVIEW_BANNER` line —
-  all of which are slots in the template, not added prose).
+  blocks — `Review details`, `Optimality review`, `Additional findings`, and
+  `Low-confidence findings` — the `MEMORIES_SECTION` and `OPEN_THREADS_LIST` slots inside
+  `Review details`, the `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the
+  `PARTIAL_REVIEW_BANNER` line — all of which are slots in the template, not added prose).
+  Besides the headline and the banner, **no** prose of the agent's own is permitted at the top
+  level of the body.
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
 ### INLINE_COMMENTS_JSON format
@@ -2279,7 +2653,7 @@ The `side` field is required by the GitHub API — omitting it returns HTTP 422.
 After posting:
 
 ```text
-Updated report on PR #<n> — <created | updated> sticky · <posted review with <N> inline comments (+ <OPTR> optimality pointer(s)) | no review posted (no new findings, verdict <VERDICT> not worsened)>.
+Updated report on PR #<n> — <created | updated | NOT updated (<reason>)> sticky · <posted review with <N> inline comments (+ <OPTR> optimality pointer(s)) | no review posted (no new findings, verdict <VERDICT> not worsened)>.
 ```
 
 `<N>` is the quality-line `posted inline` count (line-level + persona findings). When `OPTR > 0`,
@@ -2290,9 +2664,17 @@ pointer is a real posted inline comment even though the quality line excludes it
 A run that posted no review must say so explicitly and name the reason (Step 4b's four conditions
 all false) — a silent run and a broken run must never read the same in the terminal.
 
+When the sticky was **not** updated (§ *When the sticky cannot be written*), print `REPORT_BODY`
+verbatim in the terminal beneath this line. It is the only surface the report reached on that run,
+and the reason must be named — never let a run that could not update the report read like one that
+did.
+
 Include:
 - Confirmed state (`COMMENTED`) when a review was posted; `sticky-only` when it was not.
-- The sticky comment URL.
+- The sticky comment URL, or the reason there is none.
+- `prior-run state unknown` when `PRIOR_RUN_STATE_UNKNOWN` is true — a run that could not read the
+  PR's comments reviewed it blind (no carry-forward, no dedup against its own prior comments), and
+  that has to be visible next to the result rather than inferred from a missing line.
 - Gate verdicts (Gates 1/3/4/5/6 — Gate 2 shown separately as CI PASS/FAIL).
 - Integrations checked by Persona 4 and their spec versions, or "no integration changes detected".
 - Any findings dropped at line-validity for manual posting (verbatim).
@@ -2309,5 +2691,7 @@ Include:
 - **Delete any comment** — including a duplicate sticky. Patch the newest, leave the rest.
 - **Post a pending/draft review** — the review is always immediately visible.
 - **Post more than one review per run** — consolidate first, post at most once.
-- **Post more than one sticky report per PR** — create it once, patch it thereafter.
+- **Post more than one sticky report per PR** — create it once, patch it thereafter. When the patch is impossible on this access path, post no second copy at all; a run may leave the report un-updated, never duplicated.
+- **Put the report body in a review body** — `<!-- PR_REVIEWER_REPORT -->` belongs to the sticky. A review body is the one-line pointer (Step 4b) and nothing else, and the pre-flight rejects a payload that breaks this.
+- **Key prior-run detection off the bot's login** — the marker identifies the report; an unresolvable `/user` must never read as "no prior review".
 - **Load the `review-outcomes` candidate bus per-review** — consumed only at promotion time via `outcome-learning.md`.

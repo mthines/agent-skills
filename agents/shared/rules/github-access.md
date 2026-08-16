@@ -23,9 +23,22 @@ The skills were written assuming the first. When it is absent, the documented re
 
 ## Step 0 — resolve your path, once, before any GitHub step
 
+Probe with a **repo-scoped API call against the repository you are about to work on** — never with `gh auth status`:
+
 ```bash
-command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && echo GH_OK
+# TARGET_REPO is owner/name for the repo this run touches. Callers name it differently
+# (`RESOLVED_REPO` in pr-reviewer / review-loop, nothing at all in others), so derive it here
+# rather than assuming a caller variable is bound — an unset one probes `repos/` and 404s,
+# which reports "no gh" on a session where gh works.
+TARGET_REPO="${TARGET_REPO:-${RESOLVED_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}}"
+
+if command -v gh >/dev/null 2>&1 && [ -n "$TARGET_REPO" ] \
+  && gh api "repos/$TARGET_REPO" --jq .full_name >/dev/null 2>&1; then
+  echo GH_OK
+fi
 ```
+
+**If `TARGET_REPO` cannot be determined yet** — no checkout, and the repository arrives later in the run — the probe is *undecided*, not failed. Do not record "no `gh`": defer the probe to the first step that knows the repository, and run it then. A 404 on `repos/` is an unbound variable, never an access verdict.
 
 | Result | Your path | What to do |
 | ------ | --------- | ---------- |
@@ -33,7 +46,24 @@ command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1 && echo GH_OK
 | No output, **and** `mcp__github__*` appears in your available tools | **GitHub MCP** | Use the mapping below. Do not attempt `gh` — every call will fail |
 | No output, **and** no `mcp__github__*` in your tools | **No GitHub access** | See [No path](#no-path) — this is a hard stop for GitHub steps, not a reason to improvise |
 
-`gh` present but **unauthenticated** counts as no `gh`: `gh auth status` failing is not something you can fix, and `gh auth login` is interactive. Fall through to MCP.
+`gh` present but genuinely **unauthenticated** counts as no `gh`: you cannot fix it (`gh auth login` is interactive), so fall through to MCP.
+
+### Why not `gh auth status`, and why not `gh api user`
+
+Both lie in environments that are ordinary, not exotic — a hosted agent runner, or CI using a GitHub App:
+
+- **`gh auth status`** inspects a stored token. A wrapped `gh` that injects a scoped credential *per call* (Dash0's sandbox, several CI images) holds only a placeholder, so `gh auth status` exits non-zero while every real API call succeeds. Probing with it declares "no `gh`" on a session where `gh` works perfectly, and the agent then takes a path with fewer capabilities — or reports no access at all.
+- **`gh api user`** hits `/user`, which is **not repo-scoped** and 401s under a GitHub App installation token and under per-call credential injection. It is a bad liveness probe for the same reason it is a bad identity source (see below).
+
+A repo-scoped `GET /repos/{owner}/{repo}` is the narrowest call that proves what you actually need: this credential can reach this repository.
+
+### Identity (`ME` / the bot login)
+
+`gh api user --jq .login` (MCP: `get_me`) is the documented way to learn who you are posting as, and it is **allowed to fail** — see the two cases above. When it does:
+
+1. Treat the identity as **unknown**, never as the empty string. `ME=""` silently turns every `select(.user.login == env.ME)` filter into "matches nothing", which reads downstream as "no prior comment / no prior report exists" and produces duplicate posts.
+2. **Never key idempotency off the login.** Find your own prior artifacts by the marker you wrote into them (`<!-- PR_REVIEWER_REPORT -->`, and see [`reviewer-report-ingest.md`](./reviewer-report-ingest.md)), which works regardless of identity resolution.
+3. Degrade the things that genuinely need identity (self-vs-cross relation framing, "is this comment mine") to their safe default and say so once, in the run's announcement.
 
 Resolve this **once per run** and state which path you took. Re-probing per call is noise; discovering the answer at Phase 6 is the bug.
 
@@ -58,6 +88,8 @@ The verbs actually used across this repo, in frequency order. Anything not liste
 | `gh pr ready <n>` | `update_pull_request` with `draft: false` |
 | `gh pr merge <n>` | `merge_pull_request` |
 | `gh pr comment <n>` | `add_issue_comment` |
+| `gh api .../issues/<n>/comments` (read) | `issue_read` method `get_comments` (older servers: `get_issue_comments`) |
+| `gh api .../issues/comments/<id> --method PATCH` (edit a comment) | **none — see [Gaps](#gaps)** |
 | `gh api .../pulls/<n>/reviews` (read) | `pull_request_read` method `get_reviews` |
 | `gh api .../pulls/<n>/comments` (read) | `pull_request_read` method `get_review_comments` |
 | posting a review | `pull_request_review_write` (create pending → `add_comment_to_pending_review` → submit), or a single `COMMENT` review |
@@ -74,13 +106,14 @@ The verbs actually used across this repo, in frequency order. Anything not liste
 
 ## Gaps
 
-Three things have **no** MCP equivalent. Do not fake them.
+Four things have **no** MCP equivalent. Do not fake them.
 
 | `gh` capability | Why it has no equivalent | Do this instead |
 | --------------- | ------------------------ | --------------- |
 | `gh pr checks --watch` | Streams until checks settle; MCP calls are request/response | Poll `pull_request_read` method `get_check_runs` on the bounded schedule in [`registration-poll.md`](../../../skills/delivery/create-pr/rules/registration-poll.md) and the caller's watch cap. Never busy-loop |
 | `gh run download` | No artifact-download tool | Report that artifacts are unavailable on this path; do not substitute log scraping and call it the same thing |
 | `gh api graphql` (arbitrary queries) | Only specific operations are exposed | If the query has no listed equivalent, treat it as a gap and report it |
+| Editing an existing issue comment (`PATCH /issues/comments/<id>`) | The server exposes `add_issue_comment` (create) but no comment-update tool | **Never emulate it by posting another comment.** An updated-in-place surface (a sticky status comment) that cannot be updated must either stay stale or be replaced by a compact pointer — the caller decides, and states which. Two full copies is the outcome the sticky exists to prevent. Before assuming the gap, check your own tool list: if an update tool *is* present in this session, use it |
 
 MCP access is also **repo-scoped** to the session's allow-list. A mapping that works in one repository can fail in another with an authorization error — that is a `tooling-failure`, not "no data".
 

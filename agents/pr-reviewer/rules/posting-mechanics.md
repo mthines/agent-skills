@@ -20,7 +20,9 @@ tags:
 > instead. Kept for history alongside
 > [`authorization-gate.md`](./authorization-gate.md), which is legacy for the
 > same reason. Rule 2's `gh pr comment` ban is still live, but it is owned by
-> `agents/pr-reviewer.md` § *What this agent does not do*, not by this file.
+> `agents/pr-reviewer.md` § *What this agent does not do*, not by this file — and
+> its blanket ban on `POST /issues/{n}/comments` is **superseded**: the sticky
+> report comment is written there, once per PR, and patched thereafter (Step 4a).
 
 This rule covers the exact mechanics of posting a pending review under the old workflow. The non-negotiables are listed first because each one corresponds to a real prior incident.
 
@@ -30,7 +32,7 @@ This rule covers the exact mechanics of posting a pending review under the old w
 
    **Common LLM confusion** — mid-run the agent may convince itself that "the API does not support pending reviews." False. What is true: the API rejects the *literal string* `"PENDING"` as an `event` value. What is *also* true and easy to forget: **omitting the `event` key entirely** is the documented mechanism. If reasoning trails toward "pending isn't possible, I'll fall back to COMMENT" — STOP and re-read this rule. `event: "COMMENT"` posts publicly and bypasses the user gate; forbidden.
 
-2. **Never use `gh pr comment` or `POST /issues/{n}/comments`.** Those create general PR conversation comments, immediately visible. Only use `POST /repos/.../pulls/{n}/reviews` with `comments[]`.
+2. **Never use `gh pr comment` for findings.** It creates a general PR conversation comment; inline findings only ever go through `POST /repos/.../pulls/{n}/reviews` with `comments[]`. *(Superseded in part: `POST` / `PATCH` on `/issues/{n}/comments` is now permitted for the single sticky report comment, and for nothing else — `agents/pr-reviewer.md` § Step 4a.)*
 
 3. **The review `body` must be empty (`body: ""`).** All actionable feedback goes in `comments[]` pinned to a diff line. Verdict, score, rationale live in the agent's terminal output to the user, never on the PR. A non-empty `body` produces a top-level review comment that dilutes line-level feedback.
 

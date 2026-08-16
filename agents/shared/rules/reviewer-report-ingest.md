@@ -62,6 +62,13 @@ A PR mid-migration can hold both: legacy review bodies from earlier runs plus a 
 the first run after the change. **The sticky wins** — it is the only body still being updated, so a
 legacy body is used only when no sticky exists.
 
+**A review pointer is not a third host.** Every review `pr-reviewer` posts carries
+`<!-- PR_REVIEWER_POINTER -->` and a one-line body pointing at the report; it is never a report and
+carries no sections, so a consumer must not parse it with this grammar. Two things may still be read
+off it, and only these two: its `.user.login` (the agent's own login) and, when the sticky could not
+be written that run, a trailing `<!-- PR_REVIEWER_LEDGER … -->` block — which is `pr-reviewer`-private
+state, as below. Treating a pointer as a report yields a "report" whose every section is empty.
+
 Two consequences for parsing:
 
 - A sticky is an issue comment and therefore has **no `commit_id` field**. Provenance comes from the
@@ -117,9 +124,33 @@ A high-confidence optimality proposal (`optimality-review.md § Inline pointer`)
 
 ### The open-threads checklist is not a body section
 
-The `**To unblock — resolve or reply to these <N> bot threads (<K> blocking):**` list — and its
-⚠️-state twin `**Open bot threads — <N> still open, none blocking:**` (`pr-reviewer.md §
-UNRESOLVED_THREADS_SECTION`) — is a presentational rendering of Gate 3 state, not an extractable section: neither heading has a row in the table above, so the "match by literal heading" rule already skips both. Never mine its linked `path:line` bullets for findings — that would double-count the gate and re-ingest *other bots'* comments as `pr-reviewer`'s own.
+Gate 3's open threads render across two slots (`pr-reviewer.md § The Gate 3 open threads`), and
+**neither is an extractable section**:
+
+| Slot | Literal to match | Where |
+| --- | --- | --- |
+| `OPEN_THREADS_SUFFIX` | `Review details — <N> open bot threads` | appended inside the `<summary>` tag |
+| `OPEN_THREADS_LIST` | `**Open bot threads (<N>)**` | inside the accordion, right after the gate table |
+
+Neither literal has a row in the table above, so the "match by literal heading" rule already skips
+both. Never mine the list's linked `path:line` bullets for findings — that would double-count the
+gate and re-ingest *other bots'* comments as `pr-reviewer`'s own.
+
+**Match both literals as prefixes, and match the count as a number, not as `<N>`.** Each is followed
+by run-specific text — an optional ` (<K> blocking)` on the summary suffix, an optional
+` <sup><R> resolved since \`<sha>\`</sup>` and then the bullets on the list heading — so an equality
+comparison misses them on exactly the runs that have something to say.
+
+**The summary suffix is not a section boundary.** A consumer that locates the accordion by matching
+the literal `<summary>Review details</summary>` will miss it on every run with open threads, because
+the tag then reads `<summary>Review details — 2 open bot threads (1 blocking)</summary>`. Match
+`<summary>Review details` as a prefix. There is no separate top-level notice line to key on — an
+earlier revision emitted one and it was retired.
+
+**The list heading lives inside the accordion, so a consumer that slices the body at the
+`<summary>Review details` boundary must exclude it explicitly.** It is the one Gate 3 artifact that
+now sits in the same region as the extractable diagnostics; skipping it by position rather than by
+literal will silently start ingesting it the next time a diagnostic line moves.
 
 The list is **derived, not durable**: it is regenerated from live `isResolved` state on every run and
 rendered as plain bullets, with resolved entries removed rather than ticked. A consumer must not
