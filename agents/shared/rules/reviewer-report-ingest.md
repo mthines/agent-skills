@@ -129,18 +129,23 @@ Gate 3's open threads render across two slots (`pr-reviewer.md § The Gate 3 ope
 
 | Slot | Literal to match | Where |
 | --- | --- | --- |
-| `UNRESOLVED_THREADS_SECTION` | `⚠️ **<N> unresolved bot thread(s)**` | one line at the top level of the body |
-| `OPEN_THREADS_LIST` | `**Open bot threads (<N>)**` | inside the `Review details` accordion, right after the gate table |
+| `OPEN_THREADS_SUFFIX` | `Review details — <N> open bot threads` | appended inside the `<summary>` tag |
+| `OPEN_THREADS_LIST` | `**Open bot threads (<N>)**` | inside the accordion, right after the gate table |
 
 Neither literal has a row in the table above, so the "match by literal heading" rule already skips
 both. Never mine the list's linked `path:line` bullets for findings — that would double-count the
 gate and re-ingest *other bots'* comments as `pr-reviewer`'s own.
 
-**Match both literals as prefixes, and match the count as a number, not as `<N>`.** Each literal is
-followed by run-specific text — a blocking clause and an optional
-` <sup><R> resolved since \`<sha>\`</sup>` on the notice, a bullet list on the list heading — so an
-equality comparison misses them on exactly the runs that have something to say. Anchor on the bold
-span and let the remainder follow.
+**Match both literals as prefixes, and match the count as a number, not as `<N>`.** Each is followed
+by run-specific text — an optional ` (<K> blocking)` on the summary suffix, an optional
+` <sup><R> resolved since \`<sha>\`</sup>` and then the bullets on the list heading — so an equality
+comparison misses them on exactly the runs that have something to say.
+
+**The summary suffix is not a section boundary.** A consumer that locates the accordion by matching
+the literal `<summary>Review details</summary>` will miss it on every run with open threads, because
+the tag then reads `<summary>Review details — 2 open bot threads (1 blocking)</summary>`. Match
+`<summary>Review details` as a prefix. There is no separate top-level notice line to key on — an
+earlier revision emitted one and it was retired.
 
 **The list heading lives inside the accordion, so a consumer that slices the body at the
 `<summary>Review details` boundary must exclude it explicitly.** It is the one Gate 3 artifact that

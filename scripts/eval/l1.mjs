@@ -1098,46 +1098,52 @@ function checksInSync(plan, checks) {
     gate3.includes("`blocking == true` **and** `answered == false`") &&
     ["- ✅ —", "- ⚠️ —", "- ❌ —"].every((marker) => gate3.includes(marker)));
 
-  // G24b: Gate 3 renders across two slots — a one-line visible notice and a bullet list inside
-  // the Review details accordion. Lift both literals out of the renderer and assert the consumer
-  // carries each verbatim: the consumer skips them by matching that text, so a silent rename
-  // starts ingesting the gate as findings.
+  // G24b: Gate 3 renders across two slots — a counter appended to the Review details <summary>
+  // and a bullet list inside that accordion. Lift both literals out of the renderer and assert
+  // the consumer carries each verbatim: the consumer skips them by matching that text, so a
+  // silent rename starts ingesting the gate as findings.
   //
-  // Capture the notice WITHOUT its trailing run-specific text: the renderer appends a blocking
-  // clause and the optional RESOLVED_SINCE_SUFFIX, so the shared literal is a prefix.
-  const noticeLiteral = "⚠️ **<N> unresolved bot thread(s)**";
+  // Both are matched as PREFIXES by the consumer — the summary suffix is followed by an optional
+  // ` (<K> blocking)`, the list heading by RESOLVED_SINCE_SUFFIX and the bullets.
+  const suffixLiteral = "Review details — <N> open bot threads";
   const listLiteral = "**Open bot threads (<N>)**";
-  s.check("G24b pr-reviewer.md declares the one-line open-threads notice in both forms (❌ and ⚠️)",
-    prReviewer.split(noticeLiteral).length - 1 >= 2,
-    "expected the notice literal in both the blocking and the none-blocking form");
+  s.check("G24b pr-reviewer.md declares the open-threads summary counter",
+    prReviewer.includes("OPEN_THREADS_SUFFIX") && prReviewer.includes("<N> open bot threads"));
   s.check("G24b pr-reviewer.md declares the in-accordion open-threads list heading",
     prReviewer.includes(listLiteral));
-  for (const [name, lit] of [["notice", noticeLiteral], ["list heading", listLiteral]]) {
+  for (const [name, lit] of [["summary counter", suffixLiteral], ["list heading", listLiteral]]) {
     s.check(`G24b reviewer-report-ingest.md carries the renderer's ${name} verbatim`,
       ingest.includes(lit), `missing: ${lit}`);
   }
-  // The two slots are all-or-nothing. A notice without a list points at nothing; a list without
-  // a notice is a gate nobody sees in the collapsed report.
+  // The two slots are all-or-nothing. A counter without a list advertises nothing; a list without
+  // a counter is a gate nobody sees in the collapsed report.
   s.check("G24b pr-reviewer.md forbids rendering one Gate 3 slot without the other",
     /F-open-threads-slot-orphaned/.test(prReviewer));
+  // The retired standalone notice must not come back: it restated the headline's own gate phrase
+  // and pointed one line down the page at the accordion.
+  s.check("G24b no Step-4 template reintroduces a standalone open-threads notice line",
+    !/^UNRESOLVED_THREADS_SECTION$/m.test(prReviewer));
+  // Likewise the retired memories tag — the summary carries the worklist count and nothing else.
+  s.check("G24b MEMORIES_USED_SUFFIX is not rendered in any summary",
+    !/<summary>Review detailsMEMORIES_USED_SUFFIX/.test(prReviewer) &&
+    /MEMORIES_USED_SUFFIX` is retired/.test(prReviewer));
   // The bullets belong INSIDE the accordion. Both Step-4 templates that can carry open threads
-  // (WARN and FAIL) must place OPEN_THREADS_LIST after their `<summary>Review details` line.
+  // (WARN and FAIL) must place OPEN_THREADS_LIST after their `<summary>Review details` line, and
+  // carry the counter on that same summary.
   {
     const bodies = [...prReviewer.matchAll(/```markdown\n(<!-- PR_REVIEWER_REPORT -->[\s\S]*?)```/g)]
       .map((m) => m[1])
-      .filter((b) => b.includes("UNRESOLVED_THREADS_SECTION"));
+      .filter((b) => b.includes("OPEN_THREADS_LIST"));
     s.check("G24b found the WARN and FAIL report templates", bodies.length === 2,
       `found ${bodies.length}`);
     for (const b of bodies) {
       const summaryPos = b.indexOf("<summary>Review details");
       const listPos = b.indexOf("OPEN_THREADS_LIST");
-      const noticePos = b.indexOf("UNRESOLVED_THREADS_SECTION");
       s.check("G24b OPEN_THREADS_LIST renders inside the Review details accordion",
         summaryPos !== -1 && listPos > summaryPos,
         `summary@${summaryPos} list@${listPos}`);
-      s.check("G24b the UNRESOLVED_THREADS_SECTION notice stays above the accordion",
-        noticePos !== -1 && noticePos < summaryPos,
-        `notice@${noticePos} summary@${summaryPos}`);
+      s.check("G24b the open-threads counter rides on the Review details summary",
+        /<summary>Review detailsOPEN_THREADS_SUFFIX<\/summary>/.test(b));
     }
   }
   // The accordion is the collapse. Every Step-4 template must wrap its diagnostics in a

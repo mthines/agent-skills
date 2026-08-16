@@ -1127,12 +1127,12 @@ own lead line** `- [\`<path>:<line>\`](<url>) — <ask>` using the three fields 
 through to each thread and reads in one line what it wants — instead of a bare `path:line` they
 have to hunt for.
 Whenever any thread is open — on ⚠️ as well as ❌ — this list renders **inside** the `Review
-details` accordion, as `OPEN_THREADS_LIST` immediately below the gate table, and the collapsed
-report carries a **one-line** `UNRESOLVED_THREADS_SECTION` notice at the top level naming the open
-and blocking counts. That split is the whole contract: the reader learns *that* threads are open
-and *how many block* without expanding anything, and the per-thread bullets — which on a
-long-running PR grow to dozens of lines and crowd the report off the screen — are one click away
-in the accordion. The accordion's Gate 3 Details cell then stays terse —
+details` accordion, as `OPEN_THREADS_LIST` immediately below the gate table, and the accordion's
+own `<summary>` carries `OPEN_THREADS_SUFFIX` — the open count, plus the blocking subset on ❌.
+That split is the whole contract: the reader learns *that* threads are open and *how many block*
+from the one line that is visible while the report is collapsed, and the per-thread bullets —
+which on a long-running PR grow to dozens of lines and crowd the report off the screen — are one
+click away behind that same line. The accordion's Gate 3 Details cell then stays terse —
 `<N> unresolved bot thread(s) — see the thread list below`.
 
 Result: PASS (✅), WARN (⚠️), or FAIL (❌), graded from the `blocking` and `answered` fields
@@ -2102,7 +2102,7 @@ ADDITIONAL_FINDINGS_SECTION
 LOW_CONFIDENCE_SECTION
 
 <details>
-<summary>Review detailsMEMORIES_USED_SUFFIX</summary>
+<summary>Review details</summary>
 
 <sup>FOOTER_LINE</sup>
 
@@ -2157,8 +2157,6 @@ without the headline overstating cleanliness. When `CADV == 0` the headline stay
 PARTIAL_REVIEW_BANNER
 Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>.
 
-UNRESOLVED_THREADS_SECTION
-
 OPTIMALITY_SECTION
 
 ADDITIONAL_FINDINGS_SECTION
@@ -2166,7 +2164,7 @@ ADDITIONAL_FINDINGS_SECTION
 LOW_CONFIDENCE_SECTION
 
 <details>
-<summary>Review detailsMEMORIES_USED_SUFFIX</summary>
+<summary>Review detailsOPEN_THREADS_SUFFIX</summary>
 
 <sup>FOOTER_LINE</sup>
 
@@ -2208,8 +2206,6 @@ MEMORIES_SECTION
 PARTIAL_REVIEW_BANNER
 Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review. Blocking: <FAIL_REASONS>.
 
-UNRESOLVED_THREADS_SECTION
-
 OPTIMALITY_SECTION
 
 ADDITIONAL_FINDINGS_SECTION
@@ -2217,7 +2213,7 @@ ADDITIONAL_FINDINGS_SECTION
 LOW_CONFIDENCE_SECTION
 
 <details>
-<summary>Review detailsMEMORIES_USED_SUFFIX</summary>
+<summary>Review detailsOPEN_THREADS_SUFFIX</summary>
 
 <sup>FOOTER_LINE</sup>
 
@@ -2301,59 +2297,60 @@ truncated run can never be read as a complete PASS.
 This is the only prose permitted outside the templates, and it is permitted because the stop
 condition requires it in both the terminal report and the review body.
 
-### The Gate 3 open threads: one visible line, the list in the accordion
+### The Gate 3 open threads: the count on the summary, the list in the accordion
 
 Gate 3's open-thread state renders across **two** slots, and the split is the contract:
 
 | Slot | Where | What it carries |
 | --- | --- | --- |
-| `UNRESOLVED_THREADS_SECTION` | top level of the body, above `OPTIMALITY_SECTION` — **always visible** | exactly one line: the open count, the blocking count, the `resolved since` progress, and why it matters |
-| `OPEN_THREADS_LIST` | **inside** the `Review details` accordion, immediately after the gate table | the per-thread bullets, one per open thread |
+| `OPEN_THREADS_SUFFIX` | appended to the `Review details` `<summary>` — **always visible** | the open count and, on ❌, the blocking subset |
+| `OPEN_THREADS_LIST` | **inside** the accordion, immediately after the gate table | the per-thread bullets and the `resolved since` progress |
 
-A reader who never expands anything learns *that* threads are open, *how many* block, and *what to
-do* — from one line. The bullets, which on a long-running PR grow to dozens of lines and crowd the
-whole report off the screen, are one click away inside the accordion that already holds every other
-diagnostic. Neither slot may absorb the other: a list at the top level is the space problem this
-split exists to solve, and a notice hidden inside the accordion is a silent gate.
+**The counter rides on the `<summary>` rather than on a line of its own.** The summary is already
+visible when the report is collapsed *and* it is the control the reader clicks, so putting the count
+there costs zero vertical space and makes the label name its own destination. A separate notice
+paragraph would restate what the headline already says (`FAIL_REASONS` / `WARN_REASONS` carry a
+Prior-bot-feedback phrase in both non-passing states) and would point one line down the page at the
+accordion — two sentences to convey a click target that is already on screen. Do not reintroduce
+one.
 
 Render **both** slots whenever Gate 3 (`Prior bot feedback`) is ⚠️ or ❌ — i.e. whenever
-`OPEN_BOT_COMMENTS[]` is non-empty — in the FAIL template *and* the WARN template alike; omit
-**both** placeholders entirely on ✅ and `⏭️`. Rendering one without the other is a guard failure
-(`F-open-threads-slot-orphaned`): the notice alone points at a list that is not there, and the list
-alone is invisible in the collapsed report.
+`OPEN_BOT_COMMENTS[]` is non-empty — in the FAIL template *and* the WARN template alike; substitute
+**both** as empty on ✅ and `⏭️`, leaving the bare `<summary>Review details</summary>`. Rendering one
+without the other is a guard failure (`F-open-threads-slot-orphaned`): a suffix alone advertises a
+list that is not there, and a list alone is invisible in the collapsed report.
 
 Downgrading a non-blocking open thread to ⚠️ must not make it invisible: the verdict softens, the
 worklist does not shrink, so both slots follow the open set rather than the verdict.
 
-#### `UNRESOLVED_THREADS_SECTION` — the visible line
+#### `OPEN_THREADS_SUFFIX` — the counter on the summary
 
-One line, no `<details>`, no bullets. It takes one of two forms, chosen by the gate's status —
-the only thing that varies with severity, because "to unblock" is a false instruction for threads
-that are not blocking anything:
-
-```markdown
-⚠️ **<N> unresolved bot thread(s)** — <K> blocking. Resolve or reply to each; they are listed under **Review details** below.RESOLVED_SINCE_SUFFIX
-```
-
-On ⚠️ (nothing blocking) the neutral form renders instead:
+Substitute one of two forms, chosen by the gate's status — the blocking subset is named only when
+there is one, because `(0 blocking)` is noise on a gate that is not blocking anything:
 
 ```markdown
-⚠️ **<N> unresolved bot thread(s)** — none blocking. Listed under **Review details** below.RESOLVED_SINCE_SUFFIX
+ — <N> open bot threads (<K> blocking)
 ```
 
-Rules for the visible line:
-- **One line, and it is the only thing at the top level.** No bullets, no `<details>`, no table, no
-  lead-in prose. Every per-thread detail belongs to `OPEN_THREADS_LIST`.
-- **`<N>` is the full open count in both forms**, never the blocking subset — the worklist size is
-  what the reader is being told. On ❌, `<K>` = the blocking unanswered threads, the subset that
-  actually moves the verdict. Never render `none blocking` on a ❌.
-- **It names where the list is.** The `Review details` pointer is load-bearing: without it the
-  reader is told a list exists and given no way to find it.
-- **`RESOLVED_SINCE_SUFFIX` reports progress.** Substitute
-  ` <sup><RESOLVED_SINCE_PRIOR> resolved since \`<PRIOR_REVIEW_SHA_SHORT>\`</sup>` only when
-  `RESOLVED_SINCE_PRIOR > 0`; substitute nothing otherwise (never `0 resolved`). Use the singular
-  `thread` at exactly 1. When Gate 3 is ✅ this whole slot is omitted, so the counter moves into
-  Gate 3's Details cell instead — see *Rules for table cells*.
+On ⚠️ (nothing blocking), the parenthetical is dropped:
+
+```markdown
+ — <N> open bot threads
+```
+
+Rules for the suffix:
+- **It is a suffix, not a line.** It renders inside the `<summary>` tag, directly after
+  `Review details`, producing e.g. `Review details — 2 open bot threads (1 blocking)`. Plain text
+  only — no `<sup>`, no bold, no nested block elements, none of which GitHub renders in a
+  `<summary>`.
+- **`<N>` is the full open count**, never the blocking subset — the worklist size is what the
+  reader is being told. `<K>` is the blocking unanswered subset, the part that actually moves the
+  verdict. Use the singular `thread` at exactly 1. Never render `(0 blocking)`.
+- **Nothing else may be appended to the summary.** It has exactly one job: name the actionable
+  worklist inside. Run-state diagnostics — memories, run mode, quality, integrations, optimality,
+  standards — render as their own lines *inside* the accordion and never as summary tags. The
+  retired `MEMORIES_USED_SUFFIX` is the cautionary case: it duplicated `MEMORIES_SECTION`'s own
+  header and spent the report's one scannable line on `(0 memories used)`.
 
 #### `OPEN_THREADS_LIST` — the bullets, inside the accordion
 
@@ -2362,7 +2359,7 @@ Substitute one entry per item in `OPEN_BOT_COMMENTS[]` **as it stands after Step
 Step 1.0:
 
 ```markdown
-**Open bot threads (<N>)**
+**Open bot threads (<N>)**RESOLVED_SINCE_SUFFIX
 
 - [\`packages/cli/README.md:680\`](<url>) — bound \`LocalStore.search\` the way \`RemoteStore\` is
 - [\`packages/cli/src/install.mjs:291\`](<url>) — add the missing parity test for the event roster
@@ -2372,9 +2369,15 @@ Step 1.0:
 Rules for the list:
 - **No nested `<details>`.** It is already inside the `Review details` accordion; a second collapse
   would put the worklist two clicks from the reader. The bold lead line is its whole heading, and
-  `<N>` there is the same full open count as the visible line — the two must agree.
+  `<N>` there is the same full open count as `OPEN_THREADS_SUFFIX` — the two must agree.
 - **The list always renders every open thread**, on ⚠️ exactly as on ❌. Never drop a thread from it
-  because it is non-blocking; only the visible line's framing changes with severity.
+  because it is non-blocking; only the suffix's framing changes with severity.
+- **`RESOLVED_SINCE_SUFFIX` reports progress here, next to the list it describes.** Substitute
+  ` <sup><RESOLVED_SINCE_PRIOR> resolved since \`<PRIOR_REVIEW_SHA_SHORT>\`</sup>` only when
+  `RESOLVED_SINCE_PRIOR > 0`; substitute nothing otherwise (never `0 resolved`). Use the singular
+  `thread` at exactly 1. It stays off the `<summary>`, which takes plain text only and is reserved
+  for the worklist count. When Gate 3 is ✅ this whole slot is omitted, so the counter moves into
+  Gate 3's Details cell instead — see *Rules for table cells*.
 - **Every `path:line` is a Markdown link** to the thread's `html_url`, with the truncated `ask`
   after an em-dash. If an item's `url` is missing (older fetch, or the permalink could not be read),
   render its `path:line` as inline code with no link rather than a broken link, and keep the `ask`.
@@ -2499,12 +2502,12 @@ Build each `<url>` from the memory's retained `scope` + `key`, per
 `https://lorekit.io`), else a plain-text `` `<scope> · <key>` `` identifier — never a
 fabricated URL.
 
-`MEMORIES_USED_SUFFIX` is the tag appended to the `Review details` `<summary>` title so the
-collapsed label headlines how many memories **influenced** the review:
-- **Connected** — substitute ` (<MEMORIES_USED_COUNT> memories used)` — e.g.
-  `Review details (2 memories used)`. Use the singular `memory` at exactly 1; keep
-  `(0 memories used)` when nothing fired.
-- **Not connected** — substitute nothing; the title stays the bare `Review details`.
+**`MEMORIES_USED_SUFFIX` is retired — do not reintroduce it.** It appended
+` (<N> memories used)` to the `Review details` `<summary>`, which restated the header
+`MEMORIES_SECTION` already renders a few lines below it and spent the report's one scannable line
+on a number that is `0` on most runs. Memory state is run-state diagnostics, the same class as
+`**Run mode**` and `**Standards (2.4d)**`, and it renders where they do: inside the accordion, via
+`MEMORIES_SECTION`. The `<summary>` carries `OPEN_THREADS_SUFFIX` and nothing else.
 
 #### The `Review details` accordion is always rendered, and always collapsed
 
@@ -2520,8 +2523,8 @@ Three rules, all mechanical, and none of them optional:
    three-line report into a screenful.
 2. **The accordion never carries the `open` attribute.** Write `<details>`, never
    `<details open>`. Its whole purpose is that the report reads short by default and expands on
-   demand; a verdict is announced by the headline, the notice line, and the inline comments, never
-   by pre-expanding the diagnostics. This holds on FAIL exactly as on PASS
+   demand; a verdict is announced by the headline, the `<summary>` counter, and the inline
+   comments, never by pre-expanding the diagnostics. This holds on FAIL exactly as on PASS
    (`F-report-accordion-expanded`).
 3. **The body order inside the accordion is fixed:** `<summary>` → `<sup>FOOTER_LINE</sup>` →
    gate-status table → `OPEN_THREADS_LIST` → `**Run mode**` → `MEMORIES_SECTION` → `**Quality**`
@@ -2530,9 +2533,21 @@ Three rules, all mechanical, and none of them optional:
    `<summary>` and its footer line, not at the top level of the body.
 
 Everything that is *not* in that list stays outside the accordion, and the visible surface of a
-report is therefore bounded: the marker, an optional `PARTIAL_REVIEW_BANNER`, the headline, an
-optional one-line `UNRESOLVED_THREADS_SECTION`, and the collapsed `<summary>` lines of the four
-`<details>` blocks. Nothing else.
+report is therefore bounded to five things: the marker, an optional `PARTIAL_REVIEW_BANNER`, the
+headline, the collapsed `<summary>` lines of the four `<details>` blocks, and the trailing
+`<!-- PR_REVIEWER_LEDGER … -->` block. On a clean PASS with no optimality, deferred or advisory
+sections, that is **one visible line of prose plus one collapsed summary**.
+
+Two things the agent does not author may also appear at the top level, and neither is a violation:
+a trailing attribution footer appended by the posting harness (e.g. a `---` rule followed by a
+_Generated by …_ line), and GitHub's own comment chrome. Do not try to suppress or reproduce
+either; just never add prose of your own alongside them.
+
+**No standalone notice line.** Earlier revisions rendered a one-line `UNRESOLVED_THREADS_SECTION`
+between the headline and the accordion. It is retired: the headline's `FAIL_REASONS` /
+`WARN_REASONS` already name the Prior-bot-feedback gate, and the count now rides on the
+`<summary>` the reader is going to click anyway, so the extra line said the same thing a third
+time and pointed one line down the page. Adding it back is `F-open-threads-slot-orphaned`.
 
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
@@ -2552,7 +2567,7 @@ Rules for table cells:
     only place the count reaches the author — the Step 5 terminal report is not a surface they see.
   - When Gate 3 passed and `RESOLVED_SINCE_PRIOR > 0`, its Details cell holds
     `All bot threads resolved — <RESOLVED_SINCE_PRIOR> closed since \`<PRIOR_REVIEW_SHA_SHORT>\`.`
-    `UNRESOLVED_THREADS_SECTION` — where the counter normally renders — is omitted whenever Gate 3
+    `OPEN_THREADS_LIST` — where the counter normally renders — is omitted whenever Gate 3
     is ✅, so without this the run that clears the **last** open thread reports no progress at all,
     which is the run with the most progress to report. The unverified text wins if both apply: an
     unread thread map is the more important thing to say.
@@ -2595,10 +2610,10 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
 - Never add rows, sections, or prose outside the template above (except the four `<details>`
   blocks — `Review details`, `Optimality review`, `Additional findings`, and
   `Low-confidence findings` — the `MEMORIES_SECTION` and `OPEN_THREADS_LIST` slots inside
-  `Review details`, the one-line `UNRESOLVED_THREADS_SECTION` notice, and the
+  `Review details`, the `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the
   `PARTIAL_REVIEW_BANNER` line — all of which are slots in the template, not added prose).
-  `UNRESOLVED_THREADS_SECTION` is the **only** multi-word prose permitted at the top level of the
-  body besides the headline and the banner, and it is capped at one line.
+  Besides the headline and the banner, **no** prose of the agent's own is permitted at the top
+  level of the body.
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
 ### INLINE_COMMENTS_JSON format
