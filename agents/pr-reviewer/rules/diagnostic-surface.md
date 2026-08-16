@@ -167,6 +167,9 @@ The matrix is not exhaustive — when a real failure exposes a guard not listed 
 | `F-blocking-finding-deferred` | Placement | A `(blocking)` finding was deferred over the per-file or 20-total inline cap instead of always being posted inline | 2.9b |
 | `F-deep-lens-starved` | Run-mode selection | An unbounded series of incremental reviews kept skipping the holistic passes because a deep-lens-refresh trigger (`CUM_DELTA_LINES > FULL_REFRESH_DELTA`, `INCR_RUNS_SINCE_FULL >= FULL_REFRESH_RUNS`, or empty `LAST_FULL_SHA`) failed to promote the run to `full` | 1.2b |
 | `F-optimality-pointer-overreach` | Optimality surfacing | An optimality inline pointer was emitted for a proposal below `analysis_confidence` 95 or without a resolvable anchor, more than one pointer per proposal was posted, or the pointer carried the full argument instead of a signpost to the card | 2.4c |
+| `F-report-in-review-body` | Posting host | A body carrying `<!-- PR_REVIEWER_REPORT -->` was posted as the review body (or any object other than the sticky), so each run left another permanent full report instead of one edited comment | 4a → 4b |
+| `F-duplicate-report-posted` | Posting host | A second report object was created on a PR that already had one — sticky detection keyed on `.user.login` with an unresolved `ME`, a failed comments read treated as "no sticky", or an un-patchable access path answered by creating a new comment | 0.7 → 4a |
+| `F-open-threads-expanded-by-default` | Gate 3 rendering | The open-threads `<details>` was rendered expanded (`open` attribute) or its bullets were emitted outside the block, so the checklist again crowds out the report it summarises | 4 |
 | `F-novel` | Novel mode | Does not match any existing row | — |
 
 The taxonomy is **append-only**. New failure classes are added only after a confidence-gated diagnosis surfaces them.
@@ -178,9 +181,11 @@ The taxonomy is **append-only**. New failure classes are added only after a conf
 The diagnoser must not propose to relax any of these without explicit user confirmation:
 
 - **Exactly one visible `COMMENT` review is posted per run.** The `event` field MUST be `"COMMENT"` — never `"APPROVE"`, `"REQUEST_CHANGES"`, `"PENDING"`, or omitted. There is no pending/draft workflow and no `--publish` authorization gate.
-- **The review `body` MUST be a non-empty string** carrying the gate-status table. `payload_is_safe` (Step 4) rejects an empty body.
+- **The review `body` MUST be a non-empty one-line pointer** — never the report. The gate-status table and every other section live in the sticky comment; `payload_is_safe` (Step 4b) rejects an empty body, a body carrying `<!-- PR_REVIEWER_REPORT -->`, and a body over the pointer budget.
 - **The Step 3 advisory verdict (Approve / Request changes) is terminal-only.** It is never written into the posted review body.
-- **Never use `gh pr comment` or `POST /issues/{n}/comments`.** Only `POST /repos/.../pulls/{n}/reviews`.
+- **Never use `gh pr comment`.** Inline findings go only through `POST /repos/.../pulls/{n}/reviews`; `POST` / `PATCH` on `/issues/{n}/comments` is permitted for the single sticky report comment and nothing else.
+- **The report body has exactly one host — the sticky.** A run posts at most one object carrying `<!-- PR_REVIEWER_REPORT -->`, and it is an issue comment. When the sticky cannot be created or patched on this access path, the report is not relocated: the run posts the compact degraded pointer (headline + ledger) and says the report was not updated. Duplicating the report into a review body, or creating a second sticky, is a guard failure.
+- **Prior-run detection is keyed on the marker, never on the bot login.** `ME` may be unresolvable (`/user` is not repo-scoped); an identity failure must degrade the relation to `cross`, never turn a `select` into "no prior report found".
 - **Never fall back to a different event or endpoint on API failure.** Report verbatim with the request payload, list unposted comments, and stop.
 - **Verify review state after posting.** The response MUST contain `state: "COMMENTED"`. Anything else is treated as an accidental submission and the user is alerted.
 - **Every posted comment body MUST start with a Conventional-Comments prefix.** Mechanical check in `conventional-comments.md` is non-skippable.
@@ -201,7 +206,7 @@ The diagnoser must not propose to relax any of these without explicit user confi
 - **Resolution is read from `isResolved`, never inferred from reply prose.** A resolved thread never fails Gate 3, whoever resolved it and however the reply was worded. The reply-text heuristic is a fallback for when thread state is unavailable, and its use is always disclosed.
 - **An unverifiable thread is reported, not failed.** When thread state is missing or incomplete, the affected comments are excluded from `OPEN_BOT_COMMENTS[]` and counted as unverified in the gate's Details. A tooling gap never fails a PR.
 - **Gate 3 fails only on an unanswered blocking thread.** It is tri-state (`pr-reviewer.md § Gate states`): open threads that are non-blocking or already answered grade ⚠️ and never flip the verdict. Severity is read from the other bot's own decoration, never re-adjudicated here; an undecorated ask is non-blocking.
-- **Softening the verdict never shrinks the worklist.** `UNRESOLVED_THREADS_SECTION` renders every open thread on ⚠️ exactly as on ❌; only its heading changes. A thread may leave the list only by being resolved.
+- **Softening the verdict never shrinks the worklist.** `UNRESOLVED_THREADS_SECTION` renders every open thread on ⚠️ exactly as on ❌; only its `<summary>` changes. A thread may leave the list only by being resolved. The block is collapsed by default in both states — the counter line stays visible, the bullets do not — and collapsing is never allowed to become omitting.
 - **Narrative and aspirational prose is never a finding.** `standards-conformance.md` must only flag clearly violated normative statements (must / always / never / prefer / do not / forbidden). A finding on descriptive or aspirational prose is a guard failure (`F-standards-prose-flagged`).
 - **Over-cap drops in standards discovery are always logged, never silent.** When the 30,000-char cap is reached, every dropped document is logged by path. Silent truncation is a guard failure (`F-standards-cap-silent-truncation`).
 - **A lens cannot upgrade a finding to a blocking verdict.** Strict blocking rules (broken behaviour, security, data loss, misimplemented intent) apply regardless of lens severity hints.

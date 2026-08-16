@@ -117,9 +117,13 @@ A high-confidence optimality proposal (`optimality-review.md § Inline pointer`)
 
 ### The open-threads checklist is not a body section
 
-The `**To unblock — resolve or reply to these <N> bot threads (<K> blocking):**` list — and its
-⚠️-state twin `**Open bot threads — <N> still open, none blocking:**` (`pr-reviewer.md §
-UNRESOLVED_THREADS_SECTION`) — is a presentational rendering of Gate 3 state, not an extractable section: neither heading has a row in the table above, so the "match by literal heading" rule already skips both. Never mine its linked `path:line` bullets for findings — that would double-count the gate and re-ingest *other bots'* comments as `pr-reviewer`'s own.
+The `<summary>To unblock — resolve or reply to these <N> bot threads (<K> blocking)</summary>`
+block — and its ⚠️-state twin `<summary>Open bot threads — <N> still open, none blocking</summary>`
+(`pr-reviewer.md § UNRESOLVED_THREADS_SECTION`) — is a presentational rendering of Gate 3 state, not an extractable section: neither summary has a row in the table above, so the "match by literal heading" rule already skips both. It is a `<details>` block like `Additional findings` and `Low-confidence findings`, and a consumer that keys on the `<details>` shape rather than on the literal summary text **will** wrongly ingest it — key on the summary text. Never mine its linked `path:line` bullets for findings — that would double-count the gate and re-ingest *other bots'* comments as `pr-reviewer`'s own.
+
+Match on the stable prefix of the summary shown above: the renderer may append
+` · <R> resolved since \`<sha>\`` when a thread closed since the prior run, so an exact
+whole-line comparison misses the block on exactly the runs that make progress.
 
 The list is **derived, not durable**: it is regenerated from live `isResolved` state on every run and
 rendered as plain bullets, with resolved entries removed rather than ticked. A consumer must not

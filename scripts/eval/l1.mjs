@@ -1098,18 +1098,43 @@ function checksInSync(plan, checks) {
     gate3.includes("`blocking == true` **and** `answered == false`") &&
     ["- ✅ —", "- ⚠️ —", "- ❌ —"].every((marker) => gate3.includes(marker)));
 
-  // G24b: lift both heading literals out of the renderer (matched by prefix, compared through
-  // the closing `:**`), then assert each appears verbatim in the consumer.
-  const headings = [...prReviewer.matchAll(/^\*\*(?:To unblock|Open bot threads)[^\n]*?:\*\*/gm)]
-    .map((m) => m[0]);
-  s.check("G24b pr-reviewer.md declares both open-thread checklist headings (❌ and ⚠️ forms)",
+  // G24b: the checklist is a collapsed <details> whose <summary> IS the counter line. Lift both
+  // summary literals out of the renderer, then assert each appears verbatim in the consumer —
+  // the consumer skips this block by matching that text, so a silent rename breaks the skip.
+  const headings = [...prReviewer.matchAll(
+    /^<summary>(?:To unblock|Open bot threads)[^\n]*?<\/summary>/gm)].map((m) => m[0]);
+  s.check("G24b pr-reviewer.md declares both open-thread checklist summaries (❌ and ⚠️ forms)",
     headings.length === 2 &&
-    headings.some((h) => h.startsWith("**To unblock")) &&
-    headings.some((h) => h.startsWith("**Open bot threads")),
+    headings.some((h) => h.startsWith("<summary>To unblock")) &&
+    headings.some((h) => h.startsWith("<summary>Open bot threads")),
     `found ${headings.length}: ${headings.join(" | ") || "none"}`);
   for (const h of headings) {
-    s.check(`G24b reviewer-report-ingest.md carries the renderer's heading verbatim: ${h.slice(0, 34)}…`,
-      ingest.includes(h));
+    // The trailing RESOLVED_SINCE_SUFFIX slot is optional at render time, so the consumer
+    // matches the stable prefix; compare on that same prefix.
+    const stable = h.replace("RESOLVED_SINCE_SUFFIX", "");
+    s.check(`G24b reviewer-report-ingest.md carries the renderer's summary verbatim: ${stable.slice(0, 34)}…`,
+      ingest.includes(stable));
+  }
+  // The block must never be pre-expanded: `<details open>` here would restore the space problem
+  // the collapse was introduced to fix.
+  s.check("G24b the open-threads block is never rendered expanded",
+    !/<details open>\s*\n<summary>(?:To unblock|Open bot threads)/.test(prReviewer) &&
+    /Never open by default/.test(prReviewer));
+
+  // G24f: the report has exactly one host. A review body carrying the report marker is the
+  // regression that leaves one full report per run on the PR; the pre-flight must reject it.
+  s.check("G24f pr-reviewer.md rejects a review body carrying the report marker",
+    /"<!-- PR_REVIEWER_REPORT -->" in payload\["body"\]/.test(prReviewer));
+  s.check("G24f pr-reviewer.md documents the un-writable-sticky path without a second report",
+    /When the sticky cannot be written/.test(prReviewer) &&
+    /DEGRADED_POINTER_BODY/.test(prReviewer));
+  // G24g: prior-run detection must not be login-keyed — an unresolvable `/user` would otherwise
+  // read as "no prior report" and duplicate the sticky on every run.
+  s.check("G24g pr-reviewer.md finds the sticky by marker, not by author login",
+    !/select\(\.user\.login == env\.ME and[^\n]*PR_REVIEWER_REPORT/.test(prReviewer));
+  for (const fm of ["F-report-in-review-body", "F-duplicate-report-posted",
+    "F-open-threads-expanded-by-default"]) {
+    s.check(`G24f diagnostic-surface.md registers ${fm}`, prReviewerDiag.includes(fm));
   }
 
   // G24c: the three Gate-3 failure modes are registered in the diagnostic surface, so a
