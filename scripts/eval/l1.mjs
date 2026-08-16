@@ -838,9 +838,11 @@ function checksInSync(plan, checks) {
     // G19d: in every Step-4 template block, every '| Gate | Status' line appears AFTER
     // a '<summary>Review details' anchor — proving the table is inside the accordion,
     // never at the top level between the <!-- PR_REVIEWER_REPORT --> marker and the accordion.
-    // Slices only the Step-4 region (after '### Review body format', before
-    // '### INLINE_COMMENTS_JSON format') to avoid false-matching the Step-3 terminal
-    // tables at lines 818/844/870.
+    // Slices only the Step-4 region (after '### REPORT_BODY format (the sticky comment)',
+    // before '### INLINE_COMMENTS_JSON format') to avoid false-matching the Step-3 terminal
+    // tables further up the file. G24p locks that heading name; keep this citation in sync
+    // with it, since G24p's stale-citation scan covers the two markdown surfaces only —
+    // adding this file to that list would self-match on the scan's own pattern literals.
     {
       // sliceBetween guards both anchors: a moved/deleted anchor throws a clear
       // error instead of a raw indexOf(-1) silently widening the slice.
