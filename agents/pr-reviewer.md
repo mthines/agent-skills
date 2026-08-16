@@ -2119,9 +2119,11 @@ The five non-negotiables:
 3. On API failure, do not fall back — report verbatim and stop.
 4. Never post more than one review per run, and never more than one sticky per PR.
 5. Never skip the sticky patch. The review is conditional; the report is not — the sticky must
-   describe the current run in every case, including a run that posts no review. The single
-   exception is an access path that cannot write it (§ *When the sticky cannot be written*), and
-   that path posts **no** report copy anywhere — it never relocates the report into the review body.
+   describe the current run in every case, including a run that posts no review. There are exactly
+   two exceptions, and neither relocates the report: an access path that cannot write it
+   (§ *When the sticky cannot be written*), which posts the degraded pointer instead, and a body
+   that still fails `report_body_is_safe` after one re-render (§ *Render `REPORT_BODY` verbatim*),
+   which posts **no** report copy anywhere and reports the failing reason to the user.
 
 Confirm the 4b response contains `state: "COMMENTED"` when a review was posted.
 
