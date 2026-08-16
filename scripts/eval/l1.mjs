@@ -1214,6 +1214,10 @@ function checksInSync(plan, checks) {
   for (const v of ["RUN_MODE", "PRIOR_SHA", "LAST_FULL_SHA", "INCR_RUNS_SINCE_FULL"]) {
     s.check(`G24h the recovered-pointer branch binds ${v}`, pointerBranch.includes(v));
   }
+  // A flag with no reader is a comment. Assert PRIOR_RUN_STATE_UNKNOWN is bound and consumed.
+  s.check("G24h PRIOR_RUN_STATE_UNKNOWN has readers, not just a binding",
+    (prReviewer.match(/PRIOR_RUN_STATE_UNKNOWN/g) || []).length >= 4 &&
+    /prior-run state unknown/.test(sliceBetween(prReviewer, "## Step 5: Report", "## What this agent does not do")));
   s.check("G24h PRIOR_REPORT_AUTHOR covers all three prior-run shapes",
     /PRIOR_REPORT_AUTHOR=[\s\S]{0,200}STICKY[\s\S]{0,80}LEGACY_REVIEW[\s\S]{0,80}POINTER_REVIEW/
       .test(prReviewer));

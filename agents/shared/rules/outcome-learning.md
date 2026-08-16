@@ -80,7 +80,11 @@ REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 # Same identity ladder as prior-comment-awareness.md: `/user` is not repo-scoped and 401s under
 # an App installation token or a per-call credential proxy (`github-access.md § Identity`).
 # Rung 2 reads the login off this agent's own report comment on this PR.
-BOT_LOGIN="${BOT_LOGIN:-${PRIOR_REPORT_AUTHOR:-$(gh api user --jq .login 2>/dev/null || echo "")}}"
+# Rung order is identical to prior-comment-awareness.md § fetch existing PR comment state —
+# caller-bound, then /user, then this agent's own prior artifact. Two rules that resolve the
+# identity differently can attribute the same comment to two logins inside one run.
+BOT_LOGIN="${BOT_LOGIN:-$(gh api user --jq .login 2>/dev/null || echo "")}"
+[ -z "$BOT_LOGIN" ] && BOT_LOGIN="${PRIOR_REPORT_AUTHOR:-}"
 if [ -z "$BOT_LOGIN" ]; then
   # Standalone (no caller-bound PRIOR_REPORT_AUTHOR): look in BOTH hosts. The sticky lives on
   # issues/comments, while a legacy report body and a degraded pointer live on pulls/reviews —

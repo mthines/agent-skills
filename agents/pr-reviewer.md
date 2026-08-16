@@ -373,11 +373,24 @@ is the object every rule below means by "the prior report". A recovered pointer 
 report and never binds it.
 
 **When the sticky read failed and nothing else was found**, the prior-run state is *unknown*, not
-absent — the one endpoint that could have proved a prior run is the one that errored. Set
-`PRIOR_RUN_STATE_UNKNOWN=true`, `RUN_MODE = "full"`, and announce
-`Prior-run state unknown — the PR's comments could not be read; running full, with no carry-forward.`
-Never emit the first-pass announcement here: it asserts something this run could not check, and
-Step 4a is already on the no-duplicate path for the same reason.
+absent — the one endpoint that could have proved a prior run is the one that errored:
+
+```bash
+if [ "${STICKY_READ_FAILED:-false}" = "true" ] && [ -z "$PRIOR_REVIEW" ] && [ -z "$POINTER_REVIEW" ]; then
+  PRIOR_RUN_STATE_UNKNOWN=true
+else
+  PRIOR_RUN_STATE_UNKNOWN=false
+fi
+```
+
+It is bound on every path because three steps read it, and each would otherwise assert something
+this run could not check:
+
+| Reader | Behaviour when `true` |
+| --- | --- |
+| The no-prior-run branch below | Takes its bindings, but **not** its announcement: emit `Prior-run state unknown — the PR's comments could not be read; running full, with no carry-forward.` instead of `No prior review found`, and force `RUN_MODE = "full"` rather than inferring it from an absent baseline. |
+| Step 4a (§ *When the sticky cannot be written*) | Already routed by `STICKY_READ_FAILED` to the no-duplicate path; this flag is why that row exists — a sticky may well exist, unseen. |
+| Step 5 | Reports `prior-run state unknown` beside the sticky line, so a run that reviewed a PR blind is legible as such rather than as a first pass. |
 
 **`IS_RE_REVIEW` is the "has this PR been reviewed before" flag** — set it here, and gate re-review
 behaviour on it rather than on `PRIOR_REVIEW`:
@@ -415,7 +428,7 @@ They diverge on the pointer paths, where the second is true and the first is emp
 no threads resolved, `RESOLVED_SINCE_PRIOR` never bound, and Gate 3 graded against a stale open set
 the run had everything it needed to refresh.
 
-**If `PRIOR_REVIEW` is empty and no pointer ledger was recovered** (no prior run found in any shape):
+**If `PRIOR_REVIEW` is empty and no pointer was found** (no prior run found in any shape):
 - Set `RUN_MODE = "full"`.
 - Set `PRIOR_SHA = ""`.
 - Set `PRIOR_REVIEW_SHA = ""`.
@@ -428,7 +441,11 @@ the run had everything it needed to refresh.
   (other bots' threads open, which is common) reaches the checklist with nothing bound. `0`
   suppresses the counter everywhere, which is the correct reading: nothing has been resolved since
   a prior report that does not exist.
-- Announce: `No prior review found — running full review.`
+- Announce, and this is the one line `PRIOR_RUN_STATE_UNKNOWN` changes:
+  - `false` (every lookup succeeded and found nothing): `No prior review found — running full review.`
+  - `true` (a lookup failed): `Prior-run state unknown — the PR's comments could not be read; running full, with no carry-forward.`
+    Never the first-pass line: absence was not established, and Step 4a is on the no-duplicate path
+    for the same reason.
 - Proceed to Step 1.
 
 **If `PRIOR_REVIEW` is non-empty** (prior report exists):
@@ -2639,6 +2656,9 @@ did.
 Include:
 - Confirmed state (`COMMENTED`) when a review was posted; `sticky-only` when it was not.
 - The sticky comment URL, or the reason there is none.
+- `prior-run state unknown` when `PRIOR_RUN_STATE_UNKNOWN` is true — a run that could not read the
+  PR's comments reviewed it blind (no carry-forward, no dedup against its own prior comments), and
+  that has to be visible next to the result rather than inferred from a missing line.
 - Gate verdicts (Gates 1/3/4/5/6 — Gate 2 shown separately as CI PASS/FAIL).
 - Integrations checked by Persona 4 and their spec versions, or "no integration changes detected".
 - Any findings dropped at line-validity for manual posting (verbatim).
