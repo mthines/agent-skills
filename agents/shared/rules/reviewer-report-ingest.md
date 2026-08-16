@@ -124,16 +124,28 @@ A high-confidence optimality proposal (`optimality-review.md § Inline pointer`)
 
 ### The open-threads checklist is not a body section
 
-The `<summary>To unblock — resolve or reply to these <N> bot threads (<K> blocking)` block —
-and its ⚠️-state twin `<summary>Open bot threads — <N> still open, none blocking`
-(`pr-reviewer.md § UNRESOLVED_THREADS_SECTION`) — is a presentational rendering of Gate 3 state, not an extractable section: neither summary has a row in the table above, so the "match by literal heading" rule already skips both. It is a `<details>` block like `Additional findings` and `Low-confidence findings`, and a consumer that keys on the `<details>` shape rather than on the literal summary text **will** wrongly ingest it — key on the summary text. Never mine its linked `path:line` bullets for findings — that would double-count the gate and re-ingest *other bots'* comments as `pr-reviewer`'s own.
+Gate 3's open threads render across two slots (`pr-reviewer.md § The Gate 3 open threads`), and
+**neither is an extractable section**:
 
-**Both literals above stop before the closing `</summary>`, and that is deliberate.** The renderer
-appends ` · <R> resolved since \`<sha>\`` *inside* the summary whenever a thread closed since the
-prior run, so the closing tag is not adjacent to the text on exactly the runs that make progress.
-Match the literal as a prefix of the summary line and let the optional progress clause and the
-closing tag follow it; a comparison that includes `</summary>` misses the block precisely when the
-report has something to celebrate.
+| Slot | Literal to match | Where |
+| --- | --- | --- |
+| `UNRESOLVED_THREADS_SECTION` | `⚠️ **<N> unresolved bot thread(s)**` | one line at the top level of the body |
+| `OPEN_THREADS_LIST` | `**Open bot threads (<N>)**` | inside the `Review details` accordion, right after the gate table |
+
+Neither literal has a row in the table above, so the "match by literal heading" rule already skips
+both. Never mine the list's linked `path:line` bullets for findings — that would double-count the
+gate and re-ingest *other bots'* comments as `pr-reviewer`'s own.
+
+**Match both literals as prefixes, and match the count as a number, not as `<N>`.** Each literal is
+followed by run-specific text — a blocking clause and an optional
+` <sup><R> resolved since \`<sha>\`</sup>` on the notice, a bullet list on the list heading — so an
+equality comparison misses them on exactly the runs that have something to say. Anchor on the bold
+span and let the remainder follow.
+
+**The list heading lives inside the accordion, so a consumer that slices the body at the
+`<summary>Review details` boundary must exclude it explicitly.** It is the one Gate 3 artifact that
+now sits in the same region as the extractable diagnostics; skipping it by position rather than by
+literal will silently start ingesting it the next time a diagnostic line moves.
 
 The list is **derived, not durable**: it is regenerated from live `isResolved` state on every run and
 rendered as plain bullets, with resolved entries removed rather than ticked. A consumer must not

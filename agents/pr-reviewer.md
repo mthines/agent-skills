@@ -631,7 +631,7 @@ While fetching, **also identify open unresolved bot-authored comments** for Gate
   separately and reported as `thread state unavailable — <N> comment(s) unverified` in
   Gate 3's Details cell.
 - For each stored entry, capture five fields — three so Gate 3 can render an actionable, linkable
-  checklist (see *Gate 3* and `UNRESOLVED_THREADS_SECTION`), two so it can grade the gate:
+  checklist (see *Gate 3* and `OPEN_THREADS_LIST`), two so it can grade the gate:
   `path:line` (the anchor), `url`
   (the comment's `html_url` permalink from `/tmp/prior-comments.json`), and `ask` — the comment's
   own lead line, **truncated, not paraphrased**: take its first sentence (or its `suggestion:` /
@@ -1109,11 +1109,14 @@ own lead line** `- [\`<path>:<line>\`](<url>) — <ask>` using the three fields 
 (`path:line`, `url`, `ask`). This is what makes the gate actionable: the author clicks straight
 through to each thread and reads in one line what it wants — instead of a bare `path:line` they
 have to hunt for.
-Whenever any thread is open — on ⚠️ as well as ❌ — this same list is surfaced **outside** the
-accordion via `UNRESOLVED_THREADS_SECTION` (below), in its own collapsed block whose `<summary>`
-carries the open and blocking counts: the counts read without expanding anything, the per-thread
-bullets are one click away. The accordion's Gate 3 Details cell then stays terse —
-`<N> unresolved bot thread(s) — see the thread list above`.
+Whenever any thread is open — on ⚠️ as well as ❌ — this list renders **inside** the `Review
+details` accordion, as `OPEN_THREADS_LIST` immediately below the gate table, and the collapsed
+report carries a **one-line** `UNRESOLVED_THREADS_SECTION` notice at the top level naming the open
+and blocking counts. That split is the whole contract: the reader learns *that* threads are open
+and *how many block* without expanding anything, and the per-thread bullets — which on a
+long-running PR grow to dozens of lines and crowd the report off the screen — are one click away
+in the accordion. The accordion's Gate 3 Details cell then stays terse —
+`<N> unresolved bot thread(s) — see the thread list below`.
 
 Result: PASS (✅), WARN (⚠️), or FAIL (❌), graded from the `blocking` and `answered` fields
 captured in Step 1.0 (*Gate states*):
@@ -2153,10 +2156,12 @@ LOW_CONFIDENCE_SECTION
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ✅ or ⚠️ | static description (on ✅) or mismatch text |
-| Prior bot feedback   | ✅ or ⚠️ | static description (on ✅) or `<N> unresolved bot thread(s) — see the thread list above` |
+| Prior bot feedback   | ✅ or ⚠️ | static description (on ✅) or `<N> unresolved bot thread(s) — see the thread list below` |
 | Documentation        | ✅ | The change is documented well enough to follow. |
 | Self-review signals  | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
 | Code review          | ✅ or ⚠️ | static description (on ✅) or "See inline comments" or finding text |
+
+OPEN_THREADS_LIST
 
 **Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 
@@ -2202,10 +2207,12 @@ LOW_CONFIDENCE_SECTION
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ✅ or ⚠️ | static description (on ✅) or mismatch text (≤ 120 chars) |
-| Prior bot feedback   | ✅, ⚠️, or ❌ | static description (on ✅) or `<N> unresolved bot thread(s) — see the thread list above` (the linked checklist lives in `UNRESOLVED_THREADS_SECTION`, not this cell) |
+| Prior bot feedback   | ✅, ⚠️, or ❌ | static description (on ✅) or `<N> unresolved bot thread(s) — see the thread list below` (the linked checklist is `OPEN_THREADS_LIST`, not this cell) |
 | Documentation        | ✅ or ❌ | static description (on ✅) or finding text |
 | Self-review signals  | ✅ or ❌ | static description (on ✅) or finding text |
 | Code review          | ✅, ⚠️, or ❌ | static description (on ✅) or "See inline comments" or finding text |
+
+OPEN_THREADS_LIST
 
 **Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
 
@@ -2277,53 +2284,80 @@ truncated run can never be read as a complete PASS.
 This is the only prose permitted outside the templates, and it is permitted because the stop
 condition requires it in both the terminal report and the review body.
 
-`UNRESOLVED_THREADS_SECTION` renders the Gate 3 open-thread checklist as its **own collapsed
-`<details>` block at the top level of the body** — outside the `Review details` accordion, above
-`OPTIMALITY_SECTION`. The `<summary>` line *is* the counter line, so a reader who never expands
-anything still learns from the collapsed report that N threads are open and how many block; the
-per-thread bullets — which on a long-running PR grow to dozens of lines and crowd the whole report
-off the screen — live inside the block, one click away. Render it **whenever
-Gate 3 (`Prior bot feedback`) is ⚠️ or ❌** — i.e. whenever `OPEN_BOT_COMMENTS[]` is non-empty —
-in the FAIL template *and* the WARN template alike; omit the placeholder entirely on ✅ and `⏭️`.
-Downgrading a non-blocking open thread to ⚠️ must not make it invisible: the verdict softens, the
-worklist does not shrink, so this section follows the open set rather than the verdict.
-Substitute one entry per item in `OPEN_BOT_COMMENTS[]` **as it stands after Step 2.9c**
-(order: same file grouped, then by line), using the `path:line`, `url`, and `ask` fields from
-Step 1.0.
+### The Gate 3 open threads: one visible line, the list in the accordion
 
-The `<summary>` takes one of two forms, chosen by the gate's status — the only thing that varies with
-severity, because "to unblock" is a false instruction for threads that are not blocking anything:
+Gate 3's open-thread state renders across **two** slots, and the split is the contract:
+
+| Slot | Where | What it carries |
+| --- | --- | --- |
+| `UNRESOLVED_THREADS_SECTION` | top level of the body, above `OPTIMALITY_SECTION` — **always visible** | exactly one line: the open count, the blocking count, the `resolved since` progress, and why it matters |
+| `OPEN_THREADS_LIST` | **inside** the `Review details` accordion, immediately after the gate table | the per-thread bullets, one per open thread |
+
+A reader who never expands anything learns *that* threads are open, *how many* block, and *what to
+do* — from one line. The bullets, which on a long-running PR grow to dozens of lines and crowd the
+whole report off the screen, are one click away inside the accordion that already holds every other
+diagnostic. Neither slot may absorb the other: a list at the top level is the space problem this
+split exists to solve, and a notice hidden inside the accordion is a silent gate.
+
+Render **both** slots whenever Gate 3 (`Prior bot feedback`) is ⚠️ or ❌ — i.e. whenever
+`OPEN_BOT_COMMENTS[]` is non-empty — in the FAIL template *and* the WARN template alike; omit
+**both** placeholders entirely on ✅ and `⏭️`. Rendering one without the other is a guard failure
+(`F-open-threads-slot-orphaned`): the notice alone points at a list that is not there, and the list
+alone is invisible in the collapsed report.
+
+Downgrading a non-blocking open thread to ⚠️ must not make it invisible: the verdict softens, the
+worklist does not shrink, so both slots follow the open set rather than the verdict.
+
+#### `UNRESOLVED_THREADS_SECTION` — the visible line
+
+One line, no `<details>`, no bullets. It takes one of two forms, chosen by the gate's status —
+the only thing that varies with severity, because "to unblock" is a false instruction for threads
+that are not blocking anything:
 
 ```markdown
-<details>
-<summary>To unblock — resolve or reply to these <N> bot threads (<K> blocking)RESOLVED_SINCE_SUFFIX</summary>
+⚠️ **<N> unresolved bot thread(s)** — <K> blocking. Resolve or reply to each; they are listed under **Review details** below.RESOLVED_SINCE_SUFFIX
+```
+
+On ⚠️ (nothing blocking) the neutral form renders instead:
+
+```markdown
+⚠️ **<N> unresolved bot thread(s)** — none blocking. Listed under **Review details** below.RESOLVED_SINCE_SUFFIX
+```
+
+Rules for the visible line:
+- **One line, and it is the only thing at the top level.** No bullets, no `<details>`, no table, no
+  lead-in prose. Every per-thread detail belongs to `OPEN_THREADS_LIST`.
+- **`<N>` is the full open count in both forms**, never the blocking subset — the worklist size is
+  what the reader is being told. On ❌, `<K>` = the blocking unanswered threads, the subset that
+  actually moves the verdict. Never render `none blocking` on a ❌.
+- **It names where the list is.** The `Review details` pointer is load-bearing: without it the
+  reader is told a list exists and given no way to find it.
+- **`RESOLVED_SINCE_SUFFIX` reports progress.** Substitute
+  ` <sup><RESOLVED_SINCE_PRIOR> resolved since \`<PRIOR_REVIEW_SHA_SHORT>\`</sup>` only when
+  `RESOLVED_SINCE_PRIOR > 0`; substitute nothing otherwise (never `0 resolved`). Use the singular
+  `thread` at exactly 1. When Gate 3 is ✅ this whole slot is omitted, so the counter moves into
+  Gate 3's Details cell instead — see *Rules for table cells*.
+
+#### `OPEN_THREADS_LIST` — the bullets, inside the accordion
+
+Substitute one entry per item in `OPEN_BOT_COMMENTS[]` **as it stands after Step 2.9c**
+(order: same file grouped, then by line), using the `path:line`, `url`, and `ask` fields from
+Step 1.0:
+
+```markdown
+**Open bot threads (<N>)**
 
 - [\`packages/cli/README.md:680\`](<url>) — bound \`LocalStore.search\` the way \`RemoteStore\` is
 - [\`packages/cli/src/install.mjs:291\`](<url>) — add the missing parity test for the event roster
 - [\`packages/cli/src/core/lessons.mjs:843\`](<url>) — cap \`LocalStore.search\` per-prompt walk
-
-</details>
 ```
 
-On ⚠️ the same block renders under the neutral summary instead:
-
-```markdown
-<details>
-<summary>Open bot threads — <N> still open, none blockingRESOLVED_SINCE_SUFFIX</summary>
-```
-
-Rules for this section:
-- **Never open by default.** The `<details>` carries no `open` attribute in either state, including
-  ❌ — a blocking gate is already announced by the headline, the summary line, and the gate table,
-  and expanding the list by default is the space problem this block exists to solve.
-- **The summary is the only severity-dependent part.** `<N>` is the full open count in both forms
-  and the bullet list always renders every open thread; only the framing changes. On ❌ use the
-  `To unblock` form, where `<K>` = the blocking unanswered threads — the subset that actually moves
-  the verdict. On ⚠️ use the `Open bot threads` form. Never render `none blocking` on a ❌, and
-  never drop a thread from the list because it is non-blocking.
-- **One line of vertical space when collapsed.** Nothing may be added between the `<summary>` and
-  the bullets — no restated counts, no lead-in prose. The summary carries the whole at-a-glance
-  reading; anything above the bullets would defeat the collapse.
+Rules for the list:
+- **No nested `<details>`.** It is already inside the `Review details` accordion; a second collapse
+  would put the worklist two clicks from the reader. The bold lead line is its whole heading, and
+  `<N>` there is the same full open count as the visible line — the two must agree.
+- **The list always renders every open thread**, on ⚠️ exactly as on ❌. Never drop a thread from it
+  because it is non-blocking; only the visible line's framing changes with severity.
 - **Every `path:line` is a Markdown link** to the thread's `html_url`, with the truncated `ask`
   after an em-dash. If an item's `url` is missing (older fetch, or the permalink could not be read),
   render its `path:line` as inline code with no link rather than a broken link, and keep the `ask`.
@@ -2335,13 +2369,6 @@ Rules for this section:
   (`isResolved` is the authority — `prior-comment-awareness.md § Thread state`), gets overwritten by
   the next patch, and would contradict Gate 3's ❌ or ⚠️ while it survived. Do not reintroduce
   checkboxes.
-- **`RESOLVED_SINCE_PRIOR` reports progress instead of the list carrying it.** It renders in the
-  `<summary>` as `RESOLVED_SINCE_SUFFIX` — substitute
-  ` · <RESOLVED_SINCE_PRIOR> resolved since \`<PRIOR_REVIEW_SHA_SHORT>\`` only when
-  `RESOLVED_SINCE_PRIOR > 0`; substitute nothing otherwise (never `0 resolved`). Use the singular
-  `thread` at exactly 1. Plain text only inside the `<summary>` — no `<sup>`, no nested block
-  elements, which GitHub does not render there. When Gate 3 is ✅ this whole section is omitted, so
-  the counter moves into Gate 3's Details cell instead — see *Rules for table cells*.
 - **Actionable-only** — the unresolved threads and nothing else; never restate the gate table,
   tally, or other findings. It is a rendering of Gate 3 state, not a new finding, so it is never
   auto-applied or ingested (`reviewer-report-ingest.md`).
@@ -2462,9 +2489,33 @@ collapsed label headlines how many memories **influenced** the review:
   `(0 memories used)` when nothing fired.
 - **Not connected** — substitute nothing; the title stays the bare `Review details`.
 
-The gate-status table now lives **inside** the `Review details` `<details>` accordion (near
-its top, immediately after the `<summary>` line and before `**Run mode**`), not at the top level
-of the review body.
+#### The `Review details` accordion is always rendered, and always collapsed
+
+Three rules, all mechanical, and none of them optional:
+
+1. **The accordion is never omitted.** Every body variant — PASS, WARN, FAIL — wraps its
+   diagnostics in a literal `<details>` / `<summary>Review details…</summary>` / `</details>`
+   block. A run that flattens the gate table, `**Run mode**`, `MEMORIES_SECTION`, the `**Quality**`
+   line or any other diagnostic into the top level of the body has emitted a different document
+   than the template, and it is a guard failure (`F-report-accordion-flattened`) even when every
+   individual line is correct. This is the single most common way the report regresses: the model
+   re-composes the body from memory, keeps the content, and drops the wrapper — turning a
+   three-line report into a screenful.
+2. **The accordion never carries the `open` attribute.** Write `<details>`, never
+   `<details open>`. Its whole purpose is that the report reads short by default and expands on
+   demand; a verdict is announced by the headline, the notice line, and the inline comments, never
+   by pre-expanding the diagnostics. This holds on FAIL exactly as on PASS
+   (`F-report-accordion-expanded`).
+3. **The body order inside the accordion is fixed:** `<summary>` → `<sup>FOOTER_LINE</sup>` →
+   gate-status table → `OPEN_THREADS_LIST` → `**Run mode**` → `MEMORIES_SECTION` → `**Quality**`
+   → `**Integrations**` → `**Optimality (2.4c)**` → `**Standards (2.4d)**` → `**Skipped files**`
+   → the agent-link `<sup>` footer. The gate table sits near the top, immediately after the
+   `<summary>` and its footer line, not at the top level of the body.
+
+Everything that is *not* in that list stays outside the accordion, and the visible surface of a
+report is therefore bounded: the marker, an optional `PARTIAL_REVIEW_BANNER`, the headline, an
+optional one-line `UNRESOLVED_THREADS_SECTION`, and the collapsed `<summary>` lines of the four
+`<details>` blocks. Nothing else.
 
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
@@ -2491,9 +2542,10 @@ Rules for table cells:
 - When a gate WARNS (⚠️) or FAILS (❌), its Details cell shows the specific finding text (max 120
   chars — truncate; the full finding lives in the inline comment), exactly as before.
   Gate 3 is the one exception in both non-passing states: its cell stays terse —
-  `<N> unresolved bot thread(s) — see the thread list above` — because the finding text is the
-  linked checklist, which lives in `UNRESOLVED_THREADS_SECTION` and would not survive the 120-char
-  cap. The pointer wording is the same on ⚠️ and ❌; only the section's heading differs.
+  `<N> unresolved bot thread(s) — see the thread list below` — because the finding text is the
+  linked checklist, which lives in `OPEN_THREADS_LIST` a few lines further down this same accordion
+  and would not survive the 120-char cap. The pointer wording is the same on ⚠️ and ❌; only the
+  top-level notice's framing differs.
 - `⏭️` is a valid Status value in **every** body variant — PASS, WARN, and FAIL — in addition to the
   values each variant's table shows. It appears only under `--skip-gates`, for Gates 1 / 3 / 4 / 5,
   and its Details cell holds the carried prior text plus its `(carried from …)` suffix when Step 2.5c
@@ -2523,11 +2575,13 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   `WARN_GATE_COUNT` does not appear in the accordion gate table, which renders per-gate ✅/⚠️ marks
   rather than a count; its rendered uses are the Step 3 terminal WARN/FAIL verdict lines and the
   top-level WARN and FAIL headlines (the latter via `SEVERITY_TALLY`).
-- Never add rows, sections, or prose outside the template above (except the five `<details>`
-  blocks — the open-threads block (`UNRESOLVED_THREADS_SECTION`), diagnostics,
-  `Optimality review`, `Additional findings`, and `Low-confidence findings` —
-  the `MEMORIES_SECTION` slot inside the diagnostics block, and the `PARTIAL_REVIEW_BANNER` line —
-  all of which are slots in the template, not added prose).
+- Never add rows, sections, or prose outside the template above (except the four `<details>`
+  blocks — `Review details`, `Optimality review`, `Additional findings`, and
+  `Low-confidence findings` — the `MEMORIES_SECTION` and `OPEN_THREADS_LIST` slots inside
+  `Review details`, the one-line `UNRESOLVED_THREADS_SECTION` notice, and the
+  `PARTIAL_REVIEW_BANNER` line — all of which are slots in the template, not added prose).
+  `UNRESOLVED_THREADS_SECTION` is the **only** multi-word prose permitted at the top level of the
+  body besides the headline and the banner, and it is capped at one line.
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
 ### INLINE_COMMENTS_JSON format

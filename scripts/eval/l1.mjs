@@ -1098,32 +1098,66 @@ function checksInSync(plan, checks) {
     gate3.includes("`blocking == true` **and** `answered == false`") &&
     ["- ✅ —", "- ⚠️ —", "- ❌ —"].every((marker) => gate3.includes(marker)));
 
-  // G24b: the checklist is a collapsed <details> whose <summary> IS the counter line. Lift both
-  // summary literals out of the renderer, then assert each appears verbatim in the consumer —
-  // the consumer skips this block by matching that text, so a silent rename breaks the skip.
-  // Capture the summary text WITHOUT the closing tag: the renderer appends the optional
-  // RESOLVED_SINCE_SUFFIX before </summary>, so the shared literal is a prefix, not a whole line.
-  const headings = [...prReviewer.matchAll(
-    /^<summary>(?:To unblock|Open bot threads)[^\n]*?(?=RESOLVED_SINCE_SUFFIX|<\/summary>)/gm)]
-    .map((m) => m[0]);
-  s.check("G24b pr-reviewer.md declares both open-thread checklist summaries (❌ and ⚠️ forms)",
-    headings.length === 2 &&
-    headings.some((h) => h.startsWith("<summary>To unblock")) &&
-    headings.some((h) => h.startsWith("<summary>Open bot threads")),
-    `found ${headings.length}: ${headings.join(" | ") || "none"}`);
-  for (const h of headings) {
-    s.check(`G24b reviewer-report-ingest.md carries the renderer's summary verbatim: ${h.slice(0, 34)}…`,
-      ingest.includes(h));
-    // …and quotes it as a PREFIX. A literal quoted through </summary> is unmatchable on a run that
-    // rendered the progress clause, which sits before the closing tag.
-    s.check(`G24b the consumer quotes the summary as a prefix, not through </summary>: ${h.slice(0, 34)}…`,
-      !ingest.includes(`${h}</summary>`));
+  // G24b: Gate 3 renders across two slots — a one-line visible notice and a bullet list inside
+  // the Review details accordion. Lift both literals out of the renderer and assert the consumer
+  // carries each verbatim: the consumer skips them by matching that text, so a silent rename
+  // starts ingesting the gate as findings.
+  //
+  // Capture the notice WITHOUT its trailing run-specific text: the renderer appends a blocking
+  // clause and the optional RESOLVED_SINCE_SUFFIX, so the shared literal is a prefix.
+  const noticeLiteral = "⚠️ **<N> unresolved bot thread(s)**";
+  const listLiteral = "**Open bot threads (<N>)**";
+  s.check("G24b pr-reviewer.md declares the one-line open-threads notice in both forms (❌ and ⚠️)",
+    prReviewer.split(noticeLiteral).length - 1 >= 2,
+    "expected the notice literal in both the blocking and the none-blocking form");
+  s.check("G24b pr-reviewer.md declares the in-accordion open-threads list heading",
+    prReviewer.includes(listLiteral));
+  for (const [name, lit] of [["notice", noticeLiteral], ["list heading", listLiteral]]) {
+    s.check(`G24b reviewer-report-ingest.md carries the renderer's ${name} verbatim`,
+      ingest.includes(lit), `missing: ${lit}`);
   }
-  // The block must never be pre-expanded: `<details open>` here would restore the space problem
-  // the collapse was introduced to fix.
-  s.check("G24b the open-threads block is never rendered expanded",
-    !/<details open>\s*\n<summary>(?:To unblock|Open bot threads)/.test(prReviewer) &&
-    /Never open by default/.test(prReviewer));
+  // The two slots are all-or-nothing. A notice without a list points at nothing; a list without
+  // a notice is a gate nobody sees in the collapsed report.
+  s.check("G24b pr-reviewer.md forbids rendering one Gate 3 slot without the other",
+    /F-open-threads-slot-orphaned/.test(prReviewer));
+  // The bullets belong INSIDE the accordion. Both Step-4 templates that can carry open threads
+  // (WARN and FAIL) must place OPEN_THREADS_LIST after their `<summary>Review details` line.
+  {
+    const bodies = [...prReviewer.matchAll(/```markdown\n(<!-- PR_REVIEWER_REPORT -->[\s\S]*?)```/g)]
+      .map((m) => m[1])
+      .filter((b) => b.includes("UNRESOLVED_THREADS_SECTION"));
+    s.check("G24b found the WARN and FAIL report templates", bodies.length === 2,
+      `found ${bodies.length}`);
+    for (const b of bodies) {
+      const summaryPos = b.indexOf("<summary>Review details");
+      const listPos = b.indexOf("OPEN_THREADS_LIST");
+      const noticePos = b.indexOf("UNRESOLVED_THREADS_SECTION");
+      s.check("G24b OPEN_THREADS_LIST renders inside the Review details accordion",
+        summaryPos !== -1 && listPos > summaryPos,
+        `summary@${summaryPos} list@${listPos}`);
+      s.check("G24b the UNRESOLVED_THREADS_SECTION notice stays above the accordion",
+        noticePos !== -1 && noticePos < summaryPos,
+        `notice@${noticePos} summary@${summaryPos}`);
+    }
+  }
+  // The accordion is the collapse. Every Step-4 template must wrap its diagnostics in a
+  // <details> with no `open` attribute — flattening it is how the report regressed to a
+  // screenful of top-level prose.
+  {
+    const allBodies = [...prReviewer.matchAll(/```markdown\n(<!-- PR_REVIEWER_REPORT -->[\s\S]*?)```/g)]
+      .map((m) => m[1]);
+    s.check("G24b found all three report templates (PASS, WARN, FAIL)", allBodies.length === 3,
+      `found ${allBodies.length}`);
+    for (const b of allBodies) {
+      s.check("G24b the report template wraps its diagnostics in a Review details accordion",
+        /<details>\s*\n<summary>Review details/.test(b) && b.includes("</details>"));
+      s.check("G24b the Review details accordion is never pre-expanded",
+        !/<details open>/.test(b));
+    }
+  }
+  s.check("G24b pr-reviewer.md registers both accordion-regression failure modes",
+    /F-report-accordion-flattened/.test(prReviewer) &&
+    /F-report-accordion-expanded/.test(prReviewer));
 
   // G24f: the report has exactly one host. A review body carrying the report marker is the
   // regression that leaves one full report per run on the PR; the pre-flight must reject it.
@@ -1184,7 +1218,8 @@ function checksInSync(plan, checks) {
     /PRIOR_REPORT_AUTHOR=[\s\S]{0,200}STICKY[\s\S]{0,80}LEGACY_REVIEW[\s\S]{0,80}POINTER_REVIEW/
       .test(prReviewer));
   for (const fm of ["F-report-in-review-body", "F-duplicate-report-posted",
-    "F-open-threads-expanded-by-default"]) {
+    "F-report-accordion-flattened", "F-report-accordion-expanded",
+    "F-open-threads-slot-orphaned"]) {
     s.check(`G24f diagnostic-surface.md registers ${fm}`, prReviewerDiag.includes(fm));
   }
 
