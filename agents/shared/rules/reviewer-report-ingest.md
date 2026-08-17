@@ -95,9 +95,13 @@ than `pr-reviewer` has no reason to read it and must not write it.
 
 ## Sections
 
-Every section is matched by its **literal heading** as emitted by the Step 4 templates. An absent
-heading yields an empty result. Never infer a section from prose, and never treat narrative text as
-a finding.
+Every section is matched by its **literal heading** as emitted by
+[`agents/pr-reviewer/templates/report-body.md`](../../pr-reviewer/templates/report-body.md) — the
+single template the report is rendered from. That file is the authority for every literal in the
+table below; when a heading changes there, it changes here in the same commit, and
+`scripts/eval/fixtures/report-body/*.expected.md` shows the rendered result. An absent heading
+yields an empty result. Never infer a section from prose, and never treat narrative text as a
+finding.
 
 | Section | Literal marker in the body | Extractable unit | Anchored? |
 | --- | --- | --- | --- |

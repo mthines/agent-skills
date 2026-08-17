@@ -3,7 +3,7 @@
 // These assert the *mechanical contracts* the skills promise. Run in CI.
 //   node scripts/eval/l1.mjs
 // Exits non-zero if any check fails.
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, extractSection, Suite } from "./lib.mjs";
@@ -835,69 +835,26 @@ function checksInSync(plan, checks) {
       prReviewer.includes("Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review.") &&
       prReviewer.includes("Blocking: <FAIL_REASONS>."));
 
-    // G19d: in every Step-4 template block, every '| Gate | Status' line appears AFTER
-    // a '<summary>Review details' anchor — proving the table is inside the accordion,
-    // never at the top level between the <!-- PR_REVIEWER_REPORT --> marker and the accordion.
-    // Slices only the Step-4 region (after '### REPORT_BODY format (the sticky comment)',
-    // before '### INLINE_COMMENTS_JSON format') to avoid false-matching the Step-3 terminal
-    // tables further up the file. G24p locks that heading name; keep this citation in sync
-    // with it, since G24p's stale-citation scan covers the two markdown surfaces only —
-    // adding this file to that list would self-match on the scan's own pattern literals.
+    // G19d / G19g retired: they scanned the three embedded Step-4 templates for
+    // gate-table-inside-accordion and footer-inside-accordion. Those templates no longer exist —
+    // layout moved to agents/pr-reviewer/templates/report-body.md — and G25 now asserts both
+    // properties against the REAL rendered output instead of against prose, which is strictly
+    // stronger: it catches a run that produces the wrong markup, not just a spec that describes it.
     {
-      // sliceBetween guards both anchors: a moved/deleted anchor throws a clear
-      // error instead of a raw indexOf(-1) silently widening the slice.
-      const step4      = sliceBetween(prReviewer, "### REPORT_BODY format (the sticky comment)", "### INLINE_COMMENTS_JSON format");
-      // Split on the opening PR_REVIEWER_REPORT marker to isolate each template block,
-      // then keep only real template blocks — those carrying the 'Reviewed your changes'
-      // headline. This drops the trailing prose (the Rules-for-table-cells section mentions
-      // the marker and the '| Gate | Status | Details |' header in backticks, which must not
-      // be mistaken for a top-level gate table).
-      const blocks     = step4.split("<!-- PR_REVIEWER_REPORT -->").slice(1)
-        .filter((b) => b.includes("Reviewed your changes"));
-      // For each block: if a gate table row is present it must appear AFTER the
-      // '<summary>Review details' line (i.e. inside the accordion).
-      let allTablesInsideAccordion = blocks.length >= 3;
-      for (const b of blocks) {
-        const gatePos = b.indexOf("| Gate | Status");
-        const diagPos = b.indexOf("<summary>Review details");
-        // Gate table present but accordion comes after (or is absent) → table is at top level.
-        if (gatePos !== -1 && (diagPos === -1 || gatePos < diagPos)) {
-          allTablesInsideAccordion = false;
-        }
-      }
-      s.check("G19d pr-reviewer.md Step-4 gate tables all appear inside the Review details accordion (not at top level)",
-        allTablesInsideAccordion);
-
       // G19e: the review-body footer no longer carries the redundant CI-status sentence.
       // The clause was dropped from every FOOTER_LINE variant; assert it is gone from the
       // whole shipped file, not just Step 4 (the FOOTER_LINE definitions live in Step 4).
       s.check("G19e pr-reviewer.md review-body footer dropped the 'CI status is shown' clause",
         !prReviewer.includes("CI status is shown"));
 
-      // G19f: the gate table is now three columns with a per-gate Details column that shows a
-      // static description on a passing (✅) gate. Assert the '| Gate | Status | Details |'
-      // header and at least one verbatim static description string are present in Step 4.
-      s.check("G19f pr-reviewer.md Step-4 gate table is 3-column with a static description on ✅",
-        step4.includes("| Gate | Status | Details |") &&
-        step4.includes("The multi-lens review found no blocking issues."));
-
-      // G19g: the '<sup>FOOTER_LINE</sup>' commit line renders INSIDE the accordion in every
-      // Step-4 template block — after the '<summary>Review details' line and before the gate
-      // table — never at the top level. Guards the requested move of the commit line into the
-      // Review details block. Per block: FOOTER_LINE must sit between the summary and the table.
-      let allFootersInsideAccordion = blocks.length >= 3;
-      for (const b of blocks) {
-        const diagPos   = b.indexOf("<summary>Review details");
-        const footerPos  = b.indexOf("<sup>FOOTER_LINE</sup>");
-        const gatePos   = b.indexOf("| Gate | Status");
-        // Footer must be present, after the accordion summary, and before the gate table.
-        if (footerPos === -1 || diagPos === -1 ||
-            footerPos < diagPos || (gatePos !== -1 && footerPos > gatePos)) {
-          allFootersInsideAccordion = false;
-        }
-      }
-      s.check("G19g pr-reviewer.md Step-4 commit footer (FOOTER_LINE) renders inside the Review details accordion",
-        allFootersInsideAccordion);
+      // G19f: the gate table is three columns with a static description on a passing gate.
+      // The table itself now lives in the template file; the static descriptions stay in the
+      // agent (the model chooses them), so this asserts one on each side of that split.
+      s.check("G19f the report template carries the 3-column gate table",
+        readFileSync(join(REPO_ROOT, "agents/pr-reviewer/templates/report-body.md"), "utf8")
+          .includes("| Gate | Status | Details |"));
+      s.check("G19f pr-reviewer.md still defines the ✅ static descriptions",
+        prReviewer.includes("The multi-lens review found no blocking issues."));
     }
   }
 
@@ -1100,235 +1057,84 @@ function checksInSync(plan, checks) {
     gate3.includes("`blocking == true` **and** `answered == false`") &&
     ["- ✅ —", "- ⚠️ —", "- ❌ —"].every((marker) => gate3.includes(marker)));
 
-  // G24b: Gate 3 renders across two slots — a counter appended to the Review details <summary>
-  // and a bullet list inside that accordion. Lift both literals out of the renderer and assert
-  // the consumer carries each verbatim: the consumer skips them by matching that text, so a
-  // silent rename starts ingesting the gate as findings.
-  //
-  // Both are matched as PREFIXES by the consumer — the summary suffix is followed by an optional
-  // ` (<K> blocking)`, the list heading by RESOLVED_SINCE_SUFFIX and the bullets.
-  const suffixLiteral = "Review details — <N> open bot threads";
-  const listLiteral = "**Open bot threads (<N>)**";
-  s.check("G24b pr-reviewer.md declares the open-threads summary counter",
-    prReviewer.includes("OPEN_THREADS_SUFFIX") && prReviewer.includes("<N> open bot threads"));
-  s.check("G24b pr-reviewer.md declares the in-accordion open-threads list heading",
-    prReviewer.includes(listLiteral));
-  for (const [name, lit] of [["summary counter", suffixLiteral], ["list heading", listLiteral]]) {
-    s.check(`G24b reviewer-report-ingest.md carries the renderer's ${name} verbatim`,
-      ingest.includes(lit), `missing: ${lit}`);
-  }
-  // The two slots are all-or-nothing. A counter without a list advertises nothing; a list without
-  // a counter is a gate nobody sees in the collapsed report.
-  s.check("G24b pr-reviewer.md forbids rendering one Gate 3 slot without the other",
-    /F-open-threads-slot-orphaned/.test(prReviewer));
-  // The retired standalone notice must not come back: it restated the headline's own gate phrase
-  // and pointed one line down the page at the accordion.
-  s.check("G24b no Step-4 template reintroduces a standalone open-threads notice line",
-    !/^UNRESOLVED_THREADS_SECTION$/m.test(prReviewer));
-  // Likewise the retired memories tag — the summary carries the worklist count and nothing else.
-  s.check("G24b MEMORIES_USED_SUFFIX is not rendered in any summary",
-    !/<summary>Review detailsMEMORIES_USED_SUFFIX/.test(prReviewer) &&
-    /MEMORIES_USED_SUFFIX` is retired/.test(prReviewer));
-  // The bullets belong INSIDE the accordion. Both Step-4 templates that can carry open threads
-  // (WARN and FAIL) must place OPEN_THREADS_LIST after their `<summary>Review details` line, and
-  // carry the counter on that same summary.
+  // ── G25: the report renderer. Behavioural, not textual: these EXECUTE the script that now
+  // owns the report layout and compare against committed snapshots. Five production runs posted
+  // marker-less, accordion-less reports from a correct prose spec, so text-matching the spec was
+  // never going to catch this class. Snapshots live in scripts/eval/fixtures/report-body/ and are
+  // readable markdown — they are the reference for what a report looks like.
   {
-    const bodies = [...prReviewer.matchAll(/```markdown\n(<!-- PR_REVIEWER_REPORT -->[\s\S]*?)```/g)]
-      .map((m) => m[1])
-      .filter((b) => b.includes("OPEN_THREADS_LIST"));
-    s.check("G24b found the WARN and FAIL report templates", bodies.length === 2,
-      `found ${bodies.length}`);
-    for (const b of bodies) {
-      const summaryPos = b.indexOf("<summary>Review details");
-      const listPos = b.indexOf("OPEN_THREADS_LIST");
-      s.check("G24b OPEN_THREADS_LIST renders inside the Review details accordion",
-        summaryPos !== -1 && listPos > summaryPos,
-        `summary@${summaryPos} list@${listPos}`);
-      s.check("G24b the open-threads counter rides on the Review details summary",
-        /<summary>Review detailsOPEN_THREADS_SUFFIX<\/summary>/.test(b));
-    }
-  }
-  // The accordion is the collapse. Every Step-4 template must wrap its diagnostics in a
-  // <details> with no `open` attribute — flattening it is how the report regressed to a
-  // screenful of top-level prose.
-  {
-    const allBodies = [...prReviewer.matchAll(/```markdown\n(<!-- PR_REVIEWER_REPORT -->[\s\S]*?)```/g)]
-      .map((m) => m[1]);
-    s.check("G24b found all three report templates (PASS, WARN, FAIL)", allBodies.length === 3,
-      `found ${allBodies.length}`);
-    for (const b of allBodies) {
-      s.check("G24b the report template wraps its diagnostics in a Review details accordion",
-        /<details>\s*\n<summary>Review details/.test(b) && b.includes("</details>"));
-      s.check("G24b the Review details accordion is never pre-expanded",
-        !/<details open>/.test(b));
-    }
-  }
-  // G24p: the report regressed in the wild even with a correct spec, because the templates sit
-  // ~280 lines below the posting step and nothing at the call site demanded a literal copy.
-  // These three guards lock the fixes: the heading no longer misdirects, the verbatim contract
-  // lives AT Step 4a, and a mechanical pre-flight runs on the rendered body before the write.
-  {
-    // (a) The heading that used to hand the agent F-report-in-review-body must stay renamed,
-    // and no file may reintroduce the old name as a live cross-reference.
-    s.check("G24p the report-template section is not named after the review body",
-      prReviewer.includes("### REPORT_BODY format (the sticky comment)") &&
-      !/^### Review body format/m.test(prReviewer));
-    for (const f of ["agents/pr-reviewer.md", "agents/shared/rules/reviewer-report-ingest.md"]) {
-      const paras = read(f).split(/\n\s*\n/);
-      const stale = paras.filter((p) => /§ Step 4 → Review body format|per \*Review body format\*|see \*Review body format\*/.test(p));
-      s.check(`G24p ${f} cites the template section by its current title`, stale.length === 0,
-        stale[0]?.slice(0, 90));
+    const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
+    const FIX = join(REPO_ROOT, "scripts/eval/fixtures/report-body");
+    const run = (args, input) => {
+      const r = spawnSync("node", [RENDER, ...args], { input, encoding: "utf8" });
+      return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
+    };
+
+    s.check("G25 the renderer and its template both exist",
+      existsSync(RENDER) && existsSync(join(REPO_ROOT, "agents/pr-reviewer/templates/report-body.md")));
+
+    // (a) Snapshot parity. A template or renderer change that alters the output must be
+    // accompanied by a regenerated snapshot, so the diff shows the reader exactly what moved.
+    for (const name of ["pass", "warn", "fail"]) {
+      const payload = join(FIX, `${name}.json`);
+      const expectedPath = join(FIX, `${name}.expected.md`);
+      if (!existsSync(payload) || !existsSync(expectedPath)) {
+        s.check(`G25 ${name} fixture + snapshot present`, false, "missing fixture or snapshot");
+        continue;
+      }
+      const r = run([payload]);
+      s.check(`G25 ${name}.json renders without error`, r.ok, r.err);
+      const expected = readFileSync(expectedPath, "utf8");
+      s.check(`G25 ${name} output matches its committed snapshot`, r.out === expected,
+        r.out === expected ? "" : "output drifted — regenerate the snapshot and review the diff");
     }
 
-    // (b) The verbatim contract is AT the posting step, not only in the format section. Assert
-    // by POSITION: it must sit between Step 4a's heading and the templates it governs.
-    const p4a = prReviewer.indexOf("### 4a.");
-    const pVerb = prReviewer.indexOf("#### Render `REPORT_BODY` verbatim");
-    const pTmpl = prReviewer.indexOf("### REPORT_BODY format (the sticky comment)");
-    s.check("G24p the verbatim-render contract sits inside Step 4a, before the templates",
-      p4a !== -1 && pVerb > p4a && pVerb < pTmpl, `4a@${p4a} verbatim@${pVerb} templates@${pTmpl}`);
-    s.check("G24p the verbatim contract names the observed drift shapes",
-      /F-report-accordion-flattened/.test(prReviewer.slice(pVerb, pTmpl)) &&
-      /F-report-in-review-body/.test(prReviewer.slice(pVerb, pTmpl)));
-
-    // (c) The runtime pre-flight exists, is defined before the write, and actually asserts each
-    // thing it claims to. A stub that returns True would satisfy a mere name check.
-    const pf = sliceBetween(prReviewer, "def report_body_is_safe", "```");
-    s.check("G24p report_body_is_safe is defined at Step 4a", pf.length > 0);
-    for (const [claim, re] of [
-      ["the report marker", /PR_REVIEWER_REPORT/],
-      ["the Review details accordion", /<summary>Review details/],
-      ["the open attribute", /<details open>/],
-      ["accordion-owned lines above the accordion", /Gate \| Status \| Details/],
-      ["the terminal-only advisory verdict", /\*\*Verdict\*\*/],
-    ]) {
-      s.check(`G24p report_body_is_safe checks ${claim}`, re.test(pf), pf.slice(0, 80));
+    // (b) Structural invariants on every snapshot. These are what the five failed runs broke.
+    for (const name of ["pass", "warn", "fail"]) {
+      const p = join(FIX, `${name}.expected.md`);
+      if (!existsSync(p)) continue;
+      const body = readFileSync(p, "utf8");
+      s.check(`G25 ${name} carries the report marker`, body.includes("<!-- PR_REVIEWER_REPORT -->"));
+      s.check(`G25 ${name} has a Review details accordion`,
+        /<details>\n<summary>Review details/.test(body));
+      s.check(`G25 ${name} pre-expands nothing`, !body.includes("<details open>"));
+      s.check(`G25 ${name} carries no **Verdict** line`, !body.includes("**Verdict**"));
+      // Nothing the accordion owns may render above the first <details>.
+      const head = body.split("<details>")[0];
+      for (const owned of ["| Gate | Status | Details |", "**Run mode**", "**Memories**",
+        "**Quality**", "**Skipped files**"]) {
+        s.check(`G25 ${name} keeps ${owned} inside the accordion`, !head.includes(owned));
+      }
     }
-    s.check("G24p a failing report body is re-rendered, never posted",
-      /do \*\*not\*\* post: re-render from the template/.test(prReviewer));
-    s.check("G24p diagnostic-surface registers the compose-from-memory failure mode",
-      prReviewerDiag.includes("F-report-body-composed-from-memory") &&
-      prReviewerDiag.includes("report_body_is_safe"));
-  }
 
-  // G24n: retiring a render slot leaves prose elsewhere describing it. That drift is what the
-  // last three review rounds kept finding by hand — a rule pointing at a slot that no longer
-  // exists reads as authoritative and is unexecutable. Scan the pr-reviewer surface for phrases
-  // that only make sense under a retired design, allowing the paragraphs that explicitly mark
-  // them retired.
-  {
-    const RETIRED_PHRASES = [
-      [/collapsed (?:title|label) headlines/i, "the summary no longer headlines the memories count"],
-      [/(?:top-level|one-line) notice/i, "the standalone open-threads notice line is retired"],
-      [/memories used\)/, "MEMORIES_USED_SUFFIX is retired"],
+    // (c) Fail-closed. Each of these once shipped as a real posted report; the renderer must
+    // refuse them, and must print NOTHING on stdout so a piping caller cannot post a fragment.
+    const base = JSON.parse(readFileSync(join(FIX, "pass.json"), "utf8"));
+    const mutate = (fn) => { const c = structuredClone(base); fn(c); return JSON.stringify(c); };
+    const rejects = [
+      ["a missing required slot", mutate((c) => { delete c.HEADLINE; })],
+      ["an unknown key (typo'd slot)", mutate((c) => { c.HEADLIN = "x"; })],
+      ["an invalid gate glyph", mutate((c) => { c.GATE_PRIOR_STATUS = "FAIL"; })],
+      ["a smuggled **Verdict** line", mutate((c) => { c.RUN_MODE = "full\n\n**Verdict**: PASS"; })],
+      ["an empty required slot", mutate((c) => { c.SKIPPED_FILES = "   "; })],
+      ["a non-object payload", "[1,2]"],
+      ["malformed JSON", "{nope"],
     ];
-    // A paragraph is exempt when it is the retirement note itself.
-    const exempt = (p) => /retired|Earlier revisions|do not reintroduce|cautionary/i.test(p);
-    const surface = [
-      "agents/pr-reviewer.md",
-      "agents/pr-reviewer/rules/diagnostic-surface.md",
-      "agents/shared/rules/reviewer-report-ingest.md",
-      "agents/shared/rules/thread-resolution.md",
-    ];
-    for (const f of surface) {
-      const paras = read(f).split(/\n\s*\n/);
-      for (const [re, why] of RETIRED_PHRASES) {
-        const bad = paras.filter((p) => re.test(p) && !exempt(p));
-        s.check(`G24n ${f} carries no live reference to a retired slot (${why})`,
-          bad.length === 0, bad[0]?.slice(0, 100));
-      }
+    for (const [why, input] of rejects) {
+      const r = run([], input);
+      s.check(`G25 the renderer rejects ${why}`, !r.ok, r.ok ? "ACCEPTED" : "");
+      s.check(`G25 rejecting ${why} emits nothing on stdout`, r.out === "", r.out.slice(0, 60));
     }
-    // CLAUDE.md / README.md hold the whole agent description on ONE line, so paragraph-level
-    // exemption cannot discriminate there. Pin the exact retired spellings instead.
-    for (const f of ["CLAUDE.md", "README.md"]) {
-      const t = readFileSync(join(REPO_ROOT, f), "utf8");
-      for (const lit of ["`none blocking` on ⚠️", "one-line notice's framing",
-        "top-level notice"]) {
-        s.check(`G24n ${f} does not describe the retired open-threads notice (${lit})`,
-          !t.includes(lit));
-      }
-    }
-    // F3's shape: a pluralisation rule for a noun the substituted string does not contain.
-    // Scoped to the RESOLVED_SINCE_SUFFIX bullet — the identical sentence on
-    // OPEN_THREADS_SUFFIX is correct there, because that suffix does render "open bot thread(s)".
-    {
-      const bullet = sliceBetween(prReviewer,
-        "- **`RESOLVED_SINCE_SUFFIX` reports progress here", "- **Every `path:line` is a Markdown link**");
-      s.check("G24n found the RESOLVED_SINCE_SUFFIX bullet", bullet.length > 0);
-      s.check("G24n the RESOLVED_SINCE_SUFFIX rule does not pluralise a noun it never renders",
-        !/singular\s*\n?\s*`thread`/.test(bullet), bullet.slice(0, 90));
-    }
-  }
-  s.check("G24b pr-reviewer.md registers both accordion-regression failure modes",
-    /F-report-accordion-flattened/.test(prReviewer) &&
-    /F-report-accordion-expanded/.test(prReviewer));
 
-  // G24f: the report has exactly one host. A review body carrying the report marker is the
-  // regression that leaves one full report per run on the PR; the pre-flight must reject it.
-  s.check("G24f pr-reviewer.md rejects a review body carrying the report marker",
-    /"<!-- PR_REVIEWER_REPORT -->" in payload\["body"\]/.test(prReviewer));
-  s.check("G24f pr-reviewer.md documents the un-writable-sticky path without a second report",
-    /When the sticky cannot be written/.test(prReviewer) &&
-    /DEGRADED_POINTER_BODY/.test(prReviewer));
-  // G24h: prior-run detection must not be login-keyed — an unresolvable `/user` would otherwise
-  // read as "no prior report" and duplicate the sticky on every run. Assert on the WHOLE
-  // Step 0.7 fetch region rather than on one clause shape: a predicate is order-free
-  // (`select((.body | contains(…)) and .user.login == env.ME)` is the same bug rearranged),
-  // so any mention of the login inside these fetches is the regression.
-  const step07 = sliceBetween(prReviewer,
-    "## Step 0.7: Prior run detection", "### Parsing `PRIOR_DIAGNOSTICS`");
-  const step07Fetches = [...step07.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]).join("\n");
-  // Reading `.user.login` OUT of a found object is fine (PRIOR_REPORT_AUTHOR does exactly that);
-  // FILTERING on it is the bug. A regex cannot express "inside a select() at any nesting depth" —
-  // an earlier bounded-depth version let `select(((.body | contains(…))) and .user.login == …)`
-  // through — so scan to the matching close paren instead.
-  const selectBodies = (src) => {
-    const out = [];
-    for (let i = src.indexOf("select("); i >= 0; i = src.indexOf("select(", i + 1)) {
-      let depth = 0;
-      for (let j = i + "select".length; j < src.length; j++) {
-        if (src[j] === "(") depth++;
-        else if (src[j] === ")" && --depth === 0) { out.push(src.slice(i, j + 1)); break; }
-      }
-    }
-    return out;
-  };
-  const loginFilter = selectBodies(step07Fetches).some((b) => /user\.login/.test(b));
-  s.check("G24h pr-reviewer.md finds the sticky by marker, not by author login",
-    step07Fetches.includes("PR_REVIEWER_REPORT") && !loginFilter && !/env\.ME/.test(step07Fetches),
-    step07Fetches.includes("PR_REVIEWER_REPORT") ? "login key present in a Step 0.7 fetch" : "no marker-keyed fetch found");
-  // The pointer written by Step 4b must be findable by the fallback that reads it — and EVERY
-  // pointer form must carry the marker, or the identity ladder and the prior-run evidence go
-  // missing on exactly the access paths that depend on them.
-  s.check("G24h the pointer marker is both written and looked for",
-    (prReviewer.match(/<!-- PR_REVIEWER_POINTER -->/g) || []).length >= 2 &&
-    step07Fetches.includes("PR_REVIEWER_POINTER"));
-  const pointerForms = [...sliceBetween(prReviewer, "`POINTER_BODY` is one marker line",
-    "### REPORT_BODY format (the sticky comment)").matchAll(/```markdown\n([\s\S]*?)```/g)].map((m) => m[1]);
-  s.check("G24h every pointer body form carries the pointer marker",
-    pointerForms.length >= 4 && pointerForms.every((f) => f.includes("<!-- PR_REVIEWER_POINTER -->")),
-    `${pointerForms.filter((f) => !f.includes("<!-- PR_REVIEWER_POINTER -->")).length} of ${pointerForms.length} unmarked`);
-  // The pointer ledger is truncated: a 50-run history cannot ride on an append-only object.
-  s.check("G24h the degraded pointer carries a truncated ledger, not the full history",
-    /DEGRADED_LEDGER/.test(prReviewer) && /truncated/.test(prReviewer));
-  // The recovered-pointer branch is a re-review: it must bind the run-mode inputs Step 1.2b reads,
-  // and it must feed the identity ladder — it is the one path where `/user` also fails.
-  const pointerBranch = sliceBetween(step07,
-    "**Pointer fallback (this agent's own review pointers).**", "**`IS_RE_REVIEW`");
-  for (const v of ["RUN_MODE", "PRIOR_SHA", "LAST_FULL_SHA", "INCR_RUNS_SINCE_FULL"]) {
-    s.check(`G24h the recovered-pointer branch binds ${v}`, pointerBranch.includes(v));
-  }
-  // A flag with no reader is a comment. Assert PRIOR_RUN_STATE_UNKNOWN is bound and consumed.
-  s.check("G24h PRIOR_RUN_STATE_UNKNOWN has readers, not just a binding",
-    (prReviewer.match(/PRIOR_RUN_STATE_UNKNOWN/g) || []).length >= 4 &&
-    /prior-run state unknown/.test(sliceBetween(prReviewer, "## Step 5: Report", "## What this agent does not do")));
-  s.check("G24h PRIOR_REPORT_AUTHOR covers all three prior-run shapes",
-    /PRIOR_REPORT_AUTHOR=[\s\S]{0,200}STICKY[\s\S]{0,80}LEGACY_REVIEW[\s\S]{0,80}POINTER_REVIEW/
-      .test(prReviewer));
-  for (const fm of ["F-report-in-review-body", "F-duplicate-report-posted",
-    "F-report-accordion-flattened", "F-report-accordion-expanded",
-    "F-open-threads-slot-orphaned"]) {
-    s.check(`G24f diagnostic-surface.md registers ${fm}`, prReviewerDiag.includes(fm));
+    // (d) The agent must delegate, not hand-render. The old three-template shape is gone and
+    // must not come back; the payload contract and the renderer call must be present.
+    s.check("G25 pr-reviewer.md no longer embeds report templates",
+      (prReviewer.match(/```markdown\n<!-- PR_REVIEWER_REPORT -->/g) || []).length === 0,
+      "an embedded REPORT_BODY template is back — layout belongs to the template file");
+    s.check("G25 pr-reviewer.md calls the renderer at Step 4a",
+      /render-report\.mjs/.test(prReviewer) && /REPORT_BODY payload/.test(prReviewer));
+    s.check("G25 pr-reviewer.md forbids hand-rendering as a fallback",
+      /do not fall back to composing the body by hand/.test(prReviewer));
   }
 
   // G24c: the three Gate-3 failure modes are registered in the diagnostic surface, so a

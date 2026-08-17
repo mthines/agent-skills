@@ -151,3 +151,27 @@ all internal links resolve. Keep it that way: fix new breaks, don't baseline
 them. (The three original entries were resolved: `from-to-morphs.md` →
 `state-choreography.md`; the fix-bug verifier anchor → `#verifier-checks`; and
 `playwright-test-healer` → the external [Playwright Test Agents](https://playwright.dev/docs/test-agents) docs.)
+
+## Report-body snapshots
+
+`fixtures/report-body/` holds the reference renderings of the `pr-reviewer` report:
+
+| File | What it is |
+| --- | --- |
+| `<case>.json` | the payload a run would build (`pass`, `warn`, `fail`) |
+| `<case>.expected.md` | the committed snapshot — **read these to see what a report looks like** |
+
+L1's **G25** executes `agents/pr-reviewer/scripts/render-report.mjs` against each payload and diffs
+the result byte-for-byte against the snapshot, then asserts the structural invariants (marker
+present, `Review details` accordion present, nothing pre-expanded, nothing the accordion owns
+rendered above it) and that the renderer rejects seven malformed payloads while printing nothing on
+stdout.
+
+Regenerate after an intentional template or renderer change, and review the diff:
+
+```bash
+for n in pass warn fail; do
+  node agents/pr-reviewer/scripts/render-report.mjs \
+    scripts/eval/fixtures/report-body/$n.json > scripts/eval/fixtures/report-body/$n.expected.md
+done
+```
