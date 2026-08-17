@@ -2220,9 +2220,17 @@ length**, so there is no count to supply and none to get wrong:
 **Optional — scalars:** `CI_NOTE` (Gate 2's substance — which checks are red and on what),
 `VERIFIED_NOTE` (what this run checked itself), `QUALITY_DROPPED`, `RUN_NOTE`.
 
-**Do not write markdown into a structured field.** `path`, `ask`, `body`, `key` and `note` are plain
-text — the renderer adds the backticks and builds the link. A backtick, or markdown link syntax, in one of those fields is rejected, because that is how a link once shipped caged inside a code span and rendered as
+**Do not write a markdown link into a structured field.** `path`, `ask`, `body`, `key` and `note`
+carry text, not markup — the renderer builds the link from `url`. Markdown link syntax in any of
+them is rejected, because that is how a link once shipped caged inside a code span and rendered as
 dead monospace text.
+
+**Backticks: banned in the identifier fields, kept in the prose ones.** `path` and `key` are wrapped
+in a code span by the renderer, so a backtick inside one would terminate that span — rejected.
+`ask`, `body` and `note` are prose and **may** carry inline code, because `ask` is another bot's
+lead line reproduced "truncated, not paraphrased" (Step 1.0) and those lead lines name symbols in
+backticks. Rejecting them there would abort the render on exactly the input this agent is told to
+supply.
 
 **Unknown keys are a hard error**, at the top level and inside every object. A typo'd or
 misremembered name exits 1 and the run posts no report — so does a v1-shaped payload (`FOOTER_LINE`,

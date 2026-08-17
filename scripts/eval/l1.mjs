@@ -1133,8 +1133,8 @@ function checksInSync(plan, checks) {
       ["a markdown link in a structured field", mutate((c) => {
         c.OPEN_THREADS = [{ path: "a.ts", line: 1, ask: "see [the docs](https://x.invalid)" }];
       })],
-      ["a backtick in a structured field", mutate((c) => {
-        c.OPEN_THREADS = [{ path: "a.ts", line: 1, ask: "bind `LocalStore.search`" }];
+      ["a backtick in an identifier field", mutate((c) => {
+        c.OPEN_THREADS = [{ path: "a`b.ts", line: 1, ask: "bind the store" }];
       })],
       ["a non-http url", mutate((c) => {
         c.OPEN_THREADS = [{ path: "a.ts", line: 1, url: "javascript:alert(1)", ask: "x" }];
@@ -1191,6 +1191,19 @@ function checksInSync(plan, checks) {
       s.check("G25 MEMORIES_USED renders as a real link", r.ok, r.err);
       s.check("G25 the renderer built the link, not the model",
         r.out.includes("[`a-lesson-key`](https://lorekit.io/lore?x=1) — promoted"));
+    }
+
+    // A prose field carries the source comment's own wording, backticks and all. Step 1.0 requires
+    // `ask` be another bot's lead line truncated-not-paraphrased, and those name symbols in code
+    // spans; rejecting them aborted the render on mandated input.
+    {
+      const r = run([], mutate((c) => {
+        c.OPEN_THREADS = [{
+          path: "a.ts", line: 1, url: "https://x.invalid/1", ask: "bind `LocalStore.search`",
+        }];
+      }));
+      s.check("G25 a backticked ask renders", r.ok, r.err);
+      s.check("G25 the ask survives verbatim", r.out.includes("— bind `LocalStore.search`"));
     }
 
     // A complete group is still accepted — the check must discriminate, not blanket-reject.

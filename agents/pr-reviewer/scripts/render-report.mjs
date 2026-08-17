@@ -80,14 +80,29 @@ function assertNoStrayFields(where, obj, allowed) {
   }
 }
 
-/** Reject markdown syntax in a field the renderer is going to wrap itself. */
-function assertPlain(where, v) {
+/**
+ * Reject markdown syntax the renderer is going to add itself.
+ *
+ * Two field classes, two bars:
+ *   - IDENTIFIER fields (`path`, `key`) — the renderer wraps these in a code span itself, so a
+ *     backtick inside one would terminate that span. Rejected.
+ *   - PROSE fields (`ask`, `body`, `note`) — `allowCode: true`. An inline code span is the source
+ *     comment's own wording. Step 1.0 requires `ask` be another bot's lead line "truncated, not
+ *     paraphrased", and those lead lines name symbols in backticks (the `OPEN_THREADS_LIST`
+ *     example in pr-reviewer.md is itself one), so rejecting a backtick here aborted the whole
+ *     render on input the spec mandates.
+ *
+ * The hazard this guard was built for — a markdown link caged in a code span — is caught by the
+ * link test below, which matches inside backticks too, and again by the rendered-body
+ * post-condition in main(). Neither depends on banning backticks outright.
+ */
+function assertPlain(where, v, { allowCode = false } = {}) {
   const s = String(v);
   if (/\[[^\]]*\]\([^)]*\)/.test(s)) {
     fail(`${where} contains a markdown link — supply the url in its own field and let the`
       + ` renderer build the link (got: ${s.slice(0, 60)})`);
   }
-  if (s.includes("`")) {
+  if (!allowCode && s.includes("`")) {
     fail(`${where} contains a backtick — supply plain text; the renderer adds code formatting`
       + ` (got: ${s.slice(0, 60)})`);
   }
@@ -102,7 +117,7 @@ function anchorBullet(where, item, textField) {
   if (!path || String(path).trim() === "") fail(`${where}.path is required`);
   if (text === undefined || String(text).trim() === "") fail(`${where}.${textField} is required`);
   assertPlain(`${where}.path`, path);
-  assertPlain(`${where}.${textField}`, text);
+  assertPlain(`${where}.${textField}`, text, { allowCode: true });
   if (line !== undefined && line !== null && !/^\d+(,\d+)*$/.test(String(line))) {
     fail(`${where}.line must be a line number (or comma-separated numbers), got ${JSON.stringify(line)}`);
   }
@@ -304,7 +319,7 @@ function main() {
     if (!isPlainObject(m)) fail(`${where} must be an object {key, url, note}`);
     if (!m.key || String(m.key).trim() === "") fail(`${where}.key is required`);
     assertPlain(`${where}.key`, m.key);
-    if (m.note !== undefined) assertPlain(`${where}.note`, m.note);
+    if (m.note !== undefined) assertPlain(`${where}.note`, m.note, { allowCode: true });
     const label = `\`${m.key}\``;
     const head = m.url ? `- [${label}](${m.url})` : `- ${label}`;
     if (m.url && !/^https?:\/\//.test(String(m.url))) {
