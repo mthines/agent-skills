@@ -1155,22 +1155,83 @@ function checksInSync(plan, checks) {
       /render-report\.mjs/.test(prReviewer) && /REPORT_BODY payload/.test(prReviewer));
     s.check("G25 pr-reviewer.md forbids hand-rendering as a fallback",
       /do not fall back to composing the body by hand/.test(prReviewer));
-    // (e) A provenance-independent pre-write net. The renderer's own post-conditions only run
-    // when the renderer runs, so a bypassed renderer would otherwise be unchecked — strictly
-    // weaker than the report_body_is_safe() this refactor replaced. Assert all four survive.
-    const preWrite = sliceBetween(prReviewer,
-      "**Assert these four things on `REPORT_BODY` immediately before the write",
-      "On any `abort`: post no report object");
-    for (const [claim, needle] of [
-      ["the marker", "PR_REVIEWER_REPORT"],
-      ["the accordion", "<summary>Review details"],
-      ["the open attribute", "<details open>"],
-      ["the advisory verdict", "Verdict"],
-    ]) {
-      s.check(`G25 the pre-write assertion covers ${claim}`, preWrite.includes(needle));
+    // (e) A provenance-independent pre-write net — EXECUTED, not text-matched. The previous
+    // version of this guard used preWrite.includes(needle) and was green over an assertion that
+    // could never fire: `grep -qz '<details>\n<summary>…'` treats \n as the letter n inside a
+    // plain-quoted BRE, so it matched only the literal "<details>n<summary>…" and would have
+    // aborted every run. A guard that checks a command's TEXT cannot see that. Run the block.
+    {
+      const preWrite = sliceBetween(prReviewer,
+        "**Assert these four things on `REPORT_BODY` immediately before the write",
+        "On any `abort`: post no report object");
+      const fence = preWrite.match(/```bash\n([\s\S]*?)```/);
+      s.check("G25 the pre-write assertion block is extractable", !!fence);
+      if (fence) {
+        const script = `abort() { printf 'ABORT: %s\\n' "$*"; exit 3; }\n${fence[1]}\nexit 0\n`;
+        const good = spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"),
+          join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.json")], { encoding: "utf8" }).stdout;
+        const runAssert = (body) =>
+          spawnSync("bash", ["-c", script], { env: { ...process.env, REPORT_BODY: body }, encoding: "utf8" });
+
+        // A valid rendered body must PASS. This is the check that was missing.
+        const ok = runAssert(good);
+        s.check("G25 the pre-write assertions accept a valid rendered body",
+          ok.status === 0, `exit ${ok.status}: ${(ok.stdout || "").trim()}`);
+
+        // Each defect the net exists to catch must ABORT.
+        const cases = [
+          ["a body with no marker", good.replace("<!-- PR_REVIEWER_REPORT -->\n", "")],
+          ["a flattened body (no accordion)", good.replace(/<details>\n<summary>Review details[^\n]*\n/, "")],
+          ["a pre-expanded accordion", good.replace("<details>\n<summary>Review details", "<details open>\n<summary>Review details")],
+          ["a smuggled **Verdict** line", `${good}\n**Verdict**: PASS\n`],
+        ];
+        for (const [why, body] of cases) {
+          const r = runAssert(body);
+          s.check(`G25 the pre-write assertions reject ${why}`, r.status === 3,
+            `exit ${r.status} (expected 3 = abort)`);
+        }
+      }
     }
-    s.check("G25 a failing pre-write assertion posts no report and forbids hand repair",
-      /Do not repair the body by hand/.test(prReviewer));
+
+    // (g) Slot-name parity across the three places a name can be written. A name that disagrees
+    // with the renderer's keys is not a soft failure: the renderer exits 1 on an unknown key and
+    // the run posts nothing. This caught PARTIAL_REVIEW_BANNER (prose) vs PARTIAL_BANNER (key).
+    {
+      const rendererSrc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"), "utf8");
+      const keysIn = (arrName) => {
+        const blk = sliceBetween(rendererSrc, `const ${arrName} = [`, "];");
+        return new Set([...blk.matchAll(/"([A-Z0-9_]+)"/g)].map((m) => m[1]));
+      };
+      const known = new Set([...keysIn("REQUIRED"), ...keysIn("OPTIONAL")]);
+      s.check("G25 the renderer declares a non-trivial slot set", known.size >= 25, `${known.size}`);
+
+      // Every placeholder in the template must be a declared key, and vice versa.
+      const tpl = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/templates/report-body.md"), "utf8");
+      const tplNames = new Set([...tpl.matchAll(/\{\{[#/]?([A-Z0-9_]+)\}\}/g)].map((m) => m[1]));
+      const undeclared = [...tplNames].filter((n) => !known.has(n));
+      s.check("G25 every template placeholder is a declared renderer slot", undeclared.length === 0,
+        undeclared.join(", "));
+      const unused = [...known].filter((n) => !tplNames.has(n));
+      s.check("G25 every declared slot appears in the template", unused.length === 0, unused.join(", "));
+
+      // Every slot the agent's payload contract names must be a real key.
+      const contract = sliceBetween(prReviewer, "#### REPORT_BODY payload", "#### Headlines");
+      // Only the first cell of a table row declares a slot; prose elsewhere in the section
+      // legitimately cites section names (MEMORIES_SECTION, OPTIMALITY_SECTION) that are not keys.
+      const named = [...contract.matchAll(/^\|\s*((?:`[A-Z][A-Z0-9_]{3,}`(?:\s*[·+]\s*)?)+)\s*\|/gm)]
+        .flatMap((m) => [...m[1].matchAll(/`([A-Z][A-Z0-9_]{3,})`/g)].map((x) => x[1]));
+      const wrong = [...new Set(named)].filter((n) => !known.has(n));
+      s.check("G25 every slot named in the payload contract is a renderer key", wrong.length === 0,
+        wrong.join(", "));
+      // …and the contract must not elide names behind an ellipsis: all ten gate slots spelled out.
+      for (const g of ["DESCRIPTION", "PRIOR", "DOCS", "SELFREVIEW", "CODEREVIEW"]) {
+        for (const kind of ["STATUS", "DETAILS"]) {
+          s.check(`G25 the payload contract spells GATE_${g}_${kind}`,
+            contract.includes(`GATE_${g}_${kind}`));
+        }
+      }
+    }
+
     s.check("G25 no dangling reference to the retired report_body_is_safe",
       !prReviewer.includes("report_body_is_safe"));
     // (f) The taxonomy is append-only: a superseded row is marked Retired, never deleted. This

@@ -51,7 +51,7 @@ Step 0.5).
 - Memory-read budget, **inside** that total and scaled to the same bands: **4** `memory_list` calls (Step 1.0) + **1** `memory_search` (Step 1.2c) + a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` calls — so **10** of 30, **15** of 60, or **20** of 100.
   `MEMORY_READ_BUDGET` is a **single pool spanning both read sites**: Step 1.2d (lesson bodies) and Step 2.2 (relevance bodies, per `comment-relevance-memory.md § Read`). Step 1.2d spends at most **half** of it, rounded down, so a lesson-heavy shortlist can never starve the relevance verdicts that decide what gets posted; Step 2.2 may spend the whole remainder, including anything 1.2d left unused. Decrement the pool as calls are made and stop at zero at either site.
   The reads trade call count for context: the four lists are summary-only (~15 KB for a typical fan-out instead of ~110 KB), and only shortlisted entries are ever expanded, so a review that matches nothing spends 5 calls and ~15 KB rather than 5 calls and ~110 KB.
-- If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` In the review body this goes in the `PARTIAL_REVIEW_BANNER` slot of the Step 4 templates (see *REPORT_BODY format (the sticky comment)*), never as free prose. Never present a budget-truncated run as a complete review.
+- If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` In the review body this goes in the `PARTIAL_BANNER` slot of the Step 4 templates (see *REPORT_BODY format (the sticky comment)*), never as free prose. Never present a budget-truncated run as a complete review.
 - Never post a GitHub review that was not produced from fully consolidated results.
 
 ---
@@ -559,7 +559,7 @@ parsed sections onto this agent's variables:
 | `PRIOR_OPTIMALITY[]` | `OPTIMALITY_SECTION` cards | One entry per proposal: `{anchor, card_markdown}`, where `card_markdown` is the **whole card captured verbatim** — headline, the Now / Better table, `Why it's better`, `Trade-off`, `Evidence`, and the `Intent · Blast radius · Confidence` footer. A CARRY re-renders that block unchanged and appends the suffix to its headline, so no row may be summarised away at parse time. |
 | `PRIOR_STANDARDS` | the `**Standards (2.4d)**` log line only | `{ran, docs_scanned, finding_count}` — the 2.4d run-state. Individual standards findings are **not** parsed here: 2.4d findings pass gates 2.5–2.9b and land inline or overflow into `Additional findings`, which `CARRIED_FINDINGS` already carries. |
 | `PRIOR_SKIPPED_FILES[]` | the `**Skipped files**` line | File paths, or empty on `none`. **Context-only** — see below. |
-| `PRIOR_PARTIAL` | `PARTIAL_REVIEW_BANNER` | `true` when the prior run posted a partial-review banner, else `false`. **Context-only** — see below. |
+| `PRIOR_PARTIAL` | `PARTIAL_BANNER` | `true` when the prior run posted a partial-review banner, else `false`. **Context-only** — see below. |
 
 `PRIOR_SKIPPED_FILES` and `PRIOR_PARTIAL` are **context-only**: their owning steps run on every pass, so Step 2.5c can only ever disposition them `REPLACE` or `RESOLVE`, never `CARRY`.
 They are parsed so this run can say a file was skipped twice in a row, or that the prior run was truncated — not to be re-rendered.
@@ -1224,7 +1224,7 @@ the runs where the difference matters:
   in `REVIEW_DIFF` and are only "noted", so they must never enter `SCANNED_FILES`.
 - **Budget exhaustion** stops the walk mid-way (*Stop conditions*: `<M> of <T> files scanned`).
   `SCANNED_FILES` then holds the `M` that were reached, and nothing else. This is the only durable
-  record of that fact — `PARTIAL_REVIEW_BANNER` is a rendered string, not state.
+  record of that fact — `PARTIAL_BANNER` is a rendered string, not state.
 - **Zero-delta** never enters the pipeline, so `SCANNED_FILES` stays empty.
 
 Step 2.9c's re-scan predicate reads it. Without it that predicate degrades to a `REVIEW_DIFF`
@@ -1851,7 +1851,15 @@ section exists to prevent. A check that runs only inside the thing it is guardin
 
 ```bash
 grep -q '<!-- PR_REVIEWER_REPORT -->' <<< "$REPORT_BODY" || abort "report body lost the marker"
-grep -qz '<details>\n<summary>Review details' <<< "$REPORT_BODY" || abort "no Review details accordion"
+# The accordion check needs LINE ADJACENCY, which grep cannot express portably. Two traps:
+#   grep -qz '<details>\n<summary>…'   → \n is the letter n in a BRE; matches "<details>n<summary>…"
+#   grep -qz $'<details>\n<summary>…'  → a newline in a pattern is a pattern SEPARATOR, so this is
+#                                        an OR of {<details>, <summary>…} and passes on either alone
+# Both read as correct and neither is. `grep -Pqz` works but is GNU-only. Use awk.
+printf '%s\n' "$REPORT_BODY" | awk '
+  /^<details>$/ { getline nxt; if (nxt ~ /^<summary>Review details/) ok = 1 }
+  END { exit ok ? 0 : 1 }
+' || abort "no Review details accordion"
 grep -q '<details open>' <<< "$REPORT_BODY" && abort "accordion is pre-expanded"
 grep -q '\*\*Verdict\*\*' <<< "$REPORT_BODY" && abort "advisory verdict is terminal-only"
 ```
@@ -2168,8 +2176,11 @@ One flat JSON object. **Required** slots — every one must be a non-empty strin
 | --- | --- |
 | `HEADLINE` | The one-line verdict sentence (see *Headlines* below). |
 | `FOOTER_LINE` | Run-mode footer: `Reviewed for commit \`<sha>\`.` (full), `Incremental review for commit \`<sha>\` (delta since \`<prior>\`).`, or `No code changes since \`<prior>\` — gate checks only for commit \`<sha>\`.` |
-| `GATE_DESCRIPTION_STATUS` … `GATE_CODEREVIEW_STATUS` | One of `✅` `⚠️` `❌` `⏭️` per gate. Gate 2 (CI) is not a table row — it renders via `CI_NOTE`. |
-| `GATE_DESCRIPTION_DETAILS` … `GATE_CODEREVIEW_DETAILS` | The Details cell, ≤ 120 chars (see *Rules for table cells*). |
+| `GATE_DESCRIPTION_STATUS` · `GATE_PRIOR_STATUS` · `GATE_DOCS_STATUS` · `GATE_SELFREVIEW_STATUS` · `GATE_CODEREVIEW_STATUS` | One of `✅` `⚠️` `❌` `⏭️` per gate. Gate 2 (CI) is not a table row — it renders via `CI_NOTE`. |
+| `GATE_DESCRIPTION_DETAILS` · `GATE_PRIOR_DETAILS` · `GATE_DOCS_DETAILS` · `GATE_SELFREVIEW_DETAILS` · `GATE_CODEREVIEW_DETAILS` | The Details cell, ≤ 120 chars (see *Rules for table cells*). |
+
+**Every slot name is spelled out above — none are elided.** A guessed name is not a typo that degrades gracefully: the renderer exits 1 on `unknown payload key(s)` and the run posts no report. An ellipsis here once hid six of these ten names.
+
 | `RUN_MODE` | `<full \| incremental \| incremental-quick> · <DELTA_LINES> lines in delta` |
 | `MEMORIES` | The memory line's content (see `MEMORIES_SECTION`). |
 | `QUALITY` | `produced <P> → posted inline <F> · cleared <CL> · carried forward <CF> · deferred <DEF> · below-bar <CADV>` |
@@ -2248,7 +2259,7 @@ chars — if longer, keep the top two and append `; +<k> more`.
 The old `FAIL_BLOCKING_SUFFIX` slot is retired: the blocking-finding count now rides inside the
 Code-review entry of `FAIL_REASONS` (`(see inline)`), so the pointer is kept without a second clause.
 
-`PARTIAL_REVIEW_BANNER` is the review-body slot for the tool-budget stop condition. Omit the
+`PARTIAL_BANNER` is the review-body slot for the tool-budget stop condition. Omit the
 placeholder entirely on a complete run — the line disappears and the body starts at the summary
 sentence. When the budget was exhausted, substitute exactly one line, followed by a blank line:
 
@@ -2548,7 +2559,7 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   blocks — `Review details`, `Optimality review`, `Additional findings`, and
   `Low-confidence findings` — the `MEMORIES_SECTION` and `OPEN_THREADS_LIST` slots inside
   `Review details`, the `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the
-  `PARTIAL_REVIEW_BANNER` line — all of which are slots in the template, not added prose).
+  `PARTIAL_BANNER` line — all of which are slots in the template, not added prose).
   Besides the headline and the banner, **no** prose of the agent's own is permitted at the top
   level of the body.
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.

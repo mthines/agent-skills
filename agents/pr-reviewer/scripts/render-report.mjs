@@ -107,8 +107,11 @@ function main() {
   );
   if (missing.length) fail(`missing required slot(s): ${missing.join(", ")}`);
 
+  // Must agree with resolveBlocks' notion of "present", including `false`, or a payload that
+  // omits a block by passing false would hard-fail the group check instead of omitting it.
   const filled = (k) =>
-    data[k] !== undefined && data[k] !== null && String(data[k]).trim() !== "";
+    data[k] !== undefined && data[k] !== null && data[k] !== false &&
+    String(data[k]).trim() !== "";
   for (const group of GROUPS) {
     const present = group.filter(filled);
     if (present.length && present.length !== group.length) {
