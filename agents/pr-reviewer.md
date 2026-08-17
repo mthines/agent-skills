@@ -51,7 +51,7 @@ Step 0.5).
 - Memory-read budget, **inside** that total and scaled to the same bands: **4** `memory_list` calls (Step 1.0) + **1** `memory_search` (Step 1.2c) + a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` calls — so **10** of 30, **15** of 60, or **20** of 100.
   `MEMORY_READ_BUDGET` is a **single pool spanning both read sites**: Step 1.2d (lesson bodies) and Step 2.2 (relevance bodies, per `comment-relevance-memory.md § Read`). Step 1.2d spends at most **half** of it, rounded down, so a lesson-heavy shortlist can never starve the relevance verdicts that decide what gets posted; Step 2.2 may spend the whole remainder, including anything 1.2d left unused. Decrement the pool as calls are made and stop at zero at either site.
   The reads trade call count for context: the four lists are summary-only (~15 KB for a typical fan-out instead of ~110 KB), and only shortlisted entries are ever expanded, so a review that matches nothing spends 5 calls and ~15 KB rather than 5 calls and ~110 KB.
-- If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` In the review body this goes in the `PARTIAL_REVIEW_BANNER` slot of the Step 4 templates (see *REPORT_BODY format (the sticky comment)*), never as free prose. Never present a budget-truncated run as a complete review.
+- If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` In the review body this goes in the `PARTIAL_BANNER` slot of the Step 4 templates (see *REPORT_BODY format (the sticky comment)*), never as free prose. Never present a budget-truncated run as a complete review.
 - Never post a GitHub review that was not produced from fully consolidated results.
 
 ---
@@ -559,7 +559,7 @@ parsed sections onto this agent's variables:
 | `PRIOR_OPTIMALITY[]` | `OPTIMALITY_SECTION` cards | One entry per proposal: `{anchor, card_markdown}`, where `card_markdown` is the **whole card captured verbatim** — headline, the Now / Better table, `Why it's better`, `Trade-off`, `Evidence`, and the `Intent · Blast radius · Confidence` footer. A CARRY re-renders that block unchanged and appends the suffix to its headline, so no row may be summarised away at parse time. |
 | `PRIOR_STANDARDS` | the `**Standards (2.4d)**` log line only | `{ran, docs_scanned, finding_count}` — the 2.4d run-state. Individual standards findings are **not** parsed here: 2.4d findings pass gates 2.5–2.9b and land inline or overflow into `Additional findings`, which `CARRIED_FINDINGS` already carries. |
 | `PRIOR_SKIPPED_FILES[]` | the `**Skipped files**` line | File paths, or empty on `none`. **Context-only** — see below. |
-| `PRIOR_PARTIAL` | `PARTIAL_REVIEW_BANNER` | `true` when the prior run posted a partial-review banner, else `false`. **Context-only** — see below. |
+| `PRIOR_PARTIAL` | `PARTIAL_BANNER` | `true` when the prior run posted a partial-review banner, else `false`. **Context-only** — see below. |
 
 `PRIOR_SKIPPED_FILES` and `PRIOR_PARTIAL` are **context-only**: their owning steps run on every pass, so Step 2.5c can only ever disposition them `REPLACE` or `RESOLVE`, never `CARRY`.
 They are parsed so this run can say a file was skipped twice in a row, or that the prior run was truncated — not to be re-rendered.
@@ -1224,7 +1224,7 @@ the runs where the difference matters:
   in `REVIEW_DIFF` and are only "noted", so they must never enter `SCANNED_FILES`.
 - **Budget exhaustion** stops the walk mid-way (*Stop conditions*: `<M> of <T> files scanned`).
   `SCANNED_FILES` then holds the `M` that were reached, and nothing else. This is the only durable
-  record of that fact — `PARTIAL_REVIEW_BANNER` is a rendered string, not state.
+  record of that fact — `PARTIAL_BANNER` is a rendered string, not state.
 - **Zero-delta** never enters the pipeline, so `SCANNED_FILES` stays empty.
 
 Step 2.9c's re-scan predicate reads it. Without it that predicate degrades to a `REVIEW_DIFF`
@@ -1794,69 +1794,81 @@ Bind the three values Step 4 introduces before rendering:
 | `OPEN_BOT_COMMENT_IDS_JSON` | A JSON array of the comment ids in `OPEN_BOT_COMMENTS[]` **as it stands after Step 2.9c** — `[]` when the gate is clean. This is what the next run diffs to compute `RESOLVED_SINCE_PRIOR`. |
 | `BLOCKING_FINGERPRINTS_JSON` | A JSON array of the `category:claim-gist` fingerprints of this run's `(blocking)` findings (Step 2.9), `[]` when none. This is what the next run's Step 4b condition 4 diffs against. |
 
-#### Render `REPORT_BODY` verbatim — do not compose it from memory
+#### Build the payload, then run the renderer
 
-Open *REPORT_BODY format (the sticky comment)* below, find the template matching the Step 3 verdict
-(PASS / WARN / FAIL), and **copy it literally**, substituting only the named placeholders. This
-instruction lives here, at the point of use, because the templates sit ~280 lines further down a
-2700-line file and every observed regression has the same shape: the run recalls roughly what a
-report looks like and writes that instead.
+`REPORT_BODY` is **not** written by hand. The layout lives in one template
+([`templates/report-body.md`](./pr-reviewer/templates/report-body.md)) and is filled by one script
+([`scripts/render-report.mjs`](./pr-reviewer/scripts/render-report.mjs)). Your job is the **data**;
+the script owns the markup.
 
-Concretely, all of these are guard failures, not stylistic latitude:
+This split exists because hand-rendering failed repeatedly in production. Five observed runs
+(`mthines/lorekit#482`, `#492` ×3, `#495`) each read a correct spec and posted a report with no
+`<!-- PR_REVIEWER_REPORT -->` marker and no `Review details` accordion, because the layout lived in
+three ~85%-identical templates 280 lines below this step and got averaged into a remembered shape
+rather than copied. Layout is not a judgment call, so it is no longer yours.
 
-| Drift | What it produces |
-| --- | --- |
-| Dropping the `<details>` / `<summary>Review details…</summary>` wrapper | `F-report-accordion-flattened` — the whole report renders expanded |
-| Rewording a `<summary>`, heading, or headline | breaks `reviewer-report-ingest.md`, which matches these by literal text |
-| Opening the headline with the pointer's ``Reviewed `<sha>` —`` | `F-report-in-review-body` — that opening belongs to Step 4b |
-| Adding a section the template does not have (`**Verdict**`, `**CI**`, `**Prior findings**`) | prose outside the template; the advisory verdict is terminal-only |
-| Emitting `<sup>FOOTER_LINE</sup>` at the top level | it belongs inside the accordion, first line after the `<summary>` |
+```bash
+# The renderer ships beside this agent definition. Resolve it from the definition's real path.
+# `readlink -f` is GNU-only — BSD/macOS lacks it — so fall back to a pwd -P walk, and NEVER let an
+# empty AGENT_MD through: `${AGENT_MD%/pr-reviewer.md}` on "" yields "", making RENDER the absolute
+# path /pr-reviewer/scripts/render-report.mjs, which fails as "file not found" and reads like a
+# missing renderer rather than a failed resolution.
+resolve() {  # portable readlink -f
+  [ -e "$1" ] || return 1
+  ( cd "$(dirname "$1")" && t=$(basename "$1")
+    while [ -L "$t" ]; do d=$(readlink "$t"); cd "$(dirname "$d")" || return 1; t=$(basename "$d"); done
+    printf '%s/%s\n' "$(pwd -P)" "$t" )
+}
 
-If the run's findings do not fit a template slot, that is not licence to invent one — drop the
-content or route it to the section that owns it.
+AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
+if [ -z "$AGENT_MD" ]; then
+  abort "cannot locate this agent definition — set CLAUDE_AGENT_FILE to its path"
+fi
+RENDER="${AGENT_MD%/pr-reviewer.md}/pr-reviewer/scripts/render-report.mjs"
+[ -f "$RENDER" ] || abort "renderer not found at $RENDER (resolved from $AGENT_MD)"
 
-Then run this pre-flight on the rendered body **before** the write. It mirrors `payload_is_safe`
-(Step 4b) and exists for the same reason: prose instructions 280 lines away are advisory, a
-mechanical assertion at the call site is not.
-
-```python
-def report_body_is_safe(body: str) -> tuple[bool, str]:
-    if "<!-- PR_REVIEWER_REPORT -->" not in body:
-        return (False, "REPORT_BODY is missing the report marker")
-    # Order matters: `<details open>` contains no bare `<details>`, so the pre-expanded case must
-    # be caught first or it reports the wrong failure and F-report-accordion-expanded never fires.
-    if "<details open>" in body:
-        return (False, "the accordion is pre-expanded (F-report-accordion-expanded)")
-    # The accordion is the collapse. Its absence is the single most common regression.
-    if "<summary>Review details" not in body or "<details>" not in body:
-        return (False, "REPORT_BODY has no `Review details` accordion (F-report-accordion-flattened)")
-    # Everything the accordion owns must sit inside it, not above it.
-    # Split on the accordion's own summary, not on the first `<details>` — that one is
-    # OPTIMALITY_SECTION or ADDITIONAL_FINDINGS_SECTION when present, and owned lines
-    # between it and the accordion would escape the check. G19d slices the same way.
-    head = body.split("<summary>Review details", 1)[0]
-    # Every line the accordion owns, including the Gate 3 list and the four trailing
-    # diagnostics bullets — an omission here lets that line render at the top level and pass.
-    for owned in ("| Gate | Status | Details |", "**Run mode**", "**Memories**",
-                  "**Quality**", "**Open bot threads (", "**Integrations**",
-                  "**Optimality (2.4c)**", "**Standards (2.4d)**", "**Skipped files**",
-                  "<sup>Reviewed for commit", "<sup>Incremental review for commit",
-                  "<sup>Reviewed by the"):
-        if owned in head:
-            return (False, f"{owned!r} rendered above the accordion (F-report-accordion-flattened)")
-    # The Step 3 advisory verdict is terminal-only and never written to a posted body.
-    if "**Verdict**" in body:
-        return (False, "the advisory verdict is terminal-only, never in the posted report")
-    return (True, "")
+REPORT_BODY=$(node "$RENDER" /tmp/report-payload.json)   # non-zero exit ⇒ nothing on stdout
 ```
 
-On a `False`, do **not** post: re-render from the template and re-check. A body that cannot pass
-after one re-render is reported verbatim to the user with the failing reason, and the run posts
-**no report** rather than publishing a malformed one — the sticky is left as it was. This drops
-only the report: the Step 4b review object is separate, so any inline findings still post, exactly
-as on the unwritable-sticky path (§ *When the sticky cannot be written*).
+Each `abort` above is the *resolution* failing, which is a different diagnosis from the renderer
+rejecting a payload — say which one happened. Both take the same path from here: report the error,
+post no report object, and never hand-write the body.
 
-Append the ledger line to the passing body, then:
+Write the payload to `/tmp/report-payload.json` as a flat JSON object of slot → string. The keys are
+listed under *REPORT_BODY payload* below. The script **fails closed**: an unknown key, a missing
+required slot, an invalid gate glyph, a smuggled `**Verdict**` line, or a template that lost its
+marker or accordion all exit non-zero and print nothing, so a malformed report cannot be posted.
+
+**If the renderer cannot be resolved or fails**, do not fall back to composing the body by hand —
+that is the exact failure this replaces. Report the error verbatim in the Step 5 terminal output
+along with the payload you built, post the inline findings (Step 4b still applies), and leave the
+sticky untouched. A missing report is recoverable; a malformed one that consumers then parse is not.
+
+**Assert these four things on `REPORT_BODY` immediately before the write, whatever produced it.**
+The renderer guarantees them, so on the normal path this is redundant — and that is the point: it is
+the only check that survives the renderer being **bypassed**, which is the failure this whole
+section exists to prevent. A check that runs only inside the thing it is guarding guards nothing.
+
+```bash
+grep -q '<!-- PR_REVIEWER_REPORT -->' <<< "$REPORT_BODY" || abort "report body lost the marker"
+# The accordion check needs LINE ADJACENCY, which grep cannot express portably. Two traps:
+#   grep -qz '<details>\n<summary>…'   → \n is the letter n in a BRE; matches "<details>n<summary>…"
+#   grep -qz $'<details>\n<summary>…'  → a newline in a pattern is a pattern SEPARATOR, so this is
+#                                        an OR of {<details>, <summary>…} and passes on either alone
+# Both read as correct and neither is. `grep -Pqz` works but is GNU-only. Use awk.
+printf '%s\n' "$REPORT_BODY" | awk '
+  /^<details>$/ { getline nxt; if (nxt ~ /^<summary>Review details/) ok = 1 }
+  END { exit ok ? 0 : 1 }
+' || abort "no Review details accordion"
+grep -q '<details open>' <<< "$REPORT_BODY" && abort "accordion is pre-expanded"
+grep -q '\*\*Verdict\*\*' <<< "$REPORT_BODY" && abort "advisory verdict is terminal-only"
+```
+
+On any `abort`: post no report object, name the failing assertion in the Step 5 output, and stop.
+Do not repair the body by hand — a body that fails these was not built from the template, and
+editing it into shape reintroduces exactly the drift the renderer removes.
+
+Append the ledger line to the rendered body, then:
 
 ```bash
 # Append this run to the ledger, strip the two per-run fields from older entries, cap at 50.
@@ -2122,8 +2134,8 @@ The five non-negotiables:
    describe the current run in every case, including a run that posts no review. There are exactly
    two exceptions, and neither relocates the report: an access path that cannot write it
    (§ *When the sticky cannot be written*), which posts the degraded pointer instead, and a body
-   that still fails `report_body_is_safe` after one re-render (§ *Render `REPORT_BODY` verbatim*),
-   which posts **no** report copy anywhere and reports the failing reason to the user.
+   that fails the pre-write assertion below (§ *Build the payload, then run the renderer*), which
+   posts **no** report copy anywhere and reports the failing reason to the user.
 
 Confirm the 4b response contains `state: "COMMENTED"` when a review was posted.
 
@@ -2156,165 +2168,67 @@ The `<sup>` footer depends on run mode (substituted before posting):
 
 Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (all clear), **WARN** (hard Gates 2/4/5 ✅ and at least one graded gate — Description vs. code, Prior bot feedback, or Code review — is ⚠️, none ❌; still a PASS verdict), or **FAIL** (any of Gates 2/4/5 fails, or Prior bot feedback / Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
 
-**On PASS** — all clear (every gate ✅):
+#### REPORT_BODY payload
 
-```markdown
-<!-- PR_REVIEWER_REPORT -->
-PARTIAL_REVIEW_BANNER
-✅ Reviewed your changes — no issues found.
+One flat JSON object. **Required** slots — every one must be a non-empty string:
 
-OPTIMALITY_SECTION
+| Key | Content |
+| --- | --- |
+| `HEADLINE` | The one-line verdict sentence (see *Headlines* below). |
+| `FOOTER_LINE` | Run-mode footer: `Reviewed for commit \`<sha>\`.` (full), `Incremental review for commit \`<sha>\` (delta since \`<prior>\`).`, or `No code changes since \`<prior>\` — gate checks only for commit \`<sha>\`.` |
+| `GATE_DESCRIPTION_STATUS` · `GATE_PRIOR_STATUS` · `GATE_DOCS_STATUS` · `GATE_SELFREVIEW_STATUS` · `GATE_CODEREVIEW_STATUS` | One of `✅` `⚠️` `❌` `⏭️` per gate. Gate 2 (CI) is not a table row — it renders via `CI_NOTE`. |
+| `GATE_DESCRIPTION_DETAILS` · `GATE_PRIOR_DETAILS` · `GATE_DOCS_DETAILS` · `GATE_SELFREVIEW_DETAILS` · `GATE_CODEREVIEW_DETAILS` | The Details cell, ≤ 120 chars (see *Rules for table cells*). |
 
-ADDITIONAL_FINDINGS_SECTION
+**Every slot name is spelled out above — none are elided.** A guessed name is not a typo that degrades gracefully: the renderer exits 1 on `unknown payload key(s)` and the run posts no report. An ellipsis here once hid six of these ten names.
 
-LOW_CONFIDENCE_SECTION
+| `RUN_MODE` | `<full \| incremental \| incremental-quick> · <DELTA_LINES> lines in delta` |
+| `MEMORIES` | The memory line's content (see `MEMORIES_SECTION`). Multi-line is fine — embed real newlines in the JSON string (`\n`) for the per-lesson bullets. |
+| `QUALITY` | `produced <P> → posted inline <F> · cleared <CL> · carried forward <CF> · deferred <DEF> · below-bar <CADV>` |
+| `INTEGRATIONS` | Names + versions + spec URLs, or `not activated`, or `skipped (incremental-quick)`. |
+| `OPTIMALITY_LOG` | `<ran \| skipped (reason)> · <UN> judged · <UO> optimal · <OP> proposal(s) · <OPTR> inline pointer(s) · <OW> withheld` |
+| `STANDARDS_LOG` | `<ran \| skipped (reason)> · <N> docs · <FE> finding(s)` |
+| `SKIPPED_FILES` | A list, or `none`. |
 
-<details>
-<summary>Review details</summary>
+**Optional** slots. Omitting one (or passing an empty string) removes its whole block from the
+output — that *is* the omit rule, so there is no separate "omit the placeholder" instruction to
+follow:
 
-<sup>FOOTER_LINE</sup>
+| Key | Omit when | Content |
+| --- | --- | --- |
+| `PARTIAL_BANNER` + `BUDGET_CALLS` / `BUDGET_SCANNED` / `BUDGET_TOTAL` | the run completed | Set `PARTIAL_BANNER` to any non-empty value to emit the tool-budget banner. |
+| `OPTIMALITY_CARDS` + `OPTIMALITY_COUNT` | no proposals | The Step 2.4c cards (see `OPTIMALITY_SECTION`). |
+| `ADDITIONAL_FINDINGS` + `ADDITIONAL_COUNT` | `DEF == 0` | One bullet per deferred finding. |
+| `LOW_CONFIDENCE_FINDINGS` + `LOW_CONFIDENCE_COUNT` | `CADV == 0` | One bullet per advisory finding. |
+| `OPEN_THREADS` + `OPEN_THREADS_COUNT` + `OPEN_THREADS_SUFFIX` | Gate 3 is ✅ or `⏭️` | The bullets, the count, and the summary suffix. Pass all three together or none. |
+| `RESOLVED_SINCE` | `RESOLVED_SINCE_PRIOR == 0` | ` <sup><R> resolved since \`<sha>\`</sup>` |
+| `CI_NOTE` | CI is green, absent, or unremarkable | Gate 2's substance — which checks are red and on what. This is the slot that stops CI analysis being written as an invented section. |
+| `VERIFIED_NOTE` | nothing was independently verified | What this run checked itself (parity scripts, `--check` runs, claims confirmed). |
+| `QUALITY_DROPPED` | nothing was dropped | `relevance <RM> · dedupe <D> · grounding <G> · confidence <C> · shape <S>` |
 
-| Gate | Status | Details |
-|---|---|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior bot feedback   | ✅ | Earlier automated review comments are resolved. |
-| Documentation        | ✅ | The change is documented well enough to follow. |
-| Self-review signals  | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review          | ✅ | The multi-lens review found no blocking issues. |
+**Links inside a slot value are ordinary markdown — do not escape them.** Write
+``[`some-key`](https://example.com/x)`` exactly as you would in a document. The backticks around the
+link *text* are fine inside a JSON string; what is not fine is wrapping the whole link in backticks
+to protect it. A run once emitted ``` ``['some-key'](https://…)`` ``` on the `MEMORIES` slot, which is
+a code span containing literal markdown: it renders as dead monospace text and the URL does not work.
+The renderer now rejects that shape, so the failure is a non-zero exit rather than a broken report.
 
-**Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
+There is no way to add a section: an unrecognised key is a hard error, and every rendered block
+comes from the template. If a run has something to say that no slot covers, it belongs in the
+Step 5 terminal output, not in the report.
 
-MEMORIES_SECTION
+#### Headlines
 
-**Quality** — produced <P> → posted inline <F> · cleared <CL> · carried forward <CF> · deferred <DEF> · below-bar <CADV>
+`HEADLINE` is one line, chosen by the Step 3 verdict:
 
-- dropped: relevance <RM> · dedupe <D> · grounding <G> · confidence <C> · shape <S>
+- **PASS** (every gate ✅) — `✅ Reviewed your changes — no issues found.` The leading `✅` is the
+  whole affirmation: no praise phrase, no extra emoji. When `CADV > 0`, append
+  ` <CADV> advisory finding(s) below the confidence bar (see Low-confidence findings).` so the
+  headline does not overstate cleanliness while advisory `issue:` entries sit below it.
+- **WARN** — `Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>.`
+- **FAIL** — `Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review. Blocking: <FAIL_REASONS>.`
 
-**Integrations** — <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
-
-**Optimality (2.4c)** — <ran | skipped (reason)> · <UN> judged · <UO> optimal · <OP> proposal(s) · <OPTR> inline pointer(s) · <OW> withheld
-
-**Standards (2.4d)** — <ran | skipped (reason)> · <N> docs · <FE> finding(s)
-
-**Skipped files** — <list or "none">
-
-<sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
-
-</details>
-```
-
-**Affirming checkmark on the PASS headline.** The clean-PASS headline leads with a `✅` so a clean
-review reads as a subtle, confirming reward for the author rather than a flat verdict. The checkmark
-carries the affirmation; the wording stays factual — no praise phrase, no extra emoji or exclamation.
-This affirming lead is reserved for the all-clear PASS (every gate ✅, nothing inline); WARN and FAIL
-headlines stay neutral.
-
-**Advisory clause on the PASS headline.** A PASS can still carry a `LOW_CONFIDENCE_SECTION` (every
-gate ✅, yet near-miss `issue`/`suggestion` findings were deferred — advisory findings never affect
-a gate). So the bare `no issues found.` would read as contradicting the advisory `issue:` entries
-just below it. When `CADV > 0`, append ` <CADV> advisory finding(s) below the confidence bar (see
-Low-confidence findings).` to the PASS headline; the `✅ Reviewed your changes — no issues found.`
-base is preserved (nothing blocking or inline survived), so the reader learns advisory findings exist
-without the headline overstating cleanliness. When `CADV == 0` the headline stays exactly
-`✅ Reviewed your changes — no issues found.`
-
-**On WARN** — soft warnings only (hard Gates 2/4/5 ✅, at least one of Description vs. code / Prior bot feedback / Code review is ⚠️, none ❌):
-
-```markdown
-<!-- PR_REVIEWER_REPORT -->
-PARTIAL_REVIEW_BANNER
-Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>.
-
-OPTIMALITY_SECTION
-
-ADDITIONAL_FINDINGS_SECTION
-
-LOW_CONFIDENCE_SECTION
-
-<details>
-<summary>Review detailsOPEN_THREADS_SUFFIX</summary>
-
-<sup>FOOTER_LINE</sup>
-
-| Gate | Status | Details |
-|---|---|---|
-| Description vs. code | ✅ or ⚠️ | static description (on ✅) or mismatch text |
-| Prior bot feedback   | ✅ or ⚠️ | static description (on ✅) or `<N> unresolved bot thread(s) — see the thread list below` |
-| Documentation        | ✅ | The change is documented well enough to follow. |
-| Self-review signals  | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review          | ✅ or ⚠️ | static description (on ✅) or "See inline comments" or finding text |
-
-OPEN_THREADS_LIST
-
-**Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
-
-MEMORIES_SECTION
-
-**Quality** — produced <P> → posted inline <F> · cleared <CL> · carried forward <CF> · deferred <DEF> · below-bar <CADV>
-
-- dropped: relevance <RM> · dedupe <D> · grounding <G> · confidence <C> · shape <S>
-
-**Integrations** — <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
-
-**Optimality (2.4c)** — <ran | skipped (reason)> · <UN> judged · <UO> optimal · <OP> proposal(s) · <OPTR> inline pointer(s) · <OW> withheld
-
-**Standards (2.4d)** — <ran | skipped (reason)> · <N> docs · <FE> finding(s)
-
-**Skipped files** — <list or "none">
-
-<sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
-
-</details>
-```
-
-**On FAIL** (any of Gates 2/4/5 fails, or Prior bot feedback / Code review is ❌):
-
-```markdown
-<!-- PR_REVIEWER_REPORT -->
-PARTIAL_REVIEW_BANNER
-Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review. Blocking: <FAIL_REASONS>.
-
-OPTIMALITY_SECTION
-
-ADDITIONAL_FINDINGS_SECTION
-
-LOW_CONFIDENCE_SECTION
-
-<details>
-<summary>Review detailsOPEN_THREADS_SUFFIX</summary>
-
-<sup>FOOTER_LINE</sup>
-
-| Gate | Status | Details |
-|---|---|---|
-| Description vs. code | ✅ or ⚠️ | static description (on ✅) or mismatch text (≤ 120 chars) |
-| Prior bot feedback   | ✅, ⚠️, or ❌ | static description (on ✅) or `<N> unresolved bot thread(s) — see the thread list below` (the linked checklist is `OPEN_THREADS_LIST`, not this cell) |
-| Documentation        | ✅ or ❌ | static description (on ✅) or finding text |
-| Self-review signals  | ✅ or ❌ | static description (on ✅) or finding text |
-| Code review          | ✅, ⚠️, or ❌ | static description (on ✅) or "See inline comments" or finding text |
-
-OPEN_THREADS_LIST
-
-**Run mode** — <full | incremental | incremental-quick> · <DELTA_LINES> lines in delta (or "no code changes" for zero-delta)
-
-MEMORIES_SECTION
-
-**Quality** — produced <P> → posted inline <F> · cleared <CL> · carried forward <CF> · deferred <DEF> · below-bar <CADV>
-
-- dropped: relevance <RM> · dedupe <D> · grounding <G> · confidence <C> · shape <S>
-
-**Integrations** — <list of name + version + spec URL, or "not activated", or "skipped (incremental-quick)">
-
-**Optimality (2.4c)** — <ran | skipped (reason)> · <UN> judged · <UO> optimal · <OP> proposal(s) · <OPTR> inline pointer(s) · <OW> withheld
-
-**Standards (2.4d)** — <ran | skipped (reason)> · <N> docs · <FE> finding(s)
-
-**Skipped files** — <list or "none">
-
-<sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
-
-</details>
-```
+Never open the headline with ``Reviewed `<sha>` —``; that is Step 4b's pointer body, and grafting it
+onto a report is how the report ended up in a review body.
 
 The FAIL headline leads with a fixed severity tally; the WARN headline leads with its warning
 count. Both then name the important bit from each flagged gate — so a reader takes in *how bad* and
@@ -2352,7 +2266,7 @@ chars — if longer, keep the top two and append `; +<k> more`.
 The old `FAIL_BLOCKING_SUFFIX` slot is retired: the blocking-finding count now rides inside the
 Code-review entry of `FAIL_REASONS` (`(see inline)`), so the pointer is kept without a second clause.
 
-`PARTIAL_REVIEW_BANNER` is the review-body slot for the tool-budget stop condition. Omit the
+`PARTIAL_BANNER` is the review-body slot for the tool-budget stop condition. Omit the
 placeholder entirely on a complete run — the line disappears and the body starts at the summary
 sentence. When the budget was exhausted, substitute exactly one line, followed by a blank line:
 
@@ -2385,7 +2299,7 @@ one.
 Render **both** slots whenever Gate 3 (`Prior bot feedback`) is ⚠️ or ❌ — i.e. whenever
 `OPEN_BOT_COMMENTS[]` is non-empty — in the FAIL template *and* the WARN template alike; substitute
 **both** as empty on ✅ and `⏭️`, leaving the bare `<summary>Review details</summary>`. Rendering one
-without the other is a guard failure (`F-open-threads-slot-orphaned`): a suffix alone advertises a
+without the other is a guard failure (`F-report-hand-rendered`): a suffix alone advertises a
 list that is not there, and a list alone is invisible in the collapsed report.
 
 Downgrading a non-blocking open thread to ⚠️ must not make it invisible: the verdict softens, the
@@ -2571,52 +2485,24 @@ Build each `<url>` from the memory's retained `scope` + `key`, per
 `https://lorekit.io`), else a plain-text `` `<scope> · <key>` `` identifier — never a
 fabricated URL.
 
-**`MEMORIES_USED_SUFFIX` is retired — do not reintroduce it.** It appended
-` (<N> memories used)` to the `Review details` `<summary>`, which restated the header
-`MEMORIES_SECTION` already renders a few lines below it and spent the report's one scannable line
-on a number that is `0` on most runs. Memory state is run-state diagnostics, the same class as
-`**Run mode**` and `**Standards (2.4d)**`, and it renders where they do: inside the accordion, via
-`MEMORIES_SECTION`. The `<summary>` carries `OPEN_THREADS_SUFFIX` and nothing else.
+**There is no memories tag on the `<summary>`.** The retired `MEMORIES_USED_SUFFIX` appended
+` (<N> memories used)` there, restating `MEMORIES` a few lines below and spending the report's one
+scannable line on a number that is `0` on most runs. The template has no such slot and the renderer
+rejects the key, so this is now impossible rather than merely forbidden.
 
-#### The `Review details` accordion is always rendered, and always collapsed
+#### The accordion is the renderer's job, not yours
 
-Three rules, all mechanical, and none of them optional:
+The `Review details` `<details>` wrapper, the absence of an `open` attribute, the order of the
+lines inside it, and the fact that the gate table sits within it rather than above it are all
+properties of [`templates/report-body.md`](./pr-reviewer/templates/report-body.md). The renderer
+asserts each one as a post-condition and exits non-zero if a template edit breaks it, so there is
+nothing here for a run to remember, get wrong, or be guarded against. `F-report-accordion-flattened`
+and `F-report-accordion-expanded` are now render-time errors rather than review-time findings.
 
-1. **The accordion is never omitted.** Every body variant — PASS, WARN, FAIL — wraps its
-   diagnostics in a literal `<details>` / `<summary>Review details…</summary>` / `</details>`
-   block. A run that flattens the gate table, `**Run mode**`, `MEMORIES_SECTION`, the `**Quality**`
-   line or any other diagnostic into the top level of the body has emitted a different document
-   than the template, and it is a guard failure (`F-report-accordion-flattened`) even when every
-   individual line is correct. This is the single most common way the report regresses: the model
-   re-composes the body from memory, keeps the content, and drops the wrapper — turning a
-   three-line report into a screenful.
-2. **The accordion never carries the `open` attribute.** Write `<details>`, never
-   `<details open>`. Its whole purpose is that the report reads short by default and expands on
-   demand; a verdict is announced by the headline, the `<summary>` counter, and the inline
-   comments, never by pre-expanding the diagnostics. This holds on FAIL exactly as on PASS
-   (`F-report-accordion-expanded`).
-3. **The body order inside the accordion is fixed:** `<summary>` → `<sup>FOOTER_LINE</sup>` →
-   gate-status table → `OPEN_THREADS_LIST` → `**Run mode**` → `MEMORIES_SECTION` → `**Quality**`
-   → `**Integrations**` → `**Optimality (2.4c)**` → `**Standards (2.4d)**` → `**Skipped files**`
-   → the agent-link `<sup>` footer. The gate table sits near the top, immediately after the
-   `<summary>` and its footer line, not at the top level of the body.
-
-Everything that is *not* in that list stays outside the accordion, and the visible surface of a
-report is therefore bounded to five things: the marker, an optional `PARTIAL_REVIEW_BANNER`, the
-headline, the collapsed `<summary>` lines of the four `<details>` blocks, and the trailing
-`<!-- PR_REVIEWER_LEDGER … -->` block. On a clean PASS with no optimality, deferred or advisory
-sections, that is **one visible line of prose plus one collapsed summary**.
-
-Two things the agent does not author may also appear at the top level, and neither is a violation:
-a trailing attribution footer appended by the posting harness (e.g. a `---` rule followed by a
-_Generated by …_ line), and GitHub's own comment chrome. Do not try to suppress or reproduce
-either; just never add prose of your own alongside them.
-
-**No standalone notice line.** Earlier revisions rendered a one-line `UNRESOLVED_THREADS_SECTION`
-between the headline and the accordion. It is retired: the headline's `FAIL_REASONS` /
-`WARN_REASONS` already name the Prior-bot-feedback gate, and the count now rides on the
-`<summary>` the reader is going to click anyway, so the extra line said the same thing a third
-time and pointed one line down the page. Adding it back is `F-open-threads-slot-orphaned`.
+The visible surface of a report is therefore whatever the template leaves outside the accordion:
+the marker, an optional partial-review banner, the headline, and the collapsed `<summary>` lines of
+the optional `<details>` blocks. A harness-appended attribution footer may also appear; it is not
+authored here and must not be suppressed or reproduced.
 
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
@@ -2680,7 +2566,7 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   blocks — `Review details`, `Optimality review`, `Additional findings`, and
   `Low-confidence findings` — the `MEMORIES_SECTION` and `OPEN_THREADS_LIST` slots inside
   `Review details`, the `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the
-  `PARTIAL_REVIEW_BANNER` line — all of which are slots in the template, not added prose).
+  `PARTIAL_BANNER` line — all of which are slots in the template, not added prose).
   Besides the headline and the banner, **no** prose of the agent's own is permitted at the top
   level of the body.
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.

@@ -311,7 +311,7 @@ Each carried entry gets exactly one disposition:
 | The owning step was **skipped** this pass (2.4c / 2.4d under `incremental-quick`, `--no-optimize`, `--no-standards`, or `--skip-gates`) | **CARRY** — re-render the prior entry verbatim in this run's body, suffixed `(carried from <PRIOR_REVIEW_SHA_SHORT>)`. Never let a skipped step read as a clean result. |
 | The entry cannot be mapped to an owning step (unparseable or from an older template) | **DROP** with a log line; never re-render an entry you cannot attribute. |
 
-Owning steps: gate rows → Step 1.8; optimality cards → Step 2.4c; standards findings → Step 2.4d; `Skipped files` → Step 1.2 / 2; `PARTIAL_REVIEW_BANNER` → the step that set it.
+Owning steps: gate rows → Step 1.8; optimality cards → Step 2.4c; standards findings → Step 2.4d; `Skipped files` → Step 1.2 / 2; `PARTIAL_BANNER` → the step that set it.
 
 Hard rules:
 
