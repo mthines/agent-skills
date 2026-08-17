@@ -351,6 +351,27 @@ function main() {
     return m.note ? `${head} — ${m.note}` : head;
   }).join("\n");
 
+  // `<N> used` was the last hand-written count left standing over a derived list, so it was the
+  // last one that could disagree with what it counts. The model supplies the indexed half only.
+  const memoriesUsedCount = arr("MEMORIES_USED").length;
+  const memoriesSummary = String(data.MEMORIES_SUMMARY).trim();
+  const indexed = memoriesSummary.match(/^(\d+) indexed$/);
+  if (/\bused\b/.test(memoriesSummary)) {
+    fail("MEMORIES_SUMMARY carries its own used count — supply the indexed half only"
+      + ` (\`<N> indexed\`, or \`not connected\`); \`· <N> used\` is derived from MEMORIES_USED`
+      + ` (got: ${memoriesSummary})`);
+  }
+  if (!indexed && memoriesUsedCount > 0) {
+    fail(`MEMORIES_SUMMARY is ${JSON.stringify(memoriesSummary)} but MEMORIES_USED has`
+      + ` ${memoriesUsedCount} entr${memoriesUsedCount === 1 ? "y" : "ies"} — a run that applied a`
+      + " memory must report how many it indexed");
+  }
+  if (indexed && memoriesUsedCount > Number(indexed[1])) {
+    fail(`MEMORIES_SUMMARY reports ${indexed[1]} indexed but MEMORIES_USED has`
+      + ` ${memoriesUsedCount} entries — indexed is always >= used`);
+  }
+  const memoriesLine = indexed ? `${memoriesSummary} · ${memoriesUsedCount} used` : memoriesSummary;
+
   const cards = arr("OPTIMALITY_CARDS");
   cards.forEach((c, i) => {
     // Cards are multi-line markdown blocks by nature (a Now/Better table and prose), so they stay
@@ -366,7 +387,7 @@ function main() {
     HEADLINE: data.HEADLINE,
     FOOTER_LINE: footer,
     RUN_MODE: runLine,
-    MEMORIES_SUMMARY: data.MEMORIES_SUMMARY,
+    MEMORIES_SUMMARY: memoriesLine,
     MEMORIES_BULLETS: memoriesUsed,
     OPEN_THREADS: openBullets,
     OPEN_THREADS_COUNT: openThreads.length || "",

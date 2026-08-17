@@ -1175,6 +1175,18 @@ function checksInSync(plan, checks) {
       ["a MEMORIES_USED entry with no key", mutate((c) => {
         c.MEMORIES_USED = [{ url: "https://lorekit.io/lore?x=1", note: "promoted" }];
       })],
+      // The `used` half is derived from MEMORIES_USED, so supplying it is the one remaining way
+      // to make a count disagree with its list.
+      ["a hand-written used count in MEMORIES_SUMMARY",
+        mutate((c) => { c.MEMORIES_SUMMARY = "53 indexed · 3 used"; })],
+      ["MEMORIES_USED beside a not-connected summary", mutate((c) => {
+        c.MEMORIES_SUMMARY = "not connected";
+        c.MEMORIES_USED = [{ key: "a-lesson-key" }];
+      })],
+      ["more memories used than indexed", mutate((c) => {
+        c.MEMORIES_SUMMARY = "1 indexed";
+        c.MEMORIES_USED = [{ key: "a" }, { key: "b" }];
+      })],
       ["PARTIAL_REVIEW scanned over total", mutate((c) => {
         c.PARTIAL_REVIEW = { calls: 40, scanned: 90, total: 12 };
       })],
@@ -1215,6 +1227,8 @@ function checksInSync(plan, checks) {
       s.check("G25 MEMORIES_USED renders as a real link", r.ok, r.err);
       s.check("G25 the renderer built the link, not the model",
         r.out.includes("[`a-lesson-key`](https://lorekit.io/lore?x=1) — promoted"));
+      s.check("G25 the used count is derived from the list",
+        r.out.includes("**Memories** — 53 indexed · 1 used"));
     }
 
     // A zero-delta run parses under the same {mode, delta_lines} grammar as every other mode,

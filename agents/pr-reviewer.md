@@ -2182,7 +2182,7 @@ of those was a real defect before it became derived.
 | `HEADLINE` | The one-line verdict sentence (see *Headlines* below). |
 | `GATE_DESCRIPTION_STATUS` · `GATE_PRIOR_STATUS` · `GATE_DOCS_STATUS` · `GATE_SELFREVIEW_STATUS` · `GATE_CODEREVIEW_STATUS` | One of `✅` `⚠️` `❌` `⏭️`. Gate 2 (CI) is not a row — it renders via `CI_NOTE`. |
 | `GATE_DESCRIPTION_DETAILS` · `GATE_PRIOR_DETAILS` · `GATE_DOCS_DETAILS` · `GATE_SELFREVIEW_DETAILS` · `GATE_CODEREVIEW_DETAILS` | The Details cell. **Single line, no `\|`, ≤ 120 chars** — all three enforced; the full finding belongs in an inline comment. |
-| `MEMORIES_SUMMARY` | The memory line's lead, e.g. `53 indexed · 1 used` or `not connected`. |
+| `MEMORIES_SUMMARY` | The **indexed half only** — `<MEMORIES_READ_COUNT> indexed`, or `not connected`. Never write ` · <N> used`: the renderer derives that from `MEMORIES_USED`'s length and rejects a payload that supplies its own, reports fewer indexed than used, or pairs `not connected` with a non-empty `MEMORIES_USED`. |
 | `QUALITY` | Must begin `produced <N> → posted inline <N> …`. |
 | `INTEGRATIONS` | Names + versions + spec URLs, or `not activated`, or `skipped (incremental-quick)`. |
 | `OPTIMALITY_LOG` · `STANDARDS_LOG` | Must begin `ran` or `skipped (reason)` so the run-state parses. |
@@ -2494,6 +2494,9 @@ of the two shapes below it takes, so a reader always sees either both counts or 
   ```
 
   When `MEMORIES_USED_COUNT` is 0, render only the header line (`… indexed · 0 used`), no bullets.
+  This is the **rendered** shape, not the payload: supply `MEMORIES_SUMMARY: "<N> indexed"` and the
+  `APPLIED_MEMORIES[]` bullets as `MEMORIES_USED`, and the renderer derives ` · <N> used` from that
+  array — so `MEMORIES_USED_COUNT` is never typed by hand and can never disagree with the bullets.
 - **Not connected** (`LOREKIT_CONNECTED=false` — the `mcp__lorekit__memory_list` tool call still errored after the Step 1.0 retries were exhausted, or the tool was unavailable: not in the agent's `tools:` grant, or the LoreKit MCP server did not connect this session so the tool is unregistered — `No such tool available`) — render exactly `**Memories** — not connected`, no bullets.
   This shape MUST NOT appear when the read was merely skipped or assumed, nor off a single transient throw — it only appears after a genuine failed attempt that survived retries.
 

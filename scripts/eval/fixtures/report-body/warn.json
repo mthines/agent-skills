@@ -51,7 +51,7 @@
       "confidence": 78
     }
   ],
-  "MEMORIES_SUMMARY": "62 indexed · 1 used",
+  "MEMORIES_SUMMARY": "62 indexed",
   "MEMORIES_USED": [
     {
       "key": "pre-flight-logic:token-membership-tests-mis-ordered",
