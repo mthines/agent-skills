@@ -2182,7 +2182,7 @@ One flat JSON object. **Required** slots — every one must be a non-empty strin
 **Every slot name is spelled out above — none are elided.** A guessed name is not a typo that degrades gracefully: the renderer exits 1 on `unknown payload key(s)` and the run posts no report. An ellipsis here once hid six of these ten names.
 
 | `RUN_MODE` | `<full \| incremental \| incremental-quick> · <DELTA_LINES> lines in delta` |
-| `MEMORIES` | The memory line's content (see `MEMORIES_SECTION`). |
+| `MEMORIES` | The memory line's content (see `MEMORIES_SECTION`). Multi-line is fine — embed real newlines in the JSON string (`\n`) for the per-lesson bullets. |
 | `QUALITY` | `produced <P> → posted inline <F> · cleared <CL> · carried forward <CF> · deferred <DEF> · below-bar <CADV>` |
 | `INTEGRATIONS` | Names + versions + spec URLs, or `not activated`, or `skipped (incremental-quick)`. |
 | `OPTIMALITY_LOG` | `<ran \| skipped (reason)> · <UN> judged · <UO> optimal · <OP> proposal(s) · <OPTR> inline pointer(s) · <OW> withheld` |
@@ -2204,6 +2204,13 @@ follow:
 | `CI_NOTE` | CI is green, absent, or unremarkable | Gate 2's substance — which checks are red and on what. This is the slot that stops CI analysis being written as an invented section. |
 | `VERIFIED_NOTE` | nothing was independently verified | What this run checked itself (parity scripts, `--check` runs, claims confirmed). |
 | `QUALITY_DROPPED` | nothing was dropped | `relevance <RM> · dedupe <D> · grounding <G> · confidence <C> · shape <S>` |
+
+**Links inside a slot value are ordinary markdown — do not escape them.** Write
+``[`some-key`](https://example.com/x)`` exactly as you would in a document. The backticks around the
+link *text* are fine inside a JSON string; what is not fine is wrapping the whole link in backticks
+to protect it. A run once emitted ``` ``['some-key'](https://…)`` ``` on the `MEMORIES` slot, which is
+a code span containing literal markdown: it renders as dead monospace text and the URL does not work.
+The renderer now rejects that shape, so the failure is a non-zero exit rather than a broken report.
 
 There is no way to add a section: an unrecognised key is a hard error, and every rendered block
 comes from the template. If a run has something to say that no slot covers, it belongs in the

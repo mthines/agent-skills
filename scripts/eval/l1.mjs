@@ -1125,11 +1125,29 @@ function checksInSync(plan, checks) {
       ["a block key without its companions", mutate((c) => { c.PARTIAL_BANNER = "yes"; })],
       ["OPEN_THREADS without its count", mutate((c) => { c.OPEN_THREADS = "- x"; })],
       ["an orphaned OPEN_THREADS_SUFFIX", mutate((c) => { c.OPEN_THREADS_SUFFIX = " — 3 open"; })],
+      // Shipped for real on PR #121's sticky: the run wanted [`key`](url) inside a JSON string,
+      // mangled the nesting, and emitted ``['key'](url)`` — a code span, so the link rendered as
+      // dead monospace text. The report looked fine and the URL did not work.
+      ["a markdown link caged in a code span", mutate((c) => {
+        c.MEMORIES = "53 indexed · 1 used\n\n- ``['a-lesson-key'](https://lorekit.io/lore?x=1)`` — promoted";
+      })],
     ];
     for (const [why, input] of rejects) {
       const r = run([], input);
       s.check(`G25 the renderer rejects ${why}`, !r.ok, r.ok ? "ACCEPTED" : "");
       s.check(`G25 rejecting ${why} emits nothing on stdout`, r.out === "", r.out.slice(0, 60));
+    }
+
+    // A correctly written link in the same slot must still render — the footer link
+    // [`pr-reviewer`](url) in every snapshot already proves the guard is not blanket-rejecting,
+    // but assert the MEMORIES shape explicitly since that is where the mangling happened.
+    {
+      const r = run([], mutate((c) => {
+        c.MEMORIES = "53 indexed · 1 used\n\n- [`a-lesson-key`](https://lorekit.io/lore?x=1) — promoted";
+      }));
+      s.check("G25 a correctly written [`text`](url) link in MEMORIES renders", r.ok, r.err);
+      s.check("G25 that link survives as a link, not a code span",
+        r.out.includes("[`a-lesson-key`](https://lorekit.io/lore?x=1)"));
     }
 
     // A complete group is still accepted — the check must discriminate, not blanket-reject.

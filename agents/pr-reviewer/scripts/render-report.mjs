@@ -146,6 +146,16 @@ function main() {
     body = body.split(`{{${key}}}`).join(data[key] === undefined ? "" : String(data[key]));
   }
 
+  // A code span wrapping a markdown link means the value was escaped rather than written — the
+  // link renders as literal monospace text and the URL is dead. Observed in the wild on the
+  // MEMORIES slot: the run wanted [`key`](url), hit backticks-inside-a-JSON-string, and emitted
+  // ``['key'](url)``. Fail rather than post a report whose links do not work.
+  const caged = body.match(/``?\s*\[[^\]]*\]\([^)]*\)\s*``?/g);
+  if (caged) {
+    fail(`a markdown link is trapped inside a code span (it will render as text, not a link): `
+      + `${caged[0].slice(0, 90)} — write [\`text\`](url), and do not wrap it in backticks`);
+  }
+
   const leftover = body.match(/\{\{[^}]*\}\}/g);
   if (leftover) fail(`unresolved placeholder(s) left in the body: ${[...new Set(leftover)].join(", ")}`);
 
