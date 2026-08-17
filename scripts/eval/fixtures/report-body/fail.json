@@ -1,24 +1,28 @@
 {
-  "PARTIAL_BANNER": "yes", "BUDGET_CALLS": "180", "BUDGET_SCANNED": "22", "BUDGET_TOTAL": "31",
+  "PARTIAL_REVIEW": { "calls": 180, "scanned": 22, "total": 31 },
   "HEADLINE": "Reviewed your changes — **CI failing, 1 error, 1 warning** need attention before human review. Blocking: CI checks failing; 1 unanswered blocking bot thread.",
-  "FOOTER_LINE": "Reviewed for commit `69b0de8`.",
+  "RUN": { "mode": "full", "sha": "69b0de8", "delta_lines": 2172 },
   "GATE_DESCRIPTION_STATUS": "⚠️", "GATE_DESCRIPTION_DETAILS": "Claims `nx affected` is green; not true at this SHA.",
   "GATE_PRIOR_STATUS": "❌", "GATE_PRIOR_DETAILS": "1 unresolved bot thread(s) — see the thread list below",
   "GATE_DOCS_STATUS": "✅", "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
   "GATE_SELFREVIEW_STATUS": "✅", "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
   "GATE_CODEREVIEW_STATUS": "⏭️", "GATE_CODEREVIEW_DETAILS": "not evaluated this run",
-  "OPEN_THREADS_SUFFIX": " — 1 open bot thread (1 blocking)",
-  "OPEN_THREADS_COUNT": "1",
-  "OPEN_THREADS": "- [`supabase/functions/memories/handlers/list.ts:235`](https://github.com/o/r/pull/1#discussion_r3) — `applyScalarFilter` still puts the whole dimension into a PostgREST URL operand",
-  "CI_NOTE": "`Integration smoke (local Supabase)` fails on `POST /memories/list accepts the same dimension` (expected 200, got 500) — the open thread above. `Web — Vercel preview` fails on an account quota, unrelated to this diff.",
-  "RUN_MODE": "full · 2172 lines in delta",
-  "MEMORIES": "not connected",
+  "OPEN_THREADS": [
+    { "path": "supabase/functions/memories/handlers/list.ts", "line": 235,
+      "url": "https://github.com/o/r/pull/1#discussion_r3", "blocking": true,
+      "ask": "applyScalarFilter still puts the whole dimension into a PostgREST URL operand" }
+  ],
+  "OPTIMALITY_CARDS": [
+    "### Optimality proposal — src/api/client.ts:180\n\n> **Reuse `withRetry()` instead of hand-rolling a retry loop**\n\n**Why it's better** · _codebase-fit_ — one backoff policy instead of four."
+  ],
+  "LOW_CONFIDENCE_FINDINGS": [
+    { "path": "src/api/client.ts", "line": 88, "prefix": "issue",
+      "body": "this early-return may skip the audit log write", "confidence": 76 }
+  ],
+  "CI_NOTE": "`Integration smoke (local Supabase)` fails on `POST /memories/list` (expected 200, got 500) — the open thread above.",
+  "MEMORIES_SUMMARY": "not connected",
   "QUALITY": "produced 6 → posted inline 4 · cleared 4 · carried forward 0 · deferred 0 · below-bar 1",
   "QUALITY_DROPPED": "relevance 0 · dedupe 0 · grounding 0 · confidence 2 · shape 0",
-  "OPTIMALITY_CARDS": "### Optimality proposal — src/api/client.ts:180\n\n> **Reuse `withRetry()` instead of hand-rolling a retry loop**\n\n**Why it's better** · _codebase-fit_ — one backoff policy instead of four.",
-  "OPTIMALITY_COUNT": "1",
-  "LOW_CONFIDENCE_FINDINGS": "- `src/api/client.ts:88` — issue: this early-return may skip the audit log write. (confidence 76)",
-  "LOW_CONFIDENCE_COUNT": "1",
   "INTEGRATIONS": "skipped (incremental-quick)",
   "OPTIMALITY_LOG": "ran · 4 judged · 3 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld",
   "STANDARDS_LOG": "skipped (--no-standards)",

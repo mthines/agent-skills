@@ -17,7 +17,7 @@ Reviewed your changes — **CI failing, 1 error, 1 warning** need attention befo
 <details>
 <summary>Low-confidence findings (1) — advisory, below the confidence bar</summary>
 
-- `src/api/client.ts:88` — issue: this early-return may skip the audit log write. (confidence 76)
+- `src/api/client.ts:88` — issue: this early-return may skip the audit log write (confidence 76)
 
 </details>
 
@@ -36,13 +36,14 @@ Reviewed your changes — **CI failing, 1 error, 1 warning** need attention befo
 
 **Open bot threads (1)**
 
-- [`supabase/functions/memories/handlers/list.ts:235`](https://github.com/o/r/pull/1#discussion_r3) — `applyScalarFilter` still puts the whole dimension into a PostgREST URL operand
+- [`supabase/functions/memories/handlers/list.ts:235`](https://github.com/o/r/pull/1#discussion_r3) — applyScalarFilter still puts the whole dimension into a PostgREST URL operand
 
-**CI** — `Integration smoke (local Supabase)` fails on `POST /memories/list accepts the same dimension` (expected 200, got 500) — the open thread above. `Web — Vercel preview` fails on an account quota, unrelated to this diff.
+**CI** — `Integration smoke (local Supabase)` fails on `POST /memories/list` (expected 200, got 500) — the open thread above.
 
 **Run mode** — full · 2172 lines in delta
 
 **Memories** — not connected
+
 
 **Quality** — produced 6 → posted inline 4 · cleared 4 · carried forward 0 · deferred 0 · below-bar 1
 

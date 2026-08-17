@@ -2170,51 +2170,66 @@ Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (al
 
 #### REPORT_BODY payload
 
-One flat JSON object. **Required** slots — every one must be a non-empty string:
+One JSON object. **It is data, not markdown.** Anything with a count, a link, or a shape a
+documented consumer parses is supplied *structured* and derived by the renderer — you never write
+the count, never write the link, never format the run-mode or footer line. That is deliberate: each
+of those was a real defect before it became derived.
+
+**Required — scalars.** Prose only; no counts, no links, no parsed shapes:
 
 | Key | Content |
 | --- | --- |
 | `HEADLINE` | The one-line verdict sentence (see *Headlines* below). |
-| `FOOTER_LINE` | Run-mode footer: `Reviewed for commit \`<sha>\`.` (full), `Incremental review for commit \`<sha>\` (delta since \`<prior>\`).`, or `No code changes since \`<prior>\` — gate checks only for commit \`<sha>\`.` |
-| `GATE_DESCRIPTION_STATUS` · `GATE_PRIOR_STATUS` · `GATE_DOCS_STATUS` · `GATE_SELFREVIEW_STATUS` · `GATE_CODEREVIEW_STATUS` | One of `✅` `⚠️` `❌` `⏭️` per gate. Gate 2 (CI) is not a table row — it renders via `CI_NOTE`. |
-| `GATE_DESCRIPTION_DETAILS` · `GATE_PRIOR_DETAILS` · `GATE_DOCS_DETAILS` · `GATE_SELFREVIEW_DETAILS` · `GATE_CODEREVIEW_DETAILS` | The Details cell, ≤ 120 chars (see *Rules for table cells*). |
-
-**Every slot name is spelled out above — none are elided.** A guessed name is not a typo that degrades gracefully: the renderer exits 1 on `unknown payload key(s)` and the run posts no report. An ellipsis here once hid six of these ten names.
-
-| `RUN_MODE` | `<full \| incremental \| incremental-quick> · <DELTA_LINES> lines in delta` |
-| `MEMORIES` | The memory line's content (see `MEMORIES_SECTION`). Multi-line is fine — embed real newlines in the JSON string (`\n`) for the per-lesson bullets. |
-| `QUALITY` | `produced <P> → posted inline <F> · cleared <CL> · carried forward <CF> · deferred <DEF> · below-bar <CADV>` |
+| `GATE_DESCRIPTION_STATUS` · `GATE_PRIOR_STATUS` · `GATE_DOCS_STATUS` · `GATE_SELFREVIEW_STATUS` · `GATE_CODEREVIEW_STATUS` | One of `✅` `⚠️` `❌` `⏭️`. Gate 2 (CI) is not a row — it renders via `CI_NOTE`. |
+| `GATE_DESCRIPTION_DETAILS` · `GATE_PRIOR_DETAILS` · `GATE_DOCS_DETAILS` · `GATE_SELFREVIEW_DETAILS` · `GATE_CODEREVIEW_DETAILS` | The Details cell. **Single line, no `\|`, ≤ 120 chars** — all three enforced; the full finding belongs in an inline comment. |
+| `MEMORIES_SUMMARY` | The memory line's lead, e.g. `53 indexed · 1 used` or `not connected`. |
+| `QUALITY` | Must begin `produced <N> → posted inline <N> …`. |
 | `INTEGRATIONS` | Names + versions + spec URLs, or `not activated`, or `skipped (incremental-quick)`. |
-| `OPTIMALITY_LOG` | `<ran \| skipped (reason)> · <UN> judged · <UO> optimal · <OP> proposal(s) · <OPTR> inline pointer(s) · <OW> withheld` |
-| `STANDARDS_LOG` | `<ran \| skipped (reason)> · <N> docs · <FE> finding(s)` |
+| `OPTIMALITY_LOG` · `STANDARDS_LOG` | Must begin `ran` or `skipped (reason)` so the run-state parses. |
 | `SKIPPED_FILES` | A list, or `none`. |
 
-**Optional** slots. Omitting one (or passing an empty string) removes its whole block from the
-output — that *is* the omit rule, so there is no separate "omit the placeholder" instruction to
-follow:
+**Required — `RUN`**, the object the footer line and the `Run mode` line are both derived from:
 
-| Key | Omit when | Content |
+```json
+{ "RUN": { "mode": "full", "sha": "c3ceb87", "prior_sha": "70cf147", "delta_lines": 256 } }
+```
+
+- `mode` — `full` · `incremental` · `incremental-quick` · `zero-delta`.
+- `sha` / `prior_sha` — **exactly 7 lowercase hex chars** (`${SHA:0:7}`). `prior_sha` is required for
+  every mode except `full`. The renderer rejects a longer sha, which is what stops one report
+  carrying a 40-char sha in the footer and a 7-char sha in a prose line.
+- `delta_lines` — integer, required unless `mode` is `zero-delta`.
+
+The `Run mode` line renders as `<mode> · <N> lines in delta`, which is the shape
+`reviewer-report-ingest.md` parses. Extra colour goes in the optional `RUN_NOTE` scalar and is
+appended after it, so the parseable prefix survives.
+
+**Optional — structured.** Omit a key to omit its whole block. Counts are **derived from array
+length**, so there is no count to supply and none to get wrong:
+
+| Key | Shape | Notes |
 | --- | --- | --- |
-| `PARTIAL_BANNER` + `BUDGET_CALLS` / `BUDGET_SCANNED` / `BUDGET_TOTAL` | the run completed | Set `PARTIAL_BANNER` to any non-empty value to emit the tool-budget banner. |
-| `OPTIMALITY_CARDS` + `OPTIMALITY_COUNT` | no proposals | The Step 2.4c cards (see `OPTIMALITY_SECTION`). |
-| `ADDITIONAL_FINDINGS` + `ADDITIONAL_COUNT` | `DEF == 0` | One bullet per deferred finding. |
-| `LOW_CONFIDENCE_FINDINGS` + `LOW_CONFIDENCE_COUNT` | `CADV == 0` | One bullet per advisory finding. |
-| `OPEN_THREADS` + `OPEN_THREADS_COUNT` + `OPEN_THREADS_SUFFIX` | Gate 3 is ✅ or `⏭️` | The bullets, the count, and the summary suffix. Pass all three together or none. |
-| `RESOLVED_SINCE` | `RESOLVED_SINCE_PRIOR == 0` | ` <sup><R> resolved since \`<sha>\`</sup>` |
-| `CI_NOTE` | CI is green, absent, or unremarkable | Gate 2's substance — which checks are red and on what. This is the slot that stops CI analysis being written as an invented section. |
-| `VERIFIED_NOTE` | nothing was independently verified | What this run checked itself (parity scripts, `--check` runs, claims confirmed). |
-| `QUALITY_DROPPED` | nothing was dropped | `relevance <RM> · dedupe <D> · grounding <G> · confidence <C> · shape <S>` |
+| `OPEN_THREADS` | `[{path, line, url?, ask, blocking?}]` | The renderer builds the bullet `- ` + a link whose text is `` `path:line` `` and whose target is `url`, then ` — ask`; it derives `Open bot threads (N)` and the `<summary>` suffix, and appends ` (K blocking)` only when some item has `blocking: true`. A missing `url` renders unlinked inline code, never a broken link. |
+| `RESOLVED_SINCE` | `{count, sha}` | Suppressed at `count: 0`. Rejected when `OPEN_THREADS` is empty — with Gate 3 clean the counter belongs in its Details cell. |
+| `MEMORIES_USED` | `[{key, url?, note?}]` | One bullet per applied memory, under `MEMORIES_SUMMARY`. |
+| `ADDITIONAL_FINDINGS` | `[{path, line, url?, prefix, body, confidence}]` | `prefix` is a Conventional-Comments prefix; `confidence` an integer 0–100. |
+| `LOW_CONFIDENCE_FINDINGS` | `[{…same…}]` | Advisory only (`reviewer-report-ingest.md`). |
+| `OPTIMALITY_CARDS` | `[markdown, …]` | The one place model-authored markdown remains, because a card is a multi-line block with its own table. Each must contain a `### Optimality proposal — <path>:<line>` heading, which the renderer checks. |
+| `PARTIAL_REVIEW` | `{calls, scanned, total}` | Integers; emits the tool-budget banner. |
 
-**Links inside a slot value are ordinary markdown — do not escape them.** Write
-``[`some-key`](https://example.com/x)`` exactly as you would in a document. The backticks around the
-link *text* are fine inside a JSON string; what is not fine is wrapping the whole link in backticks
-to protect it. A run once emitted ``` ``['some-key'](https://…)`` ``` on the `MEMORIES` slot, which is
-a code span containing literal markdown: it renders as dead monospace text and the URL does not work.
-The renderer now rejects that shape, so the failure is a non-zero exit rather than a broken report.
+**Optional — scalars:** `CI_NOTE` (Gate 2's substance — which checks are red and on what),
+`VERIFIED_NOTE` (what this run checked itself), `QUALITY_DROPPED`, `RUN_NOTE`.
 
-There is no way to add a section: an unrecognised key is a hard error, and every rendered block
-comes from the template. If a run has something to say that no slot covers, it belongs in the
-Step 5 terminal output, not in the report.
+**Do not write markdown into a structured field.** `path`, `ask`, `body`, `key` and `note` are plain
+text — the renderer adds the backticks and builds the link. A backtick, or markdown link syntax, in one of those fields is rejected, because that is how a link once shipped caged inside a code span and rendered as
+dead monospace text.
+
+**Unknown keys are a hard error**, at the top level and inside every object. A typo'd or
+misremembered name exits 1 and the run posts no report — so does a v1-shaped payload (`FOOTER_LINE`,
+`RUN_MODE`, `MEMORIES`, or any `*_COUNT`), and the error names the replacement.
+
+There is no way to add a section: every rendered block comes from the template. If a run has
+something to say that no slot covers, it belongs in the Step 5 terminal output.
 
 #### Headlines
 

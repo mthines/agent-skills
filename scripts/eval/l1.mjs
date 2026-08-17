@@ -1119,6 +1119,44 @@ function checksInSync(plan, checks) {
       ["an empty required slot", mutate((c) => { c.SKIPPED_FILES = "   "; })],
       ["a non-object payload", "[1,2]"],
       ["malformed JSON", "{nope"],
+      // ── v2 shape validation. Each of these was a live defect in a posted report, or the
+      // silent-acceptance path that let one through.
+      ["a 40-char sha in RUN", mutate((c) => { c.RUN.sha = "c3ceb870255d96307be5b0499ca372345d237af7"; })],
+      ["an uppercase sha in RUN", mutate((c) => { c.RUN.sha = "C3CEB87"; })],
+      ["a bad RUN.mode", mutate((c) => { c.RUN.mode = "quick"; })],
+      ["a missing prior_sha on an incremental run", mutate((c) => { c.RUN.mode = "incremental"; delete c.RUN.prior_sha; })],
+      ["a non-integer delta_lines", mutate((c) => { c.RUN.delta_lines = "256"; })],
+      ["a stray nested field in RUN", mutate((c) => { c.RUN.delta_note = "x"; })],
+      ["a gate cell over the 120-char cap", mutate((c) => { c.GATE_DOCS_DETAILS = "x".repeat(121); })],
+      ["a newline in a gate cell", mutate((c) => { c.GATE_DOCS_DETAILS = "one\ntwo"; })],
+      ["a pipe in a gate cell", mutate((c) => { c.GATE_DOCS_DETAILS = "a | b"; })],
+      ["a markdown link in a structured field", mutate((c) => {
+        c.OPEN_THREADS = [{ path: "a.ts", line: 1, ask: "see [the docs](https://x.invalid)" }];
+      })],
+      ["a backtick in a structured field", mutate((c) => {
+        c.OPEN_THREADS = [{ path: "a.ts", line: 1, ask: "bind `LocalStore.search`" }];
+      })],
+      ["a non-http url", mutate((c) => {
+        c.OPEN_THREADS = [{ path: "a.ts", line: 1, url: "javascript:alert(1)", ask: "x" }];
+      })],
+      ["a non-numeric line", mutate((c) => {
+        c.OPEN_THREADS = [{ path: "a.ts", line: "top", url: "https://x.invalid/1", ask: "x" }];
+      })],
+      ["a bad Conventional-Comments prefix", mutate((c) => {
+        c.ADDITIONAL_FINDINGS = [{ path: "a.ts", line: 1, prefix: "warning", body: "x", confidence: 90 }];
+      })],
+      ["an out-of-range confidence", mutate((c) => {
+        c.ADDITIONAL_FINDINGS = [{ path: "a.ts", line: 1, prefix: "issue", body: "x", confidence: 150 }];
+      })],
+      ["RESOLVED_SINCE with no open threads", mutate((c) => { c.RESOLVED_SINCE = { count: 4, sha: "70cf147" }; })],
+      ["an optimality card with no anchored heading", mutate((c) => { c.OPTIMALITY_CARDS = ["> just prose"]; })],
+      ["a log slot that does not start ran/skipped", mutate((c) => { c.STANDARDS_LOG = "2 docs · 0 findings"; })],
+      ["a QUALITY line in the wrong shape", mutate((c) => { c.QUALITY = "4 findings posted"; })],
+      // A v1 payload must fail loudly, and the error must name the replacement.
+      ["a v1 payload (FOOTER_LINE / MEMORIES / counts)", mutate((c) => {
+        c.FOOTER_LINE = "Reviewed for commit `abc1234`."; c.MEMORIES = "53 indexed";
+        c.OPEN_THREADS_COUNT = "2";
+      })],
       // Companion-slot groups are all-or-nothing. Each of these rendered at exit 0 before the
       // group check existed: a banner with blank counts, `Open bot threads ()`, and a summary
       // counter above no list — the orphaned-slot failure this renderer was meant to retire.
@@ -1145,26 +1183,124 @@ function checksInSync(plan, checks) {
     // [`pr-reviewer`](url) in every snapshot already proves the guard is not blanket-rejecting,
     // but assert the MEMORIES shape explicitly since that is where the mangling happened.
     {
+      // The renderer BUILDS the link from {key, url}; the model never writes markdown here, which
+      // is what makes the caged-link failure unrepresentable rather than merely rejected.
       const r = run([], mutate((c) => {
-        c.MEMORIES = "53 indexed · 1 used\n\n- [`a-lesson-key`](https://lorekit.io/lore?x=1) — promoted";
+        c.MEMORIES_USED = [{ key: "a-lesson-key", url: "https://lorekit.io/lore?x=1", note: "promoted" }];
       }));
-      s.check("G25 a correctly written [`text`](url) link in MEMORIES renders", r.ok, r.err);
-      s.check("G25 that link survives as a link, not a code span",
-        r.out.includes("[`a-lesson-key`](https://lorekit.io/lore?x=1)"));
+      s.check("G25 MEMORIES_USED renders as a real link", r.ok, r.err);
+      s.check("G25 the renderer built the link, not the model",
+        r.out.includes("[`a-lesson-key`](https://lorekit.io/lore?x=1) — promoted"));
     }
 
     // A complete group is still accepted — the check must discriminate, not blanket-reject.
     {
-      const full = mutate((c) => {
-        c.OPEN_THREADS = "- [`a.ts:1`](u) — x";
-        c.OPEN_THREADS_COUNT = "1";
-        c.OPEN_THREADS_SUFFIX = " — 1 open bot thread";
-      });
-      const r = run([], full);
-      s.check("G25 a complete OPEN_THREADS group renders", r.ok, r.err);
-      s.check("G25 the complete group puts the list inside the accordion",
+      // Count and suffix are DERIVED from the array, so they cannot be supplied, omitted, or
+      // disagree — the companion-group and orphaned-slot failures are gone by construction.
+      const r = run([], mutate((c) => {
+        c.OPEN_THREADS = [{ path: "a.ts", line: 1, url: "https://x.invalid/1", ask: "bind the store" }];
+      }));
+      s.check("G25 a structured OPEN_THREADS array renders", r.ok, r.err);
+      s.check("G25 the derived count and suffix agree, list inside the accordion",
         r.out.includes("**Open bot threads (1)**") &&
+        r.out.includes("<summary>Review details — 1 open bot thread</summary>") &&
         r.out.split("<details>")[0].includes("**Open bot threads (") === false);
+    }
+
+    // (h) PRODUCER -> CONSUMER ROUND TRIP. reviewer-report-ingest.md documents extractable
+    // grammars for the report's sections; nothing checked that the report the producer emits
+    // actually parses under them. It did not: the first report the new pipeline posted carried
+    // `Run mode — full (forced by --full) · 15 files, 750 additions / 486 deletions`, while the
+    // grammar parses that slot for {mode, delta_lines}. An unenforced grammar is aspirational,
+    // which is the exact failure this whole line of work was diagnosing.
+    //
+    // These extractors are the grammar's documented shapes, applied to real rendered output.
+    {
+      const EXTRACT = {
+        // The grammar is explicit: match on "commit `<sha>`" ALONE, never on a leading phrase —
+        // anchoring on "review for commit" catches only the incremental form. Take the last such
+        // match, since the zero-delta form names the prior sha first.
+        "Footer SHA": (b) => {
+          const line = (b.match(/^<sup>(?:Reviewed|Incremental review|No code changes)[^\n]*<\/sup>$/m) || [""])[0];
+          const all = [...line.matchAll(/commit `([0-9a-f]{7})`/g)];
+          return all.length ? { sha: all[all.length - 1][1] } : null;
+        },
+        "Run mode": (b) => {
+          const m = b.match(/^\*\*Run mode\*\* — (full|incremental|incremental-quick) · (\d+) lines in delta|^\*\*Run mode\*\* — (incremental) · no code changes/m);
+          if (!m) return null;
+          return { mode: m[1] || m[3], delta_lines: m[2] === undefined ? 0 : Number(m[2]) };
+        },
+        "Standards log": (b) => {
+          const m = b.match(/^\*\*Standards \(2\.4d\)\*\* — (ran|skipped)/m);
+          return m ? { ran: m[1] === "ran" } : null;
+        },
+        "Optimality log": (b) => {
+          const m = b.match(/^\*\*Optimality \(2\.4c\)\*\* — (ran|skipped)/m);
+          return m ? { ran: m[1] === "ran" } : null;
+        },
+        "Skipped files": (b) => {
+          const m = b.match(/^\*\*Skipped files\*\* — (.+)$/m);
+          return m ? { files: m[1] === "none" ? [] : [m[1]] } : null;
+        },
+        "Headline": (b) => {
+          const lines = b.split("\n").filter((l) => l.trim() !== "");
+          const i = lines.findIndex((l) => !l.startsWith("<!--") && !l.startsWith("⚠️ **Partial review"));
+          return i !== -1 && lines[i].length > 0 ? { headline: lines[i] } : null;
+        },
+      };
+      // Sections that only appear on some fixtures: assert they parse WHERE PRESENT.
+      const CONDITIONAL = {
+        "Additional findings": [/<summary>Additional findings \((\d+)\) — cleared review, not inlined<\/summary>/,
+          /^- (?:\[)?`[^`]+`(?:\]\([^)]+\))? — \w+: .+ \(confidence \d+\)$/m],
+        "Low-confidence findings": [/<summary>Low-confidence findings \((\d+)\) — advisory, below the confidence bar<\/summary>/,
+          /^- (?:\[)?`[^`]+`(?:\]\([^)]+\))? — \w+: .+ \(confidence \d+\)$/m],
+        "Optimality cards": [/<summary>Optimality review \((\d+)\) — is this the best approach\?<\/summary>/,
+          /^### Optimality proposal — \S+:\d+$/m],
+        "Partial-review banner": [/⚠️ \*\*Partial review — tool budget exhausted after \d+ calls; \d+ of \d+ files scanned\.\*\*/, null],
+      };
+      for (const name of ["pass", "warn", "fail"]) {
+        const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
+        if (!existsSync(p)) continue;
+        const body = readFileSync(p, "utf8");
+        for (const [section, fn] of Object.entries(EXTRACT)) {
+          const got = fn(body);
+          s.check(`G25 round-trip: ${name} — the ingest grammar parses "${section}"`, got !== null,
+            "section absent or does not match the documented shape");
+        }
+        // The gate table must parse to five rows with a valid glyph each.
+        const rows = [...body.matchAll(/^\| (Description vs\. code|Prior bot feedback|Documentation|Self-review signals|Code review) \| (✅|⚠️|❌|⏭️) \| ([^|]*) \|$/gm)];
+        s.check(`G25 round-trip: ${name} — the gate table parses to 5 typed rows`, rows.length === 5,
+          `parsed ${rows.length}`);
+        // Counts in a summary must equal the bullets rendered under it.
+        for (const [section, [summaryRe, bulletRe]] of Object.entries(CONDITIONAL)) {
+          const m = body.match(summaryRe);
+          if (!m) continue;
+          s.check(`G25 round-trip: ${name} — "${section}" summary matches the documented literal`, true);
+          if (bulletRe) {
+            s.check(`G25 round-trip: ${name} — "${section}" bullets match the documented shape`,
+              bulletRe.test(body), "no bullet matched");
+          }
+        }
+      }
+    }
+
+    // (i) Derived counts cannot disagree with the lists they count — the whole point of moving
+    // counts out of the payload. Assert it on the rendered output, per fixture.
+    for (const name of ["warn", "fail"]) {
+      const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
+      if (!existsSync(p)) continue;
+      const body = readFileSync(p, "utf8");
+      const declared = body.match(/\*\*Open bot threads \((\d+)\)\*\*/);
+      if (declared) {
+        const region = body.split("**Open bot threads (")[1].split("\n\n")[1] || "";
+        const bullets = region.split("\n").filter((l) => l.startsWith("- ")).length;
+        s.check(`G25 ${name}: the open-threads count equals the bullets rendered`,
+          Number(declared[1]) === bullets, `declared ${declared[1]}, rendered ${bullets}`);
+        const suffix = body.match(/<summary>Review details — (\d+) open bot thread/);
+        s.check(`G25 ${name}: the summary counter equals the list count`,
+          suffix && Number(suffix[1]) === Number(declared[1]),
+          suffix ? `summary ${suffix[1]} vs list ${declared[1]}` : "no summary counter");
+      }
     }
 
     // (d) The agent must delegate, not hand-render. The old three-template shape is gone and
@@ -1214,47 +1350,81 @@ function checksInSync(plan, checks) {
       }
     }
 
-    // (g) Slot-name parity across the three places a name can be written. A name that disagrees
-    // with the renderer's keys is not a soft failure: the renderer exits 1 on an unknown key and
-    // the run posts nothing. This caught PARTIAL_REVIEW_BANNER (prose) vs PARTIAL_BANNER (key).
+    // (g) Slot-name parity. In v2 the payload keys are the three declared arrays; the template's
+    // placeholders are the renderer's DERIVED names, which are a superset (counts, bullets, the
+    // footer line). So: prose must name only real payload keys, and no unresolved placeholder may
+    // survive a render — the latter is asserted behaviourally by the fixtures rendering at all.
     {
       const rendererSrc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"), "utf8");
       const keysIn = (arrName) => {
         const blk = sliceBetween(rendererSrc, `const ${arrName} = [`, "];");
         return new Set([...blk.matchAll(/"([A-Z0-9_]+)"/g)].map((m) => m[1]));
       };
-      const known = new Set([...keysIn("REQUIRED"), ...keysIn("OPTIONAL")]);
-      s.check("G25 the renderer declares a non-trivial slot set", known.size >= 25, `${known.size}`);
+      const payloadKeys = new Set([...keysIn("REQUIRED_SCALARS"), ...keysIn("OPTIONAL_SCALARS"),
+        ...keysIn("STRUCTURED")]);
+      s.check("G25 the renderer declares a non-trivial payload key set", payloadKeys.size >= 24,
+        `${payloadKeys.size}`);
 
-      // Every placeholder in the template must be a declared key, and vice versa.
-      const tpl = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/templates/report-body.md"), "utf8");
-      const tplNames = new Set([...tpl.matchAll(/\{\{[#/]?([A-Z0-9_]+)\}\}/g)].map((m) => m[1]));
-      const undeclared = [...tplNames].filter((n) => !known.has(n));
-      s.check("G25 every template placeholder is a declared renderer slot", undeclared.length === 0,
-        undeclared.join(", "));
-      const unused = [...known].filter((n) => !tplNames.has(n));
-      s.check("G25 every declared slot appears in the template", unused.length === 0, unused.join(", "));
-
-      // Every slot the agent's payload contract names must be a real key.
+      // Every slot the agent's payload contract names must be a real payload key. A name that
+      // disagrees is a hard exit 1 and the run posts nothing — this caught PARTIAL_REVIEW_BANNER.
       const contract = sliceBetween(prReviewer, "#### REPORT_BODY payload", "#### Headlines");
-      // Only the first cell of a table row declares a slot; prose elsewhere in the section
-      // legitimately cites section names (MEMORIES_SECTION, OPTIMALITY_SECTION) that are not keys.
       const named = [...contract.matchAll(/^\|\s*((?:`[A-Z][A-Z0-9_]{3,}`(?:\s*[·+]\s*)?)+)\s*\|/gm)]
         .flatMap((m) => [...m[1].matchAll(/`([A-Z][A-Z0-9_]{3,})`/g)].map((x) => x[1]));
-      const wrong = [...new Set(named)].filter((n) => !known.has(n));
-      s.check("G25 every slot named in the payload contract is a renderer key", wrong.length === 0,
+      const wrong = [...new Set(named)].filter((n) => !payloadKeys.has(n));
+      s.check("G25 every slot named in the payload contract is a real payload key", wrong.length === 0,
         wrong.join(", "));
-      // …and the contract must not elide names behind an ellipsis: all ten gate slots spelled out.
       for (const g of ["DESCRIPTION", "PRIOR", "DOCS", "SELFREVIEW", "CODEREVIEW"]) {
         for (const kind of ["STATUS", "DETAILS"]) {
           s.check(`G25 the payload contract spells GATE_${g}_${kind}`,
             contract.includes(`GATE_${g}_${kind}`));
         }
       }
+      // v1 slot names must be gone from the contract: a payload built from them exits 1.
+      for (const dead of ["FOOTER_LINE", "RUN_MODE", "OPEN_THREADS_COUNT", "OPEN_THREADS_SUFFIX",
+        "ADDITIONAL_COUNT", "LOW_CONFIDENCE_COUNT", "OPTIMALITY_COUNT", "BUDGET_CALLS"]) {
+        s.check(`G25 the payload contract does not still name the derived slot ${dead}`,
+          !named.includes(dead), "listed as a payload key but is derived by the renderer");
+      }
     }
 
-    s.check("G25 no dangling reference to the retired report_body_is_safe",
-      !prReviewer.includes("report_body_is_safe"));
+    // (e) A provenance-independent pre-write net — EXECUTED, not text-matched. The previous
+    // version of this guard used preWrite.includes(needle) and was green over an assertion that
+    // could never fire: `grep -qz '<details>\n<summary>…'` treats \n as the letter n inside a
+    // plain-quoted BRE, so it matched only the literal "<details>n<summary>…" and would have
+    // aborted every run. A guard that checks a command's TEXT cannot see that. Run the block.
+    {
+      const preWrite = sliceBetween(prReviewer,
+        "**Assert these four things on `REPORT_BODY` immediately before the write",
+        "On any `abort`: post no report object");
+      const fence = preWrite.match(/```bash\n([\s\S]*?)```/);
+      s.check("G25 the pre-write assertion block is extractable", !!fence);
+      if (fence) {
+        const script = `abort() { printf 'ABORT: %s\\n' "$*"; exit 3; }\n${fence[1]}\nexit 0\n`;
+        const good = spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"),
+          join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.json")], { encoding: "utf8" }).stdout;
+        const runAssert = (body) =>
+          spawnSync("bash", ["-c", script], { env: { ...process.env, REPORT_BODY: body }, encoding: "utf8" });
+
+        // A valid rendered body must PASS. This is the check that was missing.
+        const ok = runAssert(good);
+        s.check("G25 the pre-write assertions accept a valid rendered body",
+          ok.status === 0, `exit ${ok.status}: ${(ok.stdout || "").trim()}`);
+
+        // Each defect the net exists to catch must ABORT.
+        const cases = [
+          ["a body with no marker", good.replace("<!-- PR_REVIEWER_REPORT -->\n", "")],
+          ["a flattened body (no accordion)", good.replace(/<details>\n<summary>Review details[^\n]*\n/, "")],
+          ["a pre-expanded accordion", good.replace("<details>\n<summary>Review details", "<details open>\n<summary>Review details")],
+          ["a smuggled **Verdict** line", `${good}\n**Verdict**: PASS\n`],
+        ];
+        for (const [why, body] of cases) {
+          const r = runAssert(body);
+          s.check(`G25 the pre-write assertions reject ${why}`, r.status === 3,
+            `exit ${r.status} (expected 3 = abort)`);
+        }
+      }
+    }
+
     // (f) The taxonomy is append-only: a superseded row is marked Retired, never deleted. This
     // caught a real regression — the layout excision took three rows out with it.
     for (const fm of ["F-report-accordion-flattened", "F-report-accordion-expanded",

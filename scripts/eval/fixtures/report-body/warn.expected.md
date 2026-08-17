@@ -4,8 +4,8 @@ Reviewed your changes — no blocking issues, **2 warning(s)**: 2 open bot threa
 <details>
 <summary>Additional findings (2) — cleared review, not inlined</summary>
 
-- `packages/web/src/lib/queries/explorer-stats.ts:16` — nitpick: the header table still says `GET /memories/activity`. (confidence 84)
-- `packages/web/src/lib/filters.ts:713` — question: no production call site remains for `filtersToFacetParams`. (confidence 78)
+- `packages/web/src/lib/queries/explorer-stats.ts:16` — nitpick: the header table still says GET /memories/activity (confidence 84)
+- `packages/web/src/lib/filters.ts:713` — question: no production call site remains for filtersToFacetParams (confidence 78)
 
 </details>
 
@@ -24,16 +24,19 @@ Reviewed your changes — no blocking issues, **2 warning(s)**: 2 open bot threa
 
 **Open bot threads (2)** <sup>4 resolved since `70cf147`</sup>
 
-- [`packages/web/src/lib/filters.ts:23`](https://github.com/o/r/pull/1#discussion_r1) — the docblock still names `filtersToQueryParams`
-- [`packages/schemas/src/memory.ts:735`](https://github.com/o/r/pull/1#discussion_r2) — the advertised bound is 5× what the hop survives
+- [`packages/web/src/lib/filters.ts:23`](https://github.com/o/r/pull/1#discussion_r1) — the docblock still names filtersToQueryParams
+- [`packages/schemas/src/memory.ts:735`](https://github.com/o/r/pull/1#discussion_r2) — the advertised bound is 5x what the hop survives
 
-**CI** — `Integration smoke (local Supabase)` is red on one case — `POST /memories/list` expected 200, got 500. `Typecheck, Test & Lint (affected)` green.
+**CI** — `Integration smoke (local Supabase)` is red on one case — `POST /memories/list` expected 200, got 500.
 
-**Verified** — `node scripts/sync-edge-schemas.mjs --check` in sync (15 files); GET/POST decoder parity and the CORS method list read and consistent.
+**Verified** — `node scripts/sync-edge-schemas.mjs --check` in sync (15 files).
 
-**Run mode** — incremental · 256 lines in delta
+**Run mode** — incremental · 256 lines in delta · 27 files touched
 
-**Memories** — 62 indexed · 3 used
+**Memories** — 62 indexed · 1 used
+
+- [`pre-flight-logic:token-membership-tests-mis-ordered`](https://lorekit.io/lore?scope=%22repo%3A%3Ao%2Fr%22) — promoted, seen 2x
+
 
 **Quality** — produced 7 → posted inline 3 · cleared 3 · carried forward 0 · deferred 2 · below-bar 0
 
