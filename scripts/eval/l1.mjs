@@ -1209,10 +1209,23 @@ function checksInSync(plan, checks) {
           + "``[the docs](https://lorekit.io/lore?x=1)``"];
       })],
     ];
+    // Only the v1 case is allowed to fail on the unknown-key check. Everything else must fail on
+    // the guard it names. Without this, a v2 rename silently turns a real guard's case into an
+    // `unknown payload key` rejection: the check still passes, and the guard it was written for
+    // is left with no coverage at all. That is exactly what happened to the **Verdict** and
+    // caged-link cases when the payload went structured.
+    const UNKNOWN_KEY_CASES = new Set([
+      "an unknown key (typo'd slot)",
+      "a v1 payload (FOOTER_LINE / MEMORIES / counts)",
+    ]);
     for (const [why, input] of rejects) {
       const r = run([], input);
       s.check(`G25 the renderer rejects ${why}`, !r.ok, r.ok ? "ACCEPTED" : "");
       s.check(`G25 rejecting ${why} emits nothing on stdout`, r.out === "", r.out.slice(0, 60));
+      if (!UNKNOWN_KEY_CASES.has(why)) {
+        s.check(`G25 rejecting ${why} is not an unknown-key rejection`,
+          !/unknown payload key/.test(r.err), r.err.slice(0, 90));
+      }
     }
 
     // A correctly written link in the same slot must still render — the footer link
