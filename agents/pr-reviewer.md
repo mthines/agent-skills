@@ -1825,6 +1825,22 @@ that is the exact failure this replaces. Report the error verbatim in the Step 5
 along with the payload you built, post the inline findings (Step 4b still applies), and leave the
 sticky untouched. A missing report is recoverable; a malformed one that consumers then parse is not.
 
+**Assert these four things on `REPORT_BODY` immediately before the write, whatever produced it.**
+The renderer guarantees them, so on the normal path this is redundant — and that is the point: it is
+the only check that survives the renderer being **bypassed**, which is the failure this whole
+section exists to prevent. A check that runs only inside the thing it is guarding guards nothing.
+
+```bash
+grep -q '<!-- PR_REVIEWER_REPORT -->' <<< "$REPORT_BODY" || abort "report body lost the marker"
+grep -qz '<details>\n<summary>Review details' <<< "$REPORT_BODY" || abort "no Review details accordion"
+grep -q '<details open>' <<< "$REPORT_BODY" && abort "accordion is pre-expanded"
+grep -q '\*\*Verdict\*\*' <<< "$REPORT_BODY" && abort "advisory verdict is terminal-only"
+```
+
+On any `abort`: post no report object, name the failing assertion in the Step 5 output, and stop.
+Do not repair the body by hand — a body that fails these was not built from the template, and
+editing it into shape reintroduces exactly the drift the renderer removes.
+
 Append the ledger line to the rendered body, then:Append the ledger line to the passing body, then:
 
 ```bash
@@ -2091,8 +2107,8 @@ The five non-negotiables:
    describe the current run in every case, including a run that posts no review. There are exactly
    two exceptions, and neither relocates the report: an access path that cannot write it
    (§ *When the sticky cannot be written*), which posts the degraded pointer instead, and a body
-   that still fails `report_body_is_safe` after one re-render (§ *Render `REPORT_BODY` verbatim*),
-   which posts **no** report copy anywhere and reports the failing reason to the user.
+   that fails the pre-write assertion below (§ *Build the payload, then run the renderer*), which
+   posts **no** report copy anywhere and reports the failing reason to the user.
 
 Confirm the 4b response contains `state: "COMMENTED"` when a review was posted.
 

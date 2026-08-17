@@ -1135,6 +1135,24 @@ function checksInSync(plan, checks) {
       /render-report\.mjs/.test(prReviewer) && /REPORT_BODY payload/.test(prReviewer));
     s.check("G25 pr-reviewer.md forbids hand-rendering as a fallback",
       /do not fall back to composing the body by hand/.test(prReviewer));
+    // (e) A provenance-independent pre-write net. The renderer's own post-conditions only run
+    // when the renderer runs, so a bypassed renderer would otherwise be unchecked — strictly
+    // weaker than the report_body_is_safe() this refactor replaced. Assert all four survive.
+    const preWrite = sliceBetween(prReviewer,
+      "**Assert these four things on `REPORT_BODY` immediately before the write",
+      "On any `abort`: post no report object");
+    for (const [claim, needle] of [
+      ["the marker", "PR_REVIEWER_REPORT"],
+      ["the accordion", "<summary>Review details"],
+      ["the open attribute", "<details open>"],
+      ["the advisory verdict", "Verdict"],
+    ]) {
+      s.check(`G25 the pre-write assertion covers ${claim}`, preWrite.includes(needle));
+    }
+    s.check("G25 a failing pre-write assertion posts no report and forbids hand repair",
+      /Do not repair the body by hand/.test(prReviewer));
+    s.check("G25 no dangling reference to the retired report_body_is_safe",
+      !prReviewer.includes("report_body_is_safe"));
   }
 
   // G24c: the three Gate-3 failure modes are registered in the diagnostic surface, so a
