@@ -216,10 +216,25 @@ function main() {
           + ` finding belongs in an inline comment`);
       }
     }
-    if (String(v).includes("**Verdict**")) {
-      fail(`${k} carries a **Verdict** line — the advisory verdict is terminal-only`);
-    }
   }
+
+  // The advisory verdict is terminal-only, and it can be smuggled in at any depth: an
+  // `OPEN_THREADS[].ask` or an `ADDITIONAL_FINDINGS[].body` reaches the rendered body just as
+  // surely as a top-level scalar. A top-level `String(v)` scan reads an array of objects as
+  // "[object Object]" and misses every one of them, so walk the payload instead.
+  const assertNoVerdict = (where, v) => {
+    if (typeof v === "string") {
+      if (v.includes("**Verdict**")) {
+        fail(`${where} carries a **Verdict** line — the advisory verdict is terminal-only`);
+      }
+      return;
+    }
+    if (Array.isArray(v)) return v.forEach((x, i) => assertNoVerdict(`${where}[${i}]`, x));
+    if (isPlainObject(v)) {
+      for (const [k, x] of Object.entries(v)) assertNoVerdict(`${where}.${k}`, x);
+    }
+  };
+  for (const [k, v] of Object.entries(data)) assertNoVerdict(k, v);
 
   // ── RUN → FOOTER_LINE + the Run mode line ─────────────────────────────────────────────────
   const run = data.RUN;
