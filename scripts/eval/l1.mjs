@@ -1128,6 +1128,9 @@ function checksInSync(plan, checks) {
       // Shipped for real on PR #121's sticky: the run wanted [`key`](url) inside a JSON string,
       // mangled the nesting, and emitted ``['key'](url)`` — a code span, so the link rendered as
       // dead monospace text. The report looked fine and the URL did not work.
+      // Renders only inside the OPEN_THREADS block, so passing it alone dropped the progress
+      // counter at exit 0 — silent data loss introduced by the GROUPS design itself.
+      ["an orphaned RESOLVED_SINCE", mutate((c) => { c.RESOLVED_SINCE = " <sup>7 resolved since `abc1234`</sup>"; })],
       ["a markdown link caged in a code span", mutate((c) => {
         c.MEMORIES = "53 indexed · 1 used\n\n- ``['a-lesson-key'](https://lorekit.io/lore?x=1)`` — promoted";
       })],

@@ -54,6 +54,9 @@ const GROUPS = [
   ["OPTIMALITY_CARDS", "OPTIMALITY_COUNT"],
   ["ADDITIONAL_FINDINGS", "ADDITIONAL_COUNT"],
   ["LOW_CONFIDENCE_FINDINGS", "LOW_CONFIDENCE_COUNT"],
+  // RESOLVED_SINCE renders INSIDE the OPEN_THREADS block, so passing it alone silently drops the
+  // progress counter — data loss with a zero exit. It is optional *within* a rendered group,
+  // so it cannot be a plain group member; validate the one-way implication instead (below).
   ["OPEN_THREADS", "OPEN_THREADS_COUNT", "OPEN_THREADS_SUFFIX"],
 ];
 
@@ -118,6 +121,15 @@ function main() {
       const absent = group.filter((k) => !filled(k));
       fail(`${group[0]} group is incomplete — got ${present.join(", ")}, missing ${absent.join(", ")}`
         + ` (these slots are all-or-nothing)`);
+    }
+  }
+
+  // One-way dependencies: a slot that only renders inside another's block. Passing the dependent
+  // without its host is silent data loss, so it is an error; the host without the dependent is fine.
+  for (const [dependent, host] of [["RESOLVED_SINCE", "OPEN_THREADS"]]) {
+    if (filled(dependent) && !filled(host)) {
+      fail(`${dependent} renders only inside the ${host} block, so passing it alone would silently`
+        + ` drop it — supply ${host} (and its group) or omit ${dependent}`);
     }
   }
 
