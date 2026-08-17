@@ -1165,20 +1165,36 @@ function checksInSync(plan, checks) {
         c.FOOTER_LINE = "Reviewed for commit `abc1234`."; c.MEMORIES = "53 indexed";
         c.OPEN_THREADS_COUNT = "2";
       })],
-      // Companion-slot groups are all-or-nothing. Each of these rendered at exit 0 before the
-      // group check existed: a banner with blank counts, `Open bot threads ()`, and a summary
-      // counter above no list — the orphaned-slot failure this renderer was meant to retire.
-      ["a block key without its companions", mutate((c) => { c.PARTIAL_BANNER = "yes"; })],
-      ["OPEN_THREADS without its count", mutate((c) => { c.OPEN_THREADS = "- x"; })],
-      ["an orphaned OPEN_THREADS_SUFFIX", mutate((c) => { c.OPEN_THREADS_SUFFIX = " — 3 open"; })],
+      // The v1 companion-slot cases (`PARTIAL_BANNER`, `OPEN_THREADS_SUFFIX`) are gone: those slots
+      // are derived now, so supplying one is just another unknown key and the case above covers it.
+      // What is left to guard is the structured replacement being handed a v1-shaped value.
+      ["OPEN_THREADS supplied as a markdown string", mutate((c) => { c.OPEN_THREADS = "- x"; })],
+      ["a non-zero delta_lines on a zero-delta run", mutate((c) => {
+        c.RUN = { mode: "zero-delta", sha: "bde3c2f", prior_sha: "70cf147", delta_lines: 12 };
+      })],
+      ["a MEMORIES_USED entry with no key", mutate((c) => {
+        c.MEMORIES_USED = [{ url: "https://lorekit.io/lore?x=1", note: "promoted" }];
+      })],
+      ["PARTIAL_REVIEW scanned over total", mutate((c) => {
+        c.PARTIAL_REVIEW = { calls: 40, scanned: 90, total: 12 };
+      })],
+      ["RESOLVED_SINCE supplied as a pre-rendered string",
+        mutate((c) => { c.RESOLVED_SINCE = " <sup>7 resolved since `abc1234`</sup>"; })],
       // Shipped for real on PR #121's sticky: the run wanted [`key`](url) inside a JSON string,
       // mangled the nesting, and emitted ``['key'](url)`` — a code span, so the link rendered as
       // dead monospace text. The report looked fine and the URL did not work.
-      // Renders only inside the OPEN_THREADS block, so passing it alone dropped the progress
-      // counter at exit 0 — silent data loss introduced by the GROUPS design itself.
-      ["an orphaned RESOLVED_SINCE", mutate((c) => { c.RESOLVED_SINCE = " <sup>7 resolved since `abc1234`</sup>"; })],
-      ["a markdown link caged in a code span", mutate((c) => {
-        c.MEMORIES = "53 indexed · 1 used\n\n- ``['a-lesson-key'](https://lorekit.io/lore?x=1)`` — promoted";
+      // Routing it through the retired `MEMORIES` slot only exercised the unknown-key check, so
+      // aim it at the two surfaces a v2 payload can still cage a link on: a prose field, and
+      // OPTIMALITY_CARDS, the one slot where model-authored markdown remains.
+      ["a markdown link caged in a code span in a prose field", mutate((c) => {
+        c.MEMORIES_USED = [{
+          key: "a-lesson-key",
+          note: "``[a-lesson-key](https://lorekit.io/lore?x=1)`` — promoted",
+        }];
+      })],
+      ["a markdown link caged in a code span in an optimality card", mutate((c) => {
+        c.OPTIMALITY_CARDS = ["### Optimality proposal — a.ts:1\n\n"
+          + "``[the docs](https://lorekit.io/lore?x=1)``"];
       })],
     ];
     for (const [why, input] of rejects) {
@@ -1199,6 +1215,19 @@ function checksInSync(plan, checks) {
       s.check("G25 MEMORIES_USED renders as a real link", r.ok, r.err);
       s.check("G25 the renderer built the link, not the model",
         r.out.includes("[`a-lesson-key`](https://lorekit.io/lore?x=1) — promoted"));
+    }
+
+    // A zero-delta run parses under the same {mode, delta_lines} grammar as every other mode,
+    // and the footer — not the Run mode line — is what still names the zero-delta shape.
+    {
+      const r = run([], mutate((c) => {
+        c.RUN = { mode: "zero-delta", sha: "bde3c2f", prior_sha: "70cf147" };
+      }));
+      s.check("G25 a zero-delta run renders", r.ok, r.err);
+      s.check("G25 zero-delta parses as {incremental, 0}",
+        r.out.includes("**Run mode** — incremental · 0 lines in delta"));
+      s.check("G25 zero-delta keeps its footer form",
+        r.out.includes("No code changes since `70cf147` — gate checks only for commit `bde3c2f`."));
     }
 
     // A prose field carries the source comment's own wording, backticks and all. Step 1.0 requires
@@ -1247,9 +1276,10 @@ function checksInSync(plan, checks) {
           return all.length ? { sha: all[all.length - 1][1] } : null;
         },
         "Run mode": (b) => {
-          const m = b.match(/^\*\*Run mode\*\* — (full|incremental|incremental-quick) · (\d+) lines in delta|^\*\*Run mode\*\* — (incremental) · no code changes/m);
-          if (!m) return null;
-          return { mode: m[1] || m[3], delta_lines: m[2] === undefined ? 0 : Number(m[2]) };
+          // One shape for every mode, zero-delta included — it renders `incremental · 0 lines in
+          // delta`, so there is no second alternative to carry.
+          const m = b.match(/^\*\*Run mode\*\* — (full|incremental|incremental-quick) · (\d+) lines in delta/m);
+          return m ? { mode: m[1], delta_lines: Number(m[2]) } : null;
         },
         "Standards log": (b) => {
           const m = b.match(/^\*\*Standards \(2\.4d\)\*\* — (ran|skipped)/m);

@@ -267,16 +267,24 @@ function main() {
   // The `<mode> · <N> lines in delta` prefix is what reviewer-report-ingest.md parses, so it is
   // derived. RUN_NOTE appends run-specific colour after it — extra context has a legal home, and
   // the parseable prefix stays intact.
-  if (run.mode !== "zero-delta") {
-    if (!Number.isInteger(run.delta_lines) || run.delta_lines < 0) {
-      fail(`RUN.delta_lines must be a non-negative integer when RUN.mode is ${run.mode} — got`
+  if (run.mode === "zero-delta") {
+    // Zero-delta means zero lines, so the field is optional — but a non-zero value would make the
+    // rendered line contradict the mode.
+    if (run.delta_lines !== undefined && run.delta_lines !== 0) {
+      fail(`RUN.delta_lines must be 0 or omitted when RUN.mode is zero-delta — got`
         + ` ${JSON.stringify(run.delta_lines)}`);
     }
+  } else if (!Number.isInteger(run.delta_lines) || run.delta_lines < 0) {
+    fail(`RUN.delta_lines must be a non-negative integer when RUN.mode is ${run.mode} — got`
+      + ` ${JSON.stringify(run.delta_lines)}`);
   }
+  // One shape for every mode: `<mode> · <N> lines in delta`. The zero-delta run used to render
+  // `incremental · no code changes`, which left the grammar's {mode, delta_lines} unit with no
+  // delta_lines to parse and forced a second alternative into every consumer's regex. The mode
+  // itself is not lost — the footer line names the zero-delta form explicitly.
   const modeLabel = run.mode === "zero-delta" ? "incremental" : run.mode;
-  let runLine = run.mode === "zero-delta"
-    ? `${modeLabel} · no code changes`
-    : `${modeLabel} · ${run.delta_lines} lines in delta`;
+  const deltaLines = run.mode === "zero-delta" ? 0 : run.delta_lines;
+  let runLine = `${modeLabel} · ${deltaLines} lines in delta`;
   if (data.RUN_NOTE) {
     assertPlainish("RUN_NOTE", data.RUN_NOTE);
     runLine += ` · ${data.RUN_NOTE}`;

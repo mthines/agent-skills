@@ -111,7 +111,7 @@ finding.
 | Optimality cards | `<summary>Optimality review (<N>) — is this the best approach?</summary>` | one unit per `### Optimality proposal — <path>:<line>` heading, captured **verbatim** as a whole block: headline, Now / Better table, `Why it's better`, `Trade-off`, `Evidence`, and the `Intent · Blast radius · Confidence` footer | Yes — `path:line` in the card heading |
 | Additional findings | `<summary>Additional findings (<N>) — cleared review, not inlined</summary>` | one unit per bullet: `` `<path>:<line>` — <prefix>: <body> (confidence <N>) `` | Yes |
 | Low-confidence findings | `<summary>Low-confidence findings (<N>) — advisory, below the confidence bar</summary>` | one unit per bullet: `` `<path>:<line>` — <prefix>: <body> (confidence <N>) `` | Yes |
-| Run mode | `**Run mode** —` | `{mode, delta_lines}` | n/a |
+| Run mode | `**Run mode** —` | `{mode, delta_lines}`, from the single shape `<mode> · <N> lines in delta` — every mode renders it, a zero-delta run as `incremental · 0 lines in delta`. The zero-delta form is named by the Footer SHA line, not here. | n/a |
 | Standards log | `**Standards (2.4d)** —` | `{ran, docs_scanned, finding_count}` — run-state only | n/a |
 | Optimality log | `**Optimality (2.4c)** —` | `{ran, judged, optimal, proposals, withheld}` — run-state only | n/a |
 | Skipped files | `**Skipped files** —` | file paths, empty on `none` | n/a |
