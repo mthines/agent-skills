@@ -161,11 +161,22 @@ them. (The three original entries were resolved: `from-to-morphs.md` →
 | `<case>.json` | the payload a run would build (`pass`, `warn`, `fail`) |
 | `<case>.expected.md` | the committed snapshot — **read these to see what a report looks like** |
 
+The payloads are **structured data**, not markdown: counts come from array length, links are built
+by the renderer from `{path, line, url}`, and the footer/`Run mode` lines are derived from a `RUN`
+object. So a count cannot disagree with its list and a sha cannot appear at two lengths.
+
 L1's **G25** executes `agents/pr-reviewer/scripts/render-report.mjs` against each payload and diffs
 the result byte-for-byte against the snapshot, then asserts the structural invariants (marker
 present, `Review details` accordion present, nothing pre-expanded, nothing the accordion owns
-rendered above it) and that the renderer rejects seven malformed payloads while printing nothing on
-stdout.
+rendered above it) and that the renderer rejects **every payload in G25's `rejects` table** while
+printing nothing on stdout. The count is deliberately not repeated here — it grows with the table,
+and a mirrored number goes stale on the next case added. Read `rejects` in `l1.mjs` for the list.
+
+It also runs a **producer → consumer round trip**: the extractors documented in
+`agents/shared/rules/reviewer-report-ingest.md` are applied to the rendered output, and every
+section must parse to its documented type. That is the test that was missing when a report
+shipped with `Run mode — full … 750 additions / 486 deletions`, which the grammar parses for
+`delta_lines`.
 
 Regenerate after an intentional template or renderer change, and review the diff:
 

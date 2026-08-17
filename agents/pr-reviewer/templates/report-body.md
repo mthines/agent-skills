@@ -47,7 +47,10 @@
 {{/VERIFIED_NOTE}}
 **Run mode** — {{RUN_MODE}}
 
-**Memories** — {{MEMORIES}}
+**Memories** — {{MEMORIES_SUMMARY}}
+{{#MEMORIES_BULLETS}}
+{{MEMORIES_BULLETS}}
+{{/MEMORIES_BULLETS}}
 
 **Quality** — {{QUALITY}}
 {{#QUALITY_DROPPED}}
