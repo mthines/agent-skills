@@ -45,6 +45,18 @@ const OPTIONAL = [
 
 const VALID_STATUS = new Set(["✅", "⚠️", "❌", "⏭️"]);
 
+// Slot groups that are all-or-nothing. A block key alone renders its block with its companion
+// placeholders substituted empty — `after  calls;  of  files scanned`, `Open bot threads ()`, or a
+// summary counter above no list. That last one is the orphaned-slot failure this renderer replaced,
+// so it must be impossible here rather than merely discouraged. Order matters for the message only.
+const GROUPS = [
+  ["PARTIAL_BANNER", "BUDGET_CALLS", "BUDGET_SCANNED", "BUDGET_TOTAL"],
+  ["OPTIMALITY_CARDS", "OPTIMALITY_COUNT"],
+  ["ADDITIONAL_FINDINGS", "ADDITIONAL_COUNT"],
+  ["LOW_CONFIDENCE_FINDINGS", "LOW_CONFIDENCE_COUNT"],
+  ["OPEN_THREADS", "OPEN_THREADS_COUNT", "OPEN_THREADS_SUFFIX"],
+];
+
 function fail(msg) {
   process.stderr.write(`render-report: ${msg}\n`);
   process.exit(1);
@@ -95,6 +107,17 @@ function main() {
   );
   if (missing.length) fail(`missing required slot(s): ${missing.join(", ")}`);
 
+  const filled = (k) =>
+    data[k] !== undefined && data[k] !== null && String(data[k]).trim() !== "";
+  for (const group of GROUPS) {
+    const present = group.filter(filled);
+    if (present.length && present.length !== group.length) {
+      const absent = group.filter((k) => !filled(k));
+      fail(`${group[0]} group is incomplete — got ${present.join(", ")}, missing ${absent.join(", ")}`
+        + ` (these slots are all-or-nothing)`);
+    }
+  }
+
   for (const [k, v] of Object.entries(data)) {
     if (k.endsWith("_STATUS") && !VALID_STATUS.has(String(v).trim())) {
       fail(`${k} must be one of ✅ ⚠️ ❌ ⏭️ — got ${JSON.stringify(v)}`);
@@ -133,8 +156,10 @@ function main() {
   if (body.includes("<details open>")) fail("rendered body pre-expands a `<details>` block");
   const head = body.split("<details>")[0];
   for (const owned of ["| Gate | Status | Details |", "**Run mode**", "**Memories**",
-    "**Quality**", "**Skipped files**", "<sup>Reviewed for commit",
-    "<sup>Incremental review for commit"]) {
+    "**Quality**", "**Integrations**", "**Optimality (2.4c)**", "**Standards (2.4d)**",
+    "**Skipped files**", "**Open bot threads (", "<sup>Reviewed for commit",
+    "<sup>Incremental review for commit", "<sup>No code changes since",
+    "<sup>Reviewed by the"]) {
     if (head.includes(owned)) fail(`${owned} rendered above the accordion`);
   }
 

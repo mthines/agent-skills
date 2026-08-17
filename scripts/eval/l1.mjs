@@ -1119,11 +1119,31 @@ function checksInSync(plan, checks) {
       ["an empty required slot", mutate((c) => { c.SKIPPED_FILES = "   "; })],
       ["a non-object payload", "[1,2]"],
       ["malformed JSON", "{nope"],
+      // Companion-slot groups are all-or-nothing. Each of these rendered at exit 0 before the
+      // group check existed: a banner with blank counts, `Open bot threads ()`, and a summary
+      // counter above no list — the orphaned-slot failure this renderer was meant to retire.
+      ["a block key without its companions", mutate((c) => { c.PARTIAL_BANNER = "yes"; })],
+      ["OPEN_THREADS without its count", mutate((c) => { c.OPEN_THREADS = "- x"; })],
+      ["an orphaned OPEN_THREADS_SUFFIX", mutate((c) => { c.OPEN_THREADS_SUFFIX = " — 3 open"; })],
     ];
     for (const [why, input] of rejects) {
       const r = run([], input);
       s.check(`G25 the renderer rejects ${why}`, !r.ok, r.ok ? "ACCEPTED" : "");
       s.check(`G25 rejecting ${why} emits nothing on stdout`, r.out === "", r.out.slice(0, 60));
+    }
+
+    // A complete group is still accepted — the check must discriminate, not blanket-reject.
+    {
+      const full = mutate((c) => {
+        c.OPEN_THREADS = "- [`a.ts:1`](u) — x";
+        c.OPEN_THREADS_COUNT = "1";
+        c.OPEN_THREADS_SUFFIX = " — 1 open bot thread";
+      });
+      const r = run([], full);
+      s.check("G25 a complete OPEN_THREADS group renders", r.ok, r.err);
+      s.check("G25 the complete group puts the list inside the accordion",
+        r.out.includes("**Open bot threads (1)**") &&
+        r.out.split("<details>")[0].includes("**Open bot threads (") === false);
     }
 
     // (d) The agent must delegate, not hand-render. The old three-template shape is gone and
@@ -1153,7 +1173,81 @@ function checksInSync(plan, checks) {
       /Do not repair the body by hand/.test(prReviewer));
     s.check("G25 no dangling reference to the retired report_body_is_safe",
       !prReviewer.includes("report_body_is_safe"));
+    // (f) The taxonomy is append-only: a superseded row is marked Retired, never deleted. This
+    // caught a real regression — the layout excision took three rows out with it.
+    for (const fm of ["F-report-accordion-flattened", "F-report-accordion-expanded",
+      "F-open-threads-slot-orphaned", "F-report-body-composed-from-memory"]) {
+      s.check(`G25 diagnostic-surface keeps the retired ${fm} row`,
+        prReviewerDiag.includes(fm) &&
+        new RegExp(`\\\`${fm}\\\`[^\n]*Retired`).test(prReviewerDiag),
+        "row deleted or not marked Retired");
+    }
+    s.check("G25 diagnostic-surface forbids deleting a taxonomy row",
+      /a row is \*\*never deleted\*\*/.test(prReviewerDiag));
   }
+
+  // G24f: the report has exactly one host. A review body carrying the report marker is the
+  // regression that leaves one full report per run on the PR; the pre-flight must reject it.
+  s.check("G24f pr-reviewer.md rejects a review body carrying the report marker",
+    /"<!-- PR_REVIEWER_REPORT -->" in payload\["body"\]/.test(prReviewer));
+  s.check("G24f pr-reviewer.md documents the un-writable-sticky path without a second report",
+    /When the sticky cannot be written/.test(prReviewer) &&
+    /DEGRADED_POINTER_BODY/.test(prReviewer));
+  // G24h: prior-run detection must not be login-keyed — an unresolvable `/user` would otherwise
+  // read as "no prior report" and duplicate the sticky on every run. Assert on the WHOLE
+  // Step 0.7 fetch region rather than on one clause shape: a predicate is order-free
+  // (`select((.body | contains(…)) and .user.login == env.ME)` is the same bug rearranged),
+  // so any mention of the login inside these fetches is the regression.
+  const step07 = sliceBetween(prReviewer,
+    "## Step 0.7: Prior run detection", "### Parsing `PRIOR_DIAGNOSTICS`");
+  const step07Fetches = [...step07.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]).join("\n");
+  // Reading `.user.login` OUT of a found object is fine (PRIOR_REPORT_AUTHOR does exactly that);
+  // FILTERING on it is the bug. A regex cannot express "inside a select() at any nesting depth" —
+  // an earlier bounded-depth version let `select(((.body | contains(…))) and .user.login == …)`
+  // through — so scan to the matching close paren instead.
+  const selectBodies = (src) => {
+    const out = [];
+    for (let i = src.indexOf("select("); i >= 0; i = src.indexOf("select(", i + 1)) {
+      let depth = 0;
+      for (let j = i + "select".length; j < src.length; j++) {
+        if (src[j] === "(") depth++;
+        else if (src[j] === ")" && --depth === 0) { out.push(src.slice(i, j + 1)); break; }
+      }
+    }
+    return out;
+  };
+  const loginFilter = selectBodies(step07Fetches).some((b) => /user\.login/.test(b));
+  s.check("G24h pr-reviewer.md finds the sticky by marker, not by author login",
+    step07Fetches.includes("PR_REVIEWER_REPORT") && !loginFilter && !/env\.ME/.test(step07Fetches),
+    step07Fetches.includes("PR_REVIEWER_REPORT") ? "login key present in a Step 0.7 fetch" : "no marker-keyed fetch found");
+  // The pointer written by Step 4b must be findable by the fallback that reads it — and EVERY
+  // pointer form must carry the marker, or the identity ladder and the prior-run evidence go
+  // missing on exactly the access paths that depend on them.
+  s.check("G24h the pointer marker is both written and looked for",
+    (prReviewer.match(/<!-- PR_REVIEWER_POINTER -->/g) || []).length >= 2 &&
+    step07Fetches.includes("PR_REVIEWER_POINTER"));
+  const pointerForms = [...sliceBetween(prReviewer, "`POINTER_BODY` is one marker line",
+    "### REPORT_BODY format (the sticky comment)").matchAll(/```markdown\n([\s\S]*?)```/g)].map((m) => m[1]);
+  s.check("G24h every pointer body form carries the pointer marker",
+    pointerForms.length >= 4 && pointerForms.every((f) => f.includes("<!-- PR_REVIEWER_POINTER -->")),
+    `${pointerForms.filter((f) => !f.includes("<!-- PR_REVIEWER_POINTER -->")).length} of ${pointerForms.length} unmarked`);
+  // The pointer ledger is truncated: a 50-run history cannot ride on an append-only object.
+  s.check("G24h the degraded pointer carries a truncated ledger, not the full history",
+    /DEGRADED_LEDGER/.test(prReviewer) && /truncated/.test(prReviewer));
+  // The recovered-pointer branch is a re-review: it must bind the run-mode inputs Step 1.2b reads,
+  // and it must feed the identity ladder — it is the one path where `/user` also fails.
+  const pointerBranch = sliceBetween(step07,
+    "**Pointer fallback (this agent's own review pointers).**", "**`IS_RE_REVIEW`");
+  for (const v of ["RUN_MODE", "PRIOR_SHA", "LAST_FULL_SHA", "INCR_RUNS_SINCE_FULL"]) {
+    s.check(`G24h the recovered-pointer branch binds ${v}`, pointerBranch.includes(v));
+  }
+  // A flag with no reader is a comment. Assert PRIOR_RUN_STATE_UNKNOWN is bound and consumed.
+  s.check("G24h PRIOR_RUN_STATE_UNKNOWN has readers, not just a binding",
+    (prReviewer.match(/PRIOR_RUN_STATE_UNKNOWN/g) || []).length >= 4 &&
+    /prior-run state unknown/.test(sliceBetween(prReviewer, "## Step 5: Report", "## What this agent does not do")));
+  s.check("G24h PRIOR_REPORT_AUTHOR covers all three prior-run shapes",
+    /PRIOR_REPORT_AUTHOR=[\s\S]{0,200}STICKY[\s\S]{0,80}LEGACY_REVIEW[\s\S]{0,80}POINTER_REVIEW/
+      .test(prReviewer));
 
   // G24c: the three Gate-3 failure modes are registered in the diagnostic surface, so a
   // regression has a named bucket instead of silently becoming "expected behaviour".

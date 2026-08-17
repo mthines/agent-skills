@@ -1809,11 +1809,30 @@ rather than copied. Layout is not a judgment call, so it is no longer yours.
 
 ```bash
 # The renderer ships beside this agent definition. Resolve it from the definition's real path.
-AGENT_MD=$(readlink -f "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" 2>/dev/null || echo "")
+# `readlink -f` is GNU-only — BSD/macOS lacks it — so fall back to a pwd -P walk, and NEVER let an
+# empty AGENT_MD through: `${AGENT_MD%/pr-reviewer.md}` on "" yields "", making RENDER the absolute
+# path /pr-reviewer/scripts/render-report.mjs, which fails as "file not found" and reads like a
+# missing renderer rather than a failed resolution.
+resolve() {  # portable readlink -f
+  [ -e "$1" ] || return 1
+  ( cd "$(dirname "$1")" && t=$(basename "$1")
+    while [ -L "$t" ]; do d=$(readlink "$t"); cd "$(dirname "$d")" || return 1; t=$(basename "$d"); done
+    printf '%s/%s\n' "$(pwd -P)" "$t" )
+}
+
+AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
+if [ -z "$AGENT_MD" ]; then
+  abort "cannot locate this agent definition — set CLAUDE_AGENT_FILE to its path"
+fi
 RENDER="${AGENT_MD%/pr-reviewer.md}/pr-reviewer/scripts/render-report.mjs"
+[ -f "$RENDER" ] || abort "renderer not found at $RENDER (resolved from $AGENT_MD)"
 
 REPORT_BODY=$(node "$RENDER" /tmp/report-payload.json)   # non-zero exit ⇒ nothing on stdout
 ```
+
+Each `abort` above is the *resolution* failing, which is a different diagnosis from the renderer
+rejecting a payload — say which one happened. Both take the same path from here: report the error,
+post no report object, and never hand-write the body.
 
 Write the payload to `/tmp/report-payload.json` as a flat JSON object of slot → string. The keys are
 listed under *REPORT_BODY payload* below. The script **fails closed**: an unknown key, a missing
@@ -1841,7 +1860,7 @@ On any `abort`: post no report object, name the failing assertion in the Step 5 
 Do not repair the body by hand — a body that fails these was not built from the template, and
 editing it into shape reintroduces exactly the drift the renderer removes.
 
-Append the ledger line to the rendered body, then:Append the ledger line to the passing body, then:
+Append the ledger line to the rendered body, then:
 
 ```bash
 # Append this run to the ledger, strip the two per-run fields from older entries, cap at 50.
@@ -2262,7 +2281,7 @@ one.
 Render **both** slots whenever Gate 3 (`Prior bot feedback`) is ⚠️ or ❌ — i.e. whenever
 `OPEN_BOT_COMMENTS[]` is non-empty — in the FAIL template *and* the WARN template alike; substitute
 **both** as empty on ✅ and `⏭️`, leaving the bare `<summary>Review details</summary>`. Rendering one
-without the other is a guard failure (`F-open-threads-slot-orphaned`): a suffix alone advertises a
+without the other is a guard failure (`F-report-hand-rendered`): a suffix alone advertises a
 list that is not there, and a list alone is invisible in the collapsed report.
 
 Downgrading a non-blocking open thread to ⚠️ must not make it invisible: the verdict softens, the
