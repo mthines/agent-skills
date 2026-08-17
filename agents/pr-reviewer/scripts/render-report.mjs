@@ -464,7 +464,13 @@ function main() {
   process.stdout.write(body.endsWith("\n") ? body : `${body}\n`);
 }
 
-/** Prose fields may carry inline code and links; they may not carry newlines or table pipes. */
+/**
+ * `RUN_NOTE` is free prose appended after the parseable `Run mode` prefix. It may carry inline
+ * code and links, and a `|` is fine too — it renders on a bold standalone line, not in a table
+ * cell, so it has no row to break. The one thing it may not do is span lines, which would split
+ * the `Run mode` line and orphan the grammar's prefix. (Table pipes are rejected where they
+ * actually matter: the `GATE_*_DETAILS` cells, checked in main().)
+ */
 function assertPlainish(where, v) {
   const s = String(v);
   if (s.includes("\n")) fail(`${where} must be a single line`);
