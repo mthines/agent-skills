@@ -27,6 +27,13 @@ on:
   issue_comment:
     types: [created, edited]
 
+# Required. A called workflow can only ever narrow the caller's token, never widen it, so on a repo
+# whose default GITHUB_TOKEN is read-only the reusable workflow's `pull-requests: write` request
+# fails the run. Declaring it here is what keeps this a one-file install.
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   shape:
     # issue_comment fires on plain issues too; PR-only, and skip humans' own comments cheaply.
