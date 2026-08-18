@@ -1693,6 +1693,10 @@ function checksInSync(plan, checks) {
       ["a caged markdown link",
         good.replace(/^- (\[[^\]]*\]\([^)]*\))/m, "- ``$1``"), "link-caged-in-code-span"],
       ["a count disagreeing with its list", good.replace("**Open bot threads (2)**", "**Open bot threads (5)**"), "count-disagrees-with-list"],
+      // The captured drift body wrote `**Open threads (6)**`; requiring the canonical `bot` wording
+      // let a hand-written heading's wrong count through the very check meant to catch it.
+      ["a drift-worded count disagreeing with its list",
+        good.replace("**Open bot threads (2)**", "**Open threads (5)**"), "count-disagrees-with-list"],
       // The head slice must anchor on the `Review details` accordion, not on the first <details>.
       // A flat body preceded by an unrelated fold sliced the head to nothing and reported clean.
       ["a flat body preceded by an unrelated <details> fold",
