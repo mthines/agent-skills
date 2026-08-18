@@ -188,7 +188,9 @@ Validate with `claude plugin validate plugins/agent-tasks-hooks`.
 `pr-reviewer` body against the report shape contract, from outside the agent.
 Logic lives in `scripts/validate-report-shape.mjs`; the reusable workflow is
 `.github/workflows/reviewer-report-shape.yml`, and this repo consumes it via
-`.github/workflows/reviewer-report-shape-self.yml` (local `uses:` so a change is exercised by its own PR).
+`.github/workflows/reviewer-report-shape-self.yml` (local `uses:`, which always resolves from the default
+branch — `pull_request_review` and `issue_comment` workflows never run a PR's copy, so a change to the
+reusable workflow is exercised here only after merge; pre-merge coverage comes from L1 `G26`).
 Any repo adds the caller from `templates/report-shape-caller.yml` — no secrets.
 Fires on `pull_request_review` and `issue_comment`, posts one sticky notice per PR on a violation,
 and never edits or deletes the report itself.
