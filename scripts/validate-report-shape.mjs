@@ -90,7 +90,11 @@ export function validate(body) {
 
   if (kind === "pointer") {
     // A pointer must stay a pointer: prose only, plus an optional ledger.
-    const prose = body.replace(LEDGER_RE, "").replace(POINTER_MARKER, "").trim();
+    // Strip the LEDGER only — not the marker. The agent's own Step 4b pre-flight measures the same
+    // 600-char budget against the body with just the ledger block removed, so also stripping the
+    // 27-char POINTER_MARKER here made this budget looser than the one it is meant to validate, and
+    // a body the agent rejects could pass the external guard.
+    const prose = body.replace(LEDGER_RE, "").trim();
     if (prose.length > 600) {
       add("pointer-too-long", `${prose.length} chars of prose (budget 600) — a pointer is one line`);
     }

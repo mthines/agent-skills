@@ -1649,6 +1649,17 @@ function checksInSync(plan, checks) {
         `exit ${r.status}, codes: ${(r.verdict?.violations || []).map((v) => v.code).join(", ")}`);
     }
 
+    // (b5) The pointer budget must match the agent's own pre-flight, which strips the ledger and
+    // nothing else. Stripping the marker too made the external guard looser than the internal one.
+    {
+      const marker = "<!-- PR_REVIEWER_POINTER -->";
+      const prose = "x".repeat(600 - marker.length + 5);
+      const r = run(`${marker}\n${prose}\n`);
+      s.check("G26 the pointer budget counts the marker, as the agent's pre-flight does",
+        r.status === 1 && (r.verdict?.violations || []).some((v) => v.code === "pointer-too-long"),
+        `exit ${r.status}, codes: ${(r.verdict?.violations || []).map((v) => v.code).join(", ")}`);
+    }
+
     // (c) Non-reviewer bodies are ignored, so the guard never fires on ordinary PR chatter.
     for (const [why, body] of [
       ["a plain human comment", "LGTM, nice work on the caching layer."],
