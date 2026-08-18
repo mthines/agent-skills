@@ -118,7 +118,9 @@ Apply reviewer suggestions to an existing pull request.
    a. Apply that comment's proposed edit using Edit / Write. Touch only the
       files that comment's pack entry lists.
    b. Run the project's fast checks scoped to the touched files (lint +
-      typecheck + unit tests) if wired up. If a check fails:
+      typecheck + unit tests) if wired up. This is the FAST per-comment signal;
+      it is scoped, so it cannot see a consumer this comment's edit broke in a
+      file it did not touch — step 3.5 catches that. If a check fails:
       - For a clear mechanical fix (formatter / lint autofix): apply, re-check.
       - For anything else: STOP and report — do not "fix until green" by
         weakening tests or types. Leave the commits already made in place as
@@ -137,10 +139,32 @@ Apply reviewer suggestions to an existing pull request.
 
    d. Record the resulting commit SHA and the comment's `threadId` for step 5.
 
+3.5. BEFORE pushing, run the project's fast checks ONCE MORE over the WHOLE
+   repository — unscoped (lint + typecheck + unit tests, whatever the repo wires
+   up as its local pre-push bar). Step 3b's checks are scoped to each comment's
+   own touched files, so a rename, a signature change, or a moved export can
+   commit cleanly per-comment and still leave a consumer broken in a file no
+   entry listed. That is the cross-file breakage a per-comment check cannot see,
+   and pushing it turns CI red for a reason this worker already had in hand.
+
+   If the full pass fails:
+   - For a clear mechanical fix (formatter / lint autofix): apply it, amend it
+     into the commit whose change caused it (or add one fixup commit naming the
+     comment it belongs to), then re-run the full pass.
+   - For anything else: STOP and report exactly as in step 3b — leave the commits
+     LOCAL-ONLY, push nothing, resolve nothing. Report which check failed, its
+     output excerpt, and which comment's change most plausibly caused it. Do NOT
+     weaken a test, loosen a type, or narrow the check's scope to get past it.
+
+   Skip this step ONLY if the repo wires up no such command at all. If step 3b
+   was skipped for that reason, this step is skipped too — say so in the report
+   rather than implying the batch was verified.
+
 4. git push (no --force, no --force-with-lease). Only reach this step if EVERY
-   `apply` entry committed without a STOP in step 3b — otherwise you already
-   aborted above. Push ONCE, after every per-comment commit is made, so all the
-   fix commits reach the remote before any thread is resolved.
+   `apply` entry committed without a STOP in step 3b AND the full pre-push pass
+   in step 3.5 came back clean — otherwise you already aborted above. Push ONCE,
+   after every per-comment commit is made, so all the fix commits reach the
+   remote before any thread is resolved.
 
 5. Resolve each addressed thread so the PR is left clean — one thread per
    committed comment, IN THE SAME ORDER you committed. For each `apply` entry
@@ -233,6 +257,7 @@ A short report, one row per `apply` comment:
   thread status (resolved / no-thread / not-resolved: <reason>).
 - Push status (success / rejected — verbatim error).
 - Fast-check status per comment: passed / failed-with-excerpt.
+- Full pre-push check status (step 3.5): passed / failed-with-excerpt / skipped (no command wired up).
 ```
 
 ## Planner prompt template (standard-lane only)

@@ -38,7 +38,7 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft qual
 
 | Mode / Flag    | Trigger                                            | Behaviour                                                                                                                                                                     |
 | -------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default`      | No flag                                            | One PR for the whole branch. After opening the draft PR (Step 6), Step 6.5 runs `Skill("review-loop")` — up to 5 iterations of `pr-reviewer` → `implement-suggestion` → `polish simplify`, converging until every review thread is resolved (fix or reply) and refreshing the PR description. |
+| `default`      | No flag                                            | One PR for the whole branch. After opening the draft PR (Step 6), Step 6.5 runs `Skill("review-loop", "<pr-url> --no-ci")` — up to 5 iterations of `pr-reviewer` → `implement-suggestion` → `polish simplify`, converging until every review thread is resolved (fix or reply) and refreshing the PR description. |
 | `split`        | `--split`, `-s`, or first positional token `split` | Analyse the branch diff, propose 2–4 dependency-ordered draft PRs (hard cap 5), execute only after user approval. Jump to the **Split Mode** section after the description-contract step. |
 | `no-review`    | `--no-review`                                       | Step 6.5 drops the `pr-reviewer` pass from the loop → runs only `polish simplify` once.                                                                                     |
 | `no-simplify`  | `--no-simplify`                                     | Step 6.5 drops the simplify pass from the loop → runs only `pr-reviewer` (one-shot, no apply).                                                                              |
@@ -108,11 +108,18 @@ Otherwise, map the `create-pr` flags to the appropriate invocation. Evaluate in 
 | 1 | `--quick`, or both `--no-review` **and** `--no-simplify` | `Skill("polish", "quick")`                      | Light mechanical pass (comments, naming, dead code).            |
 | 2 | `--no-review` (or legacy `--simplify` alone)             | `Skill("polish", "simplify")`                   | code-quality simplify — apply Class M refactors once.           |
 | 3 | `--no-simplify` (or legacy `--review` alone)             | `Task(subagent_type="pr-reviewer", prompt="<pr-url>")` | `pr-reviewer` **agent** (Task tool, not `Skill()`) one-shot only — findings surfaced, not applied. |
-| 4 | **none of the above (default)**                          | `Skill("review-loop", "<pr-url>")`              | Full loop: `pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 5 iterations; converges until every review thread is resolved (fix or reply) and refreshes the PR description. |
+| 4 | **none of the above (default)**                          | `Skill("review-loop", "<pr-url> --no-ci")`      | Full loop: `pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 5 iterations; converges until every review thread is resolved (fix or reply) and refreshes the PR description. |
 
 (`--no-quality` is handled above as an outright skip and never reaches this table.)
 
 Pass `--critical` through to `review-loop` / `pr-reviewer` if the user passed it to `create-pr`.
+
+**Always pass `--no-ci` to `review-loop` here.** The loop has its own CI sub-step that
+would dispatch `ci-auto-fix`; letting it run would make it a second spender of the
+per-PR handoff budget that Steps 7–9 own as its single writer. `create-pr` does not
+need it: Steps 7–9 run **after** this step, so every commit the loop pushes is
+covered by the watch that follows. Suppressing the loop's CI step here is what keeps
+`.agent/ci-watch-<pr>.state` single-writer for the whole PR.
 
 **Rows 3 and 4 both need sub-agent dispatch.** `pr-reviewer` is `Task`-only with no in-context substitute. Confirm `Task` is available before taking either row; if it is not, do not attempt the dispatch and do not silently fall through to row 2 — record `NOT REVIEWED` and carry it into Step 10.
 

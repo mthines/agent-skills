@@ -30,9 +30,15 @@ if [ -z "$ARGUMENTS" ] || [ "$ARGUMENTS" = "--report" ]; then
 fi
 ```
 
+**`review-changes` passes no `--no-ci`** — unlike `create-pr` and `autonomous-workflow`
+Phase 7, it owns no CI phase of its own, so the loop's CI sub-step is exactly what
+makes a standalone run converge to a green PR rather than a green-threads-red-build
+one. Forward `--no-ci`, `--external-review`, and `--interval` through when the user
+passes them.
+
 ```
 # Default — convergence loop on own or specified PR
-Skill("review-loop", "<pr-url-or-number> [--critical if passed]")
+Skill("review-loop", "<pr-url-or-number> [--critical|--no-ci|--external-review|--interval S if passed]")
 
 # Report-only (no apply) — one-shot review.
 # pr-reviewer is an AGENT — dispatch via the Task tool, NOT Skill():
@@ -43,7 +49,9 @@ Task(subagent_type="pr-reviewer", prompt="<pr-url-or-number> [--critical if pass
 
 | Invocation | Effect |
 | --- | --- |
-| `/review-changes` | Convergence loop on the current branch's open PR — `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved (fix or reply). |
+| `/review-changes` | Convergence loop on the current branch's open PR — `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` → CI, up to 5 iterations, converging until every review thread is resolved (fix or reply) **and** CI is not red. |
+| `/review-changes --no-ci` | Same, minus the CI sub-step. Pass this when something else already owns CI for the PR. |
+| `/review-changes --external-review` | Waits for an out-of-process reviewer (another agent, a review bot) instead of dispatching `pr-reviewer`, then applies + resolves + simplifies as usual. Also the path to use where the `Task` tool is unavailable. |
 | `/review-changes --report` | One-shot read-only review via `pr-reviewer` (no apply). |
 | `/review-changes --critical` | Adds adversarial pre-mortem (`Skill("critical", "code")`) to each `pr-reviewer` call. |
 | `/review-changes <PR-URL>` | Convergence loop on the specified PR (self or cross — `pr-reviewer` detects relation automatically). |

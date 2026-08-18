@@ -434,11 +434,20 @@ If LoreKit's `memory.*` tools are not connected, both steps are silent no-ops; t
 A loop wrapper around the multi-PR single-pass, scoped to one PR. Each iteration:
 waits for new review activity, runs Phases 1–7 over comments newer than the last
 processed timestamp, advances the baseline, and repeats until the reviewers go
-quiet or the iteration cap (default 5) is hit. `/create-pr` dispatches this as a
-background subagent post-push so a new PR auto-converges on its bot feedback.
+quiet, CI goes red, or the iteration cap (default 5) is hit. `/create-pr` dispatches
+this as a background subagent post-push so a new PR auto-converges on its bot feedback.
 
-Full loop, the poll-for-new-activity snippet, parameters (`--max-iters`,
-`--interval`), the per-iteration report, and watch-specific hard rules live in
+The wait is the shared
+[review-activity poll](../../../agents/shared/rules/review-activity-poll.md) —
+co-owned with `review-loop --external-review`, never restated here.
+
+**CI is a stop reason, never a fix.** After each iteration's push the loop reads
+check state once; a failing check stops it with `ci red — <check names>` and names
+the handoff. It dispatches no `ci-auto-fix` and spends none of the per-PR handoff
+budget. Getting a PR both comment-clean *and* green is `review-loop`.
+
+Full loop, the poll call, parameters (`--max-iters`, `--interval`), the CI-state
+table, the per-iteration report, and watch-specific hard rules live in
 [`rules/watch-mode.md`](./rules/watch-mode.md).
 
 Inside each `--watch` iteration, after the per-iteration Phase 7 report:
@@ -544,6 +553,16 @@ If `gh` is missing in multi-PR mode, stop and tell the user to install it.
 Templates:
 
 - [`suggestion-pack.md`](./templates/suggestion-pack.md) — the per-PR pack written in Phase 5.
+
+## Relationship to other skills
+
+| Skill | Relationship |
+| --- | --- |
+| `ci-auto-fix` | **Owns red CI. This skill never fixes it.** The worker's pre-push checks (Phase 6) are local and gate the push; post-push check state is only ever read as a *stop reason* under `--watch`. No `ci-auto-fix` dispatch happens here, and none of its 2-handoff budget is spent. |
+| `review-loop` | **The composition point.** "Apply the review comments **and** get CI green" is `review-loop` (or `polish`), which sequences `pr-reviewer` → this skill → `polish simplify` → `ci-auto-fix`. Invoked standalone, this skill leaves red CI to the caller — deliberately. |
+| `review-loop --external-review` | Overlaps `--watch`: both wait on an out-of-process reviewer. `--watch` is the thin one (apply + push + stop). `review-loop --external-review` adds `--resolve-all`, `polish simplify`, the CI sub-step, and the description refresh. Both call the shared [review-activity poll](../../../agents/shared/rules/review-activity-poll.md). They never nest — `review-loop`'s hard rule forbids invoking this skill with `--watch`. |
+| `pr-reviewer` | Upstream producer of the findings this skill consumes; read-only, never invoked from here. |
+| `aw-planner` | Standard-lane plan author (Phase 6) when the pack proposes architectural moves. |
 
 ## Key Principles
 

@@ -28,11 +28,14 @@ resolve PR  →  baseline = HEAD sha + current UTC timestamp
 iter = 0
 while iter < max-iters:
     iter++
-    wait for new review activity (poll up to <interval>, see snippet below)
+    wait for new review activity (shared poll, up to <interval> — see below)
     if no NEW actionable comment since `baseline.timestamp` AND iter > 1:
         stop  → reason "reviewers quiet"
     run ONE standard single-pass (Phases 1–7) scoped to comments newer than baseline.timestamp
     baseline = new HEAD sha + new UTC timestamp        # so next round only sees fresh feedback
+    read CI state once (stateless, no watch)
+    if any check is failing:
+        stop  → reason "ci red — <check names>"        # report only; never fixes CI
     if the pass applied 0 changes AND surfaced 0:
         stop  → reason "nothing actionable left"
 stop  → reason "iteration cap (<max-iters>)"
@@ -64,73 +67,50 @@ changes the current iteration's gates.
 
 ## Waiting for new review activity
 
-Poll instead of sleeping the full interval — proceed as soon as a bot posts, so a fast reviewer doesn't cost a full 5 minutes. Run this as a single Bash call per wait step (internal loop, so it is not a bare `sleep`).
+Run the shared [review-activity poll](../../../../agents/shared/rules/review-activity-poll.md#the-poll).
+That file is the owner of the procedure — call it, never restate it. Issue its
+Bash call with the tool parameter `timeout: 600000`, and clamp `--interval` to
+540 as the parameter table above states.
 
-**Two bounds are required, and the second is the one that is easy to miss.** The Bash tool's timeout **defaults to 120 000 ms** and maxes at 600 000 ms, so a loop whose own `INTERVAL` exceeds 120 s is killed by the harness before its `NO_FEEDBACK` break can fire — the internal bound becomes dead code and the wait looks like a hang. Therefore:
+Map its [caller-neutral outcomes](../../../../agents/shared/rules/review-activity-poll.md#outcomes-caller-neutral)
+onto this loop:
 
-- **Issue this Bash call with the tool parameter `timeout: 600000`.**
-- **Clamp `--interval` to 540 seconds** (below the 600 s tool cap). Values above 540 are clamped silently, the same way `--max-iters` is clamped to 10.
+| Poll outcome | Watch mode does |
+| ------------ | --------------- |
+| `NEW_FEEDBACK` | Run the pass |
+| `NO_FEEDBACK` | On iteration 1, still run one pass (there may be feedback that predates the loop, e.g. a bot that reviewed before the watch started); on later iterations, stop with reason `reviewers quiet` |
+| `POLL_ERROR` | `gh` failed; report the stderr and escalate. **Never** treat a broken probe as an absence of feedback |
+
+The poll is a *liveness probe* (did anyone post?). The actual actionable/nit
+classification and filtering still happens in Phases 2–4 of the pass — the probe
+only decides whether to run a pass, not what to apply.
+
+## CI state is a stop reason, not a fix
+
+Watch mode **never fixes CI**. Fixing red CI belongs to `ci-auto-fix`, and
+composing the two belongs to [`review-loop`](../../../quality/review-loop/SKILL.md)
+— see [Relationship to other skills](../SKILL.md#relationship-to-other-skills).
+
+But continuing to apply comment after comment on a branch whose CI is already red
+wastes iterations and buries the real blocker under a pile of fix commits. So after
+each iteration's push, read the check state once — stateless, current head, no watch:
 
 ```bash
-# Issue this Bash call with the tool parameter timeout: 600000.
-PR_URL="<pr-url>"; SINCE="<baseline-timestamp>"; INTERVAL=300; POLL=30   # INTERVAL <= 540
-read OWNER REPO NUMBER < <(echo "$PR_URL" \
-  | sed -E 's|https://github.com/([^/]+)/([^/]+)/pull/([0-9]+).*|\1 \2 \3|')
-# DO NOT wrap this block in `bash -c '...'` when "harmonising" it with the poll
-# loops in registration-poll.md / ci-auto-fix. It contains single quotes in two
-# places (the trap below and the sed above); an enclosing bash -c '...' would be
-# terminated by either, silently breaking both. Those siblings avoid apostrophes
-# deliberately. This block is correct only as a bare fence, bounded by the tool
-# timeout plus the interval clamp.
-START=$(date +%s); ERR=$(mktemp); trap 'rm -f "$ERR"' EXIT INT TERM
-
-# A failing `gh api` prints nothing to stdout, so an unguarded $(...) yields "",
-# which arithmetic reads as 0 — indistinguishable from "no new comments". That
-# would report the reviewers quiet whenever gh is broken. Fail loudly instead.
-count() {                       # $1 = api path, $2 = timestamp field
-  local n
-  n=$(gh api "$1" --jq "[.[] | select(.$2 > \"$SINCE\")] | length" 2>"$ERR")
-  [ -s "$ERR" ] && return 1     # gh spoke on stderr = gh failed
-  case "$n" in ''|*[!0-9]*) return 1 ;; esac
-  printf %s "$n"
-}
-
-while :; do
-  NEW=$(count "/repos/$OWNER/$REPO/pulls/$NUMBER/comments" created_at)   || { echo "POLL_ERROR"; { [ -s "$ERR" ] && cat "$ERR" >&2 || echo "gh returned no usable count" >&2; }; break; }
-  NEW_REVIEWS=$(count "/repos/$OWNER/$REPO/pulls/$NUMBER/reviews" submitted_at) || { echo "POLL_ERROR"; { [ -s "$ERR" ] && cat "$ERR" >&2 || echo "gh returned no usable count" >&2; }; break; }
-  # updated_at, not created_at: a rewritten-in-place reviewer report is new feedback even
-  # though the comment itself is old. GitHub guarantees updated_at >= created_at, so this
-  # subsumes the created_at test. See "Edited reports count as feedback".
-  NEW_ISSUE=$(count "/repos/$OWNER/$REPO/issues/$NUMBER/comments" updated_at)   || { echo "POLL_ERROR"; { [ -s "$ERR" ] && cat "$ERR" >&2 || echo "gh returned no usable count" >&2; }; break; }
-  if [ $((NEW + NEW_REVIEWS + NEW_ISSUE)) -gt 0 ]; then echo "NEW_FEEDBACK"; break; fi
-  [ $(( $(date +%s) - START )) -ge $INTERVAL ] && { echo "NO_FEEDBACK"; break; }
-  sleep $POLL
-done
+gh pr checks <pr-number> --repo <owner>/<repo>
 ```
 
-- `NEW_FEEDBACK` → run the pass.
-- `POLL_ERROR` → **`gh` failed; this is not "reviewers quiet".** Report the stderr and escalate. Never treat a broken probe as an absence of feedback — that silently converts a tooling failure into "the bots had nothing to say".
-- `NO_FEEDBACK` → on iteration 1, still run one pass (there may be feedback that predates the loop, e.g. a bot that reviewed before the watch started); on later iterations, stop with reason "reviewers quiet".
+Classify the result exactly as [`phase-7-ci-gate.md` Step 1](../../../workflow/autonomous-workflow/rules/phase-7-ci-gate.md#step-1-identify-the-pr--initial-watch) does — "no checks reported" is three different states, and a bare `gh pr checks` **exits non-zero while merely pending**, printing to stdout, so non-zero with empty stderr means "registered and running", not an error.
 
-Note the `comments` / `reviews` / `issues` counts above are a *liveness probe* (did anyone post?). The actual actionable/nit classification and filtering still happens in Phases 2–4 of the pass — the probe only decides whether to run a pass, not what to apply.
+| Check state | Watch mode does |
+| ----------- | --------------- |
+| Green, or still pending | Continue the loop |
+| Any check failing | **Stop** with reason `ci red — <check names>`. Surface the failing checks in the report and name `ci-auto-fix` (or `review-loop`, which composes both) as the next step |
+| Query errored (exit 127, or stderr naming auth / network / rate limit) | Tooling failure, not "no CI". Report and escalate — the same rule as `POLL_ERROR` |
 
-### Edited reports count as feedback
-
-`pr-reviewer` keeps its report in a **sticky comment it rewrites in place** every run, and posts a
-review only when it has new inline findings or the verdict worsened (`pr-reviewer.md § Step 4b`).
-An edit moves `updated_at`, never `created_at`.
-
-A probe filtering on `created_at` alone therefore misses a re-review whose only new output is
-body-only — gate rows, optimality cards, deferred `Additional findings` — which is precisely the
-class this skill was extended to ingest (*Reviewer-report expansion* in
-[`comment-fetching.md`](./comment-fetching.md)). The loop would report `reviewers quiet` and stop
-with those findings unaddressed, and the stop reason would look like success. Hence the
-switch to `updated_at` above, which GitHub guarantees is `>= created_at` and so covers newly-created
-comments too.
-
-The cost is one extra pass when a human merely edits a typo in their own comment; Phases 2–4 then
-find nothing actionable and the loop stops with `nothing actionable left`. Stopping early on real
-feedback is the worse failure, so the probe errs toward running.
+This is **reporting, not fixing**: watch mode dispatches nothing, pushes no CI fix,
+and spends none of the `ci-auto-fix` handoff budget that
+[`create-pr` Step 9](../../../delivery/create-pr/SKILL.md) and `phase-7-ci-gate.md`
+own. It stops early and hands off cleanly.
 
 ## Report (watch mode)
 
@@ -150,7 +130,9 @@ Head commit: def5678
 Surfaced (needs you): <one line per surfaced comment across all iterations, or "none">
 ```
 
-`Stopped:` is one of: `reviewers quiet`, `nothing actionable left`, `iteration cap (<n>)`.
+`Stopped:` is one of: `reviewers quiet`, `nothing actionable left`, `ci red — <check names>`, `iteration cap (<n>)`, `poll error`.
+
+On a `ci red` stop, list the failing check names and name the handoff (`ci-auto-fix`, or `review-loop` which composes both) — the loop fixes no CI itself.
 
 ## Hard rules (in addition to the skill's global Hard Rules)
 
@@ -159,3 +141,4 @@ Surfaced (needs you): <one line per surfaced comment across all iterations, or "
 - **Never lower the confidence gate to "make progress".** A surfaced comment stays surfaced across every iteration.
 - **Never re-apply a comment already processed in an earlier iteration.** Advance the baseline timestamp after each pass.
 - **Never `--force` push.** Inherited; watch mode pushes fast-forward only.
+- **Never fix CI.** Watch mode reads check state to decide whether to *stop*; it dispatches no `ci-auto-fix`, pushes no CI fix, and spends none of the 2-handoff budget owned by `create-pr` Step 9 / `phase-7-ci-gate.md`.

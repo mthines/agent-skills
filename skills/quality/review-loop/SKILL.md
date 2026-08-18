@@ -9,15 +9,23 @@ description: >
   stay open). On convergence it also refreshes the PR description to match the
   shipped diff and, best-effort, notes the linked Linear ticket. Use after
   opening a draft PR to converge the branch to a clean, review-ready state
-  before undrafting. Callers: autonomous-workflow Phase 6/7, create-pr
-  (post-draft), and standalone via /review-changes. Invoke with
-  /review-loop <PR-URL|#n> [--cap N] [--critical] [--no-feedback] [--no-refresh].
+  before undrafting. Also converges CI: after each iteration's push it reads the
+  check state and delegates a red mechanical failure to ci-auto-fix, so
+  convergence means zero open threads AND green CI (--no-ci opts out; create-pr
+  and autonomous-workflow pass it because they own their own CI phase). With
+  --external-review the reviewer is out-of-process: sub-step A waits on the
+  shared review-activity poll for another agent's review instead of dispatching
+  pr-reviewer, which also makes the loop usable where the Task tool is disabled.
+  Callers: autonomous-workflow Phase 6/7, create-pr (post-draft), and standalone
+  via /review-changes. Invoke with /review-loop <PR-URL|#n> [--cap N]
+  [--critical] [--external-review] [--interval S] [--no-ci] [--no-feedback]
+  [--no-refresh].
 disable-model-invocation: false
-argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--no-feedback] [--no-refresh]'
+argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--external-review] [--interval S] [--no-ci] [--no-feedback] [--no-refresh]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.2.0'
+  version: '1.3.0'
   workflow_type: command
   tags:
     - review
@@ -27,6 +35,8 @@ metadata:
     - thread-resolution
     - pr
     - orchestrator
+    - ci
+    - external-review
 ---
 
 # review-loop — Bounded Review-Apply-Resolve Convergence
@@ -51,7 +61,13 @@ It sequences existing pieces, each owning its own domain:
 1. `pr-reviewer` — finds issues (read-only; posts one `COMMENT` review; on a re-review resolves its own addressed threads).
 2. `implement-suggestion --resolve-all` — applies actionable findings **and** replies-to-and-resolves the non-fix threads it can honestly close (single-shot, no `--watch`).
 3. `Skill("polish", "simplify")` — applies Class M mechanical refactors behind a confidence gate.
-4. On convergence — refreshes the PR description (via the shared description-contract) and, best-effort, notes the linked Linear ticket.
+4. `ci-auto-fix` — diagnoses and fixes a red check after the iteration's push (skipped under `--no-ci`).
+5. On convergence — refreshes the PR description (via the shared description-contract) and, best-effort, notes the linked Linear ticket.
+
+Under `--external-review`, step 1 is replaced by a **wait**: the reviewer is
+another process (a review bot, a CI-triggered agent, a teammate), and the loop
+polls for its output instead of producing its own. Steps 2–5 are unchanged —
+they consume threads from GitHub and do not care who wrote them.
 
 ### Dispatch mechanics — read before invoking
 
@@ -78,6 +94,23 @@ do **not** silently continue to sub-steps B and C — without a review pass ther
 no findings to apply, and running `polish simplify` alone would misreport an
 unreviewed PR as converged.
 
+**`--external-review` is the exception, and the graceful-degradation path.** In
+that mode the loop never dispatches `pr-reviewer`, so this precondition does not
+apply and **must not** fire: the review comes from another process that has
+already written to GitHub. A harness with `Task` disabled can therefore still run
+the loop — suggest `--external-review` in the skip line rather than presenting the
+skip as the only outcome:
+
+```markdown
+- [TIMESTAMP] review-loop — skipped (sub-agent dispatch unavailable; pr-reviewer requires it). Re-run with --external-review if another agent reviews this PR.
+```
+
+One caveat to state plainly: sub-step B (`implement-suggestion`) dispatches a
+**worker** subagent of its own, which also wants `Task`. Its documented inline
+fallback (apply commit-per-comment, push, reply-and-resolve yourself) covers that
+case — see the paragraph below. `--external-review` removes the `pr-reviewer`
+dependency, not every sub-agent dependency.
+
 The check is best-effort, not certain: there is no capability-introspection API, and
 a refused dispatch may surface as an uncatchable harness error. Its value is
 **placement** — one clean logged deviation at Step 0 instead of a mid-Phase-6 error
@@ -101,6 +134,16 @@ Everything else is a flag.
 | `--critical` | Pass `--critical` to each `pr-reviewer` call (adversarial pre-mortem). |
 | `--no-feedback` | Report-only. Forces `CAP=1` and skips sub-steps B, C, and the final refresh, so `pr-reviewer` runs once and its findings are reported without being applied, resolved, or pushed. |
 | `--no-refresh` | Run the convergence loop as normal but skip the final PR-description refresh and Linear note. |
+| `--external-review` | Replace sub-step A: wait for an **out-of-process** reviewer instead of dispatching `pr-reviewer`. See [Sub-step A — external-review mode](#sub-step-a--external-review-mode). |
+| `--interval S` | Poll interval in seconds for `--external-review`, default `300`, **clamped to `540`**. Ignored without `--external-review`. |
+| `--no-ci` | Skip sub-step D (the CI pass). Callers that own their own CI phase pass this — `create-pr` (Steps 7–9) and `autonomous-workflow` (Phase 7) both do. |
+
+**Incompatible combinations**, refused or downgraded at Step 0:
+
+| Combination | Behaviour |
+| --- | --- |
+| `--external-review` + `--no-feedback` | **Refuse.** `--no-feedback` means "run `pr-reviewer` once and report"; with no `pr-reviewer` there is nothing to report. Print `--no-feedback needs pr-reviewer; drop --external-review or drop --no-feedback.` and exit. |
+| `--external-review` + `--critical` | **Warn and ignore.** `--critical` only ever fed `pr-reviewer`. Print one line noting it was ignored, then continue — callers pass it by habit and it must not abort the run. |
 
 ## Procedure
 
@@ -129,6 +172,9 @@ the `pr-reviewer` agent, which has no non-`Task` substitute (see
 [Dispatch mechanics](#dispatch-mechanics--read-before-invoking)). Before entering the
 loop, check whether `Task` appears in your available tools; if it plainly does not,
 emit the skip line from that section and return, without running sub-steps B or C.
+
+**Skip this precondition entirely when `--external-review` is set** — that mode
+dispatches no `pr-reviewer`, so a missing `Task` tool is not disqualifying.
 
 **This check cannot be made certain**, and the contract does not pretend otherwise:
 there is no capability-introspection API, and on some harnesses a refused dispatch
@@ -161,6 +207,27 @@ if [[ " $ARGUMENTS " == *" --no-refresh "* ]]; then
   NO_REFRESH=1
 fi
 
+# --external-review: sub-step A waits for an out-of-process reviewer.
+EXTERNAL_REVIEW=0
+if [[ " $ARGUMENTS " == *" --external-review "* ]]; then
+  EXTERNAL_REVIEW=1
+fi
+
+# --interval S: poll interval for --external-review. Clamp to 540 (below the
+# 600 s Bash tool cap) exactly as watch-mode does; values above are clamped
+# silently.
+INTERVAL=300
+if [[ " $ARGUMENTS " =~ [[:space:]]--interval[[:space:]=]+([0-9]+) ]]; then
+  INTERVAL="${BASH_REMATCH[1]}"
+fi
+[ "$INTERVAL" -gt 540 ] && INTERVAL=540
+
+# --no-ci: skip sub-step D. Callers owning their own CI phase pass this.
+NO_CI=0
+if [[ " $ARGUMENTS " == *" --no-ci "* ]]; then
+  NO_CI=1
+fi
+
 CAP=${cap_flag:-5}
 ITERATION=0
 
@@ -170,7 +237,26 @@ if [[ " $ARGUMENTS " == *" --no-feedback "* ]]; then
   CAP=1
   NO_REFRESH=1
 fi
+
+# Refuse the one combination that cannot mean anything: report-only needs a
+# reviewer to report, and --external-review removes the only one this loop owns.
+if [ "$EXTERNAL_REVIEW" -eq 1 ] && [ "$NO_FEEDBACK" -eq 1 ]; then
+  echo "--no-feedback needs pr-reviewer; drop --external-review or drop --no-feedback."
+  exit 1
+fi
+
+# --critical only ever fed pr-reviewer. Warn, do not abort — callers pass it by habit.
+if [ "$EXTERNAL_REVIEW" -eq 1 ] && [ "$CRITICAL" -eq 1 ]; then
+  echo "note: --critical ignored under --external-review (it only configures pr-reviewer)."
+  CRITICAL=0
+fi
 ```
+
+> **Naming.** `NO_FEEDBACK` here is the **report-only mode flag** (`--no-feedback`).
+> The shared review-activity poll emits an outcome string also spelled
+> `NO_FEEDBACK`, meaning "no new review activity this interval". They are
+> unrelated. Sub-step A below reads the poll's result into `POLL_RESULT`
+> (`new` / `quiet` / `error`) and never into this variable.
 
 A helper for the exit check — the count of **unresolved** review threads:
 
@@ -190,10 +276,11 @@ unresolved_thread_count() {
 
 ### Step 1: Loop — review → apply+resolve → simplify
 
-Each iteration runs three sub-steps.
-The loop exits when **every review thread is resolved** (`unresolved_thread_count == 0`),
-when an iteration makes **no progress** (the only threads left are ones nothing can
-resolve — human-judgment flags), or at the cap.
+Each iteration runs up to four sub-steps.
+The loop exits when **every review thread is resolved** (`unresolved_thread_count == 0`)
+**and CI is settled** (green, pending, or absent — never red), when an iteration makes
+**no progress** (the only threads left are ones nothing can resolve — human-judgment
+flags), or at the cap.
 
 When `NO_FEEDBACK == 1`, only sub-step A runs: sub-steps B and C are skipped, the
 push and the refresh are skipped, and the run reports the findings without applying
@@ -201,6 +288,8 @@ anything.
 
 ```text
 APPLIED_TOTAL = 0
+CI_HANDOFFS   = 0
+CI_STATE      = "unread"     # no check state observed yet this run
 while ITERATION < CAP:
     ITERATION += 1
 
@@ -208,17 +297,30 @@ while ITERATION < CAP:
     # loop always ENDS on a review pass that validates the previous iteration's
     # fixes and resolves this agent's now-addressed threads. This is the
     # "last review just resolves comments and makes no changes" convergence pass.
-    review = Task(subagent_type="pr-reviewer",
-                  prompt="<PR-URL>" + (" --critical" if CRITICAL == 1 else ""))
-    # pr-reviewer is an AGENT — dispatch via the Task tool, NOT Skill("pr-reviewer").
-    # On a re-review, pr-reviewer resolves its own addressed threads (thread-resolution.md).
+    if EXTERNAL_REVIEW == 0:
+        review = Task(subagent_type="pr-reviewer",
+                      prompt="<PR-URL>" + (" --critical" if CRITICAL == 1 else ""))
+        # pr-reviewer is an AGENT — dispatch via Task, NOT Skill("pr-reviewer").
+        # On a re-review it resolves its own addressed threads (thread-resolution.md).
+        NEW_FINDINGS = (pr-reviewer reported new actionable findings)
+    else:
+        POLL_RESULT = shared review-activity poll, bounded by INTERVAL   # new | quiet | error
+        if POLL_RESULT == "error":
+            abort → stop reason "poll error"      # a broken probe is NEVER "quiet"
+        if POLL_RESULT == "quiet" and ITERATION > 1:
+            NEW_FINDINGS = false                  # reviewer silent → fall to the exit below
+        else:
+            NEW_FINDINGS = true                   # iter 1 always runs a pass
 
     if NO_FEEDBACK == 1:
         break   # report-only: never apply, never resolve, never simplify, never push
 
     # CLEAN CONVERGENCE EXIT — the only exit that means "done":
-    if pr-reviewer found no new actionable findings AND unresolved_thread_count() == 0:
-        break   # every thread resolved (fix or reply) and nothing new to fix
+    # ci_is_settled() reads check state on demand when CI_STATE is still "unread"
+    # (iteration 1 can reach this exit before sub-step D has ever run), so the
+    # loop can never converge on a build it has not looked at.
+    if NEW_FINDINGS == false AND unresolved_thread_count() == 0 AND ci_is_settled():
+        break   # every thread resolved (fix or reply), nothing new to fix, CI not red
 
     unresolved_before = unresolved_thread_count()
 
@@ -239,17 +341,115 @@ while ITERATION < CAP:
     push any local changes:
     git push
 
+    # Sub-step D: CI. Read check state at the CURRENT REMOTE HEAD, then delegate
+    # a red mechanical failure to ci-auto-fix. Skipped under --no-ci.
+    if NO_CI == 0:
+        CI_STATE = read check state (stateless query, no watch)   # green|pending|red|error
+        if CI_STATE == "red" and CI_HANDOFFS < 2:
+            dispatch ci-auto-fix as a subagent; CI_HANDOFFS += 1
+
     # No-progress guard: nothing was applied or answered AND the open-thread
     # count did not drop → the remaining threads are human-judgment flags the
     # loop cannot resolve. Stop early rather than spinning to the cap. (The clean
     # convergence exit above stays the normal path — it runs one more review pass
     # to validate before declaring done.)
-    if this iteration applied 0, answered 0, and unresolved_thread_count() >= unresolved_before:
+    # CI is deliberately part of "progress": a red-CI iteration that fixed nothing
+    # else still made progress if ci-auto-fix pushed, so the loop gets to re-review.
+    if this iteration applied 0, answered 0, dispatched no ci-auto-fix,
+       and unresolved_thread_count() >= unresolved_before:
         break
 
-if ITERATION == CAP and unresolved_thread_count() > 0:
-    report: cap reached, threads still open, surface the remaining blockers/flags
+if ITERATION == CAP and (unresolved_thread_count() > 0 or CI_STATE == "red"):   # CI_STATE is "unread" when --no-ci
+    report: cap reached; surface remaining blockers/flags AND any red check
 ```
+
+### Sub-step A — external-review mode
+
+Under `--external-review` the loop produces no review of its own. It waits for one.
+
+Run the shared [review-activity poll](../../../agents/shared/rules/review-activity-poll.md#the-poll)
+with `SINCE` = the current baseline and `INTERVAL` as parsed at Step 0. That file
+owns the procedure — call it, never restate it. Issue its Bash call with the tool
+parameter `timeout: 600000`; the `--interval` clamp to 540 at Step 0 is what keeps
+the loop's own bound reachable underneath it.
+
+Map its [caller-neutral outcomes](../../../agents/shared/rules/review-activity-poll.md#outcomes-caller-neutral)
+into `POLL_RESULT`:
+
+| Poll outcome | `POLL_RESULT` | This loop does |
+| --- | --- | --- |
+| `NEW_FEEDBACK` | `new` | Run the iteration (sub-steps B, C, D) |
+| `NO_FEEDBACK` | `quiet` | **Iteration 1:** run a pass anyway — the external reviewer may have reviewed before the loop started, and exiting here would converge a PR having done nothing. **Later iterations:** the reviewer is quiet; fall through to the convergence exit |
+| `POLL_ERROR` | `error` | **Abort** with stop reason `poll error`. Report the stderr. A broken probe is never "the reviewer had nothing to say" — treating it as quiet would report a never-reviewed PR as converged |
+
+**Advance the baseline after every pass**, exactly as the shared rule requires: set
+`SINCE` to "now" once sub-steps B–D complete, so the next wait sees only what the
+reviewer posted in response to the latest push. Leaving `SINCE` at its original
+value re-reports the same review forever and the loop never reaches `quiet`.
+
+What this mode does **not** change: sub-steps B, C, and D are byte-identical. They
+read threads from GitHub and neither know nor care which process authored them.
+`unresolved_thread_count()` is the same query, and the no-green-wash safety valve
+is untouched — a live finding the agent cannot fix or honestly decline still stays
+open, whoever raised it.
+
+There is **no verdict** in this mode. `pr-reviewer`'s `PASS`/`FAIL` has no source
+here, so the report prints `n/a (external review)` rather than inventing one.
+
+### Sub-step D — CI
+
+Skipped entirely when `--no-ci` is set.
+
+After the iteration's push, read the check state **once** — stateless, at the
+current remote head, no watch:
+
+```bash
+gh pr checks "$PR_NUMBER" --repo "$RESOLVED_REPO"
+```
+
+This is a **query, not a watch**: it adds no `gh … --watch` site and spends nothing
+from the `.agent/ci-watch-<pr>.state` budget that
+[`create-pr` Step 9](../../delivery/create-pr/SKILL.md) and
+[`phase-7-ci-gate.md`](../../workflow/autonomous-workflow/rules/phase-7-ci-gate.md)
+own as its single writer. `ci-auto-fix` keeps its own local counter and treats that
+state file as informational, so delegating to it stays inside the existing contract.
+
+Classify with the same three-way rule as `phase-7-ci-gate.md` Step 1 — **"no checks
+reported" is three different states**, and a bare `gh pr checks` **exits non-zero
+while merely pending**, printing to stdout, so non-zero with empty stderr means
+"registered and running", not an error:
+
+| Check state | `CI_STATE` | This loop does |
+| --- | --- | --- |
+| All terminal and passing | `green` | Nothing. Convergence may proceed |
+| Any still pending | `pending` | Nothing this iteration — do **not** wait. The next iteration re-reads it; the cap bounds the wait |
+| Any check failing | `red` | Dispatch `ci-auto-fix` as a subagent (its output is loud and belongs out of this context), unless `CI_HANDOFFS` is already 2 |
+| Query errored (exit 127, or stderr naming auth / network / rate limit / not-logged-in) | `error` | **Tooling failure, not "no CI".** Report and escalate. Never route to `ci-auto-fix` |
+| Nothing reported, query succeeded, and this iteration just pushed | — | Not registered yet. Run the shared [registration poll](../../delivery/create-pr/rules/registration-poll.md#the-poll) and re-classify from its outcome; `no-ci` means this repo genuinely has no CI, and counts as `green` for convergence |
+
+```text
+ci_is_settled():   # the convergence predicate
+    NO_CI == 1                      → true    # caller owns CI; not this loop's call
+    CI_STATE == "unread"            → read check state now, then re-evaluate
+    CI_STATE in (green, pending)    → true    # pending is not red; the cap bounds it
+    CI_STATE == red                 → false
+    CI_STATE == error               → abort, do not converge
+```
+
+The `"unread"` arm matters: iteration 1 can reach the convergence exit before
+sub-step D has run even once (a PR that arrives already reviewed and thread-clean).
+Without that arm the loop would report convergence having never looked at CI —
+the precise failure this sub-step exists to prevent.
+
+**Cap: 2 `ci-auto-fix` handoffs per `review-loop` run** (`CI_HANDOFFS`), matching the
+per-PR cap the other two orchestrators use. Each handoff already burns a full internal
+retry budget; do not wrap it in another loop. At the cap with CI still red, stop and
+surface the failing checks — never extend it, and never converge a red PR silently.
+
+**This loop never fixes CI itself.** It classifies and delegates. Every refusal in
+[`ci-auto-fix`'s anti-patterns](../../delivery/ci-auto-fix/rules/anti-patterns.md)
+holds transitively: no `--no-verify`, no `continue-on-error`, no skipped suites, no
+weakened assertions to reach green.
 
 **Hard rule: the only permitted `polish` invocation is `Skill("polish", "simplify")`.**
 The `simplify` mode applies Class M mechanical refactors and dispatches no pr-reviewer.
@@ -292,7 +492,8 @@ After the loop exits (converged, no-progress, or at cap), emit a compact summary
 review-loop on PR #<n> (<RESOLVED_REPO>)
 
 Iterations: <N> of <CAP>
-Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable)>
+Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | ci-red (cap on ci-auto-fix handoffs) | poll error | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable)>
+Review source: <pr-reviewer | external (<N> review events observed)>
 
 Per-iteration summary:
   Iteration 1: <verdict>, <N findings>, <M applied>, <A answered/resolved>, <K simplify recipes>, <U threads still open>
@@ -301,16 +502,23 @@ Per-iteration summary:
 Open threads at exit: <count>
   - <one line per still-open human-judgment flag / unresolved blocker>
 
+CI at exit: <green | pending | red (<failing check names>) | not run (--no-ci) | none on this repo>
+  ci-auto-fix handoffs: <CI_HANDOFFS> of 2
+
 PR description: <refreshed | unchanged (no code applied) | skipped (--no-refresh)>
 Linear note: <posted <ticket> | no ticket linked | Linear MCP unavailable | skipped>
 
-Final pr-reviewer verdict: <PASS | FAIL>
+Final pr-reviewer verdict: <PASS | FAIL | n/a (external review)>
 Head commit: <sha>
 ```
 
 Surface remaining open threads prominently if the cap was reached or the
 no-progress guard tripped. Do not silently drop them — an open thread at exit is
 a human-judgment flag the user must resolve.
+
+**A red check at exit gets the same treatment.** Name the failing checks and say
+the loop stopped with CI red. Never describe such a run as converged — zero open
+threads over a red build is not a review-ready PR.
 
 ## Hard rules
 
@@ -320,6 +528,11 @@ a human-judgment flag the user must resolve.
 - **Never undraft the PR.** This skill converges; the user makes the final undraft decision.
 - **One `implement-suggestion` per iteration, no `--watch`.** The loop drives re-review; `--watch` waits for external bots and would conflict.
 - **Cap is a hard limit.** If threads are still open at the cap, surface them and stop. Do not extend the cap silently.
+- **Convergence requires CI settled, not just threads resolved.** Unless `--no-ci` is set, a red check blocks the clean-convergence exit. Reporting zero open threads over a red build is the CI-shaped version of green-washing.
+- **Never fix CI in this context.** Sub-step D classifies and delegates to `ci-auto-fix`; it applies no fix itself, and every `ci-auto-fix` refusal (no `--no-verify`, no `continue-on-error`, no skipped suites, no weakened assertions) holds transitively.
+- **Never write the CI-watch state file.** `.agent/ci-watch-<pr>.state` has a single writer — the dispatching orchestrator (`create-pr` Step 9 / `phase-7-ci-gate.md`). Sub-step D queries check state statelessly and writes nothing.
+- **A failed poll is never a quiet reviewer.** Under `--external-review`, `POLL_ERROR` aborts with `poll error`. Converting a broken probe into "the reviewer had nothing to say" reports a never-reviewed PR as converged.
+- **Never restate the shared poll.** `--external-review` calls [`review-activity-poll.md`](../../../agents/shared/rules/review-activity-poll.md); copying the block forks four correctness properties that are individually easy to drop.
 
 ## Relationship to other skills
 
@@ -333,3 +546,6 @@ a human-judgment flag the user must resolve.
 | `create-pr` | Upstream caller — delegates post-draft review to `review-loop` after opening the draft PR. |
 | `autonomous-workflow` Phase 6/7 | Invokes `review-loop` in place of the retired `reviewer` agent dispatches. |
 | `review-changes` | Routes to `review-loop` as the primary convergence entry point. |
+| `ci-auto-fix` | Sub-step D: dispatched as a subagent on a red check, capped at 2 handoffs per run. Owns the fix; this loop only classifies and delegates. Skipped under `--no-ci`. |
+| `review-activity-poll` | Shared rule owning the `--external-review` wait — [`agents/shared/rules/review-activity-poll.md`](../../../agents/shared/rules/review-activity-poll.md), co-owned with `implement-suggestion --watch`. |
+| `implement-suggestion --watch` | **Sibling, never nested.** Both wait on an out-of-process reviewer via the shared poll; `--watch` is the thin one (apply + push + stop, and it reads CI only as a stop reason). This loop adds `--resolve-all`, simplify, CI delegation, and the description refresh. The hard rule *one `implement-suggestion` per iteration, no `--watch`* keeps them from stacking. |
