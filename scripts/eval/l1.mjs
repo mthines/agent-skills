@@ -1710,18 +1710,33 @@ function checksInSync(plan, checks) {
 
     // (f) The workflow and its caller template must reference the validator and each other, or the
     // guard is unreachable from a consuming repo.
-    const wf = readFileSync(join(REPO_ROOT, ".github/workflows/reviewer-report-shape.yml"), "utf8");
-    s.check("G26 the reusable workflow runs the validator",
-      wf.includes("scripts/validate-report-shape.mjs") && wf.includes("workflow_call"));
-    s.check("G26 the workflow reads bodies via env, never string-interpolated into shell",
-      /REVIEW_BODY: \$\{\{ github\.event\.review\.body \}\}/.test(wf) &&
-      !/run:[\s\S]{0,400}\$\{\{ github\.event\.review\.body \}\}/.test(wf));
-    s.check("G26 the workflow posts one sticky notice, keyed by a marker",
-      wf.includes("PR_REVIEWER_SHAPE_GUARD") && wf.includes("-X PATCH"));
-    const caller = readFileSync(join(REPO_ROOT,
-      "plugins/pr-reviewer-shape-guard/templates/report-shape-caller.yml"), "utf8");
-    s.check("G26 the caller template targets the reusable workflow",
-      caller.includes("mthines/agent-skills/.github/workflows/reviewer-report-shape.yml@main"));
+    // Every read here is guarded: an unguarded readFileSync throws and takes down all of L1, so a
+    // deleted workflow would be reported as a total run failure instead of one named missing file.
+    const readGuarded = (rel) => {
+      const p = join(REPO_ROOT, rel);
+      const present = existsSync(p);
+      s.check(`G26 ${rel} present`, present);
+      return present ? readFileSync(p, "utf8") : "";
+    };
+    const wf = readGuarded(".github/workflows/reviewer-report-shape.yml");
+    if (wf) {
+      s.check("G26 the reusable workflow runs the validator",
+        wf.includes("scripts/validate-report-shape.mjs") && wf.includes("workflow_call"));
+      s.check("G26 the workflow reads bodies via env, never string-interpolated into shell",
+        /REVIEW_BODY: \$\{\{ github\.event\.review\.body \}\}/.test(wf) &&
+        !/run:[\s\S]{0,400}\$\{\{ github\.event\.review\.body \}\}/.test(wf));
+      s.check("G26 the workflow posts one sticky notice, keyed by a marker",
+        wf.includes("PR_REVIEWER_SHAPE_GUARD") && wf.includes("-X PATCH"));
+    }
+    const caller = readGuarded("plugins/pr-reviewer-shape-guard/templates/report-shape-caller.yml");
+    if (caller) {
+      s.check("G26 the caller template targets the reusable workflow",
+        caller.includes("mthines/agent-skills/.github/workflows/reviewer-report-shape.yml@main"));
+      // The caller must grant at least what the reusable workflow requests, or the run fails on a
+      // repo whose default token is read-only.
+      s.check("G26 the caller template declares the permissions the reusable workflow needs",
+        /permissions:\s*\n\s*contents: read\s*\n\s*pull-requests: write/.test(caller));
+    }
   }
 
   // G24c: the three Gate-3 failure modes are registered in the diagnostic surface, so a
