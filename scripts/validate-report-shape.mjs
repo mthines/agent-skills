@@ -107,11 +107,15 @@ export function validate(body) {
   }
 
   if (kind === "report-unmarked") {
-    add("missing-report-marker", `body carries report sections but no ${REPORT_MARKER}`);
+    // Describe the marker, never emit it verbatim. The workflow renders these details into its
+    // notice comment, and a notice quoting `<!-- PR_REVIEWER_REPORT -->` classifies as a report
+    // itself — so the guard's own output failed the guard when re-validated.
+    add("missing-report-marker", "body carries report sections but no PR_REVIEWER_REPORT marker comment");
   }
   if (kind === "report-mismarked-as-pointer") {
-    add("report-marked-as-pointer", `a full report body carries ${POINTER_MARKER}, so a later run's`
-      + ` prior-run detection will recover it as a pointer and read the report as absent`);
+    add("report-marked-as-pointer", "a full report body carries the PR_REVIEWER_POINTER marker"
+      + " comment, so a later run's prior-run detection will recover it as a pointer and read the"
+      + " report as absent");
   }
 
   // ── the accordion ────────────────────────────────────────────────────────────────────────────

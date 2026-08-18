@@ -1660,6 +1660,24 @@ function checksInSync(plan, checks) {
         `exit ${r.status}, codes: ${(r.verdict?.violations || []).map((v) => v.code).join(", ")}`);
     }
 
+    // (b6) The guard's own notice must not trip the guard. The workflow renders every violation
+    // `detail` into its sticky notice, so a detail quoting a marker verbatim made that notice
+    // classify as a malformed report when re-validated — the guard failing itself.
+    {
+      const flat = "Reviewed your changes.\n\n| Gate | Status | Details |\n|---|---|---|\n| Code review | OK | x |\n";
+      const r = run(flat);
+      const details = (r.verdict?.violations || []).map((v) => v.detail).join("\n");
+      const notice = ["<!-- PR_REVIEWER_SHAPE_GUARD -->",
+        "\u26a0\ufe0f **The last `pr-reviewer` body does not match the report shape contract.**", "",
+        ...(r.verdict?.violations || []).map((v) => `- \`${v.code}\` \u2014 ${v.detail}`), ""].join("\n");
+      const back = run(notice);
+      s.check("G26 no violation detail emits a marker verbatim",
+        !/<!--\s*PR_REVIEWER_(REPORT|POINTER)\s*-->/.test(details), details.slice(0, 120));
+      s.check("G26 the guard's own notice is not itself a reviewer body",
+        back.status === 0 && back.verdict?.kind === "not-a-reviewer-body",
+        `kind ${back.verdict?.kind}, exit ${back.status}`);
+    }
+
     // (c) Non-reviewer bodies are ignored, so the guard never fires on ordinary PR chatter.
     for (const [why, body] of [
       ["a plain human comment", "LGTM, nice work on the caching layer."],
