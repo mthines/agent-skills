@@ -1,0 +1,145 @@
+# Reusable workflow: validate a POSTED pr-reviewer body against the shape contract.
+#
+# This is the only check on this contract that runs outside the agent. L1 validates the repository,
+# render-report.mjs fails closed only when it is invoked, and the Step 4a pre-write assertions are
+# prose in the file a drifting run has already skipped. A run that hand-writes the body is invisible
+# to all three — observed on mthines/lorekit#503, where the same definition produced the correct
+# shape three times and a flat, marker-less body on the fourth run 24 minutes later.
+#
+# Behaviour: read-only on the reviewer's own objects. It never edits or deletes a report. On a
+# violation it posts (or rewrites) ONE sticky notice comment, so a repeatedly-drifting run leaves one
+# comment rather than a thread per run. On the next conforming post it rewrites that notice to say so
+# rather than deleting it, keeping the record that drift happened.
+#
+# Callers: copy plugins/pr-reviewer-shape-guard/templates/report-shape-caller.yml into your repo.
+
+name: Reviewer report shape
+
+on:
+  workflow_call:
+    inputs:
+      reviewer-logins:
+        description: >
+          Comma-separated logins whose posts are checked. Leave empty to check every body that
+          looks like a pr-reviewer report — which is the safer default, because a drifting run may
+          post under an unexpected identity.
+        required: false
+        type: string
+        default: ""
+      fail-the-check:
+        description: >
+          When true the job exits non-zero on a violation, so the guard can gate a branch. Default
+          false: the notice comment is the signal, and a malformed report should not block a PR whose
+          code may be fine.
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the validator
+        uses: actions/checkout@v4
+        with:
+          repository: mthines/agent-skills
+          ref: main
+          sparse-checkout: scripts/validate-report-shape.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Resolve the posted body
+        id: body
+        env:
+          # Written via the environment, never interpolated into the script: a review body is
+          # attacker-controlled text and `${{ }}` inside a run block would splice it into shell.
+          EVENT_NAME: ${{ github.event_name }}
+          REVIEW_BODY: ${{ github.event.review.body }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          REVIEW_AUTHOR: ${{ github.event.review.user.login }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          ALLOWED: ${{ inputs.reviewer-logins }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request_review" ]; then
+            printf '%s' "$REVIEW_BODY" > body.txt; AUTHOR="$REVIEW_AUTHOR"
+          else
+            printf '%s' "$COMMENT_BODY" > body.txt; AUTHOR="$COMMENT_AUTHOR"
+          fi
+          echo "author=$AUTHOR" >> "$GITHUB_OUTPUT"
+          if [ -n "${ALLOWED:-}" ] && ! printf '%s' ",$ALLOWED," | grep -qF ",$AUTHOR,"; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "author $AUTHOR not in reviewer-logins — skipping"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate the shape
+        if: steps.body.outputs.skip == 'false'
+        id: validate
+        run: |
+          set +e
+          node scripts/validate-report-shape.mjs body.txt > verdict.json 2> summary.txt
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+          set -e
+          cat summary.txt
+          {
+            echo "### Reviewer report shape"
+            echo
+            sed 's/^/    /' summary.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report the verdict on the PR
+        if: steps.body.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          AUTHOR: ${{ steps.body.outputs.author }}
+          EXIT: ${{ steps.validate.outputs.exit }}
+        run: |
+          set -euo pipefail
+          MARKER="<!-- PR_REVIEWER_SHAPE_GUARD -->"
+          KIND=$(node -e 'process.stdout.write(require("./verdict.json").kind)')
+          [ "$KIND" = "not-a-reviewer-body" ] && { echo "not a reviewer body — nothing to report"; exit 0; }
+
+          EXISTING=$(gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments" --paginate \
+            --jq "[.[] | select((.body // \"\") | contains(\"$MARKER\"))] | last // empty" \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(s).id))}catch{process.stdout.write("")}})')
+
+          if [ "$EXIT" = "0" ]; then
+            [ -z "$EXISTING" ] && { echo "conforms, no prior notice — nothing to post"; exit 0; }
+            { echo "$MARKER"; echo "✅ The latest \`pr-reviewer\` body from \`$AUTHOR\` conforms to the report shape contract ($KIND)."; } > note.md
+          else
+            { echo "$MARKER"
+              echo "⚠️ **The last \`pr-reviewer\` body from \`$AUTHOR\` does not match the report shape contract.**"
+              echo
+              echo "Classified \`$KIND\`. The report was not produced by \`render-report.mjs\`, or was edited after it was:"
+              echo
+              node -e 'for (const v of require("./verdict.json").violations) console.log(`- \`${v.code}\` — ${v.detail}`)'
+              echo
+              echo "This does not mean the review's findings are wrong — only that the body is malformed,"
+              echo "so consumers that parse it (\`implement-suggestion\`, the reviewer's own carry-forward)"
+              echo "will read it incompletely. Contract:"
+              echo "[\`agents/pr-reviewer.md § REPORT_BODY format\`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md)."
+            } > note.md
+          fi
+
+          if [ -n "$EXISTING" ]; then
+            gh api -X PATCH "repos/$GH_REPO/issues/comments/$EXISTING" -F body=@note.md >/dev/null
+            echo "updated notice $EXISTING"
+          else
+            gh api -X POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" -F body=@note.md >/dev/null
+            echo "posted notice"
+          fi
+
+      - name: Fail the check when asked
+        if: steps.body.outputs.skip == 'false' && inputs.fail-the-check && steps.validate.outputs.exit != '0'
+        run: exit 1

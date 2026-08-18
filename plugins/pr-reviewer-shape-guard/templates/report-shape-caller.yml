@@ -1,0 +1,41 @@
+# pr-reviewer report shape guard — caller workflow
+#
+# Copy this file to:
+#   YOUR_REPO/.github/workflows/reviewer-report-shape.yml
+#
+# No secrets required. That is the entire setup.
+#
+# What this does:
+#   Every time pr-reviewer posts a review or a comment, this checks the POSTED body against the
+#   report shape contract — marker present, `Review details` accordion present and collapsed,
+#   nothing the accordion owns rendered above it, no advisory verdict, no link caged in a code
+#   span, and every declared count equal to the list it counts.
+#
+#   On a violation it leaves ONE sticky notice on the PR naming exactly what is malformed. It never
+#   edits or deletes the report itself.
+#
+# Why you want it: every other guard on this contract runs inside the agent's own control flow, so a
+# run that hand-writes the body is unobserved. This is the only check that sees what was published.
+#
+# See: https://github.com/mthines/agent-skills/blob/main/plugins/pr-reviewer-shape-guard/README.md
+
+name: Reviewer report shape
+
+on:
+  pull_request_review:
+    types: [submitted, edited]
+  issue_comment:
+    types: [created, edited]
+
+jobs:
+  shape:
+    # issue_comment fires on plain issues too; PR-only, and skip humans' own comments cheaply.
+    if: github.event_name == 'pull_request_review' || github.event.issue.pull_request
+    uses: mthines/agent-skills/.github/workflows/reviewer-report-shape.yml@main
+    with:
+      # Leave empty to check every body that looks like a pr-reviewer report. Set it to your
+      # reviewer's login(s) to narrow — but note a drifting run may post under an unexpected
+      # identity, which is exactly the case you want caught.
+      reviewer-logins: ""
+      # Set true only if you want a malformed report to fail a required check.
+      fail-the-check: false
