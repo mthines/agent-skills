@@ -117,9 +117,14 @@ export function validate(body) {
     add("accordion-pre-expanded", "a <details> block carries `open`, so it renders expanded");
   }
 
-  // ── nothing the accordion owns may sit above the first <details> ──────────────────────────────
-  const firstDetails = body.indexOf("<details>");
-  const head = firstDetails === -1 ? body : body.slice(0, firstDetails);
+  // ── nothing the accordion owns may sit above the `Review details` accordion ───────────────────
+  // Anchor on the accordion itself, never on `body.indexOf("<details>")`. A report may legitimately
+  // carry an earlier, unrelated <details> block (an `Additional findings` fold, for one), and
+  // slicing at that one truncates the head before the flattened lines, so the flat body this check
+  // exists to catch would sail through. When there is no accordion the whole body is the head.
+  const head = accordionAt === -1
+    ? body
+    : lines.slice(0, accordionAt).join("\n");
   for (const owned of ACCORDION_OWNED) {
     if (head.includes(owned)) {
       add("accordion-owned-line-at-top-level", `\`${owned}\` renders above the accordion`);

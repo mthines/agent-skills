@@ -1662,6 +1662,12 @@ function checksInSync(plan, checks) {
       ["a caged markdown link",
         good.replace(/^- (\[[^\]]*\]\([^)]*\))/m, "- ``$1``"), "link-caged-in-code-span"],
       ["a count disagreeing with its list", good.replace("**Open bot threads (2)**", "**Open bot threads (5)**"), "count-disagrees-with-list"],
+      // The head slice must anchor on the `Review details` accordion, not on the first <details>.
+      // A flat body preceded by an unrelated fold sliced the head to nothing and reported clean.
+      ["a flat body preceded by an unrelated <details> fold",
+        "Reviewed your changes.\n\n<details>\n<summary>Additional findings</summary>\n\n- a\n\n</details>\n\n"
+        + "| Gate | Status | Details |\n|---|---|---|\n| Code review | \u2705 | fine |\n\n**Run mode** \u2014 full\n",
+        "accordion-owned-line-at-top-level"],
     ];
     for (const [why, body, code] of CASES) {
       const r = run(body);
