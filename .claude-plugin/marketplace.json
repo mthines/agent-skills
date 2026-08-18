@@ -28,6 +28,18 @@
         "url": "https://github.com/mthines/agent-skills",
         "path": "plugins/pr-relevance-memory"
       }
+    },
+    {
+      "name": "pr-reviewer-shape-guard",
+      "description": "GitHub Actions reusable workflow that validates a POSTED pr-reviewer report body against the report shape contract, from outside the agent — the only guard that sees what actually reached a PR. Install the caller template (templates/report-shape-caller.yml); no secrets required.",
+      "version": "1.0.0",
+      "author": { "name": "mthines" },
+      "license": "MIT",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/mthines/agent-skills",
+        "path": "plugins/pr-reviewer-shape-guard"
+      }
     }
   ]
 }
