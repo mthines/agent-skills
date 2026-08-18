@@ -1655,8 +1655,13 @@ function checksInSync(plan, checks) {
     }
 
     // (e) Each remaining defect class, synthesised.
-    const good = readFileSync(join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.expected.md"), "utf8");
-    const CASES = [
+    // Guarded like case (b): an unguarded readFileSync throws and aborts ALL of L1, turning one
+    // missing fixture into a total run failure with no per-check attribution.
+    const goodPath = join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.expected.md");
+    const goodPresent = existsSync(goodPath);
+    s.check("G26 report-body snapshot warn.expected.md present (the synthesis base)", goodPresent);
+    const good = goodPresent ? readFileSync(goodPath, "utf8") : "";
+    const CASES = goodPresent ? [
       ["a pre-expanded accordion", good.replace("<details>\n<summary>Review details", "<details open>\n<summary>Review details"), "accordion-pre-expanded"],
       ["a **Verdict** line", `${good}\n**Verdict**: PASS\n`, "verdict-in-posted-body"],
       // Cage the WHOLE link, both delimiters — the production defect was
@@ -1670,7 +1675,7 @@ function checksInSync(plan, checks) {
         "Reviewed your changes.\n\n<details>\n<summary>Additional findings</summary>\n\n- a\n\n</details>\n\n"
         + "| Gate | Status | Details |\n|---|---|---|\n| Code review | \u2705 | fine |\n\n**Run mode** \u2014 full\n",
         "accordion-owned-line-at-top-level"],
-    ];
+    ] : [];
     for (const [why, body, code] of CASES) {
       const r = run(body);
       s.check(`G26 the validator flags ${why}`, r.status === 1, `exit ${r.status}`);
