@@ -1744,9 +1744,17 @@ function checksInSync(plan, checks) {
     if (wf) {
       s.check("G26 the reusable workflow runs the validator",
         wf.includes("scripts/validate-report-shape.mjs") && wf.includes("workflow_call"));
-      s.check("G26 the workflow reads bodies via env, never string-interpolated into shell",
-        /REVIEW_BODY: \$\{\{ github\.event\.review\.body \}\}/.test(wf) &&
-        !/run:[\s\S]{0,400}\$\{\{ github\.event\.review\.body \}\}/.test(wf));
+      // BOTH body inputs, not just the review one: `github.event.comment.body` is equally
+      // attacker-controlled, and asserting only the review body left half the claim unguarded.
+      for (const [label, expr] of [
+        ["REVIEW_BODY", "github.event.review.body"],
+        ["COMMENT_BODY", "github.event.comment.body"],
+      ]) {
+        const bound = new RegExp(`${label}: \\$\\{\\{ ${expr.replace(/\./g, "\\.")} \\}\\}`);
+        const spliced = new RegExp(`run:[\\s\\S]{0,400}\\$\\{\\{ ${expr.replace(/\./g, "\\.")} \\}\\}`);
+        s.check(`G26 the workflow binds ${label} via env, never interpolated into shell`,
+          bound.test(wf) && !spliced.test(wf));
+      }
       s.check("G26 the workflow posts one sticky notice, keyed by a marker",
         wf.includes("PR_REVIEWER_SHAPE_GUARD") && wf.includes("-X PATCH"));
     }
