@@ -1613,9 +1613,11 @@ function checksInSync(plan, checks) {
 
     // (b) Every rendered snapshot must PASS. If the renderer's own output fails the external
     // validator, the two disagree about the contract and one of them is wrong.
+    // A missing snapshot must FAIL, exactly as an absent posted fixture does in case (a). A bare
+    // `continue` here ran zero checks, so deleting all three snapshots would have passed by vacuity.
     for (const name of ["pass", "warn", "fail"]) {
       const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
-      if (!existsSync(p)) continue;
+      if (!existsSync(p)) { s.check(`G26 report-body snapshot ${name}.expected.md present`, false); continue; }
       const r = run(readFileSync(p, "utf8"));
       s.check(`G26 the rendered ${name} snapshot passes the external validator`, r.status === 0,
         `exit ${r.status}: ${r.err.slice(0, 120)}`);
