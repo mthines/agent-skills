@@ -1636,6 +1636,19 @@ function checksInSync(plan, checks) {
         `kind ${r.verdict?.kind}, exit ${r.status}`);
     }
 
+    // (b4) The gate table above the accordion must be caught with the SAME spacing tolerance the
+    // classifier uses. A literal `| Gate | Status | Details |` let a padded header classify as a
+    // report and then escape the flattening check.
+    for (const [why, hdr] of [["tight", "| Gate | Status | Details |"], ["padded", "|  Gate  |  Status  |  Details  |"]]) {
+      const flat = `Reviewed your changes.\n\n${hdr}\n|---|---|---|\n| Code review | OK | fine |\n\n`
+        + "<details>\n<summary>Review details</summary>\n\n**Run mode** \u2014 full\n\n</details>\n";
+      const r = run(flat);
+      s.check(`G26 a ${why}-spaced gate table above the accordion is flagged`,
+        r.status === 1 &&
+        (r.verdict?.violations || []).some((v) => v.code === "accordion-owned-line-at-top-level"),
+        `exit ${r.status}, codes: ${(r.verdict?.violations || []).map((v) => v.code).join(", ")}`);
+    }
+
     // (c) Non-reviewer bodies are ignored, so the guard never fires on ordinary PR chatter.
     for (const [why, body] of [
       ["a plain human comment", "LGTM, nice work on the caching layer."],

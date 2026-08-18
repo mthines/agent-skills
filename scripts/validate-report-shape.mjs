@@ -32,8 +32,11 @@ const LEDGER_RE = /<!-- PR_REVIEWER_LEDGER [\s\S]*?-->/;
 
 // Lines the `Review details` accordion owns. Any of these above the first `<details>` means the
 // report was flattened — the exact regression seen in production.
+// The gate table is NOT in this list: its column spacing varies between runs, so a literal misses
+// `|  Gate  | Status | Details |`. It is matched with GATE_TABLE_RE below, the same regex the
+// classifier uses — otherwise a body could classify as a report on the regex and then escape this
+// check on the literal.
 const ACCORDION_OWNED = [
-  "| Gate | Status | Details |",
   "**Run mode**",
   "**Memories**",
   "**Quality**",
@@ -129,6 +132,9 @@ export function validate(body) {
     if (head.includes(owned)) {
       add("accordion-owned-line-at-top-level", `\`${owned}\` renders above the accordion`);
     }
+  }
+  if (GATE_TABLE_RE.test(head)) {
+    add("accordion-owned-line-at-top-level", "`| Gate | Status | Details |` renders above the accordion");
   }
 
   // ── the advisory verdict is terminal-only ────────────────────────────────────────────────────
