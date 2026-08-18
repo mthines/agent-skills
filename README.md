@@ -462,7 +462,7 @@ That is the entire integration.
 skills/                   44 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
   testing/test-auto-fix/    stack-agnostic test healer — bootstrap, classify, confidence-gate, regression-detect
 agents/                   5 agents (pr-reviewer, linear-ticket-investigator, rca-investigator, bug-fix-verifier, feature-pr-verifier)
-plugins/                  1 Claude Code plugin (agent-tasks-hooks)
+plugins/                  3 Claude Code plugins (agent-tasks-hooks, pr-relevance-memory, pr-reviewer-shape-guard)
 packages/                 VS Code extension (vscode-agent-tasks)
 .claude-plugin/           marketplace.json — plugin distribution manifest
 scripts/                  Local symlink sync (scripts/sync-symlinks.sh)
