@@ -351,6 +351,9 @@ while ITERATION < CAP:
             break   # stop reason "ci-error"; report the query failure and escalate
         if CI_STATE == "red" and CI_HANDOFFS < 2:
             dispatch ci-auto-fix as a subagent; CI_HANDOFFS += 1
+            CI_STATE = "unread"   # the handoff pushed a fix, so the recorded red
+                                  # describes a commit that is no longer head.
+                                  # ci_is_settled()'s unread arm re-reads it.
 
     # No-progress guard: nothing was applied or answered AND the open-thread
     # count did not drop → the remaining threads are human-judgment flags the
@@ -363,8 +366,11 @@ while ITERATION < CAP:
        and unresolved_thread_count() >= unresolved_before:
         break
 
-if ITERATION == CAP and (unresolved_thread_count() > 0 or CI_STATE == "red"):   # CI_STATE is "unread" when --no-ci
-    report: cap reached; surface remaining blockers/flags AND any red check
+if ITERATION == CAP:
+    if CI_STATE == "unread" and NO_CI == 0:
+        CI_STATE = read check state   # never report a state you have not read at head
+    if unresolved_thread_count() > 0 or CI_STATE == "red":   # CI_STATE stays "unread" under --no-ci
+        report: cap reached; surface remaining blockers/flags AND any red check
 ```
 
 ### Sub-step A — external-review mode
@@ -445,6 +451,13 @@ The `"unread"` arm matters: iteration 1 can reach the convergence exit before
 sub-step D has run even once (a PR that arrives already reviewed and thread-clean).
 Without that arm the loop would report convergence having never looked at CI —
 the precise failure this sub-step exists to prevent.
+
+It is also the arm that keeps a `red` from going stale. A `ci-auto-fix` handoff
+pushes a fix, so the `red` sub-step D just recorded describes a commit that is no
+longer head; the handoff therefore resets `CI_STATE` to `"unread"`, and the next
+`ci_is_settled()` re-reads instead of blocking convergence on a build that is
+already fixed. The cap check does the same read for the same reason — the loop
+never reports a CI state it has not read at the current head.
 
 **Cap: 2 `ci-auto-fix` handoffs per `review-loop` run** (`CI_HANDOFFS`), matching the
 per-PR cap the other two orchestrators use. Each handoff already burns a full internal
