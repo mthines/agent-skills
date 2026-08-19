@@ -1769,6 +1769,57 @@ function checksInSync(plan, checks) {
     }
   }
 
+  // ── G27: Gate 2 (CI) warns, it never fails. Red CI is a fact about the branch, not a finding
+  // about the diff — this agent did not diagnose it and cannot tell a regression from a flaky job,
+  // a quota, a check that does not run on this base branch, or a draft with no workflow. GitHub
+  // already blocks the merge on a required check. Observed on mthines/lorekit#490, whose headline
+  // read "CI failing, 1 error, 2 warnings … Blocking: CI checks failing" — i.e. it reported the
+  // reviewer as having found something blocking when it had not.
+  {
+    const gateStates = sliceBetween(prReviewer, "### Gate states", "`--skip-gates` bypasses");
+    s.check("G27 Gate 2 is declared a soft/warning gate, not a hard one",
+      /Gates 1 and 2 are two-state/.test(gateStates) &&
+      /\*\*Gate 2 \(CI\) warns, it does not fail\.\*\*/.test(gateStates));
+    s.check("G27 the hard-gate set no longer contains Gate 2",
+      /Gates 4 and 5 are \*\*hard\*\* gates/.test(gateStates) &&
+      !/plus Gate 2 \(CI\), are \*\*hard\*\*/.test(gateStates));
+
+    // No verdict rule may still route a CI failure to FAIL. `Gates 2/4/5` was the shared idiom for
+    // the hard-gate set at four sites, so its absence is the load-bearing assertion.
+    s.check("G27 no verdict rule still names Gates 2/4/5 as the hard set",
+      !/Gates 2\/4\/5/.test(prReviewer));
+    s.check("G27 the FAIL verdict rule names only Gates 4 and 5",
+      /verdict is \*\*FAIL\*\* when Gate 4 or Gate 5 fails/.test(prReviewer));
+
+    // The tally and reasons must carry no CI token. These are the two strings that produced the
+    // misleading headline, so assert on the rendered vocabulary rather than on prose about it.
+    const tally = sliceBetween(prReviewer, "`SEVERITY_TALLY` (the **FAIL** headline",
+      "`FAIL_REASONS` / `WARN_REASONS`");
+    s.check("G27 SEVERITY_TALLY is ordered errors-then-warnings, with no CI term",
+      /ordered errors-then-warnings/.test(tally) &&
+      !/prefix `CI failing`/.test(tally));
+    s.check("G27 SEVERITY_TALLY states CI never appears in it",
+      /\*\*CI never appears in the tally\.\*\*/.test(tally));
+    const reasons = sliceBetween(prReviewer, "`FAIL_REASONS` / `WARN_REASONS`", "| Gate | ❌ reason");
+    s.check("G27 FAIL_REASONS no longer leads with a CI phrase",
+      !/leading\s*\n?`CI checks failing`/.test(reasons) && /CI is\s*\n?never among them/.test(reasons));
+
+    // The reason table's CI row must offer a ⚠️ phrase and no ❌ phrase.
+    const ciRow = (prReviewer.match(/^\| CI \(Gate 2\) \|[^\n]*$/m) || [""])[0];
+    s.check("G27 the reason table's CI row has no ❌ phrase", /warns, never fails/.test(ciRow), ciRow.slice(0, 90));
+    s.check("G27 the reason table's CI row supplies a ⚠️ phrase", /CI red:/.test(ciRow), ciRow.slice(0, 90));
+
+    // Gate 2's own result line must be two-state.
+    const gate2 = sliceBetween(prReviewer, "**Gate 2 — CI status**", "**Gate 3 —");
+    s.check("G27 Gate 2's result is PASS/WARN and explicitly never ❌",
+      /Never ❌/.test(gate2) && /WARN \(⚠️\)/.test(gate2));
+
+    // Registered in the diagnostic surface, as an invariant and a failure mode.
+    s.check("G27 diagnostic-surface registers F-ci-failed-the-verdict",
+      prReviewerDiag.includes("F-ci-failed-the-verdict"));
+    s.check("G27 diagnostic-surface carries the CI-never-fails invariant",
+      /\*\*CI never fails the verdict\.\*\*/.test(prReviewerDiag));  }
+
   // G24c: the three Gate-3 failure modes are registered in the diagnostic surface, so a
   // regression has a named bucket instead of silently becoming "expected behaviour".
   for (const fm of ["F-nonblocking-thread-fails-gate-3", "F-gate-3-severity-reinvented",
