@@ -1,7 +1,7 @@
 <!-- PR_REVIEWER_REPORT -->
 ⚠️ **Partial review — tool budget exhausted after 180 calls; 22 of 31 files scanned.**
 
-Reviewed your changes — **CI failing, 1 error, 1 warning** need attention before human review. Blocking: CI checks failing; 1 unanswered blocking bot thread.
+Reviewed your changes — **1 error, 2 warnings** need attention before human review. Blocking: 1 unanswered blocking bot thread.
 
 <details>
 <summary>Optimality review (1) — is this the best approach?</summary>
@@ -38,7 +38,7 @@ Reviewed your changes — **CI failing, 1 error, 1 warning** need attention befo
 
 - [`supabase/functions/memories/handlers/list.ts:235`](https://github.com/o/r/pull/1#discussion_r3) — applyScalarFilter still puts the whole dimension into a PostgREST URL operand
 
-**CI** — `Integration smoke (local Supabase)` fails on `POST /memories/list` (expected 200, got 500) — the open thread above.
+**CI** — `Integration smoke (local Supabase)` is red on `POST /memories/list` (expected 200, got 500) — the open thread above. Reported, not blocking.
 
 **Run mode** — full · 2172 lines in delta
 

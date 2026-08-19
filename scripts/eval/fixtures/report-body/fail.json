@@ -1,25 +1,47 @@
 {
-  "PARTIAL_REVIEW": { "calls": 180, "scanned": 22, "total": 31 },
-  "HEADLINE": "Reviewed your changes — **CI failing, 1 error, 1 warning** need attention before human review. Blocking: CI checks failing; 1 unanswered blocking bot thread.",
-  "RUN": { "mode": "full", "sha": "69b0de8", "delta_lines": 2172 },
-  "GATE_DESCRIPTION_STATUS": "⚠️", "GATE_DESCRIPTION_DETAILS": "Claims `nx affected` is green; not true at this SHA.",
-  "GATE_PRIOR_STATUS": "❌", "GATE_PRIOR_DETAILS": "1 unresolved bot thread(s) — see the thread list below",
-  "GATE_DOCS_STATUS": "✅", "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
-  "GATE_SELFREVIEW_STATUS": "✅", "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
-  "GATE_CODEREVIEW_STATUS": "⏭️", "GATE_CODEREVIEW_DETAILS": "not evaluated this run",
+  "PARTIAL_REVIEW": {
+    "calls": 180,
+    "scanned": 22,
+    "total": 31
+  },
+  "HEADLINE": "Reviewed your changes — **1 error, 2 warnings** need attention before human review. Blocking: 1 unanswered blocking bot thread.",
+  "RUN": {
+    "mode": "full",
+    "sha": "69b0de8",
+    "delta_lines": 2172
+  },
+  "GATE_DESCRIPTION_STATUS": "⚠️",
+  "GATE_DESCRIPTION_DETAILS": "Claims `nx affected` is green; not true at this SHA.",
+  "GATE_PRIOR_STATUS": "❌",
+  "GATE_PRIOR_DETAILS": "1 unresolved bot thread(s) — see the thread list below",
+  "GATE_DOCS_STATUS": "✅",
+  "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
+  "GATE_SELFREVIEW_STATUS": "✅",
+  "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
+  "GATE_CODEREVIEW_STATUS": "⏭️",
+  "GATE_CODEREVIEW_DETAILS": "not evaluated this run",
   "OPEN_THREADS": [
-    { "path": "supabase/functions/memories/handlers/list.ts", "line": 235,
-      "url": "https://github.com/o/r/pull/1#discussion_r3", "blocking": true,
-      "ask": "applyScalarFilter still puts the whole dimension into a PostgREST URL operand" }
+    {
+      "path": "supabase/functions/memories/handlers/list.ts",
+      "line": 235,
+      "url": "https://github.com/o/r/pull/1#discussion_r3",
+      "blocking": true,
+      "ask": "applyScalarFilter still puts the whole dimension into a PostgREST URL operand"
+    }
   ],
   "OPTIMALITY_CARDS": [
     "### Optimality proposal — src/api/client.ts:180\n\n> **Reuse `withRetry()` instead of hand-rolling a retry loop**\n\n**Why it's better** · _codebase-fit_ — one backoff policy instead of four."
   ],
   "LOW_CONFIDENCE_FINDINGS": [
-    { "path": "src/api/client.ts", "line": 88, "prefix": "issue",
-      "body": "this early-return may skip the audit log write", "confidence": 76 }
+    {
+      "path": "src/api/client.ts",
+      "line": 88,
+      "prefix": "issue",
+      "body": "this early-return may skip the audit log write",
+      "confidence": 76
+    }
   ],
-  "CI_NOTE": "`Integration smoke (local Supabase)` fails on `POST /memories/list` (expected 200, got 500) — the open thread above.",
+  "CI_NOTE": "`Integration smoke (local Supabase)` is red on `POST /memories/list` (expected 200, got 500) — the open thread above. Reported, not blocking.",
   "MEMORIES_SUMMARY": "not connected",
   "QUALITY": "produced 6 → posted inline 4 · cleared 4 · carried forward 0 · deferred 0 · below-bar 1",
   "QUALITY_DROPPED": "relevance 0 · dedupe 0 · grounding 0 · confidence 2 · shape 0",
