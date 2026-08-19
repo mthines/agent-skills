@@ -27,6 +27,17 @@ Choose the path based on the argument shape:
 sets them itself, it only forwards what the user passed (see the note below).
 
 ```bash
+# --report routes straight to pr-reviewer, which --external-review exists to avoid.
+# Refuse the pair rather than accepting a flag this path cannot honour, mirroring
+# review-loop's refusal of --no-feedback --external-review.
+case "$ARGUMENTS" in
+  *--report*) case "$ARGUMENTS" in
+    *--external-review*)
+      echo "--report needs pr-reviewer; drop --external-review or drop --report."
+      exit 1 ;;
+  esac ;;
+esac
+
 # Resolve the current PR if no argument given
 if [ -z "$ARGUMENTS" ] || [ "$ARGUMENTS" = "--report" ]; then
   CURRENT_PR=$(gh pr view --json url -q .url 2>/dev/null)
@@ -62,6 +73,7 @@ Task(subagent_type="pr-reviewer", prompt="<pr-url-or-number> [--critical if pass
 | `/review-changes --no-ci` | Same, minus the CI sub-step. Pass this when something else already owns CI for the PR. |
 | `/review-changes --external-review` | Waits for an out-of-process reviewer (another agent, a review bot) instead of dispatching `pr-reviewer`, then applies + resolves + simplifies as usual. Also the path to use where the `Task` tool is unavailable. |
 | `/review-changes --report` | One-shot read-only review via `pr-reviewer` (no apply). |
+| `/review-changes --report --external-review` | **Refused.** Print `--report needs pr-reviewer; drop --external-review or drop --report.` and exit — the same refusal `review-loop` gives for `--no-feedback --external-review`, and for the same reason: report-only needs a reviewer to report, and `--external-review` removes the only one either path owns. Never silently ignore `--external-review` here. |
 | `/review-changes --critical` | Adds adversarial pre-mortem (`Skill("critical", "code")`) to each `pr-reviewer` call. |
 | `/review-changes <PR-URL>` | Convergence loop on the specified PR (self or cross — `pr-reviewer` detects relation automatically). |
 
