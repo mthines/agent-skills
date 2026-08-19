@@ -33,12 +33,21 @@ while iter < max-iters:
         stop  → reason "reviewers quiet"
     run ONE standard single-pass (Phases 1–7) scoped to comments newer than baseline.timestamp
     baseline = new HEAD sha + new UTC timestamp        # so next round only sees fresh feedback
-    read CI state once (stateless, no watch)
+    read CI state once (stateless, no watch)           # pending / unregistered => "unread"
     if any check is failing:
         stop  → reason "ci red — <check names>"        # report only; never fixes CI
     if the pass applied 0 changes AND surfaced 0:
         stop  → reason "nothing actionable left"
 stop  → reason "iteration cap (<max-iters>)"
+
+# EVERY stop above passes through here first. The read inside the loop happens seconds
+# after that iteration's own push, so it is almost always "unread" — stopping on it
+# would report a CI state no check had reached.
+before reporting any stop reason:
+    if CI state is still "unread":
+        read CI state once more at the current head
+        if any check is failing:
+            stop reason = "ci red — <check names>"     # overrides the reason above
 ```
 
 Key invariants:
