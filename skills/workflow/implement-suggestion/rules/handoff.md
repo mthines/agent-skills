@@ -148,9 +148,12 @@ Apply reviewer suggestions to an existing pull request.
    and pushing it turns CI red for a reason this worker already had in hand.
 
    If the full pass fails:
-   - For a clear mechanical fix (formatter / lint autofix): apply it, amend it
-     into the commit whose change caused it (or add one fixup commit naming the
-     comment it belongs to), then re-run the full pass.
+   - For a clear mechanical fix (formatter / lint autofix): apply it and add ONE
+     FIXUP COMMIT naming the comment it belongs to, then re-run the full pass.
+     Never amend — amending rewrites the SHA step 3d recorded, and step 5a posts
+     that SHA to the thread as `Addressed in <commit-sha>`, so an amended batch
+     replies with SHAs that are not on the remote. This is the same reason the
+     Hard rules below say workers never amend prior commits.
    - For anything else: STOP and report exactly as in step 3b — leave the commits
      LOCAL-ONLY, push nothing, resolve nothing. Report which check failed, its
      output excerpt, and which comment's change most plausibly caused it. Do NOT
