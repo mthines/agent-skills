@@ -1,5 +1,5 @@
 <!-- PR_REVIEWER_REPORT -->
-Reviewed your changes — no blocking issues, **2 warning(s)**: 2 open bot thread(s); 3 non-blocking finding(s).
+Reviewed your changes — no blocking issues, **3 warning(s)**: 2 open bot thread(s); 3 non-blocking finding(s); CI red: Integration smoke.
 
 <details>
 <summary>Additional findings (2) — cleared review, not inlined</summary>

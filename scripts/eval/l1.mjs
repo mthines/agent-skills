@@ -1854,6 +1854,36 @@ function checksInSync(plan, checks) {
           !/CI failing/.test(t) && !/Blocking: CI checks failing/.test(t));
       }
     }
+    // Every prior guard here checks whether a STRING is present or absent. That cannot see a
+    // fixture whose headline COUNT disagrees with its own gate statuses — and because G25 diffs
+    // the snapshots byte-for-byte, such a fixture locks the wrong semantics in as the reference
+    // rendering. warn.json read `**2 warning(s)**` while three gates warned (Prior bot feedback,
+    // Code review, and CI via CI_NOTE), which is exactly the miscount this change introduces the
+    // risk of. Derive the counts from the payload and compare them to the rendered headline.
+    for (const name of ["pass", "warn", "fail"]) {
+      const pj = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.json`);
+      if (!existsSync(pj)) { s.check(`G27 fixture ${name}.json present`, false); continue; }
+      const d = JSON.parse(readFileSync(pj, "utf8"));
+      const statuses = Object.entries(d).filter(([k]) => k.endsWith("_STATUS")).map(([, v]) => v);
+      const errors = statuses.filter((v) => v === "❌").length;
+      // CI is a warning gate now, and CI_NOTE is its only surface — a populated CI_NOTE means ⚠️.
+      const warnings = statuses.filter((v) => v === "⚠️").length + (d.CI_NOTE ? 1 : 0);
+      const h = String(d.HEADLINE);
+      const claimedErr = Number((h.match(/\*\*(\d+) errors?/) || [0, 0])[1]);
+      const claimedWarn = Number((h.match(/(\d+) warnings?/) || [0, 0])[1]);
+      s.check(`G27 ${name} headline's error count matches its gate statuses`,
+        claimedErr === errors, `headline ${claimedErr}, gates ${errors}`);
+      s.check(`G27 ${name} headline's warning count matches its gate statuses (CI included)`,
+        claimedWarn === warnings, `headline ${claimedWarn}, gates ${warnings}`);
+      // A warning gate must be NAMED where WARN_REASONS renders — which is the WARN headline only.
+      // On a FAIL run the spec counts warning gates in the tally but names them in the accordion,
+      // never in the headline, so requiring the phrase there would contradict the file. Scope this
+      // to the no-errors case rather than "wherever CI_NOTE is set".
+      if (d.CI_NOTE && errors === 0) {
+        s.check(`G27 ${name} names CI in WARN_REASONS when CI_NOTE reports a red check`,
+          /CI red:|CI still pending/.test(h), h.slice(0, 90));
+      }
+    }
     s.check("G27 diagnostic-surface carries the CI-never-fails invariant",
       /\*\*CI never fails the verdict\.\*\*/.test(prReviewerDiag));
   }
