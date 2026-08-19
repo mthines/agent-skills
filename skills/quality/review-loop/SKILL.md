@@ -445,14 +445,20 @@ while merely pending**, printing to stdout, so non-zero with empty stderr means
 ci_is_settled():   # the convergence predicate
     NO_CI == 1                      → true    # caller owns CI; not this loop's call
     CI_STATE == "unread"            → read check state now, then re-evaluate
-    CI_STATE in (green, pending)    → true    # pending is not red, and this loop
-                                              # never waits for CI. On the convergence
-                                              # exit there is no next iteration, so a
-                                              # pending build converges unwatched:
-                                              # "converged" means not red, not green.
+    CI_STATE == "green"             → true
+    CI_STATE == "pending", 1st time → re-read at head once, then re-evaluate
+    CI_STATE == "pending", re-read  → true    # not red, and this loop never waits for CI
     CI_STATE == red                 → false
     CI_STATE == error               → abort, do not converge
 ```
+
+The `"pending"` re-read is the same rule
+[`watch-mode.md`](../../workflow/implement-suggestion/rules/watch-mode.md#ci-state-is-a-stop-reason-not-a-fix)
+applies before its own stop, and it exists for the same reason: sub-step D reads seconds
+after its own push, so `pending` is its usual answer, and converging on the first one means
+converging on a build no check has finished. Exactly **one** re-read, and only at this
+predicate — re-reading until a check is terminal would turn a loop that must never wait for
+CI into a busy-wait on it.
 
 The `"unread"` arm matters: iteration 1 can reach the convergence exit before
 sub-step D has run even once (a PR that arrives already reviewed and thread-clean).
