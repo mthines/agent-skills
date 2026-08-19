@@ -258,7 +258,7 @@ Three phases benefit from sub-agent fan-out:
 | 4     | Run tests → iterate (cap: 5 same area in Full Mode) → run `checks.yaml` checks (all must pass; definitions immutable; `unsatisfiable` escalates) → `confidence(analysis)` at cap → one-shot auto-replan or escalate to user |
 | 5     | `Skill("docs", "update --auto")` always — refreshes `CLAUDE.md`, `.claude/rules/`, `README.md`, `docs/`, `CHANGELOG.md` |
 | 6     | `Skill("aw-create-walkthrough")` → `Skill("create-pr")` (push → open draft PR → `review-loop` convergence → watch CI) |
-| 7     | Watch CI → `Skill("ci-auto-fix")` per failure (parallel) → after CI green `Skill("review-loop", "<pr-url> --critical")` (self-relation; optional, skips if not installed) → `gw remove` after merge (optional) |
+| 7     | Watch CI → `Skill("ci-auto-fix")` per failure (parallel) → after CI green `Skill("review-loop", "<pr-url> --critical --no-ci")` (self-relation; optional, skips if not installed) → `gw remove` after merge (optional) |
 
 ### Lite Mode
 
@@ -274,7 +274,7 @@ Skip artifacts and most companions. Phase 0, Phase 2, Phase 5 (`docs update`), a
 | 4     | Test, fix failures (3-iteration limit applies)  |
 | 5     | `Skill("docs", "update --auto")`       |
 | 6     | `Skill("create-pr")`                            |
-| 7     | Watch CI, `ci-auto-fix` if needed, then `Skill("review-loop", "<pr-url> --critical")` (self-relation; skips if not installed) |
+| 7     | Watch CI, `ci-auto-fix` if needed, then `Skill("review-loop", "<pr-url> --critical --no-ci")` (self-relation; skips if not installed) |
 
 ---
 

@@ -414,7 +414,7 @@ Then proceed to [Optional Post-Merge Cleanup](#optional-post-merge-cleanup).
 ### Step 2: Invoke `review-loop`
 
 ```
-Skill("review-loop", "<pr-url> --critical")
+Skill("review-loop", "<pr-url> --critical --no-ci")
 ```
 
 `pr-reviewer` detects self-authorship via `REVIEW_RELATION` in Step 0.5 automatically.
@@ -423,12 +423,52 @@ Complex findings that the loop cannot apply are surfaced to the user inline.
 
 Do **not** wrap in a retry loop — `review-loop` owns its own iteration cap.
 
+**`--no-ci` is required here, and Step 2.5 is what makes it safe.** `review-loop`
+has its own CI sub-step that would dispatch `ci-auto-fix` on a red check. Letting it
+run would create a **second spender** of the per-PR handoff budget this phase owns —
+the exact defect the CI-watch contract exists to prevent. So this phase keeps the
+budget and does the re-check itself, immediately below.
+
+### Step 2.5: Re-check CI if `review-loop` pushed
+
+`review-loop` **pushes** — sub-step B commits applied findings and sub-step C commits
+simplify recipes. Those commits land *after* the Step 1 watch already went green, so
+the watch this phase performed says nothing about the current head. Handing back here
+reports a green PR on an unobserved commit.
+
+Skip this step only if `review-loop` pushed nothing. Its report carries no run
+total — the `applied`, `answered/resolved`, and `simplify recipes` counts appear
+**per iteration**, in the `Per-iteration summary:` block — so **sum each of the
+three columns across every iteration row** and skip only when all three sums are
+zero. A non-zero sum in any one of them means a commit landed. Otherwise:
+
+```bash
+# No --watch: returns immediately with the state of the CURRENT head.
+gh pr checks <pr-number>
+```
+
+Classify with the **same** Step 1 table — "no checks reported" is still three states,
+and a bare `gh pr checks` still exits non-zero while merely pending.
+
+| Result | Phase 7 does |
+| ------ | ------------ |
+| All terminal and passing | Continue to Step 3 |
+| Any failing | Route back into [Auto Fix](#auto-fix), **spending the same `attempts` budget** — do not reset it. If it is already exhausted, stop and surface the failing checks rather than starting a fresh budget |
+| Any still pending | Watch, bounded, per the Step 1 block — reusing this phase's counters |
+| Query errored | Tooling failure. Report and escalate; do **not** route to Auto Fix |
+
+Because this phase never handed the budget to `review-loop`, `attempts` is spent by
+this phase alone and still means what Step 1 set it to mean. The counter lives in this
+phase's own transcript — no state file carries it across phases
+([`diagnostic-surface.md`](./diagnostic-surface.md) — *watch state is queried, never
+carried*).
+
 ### Step 3: Log and hand back
 
 When the skill returns, log:
 
 ```markdown
-- [TIMESTAMP] Phase 7: review-loop — self-review complete (N iterations; M findings applied; inline report above)
+- [TIMESTAMP] Phase 7: review-loop — self-review complete (N iterations; M findings applied; CI re-checked at <sha>: <green|fixed after K attempts|red>; inline report above)
 ```
 
 Tell the user: PR URL, that the review-loop applied M findings and surfaced any remaining blockers inline, and that they should review before undrafting.
