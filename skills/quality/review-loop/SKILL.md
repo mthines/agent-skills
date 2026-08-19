@@ -524,7 +524,10 @@ review-loop on PR #<n> (<RESOLVED_REPO>)
 
 Iterations: <N> of <CAP>
 Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | ci-red (cap on ci-auto-fix handoffs) | ci-error (check query failed) | poll error | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable)>
-Review source: <pr-reviewer | external (<N> review events observed)>
+Review source: <pr-reviewer | external>
+# No count on the external arm: the shared poll is a liveness probe and returns only
+# NEW_FEEDBACK / NO_FEEDBACK / POLL_ERROR. It exposes no event count, and widening a
+# shared contract with two callers for a report cosmetic is not worth it.
 
 Per-iteration summary:
   Iteration 1: <verdict>, <N findings>, <M applied>, <A answered/resolved>, <K simplify recipes>, <U threads still open>
