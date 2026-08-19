@@ -38,10 +38,14 @@ case "$ARGUMENTS" in
   esac ;;
 esac
 
-# Resolve the current PR if no argument given
-if [ -z "$ARGUMENTS" ] || [ "$ARGUMENTS" = "--report" ]; then
-  CURRENT_PR=$(gh pr view --json url -q .url 2>/dev/null)
-fi
+# Resolve the current branch's PR whenever no PR was named. Test for the ABSENCE of a
+# PR reference, never for an exact flag string: every flag in the table above is
+# combinable, so `= "--report"` left `--external-review`, `--critical`, `--no-ci`, and
+# `--interval S` with no PR to act on.
+case "$ARGUMENTS" in
+  *github.com/*/pull/*|*\#[0-9]*) ;;                       # a PR was named; use it
+  *) CURRENT_PR=$(gh pr view --json url -q .url 2>/dev/null) ;;
+esac
 ```
 
 **`review-changes` passes no `--no-ci`** — unlike `create-pr` and `autonomous-workflow`
