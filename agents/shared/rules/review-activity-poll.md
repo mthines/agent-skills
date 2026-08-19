@@ -8,11 +8,13 @@ Neither caller may edit the procedure or restate it. Change it here, then re-rea
 both callers' outcome mappings. Ownership stated in prose is what prevents drift —
 the directory only implies it.
 
-> **Why a shared file and not a copy.** This block encodes four properties that are
+> **Why a shared file and not a copy.** This block encodes five properties that are
 > individually easy to drop and collectively load-bearing: `updated_at` over
-> `created_at`, a guarded `count()` that separates a broken `gh` from an empty
-> result, the interval clamp under the harness tool cap, and the bare-fence
-> requirement. A copy forks all four. Call this file; do not paste it.
+> `created_at`, `--paginate` with a line-per-match `--jq` (the REST default page
+> size is 30, and gh runs `--jq` once per page), a guarded `count()` that separates
+> a broken `gh` from an empty result, the interval clamp under the harness tool cap,
+> and the bare-fence requirement. A copy forks all five. Call this file; do not
+> paste it.
 
 ## What this answers
 
@@ -66,9 +68,20 @@ START=$(date +%s); ERR=$(mktemp); trap 'rm -f "$ERR"' EXIT INT TERM
 # A failing `gh api` prints nothing to stdout, so an unguarded $(...) yields "",
 # which arithmetic reads as 0 — indistinguishable from "no new comments". That
 # would report the reviewers quiet whenever gh is broken. Fail loudly instead.
+#
+# --paginate is required, and so is the shape of the --jq that goes with it:
+#   * Without --paginate the REST default page size is 30. Past 30 comments the
+#     newest sit on page 2, an unpaginated read matches none of them, and the
+#     probe reports NO_FEEDBACK on real feedback — the quiet this file bans.
+#   * With --paginate, gh applies --jq to EACH page separately. A --jq that
+#     reduces to a per-page count therefore emits one number per line, which the
+#     numeric guard below rejects and every poll returns POLL_ERROR. So emit one
+#     LINE PER MATCH (.id is present on all three endpoints) and count the lines.
+#   * per_page=100 keeps the page count low; it does not replace --paginate.
 count() {                       # $1 = api path, $2 = timestamp field
   local n
-  n=$(gh api "$1" --jq "[.[] | select(.$2 > \"$SINCE\")] | length" 2>"$ERR")
+  n=$(gh api --paginate "$1?per_page=100" \
+        --jq ".[] | select(.$2 > \"$SINCE\") | .id" 2>"$ERR" | wc -l | tr -d " ")
   [ -s "$ERR" ] && return 1     # gh spoke on stderr = gh failed
   case "$n" in ''|*[!0-9]*) return 1 ;; esac
   printf %s "$n"
