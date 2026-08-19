@@ -1,5 +1,5 @@
 {
-  "HEADLINE": "Reviewed your changes — no blocking issues, **2 warning(s)**: 2 open bot thread(s); 3 non-blocking finding(s).",
+  "HEADLINE": "Reviewed your changes — no blocking issues, **3 warning(s)**: 2 open bot thread(s); 3 non-blocking finding(s); CI red: Integration smoke.",
   "RUN": {
     "mode": "incremental",
     "sha": "2c2bd19",

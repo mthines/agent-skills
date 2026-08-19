@@ -82,19 +82,29 @@ Gate checks (Step 1.8) always run against the full PR state in every mode — CI
 A PR PASSES when ALL of the following are true:
 
 1. **Description vs. code** — the description accurately reflects what the diff does; an independent reader reaches the same conclusion about intent and scope from the description alone as from the diff. A mismatch is a **soft warning** (⚠️), not a failure — see *Gate states* below.
-2. **CI status** — all build, test, lint, and docs checks are green. (Contributes to verdict but is NOT shown as a row in the review table — CI details are redundant there; GitHub's checks section shows them.)
+2. **CI status** — all build, test, lint, and docs checks are green. This is a soft-warning gate — red or pending CI yields ⚠️ and never fails the PR (see *Gate states*). It is NOT shown as a row in the review table; GitHub's checks section shows the detail, and `CI_NOTE` carries the substance.
 3. **Prior bot feedback** — all prior automated review comments (Cursor, Claude, other agents) are resolved or explicitly dismissed. An open thread whose ask is non-blocking, or which has already been answered on-thread, is a **soft warning** (⚠️) — only an *unanswered blocking* ask fails this gate. See *Gate states* below.
 4. **Self-review signals** — no debug logs, commented-out code, leftover TODO/FIXME/HACK markers on new lines, or obvious unreviewed AI stubs in the diff.
 5. **Documentation adequacy** — description, inline comments, and any docs are sufficient for an independent reader to understand the change's purpose and behavior.
 6. **Code review** — the AI persona review pass finds no blocking issues. Non-blocking findings do **not** fail this gate (see *Gate states* below).
 
-A PR FAILS if Gate 2 (CI), Gate 4, or Gate 5 is not met, or if the Prior bot feedback (Gate 3) or Code review (Gate 6) gate is ❌. Gate 1 (Description vs. code) is a soft-warning gate — a mismatch yields ⚠️ and never fails the PR; Gates 3 and 6 are tri-state and reach ❌ only on a *blocking* item.
+A PR FAILS if Gate 4 or Gate 5 is not met, or if the Prior bot feedback (Gate 3) or Code review (Gate 6) gate is ❌. Gate 1 (Description vs. code) **and Gate 2 (CI)** are soft-warning gates — each yields ⚠️ and never fails the PR; Gates 3 and 6 are tri-state and reach ❌ only on a *blocking* item.
 
 ### Gate states
 
-Gates 4 and 5, plus Gate 2 (CI), are **hard** gates: binary ✅ / ❌, and any ❌ fails the PR.
+Gates 4 and 5 are **hard** gates: binary ✅ / ❌, and any ❌ fails the PR.
 
-The other three are **graded** — a non-blocking problem yields a warning (⚠️) that never fails the PR and is never counted in `FAILING_GATE_COUNT`. Gate 1 is two-state (it can only warn); Gates 3 and 6 are tri-state and reach ❌ only on a blocking item:
+The other four are **graded** — a non-blocking problem yields a warning (⚠️) that never fails the PR and is never counted in `FAILING_GATE_COUNT`. Gates 1 and 2 are two-state (they can only warn); Gates 3 and 6 are tri-state and reach ❌ only on a blocking item:
+
+**Gate 2 (CI) warns, it does not fail.** Red CI is a fact about the branch, not a finding about the
+diff, and this agent neither diagnosed it nor can it tell a real regression from a flaky job, an
+infrastructure quota, a check that does not run on this base branch, or a draft with no workflow
+wired up — all four observed in practice. GitHub already blocks the merge on a required check, so
+failing the review as well added no signal and mislabelled the review's own verdict: `mthines/lorekit#490`
+led with `CI failing, 1 error, 2 warnings` and `Blocking: CI checks failing`, which reads as *the
+reviewer found something* when it had not. The state is still reported in full — see `CI_NOTE` — and
+a red check that the *diff* demonstrably causes is a Gate 6 finding on this reviewer's own evidence,
+where it blocks properly.
 
 **Gate 1 — Description vs. code** is two-state:
 
@@ -139,7 +149,7 @@ A finding is **blocking** only if it is broken behaviour, security (auth bypass 
 
 **Gate 3 applies that same bar to the other bot's own decoration** — its `(blocking)` marker, its `issue:` conventional-comment prefix, or an equivalent explicit severity label it supplied — and never to a fresh adjudication of the finding by this reviewer. Reading another bot's comment and deciding for it how serious it *really* is puts words in its mouth, which Step 1.0 already forbids for the `ask` text. An undecorated or unparseable ask is read as **non-blocking**, the same way an unreadable thread state is read as not-open: the reviewer never manufactures a severity it cannot evidence. If that ask is in fact serious, this run's own review pass finds it and files it under Gate 6, where it blocks on this reviewer's own evidence.
 
-The overall verdict is **FAIL** when Gate 2 (CI), Gate 4, or Gate 5 fails **or** the Prior bot feedback or Code review gate is ❌; otherwise **PASS** (with the Description vs. code, Prior bot feedback, and Code review rows each showing ✅ or ⚠️). Gate 2 (CI) feeds this verdict but is surfaced in GitHub's checks section, not as a table row and not in `FAILING_GATE_COUNT` (criterion 2); the PASS/WARN/FAIL **table** presentation in Steps 3–4 is therefore chosen from the review gates (3, 4, 5, Description vs. code, and Code review) only.
+The overall verdict is **FAIL** when Gate 4 or Gate 5 fails **or** the Prior bot feedback or Code review gate is ❌; otherwise **PASS** (with the Description vs. code, Prior bot feedback, and Code review rows each showing ✅ or ⚠️, and CI's state in `CI_NOTE`). Gate 2 (CI) does **not** feed the verdict: it is surfaced in GitHub's checks section and in `CI_NOTE`, never as a table row and never in `FAILING_GATE_COUNT`. The PASS/WARN/FAIL presentation in Steps 3–4 is chosen from the review gates (3, 4, 5, Description vs. code, and Code review) only.
 
 `--skip-gates` bypasses Gates 1–5 and runs only the inline review pass (Gate 6).
 Those gates then render `⏭️` in every gate table, with the Details cell holding the carried prior text plus its `(carried from …)` suffix when Step 2.5c dispositioned the row `CARRY`, and `not evaluated this run` otherwise.
@@ -1112,10 +1122,12 @@ description omits or misrepresents.
 Finding format: one sentence per mismatch, file names only (no diff quotes).
 Result: PASS (✅) or WARN (⚠️) with finding text — a mismatch is a soft warning, never a hard failure (see *Gate states*).
 
-**Gate 2 — CI status** (verdict only — excluded from review body table)
+**Gate 2 — CI status** (reported, never blocking — excluded from the review body table)
 Read the CI checks output (Step 1.1 command C). List every failing or still-pending
-check by name.
-Result: PASS (all green) or FAIL with list of failing check names.
+check by name, and — where the output makes it readable — say what each failure is on.
+Result: PASS (✅, all green) or WARN (⚠️) with the failing check names. **Never ❌** — see
+*Gate states*. Report the detail in `CI_NOTE`; a red check the diff demonstrably causes is filed
+under Gate 6 instead, on this reviewer's own evidence.
 
 **Gate 3 — Unresolved prior bot/agent feedback**
 Use `OPEN_BOT_COMMENTS[]` from Step 1.0. Identify any prior automated review comments
@@ -1595,7 +1607,7 @@ fixed enumeration with no slot for either counter; do not wedge them in there.
 Produce two views before posting: a summary with the gate table, then numbered detail cards.
 Always include the run mode and delta context in the header:
 
-Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 2/4/5 all ✅) and neither tri-state gate — Prior bot feedback, Code review — is ❌, but at least one graded gate — Description vs. code, Prior bot feedback, or Code review — is ⚠️ (still a PASS verdict); **FAIL** when any of Gates 2/4/5 fails or the Prior bot feedback or Code review gate is ❌.
+Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 4/5 all ✅) and neither tri-state gate — Prior bot feedback, Code review — is ❌, but at least one graded gate — Description vs. code, CI, Prior bot feedback, or Code review — is ⚠️ (still a PASS verdict); **FAIL** when Gate 4 or Gate 5 fails or the Prior bot feedback or Code review gate is ❌ (CI never fails it).
 
 On PASS — all clear (every gate ✅):
 
@@ -1623,7 +1635,7 @@ On PASS — all clear (every gate ✅):
 [rest of sections follow]
 ```
 
-On WARN — soft warnings only (hard Gates 2/4/5 ✅, at least one of Description vs. code / Prior bot feedback / Code review is ⚠️, none ❌):
+On WARN — soft warnings only (hard Gates 4/5 ✅, at least one of Description vs. code / CI / Prior bot feedback / Code review is ⚠️, none ❌):
 
 ```markdown
 ## PR Review — PR #<n> (<repo>)
@@ -1649,7 +1661,7 @@ On WARN — soft warnings only (hard Gates 2/4/5 ✅, at least one of Descriptio
 [rest of sections follow]
 ```
 
-On FAIL (any of Gates 2/4/5 fails, or Prior bot feedback / Code review is ❌):
+On FAIL (Gate 4 or Gate 5 fails, or Prior bot feedback / Code review is ❌):
 
 ```markdown
 ## PR Review — PR #<n> (<repo>)
@@ -1698,7 +1710,7 @@ Step 2.2 relevance bodies that therefore produced no drop / downgrade / promote.
 pool never bound and when `SUMMARY_VIEW` is false (every body was already loaded).
 `<CADV>` (near-miss issue/suggestion routed to the advisory body section) is reported separately
 and is NOT part of the `<CL> − <DEF> == <F>` identity — advisory findings never cleared 2.7.
-CI: PASS or FAIL (check names if failing).
+CI: PASS or WARN (check names if red or pending; never FAIL — see *Gate states*).
 Standards conformance (2.4d):
   Status:             ran | skipped (trivial diff) | skipped (--no-standards) | skipped (incremental-quick) | skipped (no governing docs found)
   Docs discovered:    <N> (total normative bullets: <B>)
@@ -2166,7 +2178,7 @@ The `<sup>` footer depends on run mode (substituted before posting):
 - `incremental` / `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
 - Zero-delta short-circuit: `<sup>No code changes since \`PRIOR_SHA_SHORT\` — gate checks only for commit \`HEAD_SHA\`.</sup>`
 
-Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (all clear), **WARN** (hard Gates 2/4/5 ✅ and at least one graded gate — Description vs. code, Prior bot feedback, or Code review — is ⚠️, none ❌; still a PASS verdict), or **FAIL** (any of Gates 2/4/5 fails, or Prior bot feedback / Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
+Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (all clear), **WARN** (hard Gates 4/5 ✅ and at least one graded gate — Description vs. code, CI, Prior bot feedback, or Code review — is ⚠️, none ❌; still a PASS verdict), or **FAIL** (Gate 4 or Gate 5 fails, or Prior bot feedback / Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
 
 #### REPORT_BODY payload
 
@@ -2258,20 +2270,21 @@ count. Both then name the important bit from each flagged gate — so a reader t
 *why* in one glance without opening the accordion.
 
 `SEVERITY_TALLY` (the **FAIL** headline and the Step 3 FAIL verdict only) — the count skeleton,
-wrapped as one bold span by the headline (`**<SEVERITY_TALLY>**`), ordered CI-then-errors-then-warnings.
+wrapped as one bold span by the headline (`**<SEVERITY_TALLY>**`), ordered errors-then-warnings.
 Substitute `<FAILING_GATE_COUNT> error(s)`, and append `, <WARN_GATE_COUNT> warning(s)` only when
 `WARN_GATE_COUNT > 0` (omit the warnings term at 0 — never render "0 warnings"). Pluralise each
-noun against its own count (`1 error, 2 warnings`; `2 errors`). **CI (Gate 2) is not in
-`<FAILING_GATE_COUNT>`** (criterion 2), so a CI failure is *named, not counted*: prefix `CI failing`
-to the tally and drop the `<N> error(s)` term when `<FAILING_GATE_COUNT>` is 0 — so a CI-only failure
-reads `CI failing` (never `0 error(s)`), and CI plus two failing gates reads `CI failing, 2 errors`.
-Every FAIL therefore leads with at least one concrete token. The **WARN** headline does not use
-`SEVERITY_TALLY` — with no errors it renders `**<WARN_GATE_COUNT> warning(s)**` directly.
+noun against its own count (`1 error, 2 warnings`; `2 errors`).
+
+**CI never appears in the tally.** There is no `CI failing` prefix and no CI token of any kind: red
+CI is a ⚠️ like any other warning gate, so it is counted in `<WARN_GATE_COUNT>` and named in
+`WARN_REASONS`. A CI failure can therefore no longer produce a FAIL on its own — with no failing hard
+gate and no ❌ there is nothing to tally, and the run renders the WARN headline. The **WARN** headline
+does not use `SEVERITY_TALLY` — with no errors it renders `**<WARN_GATE_COUNT> warning(s)**` directly.
 
 `FAIL_REASONS` / `WARN_REASONS` — the important bit **distilled** from each ❌ (resp. ⚠️) gate's
 Details into a terse noun phrase (≤ 8 words), derived from the gate, never a copy of the cell;
-most-severe first, joined by `; `. `FAIL_REASONS` carries **one phrase per ❌ gate** (plus a leading
-`CI checks failing` when CI is down), so it matches the tally's *error* count — NOT the full tally:
+most-severe first, joined by `; `. `FAIL_REASONS` carries **one phrase per ❌ gate** — and CI is
+never among them, because CI cannot be ❌ — so it matches the tally's *error* count, NOT the full tally:
 the warning gates are counted in the tally but named only in the accordion, never in the FAIL
 headline (so `1 error, 2 warnings` carries exactly one `FAIL_REASONS` phrase). `WARN_REASONS` carries
 one phrase per ⚠️ gate. Keep the whole line to one sentence-plus-clause; cap the reasons at ~140
@@ -2284,7 +2297,7 @@ chars — if longer, keep the top two and append `; +<k> more`.
 | Self-review signals | `debug logs left in` · `leftover TODO/stub` | — |
 | Code review | `<K> blocking finding(s) (see inline)` | `<N> non-blocking finding(s)` |
 | Description vs. code | — (soft gate — warns, never fails) | `description omits <thing>` |
-| CI (Gate 2) | `CI checks failing` — leads `FAIL_REASONS` and adds the `CI failing` token to the tally (see `SEVERITY_TALLY`); CI is never in `<FAILING_GATE_COUNT>` | — |
+| CI (Gate 2) | — (**warns, never fails** — see *Gate states*) | `CI red: <check names>` · `CI still pending` |
 
 The old `FAIL_BLOCKING_SUFFIX` slot is retired: the blocking-finding count now rides inside the
 Code-review entry of `FAIL_REASONS` (`(see inline)`), so the pointer is kept without a second clause.
@@ -2580,8 +2593,10 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   `conventional-comments.md` (Step 2.9) — NOT the `issue:` prefix count, since a non-blocking
   `issue:` is not blocking (see *Gate states*).
   These reuse the Quality-line values already computed at Step 2.9b — no separate counter.
-- `WARN_GATE_COUNT` = the number of gates showing ⚠️ in this run — Description vs. code, Prior bot
-  feedback, and/or Code review, so 0 to 3. It counts ⚠️ gates on a **FAIL** run too, not only a
+- `WARN_GATE_COUNT` = the number of gates showing ⚠️ in this run — Description vs. code, **CI**,
+  Prior bot feedback, and/or Code review, so 0 to 4. CI is in this set precisely because it warns
+  and never fails: leaving it out made a CI-only red render `**0 warning(s)**`, which this file
+  forbids. It counts ⚠️ gates on a **FAIL** run too, not only a
   WARN run, so the FAIL `SEVERITY_TALLY` can report warnings alongside errors.
   The top-level WARN headline leads with `WARN_GATE_COUNT`, not the finding count `N`, so it reads
   correctly even when there are zero inline findings (a Description-vs-code-only warning).
@@ -2655,7 +2670,7 @@ Include:
 - `prior-run state unknown` when `PRIOR_RUN_STATE_UNKNOWN` is true — a run that could not read the
   PR's comments reviewed it blind (no carry-forward, no dedup against its own prior comments), and
   that has to be visible next to the result rather than inferred from a missing line.
-- Gate verdicts (Gates 1/3/4/5/6 — Gate 2 shown separately as CI PASS/FAIL).
+- Gate verdicts (Gates 1/3/4/5/6 — Gate 2 shown separately as CI PASS/WARN; it never fails the verdict).
 - Integrations checked by Persona 4 and their spec versions, or "no integration changes detected".
 - Any findings dropped at line-validity for manual posting (verbatim).
 - Direct link: `https://github.com/<repo>/pull/<n>/files`.
