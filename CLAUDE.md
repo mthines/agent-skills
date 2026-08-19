@@ -182,6 +182,25 @@ The extension rejects events with a known `schemaVersion` that is not `1`; missi
 Sentinel file at `${CLAUDE_PLUGIN_DATA}/sentinel` controls activation.
 Validate with `claude plugin validate plugins/agent-tasks-hooks`.
 
+### Plugin: pr-reviewer-shape-guard
+
+`plugins/pr-reviewer-shape-guard/` — GitHub Actions reusable workflow that validates a **posted**
+`pr-reviewer` body against the report shape contract, from outside the agent.
+Logic lives in `scripts/validate-report-shape.mjs`; the reusable workflow is
+`.github/workflows/reviewer-report-shape.yml`, and this repo consumes it via
+`.github/workflows/reviewer-report-shape-self.yml` (local `uses:`, which always resolves from the default
+branch — `pull_request_review` and `issue_comment` workflows never run a PR's copy, so a change to the
+reusable workflow is exercised here only after merge; pre-merge coverage comes from L1 `G26`).
+Any repo adds the caller from `templates/report-shape-caller.yml` — no secrets.
+Fires on `pull_request_review` and `issue_comment`, posts one sticky notice per PR on a violation,
+and never edits or deletes the report itself.
+**Why it is the only guard that matters for drift:** L1, the renderer's fail-closed behaviour, the
+Step 4a pre-write assertions and the ingest round-trip all run inside the agent's control flow or
+against fixtures, so a run that hand-writes the body is invisible to every one of them — observed on
+`mthines/lorekit#503`, where one definition produced the correct shape three times and a flat,
+marker-less body on the fourth run 24 minutes later. Guarded by L1 `G26`, which executes the
+validator against real posted bodies kept in `scripts/eval/fixtures/posted-bodies/`.
+
 ### Plugin: pr-relevance-memory
 
 `plugins/pr-relevance-memory/` — GitHub Actions reusable workflow distribution plugin.

@@ -1579,6 +1579,196 @@ function checksInSync(plan, checks) {
     /PRIOR_REPORT_AUTHOR=[\s\S]{0,200}STICKY[\s\S]{0,80}LEGACY_REVIEW[\s\S]{0,80}POINTER_REVIEW/
       .test(prReviewer));
 
+  // ── G26: the out-of-band shape validator. Behavioural — these EXECUTE the validator, against
+  // both our own fixtures and REAL bodies as published. Everything else guarding the report shape
+  // runs inside the agent's control flow; a run that hand-writes the body is invisible to all of
+  // it, so this is the only check that observes what actually reached a PR.
+  {
+    const VALIDATOR = join(REPO_ROOT, "scripts/validate-report-shape.mjs");
+    const POSTED = join(REPO_ROOT, "scripts/eval/fixtures/posted-bodies");
+    const run = (input) => {
+      const r = spawnSync("node", [VALIDATOR], { input, encoding: "utf8" });
+      let verdict = null;
+      try { verdict = JSON.parse(r.stdout); } catch { /* reported below */ }
+      return { status: r.status, verdict, err: (r.stderr || "").trim() };
+    };
+    s.check("G26 the validator exists", existsSync(VALIDATOR));
+
+    // (a) Real production bodies must be rejected, with the specific codes that name the defect.
+    const REAL = [
+      ["lorekit-503-flat.md", ["missing-report-marker", "no-review-details-accordion",
+        "accordion-owned-line-at-top-level"]],
+      ["lorekit-503-report-as-pointer.md", ["report-marked-as-pointer"]],
+    ];
+    for (const [file, expectedCodes] of REAL) {
+      const p = join(POSTED, file);
+      if (!existsSync(p)) { s.check(`G26 posted fixture ${file} present`, false); continue; }
+      const r = run(readFileSync(p, "utf8"));
+      s.check(`G26 ${file} is rejected`, r.status === 1, `exit ${r.status}: ${r.err.slice(0, 80)}`);
+      const got = new Set((r.verdict?.violations || []).map((v) => v.code));
+      for (const code of expectedCodes) {
+        s.check(`G26 ${file} reports ${code}`, got.has(code), `got: ${[...got].join(", ")}`);
+      }
+    }
+
+    // (b) Every rendered snapshot must PASS. If the renderer's own output fails the external
+    // validator, the two disagree about the contract and one of them is wrong.
+    // A missing snapshot must FAIL, exactly as an absent posted fixture does in case (a). A bare
+    // `continue` here ran zero checks, so deleting all three snapshots would have passed by vacuity.
+    for (const name of ["pass", "warn", "fail"]) {
+      const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
+      if (!existsSync(p)) { s.check(`G26 report-body snapshot ${name}.expected.md present`, false); continue; }
+      const r = run(readFileSync(p, "utf8"));
+      s.check(`G26 the rendered ${name} snapshot passes the external validator`, r.status === 0,
+        `exit ${r.status}: ${r.err.slice(0, 120)}`);
+    }
+
+    // (b2) The gate table alone must classify a body as a report. The real flat body omitted
+    // `**Run mode**`, which broke a classifier that required two diagnostic labels; the abridged
+    // fixture still carries two others, so this synthesises the minimal case that makes the
+    // gate-table signal load-bearing. Column spacing varies between runs, so test both.
+    for (const [why, sep] of [["tight pipes", "|---|---|---|"], ["padded pipes", "| --- | --- | --- |"]]) {
+      const minimal = "Reviewed your changes — no blocking issues.\n\n"
+        + `| Gate | Status | Details |\n${sep}\n| Code review | ✅ | fine |\n`;
+      const r = run(minimal);
+      s.check(`G26 the gate table alone classifies a body as a report (${why})`,
+        r.status === 1 && r.verdict?.kind === "report-unmarked",
+        `kind ${r.verdict?.kind}, exit ${r.status}`);
+    }
+
+    // (b4) The gate table above the accordion must be caught with the SAME spacing tolerance the
+    // classifier uses. A literal `| Gate | Status | Details |` let a padded header classify as a
+    // report and then escape the flattening check.
+    for (const [why, hdr] of [["tight", "| Gate | Status | Details |"], ["padded", "|  Gate  |  Status  |  Details  |"]]) {
+      const flat = `Reviewed your changes.\n\n${hdr}\n|---|---|---|\n| Code review | OK | fine |\n\n`
+        + "<details>\n<summary>Review details</summary>\n\n**Run mode** \u2014 full\n\n</details>\n";
+      const r = run(flat);
+      s.check(`G26 a ${why}-spaced gate table above the accordion is flagged`,
+        r.status === 1 &&
+        (r.verdict?.violations || []).some((v) => v.code === "accordion-owned-line-at-top-level"),
+        `exit ${r.status}, codes: ${(r.verdict?.violations || []).map((v) => v.code).join(", ")}`);
+    }
+
+    // (b5) The pointer budget must match the agent's own pre-flight, which strips the ledger and
+    // nothing else. Stripping the marker too made the external guard looser than the internal one.
+    {
+      const marker = "<!-- PR_REVIEWER_POINTER -->";
+      const prose = "x".repeat(600 - marker.length + 5);
+      const r = run(`${marker}\n${prose}\n`);
+      s.check("G26 the pointer budget counts the marker, as the agent's pre-flight does",
+        r.status === 1 && (r.verdict?.violations || []).some((v) => v.code === "pointer-too-long"),
+        `exit ${r.status}, codes: ${(r.verdict?.violations || []).map((v) => v.code).join(", ")}`);
+    }
+
+    // (b6) The guard's own notice must not trip the guard. The workflow renders every violation
+    // `detail` into its sticky notice, so a detail quoting a marker verbatim made that notice
+    // classify as a malformed report when re-validated — the guard failing itself.
+    {
+      const flat = "Reviewed your changes.\n\n| Gate | Status | Details |\n|---|---|---|\n| Code review | OK | x |\n";
+      const r = run(flat);
+      const details = (r.verdict?.violations || []).map((v) => v.detail).join("\n");
+      const notice = ["<!-- PR_REVIEWER_SHAPE_GUARD -->",
+        "\u26a0\ufe0f **The last `pr-reviewer` body does not match the report shape contract.**", "",
+        ...(r.verdict?.violations || []).map((v) => `- \`${v.code}\` \u2014 ${v.detail}`), ""].join("\n");
+      const back = run(notice);
+      s.check("G26 no violation detail emits a marker verbatim",
+        !/<!--\s*PR_REVIEWER_(REPORT|POINTER)\s*-->/.test(details), details.slice(0, 120));
+      s.check("G26 the guard's own notice is not itself a reviewer body",
+        back.status === 0 && back.verdict?.kind === "not-a-reviewer-body",
+        `kind ${back.verdict?.kind}, exit ${back.status}`);
+    }
+
+    // (c) Non-reviewer bodies are ignored, so the guard never fires on ordinary PR chatter.
+    for (const [why, body] of [
+      ["a plain human comment", "LGTM, nice work on the caching layer."],
+      ["a body with one incidental bold label", "**Note** — rebased onto main."],
+    ]) {
+      const r = run(body);
+      s.check(`G26 the validator ignores ${why}`, r.status === 0 && r.verdict?.kind === "not-a-reviewer-body",
+        `kind ${r.verdict?.kind}, exit ${r.status}`);
+    }
+
+    // (d) A genuine one-line pointer conforms — the guard must discriminate report from pointer.
+    {
+      const r = run('<!-- PR_REVIEWER_POINTER -->\nReviewed `abc1234` — 3 finding(s) inline.\n\n'
+        + '<!-- PR_REVIEWER_LEDGER {"v":1,"runs":[]} -->\n');
+      s.check("G26 a genuine one-line pointer conforms", r.status === 0 && r.verdict?.kind === "pointer",
+        `kind ${r.verdict?.kind}, exit ${r.status}`);
+    }
+
+    // (e) Each remaining defect class, synthesised.
+    // Guarded like case (b): an unguarded readFileSync throws and aborts ALL of L1, turning one
+    // missing fixture into a total run failure with no per-check attribution.
+    const goodPath = join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.expected.md");
+    const goodPresent = existsSync(goodPath);
+    s.check("G26 report-body snapshot warn.expected.md present (the synthesis base)", goodPresent);
+    const good = goodPresent ? readFileSync(goodPath, "utf8") : "";
+    const CASES = goodPresent ? [
+      ["a pre-expanded accordion", good.replace("<details>\n<summary>Review details", "<details open>\n<summary>Review details"), "accordion-pre-expanded"],
+      ["a **Verdict** line", `${good}\n**Verdict**: PASS\n`, "verdict-in-posted-body"],
+      // Cage the WHOLE link, both delimiters — the production defect was
+      // ``['key'](url)``, and a leading pair alone cages nothing.
+      ["a caged markdown link",
+        good.replace(/^- (\[[^\]]*\]\([^)]*\))/m, "- ``$1``"), "link-caged-in-code-span"],
+      ["a count disagreeing with its list", good.replace("**Open bot threads (2)**", "**Open bot threads (5)**"), "count-disagrees-with-list"],
+      // The captured drift body wrote `**Open threads (6)**`; requiring the canonical `bot` wording
+      // let a hand-written heading's wrong count through the very check meant to catch it.
+      ["a drift-worded count disagreeing with its list",
+        good.replace("**Open bot threads (2)**", "**Open threads (5)**"), "count-disagrees-with-list"],
+      // The head slice must anchor on the `Review details` accordion, not on the first <details>.
+      // A flat body preceded by an unrelated fold sliced the head to nothing and reported clean.
+      ["a flat body preceded by an unrelated <details> fold",
+        "Reviewed your changes.\n\n<details>\n<summary>Additional findings</summary>\n\n- a\n\n</details>\n\n"
+        + "| Gate | Status | Details |\n|---|---|---|\n| Code review | \u2705 | fine |\n\n**Run mode** \u2014 full\n",
+        "accordion-owned-line-at-top-level"],
+    ] : [];
+    for (const [why, body, code] of CASES) {
+      const r = run(body);
+      s.check(`G26 the validator flags ${why}`, r.status === 1, `exit ${r.status}`);
+      s.check(`G26 ${why} reports ${code}`,
+        (r.verdict?.violations || []).some((v) => v.code === code),
+        (r.verdict?.violations || []).map((v) => v.code).join(", "));
+    }
+
+    // (f) The workflow and its caller template must reference the validator and each other, or the
+    // guard is unreachable from a consuming repo.
+    // Every read here is guarded: an unguarded readFileSync throws and takes down all of L1, so a
+    // deleted workflow would be reported as a total run failure instead of one named missing file.
+    const readGuarded = (rel) => {
+      const p = join(REPO_ROOT, rel);
+      const present = existsSync(p);
+      s.check(`G26 ${rel} present`, present);
+      return present ? readFileSync(p, "utf8") : "";
+    };
+    const wf = readGuarded(".github/workflows/reviewer-report-shape.yml");
+    if (wf) {
+      s.check("G26 the reusable workflow runs the validator",
+        wf.includes("scripts/validate-report-shape.mjs") && wf.includes("workflow_call"));
+      // BOTH body inputs, not just the review one: `github.event.comment.body` is equally
+      // attacker-controlled, and asserting only the review body left half the claim unguarded.
+      for (const [label, expr] of [
+        ["REVIEW_BODY", "github.event.review.body"],
+        ["COMMENT_BODY", "github.event.comment.body"],
+      ]) {
+        const bound = new RegExp(`${label}: \\$\\{\\{ ${expr.replace(/\./g, "\\.")} \\}\\}`);
+        const spliced = new RegExp(`run:[\\s\\S]{0,400}\\$\\{\\{ ${expr.replace(/\./g, "\\.")} \\}\\}`);
+        s.check(`G26 the workflow binds ${label} via env, never interpolated into shell`,
+          bound.test(wf) && !spliced.test(wf));
+      }
+      s.check("G26 the workflow posts one sticky notice, keyed by a marker",
+        wf.includes("PR_REVIEWER_SHAPE_GUARD") && wf.includes("-X PATCH"));
+    }
+    const caller = readGuarded("plugins/pr-reviewer-shape-guard/templates/report-shape-caller.yml");
+    if (caller) {
+      s.check("G26 the caller template targets the reusable workflow",
+        caller.includes("mthines/agent-skills/.github/workflows/reviewer-report-shape.yml@main"));
+      // The caller must grant at least what the reusable workflow requests, or the run fails on a
+      // repo whose default token is read-only.
+      s.check("G26 the caller template declares the permissions the reusable workflow needs",
+        /permissions:\s*\n\s*contents: read\s*\n\s*pull-requests: write/.test(caller));
+    }
+  }
+
   // G24c: the three Gate-3 failure modes are registered in the diagnostic surface, so a
   // regression has a named bucket instead of silently becoming "expected behaviour".
   for (const fm of ["F-nonblocking-thread-fails-gate-3", "F-gate-3-severity-reinvented",

@@ -1,0 +1,9 @@
+{
+  "name": "pr-reviewer-shape-guard",
+  "version": "1.0.0",
+  "description": "GitHub Actions reusable workflow that validates a POSTED pr-reviewer report body against the report shape contract, from outside the agent",
+  "author": { "name": "mthines" },
+  "repository": "https://github.com/mthines/agent-skills",
+  "license": "MIT",
+  "keywords": ["reviewer", "pr-review", "report-shape", "github-actions", "validation"]
+}
