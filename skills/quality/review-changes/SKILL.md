@@ -6,7 +6,7 @@ description: >
   convergence loop, or to `pr-reviewer` directly for a one-shot read-only review.
   Invoke with /review-changes.
 disable-model-invocation: true
-argument-hint: '[<pr-url>|#<n>] [--report] [--critical]'
+argument-hint: '[<pr-url>|#<n>] [--report] [--critical] [--no-ci] [--external-review] [--interval S]'
 license: MIT
 metadata:
   author: mthines
@@ -20,8 +20,11 @@ Choose the path based on the argument shape:
 
 | Argument shape | Path | Reason |
 | --- | --- | --- |
-| no arg / `--report` | `Skill("review-loop", "<pr-url>")` on the current branch's open PR, or `pr-reviewer` directly if `--report` (one-shot, no apply) | Own PR convergence loop, or one-shot report. |
-| PR URL or `#<n>` | `Skill("review-loop", "<pr-url>")` — runs the bounded review-apply-simplify loop | Converges the PR regardless of who authored it (`pr-reviewer` detects `REVIEW_RELATION` itself). |
+| no arg / `--report` | `Skill("review-loop", "<pr-url> [--critical\|--no-ci\|--external-review\|--interval S]")` on the current branch's open PR, or `pr-reviewer` directly if `--report` (one-shot, no apply) | Own PR convergence loop, or one-shot report. |
+| PR URL or `#<n>` | `Skill("review-loop", "<pr-url> [--critical\|--no-ci\|--external-review\|--interval S]")` — runs the bounded review-apply-simplify loop | Converges the PR regardless of who authored it (`pr-reviewer` detects `REVIEW_RELATION` itself). |
+
+`--no-ci`, `--external-review` and `--interval S` are pass-throughs: this skill never
+sets them itself, it only forwards what the user passed (see the note below).
 
 ```bash
 # Resolve the current PR if no argument given
