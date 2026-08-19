@@ -433,7 +433,7 @@ while merely pending**, printing to stdout, so non-zero with empty stderr means
 | Check state | `CI_STATE` | This loop does |
 | --- | --- | --- |
 | All terminal and passing | `green` | Nothing. Convergence may proceed |
-| Any still pending | `pending` | Nothing this iteration — do **not** wait. The next iteration re-reads it; the cap bounds the wait |
+| Any still pending | `pending` | Nothing this iteration — do **not** wait. A *continuing* loop re-reads it next iteration; a loop that exits here does not, so `pending` can be the state it converges on |
 | Any check failing | `red` | Dispatch `ci-auto-fix` as a subagent (its output is loud and belongs out of this context), unless `CI_HANDOFFS` is already 2 |
 | Query errored (exit 127, or stderr naming auth / network / rate limit / not-logged-in) | `error` | **Tooling failure, not "no CI".** Report and escalate. Never route to `ci-auto-fix` |
 | Nothing reported, query succeeded, and this iteration just pushed | — | Not registered yet. Run the shared [registration poll](../../delivery/create-pr/rules/registration-poll.md#the-poll) and re-classify from its outcome; `no-ci` means this repo genuinely has no CI, and counts as `green` for convergence |
@@ -442,7 +442,11 @@ while merely pending**, printing to stdout, so non-zero with empty stderr means
 ci_is_settled():   # the convergence predicate
     NO_CI == 1                      → true    # caller owns CI; not this loop's call
     CI_STATE == "unread"            → read check state now, then re-evaluate
-    CI_STATE in (green, pending)    → true    # pending is not red; the cap bounds it
+    CI_STATE in (green, pending)    → true    # pending is not red, and this loop
+                                              # never waits for CI. On the convergence
+                                              # exit there is no next iteration, so a
+                                              # pending build converges unwatched:
+                                              # "converged" means not red, not green.
     CI_STATE == red                 → false
     CI_STATE == error               → abort, do not converge
 ```

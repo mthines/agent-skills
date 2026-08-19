@@ -35,9 +35,15 @@ fi
 
 **`review-changes` passes no `--no-ci`** — unlike `create-pr` and `autonomous-workflow`
 Phase 7, it owns no CI phase of its own, so the loop's CI sub-step is exactly what
-makes a standalone run converge to a green PR rather than a green-threads-red-build
-one. Forward `--no-ci`, `--external-review`, and `--interval` through when the user
-passes them.
+keeps a standalone run from converging on a **red** build instead of a
+green-threads-red-build one. Forward `--no-ci`, `--external-review`, and `--interval`
+through when the user passes them.
+
+It converges on *not red*, not on *green*. `review-loop`'s `ci_is_settled()` treats
+`pending` as settled — the loop reads check state, never waits for it — so a run can
+converge with checks still in flight. Wait for the checks yourself before merging, or
+give CI to a caller that owns a watch (`create-pr` Step 9, `phase-7-ci-gate.md`) and
+pass `--no-ci` here.
 
 ```
 # Default — convergence loop on own or specified PR
