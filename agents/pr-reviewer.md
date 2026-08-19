@@ -82,7 +82,7 @@ Gate checks (Step 1.8) always run against the full PR state in every mode — CI
 A PR PASSES when ALL of the following are true:
 
 1. **Description vs. code** — the description accurately reflects what the diff does; an independent reader reaches the same conclusion about intent and scope from the description alone as from the diff. A mismatch is a **soft warning** (⚠️), not a failure — see *Gate states* below.
-2. **CI status** — all build, test, lint, and docs checks are green. (Contributes to verdict but is NOT shown as a row in the review table — CI details are redundant there; GitHub's checks section shows them.)
+2. **CI status** — all build, test, lint, and docs checks are green. This is a soft-warning gate — red or pending CI yields ⚠️ and never fails the PR (see *Gate states*). It is NOT shown as a row in the review table; GitHub's checks section shows the detail, and `CI_NOTE` carries the substance.
 3. **Prior bot feedback** — all prior automated review comments (Cursor, Claude, other agents) are resolved or explicitly dismissed. An open thread whose ask is non-blocking, or which has already been answered on-thread, is a **soft warning** (⚠️) — only an *unanswered blocking* ask fails this gate. See *Gate states* below.
 4. **Self-review signals** — no debug logs, commented-out code, leftover TODO/FIXME/HACK markers on new lines, or obvious unreviewed AI stubs in the diff.
 5. **Documentation adequacy** — description, inline comments, and any docs are sufficient for an independent reader to understand the change's purpose and behavior.
@@ -1124,7 +1124,7 @@ Result: PASS (✅) or WARN (⚠️) with finding text — a mismatch is a soft w
 
 **Gate 2 — CI status** (reported, never blocking — excluded from the review body table)
 Read the CI checks output (Step 1.1 command C). List every failing or still-pending
-check by name, and say what each failure is on where the output makes that readable.
+check by name, and — where the output makes it readable — say what each failure is on.
 Result: PASS (✅, all green) or WARN (⚠️) with the failing check names. **Never ❌** — see
 *Gate states*. Report the detail in `CI_NOTE`; a red check the diff demonstrably causes is filed
 under Gate 6 instead, on this reviewer's own evidence.
@@ -1607,7 +1607,7 @@ fixed enumeration with no slot for either counter; do not wedge them in there.
 Produce two views before posting: a summary with the gate table, then numbered detail cards.
 Always include the run mode and delta context in the header:
 
-Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 4/5 all ✅) and neither tri-state gate — Prior bot feedback, Code review — is ❌, but at least one graded gate — Description vs. code, Prior bot feedback, or Code review — is ⚠️ (still a PASS verdict); **FAIL** when Gate 4 or Gate 5 fails or the Prior bot feedback or Code review gate is ❌ (CI never fails it).
+Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 4/5 all ✅) and neither tri-state gate — Prior bot feedback, Code review — is ❌, but at least one graded gate — Description vs. code, CI, Prior bot feedback, or Code review — is ⚠️ (still a PASS verdict); **FAIL** when Gate 4 or Gate 5 fails or the Prior bot feedback or Code review gate is ❌ (CI never fails it).
 
 On PASS — all clear (every gate ✅):
 
@@ -1710,7 +1710,7 @@ Step 2.2 relevance bodies that therefore produced no drop / downgrade / promote.
 pool never bound and when `SUMMARY_VIEW` is false (every body was already loaded).
 `<CADV>` (near-miss issue/suggestion routed to the advisory body section) is reported separately
 and is NOT part of the `<CL> − <DEF> == <F>` identity — advisory findings never cleared 2.7.
-CI: PASS or FAIL (check names if failing).
+CI: PASS or WARN (check names if red or pending; never FAIL — see *Gate states*).
 Standards conformance (2.4d):
   Status:             ran | skipped (trivial diff) | skipped (--no-standards) | skipped (incremental-quick) | skipped (no governing docs found)
   Docs discovered:    <N> (total normative bullets: <B>)
@@ -2178,7 +2178,7 @@ The `<sup>` footer depends on run mode (substituted before posting):
 - `incremental` / `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
 - Zero-delta short-circuit: `<sup>No code changes since \`PRIOR_SHA_SHORT\` — gate checks only for commit \`HEAD_SHA\`.</sup>`
 
-Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (all clear), **WARN** (hard Gates 4/5 ✅ and at least one graded gate — Description vs. code, Prior bot feedback, or Code review — is ⚠️, none ❌; still a PASS verdict), or **FAIL** (Gate 4 or Gate 5 fails, or Prior bot feedback / Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
+Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (all clear), **WARN** (hard Gates 4/5 ✅ and at least one graded gate — Description vs. code, CI, Prior bot feedback, or Code review — is ⚠️, none ❌; still a PASS verdict), or **FAIL** (Gate 4 or Gate 5 fails, or Prior bot feedback / Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
 
 #### REPORT_BODY payload
 
@@ -2593,8 +2593,10 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   `conventional-comments.md` (Step 2.9) — NOT the `issue:` prefix count, since a non-blocking
   `issue:` is not blocking (see *Gate states*).
   These reuse the Quality-line values already computed at Step 2.9b — no separate counter.
-- `WARN_GATE_COUNT` = the number of gates showing ⚠️ in this run — Description vs. code, Prior bot
-  feedback, and/or Code review, so 0 to 3. It counts ⚠️ gates on a **FAIL** run too, not only a
+- `WARN_GATE_COUNT` = the number of gates showing ⚠️ in this run — Description vs. code, **CI**,
+  Prior bot feedback, and/or Code review, so 0 to 4. CI is in this set precisely because it warns
+  and never fails: leaving it out made a CI-only red render `**0 warning(s)**`, which this file
+  forbids. It counts ⚠️ gates on a **FAIL** run too, not only a
   WARN run, so the FAIL `SEVERITY_TALLY` can report warnings alongside errors.
   The top-level WARN headline leads with `WARN_GATE_COUNT`, not the finding count `N`, so it reads
   correctly even when there are zero inline findings (a Description-vs-code-only warning).
