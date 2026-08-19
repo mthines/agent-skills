@@ -436,8 +436,11 @@ simplify recipes. Those commits land *after* the Step 1 watch already went green
 the watch this phase performed says nothing about the current head. Handing back here
 reports a green PR on an unobserved commit.
 
-Skip this step only if `review-loop` reported that it applied nothing and pushed
-nothing (`0 applied, 0 answered, 0 simplify recipes`). Otherwise:
+Skip this step only if `review-loop` pushed nothing. Its report carries no run
+total — the `applied`, `answered/resolved`, and `simplify recipes` counts appear
+**per iteration**, in the `Per-iteration summary:` block — so **sum each of the
+three columns across every iteration row** and skip only when all three sums are
+zero. A non-zero sum in any one of them means a commit landed. Otherwise:
 
 ```bash
 # No --watch: returns immediately with the state of the CURRENT head.
