@@ -16,6 +16,10 @@ description: >
   --external-review the reviewer is out-of-process: sub-step A waits on the
   shared review-activity poll for another agent's review instead of dispatching
   pr-reviewer, which also makes the loop usable where the Task tool is disabled.
+  Caller contract: this is an orchestrator whose first sub-step is a delegation,
+  so it must run at the TOP LEVEL of a session that still holds the Task tool —
+  never dispatch it into a sub-agent, which cannot delegate further and can only
+  skip at iteration 0.
   Callers: autonomous-workflow Phase 6/7, create-pr (post-draft), and standalone
   via /review-changes. Invoke with /review-loop <PR-URL|#n> [--cap N]
   [--critical] [--external-review] [--interval S] [--no-ci] [--no-feedback]
@@ -25,7 +29,7 @@ argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--external-review] [--interv
 license: MIT
 metadata:
   author: mthines
-  version: '1.3.0'
+  version: '1.4.0'
   workflow_type: command
   tags:
     - review
@@ -76,6 +80,37 @@ they consume threads from GitHub and do not care who wrote them.
 `Skill("pr-reviewer", …)` — there is no skill by that name and it errors with
 `Unknown skill: pr-reviewer`.
 
+#### Caller contract — run this loop at the top level, never inside a sub-agent
+
+This skill is an orchestrator whose **first sub-step is itself a delegation**. It
+must therefore be invoked from a context that still holds the `Task` tool. Most
+harnesses give a dispatched sub-agent no `Task` tool at all (Dash0 Agent0
+sub-agents cannot delegate further, by platform design), so a caller that
+dispatches this loop into a sub-agent spends the run's delegation budget one level
+too high and leaves the loop with nothing to dispatch `pr-reviewer` with. The loop
+then has exactly one honest outcome: a skip at iteration 0, with the PR unreviewed.
+
+```text
+# WRONG — the loop arrives without Task and can only skip at iteration 0
+Task(subagent_type="general", prompt="Run /review-loop <PR-URL>")
+
+# RIGHT — the caller runs the loop itself and spends Task on the agents it needs
+Skill("review-loop", "<PR-URL>")        # → the loop dispatches pr-reviewer via Task
+```
+
+A caller that can make **only one** dispatch has two supported shapes, in
+preference order:
+
+| Shape | What the caller does | Consequence |
+| --- | --- | --- |
+| **Own the loop** (preferred) | Run this procedure at the top level and spend the delegation budget on `pr-reviewer` / `implement-suggestion` | The only shape in which the loop can converge a PR |
+| **Delegate with `--external-review`** | Dispatch the loop *with `--external-review` passed deliberately by the caller*, never invented by the callee | No `pr-reviewer` pass happens: a fix-and-polish loop over someone else's review |
+
+**One skip is conclusive — never retry the dispatch.** A missing `Task` tool is a
+property of the dispatch topology, decided before any code is read; a second
+attempt re-derives a platform fact at the cost of a full round trip and cannot
+change the outcome.
+
 **When sub-agent dispatch is unavailable.** Some harnesses disable the `Task`
 tool, so that dispatch fails outright (`Failed to run agent`). `pr-reviewer` has
 **no `Skill()` form and no in-context substitute** — its review independence comes
@@ -85,7 +120,17 @@ produce a self-review wearing a reviewer's label, which is worse than no review.
 Check for it in [Step 0](#step-0-resolve-the-pr-and-preconditions) and **self-report
 a clean skip** rather than letting the caller discover it as a mid-loop tool error:
 
+Two causes produce the same missing tool, and they get **different skip lines**
+because they have different fixes. Report the one you can evidence; when you cannot
+tell them apart, report the harness line:
+
+| Cause | How you know | Skip line |
+| --- | --- | --- |
+| **Nested dispatch** (caller error, fixable today) | You are running as a dispatched sub-agent — the caller's prompt dispatched this loop rather than running it | `skipped (nested dispatch — review-loop must run at the top level; the caller consumed the delegation budget)` |
+| **Harness disables `Task`** (environment) | This is the top-level session and `Task` is still absent from the tool set | `skipped (sub-agent dispatch unavailable; pr-reviewer requires it)` |
+
 ```markdown
+- [TIMESTAMP] review-loop — skipped (nested dispatch — review-loop must run at the top level; the caller consumed the delegation budget). Have the caller run the loop itself, or dispatch it with --external-review.
 - [TIMESTAMP] review-loop — skipped (sub-agent dispatch unavailable; pr-reviewer requires it)
 ```
 
@@ -172,6 +217,9 @@ the `pr-reviewer` agent, which has no non-`Task` substitute (see
 [Dispatch mechanics](#dispatch-mechanics--read-before-invoking)). Before entering the
 loop, check whether `Task` appears in your available tools; if it plainly does not,
 emit the skip line from that section and return, without running sub-steps B or C.
+Pick the skip line by cause — **nested dispatch** when you are running as a
+dispatched sub-agent, the harness line otherwise — and do **not** retry the
+dispatch: one missing-`Task` return is conclusive.
 
 **Skip this precondition entirely when `--external-review` is set** — that mode
 dispatches no `pr-reviewer`, so a missing `Task` tool is not disqualifying.
@@ -523,7 +571,12 @@ After the loop exits (converged, no-progress, or at cap), emit a compact summary
 review-loop on PR #<n> (<RESOLVED_REPO>)
 
 Iterations: <N> of <CAP>
-Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | ci-red (cap on ci-auto-fix handoffs) | ci-error (check query failed) | poll error | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable)>
+Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | ci-red (cap on ci-auto-fix handoffs) | ci-error (check query failed) | poll error | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable) | skipped (nested dispatch — must run at top level)>
+# The two skipped tokens are distinct on purpose. A nested dispatch is a caller
+# bug with a same-day fix; a disabled Task tool is the environment. Never report a
+# skip as "report-only" because it is the nearest token — report-only means a
+# review pass ran and its findings were not applied, which is the opposite of a
+# PR that was never reviewed.
 Review source: <pr-reviewer | external>
 # No count on the external arm: the shared poll is a liveness probe and returns only
 # NEW_FEEDBACK / NO_FEEDBACK / POLL_ERROR. It exposes no event count, and widening a
@@ -557,6 +610,9 @@ threads over a red build is not a review-ready PR.
 ## Hard rules
 
 - **The only permitted `polish` invocation is `Skill("polish", "simplify")`.** Non-simplify modes trigger an internal agent pass and create a dispatch cycle.
+- **This loop runs at the top level, never inside a sub-agent.** Its first sub-step is a delegation, so a caller that dispatches the loop instead of running it spends the delegation budget one level too high and the loop can only skip at iteration 0 ([Caller contract](#caller-contract--run-this-loop-at-the-top-level-never-inside-a-sub-agent)). A caller limited to one dispatch passes `--external-review` **deliberately** — the loop never adds that flag to itself.
+- **One missing-`Task` skip is terminal.** Never retry the dispatch and never work around it: the tool's absence is fixed by the dispatch topology before any code is read, so a retry costs a round trip and returns the same answer.
+- **A skip is never reported as convergence, and never as report-only.** Zero open threads plus green CI is not convergence when no review pass produced a verdict; say plainly that the loop did not run and the PR was not reviewed.
 - **Convergence never green-washes.** The loop resolves a thread only via a fix or an honest reply. A live finding the agent cannot fix or honestly decline stays open and is surfaced — the loop never resolves it to terminate. This is `implement-suggestion --resolve-all`'s safety valve, inherited here.
 - **Never write to GitHub directly, except the Step 2 description refresh.** `pr-reviewer` posts the `COMMENT` review and `implement-suggestion` resolves threads; this skill orchestrates. The one direct write it owns is the final `gh pr edit --body` refresh.
 - **Never undraft the PR.** This skill converges; the user makes the final undraft decision.
