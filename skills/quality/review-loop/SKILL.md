@@ -345,6 +345,10 @@ while ITERATION < CAP:
     # a red mechanical failure to ci-auto-fix. Skipped under --no-ci.
     if NO_CI == 0:
         CI_STATE = read check state (stateless query, no watch)   # green|pending|red|error
+        if CI_STATE == "error":
+            # Tooling failure, not "no CI" and not a red build. Same verdict as
+            # ci_is_settled()'s error arm: never route to ci-auto-fix, never converge.
+            break   # stop reason "ci-error"; report the query failure and escalate
         if CI_STATE == "red" and CI_HANDOFFS < 2:
             dispatch ci-auto-fix as a subagent; CI_HANDOFFS += 1
 
@@ -493,7 +497,7 @@ After the loop exits (converged, no-progress, or at cap), emit a compact summary
 review-loop on PR #<n> (<RESOLVED_REPO>)
 
 Iterations: <N> of <CAP>
-Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | ci-red (cap on ci-auto-fix handoffs) | poll error | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable)>
+Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | ci-red (cap on ci-auto-fix handoffs) | ci-error (check query failed) | poll error | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable)>
 Review source: <pr-reviewer | external (<N> review events observed)>
 
 Per-iteration summary:
@@ -503,7 +507,7 @@ Per-iteration summary:
 Open threads at exit: <count>
   - <one line per still-open human-judgment flag / unresolved blocker>
 
-CI at exit: <green | pending | red (<failing check names>) | not run (--no-ci) | none on this repo>
+CI at exit: <green | pending | red (<failing check names>) | error (<verbatim query failure>) | not run (--no-ci) | none on this repo>
   ci-auto-fix handoffs: <CI_HANDOFFS> of 2
 
 PR description: <refreshed | unchanged (no code applied) | skipped (--no-refresh)>
