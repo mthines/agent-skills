@@ -408,11 +408,12 @@ gh pr checks "$PR_NUMBER" --repo "$RESOLVED_REPO"
 ```
 
 This is a **query, not a watch**: it adds no `gh … --watch` site and spends nothing
-from the `.agent/ci-watch-<pr>.state` budget that
+from the watch budgets that
 [`create-pr` Step 9](../../delivery/create-pr/SKILL.md) and
 [`phase-7-ci-gate.md`](../../workflow/autonomous-workflow/rules/phase-7-ci-gate.md)
-own as its single writer. `ci-auto-fix` keeps its own local counter and treats that
-state file as informational, so delegating to it stays inside the existing contract.
+each count inside their own invocation. `ci-auto-fix` likewise keeps its own local
+counter, so delegating to it stays inside the existing contract — no budget is
+shared, and none is carried across contexts.
 
 Classify with the same three-way rule as `phase-7-ci-gate.md` Step 1 — **"no checks
 reported" is three different states**, and a bare `gh pr checks` **exits non-zero
@@ -530,7 +531,7 @@ threads over a red build is not a review-ready PR.
 - **Cap is a hard limit.** If threads are still open at the cap, surface them and stop. Do not extend the cap silently.
 - **Convergence requires CI settled, not just threads resolved.** Unless `--no-ci` is set, a red check blocks the clean-convergence exit. Reporting zero open threads over a red build is the CI-shaped version of green-washing.
 - **Never fix CI in this context.** Sub-step D classifies and delegates to `ci-auto-fix`; it applies no fix itself, and every `ci-auto-fix` refusal (no `--no-verify`, no `continue-on-error`, no skipped suites, no weakened assertions) holds transitively.
-- **Never write the CI-watch state file.** `.agent/ci-watch-<pr>.state` has a single writer — the dispatching orchestrator (`create-pr` Step 9 / `phase-7-ci-gate.md`). Sub-step D queries check state statelessly and writes nothing.
+- **Never carry CI watch state — query it.** Sub-step D reads check state statelessly at the current remote head and writes nothing; it never records a verdict or a spent budget for another phase to inherit, and it never reintroduces a cross-phase watch-state file ([`diagnostic-surface.md`](../../workflow/autonomous-workflow/rules/diagnostic-surface.md) — *watch state is queried, never carried*). `CI_HANDOFFS` is counted inside this run only.
 - **A failed poll is never a quiet reviewer.** Under `--external-review`, `POLL_ERROR` aborts with `poll error`. Converting a broken probe into "the reviewer had nothing to say" reports a never-reviewed PR as converged.
 - **Never restate the shared poll.** `--external-review` calls [`review-activity-poll.md`](../../../agents/shared/rules/review-activity-poll.md); copying the block forks four correctness properties that are individually easy to drop.
 

@@ -116,10 +116,11 @@ Pass `--critical` through to `review-loop` / `pr-reviewer` if the user passed it
 
 **Always pass `--no-ci` to `review-loop` here.** The loop has its own CI sub-step that
 would dispatch `ci-auto-fix`; letting it run would make it a second spender of the
-per-PR handoff budget that Steps 7–9 own as its single writer. `create-pr` does not
+handoff budget that Steps 7–9 own for this invocation. `create-pr` does not
 need it: Steps 7–9 run **after** this step, so every commit the loop pushes is
 covered by the watch that follows. Suppressing the loop's CI step here is what keeps
-`.agent/ci-watch-<pr>.state` single-writer for the whole PR.
+this invocation's budget accountable to one owner — the counters live in this
+skill's own transcript, never in a state file carried between phases.
 
 **Rows 3 and 4 both need sub-agent dispatch.** `pr-reviewer` is `Task`-only with no in-context substitute. Confirm `Task` is available before taking either row; if it is not, do not attempt the dispatch and do not silently fall through to row 2 — record `NOT REVIEWED` and carry it into Step 10.
 

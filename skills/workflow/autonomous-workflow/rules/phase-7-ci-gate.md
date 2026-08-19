@@ -454,9 +454,11 @@ and a bare `gh pr checks` still exits non-zero while merely pending.
 | Any still pending | Watch, bounded, per the Step 1 block — reusing this phase's counters |
 | Query errored | Tooling failure. Report and escalate; do **not** route to Auto Fix |
 
-Because this phase never handed the budget to `review-loop`, there is exactly one
-writer of `.agent/ci-watch-<pr>.state` for the whole PR, and `attempts` still means
-what Step 1 set it to mean.
+Because this phase never handed the budget to `review-loop`, `attempts` is spent by
+this phase alone and still means what Step 1 set it to mean. The counter lives in this
+phase's own transcript — no state file carries it across phases
+([`diagnostic-surface.md`](./diagnostic-surface.md) — *watch state is queried, never
+carried*).
 
 ### Step 3: Log and hand back
 
