@@ -11,7 +11,7 @@ description: >
   opening a draft PR to converge the branch to a clean, review-ready state
   before undrafting. Also converges CI: after each iteration's push it reads the
   check state and delegates a red mechanical failure to ci-auto-fix, so
-  convergence means zero open threads AND green CI (--no-ci opts out; create-pr
+  convergence means zero open threads AND CI not red (--no-ci opts out; create-pr
   and autonomous-workflow pass it because they own their own CI phase). With
   --external-review the reviewer is out-of-process: sub-step A waits on the
   shared review-activity poll for another agent's review instead of dispatching
