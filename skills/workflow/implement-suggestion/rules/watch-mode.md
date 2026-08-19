@@ -103,9 +103,20 @@ Classify the result exactly as [`phase-7-ci-gate.md` Step 1](../../../workflow/a
 
 | Check state | Watch mode does |
 | ----------- | --------------- |
-| Green, or still pending | Continue the loop |
+| All terminal and passing | Continue the loop |
+| Any still pending | Continue the loop — never wait here. Record the state as **unread**, not green (see the re-read below) |
 | Any check failing | **Stop** with reason `ci red — <check names>`. Surface the failing checks in the report and name `ci-auto-fix` (or `review-loop`, which composes both) as the next step |
 | Query errored (exit 127, or stderr naming auth / network / rate limit) | Tooling failure, not "no CI". Report and escalate — the same rule as `POLL_ERROR` |
+| Nothing reported, query succeeded, and this iteration just pushed | Not registered yet. Run the shared [registration poll](../../../delivery/create-pr/rules/registration-poll.md#the-poll) and re-classify from its outcome; `no-ci` means this repo genuinely has no CI and counts as green |
+
+**Re-read before you stop, or the `ci red` stop never fires.** This read runs
+seconds after the iteration's own push, when every check is pending or not yet
+registered, so a single post-push read almost always classifies as "continue" and
+the red arrives during the next wait. So: whenever the recorded state is `unread`
+(pending, or the registration poll came back still-pending), read it **once more**
+at the current head immediately before the loop stops — for any stop reason, cap
+included — and classify with the same table. Never report a CI state you did not
+read at the head you are stopping on.
 
 This is **reporting, not fixing**: watch mode dispatches nothing, pushes no CI fix,
 and spends none of the `ci-auto-fix` handoff budget that
