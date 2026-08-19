@@ -367,7 +367,10 @@ while ITERATION < CAP:
         break
 
 if ITERATION == CAP:
-    if CI_STATE == "unread" and NO_CI == 0:
+    # NO_FEEDBACK == 1 forces CAP=1, so this branch is always taken on a
+    # report-only run — which broke out at the top having pushed nothing. There is
+    # no head of this loop's making to read CI at, so gate on it as well as NO_CI.
+    if CI_STATE == "unread" and NO_CI == 0 and NO_FEEDBACK == 0:
         CI_STATE = read check state   # never report a state you have not read at head
     if unresolved_thread_count() > 0 or CI_STATE == "red":   # CI_STATE stays "unread" under --no-ci
         report: cap reached; surface remaining blockers/flags AND any red check
