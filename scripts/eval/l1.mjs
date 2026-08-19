@@ -1817,8 +1817,46 @@ function checksInSync(plan, checks) {
     // Registered in the diagnostic surface, as an invariant and a failure mode.
     s.check("G27 diagnostic-surface registers F-ci-failed-the-verdict",
       prReviewerDiag.includes("F-ci-failed-the-verdict"));
+    // Absence is not sufficiency. Dropping Gate 2 from the hard set only lands if CI is ADDED
+    // wherever the WARNING gates are enumerated — the WARN presentation selectors and the
+    // WARN_GATE_COUNT definition. All three omitted it while L1 was green at 549/549, so a
+    // CI-only ⚠️ selected neither PASS ("every gate is ✅") nor WARN, and would have rendered
+    // `**0 warning(s)**`. Assert the presence side too.
+    for (const [what, anchor] of [
+      ["the Step 3 WARN selector", "Pick the presentation by verdict"],
+      ["the Step 4 WARN selector", "Pick the body by verdict"],
+    ]) {
+      const sel = sliceBetween(prReviewer, anchor, "\n\n");
+      s.check(`G27 ${what} lists CI among the graded gates`,
+        /at least one graded gate — Description vs\. code, CI, Prior bot feedback/.test(sel),
+        sel.slice(0, 120));
+    }
+    {
+      const wgc = sliceBetween(prReviewer, "- `WARN_GATE_COUNT` = the number of gates showing",
+        "The top-level WARN headline leads with");
+      s.check("G27 WARN_GATE_COUNT counts CI among the warning gates",
+        /\*\*CI\*\*/.test(wgc) && /so 0 to 4/.test(wgc), wgc.slice(0, 140));
+    }
+    // The criteria list is read as normative, so it must not still call CI verdict-bearing.
+    {
+      const crit = sliceBetween(prReviewer, "2. **CI status**", "3. **Prior bot feedback**");
+      s.check("G27 criterion 2 declares CI a soft-warning gate, not verdict-bearing",
+        /soft-warning gate/.test(crit) && !/Contributes to verdict/.test(crit), crit.slice(0, 120));
+    }
+    // The reference fixtures must not demonstrate the shape G27 forbids — G25 diffs them, so a
+    // stale fixture locks the forbidden headline in as the expected rendering.
+    for (const name of ["pass", "warn", "fail"]) {
+      for (const ext of ["json", "expected.md"]) {
+        const f = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.${ext}`);
+        if (!existsSync(f)) continue;
+        const t = readFileSync(f, "utf8");
+        s.check(`G27 fixture ${name}.${ext} carries no CI-blocking headline`,
+          !/CI failing/.test(t) && !/Blocking: CI checks failing/.test(t));
+      }
+    }
     s.check("G27 diagnostic-surface carries the CI-never-fails invariant",
-      /\*\*CI never fails the verdict\.\*\*/.test(prReviewerDiag));  }
+      /\*\*CI never fails the verdict\.\*\*/.test(prReviewerDiag));
+  }
 
   // G24c: the three Gate-3 failure modes are registered in the diagnostic surface, so a
   // regression has a named bucket instead of silently becoming "expected behaviour".
