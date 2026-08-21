@@ -30,7 +30,7 @@ Skill("verify-behavior", "claim")
   caller: "pr-reviewer"
 ```
 
-The skill returns a receipt in the same `[receipt] … → verdict: <confirms|contradicts|ambiguous|null>` shape this rule already produces at Tier 1 — see [`skills/quality/verify-behavior/rules/receipt.md`](../../../skills/quality/verify-behavior/rules/receipt.md) for the full contract. That receipt is consumed by Step 2.7 exactly like a Tier 1 receipt; the 2.6 → 2.6b → 2.7 pipeline order does not change, and the null-drop invariant below applies identically regardless of which tier produced the receipt.
+The skill returns a receipt whose final line reads `[receipt] verdict: <confirms|contradicts|ambiguous|null>` — the same shape this rule already produces at Tier 1 — see [`skills/quality/verify-behavior/rules/receipt.md`](../../../skills/quality/verify-behavior/rules/receipt.md) for the full contract. That receipt is consumed by Step 2.7 exactly like a Tier 1 receipt; the 2.6 → 2.6b → 2.7 pipeline order does not change, and the null-drop invariant below applies identically regardless of which tier produced the receipt.
 
 **When `verify-behavior` is unavailable:** log `verify-behavior — not available, continuing` and degrade to today's static-only behavior — Tier 1 proof tools decide what they can, and a claim that needs Tier 2/3 to decide survives with only a partial (Tier 1) receipt, exactly as before this rule delegated. Do not block the review on a missing skill.
 
@@ -103,14 +103,21 @@ Store the raw output as the receipt.
 Attach the receipt to the finding as an internal annotation (not emitted to GitHub):
 
 ```
-[receipt] grep -n 'return null' src/auth.ts → line 47: return null; (confirms claim)
-[receipt] grep -n 'if (!user)' src/auth.ts → (no output) → DROP: missing-guard claim unverified
+[receipt] tier: 1 | tool: grep | target: src/auth.ts
+[receipt] command: grep -n 'return null' src/auth.ts
+[receipt] output: line 47: return null;
+[receipt] verdict: confirms
+
+[receipt] tier: 1 | tool: grep | target: src/auth.ts
+[receipt] command: grep -n 'if (!user)' src/auth.ts
+[receipt] output: (no output)
+[receipt] verdict: null — missing-guard claim unverified; DROP
 ```
 
 Receipts are consumed by Step 2.7 as part of the `Evidence` input to `Skill("confidence", "code")`:
 
 ```
-Evidence: <patch hunk> + receipt: <raw tool output>
+Evidence: <patch hunk> + receipt: <raw tool output> + verdict: <confirms|contradicts|ambiguous|null>
 ```
 
 This makes the confidence score sharper — the skill is scoring a claim + its own proof, not a claim alone.
