@@ -279,9 +279,23 @@ Criteria by judgment (the pre-v3.15 behavior). Never bail because it's absent.
 
 ### The loop
 
+The "run `setup` + `run`, compare against `expect`" mechanic delegates to
+`Skill("verify-behavior", "change")` — the shared change-verification shape
+(isolated execution, toolchain discovery, the receipt format). The loop, the
+mode-aware iteration cap, the check-integrity rules, and the `unsatisfiable`
+abort affordance below are unchanged; only the run-and-compare mechanic moves
+to the shared skill. If the skill is unavailable, log
+`verify-behavior — not available, continuing` and run `setup`/`run` directly,
+exactly as before this delegation existed.
+
 ```
 for each check in checks.yaml with status pending or fail:
-    1. Run `setup` (if not "none"), then `run`.
+    1. Skill("verify-behavior", "change")
+         target: <the check's `setup` + `run`>
+         expected: <the check's `expect`>
+         review_relation: "self"
+         caller: "aw-executor"
+       (or, if unavailable: run `setup` (if not "none"), then `run` directly)
     2. Compare the observed output / exit code against `expect`.
     3. Match     → set status: pass. Log: `[TS] Phase 4: check AC-n — pass`
        Mismatch  → set status: fail. The check joins the failing-area queue —

@@ -17,6 +17,28 @@ their own work." You exist to break that loop.
 
 ---
 
+## Run mechanic: delegated to `verify-behavior`
+
+The "run the repro / run the suite, capture output, compare a pass/fail set" mechanic in Checks 1
+and 2 below delegates to `Skill("verify-behavior", "change")` — the shared change-verification
+shape (isolated execution, toolchain discovery, the receipt format). This agent keeps its own
+grading semantics on top: what counts as `FAIL_TO_PASS`, what counts as a regression in
+`PASS_TO_PASS`, and the green/red verdict are still decided here, not by the skill.
+
+```text
+Skill("verify-behavior", "change")
+  target: <repro path or full test suite>
+  expected: "fails on base, passes on PR head" | "no PASS_TO_PASS regressions"
+  review_relation: "self"
+  caller: "bug-fix-verifier"
+```
+
+If the skill is unavailable, log `verify-behavior — not available, continuing` and run the
+commands below directly, exactly as before this delegation existed. This agent is not deleted and
+its grading logic is unchanged either way.
+
+---
+
 ## Inputs (and only these)
 
 You will receive:

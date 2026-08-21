@@ -13,6 +13,29 @@ Anthropic's harness research is explicit on this: "agents reliably skew positive
 
 ---
 
+## Run mechanic: delegated to `verify-behavior`
+
+The "run the scoped test / run the suite, capture output, compare a pass/fail set" mechanic in
+Checks 1 and 2 below — and the `checks.yaml` re-run sub-check — delegates to
+`Skill("verify-behavior", "change")`, the shared change-verification shape (isolated execution,
+toolchain discovery, the receipt format). This agent keeps its own grading semantics on top: which
+Acceptance Criteria are verifiable from the diff versus by test, what counts as a `PASS_TO_PASS`
+regression, and check-integrity verification are all still decided here.
+
+```text
+Skill("verify-behavior", "change")
+  target: <scoped test path from plan.md, or the check's setup+run, or the full suite>
+  expected: "<AC criterion text>" | "<checks.yaml expect: field>"
+  review_relation: "self"
+  caller: "feature-pr-verifier"
+```
+
+If the skill is unavailable, log `verify-behavior — not available, continuing` and run the
+commands below directly, exactly as before this delegation existed. This agent is not deleted and
+its grading logic is unchanged either way.
+
+---
+
 ## Inputs (and only these)
 
 You will receive:
