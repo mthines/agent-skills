@@ -32,7 +32,8 @@ metadata:
 
 Given a behavioral claim about code, or a change that was just applied, decide **the cheapest way to get executed proof**, run it in isolation, and report the raw result as a receipt.
 
-This skill is the execution engine six-plus call sites in this repo used to hand-roll independently: "detect the toolchain, run something, read pass or fail." It replaces the ad hoc version in each of those with one shared ladder.
+This skill is the execution engine six-plus call sites in this repo used to hand-roll independently: "detect the toolchain, run something, read pass or fail."
+It replaces the ad hoc version in each of those with one shared ladder.
 
 > **This `SKILL.md` is a thin index.** Detailed rules live in `rules/*.md` and load on demand.
 
@@ -57,7 +58,8 @@ See [`rules/receipt.md`](./rules/receipt.md) for the full contract, including th
 | **Claim-verification** | "Is this specific behavioral assertion true?" — read-only, feeds `confidence(code)` as Evidence | `agents/shared/rules/verification-receipt.md` (pr-reviewer Tier 2/3) |
 | **Change-verification** | "Did this applied change produce the expected green/red result?" — a post-apply gate | `bug-fix-verifier`, `feature-pr-verifier`, `aw-executor` Phase 4 checks loop |
 
-Both shapes share the same core: toolchain discovery, isolated execution, and the receipt format. Only the output framing differs — see [`rules/receipt.md`](./rules/receipt.md).
+Both shapes share the same core: toolchain discovery, isolated execution, and the receipt format.
+Only the output framing differs — see [`rules/receipt.md`](./rules/receipt.md).
 
 ---
 
@@ -75,7 +77,8 @@ Parse the **first token** of `$ARGUMENTS`.
 - `claim` (claim mode) — the behavioral assertion in prose, e.g. "`validateAuth` throws on an invalid token."
 - `target` — the file(s) or symbol the claim or change concerns.
 - `expected` (change mode) — the expected post-change outcome (e.g. an `expect:` string from `checks.yaml`, or "the repro now passes").
-- `review_relation` — `"self"` | `"cross"` | `"untrusted"` (default `"self"` for a caller's own branch). Governs the Tier 3 trust split — see [`rules/isolation-safety.md`](./rules/isolation-safety.md).
+- `review_relation` — `"self"` | `"cross"` | `"untrusted"` (default `"self"` for a caller's own branch).
+  Governs the Tier 3 trust split — see [`rules/isolation-safety.md`](./rules/isolation-safety.md).
 - `caller` — the invoking agent or skill, for logging only.
 
 ## The ladder (cheapest-first)
@@ -86,7 +89,8 @@ Parse the **first token** of `$ARGUMENTS`.
 | Tier 2 | Semantic-no-execution | Low | `tsc --noEmit`, `go build`/`go vet`/`staticcheck`, `cargo check`/`clippy`, `pyright`/`mypy` |
 | Tier 3 | Execution | Highest | Run the covering test, or synthesize and run a minimal repro |
 
-Stop at the cheapest tier that can **decide** the claim — do not escalate to Tier 3 when Tier 1 or Tier 2 already confirms or contradicts it. Full per-language mapping in [`rules/ladder.md`](./rules/ladder.md).
+Stop at the cheapest tier that can **decide** the claim — do not escalate to Tier 3 when Tier 1 or Tier 2 already confirms or contradicts it.
+Full per-language mapping in [`rules/ladder.md`](./rules/ladder.md).
 
 ## Workflow
 
@@ -100,24 +104,35 @@ Stop at the cheapest tier that can **decide** the claim — do not escalate to T
 
 ### V1 — Toolchain discovery
 
-Resolve what to run before deciding how to run it: `checks.yaml` first, then the `argent-environment-inspector` detection pattern, then manifest scripts. Never assume a tool is globally installed. See [`rules/toolchain-discovery.md`](./rules/toolchain-discovery.md).
+Resolve what to run before deciding how to run it: `checks.yaml` first, then the `argent-environment-inspector` detection pattern, then manifest scripts.
+Never assume a tool is globally installed.
+See [`rules/toolchain-discovery.md`](./rules/toolchain-discovery.md).
 
 ### V2 — Tier selection
 
-Walk the ladder Tier 1 → Tier 2 → Tier 3, stopping at the first tier that can decide the claim. A claim about symbol absence or a missing guard is usually a Tier 1 grep. A claim about a type contract is usually a Tier 2 typecheck. A claim about runtime return value, thrown error, or side-effect ordering needs Tier 3. See [`rules/ladder.md`](./rules/ladder.md) for the full per-language table.
+Walk the ladder Tier 1 → Tier 2 → Tier 3, stopping at the first tier that can decide the claim.
+A claim about symbol absence or a missing guard is usually a Tier 1 grep.
+A claim about a type contract is usually a Tier 2 typecheck.
+A claim about runtime return value, thrown error, or side-effect ordering needs Tier 3.
+See [`rules/ladder.md`](./rules/ladder.md) for the full per-language table.
 
 ### V3 — Isolated execution
 
-Tier 3 runs in a throwaway worktree, never touches tracked files, deletes its scratch harness after, defaults to no network, and never pipes a remote script into a shell. Tier 3 is default-on only for the caller's own code (`self` relation); cross/untrusted callers need an explicit sandbox opt-in. See [`rules/isolation-safety.md`](./rules/isolation-safety.md).
+Tier 3 runs in a throwaway worktree, never touches tracked files, deletes its scratch harness after, defaults to no network, and never pipes a remote script into a shell.
+Tier 3 is default-on only for the caller's own code (`self` relation); cross/untrusted callers need an explicit sandbox opt-in.
+See [`rules/isolation-safety.md`](./rules/isolation-safety.md).
 
 ### V4 — Receipt
 
-Every run — regardless of tier or mode — produces a receipt: the raw command, its raw output, and one of four verdict tokens. A null or empty result is dropped or contradicts; it is never read as confirmation. See [`rules/receipt.md`](./rules/receipt.md).
+Every run — regardless of tier or mode — produces a receipt: the raw command, its raw output, and one of four verdict tokens.
+A null or empty result is dropped or contradicts; it is never read as confirmation.
+See [`rules/receipt.md`](./rules/receipt.md).
 
 ### V5 — Report
 
 - **claim mode** → return the receipt to the caller (typically `confidence(code)` Evidence).
-- **change mode** → return the receipt plus a green/red verdict against the caller-supplied `expected` outcome. The caller keeps its own grading semantics on top (e.g. `checks.yaml`'s `expect:` comparison, `FAIL_TO_PASS`).
+- **change mode** → return the receipt plus a green/red verdict against the caller-supplied `expected` outcome.
+  The caller keeps its own grading semantics on top (e.g. `checks.yaml`'s `expect:` comparison, `FAIL_TO_PASS`).
 
 ## Required Reading by Phase
 

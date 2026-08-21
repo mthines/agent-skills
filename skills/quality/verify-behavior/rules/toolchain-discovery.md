@@ -9,11 +9,14 @@ tags:
 
 # Toolchain discovery
 
-Never assume a global install. A `tsc`, `go`, `cargo`, or `pytest` invocation that works on the author's machine can fail outright — or silently run the wrong version — in an agent's sandbox. Resolve what to run, and how, before running anything.
+Never assume a global install.
+A `tsc`, `go`, `cargo`, or `pytest` invocation that works on the author's machine can fail outright — or silently run the wrong version — in an agent's sandbox.
+Resolve what to run, and how, before running anything.
 
 ## Discovery order
 
-1. **`checks.yaml`** — if `.agent/{branch}/checks.yaml` exists (Full-Mode `autonomous-workflow` plans), its `setup:`/`run:` commands are the project's own declared, already-scoped verification commands. Prefer them over rediscovering a toolchain from scratch — they were authored against this exact repo.
+1. **`checks.yaml`** — if `.agent/{branch}/checks.yaml` exists (Full-Mode `autonomous-workflow` plans), its `setup:`/`run:` commands are the project's own declared, already-scoped verification commands.
+   Prefer them over rediscovering a toolchain from scratch — they were authored against this exact repo.
 2. **The `argent-environment-inspector` detection pattern** — the same "gather workspace data" approach used to detect build commands, test runners, and package manager: read `package.json` (`scripts`), `go.mod`, `Cargo.toml`, `pyproject.toml`/`setup.cfg`, `Makefile`, and any Nx (`project.json`, `nx.json`) or monorepo workspace config, before assuming a bare command works.
 3. **Manifest scripts** — when neither of the above resolves a command, fall back to the manifest's own script definitions directly:
    - `package.json` → `scripts.test`, `scripts.build`, `scripts.typecheck`, `scripts.lint`.
@@ -34,7 +37,8 @@ Before invoking any Tier 2 or Tier 3 tool, confirm it resolves in **this** proje
 [ -z "$TSC" ] && echo "tsc not found — check package.json devDependencies" && exit 1
 ```
 
-The same rule applies to `go`, `cargo`, `pyright`/`mypy`, and any test runner: check the manifest declares the tool as a dependency (or that a version manager like `asdf`/`mise`/`rustup` pins one) before running it, and prefer the project-local binary (`node_modules/.bin/...`, a `venv`, a pinned toolchain) over whatever happens to be globally on `PATH`. A global fallback that silently uses the wrong major version produces a receipt that looks confident and is wrong.
+The same rule applies to `go`, `cargo`, `pyright`/`mypy`, and any test runner: check the manifest declares the tool as a dependency (or that a version manager like `asdf`/`mise`/`rustup` pins one) before running it, and prefer the project-local binary (`node_modules/.bin/...`, a `venv`, a pinned toolchain) over whatever happens to be globally on `PATH`.
+A global fallback that silently uses the wrong major version produces a receipt that looks confident and is wrong.
 
 If no toolchain resolves at any step, the tier is **not decidable** here — report that as part of the receipt (see [`receipt.md`](./receipt.md)) rather than guessing with an unverified global binary.
 

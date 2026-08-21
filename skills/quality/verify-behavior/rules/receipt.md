@@ -9,7 +9,8 @@ tags:
 
 # The receipt contract
 
-Every run of this skill — any tier, either consumer shape — produces exactly one artifact: a **receipt**. A receipt is evidence, not a verdict on intent.
+Every run of this skill — any tier, either consumer shape — produces exactly one artifact: a **receipt**.
+A receipt is evidence, not a verdict on intent.
 
 ## Receipt format
 
@@ -40,9 +41,13 @@ Every run of this skill — any tier, either consumer shape — produces exactly
 
 **A null or empty proof result is never read as confirmation of the claim it was meant to verify.**
 
-This is the single most important rule in this file. A claim like "there is no null check before `user.id` is accessed" that produces no `grep` match for a null check is *not* proof the guard is missing — it might mean the guard uses different wording, or the file wasn't the right one, or the pattern was wrong. The absence of contrary evidence is not presence of confirming evidence.
+This is the single most important rule in this file.
+A claim like "there is no null check before `user.id` is accessed" that produces no `grep` match for a null check is *not* proof the guard is missing — it might mean the guard uses different wording, or the file wasn't the right one, or the pattern was wrong.
+The absence of contrary evidence is not presence of confirming evidence.
 
-The same invariant holds at Tier 3: a synthesized repro that does not reproduce a claimed bug **DROPS or contradicts** the finding — it never counts as "the bug wasn't found, so the fix must have worked." A Tier 2 build that does not flag a claimed type violation **DROPS** the finding for the same reason. Silence is not proof.
+The same invariant holds at Tier 3: a synthesized repro that does not reproduce a claimed bug **DROPS or contradicts** the finding — it never counts as "the bug wasn't found, so the fix must have worked."
+A Tier 2 build that does not flag a claimed type violation **DROPS** the finding for the same reason.
+Silence is not proof.
 
 This mirrors the invariant `verification-receipt.md` already enforces at Tier 1 for `pr-reviewer` — this skill's Tier 2/3 delegation must never weaken it.
 
@@ -52,7 +57,8 @@ Both shapes share the receipt above; they differ only in what the caller does wi
 
 ### Claim-verification (read-only)
 
-Returns the receipt as-is. The typical consumer is `Skill("confidence", "code")`'s `Evidence` input:
+Returns the receipt as-is.
+The typical consumer is `Skill("confidence", "code")`'s `Evidence` input:
 
 ```text
 Evidence: <patch hunk> + receipt: <raw tool output> + verdict: <confirms|contradicts|ambiguous|null>
@@ -69,11 +75,13 @@ Returns the receipt **plus** a green/red verdict against a caller-supplied `expe
 [gate] expected: "exit 0" | observed: "exit 0" | result: green
 ```
 
-The caller keeps its own grading semantics on top of this result — `bug-fix-verifier`'s `FAIL_TO_PASS` still decides what a green/red result *means* for the PR; the `aw-executor` Phase 4 checks loop still compares against its own `expect:` field and still owns the `pass`/`fail`/`unsatisfiable` status. This skill supplies the run-and-observe mechanic; it does not replace the caller's grading.
+The caller keeps its own grading semantics on top of this result — `bug-fix-verifier`'s `FAIL_TO_PASS` still decides what a green/red result *means* for the PR; the `aw-executor` Phase 4 checks loop still compares against its own `expect:` field and still owns the `pass`/`fail`/`unsatisfiable` status.
+This skill supplies the run-and-observe mechanic; it does not replace the caller's grading.
 
 ## The execute-not-score boundary (recap)
 
-This skill's receipt is scoped strictly to **what happened when the command ran**. It never:
+This skill's receipt is scoped strictly to **what happened when the command ran**.
+It never:
 
 - assigns a numeric confidence score,
 - decides whether a finding is severe enough to post,
