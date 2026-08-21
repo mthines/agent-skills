@@ -1919,11 +1919,42 @@ snapshot: twenty runs leave twenty contradictory full reports, the oldest of whi
 reader meets first, and the "one edited comment" model is gone even though every other rule was
 followed. Step 4b's pre-flight rejects the payload mechanically; this is the rule it enforces.
 
+#### Two different reasons the sticky can go unwritten
+
+Before touching the access path, check for a **caller policy refusal** — distinct from, and checked
+before, the **access-path capability** table below:
+
+```bash
+STICKY_WRITE_FORBIDDEN=false
+STICKY_WRITE_FORBIDDEN_REASON=""
+```
+
+Set `STICKY_WRITE_FORBIDDEN=true` when the invoking context — the system prompt, harness
+guardrails, or explicit instructions from whatever dispatched this run — forbids writing to
+`/issues/{n}/comments`, **for any reason other than the access path being technically unable to
+do it**. The two failure classes are not the same thing and do not get the same diagnosis:
+
+| Failure class | Example | Row to use |
+| --- | --- | --- |
+| Access-path incapability | no `gh` token, MCP path has no comment-update tool, the read 401s | The capability table below |
+| Caller policy refusal | an orchestrator's own guardrails ban `POST /issues/{n}/comments` on principle, even though the credentials in hand could do it | This one |
+
+**This is the gap that caused ad-hoc report bodies on `mthines/lorekit#514`–`#518`.** An earlier
+version of this agent had no branch for "the write would succeed but I've been told not to attempt
+it", so a run in that situation did not recognise it as an instance of "the sticky cannot be
+written" at all — it fell through to improvising a full report's worth of prose directly into the
+review body, in whatever shape it invented that run. **Never do that.** A caller policy refusal is
+routed identically to an access-path failure: skip the write attempt entirely, set
+`STICKY_WRITE_FORBIDDEN_REASON` to the plain-language restriction (e.g. `"caller guardrails forbid
+POST to /issues/{n}/comments"`), and go straight to `DEGRADED_POINTER_BODY` in Step 4b — a policy
+refusal is never a reason to hand-write anything, any more than a 401 is.
+
 #### When the sticky cannot be written
 
-The two writes above are a repo-scoped `POST` and `PATCH` on `/issues/{n}/comments`. Resolve the
-access path once per `agents/shared/rules/github-access.md § Step 0`, then apply this table — and
-note that **no branch permits a second full report**:
+The two writes above are a repo-scoped `POST` and `PATCH` on `/issues/{n}/comments`. When
+`STICKY_WRITE_FORBIDDEN == true`, skip straight to the matching row below without attempting either
+write. Otherwise resolve the access path once per `agents/shared/rules/github-access.md § Step 0`,
+then apply this table — and note that **no branch permits a second full report**:
 
 | Situation | Do this |
 | --- | --- |
@@ -1933,6 +1964,7 @@ note that **no branch permits a second full report**:
 | MCP path, no sticky exists | Create it once with `add_issue_comment`. |
 | MCP path, sticky exists but no comment-update tool is available (`github-access.md § Gaps`) | **Do not create a second one.** Post the compact `DEGRADED_POINTER_BODY` (Step 4b) instead and state `Sticky exists but this access path cannot edit an issue comment — report not updated in place.` |
 | No GitHub access path | Nothing is posted. `github-access.md § No path` applies: say so precisely, never claim the report was updated. |
+| `STICKY_WRITE_FORBIDDEN == true` | **Do not attempt the write — this is a policy refusal, never phrase it as an API or access error.** Post the compact `DEGRADED_POINTER_BODY` (Step 4b) instead, with `DEGRADED_REASON` set to `STICKY_WRITE_FORBIDDEN_REASON`, and state in the Step 5 report: `Sticky writes disabled by caller policy — report not persisted in place.` |
 
 **The delta logic survives every branch**, because it depends on the ledger, not on the report
 prose. Whenever the sticky cannot be rewritten — in **either** non-writing branch above, the failed
@@ -2064,73 +2096,111 @@ gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
   --raw-field comments='INLINE_COMMENTS_JSON'
 ```
 
-`POINTER_BODY` is one marker line plus one prose line, and never a second copy of the report:
+**`POINTER_BODY` is not written by hand either — the same discipline as `REPORT_BODY` applies.**
+Build a small JSON payload and run it through
+[`scripts/render-pointer.mjs`](./pr-reviewer/scripts/render-pointer.mjs), resolved the same way as
+`RENDER` in Step 4a (beside this agent definition):
 
-```markdown
-<!-- PR_REVIEWER_POINTER -->
-Reviewed `<HEAD_SHA_SHORT>` — <N> finding(s) inline. [Full report](<STICKY_URL>)
+```bash
+POINTER="${AGENT_MD%/pr-reviewer.md}/pr-reviewer/scripts/render-pointer.mjs"
+[ -f "$POINTER" ] || abort "pointer renderer not found at $POINTER"
+POINTER_BODY=$(node "$POINTER" /tmp/pointer-payload.json)   # non-zero exit ⇒ nothing on stdout
 ```
 
-**Every** pointer carries `<!-- PR_REVIEWER_POINTER -->`, not just the degraded one. It is the only
-thing on a review object that identifies it as this agent's, and two things depend on that: the
-identity ladder reads `.user.login` off it when `/user` is unreachable, and Step 0.7 can recognise a
-previously-reviewed PR from the `pulls/reviews` endpoint when `issues/comments` cannot be read. An
-unmarked pointer is invisible to both, on exactly the access paths that need them.
+**Why this exists**, and not just for the sticky: a hand-authored pointer is exactly as prone to
+drift as a hand-authored report — the ad-hoc headlines observed on `mthines/lorekit#514`–`#518`
+were what a run wrote *instead of* the documented pointer forms below when it had no deterministic
+path to fall back to. One script owning every form of this one-line object removes that path the
+same way `render-report.mjs` removed it for the sticky.
 
-On an escalation with nothing inline, substitute the escalation form instead, naming what got worse
-so the notification is worth the interrupt:
+There are exactly four forms, selected by `FORM` in the payload — never invent a fifth:
 
-```markdown
-<!-- PR_REVIEWER_POINTER -->
-⚠️ Verdict moved <PRIOR_VERDICT> → <VERDICT> at `<HEAD_SHA_SHORT>` — <ESCALATION_REASONS>. [Full report](<STICKY_URL>)
+| `FORM` | When | Required payload keys |
+| --- | --- | --- |
+| `"pointer"` | The ordinary case: new inline findings, or first run, with a known prior verdict that did not worsen into this notify condition | `HEAD_SHA`, `FINDINGS_COUNT`, `STICKY_URL` |
+| `"no_prior"` | Condition 3 fired on an **empty** `PRIOR_VERDICT` — see below, never the escalation form here | `HEAD_SHA`, `VERDICT`, `STICKY_URL` |
+| `"escalation"` | The verdict worsened between two **known** verdicts | `HEAD_SHA`, `VERDICT`, `PRIOR_VERDICT`, `REASONS`, `STICKY_URL` |
+| `"degraded"` | Step 4a could not write the sticky, for **either** reason in *When the sticky cannot be written* | `HEAD_SHA`, `FINDINGS_COUNT`, `HEADLINE_LINE`, `DEGRADED_REASON`, `LEDGER` |
+
+```json
+{"FORM": "pointer", "HEAD_SHA": "<7-char sha>", "FINDINGS_COUNT": 2, "STICKY_URL": "<sticky html_url>"}
 ```
 
-`ESCALATION_REASONS` is `FAIL_REASONS` when `VERDICT == FAIL` and `WARN_REASONS` when
-`VERDICT == WARN`. `FAIL_REASONS` carries one phrase per ❌ gate, of which a WARN run has none — so
-using it unconditionally renders a bare `— .` on a PASS → WARN escalation, which is a reachable
-case under condition 3 and an interrupt with no stated reason.
-
-**Never use the "Verdict moved" form when `PRIOR_VERDICT` is empty.** Condition 3 counts an empty
-`PRIOR_VERDICT` as worsened, and `VERDICT == PASS` then satisfies it — which is not exotic: it is
-the legacy-sticky **migration run**. Step 0.7's fallback finds the report in a `reviews` body, which
-by construction has no ledger, so `PRIOR_VERDICT` is `""` on every legacy PR exactly once. The
-escalation form would render both slots blank — `⚠️ Verdict moved  → PASS at \`abc1234\` — .` — a
-warning triangle on a passing review with no prior and no reason. Route that case to its own form
-instead:
+renders:
 
 ```markdown
 <!-- PR_REVIEWER_POINTER -->
-Reviewed `<HEAD_SHA_SHORT>` — <VERDICT>, no prior report on record. [Full report](<STICKY_URL>)
+Reviewed `<sha>` — 2 finding(s) inline. [Full report](<url>)
 ```
 
-Use it whenever condition 3 fired on an empty `PRIOR_VERDICT`, at any verdict. The escalation form
-is reserved for a genuine transition between two **known** verdicts.
+**Every** pointer carries `<!-- PR_REVIEWER_POINTER -->`, not just the degraded one — the renderer
+refuses to emit a body without it. It is the only thing on a review object that identifies it as
+this agent's, and two things depend on that: the identity ladder reads `.user.login` off it when
+`/user` is unreachable, and Step 0.7 can recognise a previously-reviewed PR from the
+`pulls/reviews` endpoint when `issues/comments` cannot be read. An unmarked pointer is invisible to
+both, on exactly the access paths that need them.
 
-`DEGRADED_POINTER_BODY` is the pointer used when Step 4a could not write the sticky on this access
-path. It is the ordinary pointer plus the headline it could not deliver, plus the hidden ledger —
-never the report:
+On an escalation with nothing inline, use `FORM: "escalation"` instead, naming what got worse so the
+notification is worth the interrupt. `REASONS` is `FAIL_REASONS` when `VERDICT == FAIL` and
+`WARN_REASONS` when `VERDICT == WARN`. `FAIL_REASONS` carries one phrase per ❌ gate, of which a WARN
+run has none — so passing it unconditionally renders a bare `— .` on a PASS → WARN escalation, which
+is a reachable case under condition 3 and an interrupt with no stated reason. The renderer rejects
+an empty `REASONS`, which is what catches this.
+
+**Never use `FORM: "escalation"` when `PRIOR_VERDICT` is empty** — the renderer rejects it outright,
+because condition 3 counts an empty `PRIOR_VERDICT` as worsened, and `VERDICT == PASS` then
+satisfies it, which is not exotic: it is the legacy-sticky **migration run**. Step 0.7's fallback
+finds the report in a `reviews` body, which by construction has no ledger, so `PRIOR_VERDICT` is
+`""` on every legacy PR exactly once. Use `FORM: "no_prior"` instead whenever condition 3 fired on
+an empty `PRIOR_VERDICT`, at any verdict. The escalation form is reserved for a genuine transition
+between two **known** verdicts, and the renderer enforces that distinction rather than trusting the
+run to remember it.
+
+`FORM: "degraded"` is the pointer used whenever *When the sticky cannot be written* fired — for
+**either** reason, an access-path incapability or a caller policy refusal. It is the ordinary
+pointer plus the headline it could not deliver, plus the hidden ledger — never the report:
+
+```json
+{"FORM": "degraded", "HEAD_SHA": "<7-char sha>", "FINDINGS_COUNT": 6,
+ "HEADLINE_LINE": "1 error, 2 warnings need attention before human review.",
+ "DEGRADED_REASON": "Sticky exists but this access path cannot edit an issue comment — report not updated in place.",
+ "LEDGER": {"v": 1, "truncated": true, "runs": [{"sha": "<7-char sha>", "mode": "full", "verdict": "FAIL", "at": "<ISO 8601>"}]}}
+```
+
+renders:
 
 ```markdown
 <!-- PR_REVIEWER_POINTER -->
-Reviewed `<HEAD_SHA_SHORT>` — <HEADLINE_LINE> <N> finding(s) inline. Report not updated in place on this access path.
+Reviewed `<sha>` — 1 error, 2 warnings need attention before human review. 6 finding(s) inline. Sticky exists but this access path cannot edit an issue comment — report not updated in place.
 
 <!-- PR_REVIEWER_LEDGER {"v":1,"truncated":true,"runs":[{…newest run only…}]} -->
 ```
 
+`DEGRADED_REASON` is **required** and must name which of the two branches fired — an access-path
+limitation, quoted from the actual error, or the caller-policy sentence from *Two different reasons
+the sticky can go unwritten*. The renderer refuses an empty or missing `DEGRADED_REASON`: a degraded
+pointer with no stated cause reads as unexplained data loss to whoever finds it later.
+
 `HEADLINE_LINE` is the single verdict sentence from `REPORT_BODY` — the first non-marker,
 non-banner line — and nothing after it: no gate table, no sections, no accordion, and never the
-`<!-- PR_REVIEWER_REPORT -->` marker (the pre-flight rejects it, and a marker here would make the
-next run treat this pointer as the prior report body).
+`<!-- PR_REVIEWER_REPORT -->` marker. The renderer rejects `HEADLINE_LINE` carrying that marker, and
+for the same reason: a marker here would make the next run treat this pointer as the prior report
+body.
 
-The two HTML comments are load-bearing, not decoration:
+The two HTML comments in the degraded form are load-bearing, not decoration:
 - `<!-- PR_REVIEWER_POINTER -->` is how Step 0.7's ledger-only fallback finds this object. Without
   it the ledger is written where nothing looks, and every degraded run reads as a first run.
 - `<!-- PR_REVIEWER_LEDGER … -->` carries `DEGRADED_LEDGER` — the newest run only — never the
-  full history (*When the sticky cannot be written*).
+  full history (*When the sticky cannot be written*). Reduce it with the ladder in that section
+  **before** calling the renderer — it fails closed on a ledger over 1500 chars rather than
+  truncating it for you, so a run that skips the reduction ladder gets an abort, not a silently
+  clipped ledger.
 
-The pre-flight measures the 600-char pointer budget against the **prose with the ledger block
+The renderer measures the 600-char pointer budget against the **prose with the ledger block
 stripped**, and separately caps the ledger at 1500 chars, so this form passes on a PR with any
-number of prior runs while a pasted report still does not.
+number of prior runs while a pasted report still does not. **If the renderer cannot be resolved or
+fails, do not fall back to composing the pointer by hand** — report the error verbatim in the Step 5
+output along with the payload you built, and do not post a review this run.
 
 `STICKY_URL` is bound from the 4a response's `html_url`, in whichever branch ran. It is the only
 link in the pointer body, so a run that somehow reaches 4b without it must omit the trailing

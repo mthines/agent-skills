@@ -1556,11 +1556,16 @@ function checksInSync(plan, checks) {
   s.check("G24h the pointer marker is both written and looked for",
     (prReviewer.match(/<!-- PR_REVIEWER_POINTER -->/g) || []).length >= 2 &&
     step07Fetches.includes("PR_REVIEWER_POINTER"));
-  const pointerForms = [...sliceBetween(prReviewer, "`POINTER_BODY` is one marker line",
-    "### REPORT_BODY format (the sticky comment)").matchAll(/```markdown\n([\s\S]*?)```/g)].map((m) => m[1]);
-  s.check("G24h every pointer body form carries the pointer marker",
-    pointerForms.length >= 4 && pointerForms.every((f) => f.includes("<!-- PR_REVIEWER_POINTER -->")),
-    `${pointerForms.filter((f) => !f.includes("<!-- PR_REVIEWER_POINTER -->")).length} of ${pointerForms.length} unmarked`);
+  // The marker guarantee across all four FORMs is now enforced behaviourally by G29 (it executes
+  // render-pointer.mjs, which refuses to emit an unmarked body) rather than by grepping hand-typed
+  // markdown examples in the prose — this just asserts the four documented forms are still named
+  // and still routed through the renderer, so a rewrite can't silently drop back to hand-authoring.
+  const pointerSection = sliceBetween(prReviewer, "`POINTER_BODY` is not written by hand either",
+    "### REPORT_BODY format (the sticky comment)");
+  s.check("G24h all four pointer FORMs are documented and routed through render-pointer.mjs",
+    /render-pointer\.mjs/.test(pointerSection) &&
+    ["\"pointer\"", "\"no_prior\"", "\"escalation\"", "\"degraded\""]
+      .every((f) => pointerSection.includes(f)));
   // The pointer ledger is truncated: a 50-run history cannot ride on an append-only object.
   s.check("G24h the degraded pointer carries a truncated ledger, not the full history",
     /DEGRADED_LEDGER/.test(prReviewer) && /truncated/.test(prReviewer));
@@ -2148,6 +2153,77 @@ const isPollBlock = (block) =>
     p4.includes("verify-behavior") &&
     p4.includes("Check definitions are executor-immutable") &&
     p4.includes("unsatisfiable"));
+}
+
+// ── G29: the review-body pointer renderer. Behavioural, same rationale as G25 — a hand-authored
+// pointer drifted into four different ad-hoc headline shapes across mthines/lorekit#514-#518 when
+// a run had no deterministic fallback for "the sticky write is forbidden, not just technically
+// unavailable". render-pointer.mjs is the fix; these checks execute it against committed fixtures.
+{
+  const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-pointer.mjs");
+  const FIX = join(REPO_ROOT, "scripts/eval/fixtures/report-pointer");
+  const run = (args, input) => {
+    const r = spawnSync("node", [RENDER, ...args], { input, encoding: "utf8" });
+    return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
+  };
+  const prReviewer = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+
+  s.check("G29a the pointer renderer exists and pr-reviewer.md invokes it, not a hand-authored body",
+    existsSync(RENDER) &&
+    /render-pointer\.mjs/.test(prReviewer) &&
+    prReviewer.includes("`POINTER_BODY` is not written by hand either"));
+
+  s.check("G29b pr-reviewer.md defines the caller-policy-refusal branch, distinct from access-path incapability",
+    /STICKY_WRITE_FORBIDDEN/.test(prReviewer) &&
+    /Two different reasons the sticky can go unwritten/.test(prReviewer) &&
+    /caller policy refusal/.test(prReviewer));
+
+  // (a) Snapshot parity — one fixture per FORM.
+  for (const name of ["pointer", "no_prior", "escalation", "degraded"]) {
+    const payload = join(FIX, `${name}.json`);
+    const expectedPath = join(FIX, `${name}.expected.md`);
+    if (!existsSync(payload) || !existsSync(expectedPath)) {
+      s.check(`G29 ${name} fixture + snapshot present`, false, "missing fixture or snapshot");
+      continue;
+    }
+    const r = run([payload]);
+    s.check(`G29 ${name}.json renders without error`, r.ok, r.err);
+    const expected = readFileSync(expectedPath, "utf8");
+    s.check(`G29 ${name} output matches its committed snapshot`, r.out === expected,
+      r.out === expected ? "" : "output drifted — regenerate the snapshot and review the diff");
+  }
+
+  // (b) Structural invariants every form must hold.
+  for (const name of ["pointer", "no_prior", "escalation", "degraded"]) {
+    const p = join(FIX, `${name}.expected.md`);
+    if (!existsSync(p)) continue;
+    const body = readFileSync(p, "utf8");
+    s.check(`G29 ${name} carries the pointer marker`, body.startsWith("<!-- PR_REVIEWER_POINTER -->"));
+    s.check(`G29 ${name} never carries the report marker`, !body.includes("<!-- PR_REVIEWER_REPORT -->"));
+  }
+
+  // (c) Fail-closed — each once shipped as an ad-hoc posted body (or is the exact shape that
+  // would let one back in); the renderer must refuse it and print nothing on stdout.
+  const rejects = [
+    ["a missing FORM", '{"HEAD_SHA":"bde3c2f"}'],
+    ["an invalid FORM", '{"FORM":"summary","HEAD_SHA":"bde3c2f"}'],
+    ["a non-7-char sha", '{"FORM":"pointer","HEAD_SHA":"abc","FINDINGS_COUNT":1,"STICKY_URL":"https://x/1"}'],
+    ["an uppercase sha", '{"FORM":"pointer","HEAD_SHA":"BDE3C2F","FINDINGS_COUNT":1,"STICKY_URL":"https://x/1"}'],
+    ["escalation with empty PRIOR_VERDICT", '{"FORM":"escalation","HEAD_SHA":"bde3c2f","VERDICT":"FAIL","REASONS":"x","STICKY_URL":"https://x/1"}'],
+    ["escalation with empty REASONS", '{"FORM":"escalation","HEAD_SHA":"bde3c2f","VERDICT":"FAIL","PRIOR_VERDICT":"PASS","REASONS":"","STICKY_URL":"https://x/1"}'],
+    ["degraded missing DEGRADED_REASON", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x","LEDGER":{"v":1,"runs":[]}}'],
+    ["degraded HEADLINE_LINE carrying the report marker", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"<!-- PR_REVIEWER_REPORT -->","DEGRADED_REASON":"x","LEDGER":{"v":1,"runs":[]}}'],
+    ["degraded ledger over the 1500-char budget", JSON.stringify({ FORM: "degraded", HEAD_SHA: "bde3c2f",
+      FINDINGS_COUNT: 1, HEADLINE_LINE: "x", DEGRADED_REASON: "x",
+      LEDGER: { v: 1, runs: [{ sha: "bde3c2f", ids: Array(400).fill("comment-id-0000000000") }] } })],
+    ["an unknown payload key", '{"FORM":"pointer","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"STICKY_URL":"https://x/1","EXTRA":"nope"}'],
+    ["a non-object payload", "[1,2]"],
+    ["malformed JSON", "{nope"],
+  ];
+  for (const [label, input] of rejects) {
+    const r = run([], input);
+    s.check(`G29 rejects ${label}`, !r.ok && r.out === "", r.out ? `stdout was non-empty: ${r.out.slice(0, 80)}` : r.err);
+  }
 }
 
 process.exit(s.report() ? 0 : 1);
