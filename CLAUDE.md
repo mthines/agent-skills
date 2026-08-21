@@ -46,6 +46,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 - `review-changes` (`/`) — dispatches to `pr-reviewer` agent (self or cross per relation)
 - `tdd` (`auto`) — strict RED-GREEN-REFACTOR
 - `test-provenance-guard` (`auto`) — detects tests-by-construction (static + mutation checks); self-heals by extracting inline logic
+- `verify-behavior` (`Skill()`) — cheapest-first three-tier verification ladder: Tier 1 syntactic (`grep`/`ast-grep`/`Read`), Tier 2 semantic-no-execution (`tsc`/`go vet`/`cargo check`/`pyright`), Tier 3 execution (covering test or a minimal synthesized repro, in a throwaway worktree). Reports an evidence receipt (`confirms`/`contradicts`/`ambiguous`/`null`, null never counted as confirmation) — it never scores; `confidence(code)` owns the number. Two consumer shapes: claim-verification (read-only, feeds `confidence(code)`) and change-verification (post-apply green/red gate). Tier 3 is relation-keyed: default-on for the caller's own code, opt-in behind a sandbox for cross/untrusted callers. Wired as a thin adapter into `agents/shared/rules/verification-receipt.md` (pr-reviewer Tier 2/3, 2.6b), `bug-fix-verifier`, `feature-pr-verifier`, and the `aw-executor` Phase 4 checks loop — each keeps its own grading semantics; none is deleted
 
 ### `delivery/` — Git, PR, CI
 

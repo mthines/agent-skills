@@ -17,10 +17,27 @@ Verification receipts close that gap by requiring an *executed proof* for every 
 This step sits at **Step 2.6b** — after `finding-grounding.md` (2.6, existence) and before `per-comment-confidence.md` (2.7).
 Findings that survive produce a receipt that feeds directly into the `confidence(code)` Evidence input at 2.7, making that gate sharper.
 
+## Tier delegation to `verify-behavior`
+
+Tier 1 (the static proof tools below — `grep`, `ast-grep`, `Read`) stays **inline in this rule**.
+Tier 2 (semantic-no-execution — `tsc --noEmit`, `go vet`, `cargo check`, `pyright`) and Tier 3 (execution — run the covering test, or a minimal synthesized repro) **delegate to `Skill("verify-behavior", "claim")`**, which owns the cheapest-first ladder and the isolated-execution safety model those tiers need:
+
+```text
+Skill("verify-behavior", "claim")
+  claim: <the behavioral assertion from the finding>
+  target: <file(s) / symbol the claim concerns>
+  review_relation: "self" | "cross"
+  caller: "pr-reviewer"
+```
+
+The skill returns a receipt in the same `[receipt] … → verdict: <confirms|contradicts|ambiguous|null>` shape this rule already produces at Tier 1 — see [`skills/quality/verify-behavior/rules/receipt.md`](../../../skills/quality/verify-behavior/rules/receipt.md) for the full contract. That receipt is consumed by Step 2.7 exactly like a Tier 1 receipt; the 2.6 → 2.6b → 2.7 pipeline order does not change, and the null-drop invariant below applies identically regardless of which tier produced the receipt.
+
+**When `verify-behavior` is unavailable:** log `verify-behavior — not available, continuing` and degrade to today's static-only behavior — Tier 1 proof tools decide what they can, and a claim that needs Tier 2/3 to decide survives with only a partial (Tier 1) receipt, exactly as before this rule delegated. Do not block the review on a missing skill.
+
 > **Future work:** Once generation-aggression tuning (prompt reframing) is in place, the threshold on what triggers a receipt check can be relaxed for lower-severity findings.
 > The receipt gate is the *shippable static* version of code-execution verification — similar in spirit to CodeRabbit's generate-then-judge grounding, which runs sandbox execution to verify behavioral claims.
 > Bugbot does not do this today; execution verification is on their roadmap.
-> This rule gives `pr-reviewer` the static analogue without requiring a runtime sandbox.
+> `verify-behavior`'s Tier 2/3 delegation is exactly that upgrade, wired through this rule the same way `holistic-analysis` is wired through `holistic-review.md`.
 
 ---
 
@@ -118,9 +135,9 @@ A run with `Receipt drops: 5` out of 8 behavioral claims is healthy — those fi
 
 - **Style or naming nits** — exempt by design.
   These do not need behavioral proof; they need only grounding (2.6) and confidence (2.7).
-- **Behavioral claims that are correct but whose proof requires runtime execution.**
-  Static grep cannot run the program.
-  Findings in this class survive with a partial receipt; the confidence step (2.7) adjusts the score accordingly.
+- **Behavioral claims whose proof requires runtime execution.**
+  These now delegate to `Skill("verify-behavior", "claim")` Tier 2/3 (see § Tier delegation above) rather than surviving on a static-only partial receipt.
+  When the skill is unavailable, or Tier 3 is withheld by the relation-keyed trust split (cross-review does not default-on Tier 3), the finding survives with a partial (Tier 1/2) receipt and the confidence step (2.7) adjusts the score accordingly.
 - **Claims about deleted lines** (`-`-prefix in the diff).
   Deleted code is not in the changed file; receipts only apply to claims about the post-diff state.
 - **Claims about files not in the diff.**

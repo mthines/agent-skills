@@ -2087,4 +2087,66 @@ const isPollBlock = (block) =>
   s.check("G24 found the GitHub-using agents to guard", checked >= 3, `found ${checked}`);
 }
 
+// ── G28: the verify-behavior skill exists and its wiring into verification-receipt.md +
+// pr-reviewer's diagnostic-surface.md is real. Each sub-check reads the REAL shipped file and
+// asserts a literal anchor — never a copy re-encoded inside this eval. Mirrors the G17 guard
+// shape. Check-gaming is forbidden: these guards read the files under test, not a mock of them.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const skillDir = join(REPO_ROOT, "skills/quality/verify-behavior");
+
+  // G28a: the skill exists and documents the ladder + receipt contract + execute-not-score
+  // boundary (the same anchors AC-1/AC-6 gate on, read here as a shipping-file guard rather
+  // than a plan-time acceptance check).
+  s.check("G28a skills/quality/verify-behavior/SKILL.md exists and documents the ladder",
+    existsSync(join(skillDir, "SKILL.md")) &&
+    /Tier 1/i.test(read("skills/quality/verify-behavior/SKILL.md")) &&
+    /Tier 3/i.test(read("skills/quality/verify-behavior/SKILL.md")) &&
+    /does not score/i.test(read("skills/quality/verify-behavior/SKILL.md")));
+
+  // G28b: verification-receipt.md actually delegates Tier 2/3 to the skill, keeps the 2.6b
+  // pipeline position, and preserves the null-drop invariant — the exact adapter contract
+  // AC-7 gates on, read here as a regression lock against a future edit re-flattening it.
+  const vr = read("agents/shared/rules/verification-receipt.md");
+  s.check('G28b verification-receipt.md delegates to Skill("verify-behavior") and keeps 2.6b + null-drop',
+    /Skill\(\s*["']verify-behavior["']/.test(vr) &&
+    vr.includes("2.6b") &&
+    /null/i.test(vr) &&
+    /unavailable|not installed|not available/i.test(vr));
+
+  // G28c: verification-receipt.md's Order-in-the-pipeline block still reads 2.6 -> 2.6b -> 2.7 —
+  // a regression lock distinct from G28b's substring check, so a rewrite that keeps the words
+  // "2.6b" somewhere else in the file but reorders the actual pipeline diagram still fails.
+  s.check("G28c verification-receipt.md pipeline diagram still orders 2.6 -> 2.6b -> 2.7",
+    /\[2\.6\][^\n]*\n\s*→ verification-receipt\.md[^\n]*\[2\.6b\][^\n]*\n\s*→ per-comment-confidence[^\n]*\[2\.7\]/.test(vr));
+
+  // G28d: pr-reviewer's diagnostic-surface.md carries the new runtime-tier failure classes
+  // (append-only) without disturbing the pre-existing static-tier row or any Retired row —
+  // the exact append-only contract R17/AC-14 requires.
+  const diag = read("agents/pr-reviewer/rules/diagnostic-surface.md");
+  s.check("G28d diagnostic-surface.md appends the runtime-tier F-classes without dropping prior rows",
+    diag.includes("F-tier3-ran-untrusted-code-in-cross") &&
+    diag.includes("F-null-execution-treated-as-confirmation") &&
+    diag.includes("F-tier3-modified-tracked-files") &&
+    diag.includes("F-null-receipt-treated-as-confirmation") &&
+    diag.includes("Retired"));
+
+  // G28e: bug-fix-verifier.md and feature-pr-verifier.md both delegate their run mechanic and
+  // both still exist as real agent files — the WRAP verdict from the Existing Code Survey
+  // (D7 / plan.md), never a DELETE.
+  s.check("G28e bug-fix-verifier.md and feature-pr-verifier.md delegate to verify-behavior and still exist",
+    existsSync(join(REPO_ROOT, "agents/bug-fix-verifier.md")) &&
+    existsSync(join(REPO_ROOT, "agents/feature-pr-verifier.md")) &&
+    read("agents/bug-fix-verifier.md").includes("verify-behavior") &&
+    read("agents/feature-pr-verifier.md").includes("verify-behavior"));
+
+  // G28f: the aw-executor Phase 4 checks loop cites the change-verification shape while
+  // keeping its own mode-aware cap and check-integrity rules intact.
+  const p4 = read("skills/workflow/autonomous-workflow/rules/phase-4-testing.md");
+  s.check("G28f phase-4-testing.md checks loop cites verify-behavior change-verification and keeps its own gate rules",
+    p4.includes("verify-behavior") &&
+    p4.includes("Check definitions are executor-immutable") &&
+    p4.includes("unsatisfiable"));
+}
+
 process.exit(s.report() ? 0 : 1);
