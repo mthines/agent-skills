@@ -2121,15 +2121,16 @@ const isPollBlock = (block) =>
     /\[2\.6\][^\n]*\n\s*→ verification-receipt\.md[^\n]*\[2\.6b\][^\n]*\n\s*→ per-comment-confidence[^\n]*\[2\.7\]/.test(vr));
 
   // G28d: pr-reviewer's diagnostic-surface.md carries the new runtime-tier failure classes
-  // (append-only) without disturbing the pre-existing static-tier row or any Retired row —
-  // the exact append-only contract R17/AC-14 requires.
+  // (append-only) without dropping the pre-existing static-tier row
+  // (F-null-receipt-treated-as-confirmation) — the exact append-only contract R17/AC-14
+  // requires. Retired rows are asserted per-fingerprint by G25, not here; a bare
+  // diag.includes("Retired") only matched the append-only policy sentence, so it is dropped.
   const diag = read("agents/pr-reviewer/rules/diagnostic-surface.md");
   s.check("G28d diagnostic-surface.md appends the runtime-tier F-classes without dropping prior rows",
     diag.includes("F-tier3-ran-untrusted-code-in-cross") &&
     diag.includes("F-null-execution-treated-as-confirmation") &&
     diag.includes("F-tier3-modified-tracked-files") &&
-    diag.includes("F-null-receipt-treated-as-confirmation") &&
-    diag.includes("Retired"));
+    diag.includes("F-null-receipt-treated-as-confirmation"));
 
   // G28e: bug-fix-verifier.md and feature-pr-verifier.md both delegate their run mechanic and
   // both still exist as real agent files — the WRAP verdict from the Existing Code Survey
