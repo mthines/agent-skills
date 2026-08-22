@@ -262,13 +262,14 @@ retry budget below or set the backend not-connected.
 is far more often a momentary transport hiccup than a real outage, and treating one blip as
 terminal is what makes the `Memories — not connected` line flap between otherwise-identical runs.
 Retry up to **2 more times** (3 attempts total) with a short backoff, then treat the backend as not
-connected. The one error that must NOT be retried is a hard "tool unavailable" (the tool is absent
-from the caller's `tools:` grant, or the LoreKit MCP server did not connect this session — it
-surfaces as `No such tool available: mcp__lorekit__memory_list`): there is nothing to wait for, the
-remedy is environmental, and it is a genuine "not connected". Any attempt that returns without a
-tool error — **including an empty list** — is a success; stop retrying. This is the same contract
-`pr-reviewer.md § Step 1.0` states, restated here rather than cross-referenced because a caller
-applying this rule standalone must not end up with a weaker one.
+connected. A hard "tool unavailable" error (`No such tool available: mcp__lorekit__memory_list`) has two causes
+and only one of them is terminal. **The tool missing from the agent's `tools:` grant** is static —
+nothing to wait for, settle immediately. **The MCP server not having connected yet** is not: servers
+connect asynchronously, and a tool unregistered at the start of a run can be callable minutes later
+in the same session. Try the harness's registry affordance first (in Claude Code, `ToolSearch` with
+`select:mcp__lorekit__memory_list`, which waits for a connecting server), and treat a still-empty
+result as unavailable *for this step only*. A verdict reached at read time never suppresses a later
+write attempt — see § Write.
 
 Merge both lists (`repo::` wins on key collision).
 Skip any entry whose `expires` is in the past.

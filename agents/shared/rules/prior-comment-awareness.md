@@ -269,7 +269,7 @@ The finding may be surfaced in the terminal output for human review, but it is n
 
 When this rule executes inside a sub-agent (e.g., a review dispatched by an orchestrator), the sub-agent does NOT receive the SessionStart memory-load priming that the main session gets.
 The sub-agent MUST therefore perform the Step 1.0 memory read itself — never assume the relevance and lesson memories were pre-loaded.
-The companion relevance-memory read (see `comment-relevance-memory.md § Read`) is a mandatory real `mcp__lorekit__memory_list` tool call. Never infer disconnection without attempting the call, and never off a single transient throw: retry a thrown error up to 2 more times (3 attempts total) with a short backoff before treating the backend as not connected, exactly as `comment-relevance-memory.md § Read` and `pr-reviewer.md § Step 1.0` prescribe. A hard "tool unavailable" error is the one exception and is terminal immediately.
+The companion relevance-memory read (see `comment-relevance-memory.md § Read`) is a mandatory real `mcp__lorekit__memory_list` tool call. Never infer disconnection without attempting the call, and never off a single transient throw: retry a thrown error up to 2 more times (3 attempts total) with a short backoff before treating the backend as not connected, exactly as `comment-relevance-memory.md § Read` and `pr-reviewer.md § Step 1.0` prescribe. A hard "tool unavailable" error is terminal only when the tool is absent from the agent's `tools:` grant; when the MCP server simply has not connected yet it is provisional, and the later write sites re-probe rather than inheriting the read-time verdict (`comment-relevance-memory.md § Read`).
 
 ---
 

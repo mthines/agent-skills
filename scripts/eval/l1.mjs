@@ -223,6 +223,41 @@ function checksInSync(plan, checks) {
   }
 }
 
+// ── Check F3: "tool unavailable" is not one failure, and never terminal for a run ──
+// An MCP server connects asynchronously: a tool unregistered at the start of a run can be
+// callable minutes later in the same session (observed live — the harness reports servers as
+// "still connecting" and ToolSearch waits for them). The rule used to say the opposite — "there
+// is nothing to wait for, set false immediately, the remedy is environmental" — which is how a
+// long multi-round run probes once, settles false, and then no-ops every read AND write in every
+// later round: "LoreKit memory not connected ... nothing captured".
+//
+// Assert the two causes are still distinguished, and that no surface has gone back to declaring
+// unavailability terminal for the run.
+{
+  const readSrc = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const SURFACES = [
+    "agents/pr-reviewer.md",
+    "agents/shared/rules/comment-relevance-memory.md",
+    "agents/shared/rules/prior-comment-awareness.md",
+  ];
+  for (const f of SURFACES) {
+    const src = readSrc(f);
+    s.check(`F3 ${f} distinguishes a missing grant from a server that has not connected yet`,
+      /tools:` grant/.test(src) && /connected yet|has not connected/.test(src),
+      "the two causes of 'tool unavailable' are conflated again");
+    // The exact sentences that made the old rule wrong. Each asserted the run-level verdict.
+    for (const phrase of ["There is nothing to wait for", "terminal immediately"]) {
+      s.check(`F3 ${f} no longer declares unavailability terminal ("${phrase}")`,
+        !src.includes(phrase),
+        "a run-terminal verdict on an asynchronously-connecting server is back");
+    }
+  }
+  // The write sites must not inherit the read-time verdict — that inheritance is what turned one
+  // early probe into a whole run of no-ops.
+  s.check("F3 pr-reviewer's write sites re-probe rather than inheriting the read verdict",
+    /write sites[\s\S]{0,400}attempt their call regardless/.test(readSrc("agents/pr-reviewer.md")));
+}
+
 // ── Check G: cross-file contract drift guards (2026-06 holistic audit) ──
 // Every defect below was a contradiction between files that must agree —
 // the class Check A's link integrity cannot see. Lock the repaired contracts.
