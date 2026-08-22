@@ -21,6 +21,17 @@ This file does not restate those — it only names the buckets and says which ki
 
 ---
 
+## Contents
+
+- [The kinds](#the-kinds)
+- [The `review*` trio (the confusing one)](#the-review-trio-the-confusing-one)
+- [Master table — all 14 buckets](#master-table--all-14-buckets)
+- [First-class properties in LoreKit (`kind` + `host`)](#first-class-properties-in-lorekit-kind--host)
+- [Why the tags are not kind-prefixed](#why-the-tags-are-not-kind-prefixed)
+- [See also](#see-also)
+
+---
+
 ## The kinds
 
 The names encode the **host** (which skill or agent owns the bucket), not the **kind**.

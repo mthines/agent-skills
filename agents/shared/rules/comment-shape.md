@@ -14,6 +14,18 @@ Research grounding: AI-review tools that ship < 5 % false-positive rate and shor
 
 Optimality proposals (Step 2.4c) are **out of scope** for this rule: they render as cards in a report section, not as comments, and are exempt from every cap below (`optimality-review.md § Gates`).
 
+## Contents
+
+- [Hard caps](#hard-caps)
+- [Inline code](#inline-code)
+- [Suggestion / issue → include a fix block when a concrete patch exists](#suggestion--issue--include-a-fix-block-when-a-concrete-patch-exists)
+- [Shape](#shape)
+- [Tone](#tone)
+- [What goes elsewhere](#what-goes-elsewhere)
+- [Mechanical pre-emit check](#mechanical-pre-emit-check)
+
+---
+
 ## Hard caps
 
 | Property | Cap | On fail |

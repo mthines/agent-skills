@@ -16,6 +16,17 @@ the directory only implies it.
 > and the bare-fence requirement. A copy forks all five. Call this file; do not
 > paste it.
 
+## Contents
+
+- [What this answers](#what-this-answers)
+- [Why it is needed](#why-it-is-needed)
+- [Access path](#access-path)
+- [The poll](#the-poll)
+- [Outcomes (caller-neutral)](#outcomes-caller-neutral)
+- [Edited reports count as feedback](#edited-reports-count-as-feedback)
+
+---
+
 ## What this answers
 
 Exactly one question: **has any reviewer posted or edited feedback since a given timestamp?**

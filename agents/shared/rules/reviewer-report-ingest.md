@@ -47,6 +47,15 @@ the body template changes, and the failure is silent on both sides.
 
 ---
 
+## Contents
+
+- [Identifying a report](#identifying-a-report)
+- [Sections](#sections)
+- [Parsing rules](#parsing-rules)
+- [What this rule does not do](#what-this-rule-does-not-do)
+
+---
+
 ## Identifying a report
 
 A body is a `pr-reviewer` report when — and only when — it contains the literal marker:

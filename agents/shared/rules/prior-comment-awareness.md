@@ -19,6 +19,23 @@ This rule implements that same state-awareness.
 
 ---
 
+## Contents
+
+- [When this step runs](#when-this-step-runs)
+- [Step: fetch existing PR comment state](#step-fetch-existing-pr-comment-state)
+- [Thread state — resolution is read, never inferred](#thread-state--resolution-is-read-never-inferred)
+- [Dedup against prior bot comments](#dedup-against-prior-bot-comments)
+- [Anti-flip-flop state](#anti-flip-flop-state)
+- [What "accepted / resolved" includes](#what-accepted--resolved-includes)
+- [Sub-agent re-runs](#sub-agent-re-runs)
+- [Hardening incremental and --watch paths](#hardening-incremental-and---watch-paths)
+- [Carry-forward of deferred findings](#carry-forward-of-deferred-findings)
+- [Carry-forward of anchorless findings](#carry-forward-of-anchorless-findings)
+- [Logging](#logging)
+- [What this rule does not do](#what-this-rule-does-not-do)
+
+---
+
 ## When this step runs
 
 | Agent | When | Scope |

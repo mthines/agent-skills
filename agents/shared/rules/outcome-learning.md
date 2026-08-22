@@ -25,6 +25,19 @@ This file owns what to do with accumulated signals once they cross the promotion
 
 ---
 
+## Contents
+
+- [Primary input: the `review-outcomes` bus](#primary-input-the-review-outcomes-bus)
+- [The three gh-api resolution signals (secondary/fallback)](#the-three-gh-api-resolution-signals-secondaryfallback)
+- [Measurement mechanism](#measurement-mechanism)
+- [Entry points](#entry-points)
+- [Promotion decisions](#promotion-decisions)
+- [Outcome-driven promotion](#outcome-driven-promotion)
+- [What this does not change](#what-this-does-not-change)
+- [What this rule does not do](#what-this-rule-does-not-do)
+
+---
+
 ## Primary input: the `review-outcomes` bus
 
 The primary signal source for promotion decisions is the `review-outcomes` LoreKit bus (tag `loop::review-outcomes`).

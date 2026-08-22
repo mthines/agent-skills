@@ -9,6 +9,20 @@ tags:
 
 # Line validity
 
+## Contents
+
+- [Pre-flight is a pure in-memory computation — zero GitHub API calls](#pre-flight-is-a-pure-in-memory-computation--zero-github-api-calls)
+- [Cache the patch list once](#cache-the-patch-list-once)
+- [How to compute the valid RIGHT-side range](#how-to-compute-the-valid-right-side-range)
+- [Pre-flight per comment](#pre-flight-per-comment)
+- [Decision matrix](#decision-matrix)
+- [Why retarget only when ≤ 3 lines away](#why-retarget-only-when--3-lines-away)
+- [Multi-line comments](#multi-line-comments)
+- [Pre-existing-issue interaction](#pre-existing-issue-interaction)
+- [What this rule does not catch](#what-this-rule-does-not-catch)
+
+---
+
 ## Pre-flight is a pure in-memory computation — zero GitHub API calls
 
 Line validity is decided **entirely** from the patch data already cached in `/tmp/pr-files.json` at Step 1.2, using the `compute_valid_right_lines` hunk-walk below. It makes **no network calls of any kind**.

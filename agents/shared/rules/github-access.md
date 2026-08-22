@@ -6,6 +6,16 @@ Do not restate the mapping in a caller. Change it here.
 
 ---
 
+## Contents
+
+- [Why this exists](#why-this-exists)
+- [Step 0 — resolve your path, once, before any GitHub step](#step-0--resolve-your-path-once-before-any-github-step)
+- [Verb mapping](#verb-mapping)
+- [Gaps](#gaps)
+- [No path](#no-path)
+
+---
+
 ## Why this exists
 
 There are two ways to reach GitHub and neither is universally present:

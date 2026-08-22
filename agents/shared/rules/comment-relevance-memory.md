@@ -24,6 +24,32 @@ specific codebase, surfacing fewer noise comments and more actionable ones.
 
 ---
 
+**Read this by section, not start to finish.** At ~700 lines this is a reference: no consumer needs
+all of it. `pr-reviewer` reads *Read* at Step 2.2 and *Linking applied memories in the report* at
+Step 4; `implement-suggestion` and `outcome-learning.md` read *Write*; the GitHub Action and
+`scripts/record-comment-relevance.mjs` implement *Relevance memory record schema*. Jump to the
+section your step names — the Contents below is the index.
+
+It stays one file deliberately. Nine other files cite its sections as `comment-relevance-memory.md
+§ <section>`, so a split would break every one of those references, and the read, write, and
+schema halves share one record definition that would otherwise need a home of its own. The size
+is the cost of being the single source of truth for that record.
+
+## Contents
+
+- [Why this exists](#why-this-exists)
+- [Scope](#scope)
+- [Relevance memory record schema](#relevance-memory-record-schema)
+- [Read — loading memories into the review pipeline](#read--loading-memories-into-the-review-pipeline)
+- [Linking applied memories in the report](#linking-applied-memories-in-the-report)
+- [Write — capturing resolution outcomes](#write--capturing-resolution-outcomes)
+- [Entrenchment guards](#entrenchment-guards)
+- [Promotion rule](#promotion-rule)
+- [Interaction with existing rules](#interaction-with-existing-rules)
+- [What this rule does not do](#what-this-rule-does-not-do)
+
+---
+
 ## Why this exists
 
 Every repository has quirks: patterns that look suspicious in the abstract but

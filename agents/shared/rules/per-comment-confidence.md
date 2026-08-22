@@ -13,6 +13,18 @@ The single LLM that wrote a finding is a poor judge of whether the finding is co
 
 After the rewrite, per-comment confidence is routed through the dedicated `confidence` skill, run in `code` mode, with an 80 % drop threshold.
 
+## Contents
+
+- [The check](#the-check)
+- [Drop vs. defer — the near-miss band](#drop-vs-defer--the-near-miss-band)
+- [Why 80, not 70](#why-80-not-70)
+- [What `confidence(code)` returns](#what-confidencecode-returns)
+- [What this check does not catch](#what-this-check-does-not-catch)
+- [Order](#order)
+- [Logging](#logging)
+
+---
+
 ## The check
 
 For each finding that survives `finding-grounding.md` (2.6) and `verification-receipt.md` (2.6b):

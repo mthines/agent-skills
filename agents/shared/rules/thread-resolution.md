@@ -37,6 +37,25 @@ still open.
 
 ---
 
+**Read this by section, not start to finish.** `pr-reviewer` Step 2.9c needs *Classify each prior
+own-comment* and *Resolve the thread*; *Write the outcome to LoreKit* and *Ordering* matter once
+the classification is done. The Contents below is the index.
+
+It stays one file because the classification table and the resolve/write steps are one procedure —
+splitting them would put the status a thread was assigned in a different file from what is done
+about it — and because other rules cite its sections as `thread-resolution.md § <section>`.
+
+## Contents
+
+- [When this step runs](#when-this-step-runs)
+- [Classify each prior own-comment](#classify-each-prior-own-comment)
+- [Resolve the thread](#resolve-the-thread)
+- [Write the outcome to LoreKit](#write-the-outcome-to-lorekit)
+- [Ordering](#ordering)
+- [What this rule does not do](#what-this-rule-does-not-do)
+
+---
+
 ## When this step runs
 
 This rule is **`pr-reviewer`-only.** Resolving a GitHub thread is a write to

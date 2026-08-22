@@ -17,6 +17,18 @@ Verification receipts close that gap by requiring an *executed proof* for every 
 This step sits at **Step 2.6b** — after `finding-grounding.md` (2.6, existence) and before `per-comment-confidence.md` (2.7).
 Findings that survive produce a receipt that feeds directly into the `confidence(code)` Evidence input at 2.7, making that gate sharper.
 
+## Contents
+
+- [Tier delegation to `verify-behavior`](#tier-delegation-to-verify-behavior)
+- [What is a behavioral claim?](#what-is-a-behavioral-claim)
+- [The check](#the-check)
+- [Receipt format](#receipt-format)
+- [Logging](#logging)
+- [What this check does not catch](#what-this-check-does-not-catch)
+- [Order in the pipeline](#order-in-the-pipeline)
+
+---
+
 ## Tier delegation to `verify-behavior`
 
 Tier 1 (the static proof tools below — `grep`, `ast-grep`, `Read`) stays **inline in this rule**.
