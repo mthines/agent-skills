@@ -1567,7 +1567,10 @@ Always include the run mode and delta context in the header:
 
 Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 4/5 all ✅) and neither tri-state gate — Prior bot feedback, Code review — is ❌, but at least one graded gate — Description vs. code, CI, Prior bot feedback, or Code review — is ⚠️ (still a PASS verdict); **FAIL** when Gate 4 or Gate 5 fails or the Prior bot feedback or Code review gate is ❌ (CI never fails it).
 
-On PASS — all clear (every gate ✅):
+All three presentations share **one** template; only the `**Verdict**` line and the allowed Status
+glyphs differ, both tabulated under it. (Three near-copies is what drifted into a remembered
+average on the posted body before `render-report.mjs` took that over; terminal output has no
+renderer, so one copy is the guard.)
 
 ```markdown
 ## PR Review — PR #<n> (<repo>)
@@ -1580,74 +1583,47 @@ On PASS — all clear (every gate ✅):
 
 ### Gate Status
 
-| Gate | Status |
+| Gate | Status | Details |
+|---|---|---|
+| Description vs. code | <glyph> | <details> |
+| Prior bot feedback   | <glyph> | <details> |
+| Documentation        | <glyph> | <details> |
+| Self-review signals  | <glyph> | <details> |
+| Code review          | <glyph> | <details> |
+
+**Verdict**: <the line for this presentation, from the table below>
+
+[rest of sections follow]
+```
+
+Three columns in every presentation, matching the posted body
+(`report-rendering.md § Rules for table cells`) — the old PASS copy dropped Details, so the
+all-clear run said least about what had been checked. The *selector* above, never this table,
+decides the presentation:
+
+| Gate | Glyphs it may show | Details cell |
+|---|---|---|
+| Description vs. code | ✅ ⚠️ | mismatch text (≤ 120 chars) on ⚠️; empty on ✅ |
+| Prior bot feedback | ✅ ⚠️ ❌ | `<N> unresolved bot thread(s)` on ⚠️/❌; empty on ✅ |
+| Documentation | ✅ ❌ | finding text on ❌; empty on ✅ |
+| Self-review signals | ✅ ❌ | finding text on ❌; empty on ✅ |
+| Code review | ✅ ⚠️ ❌ | `See inline comments`, or finding text, on ⚠️/❌; empty on ✅ |
+
+Any gate may also show `⏭️` under `--skip-gates` (*Gate states*). Gate 2 (CI) is not a row, as in
+the posted body; its state goes in the Quality Gate block's CI line below.
+
+| Presentation | `**Verdict**` line |
 |---|---|
-| Description vs. code | ✅ |
-| Prior bot feedback   | ✅ |
-| Documentation        | ✅ |
-| Self-review signals  | ✅ |
-| Code review          | ✅ |
+| PASS | `PASS` |
+| WARN | `PASS — no blocking issues, <WARN_GATE_COUNT> warning(s): <WARN_REASONS>.` |
+| FAIL | `FAIL — <SEVERITY_TALLY>. Blocking: <FAIL_REASONS>.` |
 
-**Verdict**: PASS
-
-[rest of sections follow]
-```
-
-On WARN — soft warnings only (hard Gates 4/5 ✅, at least one of Description vs. code / CI / Prior bot feedback / Code review is ⚠️, none ❌):
-
-```markdown
-## PR Review — PR #<n> (<repo>)
-
-**Title**: <PR title>
-**Author**: @<login>
-**Base ← Head**: <base> ← <head>
-**Intent**: <one-line from Step 1.3>
-**Run mode**: <full | incremental (delta: N lines since PRIOR_SHA_SHORT) | incremental-quick (delta: N lines since PRIOR_SHA_SHORT)>
-
-### Gate Status
-
-| Gate | Status | Details |
-|---|---|---|
-| Description vs. code | ✅ or ⚠️ | mismatch text or empty |
-| Prior bot feedback   | ✅ or ⚠️ | open-thread count or empty |
-| Documentation        | ✅ | empty |
-| Self-review signals  | ✅ | empty |
-| Code review          | ✅ or ⚠️ | "See inline comments" or finding text or empty |
-
-**Verdict**: PASS — no blocking issues, <WARN_GATE_COUNT> warning(s): <WARN_REASONS>.
-
-[rest of sections follow]
-```
-
-On FAIL (Gate 4 or Gate 5 fails, or Prior bot feedback / Code review is ❌):
-
-```markdown
-## PR Review — PR #<n> (<repo>)
-
-**Title**: <PR title>
-**Author**: @<login>
-**Base ← Head**: <base> ← <head>
-**Intent**: <one-line from Step 1.3>
-**Run mode**: <full | incremental (delta: N lines since PRIOR_SHA_SHORT) | incremental-quick (delta: N lines since PRIOR_SHA_SHORT)>
-
-### Gate Status
-
-| Gate | Status | Details |
-|---|---|---|
-| Description vs. code | ✅ or ⚠️ | mismatch text (max 120 chars) or empty |
-| Prior bot feedback   | ✅, ⚠️, or ❌ | finding text or empty |
-| Documentation        | ✅ or ❌ | finding text or empty |
-| Self-review signals  | ✅ or ❌ | finding text or empty |
-| Code review          | ✅, ⚠️, or ❌ | "See inline comments" or finding text or empty |
-
-**Verdict**: FAIL — <SEVERITY_TALLY>. Blocking: <FAIL_REASONS>.
-
-[rest of sections follow]
-```
+WARN prints a `PASS` verdict on purpose — Step 4a's `VERDICT` binding explains why the two must
+stay distinct.
 
 `FAILING_GATE_COUNT` counts only hard-failing gates — a ⚠️ row (Description vs. code, Prior bot feedback, or Code review) is never included, even when another gate is ❌.
 
-Both PASS and FAIL continue with:
+All three presentations continue with:
 
 ```markdown
 ### Inline Findings Summary
