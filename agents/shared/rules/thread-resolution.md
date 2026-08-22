@@ -41,14 +41,14 @@ still open.
 
 This rule is **`pr-reviewer`-only.** Resolving a GitHub thread is a write to
 GitHub, and `pr-reviewer` is the review agent that writes to GitHub.
-In both relations it rewrites the sticky report and, when Step 4b's conditions are
+In both relations it rewrites the sticky report and, when Step 4b's condition is
 met, posts a single visible `COMMENT` review (`REVIEW_RELATION` only adjusts the
 framing tone), so thread resolution applies to both relations on a re-review pass. The relevance signal from threads that were not resolved here
 comes from the post-merge path (`outcome-learning.md`) and the GitHub Action instead.
 
 | Agent | When | Gate |
 | --- | --- | --- |
-| `pr-reviewer` | Step 2.9c, on every re-review (`IS_RE_REVIEW == true` in Step 0.7 — a prior sticky, a legacy report body, **or** a recovered pointer ledger; not the narrower `PRIOR_REVIEW`, which is empty on the pointer path) | Resolution + write always run; a failure here never blocks the review |
+| `pr-reviewer` | Step 2.9c, on every re-review (`IS_RE_REVIEW == true` in Step 0.7 — a PR-state record **or** a sticky found on the fallback rung; not the narrower "something was carried forward", which is empty on that rung) | Resolution + write always run; a failure here never blocks the review |
 
 It **never** runs on a first-pass review (no prior threads to reconcile).
 

@@ -46,9 +46,9 @@ REPO_NAME="${REPO##*/}"
 # matches nothing, which reads as "this agent has never commented on this PR". Dedup, the
 # anti-flip-flop check and Step 2.9c all no-op on a PR full of this agent's own threads.
 BOT_LOGIN="${BOT_LOGIN:-$(gh api user --jq .login 2>/dev/null || echo "")}"
-# Fallback: this agent's own prior report on THIS PR carries its login. The caller binds
-# PRIOR_REPORT_AUTHOR when it found a sticky, a legacy report body, or a pointer (pr-reviewer
-# Step 0.7); it costs no extra API call.
+# Fallback: this agent's own login, recorded the last time it reviewed THIS PR. The caller binds
+# PRIOR_REPORT_AUTHOR from the PR-state record's `bot_login`, or off the sticky it found on the
+# fallback rung (pr-reviewer Step 0.7); either way it costs no extra API call here.
 [ -z "$BOT_LOGIN" ] && BOT_LOGIN="${PRIOR_REPORT_AUTHOR:-}"
 
 # All existing review comments on this PR (all authors).
@@ -193,8 +193,9 @@ operate on an empty prior set` and carry it into the run's report.
 It has two reachable causes, and only the first is benign:
 - **A genuine first pass** — no prior report, no prior pointer, nothing to dedup against. The empty
   set is simply correct.
-- **A prior-run read that failed** — `PRIOR_REPORT_AUTHOR` is bound from whatever the caller found
-  (`pr-reviewer` Step 0.7), so a PR with prior runs resolves *unless the lookups themselves failed*.
+- **A prior-run read that failed** — `PRIOR_REPORT_AUTHOR` is bound from the PR-state record, or
+  from the sticky on the fallback rung (`pr-reviewer` Step 0.7), so a PR with prior runs resolves
+  *unless both lookups failed*.
   Then the identity is unknown on a PR that does have prior comments, and dedup silently no-ops:
   findings already on the PR get re-posted. This is why the flag is disclosed rather than logged and
   forgotten — the run must say that its dedup was blind, so a duplicate comment reads as a known
@@ -275,8 +276,8 @@ Carry-forward closes that hole.
 
 Run this immediately after the prior-comment fetch, in every mode:
 
-1. Read the prior report body (`PRIOR_BODY` — the sticky comment, or a legacy review body, already fetched at Step 0.7) and parse its `Additional findings` section.
-2. Re-admit each parsed entry into the current run's finding stream, tagged `carried-forward`, with its recorded confidence score.
+1. Read `CARRIED_FINDINGS` — the `data.carried_findings` array of the PR-state record, already fetched at Step 0.7. It is **structured state, not parsed prose**: each entry arrives as `{path, line, prefix, body, confidence, first_seen_sha}`, so there is no `(confidence 84)` to recover from a rendered bullet and no heading to match. When the record was unusable, this array is empty and the run says so — the fallback rung recovers a delta baseline, never carried findings.
+2. Re-admit each entry into the current run's finding stream, tagged `carried-forward`, with its recorded confidence score.
 3. Drop a carried entry when **any** holds:
    - Its `(file, line)` no longer exists in the current PR state, or the line's content changed since the review that deferred it (the finding was likely addressed).
    - It duplicates a finding produced fresh in this run (normal dedup, `§ Dedup against prior bot comments`).
@@ -287,6 +288,7 @@ Run this immediately after the prior-comment fetch, in every mode:
 Report the count as `Carried forward: <N>` in the Quality Gate summary.
 
 A finding can therefore be deferred across several incremental runs, but it can never be silently forgotten: it is either posted inline, still listed in the body, or dropped for a logged reason.
+Whichever way it goes, the run's own outcome is what gets written back (`pr-reviewer` Step 4c) — a finding posted inline or resolved this run is **not** re-recorded, or it would return next run as a duplicate.
 
 ---
 
@@ -299,7 +301,8 @@ The `**Standards (2.4d)**` log line records whether that lens ran at all; its in
 None of these are re-derivable from the delta, and 2.4c and 2.4d are both **skipped** in `incremental-quick`.
 Without this rule a re-review silently drops every one of them, and the PR conversation loses context the author still needs.
 
-Run this at **Step 2.5c**, in every mode, over the `PRIOR_DIAGNOSTICS` parsed at `pr-reviewer.md § Step 0.7 → Parsing PRIOR_DIAGNOSTICS`.
+Run this at **Step 2.5c**, in every mode, over the `PRIOR_DIAGNOSTICS` read from the PR-state record at `pr-reviewer.md § Step 0.7 → Bind the run-mode inputs` (`data.diagnostics`: `gate_rows`, `optimality_cards`, `standards`, `skipped_files`, `partial`).
+It is structured state, so a heading rename in the report template can no longer cost a re-review its carried diagnostics — which is what the old "parse it back out of the rendered accordion" path risked on every template edit.
 It runs there — not next to the deferred-finding carry-forward at Step 0.7 — because every disposition below is decided against this run's outcomes from Step 1.8, Step 2.4c, and Step 2.4d, none of which exist yet at Step 0.7.
 
 Each carried entry gets exactly one disposition:
@@ -307,8 +310,8 @@ Each carried entry gets exactly one disposition:
 | Condition | Disposition |
 | --- | --- |
 | The owning step ran this pass and reproduced the entry | **REPLACE** — the fresh entry wins; the carried copy is discarded (it is the same finding, freshly grounded). |
-| The owning step ran this pass and did **not** reproduce it | **RESOLVE** — drop it, and log `resolved since <PRIOR_REVIEW_SHA_SHORT>`. This is the only path that removes a finding from the body. |
-| The owning step was **skipped** this pass (2.4c / 2.4d under `incremental-quick`, `--no-optimize`, `--no-standards`, or `--skip-gates`) | **CARRY** — re-render the prior entry verbatim in this run's body, suffixed `(carried from <PRIOR_REVIEW_SHA_SHORT>)`. Never let a skipped step read as a clean result. |
+| The owning step ran this pass and did **not** reproduce it | **RESOLVE** — drop it, and log `resolved since <PRIOR_SHA_SHORT>`. This is the only path that removes a finding from the body. |
+| The owning step was **skipped** this pass (2.4c / 2.4d under `incremental-quick`, `--no-optimize`, `--no-standards`, or `--skip-gates`) | **CARRY** — re-render the prior entry verbatim in this run's body, suffixed `(carried from <PRIOR_SHA_SHORT>)`. Never let a skipped step read as a clean result. |
 | The entry cannot be mapped to an owning step (unparseable or from an older template) | **DROP** with a log line; never re-render an entry you cannot attribute. |
 
 Owning steps: gate rows → Step 1.8; optimality cards → Step 2.4c; standards findings → Step 2.4d; `Skipped files` → Step 1.2 / 2; `PARTIAL_BANNER` → the step that set it.
@@ -318,7 +321,7 @@ Hard rules:
 1. **A carried gate row never sets a gate's status.** Step 1.8 evaluates every gate against the **current** PR state in every run mode, exactly as it does today. `PRIOR_GATE_STATE` is context for the *Details* text and for the resolve/carry decision — it can neither fail a passing gate nor pass a failing one.
    A gate row reaches `CARRY` only under `--skip-gates`, the one flag that makes Step 1.8 not run; that gate then renders `⏭️` with the carried text in its Details cell, per `pr-reviewer.md § Gate states`. `⏭️` never counts toward `FAILING_GATE_COUNT` and never changes the verdict.
 2. **A carried entry never changes the verdict on its own.** Optimality has never blocked the verdict and still does not; standards findings keep their existing non-blocking behaviour.
-3. **Carrying is not re-asserting.** A carried entry is re-rendered because its owning step did not run, not because it was re-verified. The `(carried from …)` suffix is mandatory so the author can tell the two apart. It renders `PRIOR_REVIEW_SHA_SHORT` — the prior review's `commit_id`, set in every mode — never `PRIOR_SHA`, which is empty under `--full`.
+3. **Carrying is not re-asserting.** A carried entry is re-rendered because its owning step did not run, not because it was re-verified. The `(carried from …)` suffix is mandatory so the author can tell the two apart. It renders `PRIOR_SHA_SHORT`, which the PR-state record supplies in every run mode including `--full` — so the suffix can no longer degrade to `(carried from )`.
 4. **A `RESOLVE` requires the owning step to have actually run.** A step that was skipped can never resolve anything — that is the `CARRY` row, and conflating the two is how a still-broken gate silently disappears from the body.
 
 Report the counts as `Anchorless carried: <C> · resolved: <R>` in the Quality Gate summary — the terminal block at `pr-reviewer.md § Step 3`, which renders them as `anchorless carried <AC>, anchorless resolved <AR>`.
@@ -344,6 +347,7 @@ All four are emitted even when N = 0, M = 0, K = 0, C = 0, and R = 0, so the use
 ## What this rule does not do
 
 - Re-run outcome measurement — that is `outcome-learning.md`.
-- Change how the review is posted — `pr-reviewer` Step 4 rewrites the sticky report unconditionally and posts a visible `COMMENT` review under Step 4b's conditions, with no authorization gate.
+- Change how the review is posted — `pr-reviewer` Step 4 rewrites the sticky report unconditionally, posts a visible `COMMENT` review only when the run has new inline findings, and records its run state to the PR-state record (Step 4c). No authorization gate.
 - Apply when no PR exists yet (no prior GitHub state to reconcile).
 - Drop a finding because an author *challenged* (not accepted) a prior finding — disagreement does not prevent re-flagging; outcomes do.
+- Own the prior-run state. This rule *consumes* `CARRIED_FINDINGS`, `PRIOR_DIAGNOSTICS` and `PRIOR_REPORT_AUTHOR`; the record they are read from, and the write that produces them, belong to [`pr-reviewer.md § Step 0.7`](../../pr-reviewer.md) and § Step 4c.

@@ -148,8 +148,10 @@ they are stale history, and expanding them would re-admit findings the sticky ha
 Scanning only `reviews`, as an earlier version of this rule did, finds nothing on a current PR and
 drops the whole report silently.
 
-Ignore the trailing `<!-- PR_REVIEWER_LEDGER … -->` block: it is `pr-reviewer`-private run history,
-not a finding, and must never be expanded into a ledger entry or written back.
+A body written before `pr-reviewer` moved its run state out of the comment may carry a trailing
+`<!-- PR_REVIEWER_LEDGER … -->` block. Ignore it: it is `pr-reviewer`-private run history, not a
+finding, and must never be expanded into a ledger entry or written back. Current bodies carry no
+such block at all (`reviewer-report-ingest.md § There is no ledger block`).
 
 | Parsed section | Expands to | `source` | Anchor |
 | ---------------- | ------------ | ---------- | -------- |

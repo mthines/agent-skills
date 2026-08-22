@@ -20,10 +20,13 @@
 import { readFileSync } from "node:fs";
 
 const SHA7 = /^[0-9a-f]{7}$/;
-const VERDICTS = new Set(["PASS", "WARN", "FAIL"]);
-const FORMS = new Set(["pointer", "escalation", "no_prior", "degraded"]);
+// Two forms only. The retired "escalation" and "no_prior" forms served notification-only reviews
+// (pr-reviewer Step 4b conditions 2 and 3); with one posting condition — the run has new inline
+// findings — no caller can reach them. They are rejected rather than left unreachable, so a run
+// that remembers them gets an error instead of posting a shape nothing documents.
+const FORMS = new Set(["pointer", "degraded"]);
+const RETIRED_FORMS = new Set(["escalation", "no_prior"]);
 const PROSE_BUDGET = 600;
-const LEDGER_BUDGET = 1500;
 
 function fail(msg) {
   process.stderr.write(`render-pointer: ${msg}\n`);
@@ -77,10 +80,15 @@ function main() {
   if (!isPlainObject(data)) fail("payload must be a JSON object");
 
   const { FORM } = data;
+  if (RETIRED_FORMS.has(FORM)) {
+    fail(`FORM "${FORM}" is retired: a review object now exists only to carry inline comments`
+      + ` (pr-reviewer Step 4b), so there is no notification-only pointer. Use "pointer", or`
+      + ` "degraded" when the sticky could not be written.`);
+  }
   if (!FORMS.has(FORM)) fail(`FORM must be one of ${[...FORMS].join(" | ")} — got ${JSON.stringify(FORM)}`);
 
-  const known = new Set(["FORM", "HEAD_SHA", "FINDINGS_COUNT", "STICKY_URL", "VERDICT",
-    "PRIOR_VERDICT", "REASONS", "HEADLINE_LINE", "LEDGER", "DEGRADED_REASON"]);
+  const known = new Set(["FORM", "HEAD_SHA", "FINDINGS_COUNT", "STICKY_URL",
+    "HEADLINE_LINE", "DEGRADED_REASON"]);
   const unknown = Object.keys(data).filter((k) => !known.has(k));
   if (unknown.length) fail(`unknown payload key(s): ${unknown.join(", ")}`);
 
@@ -95,23 +103,6 @@ function main() {
     const n = data.FINDINGS_COUNT;
     body = `<!-- PR_REVIEWER_POINTER -->\n`
       + `Reviewed \`${shortSha}\` — ${n} finding(s) inline. [Full report](${data.STICKY_URL})`;
-  } else if (FORM === "no_prior") {
-    if (!VERDICTS.has(data.VERDICT)) fail(`VERDICT must be one of PASS | WARN | FAIL — got ${JSON.stringify(data.VERDICT)}`);
-    requireUrl("STICKY_URL", data.STICKY_URL);
-    body = `<!-- PR_REVIEWER_POINTER -->\n`
-      + `Reviewed \`${shortSha}\` — ${data.VERDICT}, no prior report on record. [Full report](${data.STICKY_URL})`;
-  } else if (FORM === "escalation") {
-    if (!VERDICTS.has(data.VERDICT)) fail(`VERDICT must be one of PASS | WARN | FAIL — got ${JSON.stringify(data.VERDICT)}`);
-    if (!VERDICTS.has(data.PRIOR_VERDICT)) {
-      fail(`PRIOR_VERDICT must be one of PASS | WARN | FAIL — got ${JSON.stringify(data.PRIOR_VERDICT)}`
-        + ` (an empty/unknown prior verdict is the "no_prior" form, never "escalation")`);
-    }
-    if (!data.REASONS || String(data.REASONS).trim() === "") fail("REASONS is required and must be non-empty for the escalation form");
-    assertPlain("REASONS", data.REASONS);
-    requireUrl("STICKY_URL", data.STICKY_URL);
-    body = `<!-- PR_REVIEWER_POINTER -->\n`
-      + `⚠️ Verdict moved ${data.PRIOR_VERDICT} → ${data.VERDICT} at \`${shortSha}\` — ${data.REASONS}.`
-      + ` [Full report](${data.STICKY_URL})`;
   } else if (FORM === "degraded") {
     requireCount("FINDINGS_COUNT", data.FINDINGS_COUNT);
     if (!data.HEADLINE_LINE || String(data.HEADLINE_LINE).trim() === "") fail("HEADLINE_LINE is required for the degraded form");
@@ -124,22 +115,21 @@ function main() {
         + " (an access-path failure or a caller policy refusal), never leave it implicit");
     }
     assertPlain("DEGRADED_REASON", data.DEGRADED_REASON);
-    if (!isPlainObject(data.LEDGER)) fail("LEDGER is required and must be an object for the degraded form");
-    const ledgerJson = JSON.stringify(data.LEDGER);
-    if (ledgerJson.length > LEDGER_BUDGET) {
-      fail(`LEDGER is ${ledgerJson.length} chars, over the ${LEDGER_BUDGET}-char pointer-ledger cap`
-        + " — reduce it (drop open_bot_comment_ids, then blocking_fingerprints) before calling this renderer");
-    }
     const n = data.FINDINGS_COUNT;
     body = `<!-- PR_REVIEWER_POINTER -->\n`
-      + `Reviewed \`${shortSha}\` — ${data.HEADLINE_LINE} ${n} finding(s) inline. ${data.DEGRADED_REASON}\n\n`
-      + `<!-- PR_REVIEWER_LEDGER ${ledgerJson} -->`;
+      + `Reviewed \`${shortSha}\` — ${data.HEADLINE_LINE} ${n} finding(s) inline. ${data.DEGRADED_REASON}`;
   }
 
   // ── fail-closed post-conditions, mirroring render-report.mjs ──────────────────────────────
   if (!body.startsWith("<!-- PR_REVIEWER_POINTER -->")) fail("rendered body lost the pointer marker");
   if (body.includes("<!-- PR_REVIEWER_REPORT -->")) fail("rendered body carries the report marker — the report belongs in the sticky only");
-  const prose = body.replace(/<!-- PR_REVIEWER_LEDGER .*? -->/s, "").trim();
+  // No ledger block is stripped before measuring, because none may be present: run state lives
+  // in the PR-state record (pr-reviewer Step 4c), not on a review body. A payload that smuggled
+  // one in through a prose field is rejected rather than silently exempted from the budget.
+  if (body.includes("<!-- PR_REVIEWER_LEDGER")) {
+    fail("rendered body carries a ledger block — run state belongs in the PR-state record");
+  }
+  const prose = body.trim();
   if (prose.length > PROSE_BUDGET) {
     fail(`rendered body is ${prose.length} chars of prose — a pointer, not a report (budget ${PROSE_BUDGET})`);
   }

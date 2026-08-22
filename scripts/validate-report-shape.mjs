@@ -93,7 +93,11 @@ export function validate(body) {
   if (kind === "not-a-reviewer-body") return { ok: true, kind, violations };
 
   if (kind === "pointer") {
-    // A pointer must stay a pointer: prose only, plus an optional ledger.
+    // A pointer must stay a pointer: prose only. The ledger strip is BACK-COMPAT — current
+    // pr-reviewer runs put no ledger on any body (run state is the PR-state record), but a
+    // pointer posted before that change still carries one, and this validator runs against
+    // live bodies on PRs that may not have been re-reviewed since. Stripping it keeps an old
+    // body from failing a budget it was never measured against; it is not a licence to write one.
     // Strip the LEDGER only — not the marker. The agent's own Step 4b pre-flight measures the same
     // 600-char budget against the body with just the ledger block removed, so also stripping the
     // 27-char POINTER_MARKER here made this budget looser than the one it is meant to validate, and

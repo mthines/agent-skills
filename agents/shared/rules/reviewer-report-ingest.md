@@ -26,12 +26,21 @@ Any consumer that reads only the inline comments therefore sees an incomplete re
 
 This rule is the **single grammar** for parsing that body. It is consumer-neutral: it defines what
 the sections are and what may be extracted from them, and says nothing about what a consumer then
-does with the result. Two consumers exist today:
+does with the result. One consumer exists today:
 
 | Consumer | Reads it to | Downstream contract |
 | --- | --- | --- |
-| `pr-reviewer` (Step 0.7 → 2.5c) | carry its own prior anchorless findings into a re-review | [`prior-comment-awareness.md § Carry-forward of anchorless findings`](./prior-comment-awareness.md) |
 | `implement-suggestion` (Phase 2 → 3) | expand the report into actionable ledger entries so the body-only findings get fixed | [`implement-suggestion/rules/comment-fetching.md § Reviewer-report expansion`](../../../skills/workflow/implement-suggestion/rules/comment-fetching.md) |
+
+**`pr-reviewer` is no longer a consumer**, and that is the point of the change that removed it. It
+used to parse its *own* rendered report back into `CARRIED_FINDINGS` and `PRIOR_DIAGNOSTICS` at
+Step 0.7 — a render/parse round-trip through Markdown that coupled the reviewer's memory to its own
+presentation: renaming a heading here cost a re-review its carried findings, and a body the
+renderer had not produced cost it everything. Its prior-run state now comes from a per-PR LoreKit
+state record ([`pr-reviewer.md § Step 0.7`](../../pr-reviewer.md)), which is structured, private to
+that agent, and independent of this grammar. `pr-reviewer` still **produces** the body this grammar
+reads, so a heading change in its template is still a breaking change here — the coupling is one-way
+now instead of circular.
 
 **Do not re-derive this grammar in a consumer.** Two parsers of the same markdown drift the moment
 the body template changes, and the failure is silent on both sides.
@@ -65,31 +74,27 @@ legacy body is used only when no sticky exists.
 
 **A review pointer is not a third host.** Every review `pr-reviewer` posts carries
 `<!-- PR_REVIEWER_POINTER -->` and a one-line body pointing at the report; it is never a report and
-carries no sections, so a consumer must not parse it with this grammar. Two things may still be read
-off it, and only these two: its `.user.login` (the agent's own login) and, when the sticky could not
-be written that run, a trailing `<!-- PR_REVIEWER_LEDGER … -->` block — which is `pr-reviewer`-private
-state, as below. Treating a pointer as a report yields a "report" whose every section is empty.
+carries no sections, so a consumer must not parse it with this grammar. Exactly one thing may be
+read off it — its `.user.login`, the agent's own login. Treating a pointer as a report yields a
+"report" whose every section is empty.
 
-Two consequences for parsing:
+One consequence for parsing: a sticky is an issue comment and therefore has **no `commit_id`
+field**. Provenance comes from the `Footer SHA` section. Never assume `commit_id`.
 
-- A sticky is an issue comment and therefore has **no `commit_id` field**. Provenance comes from the
-  ledger's newest `runs[].sha`, falling back to the `Footer SHA` section. Never assume `commit_id`.
-- A sticky body carries a trailing `<!-- PR_REVIEWER_LEDGER … -->` block (below). It is metadata,
-  not a section — never surface it as a finding.
+### There is no ledger block
 
-### The run ledger
+A sticky body used to end with a `<!-- PR_REVIEWER_LEDGER … -->` HTML comment carrying
+`pr-reviewer`'s per-run history, and a degraded pointer carried a truncated copy of it. Both are
+gone: that state lives in the PR-state record ([`pr-reviewer.md § Step 0.7`](../../pr-reviewer.md)).
 
-A sticky body ends with one HTML comment holding this agent's per-run history, since rewriting the
-body in place destroys the history that counting review objects used to provide:
+A consumer needs two rules about it, and no schema:
 
-```text
-<!-- PR_REVIEWER_LEDGER {"v":1,"runs":[{"sha":"…","mode":"full","verdict":"FAIL","at":"…","open_bot_comment_ids":[…],"blocking_fingerprints":[…]}]} -->
-```
-
-The schema is owned by [`pr-reviewer.md § The run ledger`](../../pr-reviewer.md); this grammar only
-declares that it exists, that it is `pr-reviewer`-private state, and that an unrecognised `v`, an
-absent block, or a parse failure is treated as "no history" rather than as an error. A consumer other
-than `pr-reviewer` has no reason to read it and must not write it.
+- **Never write one.** A ledger block on a body this grammar parses is a defect, whoever produced
+  it. `render-pointer.mjs` rejects one outright, and `pr-reviewer`'s Step 4b pre-flight rejects a
+  review payload carrying one.
+- **Tolerate one on an old body.** A report written before the change still carries it. Treat it
+  exactly as this grammar treats any unrecognised text: metadata, not a section — never surface it
+  as a finding, never expand it into a ledger entry, and never attempt to interpret its contents.
 
 ---
 
@@ -115,13 +120,13 @@ finding.
 | Standards log | `**Standards (2.4d)** —` | `{ran, docs_scanned, finding_count}` — run-state only | n/a |
 | Optimality log | `**Optimality (2.4c)** —` | `{ran, judged, optimal, proposals, withheld}` — run-state only | n/a |
 | Skipped files | `**Skipped files** —` | file paths, empty on `none` | n/a |
-| Footer SHA | `<sup>Reviewed for commit \`<sha>\`` / `<sup>Incremental review for commit \`<sha>\`` / `<sup>No code changes since \`<prior>\` — gate checks only for commit \`<sha>\`` | the reviewed SHA — **all three** run-mode forms. Match on `commit \`<sha>\`` alone, never on a leading phrase: anchoring on `review for commit` matches only the incremental form and silently misses the other two. This section is load-bearing provenance for a sticky, which has no `commit_id`. | n/a |
+| Footer SHA | `<sup>Reviewed for commit \`<sha>\`` / `<sup>Incremental review for commit \`<sha>\`` / `<sup>No code changes since \`<prior>\` — gate checks only for commit \`<sha>\`` | the reviewed SHA — **all three** run-mode forms. Match on `commit \`<sha>\`` alone, never on a leading phrase: anchoring on `review for commit` matches only the incremental form and silently misses the other two. This section is load-bearing provenance for a sticky, which has no `commit_id` — and it is what `pr-reviewer`'s own fallback rung reads to recover a delta baseline when its state record is unusable, so the three forms must stay matchable by `commit \`<sha>\`` alone. | n/a |
 
 ### Low-confidence findings are advisory, never actionable
 
 The `Low-confidence findings` section holds `issue` / `suggestion` findings that were grounded and receipt-checked but scored just under the per-comment confidence bar (`per-comment-confidence.md § Drop vs. defer`). The grammar parses them like any other anchored unit, but the **consumer contract is that they are advisory**: `implement-suggestion` MUST NOT auto-apply them, because the reviewer itself was not confident enough to inline them. A consumer may surface them to a human, never act on them unattended.
 
-**Not carried forward — by design.** `pr-reviewer`'s Step 0.7 `PRIOR_DIAGNOSTICS` mapping table has **no row** for this section, and that absence is intentional, not an omission: advisory findings are the one anchorless body output that is **not** carried into a re-review. A full re-review re-derives them from the diff, and an incremental run that skips them loses nothing durable (unlike deferred `Additional findings`, gate rows, or optimality cards, which are not re-derivable and therefore *are* carried). A consumer parsing this section must not expect a matching `PRIOR_DIAGNOSTICS` row.
+**Not carried forward — by design.** `pr-reviewer`'s PR-state record has **no field** for this section, and that absence is intentional, not an omission: advisory findings are the one anchorless body output that is **not** carried into a re-review. A full re-review re-derives them from the diff, and an incremental run that skips them loses nothing durable (unlike deferred `Additional findings`, gate rows, or optimality cards, which are not re-derivable and therefore *are* carried). A consumer parsing this section must not expect a matching `diagnostics` field in the state record.
 
 ### The optimality inline pointer is an ordinary inline comment
 
