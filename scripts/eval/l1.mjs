@@ -339,6 +339,10 @@ function checksInSync(plan, checks) {
   const reviewMode = read("skills/analysis/holistic-analysis/rules/review-mode.md");
   const holisticReview = read("agents/shared/rules/holistic-review.md");
   const prReviewer = read("agents/pr-reviewer.md");
+  // Step 4's rendering reference (headlines, payload keys, section shapes) lives in its own rule
+  // file. Checks that assert a rendered SHAPE read this; checks that assert PROCEDURE stay on the
+  // agent body.
+  const reportRendering = read("agents/pr-reviewer/rules/report-rendering.md");
 
   // G8a: review-mode declares the `focus` input with all four sub-keys.
   const focusKeys = ["file:", "line:", "symbol:", "finding:"];
@@ -646,9 +650,11 @@ function checksInSync(plan, checks) {
       /\bset `RESOLUTION_UNAVAILABLE = true`/i.test(tr2) &&
       !/\b(never|do not|don't) set `RESOLUTION_UNAVAILABLE/i.test(tr2) &&
       /github-access\.md/.test(tr2));
+    // The exclusion sentence is procedure (Step 2.9c, agent body); the Details-cell wording it
+    // produces is a rendered shape (rendering reference). Assert each where it now lives.
     s.check("G24m2 carve-out removals are excluded from the resolved-since counter",
       /RESOLUTION_UNAVAILABLE` carve-out are excluded/.test(prm) &&
-      /certified done but still open/.test(prm));
+      /certified done but still open/.test(read("agents/pr-reviewer/rules/report-rendering.md")));
 
     // (g) Every WONT_FIX_RE alternative bounded, derived from the regex rather than a
     // named subset — an earlier version asserted three of four and missed the fourth.
@@ -783,7 +789,8 @@ function checksInSync(plan, checks) {
     // carve-out's "conflict residue"), so it asserts nothing about the 2.4d statement. Same shape
     // as the G17c fix above — assert the new content, not a word that was already there.
     s.check("G17e pr-reviewer.md has standards diagnostics line + 2.4d precedence paragraph + Conflicts-surfaced counter",
-      prReviewer.includes("Standards (2.4d)") &&
+      (prReviewer.includes("Standards (2.4d)")
+        || read("agents/pr-reviewer/rules/report-rendering.md").includes("Standards (2.4d)")) &&
       /Precedence: when a standards finding conflicts with the PR author's stated intent or a review-config\s+explicit override, the author-intent and config \*\*win\*\*/.test(prReviewer) &&
       prReviewer.includes("Conflicts surfaced:"));
 
@@ -858,15 +865,15 @@ function checksInSync(plan, checks) {
   {
     // G19a: the three concise headline sentences are present (PASS / WARN / FAIL).
     // These are literal anchors grepped from the rewritten Step 4 section.
-    s.check("G19a pr-reviewer.md has the PASS concise headline with an affirming checkmark lead",
-      prReviewer.includes("✅ Reviewed your changes — no issues found."));
+    s.check("G19a the PASS concise headline has an affirming checkmark lead",
+      reportRendering.includes("✅ Reviewed your changes — no issues found."));
 
-    s.check("G19b pr-reviewer.md has the WARN concise headline led by WARN_GATE_COUNT and naming the warned gates",
-      prReviewer.includes("Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>."));
+    s.check("G19b the WARN concise headline is led by WARN_GATE_COUNT and names the warned gates",
+      reportRendering.includes("Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>."));
 
-    s.check("G19c pr-reviewer.md has the FAIL concise headline led by SEVERITY_TALLY and naming the blocking gates",
-      prReviewer.includes("Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review.") &&
-      prReviewer.includes("Blocking: <FAIL_REASONS>."));
+    s.check("G19c the FAIL concise headline is led by SEVERITY_TALLY and names the blocking gates",
+      reportRendering.includes("Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review.") &&
+      reportRendering.includes("Blocking: <FAIL_REASONS>."));
 
     // G19d / G19g retired: they scanned the three embedded Step-4 templates for
     // gate-table-inside-accordion and footer-inside-accordion. Those templates no longer exist —
@@ -881,13 +888,13 @@ function checksInSync(plan, checks) {
         !prReviewer.includes("CI status is shown"));
 
       // G19f: the gate table is three columns with a static description on a passing gate.
-      // The table itself now lives in the template file; the static descriptions stay in the
-      // agent (the model chooses them), so this asserts one on each side of that split.
+      // The table lives in the template; the static descriptions the model chooses from live in
+      // the rendering reference. Assert one on each side of that split.
       s.check("G19f the report template carries the 3-column gate table",
         readFileSync(join(REPO_ROOT, "agents/pr-reviewer/templates/report-body.md"), "utf8")
           .includes("| Gate | Status | Details |"));
-      s.check("G19f pr-reviewer.md still defines the ✅ static descriptions",
-        prReviewer.includes("The multi-lens review found no blocking issues."));
+      s.check("G19f the rendering reference still defines the ✅ static descriptions",
+        reportRendering.includes("The multi-lens review found no blocking issues."));
     }
   }
 
@@ -1079,6 +1086,10 @@ function checksInSync(plan, checks) {
 {
   const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
   const prReviewer = read("agents/pr-reviewer.md");
+  // Step 4's rendering reference moved to its own rule file (verbatim, so every literal anchor
+  // below still matches). Checks that assert a SHAPE read it; checks that assert PROCEDURE stay
+  // on the agent body.
+  const reportRendering = read("agents/pr-reviewer/rules/report-rendering.md");
   const prReviewerDiag = read("agents/pr-reviewer/rules/diagnostic-surface.md");
   const ingest = read("agents/shared/rules/reviewer-report-ingest.md");
 
@@ -1478,7 +1489,7 @@ function checksInSync(plan, checks) {
 
       // Every slot the agent's payload contract names must be a real payload key. A name that
       // disagrees is a hard exit 1 and the run posts nothing — this caught PARTIAL_REVIEW_BANNER.
-      const contract = sliceBetween(prReviewer, "#### REPORT_BODY payload", "#### Headlines");
+      const contract = sliceBetween(reportRendering, "#### REPORT_BODY payload", "#### Headlines");
       const named = [...contract.matchAll(/^\|\s*((?:`[A-Z][A-Z0-9_]{3,}`(?:\s*[·+]\s*)?)+)\s*\|/gm)]
         .flatMap((m) => [...m[1].matchAll(/`([A-Z][A-Z0-9_]{3,})`/g)].map((x) => x[1]));
       const wrong = [...new Set(named)].filter((n) => !payloadKeys.has(n));
@@ -1589,7 +1600,7 @@ function checksInSync(plan, checks) {
   // every mechanism that used to serialise state into a comment.
   {
     const step4c = sliceBetween(prReviewer, "### 4c. Record the run state",
-      "### REPORT_BODY format (the sticky comment)");
+      "### The shapes: report body, headlines, sections, inline comments");
     const step4b = sliceBetween(prReviewer, "### 4b. Post the review (conditionally)",
       "### 4c. Record the run state");
 
@@ -1916,19 +1927,19 @@ function checksInSync(plan, checks) {
 
     // The tally and reasons must carry no CI token. These are the two strings that produced the
     // misleading headline, so assert on the rendered vocabulary rather than on prose about it.
-    const tally = sliceBetween(prReviewer, "`SEVERITY_TALLY` (the **FAIL** headline",
+    const tally = sliceBetween(reportRendering, "`SEVERITY_TALLY` (the **FAIL** headline",
       "`FAIL_REASONS` / `WARN_REASONS`");
     s.check("G27 SEVERITY_TALLY is ordered errors-then-warnings, with no CI term",
       /ordered errors-then-warnings/.test(tally) &&
       !/prefix `CI failing`/.test(tally));
     s.check("G27 SEVERITY_TALLY states CI never appears in it",
       /\*\*CI never appears in the tally\.\*\*/.test(tally));
-    const reasons = sliceBetween(prReviewer, "`FAIL_REASONS` / `WARN_REASONS`", "| Gate | ❌ reason");
+    const reasons = sliceBetween(reportRendering, "`FAIL_REASONS` / `WARN_REASONS`", "| Gate | ❌ reason");
     s.check("G27 FAIL_REASONS no longer leads with a CI phrase",
       !/leading\s*\n?`CI checks failing`/.test(reasons) && /CI is\s*\n?never among them/.test(reasons));
 
     // The reason table's CI row must offer a ⚠️ phrase and no ❌ phrase.
-    const ciRow = (prReviewer.match(/^\| CI \(Gate 2\) \|[^\n]*$/m) || [""])[0];
+    const ciRow = (reportRendering.match(/^\| CI \(Gate 2\) \|[^\n]*$/m) || [""])[0];
     s.check("G27 the reason table's CI row has no ❌ phrase", /warns, never fails/.test(ciRow), ciRow.slice(0, 90));
     s.check("G27 the reason table's CI row supplies a ⚠️ phrase", /CI red:/.test(ciRow), ciRow.slice(0, 90));
 
@@ -1945,17 +1956,20 @@ function checksInSync(plan, checks) {
     // WARN_GATE_COUNT definition. All three omitted it while L1 was green at 549/549, so a
     // CI-only ⚠️ selected neither PASS ("every gate is ✅") nor WARN, and would have rendered
     // `**0 warning(s)**`. Assert the presence side too.
-    for (const [what, anchor] of [
-      ["the Step 3 WARN selector", "Pick the presentation by verdict"],
-      ["the Step 4 WARN selector", "Pick the body by verdict"],
+    // The two selectors now live in different files: Step 3's terminal one in the agent body,
+    // Step 4's body-template one in the rendering reference. Pair each anchor with its source
+    // rather than assuming one haystack.
+    for (const [what, src, anchor] of [
+      ["the Step 3 WARN selector", prReviewer, "Pick the presentation by verdict"],
+      ["the Step 4 WARN selector", reportRendering, "Pick the body by verdict"],
     ]) {
-      const sel = sliceBetween(prReviewer, anchor, "\n\n");
+      const sel = sliceBetween(src, anchor, "\n\n");
       s.check(`G27 ${what} lists CI among the graded gates`,
         /at least one graded gate — Description vs\. code, CI, Prior bot feedback/.test(sel),
         sel.slice(0, 120));
     }
     {
-      const wgc = sliceBetween(prReviewer, "- `WARN_GATE_COUNT` = the number of gates showing",
+      const wgc = sliceBetween(reportRendering, "- `WARN_GATE_COUNT` = the number of gates showing",
         "The top-level WARN headline leads with");
       s.check("G27 WARN_GATE_COUNT counts CI among the warning gates",
         /\*\*CI\*\*/.test(wgc) && /so 0 to 4/.test(wgc), wgc.slice(0, 140));
