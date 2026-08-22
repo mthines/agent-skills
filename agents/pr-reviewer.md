@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: Code reviewer for GitHub PRs — both own PRs (self-relation) and someone else's PRs (cross-relation). Runs a structured pre-merge gate check (description vs. code, CI status, unresolved bot feedback, self-review signals, documentation adequacy) then a thorough multi-lens AI persona review (correctness/logic, quality/maintainability, description accuracy, external integration verifier). Incrementally aware — on repeated runs it detects a prior review, computes only the delta since the last reviewed SHA, and chooses a run mode (full / incremental / incremental-quick) so commit-by-commit re-runs stay fast. Writes exactly one report comment per PR — a sticky issue comment rewritten in place on every run (headline, gate-status table inside a Review details accordion) — plus append-only inline findings on a visible COMMENT review, posted only when the run has new inline findings; no draft/pending workflow and no notification-only reviews. Its own run state (delta baseline, run-mode history, deferred and anchorless findings, open threads) lives in a per-PR LoreKit state record, not in the comment body, so the report carries nothing machine-private and a run that cannot write the comment still keeps its delta. Uses Lorekit relevance memories to suppress recurring noise patterns per repository. Default-on standards-conformance lens (Step 2.4d) enforces the repo's own governing docs (CLAUDE.md, AGENTS.md, .claude/rules/*.md, review-config .github/review.yaml standards:) as real findings — skip with --no-standards. Imports rules from `agents/shared/rules/` and owns its own rules under `agents/pr-reviewer/rules/`. Trigger via slash `/pr-review <PR-URL|#n>` or by dispatching this agent through the Task tool (`Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with <lens1>,<lens2>,<lens3>] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`). It is an agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
+description: Code reviewer for GitHub PRs — your own (self relation) and other people's (cross relation). Runs a pre-merge gate check (description vs. code, CI, unresolved bot feedback, self-review signals, docs) then a multi-lens review — correctness, quality, description accuracy, external integrations, holistic intent-and-system-fit, optimality, and conformance to the repo's own governing docs. Incrementally aware — a re-run reads its per-PR state record and reviews only the delta since the last reviewed SHA. Writes one report comment per PR, rewritten in place every run, plus append-only inline findings on a visible COMMENT review posted only when the run has new inline findings. Read-only — it never auto-fixes. Trigger with `/pr-review <PR-URL|#n>` or the Task tool — `Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`. An agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write, mcp__github__pull_request_read, mcp__github__create_pull_request, mcp__github__update_pull_request, mcp__github__add_issue_comment, mcp__github__issue_read, mcp__github__pull_request_review_write, mcp__github__add_comment_to_pending_review, mcp__github__resolve_review_thread, mcp__github__get_job_logs, mcp__github__actions_list, mcp__github__actions_run_trigger, mcp__github__get_me
 model: opus
 ---
@@ -183,8 +183,6 @@ rule once at the step that owns it.
 - `agents/shared/rules/comment-shape.md` — ≤ 240 chars, ≤ 2 sentences, no headings or bullets.
 - `agents/shared/rules/conventional-comments.md` — prefix table + decorations.
 - `agents/pr-reviewer/rules/line-validity.md` — RIGHT-side hunk-bounds pre-flight.
-- `agents/pr-reviewer/rules/posting-mechanics.md` — **legacy reference only.** This file describes the old PENDING review workflow. Its `event`-omit rule, `body == ""` assertion, and PENDING verification are superseded by the direct-posting contract in Step 4 of this agent. Do not apply its `payload_is_safe` or verification steps; use Step 4's inline pre-flight instead.
-- `agents/pr-reviewer/rules/authorization-gate.md` — **legacy reference only.** This file describes the retired `--publish` authorization gate for the old PENDING review workflow. Step 4 of this agent posts one visible `COMMENT` review unconditionally, in both relations; there is no authorization gate. Do not apply this file's token / phrase paths or its refusal template.
 - `agents/templates/pr-comment-card.template.md` — canonical card shape.
 
 ---
@@ -1734,11 +1732,6 @@ Line-validity casualties are logged in the terminal Quality Gate summary for man
 ---
 
 ## Step 4: Post the review
-
-> **Note on `posting-mechanics.md`:** this file describes the old PENDING review workflow
-> and its rules (omit `event`, `body == ""`, verify `state == "PENDING"`) are superseded
-> by the direct-posting contract below. Do not apply `posting-mechanics.md`'s pre-flight
-> or verification logic here.
 
 A run writes **three** things, with three different lifetimes:
 

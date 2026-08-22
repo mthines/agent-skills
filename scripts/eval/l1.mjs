@@ -194,6 +194,35 @@ function checksInSync(plan, checks) {
   }
 }
 
+// ── Check F2: frontmatter is PARSEABLE YAML, for skills and agents alike ──
+// A plain (unquoted) YAML scalar may not contain ": " — it reads as a mapping indicator, and a
+// strict parser rejects the WHOLE frontmatter block, so the file's name/description/tools never
+// load. Two real instances: agents/rca-investigator.md shipped broken ("absorbing the
+// reasoning: `/fix-bug`"), and a pr-reviewer description rewrite reintroduced it twice in one
+// line ("multi-lens review: correctness", "the Task tool: `Task(`"). Both are invisible to every
+// other check here, because every other check greps the BODY.
+//
+// This is a targeted rule rather than a YAML parse: the repo has no YAML dependency, and ": " in
+// an unquoted scalar is the only shape either failure took. A quoted value may contain anything.
+{
+  const AGENT_AND_SKILL_FRONTMATTER = [
+    ...walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith("/SKILL.md")),
+    ...walk(join(REPO_ROOT, "agents")).filter((p) => /\/agents\/[^/]+\.md$/.test(p)),
+  ];
+  for (const f of AGENT_AND_SKILL_FRONTMATTER) {
+    const src = readFileSync(f, "utf8");
+    const parts = src.split("---\n");
+    if (parts.length < 3 || parts[0] !== "") continue;   // no frontmatter block
+    const offenders = parts[1].split("\n")
+      .map((line) => /^([A-Za-z_][\w-]*): (.+)$/.exec(line))
+      .filter((m) => m && !/^["'|>]/.test(m[2]) && m[2].includes(": "))
+      .map((m) => m[1]);
+    s.check(`F2 ${rel(f)} frontmatter has no bare ": " in a plain scalar`,
+      offenders.length === 0,
+      offenders.length ? `key(s): ${offenders.join(", ")} — quote the value or use an em dash` : "");
+  }
+}
+
 // ── Check G: cross-file contract drift guards (2026-06 holistic audit) ──
 // Every defect below was a contradiction between files that must agree —
 // the class Check A's link integrity cannot see. Lock the repaired contracts.
