@@ -1585,6 +1585,25 @@ function checksInSync(plan, checks) {
     s.check("G24i the state-record TTL is 7 days in the agent and the taxonomy",
       /ttl_days\s*=\s*7\b/.test(step4c) &&
       /7d, refreshed on every write/.test(read("agents/shared/rules/memory-buckets.md")));
+    // The TTL must be documented as self-sufficient. A repo with no LoreKit GitHub integration —
+    // which is most of them — has no merge-purge event, so any wording that makes that event the
+    // real collector tells those users their records are never cleaned up. It shipped that way
+    // once ("the floor, not the plan", "the only collector") and was corrected.
+    for (const [label, src] of [["pr-reviewer.md", step4c],
+      ["memory-buckets.md", read("agents/shared/rules/memory-buckets.md")]]) {
+      s.check(`G24i ${label} presents the TTL as the cleanup mechanism, not a stopgap`,
+        /requires? nothing to be wired up|needs nothing wired up/.test(src) &&
+        /accelerant/.test(src) &&
+        !/only collector|floor, not the plan/.test(src),
+        "the merge-purge event is being presented as the real mechanism");
+    }
+    // An expired record can still be RETURNED by a read; acting on one is the stale-state failure
+    // the house rule warns about, and it is the normal end state of every dormant PR where nothing
+    // purges. It must route to the fallback rung, with its own log line.
+    s.check("G24i an expired state record is treated as absent",
+      /An expired record is a miss, not a baseline/.test(step07) &&
+      /record expired at/.test(step07),
+      "expired records are not routed to the fallback rung");
     s.check("G24i Step 4c tags the record outside the loop:: lessons grammar",
       /ci::pr-review-state/.test(step4c) && !/loop::/.test(step4c));
     s.check("G24i Step 4c applies the three caps", /50\]/.test(step4c.replace(/\s/g, ""))

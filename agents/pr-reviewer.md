@@ -385,6 +385,7 @@ path. Distinguish three outcomes:
 | --- | --- | --- |
 | A record came back and its `v` is `1` | `read` | Bind everything from `data` (below). |
 | No such record | `miss` | First run, or a record that expired / was purged at merge. Take the fallback rung below. |
+| A record came back but is **past its expiry** | `miss` | Treat it exactly as absent — see below. |
 | The tool threw, or `v` is unrecognised | `unavailable` | Take the fallback rung below, and say which of the two happened. |
 
 Retry a thrown error up to **2 more times** (3 attempts total) with a short backoff before
@@ -397,6 +398,14 @@ let Step 1.0 reuse it rather than re-probing.
 
 **An unrecognised `v` is never parsed.** Fall back and log it; a shape this run does not
 understand is more dangerous read than ignored.
+
+**An expired record is a miss, not a baseline.** LoreKit expires a record by marking it, not by
+deleting it on a schedule, so a read can return one that is past `expires_at` — and on an install
+with no merge-purge event that is the *normal* end state of every dormant PR. Check the expiry and
+take the fallback rung. The reasoning is the house rule for state records: a stale record is worse
+than a missing one, because the first-run path is a defined, exercised code path and acting on
+seven-day-old carried findings is neither. Log it distinctly — `PR-state record expired at <date> —
+treating as absent.` — so an expired record does not read as a first review.
 
 ### The GitHub fallback rung — baseline only
 
@@ -2200,13 +2209,21 @@ Four rules on this write:
    each other's record. The loser's state is one run stale, which widens the next delta — the safe
    direction — so this is accepted rather than locked. Do not build a lock here.
 
-**Merge cleans up faster than the TTL.** The 7-day TTL is the floor, not the plan: a merged PR's
-delta state is dead the moment it merges, and the durable cleanup belongs to a LoreKit-side
-GitHub-integration event on `pull_request: closed (merged)` that purges
-`ci-state::pr-review-<n>` in the PR's branch scope. That event lives in the LoreKit repository,
-not here, and until it ships the TTL is what collects the records. This agent does **not** purge:
-`mcp__lorekit__memory_delete` is deliberately absent from its `tools:` grant, so a reviewer can
-never delete a memory as a side effect of reviewing.
+**The TTL is the cleanup mechanism, and it needs nothing wired up.** `ttl_days: 7` on every write
+makes the expiry measure *how long this PR has been quiet*, not how old the record is (the write
+recomputes `expires_at = now + 7d` each time). An active PR refreshes it on every review; a PR that
+merges, closes, or is simply abandoned stops being written and the record expires seven days after
+its last review. No integration, no workflow, no webhook, and no cleanup pass is involved — which
+matters, because most repositories will never have any of those.
+
+A LoreKit-side GitHub-integration event on `pull_request: closed (merged)` could purge
+`ci-state::pr-review-<n>` the moment a PR merges, and it would be a genuine improvement: the state
+is dead at merge, so seven days of it is seven days of nothing useful. But it is an **accelerant on
+a mechanism that already works**, not the mechanism — treat it as optional everywhere. That event
+would live in the LoreKit repository, not here, and it is not shipped.
+
+This agent does **not** purge, on either path: `mcp__lorekit__memory_delete` is deliberately absent
+from its `tools:` grant, so a reviewer can never delete a memory as a side effect of reviewing.
 
 ### REPORT_BODY format (the sticky comment)
 

@@ -120,11 +120,17 @@ Three things about it are load-bearing and easy to get wrong:
 - **It is authoritative, not advisory.** Unlike every other bucket here, a reader branches on it.
   That is why it is version-stamped (`v: 1`) and why an unrecognised version falls back to the
   first-run path instead of being parsed.
+- **The 7-day TTL is the whole cleanup mechanism, and it requires nothing to be wired up.** It is
+  passed on every write, so it measures how long the PR has been quiet rather than how old the
+  record is: an active PR refreshes it each review, and a merged or abandoned one expires seven days
+  after its last. No integration, workflow, or cleanup pass is needed — which is the point, since
+  most repositories have none. A LoreKit-side GitHub-integration purge on
+  `pull_request: closed (merged)` would make it immediate rather than eventual and is **not
+  shipped**; treat it as an optional accelerant, never a prerequisite. A record read past its
+  expiry is treated as absent (`pr-reviewer.md § Read the record`).
 - **`pr-reviewer` cannot delete it.** `mcp__lorekit__memory_delete` is deliberately absent from
-  that agent's `tools:` grant. The TTL collects abandoned records; a merged PR's record is purged
-  by a LoreKit-side GitHub-integration event on `pull_request: closed (merged)` — **not yet
-  shipped**, so until it lands the 7-day TTL is the only collector. Re-check rather than trusting
-  this note.
+  that agent's `tools:` grant, so a reviewer can never delete a memory as a side effect of
+  reviewing.
 
 > **Availability note on the GH Action producer.** `.github/workflows/` in this repo currently contains only `evals-l1.yml` and `evals-l2.yml`; the reusable workflow `reviewer-comment-relevance.yml` that `plugins/pr-relevance-memory/templates/pr-relevance-caller.yml` and [`comment-relevance-memory.md`](./comment-relevance-memory.md) point at with `uses: mthines/agent-skills/.github/workflows/reviewer-comment-relevance.yml@main` has not been committed. Its classifier (`scripts/record-comment-relevance.mjs`) and the caller template both ship, so the write path is designed and callable once the workflow lands — but until it does, a caller repo wiring up that `uses:` reference will fail to resolve it, and the only live producers are `implement-suggestion` and the post-merge fallback. Re-check with `ls .github/workflows/` rather than trusting this note.
 
