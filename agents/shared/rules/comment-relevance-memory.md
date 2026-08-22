@@ -24,6 +24,32 @@ specific codebase, surfacing fewer noise comments and more actionable ones.
 
 ---
 
+**Read this by section, not start to finish.** At ~700 lines this is a reference: no consumer needs
+all of it. `pr-reviewer` reads *Read* at Step 2.2 and *Linking applied memories in the report* at
+Step 4; `implement-suggestion` and `outcome-learning.md` read *Write*; the GitHub Action and
+`scripts/record-comment-relevance.mjs` implement *Relevance memory record schema*. Jump to the
+section your step names — the Contents below is the index.
+
+It stays one file deliberately. Nine other files cite its sections as `comment-relevance-memory.md
+§ <section>`, so a split would break every one of those references, and the read, write, and
+schema halves share one record definition that would otherwise need a home of its own. The size
+is the cost of being the single source of truth for that record.
+
+## Contents
+
+- [Why this exists](#why-this-exists)
+- [Scope](#scope)
+- [Relevance memory record schema](#relevance-memory-record-schema)
+- [Read — loading memories into the review pipeline](#read--loading-memories-into-the-review-pipeline)
+- [Linking applied memories in the report](#linking-applied-memories-in-the-report)
+- [Write — capturing resolution outcomes](#write--capturing-resolution-outcomes)
+- [Entrenchment guards](#entrenchment-guards)
+- [Promotion rule](#promotion-rule)
+- [Interaction with existing rules](#interaction-with-existing-rules)
+- [What this rule does not do](#what-this-rule-does-not-do)
+
+---
+
 ## Why this exists
 
 Every repository has quirks: patterns that look suspicious in the abstract but
@@ -236,13 +262,14 @@ retry budget below or set the backend not-connected.
 is far more often a momentary transport hiccup than a real outage, and treating one blip as
 terminal is what makes the `Memories — not connected` line flap between otherwise-identical runs.
 Retry up to **2 more times** (3 attempts total) with a short backoff, then treat the backend as not
-connected. The one error that must NOT be retried is a hard "tool unavailable" (the tool is absent
-from the caller's `tools:` grant, or the LoreKit MCP server did not connect this session — it
-surfaces as `No such tool available: mcp__lorekit__memory_list`): there is nothing to wait for, the
-remedy is environmental, and it is a genuine "not connected". Any attempt that returns without a
-tool error — **including an empty list** — is a success; stop retrying. This is the same contract
-`pr-reviewer.md § Step 1.0` states, restated here rather than cross-referenced because a caller
-applying this rule standalone must not end up with a weaker one.
+connected. A hard "tool unavailable" error (`No such tool available: mcp__lorekit__memory_list`) has two causes
+and only one of them is terminal. **The tool missing from the agent's `tools:` grant** is static —
+nothing to wait for, settle immediately. **The MCP server not having connected yet** is not: servers
+connect asynchronously, and a tool unregistered at the start of a run can be callable minutes later
+in the same session. Try the harness's registry affordance first (in Claude Code, `ToolSearch` with
+`select:mcp__lorekit__memory_list`, which waits for a connecting server), and treat a still-empty
+result as unavailable *for this step only*. A verdict reached at read time never suppresses a later
+write attempt — see § Write.
 
 Merge both lists (`repo::` wins on key collision).
 Skip any entry whose `expires` is in the past.

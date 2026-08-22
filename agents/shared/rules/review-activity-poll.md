@@ -16,6 +16,17 @@ the directory only implies it.
 > and the bare-fence requirement. A copy forks all five. Call this file; do not
 > paste it.
 
+## Contents
+
+- [What this answers](#what-this-answers)
+- [Why it is needed](#why-it-is-needed)
+- [Access path](#access-path)
+- [The poll](#the-poll)
+- [Outcomes (caller-neutral)](#outcomes-caller-neutral)
+- [Edited reports count as feedback](#edited-reports-count-as-feedback)
+
+---
+
 ## What this answers
 
 Exactly one question: **has any reviewer posted or edited feedback since a given timestamp?**
@@ -116,8 +127,10 @@ review forever and never reaches a quiet outcome.
 ## Edited reports count as feedback
 
 `pr-reviewer` keeps its report in a **sticky comment it rewrites in place** every run, and posts a
-review only when it has new inline findings or the verdict worsened (`pr-reviewer.md § Step 4b`).
-An edit moves `updated_at`, never `created_at`.
+review only when it has new inline findings (`pr-reviewer.md § Step 4b`). An edit moves
+`updated_at`, never `created_at`. This matters more than it used to: with the notification-only
+posting conditions retired, a re-review whose output is entirely body-only produces **no** review
+object at all, so `created_at` sees nothing whatsoever.
 
 A probe filtering on `created_at` alone therefore misses a re-review whose only new output is
 body-only — gate rows, optimality cards, deferred `Additional findings`. The caller would report

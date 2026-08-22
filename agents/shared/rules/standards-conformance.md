@@ -20,6 +20,20 @@ documents — `CLAUDE.md`, `AGENTS.md`, path-scoped `.claude/rules/*.md` files, 
 The governing-doc line `path:line` is the grounding evidence; findings that cannot cite one
 are dropped at Step 2.6.
 
+## Contents
+
+- [Default-on, opt-out via `--no-standards`](#default-on-opt-out-via---no-standards)
+- [Two input sources](#two-input-sources)
+- [Trivial-skip set](#trivial-skip-set)
+- [When to run (the call)](#when-to-run-the-call)
+- [Signal strength mapping](#signal-strength-mapping)
+- [Grounding and gates](#grounding-and-gates)
+- [Precedence and conflict](#precedence-and-conflict)
+- [Logging](#logging)
+- [What this rule does not do](#what-this-rule-does-not-do)
+
+---
+
 ## Default-on, opt-out via `--no-standards`
 
 Standards-conformance runs on **every** invocation of `pr-reviewer` unless disabled, with a

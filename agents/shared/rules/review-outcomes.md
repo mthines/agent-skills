@@ -22,6 +22,20 @@ This separates the high-frequency write path (per-comment, per-PR) from the low-
 
 ---
 
+## Contents
+
+- [Scope](#scope)
+- [Outcome record schema](#outcome-record-schema)
+- [Fingerprint reuse](#fingerprint-reuse)
+- [Read discipline](#read-discipline)
+- [Promotion rule](#promotion-rule)
+- [Consolidation cadence](#consolidation-cadence)
+- [Provenance honesty](#provenance-honesty)
+- [Graceful degradation](#graceful-degradation)
+- [What this file does not do](#what-this-file-does-not-do)
+
+---
+
 ## Scope
 
 `review-outcomes` is a LoreKit bucket — tag `loop::review-outcomes`, key

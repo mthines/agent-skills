@@ -37,18 +37,37 @@ still open.
 
 ---
 
+**Read this by section, not start to finish.** `pr-reviewer` Step 2.9c needs *Classify each prior
+own-comment* and *Resolve the thread*; *Write the outcome to LoreKit* and *Ordering* matter once
+the classification is done. The Contents below is the index.
+
+It stays one file because the classification table and the resolve/write steps are one procedure —
+splitting them would put the status a thread was assigned in a different file from what is done
+about it — and because other rules cite its sections as `thread-resolution.md § <section>`.
+
+## Contents
+
+- [When this step runs](#when-this-step-runs)
+- [Classify each prior own-comment](#classify-each-prior-own-comment)
+- [Resolve the thread](#resolve-the-thread)
+- [Write the outcome to LoreKit](#write-the-outcome-to-lorekit)
+- [Ordering](#ordering)
+- [What this rule does not do](#what-this-rule-does-not-do)
+
+---
+
 ## When this step runs
 
 This rule is **`pr-reviewer`-only.** Resolving a GitHub thread is a write to
 GitHub, and `pr-reviewer` is the review agent that writes to GitHub.
-In both relations it rewrites the sticky report and, when Step 4b's conditions are
+In both relations it rewrites the sticky report and, when Step 4b's condition is
 met, posts a single visible `COMMENT` review (`REVIEW_RELATION` only adjusts the
 framing tone), so thread resolution applies to both relations on a re-review pass. The relevance signal from threads that were not resolved here
 comes from the post-merge path (`outcome-learning.md`) and the GitHub Action instead.
 
 | Agent | When | Gate |
 | --- | --- | --- |
-| `pr-reviewer` | Step 2.9c, on every re-review (`IS_RE_REVIEW == true` in Step 0.7 — a prior sticky, a legacy report body, **or** a recovered pointer ledger; not the narrower `PRIOR_REVIEW`, which is empty on the pointer path) | Resolution + write always run; a failure here never blocks the review |
+| `pr-reviewer` | Step 2.9c, on every re-review (`IS_RE_REVIEW == true` in Step 0.7 — a PR-state record **or** a sticky found on the fallback rung; not the narrower "something was carried forward", which is empty on that rung) | Resolution + write always run; a failure here never blocks the review |
 
 It **never** runs on a first-pass review (no prior threads to reconcile).
 

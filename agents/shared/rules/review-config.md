@@ -25,6 +25,20 @@ Nothing that clears the confidence threshold is hidden in either relation: the c
 
 ---
 
+## Contents
+
+- [Config schema](#config-schema)
+- [Profile knob](#profile-knob)
+- [Filters](#filters)
+- [Path instructions](#path-instructions)
+- [Hierarchical discovery](#hierarchical-discovery)
+- [Config loading step](#config-loading-step)
+- [Integration with per-comment-confidence.md](#integration-with-per-comment-confidencemd)
+- [Standards](#standards)
+- [What this rule does not do](#what-this-rule-does-not-do)
+
+---
+
 ## Config schema
 
 ```yaml

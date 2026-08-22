@@ -194,6 +194,70 @@ function checksInSync(plan, checks) {
   }
 }
 
+// ── Check F2: frontmatter is PARSEABLE YAML, for skills and agents alike ──
+// A plain (unquoted) YAML scalar may not contain ": " — it reads as a mapping indicator, and a
+// strict parser rejects the WHOLE frontmatter block, so the file's name/description/tools never
+// load. Two real instances: agents/rca-investigator.md shipped broken ("absorbing the
+// reasoning: `/fix-bug`"), and a pr-reviewer description rewrite reintroduced it twice in one
+// line ("multi-lens review: correctness", "the Task tool: `Task(`"). Both are invisible to every
+// other check here, because every other check greps the BODY.
+//
+// This is a targeted rule rather than a YAML parse: the repo has no YAML dependency, and ": " in
+// an unquoted scalar is the only shape either failure took. A quoted value may contain anything.
+{
+  const AGENT_AND_SKILL_FRONTMATTER = [
+    ...walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith("/SKILL.md")),
+    ...walk(join(REPO_ROOT, "agents")).filter((p) => /\/agents\/[^/]+\.md$/.test(p)),
+  ];
+  for (const f of AGENT_AND_SKILL_FRONTMATTER) {
+    const src = readFileSync(f, "utf8");
+    const parts = src.split("---\n");
+    if (parts.length < 3 || parts[0] !== "") continue;   // no frontmatter block
+    const offenders = parts[1].split("\n")
+      .map((line) => /^([A-Za-z_][\w-]*): (.+)$/.exec(line))
+      .filter((m) => m && !/^["'|>]/.test(m[2]) && m[2].includes(": "))
+      .map((m) => m[1]);
+    s.check(`F2 ${rel(f)} frontmatter has no bare ": " in a plain scalar`,
+      offenders.length === 0,
+      offenders.length ? `key(s): ${offenders.join(", ")} — quote the value or use an em dash` : "");
+  }
+}
+
+// ── Check F3: "tool unavailable" is not one failure, and never terminal for a run ──
+// An MCP server connects asynchronously: a tool unregistered at the start of a run can be
+// callable minutes later in the same session (observed live — the harness reports servers as
+// "still connecting" and ToolSearch waits for them). The rule used to say the opposite — "there
+// is nothing to wait for, set false immediately, the remedy is environmental" — which is how a
+// long multi-round run probes once, settles false, and then no-ops every read AND write in every
+// later round: "LoreKit memory not connected ... nothing captured".
+//
+// Assert the two causes are still distinguished, and that no surface has gone back to declaring
+// unavailability terminal for the run.
+{
+  const readSrc = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const SURFACES = [
+    "agents/pr-reviewer.md",
+    "agents/shared/rules/comment-relevance-memory.md",
+    "agents/shared/rules/prior-comment-awareness.md",
+  ];
+  for (const f of SURFACES) {
+    const src = readSrc(f);
+    s.check(`F3 ${f} distinguishes a missing grant from a server that has not connected yet`,
+      /tools:` grant/.test(src) && /connected yet|has not connected/.test(src),
+      "the two causes of 'tool unavailable' are conflated again");
+    // The exact sentences that made the old rule wrong. Each asserted the run-level verdict.
+    for (const phrase of ["There is nothing to wait for", "terminal immediately"]) {
+      s.check(`F3 ${f} no longer declares unavailability terminal ("${phrase}")`,
+        !src.includes(phrase),
+        "a run-terminal verdict on an asynchronously-connecting server is back");
+    }
+  }
+  // The write sites must not inherit the read-time verdict — that inheritance is what turned one
+  // early probe into a whole run of no-ops.
+  s.check("F3 pr-reviewer's write sites re-probe rather than inheriting the read verdict",
+    /write sites[\s\S]{0,400}attempt their call regardless/.test(readSrc("agents/pr-reviewer.md")));
+}
+
 // ── Check G: cross-file contract drift guards (2026-06 holistic audit) ──
 // Every defect below was a contradiction between files that must agree —
 // the class Check A's link integrity cannot see. Lock the repaired contracts.
@@ -310,6 +374,10 @@ function checksInSync(plan, checks) {
   const reviewMode = read("skills/analysis/holistic-analysis/rules/review-mode.md");
   const holisticReview = read("agents/shared/rules/holistic-review.md");
   const prReviewer = read("agents/pr-reviewer.md");
+  // Step 4's rendering reference (headlines, payload keys, section shapes) lives in its own rule
+  // file. Checks that assert a rendered SHAPE read this; checks that assert PROCEDURE stay on the
+  // agent body.
+  const reportRendering = read("agents/pr-reviewer/rules/report-rendering.md");
 
   // G8a: review-mode declares the `focus` input with all four sub-keys.
   const focusKeys = ["file:", "line:", "symbol:", "finding:"];
@@ -617,9 +685,11 @@ function checksInSync(plan, checks) {
       /\bset `RESOLUTION_UNAVAILABLE = true`/i.test(tr2) &&
       !/\b(never|do not|don't) set `RESOLUTION_UNAVAILABLE/i.test(tr2) &&
       /github-access\.md/.test(tr2));
+    // The exclusion sentence is procedure (Step 2.9c, agent body); the Details-cell wording it
+    // produces is a rendered shape (rendering reference). Assert each where it now lives.
     s.check("G24m2 carve-out removals are excluded from the resolved-since counter",
       /RESOLUTION_UNAVAILABLE` carve-out are excluded/.test(prm) &&
-      /certified done but still open/.test(prm));
+      /certified done but still open/.test(read("agents/pr-reviewer/rules/report-rendering.md")));
 
     // (g) Every WONT_FIX_RE alternative bounded, derived from the regex rather than a
     // named subset — an earlier version asserted three of four and missed the fourth.
@@ -691,11 +761,15 @@ function checksInSync(plan, checks) {
     ];
     const stale = /(\d+)-day (?:default )?TTL|(\d+)-day per-repo relevance signal|now \+ (\d+) days|(\d+) \* 24 \* 60 \* 60 \* 1000/g;
     for (const [label, content] of mirrors) {
+      // TTLs of OTHER buckets legitimately co-occur in these files. Each is excused by name and
+      // owned by its own check, so this one stays about `reviewer-comment-relevance` drift only.
+      const OTHER_BUCKET_TTLS = new Set([
+        30,  // `review-outcomes` — the volatile bus; G12a owns it.
+        7,   // `pr-review-state` — pr-reviewer's per-PR state record; G24i owns it.
+      ]);
       const found = [...content.matchAll(stale)]
         .map((m) => Number(m[1] ?? m[2] ?? m[3] ?? m[4]))
-        // 30 is `review-outcomes`' own TTL, a different bucket that legitimately
-        // co-occurs in these files; G12a owns it.
-        .filter((n) => n !== TTL_DAYS && n !== 30);
+        .filter((n) => n !== TTL_DAYS && !OTHER_BUCKET_TTLS.has(n));
       s.check(`G16f ${label} carries no reviewer-comment-relevance TTL other than ${TTL_DAYS}`,
         found.length === 0, found.length ? `stale: ${[...new Set(found)].join(", ")}` : "");
     }
@@ -750,7 +824,8 @@ function checksInSync(plan, checks) {
     // carve-out's "conflict residue"), so it asserts nothing about the 2.4d statement. Same shape
     // as the G17c fix above — assert the new content, not a word that was already there.
     s.check("G17e pr-reviewer.md has standards diagnostics line + 2.4d precedence paragraph + Conflicts-surfaced counter",
-      prReviewer.includes("Standards (2.4d)") &&
+      (prReviewer.includes("Standards (2.4d)")
+        || read("agents/pr-reviewer/rules/report-rendering.md").includes("Standards (2.4d)")) &&
       /Precedence: when a standards finding conflicts with the PR author's stated intent or a review-config\s+explicit override, the author-intent and config \*\*win\*\*/.test(prReviewer) &&
       prReviewer.includes("Conflicts surfaced:"));
 
@@ -825,15 +900,15 @@ function checksInSync(plan, checks) {
   {
     // G19a: the three concise headline sentences are present (PASS / WARN / FAIL).
     // These are literal anchors grepped from the rewritten Step 4 section.
-    s.check("G19a pr-reviewer.md has the PASS concise headline with an affirming checkmark lead",
-      prReviewer.includes("✅ Reviewed your changes — no issues found."));
+    s.check("G19a the PASS concise headline has an affirming checkmark lead",
+      reportRendering.includes("✅ Reviewed your changes — no issues found."));
 
-    s.check("G19b pr-reviewer.md has the WARN concise headline led by WARN_GATE_COUNT and naming the warned gates",
-      prReviewer.includes("Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>."));
+    s.check("G19b the WARN concise headline is led by WARN_GATE_COUNT and names the warned gates",
+      reportRendering.includes("Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>."));
 
-    s.check("G19c pr-reviewer.md has the FAIL concise headline led by SEVERITY_TALLY and naming the blocking gates",
-      prReviewer.includes("Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review.") &&
-      prReviewer.includes("Blocking: <FAIL_REASONS>."));
+    s.check("G19c the FAIL concise headline is led by SEVERITY_TALLY and names the blocking gates",
+      reportRendering.includes("Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review.") &&
+      reportRendering.includes("Blocking: <FAIL_REASONS>."));
 
     // G19d / G19g retired: they scanned the three embedded Step-4 templates for
     // gate-table-inside-accordion and footer-inside-accordion. Those templates no longer exist —
@@ -848,13 +923,13 @@ function checksInSync(plan, checks) {
         !prReviewer.includes("CI status is shown"));
 
       // G19f: the gate table is three columns with a static description on a passing gate.
-      // The table itself now lives in the template file; the static descriptions stay in the
-      // agent (the model chooses them), so this asserts one on each side of that split.
+      // The table lives in the template; the static descriptions the model chooses from live in
+      // the rendering reference. Assert one on each side of that split.
       s.check("G19f the report template carries the 3-column gate table",
         readFileSync(join(REPO_ROOT, "agents/pr-reviewer/templates/report-body.md"), "utf8")
           .includes("| Gate | Status | Details |"));
-      s.check("G19f pr-reviewer.md still defines the ✅ static descriptions",
-        prReviewer.includes("The multi-lens review found no blocking issues."));
+      s.check("G19f the rendering reference still defines the ✅ static descriptions",
+        reportRendering.includes("The multi-lens review found no blocking issues."));
     }
   }
 
@@ -1046,6 +1121,10 @@ function checksInSync(plan, checks) {
 {
   const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
   const prReviewer = read("agents/pr-reviewer.md");
+  // Step 4's rendering reference moved to its own rule file (verbatim, so every literal anchor
+  // below still matches). Checks that assert a SHAPE read it; checks that assert PROCEDURE stay
+  // on the agent body.
+  const reportRendering = read("agents/pr-reviewer/rules/report-rendering.md");
   const prReviewerDiag = read("agents/pr-reviewer/rules/diagnostic-surface.md");
   const ingest = read("agents/shared/rules/reviewer-report-ingest.md");
 
@@ -1445,7 +1524,7 @@ function checksInSync(plan, checks) {
 
       // Every slot the agent's payload contract names must be a real payload key. A name that
       // disagrees is a hard exit 1 and the run posts nothing — this caught PARTIAL_REVIEW_BANNER.
-      const contract = sliceBetween(prReviewer, "#### REPORT_BODY payload", "#### Headlines");
+      const contract = sliceBetween(reportRendering, "#### REPORT_BODY payload", "#### Headlines");
       const named = [...contract.matchAll(/^\|\s*((?:`[A-Z][A-Z0-9_]{3,}`(?:\s*[·+]\s*)?)+)\s*\|/gm)]
         .flatMap((m) => [...m[1].matchAll(/`([A-Z][A-Z0-9_]{3,})`/g)].map((x) => x[1]));
       const wrong = [...new Set(named)].filter((n) => !payloadKeys.has(n));
@@ -1523,13 +1602,13 @@ function checksInSync(plan, checks) {
   s.check("G24f pr-reviewer.md documents the un-writable-sticky path without a second report",
     /When the sticky cannot be written/.test(prReviewer) &&
     /DEGRADED_POINTER_BODY/.test(prReviewer));
-  // G24h: prior-run detection must not be login-keyed — an unresolvable `/user` would otherwise
-  // read as "no prior report" and duplicate the sticky on every run. Assert on the WHOLE
-  // Step 0.7 fetch region rather than on one clause shape: a predicate is order-free
-  // (`select((.body | contains(…)) and .user.login == env.ME)` is the same bug rearranged),
-  // so any mention of the login inside these fetches is the regression.
+  // G24h: prior-run detection reads the PR-state record, and its ONE GitHub fallback rung must
+  // not be login-keyed — an unresolvable `/user` would otherwise read as "no prior report" and
+  // duplicate the sticky on every run. Assert on the WHOLE fetch region rather than on one clause
+  // shape: a predicate is order-free (`select((.body | contains(…)) and .user.login == env.ME)`
+  // is the same bug rearranged), so any mention of the login inside these fetches is the regression.
   const step07 = sliceBetween(prReviewer,
-    "## Step 0.7: Prior run detection", "### Parsing `PRIOR_DIAGNOSTICS`");
+    "## Step 0.7: Prior run detection", "### Bind the run-mode inputs");
   const step07Fetches = [...step07.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]).join("\n");
   // Reading `.user.login` OUT of a found object is fine (PRIOR_REPORT_AUTHOR does exactly that);
   // FILTERING on it is the bug. A regex cannot express "inside a select() at any nesting depth" —
@@ -1550,39 +1629,124 @@ function checksInSync(plan, checks) {
   s.check("G24h pr-reviewer.md finds the sticky by marker, not by author login",
     step07Fetches.includes("PR_REVIEWER_REPORT") && !loginFilter && !/env\.ME/.test(step07Fetches),
     step07Fetches.includes("PR_REVIEWER_REPORT") ? "login key present in a Step 0.7 fetch" : "no marker-keyed fetch found");
-  // The pointer written by Step 4b must be findable by the fallback that reads it — and EVERY
-  // pointer form must carry the marker, or the identity ladder and the prior-run evidence go
-  // missing on exactly the access paths that depend on them.
-  s.check("G24h the pointer marker is both written and looked for",
-    (prReviewer.match(/<!-- PR_REVIEWER_POINTER -->/g) || []).length >= 2 &&
-    step07Fetches.includes("PR_REVIEWER_POINTER"));
-  // The marker guarantee across all four FORMs is now enforced behaviourally by G29 (it executes
-  // render-pointer.mjs, which refuses to emit an unmarked body) rather than by grepping hand-typed
-  // markdown examples in the prose — this just asserts the four documented forms are still named
-  // and still routed through the renderer, so a rewrite can't silently drop back to hand-authoring.
-  const pointerSection = sliceBetween(prReviewer, "`POINTER_BODY` is not written by hand either",
-    "### REPORT_BODY format (the sticky comment)");
-  s.check("G24h all four pointer FORMs are documented and routed through render-pointer.mjs",
-    /render-pointer\.mjs/.test(pointerSection) &&
-    ["\"pointer\"", "\"no_prior\"", "\"escalation\"", "\"degraded\""]
-      .every((f) => pointerSection.includes(f)));
-  // The pointer ledger is truncated: a 50-run history cannot ride on an append-only object.
-  s.check("G24h the degraded pointer carries a truncated ledger, not the full history",
-    /DEGRADED_LEDGER/.test(prReviewer) && /truncated/.test(prReviewer));
-  // The recovered-pointer branch is a re-review: it must bind the run-mode inputs Step 1.2b reads,
-  // and it must feed the identity ladder — it is the one path where `/user` also fails.
-  const pointerBranch = sliceBetween(step07,
-    "**Pointer fallback (this agent's own review pointers).**", "**`IS_RE_REVIEW`");
-  for (const v of ["RUN_MODE", "PRIOR_SHA", "LAST_FULL_SHA", "INCR_RUNS_SINCE_FULL"]) {
-    s.check(`G24h the recovered-pointer branch binds ${v}`, pointerBranch.includes(v));
+
+  // ── G24i: prior-run state lives in the PR-state record, not in the report body. These are the
+  // guards on the change that moved it: the read, the write, their agreement, and the absence of
+  // every mechanism that used to serialise state into a comment.
+  {
+    const step4c = sliceBetween(prReviewer, "### 4c. Record the run state",
+      "### The shapes: report body, headlines, sections, inline comments");
+    const step4b = sliceBetween(prReviewer, "### 4b. Post the review (conditionally)",
+      "### 4c. Record the run state");
+
+    // The read and the write must address the SAME record. Two independently-written scope/key
+    // strings is the drift that silently gives every run a fresh first-run path.
+    for (const [where, src] of [["Step 0.7", step07], ["Step 4c", step4c]]) {
+      s.check(`G24i ${where} addresses the record by branch scope + per-PR key`,
+        /branch::\$?\{?RESOLVED_REPO\}?|branch::\{owner\}\/\{repo\}/.test(src) &&
+        /ci-state::pr-review-/.test(src),
+        "scope or key missing — the two sites must name the same record");
+    }
+    s.check("G24i Step 0.7 reads the record with memory_read",
+      /mcp__lorekit__memory_read/.test(step07));
+    s.check("G24i Step 4c writes the record with memory_write",
+      /mcp__lorekit__memory_write/.test(step4c));
+
+    // A state record's guards are cardinality, TTL, and never-blocking (ci-state-records.md),
+    // not the lessons entrenchment guards. Each of these has cost a real loop when omitted.
+    // The TTL is 7 days and lives in exactly one place per surface. G16f excuses the number as
+    // "another bucket's TTL"; this is the check that makes that excuse true.
+    s.check("G24i Step 4c passes ttl_days on every write", /ttl_days/.test(step4c));
+    s.check("G24i the state-record TTL is 7 days in the agent and the taxonomy",
+      /ttl_days\s*=\s*7\b/.test(step4c) &&
+      /7d, refreshed on every write/.test(read("agents/shared/rules/memory-buckets.md")));
+    // The TTL must be documented as self-sufficient. A repo with no LoreKit GitHub integration —
+    // which is most of them — has no merge-purge event, so any wording that makes that event the
+    // real collector tells those users their records are never cleaned up. It shipped that way
+    // once ("the floor, not the plan", "the only collector") and was corrected.
+    for (const [label, src] of [["pr-reviewer.md", step4c],
+      ["memory-buckets.md", read("agents/shared/rules/memory-buckets.md")]]) {
+      s.check(`G24i ${label} presents the TTL as the cleanup mechanism, not a stopgap`,
+        /requires? nothing to be wired up|needs nothing wired up/.test(src) &&
+        /accelerant/.test(src) &&
+        !/only collector|floor, not the plan/.test(src),
+        "the merge-purge event is being presented as the real mechanism");
+    }
+    // An expired record can still be RETURNED by a read; acting on one is the stale-state failure
+    // the house rule warns about, and it is the normal end state of every dormant PR where nothing
+    // purges. It must route to the fallback rung, with its own log line.
+    s.check("G24i an expired state record is treated as absent",
+      /An expired record is a miss, not a baseline/.test(step07) &&
+      /record expired at/.test(step07),
+      "expired records are not routed to the fallback rung");
+    s.check("G24i Step 4c tags the record outside the loop:: lessons grammar",
+      /ci::pr-review-state/.test(step4c) && !/loop::/.test(step4c));
+    s.check("G24i Step 4c applies the three caps", /50\]/.test(step4c.replace(/\s/g, ""))
+      || /\.\[-50:\]/.test(step4c));
+    s.check("G24i Step 4c is unconditional and never blocking",
+      /unconditional/i.test(step4c) && /never on the critical path|never block/i.test(step4c));
+
+    // The retired mechanisms. Each is asserted absent from the step that used to own it, not from
+    // the whole file — the file still EXPLAINS them, and forbidding the explanation would delete
+    // the record of why they are gone.
+    s.check("G24i Step 4a appends no ledger to the report body",
+      !/PR_REVIEWER_LEDGER/.test(sliceBetween(prReviewer, "#### Build the payload, then run the renderer",
+        "#### The report has exactly one host")));
+    s.check("G24i Step 4b rejects a review body carrying a ledger",
+      /PR_REVIEWER_LEDGER" in payload\["body"\]/.test(step4b));
+    s.check("G24i Step 0.7 does not fetch pulls/reviews for prior state",
+      !/pulls\/\$PR_NUMBER\/reviews|pulls\/\{n\}\/reviews`/.test(step07Fetches));
+
+    // Step 4b has exactly ONE posting condition. The three notification-only conditions are what
+    // filled a PR timeline with one review object per state change.
+    // The retired conditions are still NAMED in this step (deliberately — the prose explains what
+    // was removed and why), so the predicate keys on the live contract instead: exactly one
+    // condition, and no surviving "post when any of these holds" enumeration.
+    s.check("G24i Step 4b posts a review only for new inline findings",
+      /\*\*When to post\.\*\* Exactly one condition/.test(step4b) &&
+      /INLINE_COMMENTS_JSON` is non-empty/.test(step4b) &&
+      !/Post a review when \*\*any\*\* of these holds/.test(step4b),
+      "a notification-only posting condition is back");
+    s.check("G24i the notification-only cost is stated, not silent",
+      /updates the report silently|silently/.test(step4b));
+
+    // Both prior-run paths must bind what Step 1.2b reads; an unset value is not a bound empty one.
+    for (const v of ["RUN_MODE", "PRIOR_SHA", "LAST_FULL_SHA", "INCR_RUNS_SINCE_FULL"]) {
+      s.check(`G24i Step 0.7 binds ${v} on the first-run path`,
+        sliceBetween(prReviewer, "### First run", "### What no longer happens here").includes(v));
+    }
+    // STATE_STATUS is the flag the announcements and Step 5 branch on. A flag with no reader is
+    // a comment — this is the check PRIOR_RUN_STATE_UNKNOWN used to carry.
+    s.check("G24i STATE_STATUS has readers, not just a binding",
+      (prReviewer.match(/STATE_STATUS/g) || []).length >= 3);
+    s.check("G24i Step 5 reports how prior-run state was resolved",
+      /state: (record|sticky fallback)/.test(sliceBetween(prReviewer, "## Step 5: Report",
+        "## What this agent does not do")));
+    s.check("G24i Step 5 reports the state write outcome separately",
+      /state record/.test(sliceBetween(prReviewer, "## Step 5: Report",
+        "## What this agent does not do")));
+
+    // The identity ladder's second rung. Both sources are needed: the record on the happy path,
+    // the sticky on the fallback rung — which is the one path where `/user` also fails.
+    s.check("G24i PRIOR_REPORT_AUTHOR is bound from both the record and the sticky",
+      /PRIOR_REPORT_AUTHOR[\s\S]{0,400}bot_login/.test(prReviewer) &&
+      /PRIOR_REPORT_AUTHOR=\$\(jq -r '\.user\.login/.test(prReviewer));
+
+    // The write is in-run, which the "never writes lessons during a review" rule must not be read
+    // to forbid. Without this carve-out spelled out, a reader deletes Step 4c and takes the delta
+    // logic with it.
+    s.check("G24i the state write is distinguished from a lesson write",
+      /not a lesson/i.test(prReviewer) && /never writes lessons during a review/.test(prReviewer));
+
+    // The bucket is in the taxonomy, with the branch-scope reasoning that keeps per-PR state out
+    // of the repo:: scope an agent's SessionStart injection reads.
+    const buckets = read("agents/shared/rules/memory-buckets.md");
+    s.check("G24i memory-buckets documents the pr-review-state record",
+      /pr-review-state/.test(buckets) && /ci::pr-review-state/.test(buckets) &&
+      /branch::\{owner\}\/\{repo\}/.test(buckets));
+    s.check("G24i memory-buckets says why the scope is branch:: and not repo::",
+      /SessionStart/.test(buckets) && /displace/.test(buckets));
   }
-  // A flag with no reader is a comment. Assert PRIOR_RUN_STATE_UNKNOWN is bound and consumed.
-  s.check("G24h PRIOR_RUN_STATE_UNKNOWN has readers, not just a binding",
-    (prReviewer.match(/PRIOR_RUN_STATE_UNKNOWN/g) || []).length >= 4 &&
-    /prior-run state unknown/.test(sliceBetween(prReviewer, "## Step 5: Report", "## What this agent does not do")));
-  s.check("G24h PRIOR_REPORT_AUTHOR covers all three prior-run shapes",
-    /PRIOR_REPORT_AUTHOR=[\s\S]{0,200}STICKY[\s\S]{0,80}LEGACY_REVIEW[\s\S]{0,80}POINTER_REVIEW/
-      .test(prReviewer));
 
   // ── G26: the out-of-band shape validator. Behavioural — these EXECUTE the validator, against
   // both our own fixtures and REAL bodies as published. Everything else guarding the report shape
@@ -1798,19 +1962,19 @@ function checksInSync(plan, checks) {
 
     // The tally and reasons must carry no CI token. These are the two strings that produced the
     // misleading headline, so assert on the rendered vocabulary rather than on prose about it.
-    const tally = sliceBetween(prReviewer, "`SEVERITY_TALLY` (the **FAIL** headline",
+    const tally = sliceBetween(reportRendering, "`SEVERITY_TALLY` (the **FAIL** headline",
       "`FAIL_REASONS` / `WARN_REASONS`");
     s.check("G27 SEVERITY_TALLY is ordered errors-then-warnings, with no CI term",
       /ordered errors-then-warnings/.test(tally) &&
       !/prefix `CI failing`/.test(tally));
     s.check("G27 SEVERITY_TALLY states CI never appears in it",
       /\*\*CI never appears in the tally\.\*\*/.test(tally));
-    const reasons = sliceBetween(prReviewer, "`FAIL_REASONS` / `WARN_REASONS`", "| Gate | ❌ reason");
+    const reasons = sliceBetween(reportRendering, "`FAIL_REASONS` / `WARN_REASONS`", "| Gate | ❌ reason");
     s.check("G27 FAIL_REASONS no longer leads with a CI phrase",
       !/leading\s*\n?`CI checks failing`/.test(reasons) && /CI is\s*\n?never among them/.test(reasons));
 
     // The reason table's CI row must offer a ⚠️ phrase and no ❌ phrase.
-    const ciRow = (prReviewer.match(/^\| CI \(Gate 2\) \|[^\n]*$/m) || [""])[0];
+    const ciRow = (reportRendering.match(/^\| CI \(Gate 2\) \|[^\n]*$/m) || [""])[0];
     s.check("G27 the reason table's CI row has no ❌ phrase", /warns, never fails/.test(ciRow), ciRow.slice(0, 90));
     s.check("G27 the reason table's CI row supplies a ⚠️ phrase", /CI red:/.test(ciRow), ciRow.slice(0, 90));
 
@@ -1827,17 +1991,20 @@ function checksInSync(plan, checks) {
     // WARN_GATE_COUNT definition. All three omitted it while L1 was green at 549/549, so a
     // CI-only ⚠️ selected neither PASS ("every gate is ✅") nor WARN, and would have rendered
     // `**0 warning(s)**`. Assert the presence side too.
-    for (const [what, anchor] of [
-      ["the Step 3 WARN selector", "Pick the presentation by verdict"],
-      ["the Step 4 WARN selector", "Pick the body by verdict"],
+    // The two selectors now live in different files: Step 3's terminal one in the agent body,
+    // Step 4's body-template one in the rendering reference. Pair each anchor with its source
+    // rather than assuming one haystack.
+    for (const [what, src, anchor] of [
+      ["the Step 3 WARN selector", prReviewer, "Pick the presentation by verdict"],
+      ["the Step 4 WARN selector", reportRendering, "Pick the body by verdict"],
     ]) {
-      const sel = sliceBetween(prReviewer, anchor, "\n\n");
+      const sel = sliceBetween(src, anchor, "\n\n");
       s.check(`G27 ${what} lists CI among the graded gates`,
         /at least one graded gate — Description vs\. code, CI, Prior bot feedback/.test(sel),
         sel.slice(0, 120));
     }
     {
-      const wgc = sliceBetween(prReviewer, "- `WARN_GATE_COUNT` = the number of gates showing",
+      const wgc = sliceBetween(reportRendering, "- `WARN_GATE_COUNT` = the number of gates showing",
         "The top-level WARN headline leads with");
       s.check("G27 WARN_GATE_COUNT counts CI among the warning gates",
         /\*\*CI\*\*/.test(wgc) && /so 0 to 4/.test(wgc), wgc.slice(0, 140));
@@ -2179,7 +2346,7 @@ const isPollBlock = (block) =>
     /caller policy refusal/.test(prReviewer));
 
   // (a) Snapshot parity — one fixture per FORM.
-  for (const name of ["pointer", "no_prior", "escalation", "degraded"]) {
+  for (const name of ["pointer", "degraded"]) {
     const payload = join(FIX, `${name}.json`);
     const expectedPath = join(FIX, `${name}.expected.md`);
     if (!existsSync(payload) || !existsSync(expectedPath)) {
@@ -2194,7 +2361,7 @@ const isPollBlock = (block) =>
   }
 
   // (b) Structural invariants every form must hold.
-  for (const name of ["pointer", "no_prior", "escalation", "degraded"]) {
+  for (const name of ["pointer", "degraded"]) {
     const p = join(FIX, `${name}.expected.md`);
     if (!existsSync(p)) continue;
     const body = readFileSync(p, "utf8");
@@ -2209,13 +2376,16 @@ const isPollBlock = (block) =>
     ["an invalid FORM", '{"FORM":"summary","HEAD_SHA":"bde3c2f"}'],
     ["a non-7-char sha", '{"FORM":"pointer","HEAD_SHA":"abc","FINDINGS_COUNT":1,"STICKY_URL":"https://x/1"}'],
     ["an uppercase sha", '{"FORM":"pointer","HEAD_SHA":"BDE3C2F","FINDINGS_COUNT":1,"STICKY_URL":"https://x/1"}'],
-    ["escalation with empty PRIOR_VERDICT", '{"FORM":"escalation","HEAD_SHA":"bde3c2f","VERDICT":"FAIL","REASONS":"x","STICKY_URL":"https://x/1"}'],
-    ["escalation with empty REASONS", '{"FORM":"escalation","HEAD_SHA":"bde3c2f","VERDICT":"FAIL","PRIOR_VERDICT":"PASS","REASONS":"","STICKY_URL":"https://x/1"}'],
-    ["degraded missing DEGRADED_REASON", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x","LEDGER":{"v":1,"runs":[]}}'],
-    ["degraded HEADLINE_LINE carrying the report marker", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"<!-- PR_REVIEWER_REPORT -->","DEGRADED_REASON":"x","LEDGER":{"v":1,"runs":[]}}'],
-    ["degraded ledger over the 1500-char budget", JSON.stringify({ FORM: "degraded", HEAD_SHA: "bde3c2f",
-      FINDINGS_COUNT: 1, HEADLINE_LINE: "x", DEGRADED_REASON: "x",
-      LEDGER: { v: 1, runs: [{ sha: "bde3c2f", ids: Array(400).fill("comment-id-0000000000") }] } })],
+    // The two retired notification-only forms. A run that remembers them must get an error, not
+    // a shape nothing documents — and not a silently-accepted unknown FORM either.
+    ["the retired escalation form", '{"FORM":"escalation","HEAD_SHA":"bde3c2f","VERDICT":"FAIL","PRIOR_VERDICT":"PASS","REASONS":"x","STICKY_URL":"https://x/1"}'],
+    ["the retired no_prior form", '{"FORM":"no_prior","HEAD_SHA":"bde3c2f","VERDICT":"PASS","STICKY_URL":"https://x/1"}'],
+    ["degraded missing DEGRADED_REASON", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x"}'],
+    ["degraded HEADLINE_LINE carrying the report marker", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"<!-- PR_REVIEWER_REPORT -->","DEGRADED_REASON":"x"}'],
+    // Run state may not ride on a review body at all any more: LEDGER is not a known key, and a
+    // ledger block smuggled in through a prose field is rejected by the post-condition.
+    ["a LEDGER key", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x","DEGRADED_REASON":"y","LEDGER":{"v":1,"runs":[]}}'],
+    ["a ledger block smuggled into DEGRADED_REASON", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x","DEGRADED_REASON":"see <!-- PR_REVIEWER_LEDGER {\"v\":1} -->"}'],
     ["an unknown payload key", '{"FORM":"pointer","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"STICKY_URL":"https://x/1","EXTRA":"nope"}'],
     ["a non-object payload", "[1,2]"],
     ["malformed JSON", "{nope"],

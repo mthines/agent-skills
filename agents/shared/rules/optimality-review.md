@@ -16,6 +16,22 @@ None of them asks the design-level question: **is this the most optimal way to d
 This rule routes that question through `Skill("optimize-approach", "<report|apply>")`, which returns 0–2 structured proposals (or nothing when the approach is already optimal).
 A proposal is not a comment. It keeps the gates that test whether the claim is true (`finding-grounding`, `verification-receipt`) and surfaces as a card in a dedicated report section — see § Where proposals surface and § Gates.
 
+## Contents
+
+- [Default-on, opt-out via `--no-optimize`](#default-on-opt-out-via---no-optimize)
+- [Trivial-skip set](#trivial-skip-set)
+- [When to run (the call)](#when-to-run-the-call)
+- [Apply (`polish optimize` — never the reviewer)](#apply-polish-optimize--never-the-reviewer)
+- [Where proposals surface](#where-proposals-surface)
+- [Inline pointer for high-confidence proposals](#inline-pointer-for-high-confidence-proposals)
+- [Gates](#gates)
+- [Blocking verdict](#blocking-verdict)
+- [Logging](#logging)
+- [When optimize-approach is unavailable](#when-optimize-approach-is-unavailable)
+- [What this rule does not do](#what-this-rule-does-not-do)
+
+---
+
 ## Default-on, opt-out via `--no-optimize`
 
 Optimality review runs on **every** invocation of `pr-reviewer` unless disabled, with a **quiet early-exit**: on a well-built change the skill returns nothing and the step is a silent no-op.

@@ -21,20 +21,33 @@ This file does not restate those — it only names the buckets and says which ki
 
 ---
 
-## The three kinds
+## Contents
+
+- [The kinds](#the-kinds)
+- [The `review*` trio (the confusing one)](#the-review-trio-the-confusing-one)
+- [Master table — all 14 buckets](#master-table--all-14-buckets)
+- [First-class properties in LoreKit (`kind` + `host`)](#first-class-properties-in-lorekit-kind--host)
+- [Why the tags are not kind-prefixed](#why-the-tags-are-not-kind-prefixed)
+- [See also](#see-also)
+
+---
+
+## The kinds
 
 The names encode the **host** (which skill or agent owns the bucket), not the **kind**.
 That is the one thing to internalize: a name like `reviewer-comment-relevance` tells you the host, so you must look up the kind here.
-There are exactly three kinds.
+There are three **learned** kinds, plus **state records**, which are a different shape of thing entirely.
 
 | Kind | What it holds | Lifetime | Read cadence | Changes behavior? |
 | --- | --- | --- | --- | --- |
 | **Lessons** | Procedural "how to do better next time" rules, distilled from experience. | Durable (~90d, refreshed on re-sighting). | At the **start of every run** of the host. | No — advisory input only, until a human promotes one into source. |
 | **Bus** | Raw, per-item outcome events awaiting distillation. | Volatile (short TTL, ~30d). | At **promotion time only** — never loaded per-run. | No — it is raw material, not a signal. |
 | **Signal** | A durable, learned per-repo filter derived from resolved outcomes. | Durable (~60d). | At the **start of every run**, like lessons. | No — it biases which findings survive, advisory only. |
+| **State record** | One current fact a host needs from its own last run, written mechanically. | Short TTL (~7d), refreshed on every write. | At the **start of every run**, and written back at the end. | **Yes — authoritatively.** It is parsed and branched on, not weighed. |
 
 Only the **Lessons** kind follows the `loop::<host>-lessons` convention.
 The single **Bus** and single **Signal** bucket are tagged `loop::…` too, but they are not lessons — that shared prefix is the main source of confusion.
+**State records are tagged `ci::…` and never `loop::…`**, precisely so nothing reads one as advice: the entrenchment guards that govern lessons do not apply to a record that contains no judgment, and the guards that *do* apply are different ones (bounded cardinality, no secrets, explicit TTL, never on the critical path). Their contract lives in the external `lorekit-setup` skill, `rules/ci-state-records.md` — read it before adding one.
 
 ---
 
@@ -58,7 +71,7 @@ reviewer-comment-relevance
 
 ---
 
-## Master table — all 13 buckets
+## Master table — all 14 buckets
 
 ### Lessons (`loop::<host>-lessons`, key `<host>-lessons::<slug>`)
 
@@ -94,6 +107,41 @@ hosts and silently halve every usage roll-up.
 | Bucket | Owner rule | Producer → Consumer | Lifetime | Read |
 | --- | --- | --- | --- | --- |
 | `reviewer-comment-relevance` | [`comment-relevance-memory.md`](./comment-relevance-memory.md) | GH Action `reviewer-comment-relevance.yml` (**not yet committed** — see below) + `implement-suggestion` + `reviewer`/`pr-reviewer` post-merge fallback → `reviewer`/`pr-reviewer` | durable 60d | Every review run (`reviewer` Step 0.7 / `pr-reviewer` Step 1.0); applied at Step 2.2. |
+
+### State records (`ci::<host>-state`, key `ci-state::<slug>`)
+
+| Bucket | Owner | Producer → Consumer | Scope | Lifetime |
+| --- | --- | --- | --- | --- |
+| `pr-review-state` | [`pr-reviewer.md § Step 0.7`](../../pr-reviewer.md) | `pr-reviewer` Step 4c → `pr-reviewer` Step 0.7 (its own next run, and nothing else) | `branch::{owner}/{repo}::{head}` | 7d, refreshed on every write |
+
+Tag `ci::pr-review-state`, key `ci-state::pr-review-<pr-number>`, `kind: bus`, `host: reviewer`
+(set explicitly — `kind`/`host` are inferred only from `loop::` tags, so a `ci::` tag leaves them
+NULL). It holds `pr-reviewer`'s own run history for one PR: the delta baseline SHA, the run-mode
+history the deep-lens refresh counts, the open-thread set, and the deferred + anchorless findings a
+re-review carries forward. It replaced a `<!-- PR_REVIEWER_LEDGER … -->` block inside the report
+comment, which coupled the reviewer's memory to its own rendered Markdown.
+
+Three things about it are load-bearing and easy to get wrong:
+
+- **The scope is `branch::`, not `repo::`.** Per-PR state in `repo::` would be the most recently
+  updated rows in the scope an agent's SessionStart injection reads, so on a repo with twenty open
+  PRs it would displace the lessons that injection exists to deliver — the exact failure
+  `ci-state-records.md § The cardinality rule` warns about. `branch::` also lets the record decay
+  with the branch it describes.
+- **It is authoritative, not advisory.** Unlike every other bucket here, a reader branches on it.
+  That is why it is version-stamped (`v: 1`) and why an unrecognised version falls back to the
+  first-run path instead of being parsed.
+- **The 7-day TTL is the whole cleanup mechanism, and it requires nothing to be wired up.** It is
+  passed on every write, so it measures how long the PR has been quiet rather than how old the
+  record is: an active PR refreshes it each review, and a merged or abandoned one expires seven days
+  after its last. No integration, workflow, or cleanup pass is needed — which is the point, since
+  most repositories have none. A LoreKit-side GitHub-integration purge on
+  `pull_request: closed (merged)` would make it immediate rather than eventual and is **not
+  shipped**; treat it as an optional accelerant, never a prerequisite. A record read past its
+  expiry is treated as absent (`pr-reviewer.md § Read the record`).
+- **`pr-reviewer` cannot delete it.** `mcp__lorekit__memory_delete` is deliberately absent from
+  that agent's `tools:` grant, so a reviewer can never delete a memory as a side effect of
+  reviewing.
 
 > **Availability note on the GH Action producer.** `.github/workflows/` in this repo currently contains only `evals-l1.yml` and `evals-l2.yml`; the reusable workflow `reviewer-comment-relevance.yml` that `plugins/pr-relevance-memory/templates/pr-relevance-caller.yml` and [`comment-relevance-memory.md`](./comment-relevance-memory.md) point at with `uses: mthines/agent-skills/.github/workflows/reviewer-comment-relevance.yml@main` has not been committed. Its classifier (`scripts/record-comment-relevance.mjs`) and the caller template both ship, so the write path is designed and callable once the workflow lands — but until it does, a caller repo wiring up that `uses:` reference will fail to resolve it, and the only live producers are `implement-suggestion` and the post-merge fallback. Re-check with `ls .github/workflows/` rather than trusting this note.
 
@@ -154,3 +202,4 @@ If a tag rename is ever undertaken anyway, it must land in one change across the
 - [`review-outcomes.md`](./review-outcomes.md) — the Bus schema, fingerprint, TTL, and consolidation.
 - [`comment-relevance-memory.md`](./comment-relevance-memory.md) — the Signal read/apply/write contract.
 - [`outcome-learning.md`](./outcome-learning.md) — how the Bus is distilled into Lessons at promotion time.
+- `lorekit-setup` skill, `rules/ci-state-records.md` (external) — the state-record contract: cardinality, the JSON envelope, TTL-as-liveness-guard, and the guards that replace the entrenchment ones.

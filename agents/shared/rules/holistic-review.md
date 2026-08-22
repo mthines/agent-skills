@@ -17,6 +17,21 @@ Line-level rubrics (`code-quality`, `ux`, `critical`, lenses) evaluate each hunk
 
 This rule routes both checks through `Skill("holistic-analysis", "review")`, which returns 0–3 structured findings. Findings flow through the rest of the pipeline (`finding-grounding`, `per-comment-confidence`, `comment-shape`, `conventional-comments`) like any other rubric output.
 
+## Contents
+
+- [Default-on, opt-out via `--no-holistic`](#default-on-opt-out-via---no-holistic)
+- [Trivial-skip set](#trivial-skip-set)
+- [When to run (the call)](#when-to-run-the-call)
+- [Targeted escalation (Step 2.4b)](#targeted-escalation-step-24b)
+- [Output mapping (caller-aware)](#output-mapping-caller-aware)
+- [Wiring into the rest of the pipeline](#wiring-into-the-rest-of-the-pipeline)
+- [Blocking verdict](#blocking-verdict)
+- [Logging](#logging)
+- [When holistic is unavailable](#when-holistic-is-unavailable)
+- [What this rule does not do](#what-this-rule-does-not-do)
+
+---
+
 ## Default-on, opt-out via `--no-holistic`
 
 Holistic review runs on **every** invocation of `pr-reviewer` unless explicitly disabled. The token cost is real (~20–60 s and one extra `Skill()` call per PR), but PR review is async and the value asymmetry is large: catching one system-fit bug is worth dozens of unnecessary holistic runs.

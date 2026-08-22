@@ -13,6 +13,19 @@ tags:
 
 Without a consolidation step, each rubric emits findings independently and the agent has to inline-dedupe while also writing comments. Research grounding: Qodo's 2026 "Rule System" and Greptile's multi-agent architecture both add an explicit coordinator pass — the consolidation step is what turns multi-rubric findings from noise into signal.
 
+## Contents
+
+- [Load order](#load-order)
+- [Auto-engage heuristics for `critical`](#auto-engage-heuristics-for-critical)
+- [Dedupe](#dedupe)
+- [Cross-rubric agreement](#cross-rubric-agreement)
+- [Consolidation pass](#consolidation-pass)
+- [Placement (Step 2.9b)](#placement-step-29b)
+- [Severity mapping](#severity-mapping)
+- [A lens cannot block on its own](#a-lens-cannot-block-on-its-own)
+
+---
+
 ## Load order
 
 Strict order so dedup is deterministic:
