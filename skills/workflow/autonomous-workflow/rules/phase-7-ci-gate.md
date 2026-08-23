@@ -20,6 +20,7 @@ tags:
 - [Spec Rehearsal (optional, UI tasks only)](#spec-rehearsal-optional-ui-tasks-only)
 - [Auto Verify](#auto-verify)
 - [Auto Review](#auto-review)
+- [Observability Recheck](#observability-recheck)
 - [Optional Post-Merge Cleanup](#optional-post-merge-cleanup)
 - [Phase 7 Checklist](#phase-7-checklist)
 - [References](#references)
@@ -472,6 +473,55 @@ When the skill returns, log:
 ```
 
 Tell the user: PR URL, that the review-loop applied M findings and surfaced any remaining blockers inline, and that they should review before undrafting.
+Then proceed to [Observability Recheck](#observability-recheck).
+
+## Observability Recheck
+
+This section is the anchor referenced from [`companion-skills.md`](./companion-skills.md#registry).
+
+**Why this exists.** The Phase 4 [Observability Gate](./phase-4-testing.md#observability-gate)
+audits telemetry before Step 6 — but `ci-auto-fix` ([Auto Fix](#auto-fix)) and
+`review-loop` ([Auto Review](#auto-review)) both mutate code **after** that
+point: a mechanical CI fix can delete an unused-looking `catch` log, and
+`polish simplify` can refactor away a span or an error path Phase 3 added
+in the name of cleanliness. Phase 4's audit has no visibility into either —
+it already ran. This is the one point in the run, after every code-mutating
+step has settled, where a final check can catch that drift before the run
+is declared done.
+
+**When:** once, after [Auto Review](#auto-review) completes (or is skipped
+because `review-loop` is not installed), only on runs where the original
+[Observability Trigger](./phase-3-implementation.md#observability-trigger)
+condition matched in Phase 3 — i.e. only when there is coverage to have
+lost. Skip entirely on a run where Phase 3 never touched a
+`web`/`mobile`/`api`/`worker` path.
+
+```bash
+Skill("measurable", "audit --diff --base $(git merge-base HEAD main)")
+```
+
+Reuse whatever `--strict` setting the original `aw` invocation carried
+(`--observability-strict` at the top level) — this is a recheck of the same
+gate, not a new, stricter one:
+
+```bash
+Skill("measurable", "audit --diff --base $(git merge-base HEAD main) --strict")
+```
+
+| Behavior                       | Detail                                                              |
+| ------------------------------ | ------------------------------------------------------------------- |
+| Frequency                      | Once, after Auto Fix and Auto Review have both settled              |
+| What it checks                 | Same checklist as the Phase 4 gate, against the **current** head — catches coverage Phase 4 confirmed but a later mechanical edit removed, not just coverage that was never added |
+| Default behavior (no `--observability-strict`) | Advisory — log the finding, note it in the hand-back message, never block |
+| `--observability-strict` behavior | A `missing` finding that **Phase 4 did not already flag** (i.e. newly introduced by Auto Fix or Auto Review) is a regression: fix it directly (it's a small, localized diff — restore the removed span/log/event) and re-run this recheck **once**. If it still reports `missing` after that one attempt, stop and escalate to the user rather than looping — this is a tail check, not a second stuck-loop instance. A `missing` finding that Phase 4 **already** flagged and the user accepted is not re-litigated here |
+| Read-only until the regression fix | The recheck itself never writes files; only the one-shot regression fix (under `--observability-strict`) does |
+| If skill missing               | Log `measurable() — not available, continuing`                      |
+| Progress Log entry             | `[TIMESTAMP] Phase 7: measurable(audit) — recheck: N missing (K new since Phase 4), M unlinked` (or `— not available, continuing`) |
+
+Disable: remove the `Skill("measurable", "audit", ...)` invocation from this
+section (the Phase 3/4 companions are unaffected — this is the Phase 7
+recheck only). Registry: [`companion-skills.md`](./companion-skills.md#registry).
+
 Then proceed to [Optional Post-Merge Cleanup](#optional-post-merge-cleanup).
 
 ## Optional Post-Merge Cleanup
@@ -616,6 +666,7 @@ Disable by removing this invocation (see
 - [ ] (Optional, UI tasks) `aw-tester` spec rehearsal dispatched against preview URL; verdict surfaced or skip logged
 - [ ] (Optional, Full Mode) `feature-pr-verifier` agent dispatched after CI green; verdict surfaced or skip logged
 - [ ] (Optional) `review-loop` invoked after CI green with `--critical`; inline report surfaced or skip logged
+- [ ] (If Phase 3's Observability Trigger matched) `measurable(audit)` recheck invoked after Auto Fix + Auto Review settle; findings surfaced (advisory) or, under `--observability-strict`, a newly-introduced `missing` finding fixed and re-checked once before escalating (anchor: `observability-recheck`)
 - [ ] (Optional) PR merged → worktree removed with user confirmation
 - [ ] `lorekit(memory.write aw-lessons)` invoked at end-of-run; promotion suggested if `seen_count >= 3` (anchor: `lessons-write`)
 - [ ] Final status reported to user

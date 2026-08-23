@@ -137,11 +137,13 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 3     | `lorekit-memory`       | Executor entry — read lessons only when `plan.md` has no `## Lessons applied` (no-planner paths) | `memory.list loop::aw-lessons` |
 | 3     | `tdd`                  | Pure logic / business rules / "test-driven"                          | —                |
 | 3     | `ux`                   | UI files (`*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, RN screens)         | —                |
+| 3     | `measurable`           | API/handler/job entry point or user-facing component touched (see the skill's `rules/scope-detection.md`) | `implement`      |
 | 3     | `code-quality`         | Once at end of Phase 3 (not per-file)                                | `code`           |
 | 4 (UI) cold | `aw-tester` *(agent)*  | **Once** at Phase 4 entry, plus on hot-loop escalation triggers — UI files in plan AND `.agent/{branch}/specs.md` exists AND aw-target defined | `specs.md + aw-target + --bail-on-first-red` |
 | 4 (UI) hot  | `playwright` *(direct Bash)* | Every iteration on the same failing spec — re-runs persisted `last-run.spec.ts` via `$playwright_bin test --grep "<failing_spec_id>"` (no sub-agent) | `--reporter=line --workers=1` |
 | 4     | `confidence`           | At iteration cap on same failing area (auto-replan trigger)          | `analysis`   |
 | 4     | `holistic-analysis`    | Auto-replan only — `confidence(analysis) < 90%` (one-shot)       | —                |
+| 4     | `measurable`           | Before Step 6, if the Phase 3 trigger matched — advisory audit unless `--observability-strict` | `audit --diff --base $(git merge-base HEAD main) [--strict]` |
 | 4     | `lorekit-memory`       | At stuck-loop escalation — record failing area + resolution          | `memory.write loop::aw-lessons` |
 | 5     | `docs`                 | Always (with skip conditions per phase-5 rule)                       | `update --auto`  |
 | 6     | `aw-review-quality-gate` | After `create-pr`'s review-loop returns findings (false-positive filter; advisory) | —     |
@@ -150,6 +152,7 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                               | `<run-id\|pr-url>` |
 | 7 (UI)| `aw-tester` *(agent)*  | After CI green — spec rehearsal against preview URL (advisory; skips if no preview URL or no specs.md) | `specs.md + preview-aw-target + --all` |
 | 7     | `review-loop` *(skill)* | After CI green — bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence (self-relation; `pr-reviewer` detects authorship automatically) | `<pr-url> --critical` |
+| 7     | `measurable`           | Once, after Auto Fix + Auto Review settle, if the Phase 3 trigger matched — recheck against the current head, since both prior steps can mutate code | `audit --diff --base $(git merge-base HEAD main) [--strict]` |
 | 7     | `lorekit-memory`       | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `memory.write loop::aw-lessons` |
 
 ## Spec-Driven UI Verification (Phase 4, before lint/type/test)
