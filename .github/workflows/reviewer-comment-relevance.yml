@@ -1,0 +1,124 @@
+# Reusable workflow: record a PR comment's resolution outcome into LoreKit.
+#
+# This is the write half of the reviewer's relevance memory. The `reviewer` and `pr-reviewer`
+# agents read the resulting records at the start of every run to suppress finding shapes this
+# repo has repeatedly declined, and to reinforce the ones that reliably get fixed. Without it
+# the agents re-raise the same dismissed nitpick on every PR forever, because nothing ever
+# told them it was dismissed.
+#
+# Two modes, both driven from GitHub webhooks by the caller:
+#   thread-resolved  A reviewer resolved one thread  -> relevant/fixed or not-relevant/wont-fix.
+#   pr-merged        A PR merged                     -> sweep still-open threads as ignored-at-merge.
+#
+# Behaviour: read-only on GitHub. It never posts, edits, resolves, or deletes anything on the PR;
+# its only side effect is a LoreKit write. scripts/record-comment-relevance.mjs always exits 0 —
+# a missing LOREKIT_API_KEY, an unreachable API, or an unexpected crash degrades to a no-op rather
+# than reddening a caller's PR, which matters because the caller fires on `pull_request: closed`
+# and a failure there would annotate an already-merged PR nobody is watching.
+#
+# Callers: copy plugins/pr-relevance-memory/templates/pr-relevance-caller.yml into your repo.
+
+name: Reviewer comment relevance
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: >
+          Which signal to record: `thread-resolved` for a single resolved thread, or `pr-merged`
+          to sweep the threads still open when a PR merged. An unrecognised value is a logged
+          no-op, not a failure.
+        required: true
+        type: string
+      pr_number:
+        description: The pull request number the signal belongs to.
+        required: true
+        type: string
+      # The comment_* inputs describe the FIRST comment of a resolved thread. They are unset in
+      # `pr-merged` mode, which rediscovers every thread from the API instead — so none may be
+      # required. All are typed `string` rather than `number`: a file-level review comment has a
+      # null `line`, and a null reaching a `number` input is a workflow error rather than the
+      # empty value the recorder already knows how to handle.
+      comment_id:
+        description: Numeric ID of the thread's first comment.
+        required: false
+        type: string
+        default: ""
+      comment_path:
+        description: Path of the file the comment was left on.
+        required: false
+        type: string
+        default: ""
+      comment_line:
+        description: Line the comment was left on. Empty for a file-level comment.
+        required: false
+        type: string
+        default: ""
+      comment_body:
+        description: >
+          Body of the first comment, used to derive the relevance fingerprint. Untrusted input —
+          see the note on the recorder step.
+        required: false
+        type: string
+        default: ""
+      comment_created_at:
+        description: ISO 8601 timestamp of the first comment, used as the fix-commit cutoff.
+        required: false
+        type: string
+        default: ""
+    secrets:
+      lorekit_api_key:
+        description: >
+          LoreKit API key for the memory write. Optional by design: with it unset the recorder
+          logs that it is unconfigured and skips the write, so a repo can install the caller
+          before provisioning the key.
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  record:
+    name: Record relevance signal
+    runs-on: ubuntu-latest
+    # The recorder walks a PR's commits and fetches each one's files to find a fix. On a long PR
+    # that is a lot of serial API calls, and this job holds no lock worth waiting on.
+    timeout-minutes: 10
+    steps:
+      - name: Check out the recorder
+        uses: actions/checkout@v4
+        with:
+          # A reusable workflow runs against the CALLER's checkout, so the script has to be
+          # fetched explicitly. `ref: main` matches reviewer-report-shape.yml — note it means a
+          # caller pinning `@v1` still gets main's recorder.
+          repository: mthines/agent-skills
+          ref: main
+          sparse-checkout: scripts/record-comment-relevance.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Record the signal
+        env:
+          # Every value is passed through the environment and never interpolated into the script
+          # body: a review comment is attacker-controlled text, and `${{ }}` inside a `run` block
+          # would splice it into the shell. Same rule as reviewer-report-shape.yml.
+          #
+          # `github.token` here is the CALLER's token, scoped by the caller's `permissions:` — so
+          # the recorder reads the caller's PRs, not this repository's.
+          GITHUB_TOKEN: ${{ github.token }}
+          LOREKIT_API_KEY: ${{ secrets.lorekit_api_key }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          FIRST_COMMENT_ID: ${{ inputs.comment_id }}
+          FIRST_COMMENT_PATH: ${{ inputs.comment_path }}
+          FIRST_COMMENT_LINE: ${{ inputs.comment_line }}
+          FIRST_COMMENT_BODY: ${{ inputs.comment_body }}
+          FIRST_COMMENT_CREATED_AT: ${{ inputs.comment_created_at }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+          node scripts/record-comment-relevance.mjs --mode="$MODE"
