@@ -202,10 +202,11 @@ invocation contract.
 
 #### Step 5b: Observability Gate
 
-Before Step 6, run the observability-coverage companion as a read-only gate
-on the telemetry Phase 3's [Observability Trigger](./phase-3-implementation.md#observability-trigger)
-should have already added. See [Observability Gate](#observability-gate)
-below for the full invocation contract.
+Before Step 6, run the observability-coverage companion as a read-only audit
+of the telemetry Phase 3's [Observability Trigger](./phase-3-implementation.md#observability-trigger)
+should have already added. Advisory by default — see [Observability Gate](#observability-gate)
+below for the full invocation contract and the `--observability-strict`
+opt-in.
 
 ### Step 6: Final Validation
 
@@ -673,7 +674,15 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 
 This section is the anchor referenced from [`companion-skills.md`](./companion-skills.md#registry).
 It defines when and how to invoke the `observability-coverage` companion as a
-read-only gate before Phase 4 can be declared done.
+read-only audit before Phase 4 can be declared done.
+
+**Advisory by default.** This is a new, unvalidated heuristic — unlike
+`test-provenance-guard` (mechanically verified via mutation testing),
+`observability-coverage`'s `missing`/`unlinked` classification is a judgment
+call with no track record yet in this registry. Following the precedent set
+by `critical` and `optimize-approach` (both opt-in/quiet rather than
+hard-blocking on introduction), this gate reports findings but does not stop
+the run unless the caller opted into `--observability-strict`.
 
 **When:** once, before Step 6 Final Validation, on every run where Phase 3
 touched an API handler, job entry point, or user-facing component (i.e.
@@ -684,14 +693,22 @@ condition matched).
 Skill("observability-coverage", "audit --diff --base $(git merge-base HEAD main)")
 ```
 
+Pass `--strict` (surfaced to the user as the `aw` flag
+`--observability-strict`) to escalate `missing` findings to blocking:
+
+```bash
+Skill("observability-coverage", "audit --diff --base $(git merge-base HEAD main) --strict")
+```
+
 | Behavior                       | Detail                                                              |
 | ------------------------------ | ------------------------------------------------------------------- |
 | Frequency                      | Once per Phase 4 pass, before Step 6                                 |
 | What it checks                 | Every changed API/handler/job path has a span, error-path log, and (where warranted) a RED metric; every changed user-facing flow has a RUM event or a cited reason it doesn't need one; every new failure path sets an error signal instead of failing silently — full checklist in the skill's `rules/audit-checklist.md` |
-| Gate behavior                  | `missing` findings on `web`/`mobile`/`api`/`worker` paths **block** — treat like a failing test and route through the [Stuck-Loop Detection](#stuck-loop-detection) protocol (fix the instrumentation, don't relax the gate). `unlinked` findings are advisory and logged but never block |
-| Read-only                      | This gate never writes files. If it reports `missing`, Phase 4 goes back to Step 5 to add the instrumentation, then re-runs the gate — it does not call `observability-coverage implement` itself |
+| Default gate behavior          | **Advisory.** `missing` and `unlinked` findings are both surfaced in the Progress Log and folded into the Phase 6 walkthrough's Observability summary — neither blocks Step 6 |
+| `--observability-strict` behavior | `missing` findings on `web`/`mobile`/`api`/`worker` paths **block** — treat like a failing test and route through the [Stuck-Loop Detection](#stuck-loop-detection) protocol (fix the instrumentation, don't relax the gate). `unlinked` findings stay advisory even under `--strict` |
+| Read-only                      | This gate never writes files. Under `--observability-strict`, if it reports `missing`, Phase 4 goes back to Step 5 to add the instrumentation, then re-runs the gate — it does not call `observability-coverage implement` itself |
 | If skill missing               | Log `observability-coverage() — not available, continuing`          |
-| Progress Log entry             | `[TIMESTAMP] Phase 4: observability-coverage(audit) — N missing, M unlinked, K pass` |
+| Progress Log entry             | `[TIMESTAMP] Phase 4: observability-coverage(audit) — N missing, M unlinked, K pass (advisory)` (or `, strict — blocking on N missing` when `--observability-strict` is set) |
 
 This is the verification half of the pair with the
 [Observability Trigger](./phase-3-implementation.md#observability-trigger) in
@@ -719,7 +736,7 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 - [ ] `lorekit(memory.write aw-lessons)` invoked at stuck-loop escalation; promotion suggested if `seen_count >= 3` (anchor: `lessons-write`)
 - [ ] New tests added for new functionality
 - [ ] `test-provenance-guard` invoked after new test files written; findings healed or escalated
-- [ ] `observability-coverage(audit)` invoked before Step 6 if Phase 3 touched API/handler or user-facing files; no `missing` findings remain
+- [ ] `observability-coverage(audit)` invoked before Step 6 if Phase 3 touched API/handler or user-facing files; findings reported (advisory by default; no `missing` findings remain if `--observability-strict` is set)
 - [ ] Full suite + lint + build all green
 - [ ] Every `checks.yaml` check `status: pass` — or `unsatisfiable` escalated and user-approved; skip logged if no `checks.yaml` (anchor: `executable-checks`)
 - [ ] No check definition edited (`id`/`requirement`/`ears`/`expect` untouched); every `run:`/`setup:` amendment has a `check-run-amended` Progress Log entry

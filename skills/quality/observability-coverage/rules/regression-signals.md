@@ -59,8 +59,9 @@ When running as part of `audit` mode or the `autonomous-workflow` Phase 4
 gate, grade each signal:
 
 - **`missing`** — a changed path in a `web`/`mobile`/`api`/`worker`
-  classification with no signal at all. Blocks the gate.
+  classification with no signal at all. Advisory by default; blocks the
+  gate only when the caller passed `--strict`.
 - **`unlinked`** — a signal exists but Question 3 above has no answer (no
-  dashboard, no alert, no explicit propose-a-check note). Advisory —
-  surfaced in the report, does not block.
+  dashboard, no alert, no explicit propose-a-check note). Always
+  advisory — surfaced in the report, never blocks, even under `--strict`.
 - **`pass`** — all three questions answered.

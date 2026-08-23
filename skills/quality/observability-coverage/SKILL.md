@@ -14,7 +14,8 @@ description: >
   "instrument this endpoint", "check observability coverage",
   "add RUM and API telemetry", "will we know if this regresses",
   "set up observability profile", "/observability-coverage".
-argument-hint: '[guide|implement|audit|setup] [<target>]'
+disable-model-invocation: false
+argument-hint: '[guide|implement|audit|setup] [<target>] [--strict]'
 license: MIT
 metadata:
   author: mthines
@@ -144,8 +145,14 @@ checked for coverage gaps, without writing anything.
    that needs one), `unlinked` (a signal exists but maps to no regression
    detector — Step 4 of Guide mode), or `pass`.
 3. Cite a file path and line number for every finding.
-4. Output a ranked list — `missing` findings on user-facing or API surface
-   code block the gate; `unlinked` findings are advisory.
+4. Output a ranked list. **Advisory by default** — `missing` and `unlinked`
+   findings are both reported, neither blocks. Pass `--strict` to make
+   `missing` findings on `web`/`mobile`/`api`/`worker` paths block the
+   caller's gate (`unlinked` stays advisory even in `--strict`, since not
+   every signal needs a bespoke dashboard on day one). This mirrors how
+   `critical` and `optimize-approach` ship non-blocking by default in this
+   registry — a brand-new coverage heuristic earns a hard gate only once a
+   team has opted in, not on day one.
 5. Never auto-edit in `audit` mode — that is what `implement` mode is for.
 
 ### Setup mode
@@ -210,5 +217,6 @@ Load on demand — do not preload.
   span status flip.
 - Editing a Dash0 dashboard or check rule directly from this skill instead
   of proposing it through Dash0 chat.
-- Treating `audit` mode findings as blocking when they are `unlinked`
-  (advisory) rather than `missing` (blocking).
+- Treating `audit` mode findings as blocking by default — they're advisory
+  unless the caller explicitly passed `--strict`, and even then `unlinked`
+  findings never block.

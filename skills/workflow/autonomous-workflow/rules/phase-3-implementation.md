@@ -340,13 +340,12 @@ Disable: remove the `Skill("ux")` invocation from this section. Registry:
 
 This section is the anchor referenced from [`companion-skills.md`](./companion-skills.md#registry).
 
-**When:** files written or edited in this phase include any of:
-
-| Pattern                                              | Examples                                          |
-| ------------------------------------------------------ | -------------------------------------------------- |
-| New/changed API handler, route, controller, RPC method | REST/GraphQL endpoints, server actions             |
-| New/changed queue consumer or job entry point          | Background workers, cron handlers                  |
-| New/changed user-facing component or screen            | `*.tsx`/`*.jsx` with a new interaction, RN screens |
+**When:** files written or edited in this phase match any pattern in
+`observability-coverage`'s own
+[`rules/scope-detection.md`](../../../quality/observability-coverage/rules/scope-detection.md#step-2-infer-from-the-diff-when-no-profile-exists)
+Step 2 table (`web`/`mobile`/`api`/`worker` classifications) — that table is
+the single source of truth for these patterns; this section does not
+restate it, so it cannot drift out of sync.
 
 ```bash
 Skill("observability-coverage", "implement")

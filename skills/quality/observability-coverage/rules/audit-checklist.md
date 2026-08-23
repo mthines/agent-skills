@@ -41,7 +41,7 @@ Walk every changed path in the diff (or the given target) against:
 ```markdown
 ### Observability Coverage Audit
 
-**Missing (blocking):**
+**Missing (blocking only under `--strict`):**
 - `src/api/checkout.ts:42` — new `POST /checkout` handler has no span, no
   error log on the `PaymentDeclined` branch.
 
@@ -54,6 +54,8 @@ Walk every changed path in the diff (or the given target) against:
   `orders-error-rate` check rule all present.
 ```
 
-`missing` findings on `web`/`mobile`/`api`/`worker` classifications gate
-the check as failed. `unlinked` findings never gate — they're a nudge, not
-a block, since not every signal needs a bespoke dashboard on day one.
+**Advisory by default.** Neither `missing` nor `unlinked` findings gate the
+check unless the caller passed `--strict`, in which case `missing` findings
+on `web`/`mobile`/`api`/`worker` classifications gate it as failed.
+`unlinked` findings never gate, `--strict` or not — they're a nudge, not a
+block, since not every signal needs a bespoke dashboard on day one.
