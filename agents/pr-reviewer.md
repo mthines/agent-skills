@@ -33,6 +33,31 @@ PRs)** through a `REVIEW_RELATION` flag set in Step 0.5. The pipeline is
 identical in both relations; only the framing of findings adjusts for tone (see
 Step 0.5).
 
+### Invocation outside the `~/.claude/agents/` install convention
+
+Step 4a/4b resolve the report/pointer renderer scripts (`render-report.mjs` / `render-pointer.mjs`)
+relative to this definition's own file path, defaulting to
+`${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}`. That default only resolves when this
+file is installed via the symlink convention described in the repo's `CLAUDE.md`. A caller that
+instead hands a sub-agent this file to read directly — e.g. any harness whose `Task` tool has no
+named `subagent_type="pr-reviewer"` and so dispatches a generic sub-agent with a "read this file
+and follow it" prompt, which is how Dash0 Agent0 automations invoke this agent, since Agent0 has no
+custom-named-subagent equivalent — is **not** on that path, and `CLAUDE_AGENT_FILE` is unset. Step
+4a's resolution then fails, which per its own contract means the run should abort and report the
+error rather than compose the report body by hand — but a sub-agent already deep into a review, with
+findings in hand, has in practice improvised a hand-written report shape instead of stopping, since
+"abort" is a soft instruction to override once real work is on the table.
+
+**Any caller dispatching this definition by file path rather than by install convention MUST run,
+before Step 4:**
+
+```bash
+export CLAUDE_AGENT_FILE=/path/to/this/pr-reviewer.md   # the exact path you were told to read
+```
+
+Without it, the renderer cannot resolve, the report format is no longer deterministic, and every
+guarantee in *REPORT_BODY format (the sticky comment)* below is void for that run.
+
 ---
 
 ## Non-goals
@@ -1780,7 +1805,14 @@ resolve() {  # portable readlink -f
 
 AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
 if [ -z "$AGENT_MD" ]; then
-  abort "cannot locate this agent definition — set CLAUDE_AGENT_FILE to its path"
+  abort "cannot locate this agent definition — CLAUDE_AGENT_FILE is unset and no
+$HOME/.claude/agents/pr-reviewer.md install exists. If you were dispatched by a caller that handed
+you this file's path directly (see 'Invocation outside the ~/.claude/agents/ install convention'
+above), that caller was required to export CLAUDE_AGENT_FILE before this step and did not. THIS IS
+A HARD STOP, not a cue to compose the report body yourself: an abort here is recoverable next run,
+a hand-written report that drifts from the template is a defect every consumer of this report then
+inherits (reviewer-report-ingest.md's parser, the shape-guard workflow, the next run's own re-read).
+Report the error verbatim and stop — see the fallback contract two paragraphs below."
 fi
 RENDER="${AGENT_MD%/pr-reviewer.md}/pr-reviewer/scripts/render-report.mjs"
 [ -f "$RENDER" ] || abort "renderer not found at $RENDER (resolved from $AGENT_MD)"
