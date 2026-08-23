@@ -1,6 +1,6 @@
 # Observability Profile
 
-> Written by `observability-coverage` `setup` mode. Committed via
+> Written by `measurable` `setup` mode. Committed via
 > `persistent-memory` (`project-shared` tier). Re-run setup to update —
 > see [`../rules/setup-profile.md`](../rules/setup-profile.md).
 

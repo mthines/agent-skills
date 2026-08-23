@@ -20,7 +20,7 @@ globs to `kind` (`web`, `mobile`, `api`, `worker`, `infra`, `shared-lib`) and
 to the stack already in use for that kind — use that instead of guessing.
 
 If no profile exists, fall through to Step 2 and suggest running
-`Skill("observability-coverage", "setup")` once at the end of the current
+`Skill("measurable", "setup")` once at the end of the current
 operation (do not block on it).
 
 ## Step 2: Infer from the diff when no profile exists

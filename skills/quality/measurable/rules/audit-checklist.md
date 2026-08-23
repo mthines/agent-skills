@@ -1,6 +1,6 @@
 # Audit Checklist
 
-Used standalone (`/observability-coverage audit`) and as the
+Used standalone (`/measurable audit`) and as the
 `autonomous-workflow` Phase 4 gate (see the workflow's
 [Observability Gate](../../../workflow/autonomous-workflow/rules/phase-4-testing.md#observability-gate)
 trigger). Read-only — never mutates files in this mode.

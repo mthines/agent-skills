@@ -1,5 +1,5 @@
 ---
-name: observability-coverage
+name: measurable
 description: >
   Ensures every delivery ships with the telemetry needed to prove its
   impact and catch its own regressions: RUM/analytics events for
@@ -10,11 +10,9 @@ description: >
   `setup` runs a first-time interview that records the project's
   telemetry stack, per-package instrumentation approach for monorepos,
   and regression-detection expectations as a committed Observability
-  Profile. Triggers on "is this measurable", "add telemetry",
-  "instrument this endpoint", "check observability coverage",
-  "add RUM and API telemetry", "will we know if this regresses",
-  "set up observability profile", "/observability-coverage".
-disable-model-invocation: false
+  Profile. Invoked as "/measurable" (guide by default), also reachable
+  by "/measurable implement", "/measurable audit", "/measurable setup".
+disable-model-invocation: true
 argument-hint: '[guide|implement|audit|setup] [<target>] [--strict]'
 license: MIT
 metadata:
@@ -33,7 +31,7 @@ metadata:
     - quality-gate
 ---
 
-# Observability Coverage
+# Measurable
 
 Makes "we shipped it" and "we can see it" the same statement. A change is
 only done when its impact is measurable and its regressions are visible —
@@ -68,7 +66,7 @@ State the detected mode in one line before continuing.
 | `guide`     | **yes** | "is this measurable", "what telemetry do I need", default if no mode      |
 | `implement` |         | "add telemetry", "instrument this", "add RUM and API telemetry"           |
 | `audit`     |         | "audit observability", "check observability coverage", "--diff", aw Phase 4 gate |
-| `setup`     |         | "set up observability profile", "first-time setup", "/observability-coverage setup" |
+| `setup`     |         | "set up observability profile", "first-time setup", "/measurable setup" |
 
 If `$1` is a diff, PR, file, or directory, treat it as the scope for
 `implement` or `audit`.
