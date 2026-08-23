@@ -200,6 +200,13 @@ to catch tests-by-construction *before* the loop declares Phase 4 done.
 See [Test Provenance Trigger](#test-provenance-trigger) below for the full
 invocation contract.
 
+#### Step 5b: Observability Gate
+
+Before Step 6, run the observability-coverage companion as a read-only gate
+on the telemetry Phase 3's [Observability Trigger](./phase-3-implementation.md#observability-trigger)
+should have already added. See [Observability Gate](#observability-gate)
+below for the full invocation contract.
+
 ### Step 6: Final Validation
 
 Run the full suite per `plan.md`'s pre-PR verification commands:
@@ -662,6 +669,40 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 
 ---
 
+## Observability Gate
+
+This section is the anchor referenced from [`companion-skills.md`](./companion-skills.md#registry).
+It defines when and how to invoke the `observability-coverage` companion as a
+read-only gate before Phase 4 can be declared done.
+
+**When:** once, before Step 6 Final Validation, on every run where Phase 3
+touched an API handler, job entry point, or user-facing component (i.e.
+whenever the [Observability Trigger](./phase-3-implementation.md#observability-trigger)
+condition matched).
+
+```bash
+Skill("observability-coverage", "audit --diff --base $(git merge-base HEAD main)")
+```
+
+| Behavior                       | Detail                                                              |
+| ------------------------------ | ------------------------------------------------------------------- |
+| Frequency                      | Once per Phase 4 pass, before Step 6                                 |
+| What it checks                 | Every changed API/handler/job path has a span, error-path log, and (where warranted) a RED metric; every changed user-facing flow has a RUM event or a cited reason it doesn't need one; every new failure path sets an error signal instead of failing silently — full checklist in the skill's `rules/audit-checklist.md` |
+| Gate behavior                  | `missing` findings on `web`/`mobile`/`api`/`worker` paths **block** — treat like a failing test and route through the [Stuck-Loop Detection](#stuck-loop-detection) protocol (fix the instrumentation, don't relax the gate). `unlinked` findings are advisory and logged but never block |
+| Read-only                      | This gate never writes files. If it reports `missing`, Phase 4 goes back to Step 5 to add the instrumentation, then re-runs the gate — it does not call `observability-coverage implement` itself |
+| If skill missing               | Log `observability-coverage() — not available, continuing`          |
+| Progress Log entry             | `[TIMESTAMP] Phase 4: observability-coverage(audit) — N missing, M unlinked, K pass` |
+
+This is the verification half of the pair with the
+[Observability Trigger](./phase-3-implementation.md#observability-trigger) in
+Phase 3, which authors the coverage this gate checks.
+
+Disable: remove the `Skill("observability-coverage", "audit", ...)`
+invocation from [Step 5b](#step-5b-observability-gate) and from this section.
+Registry: [`companion-skills.md`](./companion-skills.md#registry).
+
+---
+
 ## Testing Checklist
 
 - [ ] Test strategy chosen per change type
@@ -678,6 +719,7 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 - [ ] `lorekit(memory.write aw-lessons)` invoked at stuck-loop escalation; promotion suggested if `seen_count >= 3` (anchor: `lessons-write`)
 - [ ] New tests added for new functionality
 - [ ] `test-provenance-guard` invoked after new test files written; findings healed or escalated
+- [ ] `observability-coverage(audit)` invoked before Step 6 if Phase 3 touched API/handler or user-facing files; no `missing` findings remain
 - [ ] Full suite + lint + build all green
 - [ ] Every `checks.yaml` check `status: pass` — or `unsatisfiable` escalated and user-approved; skip logged if no `checks.yaml` (anchor: `executable-checks`)
 - [ ] No check definition edited (`id`/`requirement`/`ears`/`expect` untouched); every `run:`/`setup:` amendment has a `check-run-amended` Progress Log entry

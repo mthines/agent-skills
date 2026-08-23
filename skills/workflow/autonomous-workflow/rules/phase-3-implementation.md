@@ -19,6 +19,7 @@ tags:
 - [Procedure](#procedure)
 - [TDD Trigger](#tdd-trigger)
 - [UX Trigger](#ux-trigger)
+- [Observability Trigger](#observability-trigger)
 - [Code Quality Trigger](#code-quality-trigger)
 - [Implementation Checklist](#implementation-checklist)
 - [References](#references)
@@ -172,6 +173,7 @@ invocation, and disable instructions live in:
 
 - [TDD Trigger](#tdd-trigger) — pure logic / business rules
 - [UX Trigger](#ux-trigger) — UI files touched
+- [Observability Trigger](#observability-trigger) — API/handler or user-facing files touched
 - [Code Quality Trigger](#code-quality-trigger) — once at end of phase
 
 **All companions skip silently if not installed** — log the result and continue.
@@ -334,6 +336,39 @@ Disable: remove the `Skill("ux")` invocation from this section. Registry:
 
 ---
 
+## Observability Trigger
+
+This section is the anchor referenced from [`companion-skills.md`](./companion-skills.md#registry).
+
+**When:** files written or edited in this phase include any of:
+
+| Pattern                                              | Examples                                          |
+| ------------------------------------------------------ | -------------------------------------------------- |
+| New/changed API handler, route, controller, RPC method | REST/GraphQL endpoints, server actions             |
+| New/changed queue consumer or job entry point          | Background workers, cron handlers                  |
+| New/changed user-facing component or screen            | `*.tsx`/`*.jsx` with a new interaction, RN screens |
+
+```bash
+Skill("observability-coverage", "implement")
+```
+
+| Behavior                       | Detail                                                              |
+| ------------------------------ | ------------------------------------------------------------------- |
+| When to invoke                 | After the relevant files are written, before Phase 4 testing        |
+| Purpose                        | Ensure the change ships with traces/metrics/logs (API) or a RUM event (user-facing), and that every new error/warning path is visible instead of silent |
+| Delegation                     | Frontend event design delegates further to `rum-tracking`; backend spans/metrics delegate to `otel-instrumentation`/`otel-semantic-conventions` when installed, else the skill's own fallback rules |
+| If skill missing               | Log `observability-coverage() — not available, continuing`          |
+| Progress Log entry             | `[TIMESTAMP] Phase 3: observability-coverage(implement) — invoked` (or `not available, continuing`) |
+
+This is the authoring half of the pair with the [Observability Gate](./phase-4-testing.md#observability-gate)
+in Phase 4, which verifies the coverage this step adds before the loop can
+call the change done.
+
+Disable: remove the `Skill("observability-coverage", "implement")` invocation
+from this section. Registry: [`companion-skills.md`](./companion-skills.md#registry).
+
+---
+
 ## Code Quality Trigger
 
 This section is the anchor referenced from [`companion-skills.md`](./companion-skills.md#registry).
@@ -367,6 +402,7 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 - [ ] TDD invoked if pure logic / business rules
 - [ ] UX invoked if UI files touched
 - [ ] UI components are locatable by role / label without `data-testid`, or any `data-testid` is committed in the source diff alongside its consumer
+- [ ] `observability-coverage(implement)` invoked if API/handler or user-facing files touched
 - [ ] `code-quality(code)` invoked once at end of phase
 - [ ] Commits are logical, atomic, conventional
 - [ ] Progress Log updated in `.agent/{branch}/plan.md` (Full Mode); plan/checks drift written back if a decision or AC changed
