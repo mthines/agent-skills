@@ -10,9 +10,11 @@ description: >
   `setup` runs a first-time interview that records the project's
   telemetry stack, per-package instrumentation approach for monorepos,
   and regression-detection expectations as a committed Observability
-  Profile. Invoked as "/measurable" (guide by default), also reachable
-  by "/measurable implement", "/measurable audit", "/measurable setup".
-disable-model-invocation: true
+  Profile. Triggers on "is this measurable", "add telemetry",
+  "instrument this endpoint", "check observability coverage",
+  "add RUM and API telemetry", "will we know if this regresses",
+  "set up observability profile", "/measurable".
+disable-model-invocation: false
 argument-hint: '[guide|implement|audit|setup] [<target>] [--strict]'
 license: MIT
 metadata:
