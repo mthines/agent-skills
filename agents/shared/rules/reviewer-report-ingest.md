@@ -82,7 +82,8 @@ the first run after the change. **The sticky wins** — it is the only body stil
 legacy body is used only when no sticky exists.
 
 **A review pointer is not a third host.** Every review `pr-reviewer` posts carries
-`<!-- PR_REVIEWER_POINTER -->` and a one-line body pointing at the report; it is never a report and
+`<!-- PR_REVIEWER_POINTER -->`; the ordinary review body is that marker alone (no visible prose),
+and the degraded form adds one headline line pointing at the report. It is never a report and
 carries no sections, so a consumer must not parse it with this grammar. Exactly one thing may be
 read off it — its `.user.login`, the agent's own login. Treating a pointer as a report yields a
 "report" whose every section is empty.

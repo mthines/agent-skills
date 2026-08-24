@@ -1757,7 +1757,7 @@ A run writes **three** things, with three different lifetimes:
 | Object | Lifetime | Carries |
 | --- | --- | --- |
 | **Sticky report comment** — one PR issue comment | **Rewritten in place** every run | The whole report body: headline, sections, `Review details` accordion — and nothing machine-private |
-| **Review** — `POST /pulls/{n}/reviews`, `event: "COMMENT"` | **Append-only**, at most one per run, and only when it carries new inline comments | The run's new inline comments + a short pointer body |
+| **Review** — `POST /pulls/{n}/reviews`, `event: "COMMENT"` | **Append-only**, at most one per run, and only when it carries new inline comments | The run's new inline comments; the body is a marker-only pointer (no visible prose — the report lives in the sticky) |
 | **PR-state record** — one LoreKit record (Step 0.7) | **Overwritten in place** every run | The run history and everything the next run needs to compute a delta |
 
 The split follows what each payload *is*. An inline comment is a conversation anchor whose state
@@ -1875,7 +1875,8 @@ the report:
 ```bash
 printf '%s\n' "$REPORT_BODY" > /tmp/report-body.md
 
-# Capture html_url in every branch — Step 4b's POINTER_BODY links to it and Step 4c records it.
+# Capture html_url in every branch — Step 4c records it as the state record's sticky_url. The
+# marker-only pointer no longer links to it (the Full-report link lives in the sticky itself).
 if [ -n "$STICKY_COMMENT_ID" ]; then
   if ! STICKY_URL=$(gh api repos/$RESOLVED_REPO/issues/comments/$STICKY_COMMENT_ID \
        --method PATCH --field body=@/tmp/report-body.md --jq .html_url); then
@@ -2061,7 +2062,7 @@ There are exactly two forms, selected by `FORM` in the payload — never invent 
 
 | `FORM` | When | Required payload keys |
 | --- | --- | --- |
-| `"pointer"` | The ordinary case: this run has new inline findings and the sticky was written | `HEAD_SHA`, `FINDINGS_COUNT`, `STICKY_URL` |
+| `"pointer"` | The ordinary case: this run has new inline findings and the sticky was written | `HEAD_SHA` |
 | `"degraded"` | Same, but Step 4a could not write the sticky, for **either** reason in *When the sticky cannot be written* | `HEAD_SHA`, `FINDINGS_COUNT`, `HEADLINE_LINE`, `DEGRADED_REASON` |
 
 The retired `no_prior` and `escalation` forms existed only to carry a notification-only review
@@ -2070,22 +2071,27 @@ no caller — and the renderer rejects them rather than leaving two unreachable 
 as options.
 
 ```json
-{"FORM": "pointer", "HEAD_SHA": "<7-char sha>", "FINDINGS_COUNT": 2, "STICKY_URL": "<sticky html_url>"}
+{"FORM": "pointer", "HEAD_SHA": "<7-char sha>"}
 ```
 
 renders:
 
 ```markdown
 <!-- PR_REVIEWER_POINTER -->
-Reviewed `<sha>` — 2 finding(s) inline. [Full report](<url>)
 ```
 
+The ordinary pointer is **marker-only**: an HTML comment renders as nothing in GitHub, so the
+review shows only its inline comments and no text block restating the sticky. `FINDINGS_COUNT` and
+the `[Full report]` link are gone from this form — the count and the link live in the sticky, the
+one host for report content.
+
 **Every** pointer carries `<!-- PR_REVIEWER_POINTER -->`, not just the degraded one — the renderer
-refuses to emit a body without it. It is the only thing on a review object that identifies it as
-this agent's, and the identity ladder reads `.user.login` off it when `/user` is unreachable
-(`prior-comment-awareness.md § fetch existing PR comment state`, rung 3). It no longer carries run
-state: prior-run detection reads the PR-state record, and its GitHub fallback reads the sticky, so
-a pointer is now purely a signpost.
+refuses to emit a body without it, and in the ordinary case it is the *whole* body. It is the only
+thing on a review object that identifies it as this agent's, and the identity fallback reads
+`.user.login` off it when `/user` is unreachable (`prior-comment-awareness.md § fetch existing PR
+comment state`; `outcome-learning.md` Step 1's third rung). It carries no run state: prior-run
+detection reads the PR-state record, and its GitHub fallback reads the sticky, so a pointer is
+purely a signpost.
 
 `FORM: "degraded"` is the pointer used whenever *When the sticky cannot be written* fired — for
 **either** reason, an access-path incapability or a caller policy refusal. It is the ordinary
@@ -2124,9 +2130,10 @@ record is still written, so nothing is lost for the next run.
 — report the error verbatim in the Step 5 output along with the payload you built, and do not post
 a review this run.
 
-`STICKY_URL` is bound from the 4a response's `html_url`, in whichever branch ran. It is the only
-link in the pointer body, so a run that somehow reaches 4b without it must omit the trailing
-`Full report` link clause entirely rather than emit a broken link.
+`STICKY_URL` is bound from the 4a response's `html_url`, in whichever branch ran, and is used only
+by Step 4c's state record — no review body links to it any more (the ordinary pointer is
+marker-only, and the degraded pointer carries a reason, not a link). A run that reaches 4b without
+it still posts a valid pointer; only the state record's `sticky_url` is left empty.
 
 The six non-negotiables:
 1. `event` is always `"COMMENT"` — never `"APPROVE"`, `"REQUEST_CHANGES"`, or omitted.

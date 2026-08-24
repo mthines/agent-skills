@@ -1865,6 +1865,16 @@ function checksInSync(plan, checks) {
         `kind ${r.verdict?.kind}, exit ${r.status}`);
     }
 
+    // (d2) The ordinary review body is now marker-only (render-pointer.mjs `pointer` form). It has
+    // no visible prose, no gate table, and no report signals, so the CI shape guard must classify
+    // it as a conforming pointer — never as a report or a non-reviewer body — or a converging
+    // review-loop would post a false-positive shape notice on every run.
+    {
+      const r = run('<!-- PR_REVIEWER_POINTER -->\n');
+      s.check("G26 a marker-only pointer conforms", r.status === 0 && r.verdict?.kind === "pointer",
+        `kind ${r.verdict?.kind}, exit ${r.status}`);
+    }
+
     // (e) Each remaining defect class, synthesised.
     // Guarded like case (b): an unguarded readFileSync throws and aborts ALL of L1, turning one
     // missing fixture into a total run failure with no per-check attribution.
@@ -2374,8 +2384,8 @@ const isPollBlock = (block) =>
   const rejects = [
     ["a missing FORM", '{"HEAD_SHA":"bde3c2f"}'],
     ["an invalid FORM", '{"FORM":"summary","HEAD_SHA":"bde3c2f"}'],
-    ["a non-7-char sha", '{"FORM":"pointer","HEAD_SHA":"abc","FINDINGS_COUNT":1,"STICKY_URL":"https://x/1"}'],
-    ["an uppercase sha", '{"FORM":"pointer","HEAD_SHA":"BDE3C2F","FINDINGS_COUNT":1,"STICKY_URL":"https://x/1"}'],
+    ["a non-7-char sha", '{"FORM":"pointer","HEAD_SHA":"abc","FINDINGS_COUNT":1}'],
+    ["an uppercase sha", '{"FORM":"pointer","HEAD_SHA":"BDE3C2F","FINDINGS_COUNT":1}'],
     // The two retired notification-only forms. A run that remembers them must get an error, not
     // a shape nothing documents — and not a silently-accepted unknown FORM either.
     ["the retired escalation form", '{"FORM":"escalation","HEAD_SHA":"bde3c2f","VERDICT":"FAIL","PRIOR_VERDICT":"PASS","REASONS":"x","STICKY_URL":"https://x/1"}'],
@@ -2386,7 +2396,7 @@ const isPollBlock = (block) =>
     // ledger block smuggled in through a prose field is rejected by the post-condition.
     ["a LEDGER key", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x","DEGRADED_REASON":"y","LEDGER":{"v":1,"runs":[]}}'],
     ["a ledger block smuggled into DEGRADED_REASON", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x","DEGRADED_REASON":"see <!-- PR_REVIEWER_LEDGER {\"v\":1} -->"}'],
-    ["an unknown payload key", '{"FORM":"pointer","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"STICKY_URL":"https://x/1","EXTRA":"nope"}'],
+    ["an unknown payload key", '{"FORM":"pointer","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"EXTRA":"nope"}'],
     ["a non-object payload", "[1,2]"],
     ["malformed JSON", "{nope"],
   ];
