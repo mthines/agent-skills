@@ -41,7 +41,7 @@ Run `node scripts/validate-report-shape.mjs <file>` locally to see the same verd
 | `accordion-owned-line-at-top-level` | A gate table, run mode, memories, quality or footer line renders above the accordion |
 | `verdict-in-posted-body` | The Step 3 advisory verdict is terminal-only |
 | `link-caged-in-code-span` | A markdown link wrapped in backticks renders as dead monospace text |
-| `count-disagrees-with-list` | `**Open bot threads (N)**` does not equal the bullets under it |
+| `count-disagrees-with-list` | `**Open review threads (N)**` does not equal the bullets under it |
 | `summary-count-disagrees` | The `<summary>` counter disagrees with the list |
 | `pointer-too-long` / `pointer-carries-sections` | A pointer body grew into a report |
 

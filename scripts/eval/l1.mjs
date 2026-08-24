@@ -1109,7 +1109,7 @@ function checksInSync(plan, checks) {
 
 }
 
-// ── G24: Gate 3 (Prior bot feedback) tri-state + open-thread rendering contract ──
+// ── G24: Gate 3 (Prior review feedback) tri-state + open-thread rendering contract ──
 // The summary counter and the list heading are an EXACT-STRING contract between the renderer
 // (pr-reviewer.md § The Gate 3 open threads) and its documented consumer
 // (reviewer-report-ingest.md § the open-threads checklist is not a body section). That rule
@@ -1131,7 +1131,7 @@ function checksInSync(plan, checks) {
   // G24a: Step 1.8 grades on BOTH discriminants and enumerates all three states. A revert to
   // the old binary gate drops the `blocking`/`answered` conjunct and reds here.
   const gate3 = sliceBetween(prReviewer,
-    "**Gate 3 — Unresolved prior bot/agent feedback**", "**Gate 4 — Self-review signals**");
+    "**Gate 3 — Unresolved prior review feedback**", "**Gate 4 — Self-review signals**");
   s.check("G24a pr-reviewer.md Step 1.8 grades Gate 3 on blocking AND answered, across ✅/⚠️/❌",
     gate3.includes("`blocking == true` **and** `answered == false`") &&
     ["- ✅ —", "- ⚠️ —", "- ❌ —"].every((marker) => gate3.includes(marker)));
@@ -1358,9 +1358,9 @@ function checksInSync(plan, checks) {
       }));
       s.check("G25 a structured OPEN_THREADS array renders", r.ok, r.err);
       s.check("G25 the derived count and suffix agree, list inside the accordion",
-        r.out.includes("**Open bot threads (1)**") &&
-        r.out.includes("<summary>Review details — 1 open bot thread</summary>") &&
-        r.out.split("<details>")[0].includes("**Open bot threads (") === false);
+        r.out.includes("**Open review threads (1)**") &&
+        r.out.includes("<summary>Review details — 1 open review thread</summary>") &&
+        r.out.split("<details>")[0].includes("**Open review threads (") === false);
     }
 
     // (h) PRODUCER -> CONSUMER ROUND TRIP. reviewer-report-ingest.md documents extractable
@@ -1425,7 +1425,7 @@ function checksInSync(plan, checks) {
             "section absent or does not match the documented shape");
         }
         // The gate table must parse to five rows with a valid glyph each.
-        const rows = [...body.matchAll(/^\| (Description vs\. code|Prior bot feedback|Documentation|Self-review signals|Code review) \| (✅|⚠️|❌|⏭️) \| ([^|]*) \|$/gm)];
+        const rows = [...body.matchAll(/^\| (Description vs\. code|Prior review feedback|Documentation|Self-review signals|Code review) \| (✅|⚠️|❌|⏭️) \| ([^|]*) \|$/gm)];
         s.check(`G25 round-trip: ${name} — the gate table parses to 5 typed rows`, rows.length === 5,
           `parsed ${rows.length}`);
         // Counts in a summary must equal the bullets rendered under it.
@@ -1447,13 +1447,13 @@ function checksInSync(plan, checks) {
       const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
       if (!existsSync(p)) continue;
       const body = readFileSync(p, "utf8");
-      const declared = body.match(/\*\*Open bot threads \((\d+)\)\*\*/);
+      const declared = body.match(/\*\*Open review threads \((\d+)\)\*\*/);
       if (declared) {
-        const region = body.split("**Open bot threads (")[1].split("\n\n")[1] || "";
+        const region = body.split("**Open review threads (")[1].split("\n\n")[1] || "";
         const bullets = region.split("\n").filter((l) => l.startsWith("- ")).length;
         s.check(`G25 ${name}: the open-threads count equals the bullets rendered`,
           Number(declared[1]) === bullets, `declared ${declared[1]}, rendered ${bullets}`);
-        const suffix = body.match(/<summary>Review details — (\d+) open bot thread/);
+        const suffix = body.match(/<summary>Review details — (\d+) open review thread/);
         s.check(`G25 ${name}: the summary counter equals the list count`,
           suffix && Number(suffix[1]) === Number(declared[1]),
           suffix ? `summary ${suffix[1]} vs list ${declared[1]}` : "no summary counter");
@@ -1879,11 +1879,11 @@ function checksInSync(plan, checks) {
       // ``['key'](url)``, and a leading pair alone cages nothing.
       ["a caged markdown link",
         good.replace(/^- (\[[^\]]*\]\([^)]*\))/m, "- ``$1``"), "link-caged-in-code-span"],
-      ["a count disagreeing with its list", good.replace("**Open bot threads (2)**", "**Open bot threads (5)**"), "count-disagrees-with-list"],
-      // The captured drift body wrote `**Open threads (6)**`; requiring the canonical `bot` wording
-      // let a hand-written heading's wrong count through the very check meant to catch it.
+      ["a count disagreeing with its list", good.replace("**Open review threads (2)**", "**Open review threads (5)**"), "count-disagrees-with-list"],
+      // The captured drift body wrote `**Open threads (6)**`; requiring the canonical `review`
+      // wording let a hand-written heading's wrong count through the very check meant to catch it.
       ["a drift-worded count disagreeing with its list",
-        good.replace("**Open bot threads (2)**", "**Open threads (5)**"), "count-disagrees-with-list"],
+        good.replace("**Open review threads (2)**", "**Open threads (5)**"), "count-disagrees-with-list"],
       // The head slice must anchor on the `Review details` accordion, not on the first <details>.
       // A flat body preceded by an unrelated fold sliced the head to nothing and reported clean.
       ["a flat body preceded by an unrelated <details> fold",
@@ -2000,7 +2000,7 @@ function checksInSync(plan, checks) {
     ]) {
       const sel = sliceBetween(src, anchor, "\n\n");
       s.check(`G27 ${what} lists CI among the graded gates`,
-        /at least one graded gate — Description vs\. code, CI, Prior bot feedback/.test(sel),
+        /at least one graded gate — Description vs\. code, CI, Prior review feedback/.test(sel),
         sel.slice(0, 120));
     }
     {
@@ -2011,7 +2011,7 @@ function checksInSync(plan, checks) {
     }
     // The criteria list is read as normative, so it must not still call CI verdict-bearing.
     {
-      const crit = sliceBetween(prReviewer, "2. **CI status**", "3. **Prior bot feedback**");
+      const crit = sliceBetween(prReviewer, "2. **CI status**", "3. **Prior review feedback**");
       s.check("G27 criterion 2 declares CI a soft-warning gate, not verdict-bearing",
         /soft-warning gate/.test(crit) && !/Contributes to verdict/.test(crit), crit.slice(0, 120));
     }
@@ -2029,7 +2029,7 @@ function checksInSync(plan, checks) {
     // Every prior guard here checks whether a STRING is present or absent. That cannot see a
     // fixture whose headline COUNT disagrees with its own gate statuses — and because G25 diffs
     // the snapshots byte-for-byte, such a fixture locks the wrong semantics in as the reference
-    // rendering. warn.json read `**2 warning(s)**` while three gates warned (Prior bot feedback,
+    // rendering. warn.json read `**2 warning(s)**` while three gates warned (Prior review feedback,
     // Code review, and CI via CI_NOTE), which is exactly the miscount this change introduces the
     // risk of. Derive the counts from the payload and compare them to the rendered headline.
     for (const name of ["pass", "warn", "fail"]) {

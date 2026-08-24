@@ -4,7 +4,7 @@
     "scanned": 22,
     "total": 31
   },
-  "HEADLINE": "Reviewed your changes — **1 error, 2 warnings** need attention before human review. Blocking: 1 unanswered blocking bot thread.",
+  "HEADLINE": "Reviewed your changes — **1 error, 2 warnings** need attention before human review. Blocking: 1 unanswered blocking review thread.",
   "RUN": {
     "mode": "full",
     "sha": "69b0de8",
@@ -13,7 +13,7 @@
   "GATE_DESCRIPTION_STATUS": "⚠️",
   "GATE_DESCRIPTION_DETAILS": "Claims `nx affected` is green; not true at this SHA.",
   "GATE_PRIOR_STATUS": "❌",
-  "GATE_PRIOR_DETAILS": "1 unresolved bot thread(s) — see the thread list below",
+  "GATE_PRIOR_DETAILS": "1 unresolved review thread(s) — see the thread list below",
   "GATE_DOCS_STATUS": "✅",
   "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
   "GATE_SELFREVIEW_STATUS": "✅",
@@ -26,7 +26,9 @@
       "line": 235,
       "url": "https://github.com/o/r/pull/1#discussion_r3",
       "blocking": true,
-      "ask": "applyScalarFilter still puts the whole dimension into a PostgREST URL operand"
+      "ask": "applyScalarFilter still puts the whole dimension into a PostgREST URL operand",
+      "author": "cursor",
+      "is_bot": true
     }
   ],
   "OPTIMALITY_CARDS": [

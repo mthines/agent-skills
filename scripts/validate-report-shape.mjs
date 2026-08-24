@@ -44,11 +44,13 @@ const ACCORDION_OWNED = [
   "**Optimality (2.4c)**",
   "**Standards (2.4d)**",
   "**Skipped files**",
-  // `bot` is optional: the one captured drift body wrote `**Open threads (6)**`, so requiring the
-  // canonical wording let a hand-written heading — the exact class this file exists to catch —
-  // through both this list and the count check below.
+  // The qualifier is optional: the one captured drift body wrote `**Open threads (6)**`, so
+  // requiring the canonical wording let a hand-written heading — the exact class this file exists
+  // to catch — through both this list and the count check below. `bot` is the pre-rename wording,
+  // still emitted by bodies posted before the author-neutral rename; `review` is the current one.
   "**Open threads (",
   "**Open bot threads (",
+  "**Open review threads (",
   "<sup>Reviewed for commit",
   "<sup>Incremental review for commit",
   "<sup>No code changes since",
@@ -163,7 +165,7 @@ export function validate(body) {
   if (caged) add("link-caged-in-code-span", `${caged[0].slice(0, 80)}`);
 
   // ── a declared count must equal the bullets rendered under it ──────────────────────────────────
-  const declared = body.match(/\*\*Open (?:bot )?threads \((\d+)\)\*\*/);
+  const declared = body.match(/\*\*Open (?:bot |review )?threads \((\d+)\)\*\*/);
   if (declared) {
     const after = body.slice(body.indexOf(declared[0]) + declared[0].length);
     const block = after.split(/\n\s*\n/).find((p) => p.trim().startsWith("- ")) || "";
@@ -172,7 +174,7 @@ export function validate(body) {
       add("count-disagrees-with-list",
         `**Open threads (${declared[1]})** but ${bullets} bullet(s) rendered`);
     }
-    const suffix = body.match(/<summary>Review details — (\d+) open (?:bot )?thread/);
+    const suffix = body.match(/<summary>Review details — (\d+) open (?:bot |review )?thread/);
     if (suffix && Number(suffix[1]) !== Number(declared[1])) {
       add("summary-count-disagrees", `summary says ${suffix[1]}, list says ${declared[1]}`);
     }
