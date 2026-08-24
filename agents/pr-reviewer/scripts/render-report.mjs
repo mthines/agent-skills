@@ -137,16 +137,19 @@ function anchorBullet(where, item, textField) {
  * a bot's, which read as the review mislabelling the person. `is_bot` comes from the thread
  * author's GitHub type (a GitHub App is `Bot`, everyone else `human`), captured at Step 1.0.
  *
- * The tag is best-effort: when a payload omits `is_bot`/`author` the bullet renders without it
- * rather than failing the whole report — the aggregate wording is already author-neutral, so a
- * missing tag loses detail, never mislabels. The author login is wrapped in a code span (not an
- * `@mention`) so re-rendering the sticky each run does not ping the reviewer.
+ * The tag is best-effort, and it renders only when the author TYPE is actually known — i.e. when
+ * `is_bot` is a boolean. A payload that omits `is_bot` renders the bullet untagged rather than
+ * guessing, even if `author` is present: the whole point of this tag is to not mislabel a human as
+ * a bot (or the inverse), so an unknown type drops the tag instead of defaulting to one side. The
+ * aggregate wording is already author-neutral, so a dropped tag loses detail, never mislabels. The
+ * author login is wrapped in a code span (not an `@mention`) so re-rendering the sticky each run
+ * does not ping the reviewer.
  */
 function openThreadBullet(where, item) {
   const line = anchorBullet(where, item, "ask");
   const { author, is_bot: isBot } = item;
-  if (isBot === undefined && (author === undefined || author === null)) return line;
-  if (isBot !== undefined && typeof isBot !== "boolean") {
+  if (isBot === undefined || isBot === null) return line; // type unknown → untagged, never guessed
+  if (typeof isBot !== "boolean") {
     fail(`${where}.is_bot must be a boolean, got ${JSON.stringify(isBot)}`);
   }
   if (author === undefined || author === null || String(author).trim() === "") {
