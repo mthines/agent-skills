@@ -11,9 +11,12 @@ description: >
   credentials live in the OS keychain (not in the repo). Iteration loop
   uses the Playwright CLI against the running Storybook URL; visual
   evidence delegates to the `pr-reviewer` agent and the `screen-recorder`
-  skill. Triggers on "scaffold stories", "add storybook", "story for this
-  component", "interaction test for this story", "/storybook".
-argument-hint: "[component-path] [--platform web|native] [--no-interactions] [--no-playground] [--auth <profile>]"
+  skill. An opt-in `--validate` phase drives Playwright adversarially
+  against the rendered story to find edge cases and break the component,
+  then fixes the defects it finds behind a confidence gate. Triggers on
+  "scaffold stories", "add storybook", "story for this component",
+  "interaction test for this story", "validate this story", "/storybook".
+argument-hint: "[component-path] [--platform web|native] [--no-interactions] [--no-playground] [--validate] [--auth <profile>]"
 license: MIT
 metadata:
   author: mthines
@@ -86,26 +89,35 @@ Parse `$ARGUMENTS` in this order:
 | `--no-interactions`        | Generate `<name>.test.stories.tsx`                                         | Skip the interaction test file.                                         |
 | `--no-playground`          | Include a `Playground` story                                               | Skip the Playground story.                                              |
 | `--no-default`             | Include a `Default` story with grouped variants                            | Skip the visual regression Default story (rare — only for test-only).   |
+| `--validate`               | Off                                                                        | Run the opt-in adversarial validate-and-fix phase (Phase 6) after the scaffold. Local only. |
 | `--auth <profile>`         | None                                                                       | Use the named auth profile when running Playwright against the URL.     |
 | `--title <storybook-title>`| Inferred from the component path                                           | Override the Storybook `title` for the generated meta.                  |
 
 Sub-commands:
 
 ```
+/storybook validate <component>     # Run only the adversarial validate-and-fix phase against an existing story.
 /storybook auth list                # List configured auth profiles in this repo.
 /storybook auth add <profile>       # Register a new profile (writes config + stores secret in OS keychain).
 /storybook auth remove <profile>    # Remove a profile (deletes config entry + keychain item).
 /storybook auth test <profile>      # Dry-run the login flow against the configured URL.
 ```
 
+`/storybook validate <component>` skips scaffolding: it reads the
+existing `.stories.tsx` / `.test.stories.tsx` and runs Phase 6 directly.
+The full loop — probe catalog, triage, confidence-gated fixes — lives in
+[`rules/adversarial-validation.md`](./rules/adversarial-validation.md).
+
 The full auth contract — config schema, keychain commands per OS, and
 the `storageState` reuse loop — lives in [`rules/auth.md`](./rules/auth.md).
 
 ---
 
-## Workflow (six phases)
+## Workflow (six phases + opt-in validation)
 
-Each phase has a single gate. Do not proceed until it passes.
+Each phase has a single gate. Do not proceed until it passes. Phase 6
+runs only when `--validate` is passed or the skill is invoked as
+`/storybook validate <component>`.
 
 | Phase | Name                       | Gate                                                                  |
 | ----- | -------------------------- | --------------------------------------------------------------------- |
@@ -115,6 +127,7 @@ Each phase has a single gate. Do not proceed until it passes.
 | 3     | Playground scaffold        | `Playground` story written with `args` + `argTypes`                   |
 | 4     | Interaction test scaffold  | `<name>.test.stories.tsx` written under `/Tests` namespace            |
 | 5     | Verification               | Storybook running; Playwright CLI iteration confirms rendering        |
+| 6     | Adversarial validation     | (opt-in) Probes pass or defects fixed and pinned by a regression test |
 
 ### Phase 0 — Preflight
 
@@ -270,6 +283,39 @@ Playwright CLI invocation reuses the `storageState.json` produced by
 the auth profile's login flow.
 The skill never types credentials into the Playwright CLI directly.
 
+### Phase 6 — Adversarial validation (opt-in, `--validate`)
+
+Runs only when `--validate` is passed, or standalone via
+`/storybook validate <component>`. It is **local and interactive** — it
+drives Playwright against the running Storybook, so it never runs in CI.
+
+Phase 5 proves the story renders. Phase 6 proves the component **works**,
+then tries to **break it**: hostile inputs, rapid and duplicate events,
+keyboard-only navigation, viewport extremes, and error states. Each
+defect is triaged as a story bug or a component bug, fixed behind a
+confidence gate, and pinned with a regression test.
+
+The loop, in one line: probe → triage → fix (gated) → pin with a
+regression test → re-validate.
+
+- **Same tool as Phase 5**, not a second browser path. Probes run as a
+  short Playwright script under `.agent/storybook/.probe/` (gitignored)
+  so they can capture console errors, page errors, and failed requests —
+  the signals a bare screenshot misses.
+- **Story bugs** (bad args, missing decorator, wrong locator) are fixed
+  in the story or test directly — no gate.
+- **Component bugs** (crash, unescaped input, handler firing while
+  disabled, focus trap, overflow) are gated: score with
+  [`confidence`](../../quality/confidence/SKILL.md), apply only at
+  **≥ 90**, and report sub-90 findings for the user to decide. Every
+  applied fix is pinned by a regression case in `.test.stories.tsx`.
+- **Never** swallow the error, delete a probe, or `.skip` a test to force
+  a green run.
+
+Full probe catalog, the harness pattern, triage rules, and the loop cap
+live in
+[`rules/adversarial-validation.md`](./rules/adversarial-validation.md).
+
 ---
 
 ## Decision flow at a glance
@@ -278,6 +324,8 @@ The skill never types credentials into the Playwright CLI directly.
 | --------------------------------------------------------- | ------------------------------------------------------------------------ |
 | Component has no `.stories.tsx`                           | Run the full workflow (Phases 0–5).                                      |
 | Component has `.stories.tsx` but no `.test.stories.tsx`   | Skip to Phase 4. Reuse the existing meta `title` for the `/Tests` peer.  |
+| `--validate` passed, or `/storybook validate <component>` | Run Phase 6. Load [`rules/adversarial-validation.md`](./rules/adversarial-validation.md). Local only. |
+| Running in CI                                             | Skip Phase 6 — it drives a live browser and is not reproducible.        |
 | Repo has `react-native` or `expo`                         | Set `--platform native`. Load [`rules/react-native.md`](./rules/react-native.md). |
 | Storybook URL is `http://localhost:6006/...` (or similar) | Iterate via Playwright CLI. No auth needed.                              |
 | Storybook URL is gated (login form, SSO, basic auth)      | Resolve `--auth <profile>` first. Load [`rules/auth.md`](./rules/auth.md).|
@@ -330,6 +378,10 @@ The skill never types credentials into the Playwright CLI directly.
 - [`rules/playwright-cli.md`](./rules/playwright-cli.md) — iteration
   loop against the running Storybook URL: snapshot mode, `--last-failed`,
   iframe routes, story permalinks, headed vs headless.
+- [`rules/adversarial-validation.md`](./rules/adversarial-validation.md)
+  — opt-in Phase 6 (`--validate`): the probe harness, the adversarial
+  catalog, story-vs-component triage, the confidence-gated fix path, and
+  the loop cap.
 - [`rules/visual-verification.md`](./rules/visual-verification.md) —
   delegation rules for the `pr-reviewer` agent and `screen-recorder`
   skill, when each is the right tool.
@@ -378,6 +430,11 @@ The skill never types credentials into the Playwright CLI directly.
 - Generating a `Playground` story whose `argTypes` do not match the
   component's actual prop types.
 - Running Playwright CLI in headed mode in CI.
+- Running `--validate` in CI — it drives a live browser and is not
+  reproducible.
+- Under `--validate`, forcing a green run by swallowing the error,
+  deleting a probe, or `.skip`-ing a test, or editing component source
+  below a confidence of 90.
 
 ---
 
@@ -396,3 +453,7 @@ The skill never types credentials into the Playwright CLI directly.
 - [ ] No credentials in the generated files.
 - [ ] If `--auth <profile>` was used, `storageState.json` is written
       under `.agent/storybook/.auth/` and listed in `.gitignore`.
+- [ ] If `--validate` was used: applicable probes ran; findings triaged
+      as story or component; component fixes applied only at confidence
+      ≥ 90 and pinned by a regression test; sub-90 findings reported; the
+      ephemeral probe script deleted and Storybook killed on exit.
