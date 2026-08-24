@@ -1865,6 +1865,16 @@ function checksInSync(plan, checks) {
         `kind ${r.verdict?.kind}, exit ${r.status}`);
     }
 
+    // (d2) The ordinary review body is now marker-only (render-pointer.mjs `pointer` form). It has
+    // no visible prose, no gate table, and no report signals, so the CI shape guard must classify
+    // it as a conforming pointer — never as a report or a non-reviewer body — or a converging
+    // review-loop would post a false-positive shape notice on every run.
+    {
+      const r = run('<!-- PR_REVIEWER_POINTER -->\n');
+      s.check("G26 a marker-only pointer conforms", r.status === 0 && r.verdict?.kind === "pointer",
+        `kind ${r.verdict?.kind}, exit ${r.status}`);
+    }
+
     // (e) Each remaining defect class, synthesised.
     // Guarded like case (b): an unguarded readFileSync throws and aborts ALL of L1, turning one
     // missing fixture into a total run failure with no per-check attribution.

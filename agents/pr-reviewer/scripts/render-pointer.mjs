@@ -50,12 +50,6 @@ function requireSha(field, v) {
   }
 }
 
-function requireUrl(field, v) {
-  if (!v || !/^https?:\/\//.test(String(v))) {
-    fail(`${field} must be an http(s) URL — got ${JSON.stringify(v)}`);
-  }
-}
-
 function requireCount(field, v) {
   if (!Number.isInteger(v) || v < 0) {
     fail(`${field} must be a non-negative integer — got ${JSON.stringify(v)}`);
@@ -98,11 +92,15 @@ function main() {
   let body;
 
   if (FORM === "pointer") {
-    requireCount("FINDINGS_COUNT", data.FINDINGS_COUNT);
-    requireUrl("STICKY_URL", data.STICKY_URL);
-    const n = data.FINDINGS_COUNT;
-    body = `<!-- PR_REVIEWER_POINTER -->\n`
-      + `Reviewed \`${shortSha}\` — ${n} finding(s) inline. [Full report](${data.STICKY_URL})`;
+    // Marker-only. The ordinary review body carries NO visible prose: an HTML comment renders as
+    // nothing in GitHub, so the review shows only its inline comments and no redundant text block
+    // restating what the sticky report already says. The marker still identifies the review as
+    // this agent's — the identity fallback in outcome-learning.md and prior-comment-awareness.md
+    // reads `.user.login` off a marker-bearing review when `/user` 401s. FINDINGS_COUNT and
+    // STICKY_URL are no longer part of this form: the finding count and the Full-report link live
+    // in the sticky, the one host for report content. HEAD_SHA stays validated for parity with
+    // the degraded form even though the marker-only body does not print it.
+    body = `<!-- PR_REVIEWER_POINTER -->`;
   } else if (FORM === "degraded") {
     requireCount("FINDINGS_COUNT", data.FINDINGS_COUNT);
     if (!data.HEADLINE_LINE || String(data.HEADLINE_LINE).trim() === "") fail("HEADLINE_LINE is required for the degraded form");

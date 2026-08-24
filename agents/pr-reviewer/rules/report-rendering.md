@@ -153,8 +153,9 @@ something to say that no slot covers, it belongs in the Step 5 terminal output.
 - **WARN** — `Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>.`
 - **FAIL** — `Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review. Blocking: <FAIL_REASONS>.`
 
-Never open the headline with ``Reviewed `<sha>` —``; that is Step 4b's pointer body, and grafting it
-onto a report is how the report ended up in a review body.
+Never open the headline with ``Reviewed `<sha>` —``; that is Step 4b's degraded pointer body (the
+ordinary pointer is marker-only), and grafting it onto a report is how the report ended up in a
+review body.
 
 The FAIL headline leads with a fixed severity tally; the WARN headline leads with its warning
 count. Both then name the important bit from each flagged gate — so a reader takes in *how bad* and
