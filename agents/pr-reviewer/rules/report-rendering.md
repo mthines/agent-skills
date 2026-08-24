@@ -69,7 +69,7 @@ The `<sup>` footer depends on run mode (substituted before posting):
 - `incremental` / `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
 - Zero-delta short-circuit: `<sup>No code changes since \`PRIOR_SHA_SHORT\` — gate checks only for commit \`HEAD_SHA\`.</sup>`
 
-Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (all clear), **WARN** (hard Gates 4/5 ✅ and at least one graded gate — Description vs. code, CI, Prior bot feedback, or Code review — is ⚠️, none ❌; still a PASS verdict), or **FAIL** (Gate 4 or Gate 5 fails, or Prior bot feedback / Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
+Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (all clear), **WARN** (hard Gates 4/5 ✅ and at least one graded gate — Description vs. code, CI, Prior review feedback, or Code review — is ⚠️, none ❌; still a PASS verdict), or **FAIL** (Gate 4 or Gate 5 fails, or Prior review feedback / Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
 
 #### REPORT_BODY payload
 
@@ -112,7 +112,7 @@ length**, so there is no count to supply and none to get wrong:
 
 | Key | Shape | Notes |
 | --- | --- | --- |
-| `OPEN_THREADS` | `[{path, line, url?, ask, blocking?}]` | The renderer builds the bullet `- ` + a link whose text is `` `path:line` `` and whose target is `url`, then ` — ask`; it derives `Open bot threads (N)` and the `<summary>` suffix, and appends ` (K blocking)` only when some item has `blocking: true`. A missing `url` renders unlinked inline code, never a broken link. |
+| `OPEN_THREADS` | `[{path, line, url?, ask, blocking?, author?, is_bot?}]` | The renderer builds the bullet `- ` + a link whose text is `` `path:line` `` and whose target is `url`, then ` — ask`, then an author tag `` (bot · `author`) `` or `` (human · `author`) `` when `is_bot`/`author` are supplied (omitted when they are not); it derives `Open review threads (N)` and the `<summary>` suffix, and appends ` (K blocking)` only when some item has `blocking: true`. `is_bot` is a boolean (thread author's GitHub type is `Bot`); `author` is the login, code-wrapped by the renderer so it does not `@mention`. A missing `url` renders unlinked inline code, never a broken link. |
 | `RESOLVED_SINCE` | `{count, sha}` | Suppressed at `count: 0`. Rejected when `OPEN_THREADS` is empty — with Gate 3 clean the counter belongs in its Details cell. |
 | `MEMORIES_USED` | `[{key, url?, note?}]` | One bullet per applied memory, under `MEMORIES_SUMMARY`. |
 | `ADDITIONAL_FINDINGS` | `[{path, line, url?, prefix, body, confidence}]` | `prefix` is a Conventional-Comments prefix; `confidence` an integer 0–100. |
@@ -183,7 +183,7 @@ chars — if longer, keep the top two and append `; +<k> more`.
 
 | Gate | ❌ reason phrase (FAIL_REASONS) | ⚠️ note phrase (WARN_REASONS) |
 |---|---|---|
-| Prior bot feedback | `<K> unanswered blocking bot thread(s)` | `<N> open bot thread(s)` |
+| Prior review feedback | `<K> unanswered blocking review thread(s)` | `<N> open review thread(s)` |
 | Documentation | `docs missing for <thing>` · `<N> doc gap(s)` | — |
 | Self-review signals | `debug logs left in` · `leftover TODO/stub` | — |
 | Code review | `<K> blocking finding(s) (see inline)` | `<N> non-blocking finding(s)` |
@@ -223,7 +223,7 @@ Prior-bot-feedback phrase in both non-passing states) and would point one line d
 accordion — two sentences to convey a click target that is already on screen. Do not reintroduce
 one.
 
-Render **both** slots whenever Gate 3 (`Prior bot feedback`) is ⚠️ or ❌ — i.e. whenever
+Render **both** slots whenever Gate 3 (`Prior review feedback`) is ⚠️ or ❌ — i.e. whenever
 `OPEN_BOT_COMMENTS[]` is non-empty — in the FAIL template *and* the WARN template alike; substitute
 **both** as empty on ✅ and `⏭️`, leaving the bare `<summary>Review details</summary>`. Rendering one
 without the other is a guard failure (`F-report-hand-rendered`): a suffix alone advertises a
@@ -238,18 +238,18 @@ Substitute one of two forms, chosen by the gate's status — the blocking subset
 there is one, because `(0 blocking)` is noise on a gate that is not blocking anything:
 
 ```markdown
- — <N> open bot threads (<K> blocking)
+ — <N> open review threads (<K> blocking)
 ```
 
 On ⚠️ (nothing blocking), the parenthetical is dropped:
 
 ```markdown
- — <N> open bot threads
+ — <N> open review threads
 ```
 
 Rules for the suffix:
 - **It is a suffix, not a line.** It renders inside the `<summary>` tag, directly after
-  `Review details`, producing e.g. `Review details — 2 open bot threads (1 blocking)`. Plain text
+  `Review details`, producing e.g. `Review details — 2 open review threads (1 blocking)`. Plain text
   only — no `<sup>`, no bold, no nested block elements, none of which GitHub renders in a
   `<summary>`.
 - **`<N>` is the full open count**, never the blocking subset — the worklist size is what the
@@ -268,11 +268,11 @@ Substitute one entry per item in `OPEN_BOT_COMMENTS[]` **as it stands after Step
 Step 1.0:
 
 ```markdown
-**Open bot threads (<N>)**RESOLVED_SINCE_SUFFIX
+**Open review threads (<N>)**RESOLVED_SINCE_SUFFIX
 
-- [\`packages/cli/README.md:680\`](<url>) — bound \`LocalStore.search\` the way \`RemoteStore\` is
-- [\`packages/cli/src/install.mjs:291\`](<url>) — add the missing parity test for the event roster
-- [\`packages/cli/src/core/lessons.mjs:843\`](<url>) — cap \`LocalStore.search\` per-prompt walk
+- [\`packages/cli/README.md:680\`](<url>) — bound \`LocalStore.search\` the way \`RemoteStore\` is (bot · \`cursor\`)
+- [\`packages/cli/src/install.mjs:291\`](<url>) — add the missing parity test for the event roster (human · \`umanwizard\`)
+- [\`packages/cli/src/core/lessons.mjs:843\`](<url>) — cap \`LocalStore.search\` per-prompt walk (bot · \`cursor\`)
 ```
 
 Rules for the list:
@@ -291,6 +291,12 @@ Rules for the list:
 - **Every `path:line` is a Markdown link** to the thread's `html_url`, with the truncated `ask`
   after an em-dash. If an item's `url` is missing (older fetch, or the permalink could not be read),
   render its `path:line` as inline code with no link rather than a broken link, and keep the `ask`.
+- **Each bullet names who opened the thread and whether they are a bot or a human.** The renderer
+  appends `` (bot · `<author>`) `` or `` (human · `<author>`) `` from the item's `is_bot` / `author`
+  fields (Step 1.0). This is the fix for the report calling a human reviewer's thread a "bot
+  thread": the aggregate wording is author-neutral ("review thread") and the per-thread tag carries
+  the distinction. The login is code-wrapped, not an `@mention`, so re-rendering the sticky each run
+  never pings the reviewer. When a payload omits the fields the tag is dropped, never guessed.
 - **A resolved thread is removed, never ticked.** The list renders only what is still open. Because
   the sticky is rewritten each run, the list shrinks as threads close, and it disappears entirely
   when Gate 3 goes ✅ — which is the omit rule above, applied per item instead of all-or-nothing.
@@ -451,7 +457,7 @@ Rules for table cells:
     report-disagrees-with-GitHub failure the carve-out exists to surface, inverted. This is also the
     only place the count reaches the author — the Step 5 terminal report is not a surface they see.
   - When Gate 3 passed and `RESOLVED_SINCE_PRIOR > 0`, its Details cell holds
-    `All bot threads resolved — <RESOLVED_SINCE_PRIOR> closed since \`<PRIOR_SHA_SHORT>\`.`
+    `All review threads resolved — <RESOLVED_SINCE_PRIOR> closed since \`<PRIOR_SHA_SHORT>\`.`
     `OPEN_THREADS_LIST` — where the counter normally renders — is omitted whenever Gate 3
     is ✅, so without this the run that clears the **last** open thread reports no progress at all,
     which is the run with the most progress to report. The unverified text wins if both apply: an
@@ -459,7 +465,7 @@ Rules for table cells:
 - When a gate WARNS (⚠️) or FAILS (❌), its Details cell shows the specific finding text (max 120
   chars — truncate; the full finding lives in the inline comment), exactly as before.
   Gate 3 is the one exception in both non-passing states: its cell stays terse —
-  `<N> unresolved bot thread(s) — see the thread list below` — because the finding text is the
+  `<N> unresolved review thread(s) — see the thread list below` — because the finding text is the
   linked checklist, which lives in `OPEN_THREADS_LIST` a few lines further down this same accordion
   and would not survive the 120-char cap. The pointer wording is the same on ⚠️ and ❌; only
   `OPEN_THREADS_SUFFIX` on the summary changes framing between them.
@@ -474,7 +480,7 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
 | Gate | Static description (shown on ✅) |
 | --- | --- |
 | Description vs. code | The description matches what the diff does. |
-| Prior bot feedback | Earlier automated review comments are resolved. |
+| Prior review feedback | Earlier review comments are resolved. |
 | Documentation | The change is documented well enough to follow. |
 | Self-review signals | No debug logs, leftover TODOs, or unreviewed stubs. |
 | Code review | The multi-lens review found no blocking issues. |
@@ -485,7 +491,7 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   `issue:` is not blocking (see *Gate states*).
   These reuse the Quality-line values already computed at Step 2.9b — no separate counter.
 - `WARN_GATE_COUNT` = the number of gates showing ⚠️ in this run — Description vs. code, **CI**,
-  Prior bot feedback, and/or Code review, so 0 to 4. CI is in this set precisely because it warns
+  Prior review feedback, and/or Code review, so 0 to 4. CI is in this set precisely because it warns
   and never fails: leaving it out made a CI-only red render `**0 warning(s)**`, which this file
   forbids. It counts ⚠️ gates on a **FAIL** run too, not only a
   WARN run, so the FAIL `SEVERITY_TALLY` can report warnings alongside errors.

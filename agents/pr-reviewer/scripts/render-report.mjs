@@ -10,9 +10,9 @@
 // The payload is DATA, not markdown. Anything with a count, a link, or a shape a documented
 // consumer parses is supplied structured and derived here:
 //
-//   counts   — never supplied. `Open bot threads (3)` and its summary suffix come from the array's
-//              length, so a count can never disagree with the list it counts, and a list can never
-//              be orphaned from its counter.
+//   counts   — never supplied. `Open review threads (3)` and its summary suffix come from the
+//              array's length, so a count can never disagree with the list it counts, and a list
+//              can never be orphaned from its counter.
 //   links    — never supplied as markdown. The renderer builds `[`path:line`](url)`, so a value
 //              cannot arrive with the link caged in a code span (which shipped a dead link once).
 //   shapes   — `Run mode` and the footer SHA line are derived from a `RUN` object, so the report
@@ -68,7 +68,7 @@ const SHAPES = {
   PARTIAL_REVIEW: ["calls", "scanned", "total"],
   RESOLVED_SINCE: ["count", "sha"],
   "MEMORIES_USED[]": ["key", "url", "note"],
-  "OPEN_THREADS[]": ["path", "line", "url", "ask", "blocking"],
+  "OPEN_THREADS[]": ["path", "line", "url", "ask", "blocking", "author", "is_bot"],
   "ADDITIONAL_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
   "LOW_CONFIDENCE_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
 };
@@ -128,6 +128,36 @@ function anchorBullet(where, item, textField) {
   }
   // No permalink: inline code, never a broken link.
   return `- \`${anchor}\` — ${text}`;
+}
+
+/**
+ * An open-thread bullet: the anchor + truncated `ask`, then an author-type tag that names who
+ * opened the thread and whether they are a bot or a human. The tag exists because the report used
+ * to call every open thread a "bot thread" — a human reviewer's unresolved comment was reported as
+ * a bot's, which read as the review mislabelling the person. `is_bot` comes from the thread
+ * author's GitHub type (a GitHub App is `Bot`, everyone else `human`), captured at Step 1.0.
+ *
+ * The tag is best-effort, and it renders only when the author TYPE is actually known — i.e. when
+ * `is_bot` is a boolean. A payload that omits `is_bot` renders the bullet untagged rather than
+ * guessing, even if `author` is present: the whole point of this tag is to not mislabel a human as
+ * a bot (or the inverse), so an unknown type drops the tag instead of defaulting to one side. The
+ * aggregate wording is already author-neutral, so a dropped tag loses detail, never mislabels. The
+ * author login is wrapped in a code span (not an `@mention`) so re-rendering the sticky each run
+ * does not ping the reviewer.
+ */
+function openThreadBullet(where, item) {
+  const line = anchorBullet(where, item, "ask");
+  const { author, is_bot: isBot } = item;
+  if (isBot === undefined || isBot === null) return line; // type unknown → untagged, never guessed
+  if (typeof isBot !== "boolean") {
+    fail(`${where}.is_bot must be a boolean, got ${JSON.stringify(isBot)}`);
+  }
+  if (author === undefined || author === null || String(author).trim() === "") {
+    fail(`${where}.author is required when is_bot is supplied`);
+  }
+  assertPlain(`${where}.author`, author);
+  const kind = isBot === true ? "bot" : "human";
+  return `${line} (${kind} · \`${author}\`)`;
 }
 
 function findingBullets(key, arr) {
@@ -311,10 +341,11 @@ function main() {
   };
 
   const openThreads = arr("OPEN_THREADS");
-  const openBullets = openThreads.map((t, i) => anchorBullet(`OPEN_THREADS[${i}]`, t, "ask")).join("\n");
+  const openBullets = openThreads
+    .map((t, i) => openThreadBullet(`OPEN_THREADS[${i}]`, t)).join("\n");
   const blocking = openThreads.filter((t) => t.blocking === true).length;
   const openSuffix = openThreads.length === 0 ? ""
-    : ` — ${openThreads.length} open bot thread${openThreads.length === 1 ? "" : "s"}`
+    : ` — ${openThreads.length} open review thread${openThreads.length === 1 ? "" : "s"}`
       + (blocking > 0 ? ` (${blocking} blocking)` : "");
 
   let resolvedSince = "";
@@ -331,7 +362,7 @@ function main() {
     if (r.count > 0) {
       if (openThreads.length === 0) {
         fail("RESOLVED_SINCE renders beside the open-threads list, which is empty — when Gate 3 is"
-          + " clean the counter belongs in the Prior bot feedback Details cell instead");
+          + " clean the counter belongs in the Prior review feedback Details cell instead");
       }
       resolvedSince = ` <sup>${r.count} resolved since \`${r.sha}\`</sup>`;
     }
@@ -456,7 +487,7 @@ function main() {
   const head = body.split("<details>")[0];
   for (const owned of ["| Gate | Status | Details |", "**Run mode**", "**Memories**",
     "**Quality**", "**Integrations**", "**Optimality (2.4c)**", "**Standards (2.4d)**",
-    "**Skipped files**", "**Open bot threads (", "<sup>Reviewed for commit",
+    "**Skipped files**", "**Open review threads (", "<sup>Reviewed for commit",
     "<sup>Incremental review for commit", "<sup>No code changes since", "<sup>Reviewed by the"]) {
     if (head.includes(owned)) fail(`${owned} rendered above the accordion`);
   }

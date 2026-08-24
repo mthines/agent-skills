@@ -1,7 +1,7 @@
 <!-- PR_REVIEWER_REPORT -->
 ⚠️ **Partial review — tool budget exhausted after 180 calls; 22 of 31 files scanned.**
 
-Reviewed your changes — **1 error, 2 warnings** need attention before human review. Blocking: 1 unanswered blocking bot thread.
+Reviewed your changes — **1 error, 2 warnings** need attention before human review. Blocking: 1 unanswered blocking review thread.
 
 <details>
 <summary>Optimality review (1) — is this the best approach?</summary>
@@ -22,21 +22,21 @@ Reviewed your changes — **1 error, 2 warnings** need attention before human re
 </details>
 
 <details>
-<summary>Review details — 1 open bot thread (1 blocking)</summary>
+<summary>Review details — 1 open review thread (1 blocking)</summary>
 
 <sup>Reviewed for commit `69b0de8`.</sup>
 
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ⚠️ | Claims `nx affected` is green; not true at this SHA. |
-| Prior bot feedback | ❌ | 1 unresolved bot thread(s) — see the thread list below |
+| Prior review feedback | ❌ | 1 unresolved review thread(s) — see the thread list below |
 | Documentation | ✅ | The change is documented well enough to follow. |
 | Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
 | Code review | ⏭️ | not evaluated this run |
 
-**Open bot threads (1)**
+**Open review threads (1)**
 
-- [`supabase/functions/memories/handlers/list.ts:235`](https://github.com/o/r/pull/1#discussion_r3) — applyScalarFilter still puts the whole dimension into a PostgREST URL operand
+- [`supabase/functions/memories/handlers/list.ts:235`](https://github.com/o/r/pull/1#discussion_r3) — applyScalarFilter still puts the whole dimension into a PostgREST URL operand (bot · `cursor`)
 
 **CI** — `Integration smoke (local Supabase)` is red on `POST /memories/list` (expected 200, got 500) — the open thread above. Reported, not blocking.
 

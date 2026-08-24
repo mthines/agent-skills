@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: Code reviewer for GitHub PRs — your own (self relation) and other people's (cross relation). Runs a pre-merge gate check (description vs. code, CI, unresolved bot feedback, self-review signals, docs) then a multi-lens review — correctness, quality, description accuracy, external integrations, holistic intent-and-system-fit, optimality, and conformance to the repo's own governing docs. Incrementally aware — a re-run reads its per-PR state record and reviews only the delta since the last reviewed SHA. Writes one report comment per PR, rewritten in place every run, plus append-only inline findings on a visible COMMENT review posted only when the run has new inline findings. Read-only — it never auto-fixes. Trigger with `/pr-review <PR-URL|#n>` or the Task tool — `Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`. An agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
+description: Code reviewer for GitHub PRs — your own (self relation) and other people's (cross relation). Runs a pre-merge gate check (description vs. code, CI, unresolved review feedback, self-review signals, docs) then a multi-lens review — correctness, quality, description accuracy, external integrations, holistic intent-and-system-fit, optimality, and conformance to the repo's own governing docs. Incrementally aware — a re-run reads its per-PR state record and reviews only the delta since the last reviewed SHA. Writes one report comment per PR, rewritten in place every run, plus append-only inline findings on a visible COMMENT review posted only when the run has new inline findings. Read-only — it never auto-fixes. Trigger with `/pr-review <PR-URL|#n>` or the Task tool — `Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`. An agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write, mcp__github__pull_request_read, mcp__github__create_pull_request, mcp__github__update_pull_request, mcp__github__add_issue_comment, mcp__github__issue_read, mcp__github__pull_request_review_write, mcp__github__add_comment_to_pending_review, mcp__github__resolve_review_thread, mcp__github__get_job_logs, mcp__github__actions_list, mcp__github__actions_run_trigger, mcp__github__get_me
 model: opus
 ---
@@ -99,7 +99,7 @@ The agent operates in one of three run modes, chosen automatically in Step 0.7:
 
 Findings carried forward from a prior run's `Additional findings` list are re-admitted in **every** mode, including the incremental ones — they were already found on the full diff, so scanning only the delta does not lose them (`prior-comment-awareness.md § Carry-forward of deferred findings`).
 
-Gate checks (Step 1.8) always run against the full PR state in every mode — CI, prior bot feedback, and description adequacy apply to the whole PR regardless of how small the latest commit is. Gate 4 (self-review signals) is the only gate that scans the delta diff in incremental modes.
+Gate checks (Step 1.8) always run against the full PR state in every mode — CI, prior review feedback, and description adequacy apply to the whole PR regardless of how small the latest commit is. Gate 4 (self-review signals) is the only gate that scans the delta diff in incremental modes.
 
 `--full` forces `full` mode regardless of delta size.
 
@@ -113,12 +113,12 @@ A PR PASSES when ALL of the following are true:
 
 1. **Description vs. code** — the description accurately reflects what the diff does; an independent reader reaches the same conclusion about intent and scope from the description alone as from the diff. A mismatch is a **soft warning** (⚠️), not a failure — see *Gate states* below.
 2. **CI status** — all build, test, lint, and docs checks are green. This is a soft-warning gate — red or pending CI yields ⚠️ and never fails the PR (see *Gate states*). It is NOT shown as a row in the review table; GitHub's checks section shows the detail, and `CI_NOTE` carries the substance.
-3. **Prior bot feedback** — all prior automated review comments (Cursor, Claude, other agents) are resolved or explicitly dismissed. An open thread whose ask is non-blocking, or which has already been answered on-thread, is a **soft warning** (⚠️) — only an *unanswered blocking* ask fails this gate. See *Gate states* below.
+3. **Prior review feedback** — all prior review comments — from bots (Cursor, Claude, other agents) or human reviewers — are resolved or explicitly dismissed. An open thread whose ask is non-blocking, or which has already been answered on-thread, is a **soft warning** (⚠️) — only an *unanswered blocking* ask fails this gate. See *Gate states* below.
 4. **Self-review signals** — no debug logs, commented-out code, leftover TODO/FIXME/HACK markers on new lines, or obvious unreviewed AI stubs in the diff.
 5. **Documentation adequacy** — description, inline comments, and any docs are sufficient for an independent reader to understand the change's purpose and behavior.
 6. **Code review** — the AI persona review pass finds no blocking issues. Non-blocking findings do **not** fail this gate (see *Gate states* below).
 
-A PR FAILS if Gate 4 or Gate 5 is not met, or if the Prior bot feedback (Gate 3) or Code review (Gate 6) gate is ❌. Gate 1 (Description vs. code) **and Gate 2 (CI)** are soft-warning gates — each yields ⚠️ and never fails the PR; Gates 3 and 6 are tri-state and reach ❌ only on a *blocking* item.
+A PR FAILS if Gate 4 or Gate 5 is not met, or if the Prior review feedback (Gate 3) or Code review (Gate 6) gate is ❌. Gate 1 (Description vs. code) **and Gate 2 (CI)** are soft-warning gates — each yields ⚠️ and never fails the PR; Gates 3 and 6 are tri-state and reach ❌ only on a *blocking* item.
 
 ### Gate states
 
@@ -143,11 +143,11 @@ where it blocks properly.
 | ✅ | The description accurately reflects the diff. |
 | ⚠️ | The description omits or misrepresents a scope of the diff. Soft warning only — never fails the PR. |
 
-**Gate 3 — Prior bot feedback** is tri-state, on the same *blocking* bar as Gate 6:
+**Gate 3 — Prior review feedback** is tri-state, on the same *blocking* bar as Gate 6:
 
 | Status | Condition | Verdict effect |
 |---|---|---|
-| ✅ | `OPEN_BOT_COMMENTS[]` is empty — every prior bot thread is resolved. | Passes. |
+| ✅ | `OPEN_BOT_COMMENTS[]` is empty — every prior review thread is resolved. | Passes. |
 | ⚠️ | Threads are open, but none is both **blocking** and **unanswered**. | **Passes — soft warning only.** NOT counted in `FAILING_GATE_COUNT`; never flips the verdict to FAIL. |
 | ❌ | At least one open thread carries a **blocking** ask that nobody has answered. | Fails — counted in `FAILING_GATE_COUNT`. |
 
@@ -179,7 +179,7 @@ A finding is **blocking** only if it is broken behaviour, security (auth bypass 
 
 **Gate 3 applies that same bar to the other bot's own decoration** — its `(blocking)` marker, its `issue:` conventional-comment prefix, or an equivalent explicit severity label it supplied — and never to a fresh adjudication of the finding by this reviewer. Reading another bot's comment and deciding for it how serious it *really* is puts words in its mouth, which Step 1.0 already forbids for the `ask` text. An undecorated or unparseable ask is read as **non-blocking**, the same way an unreadable thread state is read as not-open: the reviewer never manufactures a severity it cannot evidence. If that ask is in fact serious, this run's own review pass finds it and files it under Gate 6, where it blocks on this reviewer's own evidence.
 
-The overall verdict is **FAIL** when Gate 4 or Gate 5 fails **or** the Prior bot feedback or Code review gate is ❌; otherwise **PASS** (with the Description vs. code, Prior bot feedback, and Code review rows each showing ✅ or ⚠️, and CI's state in `CI_NOTE`). Gate 2 (CI) does **not** feed the verdict: it is surfaced in GitHub's checks section and in `CI_NOTE`, never as a table row and never in `FAILING_GATE_COUNT`. The PASS/WARN/FAIL presentation in Steps 3–4 is chosen from the review gates (3, 4, 5, Description vs. code, and Code review) only.
+The overall verdict is **FAIL** when Gate 4 or Gate 5 fails **or** the Prior review feedback or Code review gate is ❌; otherwise **PASS** (with the Description vs. code, Prior review feedback, and Code review rows each showing ✅ or ⚠️, and CI's state in `CI_NOTE`). Gate 2 (CI) does **not** feed the verdict: it is surfaced in GitHub's checks section and in `CI_NOTE`, never as a table row and never in `FAILING_GATE_COUNT`. The PASS/WARN/FAIL presentation in Steps 3–4 is chosen from the review gates (3, 4, 5, Description vs. code, and Code review) only.
 
 `--skip-gates` bypasses Gates 1–5 and runs only the inline review pass (Gate 6).
 Those gates then render `⏭️` in every gate table, with the Details cell holding the carried prior text plus its `(carried from …)` suffix when Step 2.5c dispositioned the row `CARRY`, and `not evaluated this run` otherwise.
@@ -193,7 +193,7 @@ The pipeline lives in rule files; the agent body is intentionally small. Read ea
 rule once at the step that owns it.
 
 - `agents/shared/rules/review-config.md` — load review-config profile, filters, path instructions (Step 1.7); default `.github/review.yaml`, legacy root `.review.yaml` still honoured.
-- `agents/shared/rules/prior-comment-awareness.md` — fetch existing PR comments for dedup + anti-flip-flop (Step 1.0); also used to identify open unresolved bot comments for Gate 3.
+- `agents/shared/rules/prior-comment-awareness.md` — fetch existing PR comments for dedup + anti-flip-flop (Step 1.0); also used to identify open unresolved review threads (bot or human) for Gate 3.
 - `agents/shared/rules/reviewer-report-ingest.md` — the parse grammar for a `<!-- PR_REVIEWER_REPORT -->` report body. **This agent is no longer a consumer**: its own prior state comes from the PR-state record (Step 0.7), not from re-parsing its own rendered Markdown. It is listed here because this agent *produces* the body that grammar reads, so a heading change here is a breaking change there.
 - `agents/shared/rules/rubric-composition.md` — load + dedupe + consolidate code-quality / ux / critical / lenses.
 - `agents/shared/rules/holistic-review.md` — default-on intent-match + system-fit pass via `Skill("holistic-analysis", "review")`.
@@ -605,9 +605,15 @@ The thread-state query (`reviewThreads { id isResolved }`, paged past 100) is th
 Step 2.9c runs — fetching it here moves the call earlier rather than adding one, and Step 2.9c
 reuses `/tmp/review-threads.json`. `RESOLVED_THREAD_IDS` and `COMMENT_TO_THREAD` come from it.
 
-While fetching, **also identify open unresolved bot-authored comments** for Gate 3:
-- A comment is "bot-authored" if `user.login` matches `*[bot]*`, `cursor-ai`, `claude`,
-  `copilot`, or any login ending in `-ai` or `-bot`.
+While fetching, **also identify every open unresolved review thread** — from a bot **or** a human
+reviewer — for Gate 3. Both count: an unresolved reviewer conversation is prior feedback whether a
+GitHub App or a teammate opened it. What differs is only how the report labels each one (see the
+`is_bot` field below and `OPEN_THREADS_LIST`), never whether it is tracked.
+- Capture the author's **type** with each comment: `is_bot` is true when `user.type == "Bot"` (a
+  GitHub App — e.g. `cursor`, `claude[bot]`, `copilot`) and false for a human reviewer. Read it off
+  `user.type` from `/tmp/prior-comments.json`, never from a login-pattern guess: a login match once
+  reported a human's thread as a bot's (the exact mislabel Gate 3 no longer makes), and a service
+  account posting as a `User` is a human as far as this label is concerned.
 - A comment is **resolved** when its thread's `isResolved` is true. Read the flag; never
   infer resolution from the wording of a reply. An automated fixer replies in its own
   words and resolves the thread — it neither matches a keyword list nor replies as the PR
@@ -624,8 +630,12 @@ While fetching, **also identify open unresolved bot-authored comments** for Gate
   `isResolved == false`. Every comment whose state was unavailable or unpaged is counted
   separately and reported as `thread state unavailable — <N> comment(s) unverified` in
   Gate 3's Details cell.
-- For each stored entry, capture five fields — three so Gate 3 can render an actionable, linkable
-  checklist (see *Gate 3* and `OPEN_THREADS_LIST`), two so it can grade the gate:
+- For each stored entry, capture seven fields — three so Gate 3 can render an actionable, linkable
+  checklist (see *Gate 3* and `OPEN_THREADS_LIST`), two so it can label the thread's author, and two
+  so it can grade the gate. The label fields are `author` (the thread root's `user_login`) and
+  `is_bot` (from `user_type == "Bot"`, per the fetch above), passed straight into each
+  `OPEN_THREADS[]` payload item so the renderer tags the bullet `(bot · \`login\`)` or
+  `(human · \`login\`)`. The three checklist fields are:
   `path:line` (the anchor), `url`
   (the comment's `html_url` permalink from `/tmp/prior-comments.json`), and `ask` — the comment's
   own lead line, **truncated, not paraphrased**: take its first sentence (or its `suggestion:` /
@@ -1119,13 +1129,13 @@ Result: PASS (✅, all green) or WARN (⚠️) with the failing check names. **N
 *Gate states*. Report the detail in `CI_NOTE`; a red check the diff demonstrably causes is filed
 under Gate 6 instead, on this reviewer's own evidence.
 
-**Gate 3 — Unresolved prior bot/agent feedback**
-Use `OPEN_BOT_COMMENTS[]` from Step 1.0. Identify any prior automated review comments
-(Cursor, Claude, other agents) whose review thread is still open — `isResolved == false`
-and the thread not dismissed.
+**Gate 3 — Unresolved prior review feedback**
+Use `OPEN_BOT_COMMENTS[]` from Step 1.0. Identify any prior review comment — from a bot
+(Cursor, Claude, other agents) **or** a human reviewer — whose review thread is still open —
+`isResolved == false` and the thread not dismissed.
 Finding format: one line per unresolved item, rendered as a **clickable entry with the thread's
-own lead line** `- [\`<path>:<line>\`](<url>) — <ask>` using the three fields captured in Step 1.0
-(`path:line`, `url`, `ask`). This is what makes the gate actionable: the author clicks straight
+own lead line** `- [\`<path>:<line>\`](<url>) — <ask> (<bot|human> · \`<author>\`)` using the
+Step 1.0 fields (`path:line`, `url`, `ask`, and the `author` / `is_bot` label the renderer appends). This is what makes the gate actionable: the author clicks straight
 through to each thread and reads in one line what it wants — instead of a bare `path:line` they
 have to hunt for.
 Whenever any thread is open — on ⚠️ as well as ❌ — this list renders **inside** the `Review
@@ -1135,7 +1145,7 @@ That split is the whole contract: the reader learns *that* threads are open and 
 from the one line that is visible while the report is collapsed, and the per-thread bullets —
 which on a long-running PR grow to dozens of lines and crowd the report off the screen — are one
 click away behind that same line. The accordion's Gate 3 Details cell then stays terse —
-`<N> unresolved bot thread(s) — see the thread list below`.
+`<N> unresolved review thread(s) — see the thread list below`.
 
 Result: PASS (✅), WARN (⚠️), or FAIL (❌), graded from the `blocking` and `answered` fields
 captured in Step 1.0 (*Gate states*):
@@ -1597,7 +1607,7 @@ fixed enumeration with no slot for either counter; do not wedge them in there.
 Produce two views before posting: a summary with the gate table, then numbered detail cards.
 Always include the run mode and delta context in the header:
 
-Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 4/5 all ✅) and neither tri-state gate — Prior bot feedback, Code review — is ❌, but at least one graded gate — Description vs. code, CI, Prior bot feedback, or Code review — is ⚠️ (still a PASS verdict); **FAIL** when Gate 4 or Gate 5 fails or the Prior bot feedback or Code review gate is ❌ (CI never fails it).
+Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 4/5 all ✅) and neither tri-state gate — Prior review feedback, Code review — is ❌, but at least one graded gate — Description vs. code, CI, Prior review feedback, or Code review — is ⚠️ (still a PASS verdict); **FAIL** when Gate 4 or Gate 5 fails or the Prior review feedback or Code review gate is ❌ (CI never fails it).
 
 All three presentations share **one** template; only the `**Verdict**` line and the allowed Status
 glyphs differ, both tabulated under it. (Three near-copies is what drifted into a remembered
@@ -1618,7 +1628,7 @@ renderer, so one copy is the guard.)
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | <glyph> | <details> |
-| Prior bot feedback   | <glyph> | <details> |
+| Prior review feedback   | <glyph> | <details> |
 | Documentation        | <glyph> | <details> |
 | Self-review signals  | <glyph> | <details> |
 | Code review          | <glyph> | <details> |
@@ -1636,7 +1646,7 @@ decides the presentation:
 | Gate | Glyphs it may show | Details cell |
 |---|---|---|
 | Description vs. code | ✅ ⚠️ | mismatch text (≤ 120 chars) on ⚠️; empty on ✅ |
-| Prior bot feedback | ✅ ⚠️ ❌ | `<N> unresolved bot thread(s)` on ⚠️/❌; empty on ✅ |
+| Prior review feedback | ✅ ⚠️ ❌ | `<N> unresolved review thread(s)` on ⚠️/❌; empty on ✅ |
 | Documentation | ✅ ❌ | finding text on ❌; empty on ✅ |
 | Self-review signals | ✅ ❌ | finding text on ❌; empty on ✅ |
 | Code review | ✅ ⚠️ ❌ | `See inline comments`, or finding text, on ⚠️/❌; empty on ✅ |
@@ -1653,7 +1663,7 @@ the posted body; its state goes in the Quality Gate block's CI line below.
 WARN prints a `PASS` verdict on purpose — Step 4a's `VERDICT` binding explains why the two must
 stay distinct.
 
-`FAILING_GATE_COUNT` counts only hard-failing gates — a ⚠️ row (Description vs. code, Prior bot feedback, or Code review) is never included, even when another gate is ❌.
+`FAILING_GATE_COUNT` counts only hard-failing gates — a ⚠️ row (Description vs. code, Prior review feedback, or Code review) is never included, even when another gate is ❌.
 
 All three presentations continue with:
 

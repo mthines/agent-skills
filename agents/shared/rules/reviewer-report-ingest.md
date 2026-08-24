@@ -16,8 +16,8 @@ A `pr-reviewer` run produces one consolidated report. Its inline comments are ad
 **only in the report body** — the sticky comment, or a legacy review body (see *Where the report
 lives*):
 
-- gate findings, which have **no inline anchor by design** — a `❌` on *Prior bot feedback*,
-  *Documentation*, or *Self-review signals* (or a `⚠️` on the tri-state *Prior bot feedback*)
+- gate findings, which have **no inline anchor by design** — a `❌` on *Prior review feedback*,
+  *Documentation*, or *Self-review signals* (or a `⚠️` on the tri-state *Prior review feedback*)
   exists only as a row in the gate-status table;
 - optimality proposals (Step 2.4c), which are body cards and are **never** posted inline;
 - deferred findings (Step 2.9b), which cleared every quality gate but did not fit the inline caps.
@@ -148,8 +148,8 @@ Gate 3's open threads render across two slots (`pr-reviewer.md § The Gate 3 ope
 
 | Slot | Literal to match | Where |
 | --- | --- | --- |
-| `OPEN_THREADS_SUFFIX` | `Review details — <N> open bot threads` | appended inside the `<summary>` tag |
-| `OPEN_THREADS_LIST` | `**Open bot threads (<N>)**` | inside the accordion, right after the gate table |
+| `OPEN_THREADS_SUFFIX` | `Review details — <N> open review threads` | appended inside the `<summary>` tag |
+| `OPEN_THREADS_LIST` | `**Open review threads (<N>)**` | inside the accordion, right after the gate table |
 
 Neither literal has a row in the table above, so the "match by literal heading" rule already skips
 both. Never mine the list's linked `path:line` bullets for findings — that would double-count the
@@ -162,7 +162,7 @@ comparison misses them on exactly the runs that have something to say.
 
 **The summary suffix is not a section boundary.** A consumer that locates the accordion by matching
 the literal `<summary>Review details</summary>` will miss it on every run with open threads, because
-the tag then reads `<summary>Review details — 2 open bot threads (1 blocking)</summary>`. Match
+the tag then reads `<summary>Review details — 2 open review threads (1 blocking)</summary>`. Match
 `<summary>Review details` as a prefix. There is no separate top-level notice line to key on — an
 earlier revision emitted one and it was retired.
 

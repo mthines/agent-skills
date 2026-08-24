@@ -1,5 +1,5 @@
 <!-- PR_REVIEWER_REPORT -->
-Reviewed your changes — no blocking issues, **3 warning(s)**: 2 open bot thread(s); 3 non-blocking finding(s); CI red: Integration smoke.
+Reviewed your changes — no blocking issues, **3 warning(s)**: 2 open review thread(s); 3 non-blocking finding(s); CI red: Integration smoke.
 
 <details>
 <summary>Additional findings (2) — cleared review, not inlined</summary>
@@ -10,22 +10,22 @@ Reviewed your changes — no blocking issues, **3 warning(s)**: 2 open bot threa
 </details>
 
 <details>
-<summary>Review details — 2 open bot threads</summary>
+<summary>Review details — 2 open review threads</summary>
 
 <sup>Incremental review for commit `2c2bd19` (delta since `70cf147`).</sup>
 
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ✅ | The description matches what the diff does. |
-| Prior bot feedback | ⚠️ | 2 unresolved bot thread(s) — see the thread list below |
+| Prior review feedback | ⚠️ | 2 unresolved review thread(s) — see the thread list below |
 | Documentation | ✅ | The change is documented well enough to follow. |
 | Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
 | Code review | ⚠️ | 3 non-blocking findings — see inline comments. |
 
-**Open bot threads (2)** <sup>4 resolved since `70cf147`</sup>
+**Open review threads (2)** <sup>4 resolved since `70cf147`</sup>
 
-- [`packages/web/src/lib/filters.ts:23`](https://github.com/o/r/pull/1#discussion_r1) — the docblock still names filtersToQueryParams
-- [`packages/schemas/src/memory.ts:735`](https://github.com/o/r/pull/1#discussion_r2) — the advertised bound is 5x what the hop survives
+- [`packages/web/src/lib/filters.ts:23`](https://github.com/o/r/pull/1#discussion_r1) — the docblock still names filtersToQueryParams (human · `umanwizard`)
+- [`packages/schemas/src/memory.ts:735`](https://github.com/o/r/pull/1#discussion_r2) — the advertised bound is 5x what the hop survives (bot · `cursor`)
 
 **CI** — `Integration smoke (local Supabase)` is red on one case — `POST /memories/list` expected 200, got 500.
 

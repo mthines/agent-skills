@@ -71,8 +71,11 @@ BOT_LOGIN="${BOT_LOGIN:-$(gh api user --jq .login 2>/dev/null || echo "")}"
 # All existing review comments on this PR (all authors).
 # `html_url` is the permalink to the comment thread — kept so Gate 3 can render each
 # unresolved thread as a clickable `[path:line](url)` link the author can jump straight to.
+# `user_type` (GitHub's `Bot` / `User` / `Organization`) is kept so Gate 3 can label each open
+# thread as a bot's or a human's — the report differentiates the two instead of calling every
+# open thread a "bot thread", which once reported a human reviewer's comment as a bot's.
 gh api repos/$REPO/pulls/$PR_NUMBER/comments \
-  --jq '.[] | {id, path, line, body, user_login: .user.login, in_reply_to_id, html_url: .html_url}' \
+  --jq '.[] | {id, path, line, body, user_login: .user.login, user_type: .user.type, in_reply_to_id, html_url: .html_url}' \
   > /tmp/prior-comments.json
 
 # Comments authored by this agent (bot login)
@@ -312,7 +315,7 @@ Whichever way it goes, the run's own outcome is what gets written back (`pr-revi
 ## Carry-forward of anchorless findings
 
 `Additional findings` is not the only body-only output of a review pass.
-A gate finding has **no inline anchor by design** — a `❌` on *Prior bot feedback*, *Documentation*, or *Self-review signals* (or a `⚠️` on the tri-state *Prior bot feedback*) exists only as a row in the gate-status table inside the `Review details` accordion.
+A gate finding has **no inline anchor by design** — a `❌` on *Prior review feedback*, *Documentation*, or *Self-review signals* (or a `⚠️` on the tri-state *Prior review feedback*) exists only as a row in the gate-status table inside the `Review details` accordion.
 Optimality proposals (2.4c) are rendered as body cards and never inline.
 The `**Standards (2.4d)**` log line records whether that lens ran at all; its individual findings go inline or into `Additional findings`, so they travel with `CARRIED_FINDINGS` and are not re-parsed here.
 None of these are re-derivable from the delta, and 2.4c and 2.4d are both **skipped** in `incremental-quick`.
