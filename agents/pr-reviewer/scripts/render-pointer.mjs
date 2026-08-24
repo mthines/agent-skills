@@ -38,8 +38,8 @@ const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArr
 function assertPlain(where, v) {
   const s = String(v);
   if (/\[[^\]]*\]\([^)]*\)/.test(s)) {
-    fail(`${where} contains a markdown link — supply STICKY_URL separately and let the renderer`
-      + ` build the link (got: ${s.slice(0, 60)})`);
+    fail(`${where} contains a markdown link — a pointer body carries no links; the report and its`
+      + ` links live in the sticky (got: ${s.slice(0, 60)})`);
   }
   if (s.includes("\n")) fail(`${where} must be a single line`);
 }
@@ -81,7 +81,7 @@ function main() {
   }
   if (!FORMS.has(FORM)) fail(`FORM must be one of ${[...FORMS].join(" | ")} — got ${JSON.stringify(FORM)}`);
 
-  const known = new Set(["FORM", "HEAD_SHA", "FINDINGS_COUNT", "STICKY_URL",
+  const known = new Set(["FORM", "HEAD_SHA", "FINDINGS_COUNT",
     "HEADLINE_LINE", "DEGRADED_REASON"]);
   const unknown = Object.keys(data).filter((k) => !known.has(k));
   if (unknown.length) fail(`unknown payload key(s): ${unknown.join(", ")}`);

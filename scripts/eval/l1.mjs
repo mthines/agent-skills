@@ -2384,8 +2384,8 @@ const isPollBlock = (block) =>
   const rejects = [
     ["a missing FORM", '{"HEAD_SHA":"bde3c2f"}'],
     ["an invalid FORM", '{"FORM":"summary","HEAD_SHA":"bde3c2f"}'],
-    ["a non-7-char sha", '{"FORM":"pointer","HEAD_SHA":"abc","FINDINGS_COUNT":1,"STICKY_URL":"https://x/1"}'],
-    ["an uppercase sha", '{"FORM":"pointer","HEAD_SHA":"BDE3C2F","FINDINGS_COUNT":1,"STICKY_URL":"https://x/1"}'],
+    ["a non-7-char sha", '{"FORM":"pointer","HEAD_SHA":"abc","FINDINGS_COUNT":1}'],
+    ["an uppercase sha", '{"FORM":"pointer","HEAD_SHA":"BDE3C2F","FINDINGS_COUNT":1}'],
     // The two retired notification-only forms. A run that remembers them must get an error, not
     // a shape nothing documents — and not a silently-accepted unknown FORM either.
     ["the retired escalation form", '{"FORM":"escalation","HEAD_SHA":"bde3c2f","VERDICT":"FAIL","PRIOR_VERDICT":"PASS","REASONS":"x","STICKY_URL":"https://x/1"}'],
@@ -2396,7 +2396,7 @@ const isPollBlock = (block) =>
     // ledger block smuggled in through a prose field is rejected by the post-condition.
     ["a LEDGER key", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x","DEGRADED_REASON":"y","LEDGER":{"v":1,"runs":[]}}'],
     ["a ledger block smuggled into DEGRADED_REASON", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x","DEGRADED_REASON":"see <!-- PR_REVIEWER_LEDGER {\"v\":1} -->"}'],
-    ["an unknown payload key", '{"FORM":"pointer","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"STICKY_URL":"https://x/1","EXTRA":"nope"}'],
+    ["an unknown payload key", '{"FORM":"pointer","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"EXTRA":"nope"}'],
     ["a non-object payload", "[1,2]"],
     ["malformed JSON", "{nope"],
   ];
