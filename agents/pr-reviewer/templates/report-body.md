@@ -52,7 +52,9 @@
 {{MEMORIES_BULLETS}}
 {{/MEMORIES_BULLETS}}
 
-**Quality** — {{QUALITY}}
+{{#TIER_BREAKDOWN}}**Severity** — {{TIER_BREAKDOWN}}
+
+{{/TIER_BREAKDOWN}}**Quality** — {{QUALITY}}
 {{#QUALITY_DROPPED}}
 - dropped: {{QUALITY_DROPPED}}
 {{/QUALITY_DROPPED}}

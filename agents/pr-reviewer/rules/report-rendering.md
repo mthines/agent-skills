@@ -119,6 +119,7 @@ length**, so there is no count to supply and none to get wrong:
 | `LOW_CONFIDENCE_FINDINGS` | `[{…same…}]` | Advisory only (`reviewer-report-ingest.md`). |
 | `OPTIMALITY_CARDS` | `[markdown, …]` | The one place model-authored markdown remains, because a card is a multi-line block with its own table. Each must contain a `### Optimality proposal — <path>:<line>` heading, which the renderer checks. |
 | `PARTIAL_REVIEW` | `{calls, scanned, total}` | Integers; emits the tool-budget banner. |
+| `TIER_TALLY` | `{critical?, high?, medium?, low?}` | Non-negative integers. Renders the `**Severity**` line as a glyph breakdown (`🔴 <c> · 🟠 <h> · 🟡 <m> · ⚪ <l>`), omitting zero tiers; the whole line is dropped when all are zero or absent. Named `TIER_TALLY` to avoid the `SEVERITY_TALLY` headline term (error/warning count) — this is the finding-severity-tier distribution from the `severity` skill. Supply it on every run that tiered findings (the default; see `review-config.md` § Severity-aware thresholds), counting posted inline + advisory findings by tier. |
 
 **Optional — scalars:** `CI_NOTE` (Gate 2's substance — which checks are red and on what),
 `VERIFIED_NOTE` (what this run checked itself), `QUALITY_DROPPED`, `RUN_NOTE`.
