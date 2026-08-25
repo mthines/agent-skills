@@ -34,6 +34,16 @@ For each finding that survives `finding-grounding.md` (2.6) and `verification-re
    The default (no review config present or `profile: balanced`) is **80**.
    See `review-config.md` for the full profile→threshold table.
 
+   **Severity-aware threshold (optional, back-compat).** If the resolved profile defines
+   `severity_thresholds` (`review-config.md` § Severity-aware thresholds), assess the
+   finding's tier once with `Skill("severity", "finding")` — in this same pass, never a
+   separate per-finding call — and use `severity_thresholds[tier]` as the effective
+   threshold. With the key absent (the default), the flat profile threshold applies to
+   every finding, exactly as today. The `defer_floor` band and all rules below use the
+   effective threshold unchanged. A finding the `severity` skill tiers `critical` or
+   `high` is additionally decorated `(blocking)` (its § Mapping to a reviewer's blocking
+   flag), which exempts it from the placement caps (`rubric-composition.md § Placement`).
+
 2. Construct a `confidence(code)` call with the finding as input:
    - **Target**: `<file:line>`
    - **Claim**: the comment body (without prefix and decoration)

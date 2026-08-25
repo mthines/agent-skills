@@ -48,6 +48,12 @@ Nothing that clears the confidence threshold is hidden in either relation: the c
 
 profile: chill | balanced | assertive   # default: balanced
 
+severity_thresholds:                     # optional — severity-aware inline confidence bars
+  critical: 65                           # tier comes from Skill("severity", "finding")
+  high: 70                               # absent ⇒ the flat profile threshold applies to
+  medium: 80                             # every tier (back-compat: today's behavior)
+  low: 90
+
 filters:                                 # declarative category suppressors
   - naming-nits
   - defensive-null-checks-in-safe-contexts
@@ -83,6 +89,36 @@ The `balanced` row in the table is the definition of today's defaults — if any
 Use only in repos with high author trust in automated review (experienced team, high review culture).
 
 `chill` is the inverse: conservative for repos where false positives are especially costly (public APIs, security-sensitive code, solo maintainer projects).
+
+---
+
+## Severity-aware thresholds (optional)
+
+`severity_thresholds` refines the single per-comment bar into one bar per severity tier.
+It is **opt-in and back-compatible**: with the key absent (the default), the flat profile
+threshold applies to every finding — today's behavior, unchanged.
+
+When the key is present, `pr-reviewer` assesses each finding's tier with
+`Skill("severity", "finding")` in the same pass as the confidence rating (never a
+separate per-finding call — see `severity`'s cost note), then uses
+`severity_thresholds[tier]` as the effective threshold in `per-comment-confidence.md`.
+A higher tier justifies a lower bar, so a probable `critical` surfaces even at moderate
+confidence, while a `low` needs near-certainty or is deferred.
+
+```yaml
+severity_thresholds:
+  critical: 65
+  high: 70
+  medium: 80   # equals the balanced flat default
+  low: 90
+```
+
+Two invariants keep this from re-deriving policy the `severity` skill deliberately does
+not own:
+
+- The **numbers live here**, not in the `severity` skill — it emits the tier only.
+- The tier also drives the `(blocking)` decoration (`critical` / `high` ⇒ `(blocking)`),
+  per `skills/quality/severity/SKILL.md` § Mapping to a reviewer's blocking flag.
 
 ---
 
