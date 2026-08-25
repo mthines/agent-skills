@@ -2406,4 +2406,24 @@ const isPollBlock = (block) =>
   }
 }
 
+// G30: the tier-tolerant Conventional-Comments prefix / severity-label regex is hand-mirrored
+// across three sites — the rule (conventional-comments.md PREFIX_RE), the agent's Step 4b
+// payload pre-flight (pr-reviewer.md), and the relevance script (record-comment-relevance.mjs).
+// A drift (a tier renamed/reordered/removed in one) would let a tiered comment pass one gate and
+// abort another — exactly the hand-mirror the #136 review flagged. Assert the four-tier alternation
+// is spelled identically wherever that regex lives. (render-report.mjs uses the array form, so it
+// is not a mirror of this string and is excluded.)
+{
+  const TIER = "critical|high|medium|low";
+  for (const m of [
+    "agents/shared/rules/conventional-comments.md",
+    "agents/pr-reviewer.md",
+    "scripts/record-comment-relevance.mjs",
+  ]) {
+    const body = readFileSync(join(REPO_ROOT, m), "utf8");
+    s.check(`G30 ${m} spells the severity tier enum as \`${TIER}\``, body.includes(TIER),
+      `missing the canonical tier alternation "${TIER}" — a rename/reorder/removal drifted a mirror`);
+  }
+}
+
 process.exit(s.report() ? 0 : 1);

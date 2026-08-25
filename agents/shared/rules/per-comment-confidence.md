@@ -42,9 +42,11 @@ For each finding that survives `finding-grounding.md` (2.6) and `verification-re
    gated exactly as before; `critical` / `high` get a lower bar (surface more) and `low` a
    higher one (surface less). A flat `per_comment_confidence_threshold: N` override
    collapses all tiers back to `N` (pre-severity behavior). The `defer_floor` band and all
-   rules below use the effective threshold unchanged. A finding tiered `critical` or `high`
-   is additionally decorated `(blocking)` (severity's § Mapping to a reviewer's blocking
-   flag), exempting it from the placement caps (`rubric-composition.md § Placement`).
+   rules below use the effective threshold unchanged. A finding whose **base-tier impact** is
+   `critical` or `high` is additionally decorated `(blocking)` (severity's § Mapping to a
+   reviewer's blocking flag), exempting it from the placement caps
+   (`rubric-composition.md § Placement`). A tier raised **only** by the Step 2 path floor is
+   **not** blocking — the floor sets the confidence bar, not the blocking decoration.
 
 2. Construct a `confidence(code)` call with the finding as input:
    - **Target**: `<file:line>`

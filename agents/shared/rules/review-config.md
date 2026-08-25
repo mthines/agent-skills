@@ -126,7 +126,8 @@ not own:
 
 - The **numbers live here**, not in the `severity` skill — it emits the tier only.
 - The tier also drives the `(blocking)` decoration (`critical` / `high` ⇒ `(blocking)`),
-  per `skills/quality/severity/SKILL.md` § Mapping to a reviewer's blocking flag.
+  per `skills/quality/severity/SKILL.md` § Mapping to a reviewer's blocking flag — **except** a
+  tier raised only by the Step 2 path floor, which stays non-blocking (see that section).
 
 ---
 
