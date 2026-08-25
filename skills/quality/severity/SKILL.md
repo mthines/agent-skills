@@ -233,11 +233,11 @@ This skill emits a value and stops. It never posts, applies, blocks, or gates on
 — it is advisory, like `confidence`, and it is **policy-free**: the numeric bars a
 consumer uses live in the consumer, not here.
 
-- **A reviewer** pairs the tier with the per-finding `confidence` score to set a
-  severity-aware inline bar. The threshold numbers belong in `review-config.md`, not in
-  this skill. Illustrative only, and owned by the consumer: a higher tier justifies a
-  lower confidence bar (surface a probable `critical` even at moderate confidence), a
-  `low` tier a higher bar (advisory or suppressed).
+- **A reviewer** gates each finding on a severity-aware confidence bar **by default**:
+  `medium` anchors the profile's historical bar, `critical` / `high` get a lower bar
+  (surface a probable serious bug even at moderate confidence), `low` a higher bar
+  (advisory or suppressed). The numbers live in `review-config.md`, not in this skill —
+  it emits only the tier.
 - **`fix-bug` / `batch-linear-tickets`** order triage by tier.
 - **`ci-auto-fix`** escalates a `critical` / `high` regression and defers a `low` one.
 

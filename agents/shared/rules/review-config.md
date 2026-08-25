@@ -16,7 +16,7 @@ The config surface is deliberately small — one profile knob, one noise-suppres
 For back-compat, if `.github/review.yaml` is absent but a legacy root `.review.yaml` exists, the root file is honoured (the root location is **DEPRECATED** but still read — not removed).
 Per-subtree overrides are still named `<subtree>/.review.yaml` (the root was the pollution concern, not deep directories).
 
-**Back-compat guarantee:** with no `.github/review.yaml` and no legacy root `.review.yaml` (subtree files may still exist), configuration resolves to `profile: balanced`, which equals today's defaults (per-comment threshold 80, inline placement cap 5 per file on the posted review, no filters, no path instructions).
+**Back-compat & defaults:** with no `.github/review.yaml` and no legacy root `.review.yaml` (subtree files may still exist), configuration resolves to `profile: balanced`. The `medium`-tier confidence bar stays **80** (today's default for a typical finding) and the inline placement cap stays 5 per file, no filters, no path instructions. Severity-aware bars are on by default and fan out around the 80 anchor (high/critical lower, low higher); a flat `per_comment_confidence_threshold` override restores the uniform 80 with no fan-out.
 The config surface itself introduces no behaviour change: with no config file, `pr-reviewer` posts the same inline comments it always did, and the threshold is still 80.
 
 **One deliberate exception, introduced with placement (Step 2.9b):** the Step 3 terminal report has no per-file cap (local output, no posting cost) in either relation, so an absent config now reports *more* findings on a large branch than it used to.
@@ -48,11 +48,14 @@ Nothing that clears the confidence threshold is hidden in either relation: the c
 
 profile: chill | balanced | assertive   # default: balanced
 
-severity_thresholds:                     # optional — severity-aware inline confidence bars
-  critical: 65                           # tier comes from Skill("severity", "finding")
-  high: 70                               # absent ⇒ the flat profile threshold applies to
-  medium: 80                             # every tier (back-compat: today's behavior)
-  low: 90
+severity_thresholds:                     # DEFAULT — values shown are the `balanced` defaults.
+  critical: 65                           # The reviewer tiers every finding via
+  high: 70                               # Skill("severity","finding") and gates it on the
+  medium: 80                             # matching bar. `medium` anchors the profile's
+  low: 90                                # historical flat threshold; high/critical get a
+                                         # lower bar (surface more), low a higher one.
+                                         # A flat per_comment_confidence_threshold: N
+                                         # override collapses all tiers back to N.
 
 filters:                                 # declarative category suppressors
   - naming-nits
@@ -71,13 +74,15 @@ path_instructions:                       # path-scoped guidance
 ## Profile knob
 
 `profile` is a single knob that maps to three correlated settings.
-`balanced` always equals today's defaults, ensuring back-compat.
+`balanced`'s `medium` tier equals today's default (80); severity fans the other tiers out around it by default.
 
-| Profile | Generation aggression | Per-comment confidence threshold | Inline placement cap per file |
+| Profile | Generation aggression | Confidence bar — critical / high / **medium** / low | Inline placement cap per file |
 | --- | --- | --- | --- |
-| `chill` | Low — only high-confidence, high-severity findings | 90 | 3 |
-| `balanced` | Medium — today's defaults | **80** | **5** |
-| `assertive` | High — include lower-confidence and lower-severity findings | 70 | 7 |
+| `chill` | Low — only high-confidence, high-severity findings | 75 / 85 / 90 / 95 | 3 |
+| `balanced` | Medium — today's defaults | 65 / 70 / **80** / 90 | **5** |
+| `assertive` | High — include lower-confidence and lower-severity findings | 60 / 65 / 70 / 85 | 7 |
+
+The **medium** column is each profile's historical single threshold (`chill` 90, `balanced` **80**, `assertive` 70); severity fans the bar out around it by default. A flat `per_comment_confidence_threshold: N` override collapses all four tiers back to `N` (pre-severity behavior).
 
 The cap column governs **placement only** — how many findings are posted as inline comments per file on the Step 4 review. It applies to every run; `pr-reviewer` runs the identical pipeline and posts in both relations (`rubric-composition.md § Placement (Step 2.9b)`).
 It never discards a finding: overflow is deferred to the review body.
@@ -92,18 +97,21 @@ Use only in repos with high author trust in automated review (experienced team, 
 
 ---
 
-## Severity-aware thresholds (optional)
+## Severity-aware thresholds (default)
 
-`severity_thresholds` refines the single per-comment bar into one bar per severity tier.
-It is **opt-in and back-compatible**: with the key absent (the default), the flat profile
-threshold applies to every finding — today's behavior, unchanged.
+`severity_thresholds` refines the single per-comment bar into one bar per severity tier,
+and it is **on by default** — the goal is that what the reviewer surfaces is what an
+author actually wants to react on.
 
-When the key is present, `pr-reviewer` assesses each finding's tier with
-`Skill("severity", "finding")` in the same pass as the confidence rating (never a
-separate per-finding call — see `severity`'s cost note), then uses
-`severity_thresholds[tier]` as the effective threshold in `per-comment-confidence.md`.
-A higher tier justifies a lower bar, so a probable `critical` surfaces even at moderate
-confidence, while a `low` needs near-certainty or is deferred.
+`pr-reviewer` tiers every finding with `Skill("severity", "finding")` in the same pass as
+the confidence rating (never a separate per-finding call — see `severity`'s cost note),
+then uses `severity_thresholds[tier]` as the effective threshold in
+`per-comment-confidence.md`. The `medium` tier anchors the profile's historical bar
+(**80** for `balanced`), so a typical finding is gated exactly as before; `critical` /
+`high` get a lower bar so a probable serious bug surfaces even at moderate confidence,
+and `low` gets a higher bar so trivia needs near-certainty or is deferred. Set the map
+explicitly to tune it, or set a flat `per_comment_confidence_threshold: N` to collapse
+all tiers back to the pre-severity uniform bar.
 
 ```yaml
 severity_thresholds:

@@ -223,7 +223,7 @@ Dropped comments are logged with the dropped body verbatim in the agent's termin
 
 ## Severity marker (metadata, appended after the checks)
 
-When the reviewer assigned a severity tier (`review-config.md` § Severity-aware thresholds is configured, so `Skill("severity", "finding")` ran), append a hidden marker as the **final line** of the body, *after* the mechanical pre-emit check has passed:
+The reviewer tiers every finding by default (`review-config.md` § Severity-aware thresholds). Append a hidden marker for the assigned tier as the **final line** of the body, *after* the mechanical pre-emit check has passed:
 
 ```text
 <!-- severity: critical|high|medium|low -->
