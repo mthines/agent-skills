@@ -53,13 +53,16 @@ function ghApi(path) {
 }
 
 /**
- * The reviewer appends a hidden severity marker to each finding it tiers, e.g.
- * `<!-- severity: high -->`. It is invisible in rendered GitHub, excluded from the
- * comment-shape caps, and MUST be stripped before fingerprinting so it never pollutes
- * the claim-gist. Kept in sync with agents/shared/rules/comment-shape.md and
- * skills/quality/severity/SKILL.md.
+ * The reviewer shows the severity tier as a Conventional-Comments label decoration:
+ * `issue (high): ...`. Two regexes derive from that one visible tag:
+ *   SEVERITY_RE  — anchored, extracts the tier for the relevance record.
+ *   TIER_TAG_RE  — global, strips the tag before fingerprinting so "high" never
+ *                  pollutes the claim-gist (fingerprints stay stable across tagged and
+ *                  untagged comments). Kept in sync with
+ *                  agents/shared/rules/conventional-comments.md § Severity decoration.
  */
-const SEVERITY_RE = /<!--\s*severity:\s*(critical|high|medium|low)\s*-->/i;
+const SEVERITY_RE = /^\s*\*{0,2}(?:issue|suggestion|nitpick|nit|question|praise|chore)\s*\((critical|high|medium|low)\)/i;
+const TIER_TAG_RE = /\((?:critical|high|medium|low)\)/gi;
 
 function severityFromBody(commentBody) {
   const m = SEVERITY_RE.exec(commentBody ?? "");
@@ -83,7 +86,7 @@ function fingerprint(commentBody) {
   const ccPrefixes = ["issue", "suggestion", "nitpick", "nit", "question", "praise", "chore"];
   let category = "suggestion";
   for (const prefix of ccPrefixes) {
-    if (new RegExp(`^\\*?\\*?${prefix}[:(]`, "i").test(body.trim())) {
+    if (new RegExp(`^\\*?\\*?${prefix}(?:\\s*\\((?:critical|high|medium|low)\\))?\\s*[:(]`, "i").test(body.trim())) {
       category = prefix === "nit" ? "nitpick" : prefix;
       break;
     }
@@ -91,7 +94,7 @@ function fingerprint(commentBody) {
 
   // Extract substantive claim words (strip markdown, code spans, URLs, punctuation)
   const cleaned = body
-    .replace(SEVERITY_RE, " ")      // hidden severity marker — never part of the gist
+    .replace(TIER_TAG_RE, " ")      // severity tier label — never part of the gist
     .replace(/```[\s\S]*?```/g, "") // fenced code
     .replace(/`[^`]+`/g, "")        // inline code
     .replace(/https?:\/\/\S+/g, "") // URLs

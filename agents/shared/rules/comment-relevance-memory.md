@@ -219,7 +219,7 @@ Each entry stored to LoreKit carries:
 }
 ```
 
-`severity` is **optional**. The reviewer that tiers a finding (`review-config.md` § Severity-aware thresholds) leaves a hidden `<!-- severity: <tier> -->` marker on the comment (`comment-shape.md` § Severity marker), which `scripts/record-comment-relevance.mjs` strips before fingerprinting and reads into this field. It records the **latest-observed** tier for the fingerprint and is omitted entirely for findings that were never tiered (back-compat with existing records and non-`pr-reviewer` bots).
+`severity` is **optional**. The reviewer tiers a finding by default (`review-config.md` § Severity-aware thresholds) and shows the tier as a `<prefix> (<tier>):` label (`conventional-comments.md` § Severity decoration); `scripts/record-comment-relevance.mjs` reads it into this field and strips it before fingerprinting. It records the **latest-observed** tier for the fingerprint and is omitted for findings that were never tiered (back-compat with existing records and non-`pr-reviewer` bots).
 
 The `seen_count` field follows the standard UPDATE contract in
 [`write-pipeline.md § Lesson-scope entries`](../../../skills/authoring/persistent-memory/rules/write-pipeline.md),

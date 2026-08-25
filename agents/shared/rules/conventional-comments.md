@@ -31,6 +31,17 @@ After the prefix, the comment may include exactly one of:
 
 Decorations are part of the Conventional Comments spec and help PR authors triage at a glance.
 
+## Severity decoration
+
+The reviewer tiers every finding by default (`review-config.md` § Severity-aware thresholds) and shows the tier as a **label decoration** — in the Conventional-Comments position between the label and the colon:
+
+```text
+issue (high): <prose> **(blocking)**
+suggestion (low): <prose> **(non-blocking)**
+```
+
+The tier is one of `critical` / `high` / `medium` / `low`, from `Skill("severity", "finding")`. It is orthogonal to and does **not** replace the end-of-sentence `**(blocking)**` / `**(non-blocking)**` decoration — that token is load-bearing (other rules parse it) and stays exactly as is. `scripts/record-comment-relevance.mjs` reads the tier from this label into the relevance record's `severity` field. Omit the label only when no tier was assigned (a flat-override run, or a non-`pr-reviewer` bot).
+
 ## Examples
 
 Every code symbol in the prose is backticked. `suggestion:` and `issue:` comments with a concrete patch include a fenced fix block — see `comment-shape.md § Suggestion / issue → include a fix block`.
@@ -69,13 +80,17 @@ question: Is the empty `catch {}` intentional? Curious whether we want to surfac
 Before any emit:
 
 ```python
+import re
+
+# Tolerates the optional severity label decoration, e.g. "issue (high):".
+PREFIX_RE = re.compile(
+    r"^(praise|nitpick|suggestion|issue|question)( \((critical|high|medium|low)\))?:")
+
 def has_conventional_prefix(body: str) -> bool:
-    return any(body.startswith(p) for p in (
-        "praise:", "nitpick:", "suggestion:", "issue:", "question:"
-    ))
+    return bool(PREFIX_RE.match(body))
 ```
 
-If `False`, prepend the prefix derived from the category. This is a recoverable failure — prepend, do not drop. After prepending, re-run the `comment-shape.md` length check.
+If `False`, prepend the prefix derived from the category (with the `(tier)` label when a tier was assigned). This is a recoverable failure — prepend, do not drop. After prepending, re-run the `comment-shape.md` length check.
 
 ## What this rule does not enforce
 

@@ -23,7 +23,7 @@ Optimality proposals (Step 2.4c) are **out of scope** for this rule: they render
 - [Tone](#tone)
 - [What goes elsewhere](#what-goes-elsewhere)
 - [Mechanical pre-emit check](#mechanical-pre-emit-check)
-- [Severity marker](#severity-marker-metadata-appended-after-the-checks)
+- [Severity label](#severity-label)
 
 ---
 
@@ -221,12 +221,6 @@ On `sentences`, `structure`, `too-many-fences`, `fence-too-long`, or `fence-miss
 
 Dropped comments are logged with the dropped body verbatim in the agent's terminal output so the user can paste them manually if they want — never silently discarded.
 
-## Severity marker (metadata, appended after the checks)
+## Severity label
 
-The reviewer tiers every finding by default (`review-config.md` § Severity-aware thresholds). Append a hidden marker for the assigned tier as the **final line** of the body, *after* the mechanical pre-emit check has passed:
-
-```text
-<!-- severity: critical|high|medium|low -->
-```
-
-It is invisible in rendered GitHub, is metadata not prose, and is therefore excluded from every cap above — it is appended after `passes_shape`, so it never counts toward the 240-char or sentence limits. `scripts/record-comment-relevance.mjs` strips it before fingerprinting (so it never pollutes the claim-gist) and reads it into the relevance record's `severity` field, closing the per-tier precision loop. Emit at most one marker, and omit it entirely when no tier was assigned (back-compat: findings and other bots without a marker record no `severity`).
+The reviewer tiers every finding by default (`review-config.md` § Severity-aware thresholds) and shows the tier as a visible label decoration — `issue (high): …` (`conventional-comments.md` § Severity decoration). It sits in the prefix region, so it is included in the 240-char cap like the prefix itself (it adds ~7 characters, measured after prepending, per § Hard caps). `scripts/record-comment-relevance.mjs` reads the tier from this label into the relevance record's `severity` field and strips it before fingerprinting, so the claim-gist is unchanged whether or not the label is present. Omit the label only when no tier was assigned (a flat-override run, or a non-`pr-reviewer` bot).
