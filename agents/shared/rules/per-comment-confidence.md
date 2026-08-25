@@ -65,8 +65,11 @@ So a near-miss `issue` or `suggestion` is **deferred to an advisory surface, not
 
 ```python
 def defer_floor(threshold: int) -> int:
-    # near-miss band is [defer_floor, threshold); default threshold 80 → band [65, 80)
-    return max(threshold - 15, 65)
+    # near-miss band is [defer_floor, threshold); default threshold 80 → band [65, 80).
+    # Floored at 50 (not 65) so the sub-65 severity tiers keep a non-empty band: with a 65
+    # floor, critical (65) gave an empty [65,65) and assertive-critical (60) an inverted
+    # [65,60), so near-miss critical/high findings were dropped instead of deferred.
+    return max(threshold - 15, 50)
 ```
 
 For a finding that survived `finding-grounding.md` (2.6) and `verification-receipt.md` (2.6b), on its **Final** score:

@@ -225,6 +225,13 @@ category, which `rubric-composition.md § Severity mapping` still assigns separa
 The tier is the source; the reviewer decorates `(blocking)` from it per the crosswalk
 above. Do not encode a second, divergent blocking rule in the consumer.
 
+**One exception — a floor-only tier is not blocking.** If a finding is `high` or `critical`
+**only** because the Step 2 path floor raised it (its Step 1 base tier was `medium`/`low`), do
+not mark it `(blocking)`: a cosmetic nitpick on a `billing/` or `migrations/` path is still a
+nitpick. The floor raises the confidence bar so the finding surfaces on a sensitive path; it does
+not convert a non-blocking finding into a blocker. `(blocking)` follows the base-tier impact
+(broken behaviour, security, data loss, misimplemented intent), not the floor.
+
 ---
 
 ## How Callers Consume the Tier
