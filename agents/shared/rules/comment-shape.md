@@ -23,6 +23,7 @@ Optimality proposals (Step 2.4c) are **out of scope** for this rule: they render
 - [Tone](#tone)
 - [What goes elsewhere](#what-goes-elsewhere)
 - [Mechanical pre-emit check](#mechanical-pre-emit-check)
+- [Severity marker](#severity-marker-metadata-appended-after-the-checks)
 
 ---
 
@@ -219,3 +220,13 @@ On `length` fail: attempt one trim pass that drops the trailing rationale clause
 On `sentences`, `structure`, `too-many-fences`, `fence-too-long`, or `fence-missing-language` fail: drop without retry. These shapes are not recoverable and re-trying the same model in the same turn would re-produce them.
 
 Dropped comments are logged with the dropped body verbatim in the agent's terminal output so the user can paste them manually if they want — never silently discarded.
+
+## Severity marker (metadata, appended after the checks)
+
+When the reviewer assigned a severity tier (`review-config.md` § Severity-aware thresholds is configured, so `Skill("severity", "finding")` ran), append a hidden marker as the **final line** of the body, *after* the mechanical pre-emit check has passed:
+
+```text
+<!-- severity: critical|high|medium|low -->
+```
+
+It is invisible in rendered GitHub, is metadata not prose, and is therefore excluded from every cap above — it is appended after `passes_shape`, so it never counts toward the 240-char or sentence limits. `scripts/record-comment-relevance.mjs` strips it before fingerprinting (so it never pollutes the claim-gist) and reads it into the relevance record's `severity` field, closing the per-tier precision loop. Emit at most one marker, and omit it entirely when no tier was assigned (back-compat: findings and other bots without a marker record no `severity`).

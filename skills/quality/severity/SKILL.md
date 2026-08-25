@@ -245,8 +245,12 @@ consumer uses live in the consumer, not here.
 batch all findings into one call. Do not spawn a separate per-finding invocation — on a
 20-finding PR that doubles the per-finding LLM round-trips for no benefit.
 
-Store the emitted tier alongside the outcome so per-tier precision is measurable over
-time, the same way a reviewer tracks whether its findings were acted on.
+The reviewer records the emitted tier per outcome: it leaves a hidden
+`<!-- severity: <tier> -->` marker on each tiered finding
+(`agents/shared/rules/comment-shape.md` § Severity marker), and
+`scripts/record-comment-relevance.mjs` reads it into the `reviewer-comment-relevance`
+record's `severity` field — so per-tier precision is measurable over time, the same way
+a reviewer tracks whether its findings were acted on.
 
 ---
 

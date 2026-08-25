@@ -53,6 +53,20 @@ function ghApi(path) {
 }
 
 /**
+ * The reviewer appends a hidden severity marker to each finding it tiers, e.g.
+ * `<!-- severity: high -->`. It is invisible in rendered GitHub, excluded from the
+ * comment-shape caps, and MUST be stripped before fingerprinting so it never pollutes
+ * the claim-gist. Kept in sync with agents/shared/rules/comment-shape.md and
+ * skills/quality/severity/SKILL.md.
+ */
+const SEVERITY_RE = /<!--\s*severity:\s*(critical|high|medium|low)\s*-->/i;
+
+function severityFromBody(commentBody) {
+  const m = SEVERITY_RE.exec(commentBody ?? "");
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
  * Derive a stable fingerprint slug from a comment body.
  * Strips code fragments and normalises to a 3-6 word slug.
  * This must stay in sync with the fingerprint the agents use in
@@ -77,6 +91,7 @@ function fingerprint(commentBody) {
 
   // Extract substantive claim words (strip markdown, code spans, URLs, punctuation)
   const cleaned = body
+    .replace(SEVERITY_RE, " ")      // hidden severity marker — never part of the gist
     .replace(/```[\s\S]*?```/g, "") // fenced code
     .replace(/`[^`]+`/g, "")        // inline code
     .replace(/https?:\/\/\S+/g, "") // URLs
@@ -158,7 +173,7 @@ function hasFixCommit({ repo, prNumber, path, line, since }) {
  * Write one relevance record to LoreKit via the CLI.
  * Exits 0 gracefully if LOREKIT_API_KEY is not set (not configured).
  */
-function writeLorekit({ scope, key, relevance, resolutionMethod, reason, commentId, prRef }) {
+function writeLorekit({ scope, key, relevance, resolutionMethod, reason, commentId, prRef, severity }) {
   const apiKey = process.env.LOREKIT_API_KEY;
   if (!apiKey) {
     log("LOREKIT_API_KEY not set — skipping write (configure the secret to enable memory recording).");
@@ -170,6 +185,7 @@ function writeLorekit({ scope, key, relevance, resolutionMethod, reason, comment
     relevance,
     reason,
     resolution_method: resolutionMethod,
+    ...(severity ? { severity } : {}),
     examples: [prRef + (commentId ? ` comment ${commentId}` : "")],
     seen_count: 1,       // LoreKit CLI handles UPDATE / increment server-side on same key
     status: "active",
@@ -279,7 +295,7 @@ async function modeThreadResolved() {
   const prRef = `${repo}#${prNumber}`;
 
   log(`Verdict: ${relevance} / ${resolutionMethod} | fingerprint: ${fp}`);
-  writeLorekit({ scope, key, relevance, resolutionMethod, reason, commentId, prRef });
+  writeLorekit({ scope, key, relevance, resolutionMethod, reason, commentId, prRef, severity: severityFromBody(commentBody) });
 }
 
 // ── Mode: pr-merged ───────────────────────────────────────────────────────────
@@ -359,6 +375,7 @@ async function modePrMerged() {
       reason: `Thread on ${commentPath}:${commentLine} was open at merge with no fix commit or explicit decline`,
       commentId: root.id,
       prRef,
+      severity: severityFromBody(root.body ?? ""),
     });
     swept++;
   }

@@ -211,12 +211,15 @@ Each entry stored to LoreKit carries:
   "relevance": "relevant | not-relevant | weak-not-relevant",
   "reason": "<one-line: why this verdict was reached — resolution method>",
   "resolution_method": "fixed | wont-fix | ignored-at-merge",
+  "severity": "critical | high | medium | low",
   "examples": ["<owner>/<repo>#<n> comment <id>"],
   "seen_count": 1,
   "status": "active | promoted | retired",
   "expires": "<ISO 8601, default: now + 60 days>"
 }
 ```
+
+`severity` is **optional**. The reviewer that tiers a finding (`review-config.md` § Severity-aware thresholds) leaves a hidden `<!-- severity: <tier> -->` marker on the comment (`comment-shape.md` § Severity marker), which `scripts/record-comment-relevance.mjs` strips before fingerprinting and reads into this field. It records the **latest-observed** tier for the fingerprint and is omitted entirely for findings that were never tiered (back-compat with existing records and non-`pr-reviewer` bots).
 
 The `seen_count` field follows the standard UPDATE contract in
 [`write-pipeline.md § Lesson-scope entries`](../../../skills/authoring/persistent-memory/rules/write-pipeline.md),
