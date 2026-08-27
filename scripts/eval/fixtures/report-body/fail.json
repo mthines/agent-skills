@@ -8,7 +8,8 @@
   "RUN": {
     "mode": "full",
     "sha": "69b0de8",
-    "delta_lines": 2172
+    "delta_lines": 2172,
+    "at": "2026-08-22T03:05:00Z"
   },
   "GATE_DESCRIPTION_STATUS": "⚠️",
   "GATE_DESCRIPTION_DETAILS": "Claims `nx affected` is green; not true at this SHA.",

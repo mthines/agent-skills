@@ -1841,6 +1841,16 @@ listed under *REPORT_BODY payload* below. The script **fails closed**: an unknow
 required slot, an invalid gate glyph, a smuggled `**Verdict**` line, or a template that lost its
 marker or accordion all exit non-zero and print nothing, so a malformed report cannot be posted.
 
+`RUN.at` is required alongside `mode` / `sha` — an ISO-8601 UTC timestamp for **this** run (`date -u
++%Y-%m-%dT%H:%M:%SZ`), the same format `runs[].at` already uses in the Step 0.7 state record. The
+renderer turns it into `UPDATED_LINE`, rendered directly under the headline, **outside** the
+`Review details` accordion. This exists because editing a GitHub comment sends no notification —
+the sticky's "edited" tag was the only trace that a rewritten report had actually changed, and a
+reader had to open the edit history to see when. A visible timestamp does not create a
+notification either, but it turns "did this change since I last looked?" into a glance at the
+collapsed comment instead of a click into its history, on every run — including the ones that
+touch only the report and post no review (Step 4b).
+
 **If the renderer cannot be resolved or fails**, do not fall back to composing the body by hand —
 that is the exact failure this replaces. Report the error verbatim in the Step 5 terminal output
 along with the payload you built, post the inline findings (Step 4b still applies), and leave the
@@ -1864,6 +1874,7 @@ printf '%s\n' "$REPORT_BODY" | awk '
 ' || abort "no Review details accordion"
 grep -q '<details open>' <<< "$REPORT_BODY" && abort "accordion is pre-expanded"
 grep -q '\*\*Verdict\*\*' <<< "$REPORT_BODY" && abort "advisory verdict is terminal-only"
+grep -q '<sub>Updated .* UTC</sub>' <<< "$REPORT_BODY" || abort "no top-level UPDATED_LINE — freshness cue is missing"
 ```
 
 On any `abort`: post no report object, name the failing assertion in the Step 5 output, and stop.
