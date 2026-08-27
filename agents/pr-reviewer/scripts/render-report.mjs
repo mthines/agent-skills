@@ -51,7 +51,8 @@ const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NO
 
 // Structured slots. Each is an object or an array; the renderer turns it into markdown.
 const STRUCTURED = ["RUN", "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED",
-  "OPEN_THREADS", "ADDITIONAL_FINDINGS", "LOW_CONFIDENCE_FINDINGS", "OPTIMALITY_CARDS"];
+  "OPEN_THREADS", "ADDITIONAL_FINDINGS", "LOW_CONFIDENCE_FINDINGS", "OPTIMALITY_CARDS",
+  "TIER_TALLY"];
 
 function fail(msg) {
   process.stderr.write(`render-report: ${msg}\n`);
@@ -71,6 +72,7 @@ const SHAPES = {
   "OPEN_THREADS[]": ["path", "line", "url", "ask", "blocking", "author", "is_bot"],
   "ADDITIONAL_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
   "LOW_CONFIDENCE_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
+  TIER_TALLY: ["critical", "high", "medium", "low"],
 };
 
 function assertNoStrayFields(where, obj, allowed) {
@@ -414,8 +416,30 @@ function main() {
     }
   });
 
+  // Finding-tier tally → glyph breakdown. Optional; the model's summary of the severity tiers it
+  // assigned this run. Named TIER_TALLY to avoid the existing SEVERITY_TALLY term (the error/warning
+  // count in the FAIL headline — a different concept). Posted inline findings are not an array in
+  // the payload, so this is the one count the renderer cannot derive from a list — it validates the
+  // shape and omits zero tiers.
+  let tierBreakdown = "";
+  if (data.TIER_TALLY !== undefined && data.TIER_TALLY !== null) {
+    const t = data.TIER_TALLY;
+    const GLYPH = { critical: "🔴", high: "🟠", medium: "🟡", low: "⚪" };
+    const parts = [];
+    for (const tier of ["critical", "high", "medium", "low"]) {
+      const n = t[tier];
+      if (n === undefined || n === null) continue;
+      if (!Number.isInteger(n) || n < 0) {
+        fail(`TIER_TALLY.${tier} must be a non-negative integer, got ${JSON.stringify(n)}`);
+      }
+      if (n > 0) parts.push(`${GLYPH[tier]} ${n}`);
+    }
+    tierBreakdown = parts.join(" · ");
+  }
+
   const derived = {
     HEADLINE: data.HEADLINE,
+    TIER_BREAKDOWN: tierBreakdown,
     FOOTER_LINE: footer,
     RUN_MODE: runLine,
     MEMORIES_SUMMARY: memoriesLine,

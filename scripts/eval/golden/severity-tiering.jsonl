@@ -1,0 +1,15 @@
+{"id":"sev-1","input":"Auth middleware skips the role check when an X-Internal header is present, in components/api/src/auth/middleware.ts","expected":"critical","notes":"authz bypass + auth path floor"}
+{"id":"sev-2","input":"An HTTP handler builds a shell command from a request query parameter and executes it","expected":"critical","notes":"command injection / RCE"}
+{"id":"sev-14","input":"A user's OAuth access token is written to an info-level log line in a production request handler","expected":"critical","notes":"secret exposure"}
+{"id":"sev-3","input":"The Kafka consumer commits the offset before the ClickHouse write is acknowledged, in components/darkplane/src/clients/kafka/consumer.ts","expected":"high","notes":"data-loss shape: offset before durable write"}
+{"id":"sev-4","input":"A one-line change in modules/billing/pricing.go removes the rounding guard at tier boundaries","expected":"high","notes":"billing path floor, small diff"}
+{"id":"sev-5","input":"A CI webhook trusts head_branch from a fork without checking head_repository","expected":"high","notes":"fork/PR trust weakness"}
+{"id":"sev-6","input":"A per-org counter is incremented without a lock under concurrent requests, double-dispatching metrics","expected":"high","notes":"concurrency on shared counter"}
+{"id":"sev-7","input":"A forward migration issues DROP COLUMN without an existence guard on a populated table","expected":"high","notes":"unguarded destructive migration on production path"}
+{"id":"sev-15","input":"The main request handler returns HTTP 500 for every request when an optional header is absent","expected":"high","notes":"broken core behavior on a common path"}
+{"id":"sev-8","input":"A filter save shows a success toast even when server revalidation failed; the user can retry","expected":"medium","notes":"functional bug with a workaround"}
+{"id":"sev-9","input":"Deleted SLOs remain togglable in the UI until the page is refreshed","expected":"medium","notes":"contained functional defect, recoverable"}
+{"id":"sev-10","input":"A function summary comment inconsistently ends with a period","expected":"low","notes":"cosmetic"}
+{"id":"sev-11","input":"An unused pagesPerRun variable is left in a workflow file","expected":"low","notes":"nitpick, no functional impact"}
+{"id":"sev-12","input":"A DROP TABLE statement appears in components/accountant/src/test/fixtures/seed.test.sql","expected":"low","notes":"exclusion gate: test/fixture path, floor does not apply"}
+{"id":"sev-13","input":"A nil-dereference in a handler that is never registered with the worker (dead code path)","expected":"low","notes":"reachability cap: unreachable, rated down"}

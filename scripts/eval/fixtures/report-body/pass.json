@@ -1,15 +1,30 @@
 {
   "HEADLINE": "✅ Reviewed your changes — no issues found.",
-  "RUN": { "mode": "full", "sha": "bde3c2f", "delta_lines": 128 },
-  "GATE_DESCRIPTION_STATUS": "✅", "GATE_DESCRIPTION_DETAILS": "The description matches what the diff does.",
-  "GATE_PRIOR_STATUS": "✅", "GATE_PRIOR_DETAILS": "Earlier review comments are resolved.",
-  "GATE_DOCS_STATUS": "✅", "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
-  "GATE_SELFREVIEW_STATUS": "✅", "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
-  "GATE_CODEREVIEW_STATUS": "✅", "GATE_CODEREVIEW_DETAILS": "The multi-lens review found no blocking issues.",
+  "RUN": {
+    "mode": "full",
+    "sha": "bde3c2f",
+    "delta_lines": 128
+  },
+  "GATE_DESCRIPTION_STATUS": "✅",
+  "GATE_DESCRIPTION_DETAILS": "The description matches what the diff does.",
+  "GATE_PRIOR_STATUS": "✅",
+  "GATE_PRIOR_DETAILS": "Earlier review comments are resolved.",
+  "GATE_DOCS_STATUS": "✅",
+  "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
+  "GATE_SELFREVIEW_STATUS": "✅",
+  "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
+  "GATE_CODEREVIEW_STATUS": "✅",
+  "GATE_CODEREVIEW_DETAILS": "The multi-lens review found no blocking issues.",
   "MEMORIES_SUMMARY": "53 indexed",
   "QUALITY": "produced 3 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0",
   "INTEGRATIONS": "not activated",
   "OPTIMALITY_LOG": "ran · 2 judged · 2 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
   "STANDARDS_LOG": "ran · 2 docs · 0 finding(s)",
-  "SKIPPED_FILES": "none"
+  "SKIPPED_FILES": "none",
+  "TIER_TALLY": {
+    "critical": 1,
+    "high": 2,
+    "medium": 3,
+    "low": 1
+  }
 }

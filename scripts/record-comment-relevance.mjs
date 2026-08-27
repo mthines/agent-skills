@@ -53,6 +53,23 @@ function ghApi(path) {
 }
 
 /**
+ * The reviewer shows the severity tier as a Conventional-Comments label decoration:
+ * `issue (high): ...`. Two regexes derive from that one visible tag:
+ *   SEVERITY_RE  — anchored, extracts the tier for the relevance record.
+ *   TIER_TAG_RE  — global, strips the tag before fingerprinting so "high" never
+ *                  pollutes the claim-gist (fingerprints stay stable across tagged and
+ *                  untagged comments). Kept in sync with
+ *                  agents/shared/rules/conventional-comments.md § Severity decoration.
+ */
+const SEVERITY_RE = /^\s*\*{0,2}(?:issue|suggestion|nitpick|nit|question|praise|chore)\s*\((critical|high|medium|low)\)/i;
+const TIER_TAG_RE = /\((?:critical|high|medium|low)\)/gi;
+
+function severityFromBody(commentBody) {
+  const m = SEVERITY_RE.exec(commentBody ?? "");
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
  * Derive a stable fingerprint slug from a comment body.
  * Strips code fragments and normalises to a 3-6 word slug.
  * This must stay in sync with the fingerprint the agents use in
@@ -69,7 +86,7 @@ function fingerprint(commentBody) {
   const ccPrefixes = ["issue", "suggestion", "nitpick", "nit", "question", "praise", "chore"];
   let category = "suggestion";
   for (const prefix of ccPrefixes) {
-    if (new RegExp(`^\\*?\\*?${prefix}[:(]`, "i").test(body.trim())) {
+    if (new RegExp(`^\\*?\\*?${prefix}(?:\\s*\\((?:critical|high|medium|low)\\))?\\s*[:(]`, "i").test(body.trim())) {
       category = prefix === "nit" ? "nitpick" : prefix;
       break;
     }
@@ -77,6 +94,7 @@ function fingerprint(commentBody) {
 
   // Extract substantive claim words (strip markdown, code spans, URLs, punctuation)
   const cleaned = body
+    .replace(TIER_TAG_RE, " ")      // severity tier label — never part of the gist
     .replace(/```[\s\S]*?```/g, "") // fenced code
     .replace(/`[^`]+`/g, "")        // inline code
     .replace(/https?:\/\/\S+/g, "") // URLs
@@ -158,7 +176,7 @@ function hasFixCommit({ repo, prNumber, path, line, since }) {
  * Write one relevance record to LoreKit via the CLI.
  * Exits 0 gracefully if LOREKIT_API_KEY is not set (not configured).
  */
-function writeLorekit({ scope, key, relevance, resolutionMethod, reason, commentId, prRef }) {
+function writeLorekit({ scope, key, relevance, resolutionMethod, reason, commentId, prRef, severity }) {
   const apiKey = process.env.LOREKIT_API_KEY;
   if (!apiKey) {
     log("LOREKIT_API_KEY not set — skipping write (configure the secret to enable memory recording).");
@@ -170,6 +188,7 @@ function writeLorekit({ scope, key, relevance, resolutionMethod, reason, comment
     relevance,
     reason,
     resolution_method: resolutionMethod,
+    ...(severity ? { severity } : {}),
     examples: [prRef + (commentId ? ` comment ${commentId}` : "")],
     seen_count: 1,       // LoreKit CLI handles UPDATE / increment server-side on same key
     status: "active",
@@ -279,7 +298,7 @@ async function modeThreadResolved() {
   const prRef = `${repo}#${prNumber}`;
 
   log(`Verdict: ${relevance} / ${resolutionMethod} | fingerprint: ${fp}`);
-  writeLorekit({ scope, key, relevance, resolutionMethod, reason, commentId, prRef });
+  writeLorekit({ scope, key, relevance, resolutionMethod, reason, commentId, prRef, severity: severityFromBody(commentBody) });
 }
 
 // ── Mode: pr-merged ───────────────────────────────────────────────────────────
@@ -359,6 +378,7 @@ async function modePrMerged() {
       reason: `Thread on ${commentPath}:${commentLine} was open at merge with no fix commit or explicit decline`,
       commentId: root.id,
       prRef,
+      severity: severityFromBody(root.body ?? ""),
     });
     swept++;
   }

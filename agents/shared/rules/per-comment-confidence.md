@@ -34,6 +34,20 @@ For each finding that survives `finding-grounding.md` (2.6) and `verification-re
    The default (no review config present or `profile: balanced`) is **80**.
    See `review-config.md` for the full profile→threshold table.
 
+   **Severity-aware threshold (default).** Assess the finding's tier once with
+   `Skill("severity", "finding")` — in this same pass as the confidence rating, never a
+   separate per-finding call — and use the profile's `severity_thresholds[tier]` as the
+   effective threshold (`review-config.md` § Severity-aware thresholds). The `medium` tier
+   anchors the profile's historical bar (**80** for `balanced`), so a typical finding is
+   gated exactly as before; `critical` / `high` get a lower bar (surface more) and `low` a
+   higher one (surface less). A flat `per_comment_confidence_threshold: N` override
+   collapses all tiers back to `N` (pre-severity behavior). The `defer_floor` band and all
+   rules below use the effective threshold unchanged. A finding whose **base-tier impact** is
+   `critical` or `high` is additionally decorated `(blocking)` (severity's § Mapping to a
+   reviewer's blocking flag), exempting it from the placement caps
+   (`rubric-composition.md § Placement`). A tier raised **only** by the Step 2 path floor is
+   **not** blocking — the floor sets the confidence bar, not the blocking decoration.
+
 2. Construct a `confidence(code)` call with the finding as input:
    - **Target**: `<file:line>`
    - **Claim**: the comment body (without prefix and decoration)
@@ -53,8 +67,11 @@ So a near-miss `issue` or `suggestion` is **deferred to an advisory surface, not
 
 ```python
 def defer_floor(threshold: int) -> int:
-    # near-miss band is [defer_floor, threshold); default threshold 80 → band [65, 80)
-    return max(threshold - 15, 65)
+    # near-miss band is [defer_floor, threshold); default threshold 80 → band [65, 80).
+    # Floored at 50 (not 65) so the sub-65 severity tiers keep a non-empty band: with a 65
+    # floor, critical (65) gave an empty [65,65) and assertive-critical (60) an inverted
+    # [65,60), so near-miss critical/high findings were dropped instead of deferred.
+    return max(threshold - 15, 50)
 ```
 
 For a finding that survived `finding-grounding.md` (2.6) and `verification-receipt.md` (2.6b), on its **Final** score:

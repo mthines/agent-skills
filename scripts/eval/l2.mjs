@@ -67,6 +67,14 @@ const SUITES = [
     choices: ["promoted", "not-promoted"],
   },
   {
+    name: "severity-tiering",
+    golden: "golden/severity-tiering.jsonl",
+    rubric: { file: "skills/quality/severity/SKILL.md", section: "## Severity rubric" },
+    instruction: "You are the severity skill. Using ONLY the rubric below, classify the finding into exactly one severity tier. Run the exclusion gate and the reachability cap before applying any path floor or escalator.",
+    inputKey: "input", inputLabel: "Finding",
+    choices: ["critical", "high", "medium", "low"],
+  },
+  {
     name: "code-review-retrieval-relevance",
     golden: "golden/code-review-retrieval-relevance.jsonl",
     rubric: { file: "agents/pr-reviewer.md", section: "## Step 1: Fetch all inputs + load memories" },

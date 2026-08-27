@@ -19,6 +19,8 @@
 **Memories** — 53 indexed · 0 used
 
 
+**Severity** — 🔴 1 · 🟠 2 · 🟡 3 · ⚪ 1
+
 **Quality** — produced 3 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0
 
 **Integrations** — not activated

@@ -1334,7 +1334,9 @@ rubrics + personas produce raw findings
 | `nitpick` | 95% |
 | `praise` | Drop entirely — do not include in inline comments or review body |
 
-A near-miss `issue` or `suggestion` — one that scored just under its threshold at Step 2.7 — is **deferred to an advisory body surface, not dropped**, per `per-comment-confidence.md § Drop vs. defer` (band `[max(threshold − 15, 65), threshold)`). `question` and `nitpick` below threshold are still dropped. This is what stops a real-but-borderline finding from vanishing on one review and resurfacing as "new" on the next.
+A near-miss `issue` or `suggestion` — one that scored just under its threshold at Step 2.7 — is **deferred to an advisory body surface, not dropped**, per `per-comment-confidence.md § Drop vs. defer` (band `[max(threshold − 15, 50), threshold)`). `question` and `nitpick` below threshold are still dropped. This is what stops a real-but-borderline finding from vanishing on one review and resurfacing as "new" on the next.
+
+**When severity-aware thresholds are enabled (the default), the effective inline bar is `severity_thresholds[tier]`** (`per-comment-confidence.md` § Severity-aware threshold; `review-config.md` § Severity-aware thresholds), and it **supersedes** the per-finding-type table above. The table applies only under a flat `per_comment_confidence_threshold` override (severity fan-out off). The `praise` = drop rule always applies regardless.
 
 ### 2.2 Relevance-memory filtering
 
@@ -1995,9 +1997,13 @@ def payload_is_safe(payload: dict) -> tuple[bool, str]:
     for c in payload.get("comments", []):
         if c.get("side") not in ("RIGHT", "LEFT"):
             return (False, f"comment missing side field: {c.get('path')}:{c.get('line')}")
-        if not c.get("body", "").startswith((
-            "praise:", "nitpick:", "suggestion:", "issue:", "question:"
-        )):
+        import re  # mirrors conventional-comments.md § Mechanical check
+        # Tolerate the optional severity label decoration (e.g. "issue (high):"). A bare
+        # startswith("issue:") would reject the reviewer's own tiered comments and abort the post.
+        if not re.match(
+            r"^(praise|nitpick|suggestion|issue|question)( \((critical|high|medium|low)\))?:",
+            c.get("body", ""),
+        ):
             return (False, f"comment body missing Conventional-Comments prefix: {c['body'][:40]}")
         if len(c.get("body", "")) > 240:
             return (False, f"comment body > 240 chars: {len(c['body'])}")

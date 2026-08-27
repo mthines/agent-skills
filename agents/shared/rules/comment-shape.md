@@ -23,6 +23,7 @@ Optimality proposals (Step 2.4c) are **out of scope** for this rule: they render
 - [Tone](#tone)
 - [What goes elsewhere](#what-goes-elsewhere)
 - [Mechanical pre-emit check](#mechanical-pre-emit-check)
+- [Severity label](#severity-label)
 
 ---
 
@@ -219,3 +220,7 @@ On `length` fail: attempt one trim pass that drops the trailing rationale clause
 On `sentences`, `structure`, `too-many-fences`, `fence-too-long`, or `fence-missing-language` fail: drop without retry. These shapes are not recoverable and re-trying the same model in the same turn would re-produce them.
 
 Dropped comments are logged with the dropped body verbatim in the agent's terminal output so the user can paste them manually if they want — never silently discarded.
+
+## Severity label
+
+The reviewer tiers every finding by default (`review-config.md` § Severity-aware thresholds) and shows the tier as a visible label decoration — `issue (high): …` (`conventional-comments.md` § Severity decoration). It sits in the prefix region, so it is included in the 240-char cap like the prefix itself (it adds ~7 characters, measured after prepending, per § Hard caps). `scripts/record-comment-relevance.mjs` reads the tier from this label into the relevance record's `severity` field and strips it before fingerprinting, so the claim-gist is unchanged whether or not the label is present. Omit the label only when no tier was assigned (a flat-override run, or a non-`pr-reviewer` bot).
