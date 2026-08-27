@@ -2,6 +2,7 @@
 ⚠️ **Partial review — tool budget exhausted after 180 calls; 22 of 31 files scanned.**
 
 Reviewed your changes — **1 error, 2 warnings** need attention before human review. Blocking: 1 unanswered blocking review thread.
+<sub>Updated 2026-08-22 03:05 UTC</sub>
 
 <details>
 <summary>Optimality review (1) — is this the best approach?</summary>
