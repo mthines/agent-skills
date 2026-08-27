@@ -44,10 +44,13 @@ The Agent0 automation may also enable it out-of-band for the runs it owns. With 
 https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=<ENCODED_PROMPT>
 ```
 
-`<ENCODED_PROMPT>` is the prompt below, `encodeURIComponent`-encoded, **then** with `(`→`%28`,
-`)`→`%29`, `'`→`%27` replaced — `encodeURIComponent` leaves those three literal, and a literal `)`
-would terminate the `](url)` markdown link. The renderer rejects a `FIX_ALL_URL` that still contains
-a literal `)` as a fail-closed guard.
+`<ENCODED_PROMPT>` is built by `agents/pr-reviewer/scripts/build-agent0-link.mjs`'s `encodePrompt` —
+the single source of truth for this encoding, so the report renderer and the inline-comment step
+encode identically. Read that script for the exact escaping rule rather than re-deriving it here;
+duplicating it in prose is how the two "single source" encoders drift apart. The reason it exists:
+`encodeURIComponent` leaves `(`, `)`, and `'` literal, and a literal `)` would terminate the
+`](url)` markdown link. The renderer rejects a `FIX_ALL_URL` that still contains a literal `)` as a
+fail-closed guard.
 
 Keep prompts compact — the whole URL must stay well under ~4000 characters, so the **Fix this**
 prompt embeds only the one finding and the **Fix all** prompt embeds nothing (it points Agent0 at
