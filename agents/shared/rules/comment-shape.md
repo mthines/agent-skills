@@ -224,3 +224,9 @@ Dropped comments are logged with the dropped body verbatim in the agent's termin
 ## Severity label
 
 The reviewer tiers every finding by default (`review-config.md` § Severity-aware thresholds) and shows the tier as a visible label decoration — `issue (high): …` (`conventional-comments.md` § Severity decoration). It sits in the prefix region, so it is included in the 240-char cap like the prefix itself (it adds ~7 characters, measured after prepending, per § Hard caps). `scripts/record-comment-relevance.mjs` reads the tier from this label into the relevance record's `severity` field and strips it before fingerprinting, so the claim-gist is unchanged whether or not the label is present. Omit the label only when no tier was assigned (a flat-override run, or a non-`pr-reviewer` bot).
+
+## Fix-with-Agent0 button
+
+When `agent0_fix_links` is on (`review-config.md`; default off), append the **Fix this with Agent0** button as the final line of an `issue:` / `suggestion:` finding, *after* the fix block — a linked image built per `agents/shared/rules/agent0-fix-links.md § Button markup`. Like the severity label it is appended after the mechanical pre-emit check, so it is excluded from the 240-char prose cap. Skip it for `nitpick` / `question` / `praise`, and omit it entirely when the flag is off.
+
+Unlike the severity label, the button is not unbounded either: the embedded deep link is capped by `build-agent0-link.mjs`'s own `MAX_URL` guard (8000 chars), which applies identically to the **Fix this** and **Fix all** links since both are built by that script's `encodePrompt` / `buildLink`. If a **Fix this** prompt would push the link past that bound, omit the button for that finding rather than truncate the URL — log the omission in the agent's terminal output the same way an unrecoverable `passes_shape` drop is logged above, so the finding is never silently shortened into a broken link.

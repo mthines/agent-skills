@@ -2,7 +2,9 @@
 {{#PARTIAL_BANNER}}⚠️ **Partial review — tool budget exhausted after {{BUDGET_CALLS}} calls; {{BUDGET_SCANNED}} of {{BUDGET_TOTAL}} files scanned.**
 
 {{/PARTIAL_BANNER}}{{HEADLINE}}
-{{#OPTIMALITY_CARDS}}
+{{#FIX_ALL_BUTTON}}
+{{FIX_ALL_BUTTON}}
+{{/FIX_ALL_BUTTON}}{{#OPTIMALITY_CARDS}}
 <details>
 <summary>Optimality review ({{OPTIMALITY_COUNT}}) — is this the best approach?</summary>
 

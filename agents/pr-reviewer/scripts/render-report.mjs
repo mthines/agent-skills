@@ -47,7 +47,7 @@ const REQUIRED_SCALARS = [
   "MEMORIES_SUMMARY", "QUALITY", "INTEGRATIONS",
   "OPTIMALITY_LOG", "STANDARDS_LOG", "SKIPPED_FILES",
 ];
-const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NOTE"];
+const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NOTE", "FIX_ALL_URL"];
 
 // Structured slots. Each is an object or an array; the renderer turns it into markdown.
 const STRUCTURED = ["RUN", "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED",
@@ -437,8 +437,21 @@ function main() {
     tierBreakdown = parts.join(" · ");
   }
 
+  // Fix-all Agent0 button (opt-in). Rendered only when FIX_ALL_URL is supplied — the agent builds
+  // the deep link via scripts/build-agent0-link.mjs. The button image URL (ASSET) is a constant
+  // here; Dash0 can repoint it at a hosted PNG for production (agent0-fix-links.md § Button markup).
+  let fixAllButton = "";
+  if (data.FIX_ALL_URL !== undefined && data.FIX_ALL_URL !== null && String(data.FIX_ALL_URL).trim() !== "") {
+    const u = String(data.FIX_ALL_URL);
+    if (!/^https?:\/\//.test(u)) fail(`FIX_ALL_URL must be http(s), got ${JSON.stringify(u.slice(0, 60))}`);
+    if (/[)\s]/.test(u)) fail("FIX_ALL_URL must be a bare URL (no spaces or ')') — encode per build-agent0-link.mjs");
+    const ASSET = "https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets/fix-all-agent0.svg";
+    fixAllButton = `[![Fix all with Agent0](${ASSET})](${u})`;
+  }
+
   const derived = {
     HEADLINE: data.HEADLINE,
+    FIX_ALL_BUTTON: fixAllButton,
     TIER_BREAKDOWN: tierBreakdown,
     FOOTER_LINE: footer,
     RUN_MODE: runLine,
