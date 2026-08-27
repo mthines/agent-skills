@@ -103,16 +103,20 @@ Each button is a linked image — the image is the button, the link is the deep 
 [![Fix all with Agent0]({ASSET_BASE}/fix-all-agent0.svg)]({DEEP_LINK})
 ```
 
-`{ASSET_BASE}` defaults to the committed SVGs:
+`{ASSET_BASE}` is not a runtime setting — it is shorthand in this doc for the hardcoded `ASSET`
+constant in `render-report.mjs` (currently the committed SVGs below), and nothing exposes an
+override for it:
 
 ```text
 https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets
 ```
 
 For production, Dash0 should host PNG equivalents on `app.dash0.com` (like Cursor's own CDN button)
-and point `ASSET_BASE` there — a brand-controlled PNG renders more reliably through GitHub's image
-proxy than a repo-hosted SVG, and it does not 404 on branches before merge. The button source lives
-in `agents/pr-reviewer/assets/*.svg`.
+— a brand-controlled PNG renders more reliably through GitHub's image proxy than a repo-hosted SVG,
+and it does not 404 on branches before merge. Repointing production is a code change: edit the
+`ASSET` constant in `render-report.mjs` directly (and wire the equivalent constant when the **Fix
+this** per-finding button is implemented) rather than looking for a config flag — none exists. The
+button source lives in `agents/pr-reviewer/assets/*.svg`.
 
 - **Fix this** — appended after the fix block on each inline `issue:` / `suggestion:` finding, only
   when the flag is on (`comment-shape.md § Fix-with-Agent0 button`). Skipped for `nitpick` /
