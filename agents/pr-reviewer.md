@@ -254,6 +254,15 @@ REPO="${RESOLVED_REPO##*/}"
 If no PR reference found, abort: `pr-reviewer requires a PR URL, #<n>, or bare PR number — got: <args>`.
 If `RESOLVED_REPO` is empty (no PR_REPO and not in a git repo), abort: `pr-reviewer could not determine the repository — pass a full PR URL`.
 
+### `--fix-links` mode
+
+Set `FIX_LINKS=on` when `--fix-links` is passed OR the resolved review config sets `agent0_fix_links: true` (default: **off** — emit no buttons and skip this block entirely). When on, render the "Fix with Agent0" buttons per `agents/shared/rules/agent0-fix-links.md`:
+
+- **Fix all (report).** At Step 4, build the fix-all deep link — `node agents/pr-reviewer/scripts/build-agent0-link.mjs "<fix-all prompt>"`, the prompt from `agent0-fix-links.md § Prompt templates` filled with `OWNER/REPO`, the PR number, and the head branch — and pass the URL as the `FIX_ALL_URL` payload slot to `render-report.mjs` (`report-rendering.md`). The renderer turns it into the linked button above the accordion. Omit the slot when there are no actionable findings.
+- **Fix this (inline).** When shaping an inline `issue:` / `suggestion:` finding (Step 2.8/2.9), append the Fix-this button as the final line after the fix block, per `comment-shape.md § Fix-with-Agent0 button`, built with the same script and the fix-this prompt template. Skip `nitpick` / `question` / `praise`.
+
+With `FIX_LINKS=off` (the default) supply no `FIX_ALL_URL` and append no inline button. Either way the buttons ride **inside** the reviewer's own sticky report and inline findings — they add no new comment and never push, fix, or approve anything; a human clicks and Agent0 acts.
+
 ---
 
 ## Step 0.5: Authorship pre-check — set review relation
