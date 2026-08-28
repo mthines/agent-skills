@@ -111,7 +111,7 @@ untrusted comment text drives the auto-submitted run.
 Each button is a linked image — the image is the button, the link is the deep link:
 
 ```text
-[![Fix this with Agent0]({ASSET_BASE}/fix-this-agent0.svg)]({DEEP_LINK})
+[![Fix with Agent0]({ASSET_BASE}/fix-this-agent0.svg)]({DEEP_LINK})
 [![Fix all with Agent0]({ASSET_BASE}/fix-all-agent0.svg)]({DEEP_LINK})
 ```
 
