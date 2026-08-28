@@ -65,7 +65,7 @@ const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArr
 // an item is silent: it changes nothing and reports nothing, so a misremembered field name reads
 // as accepted. Caught exactly that with a `delta_note` typo inside RUN.
 const SHAPES = {
-  RUN: ["mode", "sha", "prior_sha", "delta_lines"],
+  RUN: ["mode", "sha", "prior_sha", "delta_lines", "at"],
   PARTIAL_REVIEW: ["calls", "scanned", "total"],
   RESOLVED_SINCE: ["count", "sha"],
   "MEMORIES_USED[]": ["key", "url", "note"],
@@ -288,6 +288,19 @@ function main() {
     || run.mode === "zero-delta";
   if (needsPrior && !run.prior_sha) fail(`RUN.prior_sha is required when RUN.mode is ${run.mode}`);
 
+  // RUN.at — the wall-clock moment this run wrote the sticky, rendered as UPDATED_LINE right under
+  // the headline (outside the accordion). GitHub sends no notification for a comment edit, so the
+  // "edited" tag was the only visible sign a rewritten report had actually changed; a reader had to
+  // open the edit history to see when. A timestamp at the top of the collapsed comment is not a
+  // notification either, but it turns "was this touched since I last looked?" into a glance instead
+  // of a click, on every run — not only the ones that also post a review.
+  if (!run.at) fail("RUN.at is required — an ISO-8601 UTC timestamp for this run (e.g. `date -u +%Y-%m-%dT%H:%M:%SZ`)");
+  const atDate = new Date(String(run.at));
+  if (Number.isNaN(atDate.getTime()) || !/Z$/.test(String(run.at))) {
+    fail(`RUN.at must be an ISO-8601 UTC timestamp ending in "Z" — got ${JSON.stringify(run.at)}`);
+  }
+  const updatedStamp = atDate.toISOString().slice(0, 16).replace("T", " ");
+
   let footer;
   if (run.mode === "full") footer = `Reviewed for commit \`${run.sha}\`.`;
   else if (run.mode === "zero-delta") {
@@ -452,6 +465,7 @@ function main() {
   const derived = {
     HEADLINE: data.HEADLINE,
     FIX_ALL_BUTTON: fixAllButton,
+    UPDATED_LINE: `<sub>Updated ${updatedStamp} UTC</sub>`,
     TIER_BREAKDOWN: tierBreakdown,
     FOOTER_LINE: footer,
     RUN_MODE: runLine,
@@ -517,6 +531,7 @@ function main() {
   // Post-conditions. Unreachable for an accepted payload, which is the point: a future template
   // edit that breaks the contract fails loudly here instead of quietly posting a flat report.
   if (!body.includes("<!-- PR_REVIEWER_REPORT -->")) fail("rendered body lost the report marker");
+  if (!body.includes(derived.UPDATED_LINE)) fail("rendered body lost the top-level UPDATED_LINE — a template edit dropped the freshness cue");
   if (!/<details>\n<summary>Review details/.test(body)) fail("rendered body has no `Review details` accordion");
   if (body.includes("<details open>")) fail("rendered body pre-expands a `<details>` block");
   const caged = body.match(/``?\s*\[[^\]]*\]\([^)]*\)\s*``?/g);

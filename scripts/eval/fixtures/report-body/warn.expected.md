@@ -1,5 +1,6 @@
 <!-- PR_REVIEWER_REPORT -->
 Reviewed your changes — no blocking issues, **3 warning(s)**: 2 open review thread(s); 3 non-blocking finding(s); CI red: Integration smoke.
+<sub>Updated 2026-08-20 14:33 UTC</sub>
 
 <details>
 <summary>Additional findings (2) — cleared review, not inlined</summary>

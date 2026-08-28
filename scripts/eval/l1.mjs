@@ -1327,7 +1327,7 @@ function checksInSync(plan, checks) {
     // and the footer — not the Run mode line — is what still names the zero-delta shape.
     {
       const r = run([], mutate((c) => {
-        c.RUN = { mode: "zero-delta", sha: "bde3c2f", prior_sha: "70cf147" };
+        c.RUN = { mode: "zero-delta", sha: "bde3c2f", prior_sha: "70cf147", at: "2026-08-15T09:12:00Z" };
       }));
       s.check("G25 a zero-delta run renders", r.ok, r.err);
       s.check("G25 zero-delta parses as {incremental, 0}",

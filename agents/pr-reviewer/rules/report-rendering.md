@@ -91,10 +91,11 @@ of those was a real defect before it became derived.
 | `OPTIMALITY_LOG` · `STANDARDS_LOG` | Must begin `ran` or `skipped (reason)` so the run-state parses. |
 | `SKIPPED_FILES` | A list, or `none`. |
 
-**Required — `RUN`**, the object the footer line and the `Run mode` line are both derived from:
+**Required — `RUN`**, the object the footer line, the `Run mode` line, and the top-level freshness
+cue are all derived from:
 
 ```json
-{ "RUN": { "mode": "full", "sha": "c3ceb87", "prior_sha": "70cf147", "delta_lines": 256 } }
+{ "RUN": { "mode": "full", "sha": "c3ceb87", "prior_sha": "70cf147", "delta_lines": 256, "at": "2026-08-15T09:12:00Z" } }
 ```
 
 - `mode` — `full` · `incremental` · `incremental-quick` · `zero-delta`.
@@ -102,6 +103,27 @@ of those was a real defect before it became derived.
   every mode except `full`. The renderer rejects a longer sha, which is what stops one report
   carrying a 40-char sha in the footer and a 7-char sha in a prose line.
 - `delta_lines` — integer, required unless `mode` is `zero-delta`.
+- `at` — **required**, an ISO-8601 UTC timestamp ending in `Z` for this run (`date -u
+  +%Y-%m-%dT%H:%M:%SZ`), the same format `runs[].at` already uses in the Step 0.7 state record.
+  Derives `UPDATED_LINE` (below) — never write that slot yourself.
+
+#### `UPDATED_LINE` — the freshness cue outside the accordion
+
+Editing a GitHub comment sends **no notification** — unlike a new comment or review, a reader
+watching the PR is never told the sticky changed. Before this slot existed, the "edited" tag next
+to the comment's timestamp was the *only* trace that a rewritten report had actually changed, and
+seeing it meant opening the edit history. `UPDATED_LINE` renders `<sub>Updated <YYYY-MM-DD
+HH:MM> UTC</sub>` on its own line directly under `HEADLINE`, **outside** the `Review details`
+accordion — visible on the collapsed comment, on every run, including a run that touches only the
+report and posts no review (Step 4b has one posting condition, and this is not it). It does not
+create a notification; it turns "did this change since I last looked?" into a glance instead of a
+click into the edit history.
+
+It is **derived, never authored** — supply `RUN.at` and the renderer formats it, the same
+discipline as `FOOTER_LINE` and `RUN_MODE`. This is also why it lives in `RUN` rather than as its
+own top-level scalar: one run produces one wall-clock moment, and `RUN` is already the object that
+moment's other derived text (the footer) comes from — a second, independent timestamp field could
+disagree with it.
 
 The `Run mode` line renders as `<mode> · <N> lines in delta`, which is the shape
 `reviewer-report-ingest.md` parses. Extra colour goes in the optional `RUN_NOTE` scalar and is
@@ -509,8 +531,10 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   blocks — `Review details`, `Optimality review`, `Additional findings`, and
   `Low-confidence findings` — the `MEMORIES_SECTION` and `OPEN_THREADS_LIST` slots inside
   `Review details`, the `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the
-  `PARTIAL_BANNER` line — all of which are slots in the template, not added prose).
-  Besides the headline and the banner, **no** prose of the agent's own is permitted at the top
+  `PARTIAL_BANNER` and `UPDATED_LINE` lines — all of which are slots in the template, not added
+  prose).
+  Besides the headline, the banner, and `UPDATED_LINE` (all three renderer-derived or
+  renderer-validated, never hand-composed), **no** prose of the agent's own is permitted at the top
   level of the body.
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
