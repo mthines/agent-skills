@@ -124,8 +124,8 @@ length**, so there is no count to supply and none to get wrong:
 **Optional — scalars:** `CI_NOTE` (Gate 2's substance — which checks are red and on what),
 `VERIFIED_NOTE` (what this run checked itself), `QUALITY_DROPPED`, `RUN_NOTE`, `FIX_ALL_URL`
 (opt-in — the Agent0 "Fix all" deep link, validated `http(s)` and bare of `)`; the renderer turns
-it into a linked button above the accordion, rendered only when supplied, i.e. when
-`agent0_fix_links` is on — see `agents/shared/rules/agent0-fix-links.md`).
+it into a linked button above the accordion, rendered only when supplied, i.e. when the
+`--fix-links` mode is on — see `agents/shared/rules/agent0-fix-links.md`).
 
 **Do not write a markdown link into a structured field.** `path`, `ask`, `body`, `key` and `note`
 carry text, not markup — the renderer builds the link from `url`. Markdown link syntax in any of

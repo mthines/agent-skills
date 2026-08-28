@@ -20,23 +20,32 @@ review config opts in.
 
 ## Contents
 
-- [Opt-in flag](#opt-in-flag)
+- [Opt-in](#opt-in)
 - [Deep-link format](#deep-link-format)
 - [Prompt templates](#prompt-templates)
 - [Button markup](#button-markup)
 - [Safety](#safety)
 
-## Opt-in flag
+## Opt-in
 
-Render the buttons only when the resolved review config sets:
+Off by default. It is a **runtime mode**, enabled per-run with the `--fix-links` flag on the
+`pr-reviewer` invocation:
+
+```text
+Task(subagent_type="pr-reviewer", prompt="<PR-URL> --fix-links")
+```
+
+`--fix-links` is the mode the Agent0 automation passes for the runs it owns, so nobody else's
+reviews change and no repo has to commit a config file. A repo that *always* wants the buttons can
+set the equivalent default in its review config instead:
 
 ```yaml
 # .github/review.yaml
-agent0_fix_links: true   # default: false
+agent0_fix_links: true   # repo-wide default — equivalent to always passing --fix-links (default: false)
 ```
 
-The Agent0 automation may also enable it out-of-band for the runs it owns. With the flag off
-(the default), the reviewer emits no buttons anywhere and behaves exactly as before.
+With neither the flag nor the config set (the default), the reviewer emits no buttons anywhere and
+behaves exactly as before.
 
 ## Deep-link format
 
