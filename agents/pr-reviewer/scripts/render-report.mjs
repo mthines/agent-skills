@@ -458,6 +458,7 @@ function main() {
     const u = String(data.FIX_ALL_URL);
     if (!/^https?:\/\//.test(u)) fail(`FIX_ALL_URL must be http(s), got ${JSON.stringify(u.slice(0, 60))}`);
     if (/[)\s]/.test(u)) fail("FIX_ALL_URL must be a bare URL (no spaces or ')') — encode per build-agent0-link.mjs");
+    if (!/^https:\/\/app\.dash0(-dev)?\.com\//.test(u)) fail("FIX_ALL_URL host must be app.dash0.com or app.dash0-dev.com (agent0_environment)");
     const ASSET = "https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets/fix-all-agent0.svg";
     fixAllButton = `[![Fix all with Agent0](${ASSET})](${u})`;
   }

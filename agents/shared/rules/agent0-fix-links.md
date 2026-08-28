@@ -47,11 +47,30 @@ agent0_fix_links: true   # repo-wide default — equivalent to always passing --
 With neither the flag nor the config set (the default), the reviewer emits no buttons anywhere and
 behaves exactly as before.
 
+## Environment
+
+Which Agent0 the buttons link to is set by `agent0_environment` in the review config:
+
+```yaml
+# .github/review.yaml
+agent0_environment: production | development   # default: production
+```
+
+- `production` → `https://app.dash0.com`
+- `development` → `https://app.dash0-dev.com`
+
+`pr-reviewer` reads this and passes it to `build-agent0-link.mjs` as `--env <env>`; that script owns
+the host map (the single source, so both button sites resolve the same host), and an unknown value
+falls back to `production`. The report renderer rejects a `FIX_ALL_URL` whose host is neither
+`app.dash0.com` nor `app.dash0-dev.com`.
+
 ## Deep-link format
 
 ```text
-https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=<ENCODED_PROMPT>
+https://<app-host>/goto/agent0?auto_submit=true&initial_prompt=<ENCODED_PROMPT>
 ```
+
+`<app-host>` is `app.dash0.com` (production) or `app.dash0-dev.com` (development), per § Environment.
 
 `<ENCODED_PROMPT>` is built by `agents/pr-reviewer/scripts/build-agent0-link.mjs`'s `encodePrompt` —
 the single source of truth for this encoding, so the report renderer and the inline-comment step

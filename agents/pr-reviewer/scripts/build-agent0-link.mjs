@@ -12,8 +12,15 @@
 
 import { readFileSync } from "node:fs";
 
-const BASE = "https://app.dash0.com/goto/agent0";
+// Environment-selectable host: production → app.dash0.com, development → app.dash0-dev.com.
+// The reviewer resolves the environment from `.github/review.yaml`'s `agent0_environment`
+// (agent0-fix-links.md § Environment) and passes it via --env / AGENT0_ENV; default production.
+const HOSTS = { production: "https://app.dash0.com", development: "https://app.dash0-dev.com" };
 const MAX_URL = 8000; // browsers/GitHub choke well before this; keep prompts compact
+
+export function resolveEnv(env) {
+  return env === "development" || env === "production" ? env : "production";
+}
 
 export function encodePrompt(prompt) {
   return encodeURIComponent(prompt)
@@ -22,18 +29,22 @@ export function encodePrompt(prompt) {
     .replace(/'/g, "%27");
 }
 
-export function buildLink(prompt) {
-  return `${BASE}?auto_submit=true&initial_prompt=${encodePrompt(prompt)}`;
+export function buildLink(prompt, env = "production") {
+  const host = HOSTS[resolveEnv(env)];
+  return `${host}/goto/agent0?auto_submit=true&initial_prompt=${encodePrompt(prompt)}`;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const arg = process.argv[2];
-  const prompt = arg !== undefined ? arg : readFileSync(0, "utf8");
+  const args = process.argv.slice(2);
+  let env = process.env.AGENT0_ENV;
+  const i = args.indexOf("--env");
+  if (i >= 0) { env = args[i + 1]; args.splice(i, 2); }
+  const prompt = args.length ? args.join(" ") : readFileSync(0, "utf8");
   if (!prompt || !prompt.trim()) {
     process.stderr.write("build-agent0-link: empty prompt\n");
     process.exit(1);
   }
-  const url = buildLink(prompt.trim());
+  const url = buildLink(prompt.trim(), resolveEnv(env));
   if (url.includes(")")) {
     process.stderr.write("build-agent0-link: encoded URL still contains a literal ')' — not markdown-safe\n");
     process.exit(1);
