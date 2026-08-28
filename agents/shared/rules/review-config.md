@@ -61,6 +61,10 @@ agent0_fix_links: false                  # repo-wide default for the "Fix with A
                                          # equivalent to always passing the --fix-links mode
                                          # (default false); see agents/shared/rules/agent0-fix-links.md
 
+agent0_environment: production           # which Agent0 the fix buttons link to —
+                                         # production → app.dash0.com, development → app.dash0-dev.com
+                                         # (default production); see agents/shared/rules/agent0-fix-links.md
+
 filters:                                 # declarative category suppressors
   - naming-nits
   - defensive-null-checks-in-safe-contexts
