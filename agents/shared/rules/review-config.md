@@ -57,6 +57,10 @@ severity_thresholds:                     # DEFAULT — values shown are the `bal
                                          # A flat per_comment_confidence_threshold: N
                                          # override collapses all tiers back to N.
 
+agent0_fix_links: false                  # repo-wide default for the "Fix with Agent0" buttons —
+                                         # equivalent to always passing the --fix-links mode
+                                         # (default false); see agents/shared/rules/agent0-fix-links.md
+
 filters:                                 # declarative category suppressors
   - naming-nits
   - defensive-null-checks-in-safe-contexts

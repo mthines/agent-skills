@@ -27,5 +27,6 @@
     "high": 2,
     "medium": 3,
     "low": 1
-  }
+  },
+  "FIX_ALL_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=Fix%20the%20pr-reviewer%20findings%20on%20owner%2Frepo%20PR%20%23123"
 }

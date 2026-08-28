@@ -2426,4 +2426,43 @@ const isPollBlock = (block) =>
   }
 }
 
+// G31: build-agent0-link.mjs is the documented single source of truth for the Agent0 deep-link
+// encoding (its own header comment says so, and render-report.mjs's FIX_ALL_URL guard cites it by
+// name) but, unlike every other renderer script here (G25 render-report.mjs, G29 render-pointer.mjs),
+// no fixture or unit check exercised it directly — a regression in `encodePrompt` or the MAX_URL
+// guard could ship silently. Exercise the exported functions directly (not a snapshot: the encoding
+// contract is a small pure function, not a rendered template) plus the CLI's two fail-closed guards.
+{
+  const LINK_MOD = join(REPO_ROOT, "agents/pr-reviewer/scripts/build-agent0-link.mjs");
+  const { encodePrompt, buildLink } = await import(`file://${LINK_MOD}`);
+
+  s.check("G31a encodePrompt escapes '(', ')', and \"'\" beyond encodeURIComponent's own output",
+    encodePrompt("fix(this)'now") === "fix%28this%29%27now",
+    `got ${JSON.stringify(encodePrompt("fix(this)'now"))}`);
+
+  s.check("G31b buildLink never leaves a literal ')' in the URL — the markdown-link-termination guard",
+    !buildLink("close (this) paren").includes(")"),
+    `buildLink output still contained ')': ${buildLink("close (this) paren")}`);
+
+  s.check("G31c buildLink prefixes the documented Agent0 base and auto_submit flag",
+    buildLink("hi").startsWith("https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt="));
+
+  const runCli = (args) => spawnSync("node", [LINK_MOD, ...args], { encoding: "utf8" });
+
+  const empty = runCli([""]);
+  s.check("G31d CLI rejects an empty prompt: non-zero exit, nothing on stdout",
+    empty.status !== 0 && empty.stdout === "",
+    `status=${empty.status} stdout=${JSON.stringify(empty.stdout)}`);
+
+  const oversized = runCli(["a".repeat(8500)]);
+  s.check("G31e CLI rejects a prompt whose encoded URL exceeds MAX_URL: non-zero exit, nothing on stdout",
+    oversized.status !== 0 && oversized.stdout === "" && /over 8000/.test(oversized.stderr),
+    `status=${oversized.status} stdout=${JSON.stringify(oversized.stdout)} stderr=${oversized.stderr}`);
+
+  const ok = runCli(["fix this thing"]);
+  s.check("G31f CLI accepts a normal prompt: zero exit, one URL line on stdout",
+    ok.status === 0 && ok.stdout.trim() === buildLink("fix this thing"),
+    `status=${ok.status} stdout=${JSON.stringify(ok.stdout)}`);
+}
+
 process.exit(s.report() ? 0 : 1);

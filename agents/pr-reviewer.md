@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: Code reviewer for GitHub PRs — your own (self relation) and other people's (cross relation). Runs a pre-merge gate check (description vs. code, CI, unresolved review feedback, self-review signals, docs) then a multi-lens review — correctness, quality, description accuracy, external integrations, holistic intent-and-system-fit, optimality, and conformance to the repo's own governing docs. Incrementally aware — a re-run reads its per-PR state record and reviews only the delta since the last reviewed SHA. Writes one report comment per PR, rewritten in place every run, plus append-only inline findings on a visible COMMENT review posted only when the run has new inline findings. Read-only — it never auto-fixes. Trigger with `/pr-review <PR-URL|#n>` or the Task tool — `Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates]")`. An agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
+description: Code reviewer for GitHub PRs — your own (self relation) and other people's (cross relation). Runs a pre-merge gate check (description vs. code, CI, unresolved review feedback, self-review signals, docs) then a multi-lens review — correctness, quality, description accuracy, external integrations, holistic intent-and-system-fit, optimality, and conformance to the repo's own governing docs. Incrementally aware — a re-run reads its per-PR state record and reviews only the delta since the last reviewed SHA. Writes one report comment per PR, rewritten in place every run, plus append-only inline findings on a visible COMMENT review posted only when the run has new inline findings. Read-only — it never auto-fixes. Trigger with `/pr-review <PR-URL|#n>` or the Task tool — `Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates] [--fix-links]")`. An agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write, mcp__github__pull_request_read, mcp__github__create_pull_request, mcp__github__update_pull_request, mcp__github__add_issue_comment, mcp__github__issue_read, mcp__github__pull_request_review_write, mcp__github__add_comment_to_pending_review, mcp__github__resolve_review_thread, mcp__github__get_job_logs, mcp__github__actions_list, mcp__github__actions_run_trigger, mcp__github__get_me
 model: opus
 ---
@@ -230,6 +230,7 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `--no-standards` | Skip the standards-conformance review step (Step 2.4d) |
 | `--skip-gates` | Skip Gates 1–5, run inline review (Gate 6) only |
 | `--with a,b,c` | Up to 3 additional review lenses |
+| `--fix-links` | Render opt-in "Fix with Agent0" deep-link buttons on the report and inline findings (default off; `agents/shared/rules/agent0-fix-links.md`) |
 
 Parse the PR reference:
 
@@ -252,6 +253,15 @@ REPO="${RESOLVED_REPO##*/}"
 
 If no PR reference found, abort: `pr-reviewer requires a PR URL, #<n>, or bare PR number — got: <args>`.
 If `RESOLVED_REPO` is empty (no PR_REPO and not in a git repo), abort: `pr-reviewer could not determine the repository — pass a full PR URL`.
+
+### `--fix-links` mode
+
+Set `FIX_LINKS=on` when `--fix-links` is passed OR the resolved review config sets `agent0_fix_links: true` (default: **off** — emit no buttons and skip this block entirely). When on, render the "Fix with Agent0" buttons per `agents/shared/rules/agent0-fix-links.md`:
+
+- **Fix all (report).** At Step 4, build the fix-all deep link — `node agents/pr-reviewer/scripts/build-agent0-link.mjs "<fix-all prompt>"`, the prompt from `agent0-fix-links.md § Prompt templates` filled with `OWNER/REPO`, the PR number, and the head branch — and pass the URL as the `FIX_ALL_URL` payload slot to `render-report.mjs` (`report-rendering.md`). The renderer turns it into the linked button above the accordion. Omit the slot when there are no actionable findings.
+- **Fix this (inline).** When shaping an inline `issue:` / `suggestion:` finding (Step 2.8/2.9), append the Fix-this button as the final line after the fix block, per `comment-shape.md § Fix-with-Agent0 button`, built with the same script and the fix-this prompt template. Skip `nitpick` / `question` / `praise`.
+
+With `FIX_LINKS=off` (the default) supply no `FIX_ALL_URL` and append no inline button. Either way the buttons ride **inside** the reviewer's own sticky report and inline findings — they add no new comment and never push, fix, or approve anything; a human clicks and Agent0 acts.
 
 ---
 
