@@ -2454,15 +2454,58 @@ const isPollBlock = (block) =>
     empty.status !== 0 && empty.stdout === "",
     `status=${empty.status} stdout=${JSON.stringify(empty.stdout)}`);
 
-  const oversized = runCli(["a".repeat(8500)]);
+  const oversized = runCli(["a".repeat(4500)]);
   s.check("G31e CLI rejects a prompt whose encoded URL exceeds MAX_URL: non-zero exit, nothing on stdout",
-    oversized.status !== 0 && oversized.stdout === "" && /over 8000/.test(oversized.stderr),
+    oversized.status !== 0 && oversized.stdout === "" && /over 4000/.test(oversized.stderr),
     `status=${oversized.status} stdout=${JSON.stringify(oversized.stdout)} stderr=${oversized.stderr}`);
 
   const ok = runCli(["fix this thing"]);
   s.check("G31f CLI accepts a normal prompt: zero exit, one URL line on stdout",
     ok.status === 0 && ok.stdout.trim() === buildLink("fix this thing"),
     `status=${ok.status} stdout=${JSON.stringify(ok.stdout)}`);
+
+  // G32: the Agent0 prompt templates are addresses, not identities. Both hand Agent0 the finding
+  // locations it would otherwise spend round trips discovering — the regression this guards is a
+  // revert to the marker hop ("open the pr-reviewer report comment (marker PR_REVIEWER_REPORT)"),
+  // which cost four discovery calls on mthines/lorekit#594 and is structurally stale: Gate 3 counts
+  // PRIOR threads, while the run's own findings post at 4b after the 4a render. The templates carry
+  // no code, so a fixture cannot cover them; assert the placeholders plus the length bound that
+  // embedding a variable-length worklist trades away.
+  const rule = readFileSync(join(REPO_ROOT, "agents/shared/rules/agent0-fix-links.md"), "utf8");
+  const templates = [...rule.matchAll(/```text\n([^`]*?)\n```/g)].map((m) => m[1]);
+  const fixAll = templates.find((t) => t.includes("{locations}"));
+  const fixThis = templates.find((t) => t.includes("{path}:{line}") && !t.includes("{locations}"));
+
+  s.check("G32a the Fix-all template hands over the worklist by location ({locations} + {count})",
+    !!fixAll && fixAll.includes("{count}"),
+    "no ```text template carries both {locations} and {count} — the worklist fill was dropped");
+
+  s.check("G32b no template sends Agent0 to the report comment by marker first",
+    !templates.some((t) => t.includes("PR_REVIEWER_REPORT")),
+    "a prompt template names the PR_REVIEWER_REPORT marker again — that is the list-and-scan hop, and the report is stale for this run's own findings");
+
+  s.check("G32c the Fix-this template carries the finding's lead line, not just its location",
+    !!fixThis && fixThis.includes("{lead}"),
+    "the fix-this template lost {lead} — Agent0 is back to fetching before it knows the subject");
+
+  // Worst case the cap allows: 15 locations at 94-char paths. The design target is 2500 — the point
+  // of the target is that MAX_URL (4000) stays a fail-closed guard rather than a routine ceiling,
+  // since the real cliff behind it is the 8k request-line buffer of a default nginx/Apache.
+  const TARGET = 2500;
+  const worst = `Fix the 15 open pr-reviewer findings on mthines/lorekit#594, at: ${
+    Array.from({ length: 15 }, (_, i) => `${"packages/service/src/features/nested/module".padEnd(86, "x")}-${i}.ts:${1200 + i}`).join(", ")
+  }. Read the inline review comments at those locations for the details (GET /repos/mthines/lorekit/pulls/594/comments). Ignore every other author. Run the repo's checks first, then commit to the same branch (no new PR).`;
+  const worstLen = buildLink(worst).length;
+  s.check(`G32d a worst-case 15-location Fix-all URL stays under the ${TARGET}-char design target`,
+    worstLen < TARGET, `worst-case URL is ${worstLen} chars — lower the location cap in agent0-fix-links.md, do not raise MAX_URL`);
+
+  s.check("G32e the rule caps the Fix-all location list at 15",
+    /capped at 15/.test(rule), "agent0-fix-links.md no longer states the 15-location cap G32d assumes");
+
+  const maxUrl = Number(/^const MAX_URL = (\d+)/m.exec(readFileSync(LINK_MOD, "utf8"))?.[1]);
+  s.check("G32f MAX_URL stays under the 8k request-line cliff it was moved off",
+    Number.isFinite(maxUrl) && maxUrl <= 4000,
+    `MAX_URL is ${maxUrl} — 8000 is nginx's default one-buffer request-line limit (414), not a safe ceiling`);
 }
 
 process.exit(s.report() ? 0 : 1);
