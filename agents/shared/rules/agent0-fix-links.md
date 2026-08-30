@@ -95,8 +95,10 @@ guard therefore sat exactly on that cliff — a 7999-char link passed and then 4
 Neither prompt embeds a finding *body*; both embed the finding **locations**, which are known at
 build time and are what turns a multi-call discovery hunt into one fetch (§ Prompt templates). The
 **Fix all** URL therefore scales with the finding count: measured worst case at the 15-location cap,
-with pathological 94-character paths, is ~2240 chars; a typical PR lands nearer 1600. **Fix this** is
-~650 with a full-length lead line. If a template ever needs to grow past the 2500 target, cut the
+with pathological 94-character paths, is ~2350 chars; a typical PR lands nearer 1700, and a
+three-finding PR near 850. **Fix this** is ~650 with a full-length lead line. The figures are not
+guesses — L1 `G32d` fills the live template and measures it, so a clause added here is measured on
+the next run. If a template ever needs to grow past the 2500 target, cut the
 location cap — do not raise `MAX_URL`.
 
 ## Prompt templates
@@ -132,14 +134,26 @@ Agent0 at the same comment.
 findings:
 
 ```text
-Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, at: {locations}. Read the inline review comments at those locations for the details (GET /repos/{owner}/{repo}/pulls/{n}/comments). Ignore every other author. Lint and typecheck only the files you changed — never the whole repo — then commit to the same branch (no new PR).
+Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, at: {locations}. Read the inline review comments at those locations for the details (GET /repos/{owner}/{repo}/pulls/{n}/comments). Then sweep for any other unresolved thread by that same reviewer and fix it too. Ignore every other author. Lint and typecheck only the files you changed — never the whole repo — then commit to the same branch (no new PR).
 ```
 
 - `{locations}` — comma-separated `{path}:{line}`, **capped at 15** (the cap that keeps the worst-case
-  URL inside the 2500 target above). Past the cap, append ` (+{overflow} more — sweep the remaining
-  unresolved threads)` after the list rather than growing the URL; blocking findings are cap-exempt
-  inline, so the count can exceed 15.
+  URL inside the 2500 target above). Past the cap, append ` (+{overflow} more)` after the list rather
+  than growing the URL — the sweep clause already tells Agent0 to find them, so do not restate it
+  here. Blocking findings are cap-exempt inline, so the count can exceed 15.
 - `{count}` — the full open-finding count including any overflow, so Agent0 can tell when it is done.
+
+**The sweep goes after the list, never before it.** Handing over `{locations}` is what removes the
+discovery round trips; the sweep is a completeness net for what the list cannot carry — findings
+past the 15 cap, a thread opened between the render and the click, and anything a payload bug drops.
+Both halves are needed: the list alone can be incomplete, and the sweep alone is the four-call
+discovery hunt this template was rewritten to eliminate. Moving the sweep to the front re-creates
+that hunt with extra steps, so keep the order — known work first, sweep second.
+
+It is scoped by **author**, not by login: *"that same reviewer"* resolves against the authors of the
+comments at `{locations}`, which Agent0 has just read. Do not substitute a `{login}` placeholder —
+the reviewer's own login is not reliably resolvable at build time (`/user` 401s on some access
+paths), and a wrong or empty login would either widen the sweep to every author or void it entirely.
 
 **Do not send Agent0 to the report comment first.** The earlier template opened with *"open the
 pr-reviewer report comment (marker `PR_REVIEWER_REPORT`)"*, which cost a list-and-scan over every

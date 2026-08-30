@@ -2541,16 +2541,36 @@ const isPollBlock = (block) =>
   // Worst case the cap allows: 15 locations at 94-char paths. The design target is 2500 — the point
   // of the target is that MAX_URL (4000) stays a fail-closed guard rather than a routine ceiling,
   // since the real cliff behind it is the 8k request-line buffer of a default nginx/Apache.
+  // Filled from the LIVE template, never hand-copied: a transcribed copy silently stops measuring
+  // the real prompt the moment the template gains a clause, which is exactly when the measurement
+  // matters. Substitute the placeholders a real fill would.
   const TARGET = 2500;
-  const worst = `Fix the 15 open pr-reviewer findings on mthines/lorekit#594, at: ${
-    Array.from({ length: 15 }, (_, i) => `${"packages/service/src/features/nested/module".padEnd(86, "x")}-${i}.ts:${1200 + i}`).join(", ")
-  }. Read the inline review comments at those locations for the details (GET /repos/mthines/lorekit/pulls/594/comments). Ignore every other author. Lint and typecheck only the files you changed — never the whole repo — then commit to the same branch (no new PR).`;
+  const worstLocations = Array.from({ length: 15 },
+    (_, i) => `${"packages/service/src/features/nested/module".padEnd(86, "x")}-${i}.ts:${1200 + i}`).join(", ");
+  const worst = (fixAll ?? "")
+    .replaceAll("{owner}", "mthines").replaceAll("{repo}", "lorekit")
+    .replaceAll("{n}", "594").replaceAll("{count}", "15")
+    .replaceAll("{locations}", worstLocations);
+  s.check("G32d0 the worst-case fill leaves no unsubstituted placeholder",
+    worst !== "" && !/\{[a-z_]+\}/.test(worst),
+    `template gained a placeholder this fill does not substitute: ${/\{[a-z_]+\}/.exec(worst)?.[0] ?? "(no template)"}`);
   const worstLen = buildLink(worst).length;
   s.check(`G32d a worst-case 15-location Fix-all URL stays under the ${TARGET}-char design target`,
     worstLen < TARGET, `worst-case URL is ${worstLen} chars — lower the location cap in agent0-fix-links.md, do not raise MAX_URL`);
 
   s.check("G32e the rule caps the Fix-all location list at 15",
     /capped at 15/.test(rule), "agent0-fix-links.md no longer states the 15-location cap G32d assumes");
+
+  // The embedded worklist can be incomplete — findings past the 15 cap, a thread opened between the
+  // render and the click, a payload bug. The sweep is the completeness net, and it must come AFTER
+  // the locations: in front of them it is the four-call discovery hunt G32b exists to prevent.
+  s.check("G32h the Fix-all template sweeps for the same reviewer's other unresolved threads",
+    !!fixAll && /sweep for any other unresolved thread by that same reviewer/.test(fixAll),
+    "Fix-all lost the sweep clause — findings past the location cap, or opened after the render, go unfixed");
+
+  s.check("G32i the sweep follows the location list rather than preceding it",
+    !!fixAll && fixAll.indexOf("sweep") > fixAll.indexOf("{locations}"),
+    "the sweep moved ahead of {locations} — that is the discovery hunt again, with extra steps");
 
   // The Agent0 runner lacks the headroom for a whole-project tsc + eslint — a repo-wide check pass
   // crashes the run, so the fix never lands. Both prompts must scope verification to touched files.
