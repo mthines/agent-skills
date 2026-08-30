@@ -2494,13 +2494,21 @@ const isPollBlock = (block) =>
   const TARGET = 2500;
   const worst = `Fix the 15 open pr-reviewer findings on mthines/lorekit#594, at: ${
     Array.from({ length: 15 }, (_, i) => `${"packages/service/src/features/nested/module".padEnd(86, "x")}-${i}.ts:${1200 + i}`).join(", ")
-  }. Read the inline review comments at those locations for the details (GET /repos/mthines/lorekit/pulls/594/comments). Ignore every other author. Run the repo's checks first, then commit to the same branch (no new PR).`;
+  }. Read the inline review comments at those locations for the details (GET /repos/mthines/lorekit/pulls/594/comments). Ignore every other author. Lint and typecheck only the files you changed — never the whole repo — then commit to the same branch (no new PR).`;
   const worstLen = buildLink(worst).length;
   s.check(`G32d a worst-case 15-location Fix-all URL stays under the ${TARGET}-char design target`,
     worstLen < TARGET, `worst-case URL is ${worstLen} chars — lower the location cap in agent0-fix-links.md, do not raise MAX_URL`);
 
   s.check("G32e the rule caps the Fix-all location list at 15",
     /capped at 15/.test(rule), "agent0-fix-links.md no longer states the 15-location cap G32d assumes");
+
+  // The Agent0 runner lacks the headroom for a whole-project tsc + eslint — a repo-wide check pass
+  // crashes the run, so the fix never lands. Both prompts must scope verification to touched files.
+  for (const [name, tpl] of [["Fix-all", fixAll], ["Fix-this", fixThis]]) {
+    s.check(`G32g the ${name} template scopes checks to the changed files, never the whole repo`,
+      !!tpl && /only the files you changed/.test(tpl) && /never the whole repo/.test(tpl),
+      `${name} lost the scoped-check clause — a repo-wide lint/typecheck crashes the Agent0 runner`);
+  }
 
   const maxUrl = Number(/^const MAX_URL = (\d+)/m.exec(readFileSync(LINK_MOD, "utf8"))?.[1]);
   s.check("G32f MAX_URL stays under the 8k request-line cliff it was moved off",
