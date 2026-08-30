@@ -1,0 +1,9 @@
+profile: balanced
+
+high_stakes_paths:
+  - "(^|/)ledger(/|$)"                   # EXTENDS the built-in list (auth, payments, migrations,
+  - "packages/tenant-isolation/"         # infra, secrets, …) — inline comments like these two
+  -                                      # an empty entry must produce no flag
+
+filters:
+  - naming-nits

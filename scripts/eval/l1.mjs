@@ -2614,6 +2614,18 @@ const isPollBlock = (block) =>
       JSON.stringify({ delta_lines: out.delta_lines, new_files: out.new_files, files: out.files?.length }));
   }
 
+  // The EXTRA_HS awk — review-config.md's own worked example annotates high_stakes_paths
+  // entries with inline `#` comments, and the shipped extraction once passed the comment
+  // text through as CLI arguments, killing the whole classification (PR #146 review round 3).
+  const hsAwk = /awk '([^']*)' "\$HS_CFG"/.exec(prm)?.[1];
+  s.check("G35g the high_stakes_paths awk program is extractable", !!hsAwk);
+  if (hsAwk) {
+    const r = spawnSync("awk", [hsAwk, join(FIX, "review.yaml")], { encoding: "utf8" });
+    s.check("G35h the awk strips inline comments, quotes, and empty entries",
+      r.status === 0 && r.stdout === " --extra-high-stakes (^|/)ledger(/|$) --extra-high-stakes packages/tenant-isolation/",
+      `status=${r.status} out=${JSON.stringify(r.stdout)}`);
+  }
+
   // The diverged-history blob-SHA authored delta.
   const blobJq = /jq -s --slurpfile prior \S+ '\n([\s\S]*?)' \\/.exec(prm)?.[1];
   s.check("G35d the blob-diff jq program is extractable", !!blobJq);

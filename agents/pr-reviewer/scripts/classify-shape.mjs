@@ -80,11 +80,19 @@ export function classify(files, extraHighStakes = []) {
       shapes.add(shape);
       if (HIGH_STAKES_PATH_SHAPES.has(shape)) highStakesFiles.push(name);
     }
-    // Content detectors never run on documentation files: prose *describing* a mutex or an
-    // endpoint is not one (the same prose-vs-code carve-out Gate 4 applies). Path shapes
-    // still apply to docs — a file under auth/ is auth whatever its extension.
-    if (DOCS_RE.test(name)) continue;
-    const added = (f.patch ?? "").split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++"));
+    // Content detectors run only on OPERATIVE lines — the prose-vs-code carve-out Gate 4
+    // applies, keyed on the property (is this text executable?) rather than one file type:
+    // documentation files and test files are skipped whole (a test exercising a mutex is not
+    // a concurrency change to production behaviour), and comment-prefixed added lines are
+    // skipped inside code files (a `//` or `#` line describing a mutex is not one). Path
+    // shapes still apply to every file — a file under auth/ is auth whatever its extension.
+    // Known residual: a string literal inside non-test code (e.g. a fixture inline in a
+    // script) still counts; over-firing there is the accepted safe direction.
+    if (DOCS_RE.test(name) || TEST_RE.test(name)) continue;
+    const added = (f.patch ?? "").split("\n")
+      .filter((l) => l.startsWith("+") && !l.startsWith("+++"))
+      .map((l) => l.slice(1).trimStart())
+      .filter((l) => !/^(\/\/|#|\*|--|<!--|;)/.test(l));
     for (const [shape, re, min] of CONTENT_SHAPES) {
       const hits = (contentHits.get(shape) ?? 0) + added.filter((l) => re.test(l)).length;
       contentHits.set(shape, hits);
@@ -158,6 +166,10 @@ function selfTest() {
       (r) => !r.shapes.includes("concurrency") && !r.shapes.includes("api-contract") && !r.risky],
     ["path shape still applies to a docs file", [{ filename: "auth/README.md" }],
       (r) => r.shapes.includes("auth") && r.risky],
+    ["comment lines inside code never fire content shapes", [{ filename: "src/pool.go", patch: "@@\n+// guard the map with a sync.Mutex before fan-out\n+# legacy note: Promise.all here once deadlocked" }],
+      (r) => !r.shapes.includes("concurrency")],
+    ["test files never fire content shapes", [{ filename: "src/store_test.go", patch: "@@\n+var mu sync.Mutex\n+mu.Lock()" }],
+      (r) => !r.shapes.includes("concurrency")],
     ["empty file list classifies to nothing", [],
       (r) => r.shapes.length === 0 && !r.risky && !r.propagation],
   ];

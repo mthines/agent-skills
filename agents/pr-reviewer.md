@@ -868,11 +868,13 @@ Run the shape classifier on the full PR file list — a pure local computation, 
 ```bash
 # Optional per-repo extension: high_stakes_paths in the review config (review-config.md
 # § High-stakes paths) — same lookup order as Step 1.7: .github/review.yaml, else the
-# legacy root .review.yaml. Entries are regexes in block-list form with no whitespace
-# (each becomes one --extra-high-stakes flag; the expansion is word-split by design).
+# legacy root .review.yaml. Entries are regexes in block-list form containing neither
+# whitespace nor `#` (each becomes one --extra-high-stakes flag; the expansion is
+# word-split by design, and everything from ` #` on is stripped as an inline comment —
+# review-config.md's own worked example annotates its entries that way).
 HS_CFG=".github/review.yaml"; [ -f "$HS_CFG" ] || HS_CFG=".review.yaml"
 EXTRA_HS=$(test -f "$HS_CFG" && \
-  awk '/^high_stakes_paths:/{f=1;next} /^[^ ]/{f=0} f && /^ *- /{sub(/^ *- */,""); gsub(/"/,""); printf " --extra-high-stakes %s", $0}' "$HS_CFG" || true)
+  awk '/^high_stakes_paths:/{f=1;next} /^[^ ]/{f=0} f && /^ *- /{sub(/^ *- */,""); sub(/ *#.*$/,""); gsub(/"/,""); sub(/ +$/,""); if (length($0)) printf " --extra-high-stakes %s", $0}' "$HS_CFG" || true)
 
 # resolve() — portable readlink -f. DEFINED HERE, at its first call site, because shell
 # state does not persist between this agent's tool calls: a definition that lives only in a
@@ -2022,6 +2024,9 @@ rather than copied. Layout is not a judgment call, so it is no longer yours.
 # empty AGENT_MD through: `${AGENT_MD%/pr-reviewer.md}` on "" yields "", making RENDER the absolute
 # path /pr-reviewer/scripts/render-report.mjs, which fails as "file not found" and reads like a
 # missing renderer rather than a failed resolution.
+# resolve() is ALSO defined at Step 1.2 (the shape-classifier resolution) — shell state does
+# not persist between tool calls, so each call site carries the definition. Edit the two
+# together; L1 G33i asserts the bodies stay byte-identical.
 resolve() {  # portable readlink -f
   [ -e "$1" ] || return 1
   ( cd "$(dirname "$1")" && t=$(basename "$1")
