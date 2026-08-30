@@ -2567,6 +2567,15 @@ const isPollBlock = (block) =>
   s.check("G33h a single-file PR classifies instead of failing the parse",
     one.status === 0 && Array.isArray(oneCls.shapes) && oneCls.shapes.includes("auth"),
     `status=${one.status} ${(one.stderr || "").slice(0, 80)}`);
+
+  // Shell state does not persist between the agent's tool calls, so resolve() is defined at
+  // BOTH call sites (Step 1.2 and Step 4a) with an edit-them-together note. This asserts the
+  // two bodies have not drifted — the regression that shipped was defining it at only one.
+  const resolves = [...readRepo("agents/pr-reviewer.md")
+    .matchAll(/resolve\(\)\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1].replace(/\s+/g, " ").trim());
+  s.check("G33i resolve() is defined at both call sites and the bodies are identical",
+    resolves.length === 2 && resolves[0] === resolves[1],
+    `found ${resolves.length} definition(s)${resolves.length === 2 && resolves[0] !== resolves[1] ? " that differ" : ""}`);
 }
 
 // ── G34: the defer-floor formula has one owner ──

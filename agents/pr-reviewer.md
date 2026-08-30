@@ -874,14 +874,25 @@ HS_CFG=".github/review.yaml"; [ -f "$HS_CFG" ] || HS_CFG=".review.yaml"
 EXTRA_HS=$(test -f "$HS_CFG" && \
   awk '/^high_stakes_paths:/{f=1;next} /^[^ ]/{f=0} f && /^ *- /{sub(/^ *- */,""); gsub(/"/,""); printf " --extra-high-stakes %s", $0}' "$HS_CFG" || true)
 
-# AGENT_MD: resolve it HERE, with the same resolve() helper and the same empty-value guard
-# Step 4a documents — this step is the first consumer, and an empty AGENT_MD expanded into
-# the path below reads as "missing script" rather than "failed resolution". On an empty
-# AGENT_MD, skip the node call and take the degradation branch below. Step 4 reuses the value.
+# resolve() — portable readlink -f. DEFINED HERE, at its first call site, because shell
+# state does not persist between this agent's tool calls: a definition that lives only in a
+# later step is `command not found` here, AGENT_MD silently binds "", and the [ -n ] guard
+# below then skips the classifier — shape routing degrades to size-only on every run while
+# looking like an optional-script miss. Step 4a re-executes this same block verbatim for the
+# renderer; edit the two together.
+resolve() {  # portable readlink -f
+  [ -e "$1" ] || return 1
+  ( cd "$(dirname "$1")" && t=$(basename "$1")
+    while [ -L "$t" ]; do d=$(readlink "$t"); cd "$(dirname "$d")" || return 1; t=$(basename "$d"); done
+    printf '%s/%s\n' "$(pwd -P)" "$t" )
+}
 AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
 CLASSIFY="${AGENT_MD%/pr-reviewer.md}/pr-reviewer/scripts/classify-shape.mjs"
 [ -n "$AGENT_MD" ] && PR_SHAPE_JSON=$(node "$CLASSIFY" /tmp/pr-files.json $EXTRA_HS)
 ```
+
+An empty `AGENT_MD` here is not fatal — the degradation branch below covers it — but Step 4a's
+hard-stop contract still applies when the renderer needs the same value.
 
 If the script cannot be resolved or exits non-zero, set
 `PR_SHAPE_JSON='{"shapes":[],"risky":false,"risky_shapes":[],"high_stakes_files":[],"propagation":false}'`,

@@ -80,6 +80,10 @@ export function classify(files, extraHighStakes = []) {
       shapes.add(shape);
       if (HIGH_STAKES_PATH_SHAPES.has(shape)) highStakesFiles.push(name);
     }
+    // Content detectors never run on documentation files: prose *describing* a mutex or an
+    // endpoint is not one (the same prose-vs-code carve-out Gate 4 applies). Path shapes
+    // still apply to docs — a file under auth/ is auth whatever its extension.
+    if (DOCS_RE.test(name)) continue;
     const added = (f.patch ?? "").split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++"));
     for (const [shape, re, min] of CONTENT_SHAPES) {
       const hits = (contentHits.get(shape) ?? 0) + added.filter((l) => re.test(l)).length;
@@ -150,6 +154,10 @@ function selfTest() {
       (r) => r.shapes.includes("api-contract") && r.risky && r.high_stakes_files.length === 0],
     ["single error-handling line stays quiet", [{ filename: "src/x.ts", patch: "@@\n+} catch (e) {" }],
       (r) => !r.shapes.includes("error-handling")],
+    ["markdown prose never fires content shapes", [{ filename: "docs/concurrency-guide.md", patch: "@@\n+Use sync.Mutex around the map, or Promise.all for fan-out.\n+router.post('/webhooks', handler) is the endpoint shape." }],
+      (r) => !r.shapes.includes("concurrency") && !r.shapes.includes("api-contract") && !r.risky],
+    ["path shape still applies to a docs file", [{ filename: "auth/README.md" }],
+      (r) => r.shapes.includes("auth") && r.risky],
     ["empty file list classifies to nothing", [],
       (r) => r.shapes.length === 0 && !r.risky && !r.propagation],
   ];
