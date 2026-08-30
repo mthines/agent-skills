@@ -217,6 +217,7 @@ Merge rules by field:
 | `profile` | Closer file wins — the most specific `.review.yaml` (or the `.github/review.yaml` base) sets the profile |
 | `filters` | **Union** — filters from all files in the hierarchy apply; a closer file cannot un-filter a category from the base |
 | `path_instructions` | **Concatenation** — all instructions from all files apply, with closer-file instructions listed first |
+| `agent0_fix_links`, `agent0_environment` | **Base only, never subtree-merged** — these gate the whole run (buttons on or off, which Agent0 host), not one file's findings, so a subtree `.review.yaml` cannot opt a directory in or out. Read from the repo-level base config alone; see § Run-level fields below. |
 
 Example: if `.github/review.yaml` sets `profile: chill` and `src/payments/.review.yaml` sets `profile: assertive`, then files under `src/payments/` use `assertive` while all other files use `chill`.
 
@@ -274,6 +275,35 @@ The effective config is consumed by:
 - `per-comment-confidence.md` (2.7) — reads the profile's threshold.
 - The filter evaluation (**Step 2.3**, early in Step 2, before holistic review) — drops findings in suppressed categories.
 - The path-instruction injection at `per-comment-confidence.md` (2.7) — appends instruction to Evidence.
+- `pr-reviewer.md`'s `--fix-links mode` section (`agents/shared/rules/agent0-fix-links.md`) — reads `agent0_fix_links` and `agent0_environment`, resolved per § Run-level fields below.
+
+### Run-level fields (`agent0_fix_links`, `agent0_environment`)
+
+Unlike `profile` / `filters` / `path_instructions`, these two are **not** part of the per-changed-file
+walk above: they decide whether "Fix with Agent0" buttons render at all and which Agent0 host they
+point at — a property of the *run*, not of any one file's findings. Resolve them once, from the
+repo-level base config only, before Step 0.5:
+
+```bash
+# Run-level fields — base config only, no subtree walk, no per-file loop.
+BASE_CONFIG=""
+[[ -f ".github/review.yaml" ]] && BASE_CONFIG=".github/review.yaml"
+[[ -z "$BASE_CONFIG" && -f ".review.yaml" ]] && BASE_CONFIG=".review.yaml"   # deprecated legacy location
+
+AGENT0_FIX_LINKS="false"
+AGENT0_ENVIRONMENT="production"
+if [[ -n "$BASE_CONFIG" ]]; then
+  grep -qE '^agent0_fix_links:[[:space:]]*true[[:space:]]*$' "$BASE_CONFIG" && AGENT0_FIX_LINKS="true"
+  if grep -qE '^agent0_environment:[[:space:]]*development[[:space:]]*$' "$BASE_CONFIG"; then
+    AGENT0_ENVIRONMENT="development"
+  fi
+fi
+```
+
+Both fields default as shown when absent or unrecognised — `agent0_fix_links` to `false` (buttons
+off), `agent0_environment` to `production` (`app.dash0.com`), matching the schema defaults above.
+`pr-reviewer.md` ORs `AGENT0_FIX_LINKS` with an explicit `--fix-links` flag to decide `FIX_LINKS`,
+and passes `AGENT0_ENVIRONMENT` to `build-agent0-link.mjs` as `--env`.
 
 ---
 
