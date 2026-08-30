@@ -933,6 +933,56 @@ function checksInSync(plan, checks) {
     }
   }
 
+  // G33: the Step 3 TERMINAL report's WARN verdict line and the POSTED body's WARN headline
+  // (report-rendering.md) must never re-diverge. Regression guard for
+  // `reviewer-lessons::gate-table-says-pass-while-contract-says-fail` (seen_count 7): a Step 3
+  // WARN row that prints "PASS — no blocking issues, N warning(s)" beside a harness
+  // `VERDICT: FAIL` (forced by ACTIONABLE >= 1, independent of gate severity) reads as an
+  // unexplained contradiction to a human, and — per the lesson's sighting 7 — a harness that
+  // judges "was this lesson honoured" from the Step 3 report rather than the posted body can be
+  // fooled if the two are allowed to drift apart. Assert three things: neither surface prints the
+  // literal `PASS —` WARN token, both surfaces state "no blocking issues" plus the warning count
+  // for WARN, and pr-reviewer.md's WARN line names the report-rendering.md contract explicitly so
+  // a future edit to one side is not made in ignorance of the other.
+  {
+    const step3WarnRow = sliceBetween(prReviewer, "| Presentation | `**Verdict**` line |", "`VERDICT` (PASS/WARN/FAIL");
+    s.check("G33a pr-reviewer.md Step 3 WARN verdict line carries no bare PASS token",
+      !/\|\s*WARN\s*\|\s*`PASS\s*—/.test(step3WarnRow),
+      "Step 3's WARN row still prints a `PASS —` verdict, which contradicts a harness VERDICT: FAIL");
+    s.check("G33b pr-reviewer.md Step 3 WARN verdict line matches the posted-body wording",
+      /No blocking issues — <WARN_GATE_COUNT> warning\(s\): <WARN_REASONS>\./.test(step3WarnRow),
+      "Step 3's WARN row no longer reads 'No blocking issues — <N> warning(s): <reasons>.' — re-sync it with report-rendering.md § Headlines");
+    s.check("G33c report-rendering.md's posted-body WARN headline carries no bare PASS token",
+      !/no blocking issues.*\*\*PASS\*\*|PASS\s*—\s*no blocking issues/i.test(reportRendering),
+      "report-rendering.md's WARN headline regained a PASS token");
+    s.check("G33d pr-reviewer.md's WARN row cites report-rendering.md so the two cannot drift silently",
+      /report-rendering\.md[\s\S]{0,40}byte-identical|byte-identical[\s\S]{0,40}report-rendering\.md/.test(prReviewer),
+      "pr-reviewer.md's Step 3 WARN explanation no longer cross-references report-rendering.md as the source of truth");
+  }
+
+  // G34: prior-comment-awareness.md requires verifying a "resolved" thread against HEAD before
+  // trusting it, and verifying an "open" thread before assuming it is still live. Regression guard
+  // for `reviewer-lessons::resolved-bot-thread-is-not-evidence-of-a-fix` (seen_count 7): a resolved
+  // cursor[bot] thread was once trusted at face value and a real defect it covered was suppressed
+  // with no code change behind the resolution.
+  {
+    const pca = read("agents/shared/rules/prior-comment-awareness.md");
+    s.check("G34a the resolved-state table no longer treats GitHub thread resolution as sufficient on its own",
+      !/\|\s*Thread explicitly marked resolved on GitHub\s*\|\s*Yes\s*\|/.test(pca),
+      "the 'accepted / resolved' table reverted to trusting a resolved GitHub thread unconditionally");
+    s.check("G34b prior-comment-awareness.md states the anchor-file-existence check as the first, cheapest verification",
+      /anchor-file existence/i.test(pca) && /[Cc]heck it before anything else/.test(pca));
+    s.check("G34c prior-comment-awareness.md requires bidirectional verification (resolved≠fixed, open≠unaddressed)",
+      /resolved ≠ fixed|resolved≠fixed/.test(pca) && /open ≠ unaddressed|open≠unaddressed/.test(pca));
+    s.check("G34d prior-comment-awareness.md requires verifying compound claims per-mechanism, not as a whole sentence",
+      /each\s+mechanism\s+verified\s+separately/i.test(pca));
+    s.check("G34e prior-comment-awareness.md defines three dedupe outcomes, not a binary post-or-suppress",
+      /gate-without-posting/.test(pca) && /post-as-new-code/.test(pca) &&
+      /not\s+collapse\s+this\s+to\s+a\s+binary\s+post-or-suppress/i.test(pca));
+    s.check("G34f the verification requirement applies to this agent's own prior comments too, not only a third party's",
+      /this agent's own prior comments\*\*, not only a third party's/.test(pca));
+  }
+
   // G20: the pr-reviewer Step 1.2c diff-keyed lesson search enriches its query with the changed
   // symbol names and the synthesized intent + integrations, and raises the search limit past 10.
   // Reads the REAL shipped agents/pr-reviewer.md and asserts literal anchors grepped from it —

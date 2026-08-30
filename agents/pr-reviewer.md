@@ -1670,11 +1670,21 @@ the posted body; its state goes in the Quality Gate block's CI line below.
 | Presentation | `**Verdict**` line |
 |---|---|
 | PASS | `PASS` |
-| WARN | `PASS — no blocking issues, <WARN_GATE_COUNT> warning(s): <WARN_REASONS>.` |
+| WARN | `No blocking issues — <WARN_GATE_COUNT> warning(s): <WARN_REASONS>.` |
 | FAIL | `FAIL — <SEVERITY_TALLY>. Blocking: <FAIL_REASONS>.` |
 
-WARN prints a `PASS` verdict on purpose — Step 4a's `VERDICT` binding explains why the two must
-stay distinct.
+The WARN line carries no `PASS` token. Seven production sightings
+(`reviewer-lessons::gate-table-says-pass-while-contract-says-fail`) showed that a WARN row reading
+`PASS — no blocking issues, <N> warning(s)` beside a harness `VERDICT: FAIL` (forced by
+`ACTIONABLE >= 1`, independent of gate severity) reads to a human as an unexplained contradiction —
+a PASS banner with no green check. Dropping the word rather than annotating it is the sighting-7
+conclusion: there is then nothing to reconcile. This line **must stay byte-identical** to
+`report-rendering.md`'s WARN headline (`Reviewed your changes — no blocking issues,
+**<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>.`, modulo the `**Verdict**:` vs. `Reviewed your
+changes —` lead) — the Step 3 terminal report and the posted body must never re-diverge the way
+they did before this fix landed (see L1 `G33`). `VERDICT` (PASS/WARN/FAIL, the presentation
+selector) stays a distinct concept from this printed line — Step 4a's `VERDICT` binding explains
+why the two must not be conflated.
 
 `FAILING_GATE_COUNT` counts only hard-failing gates — a ⚠️ row (Description vs. code, Prior review feedback, or Code review) is never included, even when another gate is ❌.
 
@@ -1793,7 +1803,7 @@ Bind the two values Step 4 introduces before rendering:
 
 | Variable | Value |
 | --- | --- |
-| `VERDICT` | `PASS` / `WARN` / `FAIL` — the **presentation variant** chosen in Step 3, the one that selects the body template. Not the printed advisory verdict: Step 3's WARN template prints `**Verdict**: PASS — no blocking issues, <N> warning(s)`, and recording that `PASS` in the state record would misreport the run's own severity to the next reader. |
+| `VERDICT` | `PASS` / `WARN` / `FAIL` — the **presentation variant** chosen in Step 3, the one that selects the body template. Not the printed advisory verdict: Step 3's WARN template prints `**Verdict**: No blocking issues — <N> warning(s)`, which carries no `PASS` token, and recording `PASS` in the state record for a WARN run would misreport the run's own severity to the next reader regardless of what the printed line says. |
 | `HEAD_SHA_SHORT` | `${HEAD_SHA:0:7}` (Step 1.2). |
 
 `OPEN_BOT_COMMENT_IDS_JSON` — the comment ids in `OPEN_BOT_COMMENTS[]` **as it stands after Step
