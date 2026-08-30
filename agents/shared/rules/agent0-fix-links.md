@@ -143,6 +143,27 @@ Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, at: {locations}
   here. Blocking findings are cap-exempt inline, so the count can exceed 15.
 - `{count}` — the full open-finding count including any overflow, so Agent0 can tell when it is done.
 
+**Fix all — CI-only** (report, empty worklist) — the report can read WARN with **zero** findings:
+Gate 2 (CI) is soft-warning-only (`pr-reviewer.md § Gate states`), so a PR with a clean Gate 6 (code
+review) and a red CI check has nothing in the finding worklist to hand Agent0 a `{path}:{line}` for,
+yet the report is visibly not a clean pass. Omitting the button in that case leaves the one state a
+human is most likely to click "fix" on with no button to click. Use this template instead of the
+findings-based one when `{locations}` would be empty but CI is not green:
+
+```text
+Fix the failing CI checks on {owner}/{repo}#{n} — {failing_checks}. View the failing job's logs for the cause, then commit a fix scoped to the files this PR changed (no new PR) — never run a whole-repo lint/typecheck/test pass to verify, only what the failing check touches.
+```
+
+- `{failing_checks}` — the same failing check names already surfaced in the report's `CI_NOTE` slot
+  (`report-rendering.md`) — reuse that value verbatim, do not re-derive it from a second CI query.
+
+This template is never used when the worklist is non-empty, even if CI is also red: a CI failure the
+diff demonstrably causes is filed as a Gate 6 finding on the reviewer's own evidence (`pr-reviewer.md
+§ Gate states`), which already has a `{path}:{line}` and belongs in the findings-based prompt above,
+not this one. It is also never used for a Gate-1-only warning (description vs. code) with clean CI
+and an empty worklist — that gate is about the human-authored PR description, not something an
+autonomous code-fix run can act on, so no Fix-all button renders for a Gate-1-only WARN.
+
 **The sweep goes after the list, never before it.** Handing over `{locations}` is what removes the
 discovery round trips; the sweep is a completeness net for what the list cannot carry — findings
 past the 15 cap, a thread opened between the render and the click, and anything a payload bug drops.
@@ -167,13 +188,17 @@ told Agent0 there was nothing to fix.
 Scoping **Fix all** to the reviewer's own findings is both product and safety: it never asks Agent0
 to act on another author's comment, so no untrusted text drives the auto-submitted run.
 
-**Scope the checks to the files touched.** Both prompts keep a verification guardrail — the cheapest
-line that stops a broken auto-commit — but it must say *"lint and typecheck only the files you
-changed — never the whole repo"*, not "run the repo's checks". A repo-wide `tsc` + `eslint` is what
-the earlier wording invited, and the Agent0 runner does not have the headroom for it: on a large
-repo the whole-project pass crashes the run, so the fix never lands. It is also wasted work by
-construction — a fix-link change is one finding at one location. Keep this clause in any future
-rewording; dropping the "never the whole repo" half is what re-opens the crash.
+**Scope the checks to the files touched.** All three prompts (Fix this, Fix all, Fix all — CI-only)
+keep a verification guardrail — the cheapest line that stops a broken auto-commit — but it must say
+*"lint and typecheck only the files you changed — never the whole repo"* (or, for the CI-only
+template with no `{path}:{line}` to anchor to, "scoped to the files this PR changed... never a
+whole-repo ... pass"), not "run the repo's checks". A repo-wide `tsc` + `eslint` is what the earlier
+wording invited, and the Agent0 runner does not have the headroom for it: on a large repo the
+whole-project pass crashes the run, so the fix never lands. It is also wasted work by construction —
+a fix-link change is one finding at one location. Keep this clause in any future rewording of any of
+the three templates; dropping the "never the whole repo" half is what re-opens the crash (found live
+in review of `mthines/agent-skills#151`, where the first draft of the CI-only template said "run the
+repo's checks locally first").
 
 ## Button markup
 
