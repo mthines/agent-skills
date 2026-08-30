@@ -95,9 +95,9 @@ guard therefore sat exactly on that cliff — a 7999-char link passed and then 4
 Neither prompt embeds a finding *body*; both embed the finding **locations**, which are known at
 build time and are what turns a multi-call discovery hunt into one fetch (§ Prompt templates). The
 **Fix all** URL therefore scales with the finding count: measured worst case at the 15-location cap,
-with pathological 94-character paths, is ~2170 chars; a typical PR lands nearer 1500. **Fix this** is
-~400. If a template ever needs to grow past the 2500 target, cut the location cap — do not raise
-`MAX_URL`.
+with pathological 94-character paths, is ~2240 chars; a typical PR lands nearer 1600. **Fix this** is
+~650 with a full-length lead line. If a template ever needs to grow past the 2500 target, cut the
+location cap — do not raise `MAX_URL`.
 
 ## Prompt templates
 
@@ -116,7 +116,7 @@ boilerplate ("You are fixing one code-review finding…", the `<finding>` wrappe
 subject without a fetch and reads the live comment only for the fix detail:
 
 ```text
-Fix the pr-reviewer finding at {path}:{line} on {owner}/{repo}#{n} — "{lead}" — read its inline review comment for the details, then commit to the same branch (no new PR); run the repo's checks first.
+Fix the pr-reviewer finding at {path}:{line} on {owner}/{repo}#{n} — "{lead}" — read its inline review comment for the details. Lint and typecheck only the files you changed — never the whole repo — then commit to the same branch (no new PR).
 ```
 
 `{lead}` is the finding's own first line as posted (the Conventional-Comments prefix plus its first
@@ -132,7 +132,7 @@ Agent0 at the same comment.
 findings:
 
 ```text
-Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, at: {locations}. Read the inline review comments at those locations for the details (GET /repos/{owner}/{repo}/pulls/{n}/comments). Ignore every other author. Run the repo's checks first, then commit to the same branch (no new PR).
+Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, at: {locations}. Read the inline review comments at those locations for the details (GET /repos/{owner}/{repo}/pulls/{n}/comments). Ignore every other author. Lint and typecheck only the files you changed — never the whole repo — then commit to the same branch (no new PR).
 ```
 
 - `{locations}` — comma-separated `{path}:{line}`, **capped at 15** (the cap that keeps the worst-case
@@ -151,9 +151,15 @@ them. Observed on `mthines/lorekit#594`: four discovery calls before the first e
 told Agent0 there was nothing to fix.
 
 Scoping **Fix all** to the reviewer's own findings is both product and safety: it never asks Agent0
-to act on another author's comment, so no untrusted text drives the auto-submitted run. The one
-guardrail kept in both prompts is "run the repo's checks first" — the cheapest line that stops a
-broken auto-commit.
+to act on another author's comment, so no untrusted text drives the auto-submitted run.
+
+**Scope the checks to the files touched.** Both prompts keep a verification guardrail — the cheapest
+line that stops a broken auto-commit — but it must say *"lint and typecheck only the files you
+changed — never the whole repo"*, not "run the repo's checks". A repo-wide `tsc` + `eslint` is what
+the earlier wording invited, and the Agent0 runner does not have the headroom for it: on a large
+repo the whole-project pass crashes the run, so the fix never lands. It is also wasted work by
+construction — a fix-link change is one finding at one location. Keep this clause in any future
+rewording; dropping the "never the whole repo" half is what re-opens the crash.
 
 ## Button markup
 
