@@ -53,7 +53,12 @@ Heuristic implementation:
 
 ```bash
 LINES_CHANGED=$(git diff --shortstat origin/main...HEAD | grep -oE '[0-9]+' | head -1)
-HIGH_STAKES=$(git diff --name-only origin/main...HEAD | grep -E '/(auth|billing|payments|migrations|infra)/' | head -1)
+# (^|/) matters: git paths carry no leading slash, so an interior-only '/token/' regex
+# misses a TOP-LEVEL auth/ or migrations/ directory entirely. In pr-reviewer this whole
+# check is superseded by the shape classifier's output (PR_HIGH_STAKES_FILES /
+# PR_RISKY_SHAPES from agents/pr-reviewer/scripts/classify-shape.mjs — the single source
+# of the high-stakes list); this grep is the reference fallback for callers without it.
+HIGH_STAKES=$(git diff --name-only origin/main...HEAD | grep -E '(^|/)(auth|billing|payments|migrations|infra)(/|$)' | head -1)
 
 if [[ "$LINES_CHANGED" -lt 10 ]] && [[ -z "$HIGH_STAKES" ]]; then
   echo "trivial-skip"
@@ -111,6 +116,18 @@ The Step 2.4 pass above is **broad and shallow**: one whole-PR scan, capped at i
 Step 2.4b adds the deep tier. It runs **after** the broad 2.4 pass and the rubric findings are collected, and **before** Step 2.5 (dedupe). It takes the line-level findings that look context-dependent and fans out **parallel, single-target** holistic traces — one per finding — each scoped to that finding's symbol via the `focus` input (see `review-mode.md § Inputs`). This is the pipeline analogue of an agentic reviewer that "decides which areas need deeper investigation and follows code paths across files."
 
 It is **default-on for `pr-reviewer`** and **opt-in for `reviewer`** (the `--escalate` flag). It is suppressed by `--no-escalate` (finer than `--no-holistic`, which also skips 2.4) and skipped wholesale when 2.4 itself was trivial-skipped.
+
+### Risky-shape incremental escalation
+
+One exception to "skipped when 2.4 was skipped": in `pr-reviewer`'s incremental modes, 2.4 is
+skipped by run-mode policy rather than by triviality — and a small delta can still be a dangerous
+one. When Step 1.2b's shape classifier flags a **risky content shape** in the delta (concurrency,
+api-contract, or schema-migration arriving by patch content rather than by path —
+`ESCALATE_IN_INCREMENTAL`), 2.4b runs anyway: cap **3** traces (not 10), seeded from the rubric
+and persona findings on the delta, highest-severity first — there is no broad-pass output to seed
+from, and none is synthesized. Selection, fan-out, re-entry, and logging are otherwise identical.
+This spends one to three focused traces to give a 15-line mutex or contract change its call-graph
+check without paying for a full-mode pass; `--no-escalate` suppresses it like any other 2.4b run.
 
 ### Selection (the agentic decision point)
 

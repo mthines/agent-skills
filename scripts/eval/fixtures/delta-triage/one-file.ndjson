@@ -1,0 +1,1 @@
+{"filename":"src/auth/one.ts","patch":"@@ -1,1 +1,2 @@\n+if (user.role !== 4) {","status":"modified","additions":1,"deletions":0,"sha":"abc123"}

@@ -1,0 +1,4 @@
+{"filename":"src/auth/login.ts","patch":"@@ -10,3 +10,7 @@\n+if (user.role !== 'admin') {","status":"modified","additions":5,"deletions":1,"sha":"aaa111"}
+{"filename":"src/util.ts","patch":"@@ -1,1 +1,2 @@\n+export const two = 2;","status":"modified","additions":1,"deletions":0,"sha":"bbb222"}
+{"filename":"assets/logo.png","patch":null,"status":"added","additions":0,"deletions":0,"sha":"ccc333"}
+{"filename":"src/legacy/cleanup.ts","patch":null,"status":"removed","additions":0,"deletions":40,"sha":"eee555"}

@@ -2566,4 +2566,130 @@ const isPollBlock = (block) =>
     `MAX_URL is ${maxUrl} — 8000 is nginx's default one-buffer request-line limit (414), not a safe ceiling`);
 }
 
+// ── G33: the shape classifier — depth routing's deterministic core, EXECUTED ──
+// classify-shape.mjs owns the high-stakes path list and the change-shape taxonomy that
+// Step 1.2/1.2b route review depth on. The regression this guards: the hand-copied
+// high-stakes jq regex in pr-reviewer.md shipped with an unmatched parenthesis, so every
+// incremental delta triage threw at runtime — a prose-presence check cannot see that;
+// only executing the code can.
+{
+  const readRepo = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const CLS = join(REPO_ROOT, "agents/pr-reviewer/scripts/classify-shape.mjs");
+  const FIX = join(REPO_ROOT, "scripts/eval/fixtures/delta-triage");
+  s.check("G33a classify-shape.mjs exists", existsSync(CLS));
+
+  const st = spawnSync("node", [CLS, "--self-test"], { encoding: "utf8" });
+  s.check("G33b classifier self-test passes", st.status === 0,
+    (st.stderr || "").split("\n").filter((l) => l.includes("FAIL")).join("; ").slice(0, 200));
+
+  const run = spawnSync("node", [CLS, join(FIX, "pr-files.ndjson")], { encoding: "utf8" });
+  s.check("G33c classifier accepts the NDJSON /tmp/pr-files.json shape", run.status === 0,
+    (run.stderr || "").slice(0, 120));
+  let cls = {};
+  try { cls = JSON.parse(run.stdout || "{}"); } catch { /* asserted below */ }
+  s.check("G33d fixture classifies auth as a risky high-stakes shape",
+    Array.isArray(cls.shapes) && cls.shapes.includes("auth") && cls.risky === true
+      && (cls.high_stakes_files || []).includes("src/auth/login.ts"),
+    JSON.stringify(cls).slice(0, 160));
+
+  const badRe = spawnSync("node", [CLS, join(FIX, "pr-files.ndjson"), "--extra-high-stakes", "("], { encoding: "utf8" });
+  s.check("G33e an invalid --extra-high-stakes regex fails closed (non-zero, empty stdout)",
+    badRe.status !== 0 && badRe.stdout === "");
+  const badFlag = spawnSync("node", [CLS, join(FIX, "pr-files.ndjson"), "--nope"], { encoding: "utf8" });
+  s.check("G33f an unknown flag fails closed (non-zero, empty stdout)",
+    badFlag.status !== 0 && badFlag.stdout === "");
+
+  // Single source: the agent body must not re-state the high-stakes alternation by hand —
+  // that copy is what drifted into the broken regex. Any two high-stakes tokens joined by a
+  // literal `|` is a regex being restated, whatever the order. (holistic-review.md keeps one
+  // grep as the documented reference fallback for non-pr-reviewer callers; that is the one
+  // allowed site.)
+  s.check("G33g pr-reviewer.md carries no hand-copied high-stakes regex",
+    !/\b(auth|billing|payments|migrations|infra|secrets)\|(auth|billing|payments|migrations|infra|secrets)\b/
+      .test(readRepo("agents/pr-reviewer.md")));
+
+  // A one-file PR's /tmp/pr-files.json is a SINGLE JSON object (valid JSON, not just valid
+  // NDJSON) — the parse must treat it as one file entry, not a malformed wrapper. This is
+  // the classifier's blocking regression from PR #146's own review.
+  const one = spawnSync("node", [CLS, join(FIX, "one-file.ndjson")], { encoding: "utf8" });
+  let oneCls = {};
+  try { oneCls = JSON.parse(one.stdout || "{}"); } catch { /* asserted below */ }
+  s.check("G33h a single-file PR classifies instead of failing the parse",
+    one.status === 0 && Array.isArray(oneCls.shapes) && oneCls.shapes.includes("auth"),
+    `status=${one.status} ${(one.stderr || "").slice(0, 80)}`);
+
+  // Shell state does not persist between the agent's tool calls, so resolve() is defined at
+  // BOTH call sites (Step 1.2 and Step 4a) with an edit-them-together note. This asserts the
+  // two bodies have not drifted — the regression that shipped was defining it at only one.
+  const resolves = [...readRepo("agents/pr-reviewer.md")
+    .matchAll(/resolve\(\)\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1].replace(/\s+/g, " ").trim());
+  s.check("G33i resolve() is defined at both call sites and the bodies are identical",
+    resolves.length === 2 && resolves[0] === resolves[1],
+    `found ${resolves.length} definition(s)${resolves.length === 2 && resolves[0] !== resolves[1] ? " that differ" : ""}`);
+}
+
+// ── G34: the defer-floor formula has one owner ──
+// per-comment-confidence.md § Drop vs. defer floors the near-miss band at 50 (so sub-65
+// severity tiers keep a non-empty band). Three restatements shipped a stale 65 floor;
+// this pins the authority and bans the stale form everywhere it appeared.
+{
+  const readRepo = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  s.check("G34a per-comment-confidence floors the defer band at 50",
+    /max\(threshold - 15, 50\)/.test(readRepo("agents/shared/rules/per-comment-confidence.md")));
+  for (const f of ["agents/pr-reviewer.md", "agents/pr-reviewer/rules/diagnostic-surface.md", "CLAUDE.md"]) {
+    s.check(`G34b ${f} carries no stale 65-floor restatement`,
+      !/threshold\s*[−-]\s*15,\s*65/.test(readRepo(f)));
+  }
+}
+
+// ── G35: Step 1.2b's executable delta-triage snippets actually run ──
+// Same pattern as Check C: extract the EXACT idioms from the agent body and execute them
+// against fixtures, so a syntax error or semantic regression in the shipped snippet fails
+// here instead of at review time.
+{
+  const prm = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+  const FIX = join(REPO_ROOT, "scripts/eval/fixtures/delta-triage");
+
+  // The intact-history compare extraction.
+  const compareJq = /--jq '(\{\n\s*delta_lines:[\s\S]*?\n {2}\})'\)/.exec(prm)?.[1];
+  s.check("G35a the compare-extraction jq program is extractable", !!compareJq);
+  if (compareJq) {
+    const r = spawnSync("jq", [compareJq], { input: readFileSync(join(FIX, "compare-intact.json"), "utf8"), encoding: "utf8" });
+    s.check("G35b the compare jq runs clean (the shipped predecessor threw 'unmatched parenthesis')",
+      r.status === 0, (r.stderr || "").slice(0, 160));
+    let out = {};
+    try { out = JSON.parse(r.stdout || "{}"); } catch { /* asserted below */ }
+    s.check("G35c compare jq extracts delta_lines=8, new_files=1, files=2",
+      out.delta_lines === 8 && out.new_files === 1 && Array.isArray(out.files) && out.files.length === 2,
+      JSON.stringify({ delta_lines: out.delta_lines, new_files: out.new_files, files: out.files?.length }));
+  }
+
+  // The EXTRA_HS awk — review-config.md's own worked example annotates high_stakes_paths
+  // entries with inline `#` comments, and the shipped extraction once passed the comment
+  // text through as CLI arguments, killing the whole classification (PR #146 review round 3).
+  const hsAwk = /awk '([^']*)' "\$HS_CFG"/.exec(prm)?.[1];
+  s.check("G35g the high_stakes_paths awk program is extractable", !!hsAwk);
+  if (hsAwk) {
+    const r = spawnSync("awk", [hsAwk, join(FIX, "review.yaml")], { encoding: "utf8" });
+    s.check("G35h the awk strips inline comments, quotes, and empty entries",
+      r.status === 0 && r.stdout === " --extra-high-stakes (^|/)ledger(/|$) --extra-high-stakes packages/tenant-isolation/",
+      `status=${r.status} out=${JSON.stringify(r.stdout)}`);
+  }
+
+  // The diverged-history blob-SHA authored delta.
+  const blobJq = /jq -s --slurpfile prior \S+ '\n([\s\S]*?)' \\/.exec(prm)?.[1];
+  s.check("G35d the blob-diff jq program is extractable", !!blobJq);
+  if (blobJq) {
+    const r = spawnSync("jq", ["-s", "--slurpfile", "prior", join(FIX, "tree-prior.json"), blobJq],
+      { input: readFileSync(join(FIX, "pr-files.ndjson"), "utf8"), encoding: "utf8" });
+    s.check("G35e the blob-diff jq runs clean", r.status === 0, (r.stderr || "").slice(0, 160));
+    let files = [];
+    try { files = JSON.parse(r.stdout || "[]"); } catch { /* asserted below */ }
+    const names = files.map((f) => f.filename).sort();
+    s.check("G35f blob diff keeps changed + added + REMOVED files and drops the identical blob",
+      JSON.stringify(names) === JSON.stringify(["assets/logo.png", "src/legacy/cleanup.ts", "src/util.ts"]),
+      JSON.stringify(names));
+  }
+}
+
 process.exit(s.report() ? 0 : 1);

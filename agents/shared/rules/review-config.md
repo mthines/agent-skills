@@ -34,6 +34,7 @@ Nothing that clears the confidence threshold is hidden in either relation: the c
 - [Hierarchical discovery](#hierarchical-discovery)
 - [Config loading step](#config-loading-step)
 - [Integration with per-comment-confidence.md](#integration-with-per-comment-confidencemd)
+- [High-stakes paths](#high-stakes-paths)
 - [Standards](#standards)
 - [What this rule does not do](#what-this-rule-does-not-do)
 
@@ -64,6 +65,13 @@ agent0_fix_links: false                  # repo-wide default for the "Fix with A
 agent0_environment: production           # which Agent0 the fix buttons link to —
                                          # production → app.dash0.com, development → app.dash0-dev.com
                                          # (default production); see agents/shared/rules/agent0-fix-links.md
+
+high_stakes_paths:                       # repo-specific critical paths (regex, case-insensitive)
+  - "(^|/)ledger(/|$)"                   # EXTENDS the built-in list (auth, payments, migrations,
+  - "(^|/)provisioning(/|$)"             # infra, secrets, …) owned by
+                                         # agents/pr-reviewer/scripts/classify-shape.mjs — it can
+                                         # add paths, never remove built-ins. A delta touching a
+                                         # match always upgrades to a full review (§ High-stakes paths).
 
 filters:                                 # declarative category suppressors
   - naming-nits
@@ -280,6 +288,34 @@ threshold = resolved_profile.per_comment_confidence_threshold
 
 The `per_comment_confidence_threshold` override in the review config (previously documented in `per-comment-confidence.md`) is now superseded by the `profile` field.
 For backwards compatibility, a bare `per_comment_confidence_threshold: N` without a `profile:` field is honoured as a direct threshold override (equivalent to a custom profile with that threshold and the balanced caps).
+
+---
+
+## High-stakes paths
+
+`high_stakes_paths:` is an optional list of case-insensitive regexes naming this repo's critical
+code beyond the built-in list — the paths where a small delta must never take the cheap review
+path ("authorization", "payment", and whatever this repo's equivalents are).
+
+- The **built-in list lives in one place** — `agents/pr-reviewer/scripts/classify-shape.mjs`,
+  derived from its path-shape detectors for `auth` (auth/authz/authorization/authentication/
+  oauth/sso/rbac/acl/permissions), `payments` (billing/payments/invoicing/checkout/subscription),
+  `schema-migration` (migrations, `schema.*` files), `infra` (infra/infrastructure/terraform/
+  helm/k8s/kubernetes, Dockerfiles, `*.tf`), and `secrets` (secrets/credentials/`.env*`) — and
+  is matched on token boundaries, so top-level `auth/**` matches and `author/**` does not.
+  (`api-contract` paths are deliberately not high-stakes: a contract edit escalates within
+  incremental rather than forcing full.)
+- Config entries **extend** that list; they can never remove a built-in.
+- Effect: any delta file matching either list puts the file in `HIGH_STAKES_FILES`, which forces
+  `RUN_MODE = "full"` at Step 1.2b and marks the change `high-stakes-path` for Persona 1's shape
+  checklists.
+- Merge rule across the discovery hierarchy: **union**, like `filters:`.
+
+```yaml
+high_stakes_paths:
+  - "(^|/)ledger(/|$)"
+  - "packages/tenant-isolation/"
+```
 
 ---
 
