@@ -261,10 +261,62 @@ The finding may be surfaced in the terminal output for human review, but it is n
 | State | Counts as resolved |
 | --- | --- |
 | Author pushed a commit touching `(path, line ± 5)` after comment | Yes |
-| Thread explicitly marked resolved on GitHub | Yes |
+| Thread explicitly marked resolved on GitHub | **Only after verifying against HEAD — see *Resolved is not verified* below. Never sufficient on its own.** |
 | Author replied with acknowledgement text | Yes |
 | Author replied with disagreement / explanation and no fix | **No** — the author challenged the finding; re-flagging in a later pass is allowed |
 | 👎 reaction by the author | **No** — dismissal means the finding was wrong, not accepted; the noise lesson fires, but re-flagging is not prevented (the agent should have dropped it originally, and the outcome-learning loop handles that) |
+
+---
+
+## Resolved is not verified — check HEAD before trusting it
+
+Thread resolution is a UI action any collaborator can take and carries **no guarantee a commit
+followed it**. Seven production sightings
+(`reviewer-lessons::resolved-bot-thread-is-not-evidence-of-a-fix`) found a real defect suppressed
+at dedup because a `cursor[bot]` thread on the same anchor was marked resolved with no accompanying
+code change — the defect was still live at HEAD, and it survived only as a prose note in the
+terminal report, invisible to a human reading the PR. The inverse also holds and is just as costly:
+an **unresolved** thread is not evidence the defect is still live — three prior comments were once
+all still `open` on GitHub yet all three had been fixed in the very next commit, GitHub had merely
+marked them outdated.
+
+Before suppressing (or re-raising) a finding on the strength of thread state alone, apply these
+checks **in order** — cheapest first:
+
+1. **Anchor-file existence.** If the file the thread anchors to no longer exists at HEAD (deleted,
+   renamed, moved), the finding is moot. This needs no line-level reasoning and is the cheapest
+   possible confirmation that HEAD contradicts the old claim — check it before anything else, for
+   **every** covering thread, including a third-party bot's, and before reading that bot's own
+   severity label.
+2. **Delta-path membership.** A prior comment anchored on a path outside this run's delta cannot
+   have been fixed by this run — computed once as a path-set intersection, before opening any file.
+3. **Read the code at HEAD.** For everything the first two checks don't settle, open the file (or
+   diff the thread's originating commit against HEAD for that path) and confirm the claim no longer
+   reproduces. A **compound** claim ("X breaks both the write and the read path") must have **each
+   mechanism verified separately** — the first mechanism reading as fixed is not evidence the second
+   is, and a partially-fixed thread is the easiest false suppression available.
+4. **A written deferral counts, an unwritten one doesn't.** A resolved thread whose remediation is
+   an explicit deferral to a follow-up ticket is validly suppressed only when that deferral is
+   recorded durably (PR body or a linked issue) — cite the text in the report. A resolved thread
+   backed by neither code nor a written deferral is still an empty resolution.
+
+This applies to **both directions** (resolved ≠ fixed, open ≠ unaddressed), to **both** bot and
+human threads (the discriminator is thread liveness and anchor identity, never authorship), and to
+**this agent's own prior comments**, not only a third party's.
+
+**Three outcomes, not two.** A verified claim resolves to one of:
+- **gate-without-posting** — a live, non-outdated thread already carries the same claim at the same
+  anchor; the defect is visible to a human, so a second inline comment would be pure duplication.
+  Fail the prior-feedback gate on it instead of restating it.
+- **post-as-new-code** — nothing visible on the PR carries the still-reproducing claim (the
+  covering thread was resolved without a fix, or only partially covers a compound claim); post it
+  as a fresh inline finding, explicitly noting the earlier thread was resolved without a code
+  change.
+- **suppress** — HEAD genuinely contradicts the finding (file deleted, code changed, or a written
+  deferral is on record).
+
+Do not collapse this to a binary post-or-suppress — a resolved thread that is only *half* fixed
+needs `post-as-new-code` for the surviving half, not `suppress` for the whole claim.
 
 ---
 
