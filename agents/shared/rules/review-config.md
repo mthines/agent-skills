@@ -297,10 +297,14 @@ For backwards compatibility, a bare `per_comment_confidence_threshold: N` withou
 code beyond the built-in list — the paths where a small delta must never take the cheap review
 path ("authorization", "payment", and whatever this repo's equivalents are).
 
-- The **built-in list lives in one place** — `agents/pr-reviewer/scripts/classify-shape.mjs`
-  (auth/authz/authorization/authentication/oauth/sso/rbac/acl/permissions, billing/payments/
-  invoicing/checkout/subscription, migrations, infra/terraform/helm, secrets/credentials) — and
+- The **built-in list lives in one place** — `agents/pr-reviewer/scripts/classify-shape.mjs`,
+  derived from its path-shape detectors for `auth` (auth/authz/authorization/authentication/
+  oauth/sso/rbac/acl/permissions), `payments` (billing/payments/invoicing/checkout/subscription),
+  `schema-migration` (migrations, `schema.*` files), `infra` (infra/infrastructure/terraform/
+  helm/k8s/kubernetes, Dockerfiles, `*.tf`), and `secrets` (secrets/credentials/`.env*`) — and
   is matched on token boundaries, so top-level `auth/**` matches and `author/**` does not.
+  (`api-contract` paths are deliberately not high-stakes: a contract edit escalates within
+  incremental rather than forcing full.)
 - Config entries **extend** that list; they can never remove a built-in.
 - Effect: any delta file matching either list puts the file in `HIGH_STAKES_FILES`, which forces
   `RUN_MODE = "full"` at Step 1.2b and marks the change `high-stakes-path` for Persona 1's shape

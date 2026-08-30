@@ -24,34 +24,29 @@
 // caller can never act on a partial classification.
 
 import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
-// ── The high-stakes path list — THE single source of truth ─────────────────────────────
+// ── Shape detectors ────────────────────────────────────────────────────────────────────
+// Path detectors run on filenames; content detectors run on ADDED (`+`) patch lines only.
 // Token-boundary matching: a listed token must be a whole path segment or a delimiter-
 // bounded token inside one (`src/auth/`, `auth/`, `payment_processor.go` all match;
 // `author/`, `oauthor.ts` do not). Top-level directories match — git paths carry no
 // leading slash, which is why the old interior-`/token/` regex missed `auth/**` entirely.
-const HIGH_STAKES_TOKENS = [
-  "auth", "authz", "authorization", "authentication", "oauth", "sso", "rbac", "acl",
-  "permissions?",
-  "billing", "payments?", "invoic(?:e|es|ing)", "checkout", "subscription",
-  "migrations?",
-  "infra", "infrastructure", "terraform", "helm",
-  "secrets?", "credentials?",
-];
-const HIGH_STAKES_RE = new RegExp(
-  `(^|[/._-])(${HIGH_STAKES_TOKENS.join("|")})([/._-]|$)`, "i",
-);
-
-// ── Shape detectors ────────────────────────────────────────────────────────────────────
-// Path detectors run on filenames; content detectors run on ADDED (`+`) patch lines only.
 const PATH_SHAPES = [
   ["auth", /(^|[/._-])(auth|authz|authorization|authentication|oauth|sso|rbac|acl|permissions?)([/._-]|$)/i],
   ["payments", /(^|[/._-])(billing|payments?|invoic(?:e|es|ing)|checkout|subscription)([/._-]|$)/i],
   ["schema-migration", /(^|[/._-])migrations?([/._-]|$)|(^|\/)schema\.(sql|prisma|rb|graphql)$/i],
-  ["infra", /(^|[/._-])(infra|infrastructure|terraform|helm|k8s|kubernetes)([/._-]|$)|(^|\/)Dockerfile|\.tf$/i],
+  ["infra", /(^|[/._-])(infra|infrastructure|terraform|helm|k8s|kubernetes)([/._-]|$)|(^|\/)([^/]*\.)?Dockerfile(\.[^/]*)?$|\.tf$/i],
   ["secrets", /(^|[/._-])(secrets?|credentials?)([/._-]|$)|(^|\/)\.env(\.|$)/i],
   ["api-contract", /\.(proto|graphql|gql)$|(^|[/._-])(openapi|swagger)([/._-]|$)/i],
 ];
+
+// ── The high-stakes path list — THE single source of truth ─────────────────────────────
+// Derived from the path-shape detectors above rather than a second, drift-prone token
+// list: a file matching one of THESE shapes' path detectors is a high-stakes file (and
+// forces a full review at Step 1.2b). api-contract is deliberately absent — a contract
+// edit escalates within incremental rather than forcing full.
+const HIGH_STAKES_PATH_SHAPES = new Set(["auth", "payments", "schema-migration", "infra", "secrets"]);
 const CONTENT_SHAPES = [
   // Threshold = minimum count of matching added lines before the shape fires.
   ["concurrency", /\b(mutex|rwmutex|sync\.(Mutex|RWMutex|WaitGroup|Once)|atomic\.|go func|make\(chan\b|semaphore|threading\.|multiprocessing|Promise\.(all|race|allSettled)|SharedArrayBuffer|Atomics\.)/i, 1],
@@ -79,8 +74,12 @@ export function classify(files, extraHighStakes = []) {
 
   for (const f of files) {
     const name = f.filename ?? "";
-    if (HIGH_STAKES_RE.test(name) || extras.some((re) => re.test(name))) highStakesFiles.push(name);
-    for (const [shape, re] of PATH_SHAPES) if (re.test(name)) shapes.add(shape);
+    if (extras.some((re) => re.test(name))) highStakesFiles.push(name);
+    for (const [shape, re] of PATH_SHAPES) {
+      if (!re.test(name)) continue;
+      shapes.add(shape);
+      if (HIGH_STAKES_PATH_SHAPES.has(shape)) highStakesFiles.push(name);
+    }
     const added = (f.patch ?? "").split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++"));
     for (const [shape, re, min] of CONTENT_SHAPES) {
       const hits = (contentHits.get(shape) ?? 0) + added.filter((l) => re.test(l)).length;
@@ -143,6 +142,12 @@ function selfTest() {
       (r) => r.shapes.includes("schema-migration") && r.risky],
     ["extra high-stakes config pattern", [{ filename: "core/ledger/post.ts" }],
       (r, extras) => extras && r.high_stakes_files.includes("core/ledger/post.ts") && r.risky],
+    ["terraform file is high-stakes infra", [{ filename: "modules/network/vpc.tf" }],
+      (r) => r.shapes.includes("infra") && r.high_stakes_files.includes("modules/network/vpc.tf")],
+    ["Dockerfile variants are infra, prose about one is not", [{ filename: "Dockerfile.dev" }, { filename: "docs/Dockerfile-guide.md" }],
+      (r) => r.shapes.includes("infra") && r.high_stakes_files.length === 1 && r.high_stakes_files[0] === "Dockerfile.dev"],
+    ["api-contract path is risky but NOT high-stakes (escalate, not full)", [{ filename: "api/v1/orders.proto" }],
+      (r) => r.shapes.includes("api-contract") && r.risky && r.high_stakes_files.length === 0],
     ["single error-handling line stays quiet", [{ filename: "src/x.ts", patch: "@@\n+} catch (e) {" }],
       (r) => !r.shapes.includes("error-handling")],
     ["empty file list classifies to nothing", [],
@@ -187,7 +192,14 @@ function main() {
     const raw = readFileSync(input, "utf8");
     try {
       const parsed = JSON.parse(raw);
-      files = Array.isArray(parsed) ? parsed : parsed.files;
+      // A ONE-file NDJSON stream is itself valid JSON — a single object — so an object
+      // carrying `filename` is a single file entry, not a malformed wrapper. Without this
+      // branch every single-file PR failed the parse and silently degraded shape routing
+      // to size-only — on exactly the "15-line auth change" case the classifier exists for.
+      files = Array.isArray(parsed) ? parsed
+        : Array.isArray(parsed?.files) ? parsed.files
+        : parsed && typeof parsed === "object" && "filename" in parsed ? [parsed]
+        : null;
     } catch {
       // NDJSON — the shape `gh api --paginate --jq '.[] | {…}'` emits (one object per line,
       // possibly multi-line pretty-printed objects are NOT supported; gh emits compact lines).
@@ -200,4 +212,4 @@ function main() {
   process.stdout.write(JSON.stringify(classify(files, extras)) + "\n");
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (import.meta.url === pathToFileURL(process.argv[1]).href) main();

@@ -2550,10 +2550,23 @@ const isPollBlock = (block) =>
     badFlag.status !== 0 && badFlag.stdout === "");
 
   // Single source: the agent body must not re-state the high-stakes alternation by hand —
-  // that copy is what drifted into the broken regex. (holistic-review.md keeps one grep as
-  // the documented reference fallback for non-pr-reviewer callers; that is the one allowed site.)
+  // that copy is what drifted into the broken regex. Any two high-stakes tokens joined by a
+  // literal `|` is a regex being restated, whatever the order. (holistic-review.md keeps one
+  // grep as the documented reference fallback for non-pr-reviewer callers; that is the one
+  // allowed site.)
   s.check("G33g pr-reviewer.md carries no hand-copied high-stakes regex",
-    !/auth\|billing\|payments/.test(readRepo("agents/pr-reviewer.md")));
+    !/\b(auth|billing|payments|migrations|infra|secrets)\|(auth|billing|payments|migrations|infra|secrets)\b/
+      .test(readRepo("agents/pr-reviewer.md")));
+
+  // A one-file PR's /tmp/pr-files.json is a SINGLE JSON object (valid JSON, not just valid
+  // NDJSON) — the parse must treat it as one file entry, not a malformed wrapper. This is
+  // the classifier's blocking regression from PR #146's own review.
+  const one = spawnSync("node", [CLS, join(FIX, "one-file.ndjson")], { encoding: "utf8" });
+  let oneCls = {};
+  try { oneCls = JSON.parse(one.stdout || "{}"); } catch { /* asserted below */ }
+  s.check("G33h a single-file PR classifies instead of failing the parse",
+    one.status === 0 && Array.isArray(oneCls.shapes) && oneCls.shapes.includes("auth"),
+    `status=${one.status} ${(one.stderr || "").slice(0, 80)}`);
 }
 
 // ── G34: the defer-floor formula has one owner ──
@@ -2602,8 +2615,8 @@ const isPollBlock = (block) =>
     let files = [];
     try { files = JSON.parse(r.stdout || "[]"); } catch { /* asserted below */ }
     const names = files.map((f) => f.filename).sort();
-    s.check("G35f blob diff keeps the changed + added files and drops the identical blob",
-      JSON.stringify(names) === JSON.stringify(["assets/logo.png", "src/util.ts"]),
+    s.check("G35f blob diff keeps changed + added + REMOVED files and drops the identical blob",
+      JSON.stringify(names) === JSON.stringify(["assets/logo.png", "src/legacy/cleanup.ts", "src/util.ts"]),
       JSON.stringify(names));
   }
 }

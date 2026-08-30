@@ -866,14 +866,21 @@ All subsequent steps depend on Step 1.2 completing first.
 Run the shape classifier on the full PR file list — a pure local computation, no API calls:
 
 ```bash
-# Optional per-repo extension: high_stakes_paths in the review config (review-config.md § High-stakes paths).
-EXTRA_HS=$(test -f .github/review.yaml && \
-  awk '/^high_stakes_paths:/{f=1;next} /^[^ ]/{f=0} f && /^ *- /{sub(/^ *- */,""); gsub(/"/,""); printf " --extra-high-stakes %s", $0}' .github/review.yaml || true)
+# Optional per-repo extension: high_stakes_paths in the review config (review-config.md
+# § High-stakes paths) — same lookup order as Step 1.7: .github/review.yaml, else the
+# legacy root .review.yaml. Entries are regexes in block-list form with no whitespace
+# (each becomes one --extra-high-stakes flag; the expansion is word-split by design).
+HS_CFG=".github/review.yaml"; [ -f "$HS_CFG" ] || HS_CFG=".review.yaml"
+EXTRA_HS=$(test -f "$HS_CFG" && \
+  awk '/^high_stakes_paths:/{f=1;next} /^[^ ]/{f=0} f && /^ *- /{sub(/^ *- */,""); gsub(/"/,""); printf " --extra-high-stakes %s", $0}' "$HS_CFG" || true)
 
-# AGENT_MD is resolved by the `resolve()` helper defined in Step 4a — the same
-# CLAUDE_AGENT_FILE contract. Resolve it once here (first consumer) and reuse it at Step 4.
+# AGENT_MD: resolve it HERE, with the same resolve() helper and the same empty-value guard
+# Step 4a documents — this step is the first consumer, and an empty AGENT_MD expanded into
+# the path below reads as "missing script" rather than "failed resolution". On an empty
+# AGENT_MD, skip the node call and take the degradation branch below. Step 4 reuses the value.
+AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
 CLASSIFY="${AGENT_MD%/pr-reviewer.md}/pr-reviewer/scripts/classify-shape.mjs"
-PR_SHAPE_JSON=$(node "$CLASSIFY" /tmp/pr-files.json $EXTRA_HS)
+[ -n "$AGENT_MD" ] && PR_SHAPE_JSON=$(node "$CLASSIFY" /tmp/pr-files.json $EXTRA_HS)
 ```
 
 If the script cannot be resolved or exits non-zero, set
@@ -939,8 +946,11 @@ gh api "repos/$RESOLVED_REPO/git/trees/$PRIOR_SHA?recursive=1" \
 # -s slurps the NDJSON pr-files stream into one array; --slurpfile carries the tree.
 jq -s --slurpfile prior /tmp/tree-prior.json '
   ($prior[0] | map({key: .path, value: .sha}) | from_entries) as $was
-  | [ .[] | select(($was[.filename] // "") != .sha) ]' \
+  | [ .[] | select(.status == "removed" or ($was[.filename] // "") != .sha) ]' \
   /tmp/pr-files.json > /tmp/pr-delta.json
+# A removed file is kept unconditionally: pulls/{n}/files reports a removed row with the
+# DELETED blob sha, which equals its sha in the prior tree — a blob-equality test alone
+# would read every deletion as "unchanged" and a deletion-only push as a zero delta.
 DELTA_LINES=$(jq '[.[] | .additions + .deletions] | add // 0' /tmp/pr-delta.json)
 NEW_FILES=$(jq '[.[] | select(.status == "added")] | length' /tmp/pr-delta.json)
 DELTA_SOURCE="blob-diff (compare $COMPARE_STATUS, behind_by $BEHIND_BY)"
@@ -1001,7 +1011,7 @@ fi
 - `DELTA_LINES > 100`
 - `NEW_FILES > 0`
 - `HIGH_STAKES_FILES` is non-empty — the delta touches a high-stakes **path** (auth, payments,
-  migrations, infra, secrets, or a repo-configured `high_stakes_paths:` glob; the classifier owns
+  migrations, infra, secrets, or a repo-configured `high_stakes_paths:` regex; the classifier owns
   the list).
 - `DELTA_PROPAGATION` is true — the delta edits a governing document (`CLAUDE.md`, `AGENTS.md`,
   `.claude/rules/*.md`) alongside other files. On a fan-out PR the delta lands on the authority
@@ -1560,7 +1570,10 @@ For `pr-reviewer` (cross-review), map holistic finding types to:
 ### 2.4b Targeted holistic escalation (default ON in `full` mode; shape-gated in incremental)
 
 See `agents/shared/rules/holistic-review.md § Targeted escalation`. Runs after 2.4 and
-before dedupe. Default ON for `pr-reviewer`. Skip via `--no-escalate`.
+before dedupe. Default ON for `pr-reviewer`. Skip via `--no-escalate`, or when 2.4 was
+**trivially** skipped (trivial-skip heuristic or the Step 1.8 token-economy skip) — the
+incremental-mode 2.4 skip is a run-mode policy, not a triviality verdict, and gets the
+shape-gated exception below.
 Selects context-dependent findings (changed exports whose correctness depends on caller
 behaviour) and fans out parallel focused traces — one per finding, cap 10.
 

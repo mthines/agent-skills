@@ -1,5 +1,6 @@
 [
   { "path": "src/auth/login.ts", "sha": "aaa111" },
   { "path": "src/util.ts", "sha": "old999" },
+  { "path": "src/legacy/cleanup.ts", "sha": "eee555" },
   { "path": "README.md", "sha": "ddd444" }
 ]
