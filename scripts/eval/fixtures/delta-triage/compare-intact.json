@@ -1,0 +1,9 @@
+{
+  "status": "ahead",
+  "ahead_by": 2,
+  "behind_by": 0,
+  "files": [
+    { "filename": "src/auth/login.ts", "additions": 5, "deletions": 1, "status": "modified", "patch": "@@ -10,3 +10,7 @@\n+if (user.role !== 'admin') {\n+  return deny();\n+}" },
+    { "filename": "docs/setup.md", "additions": 2, "deletions": 0, "status": "added", "patch": "@@ -0,0 +1,2 @@\n+# Setup\n+Steps." }
+  ]
+}

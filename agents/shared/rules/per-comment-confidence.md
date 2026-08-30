@@ -52,6 +52,14 @@ For each finding that survives `finding-grounding.md` (2.6) and `verification-re
    - **Target**: `<file:line>`
    - **Claim**: the comment body (without prefix and decoration)
    - **Evidence**: the changed-file patch hunk that contains the line, PLUS any verification receipt from Step 2.6b (raw tool output that supports or modifies the claim)
+   - **Context expansion — mandatory for `issue`-typed findings**: also read and include (a) the
+     **enclosing function or method body** the line sits in — the hunk alone routinely hides a
+     guard two lines above it or a cleanup below it — and (b) when the touched symbol is
+     exported, **one representative caller** (cheapest hit of a repo grep for the symbol). Both
+     are reads the run can already make (`gh api contents` or the local checkout); together they
+     are what turns "plausible from the hunk" into either a confirmed defect or a discovered
+     guard that clears the finding before it wastes an author's attention. `suggestion` /
+     `question` / `nitpick` findings may include them but are not required to.
    - **Acceptance criteria** (the reviewer's own rubric questions — inputs to the call, NOT scores the skill returns):
      - Is the claim factually correct given the patch hunk?
      - Can the PR author act on it without additional context?
