@@ -293,17 +293,26 @@ BASE_CONFIG=""
 AGENT0_FIX_LINKS="false"
 AGENT0_ENVIRONMENT="production"
 if [[ -n "$BASE_CONFIG" ]]; then
-  grep -qE '^agent0_fix_links:[[:space:]]*true[[:space:]]*$' "$BASE_CONFIG" && AGENT0_FIX_LINKS="true"
-  if grep -qE '^agent0_environment:[[:space:]]*development[[:space:]]*$' "$BASE_CONFIG"; then
-    AGENT0_ENVIRONMENT="development"
-  fi
+  # Strip a trailing `# comment` and surrounding quotes before comparing — the schema's own
+  # documented style (§ Config schema above) puts an inline comment after the value, and an
+  # end-of-line-anchored match against the raw line silently reads that as "unset" (found in
+  # review of PR #149).
+  fl=$(grep -E '^agent0_fix_links:' "$BASE_CONFIG" \
+    | sed -E 's/#.*$//; s/^[^:]+:[[:space:]]*//; s/["'"'"']//g; s/[[:space:]]*$//')
+  [[ "$fl" == "true" ]] && AGENT0_FIX_LINKS="true"
+  env=$(grep -E '^agent0_environment:' "$BASE_CONFIG" \
+    | sed -E 's/#.*$//; s/^[^:]+:[[:space:]]*//; s/["'"'"']//g; s/[[:space:]]*$//')
+  [[ "$env" == "development" ]] && AGENT0_ENVIRONMENT="development"
 fi
 ```
 
 Both fields default as shown when absent or unrecognised — `agent0_fix_links` to `false` (buttons
 off), `agent0_environment` to `production` (`app.dash0.com`), matching the schema defaults above.
 `pr-reviewer.md` ORs `AGENT0_FIX_LINKS` with an explicit `--fix-links` flag to decide `FIX_LINKS`,
-and passes `AGENT0_ENVIRONMENT` to `build-agent0-link.mjs` as `--env`.
+and passes `AGENT0_ENVIRONMENT` to `build-agent0-link.mjs` as `--env` — **on both the Fix-all and
+Fix-this call sites** (§ Config loading step above lists both consumers; `agent0-fix-links.md §
+Button markup` and `comment-shape.md § Fix-with-Agent0 button` must not be read as excusing the
+inline site from passing it — see the note in each).
 
 ---
 
