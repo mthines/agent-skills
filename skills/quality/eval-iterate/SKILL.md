@@ -1,27 +1,27 @@
 ---
 name: eval-iterate
 description: >
-  Iterates on a failing AI/LLM eval (an L2 behavioral suite, a golden-set /
-  LLM-as-judge eval, or any eval gating a PR) until it is green AND
-  confirmed, not just luckily passing once. Diagnoses via the
-  `ai-engineering` skill's evals concern, classifying the failure as a
-  code bug, an eval-definition bug (stale golden item, miscalibrated
-  judge, wrong assertion), or flaky. Applies the minimal fix, re-runs,
-  then requires a second confirming re-run before declaring victory.
-  Hard-capped at 5 iterations. Refuses to game the eval (skip/delete a
-  failing case, loosen a threshold) without a logged rationale gated by
-  `confidence(analysis) >= 90%` — the check-gaming-forbidden spirit of
-  `checks.yaml`. Composes `ai-engineering`, `confidence`, and
-  `verify-behavior` rather than reimplementing them. Use when an eval is
-  failing on a PR and needs a real, non-gamed green. Triggers on "this
-  eval is failing", "iterate on this eval", "fix this eval", "get this
-  eval green", "optimize this eval", "/eval-iterate".
+  Iterates on a failing AI/LLM eval (an L2 suite, a golden-set / judge
+  eval, or any eval gating a PR) until it is green AND confirmed, not
+  just luckily passing once. Classifies the failure as a code bug, an
+  eval-definition bug (stale golden item / criteria drift), judge-drift
+  (silent grader version change), or flaky. Applies the minimal fix, then
+  requires N consecutive confirming re-runs — 2 deterministic, 5 for
+  anything a model call grades, since a flat "2" is statistically weak
+  for a stochastic judge. Hard-capped at 5 fix iterations. Refuses to
+  game the eval (Goodhart's Law: skip/delete/overwrite-in-place a case,
+  loosen a threshold) without a second independent check plus
+  `confidence(analysis) >= 90%` and a logged rationale. Composes
+  `ai-engineering`, `confidence`, `critical`, `verify-behavior`. Use when
+  an eval is failing on a PR and needs a real, non-gamed green. Triggers
+  on "this eval is failing", "iterate on this eval", "fix this eval",
+  "get this eval green", "optimize this eval", "/eval-iterate".
 disable-model-invocation: false
 argument-hint: '[<eval-target>|<pr-url>] [--max-iterations <n>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: command
   tags:
     - evals
@@ -31,6 +31,7 @@ metadata:
     - check-gaming
     - golden-set
     - llm-as-judge
+    - judge-drift
     - confirmation
 ---
 
@@ -95,6 +96,13 @@ assertion or suite that failed). Never start from a remembered or assumed
 failure — the baseline is evidence, not a guess. This raw output is
 `BASELINE_FAILURE` and is quoted in the Phase 6 report.
 
+If the target's grading involves any model call (an LLM-as-judge
+assertion, a model-scored golden-set item), also record `JUDGE_MODEL` —
+the grader model name + version — at this same baseline moment. A silent
+grader-version change between baseline and confirmation is a distinct
+failure mode (`judge-drift`, Phase 2) that a code-only diff would miss
+entirely.
+
 Print the resolved target before continuing:
 `Target: <eval identifier> on branch <branch> (cap: <n>/5)`.
 
@@ -120,6 +128,14 @@ Record the resolved command as `RUN_CMD`. Every re-run in this skill uses
 the same `RUN_CMD` — changing the run command mid-loop invalidates the
 comparison between iterations.
 
+Also classify the target's **grading path** once, here — it decides the
+Phase 4 confirmation bar: does any part of `RUN_CMD`'s pass/fail decision
+involve a model call (an LLM-as-judge assertion, a model-scored
+golden-set item), or is it purely deterministic (exit code, type/schema
+check, string/regex assertion)? Record this as `GRADING_PATH` (`judge` or
+`deterministic`). See
+[`rules/convergence-confirmation.md`](./rules/convergence-confirmation.md).
+
 ## Phase 2 — Classify the failure (verdict required)
 
 Pick exactly one verdict per iteration before writing anything.
@@ -130,11 +146,21 @@ Verdicts at a glance:
 
 - `code-bug` — the code under test is wrong; the eval correctly caught it.
 - `eval-bug` — the eval itself is wrong (stale golden item, miscalibrated
-  judge, wrong assertion, threshold set without basis).
-- `flaky` — re-run `RUN_CMD` once immediately, unchanged. If it now
-  passes, note the flake and treat non-determinism itself as an `eval-bug`
-  (an eval that isn't reproducible is broken) rather than spending a fix
-  iteration guessing at a code change.
+  judge, wrong assertion, threshold set without basis). Tag it with a
+  subtype — `mis-specified` (the eval's existing logic is simply wrong)
+  or `stale-criteria` (the eval never anticipated this case — legitimate
+  criteria drift, not a mistake) — per
+  [`rules/eval-bug-classification.md`](./rules/eval-bug-classification.md).
+- `judge-drift` — `GRADING_PATH` is `judge`, and the grader model name +
+  version now serving the re-run differs from the `JUDGE_MODEL` recorded
+  at baseline. The fix is pinning the grader version, not editing the
+  eval or the code — see
+  [`rules/eval-bug-classification.md`](./rules/eval-bug-classification.md).
+- `flaky` — re-run `RUN_CMD` once immediately, unchanged, with
+  `JUDGE_MODEL` confirmed unchanged. If it now passes, note the flake and
+  treat non-determinism itself as an `eval-bug` (an eval that isn't
+  reproducible is broken) rather than spending a fix iteration guessing
+  at a code change.
 - `unsure` — the failure output does not clearly support any of the
   above. Do not guess. Use `Skill("ai-engineering", "review <target>")`
   scoped to the evals area for a second look; if still unsure after that,
@@ -146,35 +172,50 @@ Verdicts at a glance:
 - `code-bug` → fix the code under test. No eval file is touched. Normal
   code-change discipline applies (smallest change that fixes the root
   cause, consistent with the surrounding code).
+- `judge-drift` → pin the grader model version in the eval's own config.
+  No assertion, golden item, or code is touched.
 - `eval-bug` → **read
   [`rules/anti-gaming-guard.md`](./rules/anti-gaming-guard.md) before
   editing anything.** Every edit to an assertion, threshold, golden-set
-  item, or judge prompt is gated on `confidence(analysis) >= 90%` plus a
-  logged rationale — no exceptions, no matter how obviously "just a typo
-  in the expected value" it looks.
+  item, or judge prompt requires (1) a second independent check — a
+  fresh `Skill("critical", "analysis")` pass or explicit user
+  confirmation, not just this run's own self-graded score, (2)
+  `confidence(analysis) >= 90%`, and (3) a logged rationale — no
+  exceptions, no matter how obviously "just a typo in the expected
+  value" it looks.
 
-Hard refusals (full list in
+Hard refusals (full list, including Goodhart's-Law framing, in
 [`rules/anti-gaming-guard.md`](./rules/anti-gaming-guard.md)):
 
 - Never skip, delete, `.skip`/`xfail`, or exclude a failing case to make
   the suite pass.
 - Never loosen a threshold, gate percentage, or assertion without a
-  logged, evidence-backed rationale and the confidence gate above.
+  logged, evidence-backed rationale and the gates above.
+- Never overwrite an existing golden-set case in place — a legitimate
+  correction adds a new/superseding case and keeps the original runnable
+  as a regression guard.
 - Never suppress or catch the eval framework's failure exit code.
 - Never disable the CI step that runs this eval (`continue-on-error`,
   removing it from `paths:`, etc.).
 
 ## Phase 4 — Re-run, then confirm
 
+`N` is the confirmation bar decided at Phase 1's `GRADING_PATH`
+classification: **2** for `deterministic`, **5** for `judge`. Full
+rationale and procedure in
+[`rules/convergence-confirmation.md`](./rules/convergence-confirmation.md).
+
 1. Run `RUN_CMD`. If it fails, this iteration did not succeed — go to
    Phase 5 (do not stop here and call it done).
-2. If it passes, **do not declare victory on one pass.** Run `RUN_CMD` a
-   second time, unchanged, per
-   [`rules/convergence-confirmation.md`](./rules/convergence-confirmation.md).
-   Both runs must pass for the result to count as `CONFIRMED`. A pass
-   followed by a fail is not a flake to explain away — it means the fix
-   did not actually address the failure; treat it as a failed iteration
-   and continue.
+2. If it passes, **do not declare victory on one pass.** Run `RUN_CMD`
+   again, unchanged, for a total of `N` consecutive passes. Stop at the
+   first failure inside that window — a single fail disproves
+   `CONFIRMED` regardless of how many runs already passed; treat it as a
+   failed iteration and continue, not a flake to explain away.
+3. If `GRADING_PATH` is `judge`, all `N` passes is evidence the fix isn't
+   a fluke — it is not proof the judge itself is well-calibrated
+   (repeated sampling cancels random noise, not a systematically wrong
+   judge). Do not overstate `CONFIRMED` as more than that.
 
 ## Phase 5 — Iterate or stop at the cap
 
@@ -199,15 +240,16 @@ Always end with a structured summary, regardless of outcome:
 eval-iterate run
   Outcome: <confirmed-green | escalated | max-iterations>
   Target: <eval identifier> (<RUN_CMD>)
+  Grading path: <deterministic | judge>  JUDGE_MODEL: <name+version, if judge>
   Baseline failure: <one-line cause, quoting BASELINE_FAILURE>
   Iterations: <N>/<cap>
-  Per-iteration verdicts: <code-bug | eval-bug | flaky | unsure>, ...
-  Eval-definition edits: <none | list each edit with its confidence(analysis) score and rationale>
-  Confirmation: <two consecutive green runs of RUN_CMD | not reached>
+  Per-iteration verdicts: <code-bug | eval-bug(subtype) | judge-drift | flaky | unsure>, ...
+  Eval-definition edits: <none | one entry per edit — see rules/anti-gaming-guard.md's log format>
+  Confirmation: <N-of-N consecutive green runs of RUN_CMD, N per grading path | not reached>
 ```
 
 On `confirmed-green`, include the fix applied per iteration and the final
-two confirming run outputs (or a pointer to them).
+confirming run outputs (or a pointer to them).
 
 On `max-iterations` or `escalated`, include what was tried per iteration,
 the current best hypothesis, and what a human should look at next. Never
@@ -236,6 +278,10 @@ reimplements their logic:
 - **`confidence`** (`analysis` mode) owns the score gating any
   eval-definition edit. This skill never invents its own scoring rubric —
   it calls `Skill("confidence", "analysis")` and reads the `Final` score.
+- **`critical`** (`analysis` mode) supplies the second, independent check
+  an eval-definition edit needs beyond the fixing agent's own confidence
+  score — dispatch it fresh, without the proposed edit already in its
+  context, to challenge the rationale adversarially.
 - **`verify-behavior`** (`change` mode) owns the execute-and-receipt
   mechanic for the re-run in Phase 4. This skill supplies the
   `expected: "RUN_CMD exits 0"` framing; `verify-behavior` supplies the
@@ -249,42 +295,62 @@ table) rather than skipping the gate.
 ## Core Principles
 
 1. **Confirmed, not merely green.** A single pass proves nothing about a
-   flaky suite or a lucky sample; two consecutive passes of the same
-   `RUN_CMD` are the minimum bar. See
+   flaky suite or a lucky sample. The bar scales with how the eval grades:
+   2 consecutive passes for a deterministic check, 5 for anything a model
+   call scores — binomial statistics make a flat "2" indefensible for a
+   stochastic judge. See
    [`rules/convergence-confirmation.md`](./rules/convergence-confirmation.md).
 2. **Classify before you touch anything.** A code-bug and an eval-bug look
    identical from the failure output alone until you read the eval's own
    logic — guessing wrong wastes an iteration and, worse, can mask a real
-   regression as an eval problem.
-3. **The eval is not free to edit.** Treat it like `checks.yaml`'s
-   executor-immutable spirit: any loosening edit needs a confidence gate
-   and a written rationale, never a silent fix-to-pass.
+   regression as an eval problem. A silent judge-version bump is a third,
+   easy-to-miss possibility — check `JUDGE_MODEL` before blaming the code
+   or the eval.
+3. **The eval is not free to edit, and self-review doesn't count.** Treat
+   it like `checks.yaml`'s executor-immutable spirit: any loosening edit
+   needs a second independent check, a confidence gate, and a written
+   rationale — never a silent fix-to-pass, and never a single agent
+   grading its own proposed edit. This is Goodhart's Law in four shapes
+   (regressive, extremal, causal, adversarial) — see
+   [`rules/anti-gaming-guard.md`](./rules/anti-gaming-guard.md).
 4. **The cap is hard.** 5 iterations, never more, regardless of how close
-   the last run looked. A loop that isn't converging by iteration 5 needs
-   a human, not iteration 6.
+   the last run looked — a pragmatic ceiling, not a number derived from
+   eval-specific research. A loop that isn't converging by iteration 5
+   needs a human, not iteration 6.
 5. **Evidence over assumption.** Every classification and every re-run is
    grounded in an actual command's actual output — never "it should pass
    now."
+6. **A corrected case is a new case, not an edit.** The failing golden
+   item is itself the strongest evidence a real failure mode exists;
+   overwriting it in place destroys the regression guard it represents.
 
 ## Anti-patterns (one-liners — full list in the rules)
 
-- Declaring victory on a single green run.
-- Deleting or skipping the failing case instead of fixing why it fails.
-- Loosening a threshold or assertion without a confidence-gated rationale.
+- Declaring victory on a single green run — or on N green runs of a
+  deterministic check while treating a judge-graded check the same way.
+- Deleting, skipping, or overwriting-in-place the failing case instead of
+  fixing why it fails or superseding it with a new, versioned case.
+- Loosening a threshold or assertion without a confidence-gated rationale
+  and a second independent check.
 - Guessing the classification instead of reading the eval's own failure
-  output and logic.
+  output and logic — including checking `JUDGE_MODEL` before assuming a
+  code or eval regression.
 - Continuing past 5 iterations because "just one more try."
 - Reusing a different `RUN_CMD` between iterations, making runs
   incomparable.
 
 ## Definition of Done
 
-- [ ] Baseline failure captured from an actual run, not assumed.
-- [ ] `RUN_CMD` resolved once and held constant across iterations.
-- [ ] Every iteration has an explicit verdict (Phase 2).
-- [ ] Any eval-definition edit passed the `confidence(analysis) >= 90%`
-      gate and is logged with its rationale.
-- [ ] The eval passed **twice consecutively** before being reported
-      `confirmed-green`.
+- [ ] Baseline failure (and `JUDGE_MODEL`, if judge-graded) captured from
+      an actual run, not assumed.
+- [ ] `RUN_CMD` and `GRADING_PATH` resolved once and held constant across
+      iterations.
+- [ ] Every iteration has an explicit verdict (Phase 2), including
+      `judge-drift` and an `eval-bug` subtype where applicable.
+- [ ] Any eval-definition edit passed a second independent check plus the
+      `confidence(analysis) >= 90%` gate, is logged with its rationale,
+      and left the original case retained rather than overwritten.
+- [ ] The eval passed **N consecutive times** (2 deterministic / 5 judge)
+      before being reported `confirmed-green`.
 - [ ] The iteration cap (≤ 5, never raised) was respected.
 - [ ] The structured report (Phase 6) was printed, regardless of outcome.

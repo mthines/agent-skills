@@ -1,5 +1,14 @@
 # Eval-Bug Classification
 
+## Contents
+
+- [Decision table](#decision-table)
+- [Judge-drift is not a code-bug or an eval-bug](#judge-drift-is-not-a-code-bug-or-an-eval-bug)
+- [How to decide, not guess](#how-to-decide-not-guess)
+- [Criteria drift — when "the eval was incomplete" isn't gaming](#criteria-drift--when-the-eval-was-incomplete-isnt-gaming)
+- [Flaky is not free](#flaky-is-not-free)
+- [Examples](#examples)
+
 Every iteration picks exactly one verdict before any fix is written.
 This is the same discipline `ci-auto-fix` applies to CI failures
 (`rules/verdicts.md`), specialized for AI/LLM evals: a failing eval can
@@ -12,12 +21,32 @@ biggest way this loop wastes iterations.
 | Signal in the failure output | Verdict |
 | ----------------------------- | ------- |
 | The eval's expected value / golden item is demonstrably correct (matches documented behavior, a prior passing snapshot, or product intent) and the actual output changed | `code-bug` |
-| The assertion checks something the code was never supposed to guarantee (over-strict schema check, exact-string match on a field that's allowed to vary) | `eval-bug` |
-| The golden-set item's `expected` field predates a deliberate, already-shipped behavior change and was never updated | `eval-bug` |
-| The judge is same-model-family as the actor, unrandomized, or has no reference answer (see `ai-engineering/rules/evals.md` §3) | `eval-bug` |
-| A numeric threshold/gate (e.g. `EVAL_GATE`) was set without a documented basis and a single borderline case trips it | `eval-bug` — but lowering the gate still needs the confidence gate in `rules/anti-gaming-guard.md` |
-| Re-running the identical command with no code change flips the result | `flaky` |
+| The assertion checks something the code was never supposed to guarantee (over-strict schema check, exact-string match on a field that's allowed to vary) | `eval-bug` (subtype `mis-specified`) |
+| The golden-set item's `expected` field predates a deliberate, already-shipped behavior change and was never updated | `eval-bug` (subtype `mis-specified`) |
+| The failure surfaces a real gap the eval never covered — a case the criteria didn't anticipate, not a case the criteria got wrong | `eval-bug` (subtype `stale-criteria` — see "Criteria drift" below) |
+| A numeric threshold/gate (e.g. `EVAL_GATE`) was set without a documented basis and a single borderline case trips it | `eval-bug` (subtype `mis-specified`) — lowering the gate still needs the confidence gate in `rules/anti-gaming-guard.md` |
+| The check is LLM-judge-graded, and the judge/grader model name+version recorded at baseline (`JUDGE_MODEL`) differs from the version now serving the re-run | `judge-drift` |
+| Re-running the identical command with no code change flips the result, and `JUDGE_MODEL` is unchanged | `flaky` |
 | The failure output doesn't clearly support any row above | `unsure` |
+
+## Judge-drift is not a code-bug or an eval-bug
+
+A silent judge/grader model-version bump can flip a passing eval to failing
+(and vice versa) with zero change to the code under test or the eval
+definition — a documented Cohen's d=4.37 score shift from a single GPT-4o
+version bump has been measured in practice. Record `JUDGE_MODEL` (grader
+model name + version string) alongside `BASELINE_FAILURE` in Phase 0, and
+record it again before scoring each confirmation run in Phase 4. If the
+two differ:
+
+1. Classify as `judge-drift`, not `code-bug`/`eval-bug`/`flaky`.
+2. The fix is to **pin the grader model version** in the eval's own config
+   (most frameworks — promptfoo, Braintrust — support this) so the next
+   run is reproducible, not to edit the assertion or golden item.
+3. If the drift itself revealed a real quality change worth accepting,
+   that is a deliberate re-baseline decision, not a same-iteration fix —
+   escalate to the user rather than silently re-scoring against the new
+   judge inside this loop.
 
 ## How to decide, not guess
 
@@ -40,6 +69,19 @@ biggest way this loop wastes iterations.
    `unsure` and escalating. Do not default to `code-bug` just because it
    is the verdict that avoids touching the eval — that bias produces
    fixes that don't address the actual regression.
+
+## Criteria drift — when "the eval was incomplete" isn't gaming
+
+Not every `eval-bug` is a mistake. Shankar et al. ("Who Validates the
+Validators?", UIST '24) document "criteria drift": it is often impossible
+to fully specify an eval's criteria before seeing real outputs — a new
+failure mode discovered mid-review, or an existing criterion that needed
+reinterpreting, is expected evolution, not a badly-written eval. Tag an
+`eval-bug` edit `stale-criteria` (rather than `mis-specified`) when the
+evidence shows the eval never anticipated this case, as opposed to
+`mis-specified` when the eval's existing logic is simply wrong. Both
+subtypes still go through the full gate in `rules/anti-gaming-guard.md` —
+the subtype changes the rationale you log, not whether the gate applies.
 
 ## Flaky is not free
 
