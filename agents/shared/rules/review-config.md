@@ -282,27 +282,39 @@ The effective config is consumed by:
 Unlike `profile` / `filters` / `path_instructions`, these two are **not** part of the per-changed-file
 walk above: they decide whether "Fix with Agent0" buttons render at all and which Agent0 host they
 point at — a property of the *run*, not of any one file's findings. Resolve them once, from the
-repo-level base config only, before Step 0.5:
+repo-level base config only, before Step 0.5.
+
+**Read the file via the GitHub API, never a local path check.** A local `[[ -f ".github/review.yaml" ]]`
+assumes the shell's cwd is the reviewed repo's checked-out root. Nothing in this agent's definition
+ever establishes that, and dispatch harnesses that clone this repo (for the agent's own definition)
+without also cloning the *reviewed* repo — which is the normal case, since Step 1.2 already reads PR
+files remotely via `gh api` rather than a local diff — leave that check permanently false. Observed
+live: `mthines/agent-skills#153`'s own self-review read this as unset even though the file exists at
+that exact repo's root, because the review sub-agent's cwd was never that checkout. Use `$RESOLVED_REPO`
+(already resolved for every other `gh api` call in this doc) against the repo's default branch — this
+is a repo-wide setting, not something that varies with one PR's diff, so there is no need to pin a ref:
 
 ```bash
-# Run-level fields — base config only, no subtree walk, no per-file loop.
-BASE_CONFIG=""
-[[ -f ".github/review.yaml" ]] && BASE_CONFIG=".github/review.yaml"
-[[ -z "$BASE_CONFIG" && -f ".review.yaml" ]] && BASE_CONFIG=".review.yaml"   # deprecated legacy location
+# Run-level fields — read over the GitHub API, no local file check, no subtree walk, no per-file loop.
+fetch_base_config() {  # $1 = path, e.g. ".github/review.yaml"
+  gh api "repos/$RESOLVED_REPO/contents/$1" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true
+}
+BASE_CONFIG_CONTENT=$(fetch_base_config ".github/review.yaml")
+[ -z "$BASE_CONFIG_CONTENT" ] && BASE_CONFIG_CONTENT=$(fetch_base_config ".review.yaml")   # deprecated legacy location
 
 AGENT0_FIX_LINKS="false"
 AGENT0_ENVIRONMENT="production"
-if [[ -n "$BASE_CONFIG" ]]; then
+if [ -n "$BASE_CONFIG_CONTENT" ]; then
   # Strip a trailing `# comment` and surrounding quotes before comparing — the schema's own
   # documented style (§ Config schema above) puts an inline comment after the value, and an
   # end-of-line-anchored match against the raw line silently reads that as "unset" (found in
   # review of PR #149).
-  fl=$(grep -E '^agent0_fix_links:' "$BASE_CONFIG" \
+  fl=$(grep -E '^agent0_fix_links:' <<< "$BASE_CONFIG_CONTENT" \
     | sed -E 's/#.*$//; s/^[^:]+:[[:space:]]*//; s/["'"'"']//g; s/[[:space:]]*$//')
-  [[ "$fl" == "true" ]] && AGENT0_FIX_LINKS="true"
-  env=$(grep -E '^agent0_environment:' "$BASE_CONFIG" \
+  [ "$fl" = "true" ] && AGENT0_FIX_LINKS="true"
+  env=$(grep -E '^agent0_environment:' <<< "$BASE_CONFIG_CONTENT" \
     | sed -E 's/#.*$//; s/^[^:]+:[[:space:]]*//; s/["'"'"']//g; s/[[:space:]]*$//')
-  [[ "$env" == "development" ]] && AGENT0_ENVIRONMENT="development"
+  [ "$env" = "development" ] && AGENT0_ENVIRONMENT="development"
 fi
 ```
 
