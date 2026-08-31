@@ -139,7 +139,7 @@ boilerplate ("You are fixing one code-review finding…", the `<finding>` wrappe
 subject without a fetch and reads the live comment only for the fix detail:
 
 ```text
-Fix the pr-reviewer finding at {path}:{line} on {owner}/{repo}#{n} — "{lead}" — read its inline review comment for the details. Lint and typecheck only the files you changed — never the whole repo — then commit to the same branch (no new PR).
+Fix the pr-reviewer finding at {path}:{line} on {owner}/{repo}#{n} — "{lead}" — read its inline review comment for the details. Verify using the repo's own lint/typecheck scripts — never a raw tsc/eslint call or a whole-repo pass — skip verification if none exist — then commit to the same branch (no new PR).
 ```
 
 `{lead}` is the finding's own first line as posted (the Conventional-Comments prefix plus its first
@@ -155,7 +155,7 @@ Agent0 at the same comment.
 findings:
 
 ```text
-Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, at: {locations}. Read the inline review comments at those locations for the details (GET /repos/{owner}/{repo}/pulls/{n}/comments). Then sweep for any other unresolved thread by that same reviewer and fix it too. Ignore every other author. Lint and typecheck only the files you changed — never the whole repo — then commit to the same branch (no new PR).
+Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, at: {locations}. Read the inline review comments at those locations for the details (GET /repos/{owner}/{repo}/pulls/{n}/comments). Then sweep for any other unresolved thread by that same reviewer and fix it too. Ignore every other author. Verify using the repo's own lint/typecheck scripts — never a raw tsc/eslint call or a whole-repo pass — skip verification if none exist — then commit to the same branch (no new PR).
 ```
 
 - `{locations}` — comma-separated `{path}:{line}`, **capped at 15** (the cap that keeps the worst-case
@@ -172,7 +172,7 @@ human is most likely to click "fix" on with no button to click. Use this templat
 findings-based one when `{locations}` would be empty but CI is not green:
 
 ```text
-Fix the failing CI checks on {owner}/{repo}#{n} — {failing_checks}. View the failing job's logs for the cause, then commit a fix scoped to the files this PR changed (no new PR) — never run a whole-repo lint/typecheck/test pass to verify, only what the failing check touches.
+Fix the failing CI checks on {owner}/{repo}#{n} — {failing_checks}. View the failing job's logs for the cause. Verify using the repo's own lint/typecheck/test scripts, scoped to what the failing check touches — never a raw tsc/eslint/test-runner call or a whole-repo pass — skip verification if none exist. Then commit a fix scoped to the files this PR changed (no new PR).
 ```
 
 - `{failing_checks}` — the same failing check names already surfaced in the report's `CI_NOTE` slot
@@ -209,17 +209,27 @@ told Agent0 there was nothing to fix.
 Scoping **Fix all** to the reviewer's own findings is both product and safety: it never asks Agent0
 to act on another author's comment, so no untrusted text drives the auto-submitted run.
 
-**Scope the checks to the files touched.** All three prompts (Fix this, Fix all, Fix all — CI-only)
-keep a verification guardrail — the cheapest line that stops a broken auto-commit — but it must say
-*"lint and typecheck only the files you changed — never the whole repo"* (or, for the CI-only
-template with no `{path}:{line}` to anchor to, "scoped to the files this PR changed... never a
-whole-repo ... pass"), not "run the repo's checks". A repo-wide `tsc` + `eslint` is what the earlier
-wording invited, and the Agent0 runner does not have the headroom for it: on a large repo the
-whole-project pass crashes the run, so the fix never lands. It is also wasted work by construction —
-a fix-link change is one finding at one location. Keep this clause in any future rewording of any of
-the three templates; dropping the "never the whole repo" half is what re-opens the crash (found live
-in review of `mthines/agent-skills#151`, where the first draft of the CI-only template said "run the
-repo's checks locally first").
+**Verify with the repo's own scripts, never a raw tool call.** All three prompts (Fix this, Fix all,
+Fix all — CI-only) keep a verification guardrail — the cheapest line that stops a broken auto-commit
+— but it must send Agent0 to the repo's *own* lint/typecheck/test scripts (whatever its
+`package.json`/CLI already documents), never a raw `tsc`/`eslint`/test-runner invocation, and never a
+whole-repo pass. Scoping by file count alone is not enough: `tsc --noEmit --project <tsconfig>`
+type-checks the whole project graph regardless of which files changed, so even a single-package
+invocation still crashes the Agent0 runner on a large monorepo. Observed live: with the earlier
+wording ("lint and typecheck only the files you changed — never the whole repo"), a run scoped
+correctly to the changed package but then reached for a raw `npx tsc --noEmit --project tsconfig.json`
+on that package's own large graph, ran out of memory, retried with
+`NODE_OPTIONS=--max-old-space-size=4096`, and still had to kill and retry a second time — the file-count
+scoping was honored, but nothing told it to prefer the repo's documented (and presumably
+already-scoped or cached) lint/typecheck script over a hand-rolled invocation. The fix is two-part:
+route through whatever the repo already documents for a fast check, and make explicit that skipping
+verification entirely is preferable to inventing a raw invocation — CI still catches what a skipped
+local check would have. It is also wasted work by construction — a fix-link change is one finding at
+one location. Keep this clause in any future rewording of any of the three templates; dropping the
+"repo's own … scripts" / "never a raw … call" pair is what reopens the crash (the whole-repo half was
+already fixed once, in review of `mthines/agent-skills#151`, where the first draft of the CI-only
+template said "run the repo's checks locally first" — this second incident shows scoping by file
+count was not sufficient on its own).
 
 ## Button markup
 

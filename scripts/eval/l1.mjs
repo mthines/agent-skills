@@ -2538,6 +2538,7 @@ const isPollBlock = (block) =>
   const templates = [...rule.matchAll(/```text\n([^`]*?)\n```/g)].map((m) => m[1]);
   const fixAll = templates.find((t) => t.includes("{locations}"));
   const fixThis = templates.find((t) => t.includes("{path}:{line}") && !t.includes("{locations}"));
+  const ciOnly = templates.find((t) => t.includes("{failing_checks}"));
 
   s.check("G32a the Fix-all template hands over the worklist by location ({locations} + {count})",
     !!fixAll && fixAll.includes("{count}"),
@@ -2585,12 +2586,20 @@ const isPollBlock = (block) =>
     !!fixAll && fixAll.indexOf("sweep") > fixAll.indexOf("{locations}"),
     "the sweep moved ahead of {locations} — that is the discovery hunt again, with extra steps");
 
-  // The Agent0 runner lacks the headroom for a whole-project tsc + eslint — a repo-wide check pass
-  // crashes the run, so the fix never lands. Both prompts must scope verification to touched files.
-  for (const [name, tpl] of [["Fix-all", fixAll], ["Fix-this", fixThis]]) {
-    s.check(`G32g the ${name} template scopes checks to the changed files, never the whole repo`,
-      !!tpl && /only the files you changed/.test(tpl) && /never the whole repo/.test(tpl),
-      `${name} lost the scoped-check clause — a repo-wide lint/typecheck crashes the Agent0 runner`);
+  // The Agent0 runner lacks the headroom for a raw tsc/eslint invocation — even one scoped to a
+  // single changed package still walks that package's whole project graph and crashes the run, so
+  // scoping by file count alone (the earlier wording) was not sufficient; observed live when a run
+  // honored "only the files you changed" but still reached for `npx tsc --noEmit --project
+  // tsconfig.json` on the changed package. All three templates must instead route to the repo's own
+  // lint/typecheck/test scripts and allow skipping verification outright rather than inventing a raw
+  // invocation.
+  for (const [name, tpl] of [["Fix-all", fixAll], ["Fix-this", fixThis], ["Fix-all — CI-only", ciOnly]]) {
+    s.check(`G32g the ${name} template verifies via the repo's own scripts, never a raw call or a whole-repo pass`,
+      !!tpl
+        && /repo's own lint\/typecheck/.test(tpl)
+        && /never a raw [\w/-]+ call or a whole-repo pass/.test(tpl)
+        && /skip verification if none exist/.test(tpl),
+      `${name} lost the scoped-verification clause — a raw tsc/eslint call, even scoped to the changed package, still crashes the Agent0 runner on a large repo`);
   }
 
   const maxUrl = Number(/^const MAX_URL = (\d+)/m.exec(readFileSync(LINK_MOD, "utf8"))?.[1]);
