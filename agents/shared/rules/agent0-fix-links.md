@@ -172,7 +172,7 @@ human is most likely to click "fix" on with no button to click. Use this templat
 findings-based one when `{locations}` would be empty but CI is not green:
 
 ```text
-Fix the failing CI checks on {owner}/{repo}#{n} — {failing_checks}. View the failing job's logs for the cause, then commit a fix scoped to the files this PR changed (no new PR). Verify using the repo's own lint/typecheck/test scripts, scoped to what the failing check touches — never a raw tsc/eslint/test-runner call or a whole-repo pass — skip verification if none exist.
+Fix the failing CI checks on {owner}/{repo}#{n} — {failing_checks}. View the failing job's logs for the cause. Verify using the repo's own lint/typecheck/test scripts, scoped to what the failing check touches — never a raw tsc/eslint/test-runner call or a whole-repo pass — skip verification if none exist. Then commit a fix scoped to the files this PR changed (no new PR).
 ```
 
 - `{failing_checks}` — the same failing check names already surfaced in the report's `CI_NOTE` slot
