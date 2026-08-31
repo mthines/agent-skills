@@ -16,7 +16,7 @@ argument-hint: '[guide|review|design] [<area>|<file>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: advisory
   tags:
     - ai-engineering
