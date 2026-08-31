@@ -2491,28 +2491,41 @@ const isPollBlock = (block) =>
     `got ${JSON.stringify(encodePrompt("fix(this)'now"))}`);
 
   s.check("G31b buildLink never leaves a literal ')' in the URL — the markdown-link-termination guard",
-    !buildLink("close (this) paren").includes(")"),
-    `buildLink output still contained ')': ${buildLink("close (this) paren")}`);
+    !buildLink("close (this) paren", "production", "fix-all").includes(")"),
+    `buildLink output still contained ')': ${buildLink("close (this) paren", "production", "fix-all")}`);
 
   s.check("G31c buildLink prefixes the documented Agent0 base and auto_submit flag",
-    buildLink("hi").startsWith("https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt="));
+    buildLink("hi", "production", "fix-all").startsWith("https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt="));
+
+  s.check("G31g buildLink throws on a missing or unknown source — click attribution must never silently default",
+    (() => { try { buildLink("hi", "production", undefined); return false; } catch { return true; } })()
+    && (() => { try { buildLink("hi", "production", "bogus"); return false; } catch { return true; } })());
+
+  s.check("G31h buildLink appends the utm_source click-attribution tag matching the given source",
+    buildLink("hi", "production", "fix-all").includes("&utm_source=pr-reviewer-fix-all")
+    && buildLink("hi", "production", "fix-this").includes("&utm_source=pr-reviewer-fix-this"));
 
   const runCli = (args) => spawnSync("node", [LINK_MOD, ...args], { encoding: "utf8" });
 
-  const empty = runCli([""]);
+  const empty = runCli(["--source", "fix-all", ""]);
   s.check("G31d CLI rejects an empty prompt: non-zero exit, nothing on stdout",
     empty.status !== 0 && empty.stdout === "",
     `status=${empty.status} stdout=${JSON.stringify(empty.stdout)}`);
 
-  const oversized = runCli(["a".repeat(4500)]);
+  const oversized = runCli(["--source", "fix-all", "a".repeat(4500)]);
   s.check("G31e CLI rejects a prompt whose encoded URL exceeds MAX_URL: non-zero exit, nothing on stdout",
     oversized.status !== 0 && oversized.stdout === "" && /over 4000/.test(oversized.stderr),
     `status=${oversized.status} stdout=${JSON.stringify(oversized.stdout)} stderr=${oversized.stderr}`);
 
-  const ok = runCli(["fix this thing"]);
+  const ok = runCli(["--source", "fix-all", "fix this thing"]);
   s.check("G31f CLI accepts a normal prompt: zero exit, one URL line on stdout",
-    ok.status === 0 && ok.stdout.trim() === buildLink("fix this thing"),
+    ok.status === 0 && ok.stdout.trim() === buildLink("fix this thing", "production", "fix-all"),
     `status=${ok.status} stdout=${JSON.stringify(ok.stdout)}`);
+
+  const noSource = runCli(["fix this thing"]);
+  s.check("G31i CLI rejects a missing --source: non-zero exit, nothing on stdout",
+    noSource.status !== 0 && noSource.stdout === "" && /source must be one of/.test(noSource.stderr),
+    `status=${noSource.status} stdout=${JSON.stringify(noSource.stdout)} stderr=${noSource.stderr}`);
 
   // G32: the Agent0 prompt templates are addresses, not identities. Both hand Agent0 the finding
   // locations it would otherwise spend round trips discovering — the regression this guards is a
@@ -2525,6 +2538,7 @@ const isPollBlock = (block) =>
   const templates = [...rule.matchAll(/```text\n([^`]*?)\n```/g)].map((m) => m[1]);
   const fixAll = templates.find((t) => t.includes("{locations}"));
   const fixThis = templates.find((t) => t.includes("{path}:{line}") && !t.includes("{locations}"));
+  const ciOnly = templates.find((t) => t.includes("{failing_checks}"));
 
   s.check("G32a the Fix-all template hands over the worklist by location ({locations} + {count})",
     !!fixAll && fixAll.includes("{count}"),
@@ -2554,7 +2568,7 @@ const isPollBlock = (block) =>
   s.check("G32d0 the worst-case fill leaves no unsubstituted placeholder",
     worst !== "" && !/\{[a-z_]+\}/.test(worst),
     `template gained a placeholder this fill does not substitute: ${/\{[a-z_]+\}/.exec(worst)?.[0] ?? "(no template)"}`);
-  const worstLen = buildLink(worst).length;
+  const worstLen = buildLink(worst, "production", "fix-all").length;
   s.check(`G32d a worst-case 15-location Fix-all URL stays under the ${TARGET}-char design target`,
     worstLen < TARGET, `worst-case URL is ${worstLen} chars — lower the location cap in agent0-fix-links.md, do not raise MAX_URL`);
 
@@ -2572,12 +2586,20 @@ const isPollBlock = (block) =>
     !!fixAll && fixAll.indexOf("sweep") > fixAll.indexOf("{locations}"),
     "the sweep moved ahead of {locations} — that is the discovery hunt again, with extra steps");
 
-  // The Agent0 runner lacks the headroom for a whole-project tsc + eslint — a repo-wide check pass
-  // crashes the run, so the fix never lands. Both prompts must scope verification to touched files.
-  for (const [name, tpl] of [["Fix-all", fixAll], ["Fix-this", fixThis]]) {
-    s.check(`G32g the ${name} template scopes checks to the changed files, never the whole repo`,
-      !!tpl && /only the files you changed/.test(tpl) && /never the whole repo/.test(tpl),
-      `${name} lost the scoped-check clause — a repo-wide lint/typecheck crashes the Agent0 runner`);
+  // The Agent0 runner lacks the headroom for a raw tsc/eslint invocation — even one scoped to a
+  // single changed package still walks that package's whole project graph and crashes the run, so
+  // scoping by file count alone (the earlier wording) was not sufficient; observed live when a run
+  // honored "only the files you changed" but still reached for `npx tsc --noEmit --project
+  // tsconfig.json` on the changed package. All three templates must instead route to the repo's own
+  // lint/typecheck/test scripts and allow skipping verification outright rather than inventing a raw
+  // invocation.
+  for (const [name, tpl] of [["Fix-all", fixAll], ["Fix-this", fixThis], ["Fix-all — CI-only", ciOnly]]) {
+    s.check(`G32g the ${name} template verifies via the repo's own scripts, never a raw call or a whole-repo pass`,
+      !!tpl
+        && /repo's own lint\/typecheck/.test(tpl)
+        && /never a raw [\w/-]+ call or a whole-repo pass/.test(tpl)
+        && /skip verification if none exist/.test(tpl),
+      `${name} lost the scoped-verification clause — a raw tsc/eslint call, even scoped to the changed package, still crashes the Agent0 runner on a large repo`);
   }
 
   const maxUrl = Number(/^const MAX_URL = (\d+)/m.exec(readFileSync(LINK_MOD, "utf8"))?.[1]);
@@ -2748,6 +2770,26 @@ const isPollBlock = (block) =>
   // Guard-bites proof (documented, not executed, per the mock-that-reimplements lesson):
   // reverting any of the three edits above removes the literal anchor G36a/b/c greps for,
   // which flips the corresponding check red — confirmed by hand before landing this guard.
+}
+
+// ── G37: the Fix-with-Agent0 scripts are never invoked by a bare relative path ──
+// build-agent0-link.mjs must be resolved from $AGENT_MD the same way RENDER/CLASSIFY/POINTER
+// already are — a bare `agents/pr-reviewer/scripts/build-agent0-link.mjs` only happens to
+// resolve when the shell's cwd is this repo's own checkout, which silently breaks on a
+// cross-repo dispatch (observed live: mthines/lorekit#318 still linked to app.dash0.com hours
+// after both the base-config resolution and the --env-threading fixes had merged).
+{
+  const readRepo = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  // Matches only an actual invocation ("node <bare path>"), not the cautionary prose in these
+  // same files that quotes the bad bare path as an example of what NOT to do.
+  const BARE_INVOCATION = /node agents\/pr-reviewer\/scripts\/build-agent0-link\.mjs/;
+  for (const f of ["agents/pr-reviewer.md", "agents/shared/rules/comment-shape.md"]) {
+    s.check(`G37a ${f} never invokes build-agent0-link.mjs by a bare relative path`,
+      !BARE_INVOCATION.test(readRepo(f)));
+  }
+  s.check("G37b pr-reviewer.md derives BUILD_LINK from the same $AGENT_MD as RENDER",
+    /BUILD_LINK="\$\{AGENT_MD%\/pr-reviewer\.md\}\/pr-reviewer\/scripts\/build-agent0-link\.mjs"/.test(
+      readRepo("agents/pr-reviewer.md")));
 }
 
 process.exit(s.report() ? 0 : 1);

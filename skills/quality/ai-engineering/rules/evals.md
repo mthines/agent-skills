@@ -73,6 +73,13 @@ Each item has:
 CI gates on regression > N% (typically 0% — any regression blocks).
 Source: [Hamel Husain — Your AI Product Needs Evals](https://hamel.dev/blog/posts/evals/).
 
+Size from the confidence interval you need, not the table alone: a pass
+rate's standard error shrinks only with √N, so ~500 items resolves to
+roughly ±3 points at an 85% pass rate, while ±1.5 points needs roughly
+2,000. Report a delta as "82% (95% CI: 80–84)," not a bare point
+estimate — a 2–4 point swing on a 100-item set is frequently noise, not
+signal.
+
 ## 3. LLM-as-judge — bias mitigations are non-negotiable
 
 LLM-as-judge is useful but biased.
@@ -91,9 +98,25 @@ Apply all four mitigations:
    Hand-label ~50 items.
    If judge agreement with humans is < 80%, do not trust the judge.
 
+**Judges drift and are individually unreliable — plan for both.**
+Documented cases show a silent grader-model version bump shifting scores
+by a large effect size with zero change to the system under test — pin
+the judge's model+version like any other dependency, and re-validate
+periodically against the human-labelled anchor set in mitigation 4, not
+just once at launch. Separately, a single judge has measured low
+intra-rater reliability — the same judge can score the same input
+differently run-to-run, even at temperature 0, and low temperature does
+not reliably fix this for every model family. Repeated sampling
+(majority vote across N judge calls) cancels *random* judge noise; it
+does not catch a judge that is *systematically* miscalibrated in one
+direction, so treat an ensemble or majority vote as variance reduction,
+not as proof the judge is correct.
+
 Sources:
 [Justice or Prejudice? — LLM-as-Judge bias](https://llm-judge-bias.github.io/),
-[Eugene Yan — LLM-as-Judge won't save the product](https://eugeneyan.com/writing/eval-process/).
+[Eugene Yan — LLM-as-Judge won't save the product](https://eugeneyan.com/writing/eval-process/),
+[G-Eval](https://arxiv.org/pdf/2303.16634v2),
+["Who Drifted" anytime-valid judge-drift attribution](https://arxiv.org/abs/2606.15474).
 
 ## 4. Narrow rubrics — one dimension per pass
 

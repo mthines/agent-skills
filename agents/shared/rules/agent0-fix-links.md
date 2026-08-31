@@ -22,6 +22,7 @@ review config opts in.
 
 - [Opt-in](#opt-in)
 - [Deep-link format](#deep-link-format)
+- [Click attribution](#click-attribution)
 - [Prompt templates](#prompt-templates)
 - [Button markup](#button-markup)
 - [Safety](#safety)
@@ -67,10 +68,11 @@ falls back to `production`. The report renderer rejects a `FIX_ALL_URL` whose ho
 ## Deep-link format
 
 ```text
-https://<app-host>/goto/agent0?auto_submit=true&initial_prompt=<ENCODED_PROMPT>
+https://<app-host>/goto/agent0?auto_submit=true&initial_prompt=<ENCODED_PROMPT>&utm_source=pr-reviewer-<SOURCE>
 ```
 
 `<app-host>` is `app.dash0.com` (production) or `app.dash0-dev.com` (development), per § Environment.
+`<SOURCE>` is `fix-all` or `fix-this`, per § Click attribution.
 
 `<ENCODED_PROMPT>` is built by `agents/pr-reviewer/scripts/build-agent0-link.mjs`'s `encodePrompt` —
 the single source of truth for this encoding, so the report renderer and the inline-comment step
@@ -97,9 +99,28 @@ build time and are what turns a multi-call discovery hunt into one fetch (§ Pro
 **Fix all** URL therefore scales with the finding count: measured worst case at the 15-location cap,
 with pathological 94-character paths, is ~2350 chars; a typical PR lands nearer 1700, and a
 three-finding PR near 850. **Fix this** is ~650 with a full-length lead line. The figures are not
-guesses — L1 `G32d` fills the live template and measures it, so a clause added here is measured on
-the next run. If a template ever needs to grow past the 2500 target, cut the
-location cap — do not raise `MAX_URL`.
+guesses — L1 `G32d` fills the live template and measures it (the `&utm_source=...` tag from § Click
+attribution is a small, fixed addition on top and does not change which side of the 2500 target
+either shape lands on), so a clause added here is measured on the next run. If a template ever needs
+to grow past the 2500 target, cut the location cap — do not raise `MAX_URL`.
+
+## Click attribution
+
+Every deep link carries `&utm_source=pr-reviewer-<SOURCE>`, where `<SOURCE>` is `fix-all` or
+`fix-this` — a static tag with no per-PR or per-finding data, existing solely so a click on either
+button is distinguishable from the other in Dash0's own analytics (which button gets used tells the
+product something the report's structure alone can't). It is **not** an environment or a repo
+identifier — `app.dash0.com` vs. `app.dash0-dev.com` (§ Environment) already carries that.
+
+`build-agent0-link.mjs`'s `buildLink()` takes `source` as a required third argument and **throws** if
+it is missing or not one of the two known values — the CLI's `--source <fix-all|fix-this>` flag is
+correspondingly mandatory, not optional-with-a-default. This mirrors `--env`'s own history: an
+optional, silently-defaulted flag is exactly how the environment kept resolving to `production` long
+after the config-reading side was fixed, because nothing forced every call site to actually pass it.
+Making a click-tracking parameter optional reproduces the identical failure shape for analytics
+instead of environment: a build succeeds, the button renders, and the click is silently
+uncategorized (or, if the two sites drift to the same hardcoded string, uncategorizable) with no
+symptom visible on the rendered link itself. Fail closed here for the same reason `--env` now does.
 
 ## Prompt templates
 
@@ -118,7 +139,7 @@ boilerplate ("You are fixing one code-review finding…", the `<finding>` wrappe
 subject without a fetch and reads the live comment only for the fix detail:
 
 ```text
-Fix the pr-reviewer finding at {path}:{line} on {owner}/{repo}#{n} — "{lead}" — read its inline review comment for the details. Lint and typecheck only the files you changed — never the whole repo — then commit to the same branch (no new PR).
+Fix the pr-reviewer finding at {path}:{line} on {owner}/{repo}#{n} — "{lead}" — read its inline review comment for the details. Verify using the repo's own lint/typecheck scripts — never a raw tsc/eslint call or a whole-repo pass — skip verification if none exist — then commit to the same branch (no new PR).
 ```
 
 `{lead}` is the finding's own first line as posted (the Conventional-Comments prefix plus its first
@@ -134,7 +155,7 @@ Agent0 at the same comment.
 findings:
 
 ```text
-Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, at: {locations}. Read the inline review comments at those locations for the details (GET /repos/{owner}/{repo}/pulls/{n}/comments). Then sweep for any other unresolved thread by that same reviewer and fix it too. Ignore every other author. Lint and typecheck only the files you changed — never the whole repo — then commit to the same branch (no new PR).
+Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, at: {locations}. Read the inline review comments at those locations for the details (GET /repos/{owner}/{repo}/pulls/{n}/comments). Then sweep for any other unresolved thread by that same reviewer and fix it too. Ignore every other author. Verify using the repo's own lint/typecheck scripts — never a raw tsc/eslint call or a whole-repo pass — skip verification if none exist — then commit to the same branch (no new PR).
 ```
 
 - `{locations}` — comma-separated `{path}:{line}`, **capped at 15** (the cap that keeps the worst-case
@@ -151,7 +172,7 @@ human is most likely to click "fix" on with no button to click. Use this templat
 findings-based one when `{locations}` would be empty but CI is not green:
 
 ```text
-Fix the failing CI checks on {owner}/{repo}#{n} — {failing_checks}. View the failing job's logs for the cause, then commit a fix scoped to the files this PR changed (no new PR) — never run a whole-repo lint/typecheck/test pass to verify, only what the failing check touches.
+Fix the failing CI checks on {owner}/{repo}#{n} — {failing_checks}. View the failing job's logs for the cause. Verify using the repo's own lint/typecheck/test scripts, scoped to what the failing check touches — never a raw tsc/eslint/test-runner call or a whole-repo pass — skip verification if none exist. Then commit a fix scoped to the files this PR changed (no new PR).
 ```
 
 - `{failing_checks}` — the same failing check names already surfaced in the report's `CI_NOTE` slot
@@ -188,17 +209,27 @@ told Agent0 there was nothing to fix.
 Scoping **Fix all** to the reviewer's own findings is both product and safety: it never asks Agent0
 to act on another author's comment, so no untrusted text drives the auto-submitted run.
 
-**Scope the checks to the files touched.** All three prompts (Fix this, Fix all, Fix all — CI-only)
-keep a verification guardrail — the cheapest line that stops a broken auto-commit — but it must say
-*"lint and typecheck only the files you changed — never the whole repo"* (or, for the CI-only
-template with no `{path}:{line}` to anchor to, "scoped to the files this PR changed... never a
-whole-repo ... pass"), not "run the repo's checks". A repo-wide `tsc` + `eslint` is what the earlier
-wording invited, and the Agent0 runner does not have the headroom for it: on a large repo the
-whole-project pass crashes the run, so the fix never lands. It is also wasted work by construction —
-a fix-link change is one finding at one location. Keep this clause in any future rewording of any of
-the three templates; dropping the "never the whole repo" half is what re-opens the crash (found live
-in review of `mthines/agent-skills#151`, where the first draft of the CI-only template said "run the
-repo's checks locally first").
+**Verify with the repo's own scripts, never a raw tool call.** All three prompts (Fix this, Fix all,
+Fix all — CI-only) keep a verification guardrail — the cheapest line that stops a broken auto-commit
+— but it must send Agent0 to the repo's *own* lint/typecheck/test scripts (whatever its
+`package.json`/CLI already documents), never a raw `tsc`/`eslint`/test-runner invocation, and never a
+whole-repo pass. Scoping by file count alone is not enough: `tsc --noEmit --project <tsconfig>`
+type-checks the whole project graph regardless of which files changed, so even a single-package
+invocation still crashes the Agent0 runner on a large monorepo. Observed live: with the earlier
+wording ("lint and typecheck only the files you changed — never the whole repo"), a run scoped
+correctly to the changed package but then reached for a raw `npx tsc --noEmit --project tsconfig.json`
+on that package's own large graph, ran out of memory, retried with
+`NODE_OPTIONS=--max-old-space-size=4096`, and still had to kill and retry a second time — the file-count
+scoping was honored, but nothing told it to prefer the repo's documented (and presumably
+already-scoped or cached) lint/typecheck script over a hand-rolled invocation. The fix is two-part:
+route through whatever the repo already documents for a fast check, and make explicit that skipping
+verification entirely is preferable to inventing a raw invocation — CI still catches what a skipped
+local check would have. It is also wasted work by construction — a fix-link change is one finding at
+one location. Keep this clause in any future rewording of any of the three templates; dropping the
+"repo's own … scripts" / "never a raw … call" pair is what reopens the crash (the whole-repo half was
+already fixed once, in review of `mthines/agent-skills#151`, where the first draft of the CI-only
+template said "run the repo's checks locally first" — this second incident shows scoping by file
+count was not sufficient on its own).
 
 ## Button markup
 
