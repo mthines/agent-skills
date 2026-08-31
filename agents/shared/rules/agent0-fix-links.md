@@ -22,6 +22,7 @@ review config opts in.
 
 - [Opt-in](#opt-in)
 - [Deep-link format](#deep-link-format)
+- [Click attribution](#click-attribution)
 - [Prompt templates](#prompt-templates)
 - [Button markup](#button-markup)
 - [Safety](#safety)
@@ -67,10 +68,11 @@ falls back to `production`. The report renderer rejects a `FIX_ALL_URL` whose ho
 ## Deep-link format
 
 ```text
-https://<app-host>/goto/agent0?auto_submit=true&initial_prompt=<ENCODED_PROMPT>
+https://<app-host>/goto/agent0?auto_submit=true&initial_prompt=<ENCODED_PROMPT>&utm_source=pr-reviewer-<SOURCE>
 ```
 
 `<app-host>` is `app.dash0.com` (production) or `app.dash0-dev.com` (development), per § Environment.
+`<SOURCE>` is `fix-all` or `fix-this`, per § Click attribution.
 
 `<ENCODED_PROMPT>` is built by `agents/pr-reviewer/scripts/build-agent0-link.mjs`'s `encodePrompt` —
 the single source of truth for this encoding, so the report renderer and the inline-comment step
@@ -97,9 +99,28 @@ build time and are what turns a multi-call discovery hunt into one fetch (§ Pro
 **Fix all** URL therefore scales with the finding count: measured worst case at the 15-location cap,
 with pathological 94-character paths, is ~2350 chars; a typical PR lands nearer 1700, and a
 three-finding PR near 850. **Fix this** is ~650 with a full-length lead line. The figures are not
-guesses — L1 `G32d` fills the live template and measures it, so a clause added here is measured on
-the next run. If a template ever needs to grow past the 2500 target, cut the
-location cap — do not raise `MAX_URL`.
+guesses — L1 `G32d` fills the live template and measures it (the `&utm_source=...` tag from § Click
+attribution is a small, fixed addition on top and does not change which side of the 2500 target
+either shape lands on), so a clause added here is measured on the next run. If a template ever needs
+to grow past the 2500 target, cut the location cap — do not raise `MAX_URL`.
+
+## Click attribution
+
+Every deep link carries `&utm_source=pr-reviewer-<SOURCE>`, where `<SOURCE>` is `fix-all` or
+`fix-this` — a static tag with no per-PR or per-finding data, existing solely so a click on either
+button is distinguishable from the other in Dash0's own analytics (which button gets used tells the
+product something the report's structure alone can't). It is **not** an environment or a repo
+identifier — `app.dash0.com` vs. `app.dash0-dev.com` (§ Environment) already carries that.
+
+`build-agent0-link.mjs`'s `buildLink()` takes `source` as a required third argument and **throws** if
+it is missing or not one of the two known values — the CLI's `--source <fix-all|fix-this>` flag is
+correspondingly mandatory, not optional-with-a-default. This mirrors `--env`'s own history: an
+optional, silently-defaulted flag is exactly how the environment kept resolving to `production` long
+after the config-reading side was fixed, because nothing forced every call site to actually pass it.
+Making a click-tracking parameter optional reproduces the identical failure shape for analytics
+instead of environment: a build succeeds, the button renders, and the click is silently
+uncategorized (or, if the two sites drift to the same hardcoded string, uncategorizable) with no
+symptom visible on the rendered link itself. Fail closed here for the same reason `--env` now does.
 
 ## Prompt templates
 

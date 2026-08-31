@@ -2491,28 +2491,41 @@ const isPollBlock = (block) =>
     `got ${JSON.stringify(encodePrompt("fix(this)'now"))}`);
 
   s.check("G31b buildLink never leaves a literal ')' in the URL — the markdown-link-termination guard",
-    !buildLink("close (this) paren").includes(")"),
-    `buildLink output still contained ')': ${buildLink("close (this) paren")}`);
+    !buildLink("close (this) paren", "production", "fix-all").includes(")"),
+    `buildLink output still contained ')': ${buildLink("close (this) paren", "production", "fix-all")}`);
 
   s.check("G31c buildLink prefixes the documented Agent0 base and auto_submit flag",
-    buildLink("hi").startsWith("https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt="));
+    buildLink("hi", "production", "fix-all").startsWith("https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt="));
+
+  s.check("G31g buildLink throws on a missing or unknown source — click attribution must never silently default",
+    (() => { try { buildLink("hi", "production", undefined); return false; } catch { return true; } })()
+    && (() => { try { buildLink("hi", "production", "bogus"); return false; } catch { return true; } })());
+
+  s.check("G31h buildLink appends the utm_source click-attribution tag matching the given source",
+    buildLink("hi", "production", "fix-all").includes("&utm_source=pr-reviewer-fix-all")
+    && buildLink("hi", "production", "fix-this").includes("&utm_source=pr-reviewer-fix-this"));
 
   const runCli = (args) => spawnSync("node", [LINK_MOD, ...args], { encoding: "utf8" });
 
-  const empty = runCli([""]);
+  const empty = runCli(["--source", "fix-all", ""]);
   s.check("G31d CLI rejects an empty prompt: non-zero exit, nothing on stdout",
     empty.status !== 0 && empty.stdout === "",
     `status=${empty.status} stdout=${JSON.stringify(empty.stdout)}`);
 
-  const oversized = runCli(["a".repeat(4500)]);
+  const oversized = runCli(["--source", "fix-all", "a".repeat(4500)]);
   s.check("G31e CLI rejects a prompt whose encoded URL exceeds MAX_URL: non-zero exit, nothing on stdout",
     oversized.status !== 0 && oversized.stdout === "" && /over 4000/.test(oversized.stderr),
     `status=${oversized.status} stdout=${JSON.stringify(oversized.stdout)} stderr=${oversized.stderr}`);
 
-  const ok = runCli(["fix this thing"]);
+  const ok = runCli(["--source", "fix-all", "fix this thing"]);
   s.check("G31f CLI accepts a normal prompt: zero exit, one URL line on stdout",
-    ok.status === 0 && ok.stdout.trim() === buildLink("fix this thing"),
+    ok.status === 0 && ok.stdout.trim() === buildLink("fix this thing", "production", "fix-all"),
     `status=${ok.status} stdout=${JSON.stringify(ok.stdout)}`);
+
+  const noSource = runCli(["fix this thing"]);
+  s.check("G31i CLI rejects a missing --source: non-zero exit, nothing on stdout",
+    noSource.status !== 0 && noSource.stdout === "" && /source must be one of/.test(noSource.stderr),
+    `status=${noSource.status} stdout=${JSON.stringify(noSource.stdout)} stderr=${noSource.stderr}`);
 
   // G32: the Agent0 prompt templates are addresses, not identities. Both hand Agent0 the finding
   // locations it would otherwise spend round trips discovering — the regression this guards is a
@@ -2554,7 +2567,7 @@ const isPollBlock = (block) =>
   s.check("G32d0 the worst-case fill leaves no unsubstituted placeholder",
     worst !== "" && !/\{[a-z_]+\}/.test(worst),
     `template gained a placeholder this fill does not substitute: ${/\{[a-z_]+\}/.exec(worst)?.[0] ?? "(no template)"}`);
-  const worstLen = buildLink(worst).length;
+  const worstLen = buildLink(worst, "production", "fix-all").length;
   s.check(`G32d a worst-case 15-location Fix-all URL stays under the ${TARGET}-char design target`,
     worstLen < TARGET, `worst-case URL is ${worstLen} chars — lower the location cap in agent0-fix-links.md, do not raise MAX_URL`);
 
