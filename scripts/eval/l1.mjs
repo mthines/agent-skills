@@ -2712,4 +2712,24 @@ const isPollBlock = (block) =>
   }
 }
 
+// ── G36: the Fix-with-Agent0 scripts are never invoked by a bare relative path ──
+// build-agent0-link.mjs must be resolved from $AGENT_MD the same way RENDER/CLASSIFY/POINTER
+// already are — a bare `agents/pr-reviewer/scripts/build-agent0-link.mjs` only happens to
+// resolve when the shell's cwd is this repo's own checkout, which silently breaks on a
+// cross-repo dispatch (observed live: mthines/lorekit#318 still linked to app.dash0.com hours
+// after both the base-config resolution and the --env-threading fixes had merged).
+{
+  const readRepo = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  // Matches only an actual invocation ("node <bare path>"), not the cautionary prose in these
+  // same files that quotes the bad bare path as an example of what NOT to do.
+  const BARE_INVOCATION = /node agents\/pr-reviewer\/scripts\/build-agent0-link\.mjs/;
+  for (const f of ["agents/pr-reviewer.md", "agents/shared/rules/comment-shape.md"]) {
+    s.check(`G36a ${f} never invokes build-agent0-link.mjs by a bare relative path`,
+      !BARE_INVOCATION.test(readRepo(f)));
+  }
+  s.check("G36b pr-reviewer.md derives BUILD_LINK from the same $AGENT_MD as RENDER",
+    /BUILD_LINK="\$\{AGENT_MD%\/pr-reviewer\.md\}\/pr-reviewer\/scripts\/build-agent0-link\.mjs"/.test(
+      readRepo("agents/pr-reviewer.md")));
+}
+
 process.exit(s.report() ? 0 : 1);
