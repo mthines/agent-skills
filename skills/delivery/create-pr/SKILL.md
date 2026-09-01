@@ -1,21 +1,17 @@
 ---
 name: create-pr
 description: >
-  Generate a short, narrative GitHub pull request description (≤ 25 lines, hard
-  ceiling 40), push the branch, open the PR as a draft, then run the review-loop
-  skill for a bounded review-apply-simplify convergence before finalizing. The
+  Generates a short, narrative GitHub pull request description (≤ 25 lines,
+  hard ceiling 40), pushes the branch, opens the PR as a draft, then runs
   review-loop (pr-reviewer → implement-suggestion → polish simplify, up to 5
-  iterations, converging until every review thread is resolved via fix or reply)
-  runs AFTER the draft PR is open — the single reviewer now operates
-  on PRs. Scale down with --no-review (skip the pr-reviewer pass), --no-simplify
-  (skip simplify), --quick (light mechanical pass only), or --no-quality (skip
-  the loop entirely). A post-push external-bot feedback loop also runs by default
-  (--no-feedback to skip), scoped to external bots only so it does not re-apply
-  the review-loop's own findings. With --split, analyses the branch diff and
-  breaks it into 2–4 focused, dependency-ordered draft PRs after user approval.
-  Escalates judgment-required CI failures via /confidence rather than guessing.
-  Invoke with /create-pr, /create-pr --no-review, /create-pr --quick, /create-pr
-  --no-quality, or /create-pr --split.
+  iterations) until every review thread is resolved via fix or reply. Scale
+  down with --no-review, --no-simplify, --quick (light mechanical pass only),
+  or --no-quality (skip the loop). A post-push external-bot feedback loop
+  runs by default (--no-feedback to skip). On a UI diff, injects a preview
+  verification spec by default (--no-preview-spec to skip). With --split,
+  breaks the branch diff into 2–4 focused, dependency-ordered draft PRs after
+  user approval. Escalates judgment-required CI failures via /confidence
+  rather than guessing. Invoke with /create-pr or /create-pr --split.
 disable-model-invocation: false
 argument-hint: '[--split] [--quick] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-preview-spec]'
 license: MIT
