@@ -42,7 +42,7 @@ Never write the resolved URL or any credential into the committed `.claude/aw-ta
 
 ## Step 4: Dispatch `aw-tester`
 
-Dispatch the runner as a sub-agent, passing the explicit spec and target paths (this mirrors how the autonomous-workflow executor invokes it, so the explicit `Aw-Target file:` line is honored over the default name-derived path):
+Dispatch the runner as a sub-agent, passing the explicit spec and target paths. `aw-tester` reads its target from the `Aw-Target file:` path when the prompt gives one, falling back to the name-derived path only when it does not — its documented input contract ([`aw-tester.agent.md § Parse inputs`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md)), so the ephemeral overlay is read, not the committed `preview.yml` placeholder:
 
 ```
 Task(
