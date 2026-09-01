@@ -2734,7 +2734,45 @@ const isPollBlock = (block) =>
   }
 }
 
-// ── G36: the Fix-with-Agent0 scripts are never invoked by a bare relative path ──
+// ── G36: weekly lesson-promotion sweep (2026-08-31) — three reviewer-lessons clusters ──
+// (a) Step 4b's review POST must use `--input`, never `--field`/`--raw-field`, for the
+//     `comments` array (gh's raw-field flags always serialize a value as a JSON string, so a
+//     `comments` array 422s as "is not an array" — 5 independent lessons converged on this fix).
+// (b) Step 1.2/3.5 must partition undiffable (binary) paths and route their findings to the
+//     gate table as ANCHORLESS-BY-CONSTRUCTION, never as an ordinary line-validity casualty.
+// (c) Persona 4 must name the cross-owner `gh api` 401 as scoping (not breakage) and pivot to a
+//     `webfetch` HTTP fallback for any pin/spec verification outside the PR's own repository.
+{
+  const prm = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+
+  // (a) --input POST regression lock.
+  s.check("G36a Step 4b posts the review with --input, not --field/--raw-field",
+    /--method POST \\\s*\n\s*--input \/tmp\/review-payload\.json/.test(prm));
+  s.check("G36a-neg Step 4b's review POST command no longer carries a --raw-field comments= flag",
+    !/^\s*--raw-field comments=/m.test(prm));
+  s.check("G36a the payload is built as one JSON document with commit_id, body, event, and comments",
+    /json\.dump\(\s*\n\s*\{"commit_id": head_sha, "body": body, "event": "COMMENT", "comments": json\.loads\(comments_json\)\}/.test(prm));
+
+  // (b) ANCHORLESS-BY-CONSTRUCTION regression lock.
+  s.check("G36b Step 1.2 computes /tmp/pr-undiffable-paths.json from patch == null entries",
+    /select\(\.patch == null\) \| \.filename\]/.test(prm) && prm.includes("/tmp/pr-undiffable-paths.json"));
+  s.check("G36b Step 3.5 names ANCHORLESS-BY-CONSTRUCTION as a distinct, non-casualty outcome",
+    /ANCHORLESS-BY-CONSTRUCTION.{0,400}never a line-validity casualty/s.test(prm));
+
+  // (c) Cross-owner 401-is-scoping regression lock.
+  s.check("G36c Persona 4 states the injected gh credential is scoped to the PR's own repository",
+    prm.includes("The injected `gh` credential is scoped to this PR's own repository"));
+  s.check("G36c Persona 4 prescribes the webfetch/raw.githubusercontent fallback for cross-owner targets",
+    prm.includes("`webfetch` against `api.github.com`") && prm.includes("raw.githubusercontent.com"));
+  s.check("G36c a dependency-bump PR's upstream claim is labelled unverified rather than asserted when unreachable",
+    prm.includes("unverified (upstream unreachable)"));
+
+  // Guard-bites proof (documented, not executed, per the mock-that-reimplements lesson):
+  // reverting any of the three edits above removes the literal anchor G36a/b/c greps for,
+  // which flips the corresponding check red — confirmed by hand before landing this guard.
+}
+
+// ── G37: the Fix-with-Agent0 scripts are never invoked by a bare relative path ──
 // build-agent0-link.mjs must be resolved from $AGENT_MD the same way RENDER/CLASSIFY/POINTER
 // already are — a bare `agents/pr-reviewer/scripts/build-agent0-link.mjs` only happens to
 // resolve when the shell's cwd is this repo's own checkout, which silently breaks on a
@@ -2746,10 +2784,10 @@ const isPollBlock = (block) =>
   // same files that quotes the bad bare path as an example of what NOT to do.
   const BARE_INVOCATION = /node agents\/pr-reviewer\/scripts\/build-agent0-link\.mjs/;
   for (const f of ["agents/pr-reviewer.md", "agents/shared/rules/comment-shape.md"]) {
-    s.check(`G36a ${f} never invokes build-agent0-link.mjs by a bare relative path`,
+    s.check(`G37a ${f} never invokes build-agent0-link.mjs by a bare relative path`,
       !BARE_INVOCATION.test(readRepo(f)));
   }
-  s.check("G36b pr-reviewer.md derives BUILD_LINK from the same $AGENT_MD as RENDER",
+  s.check("G37b pr-reviewer.md derives BUILD_LINK from the same $AGENT_MD as RENDER",
     /BUILD_LINK="\$\{AGENT_MD%\/pr-reviewer\.md\}\/pr-reviewer\/scripts\/build-agent0-link\.mjs"/.test(
       readRepo("agents/pr-reviewer.md")));
 }

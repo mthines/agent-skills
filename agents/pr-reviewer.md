@@ -866,6 +866,22 @@ the next run reviews the newer commit; this run stays internally consistent.
 `HEAD_SHA` is used in Step 4 (review body) and Step 5 (terminal report).
 All subsequent steps depend on Step 1.2 completing first.
 
+**Partition undiffable paths up front.** GitHub returns `"patch": null` (no `changes`/`additions`
+hunk) for any added/modified BINARY file — `*.png`, `*.jpg`, `*.gif`, `*.webp`, `*.pdf`, `*.mp4`,
+`*.woff2`, or anything else it cannot diff — while still listing it with a `status` and a
+`changes` count, so it looks reviewable right up to Step 3.5. Compute the split here, once, so
+every downstream step can consult it instead of discovering the gap at the last gate after paying
+full generation cost:
+
+```bash
+jq '[.[] | select(.patch == null) | .filename]' /tmp/pr-files.json > /tmp/pr-undiffable-paths.json
+```
+
+A candidate finding about an entry in `/tmp/pr-undiffable-paths.json` — its placement, whether
+anything references it, its size, whether it duplicates an existing asset — is still worth
+producing (see Step 3.5), but mark it `ANCHORLESS-BY-CONSTRUCTION` at birth rather than letting it
+reach line-validity as an ordinary candidate.
+
 #### Change-shape classification (all modes)
 
 Run the shape classifier on the full PR file list — a pure local computation, no API calls:
@@ -1480,14 +1496,34 @@ Persona 3 findings are deduped at Step 2.5 rather than posted twice.
      a. The package's GitHub releases page or CHANGELOG for the version in use.
      b. The official API reference for the protocol/service at that version.
      c. The registry page (npm, PyPI, crates.io, pkg.go.dev) for version notes.
+     **The injected `gh` credential is scoped to this PR's own repository, so `gh api` 401s on
+     every OTHER owner — a third-party action, image, or spec pin, or any upstream repo used to
+     verify a release claim. That 401 is scoping, not breakage: never read it as "unverifiable"
+     and never spend a retry on it.** Fetch a cross-owner target over plain HTTP instead —
+     `webfetch` against `api.github.com` (releases/tags/compare) or `raw.githubusercontent.com`
+     (a pinned ref's file contents) reaches any public repository regardless of credential scope.
+     Pivot to this rung for any pin verification outside the PR's own owner (GitHub Actions
+     `uses:`, a base image tag, a vendored spec version) — do not stop at "unverifiable" once an
+     in-repo `gh api` call 401s cross-owner.
   3. Compare the diff against the documented contract for that version: field names, types,
      required vs. optional status, method signatures, deprecations, breaking changes,
      version-specific behavior.
   4. For every mismatch, produce a finding with: specific field/method that diverges, direct
      quote or link to the relevant spec section + version, confidence level.
   5. If the version cannot be determined, flag: unpinned integration version.
-  6. If the spec is behind auth or not publicly accessible, note and skip.
-  Store Persona 4 results as `INTEGRATIONS_CHECKED` (string) for the review body diagnostics.
+  6. On a DEPENDENCY-BUMP PR specifically (title/manifest matches `chore(deps): bump …` or
+     equivalent), a release-notes claim from an upstream repo is a cross-owner target by
+     definition and follows rung 2 above — `webfetch` it, never assert it as verified from an
+     unpinned `gh api` 401. When even the HTTP rung is unreachable (private upstream, rate limit),
+     substitute the four in-repo checks that do not require reading the dependency's own
+     repository: the manifest/lockfile diff itself, the changelog file if vendored, the CI result
+     on this PR's own head, and a grep of this repo's usage sites against the new version's
+     locally-visible type/signature surface (if the package ships types) — and label the release
+     claim `unverified (upstream unreachable)` rather than asserting it as confirmed.
+  7. If the spec is behind auth or not publicly accessible after both rungs, note and skip.
+  Store Persona 4 results as `INTEGRATIONS_CHECKED` (string) for the review body diagnostics. An
+  "integrations checked" line never implies upstream release-note verification unless rung 2's
+  HTTP fetch (or rung 6's in-repo substitutes) actually ran — name which rung produced each result.
 
 After rubric + persona findings are collected, the pipeline runs through these gates in
 strict order. Each gate is a drop point; no retries.
@@ -1978,8 +2014,19 @@ re-reading changed files in full before posting.
 See `agents/pr-reviewer/rules/line-validity.md`. For every inline finding, validate
 `(file, line)` against `/tmp/pr-files.json`. Retarget by ≤ 3 lines or drop.
 
+**`ANCHORLESS-BY-CONSTRUCTION` is a distinct outcome, never a line-validity casualty.** A finding
+whose subject file appears in `/tmp/pr-undiffable-paths.json` (Step 1.2) has no RIGHT-side hunk to
+anchor to by construction — a binary asset cannot be diffed — so it is not a retargeting failure
+and must not be counted or reported as one. Route it straight to the review body's gate-status
+table (the Code-review gate's Details cell), the same channel a dropped-list finding uses, and
+never post it as a standalone PR-level comment. Keeping this outcome separate from genuine
+line-validity casualties keeps that casualty metric meaningful — it should measure anchoring
+failures on diffable files, not the structurally-expected gap on binary assets.
+
 Pure in-memory computation — no GitHub API calls.
 Line-validity casualties are logged in the terminal Quality Gate summary for manual posting.
+`ANCHORLESS-BY-CONSTRUCTION` findings are logged separately, in the gate-status table, not in that
+casualty count.
 
 ---
 
@@ -2315,14 +2362,36 @@ how many findings it absorbed. This guard costs one read on every posting run an
 duplicate check that sees the sibling, because it is the only one that runs after the sibling
 existed.
 
+**Post with `--input`, never `--field`/`--raw-field`, for this call.** `gh api`'s `--field` and
+`--raw-field` always serialize their value as a JSON *string* — there is no flag that sends one as a
+JSON *array or object*. `--raw-field comments='INLINE_COMMENTS_JSON'` therefore posts the literal
+string `"[{...}]"` where the endpoint requires an array, and GitHub 422s with
+`For 'properties/comments', "[...]" is not an array`. This is a CLI serialization limit, not a
+findings problem — never react to this 422 by dropping or reshaping `comments`, and never retry the
+POST blind: a 422 can still mean the request reached GitHub, so re-read
+`pulls/$PR_NUMBER/reviews` for a review at `$HEAD_SHA` carrying `<!-- PR_REVIEWER_POINTER -->`
+before retrying, or a transient-looking failure turns into a double-post. Build the whole payload —
+`commit_id`, `body`, `event`, and `comments` — as one JSON document and POST it with `--input`,
+which sends the file verbatim as the request body and keeps `comments` a real array:
+
 ```bash
+python3 - "$HEAD_SHA" "$POINTER_BODY" "$INLINE_COMMENTS_JSON" <<'PY' > /tmp/review-payload.json
+import json, sys
+head_sha, body, comments_json = sys.argv[1:4]
+json.dump(
+    {"commit_id": head_sha, "body": body, "event": "COMMENT", "comments": json.loads(comments_json)},
+    sys.stdout,
+)
+PY
+
 gh api repos/$RESOLVED_REPO/pulls/$PR_NUMBER/reviews \
   --method POST \
-  --field commit_id="$HEAD_SHA" \
-  --field body="POINTER_BODY" \
-  --field event="COMMENT" \
-  --raw-field comments='INLINE_COMMENTS_JSON'
+  --input /tmp/review-payload.json
 ```
+
+When `INLINE_COMMENTS_JSON` is `[]` this branch is unreachable — see *When to post* above — so
+`--input` always carries a non-empty `comments` array here; no separate no-comments code path is
+needed.
 
 **`POINTER_BODY` is not written by hand either — the same discipline as `REPORT_BODY` applies.**
 Build a small JSON payload and run it through
