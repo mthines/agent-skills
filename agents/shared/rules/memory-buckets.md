@@ -25,7 +25,7 @@ This file does not restate those — it only names the buckets and says which ki
 
 - [The kinds](#the-kinds)
 - [The `review*` trio (the confusing one)](#the-review-trio-the-confusing-one)
-- [Master table — all 14 buckets](#master-table--all-14-buckets)
+- [Master table — all 15 buckets](#master-table--all-15-buckets)
 - [First-class properties in LoreKit (`kind` + `host`)](#first-class-properties-in-lorekit-kind--host)
 - [Why the tags are not kind-prefixed](#why-the-tags-are-not-kind-prefixed)
 - [See also](#see-also)
@@ -71,7 +71,7 @@ reviewer-comment-relevance
 
 ---
 
-## Master table — all 14 buckets
+## Master table — all 15 buckets
 
 ### Lessons (`loop::<host>-lessons`, key `<host>-lessons::<slug>`)
 
@@ -85,7 +85,8 @@ hosts and silently halve every usage roll-up.
 | Bucket | Host | Read → Write | Scope default | Notes |
 | --- | --- | --- | --- | --- |
 | `aw-lessons` | `aw` (dispatcher, shared by `aw-planner` / `aw-executor`) | dispatcher start → on friction | `global` \| `repo::` | Universal loop hoisted to the dispatcher; promotes to `diagnose`. |
-| `aw-tester-lessons` | `aw-tester` | spec run start → on spec-verify friction | `global` \| `repo::` | UI-verification lessons. |
+| `aw-tester-lessons` | `aw-tester` | spec run start → on spec-verify friction | `global` \| `repo::` | UI-verification lessons. Also read by `preview-spec` at author time (cross-bucket read). |
+| `preview-spec-lessons` | `preview-spec` | `author` (read) → `run` on spec-navigation friction (write) | `global` \| `repo::` | Spec-quality / navigation lessons for PR-preview verification. The author also reads `aw-tester-lessons`; the runner writes navigation friction here, locator friction goes to `aw-tester-lessons`. |
 | `fix-bug-lessons` | `fix-bug` | Phase 0.5 → Phase 5·7·8 | `global` \| `repo::` | Diagnostic-phase lessons; inherits `aw-lessons` via `aw-executor`. |
 | `batch-lessons` | `batch` (agent: `batch-linear-tickets`) | Phase 1 → Phase 5 | `global` \| `repo::` | Ticket classification + correlation. |
 | `reviewer-lessons` | `reviewer` (agent: `pr-reviewer`) | Step 0.7 / Step 1.0 → post-merge promotion only | `global` \| `repo::` | Distilled from the `review-outcomes` bus at promotion time. `pr-reviewer` NEVER writes in-run — writes come from `outcome-learning.md` after the PR closes. |
