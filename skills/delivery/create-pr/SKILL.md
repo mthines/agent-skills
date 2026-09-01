@@ -107,6 +107,8 @@ Skill("preview-spec", "author <pr-url>")
 
 `preview-spec` owns the spec grammar, the marker contract, and its authoring memory loop; it edits the PR body in place, adding one `<!-- preview-spec:v1 -->` block. The block is exempt from the description length budget and is preserved verbatim by the Step 6.5 review-loop's description refresh — both rules live in the [description contract](./rules/description-contract.md#ui-verification-spec-optional). Continue to Step 6.5 regardless of whether a spec was authored.
 
+This step only **authors** the spec. The **run** is the review-loop's job: the default Step 6.5 invocation (`Skill("review-loop", "<pr-url> --no-ci")`) executes the block once against the live preview deployment at exit, report-only (its Step 1.6). `create-pr` deliberately does **not** pass `--no-preview-run` — that opt-out is for `autonomous-workflow`, whose Phase 7 rehearses the same specs itself. So a hand-driven UI PR gets both halves here: authored at 6.4, verified at 6.5.
+
 ## Step 6.5: Post-draft quality loop (delegated to `review-loop`)
 
 After the draft PR is open, run the bounded review-apply-simplify convergence loop.

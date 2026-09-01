@@ -128,7 +128,7 @@ Phase 5: Documentation
     | Skill("docs", "update --auto") always (self-improving docs loop across CLAUDE.md, README.md, docs/)
     | (docs complete)
 Phase 6: PR Creation
-    | Skill("review-loop", "<pr-url> --critical --no-ci") -> Skill("aw-create-walkthrough") -> Skill("create-pr")
+    | Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run") -> Skill("aw-create-walkthrough") -> Skill("create-pr")
     | (draft PR delivered, walkthrough.md written)
 Phase 7: CI Gate + Optional Cleanup
     | Watch CI -> Skill("ci-auto-fix") per failed check (parallel, cap 2)

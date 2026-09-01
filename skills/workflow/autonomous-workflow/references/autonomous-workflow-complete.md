@@ -870,7 +870,7 @@ $ pnpm lint
 ### Review Changes (Post-Draft Self-Review via review-loop)
 
 ```
-Skill("review-loop", "<pr-url> --critical --no-ci")
+Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")
 → REVIEW_RELATION: self (pr-reviewer detects authorship automatically)
 → Iteration 1: analyzed 8 commits across 5 new files / 3 modified files
 → Coverage: 100% on new code, no regressions in existing tests
