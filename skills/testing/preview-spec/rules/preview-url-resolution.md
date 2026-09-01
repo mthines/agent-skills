@@ -38,18 +38,27 @@ The caller has told you the URL; do not second-guess it.
 
 2. **Prefer a preview environment over production.** From the list, drop any deployment whose `environment` is exactly `production` or `Production`. Keep the newest of the rest (Vercel names them `Preview`, Netlify `deploy-preview`, others vary). If every deployment is production, there is no preview to test — report `inconclusive: no preview environment` and stop.
 
-3. **Read that deployment's statuses and take the URL of the newest success.**
+3. **Read that deployment's statuses newest-first and take the URL of the newest success.**
 
    ```bash
    gh api "repos/<owner>/<repo>/deployments/<deployment-id>/statuses?per_page=20" \
      --jq '[.[] | {state, environment_url, target_url, created_at}]
-           | map(select(.state == "success"))
-           | sort_by(.created_at) | reverse | .[0]'
+           | sort_by(.created_at) | reverse'
    ```
 
-   - Take `environment_url`. If it is null or empty, fall back to `target_url`.
-   - **State handling:** newest status is `pending` / `in_progress` and no earlier `success` exists → the build is still running; report `inconclusive: preview building` and stop. Newest is `failure` / `error` with no later `success` → report `inconclusive: preview deploy failed` and stop.
-   - Both URLs empty on the only success → report `inconclusive: preview URL not published` and stop.
+   Do not filter to `state == "success"` before sorting — that collapses a
+   pending-only list and a failed-only list to the same empty result, so the
+   state handling below could never tell them apart. Keep every status.
+
+   - Find the first entry (newest-first) whose `state == "success"`. Take its
+     `environment_url`; if null or empty, fall back to `target_url`.
+   - **State handling:** the newest entry (index 0) is `pending` / `in_progress`
+     and no `success` entry exists anywhere in the list → the build is still
+     running; report `inconclusive: preview building` and stop. The newest
+     entry is `failure` / `error` and no `success` entry exists anywhere in
+     the list → report `inconclusive: preview deploy failed` and stop.
+   - Both URLs empty on the only `success` entry → report `inconclusive:
+     preview URL not published` and stop.
 
 4. **Return the resolved URL** (no trailing slash) to the runner. State it in the report: `Preview URL: <url> (deployment <id>, environment <environment>)`.
 
