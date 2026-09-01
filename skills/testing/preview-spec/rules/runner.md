@@ -17,6 +17,7 @@ The runner is an **on-demand orchestrator** — it resolves and dispatches once,
 
 Read the PR body: `gh pr view <pr> --json body -q .body`.
 Extract the region between `<!-- preview-spec:v1 -->` and `<!-- /preview-spec:v1 -->` (see [`spec-format.md`](./spec-format.md)).
+The committed PR body is the **only** source the runner reads. It never reads `.agent/{branch}/specs.md` — that file is gitignored and absent on a fresh checkout ([`spec-sources.md § Two artifacts, two lifetimes`](./spec-sources.md#two-artifacts-two-lifetimes)). Verifying against the PR is therefore independent of any local aw run.
 
 - No markers → report `no spec — nothing to run` and stop. The PR has no embedded spec; `author` never ran, or the diff was not UI.
 - Markers present but empty body → report `empty spec` and stop.

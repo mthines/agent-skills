@@ -188,6 +188,9 @@ selects it.
 
 For best-effort markdown checklists: `repro/<id>.md`.
 
+> [!NOTE]
+> For a UI or visual bug (layer rows 5–7: web E2E, mobile E2E, visual), this repro artifact is reused at Phase 6: `preview-spec` (via `create-pr` Step 6.4) seeds the PR-body verification spec from it, phrasing each step as the fixed behavior. Contract: [`preview-spec/rules/spec-sources.md`](../../../testing/preview-spec/rules/spec-sources.md). Nothing to invoke here — write a clear repro and it flows through.
+
 ---
 
 ## Best-effort fallback

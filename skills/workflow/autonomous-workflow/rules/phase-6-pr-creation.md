@@ -182,8 +182,19 @@ What `create-pr` handles:
 | `git push -u origin`          | `create-pr` |
 | `gh pr create --draft`        | `create-pr` |
 | Post-draft review loop        | `create-pr` Step 6.5 → `review-loop` (always with `--no-ci`) → `pr-reviewer` + `implement-suggestion` + `polish simplify` |
+| Preview verification spec (UI diffs) | `create-pr` Step 6.4 → `preview-spec` (see below) |
 | Watch initial CI              | `create-pr` |
 | External-bot reviewer-feedback | `create-pr` Step 6.7 |
+
+### Preview-spec
+
+On a UI diff, `create-pr` Step 6.4 delegates to `preview-spec` (`Skill("preview-spec", "author <pr-url>")`), which injects a collapsed, machine-findable UI verification spec into the PR body so an agent can later run it against the preview deployment.
+You do not invoke `preview-spec` here — `create-pr` owns the call. Two workflow-specific facts:
+
+- **It seeds from the planner's specs.** When this task emitted `.agent/{branch}/specs.md` (Phase 1, UI tasks), `preview-spec` lifts those already-locally-verified specs into the PR block rather than regenerating from the diff — so the PR-embedded spec matches what Phase 4 ran. `specs.md` is gitignored, but the lift works because `author` runs here in the same worktree; it copies the content into the **committed** PR body, and `specs.md` itself is never committed. Contract: [`preview-spec/rules/spec-sources.md`](../../../testing/preview-spec/rules/spec-sources.md).
+- **It is distinct from Phase 7 Spec Rehearsal — two artifacts, two lifetimes.** Phase 7 re-runs the gitignored `.agent/{branch}/specs.md` against the preview *during this run* (local, in-worktree). The preview-spec block *persists in the committed PR description*, so `preview-spec run` and any on-demand agent can repeat the check on a fresh checkout after this run ends. Both are supported; they read different files.
+
+Skips silently if `preview-spec` is not installed (`create-pr` catches and logs). Disable by passing `--no-preview-spec` — but only when the user asked to skip it.
 
 ### Phase 6 Delivery Receipt (GATE — Full + Lite)
 
