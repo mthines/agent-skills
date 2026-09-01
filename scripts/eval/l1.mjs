@@ -2591,6 +2591,16 @@ const isPollBlock = (block) =>
     !!fixAll && /isResolved/.test(fixAll) && (fixAll.match(/\{bot_login\}/g) ?? []).length >= 2,
     "Fix-all lost the isResolved check or the {bot_login} filter — Agent0 can no longer tell open threads from closed ones, or from another author's, without a second call");
 
+  // `reviewThreads` caps at first:100 and --paginate does not work for GraphQL — the guard
+  // prior-comment-awareness.md § Thread state states for this exact query, and which
+  // thread-resolution.md and outcome-learning.md both carry. It binds HARDER here: the query has no
+  // server-side author filter, so {bot_login} is applied client-side and the 100-cap falls on the
+  // unfiltered thread list. On a multi-reviewer PR this reviewer's own open threads can sit past the
+  // cap, and Agent0 then reports done having fixed a subset. Both halves must survive a reword.
+  s.check("G32j the Fix-all template's query carries the reviewThreads pagination walk",
+    !!fixAll && /pageInfo\{hasNextPage endCursor\}/.test(fixAll) && /after:/.test(fixAll),
+    "Fix-all dropped pageInfo{hasNextPage endCursor} or the after: clause — reviewThreads caps at first:100 with no server-side author filter, so this silently truncates the worklist on a multi-reviewer PR (prior-comment-awareness.md § Thread state)");
+
   s.check("G32i the Fix-all template's GraphQL query has balanced braces",
     !!fixAll && (() => {
       const q = /query='(\{.*?\})'/.exec(fixAll)?.[1] ?? "";

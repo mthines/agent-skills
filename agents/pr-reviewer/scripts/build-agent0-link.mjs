@@ -22,7 +22,7 @@ const HOSTS = { production: "https://app.dash0.com", development: "https://app.d
 // LimitRequestLine defaults to 8190 — so 8000 sat exactly on the cliff rather than short of it.
 // 4000 keeps a 2x margin under that. The legacy "2048 everywhere" figure comes from IE's 2083 and
 // no longer binds a known modern host. Measured against it: fix-this ~880 chars at its worst case
-// (94-char path, 240-char lead cap), fix-all ~980 chars flat — independent of finding count, since
+// (94-char path, 240-char lead cap), fix-all ~1100 chars flat — independent of finding count, since
 // it embeds a fixed GraphQL query rather than a per-finding list (agent0-fix-links.md § Deep-link
 // format).
 const MAX_URL = 4000;

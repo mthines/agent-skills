@@ -99,7 +99,7 @@ all** embeds no per-finding data at all — instead it embeds `{bot_login}` and 
 GitHub GraphQL query (§ Prompt templates) that returns every one of this reviewer's threads, resolved
 state included, in a single call. That makes the **Fix all** URL length **independent of the finding
 count** — it no longer grows with how many findings are open, which is what let a large PR's worklist
-crowd the 2500 target before. Measured from the live template with a realistic owner/repo/login: ~980
+crowd the 2500 target before. Measured from the live template with a realistic owner/repo/login: ~1100
 chars, flat regardless of `{count}`. **Fix this** is ~880 at its worst case (a 94-char path plus the
 full 240-char lead cap). The figures are not guesses — L1 `G32d` fills the live template and measures
 it (the `&utm_source=...` tag from § Click attribution is a small, fixed addition on top and does not
@@ -157,7 +157,7 @@ Agent0 at the same comment.
 reviewer's OWN findings by an exact login match:
 
 ```text
-Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, authored by {bot_login}. List them with: gh api graphql -f query='{repository(owner:"{owner}",name:"{repo}"){pullRequest(number:{n}){reviewThreads(first:100){nodes{isResolved comments(first:1){nodes{path line body author{login}}}}}}}}' — keep only isResolved:false nodes whose comment author.login is "{bot_login}", ignore every other author. Verify using the repo's own lint/typecheck scripts — never a raw tsc/eslint call or a whole-repo pass — skip verification if none exist — then commit to the same branch (no new PR).
+Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, authored by {bot_login}. List them with: gh api graphql -f query='{repository(owner:"{owner}",name:"{repo}"){pullRequest(number:{n}){reviewThreads(first:100){pageInfo{hasNextPage endCursor} nodes{isResolved comments(first:1){nodes{path line body author{login}}}}}}}}' — if hasNextPage, repeat with after:"<endCursor>" until false. Keep only isResolved:false nodes whose comment author.login is "{bot_login}", ignore every other author. Verify using the repo's own lint/typecheck scripts — never a raw tsc/eslint call or a whole-repo pass — skip verification if none exist — then commit to the same branch (no new PR).
 ```
 
 - `{bot_login}` — this agent's own login, already resolved earlier in the run by the same identity
@@ -175,6 +175,18 @@ Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, authored by {bo
   given rather than discovering or reconstructing it, which is the concrete "no wasted time" property
   this template is designed for. Because the query is fixed text, not a per-finding list, the URL
   no longer grows with the finding count.
+- **The `pageInfo`/`endCursor` walk is not optional, even here.** `reviewThreads` caps at `first:100`
+  and `--paginate` does not work for GraphQL — the guard `prior-comment-awareness.md § Thread state`
+  states for this exact query, and which `thread-resolution.md` and `outcome-learning.md` both carry
+  ("do not drop the walk"). It binds harder in this template than in those callers, not less: the
+  query has **no server-side author filter** — GitHub offers none — so `{bot_login}` is applied
+  client-side and the 100-cap therefore falls on the *unfiltered* thread list, every author's
+  included. On a PR with several reviewers, this reviewer's own open threads can sit past the cap
+  while the first 100 are someone else's. Dropping the walk there does not shorten a worklist, it
+  silently truncates one, and Agent0 reports done having fixed a subset — the "an unseen thread must
+  never be silently assumed unresolved" failure, one indirection further out. Any future reword keeps
+  both halves: `pageInfo{hasNextPage endCursor}` in the selection **and** the `after:` clause after
+  it. The ~130 chars this costs sit against ~1400 of headroom under the 2500 target.
 
 **Fix all — CI-only** (report, `{count}` is 0) — the report can read WARN with **zero** findings:
 Gate 2 (CI) is soft-warning-only (`pr-reviewer.md § Gate states`), so a PR with a clean Gate 6 (code
