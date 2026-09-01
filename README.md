@@ -465,7 +465,7 @@ That is the entire integration.
 ## Repository structure
 
 ```
-skills/                   51 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
+skills/                   52 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
   testing/test-auto-fix/    stack-agnostic test healer — bootstrap, classify, confidence-gate, regression-detect
 agents/                   5 agents (pr-reviewer, linear-ticket-investigator, rca-investigator, bug-fix-verifier, feature-pr-verifier)
 plugins/                  3 Claude Code plugins (agent-tasks-hooks, pr-relevance-memory, pr-reviewer-shape-guard)

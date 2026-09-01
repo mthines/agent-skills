@@ -1,21 +1,20 @@
 ---
 name: preview-spec
 description: >
-  Makes a UI pull request autonomously verifiable. Two operations. `author`
-  generates a step-by-step UI verification spec for the PR's visual change and
-  injects it into the PR description as a collapsed, machine-findable block
-  (delegated to by `create-pr` when the diff touches UI; also runnable
-  standalone). `run` extracts that block from a PR, resolves the PR's live
-  preview deployment URL via the GitHub deployments API, and runs the spec
-  against it with Playwright by dispatching the `aw-tester` agent, then reports
-  a pass/fail verdict. A two-way LoreKit memory loop connects them: the runner
-  records navigation quirks it hits (a cookie banner, a required query param,
-  a preview-auth header), and the author reads those lessons so future specs
-  are written correctly from the start. Web only — the spec grammar and the
-  Playwright runner are `aw-tester`'s; this skill owns the PR-embedding, the
-  preview-URL resolution, and the authoring loop. Triggers on "write a preview
-  spec", "add a UI verification spec", "verify this PR's preview", "run the
-  preview spec", "test the preview deployment", "/preview-spec".
+  Makes a UI pull request autonomously verifiable. `author` generates a
+  step-by-step UI verification spec for the PR's visual change and injects it
+  into the PR description as a collapsed, machine-findable block (delegated
+  to by `create-pr` on UI diffs; also runnable standalone). `run` extracts
+  that block, resolves the PR's live preview deployment URL via the GitHub
+  deployments API, and runs the spec against it with Playwright by
+  dispatching the `aw-tester` agent, then reports a pass/fail verdict. A
+  two-way LoreKit memory loop connects them: the runner records navigation
+  quirks it hits, and the author reads those lessons so future specs start
+  correct from the outset. Web only — the spec grammar and Playwright runner
+  are `aw-tester`'s; this skill owns the PR-embedding, URL resolution, and the
+  authoring loop. Triggers on "write a preview spec", "add a UI verification
+  spec", "verify this PR's preview", "run the preview spec", "test the
+  preview deployment", "/preview-spec".
 disable-model-invocation: true
 argument-hint: '[author|run] [pr-url|pr-number] [--url <preview-url>]'
 license: MIT

@@ -13,9 +13,17 @@ tags:
 The UI verification spec lives inside the PR description, inside a collapsed `<details>` block, between two HTML-comment markers.
 The markers make the block **machine-findable** — the runner and `review-loop` locate it without parsing prose — and the collapse keeps it out of a reviewer's way.
 
+## Contents
+
+- [The marker contract](#the-marker-contract)
+- [The spec grammar is `aw-tester`'s — do not fork it](#the-spec-grammar-is-aw-testers--do-not-fork-it)
+- [Two host-contract rules](#two-host-contract-rules)
+- [Good and bad](#good-and-bad)
+
 ## The marker contract
 
-The block is exactly this shape:
+The block is exactly this shape.
+`author` starts from the literal boilerplate in [`templates/embedded-spec.md.template`](../templates/embedded-spec.md.template) and fills in the `Spec N:` blocks for the diff at hand.
 
 ```markdown
 <!-- preview-spec:v1 -->

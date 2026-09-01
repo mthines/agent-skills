@@ -29,7 +29,7 @@ If `memory.*` is not connected, skip every step here silently and log one line: 
 
 Before writing a spec (`author` Step 1), read both buckets narrow-to-broad — `repo::` first, then `global`:
 
-```
+```text
 memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::preview-spec-lessons"], limit: 50 }
 memory.list { scope: "global",               tags: ["loop::preview-spec-lessons"], limit: 50 }
 memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-tester-lessons"],    limit: 50 }
@@ -61,7 +61,7 @@ After the runner reports its verdict (`run` Step 6), write a `preview-spec-lesso
 
 Dedup, then write:
 
-```
+```text
 memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 memory.write {
   scope: "<global | repo::{owner}/{repo}>",
