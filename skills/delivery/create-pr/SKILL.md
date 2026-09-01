@@ -1,23 +1,19 @@
 ---
 name: create-pr
 description: >
-  Generate a short, narrative GitHub pull request description (≤ 25 lines, hard
-  ceiling 40), push the branch, open the PR as a draft, then run the review-loop
-  skill for a bounded review-apply-simplify convergence before finalizing. The
+  Generates a short, narrative GitHub pull request description (≤ 25 lines,
+  hard ceiling 40), pushes the branch, opens the PR as a draft, then runs
   review-loop (pr-reviewer → implement-suggestion → polish simplify, up to 5
-  iterations, converging until every review thread is resolved via fix or reply)
-  runs AFTER the draft PR is open — the single reviewer now operates
-  on PRs. Scale down with --no-review (skip the pr-reviewer pass), --no-simplify
-  (skip simplify), --quick (light mechanical pass only), or --no-quality (skip
-  the loop entirely). A post-push external-bot feedback loop also runs by default
-  (--no-feedback to skip), scoped to external bots only so it does not re-apply
-  the review-loop's own findings. With --split, analyses the branch diff and
-  breaks it into 2–4 focused, dependency-ordered draft PRs after user approval.
-  Escalates judgment-required CI failures via /confidence rather than guessing.
-  Invoke with /create-pr, /create-pr --no-review, /create-pr --quick, /create-pr
-  --no-quality, or /create-pr --split.
+  iterations) until every review thread is resolved via fix or reply. Scale
+  down with --no-review, --no-simplify, --quick (light mechanical pass only),
+  or --no-quality (skip the loop). A post-push external-bot feedback loop
+  runs by default (--no-feedback to skip). On a UI diff, injects a preview
+  verification spec by default (--no-preview-spec to skip). With --split,
+  breaks the branch diff into 2–4 focused, dependency-ordered draft PRs after
+  user approval. Escalates judgment-required CI failures via /confidence
+  rather than guessing. Invoke with /create-pr or /create-pr --split.
 disable-model-invocation: false
-argument-hint: '[--split] [--quick] [--no-review] [--no-simplify] [--no-quality] [--no-feedback]'
+argument-hint: '[--split] [--quick] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-preview-spec]'
 license: MIT
 metadata:
   author: mthines
@@ -45,6 +41,7 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft qual
 | `quick`        | `--quick`                                           | Step 6.5 runs only the light mechanical pass → `Skill("polish", "quick")` (no pr-reviewer, no structural refactors).                                                        |
 | `no-quality`   | `--no-quality` anywhere in arguments               | Skip Step 6.5 entirely **and** the Step 6.7 external-bot feedback loop. Wins over every other quality flag.                                                                  |
 | `no-feedback`  | `--no-feedback` anywhere in arguments              | Skip the **default-on** external-bot feedback loop (Step 6.7). Composes with everything. Does not skip the review-loop step.                                                |
+| `no-preview-spec` | `--no-preview-spec` anywhere in arguments        | Skip the **default-on** UI verification spec authoring (Step 6.4). Composes with everything.                                                                                |
 
 > **Legacy positive flags.** `--review` and `--simplify` are still accepted as explicit single-pass scoping: `--review` alone ≡ `--no-simplify` (pr-reviewer only), `--simplify` alone ≡ `--no-review` (simplify only), and `--review --simplify` ≡ the default (full loop). Prefer the `--no-*` form — with the full loop now the default, the negative flags read more clearly.
 
@@ -91,6 +88,24 @@ EOF
 ```
 
 Capture the PR URL/number from the output — the next steps need it.
+
+## Step 6.4: Author the UI verification spec (default ON for UI changes)
+
+When the diff touches the UI, attach a collapsed, machine-findable verification spec to the PR description so an agent can later run it against the preview deployment. This is authored once, here, right after the draft opens.
+
+**Skip this step** when any of the following hold:
+
+- `--no-preview-spec` or `--no-quality` is in `$ARGUMENTS`.
+- The diff does **not** touch the UI. Heuristic: no changed file matches `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `*.css`, `*.scss`, `*.stories.*`, or a component directory. Test-only and config-only changes to those files do not count.
+- `preview-spec` is not installed (`Skill()` raises — catch, log one line, continue).
+
+Otherwise delegate — do not author the block by hand:
+
+```
+Skill("preview-spec", "author <pr-url>")
+```
+
+`preview-spec` owns the spec grammar, the marker contract, and its authoring memory loop; it edits the PR body in place, adding one `<!-- preview-spec:v1 -->` block. The block is exempt from the description length budget and is preserved verbatim by the Step 6.5 review-loop's description refresh — both rules live in the [description contract](./rules/description-contract.md#ui-verification-spec-optional). Continue to Step 6.5 regardless of whether a spec was authored.
 
 ## Step 6.5: Post-draft quality loop (delegated to `review-loop`)
 

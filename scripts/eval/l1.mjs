@@ -176,7 +176,7 @@ function checksInSync(plan, checks) {
 // masquerading as lessons. Keep these directories absent in agent-skills.git.
 {
   // Keep this array in sync with the Lessons table in agents/shared/rules/memory-buckets.md.
-  for (const scope of ["aw-lessons", "aw-tester-lessons", "fix-bug-lessons", "batch-lessons", "reviewer-lessons", "implement-suggestion-lessons", "ci-auto-fix-lessons", "e2e-pr-stabilizer-lessons", "test-auto-fix-lessons", "ideate-lessons", "optimize-approach-lessons"]) {
+  for (const scope of ["aw-lessons", "aw-tester-lessons", "preview-spec-lessons", "fix-bug-lessons", "batch-lessons", "reviewer-lessons", "implement-suggestion-lessons", "ci-auto-fix-lessons", "e2e-pr-stabilizer-lessons", "test-auto-fix-lessons", "ideate-lessons", "optimize-approach-lessons"]) {
     const dir = join(REPO_ROOT, "memory", scope);
     s.check(`memory/${scope} not committed in agent-skills.git (this is the skill source, not a consumer)`, !existsSync(dir));
   }

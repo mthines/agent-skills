@@ -1,0 +1,42 @@
+# Commit this at .claude/aw-targets/preview.yml
+#
+# It is the browser context for verifying PR preview deployments. The runner
+# reads it, then OVERRIDES base_url at runtime with the URL it resolves from the
+# GitHub deployments API for the specific PR — so leave base_url as the
+# placeholder below. Commit this file (it carries NO secrets); gitignore any
+# .auth/*.json it points at.
+#
+# Reuses the aw-target.yml schema verbatim — see
+# skills/workflow/autonomous-workflow/templates/aw-target.yml.template for the
+# full field reference. Only the preview-specific notes are repeated here.
+
+name: preview
+
+# Overridden at runtime by preview-spec's URL resolution. The literal value here
+# is never used; keep it as a marker so a misconfigured run fails loudly.
+base_url: RESOLVED_AT_RUNTIME
+
+auth:
+  # For a preview behind Vercel Deployment Protection or an app login, use
+  # storage-state and a refresh command that authenticates against the RESOLVED
+  # preview URL (read it from the PREVIEW_URL env var the runner exports).
+  # For a fully public preview, set strategy: none and delete the rest.
+  strategy: none            # one of: storage-state | none | manual | env-credentials
+  # storage_state: ./.auth/preview.json   # gitignored; only for storage-state
+  # refresh:
+  #   when: missing-or-expired
+  #   command: |
+  #     AUTH_LOGIN_URL="${PREVIEW_URL}/login" \
+  #       AUTH_STORAGE_STATE=./.auth/preview.json \
+  #       node scripts/auth-bootstrap-headful.mjs
+  #   timeout_seconds: 600
+
+fixtures:
+  # A preview usually points at a shared staging database, so seeding is often a
+  # no-op. Reference dynamic ids the same way as any aw-target.
+  references:
+    # dashboardId: ${SEED_DASHBOARD_ID}
+
+constraints:
+  parallelism: 1
+  reset_between_specs: false

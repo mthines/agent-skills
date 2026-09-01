@@ -1,0 +1,27 @@
+<!-- This is the block `preview-spec author` injects into a PR description.
+     The markers, the collapsed <details>, and Target: preview are fixed.
+     The spec body uses aw-tester's grammar verbatim — see
+     skills/workflow/autonomous-workflow/templates/specs.md.template.
+     Replace the Spec blocks with the behaviors the diff actually changes
+     (1–3 specs). Delete this comment when injecting. -->
+<!-- preview-spec:v1 -->
+<details>
+<summary>🧪 UI verification spec — run against the preview deployment</summary>
+
+Target: preview
+Refactor: no
+
+## Spec 1: <one-line user goal for the changed screen>
+url: /<changed-route>
+preconditions:
+  - <any state the app needs first; handled by the preview target's auth/seed>
+flow:
+  - WHEN {role: "button", name: "<Action>"} is clicked
+    THEN {role: "dialog", name: "<Result>"} is visible
+  - WHEN {role: "textbox", name: "<Field>"} is filled with "<value>"
+    AND {role: "button", name: "Save"} is clicked
+    THEN {text: "<expected result>"} is visible on the page
+    AND network: POST /api/<endpoint> returned 201
+
+</details>
+<!-- /preview-spec:v1 -->

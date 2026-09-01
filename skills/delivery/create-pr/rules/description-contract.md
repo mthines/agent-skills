@@ -34,6 +34,8 @@ A reviewer should read the entire description in **under 30 seconds**. Concretel
 
 If you can't fit the change inside this budget, the PR is probably too big — stop and offer the user `/create-pr --split` instead of expanding the description.
 
+**One region is exempt: the UI verification spec block.** When the PR has a `<!-- preview-spec:v1 -->` … `<!-- /preview-spec:v1 -->` block (see [UI verification spec](#ui-verification-spec-optional)), everything between those markers does **not** count toward the ≤ 25 / 40 budget — it is collapsed and machine-oriented, not reviewer-facing prose.
+
 ## Core principles
 
 1. **Narrative over checklist.** Reads like prose explaining a decision, not a bullet-point manifest of every file touched.
@@ -111,6 +113,19 @@ If you can't answer these from the diff alone, ask the user — don't pad the de
 
 Aim for **2–4 bullets** under "What changed". If you have 6+, the PR is too big or you're enumerating files instead of concepts.
 
+## UI verification spec (optional)
+
+When the diff touches the UI, the PR body can carry a **collapsed, machine-findable UI verification spec** — a step-by-step checklist an agent runs against the PR's live preview deployment.
+`create-pr` authors it by delegating to `preview-spec`; it is not part of the narrative body a reviewer reads.
+
+- **Author it by delegation**, never by hand: `Skill("preview-spec", "author <pr-url>")`. That skill owns the spec grammar, the marker contract, and the authoring memory loop. `create-pr` decides *whether* to call it (UI diff, flag unset); `preview-spec` decides *what* the spec says.
+- **The block is a single owned region**, delimited by `<!-- preview-spec:v1 -->` … `<!-- /preview-spec:v1 -->`. There is at most one per PR.
+- **It is exempt from the length budget** (see above) and **preserved verbatim on refresh** (see Step 5 and the refresh note below).
+- Full contract: [`skills/testing/preview-spec/rules/spec-format.md`](../../../testing/preview-spec/rules/spec-format.md).
+
+**On refresh (the `review-loop` case):** carry the whole `<!-- preview-spec:v1 -->` … `<!-- /preview-spec:v1 -->` region forward unchanged.
+The refresh rewrites narrative sections only; re-authoring the spec is `preview-spec author`'s job, not the refresh's.
+
 ## Step 4: Write the title
 
 - Imperative mood, specific, under ~70 chars.
@@ -120,7 +135,7 @@ Aim for **2–4 bullets** under "What changed". If you have 6+, the PR is too bi
 
 ## Step 5: Length self-check (before writing the body)
 
-Count the rendered lines of the body. If it's over 25, cut. Common cuts:
+Count the rendered lines of the body, **skipping any `<!-- preview-spec:v1 -->` … `<!-- /preview-spec:v1 -->` region** — that block is exempt (see [UI verification spec](#ui-verification-spec-optional)). If the remaining body is over 25, cut. Common cuts:
 
 - **Collapse "Notes for reviewers"** unless it flags a real risk or judgment call. "We chose X because Y" usually belongs in a code comment.
 - **Drop "internal narration"** — explanations of memo deps, useEffect timing, and other implementation detail that a reviewer will read in the diff anyway.

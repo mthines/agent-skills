@@ -66,13 +66,13 @@ Resolve the following from the invocation prompt:
 |-------|--------|----------|
 | `specs_path` | Argument or `.agent/{branch}/specs.md` | Yes |
 | `aw_target_name` | Argument (e.g. `local`) | Yes |
-| `aw_target_path` | `.claude/aw-targets/{aw_target_name}.yml` | Derived |
+| `aw_target_path` | An explicit `Aw-Target file:` path in the prompt if given, else `.claude/aw-targets/{aw_target_name}.yml` | Derived |
 | `mode` | `--bail-on-first-red` (default) or `--all` | No |
 | `headed` | `--headed` flag | No |
 
 ### 3. Load the aw-target
 
-Read `.claude/aw-targets/{aw_target_name}.yml`. Parse:
+Read the aw-target file at `aw_target_path` — the explicit `Aw-Target file:` path when the prompt gave one, otherwise the name-derived `.claude/aw-targets/{aw_target_name}.yml`. Parse:
 - `base_url`
 - `auth.strategy` and `auth.storage_state` (if strategy is `storage-state`)
 - `fixtures.references` (for placeholder resolution)
