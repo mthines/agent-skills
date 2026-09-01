@@ -12,8 +12,11 @@ description: >
   before undrafting. Also converges CI: after each iteration's push it reads the
   check state and delegates a red mechanical failure to ci-auto-fix, so
   convergence means zero open threads AND CI not red (--no-ci opts out; create-pr
-  and autonomous-workflow pass it because they own their own CI phase). With
-  --external-review the reviewer is out-of-process: sub-step A waits on the
+  and autonomous-workflow pass it because they own their own CI phase). On a UI PR
+  it also runs the committed preview-spec block against the live preview deployment
+  once at exit (report-only, never blocks convergence; --no-preview-run opts out —
+  autonomous-workflow passes it because its Phase 7 already rehearses the same
+  specs). With --external-review the reviewer is out-of-process: sub-step A waits on the
   shared review-activity poll for another agent's review instead of dispatching
   pr-reviewer, which also makes the loop usable where the Task tool is disabled.
   Caller contract: this is an orchestrator whose first sub-step is a delegation,
@@ -23,13 +26,13 @@ description: >
   Callers: autonomous-workflow Phase 6/7, create-pr (post-draft), and standalone
   via /review-changes. Invoke with /review-loop <PR-URL|#n> [--cap N]
   [--critical] [--external-review] [--interval S] [--no-ci] [--no-feedback]
-  [--no-refresh].
+  [--no-refresh] [--no-preview-run].
 disable-model-invocation: false
-argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--external-review] [--interval S] [--no-ci] [--no-feedback] [--no-refresh]'
+argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--external-review] [--interval S] [--no-ci] [--no-feedback] [--no-refresh] [--no-preview-run]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.4.0'
+  version: '1.5.0'
   workflow_type: command
   tags:
     - review
@@ -182,6 +185,7 @@ Everything else is a flag.
 | `--external-review` | Replace sub-step A: wait for an **out-of-process** reviewer instead of dispatching `pr-reviewer`. See [Sub-step A — external-review mode](#sub-step-a--external-review-mode). |
 | `--interval S` | Poll interval in seconds for `--external-review`, default `300`, **clamped to `540`**. Ignored without `--external-review`. |
 | `--no-ci` | Skip sub-step D (the CI pass). Callers that own their own CI phase pass this — `create-pr` (Steps 7–9) and `autonomous-workflow` (Phase 7) both do. |
+| `--no-preview-run` | Skip [Step 1.6](#step-16-preview-spec-run-report-only-once-on-exit), the report-only preview-spec run at exit. `autonomous-workflow` passes this because its Phase 7 spec rehearsal already runs the same specs against the preview; `create-pr` does **not**, so a hand-driven UI PR gets its authored spec verified here. |
 
 **Incompatible combinations**, refused or downgraded at Step 0:
 
@@ -274,6 +278,13 @@ fi
 NO_CI=0
 if [[ " $ARGUMENTS " == *" --no-ci "* ]]; then
   NO_CI=1
+fi
+
+# --no-preview-run: skip Step 1.6, the report-only preview-spec run at exit.
+# autonomous-workflow passes this (its Phase 7 rehearses the same specs).
+NO_PREVIEW_RUN=0
+if [[ " $ARGUMENTS " == *" --no-preview-run "* ]]; then
+  NO_PREVIEW_RUN=1
 fi
 
 CAP=${cap_flag:-5}
@@ -535,6 +546,51 @@ The `simplify` mode applies Class M mechanical refactors and dispatches no pr-re
 All other `polish` modes trigger an internal agent pass, which would create a dispatch cycle.
 This is the anti-circularity guarantee.
 
+### Step 1.6: Preview-spec run (report-only, once, on exit)
+
+After the loop exits — however it exited (converged, no-progress, or cap) — run the
+PR's embedded preview-spec **once** against the live preview deployment. This is the
+run half of the `author` step `create-pr` performs at its Step 6.4: the spec was
+written into the PR body; here it is executed.
+
+Skip this step entirely when **any** of:
+
+- `NO_PREVIEW_RUN == 1` — the caller owns preview verification (`autonomous-workflow`
+  passes this; its Phase 7 rehearses the same specs).
+- `NO_FEEDBACK == 1` — report-only mode applied nothing, so there is nothing new to verify.
+- the loop returned a dispatch skip (missing `Task`, nested dispatch) — no run happened.
+
+Otherwise dispatch it **once**, regardless of iteration count:
+
+```text
+Skill("preview-spec", "run <PR-URL>")
+```
+
+`preview-spec run` owns the whole procedure: it reads the committed
+`<!-- preview-spec:v1 -->` block (the **only** source — never the gitignored
+`.agent/{branch}/specs.md`, so it works on this or any checkout), resolves the
+preview URL via the GitHub deployments API, dispatches `aw-tester --all`, and
+returns a verdict. This loop only records the outcome.
+
+**Report-only — this step never gates.** The verdict does **not** block convergence,
+does **not** reopen the loop, and does **not** undraft the PR — matching
+`autonomous-workflow`'s Phase 7 rehearsal, which also never auto-undrafts on the
+spec verdict. Convergence is already decided by threads-resolved + CI-settled before
+this step runs; the preview verdict is surfaced for the human undrafting the PR.
+
+Map its outcome into the report:
+
+| `preview-spec run` outcome | This loop records |
+| --- | --- |
+| `no spec` (no block — not a UI PR, or `author` never ran) | `not run (no preview-spec block)` — log and continue |
+| `inconclusive: preview not deployed` | `inconclusive (preview not deployed at exit)` — note `re-run /preview-spec run <PR-URL> once the preview is up`. Never a red |
+| `green` | `green (<N> specs on <preview-url>)` |
+| `red` | `red (<N> failing on <preview-url>) — review before undrafting`. Report-only; does not reopen the loop |
+| `preview-spec` not installed / `Skill()` refused | `skipped (preview-spec not available)` — log one line and continue; it is a non-load-bearing companion |
+
+Run it **at most once** per `review-loop` invocation — it is an exit signal, not a
+per-iteration check, and each run spends a full `aw-tester` Playwright dispatch.
+
 ### Step 2: Refresh the PR description and Linear note (on convergence)
 
 Skip this step entirely when `NO_REFRESH == 1`, when `NO_FEEDBACK == 1`, or when
@@ -592,6 +648,8 @@ Open threads at exit: <count>
 CI at exit: <green | pending | red (<failing check names>) | error (<verbatim query failure>) | not run (--no-ci) | none on this repo>
   ci-auto-fix handoffs: <CI_HANDOFFS> of 2
 
+Preview spec: <green (<N> specs on <url>) | red (<N> failing on <url>) — review before undrafting | inconclusive (preview not deployed at exit) | not run (no preview-spec block) | skipped (--no-preview-run) | skipped (--no-feedback) | skipped (preview-spec not available)>
+
 PR description: <refreshed | unchanged (no code applied) | skipped (--no-refresh)>
 Linear note: <posted <ticket> | no ticket linked | Linear MCP unavailable | skipped>
 
@@ -619,6 +677,7 @@ threads over a red build is not a review-ready PR.
 - **One `implement-suggestion` per iteration, no `--watch`.** The loop drives re-review; `--watch` waits for external bots and would conflict.
 - **Cap is a hard limit.** If threads are still open at the cap, surface them and stop. Do not extend the cap silently.
 - **Convergence requires CI settled, not just threads resolved.** Unless `--no-ci` is set, a red check blocks the clean-convergence exit. Reporting zero open threads over a red build is the CI-shaped version of green-washing.
+- **The preview-spec run is report-only and never part of convergence.** Step 1.6 runs after the loop has already decided convergence (threads-resolved + CI-settled); its verdict is surfaced for the human, never gates the loop, and never undrafts — matching `autonomous-workflow` Phase 7. It runs at most once per invocation, reads only the committed `preview-spec:v1` block (never `.agent/{branch}/specs.md`), and `autonomous-workflow` opts out via `--no-preview-run` because Phase 7 rehearses the same specs. A missing `preview-spec` is a silent skip, not a failure.
 - **Never fix CI in this context.** Sub-step D classifies and delegates to `ci-auto-fix`; it applies no fix itself, and every `ci-auto-fix` refusal (no `--no-verify`, no `continue-on-error`, no skipped suites, no weakened assertions) holds transitively.
 - **Never carry CI watch state — query it.** Sub-step D reads check state statelessly at the current remote head and writes nothing; it never records a verdict or a spent budget for another phase to inherit, and it never reintroduces a cross-phase watch-state file ([`diagnostic-surface.md`](../../workflow/autonomous-workflow/rules/diagnostic-surface.md) — *watch state is queried, never carried*). `CI_HANDOFFS` is counted inside this run only.
 - **A failed poll is never a quiet reviewer.** Under `--external-review`, `POLL_ERROR` aborts with `poll error`. Converting a broken probe into "the reviewer had nothing to say" reports a never-reviewed PR as converged.
@@ -637,5 +696,6 @@ threads over a red build is not a review-ready PR.
 | `autonomous-workflow` Phase 6/7 | Invokes `review-loop` in place of the retired `reviewer` agent dispatches. |
 | `review-changes` | Routes to `review-loop` as the primary convergence entry point. |
 | `ci-auto-fix` | Sub-step D: dispatched as a subagent on a red check, capped at 2 handoffs per run. Owns the fix; this loop only classifies and delegates. Skipped under `--no-ci`. |
+| `preview-spec run` | Step 1.6: dispatched once at exit on a UI PR to run the committed spec against the preview deployment. Report-only — never gates convergence or undrafts. Skipped under `--no-preview-run` (which `autonomous-workflow` passes, its Phase 7 owning the same rehearsal) or when the skill is absent. Pairs with `create-pr` Step 6.4, which authored the spec. |
 | `review-activity-poll` | Shared rule owning the `--external-review` wait — [`agents/shared/rules/review-activity-poll.md`](../../../agents/shared/rules/review-activity-poll.md), co-owned with `implement-suggestion --watch`. |
 | `implement-suggestion --watch` | **Sibling, never nested.** Both wait on an out-of-process reviewer via the shared poll; `--watch` is the thin one (apply + push + stop, and it reads CI only as a stop reason). This loop adds `--resolve-all`, simplify, CI delegation, and the description refresh. The hard rule *one `implement-suggestion` per iteration, no `--watch`* keeps them from stacking. |

@@ -415,7 +415,7 @@ Then proceed to [Optional Post-Merge Cleanup](#optional-post-merge-cleanup).
 ### Step 2: Invoke `review-loop`
 
 ```
-Skill("review-loop", "<pr-url> --critical --no-ci")
+Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")
 ```
 
 `pr-reviewer` detects self-authorship via `REVIEW_RELATION` in Step 0.5 automatically.
@@ -429,6 +429,18 @@ has its own CI sub-step that would dispatch `ci-auto-fix` on a red check. Lettin
 run would create a **second spender** of the per-PR handoff budget this phase owns —
 the exact defect the CI-watch contract exists to prevent. So this phase keeps the
 budget and does the re-check itself, immediately below.
+
+**`--no-preview-run` is required here for the same reason.** `review-loop` has its own
+report-only preview-spec run at exit (its Step 1.6). This phase's
+[Spec Rehearsal](#spec-rehearsal-optional-ui-tasks-only) already runs the same specs
+against the same preview deployment, so letting the loop also run them would double the
+`aw-tester` dispatch for no new signal. This phase owns the rehearsal; the loop opts out.
+
+This covers only the **direct** review-loop call above. Phase 6 invokes `create-pr`
+bare, and `create-pr` Step 6.5 runs `review-loop --no-ci` **without** `--no-preview-run`,
+so Step 1.6 can also fire once in Phase 6. That is not a second real dispatch: at Phase 6
+the just-opened draft's preview is not deployed yet, so Step 1.6 returns `inconclusive`
+without running `aw-tester`. Phase 7's Spec Rehearsal is the authoritative run.
 
 ### Step 2.5: Re-check CI if `review-loop` pushed
 
