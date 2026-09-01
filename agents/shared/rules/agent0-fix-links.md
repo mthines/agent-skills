@@ -94,15 +94,16 @@ proxy is: nginx's default `large_client_header_buffers 4 8k` requires the whole 
 guard therefore sat exactly on that cliff — a 7999-char link passed and then 414'd. The often-quoted
 "2048 everywhere" is IE's 2083 in disguise and no longer binds a known modern host.
 
-Neither prompt embeds a finding *body*; both embed the finding **locations**, which are known at
-build time and are what turns a multi-call discovery hunt into one fetch (§ Prompt templates). The
-**Fix all** URL therefore scales with the finding count: measured worst case at the 15-location cap,
-with pathological 94-character paths, is ~2350 chars; a typical PR lands nearer 1700, and a
-three-finding PR near 850. **Fix this** is ~650 with a full-length lead line. The figures are not
-guesses — L1 `G32d` fills the live template and measures it (the `&utm_source=...` tag from § Click
-attribution is a small, fixed addition on top and does not change which side of the 2500 target
-either shape lands on), so a clause added here is measured on the next run. If a template ever needs
-to grow past the 2500 target, cut the location cap — do not raise `MAX_URL`.
+Neither prompt embeds a finding *body*. **Fix this** embeds one finding's own `{path}:{line}`; **Fix
+all** embeds no per-finding data at all — instead it embeds `{bot_login}` and a fixed, ready-to-run
+GitHub GraphQL query (§ Prompt templates) that returns every one of this reviewer's threads, resolved
+state included, in a single call. That makes the **Fix all** URL length **independent of the finding
+count** — it no longer grows with how many findings are open, which is what let a large PR's worklist
+crowd the 2500 target before. Measured from the live template with a realistic owner/repo/login: ~980
+chars, flat regardless of `{count}`. **Fix this** is ~880 at its worst case (a 94-char path plus the
+full 240-char lead cap). The figures are not guesses — L1 `G32d` fills the live template and measures
+it (the `&utm_source=...` tag from § Click attribution is a small, fixed addition on top and does not
+move either shape closer to the target), so a clause added here is measured on the next run.
 
 ## Click attribution
 
@@ -129,9 +130,10 @@ to be resolved — a marker to scan for, an unnamed "the reviewer", a location t
 round trip before the first edit. A prompt carries only what Agent0 cannot infer, but it carries
 *that* in fetchable form.
 
-**Neither prompt embeds a finding body.** Bodies are re-read live at the locations given, so a
-finding edited after the button was built is never stale, and no third-party text rides into the
-URL. `{branch}` is omitted (Agent0 resolves the PR's head branch from `#{n}`). Do not re-add the old
+**Neither prompt embeds a finding body.** Bodies are re-read live — **Fix this** from the inline
+comment at its given location, **Fix all** from the `body` field the embedded GraphQL query itself
+returns — so a finding edited after the button was built is never stale, and no third-party text
+rides into the URL. `{branch}` is omitted (Agent0 resolves the PR's head branch from `#{n}`). Do not re-add the old
 boilerplate ("You are fixing one code-review finding…", the `<finding>` wrapper, an embedded
 `{body}`) — it roughly doubled the URL for no added clarity.
 
@@ -139,7 +141,7 @@ boilerplate ("You are fixing one code-review finding…", the `<finding>` wrappe
 subject without a fetch and reads the live comment only for the fix detail:
 
 ```text
-Fix the pr-reviewer finding at {path}:{line} on {owner}/{repo}#{n} — "{lead}" — read its inline review comment for the details. Verify using the repo's own lint/typecheck scripts — never a raw tsc/eslint call or a whole-repo pass — skip verification if none exist — then commit to the same branch (no new PR).
+Fix the pr-reviewer finding at {path}:{line} on {owner}/{repo}#{n} — "{lead}". Read the inline comment there for detail. Verify using the repo's own lint/typecheck scripts — never a raw tsc/eslint call or a whole-repo pass — skip verification if none exist — then commit to the same branch (no new PR).
 ```
 
 `{lead}` is the finding's own first line as posted (the Conventional-Comments prefix plus its first
@@ -151,25 +153,35 @@ only on POST, so it is not known when the button's own body is built, and `pr-re
 an inline comment after posting to inject it. `{path}:{line}` is known at build time and points
 Agent0 at the same comment.
 
-**Fix all** (report) — hands over the whole worklist by location, scoped to the reviewer's OWN
-findings:
+**Fix all** (report) — hands Agent0 a ready-to-run query instead of a worklist, scoped to the
+reviewer's OWN findings by an exact login match:
 
 ```text
-Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, at: {locations}. Read the inline review comments at those locations for the details (GET /repos/{owner}/{repo}/pulls/{n}/comments). Then sweep for any other unresolved thread by that same reviewer and fix it too. Ignore every other author. Verify using the repo's own lint/typecheck scripts — never a raw tsc/eslint call or a whole-repo pass — skip verification if none exist — then commit to the same branch (no new PR).
+Fix the {count} open pr-reviewer findings on {owner}/{repo}#{n}, authored by {bot_login}. List them with: gh api graphql -f query='{repository(owner:"{owner}",name:"{repo}"){pullRequest(number:{n}){reviewThreads(first:100){nodes{isResolved comments(first:1){nodes{path line body author{login}}}}}}}}' — keep only isResolved:false nodes whose comment author.login is "{bot_login}", ignore every other author. Verify using the repo's own lint/typecheck scripts — never a raw tsc/eslint call or a whole-repo pass — skip verification if none exist — then commit to the same branch (no new PR).
 ```
 
-- `{locations}` — comma-separated `{path}:{line}`, **capped at 15** (the cap that keeps the worst-case
-  URL inside the 2500 target above). Past the cap, append ` (+{overflow} more)` after the list rather
-  than growing the URL — the sweep clause already tells Agent0 to find them, so do not restate it
-  here. Blocking findings are cap-exempt inline, so the count can exceed 15.
-- `{count}` — the full open-finding count including any overflow, so Agent0 can tell when it is done.
+- `{bot_login}` — this agent's own login, already resolved earlier in the run by the same identity
+  ladder `prior-comment-awareness.md` uses (`ME` from Step 0.5, falling back to the PR-state record's
+  `bot_login` from Step 0.7) — never a fresh API call to fill this slot, and never the PR author or
+  any other third party. **Omit the Fix-all button entirely** when both rungs come back empty: an
+  unresolved login has no safe filter value, and a wrong or empty one would either widen the query to
+  every author or match nothing.
+- `{count}` — the full open-finding count, so Agent0 can tell when it is done.
+- The embedded `gh api graphql` call replaces what used to be a REST list plus a fallback sweep in one
+  step. GitHub's REST comments endpoint has no `isResolved` field — only GraphQL's `reviewThreads`
+  does — so a login-filtered REST call still cannot tell Agent0 which of this reviewer's threads are
+  already closed; it would need a second GraphQL round trip to find out. Handing over the exact query
+  removes that round trip **and** the need for Agent0 to compose its own — it runs the command as
+  given rather than discovering or reconstructing it, which is the concrete "no wasted time" property
+  this template is designed for. Because the query is fixed text, not a per-finding list, the URL
+  no longer grows with the finding count.
 
-**Fix all — CI-only** (report, empty worklist) — the report can read WARN with **zero** findings:
+**Fix all — CI-only** (report, `{count}` is 0) — the report can read WARN with **zero** findings:
 Gate 2 (CI) is soft-warning-only (`pr-reviewer.md § Gate states`), so a PR with a clean Gate 6 (code
-review) and a red CI check has nothing in the finding worklist to hand Agent0 a `{path}:{line}` for,
-yet the report is visibly not a clean pass. Omitting the button in that case leaves the one state a
-human is most likely to click "fix" on with no button to click. Use this template instead of the
-findings-based one when `{locations}` would be empty but CI is not green:
+review) and a red CI check has nothing for Agent0 to fix via the findings-based prompt above, yet the
+report is visibly not a clean pass. Omitting the button in that case leaves the one state a human is
+most likely to click "fix" on with no button to click. Use this template instead of the findings-based
+one when `{count}` would be 0 but CI is not green:
 
 ```text
 Fix the failing CI checks on {owner}/{repo}#{n} — {failing_checks}. View the failing job's logs for the cause. Verify using the repo's own lint/typecheck/test scripts, scoped to what the failing check touches — never a raw tsc/eslint/test-runner call or a whole-repo pass — skip verification if none exist. Then commit a fix scoped to the files this PR changed (no new PR).
@@ -178,36 +190,37 @@ Fix the failing CI checks on {owner}/{repo}#{n} — {failing_checks}. View the f
 - `{failing_checks}` — the same failing check names already surfaced in the report's `CI_NOTE` slot
   (`report-rendering.md`) — reuse that value verbatim, do not re-derive it from a second CI query.
 
-This template is never used when the worklist is non-empty, even if CI is also red: a CI failure the
-diff demonstrably causes is filed as a Gate 6 finding on the reviewer's own evidence (`pr-reviewer.md
-§ Gate states`), which already has a `{path}:{line}` and belongs in the findings-based prompt above,
-not this one. It is also never used for a Gate-1-only warning (description vs. code) with clean CI
-and an empty worklist — that gate is about the human-authored PR description, not something an
-autonomous code-fix run can act on, so no Fix-all button renders for a Gate-1-only WARN.
+This template is never used when `{count}` is non-zero, even if CI is also red: a CI failure the diff
+demonstrably causes is filed as a Gate 6 finding on the reviewer's own evidence (`pr-reviewer.md
+§ Gate states`), which belongs in the findings-based prompt above, not this one. It is also never used
+for a Gate-1-only warning (description vs. code) with clean CI and `{count}` at 0 — that gate is about
+the human-authored PR description, not something an autonomous code-fix run can act on, so no Fix-all
+button renders for a Gate-1-only WARN.
 
-**The sweep goes after the list, never before it.** Handing over `{locations}` is what removes the
-discovery round trips; the sweep is a completeness net for what the list cannot carry — findings
-past the 15 cap, a thread opened between the render and the click, and anything a payload bug drops.
-Both halves are needed: the list alone can be incomplete, and the sweep alone is the four-call
-discovery hunt this template was rewritten to eliminate. Moving the sweep to the front re-creates
-that hunt with extra steps, so keep the order — known work first, sweep second.
+**Why an exact login match, and not a natural-language "that same reviewer".** An earlier revision of
+this template handed Agent0 a list of locations and told it to resolve authorship from the comments at
+those locations — a `{login}` placeholder was ruled out at the time because the reviewer's own login
+was not reliably known at build time (`/user` 401s on some access paths). That gap has since closed:
+`{bot_login}` now reuses the identity ladder `prior-comment-awareness.md` already resolves earlier in
+the run (`ME`, falling back to the PR-state record's `bot_login`), so the exact login is normally on
+hand with no new call. When it genuinely is not — both rungs empty — the button is omitted rather than
+sent with a placeholder value, per the `{bot_login}` note in § Prompt templates above; an empty or
+wrong login would either match nothing or widen the filter to every author.
 
-It is scoped by **author**, not by login: *"that same reviewer"* resolves against the authors of the
-comments at `{locations}`, which Agent0 has just read. Do not substitute a `{login}` placeholder —
-the reviewer's own login is not reliably resolvable at build time (`/user` 401s on some access
-paths), and a wrong or empty login would either widen the sweep to every author or void it entirely.
-
-**Do not send Agent0 to the report comment first.** The earlier template opened with *"open the
+**Do not send Agent0 to the report comment first.** An earlier template opened with *"open the
 pr-reviewer report comment (marker `PR_REVIEWER_REPORT`)"*, which cost a list-and-scan over every
-issue comment plus a read, and returned prose rather than a worklist. Worse, it is structurally
-stale at exactly the moment the button matters: Gate 3 counts *prior* open threads, and this run's
-own findings post at Step 4b **after** the report renders at Step 4a — so a run whose findings are
-all new renders a report saying "No open review threads" directly above a Fix-all button for N of
-them. Observed on `mthines/lorekit#594`: four discovery calls before the first edit, one of which
-told Agent0 there was nothing to fix.
+issue comment plus a read, and returned prose rather than a worklist. Worse, it was structurally stale
+at exactly the moment the button mattered: Gate 3 counts *prior* open threads, and this run's own
+findings post at Step 4b **after** the report renders at Step 4a — so a run whose findings are all new
+rendered a report saying "No open review threads" directly above a Fix-all button for N of them.
+Observed on `mthines/lorekit#594`: four discovery calls before the first edit, one of which told
+Agent0 there was nothing to fix. The `gh api graphql` call above is the direct-fetch replacement for
+that hop — one command, filtered server-side to this reviewer's own threads with resolution state
+included, so there is nothing left to discover.
 
-Scoping **Fix all** to the reviewer's own findings is both product and safety: it never asks Agent0
-to act on another author's comment, so no untrusted text drives the auto-submitted run.
+Scoping **Fix all** to the reviewer's own findings, by exact login rather than inference, is both
+product and safety: it never asks Agent0 to act on another author's comment, so no untrusted text
+drives the auto-submitted run.
 
 **Verify with the repo's own scripts, never a raw tool call.** All three prompts (Fix this, Fix all,
 Fix all — CI-only) keep a verification guardrail — the cheapest line that stops a broken auto-commit
@@ -268,8 +281,9 @@ button source lives in `agents/pr-reviewer/assets/*.svg`.
 - **Fix this** embeds one line of text and it is always the reviewer's **own** — the finding's lead
   line, authored by this agent under `comment-shape.md`'s caps, never a quoted third party. The fix
   detail is still read live from the inline comment.
-- The **Fix all** prompt embeds no comment text at all — only `{path}:{line}` locations the reviewer
-  itself produced — and tells Agent0 to ignore every other author, so a hostile comment from a third
-  party cannot ride into the run.
+- The **Fix all** prompt embeds no comment text and no per-finding data at all — only the reviewer's
+  own login and a fixed, read-only GraphQL query — and tells Agent0 to ignore every other author, so
+  a hostile comment from a third party cannot ride into the run, and the exact-login filter means no
+  other author's thread is ever touched.
 - The deep link is a plain `https://app.dash0.com` URL; the renderer validates it as `http(s)` like
   every other URL slot.

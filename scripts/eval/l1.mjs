@@ -2527,22 +2527,23 @@ const isPollBlock = (block) =>
     noSource.status !== 0 && noSource.stdout === "" && /source must be one of/.test(noSource.stderr),
     `status=${noSource.status} stdout=${JSON.stringify(noSource.stdout)} stderr=${noSource.stderr}`);
 
-  // G32: the Agent0 prompt templates are addresses, not identities. Both hand Agent0 the finding
-  // locations it would otherwise spend round trips discovering — the regression this guards is a
-  // revert to the marker hop ("open the pr-reviewer report comment (marker PR_REVIEWER_REPORT)"),
-  // which cost four discovery calls on mthines/lorekit#594 and is structurally stale: Gate 3 counts
-  // PRIOR threads, while the run's own findings post at 4b after the 4a render. The templates carry
-  // no code, so a fixture cannot cover them; assert the placeholders plus the length bound that
-  // embedding a variable-length worklist trades away.
+  // G32: the Agent0 prompt templates are addresses, not identities. Fix-this hands Agent0 the one
+  // location it would otherwise spend a round trip discovering; Fix-all hands Agent0 a ready-to-run
+  // GraphQL command scoped to its own login, rather than a per-finding location list — the regression
+  // this guards is a revert to the marker hop ("open the pr-reviewer report comment (marker
+  // PR_REVIEWER_REPORT)"), which cost four discovery calls on mthines/lorekit#594 and is structurally
+  // stale: Gate 3 counts PRIOR threads, while the run's own findings post at 4b after the 4a render.
+  // The templates carry no code, so a fixture cannot cover them; assert the placeholders plus the
+  // length bound the fixed-query design buys back.
   const rule = readFileSync(join(REPO_ROOT, "agents/shared/rules/agent0-fix-links.md"), "utf8");
   const templates = [...rule.matchAll(/```text\n([^`]*?)\n```/g)].map((m) => m[1]);
-  const fixAll = templates.find((t) => t.includes("{locations}"));
-  const fixThis = templates.find((t) => t.includes("{path}:{line}") && !t.includes("{locations}"));
+  const fixAll = templates.find((t) => t.includes("{bot_login}") && t.includes("gh api graphql"));
+  const fixThis = templates.find((t) => t.includes("{path}:{line}") && t.includes("{lead}"));
   const ciOnly = templates.find((t) => t.includes("{failing_checks}"));
 
-  s.check("G32a the Fix-all template hands over the worklist by location ({locations} + {count})",
+  s.check("G32a the Fix-all template carries a ready-to-run query scoped to its own login ({bot_login} + {count} + gh api graphql)",
     !!fixAll && fixAll.includes("{count}"),
-    "no ```text template carries both {locations} and {count} — the worklist fill was dropped");
+    "no ```text template carries {bot_login}, {count}, and a gh api graphql call — the ready-to-run query fill was dropped");
 
   s.check("G32b no template sends Agent0 to the report comment by marker first",
     !templates.some((t) => t.includes("PR_REVIEWER_REPORT")),
@@ -2552,39 +2553,53 @@ const isPollBlock = (block) =>
     !!fixThis && fixThis.includes("{lead}"),
     "the fix-this template lost {lead} — Agent0 is back to fetching before it knows the subject");
 
-  // Worst case the cap allows: 15 locations at 94-char paths. The design target is 2500 — the point
-  // of the target is that MAX_URL (4000) stays a fail-closed guard rather than a routine ceiling,
-  // since the real cliff behind it is the 8k request-line buffer of a default nginx/Apache.
-  // Filled from the LIVE template, never hand-copied: a transcribed copy silently stops measuring
-  // the real prompt the moment the template gains a clause, which is exactly when the measurement
-  // matters. Substitute the placeholders a real fill would.
+  // The Fix-all template embeds no per-finding data, so its length no longer scales with the open
+  // finding count — {count} is just a number substitution. The design target is 2500 — the point of
+  // the target is that MAX_URL (4000) stays a fail-closed guard rather than a routine ceiling, since
+  // the real cliff behind it is the 8k request-line buffer of a default nginx/Apache. Filled from the
+  // LIVE template, never hand-copied: a transcribed copy silently stops measuring the real prompt the
+  // moment the template gains a clause, which is exactly when the measurement matters.
   const TARGET = 2500;
-  const worstLocations = Array.from({ length: 15 },
-    (_, i) => `${"packages/service/src/features/nested/module".padEnd(86, "x")}-${i}.ts:${1200 + i}`).join(", ");
-  const worst = (fixAll ?? "")
+  const fillTemplate = (t, count) => (t ?? "")
     .replaceAll("{owner}", "mthines").replaceAll("{repo}", "lorekit")
-    .replaceAll("{n}", "594").replaceAll("{count}", "15")
-    .replaceAll("{locations}", worstLocations);
-  s.check("G32d0 the worst-case fill leaves no unsubstituted placeholder",
-    worst !== "" && !/\{[a-z_]+\}/.test(worst),
-    `template gained a placeholder this fill does not substitute: ${/\{[a-z_]+\}/.exec(worst)?.[0] ?? "(no template)"}`);
-  const worstLen = buildLink(worst, "production", "fix-all").length;
-  s.check(`G32d a worst-case 15-location Fix-all URL stays under the ${TARGET}-char design target`,
-    worstLen < TARGET, `worst-case URL is ${worstLen} chars — lower the location cap in agent0-fix-links.md, do not raise MAX_URL`);
+    .replaceAll("{n}", "594").replaceAll("{count}", String(count))
+    .replaceAll("{bot_login}", "dash0-dev[bot]");
+  const filledLow = fillTemplate(fixAll, 1);
+  const filledHigh = fillTemplate(fixAll, 999);
+  // A generic /\{[a-z_]+\}/ scan false-positives on the GraphQL query's own field selections (e.g.
+  // `author{login}` is valid query syntax, not an unsubstituted template placeholder), so check the
+  // known placeholder names this fill is supposed to substitute rather than any brace-wrapped word.
+  const KNOWN_PLACEHOLDERS = ["{owner}", "{repo}", "{n}", "{count}", "{bot_login}"];
+  const leftoverPlaceholder = KNOWN_PLACEHOLDERS.find((p) => filledLow.includes(p));
+  s.check("G32d0 the fill leaves no unsubstituted placeholder",
+    filledLow !== "" && !leftoverPlaceholder,
+    `template gained a placeholder this fill does not substitute: ${leftoverPlaceholder ?? "(no template)"}`);
+  const lenLow = buildLink(filledLow, "production", "fix-all").length;
+  const lenHigh = buildLink(filledHigh, "production", "fix-all").length;
+  s.check(`G32d a filled Fix-all URL stays under the ${TARGET}-char design target`,
+    lenLow < TARGET, `filled URL is ${lenLow} chars — the fixed-query design should sit far under ${TARGET}; a per-finding list crept back in`);
 
-  s.check("G32e the rule caps the Fix-all location list at 15",
-    /capped at 15/.test(rule), "agent0-fix-links.md no longer states the 15-location cap G32d assumes");
+  s.check("G32e the Fix-all URL length does not grow with the finding count",
+    Math.abs(lenHigh - lenLow) <= 4,
+    `a count=1 fill is ${lenLow} chars and a count=999 fill is ${lenHigh} chars — Fix-all should be flat in finding count (only the digits of {count} may differ), a per-finding list crept back in`);
 
-  // The embedded worklist can be incomplete — findings past the 15 cap, a thread opened between the
-  // render and the click, a payload bug. The sweep is the completeness net, and it must come AFTER
-  // the locations: in front of them it is the four-call discovery hunt G32b exists to prevent.
-  s.check("G32h the Fix-all template sweeps for the same reviewer's other unresolved threads",
-    !!fixAll && /sweep for any other unresolved thread by that same reviewer/.test(fixAll),
-    "Fix-all lost the sweep clause — findings past the location cap, or opened after the render, go unfixed");
+  // The embedded GraphQL query is the single source of truth for "what's still open" — it must scope
+  // to the reviewer's own login twice (once in the lead sentence, once in the filter clause) rather
+  // than an inferred "that same reviewer", and it must actually check isResolved so Agent0 never
+  // touches an already-closed thread.
+  s.check("G32h the Fix-all template's query checks isResolved and filters to {bot_login}'s own comments",
+    !!fixAll && /isResolved/.test(fixAll) && (fixAll.match(/\{bot_login\}/g) ?? []).length >= 2,
+    "Fix-all lost the isResolved check or the {bot_login} filter — Agent0 can no longer tell open threads from closed ones, or from another author's, without a second call");
 
-  s.check("G32i the sweep follows the location list rather than preceding it",
-    !!fixAll && fixAll.indexOf("sweep") > fixAll.indexOf("{locations}"),
-    "the sweep moved ahead of {locations} — that is the discovery hunt again, with extra steps");
+  s.check("G32i the Fix-all template's GraphQL query has balanced braces",
+    !!fixAll && (() => {
+      const q = /query='(\{.*?\})'/.exec(fixAll)?.[1] ?? "";
+      if (!q) return false;
+      const opens = (q.match(/\{/g) ?? []).length;
+      const closes = (q.match(/\}/g) ?? []).length;
+      return opens > 0 && opens === closes;
+    })(),
+    "the embedded gh api graphql query is missing or has unbalanced braces — Agent0 would run a broken command verbatim");
 
   // The Agent0 runner lacks the headroom for a raw tsc/eslint invocation — even one scoped to a
   // single changed package still walks that package's whole project graph and crashes the run, so
