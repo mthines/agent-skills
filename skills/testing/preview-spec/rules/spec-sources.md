@@ -16,12 +16,30 @@ Reuse it. Regenerating from the diff produces a second, divergent description of
 
 Check these sources in priority order. The first that exists wins; fall through to generating from the diff only when none do.
 
+## Two artifacts, two lifetimes
+
+`.agent/{branch}/specs.md` and the PR-body block are **different files with different lifetimes**. Do not conflate them.
+
+| Artifact | Lifetime | Who reads it |
+| --- | --- | --- |
+| `.agent/{branch}/specs.md` | Gitignored, local to the worktree. Exists only during the aw run that wrote it. | The aw executor (Phase 4, against a local target) and Phase 7 Spec Rehearsal (against the preview) — both inside that same run. |
+| The `<!-- preview-spec:v1 -->` block in the PR body | Committed to GitHub as part of the PR description. Outlives the run and survives a fresh checkout. | `preview-spec run` and any on-demand agent, in any later session. |
+
+`author` is the **one-way bridge** between them. It runs during the aw flow, while `specs.md` still exists in the worktree, and copies that content into the committed PR body. That is why the gitignore never breaks verification: the durable artifact is the PR block, `run` reads **only** the PR block (never `specs.md`), and `specs.md` itself is never committed — only its lifted content reaches GitHub.
+
+So both uses are supported, and they are separate:
+
+- **Local verification during the aw run** reads `specs.md` directly (Phase 4, Phase 7). Fast, in-worktree, no PR needed.
+- **Verification against the PR** reads the committed block (`preview-spec run`). Portable, checkout-independent, repeatable after the run ends.
+
 ## Source 1: the autonomous-workflow planner's `specs.md`
 
 Path: `.agent/{branch}/specs.md`.
 
 The autonomous-workflow planner emits this for UI tasks (Phase 1), the executor runs it against a local target at Phase 4, and Phase 7 re-runs it against the preview deployment.
 It is written in **`aw-tester`'s grammar — the same grammar this skill's block uses** — so reuse is a lift, not a translation.
+
+The file is gitignored, but this works because `author` runs during the same aw flow (Phase 6), where the worktree still holds `specs.md`. You are reading a local file and writing its content into the committed PR body — see [Two artifacts, two lifetimes](#two-artifacts-two-lifetimes). A standalone `author` on a fresh checkout finds no `specs.md` and falls through to [Source 3](#source-3-generate-from-the-diff).
 
 How to reuse:
 
