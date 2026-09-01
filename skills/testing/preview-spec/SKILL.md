@@ -65,7 +65,7 @@ Parse `$ARGUMENTS`. The first token selects the operation.
 
 | Operation | Trigger | What it does |
 | --- | --- | --- |
-| `author` | first token `author`, or delegated from `create-pr` | Generate the spec for the diff and inject the marked collapsed block into the PR body. Reads memory first. |
+| `author` | first token `author`, or delegated from `create-pr` | Seed the spec from an existing source (the aw planner's `specs.md`, a `/fix-bug` repro) or generate it from the diff, then inject the marked collapsed block into the PR body. Reads memory first. |
 | `run` | first token `run` | Extract the block from the PR, resolve the preview URL, dispatch `aw-tester`, report the verdict, write lessons. |
 
 If no operation token is present, default to `author` when a diff or branch context is in scope, and `run` when only a PR reference is given.
@@ -82,8 +82,11 @@ The commands below are the `gh`-path form.
 Inject one collapsed, marked UI verification spec into the PR body.
 
 1. **Read memory first.** Load spec-authoring lessons and locator lessons per [`rules/memory.md § Read at author time`](./rules/memory.md). These tell you the app's navigation quirks and stable locators before you write a single step.
-2. **Read the diff.** Identify the changed screens, components, and user-visible behavior. `git diff <base>...HEAD --name-status` plus the relevant file contents.
-3. **Write the spec** in `aw-tester`'s grammar, one `## Spec N:` block per user-visible behavior the diff changes. Prefer role-and-name locators; use `{testid: …}` only as an escape hatch. Keep it to the behaviors a reviewer would actually click through — 1 to 3 specs, not an exhaustive suite.
+2. **Reuse an existing spec source when present.** Before writing anything, check for a spec artifact the surrounding flow already produced, in priority order (full contract: [`rules/spec-sources.md`](./rules/spec-sources.md)):
+   - `.agent/{branch}/specs.md` — the autonomous-workflow planner's `aw-tester` specs, already run locally at Phase 4. Same grammar: lift its `## Spec N:` blocks verbatim.
+   - A `/fix-bug` reproduction artifact for a UI or visual bug — an `e2e-testing` flow or a `repro/<id>.md` checklist. Adapt its steps into the grammar.
+   When a source is found, seed the block from it and skip step 3, so the PR block matches what was verified locally rather than a second, divergent description of the same behavior.
+3. **Otherwise, write the spec from the diff.** Read the diff (`git diff <base>...HEAD --name-status` plus the relevant files), then write one `## Spec N:` block per user-visible behavior the diff changes, in `aw-tester`'s grammar. Prefer role-and-name locators; use `{testid: …}` only as an escape hatch. Keep it to the behaviors a reviewer would actually click through — 1 to 3 specs, not an exhaustive suite.
 4. **Wrap and inject** the spec in the marked collapsed block per [`rules/spec-format.md`](./rules/spec-format.md), and write it into the PR body with `gh pr edit --body`, preserving everything already there.
 
 The block is **exempt from the `create-pr` description length ceiling** and is **preserved verbatim** by `review-loop`'s body refresh — both rules live in [`rules/spec-format.md`](./rules/spec-format.md) and in the [description contract](../../delivery/create-pr/rules/description-contract.md).
