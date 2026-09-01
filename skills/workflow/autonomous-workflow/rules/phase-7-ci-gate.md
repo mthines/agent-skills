@@ -436,6 +436,12 @@ report-only preview-spec run at exit (its Step 1.6). This phase's
 against the same preview deployment, so letting the loop also run them would double the
 `aw-tester` dispatch for no new signal. This phase owns the rehearsal; the loop opts out.
 
+This covers only the **direct** review-loop call above. Phase 6 invokes `create-pr`
+bare, and `create-pr` Step 6.5 runs `review-loop --no-ci` **without** `--no-preview-run`,
+so Step 1.6 can also fire once in Phase 6. That is not a second real dispatch: at Phase 6
+the just-opened draft's preview is not deployed yet, so Step 1.6 returns `inconclusive`
+without running `aw-tester`. Phase 7's Spec Rehearsal is the authoritative run.
+
 ### Step 2.5: Re-check CI if `review-loop` pushed
 
 `review-loop` **pushes** — sub-step B commits applied findings and sub-step C commits

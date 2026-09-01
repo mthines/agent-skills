@@ -648,7 +648,7 @@ Open threads at exit: <count>
 CI at exit: <green | pending | red (<failing check names>) | error (<verbatim query failure>) | not run (--no-ci) | none on this repo>
   ci-auto-fix handoffs: <CI_HANDOFFS> of 2
 
-Preview spec: <green (<N> specs on <url>) | red (<N> failing on <url>) — review before undrafting | inconclusive (preview not deployed at exit) | not run (no preview-spec block) | skipped (--no-preview-run) | skipped (preview-spec not available)>
+Preview spec: <green (<N> specs on <url>) | red (<N> failing on <url>) — review before undrafting | inconclusive (preview not deployed at exit) | not run (no preview-spec block) | skipped (--no-preview-run) | skipped (--no-feedback) | skipped (preview-spec not available)>
 
 PR description: <refreshed | unchanged (no code applied) | skipped (--no-refresh)>
 Linear note: <posted <ticket> | no ticket linked | Linear MCP unavailable | skipped>
