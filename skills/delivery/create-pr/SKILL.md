@@ -100,7 +100,7 @@ When the diff touches the UI, attach a collapsed, machine-findable verification 
 **Skip this step** when any of the following hold:
 
 - `--no-preview-spec` or `--no-quality` is in `$ARGUMENTS`.
-- The diff does **not** touch the UI. Heuristic: no changed file matches `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `*.css`, `*.scss`, `*.stories.*`, or a component directory. Test-only and config-only changes to those files do not count. A repo may widen or narrow this via its review-config.
+- The diff does **not** touch the UI. Heuristic: no changed file matches `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `*.css`, `*.scss`, `*.stories.*`, or a component directory. Test-only and config-only changes to those files do not count.
 - `preview-spec` is not installed (`Skill()` raises — catch, log one line, continue).
 
 Otherwise delegate — do not author the block by hand:
