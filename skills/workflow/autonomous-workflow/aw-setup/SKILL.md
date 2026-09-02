@@ -149,14 +149,19 @@ Behaviour depends on the strategy picked in Phase B:
 
 | Strategy | Probe command | Expected outcome |
 |----------|---------------|------------------|
-| (a) Interactive headful capture | `AUTH_LOGIN_URL=... AUTH_STORAGE_STATE=./.auth/local.json node scripts/auth-bootstrap-headful.mjs` | Headful browser opens. User logs in. `.auth/local.json` is written when the user closes the browser (or hits a `POST_LOGIN_URL_PATTERN`). |
-| (b) Automated credentials | `AUTH_LOGIN_URL=... AUTH_STORAGE_STATE=./.auth/local.json AUTH_POST_LOGIN_URL_PATTERN='/dashboard' E2E_EMAIL=... E2E_PASSWORD=... node scripts/auth-bootstrap-credentials.mjs` | Headless run. `.auth/local.json` written on success. Script exits non-zero with a diagnostic if locators or credentials are wrong. |
-| (c) Existing bootstrap command | `timeout 30 <user-provided command>` | The user's command produces `.auth/local.json`. |
+| (a) Interactive headful capture | `AUTH_LOGIN_URL=... AUTH_STORAGE_STATE=<storage_state path> node scripts/auth-bootstrap-headful.mjs` | Headful browser opens. User logs in. `<storage_state path>` is written when the user closes the browser (or hits a `POST_LOGIN_URL_PATTERN`). |
+| (b) Automated credentials | `AUTH_LOGIN_URL=... AUTH_STORAGE_STATE=<storage_state path> AUTH_POST_LOGIN_URL_PATTERN='/dashboard' E2E_EMAIL=... E2E_PASSWORD=... node scripts/auth-bootstrap-credentials.mjs` | Headless run. `<storage_state path>` written on success. Script exits non-zero with a diagnostic if locators or credentials are wrong. |
+| (c) Existing bootstrap command | `timeout 30 <user-provided command>` | The user's command produces `<storage_state path>`. |
 | (d) None | (skip — no auth) | n/a |
 | (e) Manual | (skip — aw-tester will skip authed specs) | n/a |
 
+`<storage_state path>` is `.auth/local.json` by default. When
+[Reuse before you scaffold](#reuse-before-you-scaffold) detected an existing
+convention, substitute its path instead (e.g. `.browser/auth-state.json`) —
+do not probe against the default path when a convention was found.
+
 Then for every strategy except (d) / (e):
-1. Verify `.auth/local.json` was written.
+1. Verify `<storage_state path>` was written.
 2. Load one fixture URL (base_url + `/`) and confirm it renders (HTTP 200 and
    the page title is not an error page).
 3. If the probe fails, report the error and loop back to Phase B.
