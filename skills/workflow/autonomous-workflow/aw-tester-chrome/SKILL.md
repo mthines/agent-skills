@@ -1,15 +1,18 @@
 ---
 name: aw-tester-chrome
 description: >
-  In-session spec runner — the Chrome sibling of the aw-tester agent. Reads the
-  same specs.md and aw-target.yml, drives the claude-in-chrome extension
-  interactively (navigate → read → act → assert, seeing the page between steps),
-  and emits the same compact verdict block. Runs in the current session against
-  an already-logged-in Chrome — faster than the Playwright sub-agent for local
-  runs, but needs the browser extension so it does not work in remote / CI envs.
-  Invoke via `preview-spec run --driver chrome`, or directly with a specs.md path
-  and an aw-target. Falls back to aw-tester when the extension is not connected.
+  Runs UI verification specs in-session through the claude-in-chrome extension —
+  the Chrome sibling of the aw-tester agent. Reads the same specs.md and
+  aw-target.yml, drives Chrome interactively (navigate → read → act → assert,
+  seeing the page between steps), and emits the same compact verdict block. Runs
+  in the current session against an already-logged-in Chrome, so it is faster
+  than the Playwright sub-agent for local runs, but it needs the browser
+  extension and does not work in remote / CI envs. Falls back to aw-tester when
+  the extension is not connected. Triggers on "run the spec in chrome", "verify
+  with the chrome driver", "aw-tester-chrome", or a "preview-spec run
+  --driver chrome" dispatch.
 disable-model-invocation: false
+argument-hint: '[specs-path] [aw-target] [--all|--bail-on-first-red]'
 license: MIT
 metadata:
   author: mthines
@@ -52,7 +55,7 @@ the contract wins.
 If the `mcp__claude-in-chrome__*` tools are deferred, load the set you need in
 one call:
 
-```
+```text
 ToolSearch "select:mcp__claude-in-chrome__tabs_context_mcp,mcp__claude-in-chrome__navigate,mcp__claude-in-chrome__read_page,mcp__claude-in-chrome__find,mcp__claude-in-chrome__get_page_text,mcp__claude-in-chrome__computer,mcp__claude-in-chrome__form_input,mcp__claude-in-chrome__read_network_requests,mcp__claude-in-chrome__tabs_create_mcp"
 ```
 
@@ -73,7 +76,7 @@ notes: claude-in-chrome extension not connected — re-run with --driver playwri
 
 ### 3. Read cross-run lessons
 
-```
+```text
 memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-tester-lessons"], limit: 50 }
 memory.list { scope: "global",               tags: ["loop::aw-tester-lessons"], limit: 50 }
 ```
