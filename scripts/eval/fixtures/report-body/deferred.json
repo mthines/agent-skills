@@ -1,0 +1,46 @@
+{
+  "HEADLINE": "Reviewed your changes — **1 error** need attention before human review. Blocking: 1 unanswered blocking review thread.",
+  "RUN": {
+    "mode": "incremental",
+    "sha": "bcea0f9",
+    "prior_sha": "4d1c7ab",
+    "delta_lines": 41,
+    "at": "2026-08-28T11:04:00Z"
+  },
+  "RUN_NOTE": "3 files touched",
+  "GATE_DESCRIPTION_STATUS": "✅",
+  "GATE_DESCRIPTION_DETAILS": "The description matches what the diff does.",
+  "GATE_PRIOR_STATUS": "❌",
+  "GATE_PRIOR_DETAILS": "1 unresolved review thread(s) — see the thread list below",
+  "GATE_DOCS_STATUS": "✅",
+  "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
+  "GATE_SELFREVIEW_STATUS": "✅",
+  "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
+  "GATE_CODEREVIEW_STATUS": "✅",
+  "GATE_CODEREVIEW_DETAILS": "The multi-lens review found no blocking issues.",
+  "OPEN_THREADS": [
+    {
+      "path": "packages/store/src/store-denormalized.ts",
+      "line": 977,
+      "url": "https://github.com/o/r/pull/1#discussion_r4",
+      "ask": "the materialized path keeps root-adjacent edges this prune drops",
+      "blocking": true,
+      "unclearable": true,
+      "author": "cursor",
+      "is_bot": true
+    }
+  ],
+  "MEMORIES_SUMMARY": "148 indexed",
+  "MEMORIES_USED": [
+    {
+      "key": "reviewer-lessons::gate3-open-third-party-bot-threads-make-review-loop-structurally-unable-to-converge",
+      "url": "https://lorekit.io/lore?scope=%22global%22",
+      "note": "structural, seen 2x"
+    }
+  ],
+  "QUALITY": "produced 2 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0",
+  "INTEGRATIONS": "not activated",
+  "OPTIMALITY_LOG": "ran · 1 judged · 1 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
+  "STANDARDS_LOG": "ran · 2 docs · 0 finding(s)",
+  "SKIPPED_FILES": "none"
+}

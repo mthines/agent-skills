@@ -1194,6 +1194,7 @@ function checksInSync(plan, checks) {
   {
     const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
     const FIX = join(REPO_ROOT, "scripts/eval/fixtures/report-body");
+    const REPORT_FIXTURES = ["pass", "warn", "fail", "deferred"];
     const run = (args, input) => {
       const r = spawnSync("node", [RENDER, ...args], { input, encoding: "utf8" });
       return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
@@ -1204,7 +1205,10 @@ function checksInSync(plan, checks) {
 
     // (a) Snapshot parity. A template or renderer change that alters the output must be
     // accompanied by a regenerated snapshot, so the diff shows the reader exactly what moved.
-    for (const name of ["pass", "warn", "fail"]) {
+    // `deferred` is the fourth verdict shape: Gate 3 ❌ on a thread this agent may not resolve,
+    // every other gate green — the run that has nothing of its own to report and must still say
+    // why it is not approving (`reviewer-lessons::gate3-open-third-party-bot-threads-…`).
+    for (const name of REPORT_FIXTURES) {
       const payload = join(FIX, `${name}.json`);
       const expectedPath = join(FIX, `${name}.expected.md`);
       if (!existsSync(payload) || !existsSync(expectedPath)) {
@@ -1219,7 +1223,7 @@ function checksInSync(plan, checks) {
     }
 
     // (b) Structural invariants on every snapshot. These are what the five failed runs broke.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of REPORT_FIXTURES) {
       const p = join(FIX, `${name}.expected.md`);
       if (!existsSync(p)) continue;
       const body = readFileSync(p, "utf8");
@@ -1239,7 +1243,22 @@ function checksInSync(plan, checks) {
     // (c) Fail-closed. Each of these once shipped as a real posted report; the renderer must
     // refuse them, and must print NOTHING on stdout so a piping caller cannot post a fragment.
     const base = JSON.parse(readFileSync(join(FIX, "pass.json"), "utf8"));
-    const mutate = (fn) => { const c = structuredClone(base); fn(c); return JSON.stringify(c); };
+    const mutateRaw = (fn) => { const c = structuredClone(base); fn(c); return JSON.stringify(c); };
+    // `pass.json` grades Gate 3 ✅, which the renderer requires to mean "no open threads" — so a
+    // case that adds OPEN_THREADS to it must re-grade the gate, or every such payload gets
+    // rejected for the Gate-3 contradiction rather than for the thing the case is testing.
+    // Normalized here so each case reads as its own concern; the contradiction guard itself is
+    // exercised by the two `mutateRaw` cases below.
+    const mutate = (fn) => {
+      const c = structuredClone(base);
+      fn(c);
+      if (Array.isArray(c.OPEN_THREADS) && c.OPEN_THREADS.length > 0
+          && c.GATE_PRIOR_STATUS === "✅") {
+        c.GATE_PRIOR_STATUS = "⚠️";
+        c.GATE_PRIOR_DETAILS = "1 unresolved review thread(s) — see the thread list below";
+      }
+      return JSON.stringify(c);
+    };
     const rejects = [
       ["a missing required slot", mutate((c) => { delete c.HEADLINE; })],
       ["an unknown key (typo'd slot)", mutate((c) => { c.HEADLIN = "x"; })],
@@ -1336,6 +1355,23 @@ function checksInSync(plan, checks) {
       ["a markdown link caged in a code span in an optimality card", mutate((c) => {
         c.OPTIMALITY_CARDS = ["### Optimality proposal — a.ts:1\n\n"
           + "``[the docs](https://lorekit.io/lore?x=1)``"];
+      })],
+      // The recommendation is derived from the gate cells, so a payload whose cells contradict its
+      // own open-thread list would render an approval the table does not support. Both directions
+      // are refused. `mutateRaw` on purpose: the normalization in `mutate` exists to keep every
+      // OTHER case off this guard, so these two must bypass it.
+      ["Gate 3 ✅ beside a non-empty open-thread list", mutateRaw((c) => {
+        c.OPEN_THREADS = [{ path: "a.ts", line: 1, url: "https://x.invalid/1", ask: "x" }];
+      })],
+      ["Gate 3 ❌ with no blocking thread to justify it", mutateRaw((c) => {
+        c.GATE_PRIOR_STATUS = "❌";
+        c.GATE_PRIOR_DETAILS = "1 unresolved review thread(s) — see the thread list below";
+        c.OPEN_THREADS = [{ path: "a.ts", line: 1, url: "https://x.invalid/1", ask: "x" }];
+      })],
+      ["a non-boolean unclearable flag", mutate((c) => {
+        c.OPEN_THREADS = [{
+          path: "a.ts", line: 1, url: "https://x.invalid/1", ask: "x", unclearable: "yes",
+        }];
       })],
     ];
     // Only the v1 case is allowed to fail on the unknown-key check. Everything else must fail on
@@ -1465,7 +1501,7 @@ function checksInSync(plan, checks) {
           /^### Optimality proposal — \S+:\d+$/m],
         "Partial-review banner": [/⚠️ \*\*Partial review — tool budget exhausted after \d+ calls; \d+ of \d+ files scanned\.\*\*/, null],
       };
-      for (const name of ["pass", "warn", "fail"]) {
+      for (const name of ["pass", "warn", "fail", "deferred"]) {
         const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
         if (!existsSync(p)) continue;
         const body = readFileSync(p, "utf8");
@@ -1834,7 +1870,7 @@ function checksInSync(plan, checks) {
     // validator, the two disagree about the contract and one of them is wrong.
     // A missing snapshot must FAIL, exactly as an absent posted fixture does in case (a). A bare
     // `continue` here ran zero checks, so deleting all three snapshots would have passed by vacuity.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of ["pass", "warn", "fail", "deferred"]) {
       const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
       if (!existsSync(p)) { s.check(`G26 report-body snapshot ${name}.expected.md present`, false); continue; }
       const r = run(readFileSync(p, "utf8"));
@@ -2077,7 +2113,7 @@ function checksInSync(plan, checks) {
     }
     // The reference fixtures must not demonstrate the shape G27 forbids — G25 diffs them, so a
     // stale fixture locks the forbidden headline in as the expected rendering.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of ["pass", "warn", "fail", "deferred"]) {
       for (const ext of ["json", "expected.md"]) {
         const f = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.${ext}`);
         if (!existsSync(f)) continue;
@@ -2092,7 +2128,7 @@ function checksInSync(plan, checks) {
     // rendering. warn.json read `**2 warning(s)**` while three gates warned (Prior review feedback,
     // Code review, and CI via CI_NOTE), which is exactly the miscount this change introduces the
     // risk of. Derive the counts from the payload and compare them to the rendered headline.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of ["pass", "warn", "fail", "deferred"]) {
       const pj = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.json`);
       if (!existsSync(pj)) { s.check(`G27 fixture ${name}.json present`, false); continue; }
       const d = JSON.parse(readFileSync(pj, "utf8"));
@@ -2125,6 +2161,132 @@ function checksInSync(plan, checks) {
   for (const fm of ["F-nonblocking-thread-fails-gate-3", "F-gate-3-severity-reinvented",
     "F-warn-hides-open-threads"]) {
     s.check(`G24c diagnostic-surface.md registers ${fm}`, prReviewerDiag.includes(fm));
+  }
+
+  // ── G38: the approval recommendation. BEHAVIOURAL where it matters — these EXECUTE the
+  // renderer, because the whole design claim is that the recommendation cannot disagree with the
+  // gate table it is derived from, and only running it can show that. Regression guard for two
+  // lessons at once: `…gate3-open-third-party-bot-threads-…` (an approval silently withheld on a
+  // PR the reviewer found nothing wrong with, because the only ❌ was another bot's thread) and
+  // `…gate-table-says-pass-while-contract-says-fail` (a headline and a gate table telling a
+  // reader two different things — which is what a MODEL-AUTHORED recommendation would reopen).
+  {
+    const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
+    const base = JSON.parse(readFileSync(
+      join(REPO_ROOT, "scripts/eval/fixtures/report-body/pass.json"), "utf8"));
+    const render = (fn) => {
+      const c = structuredClone(base);
+      fn(c);
+      const r = spawnSync("node", [RENDER], { input: JSON.stringify(c), encoding: "utf8" });
+      const line = (r.stdout || "").split("\n").find((l) => l.startsWith("**Recommendation**"));
+      return { ok: r.status === 0, line: line || "", err: (r.stderr || "").trim() };
+    };
+    const openThread = (extra = {}) => ({
+      path: "a.ts", line: 1, url: "https://x.invalid/1", ask: "x", ...extra,
+    });
+
+    // (a) Every gate ✅ ⇒ Approve. No ❌ but a ⚠️ ⇒ an approval that SAYS it is one.
+    s.check("G38a all-clear gates render Approve",
+      render(() => {}).line === "**Recommendation** — ✅ Approve.", render(() => {}).line);
+    {
+      const r = render((c) => { c.GATE_DESCRIPTION_STATUS = "⚠️"; });
+      s.check("G38b a ⚠️ gate still renders an approval, not a withheld verdict",
+        /^\*\*Recommendation\*\* — ✅ Approve with comments\b/.test(r.line), r.line || r.err);
+      s.check("G38b the approve-with-comments form names the warnings as advisory",
+        /nothing blocking; the warnings above are advisory\./.test(r.line), r.line);
+    }
+
+    // (c) A ❌ ⇒ Request changes, and a ⚠️ can never produce one. This is the pair that made the
+    // old report unreadable: the warning count was the only signal, and it looked like a failure.
+    s.check("G38c a ❌ gate renders Request changes",
+      /Request changes/.test(render((c) => { c.GATE_DOCS_STATUS = "❌"; }).line));
+    s.check("G38c a ⚠️ gate never renders Request changes",
+      !/Request changes/.test(render((c) => { c.GATE_CODEREVIEW_STATUS = "⚠️"; }).line));
+
+    // (d) The unclearable-gate form: Gate 3 the only ❌, every open thread one this agent may not
+    // resolve. It must name WHY it is not approving — a bare `Request changes` here is the exact
+    // misread the lesson records (a caller sent hunting for bad code that does not exist).
+    {
+      const r = render((c) => {
+        c.GATE_PRIOR_STATUS = "❌";
+        c.GATE_PRIOR_DETAILS = "1 unresolved review thread(s) — see the thread list below";
+        c.OPEN_THREADS = [openThread({ blocking: true, unclearable: true })];
+      });
+      s.check("G38d the unclearable-gate form is not a bare Request changes",
+        r.ok && r.line !== "**Recommendation** — ❌ Request changes.", r.line || r.err);
+      s.check("G38d it states the review found nothing blocking of its own",
+        /nothing blocking of its own/.test(r.line), r.line);
+      s.check("G38d it names the thread as another reviewer's and unresolvable here",
+        /from another reviewer/.test(r.line) && /cannot resolve/.test(r.line), r.line);
+      // …but only while the review pass actually RAN. A skipped Gate 6 found nothing either way,
+      // and vouching for a pass that did not run is the one overstatement this line can make.
+      const skipped = render((c) => {
+        c.GATE_PRIOR_STATUS = "❌";
+        c.GATE_PRIOR_DETAILS = "1 unresolved review thread(s) — see the thread list below";
+        c.GATE_CODEREVIEW_STATUS = "⏭️";
+        c.GATE_CODEREVIEW_DETAILS = "not evaluated this run";
+        c.OPEN_THREADS = [openThread({ blocking: true, unclearable: true })];
+      });
+      s.check("G38d it drops that claim when the code-review pass was skipped",
+        skipped.ok && !/nothing blocking of its own/.test(skipped.line), skipped.line || skipped.err);
+      s.check("G38d a skipped gate is reported, never counted as clean",
+        /gate not evaluated this run/.test(skipped.line), skipped.line);
+    }
+
+    // (e) A partially-unclearable set gets the clause, not the deferred form: some of these
+    // threads ARE this agent's to close, so "nothing here is mine" would be false.
+    {
+      const r = render((c) => {
+        c.GATE_PRIOR_STATUS = "⚠️";
+        c.GATE_PRIOR_DETAILS = "2 unresolved review thread(s) — see the thread list below";
+        c.OPEN_THREADS = [openThread({ unclearable: true }), openThread({ line: 9 })];
+      });
+      s.check("G38e a partially-unclearable set renders the clause on an approval",
+        /✅ Approve with comments/.test(r.line)
+        && /1 open thread here is another reviewer's/.test(r.line), r.line || r.err);
+    }
+
+    // (f) There is no payload key for it — the property the no-drift claim rests on.
+    for (const key of ["RECOMMENDATION", "RECOMMENDATION_LINE"]) {
+      const r = render((c) => { c[key] = "approve"; });
+      s.check(`G38f supplying ${key} is rejected`, !r.ok && /unknown payload key/.test(r.err),
+        r.ok ? "ACCEPTED" : r.err.slice(0, 80));
+    }
+
+    // (g) The documented forms and the rendered ones are one thing. report-rendering.md's table is
+    // what a run reads to know what its report will say; a renderer edit that moves the wording
+    // without moving the doc leaves the agent describing a report it no longer produces.
+    {
+      const rr = read("agents/pr-reviewer/rules/report-rendering.md");
+      for (const form of [
+        "**Recommendation** — ✅ Approve.",
+        "nothing blocking; the warnings above are advisory.",
+        "this review found nothing blocking of its own",
+      ]) {
+        s.check(`G38g report-rendering.md documents the rendered form ${JSON.stringify(form.slice(0, 40))}`,
+          rr.includes(form));
+      }
+      s.check("G38g report-rendering.md states the recommendation is derived, not supplied",
+        /fully derived/.test(rr) && /unknown-key rejection/.test(rr));
+      s.check("G38g report-rendering.md states it is not a GitHub review state",
+        /never a GitHub review state/.test(rr));
+    }
+
+    // (h) The agent body and the diagnostic surface must both carry the rule, or a future run
+    // reads "terminal-only" in one file and renders the line from another.
+    s.check("G38h pr-reviewer.md defines the recommendation and its three values",
+      /### The recommendation/.test(prReviewer)
+      && /Approve with comments/.test(prReviewer)
+      && /derived, never authored/.test(prReviewer));
+    s.check("G38h pr-reviewer.md keeps the COMMENT event non-goal explicit alongside it",
+      /always use COMMENT/.test(prReviewer)
+      && /does not satisfy branch protection/.test(prReviewer));
+    for (const fm of ["F-recommendation-authored", "F-recommendation-contradicts-gates",
+      "F-unclearable-gate-unnamed", "F-unclearable-guessed"]) {
+      s.check(`G38h diagnostic-surface.md registers ${fm}`, prReviewerDiag.includes(fm));
+    }
+    s.check("G38h reviewer-report-ingest.md documents the Recommendation line as advisory",
+      /\*\*Recommendation\*\* —/.test(read("agents/shared/rules/reviewer-report-ingest.md")));
   }
 }
 

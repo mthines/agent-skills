@@ -24,6 +24,7 @@
       "line": 23,
       "url": "https://github.com/o/r/pull/1#discussion_r1",
       "ask": "the docblock still names filtersToQueryParams",
+      "unclearable": true,
       "author": "umanwizard",
       "is_bot": false
     },
@@ -32,6 +33,7 @@
       "line": 735,
       "url": "https://github.com/o/r/pull/1#discussion_r2",
       "ask": "the advertised bound is 5x what the hop survives",
+      "unclearable": true,
       "author": "cursor",
       "is_bot": true
     }

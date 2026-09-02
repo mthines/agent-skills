@@ -62,9 +62,13 @@ guarantee in *REPORT_BODY format (the sticky comment)* below is void for that ru
 
 ## Non-goals
 
-- Do not approve or request-changes in the GitHub review event — always use COMMENT.
+- Do not approve or request-changes in the GitHub review event — always use COMMENT. The report's
+  rendered `Approve` recommendation (*The recommendation*) is advisory text addressed to whoever can
+  approve; it is not this event, does not satisfy branch protection, and does not unblock a merge.
 - Do not measure PR size (line counts, file counts) as a quality signal.
-- Do not claim the PR is ready to merge — only signal it is ready for human review.
+- Do not claim the PR is ready to *merge* — recommending approval is a statement about what this
+  review found, not about the merge decision, which belongs to a human and to the checks GitHub
+  enforces. `Approve` says *nothing here blocks*; it never says *ship it*.
 - Do not replace the human reviewer.
 - Do not post more than one GitHub review per run, or more than one sticky report per PR.
 - Do not post a review that carries no inline comments — the report is the sticky, and a review with nothing at the code is a notification with no content.
@@ -180,6 +184,56 @@ A finding is **blocking** only if it is broken behaviour, security (auth bypass 
 **Gate 3 applies that same bar to the other bot's own decoration** — its `(blocking)` marker, its `issue:` conventional-comment prefix, or an equivalent explicit severity label it supplied — and never to a fresh adjudication of the finding by this reviewer. Reading another bot's comment and deciding for it how serious it *really* is puts words in its mouth, which Step 1.0 already forbids for the `ask` text. An undecorated or unparseable ask is read as **non-blocking**, the same way an unreadable thread state is read as not-open: the reviewer never manufactures a severity it cannot evidence. If that ask is in fact serious, this run's own review pass finds it and files it under Gate 6, where it blocks on this reviewer's own evidence.
 
 The overall verdict is **FAIL** when Gate 4 or Gate 5 fails **or** the Prior review feedback or Code review gate is ❌; otherwise **PASS** (with the Description vs. code, Prior review feedback, and Code review rows each showing ✅ or ⚠️, and CI's state in `CI_NOTE`). Gate 2 (CI) does **not** feed the verdict: it is surfaced in GitHub's checks section and in `CI_NOTE`, never as a table row and never in `FAILING_GATE_COUNT`. The PASS/WARN/FAIL presentation in Steps 3–4 is chosen from the review gates (3, 4, 5, Description vs. code, and Code review) only.
+
+### The recommendation
+
+The gate states above answer "what did this run find". They do not answer the question the author
+and the reviewer's caller are actually asking — **is this approvable?** — and until this section
+existed, nothing posted to GitHub did: a PR whose only open items were non-blocking got a report
+reading `no blocking issues, 3 warning(s)` and no statement anywhere that the reviewer considered
+it approvable. The consequences were both a human one and a machine one. A human read the
+warning count as *something is wrong*; an automation whose approval rule keys on a passing token
+withheld the approval entirely on a PR this reviewer had found nothing wrong with
+(`reviewer-lessons::gate3-open-third-party-bot-threads-…`, sighting 2 — `VERDICT: FAIL` beside
+`ACTIONABLE: 0`, on green CI). The gates already knew the answer. Nothing said it out loud.
+
+So every report carries a **recommendation**, one of three values, rendered as one line under the
+headline where a collapsed comment still shows it:
+
+| Recommendation | When |
+|---|---|
+| **Approve** | Every graded gate is ✅. |
+| **Approve with comments** | No gate is ❌, and at least one is ⚠️ — the non-blocking case. **This is an approval**, and it says so; the warnings are the author's to weigh, not a withheld verdict. |
+| **Request changes** | Some gate is ❌. |
+
+Three properties matter more than the wording:
+
+- **It is derived, never authored.** `render-report.mjs` computes it from the five gate status
+  cells; there is no payload slot for it, and supplying one is a hard rejection
+  (`report-rendering.md § RECOMMENDATION_LINE`). A recommendation the model wrote would be a second
+  opinion about the same cells, free to disagree with them — which is exactly the defect
+  `reviewer-lessons::gate-table-says-pass-while-contract-says-fail` records seven sightings of.
+  Derived, `Approve` is a *restatement* of "no ❌", not a claim that can drift from it.
+- **It is a recommendation to a human, not a GitHub review state.** The review event stays
+  `COMMENT` in every branch, `Approve` included — see *What this agent does not do*. This agent
+  does not approve PRs, and a rendered `Approve` does not satisfy branch protection, mark a
+  required review, or unblock a merge. It tells whoever can approve what this reviewer thinks.
+- **It never overstates a gate it did not run.** An `⏭️` gate (`--skip-gates`) is neither an
+  approval nor a warning, so the line appends `<S> gate(s) not evaluated this run` rather than
+  counting "not checked" as clean.
+
+**The unclearable-gate case.** Gate 3 can be ❌ on a thread this agent is not permitted to close:
+`thread-resolution.md` may only touch threads this agent authored, so another bot's or a human's
+open blocking thread stays open no matter what this run does or how good the code is. That is
+correct — an open thread from another reviewer is real signal a human should read, and neither
+wholesale-excluding third-party bots from Gate 3 nor resolving their threads to clear it is
+acceptable. What is *not* correct is reporting it as though this review found the problem. When
+Gate 3 is the only ❌ **and** every open thread is unclearable, the recommendation names that
+instead: `Request changes — this review found nothing blocking of its own; the only ❌ is <K>
+unanswered blocking thread(s) from another reviewer, which this agent cannot resolve; a human must.`
+A caller reading that knows to send a human, not to look for bad code that is not there. Both
+sightings of the lesson above were runs where that distinction existed in the gate table and in no
+sentence anyone read.
 
 `--skip-gates` bypasses Gates 1–5 and runs only the inline review pass (Gate 6).
 Those gates then render `⏭️` in every gate table, with the Details cell holding the carried prior text plus its `(carried from …)` suffix when Step 2.5c dispositioned the row `CARRY`, and `not evaluated this run` otherwise.
@@ -648,9 +702,10 @@ GitHub App or a teammate opened it. What differs is only how the report labels e
   `isResolved == false`. Every comment whose state was unavailable or unpaged is counted
   separately and reported as `thread state unavailable — <N> comment(s) unverified` in
   Gate 3's Details cell.
-- For each stored entry, capture seven fields — three so Gate 3 can render an actionable, linkable
-  checklist (see *Gate 3* and `OPEN_THREADS_LIST`), two so it can label the thread's author, and two
-  so it can grade the gate. The label fields are `author` (the thread root's `user_login`) and
+- For each stored entry, capture eight fields — three so Gate 3 can render an actionable, linkable
+  checklist (see *Gate 3* and `OPEN_THREADS_LIST`), two so it can label the thread's author, two
+  so it can grade the gate, and one so the recommendation can tell a thread this run could have
+  closed from one it may not touch. The label fields are `author` (the thread root's `user_login`) and
   `is_bot` (from `user_type == "Bot"`, per the fetch above), passed straight into each
   `OPEN_THREADS[]` payload item so the renderer tags the bullet `(bot · \`login\`)` or
   `(human · \`login\`)`. The three checklist fields are:
@@ -687,6 +742,20 @@ GitHub App or a teammate opened it. What differs is only how the report labels e
     upstream and better: a bot that withdraws also **resolves** the thread, which removes it from
     `OPEN_BOT_COMMENTS[]` entirely, so it never reaches this test. A self-reply that leaves the
     thread open is, by the authoring bot's own action, still open.
+- And capture the one field the recommendation consumes (*The recommendation* § the unclearable-gate
+  case):
+  - `unclearable` — true when **no action this agent is permitted to take could close this
+    thread**. Mechanically: the thread root's `user_login != BOT_LOGIN`, so Step 2.9c may not
+    resolve it (`thread-resolution.md` — *only ever touch threads this agent authored*), and the
+    thread can clear only by the PR author replying or a human resolving it. Own-lineage threads
+    are `false`: those Step 2.9c can still address this run.
+  - **When `BOT_IDENTITY_UNKNOWN` is true, leave the field off entirely** rather than defaulting it
+    to true. With no known login, "not mine" is a guess, and the field's whole output is the
+    sentence *this thread belongs to another reviewer* — a claim the report must not make on a
+    login it could not read. Omitting it costs a clause; asserting it wrongly tells the author to
+    go find a reviewer who does not exist. Same epistemics as `blocking` (undecorated ⇒
+    non-blocking) and thread state (unreadable ⇒ not-open): this reviewer never manufactures a
+    fact it cannot evidence.
 - If `OPEN_BOT_COMMENTS[]` is empty, Gate 3 passes (✅). A non-empty set is graded ⚠️ or ❌ from
   `blocking` and `answered` at Step 1.8.
 
@@ -1995,16 +2064,26 @@ cleared finding was dropped somewhere it should not have been.
 <one card per inline finding using pr-comment-card.template.md>
 ```
 
-**Verdict (advisory — emitted in terminal only, not posted to GitHub):**
+**Recommendation.** Print the same three-valued recommendation the posted report renders — read
+*The recommendation* under *Gate states* for the values, the derivation, and the unclearable-gate
+form. It is **derived from the five gate cells**, so there is no separate judgment to make here and
+no way for the terminal line and the posted line to disagree:
 
-| Verdict | When |
+| Recommendation | When |
 |---|---|
-| **Approve** | No issues, only nits/praise |
-| **Approve with comments** | Suggestions, questions, nits, doc gaps |
-| **Request changes** *(rare)* | Genuine blocker |
+| **Approve** | Every graded gate ✅ — no issues, only nits/praise |
+| **Approve with comments** | No ❌, at least one ⚠️ — suggestions, questions, nits, doc gaps. **An approval.** |
+| **Request changes** *(rare)* | Some gate ❌ — a genuine blocker |
 
 A finding only blocks if: broken behaviour, security (auth bypass/injection/secret leak/CSRF),
 data loss/corruption, or misimplemented intent.
+
+This recommendation **is** posted, as `RECOMMENDATION_LINE` in the sticky report (Step 4a) — that is
+the change this section used to forbid, and the reason is in *The recommendation*: withholding it
+left the approval unsaid on every non-blocking PR. What stays terminal-only is the `**Verdict**:`
+line above and the diagnostics under it; the renderer still rejects a `**Verdict**` string anywhere
+in the payload, and `Approve` here is still not a GitHub approval — the review event is `COMMENT`
+in every branch.
 
 Run `Skill("confidence", "code")` against the overall verdict. Below 70% requires
 re-reading changed files in full before posting.
@@ -2130,8 +2209,19 @@ post no report object, and never hand-write the body.
 
 Write the payload to `/tmp/report-payload.json` as a flat JSON object of slot → string. The keys are
 listed under *REPORT_BODY payload* below. The script **fails closed**: an unknown key, a missing
-required slot, an invalid gate glyph, a smuggled `**Verdict**` line, or a template that lost its
-marker or accordion all exit non-zero and print nothing, so a malformed report cannot be posted.
+required slot, an invalid gate glyph, a smuggled `**Verdict**` line, a gate grade that contradicts
+its own open-thread list, or a template that lost its marker or accordion all exit non-zero and
+print nothing, so a malformed report cannot be posted.
+
+**The recommendation line is derived, not supplied.** The renderer computes `Approve` /
+`Approve with comments` / `Request changes` from the five gate status cells and `OPEN_THREADS`
+(`report-rendering.md § RECOMMENDATION_LINE`), so there is no slot to fill and a `RECOMMENDATION*`
+key is an unknown-key rejection. Two payload facts feed it and both are yours to get right: each
+open thread's `blocking` flag, and its `unclearable` flag from Step 1.0 (omitted, never guessed,
+when this agent's own login was unreadable). The renderer also refuses two self-contradictory
+payloads outright, because the recommendation would inherit whichever half is wrong — Gate 3 graded
+✅ beside a non-empty `OPEN_THREADS`, and Gate 3 graded ❌ with no `blocking: true` thread to justify
+it.
 
 `RUN.at` is required alongside `mode` / `sha` — an ISO-8601 UTC timestamp for **this** run (`date -u
 +%Y-%m-%dT%H:%M:%SZ`), the same format `runs[].at` already uses in the Step 0.7 state record. The
@@ -2658,6 +2748,12 @@ Include:
   - `state: unknown — neither the record nor the PR's comments could be read` — reviewed blind: no
     carry-forward, and dedup against its own prior comments operated on an empty set.
 - Gate verdicts (Gates 1/3/4/5/6 — Gate 2 shown separately as CI PASS/WARN; it never fails the verdict).
+- **The recommendation**, verbatim as the report renders it — `Approve` / `Approve with comments` /
+  `Request changes`, with the unclearable-thread clause when it applies (*The recommendation*).
+  A caller that reads only this terminal output must not have to infer the approval from a warning
+  count: the pair to avoid emitting is a `Request changes` beside zero findings of this run's own
+  with no reason given, which is the shape sighting 2 of
+  `reviewer-lessons::gate3-open-third-party-bot-threads-…` was reported as.
 - Integrations checked by Persona 4 and their spec versions, or "no integration changes detected".
 - Any findings dropped at line-validity for manual posting (verbatim).
 - Direct link: `https://github.com/<repo>/pull/<n>/files`.

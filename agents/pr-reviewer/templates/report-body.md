@@ -2,6 +2,7 @@
 {{#PARTIAL_BANNER}}⚠️ **Partial review — tool budget exhausted after {{BUDGET_CALLS}} calls; {{BUDGET_SCANNED}} of {{BUDGET_TOTAL}} files scanned.**
 
 {{/PARTIAL_BANNER}}{{HEADLINE}}
+{{RECOMMENDATION_LINE}}
 {{UPDATED_LINE}}
 {{#FIX_ALL_BUTTON}}
 {{FIX_ALL_BUTTON}}

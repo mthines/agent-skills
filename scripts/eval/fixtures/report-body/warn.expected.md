@@ -1,5 +1,6 @@
 <!-- PR_REVIEWER_REPORT -->
 Reviewed your changes — no blocking issues, **3 warning(s)**: 2 open review thread(s); 3 non-blocking finding(s); CI red: Integration smoke.
+**Recommendation** — ✅ Approve with comments — nothing blocking; the warnings above are advisory. 2 open threads here are another reviewer's — this agent cannot resolve them; a human must.
 <sub>Updated 2026-08-20 14:33 UTC</sub>
 
 <details>

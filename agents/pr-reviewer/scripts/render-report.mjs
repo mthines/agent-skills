@@ -19,6 +19,11 @@
 //              cannot carry a 40-char sha in one line and a 7-char sha in another, and the
 //              `<mode> · <N> lines in delta` form that reviewer-report-ingest.md parses is
 //              guaranteed rather than hoped for.
+//   verdicts — `RECOMMENDATION_LINE` is derived from the five gate status cells and the open-thread
+//              array, never supplied. The reviewer's approval recommendation and its own gate table
+//              are then the same fact rendered twice, so they cannot disagree — which is the whole
+//              defect class behind `reviewer-lessons::gate-table-says-pass-while-contract-says-fail`
+//              (seen 7x). Supplying a RECOMMENDATION* key is an unknown-key rejection.
 //
 // Usage:  node render-report.mjs payload.json    (or: … < payload.json)
 // Output: the report body on stdout. Any problem exits non-zero with a reason on stderr and
@@ -69,7 +74,7 @@ const SHAPES = {
   PARTIAL_REVIEW: ["calls", "scanned", "total"],
   RESOLVED_SINCE: ["count", "sha"],
   "MEMORIES_USED[]": ["key", "url", "note"],
-  "OPEN_THREADS[]": ["path", "line", "url", "ask", "blocking", "author", "is_bot"],
+  "OPEN_THREADS[]": ["path", "line", "url", "ask", "blocking", "unclearable", "author", "is_bot"],
   "ADDITIONAL_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
   "LOW_CONFIDENCE_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
   TIER_TALLY: ["critical", "high", "medium", "low"],
@@ -160,6 +165,87 @@ function openThreadBullet(where, item) {
   assertPlain(`${where}.author`, author);
   const kind = isBot === true ? "bot" : "human";
   return `${line} (${kind} · \`${author}\`)`;
+}
+
+/**
+ * The approval recommendation, derived from the gate cells — never supplied.
+ *
+ * Why it is rendered at all: the recommendation used to be terminal-only, which meant a PR whose
+ * only open items were non-blocking got a report reading `no blocking issues, 3 warning(s)` and no
+ * statement anywhere that the reviewer considered it approvable. A human read that as "something is
+ * wrong", and a wrapping automation whose approval rule keys on a PASS token withheld the approval
+ * outright (`reviewer-lessons::gate3-open-third-party-bot-threads-…`, sighting 2: `VERDICT: FAIL`
+ * beside `ACTIONABLE: 0`). Saying it out loud costs one line.
+ *
+ * Why it is derived rather than supplied: a supplied recommendation is a second opinion about the
+ * same five cells, free to disagree with them — the defect class of
+ * `reviewer-lessons::gate-table-says-pass-while-contract-says-fail`. Derived, "approve" is a
+ * restatement of "no ❌", not a claim that can drift from it.
+ *
+ * It is a recommendation to a human, not a GitHub review state: the review event stays `COMMENT`
+ * in every branch (`pr-reviewer.md § What this agent does not do`).
+ */
+function recommendationLine(data, openThreads) {
+  const GATES = ["GATE_DESCRIPTION_STATUS", "GATE_PRIOR_STATUS", "GATE_DOCS_STATUS",
+    "GATE_SELFREVIEW_STATUS", "GATE_CODEREVIEW_STATUS"];
+  const at = (k) => String(data[k]).trim();
+  const failing = GATES.filter((k) => at(k) === "❌");
+  const warned = GATES.filter((k) => at(k) === "⚠️");
+  const skipped = GATES.filter((k) => at(k) === "⏭️");
+
+  for (const [i, t] of openThreads.entries()) {
+    if (t.unclearable !== undefined && typeof t.unclearable !== "boolean") {
+      fail(`OPEN_THREADS[${i}].unclearable must be a boolean, got ${JSON.stringify(t.unclearable)}`);
+    }
+  }
+  const unclearable = openThreads.filter((t) => t.unclearable === true).length;
+  const blocking = openThreads.filter((t) => t.blocking === true).length;
+
+  // Gate 3's two contradiction classes. ✅ means the open set was empty, and ❌ means at least one
+  // open thread carried an unanswered blocking ask — so a payload asserting either alongside an
+  // open-thread list that says otherwise has one of the two wrong, and the recommendation would
+  // inherit whichever is wrong. (⚠️ is deliberately unguarded: it is also the state for
+  // `thread state unavailable`, which legitimately has no list.)
+  if (at("GATE_PRIOR_STATUS") === "✅" && openThreads.length > 0) {
+    fail(`GATE_PRIOR_STATUS is ✅ but OPEN_THREADS has ${openThreads.length} entr`
+      + `${openThreads.length === 1 ? "y" : "ies"} — Gate 3 passes only when every prior thread is`
+      + " resolved, so one of the two is stale");
+  }
+  if (at("GATE_PRIOR_STATUS") === "❌" && blocking === 0) {
+    fail("GATE_PRIOR_STATUS is ❌ but no OPEN_THREADS entry is marked `blocking: true` — Gate 3"
+      + " fails only on an unanswered *blocking* ask, so either the grade or the list is wrong");
+  }
+
+  const plural = (n, noun) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+  // Kept short on purpose: this whole line renders on the collapsed comment, and a clause long
+  // enough to wrap costs the headline its glanceability — the one property it exists for.
+  const unclearableClause = unclearable === 0 ? ""
+    : ` ${plural(unclearable, "open thread")} here ${unclearable === 1 ? "is" : "are"} another`
+      + ` reviewer's — this agent cannot resolve ${unclearable === 1 ? "it" : "them"}; a human must.`;
+  const skippedClause = skipped.length === 0 ? ""
+    : ` ${plural(skipped.length, "gate")} not evaluated this run.`;
+
+  let rec;
+  if (failing.length === 0) {
+    rec = warned.length === 0
+      ? "✅ Approve."
+      : "✅ Approve with comments — nothing blocking; the warnings above are advisory."
+        + unclearableClause;
+  } else if (failing.length === 1 && failing[0] === "GATE_PRIOR_STATUS"
+      && openThreads.length > 0 && unclearable === openThreads.length) {
+    // The unclearable-gate case. Every ❌ traces to a thread this agent may not resolve and the PR
+    // author may not have opened, so `Request changes` on its own would read as "this reviewer
+    // found something" when it found nothing — the exact misread the lesson records. Name the
+    // reason instead; the "of its own" claim is made only when the review pass actually ran.
+    const ownPassRan = ["✅", "⚠️"].includes(at("GATE_CODEREVIEW_STATUS"));
+    rec = "❌ Request changes — "
+      + (ownPassRan ? "this review found nothing blocking of its own; " : "")
+      + `the only ❌ is ${plural(blocking, "unanswered blocking thread")} from another reviewer,`
+      + " which this agent cannot resolve; a human must.";
+  } else {
+    rec = "❌ Request changes." + unclearableClause;
+  }
+  return `**Recommendation** — ${rec}${skippedClause}`;
 }
 
 function findingBullets(key, arr) {
@@ -465,6 +551,7 @@ function main() {
 
   const derived = {
     HEADLINE: data.HEADLINE,
+    RECOMMENDATION_LINE: recommendationLine(data, openThreads),
     FIX_ALL_BUTTON: fixAllButton,
     UPDATED_LINE: `<sub>Updated ${updatedStamp} UTC</sub>`,
     TIER_BREAKDOWN: tierBreakdown,
@@ -533,6 +620,12 @@ function main() {
   // edit that breaks the contract fails loudly here instead of quietly posting a flat report.
   if (!body.includes("<!-- PR_REVIEWER_REPORT -->")) fail("rendered body lost the report marker");
   if (!body.includes(derived.UPDATED_LINE)) fail("rendered body lost the top-level UPDATED_LINE — a template edit dropped the freshness cue");
+  // Visible while collapsed, or it does not do its job: the whole point of the recommendation is
+  // that a reader (and a wrapping approval rule) sees the approval without opening the accordion.
+  if (!body.split("<details>")[0].includes(derived.RECOMMENDATION_LINE)) {
+    fail("the recommendation line is missing or rendered inside the accordion — it must sit above"
+      + " the first <details>, where a collapsed report still shows it");
+  }
   if (!/<details>\n<summary>Review details/.test(body)) fail("rendered body has no `Review details` accordion");
   if (body.includes("<details open>")) fail("rendered body pre-expands a `<details>` block");
   const caged = body.match(/``?\s*\[[^\]]*\]\([^)]*\)\s*``?/g);

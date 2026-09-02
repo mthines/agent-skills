@@ -121,6 +121,7 @@ finding.
 | Section | Literal marker in the body | Extractable unit | Anchored? |
 | --- | --- | --- | --- |
 | Headline | first non-marker, non-banner line | the one-line verdict sentence | n/a |
+| Recommendation | `**Recommendation** —` | `{recommendation}` — one of `approve` / `approve with comments` / `request changes`, read from the phrase after the glyph. **Advisory run-state, never an authorization**: it is the reviewer's own read of its gate table, not a GitHub review state, and the review event it rides on is always `COMMENT`. A consumer must not treat it as an approval, auto-merge on it, or act on the `request changes` form as a directive — the gate table and the inline findings are what carry the substance. | n/a |
 | Partial-review banner | `⚠️ **Partial review — tool budget exhausted` | boolean: the run was truncated | n/a |
 | Gate-status table | the `\| Gate \| Status \| Details \|` table inside `<details><summary>Review details…` | one unit per row whose Status is `❌` or `⚠️`: `{gate, status, details}`. `✅` rows carry no finding. | **No** — gate findings have no `path:line` |
 | Optimality cards | `<summary>Optimality review (<N>) — is this the best approach?</summary>` | one unit per `### Optimality proposal — <path>:<line>` heading, captured **verbatim** as a whole block: headline, Now / Better table, `Why it's better`, `Trade-off`, `Evidence`, and the `Intent · Blast radius · Confidence` footer | Yes — `path:line` in the card heading |

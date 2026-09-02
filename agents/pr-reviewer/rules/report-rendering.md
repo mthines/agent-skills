@@ -32,6 +32,7 @@ and both the renderer and the L1 guards match some of these headings as literal 
 
 - [REPORT_BODY format (the sticky comment)](#reportbody-format-the-sticky-comment)
   - [REPORT_BODY payload](#reportbody-payload)
+  - [`RECOMMENDATION_LINE` — the approval, said out loud](#recommendationline--the-approval-said-out-loud)
   - [Headlines](#headlines)
 - [The Gate 3 open threads: the count on the summary, the list in the accordion](#the-gate-3-open-threads-the-count-on-the-summary-the-list-in-the-accordion)
   - [`OPEN_THREADS_SUFFIX` — the counter on the summary](#openthreadssuffix--the-counter-on-the-summary)
@@ -129,12 +130,62 @@ The `Run mode` line renders as `<mode> · <N> lines in delta`, which is the shap
 `reviewer-report-ingest.md` parses. Extra colour goes in the optional `RUN_NOTE` scalar and is
 appended after it, so the parseable prefix survives.
 
+#### `RECOMMENDATION_LINE` — the approval, said out loud
+
+One line directly under `HEADLINE`, above `UPDATED_LINE` and **outside** the accordion, so it is
+visible on the collapsed comment. It is **fully derived** from the five gate status cells and
+`OPEN_THREADS` — there is no payload key for it, and supplying one (`RECOMMENDATION`,
+`RECOMMENDATION_LINE`, …) is an unknown-key rejection.
+
+**Why it is posted at all.** The recommendation used to be terminal-only (`pr-reviewer.md` § Step 3),
+so a PR whose only open items were non-blocking got a report reading `no blocking issues, 3
+warning(s)` — accurate, and silent on the thing the author and the reviewer's caller actually want
+to know. A human read it as *something is wrong*; an automation whose approval rule keys on a
+passing token withheld the approval outright, on a PR this reviewer had found nothing wrong with
+(`reviewer-lessons::gate3-open-third-party-bot-threads-…`, sighting 2 — `VERDICT: FAIL` beside
+`ACTIONABLE: 0`). The gates already knew the answer; nothing printed it.
+
+**Why it is derived rather than authored.** A supplied recommendation is a second opinion about the
+same five cells, free to disagree with them — the defect class of
+`reviewer-lessons::gate-table-says-pass-while-contract-says-fail` (seen 7×), where the headline and
+the gate table told a reader two different things. Derived, `Approve` *is* the restatement of "no
+❌", not a claim that can drift from it.
+
+| Gate state | Rendered line |
+| --- | --- |
+| No `❌`, no `⚠️` | `**Recommendation** — ✅ Approve.` |
+| No `❌`, at least one `⚠️` | `**Recommendation** — ✅ Approve with comments — nothing blocking; the warnings above are advisory.` |
+| At least one `❌` | `**Recommendation** — ❌ Request changes.` |
+| Only `GATE_PRIOR_STATUS` is `❌`, and **every** open thread is `unclearable` | `**Recommendation** — ❌ Request changes — this review found nothing blocking of its own; the only ❌ is <K> unanswered blocking thread(s) from another reviewer, which this agent cannot resolve; a human must.` The `this review found nothing blocking of its own` clause is dropped when `GATE_CODEREVIEW_STATUS` is `⏭️` — a pass that did not run found nothing either way, and claiming otherwise would be the reviewer vouching for work it skipped. |
+
+Two clauses are appended where they apply:
+
+- **Unclearable threads** — on the `Approve with comments` and plain `Request changes` forms, when
+  some (not all) open threads are `unclearable`: ` <U> open thread(s) here are another reviewer's —
+  this agent cannot resolve them; a human must.` Suppressed on the fourth row, which already says
+  it. Kept this short deliberately: the whole line renders on the collapsed comment, and a clause
+  long enough to wrap costs it the glanceability it exists for.
+- **Skipped gates** — when any of the five is `⏭️` (`--skip-gates`): ` <S> gate(s) not evaluated
+  this run.` An `⏭️` gate is neither an approval nor a warning, and a recommendation that silently
+  treated "not checked" as "clean" would be the one overstatement this line can make.
+
+**It is a recommendation to a human, never a GitHub review state.** The review event stays
+`COMMENT` in every branch, including `✅ Approve` — see `pr-reviewer.md` § What this agent does not
+do. `Request changes` here is advisory text with the reviewer's own reasoning attached; it does not
+`REQUEST_CHANGES` on the PR and does not block a merge.
+
+Two contradiction guards ride along, because the recommendation inherits whichever side is wrong:
+the renderer rejects `GATE_PRIOR_STATUS: ✅` beside a non-empty `OPEN_THREADS` (Gate 3 passes only
+when the open set is empty), and `GATE_PRIOR_STATUS: ❌` with no `blocking: true` thread to justify
+it (Gate 3 fails only on an unanswered *blocking* ask). `⚠️` is deliberately unguarded — it is also
+the grade for `thread state unavailable`, which legitimately has no list.
+
 **Optional — structured.** Omit a key to omit its whole block. Counts are **derived from array
 length**, so there is no count to supply and none to get wrong:
 
 | Key | Shape | Notes |
 | --- | --- | --- |
-| `OPEN_THREADS` | `[{path, line, url?, ask, blocking?, author?, is_bot?}]` | The renderer builds the bullet `- ` + a link whose text is `` `path:line` `` and whose target is `url`, then ` — ask`, then an author tag `` (bot · `author`) `` or `` (human · `author`) `` when `is_bot`/`author` are supplied (omitted when they are not); it derives `Open review threads (N)` and the `<summary>` suffix, and appends ` (K blocking)` only when some item has `blocking: true`. `is_bot` is a boolean (thread author's GitHub type is `Bot`); `author` is the login, code-wrapped by the renderer so it does not `@mention`. A missing `url` renders unlinked inline code, never a broken link. |
+| `OPEN_THREADS` | `[{path, line, url?, ask, blocking?, unclearable?, author?, is_bot?}]` | The renderer builds the bullet `- ` + a link whose text is `` `path:line` `` and whose target is `url`, then ` — ask`, then an author tag `` (bot · `author`) `` or `` (human · `author`) `` when `is_bot`/`author` are supplied (omitted when they are not); it derives `Open review threads (N)` and the `<summary>` suffix, and appends ` (K blocking)` only when some item has `blocking: true`. `is_bot` is a boolean (thread author's GitHub type is `Bot`); `author` is the login, code-wrapped by the renderer so it does not `@mention`. `unclearable` is a boolean — `true` when no action this agent is permitted to take could close the thread (its root author is not this agent, so `thread-resolution.md` may not resolve it); it feeds `RECOMMENDATION_LINE` and is never rendered on the bullet itself. A missing `url` renders unlinked inline code, never a broken link. |
 | `RESOLVED_SINCE` | `{count, sha}` | Suppressed at `count: 0`. Rejected when `OPEN_THREADS` is empty — with Gate 3 clean the counter belongs in its Details cell. |
 | `MEMORIES_USED` | `[{key, url?, note?}]` | One bullet per applied memory, under `MEMORIES_SUMMARY`. |
 | `ADDITIONAL_FINDINGS` | `[{path, line, url?, prefix, body, confidence}]` | `prefix` is a Conventional-Comments prefix; `confidence` an integer 0–100. |

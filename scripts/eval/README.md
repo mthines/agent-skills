@@ -159,12 +159,19 @@ them. (The three original entries were resolved: `from-to-morphs.md` →
 
 | File | What it is |
 | --- | --- |
-| `<case>.json` | the payload a run would build (`pass`, `warn`, `fail`) |
+| `<case>.json` | the payload a run would build (`pass`, `warn`, `fail`, `deferred`) |
 | `<case>.expected.md` | the committed snapshot — **read these to see what a report looks like** |
 
 The payloads are **structured data**, not markdown: counts come from array length, links are built
-by the renderer from `{path, line, url}`, and the footer/`Run mode` lines are derived from a `RUN`
-object. So a count cannot disagree with its list and a sha cannot appear at two lengths.
+by the renderer from `{path, line, url}`, the footer/`Run mode` lines are derived from a `RUN`
+object, and the approval recommendation is derived from the five gate cells. So a count cannot
+disagree with its list, a sha cannot appear at two lengths, and an `Approve` cannot appear beside a
+failing gate.
+
+`deferred` is the fourth case and the least obvious one: Gate 3 ❌ on an open blocking thread from
+another reviewer — one this agent is not permitted to resolve — with every other gate green. Read
+its snapshot to see what the reviewer says when it has nothing of its own to report and still
+cannot approve (`reviewer-lessons::gate3-open-third-party-bot-threads-…`).
 
 L1's **G25** executes `agents/pr-reviewer/scripts/render-report.mjs` against each payload and diffs
 the result byte-for-byte against the snapshot, then asserts the structural invariants (marker
@@ -182,7 +189,7 @@ shipped with `Run mode — full … 750 additions / 486 deletions`, which the gr
 Regenerate after an intentional template or renderer change, and review the diff:
 
 ```bash
-for n in pass warn fail; do
+for n in pass warn fail deferred; do
   node agents/pr-reviewer/scripts/render-report.mjs \
     scripts/eval/fixtures/report-body/$n.json > scripts/eval/fixtures/report-body/$n.expected.md
 done
