@@ -52,7 +52,8 @@ PR that touches UI. Re-run it when auth drifts, fixtures change, or base URL mov
 - Smoke spec: run it. If green, done — no prompts needed.
 - Only prompt for what broke or is missing.
 - Show a unified diff before overwriting any field in the aw-target file.
-- Never silently overwrite `.auth/*.json`.
+- Never silently overwrite the auth storage-state file (`.auth/*.json`, or the
+  repo's own convention such as `.browser/auth-state*.json`).
 
 ---
 
@@ -68,12 +69,38 @@ Read the project to guess the aw-target configuration. Look for:
 | Auth strategy | `next-auth` / `auth.js` imports, custom `/api/auth` routes, OAuth config |
 | Test backdoors | Dev-only cookies (`__e2e_token`), test env vars (`E2E_AUTH_TOKEN`), seed scripts in `package.json` |
 | Fixtures / seed | `db:seed`, `db:reset`, `seed:aw`, `test:setup` scripts |
-| Existing aw-target | `.claude/aw-targets/local.yml` (re-run path) |
+| Existing aw-target | `.claude/aw-targets/*.yml` (re-run path) |
+| Existing auth convention | A storage-state file or login script the repo already uses — see [Reuse before you scaffold](#reuse-before-you-scaffold) |
 
 Detection confidence level:
 - **High:** base URL found in env, auth strategy clear, seed script named explicitly.
 - **Medium:** base URL guessed from port, auth strategy inferred.
 - **Low:** nothing found — fall through to Ask with all questions.
+
+#### Reuse before you scaffold
+
+`.auth/<name>.json` + `scripts/auth-bootstrap-*.mjs` is this skill's **fallback
+scaffold**, not a mandate. If the repo already has an auth convention, reuse it
+instead of creating a parallel one — a second location silently drifts from the
+one the rest of the repo maintains.
+
+Probe in this order and stop at the first hit:
+
+1. **An existing aw-target** — any `.claude/aw-targets/*.yml` that sets
+   `auth.storage_state`. Reuse its `storage_state` path and `refresh.command`
+   verbatim; do not rewrite them.
+2. **A captured storage-state file** already in the repo:
+   `.browser/auth-state*.json` (the dash0 / `playwright-cli-authed` convention),
+   else `.auth/*.json` (this skill's default).
+3. **A login / refresh script** already in the repo:
+   `.claude/aw-targets/scripts/refresh-auth*.mjs` or `.browser/refresh-auth*.mjs`
+   (dash0), else `scripts/auth-bootstrap-*.mjs` (this skill's default).
+
+When a convention is found, substitute its paths for `.auth/<name>.json` and
+`scripts/auth-bootstrap-*.mjs` everywhere below — the Phase C probe, the Phase D
+write, the gitignore guard, and the file-location table — and match the repo's
+existing gitignore entry (`.browser/` vs `.auth/`). Only when nothing is found do
+you scaffold the generic `.auth/` setup.
 
 ### Phase B — Ask
 
@@ -169,15 +196,19 @@ block in the script and confirm the user has reviewed the locators.
 Require user confirmation before writing. If the diff is empty, say "No changes
 needed — aw-target is up to date."
 
-**Gitignore guard:**
+**Gitignore guard:** ensure the auth directory actually in use is ignored — the
+reused convention's dir when one was detected (e.g. `.browser/`), otherwise the
+`.auth/` default:
 ```bash
-# Add .auth/ to .gitignore if not already present
-grep -q "^\.auth/" .gitignore 2>/dev/null || echo ".auth/" >> .gitignore
+# AUTH_DIR is the directory of auth.storage_state — .browser/ when a convention
+# was reused, else .auth/ for a fresh scaffold.
+AUTH_DIR="$(dirname "${AUTH_STORAGE_STATE:-.auth/local.json}")/"
+grep -q "^${AUTH_DIR}" .gitignore 2>/dev/null || echo "${AUTH_DIR}" >> .gitignore
 ```
 
-Never overwrite `.auth/*.json` silently. If the file exists and a new one would
-be produced by the bootstrap command, ask: "Overwrite existing auth state at
-`.auth/local.json`?"
+Never overwrite the auth storage-state file silently. If it exists and a new one
+would be produced by the bootstrap command, ask: "Overwrite existing auth state
+at `<storage_state path>`?"
 
 ### Phase E — Smoke-test
 
@@ -282,6 +313,11 @@ One field needs attention: auth storage state is missing.
 The aw-target file and bootstrap script are committed so teammates can use the
 same flow. The auth storage state and credentials are gitignored — they
 contain secrets.
+
+> When the repo already has an auth convention (see
+> [Reuse before you scaffold](#reuse-before-you-scaffold)), these paths follow it
+> instead of the defaults shown — e.g. `.browser/auth-state.json` for the storage
+> state and `.claude/aw-targets/scripts/refresh-auth.mjs` for the script.
 
 ---
 
@@ -410,9 +446,10 @@ rewrite the bootstrap script + the `refresh.command` line in lockstep.
 - [ ] If strategy (a) or (b): the matching bootstrap script written under
       `scripts/auth-bootstrap-*.mjs` and reviewed by the user (especially
       the `CUSTOMIZE` block for strategy b).
-- [ ] `.auth/local.json` exists (or `auth.strategy: manual` is set).
-- [ ] `.auth/` is in `.gitignore`. If strategy (b), `.env.local` (or whichever
-      file holds `E2E_PASSWORD`) is also in `.gitignore`.
+- [ ] The auth storage-state file exists (or `auth.strategy: manual` is set).
+- [ ] The auth directory in use is in `.gitignore` — the reused convention's dir
+      (e.g. `.browser/`) or the `.auth/` default. If strategy (b), `.env.local`
+      (or whichever file holds `E2E_PASSWORD`) is also in `.gitignore`.
 - [ ] Smoke spec returned `green` (or `inconclusive` for `manual` auth strategy).
 - [ ] User told what to do next:
   - "Run an autonomous task that touches UI — the executor's Phase 4 will
