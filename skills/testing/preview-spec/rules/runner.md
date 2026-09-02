@@ -10,19 +10,21 @@ tags:
 
 # Runner
 
-The `run` operation: extract the embedded spec, point `aw-tester` at the live preview, and report its verdict.
-The runner is an **on-demand orchestrator** — it resolves and dispatches once, reads the verdict, and writes lessons. It does not watch, retry the browser, or fix code.
+The `run` operation: get the spec, point the selected runner at the live preview, and report its verdict.
+The runner is an **on-demand orchestrator** — it resolves and dispatches once, reads the verdict, and writes lessons. It does not watch, retry the browser, or fix code. It picks between two runners with `--driver`; both emit the same verdict per the [spec-run contract](../../../workflow/autonomous-workflow/rules/spec-run-contract.md).
 
-## Step 1: Extract the spec
+## Step 1: Get the spec
 
-Read the PR body: `gh pr view <pr> --json body -q .body`.
+**From the PR (default).** Read the PR body: `gh pr view <pr> --json body -q .body`.
 Extract the region between `<!-- preview-spec:v1 -->` and `<!-- /preview-spec:v1 -->` (see [`spec-format.md`](./spec-format.md)).
-The committed PR body is the **only** source the runner reads. It never reads `.agent/{branch}/specs.md` — that file is gitignored and absent on a fresh checkout ([`spec-sources.md § Two artifacts, two lifetimes`](./spec-sources.md#two-artifacts-two-lifetimes)). Verifying against the PR is therefore independent of any local aw run.
+The committed PR body is the **only** source the PR path reads. It never reads `.agent/{branch}/specs.md` — that file is gitignored and absent on a fresh checkout ([`spec-sources.md § Two artifacts, two lifetimes`](./spec-sources.md#two-artifacts-two-lifetimes)). Verifying against the PR is therefore independent of any local aw run.
 
 - No markers → report `no spec — nothing to run` and stop. The PR has no embedded spec; `author` never ran, or the diff was not UI.
 - Markers present but empty body → report `empty spec` and stop.
 
 Strip the `<details>` / `<summary>` wrapper and the markers. What remains is the `specs.md` body (the `Target:` / `Refactor:` header plus the `## Spec N:` blocks).
+
+**From a local path (shortcut).** When the run argument is a filesystem path to a `specs.md` (a local author→run loop, before any PR exists), read it verbatim and skip extraction. A local path requires `--url <preview-url>` — there is no PR to resolve a deployment from. This path is for fast local iteration; the durable, checkout-independent source is still the PR body.
 
 ## Step 2: Resolve the preview URL
 
@@ -41,9 +43,31 @@ Write two files under `.agent/{branch}/.preview-spec/` (the branch is the PR's h
 
 Never write the resolved URL or any credential into the committed `.claude/aw-targets/preview.yml` — only into the ephemeral `.agent/{branch}/.preview-spec/aw-target.yml`.
 
-## Step 4: Dispatch `aw-tester`
+## Step 4: Select the driver and run
 
-Dispatch the runner as a sub-agent, passing the explicit spec and target paths. `aw-tester` reads its target from the `Aw-Target file:` path when the prompt gives one, falling back to the name-derived path only when it does not — its documented input contract ([`aw-tester.agent.md § Parse inputs`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md)), so the ephemeral overlay is read, not the committed `preview.yml` placeholder:
+Resolve `--driver` (default `auto`), then run the spec through the chosen runner. Both read the target from the `Aw-Target file:` path and the spec from the `Specs file:` path — the ephemeral overlay from Step 3, not the committed `preview.yml` placeholder. Both emit the identical verdict block ([spec-run contract § 4](../../../workflow/autonomous-workflow/rules/spec-run-contract.md#4-verdict-schema-mandatory--do-not-deviate)). `--all` runs every spec (not `--bail-on-first-red`) — an on-demand verification wants the full picture.
+
+**`auto` (default): resolve to a concrete driver.**
+The Chrome runner is in-session and needs the browser extension; the Playwright runner is a sub-agent and needs `Task`. Pick:
+
+1. If the `mcp__claude-in-chrome__*` tools are available and `tabs_context_mcp` returns a connected browser → **chrome**.
+2. Else if `Task` is available → **playwright**.
+3. Else → report `NOT RUN (no Chrome extension and no sub-agent dispatch available)` and stop.
+
+**Driver `chrome` — invoke [`aw-tester-chrome`](../../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md) in-session:**
+
+```text
+Skill("aw-tester-chrome", "
+  Run the specs at .agent/{branch}/.preview-spec/specs.md against aw-target 'preview'.
+  Aw-Target file: .agent/{branch}/.preview-spec/aw-target.yml
+  Specs file: .agent/{branch}/.preview-spec/specs.md
+  Mode: --all
+")
+```
+
+If it returns `verdict: inconclusive` with `fallback: playwright` (extension gone, or a `storage-state` target sitting on a login screen), fall through to the Playwright driver and run once there. This is the "chrome first, playwright on failure" default the user asked for.
+
+**Driver `playwright` — dispatch [`aw-tester`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md) as a sub-agent** ([`§ Parse inputs`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md)):
 
 ```text
 Task(
@@ -57,18 +81,16 @@ Task(
 )
 ```
 
-`--all` runs every spec (not `--bail-on-first-red`) — an on-demand verification wants the full picture, not just the first failure.
-
-If `Task` is unavailable in the harness, say so and stop: the runner cannot substitute for `aw-tester` in-context, because its Playwright execution and locator-healing live in the isolated agent. Report `NOT RUN (sub-agent dispatch unavailable)`.
+If `--driver playwright` is forced and `Task` is unavailable, say so and stop: the runner cannot substitute for `aw-tester` in-context, because its Playwright execution and locator-healing live in the isolated agent. Report `NOT RUN (sub-agent dispatch unavailable)`.
 
 ## Step 5: Report the verdict
 
-`aw-tester` returns a compact YAML verdict (`verdict: green | red | inconclusive`, one entry per spec with `result` and, on failure, `diagnostics` capped at 30 lines).
-Relay it to the user as-is plus the resolved preview URL. Do not re-run, and do not paste browser logs beyond the diagnostics `aw-tester` already trimmed.
+The runner returns a compact YAML verdict (`verdict: green | red | inconclusive`, one entry per spec with `result` and, on failure, `diagnostics` capped at 30 lines) — identical shape from either driver.
+Relay it to the user as-is plus the resolved preview URL and which driver ran it. Do not re-run (beyond the one documented chrome→playwright fallback), and do not paste browser logs beyond the diagnostics the runner already trimmed.
 
 Optionally, when the caller asked for it, post the verdict as a PR comment. Off by default — the runner reports to the terminal.
 
 ## Step 6: Write lessons
 
 Write to `preview-spec-lessons` **only** when a spec failed for a navigation or precondition reason that a better spec would have avoided — see [`memory.md § Write at run time`](./memory.md) for exactly what qualifies and what does not.
-A locator miss that `aw-tester` healed is `aw-tester`'s lesson, not this skill's; do not duplicate it.
+A locator miss that the runner healed is the runner's lesson (`aw-tester-lessons`), not this skill's; do not duplicate it.

@@ -36,6 +36,18 @@ reading browser logs itself.
 output schema below. Nothing else. Do not narrate. Do not repeat spec bodies.
 Do not dump browser logs unless a spec failed.
 
+### The shared spec-run contract
+
+You are the **Playwright runner**. A sibling runner,
+[`aw-tester-chrome`](../aw-tester-chrome/SKILL.md), executes the same specs
+in-session through the Chrome extension. The locator ladder, the auth-strategy
+semantics, and the verdict schema below are the **engine-agnostic spec-run
+contract** ([`rules/spec-run-contract.md`](../rules/spec-run-contract.md)) that
+both runners implement — keep them engine-neutral. Everything else in this file
+is Playwright-specific: the binary resolution, the batch-compiled `last-run.spec.ts`,
+the one-context-per-batch run, and the `hot_loop:` handoff. The `hot_loop:` block
+is yours alone; the Chrome runner omits it.
+
 ---
 
 ## Critical First Actions

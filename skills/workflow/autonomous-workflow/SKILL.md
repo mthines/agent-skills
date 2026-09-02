@@ -376,6 +376,7 @@ per-companion disabling, see the [README](./README.md#installation) and
 - [`aw-create-plan`](../aw-create-plan/SKILL.md) — `plan.md` artifact generator
 - [`aw-create-walkthrough`](../aw-create-walkthrough/SKILL.md) — `walkthrough.md` artifact generator
 - [`aw-setup`](./aw-setup/SKILL.md) — **one-time UI aw-target scaffolding** (prerequisite for `aw-tester`; run `/aw-setup` once per project before the first autonomous UI task)
+- [`aw-tester-chrome`](./aw-tester-chrome/SKILL.md) — in-session Chrome runner; the fast local sibling of the `aw-tester` agent. Same spec grammar and verdict, driven through the claude-in-chrome extension instead of Playwright. Picked by `preview-spec run --driver chrome|auto`; not for sub-agent / CI flows (no extension there)
 - [`code-quality`](../../quality/code-quality/SKILL.md) — readability and complexity review
 - [`tdd`](../../quality/tdd/SKILL.md) — RED-GREEN-REFACTOR enforcement
 - [`ux`](../../design/ux/SKILL.md) — UI / accessibility review
@@ -390,7 +391,7 @@ per-companion disabling, see the [README](./README.md#installation) and
 
 ### Related Agents
 
-- [`aw-tester`](./templates/aw-tester.agent.md) — spec-driven UI verification agent. Dispatched by the executor in Phase 4 (before lint/type/test) and optionally in Phase 7 (spec rehearsal against preview). Requires an aw-target at `.claude/aw-targets/` — run `/aw-setup` first.
+- [`aw-tester`](./templates/aw-tester.agent.md) — spec-driven UI verification agent (Playwright, sub-agent). Dispatched by the executor in Phase 4 (before lint/type/test) and optionally in Phase 7 (spec rehearsal against preview). Requires an aw-target at `.claude/aw-targets/` — run `/aw-setup` first. Shares the engine-agnostic [spec-run contract](./rules/spec-run-contract.md) with the in-session [`aw-tester-chrome`](./aw-tester-chrome/SKILL.md) runner.
 - [`pr-reviewer`](../../../agents/pr-reviewer.md) — Phase 6 and Phase 7 review passes, invoked via the `review-loop` skill. Handles both self-relation (own PR — `REVIEW_RELATION = self`) and cross-relation (someone else's PR). Stays read-only; apply passes are delegated to `implement-suggestion` and `polish simplify`.
 
 ---
