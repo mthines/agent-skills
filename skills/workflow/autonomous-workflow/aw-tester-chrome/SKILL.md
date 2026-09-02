@@ -71,8 +71,10 @@ specs: []
 notes: claude-in-chrome extension not connected — re-run with --driver playwright (aw-tester).
 ```
 
-`preview-spec run --driver auto` reads `fallback: playwright` and dispatches
-`aw-tester` instead. A direct caller should do the same.
+`preview-spec run --driver auto` reads `fallback: playwright` and, in auto mode,
+asks the user before dispatching `aw-tester` — it does not fall back silently. A
+direct caller should do the same. An explicit `--driver chrome` stops here and
+reports this verdict as-is.
 
 ### 3. Read cross-run lessons
 

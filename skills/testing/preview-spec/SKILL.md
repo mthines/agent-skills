@@ -18,7 +18,7 @@ description: >
 disable-model-invocation: true
 argument-hint: '[author|run] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright]'
 license: MIT
-allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Read Edit Write Grep Glob Skill Task mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
+allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Read Edit Write Grep Glob Skill Task AskUserQuestion mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
   author: mthines
   version: '1.0.0'
@@ -77,7 +77,7 @@ If no operation token is present, default to `author` when a diff or branch cont
 
 | `--driver` | Runner | When |
 | --- | --- | --- |
-| `auto` (default) | Chrome if the extension is connected, else Playwright | Everyday use — fast locally, correct everywhere. |
+| `auto` (default) | Chrome if the extension is connected; otherwise asks before using Playwright | Everyday use — fast locally, correct everywhere. |
 | `chrome` | [`aw-tester-chrome`](../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md), in-session | Force the fast see→act loop against your logged-in Chrome. |
 | `playwright` | [`aw-tester`](../../workflow/autonomous-workflow/templates/aw-tester.agent.md) sub-agent | CI, remote envs, or no browser extension. |
 
@@ -115,7 +115,7 @@ Full procedure: **[`rules/runner.md`](./rules/runner.md)**. In outline:
 1. **Get the spec.** Extract it from the PR body between the `<!-- preview-spec:v1 -->` markers — the committed PR body is the only source that works on any checkout and in any later session. As a shortcut for a local author→run loop, `run <specs-path>` reads a local `specs.md` directly (no PR, no extraction). Absent → report `no spec` and stop.
 2. **Resolve the preview URL** per [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md). A `--url <preview-url>` argument overrides resolution (required with a local `specs-path`). Not deployed yet → report `inconclusive: preview not deployed` and stop.
 3. **Materialize** an ephemeral `specs.md` and an `aw-target.yml` overlay (`base_url` = resolved URL) under `.agent/{branch}/.preview-spec/`, reading auth and fixtures from a committed `.claude/aw-targets/preview.yml` when one exists.
-4. **Select the driver and run** per `--driver` (see [Drivers](#drivers) and [`rules/runner.md § Step 4`](./rules/runner.md)). `auto` invokes `aw-tester-chrome` in-session when the Chrome extension is connected, and dispatches the `aw-tester` sub-agent otherwise; a Chrome run that returns `fallback: playwright` re-runs on `aw-tester`. Mode `--all`.
+4. **Select the driver and run** per `--driver` (see [Drivers](#drivers) and [`rules/runner.md § Step 4`](./rules/runner.md)). `auto` invokes `aw-tester-chrome` in-session when the Chrome extension is connected; when Chrome is unavailable or a Chrome run returns `fallback: playwright`, it asks the user before running the `aw-tester` sub-agent rather than falling back silently. A forced `--driver chrome`/`playwright` never prompts. Mode `--all`.
 5. **Report** the verdict (pass / fail / inconclusive, per spec) — identical shape from either driver.
 6. **Write lessons** per [`rules/memory.md § Write at run time`](./rules/memory.md) when a spec failed for a navigation or precondition reason — not for a locator miss, which is the runner's own lesson to write.
 
