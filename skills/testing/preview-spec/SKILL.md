@@ -16,7 +16,7 @@ description: >
   spec", "verify this PR's preview", "run the preview spec", "test the
   preview deployment", "/preview-spec".
 disable-model-invocation: true
-argument-hint: '[author|run] [pr-url|pr-number] [--url <preview-url>]'
+argument-hint: '[author|run] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright]'
 license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Read Edit Write Grep Glob Skill Task mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
@@ -52,7 +52,8 @@ This skill owns three things and reuses the rest.
 | Concern | Owner |
 | --- | --- |
 | The spec grammar (`WHEN/THEN/AND`, the locator mini-grammar, `url:`, `network:`) | `aw-tester` — [`specs.md.template`](../../workflow/autonomous-workflow/templates/specs.md.template). This skill references it and never forks it. |
-| The Playwright runner + the compact verdict | `aw-tester` — dispatched as a sub-agent. |
+| The spec-run contract (locator ladder, auth semantics, verdict schema) | [`spec-run-contract.md`](../../workflow/autonomous-workflow/rules/spec-run-contract.md) — the engine-agnostic contract both runners implement. |
+| The runners + the compact verdict | Two, one contract: [`aw-tester`](../../workflow/autonomous-workflow/templates/aw-tester.agent.md) (Playwright sub-agent) and [`aw-tester-chrome`](../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md) (in-session Chrome). `run --driver` picks one. |
 | The browser context (`base_url`, auth, fixtures) | `aw-target.yml` — [`aw-target.yml.template`](../../workflow/autonomous-workflow/templates/aw-target.yml.template). |
 | The two-way lessons loop | `aw-tester-lessons` (locator friction, existing) + `preview-spec-lessons` (navigation / spec-quality friction, new). See [`rules/memory.md`](./rules/memory.md). |
 | **Embedding the spec in the PR body** (marker + collapsed block, ceiling exemption) | this skill — [`rules/spec-format.md`](./rules/spec-format.md). |
@@ -66,9 +67,21 @@ Parse `$ARGUMENTS`. The first token selects the operation.
 | Operation | Trigger | What it does |
 | --- | --- | --- |
 | `author` | first token `author`, or delegated from `create-pr` | Seed the spec from an existing source (the aw planner's `specs.md`, a `/fix-bug` repro) or generate it from the diff, then inject the marked collapsed block into the PR body. Reads memory first. |
-| `run` | first token `run` | Extract the block from the PR, resolve the preview URL, dispatch `aw-tester`, report the verdict, write lessons. |
+| `run` | first token `run` | Extract the block from the PR (or read a local `specs.md` path), resolve the preview URL, run the spec via the selected driver, report the verdict, write lessons. |
 
 If no operation token is present, default to `author` when a diff or branch context is in scope, and `run` when only a PR reference is given.
+
+### Drivers
+
+`run` executes the spec through one of two runners — same grammar, same verdict, different engine. Pick with `--driver`:
+
+| `--driver` | Runner | When |
+| --- | --- | --- |
+| `auto` (default) | Chrome if the extension is connected, else Playwright | Everyday use — fast locally, correct everywhere. |
+| `chrome` | [`aw-tester-chrome`](../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md), in-session | Force the fast see→act loop against your logged-in Chrome. |
+| `playwright` | [`aw-tester`](../../workflow/autonomous-workflow/templates/aw-tester.agent.md) sub-agent | CI, remote envs, or no browser extension. |
+
+`author` never touches a browser and takes no `--driver`.
 
 ## Step 0: Resolve your GitHub access path
 
@@ -99,12 +112,12 @@ Run the embedded spec against the live preview.
 
 Full procedure: **[`rules/runner.md`](./rules/runner.md)**. In outline:
 
-1. **Extract** the spec from the PR body between the `<!-- preview-spec:v1 -->` markers. Absent → report `no spec` and stop. The committed PR body is the only source `run` reads — it never depends on the gitignored `.agent/{branch}/specs.md`, so it works on any checkout and in any later session.
-2. **Resolve the preview URL** per [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md). A `--url <preview-url>` argument overrides resolution. Not deployed yet → report `inconclusive: preview not deployed` and stop.
+1. **Get the spec.** Extract it from the PR body between the `<!-- preview-spec:v1 -->` markers — the committed PR body is the only source that works on any checkout and in any later session. As a shortcut for a local author→run loop, `run <specs-path>` reads a local `specs.md` directly (no PR, no extraction). Absent → report `no spec` and stop.
+2. **Resolve the preview URL** per [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md). A `--url <preview-url>` argument overrides resolution (required with a local `specs-path`). Not deployed yet → report `inconclusive: preview not deployed` and stop.
 3. **Materialize** an ephemeral `specs.md` and an `aw-target.yml` overlay (`base_url` = resolved URL) under `.agent/{branch}/.preview-spec/`, reading auth and fixtures from a committed `.claude/aw-targets/preview.yml` when one exists.
-4. **Dispatch** `aw-tester` with the explicit spec and target paths (mode `--all`).
-5. **Report** the verdict `aw-tester` returns (pass / fail / inconclusive, per spec).
-6. **Write lessons** per [`rules/memory.md § Write at run time`](./rules/memory.md) when a spec failed for a navigation or precondition reason — not for a locator miss, which is `aw-tester`'s own lesson to write.
+4. **Select the driver and run** per `--driver` (see [Drivers](#drivers) and [`rules/runner.md § Step 4`](./rules/runner.md)). `auto` invokes `aw-tester-chrome` in-session when the Chrome extension is connected, and dispatches the `aw-tester` sub-agent otherwise; a Chrome run that returns `fallback: playwright` re-runs on `aw-tester`. Mode `--all`.
+5. **Report** the verdict (pass / fail / inconclusive, per spec) — identical shape from either driver.
+6. **Write lessons** per [`rules/memory.md § Write at run time`](./rules/memory.md) when a spec failed for a navigation or precondition reason — not for a locator miss, which is the runner's own lesson to write.
 
 ## Hard rules
 
