@@ -106,7 +106,7 @@ guarantee in *REPORT_BODY format (the sticky comment)* below is void for that ru
 - Stop and report if no PR reference is found in the invocation.
 - Stop and report a BLOCKED result if the inline review sub-pipeline fails twice.
 - Tool-call budget, scaled to the size of the reviewed diff: **30** calls for ≤ 10 changed files, **60** for 11–30, **100** for > 30. `--full` on a large PR always uses the top band.
-- Memory-call budget, **inside** that total and scaled to the same bands: **1** `memory_read` for the PR-state record (Step 0.7) + **1** `memory_write` for it (Step 4c) + **4** `memory_list` calls (Step 1.0) + **1** `memory_search` (Step 1.2c) + a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` calls — so **12** of 30, **17** of 60, or **22** of 100. The two state calls are fixed cost, not part of `MEMORY_READ_BUDGET`, and must never be traded against it: the state read is what makes the run incremental at all, and the state write is what makes the *next* run incremental.
+- Memory-call budget, **inside** that total and scaled to the same bands: **1** `memory_read` for the PR-state record (Step 0.7) + **1** `memory_write` for it (Step 4c) + **4** `memory_list` calls (Step 1.0) + the **2** impact-keyed knowledge calls (Step 1.2a — one `memory_list`, one `memory_search`) + **1** `memory_search` (Step 1.2c) + a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` calls — so **14** of 30, **19** of 60, or **24** of 100. The two state calls are fixed cost, not part of `MEMORY_READ_BUDGET`, and must never be traded against it: the state read is what makes the run incremental at all, and the state write is what makes the *next* run incremental.
 - **Step 4d's writes sit outside that budget**, capped by their own rule (`memory.md § Write budget`: ≤ 10 knowledge, one hotspot per file with a confirmed finding, `deep` tier only for knowledge). They are the only calls here that are *not* traded against reads, for the same reason the state write is not: a read budget spent is this run's context, while a write skipped is every future run's memory. A run that trims 4d to stay under a read cap has optimised the wrong side of the ledger.
   `MEMORY_READ_BUDGET` is a **single pool spanning both read sites**: Step 1.2d (lesson bodies) and Step 2.7b (relevance bodies, per `comment-relevance-memory.md § Read`). Step 1.2d spends at most **half** of it, rounded down, so a lesson-heavy shortlist can never starve the relevance verdicts that decide what gets posted; Step 2.7b may spend the whole remainder, including anything 1.2d left unused. Decrement the pool as calls are made and stop at zero at either site.
   The reads trade call count for context: the four lists are summary-only (~15 KB for a typical fan-out instead of ~110 KB), and only shortlisted entries are ever expanded, so a review that matches nothing spends 5 calls and ~15 KB rather than 5 calls and ~110 KB.
@@ -931,12 +931,19 @@ Retain each loaded memory's LoreKit `scope` and `key` alongside its
 (`agents/shared/rules/comment-relevance-memory.md § Linking applied memories in the report`).
 Set `LOREKIT_CONNECTED` = `true` when the `mcp__lorekit__memory_list` call returned without a tool error (i.e., the attempt was made and succeeded); set `false` only when the tool call still threw an error after the retries above are exhausted, or the tool is not in the agent's `tools:` grant — never infer `false` without attempting the call, and never off a single transient throw before retrying.
 Set `MEMORIES_READ_COUNT` = the number of `reviewer-comment-relevance` memories retained after
-this merge/dedup (0 when connected but none matched).
-**This definition is authoritative and no later step widens it** — including the Step 1.2c addend.
-`MEMORIES_READ_COUNT` counts `reviewer-comment-relevance` memories only, never `reviewer-lessons`,
-because its partner `MEMORIES_USED_COUNT` is `|APPLIED_MEMORIES|`, built at Step 2.7b from relevance
-memories alone, and the two are rendered as a single `indexed · used` pair that must describe one
-population. It is `indexed`, not `read`, because under `SUMMARY_VIEW` these entries were listed but
+this merge/dedup (0 when connected but none matched), **plus the knowledge and hotspot records the
+Step 1.2a read returns** — the three record families [`memory.md`](./pr-reviewer/rules/memory.md)
+defines, counted as one population.
+`MEMORIES_READ_COUNT` never counts `reviewer-lessons`, which have their own announce line.
+The population is fixed by its partner, not chosen here: `MEMORIES_USED_COUNT` is `|MEMORIES_USED|`,
+whose entries carry `kind` ∈ `rule` / `knowledge` / `hotspot`, and the two render as a single
+`indexed · used` pair that the renderer **fails closed** on when `used > indexed`. Counting only
+relevance rows here is therefore not a conservative choice but a report that cannot be produced: a
+run that applies a hotspot and a knowledge fact on a repo with no armed relevance rules yields
+`0 indexed · 2 used`, `render-report.mjs` exits non-zero with nothing on stdout, and Step 4a's
+contract is then to post no report at all. That is the normal adoption shape for a new bucket, so it
+would have been the common case.
+It is `indexed`, not `read`, because under `SUMMARY_VIEW` these entries were listed but
 their bodies were not fetched — calling that "read" would overstate what the reviewer actually
 consulted. When `SUMMARY_VIEW` is false the entries genuinely were read in full, but the label
 stays `indexed` so the figure means the same thing in every run.
@@ -1182,6 +1189,37 @@ that is a hypothesis a finder must state and the verifier must confirm against t
 code. Reporting graph edges as defects is the failure mode this phase is most likely to cause, and
 [`impact-graph.md § The graph is a lead, never a verdict`](./pr-reviewer/rules/impact-graph.md#the-graph-is-a-lead-never-a-verdict)
 is the rule that forbids it.
+
+**Then read what this repository already knows about the symbols the graph just named.** These two
+calls are the whole read side of
+[`memory.md § Read — two calls, keyed by the impact graph`](./pr-reviewer/rules/memory.md#read--two-calls-keyed-by-the-impact-graph),
+and they live here because the graph is what makes them selective — the same reason the rule says
+"after Phase B". Issue each as a real tool call:
+
+```text
+# 1. The knowledge + hotspot records for this repo. The tag is what makes one page selective:
+#    relevance rules carry the same kind/host, so a kind/host filter alone returns both buckets
+#    mixed and the knowledge rows lose the page to whichever bucket grew fastest.
+mcp__lorekit__memory_list:   scope="repo::{owner}/{repo}" tags=["ci::review-knowledge"] kind="signal" host="reviewer" limit=50
+
+# 2. A targeted search on the top 10 changed symbols by blast radius, from impact.json.
+#    Note the parameter names: memory_search takes `q` + `scopes` (array), NOT `query` + `scope`.
+mcp__lorekit__memory_search: q="<symbol> <symbol> <symbol>" scopes=["repo::{owner}/{repo}"] limit=25
+```
+
+Match the returned records against the graph per that rule's match table, and hand the finders what
+it prescribes: the recorded contract plus `history[]` for a changed symbol, the hotspot checklist
+line (`history: <N> defects here in 90 d, classes: …`) for a file in the delta, and a previously
+caught human comment as a checklist line. Two things this read never does: it never fetches
+relevance rules (they have their own tag-filtered pair at Step 1.0, and duplicating them here is
+what crowded the knowledge rows out of the page), and it never applies a suppression — that is
+Step 2.7b, after verification.
+
+**Without this step Step 4d writes into a bucket nothing reads.** The write side and the read side
+of the knowledge bucket are two halves of one loop, and a bucket with a producer and no consumer
+fails exactly as silently as the reverse: the run still reviews, reports 0 memories applied, and
+looks indistinguishable from a repository that has learned nothing. Skipping it is a deviation to
+declare in Step 5, not an optimisation.
 
 ### 1.2b Delta triage and depth routing (Phase C)
 
@@ -1831,9 +1869,10 @@ three outcomes are `breaking-and-used`, `breaking-but-unused`, and `no-breaking-
 there is never a silent fourth: when the ladder cannot reach the changelog, the finding is withheld
 as an `unobtainable` hypothesis (`WITHHELD` in Step 4), never asserted as verified.
 
-Set `INTEGRATIONS_CHECKED` from the dependency finder's disposition — `not activated` when the diff
-touches no manifest or lockfile, `skipped (tier: quick)` at `quick`, and otherwise the rung that
-produced each result. An "integrations checked" line never implies upstream release-note
+Set the payload's **`INTEGRATIONS`** slot from the dependency finder's disposition — `not activated`
+when the diff touches no manifest or lockfile, `skipped (tier: quick)` at `quick`, and otherwise the
+rung that produced each result. The slot is **required**: `render-report.mjs` exits non-zero with
+nothing on stdout when it is absent, so a run that leaves it unset posts no report at all. An "integrations checked" line never implies upstream release-note
 verification unless a rung that reads the changelog actually ran.
 
 **Diversify then vote.** When this agent holds `Task`, the correctness finder runs as **N = 3**
@@ -2985,7 +3024,9 @@ the branch and reaches the next author who touches the same symbol.
 Run the two writes in
 [`memory.md § Write — the two calls this agent makes itself`](./pr-reviewer/rules/memory.md#write--the-two-calls-this-agent-makes-itself):
 **knowledge** for each symbol this run traced (deep tier only, cap 10) and **hotspot** for each file
-that carried a confirmed finding (one per file). Both are `mcp__lorekit__memory_write` calls with
+that carried a confirmed finding — plus each file where Step 1.0's in-run signals recorded a `missed`
+(a human caught something on a changed line this agent did not flag). Both are
+`mcp__lorekit__memory_write` calls with
 `kind: "signal"`, `host: "reviewer"`, and `ttl_days: 90` — passed explicitly, because a `ci::` tag
 leaves both NULL and Step 1.0's `kind=signal host=reviewer` read then cannot see what was written.
 
@@ -2993,6 +3034,12 @@ leaves both NULL and Step 1.0's `kind=signal host=reviewer` read then cannot see
 | --- | --- |
 | `deep` | knowledge + hotspot |
 | `standard` · `quick` | **hotspot only.** A knowledge fact needs a traced symbol and a receipt, and neither tier produces one; writing a fact the run did not verify is the failure mode rule 1 of that section exists to prevent. |
+
+**Both writes merge onto the record read at Step 1.2a — never write the rule file's literals.** Same
+scope + key replaces the whole value, so a hotspot written as the template's `confirmed: 1` resets a
+counter four PRs of history built, and the `hot` classification the finders branch on never arms.
+Rule 3 of that section is the arithmetic: increment the counter this run earned, union `classes[]`,
+append to the capped example lists, and carry every untouched counter through unchanged.
 
 Non-blocking, like 4c: a failed write is logged and the run continues. Report the counts in Step 5
 (`Memory written: <K> knowledge, <H> hotspot`) — **including the zeroes**. A deep-tier run that wrote

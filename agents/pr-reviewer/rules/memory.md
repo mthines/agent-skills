@@ -110,6 +110,11 @@ That marker is also the **attribution**: only this agent writes it, so its prese
 Memory is read **after** Phase B, because Phase B is what tells you which symbols and files to ask about.
 Reading before it means asking for the whole `repo::` scope and paging through noise.
 
+**The call site is the tail of Step 1.2a**, named there in the agent body. That cross-reference is
+load-bearing in both directions: a read prescribed only here is a read no run issues, which is how
+this bucket spent its first three runs with a rule file, a match table, a TTL, a write budget, and
+zero calls against it. If you change where the read happens, change both files in the same edit.
+
 ```text
 # 1. The knowledge + hotspot records for this repo. Tag-filtered, not just kind/host.
 mcp__lorekit__memory_list    scope="repo::{owner}/{repo}"  tags=["ci::review-knowledge"]  kind=signal  host=reviewer  limit=50
@@ -312,15 +317,35 @@ mcp__lorekit__memory_write:
   ttl_days = 90
   origin_repo = "<RESOLVED_REPO>"   origin_pr = <PR_NUMBER>   origin_commit = "<HEAD_SHA>"
 
-# B. Hotspot — one call per file that carried a confirmed finding this run.
+# B. Hotspot — one call per file that carried a confirmed finding this run, plus one per file where
+#    Step 1.0's in-run signals saw a human catch something this agent did not flag (`missed`).
 mcp__lorekit__memory_write:
   scope    = "repo::{owner}/{repo}"
   key      = "hotspot::<path>"
-  value    = "<{v:1, path, confirmed:1, last_touched_by:[…]}, serialised>"
+  value    = "<the JSON record below, serialised — MERGED onto the record read at Step 1.2a>"
   tags     = ["ci::review-knowledge", "signal::confirmed"]
   kind     = "signal"
   host     = "reviewer"
   ttl_days = 90
+```
+
+The hotspot record's value carries **every counter the read side branches on**, not just the one
+this run incremented:
+
+```jsonc
+{
+  "v": 1,
+  "path": "src/api/client.ts",
+  "confirmed": 4,
+  "missed": 1,
+  "regressed": 0,
+  "classes": ["contract-break", "nil-deref"],
+  "confirmed_examples": [
+    { "pr": 164, "sha": "47b969a",
+      "fp": "consumer-impact:contract-break:retryRequest@src/api/client.ts" }
+  ],
+  "last_touched_by": ["#164"]
+}
 ```
 
 `kind` and `host` are passed **explicitly on every write**. LoreKit infers them from a `loop::` tag only, and these records carry `ci::` tags, so omitting them leaves both NULL — at which point [read call 1](#read--two-calls-keyed-by-the-impact-graph), which filters `kind=signal host=reviewer`, cannot see the record the run just wrote. A write nothing can read is worse than no write: it reports success.
@@ -348,11 +373,22 @@ The knowledge record's value:
 }
 ```
 
-Four rules on the knowledge write, each closing a way this record could become a liability:
+Four rules on these writes, each closing a way a record could become a liability. Rules 1, 2, and 4
+govern the **knowledge** write; **rule 3 governs both**, and reading it as knowledge-only is what
+turns write B into a counter that resets to 1 on every run:
 
 1. **Only what this run verified.** A `facts[]` entry carries the receipt tier that produced it ([`verification-receipt.md`](../../shared/rules/verification-receipt.md)). A claim the run inferred but did not check is not a fact and is not written — the next run would consume it as one, and [re-verification](#a-knowledge-fact-is-re-verified-or-dropped-never-trusted) only compares it against the code, it does not re-derive whether it was ever true.
 2. **`verified_at_sha` is this run's `HEAD_SHA`, always.** It is the whole mechanism by which the next run decides between "the fact stands" and "re-verify" — a stale or absent sha makes every fact permanently unverifiable, and rule 3 of that section then drops it on every future run.
-3. **Merge, never clobber.** Same scope + key is an UPDATE, so read the existing record first (it is already in hand from call 1) and append to `history[]` — capped at 20, oldest dropped. Overwriting it throws away the cross-author history that is the point of the record.
+3. **Merge, never clobber — on both writes.** Same scope + key is an UPDATE that replaces the whole
+   value, so read the existing record first (it is already in hand from the Step 1.2a call) and merge
+   onto it. For **knowledge**, append to `history[]` — capped at 20, oldest dropped. For **hotspot**,
+   *increment* the counter this run earned (`confirmed`, `missed`, or `regressed`), union `classes[]`,
+   append to `confirmed_examples[]` and `last_touched_by[]` — each capped at 20, oldest dropped — and
+   **carry the counters this run did not touch through unchanged**. Writing the template's literals
+   instead is the specific failure: a file with `confirmed: 6` after four PRs of history goes back to
+   `confirmed: 1`, the `hot` classification the finders branch on never arms, and the `missed[]` a
+   human's catch recorded is gone. Nothing reports it, because a clobbered counter and a first write
+   are byte-identical in the store.
 4. **Facts about code, never about people or telemetry values.** No login, no comment text, no raw span attribute (`telemetry.md § Three rules that hold everywhere`, rule 3). A `traffic_band` and a `sampled_at` are aggregates and may be cached here; a request body may not.
 
 **Neither write is on the critical path.** A failure is logged and the run continues, exactly as the state write's rule 1 has it. Report the count in Step 5 — a run that wrote 0 knowledge records on a deep tier is a fact worth seeing, because it means either nothing was traced or the write is broken, and those look identical from the store.

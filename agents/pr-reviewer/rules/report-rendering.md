@@ -88,7 +88,7 @@ of those was a real defect before it became derived.
 | `HEADLINE` | The one-line verdict sentence (see *Headlines* below). |
 | `GATE_DESCRIPTION_STATUS` · `GATE_PRIOR_STATUS` · `GATE_DOCS_STATUS` · `GATE_SELFREVIEW_STATUS` · `GATE_CODEREVIEW_STATUS` | One of `✅` `⚠️` `❌` `⏭️`. Gate 2 (CI) is not a row — it renders via `CI_NOTE`. |
 | `GATE_DESCRIPTION_DETAILS` · `GATE_PRIOR_DETAILS` · `GATE_DOCS_DETAILS` · `GATE_SELFREVIEW_DETAILS` · `GATE_CODEREVIEW_DETAILS` | The Details cell. **Single line, no `\|`, ≤ 120 chars** — all three enforced; the full finding belongs in an inline comment. |
-| `MEMORIES_SUMMARY` | The **indexed half only** — `<MEMORIES_READ_COUNT> indexed`, or `not connected`. Never write ` · <N> used`: the renderer derives that from `MEMORIES_USED`'s length and rejects a payload that supplies its own, reports fewer indexed than used, or pairs `not connected` with a non-empty `MEMORIES_USED`. |
+| `MEMORIES_SUMMARY` | The **indexed half only** — `<MEMORIES_READ_COUNT> indexed`, or `not connected`. It counts all three record families (relevance rules, knowledge, hotspot), because `MEMORIES_USED` does. Never write ` · <N> used`: the renderer derives that from `MEMORIES_USED`'s length and rejects a payload that supplies its own, reports fewer indexed than used, or pairs `not connected` with a non-empty `MEMORIES_USED`. |
 | `QUALITY` | Must begin `produced <N> → posted inline <N> …`. |
 | `INTEGRATIONS` | Names + versions + spec URLs, or `not activated`, or `skipped (<reason>)` — e.g. `skipped (tier: quick)`. |
 | `OPTIMALITY_LOG` · `STANDARDS_LOG` · `MEASURABILITY_LOG` | Must begin `ran` or `skipped (reason)` so the run-state parses. |
@@ -549,9 +549,14 @@ of the two shapes below it takes, so a reader always sees either both counts or 
 - **Not connected** (`LOREKIT_CONNECTED=false` — the `mcp__lorekit__memory_list` tool call still errored after the Step 1.0 retries were exhausted, or the tool was unavailable: not in the agent's `tools:` grant, or the LoreKit MCP server did not connect this session so the tool is unregistered — `No such tool available`) — render exactly `Memories — not connected`, no bullets.
   This shape MUST NOT appear when the read was merely skipped or assumed, nor off a single transient throw — it only appears after a genuine failed attempt that survived retries.
 
-`MEMORIES_READ_COUNT` (Step 1.0) is how many relevance memories were loaded into the index;
-`MEMORIES_USED_COUNT` = `|APPLIED_MEMORIES|`, how many actually fired (drops + downgrades +
-promotes). Indexed is always ≥ used — a run can index memories and apply none. The bullet count MUST equal `MEMORIES_USED_COUNT`.
+`MEMORIES_READ_COUNT` is how many memory records were loaded into the index — relevance rules
+(Step 1.0) **plus** knowledge and hotspot records (Step 1.2a), the three families
+[`memory.md`](./memory.md) defines. `MEMORIES_USED_COUNT` = `|MEMORIES_USED|`, how many actually
+fired (a relevance drop, downgrade or promote; a knowledge fact or hotspot counter that reached a
+finder). Indexed is always ≥ used — a run can index memories and apply none — and the renderer
+enforces it, so the two halves must count the same three families: a relevance-only `indexed`
+beside a `used` that includes a hotspot fails the whole report closed. The bullet count MUST equal
+`MEMORIES_USED_COUNT`.
 
 Build each `<url>` from the memory's retained `scope` + `key`, per
 `comment-relevance-memory.md § Linking applied memories in the report` — the

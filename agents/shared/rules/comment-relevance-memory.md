@@ -25,7 +25,7 @@ specific codebase, surfacing fewer noise comments and more actionable ones.
 ---
 
 **Read this by section, not start to finish.** At ~700 lines this is a reference: no consumer needs
-all of it. `pr-reviewer` reads *Read* at Step 2.2 and *Linking applied memories in the report* at
+all of it. `pr-reviewer` reads *Read* at Step 2.7b and *Linking applied memories in the report* at
 Step 4; `implement-suggestion` and `outcome-learning.md` read *Write*; the GitHub Action and
 `scripts/record-comment-relevance.mjs` implement *Relevance memory record schema*. Jump to the
 section your step names — the Contents below is the index.
@@ -371,7 +371,7 @@ mcp__lorekit__memory_read: scope="<the entry's scope>" key="<the entry's key>"
 ```
 
 This fetch happens **after** the run's raw findings exist, because the selector is a fingerprint
-match against them — there is nothing to match earlier. In `pr-reviewer` that is Step 2.2.
+match against them — there is nothing to match earlier. In `pr-reviewer` that is Step 2.7b, **after** Phase E verification: suppressing before it would drop a candidate nobody looked at on the strength of a fingerprint match, while suppressing after it drops a *verified* finding the repo has repeatedly declined, which is a recordable maintainer preference.
 
 Skip the fetch entirely in two cases, neither of which consumes budget:
 
@@ -408,7 +408,8 @@ For each loaded memory with `relevance: not-relevant` or `relevance: weak-not-re
   equivalent to the finding's one-line claim.
 - On match:
   - `relevance: not-relevant` with `seen_count >= 3` → **DROP** the finding
-    before it reaches the grounding step.
+    before it is scored and placed. It has already been grounded and verified —
+    that is what makes the drop a preference rather than a guess.
     Log: `[relevance-memory] DROP <file>:<line> — not-relevant pattern "<fingerprint>" seen <n> times (repo-suppressed)`.
   - `relevance: not-relevant` with `seen_count 1–2` → **DOWNGRADE** from
     `issue`/`suggestion` to `nitpick`; add the decoration `(repo-pattern, seen
@@ -767,7 +768,7 @@ Use the same `memory.write` call format above, with `source_agent: "pr-reviewer"
 `lorekit-setup § Wiring checklist` requires a loop to state these so a future maintainer does not
 optimise them away. They are what stop this bucket reinforcing its own errors:
 
-1. **Records are advisory, never auto-applied.** A relevance memory biases Step 2.2 — it may drop,
+1. **Records are advisory, never auto-applied.** A relevance memory biases Step 2.7b — it may drop,
    downgrade, or promote a *finding*. It may never disable a gate, change a threshold, or skip a
    step. The only path to changed behaviour is the human-reviewed suggestion in § Promotion rule.
 2. **Recurrence gates promotion, not a single run** (`seen_count >= 3` concordant, same direction).
@@ -823,7 +824,7 @@ until 6).
 | `outcome-learning.md` | Post-merge gh-api signals write to BOTH `reviewer-lessons` (existing) AND `reviewer-comment-relevance` (new). |
 | `per-comment-confidence.md` | Confidence gate runs on the surviving findings only — already-dropped findings skip the gate. |
 | `finding-grounding.md` | Grounding runs on the surviving findings only. |
-| review-config `filters:` | Relevance-memory filtering runs at Step 2.2, filter suppression at Step 2.3. A finding that survives Step 2.2 (seen < 3 times, only downgraded) is still eligible for filter suppression at Step 2.3. A finding dropped at Step 2.2 never reaches Step 2.3 — filter suppression is a no-op for already-dropped findings. Both mechanisms are complementary: memory is adaptive (learned), filters are explicit (configured). |
+| review-config `filters:` | Filter suppression runs at Step 2.3, relevance-memory filtering at Step 2.7b — filters first, memory after verification. A finding suppressed by a filter at Step 2.3 never reaches Step 2.7b, so memory is a no-op for it; a finding that survives both (seen < 3 times, only downgraded) is posted downgraded. Both mechanisms are complementary: memory is adaptive (learned), filters are explicit (configured). |
 
 ---
 

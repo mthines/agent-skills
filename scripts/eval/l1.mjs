@@ -3766,6 +3766,99 @@ const isPollBlock = (block) =>
       /lorekit_api_key:\s*\$\{\{\s*secrets\.LOREKIT_API_KEY\s*\}\}/.test(caller));
   }
   void CALLER;
+
+  // ---- G45a: the knowledge read has a call site, not just a rule ----
+  //
+  // G44 guarded the write side and said so in its own comment. The read side stayed
+  // prescribed-only: `memory.md § Read` carried two calls, a match table, a budget and a TTL,
+  // while `agents/pr-reviewer.md` mentioned `ci::review-knowledge`, `knowledge::` and
+  // `hotspot::` zero times — so Step 4d's producer had no consumer, and a run reported
+  // "0 memories applied" indistinguishably from a repo that had learned nothing.
+  s.check("G45a the agent body issues the `ci::review-knowledge` read",
+    BODY.includes('tags=["ci::review-knowledge"]'));
+  s.check("G45a the agent body's knowledge read passes kind=signal host=reviewer",
+    /tags=\["ci::review-knowledge"\][^\n]*kind="signal"[^\n]*host="reviewer"/.test(BODY));
+  // The call site is Phase B's tail, per memory.md. Assert it positionally rather than by
+  // heading text: the read must come after the graph exists and before depth routing reads it.
+  const iGraph = BODY.indexOf("#### 1.2a Build the impact graph (Phase B)");
+  const iKnowledgeRead = BODY.indexOf('tags=["ci::review-knowledge"]');
+  const iDepthRouting = BODY.indexOf("### 1.2b Delta triage and depth routing (Phase C)");
+  s.check("G45a the knowledge read sits inside Step 1.2a, after the graph is built",
+    iGraph > 0 && iKnowledgeRead > iGraph && iDepthRouting > iKnowledgeRead);
+  // Both files must name the other's half of the loop, so moving one fails here.
+  s.check("G45a memory.md names its call site in the agent body",
+    /call site is the tail of Step 1\.2a/.test(MEMORY_MD));
+  s.check("G45a the agent body routes the read back to memory.md § Read",
+    /Read — two calls, keyed by the impact graph|#read--two-calls-keyed-by-the-impact-graph/
+      .test(BODY));
+
+  // ---- G45b: the hotspot write merges its counters instead of clobbering them ----
+  //
+  // The template was a literal `confirmed:1` with field list `{v, path, confirmed,
+  // last_touched_by}`, and the merge rule was scoped to "the knowledge write" by its own
+  // heading — so every run reset a counter the read side classifies `hot` on, and the
+  // `missed[]` the in-run signals table promises had nowhere to land.
+  const hotspotBlock = MEMORY_MD.split("# B. Hotspot")[1]?.split("```")[0] ?? "";
+  s.check("G45b the hotspot write is documented", hotspotBlock.length > 0);
+  s.check("G45b the hotspot write merges onto the record read at Step 1.2a",
+    /MERGED onto the record read at Step 1\.2a/.test(hotspotBlock));
+  s.check("G45b the hotspot write template does not hardcode `confirmed:1`",
+    !/confirmed\s*:\s*1\b/.test(hotspotBlock));
+  // Every counter the read side branches on must exist in the written record. `missed` and
+  // `regressed` are named by the four-records table and the match table; omitting them from
+  // the write is what made those rows unreachable.
+  for (const field of ["missed", "regressed", "classes", "confirmed_examples"]) {
+    s.check(`G45b the hotspot record's value carries \`${field}\``,
+      new RegExp(`"${field}"`).test(MEMORY_MD));
+  }
+  s.check("G45b the merge rule covers both writes, not the knowledge write alone",
+    /Merge, never clobber — on both writes/.test(MEMORY_MD)
+    && !/Four rules on the knowledge write/.test(MEMORY_MD));
+  s.check("G45b Step 4d tells the run to merge rather than write the literals",
+    /never write the rule file's literals/.test(BODY));
+
+  // ---- G45c: `indexed` and `used` count one population ----
+  //
+  // The body defined `MEMORIES_READ_COUNT` as relevance-only and called itself authoritative;
+  // a later step extended `MEMORIES_USED[]` to knowledge and hotspot; `render-report.mjs`
+  // derives `used` from that array's length and FAILS CLOSED when it exceeds indexed. A run
+  // applying a hotspot on a repo with no armed relevance rule therefore rendered nothing at
+  // all — and that is the normal shape for a bucket in its first weeks.
+  const RENDERING_MD = read("agents/pr-reviewer/rules/report-rendering.md");
+  for (const [file, text] of [
+    ["pr-reviewer.md", BODY],
+    ["report-rendering.md", RENDERING_MD],
+  ]) {
+    s.check(`G45c ${file}: MEMORIES_READ_COUNT counts knowledge and hotspot too`,
+      /MEMORIES_READ_COUNT[\s\S]{0,700}?hotspot/.test(text)
+      || /hotspot[\s\S]{0,700}?MEMORIES_READ_COUNT/.test(text));
+    s.check(`G45c ${file}: no relevance-only claim survives beside the widened pair`,
+      !/MEMORIES_READ_COUNT[^\n]*counts `reviewer-comment-relevance` memories only/.test(text)
+      && !/is how many relevance memories were loaded/.test(text));
+  }
+  // The renderer's fail-closed rule is the reason the two must agree; assert it is still there,
+  // so a future relaxation of the docs cannot pass while the code still rejects the payload.
+  const RENDER = read("agents/pr-reviewer/scripts/render-report.mjs");
+  s.check("G45c the renderer still fails closed on used > indexed",
+    /indexed is always >= used/.test(RENDER));
+
+  // ---- G45d: relevance suppression is documented after verification, in every file ----
+  //
+  // G38d asserted the 2.7b ordering on the agent body alone, and G44a looped over both memory
+  // files without an ordering check, so `comment-relevance-memory.md` kept describing Step 2.2
+  // ("DROP the finding before it reaches the grounding step") at 1008/1008 green — the exact
+  // pre-verification suppression this PR moved.
+  for (const [file, text] of [
+    ["comment-relevance-memory.md", RELEVANCE_MD],
+    ["pr-reviewer.md", BODY],
+  ]) {
+    s.check(`G45d ${file}: no site claims relevance filtering runs at Step 2.2`,
+      !/[Ss]tep 2\.2\b/.test(text));
+    s.check(`G45d ${file}: no site drops a finding before grounding`,
+      !/before it reaches the grounding step/.test(text));
+  }
+  s.check("G45d comment-relevance-memory.md names Step 2.7b as the match point",
+    /In `pr-reviewer` that is Step 2\.7b/.test(RELEVANCE_MD));
 }
 
 process.exit(s.report() ? 0 : 1);
