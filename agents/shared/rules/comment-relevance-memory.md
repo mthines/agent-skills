@@ -99,6 +99,36 @@ No git remote → use `global` only.
 
 ### Key format
 
+Two key spaces coexist, and which one a record lands in decides whether it can ever arm a
+suppression rule.
+
+**v2 — structural, canonical, promotable.** A finding this agent posted carries its own fingerprint
+in an HTML marker, so the key is *recovered* rather than re-derived from prose:
+
+```text
+reviewer-comment-relevance::rule::<finder>:<defect-class>:<symbol>@<path>
+```
+
+[`agents/pr-reviewer/scripts/fingerprint.mjs`](../../pr-reviewer/scripts/fingerprint.mjs) is the
+**single normative implementation** of that grammar — `buildFingerprint`, `marker`,
+`extractFingerprint`, `parseFingerprint`, and the matcher. Everything that needs a fingerprint
+imports it; nothing re-implements it. The recorder, the agent, and the eval harness therefore cannot
+fork into two key spaces for the same finding, which is the failure the v1 space actually suffered.
+
+**Why `@path` is allowed here when the coordinate ban forbids `file:line`.** The ban exists because a
+coordinate that is unique per occurrence never accumulates. A line number drifts on the next commit;
+a path does not, and a symbol survives being moved within its file. More to the point, `symbol@path`
+is the *right scope* for suppression: "this repo declines this defect class on this symbol" is a
+statement worth accumulating, while "this repo declines this defect class anywhere" is too coarse to
+be safe and "…on this line" too fine to ever fire. A rename of the code re-keys the record, which is
+the correct sensitivity — the old record lapses at TTL and the new one starts clean.
+
+**v1 — prose-derived, legacy, read-only.** Records keyed from comment text are still read for
+back-compat and are written by producers that have no marker to recover, but they are marked
+`promotable: false` and left to lapse. A prose key re-keys on every re-phrasing of the same
+finding, so its `seen_count` splits and it never reaches the `≥ 3` bar — arming a durable
+suppression rule on a key that wobbles is the thing to avoid, not the split itself.
+
 ```text
 reviewer-comment-relevance::<category>:<claim-gist>
 ```
@@ -207,17 +237,38 @@ Each entry stored to LoreKit carries:
 
 ```json
 {
-  "fingerprint": "<category>:<claim-gist>",
+  "v": 2,
+  "fingerprint": "<finder>:<defect-class>:<symbol>@<path>",
+  "fp_v": 2,
+  "promotable": true,
   "relevance": "relevant | not-relevant | weak-not-relevant",
+  "direction": "amplify | suppress",
   "reason": "<one-line: why this verdict was reached — resolution method>",
   "resolution_method": "fixed | wont-fix | ignored-at-merge",
   "severity": "critical | high | medium | low",
+  "source": { "login": "<who>", "type": "bot | human", "agent": "pr-reviewer | other" },
+  "status": "candidate | active | disabled",
+  "evidence": [{ "pr": 123, "signal": "wont-fix", "at": "<ISO 8601>", "by": "<login>" }],
   "examples": ["<owner>/<repo>#<n> comment <id>"],
   "seen_count": 1,
-  "status": "active | promoted | retired",
+  "origin_pr": 123,
   "expires": "<ISO 8601, default: now + 60 days>"
 }
 ```
+
+Three fields carry the weight:
+
+- **`source`** is provenance, and every read filters on it. A record derived from another bot's
+  comment or a human's comment must never train *this* agent's suppressor: those authors have their
+  own bars and their own noise. A comment this agent posted is identified by its own
+  `<!-- fp:v2:… -->` marker, which is self-attributing and needs no login configuration — which
+  matters on access paths where `/user` 401s and the bot login is simply unavailable.
+- **`promotable`** is `false` for every v1 key, so a wobbling prose key cannot arm a rule however
+  often it is re-sighted.
+- **`status`** is written as an **advisory snapshot only**. The reader recomputes the lifecycle from
+  server-incremented `seen_count` plus the distinct PRs in `evidence[]`, so a failed
+  read-modify-write can never reset a lifecycle or promote one early. `candidate` → `active`
+  (suppression armed) → `disabled` (a later fix contradicted it).
 
 `severity` is **optional**. The reviewer tiers a finding by default (`review-config.md` § Severity-aware thresholds) and shows the tier as a `<prefix> (<tier>):` label (`conventional-comments.md` § Severity decoration); `scripts/record-comment-relevance.mjs` reads it into this field and strips it before fingerprinting. It records the **latest-observed** tier for the fingerprint and is omitted for findings that were never tiered (back-compat with existing records and non-`pr-reviewer` bots).
 
@@ -485,93 +536,117 @@ with a single `uses:` line — no need to copy any script or workflow logic.
 Updates to the classification logic propagate automatically to all callers when
 the `@main` reference is used (or pin to a tag for stable behaviour).
 
-**Two triggers the caller wires up:**
+**Four modes, three of which the caller template wires up:**
+
+Every mode obeys one rule, and it is the rule the earlier version of this section did not enforce:
+**a directional record requires corroborated evidence, and where the evidence cannot decide, the
+recorder writes nothing.** Silence costs one signal. A wrong signal trains the suppressor against a
+finding class nobody rejected, and it does so durably.
+
+Thread state comes from **GraphQL** (`pullRequest { reviewThreads { isResolved isOutdated
+comments { databaseId } } }`), not from `/pulls/{n}/comments` — REST does not expose thread
+resolution at all, and the three defects below were all downstream of reading the wrong endpoint.
+When the GraphQL read fails or is incomplete, thread state is *unknown* and both event modes skip
+rather than guess.
 
 **`pull_request_review_thread: resolved`** (mode `thread-resolved`) —
-Fires the moment a reviewer resolves a thread.
-The script fetches the thread's replies and checks for:
+Fires the moment a reviewer resolves a thread. Precedence, highest first:
+
 1. 👎 reaction from the PR author on the root comment → `not-relevant / wont-fix`
-2. "Won't fix / by design / n/a / out of scope" language in any reply → `not-relevant / wont-fix`
-3. A commit after the comment that touches `(path, line ± 10)` → `relevant / fixed`
-4. Thread resolved with none of the above → `relevant / fixed` (human accepted)
+2. `WONT_FIX_RE` language in any reply → `not-relevant / wont-fix`
+3. Thread state unavailable → **write nothing** (`thread-state-unavailable`)
+4. `isOutdated` anchor → **write nothing** (`anchor-gone`)
+5. A commit after the comment touching `(path, line ± 10)` → `relevant / fixed`
+6. Resolved with none of the above → `relevant / fixed` (human accepted)
 
-**Check 3** is sound in this mode, and only in this mode: the trigger is the resolution event, so the
-thread is resolved by construction and the corroboration
-``outcome-learning.md § Signal (c) requires corroboration`` demands is present. The same region-touch
-test is **not** sound on the post-merge fallback path, which has no such guarantee.
+The author's own words (1–2) outrank anything inferred from the diff, and an undecidable anchor (4)
+outranks both inference branches — which is what closes the third defect below. Checks 5 and 6 are
+sound **only** in this mode: the trigger is the resolution event, so resolution is present by
+construction and the corroboration ``outcome-learning.md § Signal (c) requires corroboration``
+demands is satisfied. The same region-touch test is **not** sound on the post-merge fallback path,
+which carries no such guarantee.
 
-The same `WONT_FIX_RE` drift reaches **check 3** whenever the declined thread's region was also
-edited — and declines commonly arrive with nearby edits. Check 3 still satisfies the corroboration
-rule (resolved **and** touched), so it is sound as defined; but "sound" is not an exemption from the
-matcher drift below.
-
-**Check 4 is not signal (c) at all** and that argument does not reach it. There is no region touch,
-so resolution is the *sole* evidence rather than corroboration of anything. It is retained as
-pre-existing behaviour, but note what it infers over: `pr-reviewer` Step 2.9c resolves threads it
-classified `declined` as well as `fixed` / `acknowledged`, so a decline whose wording misses
-`WONT_FIX_RE` — a different matcher, free to drift from Step 2.9c's phrase list — resolves, fires
-this trigger, and records `relevant / fixed` for a finding the author rejected. Not introduced here
-and not fixed here; flagged so the next change to either matcher knows the two are coupled.
+Check 6 remains the one inference with resolution as its *sole* evidence, and it stays coupled to
+`pr-reviewer` Step 2.9c: that step resolves threads it classified `declined` as well as `fixed`, so
+a decline whose wording misses `WONT_FIX_RE` — a different matcher, free to drift from Step 2.9c's
+phrase list — resolves, fires this trigger, and records `relevant / fixed` for a rejected finding.
+The two matchers are coupled; L1 (`G24g` / `G24h`) holds `WONT_FIX_RE` set-equal to
+``outcome-learning.md``'s list precisely so the drift cannot open silently.
 
 **`pull_request: closed` (merged)** (mode `pr-merged`) —
-Fires when a PR merges.
 Sweeps the PR's review threads and records `weak-not-relevant / ignored-at-merge` for the ones it
-cannot account for otherwise.
+can actually account for. It skips, writing nothing, on all of:
 
-**What `modePrMerged` actually skips** (`scripts/record-comment-relevance.mjs`), and it is only two
-things, both REST-derivable:
+- **`already-recorded-on-resolve`** — the thread is `isResolved`, so the first trigger owns it.
+- **`wont-fix`** (recorded, not skipped) — a reply decline, or a 👎 from anyone. Reactions are
+  looked up on the root comment, capped at 30 lookups per sweep so a PR with hundreds of threads
+  cannot exhaust the API budget.
+- **`anchor-gone`** — `isOutdated`.
+- **`region-edited`** — a commit since the comment touched its region. The outcome is *unknown*, not
+  "already captured": `ignored-at-merge` is a claim the evidence does not support.
+- **`no-anchor`** — no `path` at all, so nothing to corroborate against.
 
-- A thread with a **won't-fix reply** (`WONT_FIX_RE`) — the decline is the record.
-- A thread with a **commit touching its region** since the comment, when the root comment has a
-  resolvable anchor (`path` non-empty and `line > 0`, `line` falling back to `original_line`).
+A **file-level comment** (a `path`, but `line` and `original_line` both null) falls back to a
+**file-level** touch check: an untouched file is real evidence of no fix and is recorded, a touched
+file is undecidable and writes nothing. The record carries the granularity it was decided at.
 
-  This skip is load-bearing in a way it was not before: such a thread's outcome is **unknown**, not
-  "already captured". Its region was edited, so `ignored-at-merge` is a claim the evidence does not
-  support, and the first trigger (`thread-resolved`) never fired for it unless it was also resolved.
-  Skipping it writes nothing, which is the correct outcome
-  (``outcome-learning.md § Signal (c) requires corroboration``).
+**`pull_request_review_comment: created`** (mode `human-comment`) —
+A human commenting on a changed line this agent did **not** flag, within ±5 lines, is the only
+direct evidence in the whole memory layer that detection came up short. It writes a `missed`
+counter to the `hotspot::<path>` knowledge record — never a relevance rule, because a miss says
+nothing about which finding shapes get accepted. Bot comments are skipped in both the caller's `if:`
+and the recorder.
 
-  **A file-level comment is a different case and is not skipped.** It carries a `path` but no line
-  anchor (`line` and `original_line` both null), so the guard's `line > 0` clause fails, the touch
-  check never runs, and the thread is swept as `ignored-at-merge` however the author dealt with it.
-  Its outcome is unknown, but the sweep **does write** — execution falls past the guard and records
-  `weak-not-relevant / ignored-at-merge` with a `path:0` anchor, however the author dealt with it.
-  That is a directional record on undecidable evidence, and it is the one place the committed script
-  still does what the corroboration rule forbids. Tracked in the Known gap below; closing it is the
-  same script change.
+**`deployment_status: success`** (mode `deploy-regression`, not wired up by the caller template) —
+Proposal § 4.8.5. The recorder holds **no telemetry credentials**: whatever does (a caller step, or
+a Routine in the reviewer's environment) computes the before/after comparison and passes it in as
+`regression_report`. Keeping the query out of the script is what lets its decision table be tested
+offline. Three outcomes: a regression on a file nothing flagged is a `missed` hotspot; a regression
+on a finding that was **dismissed** amplifies that rule at weight 3, because one production
+regression outweighs three 👎; a regression on a finding that was fixed before merge writes nothing.
+An empty `regressions` array also writes nothing — **silence is not evidence of safety**, so there
+is no confirmed-safe counter-record.
 
-**Known gap — resolved-with-no-touch double-writes.** The sweep has **no resolved-state check**, and
-cannot get one from the endpoint it reads: the script fetches `/pulls/{n}/comments`, and GitHub does
-not expose thread resolution in the REST comments list (the script says so at its own skip block).
-So a thread resolved with **no region touch** is recorded twice, on the same fingerprint:
+### The three defects this replaced, and why they were live
 
-- **Resolved with no matching decline phrase** — `thread-resolved` mode's check 4, the "human
-  accepted" fallthrough — takes `relevant / fixed` from the first trigger and then
-  `weak-not-relevant / ignored-at-merge` from this sweep. Two **opposite** directional records; per
-  § Relevance memory record schema they surface as a contradiction rather than resolving.
-- **Declined by a 👎 reaction rather than a reply** — check 1 — takes `not-relevant / wont-fix` and
-  is *also* swept, because the sweep inspects replies and never reactions. Same direction, so no
-  contradiction, but one event counts twice toward the `≥ 3` suppression bar.
+Three write defects were documented here as latent "known gaps" on the stated grounds that the
+workflow had not been committed. **It had been.** All three were writing into a durable signal for
+as long as that note stood, which is why they are recorded here rather than quietly deleted — a
+correctness argument that rests on a deployment claim has to re-check the deployment claim.
 
-This predates the corroboration rule and is **not** fixed here. Closing it needs the same GraphQL
-`reviewThreads` query `outcome-learning.md § Step 3b` adds — a change to the committed script, not
-to this document. It is recorded rather than papered over because the alternative is a doc that
-claims a protection the implementation does not provide.
+1. **Double write.** The sweep had no resolved-state check and could not get one from REST. A thread
+   resolved with no region touch was recorded twice on one fingerprint: `relevant / fixed` by the
+   resolve trigger, then `weak-not-relevant / ignored-at-merge` by the sweep. Two **opposite**
+   directional records, surfacing as a contradiction rather than resolving. Closed by the GraphQL
+   read plus the `already-recorded-on-resolve` skip. A 👎-declined thread was the same bug in one
+   direction: recorded once by the resolve trigger, then again by a sweep that inspected replies and
+   never reactions, so one event counted twice toward the `≥ 3` bar. The sweep now reads reactions.
+2. **File-level comments.** The touch guard's `line > 0` clause failed on a file-level comment,
+   execution fell **past** the guard, and the thread was swept as `ignored-at-merge` however the
+   author had dealt with it — a directional record on undecidable evidence. Closed by the file-level
+   touch fallback.
+3. **Obsolete read as fixed.** The resolve trigger cannot see *why* a thread was resolved. When the
+   reviewer resolves one as `obsolete` (the code the finding was about is gone), the region-touch
+   branch matches — a deletion always touches the line — and check 6 reads "resolved with none of
+   the above ⇒ relevant/fixed". Withdrawing a question was recorded as a finding that was accepted
+   and fixed. Closed by consulting GitHub's own `isOutdated`.
 
-Until then the Action path is dormant: `.github/workflows/reviewer-comment-relevance.yml` is still
-uncommitted (see the availability note in [`memory-buckets.md`](./memory-buckets.md)), so this is a
-spec defect awaiting a fix, not a live source of contradictory records.
+All three now have named cases in the recorder's `--self-test`, which L1 executes, so none can
+regress back into a durable signal unnoticed.
 
 **What the reusable workflow does:**
-- Checks out `mthines/agent-skills` to get `scripts/record-comment-relevance.mjs`.
+- Checks out `mthines/agent-skills` to get `scripts/record-comment-relevance.mjs` **and**
+  `agents/pr-reviewer/scripts/fingerprint.mjs`, which the recorder imports rather than carrying a
+  second copy of the fingerprint grammar.
 - Runs it with the event-specific inputs passed by the caller.
 - Writes to LoreKit via `npx @lorekit/cli memory write`:
   ```bash
   npx @lorekit/cli memory write \
     --scope "repo::{owner}/{repo}" \
-    --key "reviewer-comment-relevance::{category}:{claim-gist}" \
+    --key "reviewer-comment-relevance::rule::{finder}:{defect-class}:{symbol}@{path}" \
     --value '{"fingerprint":"...","relevance":"...","resolution_method":"...","reason":"...","seen_count":1,"status":"active","expires":"..."}' \
     --tags "loop::reviewer-comment-relevance,source::{resolution_method}" \
+    --kind signal --host reviewer \
     --source-agent "github-actions/reviewer-comment-relevance"
   ```
 - LoreKit's server-side deduplication increments `seen_count` on re-write of the same key.

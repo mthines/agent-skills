@@ -12,8 +12,17 @@
 # What this does:
 #   - When a reviewer resolves a PR thread → records whether it was fixed or dismissed
 #   - When a PR is merged → sweeps any still-open threads as "ignored at merge"
+#   - When a human comments on a changed line the agent did NOT flag → records a
+#     `missed` hotspot signal, the one direct piece of evidence that detection came up
+#     short.  Delete the `human-comment` job below if you do not want that.
 #   These signals accumulate in LoreKit under your repo's scope and make the
 #   reviewer / pr-reviewer agents progressively more accurate on your codebase.
+#
+# Not wired up here: `deploy-regression` mode, which amplifies a dismissed finding that
+# regressed in production after deploy.  It needs a telemetry comparison this workflow
+# cannot compute — see § 4.8.5 of the redesign proposal for the report shape and call the
+# reusable workflow with `mode: deploy-regression` and `regression_report:` from wherever
+# your telemetry credentials live.
 #
 # See: https://github.com/mthines/agent-skills/blob/main/agents/shared/rules/comment-relevance-memory.md
 
@@ -24,6 +33,8 @@ on:
     types: [resolved]
   pull_request:
     types: [closed]
+  pull_request_review_comment:
+    types: [created]
 
 permissions:
   contents: read
@@ -42,6 +53,8 @@ jobs:
       comment_line: ${{ github.event.thread.comments[0].line }}
       comment_body: ${{ github.event.thread.comments[0].body }}
       comment_created_at: ${{ github.event.thread.comments[0].created_at }}
+      comment_author: ${{ github.event.thread.comments[0].user.login }}
+      comment_author_type: ${{ github.event.thread.comments[0].user.type }}
     secrets:
       lorekit_api_key: ${{ secrets.LOREKIT_API_KEY }}
 
@@ -52,5 +65,27 @@ jobs:
     with:
       mode: pr-merged
       pr_number: ${{ github.event.pull_request.number }}
+    secrets:
+      lorekit_api_key: ${{ secrets.LOREKIT_API_KEY }}
+
+  human-comment:
+    name: Record a missed detection
+    # A human's own review comment on a changed line.  The `user.type` guard is belt and
+    # braces: the recorder skips bot comments itself, but skipping the job entirely saves
+    # a runner minute on every review bot's comment.
+    if: >
+      github.event_name == 'pull_request_review_comment'
+      && github.event.comment.user.type == 'User'
+    uses: mthines/agent-skills/.github/workflows/reviewer-comment-relevance.yml@main
+    with:
+      mode: human-comment
+      pr_number: ${{ github.event.pull_request.number }}
+      comment_id: ${{ github.event.comment.id }}
+      comment_path: ${{ github.event.comment.path }}
+      comment_line: ${{ github.event.comment.line }}
+      comment_body: ${{ github.event.comment.body }}
+      comment_created_at: ${{ github.event.comment.created_at }}
+      comment_author: ${{ github.event.comment.user.login }}
+      comment_author_type: ${{ github.event.comment.user.type }}
     secrets:
       lorekit_api_key: ${{ secrets.LOREKIT_API_KEY }}

@@ -630,16 +630,29 @@ function checksInSync(plan, checks) {
     // Scope to each function's own body. `fnBody` must handle `async function`: an
     // earlier version terminated on "\nfunction " only, so modeThreadResolved's window
     // ran to EOF, swallowed modePrMerged, and stayed green when its own call was cut.
+    // `export ` must be tolerated too: the decline logic now lives in exported pure
+    // deciders, and a pattern anchored on a bare `function` silently returned "" for
+    // each of them — which reads as "the call is missing" rather than "the guard cannot
+    // see the function", the same false-green shape the async fix above closed.
+    const FN_START = "^(?:export\\s+)?(?:async\\s+)?function";
     const fnBody = (name) => {
-      const i = rec.search(new RegExp(`^(?:async\\s+)?function ${name}\\(`, "m"));
+      const i = rec.search(new RegExp(`${FN_START} ${name}\\(`, "m"));
       if (i < 0) return "";
       const rest = rec.slice(i + 1);
-      const j = rest.search(/^(?:async\s+)?function \w+\(/m);
+      const j = rest.search(new RegExp(`${FN_START} \\w+\\(`, "m"));
       return j < 0 ? rec.slice(i) : rec.slice(i, i + 1 + j);
     };
-    s.check("G24f both script modes still apply decline detection",
-      /hasWontFixReply\s*\(/.test(fnBody("modeThreadResolved")) &&
-      /hasWontFixReply\s*\(/.test(fnBody("modePrMerged")));
+    // Decline detection moved out of the two mode functions and into the pure deciders
+    // they call, so asserting the call site inside each mode body no longer proves
+    // anything. Assert the whole path instead — each mode delegates, and each decider
+    // it delegates to applies the matcher. Four assertions where there were two: a
+    // decider that drops the matcher fails, and so does a mode that stops delegating.
+    s.check("G24f both deciders apply decline detection",
+      /hasWontFixReply\s*\(/.test(fnBody("decideResolvedThread")) &&
+      /hasWontFixReply\s*\(/.test(fnBody("decideMergeSweep")));
+    s.check("G24f both script modes delegate to the decider that applies it",
+      /decideResolvedThread\s*\(/.test(fnBody("modeThreadResolved")) &&
+      /decideMergeSweep\s*\(/.test(fnBody("modePrMerged")));
 
     // (i) The acknowledged-no-fix carve-out must exist AND precede the ignored-at-merge
     // bullet whose condition it satisfies in full. Deleting it (which I did) sends an
@@ -766,6 +779,7 @@ function checksInSync(plan, checks) {
       const OTHER_BUCKET_TTLS = new Set([
         30,  // `review-outcomes` — the volatile bus; G12a owns it.
         7,   // `pr-review-state` — pr-reviewer's per-PR state record; G24i owns it.
+        90,  // `review-knowledge` — symbol + hotspot records; G16g below owns it.
       ]);
       const found = [...content.matchAll(stale)]
         .map((m) => Number(m[1] ?? m[2] ?? m[3] ?? m[4]))
@@ -773,6 +787,16 @@ function checksInSync(plan, checks) {
       s.check(`G16f ${label} carries no reviewer-comment-relevance TTL other than ${TTL_DAYS}`,
         found.length === 0, found.length ? `stale: ${[...new Set(found)].join(", ")}` : "");
     }
+
+    // G16g owns the OTHER durable TTL in the same file. Excusing 90 in G16f without an
+    // owning check would let the knowledge TTL drift freely under cover of the excuse.
+    const KNOWLEDGE_TTL_DAYS = 90;
+    const buckets = read("agents/shared/rules/memory-buckets.md");
+    s.check(`G16g record-comment-relevance.mjs computes the knowledge/hotspot expiry from ${KNOWLEDGE_TTL_DAYS} days`,
+      recorder.includes(`KNOWLEDGE_TTL_MS = ${KNOWLEDGE_TTL_DAYS} * 24 * 60 * 60 * 1000`));
+    s.check(`G16g memory-buckets.md states the knowledge/hotspot lifetime as ${KNOWLEDGE_TTL_DAYS}d`,
+      new RegExp(`review-knowledge\`? \\(symbol\\)[^\n]*durable ${KNOWLEDGE_TTL_DAYS}d`).test(buckets) &&
+      new RegExp(`review-hotspot\`?[^\n]*durable ${KNOWLEDGE_TTL_DAYS}d`).test(buckets));
   }
 
   // G17: standards-conformance.md exists and is wired into pr-reviewer.

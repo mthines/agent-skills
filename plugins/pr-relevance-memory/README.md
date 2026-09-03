@@ -23,9 +23,16 @@ Three resolution outcomes carry signal:
 
 | Outcome | Detection | LoreKit signal |
 |---|---|---|
-| **Fixed** | Fix commit touches the commented line ± 10 rows | `relevant / fixed` |
+| **Fixed** | Thread resolved, anchor still live, and a fix commit touches the commented line ± 10 rows | `relevant / fixed` |
 | **Won't fix** | Author 👎 reacts, or replies "won't fix / by design / n/a" | `not-relevant / wont-fix` |
-| **Ignored at merge** | PR merged, thread still open, no fix, no decline | `weak-not-relevant / ignored-at-merge` |
+| **Ignored at merge** | PR merged, thread still open and unresolved, anchor live, no fix, no decline | `weak-not-relevant / ignored-at-merge` |
+| **Missed** | A human comments on a changed line the agent did not flag | `hotspot::<path>` `missed` counter |
+| **Undecidable** | Anchor gone (`isOutdated`), region edited with no decline, thread already recorded on resolve, or thread state unreadable | **nothing is written** |
+
+That last row is the one that makes the others trustworthy. A directional record needs
+corroborated evidence; where the evidence cannot decide, the recorder writes nothing. Silence
+costs one signal, while a wrong signal trains the reviewer's suppressor against a finding class
+nobody rejected — and it does so for 60 days.
 
 ## Installation
 

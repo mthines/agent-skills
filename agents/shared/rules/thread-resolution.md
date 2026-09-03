@@ -177,16 +177,22 @@ carries no signal about whether the finding was any good. It was never accepted 
 declined — the question was withdrawn. Recording it as `fixed` would reward a detection
 nobody acted on; recording it as `not-relevant` would punish one nobody rejected.
 
-**Known gap — the Action can still write one.** `scripts/record-comment-relevance.mjs`
-fires on `pull_request_review_thread: resolved` and has no way to know *why* a thread was
-resolved: its region-touch branch matches (a deletion always touches the line) and its
-terminal branch is "resolved with none of the above ⇒ `relevant / fixed`". So in a repo
-running the `pr-relevance-memory` caller, resolving a thread as `obsolete` produces exactly
-the record this paragraph forbids. Latent here — the reusable workflow is still uncommitted
-— and real for consumers. Closing it needs the resolver to signal intent to the webhook
-(a marker reply, or a `resolution_method` the Action can read), which is a script change,
-not a doc change. The direction is noise-amplification rather than suppression, so it does
-not gate a merge; it is recorded so the next change to that script knows.
+**Closed — the Action now consults `isOutdated`.** `scripts/record-comment-relevance.mjs`
+fires on `pull_request_review_thread: resolved` and still has no way to know *why* a thread
+was resolved, so the inference it used to make was wrong in exactly this case: its
+region-touch branch matched (a deletion always touches the line) and its terminal branch
+read "resolved with none of the above ⇒ `relevant / fixed`". Resolving a thread as
+`obsolete` therefore produced the record this paragraph forbids, in every repo running the
+`pr-relevance-memory` caller — and it was live, not latent, because the claim that the
+reusable workflow was uncommitted was false for as long as it stood.
+
+The fix does not require the resolver to signal intent. GitHub already knows: a thread whose
+anchor is gone is `isOutdated`, which the recorder reads over GraphQL and treats as
+**undecidable**, ordered ABOVE both inference branches. An outdated anchor writes nothing.
+The author's own words still outrank it — a 👎 or a decline reply on an obsolete thread is a
+real decline and is recorded — because those are evidence, and `isOutdated` only says the
+inference has none. Two named cases in the recorder's `--self-test`, executed by L1, hold
+this shut.
 
 Log it distinctly so a growing count is visible: `[thread] OBSOLETE <path>:<line> — anchor
 gone at <sha>, finding not re-produced`.
