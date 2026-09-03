@@ -3213,6 +3213,26 @@ const isPollBlock = (block) =>
     /source\.agent == "pr-reviewer"\s*(?:∨|\|\|)\s*source\.explicit == true/.test(memory)
     && /source\.agent == "pr-reviewer"\s*(?:∨|\|\|)\s*source\.explicit == true/.test(prm),
     "memory.md and the agent body must state the same two-case predicate");
+  // A record value with no closed field set grows fields nobody reads. Observed once as a hotspot
+  // carrying `fp_v` and `source{}` lifted off the relevance-rule schema, a `window_days` restating
+  // the TTL LoreKit stores as a column, and three prose sections — one of them the checklist line
+  // the READ side renders from the counters, frozen at write time so the next increment made it
+  // wrong. Nothing objected, because the schemas were examples rather than contracts.
+  s.check("G38e memory.md closes both record schemas against extra fields",
+    /field sets are closed/i.test(memory) && /not listed is not written/i.test(memory),
+    "the knowledge/hotspot value schemas must be stated as closed, not shown as examples");
+  s.check("G38e memory.md forbids restating a LoreKit first-class property",
+    /Never restate what LoreKit already stores as a first-class property/.test(memory)
+    && /source_agent/.test(memory) && /`window_days: 90` in the value/.test(memory),
+    "memory.md must name the columns a value may not duplicate, window_days included");
+  s.check("G38e memory.md keeps in-value expires as the stated exception",
+    /deliberate exception is the in-value \*\*`expires`\*\*/.test(memory)
+    && /by \*marking\* it, not by dropping it/.test(memory),
+    "the expires carve-out must give its mechanical reason: LoreKit marks rather than drops");
+  s.check("G38e memory.md bans storing what the read side derives",
+    /Never store what the read side derives/.test(memory)
+    && /facts and not advice|facts, not advice/i.test(memory),
+    "memory.md must forbid writing the rendered checklist line into the record");
 
   // (f) Telemetry's three invariants. Any of the three lost turns an exposure signal into a
   // correctness verdict about code that has, by construction, no telemetry yet.

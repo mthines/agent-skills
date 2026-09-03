@@ -344,9 +344,21 @@ this run incremented:
     { "pr": 164, "sha": "47b969a",
       "fp": "consumer-impact:contract-break:retryRequest@src/api/client.ts" }
   ],
-  "last_touched_by": ["#164"]
+  "last_touched_by": ["#164"],
+  // Not a restatement of `ttl_days` — see the first-class-property rule below.
+  "expires": "<ISO 8601, this write's time + 90 days>"
 }
 ```
+
+**Both field sets are closed, and the value is that JSON and nothing else.** A field not listed is not written, and no prose accompanies the object — no heading, no "why this file recurs", no "what to check next time".
+Two failure modes make this worth stating rather than leaving to taste, and both were observed on one hotspot record:
+
+- **A field copied from a neighbouring schema is not free.** `fp_v` and `source{}` belong to the [relevance rule](#the-four-records) and nowhere else. `fp_v` versions a *fingerprint*, and a hotspot's key is a path, so the field labels the record with a version of a thing it does not have. `source{}` looks like the duplicate it mostly is — but on a relevance rule it records **who wrote the review comment** (`bot` / `human` / which agent), which is a different question from who wrote the row, so LoreKit's own `source_agent` cannot stand in for it. On a hotspot, where every write comes from this agent or the recorder, it is pure restatement.
+- **Never store what the read side derives.** [The match table](#read--two-calls-keyed-by-the-impact-graph) turns the counters into a checklist line (`history: 6 defects here in 90 d, classes: …`) at read time. Writing that sentence *into* the record freezes it: the next `confirmed` increment makes the stored line wrong while every counter around it is right, and a reader cannot tell which of the two the run meant. The same goes for advice — `classes[]` is a fact, "check the revoke triple next time" is the finders' job to conclude from it, and [The four records](#the-four-records) already says these records are facts and not advice.
+
+**Never restate what LoreKit already stores as a first-class property.** `scope`, `tags`, `kind`, `host`, `source_agent`, `trigger`, `ttl_days`, the created/updated timestamps, and the usage count are columns on the row, shown in its metadata panel and queryable — so a `window_days: 90` in the value is a second copy of `ttl_days` with no owner, and the two disagree the moment either changes.
+
+The one deliberate exception is the in-value **`expires`**, and it is an exception for a mechanical reason rather than a stylistic one: LoreKit expires a record by *marking* it, not by dropping it, so an expired row still comes back on a read and the reader has to be able to skip it — which it can only do if the expiry travels in the value it is reading ([`comment-relevance-memory.md`](../../shared/rules/comment-relevance-memory.md) — "Skip any entry whose `expires` is in the past", guarded by L1 `G16b`). That applies to the hotspot as much as to the relevance rule: a 91-day-old counter that still answers a read is a stale defect history presented as a current one, and `writeHotspot` in [`record-comment-relevance.mjs`](../../../scripts/record-comment-relevance.mjs) has always emitted it. `window_days` is not that field — it names the window in the abstract instead of dating this row, so nothing can compare it to `now`.
 
 `kind` and `host` are passed **explicitly on every write**. LoreKit infers them from a `loop::` tag only, and these records carry `ci::` tags, so omitting them leaves both NULL — at which point [read call 1](#read--two-calls-keyed-by-the-impact-graph), which filters `kind=signal host=reviewer`, cannot see the record the run just wrote. A write nothing can read is worse than no write: it reports success.
 
