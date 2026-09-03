@@ -6,6 +6,10 @@
 # Convention:
 #   - Commit this file (it contains no secrets).
 #   - Add .auth/<name>.json to .gitignore (it contains the auth storage state).
+#   - Reuse an existing repo auth convention if one exists (a captured
+#     storage-state + login script, e.g. dash0's .browser/auth-state.json +
+#     .claude/aw-targets/scripts/refresh-auth.mjs) instead of scaffolding a
+#     parallel .auth/ — see aw-setup's "Reuse before you scaffold".
 #   - Run `/aw-setup` once to scaffold this file and validate it with a smoke spec.
 #   - Re-run `/aw-setup` anytime auth drifts, fixtures change, or base URL moves.
 #

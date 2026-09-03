@@ -3,8 +3,9 @@
 # It is the browser context for verifying PR preview deployments. The runner
 # reads it, then OVERRIDES base_url at runtime with the URL it resolves from the
 # GitHub deployments API for the specific PR — so leave base_url as the
-# placeholder below. Commit this file (it carries NO secrets); gitignore any
-# .auth/*.json it points at.
+# placeholder below. Commit this file (it carries NO secrets); gitignore whatever
+# storage-state file it points at (.auth/*.json, or your repo's convention such
+# as .browser/auth-state.preview.json).
 #
 # Reuses the aw-target.yml schema verbatim — see
 # skills/workflow/autonomous-workflow/templates/aw-target.yml.template for the
@@ -21,15 +22,32 @@ auth:
   # storage-state and a refresh command that authenticates against the RESOLVED
   # preview URL (read it from the PREVIEW_URL env var the runner exports).
   # For a fully public preview, set strategy: none and delete the rest.
+  #
+  # REUSE an existing repo auth convention rather than scaffolding a parallel one
+  # (see aw-setup's "Reuse before you scaffold"). Point storage_state / the
+  # refresh script at whatever the repo already uses; a per-host preview session
+  # differs per PR and per push, so `when: always` re-captures every run.
   strategy: none            # one of: storage-state | none | manual | env-credentials
+  #
+  # Default scaffold (no existing convention):
   # storage_state: ./.auth/preview.json   # gitignored; only for storage-state
   # refresh:
-  #   when: missing-or-expired
+  #   when: always
   #   command: |
   #     AUTH_LOGIN_URL="${PREVIEW_URL}/login" \
   #       AUTH_STORAGE_STATE=./.auth/preview.json \
   #       node scripts/auth-bootstrap-headful.mjs
   #   timeout_seconds: 600
+  #
+  # dash0 / playwright-cli-authed convention (reuse .browser/ + refresh-auth):
+  # storage_state: .browser/auth-state.preview.json   # gitignored under .browser/
+  # refresh:
+  #   when: always
+  #   command: |
+  #     PREVIEW_URL="${PREVIEW_URL}" \
+  #       AUTH_STORAGE_STATE=.browser/auth-state.preview.json \
+  #       node .browser/refresh-auth-preview.mjs
+  #   timeout_seconds: 120
 
 fixtures:
   # A preview usually points at a shared staging database, so seeding is often a
