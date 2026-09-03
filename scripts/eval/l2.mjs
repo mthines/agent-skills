@@ -77,7 +77,7 @@ const SUITES = [
   {
     name: "shape-depth-routing",
     golden: "golden/shape-depth-routing.jsonl",
-    rubric: { file: "agents/pr-reviewer.md", section: "### 1.2b Delta triage (incremental modes only)" },
+    rubric: { file: "agents/pr-reviewer.md", section: "### 1.2b Delta triage and depth routing (Phase C)" },
     instruction: "You are pr-reviewer at Step 1.2b, after the delta and its shape classification are computed. Using ONLY the rules below, pick the routing outcome: 'full' when any upgrade rule forces RUN_MODE=full, 'escalate' when the run stays incremental but ESCALATE_IN_INCREMENTAL is set (a risky content shape with no upgrade trigger), and 'cheap' when the run stays incremental with no escalation.",
     inputKey: "input", inputLabel: "Delta",
     choices: ["full", "escalate", "cheap"],

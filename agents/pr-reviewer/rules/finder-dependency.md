@@ -55,6 +55,26 @@ Try in order. Stop at the first that yields the notes for the whole range `(from
 
 Every rung is read-only and anonymous. **Never authenticate to a third-party registry**, and never run an upstream's install scripts to learn its version.
 
+### A cross-owner `gh api` 401 is scoping, not breakage
+
+**The injected `gh` credential is scoped to this PR's own repository, so `gh api` 401s on every OTHER owner** — the upstream whose releases rung 2 wants to read, a third-party action, a base image, or any pinned spec.
+That 401 says the credential does not cover the target; it says nothing about whether the target is readable.
+Never read it as "unverifiable", and never spend a retry on it.
+
+Pivot to plain anonymous HTTP, which reaches any public repository regardless of credential scope:
+
+- `webfetch` against `api.github.com` for releases, tags, and compare ranges.
+- `webfetch` against `raw.githubusercontent.com` for a pinned ref's file contents (a `CHANGELOG.md` at a tag).
+
+"`webfetch`" means the caller's HTTP-fetch capability — the `WebFetch` tool where the grant carries it, and an anonymous `curl -fsSL` through `Bash` where it does not.
+Either is fine; the rung is defined by *anonymous HTTP to a public host*, not by which tool issues it.
+What is never fine is retrying the `gh` call, or reporting the 401 as the target being unreachable.
+
+Only after **both** the `gh` rung and the HTTP rung fail is the range genuinely unreachable, and then it takes the withheld form below — labelled `unverified (upstream unreachable)`, never asserted as confirmed.
+On a dependency-bump PR this is the normal path, not an edge case: a release-notes claim about an upstream repository is a cross-owner target by definition.
+
+When even HTTP is unreachable (a private registry, a rate limit, a network-restricted runner), substitute the four checks that need no access to the dependency's own repository — the manifest/lockfile diff itself, a vendored changelog if the repo carries one, this PR's own CI result, and a grep of this repo's usage sites against the new version's locally-visible type surface if the package ships types — and still label the release claim `unverified (upstream unreachable)`.
+
 Extract, per version in range:
 
 - **Breaking changes** — removed APIs, renamed exports, changed signatures, changed defaults, dropped runtime or platform support.

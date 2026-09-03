@@ -862,7 +862,11 @@ function checksInSync(plan, checks) {
       (prReviewer.includes("Standards (2.4d)")
         || read("agents/pr-reviewer/rules/report-rendering.md").includes("Standards (2.4d)")) &&
       /Precedence: when a standards finding conflicts with the PR author's stated intent or a review-config\s+explicit override, the author-intent and config \*\*win\*\*/.test(prReviewer) &&
-      prReviewer.includes("Conflicts surfaced:"));
+      // The diagnostics counter lives in whichever surface renders the log block: the terminal
+      // template (now terminal-report.md) or the posted-body reference. Accept either — the
+      // assertion is that the counter EXISTS, not which file it moved to.
+      (prReviewer.includes("Conflicts surfaced:")
+        || read("agents/pr-reviewer/rules/terminal-report.md").includes("Conflicts surfaced:")));
 
     // G17f: pr-reviewer.md has --no-standards in the arg table AND the frontmatter description,
     // standards-conformance.md in the Imports list, and 2.4d in the pipeline block.
@@ -980,19 +984,26 @@ function checksInSync(plan, checks) {
   // for WARN, and pr-reviewer.md's WARN line names the report-rendering.md contract explicitly so
   // a future edit to one side is not made in ignorance of the other.
   {
-    const step3WarnRow = sliceBetween(prReviewer, "| Presentation | `**Verdict**` line |", "`VERDICT` (PASS/WARN/FAIL");
-    s.check("G33a pr-reviewer.md Step 3 WARN verdict line carries no bare PASS token",
+    // The template moved out of the agent body into terminal-report.md; the agent body keeps the
+    // routing line. Read the surface that actually owns the verdict rows, and assert the agent
+    // still routes to it — otherwise a future move could orphan these three checks silently.
+    const terminalReport = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/terminal-report.md"), "utf8");
+    s.check("G33 pr-reviewer.md routes Step 3 to terminal-report.md",
+      prReviewer.includes("pr-reviewer/rules/terminal-report.md"),
+      "Step 3 no longer names the file that owns the terminal template");
+    const step3WarnRow = sliceBetween(terminalReport, "| Presentation | `**Verdict**` line |", "`VERDICT` (PASS/WARN/FAIL");
+    s.check("G33a terminal-report.md Step 3 WARN verdict line carries no bare PASS token",
       !/\|\s*WARN\s*\|\s*`PASS\s*—/.test(step3WarnRow),
       "Step 3's WARN row still prints a `PASS —` verdict, which contradicts a harness VERDICT: FAIL");
-    s.check("G33b pr-reviewer.md Step 3 WARN verdict line matches the posted-body wording",
+    s.check("G33b terminal-report.md Step 3 WARN verdict line matches the posted-body wording",
       /No blocking issues — <WARN_GATE_COUNT> warning\(s\): <WARN_REASONS>\./.test(step3WarnRow),
       "Step 3's WARN row no longer reads 'No blocking issues — <N> warning(s): <reasons>.' — re-sync it with report-rendering.md § Headlines");
     s.check("G33c report-rendering.md's posted-body WARN headline carries no bare PASS token",
       !/no blocking issues.*\*\*PASS\*\*|PASS\s*—\s*no blocking issues/i.test(reportRendering),
       "report-rendering.md's WARN headline regained a PASS token");
-    s.check("G33d pr-reviewer.md's WARN row cites report-rendering.md so the two cannot drift silently",
-      /report-rendering\.md[\s\S]{0,40}byte-identical|byte-identical[\s\S]{0,40}report-rendering\.md/.test(prReviewer),
-      "pr-reviewer.md's Step 3 WARN explanation no longer cross-references report-rendering.md as the source of truth");
+    s.check("G33d terminal-report.md's WARN row cites report-rendering.md so the two cannot drift silently",
+      /report-rendering\.md[\s\S]{0,40}byte-identical|byte-identical[\s\S]{0,40}report-rendering\.md/.test(terminalReport),
+      "terminal-report.md's Step 3 WARN explanation no longer cross-references report-rendering.md as the source of truth");
   }
 
   // G34: prior-comment-awareness.md requires verifying a "resolved" thread against HEAD before
@@ -2800,7 +2811,7 @@ const isPollBlock = (block) =>
 //     `comments` array 422s as "is not an array" — 5 independent lessons converged on this fix).
 // (b) Step 1.2/3.5 must partition undiffable (binary) paths and route their findings to the
 //     gate table as ANCHORLESS-BY-CONSTRUCTION, never as an ordinary line-validity casualty.
-// (c) Persona 4 must name the cross-owner `gh api` 401 as scoping (not breakage) and pivot to a
+// (c) The dependency finder must name the cross-owner `gh api` 401 as scoping (not breakage) and pivot to a
 //     `webfetch` HTTP fallback for any pin/spec verification outside the PR's own repository.
 {
   const prm = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
@@ -2819,13 +2830,21 @@ const isPollBlock = (block) =>
   s.check("G36b Step 3.5 names ANCHORLESS-BY-CONSTRUCTION as a distinct, non-casualty outcome",
     /ANCHORLESS-BY-CONSTRUCTION.{0,400}never a line-validity casualty/s.test(prm));
 
-  // (c) Cross-owner 401-is-scoping regression lock.
-  s.check("G36c Persona 4 states the injected gh credential is scoped to the PR's own repository",
-    prm.includes("The injected `gh` credential is scoped to this PR's own repository"));
-  s.check("G36c Persona 4 prescribes the webfetch/raw.githubusercontent fallback for cross-owner targets",
-    prm.includes("`webfetch` against `api.github.com`") && prm.includes("raw.githubusercontent.com"));
+  // (c) Cross-owner 401-is-scoping regression lock. The lesson moved out of the agent body with
+  // Persona 4's retirement — the dependency finder is what reads an upstream changelog now, so
+  // that is where the anchors have to be. Reverting the move without carrying the lesson leaves
+  // rung 2 (`gh api repos/<upstream>/releases`) reading its own 401 as "unverifiable", which is
+  // the exact defect this locks: a cross-owner 401 is credential scope, not an unreachable target.
+  const dep = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/finder-dependency.md"), "utf8");
+  s.check("G36c the dependency finder states the injected gh credential is scoped to the PR's own repository",
+    dep.includes("The injected `gh` credential is scoped to this PR's own repository"));
+  s.check("G36c the dependency finder prescribes the webfetch/raw.githubusercontent fallback for cross-owner targets",
+    dep.includes("`webfetch` against `api.github.com`") && dep.includes("raw.githubusercontent.com"));
   s.check("G36c a dependency-bump PR's upstream claim is labelled unverified rather than asserted when unreachable",
-    prm.includes("unverified (upstream unreachable)"));
+    dep.includes("unverified (upstream unreachable)"));
+  // And the lesson must not be orphaned: the agent body has to route to the file that carries it.
+  s.check("G36c the agent body routes dependency review to finder-dependency.md",
+    prm.includes("pr-reviewer/rules/finder-dependency.md"));
 
   // Guard-bites proof (documented, not executed, per the mock-that-reimplements lesson):
   // reverting any of the three edits above removes the literal anchor G36a/b/c greps for,

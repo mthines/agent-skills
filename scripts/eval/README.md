@@ -69,7 +69,7 @@ choice against the human label. Classification → exact-match, **no LLM-as-judg
 | `aw-should-trigger` | should the routing rule auto-trigger? | the whole routing rule | trigger / skip |
 | `reviewer-agreement-bump` | is the surviving finding agreement-promoted? | reviewer `## Cross-rubric agreement` | promoted / not-promoted |
 | `optimize-approach-optimality` | is this approach optimal or suboptimal? | optimize-approach `optimality-rubric.md` (whole file) | optimal / suboptimal |
-| `shape-depth-routing` | given the computed delta + shapes, does Step 1.2b go full, escalate-in-incremental, or stay cheap? | `agents/pr-reviewer.md` `### 1.2b Delta triage (incremental modes only)` | full / escalate / cheap |
+| `shape-depth-routing` | given the computed delta + shapes, does Step 1.2b go full, escalate-in-incremental, or stay cheap? | `agents/pr-reviewer.md` `### 1.2b Delta triage and depth routing (Phase C)` | full / escalate / cheap |
 | `code-review-retrieval-relevance` | would the documented Step 1.0 + 1.2c read surface this candidate memory for the given PR diff? | `agents/pr-reviewer.md` `## Step 1: Fetch all inputs + load memories` | surface / skip |
 
 ```bash
