@@ -11,10 +11,16 @@ tags:
 
 The single LLM that wrote a finding is a poor judge of whether the finding is correct. The AAAI SELF-[IN]CORRECT result and Anthropic's own published guidance ("Pride and Prejudice", ACL 2024) both show that naïve self-grading either amplifies bias or adds no gain over self-consistency. The current 70 % per-comment threshold in the legacy reviewer was self-graded — exactly the failure mode the literature warns against.
 
-After the rewrite, per-comment confidence is routed through the dedicated `confidence` skill, run in `code` mode, with an 80 % drop threshold.
+After the rewrite, per-comment confidence stopped being a self-grade. This rule owns **the bar** — the
+threshold, the severity fan-out, the near-miss defer band, and the path-instruction injection.
+
+**The score itself now comes from the verifier**, not from `Skill("confidence", "code")` — see
+[Where the score comes from](#where-the-score-comes-from) below. The threshold semantics are
+unchanged, so everything downstream of the number reads exactly as it did.
 
 ## Contents
 
+- [Where the score comes from](#where-the-score-comes-from)
 - [The check](#the-check)
 - [Drop vs. defer — the near-miss band](#drop-vs-defer--the-near-miss-band)
 - [Why 80, not 70](#why-80-not-70)
@@ -24,6 +30,40 @@ After the rewrite, per-comment confidence is routed through the dedicated `confi
 - [Logging](#logging)
 
 ---
+
+## Where the score comes from
+
+`Skill("confidence", "code")` asks whether **a code change is sound**. A finding is not a code
+change, and the mismatch was doing real damage: a finding about correct-looking code scored well on
+"is this code good" grounds that had nothing to do with whether the finding was *right*, and a
+correct finding about ugly code was penalised for the ugliness it was reporting.
+
+The score is now returned by [`finding-verifier.md`](./finding-verifier.md), which scores the
+finding on its own axes:
+
+| Dimension | Weight | Question |
+| --- | --- | --- |
+| Reproducible | 40 % | Can the bad outcome be reached from the code as written, with concrete inputs or a concrete caller? |
+| Attributable | 30 % | Is it introduced or exposed by **this PR** — not pre-existing, not already guarded? |
+| Actionable | 30 % | Would the author know what to change from the comment alone? |
+
+What that changes here: **nothing but the source of the number.**
+
+| Unchanged, and owned by this rule | Moved |
+| --- | --- |
+| the effective threshold and the profile table | the rubric that produces the score |
+| the severity-aware fan-out and `Skill("severity", "finding")` | the receipt tiers and the four-way verdict |
+| the near-miss defer band and its floor | the adversarial re-derivation |
+| the path-instruction injection | |
+| the `(blocking)` decoration and its cap exemption | |
+
+The `confidence(code)` call and its rubric-composition inputs described in § The check remain the
+**fallback** when the verifier did not run — a `quick`-tier run without a workspace, or a finding
+from a lens that emits outside the finder pipeline (`ux`, `--with …`). Both paths return a 0–100
+**Final** score against the same threshold, so a mixed run does not need two bars.
+
+**A finding with no score from either path is dropped, never posted at the threshold's benefit of the
+doubt.** An unscored finding is not a confident one.
 
 ## The check
 

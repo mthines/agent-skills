@@ -11,6 +11,17 @@ import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, e
 const AW = join(REPO_ROOT, "skills/workflow/autonomous-workflow");
 const s = new Suite("L1 deterministic contract checks");
 
+// Every report-body fixture, discovered from disk rather than listed. G25/G26/G27 each iterate
+// the fixtures, and an explicit list meant a new fixture was silently exempt from all three —
+// the guards would have kept passing while the reference rendering it locks in went unchecked.
+// A fixture is `<name>.json` + `<name>.expected.md`; the presence checks below catch a half-pair.
+const REPORT_FIXTURES = (() => {
+  const dir = join(REPO_ROOT, "scripts/eval/fixtures/report-body");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((f) => f.endsWith(".json"))
+    .map((f) => f.replace(/\.json$/, "")).sort();
+})();
+
 // ── Check A: link + anchor integrity (skips code fences + templates/) ──
 // Catches the broken-anchor class (e.g. the #lesson-promotion bug we shipped + fixed).
 // The repo has pre-existing link debt in example/scaffold prose, so this gates on
@@ -1228,7 +1239,7 @@ function checksInSync(plan, checks) {
 
     // (a) Snapshot parity. A template or renderer change that alters the output must be
     // accompanied by a regenerated snapshot, so the diff shows the reader exactly what moved.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of REPORT_FIXTURES) {
       const payload = join(FIX, `${name}.json`);
       const expectedPath = join(FIX, `${name}.expected.md`);
       if (!existsSync(payload) || !existsSync(expectedPath)) {
@@ -1243,7 +1254,7 @@ function checksInSync(plan, checks) {
     }
 
     // (b) Structural invariants on every snapshot. These are what the five failed runs broke.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of REPORT_FIXTURES) {
       const p = join(FIX, `${name}.expected.md`);
       if (!existsSync(p)) continue;
       const body = readFileSync(p, "utf8");
@@ -1489,7 +1500,7 @@ function checksInSync(plan, checks) {
           /^### Optimality proposal — \S+:\d+$/m],
         "Partial-review banner": [/⚠️ \*\*Partial review — tool budget exhausted after \d+ calls; \d+ of \d+ files scanned\.\*\*/, null],
       };
-      for (const name of ["pass", "warn", "fail"]) {
+      for (const name of REPORT_FIXTURES) {
         const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
         if (!existsSync(p)) continue;
         const body = readFileSync(p, "utf8");
@@ -1517,7 +1528,7 @@ function checksInSync(plan, checks) {
 
     // (i) Derived counts cannot disagree with the lists they count — the whole point of moving
     // counts out of the payload. Assert it on the rendered output, per fixture.
-    for (const name of ["warn", "fail"]) {
+    for (const name of REPORT_FIXTURES) {
       const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
       if (!existsSync(p)) continue;
       const body = readFileSync(p, "utf8");
@@ -1858,7 +1869,7 @@ function checksInSync(plan, checks) {
     // validator, the two disagree about the contract and one of them is wrong.
     // A missing snapshot must FAIL, exactly as an absent posted fixture does in case (a). A bare
     // `continue` here ran zero checks, so deleting all three snapshots would have passed by vacuity.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of REPORT_FIXTURES) {
       const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
       if (!existsSync(p)) { s.check(`G26 report-body snapshot ${name}.expected.md present`, false); continue; }
       const r = run(readFileSync(p, "utf8"));
@@ -2101,7 +2112,7 @@ function checksInSync(plan, checks) {
     }
     // The reference fixtures must not demonstrate the shape G27 forbids — G25 diffs them, so a
     // stale fixture locks the forbidden headline in as the expected rendering.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of REPORT_FIXTURES) {
       for (const ext of ["json", "expected.md"]) {
         const f = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.${ext}`);
         if (!existsSync(f)) continue;
@@ -2116,7 +2127,7 @@ function checksInSync(plan, checks) {
     // rendering. warn.json read `**2 warning(s)**` while three gates warned (Prior review feedback,
     // Code review, and CI via CI_NOTE), which is exactly the miscount this change introduces the
     // risk of. Derive the counts from the payload and compare them to the rendered headline.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of REPORT_FIXTURES) {
       const pj = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.json`);
       if (!existsSync(pj)) { s.check(`G27 fixture ${name}.json present`, false); continue; }
       const d = JSON.parse(readFileSync(pj, "utf8"));

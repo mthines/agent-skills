@@ -48,7 +48,21 @@
 {{/CI_NOTE}}{{#VERIFIED_NOTE}}
 **Verified** — {{VERIFIED_NOTE}}
 {{/VERIFIED_NOTE}}
-**Run mode** — {{RUN_MODE}}
+{{#IMPACT_SECTION}}<details>
+<summary>Impact — {{IMPACT_SUMMARY}}</summary>
+
+{{IMPACT_SECTION}}
+
+</details>
+
+{{/IMPACT_SECTION}}{{#WITHHELD}}<details>
+<summary>Withheld ({{WITHHELD_COUNT}}) — could not be verified from this runner</summary>
+
+{{WITHHELD}}
+
+</details>
+
+{{/WITHHELD}}**Run mode** — {{RUN_MODE}}
 
 **Memories** — {{MEMORIES_SUMMARY}}
 {{#MEMORIES_BULLETS}}

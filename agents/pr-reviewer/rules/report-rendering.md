@@ -32,6 +32,8 @@ and both the renderer and the L1 guards match some of these headings as literal 
 
 - [REPORT_BODY format (the sticky comment)](#reportbody-format-the-sticky-comment)
   - [REPORT_BODY payload](#reportbody-payload)
+  - [`UPDATED_LINE` — the freshness cue outside the accordion](#updatedline--the-freshness-cue-outside-the-accordion)
+  - [`RUN.tier` and `RUN.depth` — the depth declaration](#runtier-and-rundepth--the-depth-declaration)
   - [Headlines](#headlines)
 - [The Gate 3 open threads: the count on the summary, the list in the accordion](#the-gate-3-open-threads-the-count-on-the-summary-the-list-in-the-accordion)
   - [`OPEN_THREADS_SUFFIX` — the counter on the summary](#openthreadssuffix--the-counter-on-the-summary)
@@ -87,7 +89,7 @@ of those was a real defect before it became derived.
 | `GATE_DESCRIPTION_DETAILS` · `GATE_PRIOR_DETAILS` · `GATE_DOCS_DETAILS` · `GATE_SELFREVIEW_DETAILS` · `GATE_CODEREVIEW_DETAILS` | The Details cell. **Single line, no `\|`, ≤ 120 chars** — all three enforced; the full finding belongs in an inline comment. |
 | `MEMORIES_SUMMARY` | The **indexed half only** — `<MEMORIES_READ_COUNT> indexed`, or `not connected`. Never write ` · <N> used`: the renderer derives that from `MEMORIES_USED`'s length and rejects a payload that supplies its own, reports fewer indexed than used, or pairs `not connected` with a non-empty `MEMORIES_USED`. |
 | `QUALITY` | Must begin `produced <N> → posted inline <N> …`. |
-| `INTEGRATIONS` | Names + versions + spec URLs, or `not activated`, or `skipped (incremental-quick)`. |
+| `INTEGRATIONS` | Names + versions + spec URLs, or `not activated`, or `skipped (<reason>)` — e.g. `skipped (tier: quick)`. |
 | `OPTIMALITY_LOG` · `STANDARDS_LOG` | Must begin `ran` or `skipped (reason)` so the run-state parses. |
 | `SKIPPED_FILES` | A list, or `none`. |
 
@@ -95,7 +97,7 @@ of those was a real defect before it became derived.
 cue are all derived from:
 
 ```json
-{ "RUN": { "mode": "full", "sha": "c3ceb87", "prior_sha": "70cf147", "delta_lines": 256, "at": "2026-08-15T09:12:00Z" } }
+{ "RUN": { "mode": "full", "sha": "c3ceb87", "prior_sha": "70cf147", "delta_lines": 256, "at": "2026-08-15T09:12:00Z", "tier": "deep", "depth": "checkout" } }
 ```
 
 - `mode` — `full` · `incremental` · `incremental-quick` · `zero-delta`.
@@ -106,6 +108,8 @@ cue are all derived from:
 - `at` — **required**, an ISO-8601 UTC timestamp ending in `Z` for this run (`date -u
   +%Y-%m-%dT%H:%M:%SZ`), the same format `runs[].at` already uses in the Step 0.7 state record.
   Derives `UPDATED_LINE` (below) — never write that slot yourself.
+- `tier` — optional, `deep` · `standard` · `quick` (see [`depth-routing.md`](./depth-routing.md)).
+- `depth` — optional, `checkout` · `tarball` · `diff-only` (see [`workspace.md`](./workspace.md)).
 
 #### `UPDATED_LINE` — the freshness cue outside the accordion
 
@@ -129,6 +133,36 @@ The `Run mode` line renders as `<mode> · <N> lines in delta`, which is the shap
 `reviewer-report-ingest.md` parses. Extra colour goes in the optional `RUN_NOTE` scalar and is
 appended after it, so the parseable prefix survives.
 
+#### `RUN.tier` and `RUN.depth` — the depth declaration
+
+A shallow review that renders the same report as a deep one is the failure Phases A and C exist to
+fix: nobody can tell which they got, so the review's silence is read as coverage it never had.
+These two slots put both facts on the `Run mode` line, **after** the parseable
+`<mode> · <N> lines in delta` prefix, so the ingest grammar is untouched:
+
+```markdown
+**Run mode** — incremental · 84 lines in delta · tier standard · depth tarball (no git history)
+```
+
+- `tier` is the routing outcome from [`depth-routing.md`](./depth-routing.md) — `deep`, `standard`,
+  or `quick`.
+- `depth` is the workspace capability from [`workspace.md`](./workspace.md) — `checkout`,
+  `tarball`, or `diff-only`. The renderer expands the label:
+  `tarball` → `tarball (no git history)`, and `diff-only` →
+  `diff-only — consumer, type, and test verification unavailable`, because `diff-only` is the value
+  whose consequences a maintainer must not have to look up.
+
+Two pairings are rejected:
+
+| Rejected | Why |
+| --- | --- |
+| `tier` that disagrees with `mode` (`full`↔`deep`, `incremental`↔`standard`, `incremental-quick`↔`quick`) | A report cannot claim a deep review while rendering an incremental mode; one of the two is wrong and the run must not pick which. |
+| `depth: diff-only` with `tier: deep` | A deep review is not *obtainable* without a checkout — the consumer, type, and test rungs all need one. `depth-routing.md` caps a `diff-only` run at `standard`; this is that cap enforced mechanically. |
+
+Both are optional, so a run that has not routed (or a caller on an older payload) renders the line
+exactly as before. Supply them on every routed run: an omitted `depth` asserts full capability by
+default, which is the failure Phase A exists to fix.
+
 **Optional — structured.** Omit a key to omit its whole block. Counts are **derived from array
 length**, so there is no count to supply and none to get wrong:
 
@@ -136,7 +170,9 @@ length**, so there is no count to supply and none to get wrong:
 | --- | --- | --- |
 | `OPEN_THREADS` | `[{path, line, url?, ask, blocking?, author?, is_bot?}]` | The renderer builds the bullet `- ` + a link whose text is `` `path:line` `` and whose target is `url`, then ` — ask`, then an author tag `` (bot · `author`) `` or `` (human · `author`) `` when `is_bot`/`author` are supplied (omitted when they are not); it derives `Open review threads (N)` and the `<summary>` suffix, and appends ` (K blocking)` only when some item has `blocking: true`. `is_bot` is a boolean (thread author's GitHub type is `Bot`); `author` is the login, code-wrapped by the renderer so it does not `@mention`. A missing `url` renders unlinked inline code, never a broken link. |
 | `RESOLVED_SINCE` | `{count, sha}` | Suppressed at `count: 0`. Rejected when `OPEN_THREADS` is empty — with Gate 3 clean the counter belongs in its Details cell. |
-| `MEMORIES_USED` | `[{key, url?, note?}]` | One bullet per applied memory, under `MEMORIES_SUMMARY`. |
+| `MEMORIES_USED` | `[{key, url?, note?, kind?, evidence?}]` | One bullet per applied memory, under `MEMORIES_SUMMARY`. `kind` is `knowledge` · `hotspot` · `rule` ([`memory.md`](./memory.md)) and renders as a bold prefix; when any entry supplies one, the summary's `used` half gains a per-kind breakdown (`3 used (1 knowledge · 1 hotspot · 1 rule)`) derived from the array. `evidence` is an array of the PR numbers a `rule` was learned from, rendered `<sup>evidence #88 #91 #97</sup>`; a `rule`-kind entry with an empty `evidence` array is **rejected** — a suppression rule with no evidence trail is exactly the unauditable suppression `memory.md` forbids. Omit `evidence` entirely on the other two kinds. |
+| `IMPACT` | `{telemetry?, symbols?, dependencies?, overlaps?}` | The consequence-note accordion from [`impact-graph.md`](./impact-graph.md). `symbols` is `[{name, path, change, consumer_files, verified_unaffected, findings}]` — `change` is `signature` · `body` · `removed`; `dependencies` is `[{name, from, to, delta, usage_sites, url?}]`; `overlaps` is `[{pr, author, path, symbol?, url?}]`; `telemetry` is one plain line ([`telemetry.md`](./telemetry.md)). The renderer derives the `<summary>` counts, builds every link from `url`, and joins the three bullet groups into **one** list. It rejects `verified_unaffected + findings > consumer_files` and states any untraced remainder in the bullet, so a partial trace can never render as a complete one. |
+| `WITHHELD` | `[{prefix, body, reason, path?, line?, url?}]` | The `unobtainable` findings from [`verification-receipt.md`](../../shared/rules/verification-receipt.md) — re-framed, not dropped. `reason` is **required** (which rung was unavailable); `prefix` must be `suggestion` or `question` and any other value is rejected, because nothing was verified so nothing is asserted. Renders in its own collapsed accordion with `<sup>(unverified: <reason>)</sup>`. |
 | `ADDITIONAL_FINDINGS` | `[{path, line, url?, prefix, body, confidence}]` | `prefix` is a Conventional-Comments prefix; `confidence` an integer 0–100. |
 | `LOW_CONFIDENCE_FINDINGS` | `[{…same…}]` | Advisory only (`reviewer-report-ingest.md`). |
 | `OPTIMALITY_CARDS` | `[markdown, …]` | The one place model-authored markdown remains, because a card is a multi-line block with its own table. Each must contain a `### Optimality proposal — <path>:<line>` heading, which the renderer checks. |

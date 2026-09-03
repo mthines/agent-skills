@@ -23,6 +23,7 @@ This rule routes both checks through `Skill("holistic-analysis", "review")`, whi
 - [Trivial-skip set](#trivial-skip-set)
 - [When to run (the call)](#when-to-run-the-call)
 - [Targeted escalation (Step 2.4b)](#targeted-escalation-step-24b)
+- [Relationship to the consumer-impact finder](#relationship-to-the-consumer-impact-finder)
 - [Output mapping (caller-aware)](#output-mapping-caller-aware)
 - [Wiring into the rest of the pipeline](#wiring-into-the-rest-of-the-pipeline)
 - [Blocking verdict](#blocking-verdict)
@@ -116,6 +117,32 @@ The Step 2.4 pass above is **broad and shallow**: one whole-PR scan, capped at i
 Step 2.4b adds the deep tier. It runs **after** the broad 2.4 pass and the rubric findings are collected, and **before** Step 2.5 (dedupe). It takes the line-level findings that look context-dependent and fans out **parallel, single-target** holistic traces — one per finding — each scoped to that finding's symbol via the `focus` input (see `review-mode.md § Inputs`). This is the pipeline analogue of an agentic reviewer that "decides which areas need deeper investigation and follows code paths across files."
 
 It is **default-on for `pr-reviewer`** and **opt-in for `reviewer`** (the `--escalate` flag). It is suppressed by `--no-escalate` (finer than `--no-holistic`, which also skips 2.4) and skipped wholesale when 2.4 itself was trivial-skipped.
+
+### Relationship to the consumer-impact finder
+
+The escalation's core motive — *a function change that is clean in isolation but wrong for how the
+function is actually used* — is now served **first** by the consumer-impact finder
+([`finder-consumer-impact.md`](../../pr-reviewer/rules/finder-consumer-impact.md)), which traces
+every changed export's callers mechanically off the impact graph and does not need a finding to
+already exist before it looks.
+
+The two are complementary, and the division is what stops them duplicating each other:
+
+| | consumer-impact finder | 2.4b escalation |
+| --- | --- | --- |
+| Trigger | a changed export with ≥ 1 consumer | an existing **finding** that looks context-dependent |
+| Scope | the six caller expectations, per consumer | the full execution path, entry to exit |
+| Cost | one read per consumer | one holistic trace per finding |
+| Finds | a caller whose expectation the diff broke | a system-fit problem no single caller shows |
+
+So when the consumer-impact finder ran on a symbol, **do not escalate a finding about that symbol's
+callers** — the trace already happened, and re-running it produces a second finding on the same
+evidence for dedupe to collapse. Escalate on that symbol only for a claim the caller-expectation
+list does not cover: an ordering assumption across three files, a state machine, a transaction
+boundary.
+
+Where the consumer-impact finder did **not** run — `quick` tier, or `DEPTH_CAPABILITY = diff-only`
+— 2.4b is the only deep trace available and its selection rules below apply unchanged.
 
 ### Risky-shape incremental escalation
 

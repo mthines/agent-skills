@@ -2308,8 +2308,25 @@ def payload_is_safe(payload: dict) -> tuple[bool, str]:
             c.get("body", ""),
         ):
             return (False, f"comment body missing Conventional-Comments prefix: {c['body'][:40]}")
-        if len(c.get("body", "")) > 240:
-            return (False, f"comment body > 240 chars: {len(c['body'])}")
+        # Measure the PROSE, exactly as comment-shape.md does — not the whole body.
+        # `len(body) > 240` on the raw body rejected every finding carrying the fix
+        # fence that same rule requires for an `issue:` / `suggestion:`, and because
+        # this assertion aborts the whole post rather than dropping one comment, one
+        # well-formed finding with a 10-line patch would have taken the entire review
+        # down. The two caps now measure the same thing.
+        import re as _re
+        _prose = _re.sub(r"```[a-zA-Z0-9_+-]*\n.*?\n```", "", c.get("body", ""), flags=_re.DOTALL)
+        _prose = _re.sub(r"^Evidence:.*$", "", _prose, flags=_re.MULTILINE)
+        _prose = _re.sub(r"<!--\s*fp:v\d+:[^\s>]+?\s*-->", "", _prose).strip()
+        if len(_prose) > 240:
+            return (False, f"comment prose > 240 chars: {len(_prose)}")
+        # An absolute ceiling on the whole body still applies, generously: prose (240)
+        # + an evidence line (180) + a 10-line fence + the marker. Anything past this
+        # is a shape failure the pre-emit check should already have dropped.
+        if len(c.get("body", "")) > 2000:
+            return (False, f"comment body > 2000 chars: {len(c['body'])}")
+        if len(_re.findall(r"<!--\s*fp:v\d+:", c.get("body", ""))) > 1:
+            return (False, f"comment carries more than one fingerprint marker: {c.get('path')}")
     return (True, "")
 ```
 

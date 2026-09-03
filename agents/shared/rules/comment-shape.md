@@ -17,6 +17,8 @@ Optimality proposals (Step 2.4c) are **out of scope** for this rule: they render
 ## Contents
 
 - [Hard caps](#hard-caps)
+- [The `Evidence:` line](#the-evidence-line)
+- [The fingerprint marker](#the-fingerprint-marker)
 - [Inline code](#inline-code)
 - [Suggestion / issue → include a fix block when a concrete patch exists](#suggestion--issue--include-a-fix-block-when-a-concrete-patch-exists)
 - [Shape](#shape)
@@ -37,10 +39,79 @@ Optimality proposals (Step 2.4c) are **out of scope** for this rule: they render
 | Bullet lists (`-`, `*`, `1.`) in body | 0 | Drop |
 | Code fences | ≤ 1, ≤ 10 lines, language tagged | Strip extra fences; drop on missing tag |
 | **Inline backticks on every code symbol** | required | Auto-wrap before shape check; see § Inline code |
+| `Evidence:` line | ≤ 1, ≤ 3 `path:line` references, ≤ 180 characters | Trim to the 3 strongest; drop the line, never the comment |
+| Fingerprint marker | exactly 1 on an `issue:` / `suggestion:` finding | Rebuild via `fingerprint.mjs`; see § The fingerprint marker |
 
-The 240-char cap applies to the **prose** portion only — fenced code blocks are excluded from the count because GitHub renders them visually distinct from comment text and they carry the actionable patch the author copies. The prose still has to make the point in one or two sentences; the fence carries the fix.
+The 240-char cap applies to the **prose** portion only — the fenced code block, the `Evidence:` line, and the fingerprint marker are all excluded from the count. Fences render visually distinct and carry the patch the author copies; the `Evidence:` line is a citation list, not argument; the marker is invisible. The prose still has to make the point in one or two sentences.
 
 Character count is measured **after** the Conventional-Comments prefix is prepended (so `suggestion: ` + prose must fit). Sentence count is measured against the prose only and counts `.`, `!`, `?` followed by space or end-of-string. Punctuation inside backticks or fenced code does not count.
+
+## The `Evidence:` line
+
+An `issue:` or `suggestion:` finding may carry **one** `Evidence:` line, immediately after the prose
+and before the fix fence.
+
+```markdown
+issue (high): `retryRequest` now throws `RetryExhausted` where it returned `null`; `sync.ts:88` still checks `=== null` and has no catch.
+Evidence: src/api/client.ts:214 (throw added) · src/jobs/sync.ts:88 (null check) · no covering test.
+
+```ts
+try { await retryRequest(job) } catch (e) { if (e instanceof RetryExhausted) return markFailed(job); throw e }
+```
+```
+
+Rules:
+
+| Rule | Why |
+| --- | --- |
+| At most **3** references, `·`-separated | a fourth is a list, and a list is the thing the no-bullets rule exists to prevent |
+| Each is a `path:line`, optionally with a ≤ 5-word parenthetical | a reference the author cannot click is not evidence |
+| **Exempt from the sentence count** | it is a citation list, not a second argument. Counting it would force the prose down to one sentence to make room for the proof. |
+| Excluded from the 240-char prose cap, with its own 180-char bound | so the caps do not fight |
+| Only the paths the receipt actually touched | a fabricated citation is worse than none: it converts an unverified claim into a confident-looking one |
+| Never on `praise` / `question` / `nitpick` | nothing is being proved |
+
+This line is the largest credibility gain available at **zero model cost**. It is assembled from the
+candidate's `evidence[]` and the verifier's receipt, both of which already exist — nothing is
+generated for it. An author who can check the claim in one click either fixes it or refutes it; one
+who cannot has to take the reviewer's word, and a reviewer whose word has to be taken gets ignored.
+
+**Never write an `Evidence:` line the receipt does not support.** If the verdict was `unobtainable`,
+the decoration is `(unverified: <reason>)` and there is no evidence line —
+[`verification-receipt.md`](./verification-receipt.md) owns that distinction.
+
+## The fingerprint marker
+
+Every `issue:` and `suggestion:` finding ends with its structural fingerprint as an HTML comment:
+
+```markdown
+<!-- fp:v2:consumer-impact:contract-break:retryRequest@src/api/client.ts -->
+```
+
+Build it — never type it:
+
+```bash
+FP="${AGENT_MD%/pr-reviewer.md}/pr-reviewer/scripts/fingerprint.mjs"
+node "$FP" marker "$(node "$FP" build --finder consumer-impact \
+  --defect-class contract-break --symbol retryRequest --path src/api/client.ts)"
+```
+
+Resolve `$FP` from `$AGENT_MD` with the same idiom the other scripts use; a bare relative path only
+resolves when the shell's cwd happens to be this repo's checkout.
+
+The marker does three jobs at once, which is why it is worth the invisible bytes:
+
+1. **Exact recovery.** The relevance recorder reads the key back rather than re-deriving it from
+   prose, so the write path and the read path cannot disagree.
+2. **Self-attribution.** Only this agent writes it, so its presence identifies the author with no
+   login configuration — and the bot login is genuinely unavailable on access paths where `/user`
+   returns 401.
+3. **Version tagging.** `v2` means a formula change re-keys explicitly instead of silently
+   splitting one finding's history across two key spaces.
+
+It is invisible in rendered Markdown, excluded from every cap, and **must not** be added to
+`praise` / `question` / `nitpick`: those never arm a relevance rule, and a marker on one would
+create a key that accumulates signal for a finding class that has no suppression semantics.
 
 ## Inline code
 
@@ -183,16 +254,39 @@ If a finding needs more than 240 characters and 2 sentences to land, it does not
 ```python
 import re
 
-FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\n.*?\n```", re.DOTALL)
+FENCE_RE    = re.compile(r"```[a-zA-Z0-9_+-]*\n.*?\n```", re.DOTALL)
+EVIDENCE_RE = re.compile(r"^Evidence:.*$", re.MULTILINE)
+MARKER_RE   = re.compile(r"<!--\s*fp:v\d+:[^\s>]+?\s*-->")
 
-def strip_fences(body: str) -> tuple[str, list[str]]:
+def strip_fences(body: str) -> tuple[str, list[str], str]:
+    """Split the body into prose, fences, and the one evidence line.
+
+    All three of fences, the evidence line, and the marker are stripped BEFORE the prose
+    is measured. Measuring any of them against the prose caps makes the caps fight each
+    other: a comment carrying a legitimate 10-line fix and a 3-reference citation would
+    fail `length` on the strength of the very parts that make it useful.
+    """
     fences = FENCE_RE.findall(body)
-    prose = FENCE_RE.sub("", body).strip()
-    return prose, fences
+    rest   = FENCE_RE.sub("", body)
+
+    match    = EVIDENCE_RE.search(rest)
+    evidence = match.group(0) if match else ""
+    rest     = EVIDENCE_RE.sub("", rest)
+
+    prose = MARKER_RE.sub("", rest).strip()
+    return prose, fences, evidence
 
 def passes_shape(body: str) -> tuple[bool, str]:
     # Body has already been through the inline-backtick auto-wrap pass.
-    prose, fences = strip_fences(body)
+    prose, fences, evidence = strip_fences(body)
+
+    # The evidence line has its own bound and its own reference cap; it is never measured
+    # against the prose caps, and a failure here drops the LINE, never the comment.
+    if evidence:
+        if len(evidence) > 180 or evidence.count("·") > 2:
+            return (True, "evidence-line-oversized")   # caller drops the line and re-checks
+        if len(MARKER_RE.findall(body)) > 1:
+            return (False, "duplicate-fingerprint-marker")
 
     if len(prose) > 240:
         return (False, "length")
@@ -214,6 +308,11 @@ def passes_shape(body: str) -> tuple[bool, str]:
 ```
 
 The check runs **after** Conventional-Comments prefix prepending, **after** the optional `(blocking)` / `(non-blocking)` decoration, and **after** the inline-backtick auto-wrap pass, so the cap applies to what the PR author actually sees.
+
+`evidence-line-oversized` is the one non-fatal return: it passes, and the caller **drops the
+`Evidence:` line and re-runs the check**. The evidence line is an enhancement, and dropping a
+correct finding because its citation list was one reference too long would be the tail wagging the
+dog.
 
 On `length` fail: attempt one trim pass that drops the trailing rationale clause from the **prose** (never from the fence). If the trimmed prose no longer makes the point standalone, drop the comment and surface it in the terminal output for the user to post manually.
 

@@ -21,6 +21,7 @@ Without a consolidation step, each rubric emits findings independently and the a
 - [Cross-rubric agreement](#cross-rubric-agreement)
 - [Consolidation pass](#consolidation-pass)
 - [Placement (Step 2.9b)](#placement-step-29b)
+- [Memory suppression (`pr-reviewer`)](#memory-suppression-pr-reviewer)
 - [Severity mapping](#severity-mapping)
 - [A lens cannot block on its own](#a-lens-cannot-block-on-its-own)
 
@@ -142,6 +143,30 @@ Rules:
 Rationale for the inline cap: a PR comment with 12 inline annotations on the same file reads as a hostile review even when every individual finding is correct.
 The 2026 CodeRabbit / Greptile field guide flags > 5 comments per file as the threshold above which authors start to dismiss the review wholesale.
 That is an argument about **inline density**, not about how much the reviewer is allowed to report — hence deferral rather than a drop.
+
+### Memory suppression (`pr-reviewer`)
+
+An `active suppress` relevance rule is applied **here**, at placement, on findings that have already
+cleared the verifier — never at find time and never before the confidence gate.
+
+The ordering is the whole point:
+
+| Suppressed before verification | Suppressed at placement |
+| --- | --- |
+| a candidate nobody looked at | a **verified** finding this repo has repeatedly declined |
+| possibly a real defect, dropped on a fingerprint match | a recorded maintainer preference |
+
+Two findings are **never** suppressible by memory, however many times they have been declined:
+
+- A **`standards`** finding. The repo's own written rule outranks its reviewers' fatigue; the remedy for repeated dismissals is to change the governing doc, and this agent does not get to make that call.
+- A **`(blocking)`** finding. It always posts, with the rule match surfaced as context instead of applied — "previously declined on #88, #91 — re-raised because blocking."
+
+A memory suppression is a **pre-placement drop** of a cleared finding, so unlike every other drop in
+this rule it *is* a drop of something that cleared 2.7. It is therefore counted separately in the
+Quality Gate summary as `Memory suppressions: <N>` and each one is listed in the report's `Memory`
+block with its rule id and the evidence PRs, exactly so the `<CL> − <DEF> == <F>` identity stays
+auditable rather than quietly absorbing them. A suppression that cannot name its evidence PRs is a
+bug, not a preference — see [`memory.md`](../../pr-reviewer/rules/memory.md).
 
 ### Materiality routing
 

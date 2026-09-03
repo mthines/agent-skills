@@ -1,0 +1,113 @@
+{
+  "HEADLINE": "Reviewed your changes — **1 error**, **2 warning(s)**: 1 blocking finding(s); 1 open review thread(s); CI pending.",
+  "RUN": {
+    "mode": "full",
+    "sha": "a1b2c3d",
+    "delta_lines": 12,
+    "at": "2026-09-03T09:12:00Z",
+    "tier": "deep",
+    "depth": "checkout"
+  },
+  "RUN_NOTE": "blast_radius=high · semver_delta=major",
+  "GATE_DESCRIPTION_STATUS": "✅",
+  "GATE_DESCRIPTION_DETAILS": "The description matches what the diff does.",
+  "GATE_PRIOR_STATUS": "⚠️",
+  "GATE_PRIOR_DETAILS": "1 unresolved review thread(s) — see the thread list below",
+  "GATE_DOCS_STATUS": "✅",
+  "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
+  "GATE_SELFREVIEW_STATUS": "✅",
+  "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
+  "GATE_CODEREVIEW_STATUS": "❌",
+  "GATE_CODEREVIEW_DETAILS": "1 blocking finding — see inline comments.",
+  "IMPACT": {
+    "telemetry": "production (`api`, `ui-web`; sampled 09:12 UTC; no preview spans for `a1b2c3d`)",
+    "symbols": [
+      {
+        "name": "retryRequest",
+        "path": "src/api/client.ts",
+        "change": "signature",
+        "consumer_files": 14,
+        "verified_unaffected": 13,
+        "findings": 1
+      },
+      {
+        "name": "parseConfig",
+        "path": "src/config/load.ts",
+        "change": "body",
+        "consumer_files": 4,
+        "verified_unaffected": 4,
+        "findings": 0
+      }
+    ],
+    "dependencies": [
+      {
+        "name": "stripe",
+        "from": "14.2.0",
+        "to": "16.0.1",
+        "delta": "major",
+        "usage_sites": 6,
+        "url": "https://github.com/stripe/stripe-node/releases/tag/v16.0.0"
+      }
+    ],
+    "overlaps": [
+      {
+        "pr": 212,
+        "author": "alice",
+        "path": "src/api/client.ts",
+        "symbol": "retryRequest",
+        "url": "https://github.com/o/r/pull/212"
+      }
+    ]
+  },
+  "WITHHELD": [
+    {
+      "prefix": "suggestion",
+      "path": "src/auth/session.ts",
+      "line": 22,
+      "body": "`internal-sdk` 3.1.0 → 4.0.0 is a major bump; the 4 usage sites are worth confirming against the upgrade notes before merge.",
+      "reason": "upstream release notes unreachable from this runner"
+    }
+  ],
+  "OPEN_THREADS": [
+    {
+      "path": "src/jobs/sync.ts",
+      "line": 88,
+      "url": "https://github.com/o/r/pull/1#discussion_r9",
+      "ask": "`retryRequest` now throws where it returned `null`",
+      "blocking": true,
+      "author": "cursor",
+      "is_bot": true
+    }
+  ],
+  "TIER_TALLY": {
+    "high": 1,
+    "medium": 2
+  },
+  "MEMORIES_SUMMARY": "48 indexed",
+  "MEMORIES_USED": [
+    {
+      "kind": "knowledge",
+      "key": "knowledge::retryRequest@src/api/client.ts",
+      "url": "https://lorekit.io/lore?scope=%22repo%3A%3Ao%2Fr%22",
+      "note": "4 facts, verified at 9f8e7d6 (re-verified this run: 4/4)"
+    },
+    {
+      "kind": "hotspot",
+      "key": "hotspot::src/api/client.ts",
+      "note": "hot — 5 confirmed, 1 missed, 90 d"
+    },
+    {
+      "kind": "rule",
+      "key": "rule::correctness:nil-deref:-@src/legacy",
+      "note": "suppress, active",
+      "evidence": [88, 91, 97]
+    }
+  ],
+  "CI_NOTE": "3 checks pending on `a1b2c3d`.",
+  "QUALITY": "produced 9 → posted inline 4 · cleared 4 · carried forward 0 · deferred 0 · below-bar 1 · memory suppressions 1",
+  "QUALITY_DROPPED": "relevance 1 · dedupe 2 · grounding 0 · verifier contradicted 2 · shape 0",
+  "INTEGRATIONS": "not activated",
+  "OPTIMALITY_LOG": "ran · 3 judged · 2 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld",
+  "STANDARDS_LOG": "ran · 2 docs · 0 finding(s)",
+  "SKIPPED_FILES": "none"
+}

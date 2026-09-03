@@ -112,11 +112,14 @@ With `install: false`, a Tier-2 receipt that needs resolved types is `unobtainab
 
 ## Declare the capability in the report
 
-`DEPTH_CAPABILITY` renders on the first line of the `Review details` accordion, through the renderer's slot, never hand-written.
+`DEPTH_CAPABILITY` renders on the report's `**Run mode**` line, through the renderer's `RUN.depth` slot, never hand-written.
+Pass it as `RUN.depth` in the `REPORT_BODY` payload; the renderer appends ` · depth <label>` after the parseable `<mode> · <N> lines in delta` prefix and expands `diff-only` into the label that names what is unavailable.
 
 ```markdown
-Depth: tarball (no git history) · Tier 2: tsc · Install: off
+**Run mode** — incremental · 84 lines in delta · tier standard · depth tarball (no git history)
 ```
+
+The renderer rejects `depth: diff-only` paired with `tier: deep`, because a deep review is not obtainable without a checkout — see [`report-rendering.md`](./report-rendering.md#runtier-and-rundepth--the-depth-declaration).
 
 This is the line a maintainer reads to know how much the review's silence is worth.
 A report that omits it is asserting full capability by default, which is exactly the failure the phase exists to fix.

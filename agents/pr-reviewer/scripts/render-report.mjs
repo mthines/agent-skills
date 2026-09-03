@@ -33,6 +33,17 @@ const TEMPLATE = join(HERE, "..", "templates", "report-body.md");
 
 const VALID_STATUS = new Set(["✅", "⚠️", "❌", "⏭️"]);
 const VALID_MODES = new Set(["full", "incremental", "incremental-quick", "zero-delta"]);
+// Phase C tiers. `mode` stays the parseable grammar field reviewer-report-ingest.md keys on;
+// `tier` is the routing decision that produced it, and the two are checked against each other
+// below so a report cannot claim a deep review while rendering an incremental mode.
+const VALID_TIERS = new Set(["deep", "standard", "quick"]);
+const TIER_FOR_MODE = { full: "deep", incremental: "standard", "incremental-quick": "quick" };
+const VALID_DEPTHS = new Set(["checkout", "tarball", "diff-only"]);
+const DEPTH_LABEL = {
+  checkout: "checkout",
+  tarball: "tarball (no git history)",
+  "diff-only": "diff-only — consumer, type, and test verification unavailable",
+};
 const SHA7 = /^[0-9a-f]{7}$/;
 const GATE_DETAILS_MAX = 120;
 
@@ -52,7 +63,7 @@ const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NO
 // Structured slots. Each is an object or an array; the renderer turns it into markdown.
 const STRUCTURED = ["RUN", "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED",
   "OPEN_THREADS", "ADDITIONAL_FINDINGS", "LOW_CONFIDENCE_FINDINGS", "OPTIMALITY_CARDS",
-  "TIER_TALLY"];
+  "TIER_TALLY", "IMPACT", "WITHHELD"];
 
 function fail(msg) {
   process.stderr.write(`render-report: ${msg}\n`);
@@ -65,14 +76,19 @@ const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArr
 // an item is silent: it changes nothing and reports nothing, so a misremembered field name reads
 // as accepted. Caught exactly that with a `delta_note` typo inside RUN.
 const SHAPES = {
-  RUN: ["mode", "sha", "prior_sha", "delta_lines", "at"],
+  RUN: ["mode", "sha", "prior_sha", "delta_lines", "at", "tier", "depth"],
   PARTIAL_REVIEW: ["calls", "scanned", "total"],
   RESOLVED_SINCE: ["count", "sha"],
-  "MEMORIES_USED[]": ["key", "url", "note"],
+  "MEMORIES_USED[]": ["key", "url", "note", "kind", "evidence"],
   "OPEN_THREADS[]": ["path", "line", "url", "ask", "blocking", "author", "is_bot"],
   "ADDITIONAL_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
   "LOW_CONFIDENCE_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
   TIER_TALLY: ["critical", "high", "medium", "low"],
+  IMPACT: ["telemetry", "symbols", "dependencies", "overlaps"],
+  "IMPACT.symbols[]": ["name", "path", "change", "consumer_files", "verified_unaffected", "findings"],
+  "IMPACT.dependencies[]": ["name", "from", "to", "delta", "usage_sites", "url"],
+  "IMPACT.overlaps[]": ["pr", "author", "path", "symbol", "url"],
+  "WITHHELD[]": ["path", "line", "url", "prefix", "body", "reason"],
 };
 
 function assertNoStrayFields(where, obj, allowed) {
@@ -330,6 +346,36 @@ function main() {
   const modeLabel = run.mode === "zero-delta" ? "incremental" : run.mode;
   const deltaLines = run.mode === "zero-delta" ? 0 : run.delta_lines;
   let runLine = `${modeLabel} · ${deltaLines} lines in delta`;
+
+  // Tier and depth append AFTER the parseable `<mode> · <N> lines in delta` prefix, in the same
+  // position RUN_NOTE occupies, so reviewer-report-ingest.md's grammar is untouched.
+  if (run.tier !== undefined && run.tier !== null) {
+    if (!VALID_TIERS.has(String(run.tier))) {
+      fail(`RUN.tier must be one of ${[...VALID_TIERS].join(" | ")} — got ${JSON.stringify(run.tier)}`);
+    }
+    // A report claiming a deep review while rendering an incremental mode is the exact class of
+    // internal contradiction this renderer exists to make unrepresentable. zero-delta is exempt:
+    // it is a mode with no tier of its own (the gates ran, no finder did).
+    const expected = TIER_FOR_MODE[run.mode];
+    if (expected && String(run.tier) !== expected) {
+      fail(`RUN.tier ${JSON.stringify(run.tier)} contradicts RUN.mode ${JSON.stringify(run.mode)}`
+        + ` — mode ${run.mode} is tier ${expected}`);
+    }
+    runLine += ` · tier ${run.tier}`;
+  }
+  if (run.depth !== undefined && run.depth !== null) {
+    if (!VALID_DEPTHS.has(String(run.depth))) {
+      fail(`RUN.depth must be one of ${[...VALID_DEPTHS].join(" | ")} — got ${JSON.stringify(run.depth)}`);
+    }
+    // A `deep` tier whose deep lenses could not run is a label, not a review — depth-routing.md
+    // caps the tier at standard on diff-only, so this pairing means the cap was not applied.
+    if (String(run.depth) === "diff-only" && String(run.tier) === "deep") {
+      fail("RUN.depth diff-only cannot carry RUN.tier deep — depth-routing.md caps the tier at"
+        + " standard when there is no workspace");
+    }
+    runLine += ` · depth ${DEPTH_LABEL[String(run.depth)]}`;
+  }
+
   if (data.RUN_NOTE) {
     assertPlainish("RUN_NOTE", data.RUN_NOTE);
     runLine += ` · ${data.RUN_NOTE}`;
@@ -383,19 +429,49 @@ function main() {
     }
   }
 
+  const MEMORY_KINDS = ["knowledge", "hotspot", "rule", "lesson"];
+  const kindCounts = { knowledge: 0, hotspot: 0, rule: 0, lesson: 0 };
   const memoriesUsed = arr("MEMORIES_USED").map((m, i) => {
     const where = `MEMORIES_USED[${i}]`;
-    if (!isPlainObject(m)) fail(`${where} must be an object {key, url, note}`);
+    if (!isPlainObject(m)) fail(`${where} must be an object {key, url, note, kind, evidence}`);
     if (!m.key || String(m.key).trim() === "") fail(`${where}.key is required`);
     assertPlain(`${where}.key`, m.key);
     if (m.note !== undefined) assertPlain(`${where}.note`, m.note, { allowCode: true });
+    if (m.kind !== undefined && m.kind !== null) {
+      if (!MEMORY_KINDS.includes(String(m.kind))) {
+        fail(`${where}.kind must be one of ${MEMORY_KINDS.join(" | ")} — got ${JSON.stringify(m.kind)}`);
+      }
+      kindCounts[String(m.kind)] += 1;
+    }
+    // `evidence` is the PR numbers a relevance rule accumulated. A rule that suppresses a finding
+    // must be able to name where that preference came from — memory.md § Where suppression
+    // applies makes an unevidenced suppression a bug, and this is where that becomes visible.
+    let evidence = "";
+    if (m.evidence !== undefined && m.evidence !== null) {
+      if (!Array.isArray(m.evidence)) fail(`${where}.evidence must be an array of PR numbers`);
+      for (const pr of m.evidence) {
+        if (!Number.isInteger(pr) || pr <= 0) {
+          fail(`${where}.evidence entries must be positive integers (PR numbers), got ${JSON.stringify(pr)}`);
+        }
+      }
+      if (String(m.kind) === "rule" && m.evidence.length === 0) {
+        fail(`${where} is a rule with an empty evidence list — a rule that cannot name its`
+          + " evidence PRs is a bug, not a preference (memory.md)");
+      }
+      if (m.evidence.length) evidence = ` <sup>evidence ${m.evidence.map((n) => `#${n}`).join(" ")}</sup>`;
+    }
     const label = `\`${m.key}\``;
-    const head = m.url ? `- [${label}](${m.url})` : `- ${label}`;
+    const kindTag = m.kind ? `**${m.kind}** ` : "";
+    const head = m.url ? `- ${kindTag}[${label}](${m.url})` : `- ${kindTag}${label}`;
     if (m.url && !/^https?:\/\//.test(String(m.url))) {
       fail(`${where}.url must be http(s), got ${JSON.stringify(m.url)}`);
     }
-    return m.note ? `${head} — ${m.note}` : head;
+    return (m.note ? `${head} — ${m.note}` : head) + evidence;
   }).join("\n");
+  const kindBreakdown = MEMORY_KINDS
+    .filter((k) => kindCounts[k] > 0)
+    .map((k) => `${kindCounts[k]} ${k}${kindCounts[k] === 1 ? "" : k === "knowledge" ? "" : "s"}`)
+    .join(" · ");
 
   // `<N> used` was the last hand-written count left standing over a derived list, so it was the
   // last one that could disagree with what it counts. The model supplies the indexed half only.
@@ -416,7 +492,8 @@ function main() {
     fail(`MEMORIES_SUMMARY reports ${indexed[1]} indexed but MEMORIES_USED has`
       + ` ${memoriesUsedCount} entries — indexed is always >= used`);
   }
-  const memoriesLine = indexed ? `${memoriesSummary} · ${memoriesUsedCount} used` : memoriesSummary;
+  let memoriesLine = indexed ? `${memoriesSummary} · ${memoriesUsedCount} used` : memoriesSummary;
+  if (kindBreakdown) memoriesLine += ` (${kindBreakdown})`;
 
   const cards = arr("OPTIMALITY_CARDS");
   cards.forEach((c, i) => {
@@ -450,6 +527,173 @@ function main() {
     tierBreakdown = parts.join(" · ");
   }
 
+  // ── IMPACT → the consequence-note section ──────────────────────────────────────────────────
+  //
+  // "Note me about the consequences of changing this code" renders here, and it is also the only
+  // checkable record of what a deep trace actually covered: "14 consumers, 13 verified unaffected"
+  // can be audited, silence cannot. Every count is derived from an array or summed from the rows,
+  // so the summary cannot overstate the work — which matters more here than anywhere else in the
+  // report, because a note claiming a trace that did not happen forecloses the question.
+  let impactSection = "";
+  let impactSummary = "";
+  let telemetryLine = "";
+  if (data.IMPACT !== undefined && data.IMPACT !== null) {
+    const im = data.IMPACT;
+    if (!isPlainObject(im)) fail("IMPACT must be an object {telemetry, symbols, dependencies, overlaps}");
+    assertNoStrayFields("IMPACT", im, SHAPES.IMPACT);
+
+    const list = (field) => {
+      const v = im[field];
+      if (v === undefined || v === null) return [];
+      if (!Array.isArray(v)) fail(`IMPACT.${field} must be an array`);
+      return v;
+    };
+    const int = (where, v, { min = 0 } = {}) => {
+      if (!Number.isInteger(v) || v < min) {
+        fail(`${where} must be an integer >= ${min}, got ${JSON.stringify(v)}`);
+      }
+      return v;
+    };
+
+    const CHANGES = ["added", "removed", "signature", "body"];
+    const symbols = list("symbols");
+    const symbolBullets = symbols.map((sy, i) => {
+      const where = `IMPACT.symbols[${i}]`;
+      if (!isPlainObject(sy)) fail(`${where} must be an object`);
+      assertNoStrayFields(where, sy, SHAPES["IMPACT.symbols[]"]);
+      for (const f of ["name", "path"]) {
+        if (!sy[f] || String(sy[f]).trim() === "") fail(`${where}.${f} is required`);
+        assertPlain(`${where}.${f}`, sy[f]);
+      }
+      if (!CHANGES.includes(String(sy.change))) {
+        fail(`${where}.change must be one of ${CHANGES.join(" | ")} — got ${JSON.stringify(sy.change)}`);
+      }
+      const files = int(`${where}.consumer_files`, sy.consumer_files);
+      const ok = int(`${where}.verified_unaffected`, sy.verified_unaffected ?? 0);
+      const found = int(`${where}.findings`, sy.findings ?? 0);
+      // The identity that keeps the note honest: you cannot verify more consumers than exist, and
+      // verified + flagged cannot exceed the total. A truncated trace reports the truncation.
+      if (ok > files) {
+        fail(`${where}: verified_unaffected (${ok}) exceeds consumer_files (${files})`);
+      }
+      if (ok + found > files) {
+        fail(`${where}: verified_unaffected + findings (${ok + found}) exceeds consumer_files`
+          + ` (${files}) — a consumer cannot be both`);
+      }
+      const parts = [`${sy.change} change`, `${files} consumer file${files === 1 ? "" : "s"}`];
+      if (ok) parts.push(`${ok} verified unaffected`);
+      if (found) parts.push(`${found} finding${found === 1 ? "" : "s"} inline`);
+      // An untraced remainder is stated, never rounded away.
+      const untraced = files - ok - found;
+      if (untraced > 0) parts.push(`${untraced} not traced (budget)`);
+      return `- \`${sy.name}\` (\`${sy.path}\`) — ${parts.join(" · ")}`;
+    });
+
+    const DELTAS = ["major", "minor", "patch"];
+    const deps = list("dependencies");
+    const depBullets = deps.map((d, i) => {
+      const where = `IMPACT.dependencies[${i}]`;
+      if (!isPlainObject(d)) fail(`${where} must be an object`);
+      assertNoStrayFields(where, d, SHAPES["IMPACT.dependencies[]"]);
+      for (const f of ["name", "from", "to"]) {
+        if (!d[f] || String(d[f]).trim() === "") fail(`${where}.${f} is required`);
+        assertPlain(`${where}.${f}`, d[f]);
+      }
+      if (!DELTAS.includes(String(d.delta))) {
+        fail(`${where}.delta must be one of ${DELTAS.join(" | ")} — got ${JSON.stringify(d.delta)}`);
+      }
+      const sites = int(`${where}.usage_sites`, d.usage_sites);
+      if (d.url !== undefined && d.url !== null && !/^https?:\/\//.test(String(d.url))) {
+        fail(`${where}.url must be http(s), got ${JSON.stringify(d.url)}`);
+      }
+      const notes = d.url ? ` · [release notes](${d.url})` : "";
+      return `- \`${d.name}\` ${d.from} → ${d.to} (${d.delta}) — ${sites} usage site`
+        + `${sites === 1 ? "" : "s"} checked${notes}`;
+    });
+
+    const overlaps = list("overlaps");
+    const overlapBullets = overlaps.map((o, i) => {
+      const where = `IMPACT.overlaps[${i}]`;
+      if (!isPlainObject(o)) fail(`${where} must be an object`);
+      assertNoStrayFields(where, o, SHAPES["IMPACT.overlaps[]"]);
+      int(`${where}.pr`, o.pr, { min: 1 });
+      for (const f of ["author", "path"]) {
+        if (!o[f] || String(o[f]).trim() === "") fail(`${where}.${f} is required`);
+        assertPlain(`${where}.${f}`, o[f]);
+      }
+      if (o.url !== undefined && o.url !== null && !/^https?:\/\//.test(String(o.url))) {
+        fail(`${where}.url must be http(s), got ${JSON.stringify(o.url)}`);
+      }
+      const target = o.symbol ? `\`${o.symbol}\`` : `\`${o.path}\``;
+      const ref = o.url ? `[#${o.pr}](${o.url})` : `#${o.pr}`;
+      // Git merges two clean edits to different lines of one function and produces code neither
+      // author wrote, so this is stated as a semantic risk rather than a merge-conflict warning.
+      return `- ${target} is also changed on ${ref} by @${o.author} — a semantic conflict is`
+        + " likely even if git merges both cleanly";
+    });
+
+    if (im.telemetry !== undefined && im.telemetry !== null && String(im.telemetry).trim() !== "") {
+      assertPlain("IMPACT.telemetry", im.telemetry, { allowCode: true });
+      if (String(im.telemetry).includes("\n")) fail("IMPACT.telemetry must be a single line");
+      telemetryLine = `**Telemetry:** ${im.telemetry}`;
+    }
+
+    const consumersChecked = symbols.reduce((n, sy) => n + (sy.verified_unaffected ?? 0)
+      + (sy.findings ?? 0), 0);
+    const bits = [];
+    if (symbols.length) bits.push(`${symbols.length} changed export${symbols.length === 1 ? "" : "s"}`);
+    if (consumersChecked) bits.push(`${consumersChecked} consumer${consumersChecked === 1 ? "" : "s"} checked`);
+    if (deps.length) bits.push(`${deps.length} dependency delta${deps.length === 1 ? "" : "s"}`);
+    if (overlaps.length) bits.push(`${overlaps.length} open-PR overlap${overlaps.length === 1 ? "" : "s"}`);
+    impactSummary = bits.join(" · ");
+
+    // One contiguous list, not three. A blank line between bullet groups makes GitHub emit three
+    // separate `<ul>`s, and with no heading between them the gap reads as a missing label rather
+    // than as grouping — the bullets are already self-labelling (symbol / dependency / overlap).
+    const bulletBlock = [...symbolBullets, ...depBullets, ...overlapBullets].join("\n");
+    const blocks = [telemetryLine, bulletBlock].filter((b) => b !== "");
+    // A section with a summary but no rows would render an empty accordion; a section with rows
+    // but no summary would render an unlabelled one. Either way, suppress it.
+    if (blocks.length && impactSummary) impactSection = blocks.join("\n\n");
+    else { impactSection = ""; impactSummary = ""; }
+  }
+
+  // ── WITHHELD → the unverified-hypothesis section ───────────────────────────────────────────
+  //
+  // verification-receipt.md's `unobtainable` verdict re-frames rather than drops, and this is
+  // where the re-framed findings land when they have no valid anchor. Every entry names the
+  // reason the check could not run, because "unverified" with no reason is indistinguishable
+  // from a guess.
+  const withheld = arr("WITHHELD").map((w, i) => {
+    const where = `WITHHELD[${i}]`;
+    if (!isPlainObject(w)) fail(`${where} must be an object {path, line, url, prefix, body, reason}`);
+    assertNoStrayFields(where, w, SHAPES["WITHHELD[]"]);
+    if (!w.reason || String(w.reason).trim() === "") {
+      fail(`${where}.reason is required — an unverified finding names which rung was unavailable`);
+    }
+    assertPlain(`${where}.reason`, w.reason, { allowCode: true });
+    if (!w.body || String(w.body).trim() === "") fail(`${where}.body is required`);
+    assertPlain(`${where}.body`, w.body, { allowCode: true });
+    const PREFIXES = ["suggestion", "question"];
+    if (!PREFIXES.includes(String(w.prefix))) {
+      // Never `issue:`, never blocking: nothing was verified, so nothing is asserted.
+      fail(`${where}.prefix must be one of ${PREFIXES.join(" | ")} — an unverified finding is`
+        + ` never an issue (got ${JSON.stringify(w.prefix)})`);
+    }
+    let anchor = "";
+    if (w.path) {
+      assertPlain(`${where}.path`, w.path);
+      const label = w.line ? `${w.path}:${w.line}` : String(w.path);
+      if (w.url !== undefined && w.url !== null) {
+        if (!/^https?:\/\//.test(String(w.url))) {
+          fail(`${where}.url must be http(s), got ${JSON.stringify(w.url)}`);
+        }
+        anchor = `[\`${label}\`](${w.url}) — `;
+      } else anchor = `\`${label}\` — `;
+    }
+    return `- ${anchor}${w.prefix}: ${w.body} <sup>(unverified: ${w.reason})</sup>`;
+  }).join("\n");
+
   // Fix-all Agent0 button (opt-in). Rendered only when FIX_ALL_URL is supplied — the agent builds
   // the deep link via scripts/build-agent0-link.mjs. The button image URL (ASSET) is a constant
   // here; Dash0 can repoint it at a hosted PNG for production (agent0-fix-links.md § Button markup).
@@ -482,6 +726,10 @@ function main() {
     LOW_CONFIDENCE_COUNT: arr("LOW_CONFIDENCE_FINDINGS").length || "",
     OPTIMALITY_CARDS: cards.join("\n\n"),
     OPTIMALITY_COUNT: cards.length || "",
+    IMPACT_SECTION: impactSection,
+    IMPACT_SUMMARY: impactSummary,
+    WITHHELD: withheld,
+    WITHHELD_COUNT: arr("WITHHELD").length || "",
   };
   for (const k of [...REQUIRED_SCALARS, ...OPTIONAL_SCALARS]) {
     if (derived[k] === undefined) derived[k] = data[k] === undefined ? "" : String(data[k]);
@@ -541,7 +789,8 @@ function main() {
   for (const owned of ["| Gate | Status | Details |", "**Run mode**", "**Memories**",
     "**Quality**", "**Integrations**", "**Optimality (2.4c)**", "**Standards (2.4d)**",
     "**Skipped files**", "**Open review threads (", "<sup>Reviewed for commit",
-    "<sup>Incremental review for commit", "<sup>No code changes since", "<sup>Reviewed by the"]) {
+    "<sup>Incremental review for commit", "<sup>No code changes since", "<sup>Reviewed by the",
+    "<summary>Impact —", "<summary>Withheld (", "**Telemetry:**"]) {
     if (head.includes(owned)) fail(`${owned} rendered above the accordion`);
   }
 
