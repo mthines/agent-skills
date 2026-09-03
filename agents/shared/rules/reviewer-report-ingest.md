@@ -120,18 +120,47 @@ finding.
 
 | Section | Literal marker in the body | Extractable unit | Anchored? |
 | --- | --- | --- | --- |
-| Headline | first non-marker, non-banner line | the one-line verdict sentence | n/a |
+| Headline | first non-marker, non-banner line, always a `### ` heading | the count-forward verdict line — `### <glyph> <N> findings — <K> blocking`, or `### ✅ No issues found`, or `### <glyph> No findings — <M> gates need attention`. The `SUMMARY` sentence about the change is the **next** non-empty line. | n/a |
 | Partial-review banner | `⚠️ **Partial review — tool budget exhausted` | boolean: the run was truncated | n/a |
 | Gate-status table | the `\| Gate \| Status \| Details \|` table inside `<details><summary>Review details…` | one unit per row whose Status is `❌` or `⚠️`: `{gate, status, details}`. `✅` rows carry no finding. | **No** — gate findings have no `path:line` |
-| Optimality cards | `<summary>Optimality review (<N>) — is this the best approach?</summary>` | one unit per `### Optimality proposal — <path>:<line>` heading, captured **verbatim** as a whole block: headline, Now / Better table, `Why it's better`, `Trade-off`, `Evidence`, and the `Intent · Blast radius · Confidence` footer | Yes — `path:line` in the card heading |
-| Additional findings | `<summary>Additional findings (<N>) — cleared review, not inlined</summary>` | one unit per bullet: `` `<path>:<line>` — <prefix>: <body> (confidence <N>) `` | Yes |
-| Low-confidence findings | `<summary>Low-confidence findings (<N>) — advisory, below the confidence bar</summary>` | one unit per bullet: `` `<path>:<line>` — <prefix>: <body> (confidence <N>) `` | Yes |
+| Optimality cards | `<summary>Is there a better approach? (<N>)</summary>` | one unit per `### Optimality proposal — <path>:<line>` heading, captured **verbatim** as a whole block: headline, Now / Better table, `Why it's better`, `Trade-off`, `Evidence`, and the `Intent · Blast radius · Confidence` footer | Yes — `path:line` in the card heading |
+| Findings index | the `\| Finding \| Where \| Severity \|` table above the accordions | one unit per row: `{title, path, line, url, tier, blocking}` — the findings this run posted **inline**, which are also fetchable from `pulls/<n>/comments`. **Do not double-count**: a consumer reading both surfaces must dedupe on `path:line`, since the index is a pointer to the comment, not a second finding. | Yes |
+| Additional findings | `<summary><N> more findings — verified, too minor to comment on</summary>` | one unit per bullet: `` `<path>:<line>` — <prefix>: <body> (confidence <N>) `` | Yes |
+| Low-confidence findings | `<summary>Less certain (<N>) — advisory, below the confidence bar</summary>` | one unit per bullet: `` `<path>:<line>` — <prefix>: <body> (confidence <N>) `` | Yes |
 | Run mode | a line **beginning** `<mode> · <N> lines in delta` — `/^(full\|incremental\|incremental-quick) · (\d+) lines in delta/m` | `{mode, delta_lines}`, from that single shape — every mode renders it, a zero-delta run as `incremental · 0 lines in delta`. The zero-delta form is named by the Footer SHA line, not here. | n/a |
 | Standards log | `Standards —`, the first line of the `Found` group's standards entry | `{ran, docs_scanned, finding_count}` — run-state only. **Absent when the lens had nothing to report** (see *Quiet lenses collapse into a footnote*). | n/a |
 | Optimality log | `Optimality —` | `{ran, judged, optimal, proposals, withheld}` — run-state only. Absent when quiet. | n/a |
 | Measurability log | `Measurability —` | `{ran, paths_classified, missing, unlinked}` — run-state only. Absent when quiet (`0 missing` and `0 unlinked`). | n/a |
 | Skipped files | `Skipped files —` | file paths. **Absent on `none`** — an empty skip list renders as `0 files skipped` in the footnote, never as its own line. | n/a |
-| Footer SHA | `<sup>Reviewed for commit \`<sha>\`` / `<sup>Incremental review for commit \`<sha>\`` / `<sup>No code changes since \`<prior>\` — gate checks only for commit \`<sha>\`` | the reviewed SHA — **all three** run-mode forms. Match on `commit \`<sha>\`` alone, never on a leading phrase: anchoring on `review for commit` matches only the incremental form and silently misses the other two. This section is load-bearing provenance for a sticky, which has no `commit_id` — and it is what `pr-reviewer`'s own fallback rung reads to recover a delta baseline when its state record is unusable, so the three forms must stay matchable by `commit \`<sha>\`` alone. | n/a |
+| Footer SHA | `<sup>\`pr-reviewer\` · commit \`<sha>\`` — one shared line, built by `comment-spine.mjs`'s `footerLine()` and rendered **below** the `Review details` accordion | the reviewed SHA. Match on `` commit \`<sha>\` `` **alone**, never on a leading phrase — the rule that already applied to the three retired run-mode forms (`Reviewed for commit`, `Incremental review for commit`, `No code changes since`), and the reason this line's rewording costs a conforming consumer nothing. The run mode now rides as a phrase after the sha (`full review`, `incremental review, delta since \`<prior>\``, `no code changes since \`<prior>\`, gate checks only`) and the freshness stamp as `updated <YYYY-MM-DD HH:MM> UTC`, so the old standalone `<sub>Updated … UTC</sub>` line is gone. This is load-bearing provenance for a sticky, which has no `commit_id` — and it is what `pr-reviewer`'s own fallback rung reads to recover a delta baseline when its state record is unusable. A body written before this change still carries one of the three retired forms; a consumer matching on `` commit \`<sha>\` `` reads both. | n/a |
+
+### The headline is two lines, and the first is a heading
+
+The headline region renders as a `### ` heading followed by a sentence, and optionally a reasons
+line and an advisory note:
+
+```markdown
+### 🟠 4 findings — 1 blocking
+
+Adds `github.check_run` to the trigger-kind union but leaves four keyed registries unwired.
+
+**Blocking:** 1 unanswered blocking review thread
+
+<sub>1 advisory finding below the confidence bar — see *Less certain* below.</sub>
+```
+
+Three consequences for a consumer:
+
+- **The heading is the verdict line, not prose.** Every count in it is derived from `FINDINGS[]`, so
+  it cannot disagree with the index below it or with the `Severity — ` tally in the accordion. It
+  replaced a free-prose slot whose spec defined three forms and whose renderer checked only that it
+  was non-empty — which is how a headline matching none of them shipped.
+- **It counts findings, not gates.** The old headline read `1 error, 2 warnings`, counting gate
+  statuses, while the inline comments were findings and nothing reconciled the two numbers. Gate
+  state is now named in the `**Blocking:**` / `**Warnings:**` line instead.
+- **`### ` is the report's identity marker.** An inline finding never uses a heading
+  (`comment-shape.md § Shape` forbids it and uses a bold title line), so the presence of a `### `
+  heading distinguishes the two surfaces without reading the marker.
 
 ### The accordion is grouped, and the group headings are not sections
 

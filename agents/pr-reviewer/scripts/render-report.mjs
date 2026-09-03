@@ -27,6 +27,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import {
+  TIERS, TIER_GLYPH, VERDICT_GLYPH, VERDICTS, SHA7, GATE_DETAILS_MAX,
+  worstTier, tierTally, footerLine, fixButton, anchor,
+} from "./comment-spine.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE = join(HERE, "..", "templates", "report-body.md");
@@ -44,14 +48,20 @@ const DEPTH_LABEL = {
   tarball: "tarball (no git history)",
   "diff-only": "diff-only — consumer, type, and test verification unavailable",
 };
-const SHA7 = /^[0-9a-f]{7}$/;
 // The glyphs the renderer owns. RUN_NOTE may carry none of them; RUN_ANOMALY may not lead with one.
 const WARN_GLYPH = /[\u26a0\u274c]|\u{1F534}/u;
-const GATE_DETAILS_MAX = 120;
 
 // Scalar slots the model supplies verbatim. Prose only — no counts, no links, no parsed shapes.
+//
+// `HEADLINE` used to live here as one free-prose line, and it was the single most-read line in the
+// system checked only for non-emptiness — every other slot with a count, a link or a parsed shape
+// was already derived. That gap is how `Not ready — this PR adds github.check_run…` shipped on
+// dash0hq/dash0#18362 against a spec (`report-rendering.md § Headlines`) defining three fixed forms
+// that all open `Reviewed your changes —`. It is replaced by VERDICT + FINDINGS + SUMMARY: the
+// glyph, the count and the blocking subset are now derived, and the run supplies only the one
+// sentence that actually needs judgment.
 const REQUIRED_SCALARS = [
-  "HEADLINE",
+  "VERDICT", "SUMMARY",
   "GATE_DESCRIPTION_STATUS", "GATE_DESCRIPTION_DETAILS",
   "GATE_PRIOR_STATUS", "GATE_PRIOR_DETAILS",
   "GATE_DOCS_STATUS", "GATE_DOCS_DETAILS",
@@ -65,8 +75,9 @@ const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NO
 
 // Structured slots. Each is an object or an array; the renderer turns it into markdown.
 const STRUCTURED = ["RUN", "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED",
+  "FINDINGS", "FAIL_REASONS", "WARN_REASONS",
   "OPEN_THREADS", "ADDITIONAL_FINDINGS", "LOW_CONFIDENCE_FINDINGS", "OPTIMALITY_CARDS",
-  "TIER_TALLY", "IMPACT", "WITHHELD"];
+  "IMPACT", "WITHHELD"];
 
 function fail(msg) {
   process.stderr.write(`render-report: ${msg}\n`);
@@ -86,7 +97,10 @@ const SHAPES = {
   "OPEN_THREADS[]": ["path", "line", "url", "ask", "blocking", "author", "is_bot"],
   "ADDITIONAL_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
   "LOW_CONFIDENCE_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
-  TIER_TALLY: ["critical", "high", "medium", "low"],
+  // The findings this run posted inline — the worklist the report never had. `title` is the same
+  // string `render-comment.mjs` put on the comment's own first line, which is what makes the index
+  // row and the comment it links to recognisably the same finding.
+  "FINDINGS[]": ["title", "path", "line", "url", "tier", "blocking"],
   IMPACT: ["telemetry", "symbols", "dependencies", "overlaps"],
   "IMPACT.symbols[]": ["name", "path", "change", "consumer_files", "verified_unaffected", "findings"],
   "IMPACT.dependencies[]": ["name", "from", "to", "delta", "usage_sites", "url"],
@@ -223,9 +237,15 @@ function main() {
   const known = new Set([...REQUIRED_SCALARS, ...OPTIONAL_SCALARS, ...STRUCTURED]);
   const unknown = Object.keys(data).filter((k) => !known.has(k));
   if (unknown.length) {
-    const hint = unknown.some((k) => ["MEMORIES", "FOOTER_LINE", "RUN_MODE", "OPEN_THREADS_COUNT",
+    const V1 = ["MEMORIES", "FOOTER_LINE", "RUN_MODE", "OPEN_THREADS_COUNT",
       "OPEN_THREADS_SUFFIX", "ADDITIONAL_COUNT", "LOW_CONFIDENCE_COUNT", "OPTIMALITY_COUNT",
-      "BUDGET_CALLS", "BUDGET_SCANNED", "BUDGET_TOTAL", "PARTIAL_BANNER"].includes(k))
+      "BUDGET_CALLS", "BUDGET_SCANNED", "BUDGET_TOTAL", "PARTIAL_BANNER"];
+    const V2 = ["HEADLINE", "TIER_TALLY"];
+    const hint = unknown.some((k) => V2.includes(k))
+      ? " — these look like v2 slots: HEADLINE is replaced by VERDICT + FINDINGS + SUMMARY (the"
+        + " glyph, the count and the blocking subset are derived), and TIER_TALLY is derived from"
+        + " FINDINGS[].tier so a tally can no longer disagree with the findings it counts"
+      : unknown.some((k) => V1.includes(k))
       ? " — these look like v1 slots: counts are now derived from array length, MEMORIES split into"
         + " MEMORIES_SUMMARY + MEMORIES_USED, and FOOTER_LINE/RUN_MODE are derived from RUN"
       : "";
@@ -320,12 +340,16 @@ function main() {
   }
   const updatedStamp = atDate.toISOString().slice(0, 16).replace("T", " ");
 
+  // The run descriptor for the footer. It is a PHRASE, not a sentence, because `footerLine` already
+  // renders `commit \`<sha>\`` — the substring every consumer matches on
+  // (`reviewer-report-ingest.md § Footer SHA`) and the one `pr-reviewer`'s own fallback rung reads
+  // to recover a delta baseline. Repeating the sha here would put it in the line twice.
   let footer;
-  if (run.mode === "full") footer = `Reviewed for commit \`${run.sha}\`.`;
+  if (run.mode === "full") footer = "full review";
   else if (run.mode === "zero-delta") {
-    footer = `No code changes since \`${run.prior_sha}\` — gate checks only for commit \`${run.sha}\`.`;
+    footer = `no code changes since \`${run.prior_sha}\`, gate checks only`;
   } else {
-    footer = `Incremental review for commit \`${run.sha}\` (delta since \`${run.prior_sha}\`).`;
+    footer = `incremental review, delta since \`${run.prior_sha}\``;
   }
 
   // The `<mode> · <N> lines in delta` prefix is what reviewer-report-ingest.md parses, so it is
@@ -532,25 +556,55 @@ function main() {
     }
   });
 
-  // Finding-tier tally → glyph breakdown. Optional; the model's summary of the severity tiers it
-  // assigned this run. Named TIER_TALLY to avoid the existing SEVERITY_TALLY term (the error/warning
-  // count in the FAIL headline — a different concept). Posted inline findings are not an array in
-  // the payload, so this is the one count the renderer cannot derive from a list — it validates the
-  // shape and omits zero tiers.
-  let tierBreakdown = "";
-  if (data.TIER_TALLY !== undefined && data.TIER_TALLY !== null) {
-    const t = data.TIER_TALLY;
-    const GLYPH = { critical: "🔴", high: "🟠", medium: "🟡", low: "⚪" };
-    const parts = [];
-    for (const tier of ["critical", "high", "medium", "low"]) {
-      const n = t[tier];
-      if (n === undefined || n === null) continue;
-      if (!Number.isInteger(n) || n < 0) {
-        fail(`TIER_TALLY.${tier} must be a non-negative integer, got ${JSON.stringify(n)}`);
-      }
-      if (n > 0) parts.push(`${GLYPH[tier]} ${n}`);
+  // ── FINDINGS → the headline counts, the index, and the severity tally ──────────────────────────
+  //
+  // One array, three renderings. It replaces a hand-written headline, a hand-written TIER_TALLY, and
+  // nothing at all — because the report never listed what it posted inline. That absence is why the
+  // headline counted GATES (`1 error, 2 warnings`) while the inline comments were FINDINGS with no
+  // line reconciling them, and why a posted finding resorted to "the report lists all four unwired
+  // registries" — a cross-reference to a document that did not, in fact, list them.
+  const findings = arr("FINDINGS");
+  const findingRows = findings.map((f, i) => {
+    const where = `FINDINGS[${i}]`;
+    if (!f.title || String(f.title).trim() === "") fail(`${where}.title is required`);
+    assertPlain(`${where}.title`, f.title, { allowCode: true });
+    // A pipe would split the row into phantom columns, and a table cell cannot be escaped out of.
+    if (String(f.title).includes("|")) fail(`${where}.title contains a pipe — it would break the row`);
+    if (!TIERS.includes(String(f.tier))) {
+      fail(`${where}.tier must be one of ${TIERS.join(" | ")} — got ${JSON.stringify(f.tier)}`);
     }
-    tierBreakdown = parts.join(" · ");
+    if (f.blocking !== undefined && f.blocking !== null && typeof f.blocking !== "boolean") {
+      fail(`${where}.blocking must be a boolean, got ${JSON.stringify(f.blocking)}`);
+    }
+    let ref;
+    try {
+      ref = anchor({ path: f.path, line: f.line, url: f.url });
+    } catch (e) { fail(`${where}: ${e.message}`); }
+    const sev = `${TIER_GLYPH[String(f.tier)]} ${f.tier}` + (f.blocking === true ? " · blocking" : "");
+    return `| ${String(f.title).trim()} | ${ref} | ${sev} |`;
+  });
+  const findingsIndex = findingRows.length
+    ? ["| Finding | Where | Severity |", "|---|---|---|", ...findingRows].join("\n")
+    : "";
+
+  const tierCounts = Object.fromEntries(TIERS.map((t) => [t, 0]));
+  for (const f of findings) tierCounts[String(f.tier)] += 1;
+  const tierBreakdown = tierTally(tierCounts);
+  const blockingFindings = findings.filter((f) => f.blocking === true).length;
+
+  // `posted inline <N>` in QUALITY and `FINDINGS.length` are the same number stated twice, and
+  // until FINDINGS existed they could not be compared: the headline counted GATES while the inline
+  // comments were findings, and the only line naming the finding count sat four accordion levels
+  // down in pipeline vocabulary. Now the report's worklist has to agree with its own tally.
+  const postedInline = /posted inline (\d+)/.exec(String(data.QUALITY));
+  if (!postedInline) {
+    fail("QUALITY must name its inline count as `posted inline <N>` — the findings index is checked"
+      + " against it");
+  }
+  if (Number(postedInline[1]) !== findings.length) {
+    fail(`QUALITY says posted inline ${postedInline[1]} but FINDINGS has ${findings.length}`
+      + ` entr${findings.length === 1 ? "y" : "ies"} — the index and the tally are the same number,`
+      + " so one of them is wrong");
   }
 
   // ── IMPACT → the consequence-note section ──────────────────────────────────────────────────
@@ -835,24 +889,120 @@ function main() {
     "GATE_SELFREVIEW_STATUS", "GATE_CODEREVIEW_STATUS"].map((k) => String(data[k]).trim());
   const needsAttention = gateStatuses.some((v) => v === "⚠️" || v === "❌") ? "yes" : "";
 
+  // ── VERDICT → the headline ─────────────────────────────────────────────────────────────────────
+  //
+  // The verdict is cross-checked against the gate table it sits above, which is a class of
+  // contradiction the report could previously post: a `reviewer-lessons` entry records a posted
+  // gate table reading PASS while the run's own contract said FAIL. The gates decide, so a
+  // mismatched VERDICT is a rejection rather than a rendered disagreement. Gate 2 (CI) is
+  // deliberately not consulted — it warns and never fails, so it cannot move the verdict.
+  const verdict = String(data.VERDICT).trim();
+  if (!VERDICTS.includes(verdict)) {
+    fail(`VERDICT must be one of ${VERDICTS.join(" | ")} — got ${JSON.stringify(data.VERDICT)}`);
+  }
+  const failing = gateStatuses.filter((v) => v === "❌").length;
+  // Gate 2 (CI) has no row in the table — `CI_NOTE` is its whole surface — but it is still a
+  // warning gate, and a red or pending check renders the WARN headline rather than PASS
+  // (`report-rendering.md`: "with no failing hard gate and no ❌ there is nothing to tally, and the
+  // run renders the WARN headline"). It can raise the verdict to WARN and never past it.
+  const warning = gateStatuses.filter((v) => v === "⚠️").length + (data.CI_NOTE ? 1 : 0);
+  const impliedVerdict = failing > 0 ? "FAIL" : warning > 0 ? "WARN" : "PASS";
+  if (verdict !== impliedVerdict) {
+    fail(`VERDICT ${verdict} contradicts the gate table — ${failing} ❌ and ${warning} ⚠️`
+      + `${data.CI_NOTE ? " (CI included)" : ""} imply ${impliedVerdict}. The gates decide the`
+      + " verdict; fix whichever is wrong before rendering");
+  }
+
+  const reasonList = (k) => {
+    const v = arr(k);
+    v.forEach((r, i) => {
+      if (typeof r !== "string" || r.trim() === "") fail(`${k}[${i}] must be a non-empty string`);
+      assertPlain(`${k}[${i}]`, r, { allowCode: true });
+    });
+    // Two phrases plus a count, never a paragraph. The cap is the same one the prose spec set at
+    // ~140 chars, expressed as a list bound so it cannot be exceeded by wording.
+    return v.length <= 2 ? v.join("; ") : `${v.slice(0, 2).join("; ")}; +${v.length - 2} more`;
+  };
+  if (verdict === "FAIL" && arr("FAIL_REASONS").length === 0) {
+    fail("VERDICT FAIL with no FAIL_REASONS — a failing gate names why in one noun phrase"
+      + " (report-rendering.md § Headlines)");
+  }
+  if (arr("FAIL_REASONS").length > failing) {
+    fail(`FAIL_REASONS has ${arr("FAIL_REASONS").length} phrases but only ${failing} gate(s) are ❌`
+      + " — one phrase per failing gate, and CI is never among them");
+  }
+
+  // The count-forward headline. `<N> findings` is the number the author acts on, so it leads; the
+  // gate state follows in the reasons line. A run with no findings still has a state to report,
+  // which is what the two zero-finding forms are for.
+  const n = findings.length;
+  let headline;
+  if (n > 0) {
+    const glyph = TIER_GLYPH[worstTier(findings)];
+    headline = `### ${glyph} ${n} finding${n === 1 ? "" : "s"}`
+      + (blockingFindings > 0 ? ` — ${blockingFindings} blocking` : "");
+  } else if (verdict === "PASS") {
+    headline = "### ✅ No issues found";
+  } else {
+    const gates = failing + warning;
+    headline = `### ${VERDICT_GLYPH[verdict]} No findings — ${gates} gate${gates === 1 ? "" : "s"}`
+      + " need attention";
+  }
+
+  const summary = String(data.SUMMARY).trim();
+  assertPlain("SUMMARY", summary, { allowCode: true });
+  if (summary.length > 240) {
+    fail(`SUMMARY is ${summary.length} chars, over the 240-char cap — it is one sentence about the`
+      + " change, not the report");
+  }
+  const reasons = verdict === "FAIL" ? reasonList("FAIL_REASONS")
+    : verdict === "WARN" ? reasonList("WARN_REASONS") : "";
+  const reasonsLine = reasons
+    ? `**${verdict === "FAIL" ? "Blocking" : "Warnings"}:** ${reasons}`
+    : "";
+
+  // A PASS headline must not overstate cleanliness while advisory `issue:` entries sit below it.
+  const cadv = arr("LOW_CONFIDENCE_FINDINGS").length;
+  const advisoryLine = cadv > 0
+    ? `<sub>${cadv} advisory finding${cadv === 1 ? "" : "s"} below the confidence bar — see`
+      + " *Less certain* below.</sub>"
+    : "";
+
   // Fix-all Agent0 button (opt-in). Rendered only when FIX_ALL_URL is supplied — the agent builds
   // the deep link via scripts/build-agent0-link.mjs. The button image URL (ASSET) is a constant
   // here; Dash0 can repoint it at a hosted PNG for production (agent0-fix-links.md § Button markup).
+  // The label carries the count, so the button says what it will do rather than naming a mode —
+  // `Fix all 3 with Agent0` is a promise a reader can check against the index directly above it.
+  // Markup, host validation, and the light/dark variant pair all come from the spine, so the
+  // report's button and the inline one cannot drift into two different chips.
   let fixAllButton = "";
   if (data.FIX_ALL_URL !== undefined && data.FIX_ALL_URL !== null && String(data.FIX_ALL_URL).trim() !== "") {
-    const u = String(data.FIX_ALL_URL);
-    if (!/^https?:\/\//.test(u)) fail(`FIX_ALL_URL must be http(s), got ${JSON.stringify(u.slice(0, 60))}`);
-    if (/[)\s]/.test(u)) fail("FIX_ALL_URL must be a bare URL (no spaces or ')') — encode per build-agent0-link.mjs");
-    if (!/^https:\/\/app\.dash0(-dev)?\.com\//.test(u)) fail("FIX_ALL_URL host must be app.dash0.com or app.dash0-dev.com (agent0_environment)");
-    const ASSET = "https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets/fix-all-agent0.svg";
-    fixAllButton = `[![Fix all with Agent0](${ASSET})](${u})`;
+    // Zero findings and no CI note means there is nothing for Agent0 to do, and a button that
+    // hands it an empty worklist is worse than no button: it invites a click that spends a run
+    // discovering it has no work. The one legitimate zero-finding case is the CI-only template
+    // (`agent0-fix-links.md § Fix all — CI-only`), which requires a CI note to exist.
+    if (n === 0 && !data.CI_NOTE) {
+      fail("FIX_ALL_URL with 0 findings and no CI_NOTE — there is nothing to fix; omit the button"
+        + " (agent0-fix-links.md § Fix all — CI-only)");
+    }
+    const label = n > 0 ? `Fix all ${n} with Agent0`
+      : "Fix the failing checks with Agent0";
+    try {
+      fixAllButton = fixButton({ kind: "all", url: String(data.FIX_ALL_URL), label });
+    } catch (e) { fail(`FIX_ALL_URL: ${e.message}`); }
   }
 
   const derived = {
-    HEADLINE: data.HEADLINE,
+    HEADLINE: headline,
+    SUMMARY_LINE: summary,
+    REASONS_LINE: reasonsLine,
+    ADVISORY_LINE: advisoryLine,
+    FINDINGS_INDEX: findingsIndex,
     FIX_ALL_BUTTON: fixAllButton,
-    UPDATED_LINE: `<sub>Updated ${updatedStamp} UTC</sub>`,
-    FOOTER_LINE: footer,
+    // One footer, both surfaces, and outside the accordion so a reader of the collapsed report can
+    // still see who reviewed what. `run` and `at` are the report's own additions; an inline comment
+    // passes neither, so the two footers differ only by what only the report knows.
+    FOOTER_SUP: footerLine({ sha: run.sha, run: footer, at: updatedStamp }),
     NEEDS_ATTENTION: needsAttention,
     FOUND_LINES: foundLines.join("\n"),
     RUN_LINES: runLines.join("\n"),
@@ -921,7 +1071,14 @@ function main() {
   // Post-conditions. Unreachable for an accepted payload, which is the point: a future template
   // edit that breaks the contract fails loudly here instead of quietly posting a flat report.
   if (!body.includes("<!-- PR_REVIEWER_REPORT -->")) fail("rendered body lost the report marker");
-  if (!body.includes(derived.UPDATED_LINE)) fail("rendered body lost the top-level UPDATED_LINE — a template edit dropped the freshness cue");
+  if (!body.includes(derived.FOOTER_SUP)) {
+    fail("rendered body lost the attribution footer — it carries the reviewed sha, which a sticky"
+      + " has no commit_id for, and the freshness stamp");
+  }
+  if (!/^### /m.test(body)) {
+    fail("rendered body has no `### ` headline — the heading is what makes a report identifiable as"
+      + " a report at a glance, and the one shape an inline finding never uses");
+  }
   if (!/<details>\n<summary>Review details/.test(body)) fail("rendered body has no `Review details` accordion");
   if (body.includes("<details open>")) fail("rendered body pre-expands a `<details>` block");
   const caged = body.match(/``?\s*\[[^\]]*\]\([^)]*\)\s*``?/g);
@@ -936,11 +1093,19 @@ function main() {
   // Only the group headings and the structural literals are listed. A plain in-group label
   // (`Quality — `, `Memories — `) is deliberately absent: model-authored optimality cards render
   // above the accordion, and a card discussing quality would trip a substring match on one.
+  // The footer is NOT in this list: it now renders below the accordion by design, so it is never in
+  // `head` on a well-formed body — and on a flattened one (no accordion at all, `head` = the whole
+  // body) the missing-accordion check above has already fired.
   for (const owned of ["| Gate | Status | Details |", "**Needs attention**", "**Found**", "**Run**",
-    "**Open review threads (", "<sup>Nothing to report —", "<sup>Reviewed for commit",
-    "<sup>Incremental review for commit", "<sup>No code changes since", "<sup>Reviewed by the",
+    "**Open review threads (", "<sup>Nothing to report —",
     "<summary>Impact —", "<summary>Withheld (", "**Telemetry:**"]) {
     if (head.includes(owned)) fail(`${owned} rendered above the accordion`);
+  }
+  // The findings index is the one thing that MUST be above it: a worklist inside a collapsed
+  // accordion is a worklist nobody reads.
+  if (findingsIndex && !head.includes("| Finding | Where | Severity |")) {
+    fail("the findings index rendered inside the accordion — it is the report's worklist and has to"
+      + " be visible without a click");
   }
 
   process.stdout.write(body.endsWith("\n") ? body : `${body}\n`);

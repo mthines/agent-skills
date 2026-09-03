@@ -941,17 +941,59 @@ function checksInSync(plan, checks) {
   // a self-comparison (aw-lessons::mock-that-reimplements-the-thing-under-test).
   // Mirrors the G18 literal-sentence + positional-slice idiom.
   {
-    // G19a: the three concise headline sentences are present (PASS / WARN / FAIL).
-    // These are literal anchors grepped from the rewritten Step 4 section.
-    s.check("G19a the PASS concise headline has an affirming checkmark lead",
-      reportRendering.includes("✅ Reviewed your changes — no issues found."));
+    // G19a-c: the three headline forms. They used to be three prose sentences the run composed
+    // and the renderer accepted unchecked, which is how a headline matching none of them shipped;
+    // they are now derived shapes, so the checks assert the RENDERED forms against the real
+    // renderer and the doc that specifies them, not a prose literal.
+    s.check("G19a the PASS form is a heading with an affirming checkmark lead",
+      reportRendering.includes("`### ✅ No issues found`"));
 
-    s.check("G19b the WARN concise headline is led by WARN_GATE_COUNT and names the warned gates",
-      reportRendering.includes("Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>."));
+    s.check("G19b the zero-finding non-PASS form names the gate count",
+      reportRendering.includes("`### <verdict glyph> No findings — <M> gates need attention`"));
 
-    s.check("G19c the FAIL concise headline is led by SEVERITY_TALLY and names the blocking gates",
-      reportRendering.includes("Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review.") &&
-      reportRendering.includes("Blocking: <FAIL_REASONS>."));
+    s.check("G19c the with-findings form leads with the count and the blocking subset",
+      reportRendering.includes("`### <worst-tier glyph> <N> findings — <K> blocking`")
+      && /never rendered as `0 blocking`/.test(reportRendering));
+
+    // Every form the doc specifies must be reachable from the renderer, and every form the
+    // renderer emits must be specified. Executed against the real script, because a spec/impl
+    // agreement asserted by reading only the spec is the exact gap this replaces.
+    {
+      const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
+      const FIX = join(REPO_ROOT, "scripts/eval/fixtures/report-body");
+      const base = JSON.parse(readFileSync(join(FIX, "pass.json"), "utf8"));
+      const render = (fn) => {
+        const c = structuredClone(base); fn(c);
+        const r = spawnSync("node", [RENDER], { input: JSON.stringify(c), encoding: "utf8" });
+        return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
+      };
+      const passForm = render(() => {});
+      s.check("G19a the renderer emits the PASS form", passForm.ok
+        && /^### ✅ No issues found$/m.test(passForm.out), passForm.err);
+      const warnForm = render((c) => {
+        c.VERDICT = "WARN"; c.GATE_DOCS_STATUS = "⚠️"; c.GATE_DOCS_DETAILS = "x";
+        c.WARN_REASONS = ["1 doc gap"];
+      });
+      s.check("G19b the renderer emits the zero-finding non-PASS form", warnForm.ok
+        && /^### ⚠️ No findings — 1 gate needs? attention$/m.test(warnForm.out), warnForm.err);
+      const withFindings = render((c) => {
+        c.QUALITY = "produced 3 → posted inline 2 · cleared 2 · carried forward 0 · deferred 0 · below-bar 0";
+        c.FINDINGS = [
+          { title: "A blocking finding", path: "a.ts", line: 1, tier: "high", blocking: true },
+          { title: "A quieter one", path: "b.ts", line: 2, tier: "low" },
+        ];
+      });
+      s.check("G19c the renderer emits the with-findings form", withFindings.ok
+        && /^### 🟠 2 findings — 1 blocking$/m.test(withFindings.out), withFindings.err);
+      // `0 blocking` is never rendered — the clause is dropped, not zero-filled.
+      const noBlocking = render((c) => {
+        c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
+        c.FINDINGS = [{ title: "A quieter one", path: "b.ts", line: 2, tier: "low" }];
+      });
+      s.check("G19c the renderer drops the blocking clause at zero", noBlocking.ok
+        && /^### ⚪ 1 finding$/m.test(noBlocking.out) && !/0 blocking/.test(noBlocking.out),
+        noBlocking.err);
+    }
 
     // G19d / G19g retired: they scanned the three embedded Step-4 templates for
     // gate-table-inside-accordion and footer-inside-accordion. Those templates no longer exist —
@@ -1005,9 +1047,20 @@ function checksInSync(plan, checks) {
     s.check("G33c report-rendering.md's posted-body WARN headline carries no bare PASS token",
       !/no blocking issues.*\*\*PASS\*\*|PASS\s*—\s*no blocking issues/i.test(reportRendering),
       "report-rendering.md's WARN headline regained a PASS token");
+    // The two surfaces now count different things on purpose — the posted headline counts
+    // FINDINGS, this line counts gates — so the old assertion (a `byte-identical` claim next to a
+    // `report-rendering.md` reference) would now enforce a coupling that is itself the bug: it is
+    // what made the posted headline count gates. What must still agree is the FACT, so assert the
+    // cross-reference plus the named shared values, and assert the retired claim is gone.
     s.check("G33d terminal-report.md's WARN row cites report-rendering.md so the two cannot drift silently",
-      /report-rendering\.md[\s\S]{0,40}byte-identical|byte-identical[\s\S]{0,40}report-rendering\.md/.test(terminalReport),
-      "terminal-report.md's Step 3 WARN explanation no longer cross-references report-rendering.md as the source of truth");
+      /report-rendering\.md/.test(terminalReport)
+      && /verdict token[\s\S]{0,200}reason phrases/.test(terminalReport),
+      "terminal-report.md's Step 3 WARN explanation no longer cross-references report-rendering.md,"
+      + " or no longer names the verdict token and reason phrases as the values that must agree");
+    s.check("G33d the retired byte-identity coupling is not re-asserted",
+      /byte-identity rule this paragraph used to state/.test(terminalReport)
+      && !/must stay \*\*byte-identical\*\*/.test(terminalReport),
+      "a byte-identity claim between the terminal line and the posted headline is back");
   }
 
   // G34: prior-comment-awareness.md requires verifying a "resolved" thread against HEAD before
@@ -1291,7 +1344,31 @@ function checksInSync(plan, checks) {
     const base = JSON.parse(readFileSync(join(FIX, "pass.json"), "utf8"));
     const mutate = (fn) => { const c = structuredClone(base); fn(c); return JSON.stringify(c); };
     const rejects = [
-      ["a missing required slot", mutate((c) => { delete c.HEADLINE; })],
+      ["a missing required slot", mutate((c) => { delete c.SUMMARY; })],
+      // The verdict is cross-checked against the gate table it sits above. A `reviewer-lessons`
+      // entry records a posted report whose gate table read PASS while the run's own contract said
+      // FAIL; the gates decide, so a disagreement is a rejection rather than a rendered
+      // contradiction.
+      ["a VERDICT that contradicts the gate table",
+        mutate((c) => { c.GATE_DOCS_STATUS = "❌"; c.GATE_DOCS_DETAILS = "no docs"; })],
+      // The findings index and the QUALITY tally are the same number stated twice.
+      ["a findings index that disagrees with the QUALITY tally", mutate((c) => {
+        c.FINDINGS = [{ title: "A finding", path: "a.ts", line: 1, tier: "high" }];
+      })],
+      // A tier is an enum, not prose: the glyph is looked up from it.
+      ["a findings entry with an unknown tier", mutate((c) => {
+        c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
+        c.FINDINGS = [{ title: "A finding", path: "a.ts", line: 1, tier: "urgent" }];
+      })],
+      // A pipe in a title splits the index row into phantom columns.
+      ["a findings title carrying a table pipe", mutate((c) => {
+        c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
+        c.FINDINGS = [{ title: "A | B", path: "a.ts", line: 1, tier: "high" }];
+      })],
+      // Zero findings and no CI note means the Fix-all button would hand Agent0 an empty worklist.
+      ["a Fix-all button with nothing to fix", mutate((c) => {
+        c.FIX_ALL_URL = "https://app.dash0.com/goto/agent0?auto_submit=true";
+      })],
       ["an unknown key (typo'd slot)", mutate((c) => { c.HEADLIN = "x"; })],
       ["an invalid gate glyph", mutate((c) => { c.GATE_PRIOR_STATUS = "FAIL"; })],
       // `RUN_MODE` is a v1 slot, so mutating it only proved the unknown-key check. Smuggle the
@@ -1433,7 +1510,7 @@ function checksInSync(plan, checks) {
       s.check("G25 zero-delta parses as {incremental, 0}",
         /^incremental · 0 lines in delta$/m.test(r.out));
       s.check("G25 zero-delta keeps its footer form",
-        r.out.includes("No code changes since `70cf147` — gate checks only for commit `bde3c2f`."));
+        r.out.includes("commit `bde3c2f` · no code changes since `70cf147`, gate checks only"));
     }
 
     // A prose field carries the source comment's own wording, backticks and all. Step 1.0 requires
@@ -1477,7 +1554,7 @@ function checksInSync(plan, checks) {
         // anchoring on "review for commit" catches only the incremental form. Take the last such
         // match, since the zero-delta form names the prior sha first.
         "Footer SHA": (b) => {
-          const line = (b.match(/^<sup>(?:Reviewed|Incremental review|No code changes)[^\n]*<\/sup>$/m) || [""])[0];
+          const line = (b.match(/^<sup>`pr-reviewer` · commit[^\n]*<\/sup>$/m) || [""])[0];
           const all = [...line.matchAll(/commit `([0-9a-f]{7})`/g)];
           return all.length ? { sha: all[all.length - 1][1] } : null;
         },
@@ -1496,11 +1573,11 @@ function checksInSync(plan, checks) {
       };
       // Sections that only appear on some fixtures: assert they parse WHERE PRESENT.
       const CONDITIONAL = {
-        "Additional findings": [/<summary>Additional findings \((\d+)\) — cleared review, not inlined<\/summary>/,
+        "Additional findings": [/<summary>(\d+) more findings — verified, too minor to comment on<\/summary>/,
           /^- (?:\[)?`[^`]+`(?:\]\([^)]+\))? — \w+: .+ \(confidence \d+\)$/m],
-        "Low-confidence findings": [/<summary>Low-confidence findings \((\d+)\) — advisory, below the confidence bar<\/summary>/,
+        "Low-confidence findings": [/<summary>Less certain \((\d+)\) — advisory, below the confidence bar<\/summary>/,
           /^- (?:\[)?`[^`]+`(?:\]\([^)]+\))? — \w+: .+ \(confidence \d+\)$/m],
-        "Optimality cards": [/<summary>Optimality review \((\d+)\) — is this the best approach\?<\/summary>/,
+        "Optimality cards": [/<summary>Is there a better approach\? \((\d+)\)<\/summary>/,
           /^### Optimality proposal — \S+:\d+$/m],
         "Partial-review banner": [/⚠️ \*\*Partial review — tool budget exhausted after \d+ calls; \d+ of \d+ files scanned\.\*\*/, null],
       };
@@ -1589,10 +1666,20 @@ function checksInSync(plan, checks) {
       const allPass = run([join(FIX, "pass.json")]);
       s.check("G25 an all-✅ gate table renders no attention heading",
         allPass.ok && !allPass.out.includes("**Needs attention**"), allPass.err);
-      const oneWarn = run([], mutate((c) => { c.GATE_DOCS_STATUS = "⚠️"; c.GATE_DOCS_DETAILS = "x"; }));
+      // The verdict travels with the gate change: the renderer now rejects a VERDICT that
+      // contradicts the table, so a ⚠️ gate implies WARN and the payload has to say so.
+      const oneWarn = run([], mutate((c) => {
+        c.GATE_DOCS_STATUS = "⚠️"; c.GATE_DOCS_DETAILS = "x";
+        c.VERDICT = "WARN"; c.WARN_REASONS = ["1 doc gap"];
+      }));
       s.check("G25 one ⚠️ gate renders the attention heading",
         oneWarn.ok && oneWarn.out.includes("**Needs attention**"), oneWarn.err);
-      const ciOnly = run([], mutate((c) => { c.CI_NOTE = "2 checks red on `bde3c2f`."; }));
+      // Red CI raises the verdict to WARN (`report-rendering.md`: with no ❌ the run renders the
+      // WARN headline) but it must NOT label the gate table, because CI has no row in it.
+      const ciOnly = run([], mutate((c) => {
+        c.CI_NOTE = "2 checks red on `bde3c2f`.";
+        c.VERDICT = "WARN"; c.WARN_REASONS = ["CI red: build, lint"];
+      }));
       s.check("G25 red CI alone renders no attention heading — Gate 2 warns, never fails",
         ciOnly.ok && !ciOnly.out.includes("**Needs attention**"), ciOnly.err);
 
@@ -1637,7 +1724,7 @@ function checksInSync(plan, checks) {
     // aborted every run. A guard that checks a command's TEXT cannot see that. Run the block.
     {
       const preWrite = sliceBetween(prReviewer,
-        "**Assert these four things on `REPORT_BODY` immediately before the write",
+        "**Assert these six things on `REPORT_BODY` immediately before the write",
         "On any `abort`: post no report object");
       const fence = preWrite.match(/```bash\n([\s\S]*?)```/);
       s.check("G25 the pre-write assertion block is extractable", !!fence);
@@ -1712,7 +1799,7 @@ function checksInSync(plan, checks) {
     // aborted every run. A guard that checks a command's TEXT cannot see that. Run the block.
     {
       const preWrite = sliceBetween(prReviewer,
-        "**Assert these four things on `REPORT_BODY` immediately before the write",
+        "**Assert these six things on `REPORT_BODY` immediately before the write",
         "On any `abort`: post no report object");
       const fence = preWrite.match(/```bash\n([\s\S]*?)```/);
       s.check("G25 the pre-write assertion block is extractable", !!fence);
@@ -2131,18 +2218,22 @@ function checksInSync(plan, checks) {
     s.check("G27 the FAIL verdict rule names only Gates 4 and 5",
       /verdict is \*\*FAIL\*\* when Gate 4 or Gate 5 fails/.test(prReviewer));
 
-    // The tally and reasons must carry no CI token. These are the two strings that produced the
-    // misleading headline, so assert on the rendered vocabulary rather than on prose about it.
-    const tally = sliceBetween(reportRendering, "`SEVERITY_TALLY` (the **FAIL** headline",
-      "`FAIL_REASONS` / `WARN_REASONS`");
-    s.check("G27 SEVERITY_TALLY is ordered errors-then-warnings, with no CI term",
-      /ordered errors-then-warnings/.test(tally) &&
-      !/prefix `CI failing`/.test(tally));
-    s.check("G27 SEVERITY_TALLY states CI never appears in it",
-      /\*\*CI never appears in the tally\.\*\*/.test(tally));
-    const reasons = sliceBetween(reportRendering, "`FAIL_REASONS` / `WARN_REASONS`", "| Gate | ❌ reason");
+    // CI must not reach the posted headline at all. The gate-count tally that used to lead it is
+    // gone — the headline counts FINDINGS now, and `SEVERITY_TALLY` is terminal-only — so the
+    // assertion moves to the two places CI could still leak into a verdict: the WARN ceiling in
+    // the headline rules, and the reasons array.
+    const headlines = sliceBetween(reportRendering, "#### Headlines", "| Gate | ❌ reason");
+    s.check("G27 the headline rules cap CI at WARN and never past it",
+      /raises the verdict to `WARN` and \*\*never past it\*\*/.test(headlines));
+    s.check("G27 the headline counts findings, not gate statuses",
+      /\*\*It counts findings, not gates\.\*\*/.test(headlines));
+    s.check("G27 SEVERITY_TALLY no longer reaches the posted headline",
+      /`SEVERITY_TALLY` is a \*\*terminal-only\*\* term/.test(reportRendering));
+    s.check("G27 the posted headline region carries no CI token",
+      !/CI failing/.test(headlines));
     s.check("G27 FAIL_REASONS no longer leads with a CI phrase",
-      !/leading\s*\n?`CI checks failing`/.test(reasons) && /CI is\s*\n?never among them/.test(reasons));
+      !/leading\s*\n?`CI checks failing`/.test(headlines)
+      && /CI is never\s*\n?among them/.test(headlines));
 
     // The reason table's CI row must offer a ⚠️ phrase and no ❌ phrase.
     const ciRow = (reportRendering.match(/^\| CI \(Gate 2\) \|[^\n]*$/m) || [""])[0];
@@ -2198,34 +2289,61 @@ function checksInSync(plan, checks) {
       }
     }
     // Every prior guard here checks whether a STRING is present or absent. That cannot see a
-    // fixture whose headline COUNT disagrees with its own gate statuses — and because G25 diffs
-    // the snapshots byte-for-byte, such a fixture locks the wrong semantics in as the reference
-    // rendering. warn.json read `**2 warning(s)**` while three gates warned (Prior review feedback,
-    // Code review, and CI via CI_NOTE), which is exactly the miscount this change introduces the
-    // risk of. Derive the counts from the payload and compare them to the rendered headline.
+    // fixture whose headline COUNT disagrees with the payload it was rendered from — and because
+    // G25 diffs the snapshots byte-for-byte, such a fixture locks the wrong semantics in as the
+    // reference rendering.
+    //
+    // The headline used to count GATES (`1 error, 2 warnings`), which is what these checks read.
+    // It now counts FINDINGS, because that is the number the author acts on and the one the inline
+    // comments are — the gate/finding mismatch was why the report and the inline surface never
+    // added up to one number. So the invariants change shape: the finding count and the blocking
+    // subset are checked against FINDINGS[], and the verdict is checked against the gates that
+    // decide it, CI included.
     for (const name of REPORT_FIXTURES) {
       const pj = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.json`);
+      const mj = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
       if (!existsSync(pj)) { s.check(`G27 fixture ${name}.json present`, false); continue; }
       const d = JSON.parse(readFileSync(pj, "utf8"));
-      const statuses = Object.entries(d).filter(([k]) => k.endsWith("_STATUS")).map(([, v]) => v);
+      const statuses = ["GATE_DESCRIPTION_STATUS", "GATE_PRIOR_STATUS", "GATE_DOCS_STATUS",
+        "GATE_SELFREVIEW_STATUS", "GATE_CODEREVIEW_STATUS"].map((k) => d[k]);
       const errors = statuses.filter((v) => v === "❌").length;
-      // CI is a warning gate now, and CI_NOTE is its only surface — a populated CI_NOTE means ⚠️.
+      // CI is a warning gate, and CI_NOTE is its only surface — a populated CI_NOTE means ⚠️.
       const warnings = statuses.filter((v) => v === "⚠️").length + (d.CI_NOTE ? 1 : 0);
-      const h = String(d.HEADLINE);
-      const claimedErr = Number((h.match(/\*\*(\d+) errors?/) || [0, 0])[1]);
-      const claimedWarn = Number((h.match(/(\d+) warnings?/) || [0, 0])[1]);
-      s.check(`G27 ${name} headline's error count matches its gate statuses`,
-        claimedErr === errors, `headline ${claimedErr}, gates ${errors}`);
-      s.check(`G27 ${name} headline's warning count matches its gate statuses (CI included)`,
-        claimedWarn === warnings, `headline ${claimedWarn}, gates ${warnings}`);
-      // A warning gate must be NAMED where WARN_REASONS renders — which is the WARN headline only.
-      // On a FAIL run the spec counts warning gates in the tally but names them in the accordion,
-      // never in the headline, so requiring the phrase there would contradict the file. Scope this
-      // to the no-errors case rather than "wherever CI_NOTE is set".
+      const implied = errors > 0 ? "FAIL" : warnings > 0 ? "WARN" : "PASS";
+      s.check(`G27 ${name} VERDICT agrees with its own gate statuses (CI included)`,
+        d.VERDICT === implied, `payload ${d.VERDICT}, gates imply ${implied}`);
+      // CI can raise the verdict to WARN and never past it: a red check is never an error.
+      s.check(`G27 ${name} CI alone never produces a FAIL`,
+        !(errors === 0 && d.VERDICT === "FAIL"), `${d.VERDICT} with 0 ❌ gates`);
+      // One FAIL_REASONS phrase per ❌ gate, and CI is never among them.
+      const reasons = Array.isArray(d.FAIL_REASONS) ? d.FAIL_REASONS : [];
+      s.check(`G27 ${name} has one FAIL_REASONS phrase per ❌ gate`,
+        reasons.length === errors, `${reasons.length} phrase(s), ${errors} ❌ gate(s)`);
+      s.check(`G27 ${name} names no CI phrase in FAIL_REASONS`,
+        !reasons.some((r) => /\bCI\b/.test(r)), reasons.join("; ").slice(0, 90));
+      // A warning gate must be NAMED where WARN_REASONS renders — the WARN verdict only. On a FAIL
+      // run the spec names warning gates in the accordion, never in the headline region.
       if (d.CI_NOTE && errors === 0) {
+        const warnReasons = (Array.isArray(d.WARN_REASONS) ? d.WARN_REASONS : []).join("; ");
         s.check(`G27 ${name} names CI in WARN_REASONS when CI_NOTE reports a red check`,
-          /CI red:|CI still pending/.test(h), h.slice(0, 90));
+          /CI red:|CI still pending/.test(warnReasons), warnReasons.slice(0, 90));
       }
+      if (!existsSync(mj)) continue;
+      const body = readFileSync(mj, "utf8");
+      const findings = Array.isArray(d.FINDINGS) ? d.FINDINGS : [];
+      const blocking = findings.filter((f) => f.blocking === true).length;
+      const head = (body.match(/^### .*$/m) || [""])[0];
+      const claimed = Number((head.match(/(\d+) findings?/) || [0, 0])[1]);
+      s.check(`G27 ${name} headline's finding count matches FINDINGS[]`,
+        claimed === findings.length, `headline ${claimed}, payload ${findings.length}`);
+      const claimedBlocking = Number((head.match(/(\d+) blocking/) || [0, 0])[1]);
+      s.check(`G27 ${name} headline's blocking count matches FINDINGS[].blocking`,
+        claimedBlocking === blocking, `headline ${claimedBlocking}, payload ${blocking}`);
+      // The index is the worklist, so it must carry one row per finding and sit above the accordion.
+      const indexRows = (body.split("<details>")[0].match(/^\| .* \| .* \| .* \|$/gm) || [])
+        .filter((r) => !/^\|\s*(Finding|-{3})/.test(r) && !/^\|---\|/.test(r));
+      s.check(`G27 ${name} findings index has one visible row per finding`,
+        indexRows.length === findings.length, `${indexRows.length} row(s), ${findings.length} finding(s)`);
     }
     s.check("G27 diagnostic-surface carries the CI-never-fails invariant",
       /\*\*CI never fails the verdict\.\*\*/.test(prReviewerDiag));
@@ -3195,6 +3313,167 @@ const isPollBlock = (block) =>
     const noKey = spawnSync("node", [RUNNER], { encoding: "utf8", env: { ...process.env, ANTHROPIC_API_KEY: "" } });
     s.check("G39c the detection runner skips cleanly with no API key",
       noKey.status === 0 && /no ANTHROPIC_API_KEY/.test(noKey.stdout || ""));
+  }
+}
+
+// ── G41: the inline comment surface has a renderer, and it shares ONE vocabulary with the report ──
+//
+// The report got `render-report.mjs` because runs stopped copying its template and started
+// remembering it. The inline surface had the same problem and the opposite treatment: a prose rule
+// plus a `passes_shape()` function in Python that nothing ever executed — so on dash0hq/dash0#18362
+// one posted finding dropped three documented decorations at once (the severity label, the bold on
+// `**(blocking)**`, and its position) and omitted the fix fence its own rule requires.
+//
+// These checks are behavioural, not textual, for the same reason G25's are: text-matching a correct
+// prose spec was never going to catch a run that ignores it.
+{
+  const SPINE = join(REPO_ROOT, "agents/pr-reviewer/scripts/comment-spine.mjs");
+  const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-comment.mjs");
+  const FIX = join(REPO_ROOT, "scripts/eval/fixtures/inline-comment");
+  const run = (args, input) => {
+    const r = spawnSync("node", [RENDER, ...args], { input, encoding: "utf8" });
+    return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
+  };
+
+  s.check("G41a the inline renderer and the shared spine both exist",
+    existsSync(RENDER) && existsSync(SPINE));
+
+  if (existsSync(RENDER) && existsSync(SPINE)) {
+    // (a) The renderer's own self-test. Every case in it is a shape that shipped or was one edit
+    // from shipping, so a regression in the caps is a CI failure rather than a posted comment.
+    const st = spawnSync("node", [RENDER, "--self-test"], { encoding: "utf8" });
+    s.check("G41b the inline renderer's self-test passes", st.status === 0,
+      ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("—"))
+        .join("; ").slice(0, 400));
+
+    // (b) Snapshot parity, discovered from disk so a new fixture is never silently exempt.
+    const fixtures = existsSync(FIX)
+      ? readdirSync(FIX).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort()
+      : [];
+    s.check("G41c the inline surface has committed reference renderings", fixtures.length >= 3,
+      `${fixtures.length} fixture(s)`);
+    for (const name of fixtures) {
+      const expectedPath = join(FIX, `${name}.expected.md`);
+      if (!existsSync(expectedPath)) {
+        s.check(`G41d ${name} fixture + snapshot present`, false, "missing snapshot");
+        continue;
+      }
+      const r = run([join(FIX, `${name}.json`)]);
+      s.check(`G41d ${name}.json renders without error`, r.ok, r.err);
+      const expected = readFileSync(expectedPath, "utf8");
+      s.check(`G41d ${name} output matches its committed snapshot`, r.out === expected,
+        r.out === expected ? "" : "output drifted — regenerate the snapshot and review the diff");
+    }
+
+    // (c) The invariants the posted comment in the screenshots broke. Asserted on every snapshot,
+    // because these are the properties that make the two surfaces read as one reviewer.
+    for (const name of fixtures) {
+      const p = join(FIX, `${name}.expected.md`);
+      if (!existsSync(p)) continue;
+      const body = readFileSync(p, "utf8");
+      const first = body.split("\n")[0];
+      // The prefix stays at position 0 with the tier immediately after it, because
+      // record-comment-relevance.mjs reads the tier off exactly that shape.
+      s.check(`G41e ${name} opens with a Conventional-Comments prefix`,
+        /^(praise|nitpick|suggestion|issue|question)( \((critical|high|medium|low)\)):/.test(first),
+        first.slice(0, 60));
+      // The recorder's own regex, verbatim — a guard that paraphrases it is not a guard on it.
+      s.check(`G41e ${name} tier is readable by the relevance recorder's SEVERITY_RE`,
+        /^\s*\*{0,2}(?:issue|suggestion|nitpick|nit|question|praise|chore)\s*\((critical|high|medium|low)\)/i
+          .test(body), first.slice(0, 60));
+      // The blocking/non-blocking token is bold and on line 1 — other rules parse it, and Gate 3
+      // reads it to decide whether an open thread fails a PR.
+      if (/\*\*\(blocking\)\*\*|\*\*\(non-blocking\)\*\*/.test(body)) {
+        s.check(`G41e ${name} keeps its bold decoration on line 1`,
+          /\*\*\((?:non-)?blocking\)\*\*\s*$/.test(first), first.slice(-40));
+      }
+      // The footer is the cue that makes an inline finding and the report the same reviewer, and
+      // the only attribution visible in a notification email.
+      s.check(`G41e ${name} carries the shared attribution footer`,
+        /^<sup>`pr-reviewer` · commit `[0-9a-f]{7}` · \[how these findings are produced\]/m.test(body));
+      // No heading, no bullets — the shape rule the report's `### ` headline is the counterpart of.
+      s.check(`G41e ${name} uses no heading`, !/^#{1,6} /m.test(body));
+      // A claim carries a title in bold; a one-liner carries none. Both are checked, because the
+      // interesting failure is a nitpick that grew a title as much as an issue that lost one.
+      const isClaim = /^(issue|suggestion)/.test(first);
+      s.check(`G41e ${name} ${isClaim ? "carries" : "carries no"} a bold title`,
+        /\*\*[^*(]/.test(first) === isClaim, first.slice(0, 70));
+    }
+
+    // (d) The two surfaces import the SAME vocabulary. This is the check that makes consistency
+    // structural: a glyph map or footer builder copied into one renderer would drift on the first
+    // edit that touched only one of them, which is how the two surfaces came to share nothing.
+    const spine = readFileSync(SPINE, "utf8");
+    const inline = readFileSync(RENDER, "utf8");
+    const report = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"), "utf8");
+    for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
+      s.check(`G41f ${file} imports the shared spine`,
+        /from "\.\/comment-spine\.mjs"/.test(src));
+      for (const shared of ["TIER_GLYPH", "footerLine"]) {
+        s.check(`G41f ${file} takes ${shared} from the spine, not a local copy`,
+          new RegExp(`import[\\s\\S]*?${shared}[\\s\\S]*?comment-spine`).test(src)
+          && !new RegExp(`(const|function)\\s+${shared}\\b`).test(src));
+      }
+    }
+    // The glyph set is defined exactly once in the repo's renderer layer.
+    for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
+      s.check(`G41f ${file} declares no second glyph map`,
+        !/\{\s*critical:\s*"/.test(src.replace(/^import[\s\S]*?;$/m, "")));
+    }
+    s.check("G41f the spine is where the glyph set lives", /TIER_GLYPH = \{ critical:/.test(spine));
+
+    // (e) WCAG 1.4.1: the glyph is never the sole carrier of the tier. `🔴 3 · 🟠 1` is unreadable
+    // to anyone who does not already know the mapping and announces as four colour names.
+    s.check("G41g the tally pairs every glyph with its word",
+      /`\$\{TIER_GLYPH\[t\]\} \$\{counts\[t\]\} \$\{t\}`/.test(spine));
+
+    // (e2) The Step 4b pre-flight and the renderer must agree about what a well-formed body is.
+    // They are two implementations of one contract in two languages, and the pre-flight aborts the
+    // WHOLE post rather than dropping one comment — so a disagreement does not lose a finding, it
+    // loses the review. Caught exactly that while writing this: the <picture> button markup is
+    // ~430 chars and was being measured as prose, which rejected every rendered claim.
+    //
+    // Executed, not text-matched: extract `payload_is_safe` from the agent body and run the
+    // committed reference renderings through it.
+    {
+      const agentBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+      const m = agentBody.match(/^def payload_is_safe\([\s\S]*?\n    return \(True, ""\)$/m);
+      s.check("G41i the Step 4b pre-flight is extractable from the agent body", !!m,
+        "payload_is_safe not found — the fence shape changed");
+      if (m) {
+        const comments = fixtures.map((name) => {
+          const body = readFileSync(join(FIX, `${name}.expected.md`), "utf8");
+          return { path: "a.ts", line: 1, side: "RIGHT", body };
+        });
+        const prog = `${m[0]}\nimport json,sys\n`
+          + `ok, why = payload_is_safe({"event":"COMMENT","body":"<!-- PR_REVIEWER_POINTER -->",`
+          + `"comments": json.loads(sys.argv[1])})\nprint(json.dumps([ok, why]))\n`;
+        const r = spawnSync("python3", ["-c", prog, JSON.stringify(comments)], { encoding: "utf8" });
+        s.check("G41i the pre-flight runs", r.status === 0, (r.stderr || "").slice(0, 300));
+        if (r.status === 0) {
+          let verdict = [null, ""];
+          try { verdict = JSON.parse(r.stdout); } catch { /* reported below */ }
+          s.check("G41i the pre-flight accepts every rendered reference body", verdict[0] === true,
+            `rejected: ${verdict[1]}`);
+        }
+      }
+    }
+
+    // (f) Fail-closed, and silent on stdout — a caller that pipes stdout can never post a fragment.
+    const good = JSON.parse(readFileSync(join(FIX, "issue-blocking.json"), "utf8"));
+    const mutate = (fn) => { const c = structuredClone(good); fn(c); return JSON.stringify(c); };
+    for (const [why, payload] of [
+      ["a missing title on a claim", mutate((c) => { delete c.TITLE; })],
+      ["a hand-typed fingerprint", mutate((c) => { c.FP = "persona1:vibes:f@a.ts"; })],
+      ["a typo'd slot", mutate((c) => { c.TITEL = "x"; })],
+      ["a non-Agent0 button host", mutate((c) => { c.FIX_URL = "https://evil.example.com/x"; })],
+      ["a 40-char sha", mutate((c) => { c.SHA = "7389036aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; })],
+      ["malformed JSON", "{nope"],
+    ]) {
+      const r = run([], payload);
+      s.check(`G41h the inline renderer rejects ${why}`, !r.ok, r.ok ? "ACCEPTED" : "");
+      s.check(`G41h rejecting ${why} emits nothing on stdout`, r.out === "", r.out.slice(0, 60));
+    }
   }
 }
 

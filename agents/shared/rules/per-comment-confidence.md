@@ -188,7 +188,7 @@ review pass
   → verification-receipt.md (behavioral claim proven?)         [2.6b]
   → per-comment-confidence (Skill("confidence", "code") ≥ threshold?) [2.7]
   → conventional-comments.md (prefix prepend + decoration)    [2.9]
-  → comment-shape.md       (≤ 240 chars, ≤ 2 sentences?)      [2.8]
+  → comment-shape.md       (render-comment.mjs: title + ≤ 200 chars?) [2.8]
   → (PR Mode only) line-validity.md (hunk-bounds RIGHT-side)  [3.5]
   → emit / post
 ```

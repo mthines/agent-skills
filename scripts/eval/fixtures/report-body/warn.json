@@ -1,5 +1,34 @@
 {
-  "HEADLINE": "Reviewed your changes — no blocking issues, **3 warning(s)**: 2 open review thread(s); 3 non-blocking finding(s); CI red: Integration smoke.",
+  "VERDICT": "WARN",
+  "SUMMARY": "Reworks the retry path so `retryRequest` throws instead of returning `null`.",
+  "WARN_REASONS": [
+    "2 open review threads",
+    "3 non-blocking findings",
+    "CI red: Integration smoke"
+  ],
+  "FINDINGS": [
+    {
+      "title": "Retry exhaustion now throws where it returned null",
+      "path": "src/api/client.ts",
+      "line": 214,
+      "url": "https://github.com/o/r/pull/1#discussion_r11",
+      "tier": "high"
+    },
+    {
+      "title": "Backoff jitter is seeded once per process",
+      "path": "src/api/backoff.ts",
+      "line": 41,
+      "url": "https://github.com/o/r/pull/1#discussion_r12",
+      "tier": "medium"
+    },
+    {
+      "title": "`sync.ts` still branches on the old null contract",
+      "path": "src/jobs/sync.ts",
+      "line": 88,
+      "url": "https://github.com/o/r/pull/1#discussion_r13",
+      "tier": "medium"
+    }
+  ],
   "RUN": {
     "mode": "incremental",
     "sha": "2c2bd19",
@@ -72,5 +101,6 @@
   "OPTIMALITY_LOG": "ran · 3 judged · 3 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
   "STANDARDS_LOG": "ran · 1 doc · 0 finding(s)",
   "MEASURABILITY_LOG": "ran · 2 paths classified · 1 missing · 0 unlinked",
-  "SKIPPED_FILES": "none"
+  "SKIPPED_FILES": "none",
+  "FIX_ALL_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=Fix%20the%203%20open%20pr-reviewer%20findings&utm_source=pr-reviewer-fix-all"
 }

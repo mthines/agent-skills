@@ -67,8 +67,11 @@ severity_thresholds:                     # DEFAULT — values shown are the `bal
                                          # A flat per_comment_confidence_threshold: N
                                          # override collapses all tiers back to N.
 
-agent0_fix_links: false                  # repo-wide default for the "Fix with Agent0" buttons —
-                                         # equivalent to always passing the --fix-links mode
+agent0_fix_links: false                  # explicit override for the "Fix with Agent0" buttons —
+                                         # omit it and the buttons follow agent0_environment
+                                         # (named ⇒ on, absent ⇒ off) —
+                                         # true is equivalent to always passing --fix-links,
+                                         # false to always passing --no-fix-links
                                          # (default false); see agents/shared/rules/agent0-fix-links.md
 
 agent0_environment: production           # which Agent0 the fix buttons link to —
@@ -285,7 +288,7 @@ The effective config is consumed by:
 - `per-comment-confidence.md` (2.7) — reads the profile's threshold.
 - The filter evaluation (**Step 2.3**, early in Step 2, before holistic review) — drops findings in suppressed categories.
 - The path-instruction injection at `per-comment-confidence.md` (2.7) — appends instruction to Evidence.
-- `pr-reviewer.md`'s `--fix-links mode` section (`agents/shared/rules/agent0-fix-links.md`) — reads `agent0_fix_links` and `agent0_environment`, resolved per § Run-level fields below.
+- `pr-reviewer.md`'s `Fix-with-Agent0 buttons` section (`agents/shared/rules/agent0-fix-links.md`) — reads `agent0_fix_links` and `agent0_environment`, resolved per § Run-level fields below.
 
 ### Run-level fields (`agent0_fix_links`, `agent0_environment`)
 
@@ -312,25 +315,43 @@ fetch_base_config() {  # $1 = path, e.g. ".github/review.yaml"
 BASE_CONFIG_CONTENT=$(fetch_base_config ".github/review.yaml")
 [ -z "$BASE_CONFIG_CONTENT" ] && BASE_CONFIG_CONTENT=$(fetch_base_config ".review.yaml")   # deprecated legacy location
 
-AGENT0_FIX_LINKS="false"
+AGENT0_FIX_LINKS="false"          # off unless an Agent0 is configured, below
 AGENT0_ENVIRONMENT="production"
+AGENT0_ENV_CONFIGURED="false"     # did the repo actually name an Agent0?
 if [ -n "$BASE_CONFIG_CONTENT" ]; then
   # Strip a trailing `# comment` and surrounding quotes before comparing — the schema's own
   # documented style (§ Config schema above) puts an inline comment after the value, and an
   # end-of-line-anchored match against the raw line silently reads that as "unset" (found in
   # review of PR #149).
-  fl=$(grep -E '^agent0_fix_links:' <<< "$BASE_CONFIG_CONTENT" \
-    | sed -E 's/#.*$//; s/^[^:]+:[[:space:]]*//; s/["'"'"']//g; s/[[:space:]]*$//')
-  [ "$fl" = "true" ] && AGENT0_FIX_LINKS="true"
-  env=$(grep -E '^agent0_environment:' <<< "$BASE_CONFIG_CONTENT" \
-    | sed -E 's/#.*$//; s/^[^:]+:[[:space:]]*//; s/["'"'"']//g; s/[[:space:]]*$//')
-  [ "$env" = "development" ] && AGENT0_ENVIRONMENT="development"
+  strip() { sed -E 's/#.*$//; s/^[^:]+:[[:space:]]*//; s/["'"'"']//g; s/[[:space:]]*$//'; }
+  env=$(grep -E '^agent0_environment:' <<< "$BASE_CONFIG_CONTENT" | strip)
+  case "$env" in
+    development) AGENT0_ENVIRONMENT="development"; AGENT0_ENV_CONFIGURED="true" ;;
+    production)  AGENT0_ENVIRONMENT="production";  AGENT0_ENV_CONFIGURED="true" ;;
+  esac
+  # A repo that named an Agent0 has already answered the only question the buttons depend on, so
+  # they default ON there. `agent0_fix_links` is read AFTER, as the explicit override in either
+  # direction — which is why the empty case has to be distinguished from `false`.
+  [ "$AGENT0_ENV_CONFIGURED" = "true" ] && AGENT0_FIX_LINKS="true"
+  fl=$(grep -E '^agent0_fix_links:' <<< "$BASE_CONFIG_CONTENT" | strip)
+  case "$fl" in
+    true)  AGENT0_FIX_LINKS="true" ;;
+    false) AGENT0_FIX_LINKS="false" ;;
+  esac
 fi
 ```
 
-Both fields default as shown when absent or unrecognised — `agent0_fix_links` to `false` (buttons
-off), `agent0_environment` to `production` (`app.dash0.com`), matching the schema defaults above.
-`pr-reviewer.md` ORs `AGENT0_FIX_LINKS` with an explicit `--fix-links` flag to decide `FIX_LINKS`,
+`agent0_environment` defaults to `production` (`app.dash0.com`) when absent or unrecognised, and
+`agent0_fix_links` derives from it: **naming an Agent0 turns the buttons on**, and an explicit
+`agent0_fix_links: true|false` overrides that in either direction. A repo with no
+`agent0_environment` line resolves `AGENT0_FIX_LINKS=false` and renders no buttons anywhere — which
+is every non-Dash0 repo, so the default is invisible outside Dash0.
+
+Note the `case` rather than a `[ "$fl" = "true" ]` test: `false` and *absent* have to be
+distinguishable now, because absent means "inherit from the environment" and `false` means "no,
+really, off". A truthiness check would collapse the two and make the override unwritable.
+`pr-reviewer.md` combines `AGENT0_FIX_LINKS` with the invocation flags to decide `FIX_LINKS`
+(`--no-fix-links` wins, then `--fix-links`, then this value),
 and passes `AGENT0_ENVIRONMENT` to `build-agent0-link.mjs` as `--env` — **on both the Fix-all and
 Fix-this call sites** (§ Config loading step above lists both consumers; `agent0-fix-links.md §
 Button markup` and `comment-shape.md § Fix-with-Agent0 button` must not be read as excusing the

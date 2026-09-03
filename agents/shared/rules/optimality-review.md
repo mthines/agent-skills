@@ -101,7 +101,7 @@ A proposal that `pr-reviewer` surfaced and that you want applied goes through `i
 
 A proposal is a **design argument**, not a line-level nit.
 Its record carries a full structured comparison (`report-mode.md § Proposal record`) and all of its value is in that comparison — a one-line headline, current vs. better approach, why-better, trade-off, evidence, blast radius.
-Routing that through the inline comment stream is what made the lens ineffective: `comment-shape.md` allows ≤ 240 characters and ≤ 2 sentences, so a proposal was trimmed to a slogan or dropped outright.
+Routing that through the inline comment stream is what made the lens ineffective: `comment-shape.md` allows ≤ 200 characters of prose and ≤ 2 sentences, so a proposal was trimmed to a slogan or dropped outright.
 
 Proposals therefore leave the pipeline through a **dedicated long-form surface**:
 
@@ -112,7 +112,7 @@ Proposals therefore leave the pipeline through a **dedicated long-form surface**
 | `polish` (`optimize` mode) | The pass's own terminal output | The same card, plus the apply outcome |
 
 Omit the section entirely when the skill returned no proposals — the quiet early-exit must stay quiet.
-Never render a proposal's **full argument** as an inline comment — the ten-field comparison does not survive the 240-char inline shape. A very-high-confidence proposal may, in addition to its body card, leave a short inline **pointer** to that card — see § Inline pointer for high-confidence proposals.
+Never render a proposal's **full argument** as an inline comment — the ten-field comparison does not survive the 200-char inline shape. A very-high-confidence proposal may, in addition to its body card, leave a short inline **pointer** to that card — see § Inline pointer for high-confidence proposals.
 
 ## Inline pointer for high-confidence proposals
 
@@ -132,7 +132,7 @@ suggestion: A better approach may fit here — see the Optimality review in the 
 Pointer rules:
 
 - **One pointer per qualifying proposal**, so at most 2 per run (the proposal cap). The full card still renders in `OPTIMALITY_SECTION` — the pointer never replaces it.
-- The pointer **is** an inline comment, so it passes `comment-shape.md` (2.8), `conventional-comments.md` (2.9), and line-validity (3.5) — it is naturally compliant (`suggestion:` prefix, one sentence, ≤ 240 chars).
+- The pointer **is** an inline comment, so it passes `comment-shape.md` (2.8), `conventional-comments.md` (2.9), and line-validity (3.5) — it is naturally compliant (`suggestion:` prefix, one sentence, ≤ 200 chars, and a ≤ 60-char title naming the proposal).
 - The pointer is **exempt** from the per-comment-confidence gate (2.7) — its gate is the proposal's own `analysis_confidence >= 95` — and from the placement caps (2.9b): it is tied to its card, not competing in the general inline budget, and being non-blocking it does not benefit from the blocking exemption either. It simply always posts when it qualifies.
 - The pointer is **non-blocking** and never affects the verdict — same as every optimality proposal.
 - Count pointers as `Inline pointers: <N>` in the § Logging block; they are **not** counted in the reviewer's `produced` / `cleared` / `posted inline` quality line, which tracks line-level and persona findings only. Because a pointer *is* a real posted inline comment, wherever a caller reports a count of comments it posted inline (e.g. `pr-reviewer` Step 5's report), it MUST show the pointer count alongside — `<F> inline comments + <OPTR> optimality pointer(s)` — so the posted total is never understated by the quality line's exclusion.
@@ -165,7 +165,7 @@ Proposals keep the gates that test whether the claim is *true*, and skip the one
 | Gate | Why exempt |
 | --- | --- |
 | `per-comment-confidence` (2.7) | Double-gating — see below |
-| `comment-shape` (2.8) | Body content has no length limit; a 240-char cap on a ten-field record guarantees the loss |
+| `comment-shape` (2.8) | Body content has no length limit; a 200-char cap on a ten-field record guarantees the loss |
 | `conventional-comments` (2.9) | The card has its own structure; a category prefix on a section heading is noise |
 | Placement caps (2.9b) | Body content consumes no inline slot; the skill's own cap of 2 proposals per run is the only quantity limit |
 

@@ -15,8 +15,15 @@ Opt-in "Fix with Agent0" buttons on the reviewer's output — the Agent0 equival
 button per inline finding. Each links to an Agent0 deep link that auto-submits a prompt which fixes
 the finding and commits to the same PR.
 
-This is **off by default**. Non-Dash0 repos have no Agent0, so the buttons only render when the
-review config opts in.
+**On wherever an Agent0 exists; off everywhere else.** The gate is whether the repo's review config
+resolves an `agent0_environment` (§ Environment) — a repo that has said which Agent0 it uses has
+already answered the only question the button depends on. Non-Dash0 repos configure no environment,
+render no buttons, and are unaffected.
+
+The buttons used to be off unless a flag was passed, and the cost of that was the whole point of
+having them: the affordance that turns a review into an action was absent from every run nobody
+remembered to flag — including the runs a screenshot gets taken of. A review that finds four real
+problems and offers no way to act on them is doing the hard half and skipping the cheap one.
 
 ## Contents
 
@@ -29,24 +36,30 @@ review config opts in.
 
 ## Opt-in
 
-Off by default. It is a **runtime mode**, enabled per-run with the `--fix-links` flag on the
-`pr-reviewer` invocation:
+Resolution order, first match wins:
 
-```text
-Task(subagent_type="pr-reviewer", prompt="<PR-URL> --fix-links")
-```
-
-`--fix-links` is the mode the Agent0 automation passes for the runs it owns, so nobody else's
-reviews change and no repo has to commit a config file. A repo that *always* wants the buttons can
-set the equivalent default in its review config instead:
+| Signal | Result |
+| --- | --- |
+| `--no-fix-links` on the invocation | **off** — the explicit opt-out, and it beats everything below |
+| `--fix-links` on the invocation | **on** |
+| `agent0_fix_links: true` / `false` in the review config | as set — an explicit repo-wide answer |
+| `agent0_environment` resolves in the review config | **on** — the default this section is about |
+| nothing configured | **off** |
 
 ```yaml
 # .github/review.yaml
-agent0_fix_links: true   # repo-wide default — equivalent to always passing --fix-links (default: false)
+agent0_environment: production      # this alone turns the buttons on
+agent0_fix_links: false             # …unless the repo explicitly says otherwise
 ```
 
-With neither the flag nor the config set (the default), the reviewer emits no buttons anywhere and
-behaves exactly as before.
+```text
+Task(subagent_type="pr-reviewer", prompt="<PR-URL> --no-fix-links")   # opt out for one run
+```
+
+Two properties are worth stating because they are what make the default safe. A repo with no
+`agent0_environment` still gets nothing, so the change is invisible outside Dash0. And the two
+placements are governed by **one** flag, so a run either has both buttons or neither — a report
+offering *Fix all* above findings with no *Fix this* was one of the inconsistencies this replaces.
 
 ## Environment
 
@@ -101,7 +114,7 @@ state included, in a single call. That makes the **Fix all** URL length **indepe
 count** — it no longer grows with how many findings are open, which is what let a large PR's worklist
 crowd the 2500 target before. Measured from the live template with a realistic owner/repo/login: ~1100
 chars, flat regardless of `{count}`. **Fix this** is ~880 at its worst case (a 94-char path plus the
-full 240-char lead cap). The figures are not guesses — L1 `G32d` fills the live template and measures
+full lead-line cap). The figures are not guesses — L1 `G32d` fills the live template and measures
 it (the `&utm_source=...` tag from § Click attribution is a small, fixed addition on top and does not
 move either shape closer to the target), so a clause added here is measured on the next run.
 
@@ -145,7 +158,7 @@ Fix the pr-reviewer finding at {path}:{line} on {owner}/{repo}#{n} — "{lead}".
 ```
 
 `{lead}` is the finding's own first line as posted (the Conventional-Comments prefix plus its first
-sentence, ≤ 240 chars by `comment-shape.md § Hard caps`), with any double quotes dropped so it
+sentence, ≤ 200 chars by `comment-shape.md § Hard caps`, plus its ≤ 60-char title), with any double quotes dropped so it
 cannot break out of its quoted span. It is the reviewer's own authored text, not a third party's.
 
 Why `{path}:{line}` and not a `#discussion_r<id>` permalink: GitHub assigns the comment's `r<id>`
@@ -258,33 +271,63 @@ count was not sufficient on its own).
 
 ## Button markup
 
-Each button is a linked image — the image is the button, the link is the deep link:
+**Built by one function, `comment-spine.mjs`'s `fixButton()`, which both renderers call.** Never
+hand-write this markup: the host validation, the `)`-in-URL rejection, the alt text and the theme
+pair all live in that function, and a second copy is how the report's button and the inline one
+drift into two different chips.
 
-```text
-[![Fix with Agent0]({ASSET_BASE}/fix-this-agent0.svg)]({DEEP_LINK})
-[![Fix all with Agent0]({ASSET_BASE}/fix-all-agent0.svg)]({DEEP_LINK})
+Each button is a **theme-aware** linked image:
+
+```html
+<a href="{DEEP_LINK}"><picture><source media="(prefers-color-scheme: dark)" srcset="{ASSET_BASE}/fix-this-agent0-dark.svg"><img alt="Fix with Agent0" src="{ASSET_BASE}/fix-this-agent0-light.svg" height="36"></picture></a>
 ```
 
-`{ASSET_BASE}` is not a runtime setting — it is shorthand in this doc for the hardcoded `ASSET`
-constant in `render-report.mjs` (currently the committed SVGs below), and nothing exposes an
-override for it:
+**The anchor is HTML, not markdown link syntax, and it is one line.** Wrapping the `<picture>`
+element in markdown link brackets puts a block of raw HTML inside a markdown link, and whether the
+parser treats that HTML as the link's inline content is not something this repo can verify without
+posting a comment — a broken
+button reads as a broken reviewer. `<a href>` wrapping `<picture>` needs no markdown parsing at all,
+and both elements are on GitHub's comment HTML allowlist. One line because a blank line inside
+inline HTML ends the HTML block.
+
+`<picture>` with `media="(prefers-color-scheme: dark)"` is how GitHub does theme-aware images, and
+it is why there are two variants. A single dark chip reads as a near-black blob in GitHub's light
+theme, where every other control is light — this is the primary call to action of the whole review,
+so it should not be the one element that ignores the reader's theme. The light variant uses
+GitHub's own control colours (`#d0d7de` border, `#1f2328` ink) so it reads as part of the page.
+
+**Both variants are 36 px tall.** The originals were 28. WCAG 2.2 SC 2.5.8 sets a 24×24 floor
+(28 cleared it, barely); SC 2.5.5 and the iOS HIG want 44×44 and Android 48 dp, which a chip sitting
+beside body text cannot reach without dominating the comment. 36 is the compromise: comfortably
+clear of the floor, and roughly as close to the platform minimum as this control can get. On the
+GitHub mobile web view this is the tap target for the review's only action, so the extra 8 px is not
+cosmetic.
+
+`{ASSET_BASE}` is not a runtime setting — it is shorthand for the hardcoded `ASSET_BASE` constant in
+`comment-spine.mjs`, and nothing exposes an override:
 
 ```text
 https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets
 ```
 
+The pre-theme `fix-this-agent0.svg` / `fix-all-agent0.svg` are **kept in place and unreferenced**.
+Comments posted before this change embed those exact raw URLs, and deleting the files would 404 the
+button image in every already-posted finding.
+
 For production, Dash0 should host PNG equivalents on `app.dash0.com` (like Cursor's own CDN button)
 — a brand-controlled PNG renders more reliably through GitHub's image proxy than a repo-hosted SVG,
-and it does not 404 on branches before merge. Repointing production is a code change: edit the
-`ASSET` constant in `render-report.mjs` directly (and wire the equivalent constant when the **Fix
-this** per-finding button is implemented) rather than looking for a config flag — none exists. The
-button source lives in `agents/pr-reviewer/assets/*.svg`.
+and it does not 404 on branches before merge. Repointing production is a code change: edit
+`ASSET_BASE` in `comment-spine.mjs`, which now moves **both** placements at once rather than one.
 
-- **Fix this** — appended after the fix block on each inline `issue:` / `suggestion:` finding, only
-  when the flag is on (`comment-shape.md § Fix-with-Agent0 button`). Skipped for `nitpick` /
-  `question` / `praise`.
-- **Fix all** — rendered in the report via the `FIX_ALL_URL` payload slot
-  (`report-rendering.md`), which the renderer turns into the linked button.
+- **Fix this** — rendered from the inline payload's `FIX_URL` slot, after the fix block, on each
+  `issue:` / `suggestion:` finding (`comment-shape.md § The payload`). The renderer **rejects** it on
+  `nitpick` / `question` / `praise` — there is nothing for Agent0 to fix.
+- **Fix all** — rendered in the report from the `FIX_ALL_URL` payload slot
+  (`report-rendering.md`), and its label carries the count (`Fix all 3 with Agent0`) so the button
+  states what it will do rather than naming a mode. The renderer **rejects** it when there are zero
+  findings and no `CI_NOTE`: a button that hands Agent0 an empty worklist is worse than no button,
+  because it invites a click that spends a run discovering there is no work. The one legitimate
+  zero-finding case is the CI-only template below, which requires a CI note to exist.
 
 ## Safety
 

@@ -8,13 +8,26 @@ tags:
 
 # Comment shape
 
-Every inline review comment — whether posted to GitHub by `pr-reviewer` or emitted to the terminal by `reviewer` Self-Review — passes these checks before it leaves the agent.
+Every inline review comment — whether posted to GitHub by `pr-reviewer` or emitted to the terminal by `reviewer` Self-Review — is **rendered by a script**, not composed by hand.
 
-Research grounding: AI-review tools that ship < 5 % false-positive rate and short, scannable comments (CodeRabbit, Greptile in their 2026 field tests) are the ones developers keep reading. Long comments are skipped; skipped comments make the entire review feel like noise.
+```bash
+node "$RENDER_COMMENT" /tmp/finding.json     # RENDER_COMMENT="${AGENT_MD%/pr-reviewer.md}/pr-reviewer/scripts/render-comment.mjs"
+```
+
+**Why it is a script.** The report layout was taken away from the model for a documented reason: five production runs posted marker-less, accordion-less reports from a correct prose spec, so `render-report.mjs` was written and the model was left supplying data. This rule had the same problem and the opposite treatment — it specified the shape in prose and shipped a `passes_shape()` function that *nothing executed*. The contract therefore held only as long as the model remembered it, and on `dash0hq/dash0#18362` one posted finding dropped three of the decorations below at once (the severity label, the bold on `**(blocking)**`, and its position) and omitted the fix fence its own rule requires for a finding with a concrete patch.
+
+So the caps, the decorations, the evidence line, the fingerprint marker, the button markup and the footer are all **derived** now. This file is the reference for *what the shapes are and why*; [`render-comment.mjs`](../../pr-reviewer/scripts/render-comment.mjs) is the authority on whether a given body conforms, and it fails closed — a rejected payload prints nothing on stdout, so a caller that pipes stdout can never post a half-formed finding.
+
+**The vocabulary is shared with the report.** Both renderers import [`comment-spine.mjs`](../../pr-reviewer/scripts/comment-spine.mjs) for the tier glyphs, the attribution footer, the button markup, and the caps. That single import is the mechanism: a change to the vocabulary cannot land on one surface only. The one deliberate asymmetry between the two surfaces is a rule you can say in a sentence — **a `###` heading means the report; a bold title means one finding** — and each renderer's post-conditions enforce its own half.
+
+Research grounding: AI-review tools that ship < 5 % false-positive rate and short, scannable comments (CodeRabbit, Greptile in their 2026 field tests) are the ones developers keep reading. Long comments are skipped; skipped comments make the entire review feel like noise. The title added below is not a relaxation of that: it *replaces* the opening clause that used to do a title's job badly, and the prose cap drops from 240 to 200 to pay for most of it.
 
 Optimality proposals (Step 2.4c) are **out of scope** for this rule: they render as cards in a report section, not as comments, and are exempt from every cap below (`optimality-review.md § Gates`).
 
 ## Contents
+
+- [The payload](#the-payload)
+- [The title line](#the-title-line)
 
 - [Hard caps](#hard-caps)
 - [The `Evidence:` line](#the-evidence-line)
@@ -29,22 +42,65 @@ Optimality proposals (Step 2.4c) are **out of scope** for this rule: they render
 
 ---
 
+## The payload
+
+One JSON object per finding. **It is data, not markdown.**
+
+| Key | Required | Content |
+| --- | --- | --- |
+| `PREFIX` | yes | `issue` · `suggestion` · `nitpick` · `question` · `praise` |
+| `TIER` | on a tiered run | `critical` · `high` · `medium` · `low`. Omit only when no tier was assigned (a flat-override run). |
+| `TITLE` | on `issue` / `suggestion` | The noun phrase, ≤ 60 chars, no sentence punctuation. **Rejected** on the one-liner prefixes. |
+| `BODY` | yes | One paragraph, ≤ 200 chars, ≤ 2 sentences, inline code kept. |
+| `BLOCKING` | no | Boolean. **Rejected** on anything but `issue` — Gate 3 reads this token to decide whether an open thread fails a PR. |
+| `EVIDENCE` | no | `[{path, line?, note?}]`, ≤ 3. Mutually exclusive with `UNVERIFIED`. Rejected on the one-liner prefixes. |
+| `UNVERIFIED` | no | The rung that was unavailable. Rejected on `issue` — nothing was verified, so nothing is asserted. |
+| `FENCE` | no | `{lang, code}`, ≤ 10 lines, `lang` required. |
+| `PSEUDO` | no | Boolean; appends the pseudo-code disclaimer. Rejected with no `FENCE` to disclaim. |
+| `FP` | on `issue` / `suggestion` | The v2 fingerprint. **Rejected** on the one-liner prefixes, and rejected if it is not a real v2 key. |
+| `FIX_URL` | no | The Agent0 deep link (§ Fix-with-Agent0 button). |
+| `SHA` | yes | `${HEAD_SHA:0:7}` — exactly 7 lowercase hex chars, for the footer. |
+
+An unknown key is a hard error, not a no-op: a typo'd slot would otherwise render nothing and silently drop the evidence line, the patch, or the button.
+
+## The title line
+
+Line 1 is the finding's whole identity, and it is **machine-shaped first**:
+
+```markdown
+issue (high): 🟠 **Check-run variables rejected at runtime** **(blocking)**
+```
+
+Reading left to right: the Conventional-Comments prefix, the tier in parentheses, the colon, the tier glyph, the bold title, the decoration. The first three are unchanged, which is the point — `PREFIX_RE` in `record-comment-relevance.mjs` still matches at position 0 and `SEVERITY_RE` still reads the tier, so the title could be added without touching either regex.
+
+**Why a title at all.** GitHub surfaces an inline comment in three places that show only its opening — the Files-changed rail, the conversation timeline, and the notification email — and a body opening `issue: Adding github.check_run here obligates the exhaustive Record<TriggerKind> maps…` gives none of them a handle. A finding that cannot be named cannot be triaged, referred to, or counted, which is also why the report's findings index carries the **same** `title` string: an index row and the comment it links to are recognisably the same finding.
+
+**Why only on a claim.** `nitpick` / `question` / `praise` render as one line and take no title — a title on a nitpick costs more vertical height than the nitpick is worth, and the terseness of the one-liners is what buys the claims their extra structure. The renderer rejects a title on one and requires it on the other, so the split cannot erode in either direction.
+
+**The title is a noun phrase, not a sentence.** No trailing full stop, no verb-first imperative — `Check-run variables rejected at runtime`, not `The check-run variables are rejected.` Sentence punctuation in a title is rejected, because a title that reads as a sentence competes with the body instead of labelling it.
+
 ## Hard caps
+
+Enforced in code by `render-comment.mjs`; the `On fail` column describes what the *caller* does with a rejection.
 
 | Property | Cap | On fail |
 | --- | --- | --- |
-| **Prose** length (body excl. fenced code blocks) | ≤ 240 characters | Trim once; drop on second fail |
+| `TITLE` length | ≤ 60 characters | Rejected — shorten the noun phrase |
+| `TITLE` sentence punctuation | 0 | Rejected — it is a label, not a sentence |
+| **Prose** length (`BODY`, excl. fences) | ≤ 200 characters | Trim once; drop on second fail |
 | Sentence count (prose only) | ≤ 2 | Drop |
+| Paragraphs in `BODY` | 1 | Drop — a multi-paragraph finding goes to the terminal summary |
 | Headings (`#`, `##`, `###`) in body | 0 | Drop |
 | Bullet lists (`-`, `*`, `1.`) in body | 0 | Drop |
 | Code fences | ≤ 1, ≤ 10 lines, language tagged | Strip extra fences; drop on missing tag |
-| **Inline backticks on every code symbol** | required | Auto-wrap before shape check; see § Inline code |
-| `Evidence:` line | ≤ 1, ≤ 3 `path:line` references, ≤ 180 characters | Trim to the 3 strongest; drop the line, never the comment |
-| Fingerprint marker | exactly 1 on an `issue:` / `suggestion:` finding | Rebuild via `fingerprint.mjs`; see § The fingerprint marker |
+| **Inline backticks on every code symbol** | required | Auto-wrap before rendering; see § Inline code |
+| `Evidence:` line | ≤ 1, ≤ 3 `path:line` references, ≤ 180 characters | Trim to the 2 strongest; drop the line, never the comment |
+| Fingerprint marker | exactly 1 on an `issue:` / `suggestion:` finding | Rebuilt via `fingerprint.mjs`; see § The fingerprint marker |
+| Attribution footer | exactly 1, on every posted comment | Rejected — see § The footer |
 
-The 240-char cap applies to the **prose** portion only — the fenced code block, the `Evidence:` line, and the fingerprint marker are all excluded from the count. Fences render visually distinct and carry the patch the author copies; the `Evidence:` line is a citation list, not argument; the marker is invisible. The prose still has to make the point in one or two sentences.
+The 200-char cap applies to the **prose** portion only — the fenced code block, the `Evidence:` line, and the fingerprint marker are all excluded from the count. Fences render visually distinct and carry the patch the author copies; the `Evidence:` line is a citation list, not argument; the marker is invisible. The prose still has to make the point in one or two sentences.
 
-Character count is measured **after** the Conventional-Comments prefix is prepended (so `suggestion: ` + prose must fit). Sentence count is measured against the prose only and counts `.`, `!`, `?` followed by space or end-of-string. Punctuation inside backticks or fenced code does not count.
+Character count is measured on `BODY` alone. The prefix, the tier label, the glyph and the title all live on line 1 and have their own bounds — measuring them against the prose cap is what used to make the caps fight each other. Sentence count is measured against the prose only and counts `.`, `!`, `?` followed by space or end-of-string. Punctuation inside backticks or fenced code does not count.
 
 ## The `Evidence:` line
 
@@ -67,7 +123,7 @@ Rules:
 | At most **3** references, `·`-separated | a fourth is a list, and a list is the thing the no-bullets rule exists to prevent |
 | Each is a `path:line`, optionally with a ≤ 5-word parenthetical | a reference the author cannot click is not evidence |
 | **Exempt from the sentence count** | it is a citation list, not a second argument. Counting it would force the prose down to one sentence to make room for the proof. |
-| Excluded from the 240-char prose cap, with its own 180-char bound | so the caps do not fight |
+| Excluded from the 200-char prose cap, with its own 180-char bound | so the caps do not fight |
 | Only the paths the receipt actually touched | a fabricated citation is worse than none: it converts an unverified claim into a confident-looking one |
 | Never on `praise` / `question` / `nitpick` | nothing is being proved |
 
@@ -159,14 +215,52 @@ Skip the fix block only when:
 
 ## Shape
 
+A **claim** (`issue` / `suggestion`) — seven blocks, blank-line separated, in this order:
+
 ```
-<one-sentence prose point — what + why — with every code symbol in backticks>
+<prefix> (<tier>): <glyph> **<title, ≤ 60 chars, noun phrase>** **(blocking|non-blocking)**
+
+<≤ 2 sentences, ≤ 200 chars, every code symbol in backticks>
+
+Evidence: `path:line` (≤ 5-word note) · `path:line`
 
 ```<lang>
-<≤ 10-line fix block — proposed replacement for suggestion / issue,
- omitted for praise / question / nitpick>
+<≤ 10-line fix block — the proposed replacement>
 ```
+
+_Pseudo-code — verify before applying._      ← only when PSEUDO is set
+
+<Fix with Agent0 button>                      ← only when the mode is on
+
+<sup>`pr-reviewer` · commit `<sha7>` · [how these findings are produced](…)</sup>
+<!-- fp:v2:<finder>:<class>:<symbol>@<path> -->
 ```
+
+A **one-liner** (`nitpick` / `question` / `praise`) — the terse form, unchanged apart from the footer:
+
+```
+<prefix> (<tier>): <≤ 2 sentences> **(non-blocking)**
+
+<sup>`pr-reviewer` · commit `<sha7>` · [how these findings are produced](…)</sup>
+```
+
+## The footer
+
+Every posted inline comment ends with the shared attribution footer, built by
+`comment-spine.mjs`'s `footerLine()` — the **same function** that builds the report's.
+
+**One rule, no exceptions**, including `praise`. The exceptions are what drift: a per-prefix
+carve-out is a decision to re-make on every finding, and the cost of the rule as stated is one
+`<sup>` line on a rare comment.
+
+It answers two questions nothing else on this surface could. *Who is speaking* — an inline comment
+is most often read in a notification email or the Files-changed rail, with no surrounding page to
+identify the author, and this reviewer's login is not always resolvable (`/user` 401s on some access
+paths) which is why the name is written rather than inferred. And *which commit was read* — a
+finding on a stale SHA is a different claim from the same finding on HEAD, and the author cannot
+tell them apart without it. It is the cue that makes an inline finding and the report recognisably
+the same reviewer; Cursor's own footer does exactly this job, and its absence here is most of why
+our two surfaces read as two bots.
 
 ### Examples that pass
 
@@ -228,7 +322,7 @@ checks free.
 - `suggestion: url: mcp.urls[0] has no nullish fallback here` — bare code symbols `url`, `mcp.urls[0]` not backticked → auto-wrap pass should fix; drop only if auto-wrap can't resolve them.
 - Anything starting with `## Why` or `### Issue` — heading in body → drop.
 - Anything containing `1. First, …\n2. Second, …` — bullets in body → drop.
-- A 320-character prose explanation — trim once to ≤ 240; if the trim breaks the point, drop and surface in the terminal output instead.
+- A 320-character prose explanation — trim once to ≤ 200; if the trim breaks the point, drop and surface in the terminal output instead.
 - A 14-line fix block — exceeds the 10-line fence cap; trim the fence to the smallest patch that lands the change, or drop the block and route the long-form fix to the terminal proposal.
 
 ## Tone
@@ -241,7 +335,7 @@ checks free.
 
 ## What goes elsewhere
 
-If a finding needs more than 240 characters and 2 sentences to land, it does not belong as an inline comment. Route it to:
+If a finding needs more than a 60-char title, 200 characters of prose, and 2 sentences to land, it does not belong as an inline comment. Route it to:
 
 - The terminal summary (Step 3) for design-level concerns.
 - A linked file (`docs/`, `RFC.md`) for genuinely long-form rationale.
@@ -249,7 +343,13 @@ If a finding needs more than 240 characters and 2 sentences to land, it does not
 
 ## Mechanical pre-emit check
 
-`pr-reviewer` runs these in order immediately before emitting / posting:
+**This is `render-comment.mjs`'s job now, and the Python below is the reference, not the
+implementation.** It is kept because it documents the *order* the checks run in and why each cap
+exists; the executable version lives in the renderer and is exercised by `node
+render-comment.mjs --self-test` plus committed fixtures in
+`scripts/eval/fixtures/inline-comment/`, both run by L1 (`G41`). If the two ever disagree, the
+renderer is right and this block is stale — that asymmetry is deliberate, and it is the whole
+difference between this rule and the version of it that let three decorations quietly disappear.
 
 ```python
 import re
@@ -288,7 +388,7 @@ def passes_shape(body: str) -> tuple[bool, str]:
         if len(MARKER_RE.findall(body)) > 1:
             return (False, "duplicate-fingerprint-marker")
 
-    if len(prose) > 240:
+    if len(prose) > 200:
         return (False, "length")
     if sum(prose.count(c) for c in ".!?") > 2:
         return (False, "sentences")
@@ -307,7 +407,7 @@ def passes_shape(body: str) -> tuple[bool, str]:
     return (True, "")
 ```
 
-The check runs **after** Conventional-Comments prefix prepending, **after** the optional `(blocking)` / `(non-blocking)` decoration, and **after** the inline-backtick auto-wrap pass, so the cap applies to what the PR author actually sees.
+The prose cap is measured on `BODY` alone, **after** the inline-backtick auto-wrap pass. The prefix, tier label, glyph, title, decoration, evidence line, fence, button, footer and marker all have their own bounds and are excluded — measuring them against the prose cap is what made the caps fight each other and pushed correct findings over the edge.
 
 `evidence-line-oversized` is the one non-fatal return: it passes, and the caller **drops the
 `Evidence:` line and re-runs the check**. The evidence line is an enhancement, and dropping a
@@ -322,15 +422,15 @@ Dropped comments are logged with the dropped body verbatim in the agent's termin
 
 ## Severity label
 
-The reviewer tiers every finding by default (`review-config.md` § Severity-aware thresholds) and shows the tier as a visible label decoration — `issue (high): …` (`conventional-comments.md` § Severity decoration). It sits in the prefix region, so it is included in the 240-char cap like the prefix itself (it adds ~7 characters, measured after prepending, per § Hard caps). `scripts/record-comment-relevance.mjs` reads the tier from this label into the relevance record's `severity` field and strips it before fingerprinting, so the claim-gist is unchanged whether or not the label is present. Omit the label only when no tier was assigned (a flat-override run, or a non-`pr-reviewer` bot).
+The reviewer tiers every finding by default (`review-config.md` § Severity-aware thresholds), and the tier appears **twice** on line 1: as the `(high)` label the machines read, and as the glyph a human scans (§ The title line). Both are derived from the payload's `TIER` by `render-comment.mjs`, from the one glyph map in `comment-spine.mjs` that the report's severity tally also uses — so the two surfaces cannot disagree about what `high` looks like. The label keeps its position immediately after the prefix because `scripts/record-comment-relevance.mjs` reads the tier from exactly there into the relevance record's `severity` field, and strips it before fingerprinting so the claim-gist is unchanged whether or not the label is present. Both are omitted when no tier was assigned (a flat-override run, or a non-`pr-reviewer` bot). Neither is counted against the prose cap.
 
 ## Fix-with-Agent0 button
 
-When the `--fix-links` mode is on (`agents/shared/rules/agent0-fix-links.md § Opt-in`; default off), append the **Fix with Agent0** button as the final line of an `issue:` / `suggestion:` finding, *after* the fix block — a linked image built per `agents/shared/rules/agent0-fix-links.md § Button markup`, **passing the same `--env <env>` the run resolved once at `pr-reviewer.md § --fix-links mode` (`review-config.md § Run-level fields`) — never rebuild or default the environment per finding — and `--source fix-this` (always this literal value here; `agent0-fix-links.md § Click attribution`).** Omitting `--env` here silently falls back to `build-agent0-link.mjs`'s own `production` default regardless of `agent0_environment`, which is exactly the bug this line now guards against (a `development`-configured repo whose Fix-all report button correctly linked to `app.dash0-dev.com` while its inline Fix-this buttons still linked to `app.dash0.com`). `--source` has no default at all — the script throws rather than silently mis-tagging or dropping the click-attribution data.
+When the buttons are on (`agents/shared/rules/agent0-fix-links.md § Opt-in` — the default wherever the review config names an `agent0_environment`), build the deep link and pass it as the payload's **`FIX_URL`**. `render-comment.mjs` renders the button itself, from `comment-spine.mjs`'s `fixButton()`, after the fix block — **never hand-write the markup**, since the host validation, the theme pair and the alt text all live in that one function and a second copy is how the report's button and this one drift apart. Build the link with **the same `--env <env>` the run resolved once at `pr-reviewer.md § Fix-with-Agent0 buttons` (`review-config.md § Run-level fields`) — never rebuild or default the environment per finding — and `--source fix-this` (always this literal value here; `agent0-fix-links.md § Click attribution`).** Omitting `--env` here silently falls back to `build-agent0-link.mjs`'s own `production` default regardless of `agent0_environment`, which is exactly the bug this line now guards against (a `development`-configured repo whose Fix-all report button correctly linked to `app.dash0-dev.com` while its inline Fix-this buttons still linked to `app.dash0.com`). `--source` has no default at all — the script throws rather than silently mis-tagging or dropping the click-attribution data.
 
-**Invoke the script by its `$AGENT_MD`-resolved path, never a bare `agents/pr-reviewer/scripts/build-agent0-link.mjs`.** This step (Step 2.8/2.9) is its own tool call, separate from Step 4a — shell state including any previously-resolved `$AGENT_MD` is gone, so re-resolve it fresh here with the same `resolve()` idiom `pr-reviewer.md § Step 1.2` uses for `CLASSIFY` (`pr-reviewer.md § --fix-links mode` shows the exact `BUILD_LINK` derivation). A bare relative path only happens to resolve when the shell's cwd is this repo's own checkout, which is not guaranteed on every dispatch — silent failure here reads as a fabricated or defaulted URL rather than a loud error, which is how a `production` link survived on `mthines/lorekit#318` well after the `--env` gap above was already fixed.
+**Invoke the script by its `$AGENT_MD`-resolved path, never a bare `agents/pr-reviewer/scripts/build-agent0-link.mjs`.** This step (Step 2.8/2.9) is its own tool call, separate from Step 4a — shell state including any previously-resolved `$AGENT_MD` is gone, so re-resolve it fresh here with the same `resolve()` idiom `pr-reviewer.md § Step 1.2` uses for `CLASSIFY` (`pr-reviewer.md § Fix-with-Agent0 buttons` shows the exact `BUILD_LINK` derivation). A bare relative path only happens to resolve when the shell's cwd is this repo's own checkout, which is not guaranteed on every dispatch — silent failure here reads as a fabricated or defaulted URL rather than a loud error, which is how a `production` link survived on `mthines/lorekit#318` well after the `--env` gap above was already fixed.
 
-Like the severity label it is appended after the mechanical pre-emit check, so it is excluded from the 240-char prose cap — and it is skipped, not aborted, when `$BUILD_LINK` doesn't exist: re-check `[ -f "$BUILD_LINK" ]` fresh at this same re-resolution point (`pr-reviewer.md § --fix-links mode`'s Fix-this bullet re-checks it per finding, since this is a separate tool call from Step 4a where the existence check was first added). Skip it for `nitpick` / `question` / `praise`, and omit it entirely when the mode is off.
+Like the severity label it is rendered outside the prose, so it is excluded from the 200-char prose cap — and it is skipped, not aborted, when `$BUILD_LINK` doesn't exist: re-check `[ -f "$BUILD_LINK" ]` fresh at this same re-resolution point (`pr-reviewer.md § Fix-with-Agent0 buttons`'s Fix-this bullet re-checks it per finding, since this is a separate tool call from Step 4a where the existence check was first added) — omit `FIX_URL` from that one payload rather than dropping the finding. The renderer **rejects** `FIX_URL` on `nitpick` / `question` / `praise`, so the skip for those is enforced rather than remembered; omit it entirely when the mode is off.
 
 Its deep link embeds the finding's **lead line** — the prefix plus first sentence of the body this check just cleared — so read the prompt template in `agent0-fix-links.md § Prompt templates` rather than assuming the URL is finding-independent. Build the link from the *final* body: a prose trim under § Hard caps changes the lead line, and a link built before the trim would quote text the comment does not contain.
 

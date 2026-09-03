@@ -1,11 +1,23 @@
 <!-- PR_REVIEWER_REPORT -->
 ⚠️ **Partial review — tool budget exhausted after 180 calls; 22 of 31 files scanned.**
 
-Reviewed your changes — **1 error, 2 warnings** need attention before human review. Blocking: 1 unanswered blocking review thread.
-<sub>Updated 2026-08-22 03:05 UTC</sub>
+### 🟠 4 findings — 1 blocking
+
+Adds `github.check_run` to the trigger-kind union but leaves four keyed registries unwired.
+
+**Blocking:** 1 unanswered blocking review thread
+
+<sub>1 advisory finding below the confidence bar — see *Less certain* below.</sub>
+
+| Finding | Where | Severity |
+|---|---|---|
+| Check-run variables rejected at runtime | [`src/triggers/variables.ts:12`](https://github.com/o/r/pull/1#discussion_r21) | 🟠 high · blocking |
+| Hover card has no label for the new kind | [`src/ui/hover-card.tsx:40`](https://github.com/o/r/pull/1#discussion_r22) | 🟡 medium |
+| `triggerKinds` fixture asserts the old arity | [`src/triggers/kinds.test.ts:64`](https://github.com/o/r/pull/1#discussion_r23) | 🟡 medium |
+| Migration backfill skips existing rows | [`db/migrations/0042.sql:7`](https://github.com/o/r/pull/1#discussion_r24) | ⚪ low |
 
 <details>
-<summary>Optimality review (1) — is this the best approach?</summary>
+<summary>Is there a better approach? (1)</summary>
 
 ### Optimality proposal — src/api/client.ts:180
 
@@ -16,7 +28,7 @@ Reviewed your changes — **1 error, 2 warnings** need attention before human re
 </details>
 
 <details>
-<summary>Low-confidence findings (1) — advisory, below the confidence bar</summary>
+<summary>Less certain (1) — advisory, below the confidence bar</summary>
 
 - `src/api/client.ts:88` — issue: this early-return may skip the audit log write (confidence 76)
 
@@ -24,8 +36,6 @@ Reviewed your changes — **1 error, 2 warnings** need attention before human re
 
 <details>
 <summary>Review details — 1 open review thread (1 blocking)</summary>
-
-<sup>Reviewed for commit `69b0de8`.</sup>
 
 **Needs attention**
 
@@ -45,6 +55,7 @@ Reviewed your changes — **1 error, 2 warnings** need attention before human re
 
 Quality — produced 6 → posted inline 4 · cleared 4 · carried forward 0 · deferred 0 · below-bar 1
 Dropped — relevance 0 · dedupe 0 · grounding 0 · confidence 2 · shape 0
+Severity — 🟠 1 high · 🟡 2 medium · ⚪ 1 low
 Optimality — ran · 4 judged · 3 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld
 
 **Run**
@@ -54,8 +65,8 @@ Skipped files — packages/legacy/**
 CI — `Integration smoke (local Supabase)` is red on `POST /memories/list` (expected 200, got 500) — the open thread above. Reported, not blocking.
 Memories — not connected
 
-<sup>Nothing to report — standards (skipped), measurability (skipped), integrations (skipped), severity.</sup>
-
-<sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
+<sup>Nothing to report — standards (skipped), measurability (skipped), integrations (skipped).</sup>
 
 </details>
+
+<sup>`pr-reviewer` · commit `69b0de8` · full review · [how these findings are produced](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) · updated 2026-08-22 03:05 UTC</sup>

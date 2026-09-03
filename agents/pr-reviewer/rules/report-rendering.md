@@ -32,7 +32,7 @@ and both the renderer and the L1 guards match some of these headings as literal 
 
 - [REPORT_BODY format (the sticky comment)](#reportbody-format-the-sticky-comment)
   - [REPORT_BODY payload](#reportbody-payload)
-  - [`UPDATED_LINE` — the freshness cue outside the accordion](#updatedline--the-freshness-cue-outside-the-accordion)
+  - [The shared footer — one line, both surfaces](#the-shared-footer--one-line-both-surfaces)
   - [`RUN.tier` and `RUN.depth` — the depth declaration](#runtier-and-rundepth--the-depth-declaration)
   - [The three groups inside the accordion](#the-three-groups-inside-the-accordion)
   - [Headlines](#headlines)
@@ -85,7 +85,8 @@ of those was a real defect before it became derived.
 
 | Key | Content |
 | --- | --- |
-| `HEADLINE` | The one-line verdict sentence (see *Headlines* below). |
+| `VERDICT` | `PASS` · `WARN` · `FAIL`. The renderer **cross-checks it against the gate table** and rejects a disagreement — see *Headlines* below. |
+| `SUMMARY` | One sentence about the **change**, ≤ 240 chars, single line. It is the only part of the headline region that needs judgment; the glyph, the counts, and the blocking subset are all derived. |
 | `GATE_DESCRIPTION_STATUS` · `GATE_PRIOR_STATUS` · `GATE_DOCS_STATUS` · `GATE_SELFREVIEW_STATUS` · `GATE_CODEREVIEW_STATUS` | One of `✅` `⚠️` `❌` `⏭️`. Gate 2 (CI) is not a row — it renders via `CI_NOTE`. |
 | `GATE_DESCRIPTION_DETAILS` · `GATE_PRIOR_DETAILS` · `GATE_DOCS_DETAILS` · `GATE_SELFREVIEW_DETAILS` · `GATE_CODEREVIEW_DETAILS` | The Details cell. **Single line, no `\|`, ≤ 120 chars** — all three enforced; the full finding belongs in an inline comment. |
 | `MEMORIES_SUMMARY` | The **indexed half only** — `<MEMORIES_READ_COUNT> indexed`, or `not connected`. It counts all three record families (relevance rules, knowledge, hotspot), because `MEMORIES_USED` does. Never write ` · <N> used`: the renderer derives that from `MEMORIES_USED`'s length and rejects a payload that supplies its own, reports fewer indexed than used, or pairs `not connected` with a non-empty `MEMORIES_USED`. |
@@ -108,27 +109,43 @@ cue are all derived from:
 - `delta_lines` — integer, required unless `mode` is `zero-delta`.
 - `at` — **required**, an ISO-8601 UTC timestamp ending in `Z` for this run (`date -u
   +%Y-%m-%dT%H:%M:%SZ`), the same format `runs[].at` already uses in the Step 0.7 state record.
-  Derives `UPDATED_LINE` (below) — never write that slot yourself.
+  Feeds the shared footer's `updated <stamp> UTC` clause (below) — never write it yourself.
 - `tier` — optional, `deep` · `standard` · `quick` (see [`depth-routing.md`](./depth-routing.md)).
 - `depth` — optional, `checkout` · `tarball` · `diff-only` (see [`workspace.md`](./workspace.md)).
 
-#### `UPDATED_LINE` — the freshness cue outside the accordion
+#### The shared footer — one line, both surfaces
 
-Editing a GitHub comment sends **no notification** — unlike a new comment or review, a reader
-watching the PR is never told the sticky changed. Before this slot existed, the "edited" tag next
-to the comment's timestamp was the *only* trace that a rewritten report had actually changed, and
-seeing it meant opening the edit history. `UPDATED_LINE` renders `<sub>Updated <YYYY-MM-DD
-HH:MM> UTC</sub>` on its own line directly under `HEADLINE`, **outside** the `Review details`
-accordion — visible on the collapsed comment, on every run, including a run that touches only the
-report and posts no review (Step 4b has one posting condition, and this is not it). It does not
-create a notification; it turns "did this change since I last looked?" into a glance instead of a
-click into the edit history.
+The footer is built by [`comment-spine.mjs`](../scripts/comment-spine.mjs)'s `footerLine()`, which
+`render-comment.mjs` calls too, and it renders **below** the `Review details` accordion:
 
-It is **derived, never authored** — supply `RUN.at` and the renderer formats it, the same
-discipline as `FOOTER_LINE` and `RUN_MODE`. This is also why it lives in `RUN` rather than as its
-own top-level scalar: one run produces one wall-clock moment, and `RUN` is already the object that
-moment's other derived text (the footer) comes from — a second, independent timestamp field could
-disagree with it.
+```markdown
+<sup>`pr-reviewer` · commit `bde3c2f` · full review · [how these findings are produced](…) · updated 2026-08-15 09:12 UTC</sup>
+```
+
+It replaced three things that each solved part of the same problem separately: a run-mode footer
+sentence and a `Reviewed by the pr-reviewer agent` line, both *inside* the collapsed accordion, and
+a standalone `<sub>Updated … UTC</sub>` line under the headline. A reader of the closed report saw
+no attribution and no reviewed commit, and the inline findings had no footer at all — so neither
+surface said who was speaking or which commit was read, which is most of why the two read as
+unrelated bots. Cursor's own footer is the one cue that makes its report and its inline comments
+recognisably the same tool; this is that cue, and it is one function so the two cannot drift.
+
+Three properties are load-bearing:
+
+- **`commit \`<sha>\`` is matchable on its own.** A sticky is an issue comment and has no
+  `commit_id`, so this is the only record of what was reviewed — and it is what `pr-reviewer`'s own
+  fallback rung reads to recover a delta baseline when its state record is unusable
+  ([`reviewer-report-ingest.md § Footer SHA`](../../shared/rules/reviewer-report-ingest.md)). The
+  run descriptor is a *phrase* (`full review`, `incremental review, delta since \`70cf147\``,
+  `no code changes since \`70cf147\`, gate checks only`) precisely so the sha is not in the line twice.
+- **It is outside the accordion, and below it.** Visible on the collapsed comment, on every run —
+  including a run that touches only the report and posts no review (Step 4b has one posting
+  condition, and this is not it). Below rather than above so the head region stays the headline plus
+  the worklist.
+- **The `updated` stamp is derived from `RUN.at`, never authored.** Editing a GitHub comment sends
+  **no notification**, so the "edited" tag was the only trace that a rewritten report had changed,
+  and seeing when meant opening the edit history. One run produces one wall-clock moment, which is
+  why it lives in `RUN` beside the sha rather than as its own scalar that could disagree with it.
 
 The run line renders as `<mode> · <N> lines in delta`, which is the shape
 `reviewer-report-ingest.md` parses — and, since the `**Run**` group heading now carries the label,
@@ -195,7 +212,7 @@ length**, so there is no count to supply and none to get wrong:
 | `LOW_CONFIDENCE_FINDINGS` | `[{…same…}]` | Advisory only (`reviewer-report-ingest.md`). |
 | `OPTIMALITY_CARDS` | `[markdown, …]` | The one place model-authored markdown remains, because a card is a multi-line block with its own table. Each must contain a `### Optimality proposal — <path>:<line>` heading, which the renderer checks. |
 | `PARTIAL_REVIEW` | `{calls, scanned, total}` | Integers; emits the tool-budget banner. |
-| `TIER_TALLY` | `{critical?, high?, medium?, low?}` | Non-negative integers. Renders the `Severity — ` line as a glyph breakdown (`🔴 <c> · 🟠 <h> · 🟡 <m> · ⚪ <l>`), omitting zero tiers; the whole line is dropped when all are zero or absent. Named `TIER_TALLY` to avoid the `SEVERITY_TALLY` headline term (error/warning count) — this is the finding-severity-tier distribution from the `severity` skill. Supply it on every run that tiered findings (the default; see `review-config.md` § Severity-aware thresholds), counting posted inline + advisory findings by tier. |
+| `FINDINGS` | `[{title, path, line?, url?, tier, blocking?}]` — the findings this run **posted inline**. Three renderings come from this one array: the headline's count and glyph (`### 🟠 4 findings — 1 blocking`), the visible findings index above the accordions, and the `Severity — ` tally (`🔴 1 critical · 🟠 2 high`, glyph paired with its word per WCAG 1.4.1). `title` is the **same string `render-comment.mjs` put on that comment's first line**, which is what makes an index row and the comment it links to recognisably the same finding. `tier` is required and enumerated (`critical` · `high` · `medium` · `low`); a `\|` in `title` is rejected (it would split the row). The renderer also rejects a `FINDINGS` length that disagrees with `QUALITY`'s `posted inline <N>` — they are the same number stated twice. |
 
 **Optional — scalars:** `CI_NOTE` (Gate 2's substance — which checks are red and on what),
 `VERIFIED_NOTE` (what this run checked itself), `QUALITY_DROPPED`, `RUN_NOTE`, `RUN_ANOMALY`
@@ -247,7 +264,7 @@ guessed from prose length or a bare substring search:
 | `MEASURABILITY_LOG` | begins `skipped`, or contains both `0 missing` and `0 unlinked` | `measurability (<N> paths classified)` · `measurability (skipped)` |
 | `INTEGRATIONS` | exactly `not activated`, or begins `skipped` | `integrations (not activated)` · `integrations (skipped)` |
 | `SKIPPED_FILES` | exactly `none` | `0 files skipped` |
-| `TIER_TALLY` | absent, or every tier zero | `severity` |
+| `FINDINGS` | empty, so no tier was posted | `severity` |
 
 Two rules follow, and both are enforced:
 
@@ -282,43 +299,61 @@ something to say that no slot covers, it belongs in the Step 5 terminal output.
 
 #### Headlines
 
-`HEADLINE` is one line, chosen by the Step 3 verdict:
+**The headline is derived, not written.** Supply `VERDICT`, `FINDINGS[]`, `SUMMARY`, and the reasons
+array; the renderer builds the region. There is no `HEADLINE` slot — it was the most-read line in
+the report and the only one checked merely for non-emptiness, which is how a headline matching none
+of the documented forms shipped on `dash0hq/dash0#18362`.
 
-- **PASS** (every gate ✅) — `✅ Reviewed your changes — no issues found.` The leading `✅` is the
-  whole affirmation: no praise phrase, no extra emoji. When `CADV > 0`, append
-  ` <CADV> advisory finding(s) below the confidence bar (see Low-confidence findings).` so the
-  headline does not overstate cleanliness while advisory `issue:` entries sit below it.
-- **WARN** — `Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>.`
-- **FAIL** — `Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review. Blocking: <FAIL_REASONS>.`
+The rendered region is a `### ` heading, then the summary sentence, then the reasons, then an
+optional advisory note:
+
+| Condition | Heading |
+|---|---|
+| `FINDINGS` non-empty | `### <worst-tier glyph> <N> findings — <K> blocking` (the ` — <K> blocking` clause is dropped at `K == 0`, never rendered as `0 blocking`) |
+| empty, `VERDICT: PASS` | `### ✅ No issues found` |
+| empty, `VERDICT: WARN` / `FAIL` | `### <verdict glyph> No findings — <M> gates need attention` |
+
+**It counts findings, not gates.** The old headline counted gate statuses (`1 error, 2 warnings`)
+while the inline comments were findings, with nothing reconciling the two numbers — which is most of
+why the report and the inline surface read as unrelated. The number a PR author acts on is the
+finding count, so it leads; gate state is named in the reasons line below it. `<N>` is
+`FINDINGS.length` and `<K>` is the `blocking` subset, so neither can disagree with the findings
+index directly beneath.
+
+`### ` is also the report's identity marker: an inline finding never uses a heading
+(`comment-shape.md § Shape` forbids one and uses a bold title line instead), so a reader can tell
+the two surfaces apart without reading a marker. The renderer refuses to emit a body with no `### `
+line.
+
+**`VERDICT` is cross-checked against the gate table and a disagreement is rejected.** Any ❌ implies
+`FAIL`; otherwise any ⚠️ implies `WARN`; otherwise `PASS`. Gate 2 (CI) has no table row —
+`CI_NOTE` is its whole surface — but a populated `CI_NOTE` counts as one warning gate, so red or
+pending CI raises the verdict to `WARN` and **never past it**. A `reviewer-lessons` entry records a
+posted gate table reading PASS while the run's own contract said FAIL; the gates decide, and a
+mismatch now stops the render rather than shipping the contradiction.
 
 Never open the headline with ``Reviewed `<sha>` —``; that is Step 4b's degraded pointer body (the
 ordinary pointer is marker-only), and grafting it onto a report is how the report ended up in a
 review body.
 
-The FAIL headline leads with a fixed severity tally; the WARN headline leads with its warning
-count. Both then name the important bit from each flagged gate — so a reader takes in *how bad* and
-*why* in one glance without opening the accordion.
+`SUMMARY` — one sentence, ≤ 240 chars, single line, about **the change** rather than about the
+report. It is the only part of this region that needs judgment.
 
-`SEVERITY_TALLY` (the **FAIL** headline and the Step 3 FAIL verdict only) — the count skeleton,
-wrapped as one bold span by the headline (`**<SEVERITY_TALLY>**`), ordered errors-then-warnings.
-Substitute `<FAILING_GATE_COUNT> error(s)`, and append `, <WARN_GATE_COUNT> warning(s)` only when
-`WARN_GATE_COUNT > 0` (omit the warnings term at 0 — never render "0 warnings"). Pluralise each
-noun against its own count (`1 error, 2 warnings`; `2 errors`).
+`FAIL_REASONS` / `WARN_REASONS` — **arrays** of terse noun phrases (≤ 8 words each), the important
+bit distilled from each ❌ (resp. ⚠️) gate's Details, derived from the gate and never a copy of the
+cell, most-severe first. The renderer joins them and renders `**Blocking:** …` on a FAIL or
+`**Warnings:** …` on a WARN, keeping the first two and appending `; +<k> more` beyond that — the
+~140-char bound expressed as a list bound, so it cannot be exceeded by wording.
 
-**CI never appears in the tally.** There is no `CI failing` prefix and no CI token of any kind: red
-CI is a ⚠️ like any other warning gate, so it is counted in `<WARN_GATE_COUNT>` and named in
-`WARN_REASONS`. A CI failure can therefore no longer produce a FAIL on its own — with no failing hard
-gate and no ❌ there is nothing to tally, and the run renders the WARN headline. The **WARN** headline
-does not use `SEVERITY_TALLY` — with no errors it renders `**<WARN_GATE_COUNT> warning(s)**` directly.
+`FAIL_REASONS` carries **one phrase per ❌ gate**, which the renderer enforces, and CI is never
+among them because CI cannot be ❌. Warning gates on a FAIL run are named in the accordion, not
+here.
 
-`FAIL_REASONS` / `WARN_REASONS` — the important bit **distilled** from each ❌ (resp. ⚠️) gate's
-Details into a terse noun phrase (≤ 8 words), derived from the gate, never a copy of the cell;
-most-severe first, joined by `; `. `FAIL_REASONS` carries **one phrase per ❌ gate** — and CI is
-never among them, because CI cannot be ❌ — so it matches the tally's *error* count, NOT the full tally:
-the warning gates are counted in the tally but named only in the accordion, never in the FAIL
-headline (so `1 error, 2 warnings` carries exactly one `FAIL_REASONS` phrase). `WARN_REASONS` carries
-one phrase per ⚠️ gate. Keep the whole line to one sentence-plus-clause; cap the reasons at ~140
-chars — if longer, keep the top two and append `; +<k> more`.
+**The advisory note.** When `LOW_CONFIDENCE_FINDINGS` is non-empty the renderer adds
+`<sub><N> advisory finding(s) below the confidence bar — see *Less certain* below.</sub>`, derived
+from the array. It renders on every verdict, not only PASS: the reason it exists is that a headline
+must not overstate cleanliness while advisory `issue:` entries sit below it, and that is as true of
+a WARN as of a PASS.
 
 | Gate | ❌ reason phrase (FAIL_REASONS) | ⚠️ note phrase (WARN_REASONS) |
 |---|---|---|
@@ -448,12 +483,21 @@ Rules for the list:
   tally, or other findings. It is a rendering of Gate 3 state, not a new finding, so it is never
   auto-applied or ingested (`reviewer-report-ingest.md`).
 
+**The three accordion summaries are written for a PR author, not for the pipeline.** They used to
+read `Additional findings (3) — cleared review, not inlined`, `Low-confidence findings (1)`, and
+`Optimality review (1) — is this the best approach?`. "Cleared review" means *passed the verifier*,
+and every author reads it as *dismissed* — so the one accordion holding real, verified findings was
+labelled as the one holding nothing. The pipeline vocabulary (`cleared`, `deferred`, `below-bar`,
+`produced → posted inline`) stays in the state record, the diagnostics, and the terminal report,
+where the audience is the operator. `reviewer-report-ingest.md` keys on these literals, so a reword
+here changes that grammar in the same commit — which is exactly what its own rule requires.
+
 `OPTIMALITY_SECTION` renders the Step 2.4c proposals. Omit the placeholder entirely when there
 are no proposals — the quiet early-exit must stay quiet. Otherwise substitute:
 
 ```markdown
 <details>
-<summary>Optimality review (<OP>) — is this the best approach?</summary>
+<summary>Is there a better approach? (<OP>)</summary>
 
 ### Optimality proposal — src/api/client.ts:180
 
@@ -484,7 +528,7 @@ cleared every quality gate but did not fit the inline caps. Omit the placeholder
 
 ```markdown
 <details>
-<summary>Additional findings (<DEF>) — cleared review, not inlined</summary>
+<summary><DEF> more findings — verified, too minor to comment on</summary>
 
 - `src/api/client.ts:214` — issue: retry loop re-sends the request body after a 413. (confidence 92)
 - `src/api/client.ts:260` — suggestion: extract the backoff calculation; it is duplicated below. (confidence 84)
@@ -504,7 +548,7 @@ findings are advisory`). Omit the placeholder entirely when `CADV == 0`; otherwi
 
 ```markdown
 <details>
-<summary>Low-confidence findings (<CADV>) — advisory, below the confidence bar</summary>
+<summary>Less certain (<CADV>) — advisory, below the confidence bar</summary>
 
 - `src/api/client.ts:88` — issue: this early-return may skip the audit log write. (confidence 76)
 - `src/api/client.ts:132` — suggestion: consider hoisting the client construction out of the loop. (confidence 71)
@@ -638,33 +682,56 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   Prior review feedback, and/or Code review, so 0 to 4. CI is in this set precisely because it warns
   and never fails: leaving it out made a CI-only red render `**0 warning(s)**`, which this file
   forbids. It counts ⚠️ gates on a **FAIL** run too, not only a
-  WARN run, so the FAIL `SEVERITY_TALLY` can report warnings alongside errors.
+  WARN run, so the Step 3 terminal FAIL verdict's `SEVERITY_TALLY` can report warnings alongside
+  errors. (`SEVERITY_TALLY` is a **terminal-only** term now — see
+  [`terminal-report.md`](./terminal-report.md); the posted headline counts findings.)
   The top-level WARN headline leads with `WARN_GATE_COUNT`, not the finding count `N`, so it reads
   correctly even when there are zero inline findings (a Description-vs-code-only warning).
   `WARN_GATE_COUNT` does not appear in the accordion gate table, which renders per-gate ✅/⚠️ marks
   rather than a count; its rendered uses are the Step 3 terminal WARN/FAIL verdict lines and the
-  top-level WARN and FAIL headlines (the latter via `SEVERITY_TALLY`).
+  Step 3 terminal WARN/FAIL verdict lines. It no longer reaches the posted headline, which counts
+  findings and names gate state in its reasons line instead.
 - Never add rows, sections, or prose outside the template above (except the four `<details>`
   blocks — `Review details`, `Optimality review`, `Additional findings`, and
   `Low-confidence findings` — the three group headings, the `MEMORIES_SECTION` and
   `OPEN_THREADS_LIST` slots and the `Nothing to report` footnote inside `Review details`, the
-  `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the `PARTIAL_BANNER` and `UPDATED_LINE`
-  lines — all of which are slots in the template, not added prose).
-  Besides the headline, the banner, and `UPDATED_LINE` (all three renderer-derived or
-  renderer-validated, never hand-composed), **no** prose of the agent's own is permitted at the top
-  level of the body.
+  `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the `PARTIAL_BANNER`, `FINDINGS_INDEX` and
+  `FOOTER_SUP` lines — all of which are slots in the template, not added prose).
+  Besides the headline region (headline, `SUMMARY`, reasons, advisory note), the banner, the
+  findings index, and the footer — all renderer-derived or renderer-validated, never hand-composed
+  — **no** prose of the agent's own is permitted at the top level of the body.
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
 ### INLINE_COMMENTS_JSON format
 
-A valid JSON array. Each entry **must** include `side`:
+A valid JSON array. Each entry **must** include `side`, and **`body` is never hand-written** — it is
+the stdout of [`render-comment.mjs`](../scripts/render-comment.mjs), one invocation per finding:
+
+```bash
+RENDER_COMMENT="${AGENT_MD%/pr-reviewer.md}/pr-reviewer/scripts/render-comment.mjs"
+BODY=$(node "$RENDER_COMMENT" /tmp/finding-1.json) || abort "finding 1 did not render"
+```
+
+Resolve `$RENDER_COMMENT` from `$AGENT_MD` with the same `resolve()` idiom Step 1.2 uses for
+`CLASSIFY` — a bare relative path only happens to work when the shell's cwd is this repo's own
+checkout. The script fails closed and prints nothing on stdout when it rejects a payload, so a
+finding that does not conform is **dropped and logged**, never posted half-formed. The payload keys
+are in [`comment-shape.md § The payload`](../../shared/rules/comment-shape.md); do not compose the
+body yourself, and do not repair one the renderer rejected — a body that fails its checks was not
+built from the payload, and editing it into shape reintroduces exactly the drift the renderer
+removes.
+
+**Every finding you post inline also becomes one `FINDINGS[]` entry in the report payload**, carrying
+the same `title` you gave the renderer. That is what makes the report's index and the inline comments
+one worklist instead of two unrelated numbers, and the report renderer rejects a `FINDINGS` length
+that disagrees with `QUALITY`'s `posted inline <N>`.
 
 ```json
 {
   "path": "relative/file/path",
   "line": <integer RIGHT-side line number>,
   "side": "RIGHT",
-  "body": "conventional-comments formatted body"
+  "body": "<the renderer's stdout, verbatim>"
 }
 ```
 
@@ -683,3 +750,6 @@ For multi-line comments, also include `start_line` and `start_side`:
 
 Use `[]` if no surviving inline findings.
 The `side` field is required by the GitHub API — omitting it returns HTTP 422.
+
+The reference renderings live in `scripts/eval/fixtures/inline-comment/*.expected.md` — readable
+markdown, diffed by L1 (`G41`), and the answer to "what is an inline finding supposed to look like".

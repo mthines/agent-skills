@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: Code reviewer for GitHub PRs — your own (self relation) and other people's (cross relation). Runs a pre-merge gate check (description vs. code, CI, unresolved review feedback, self-review signals, docs) then a review built from independent finders and an independent verifier — correctness, quality, description accuracy, consumer impact of every changed export, version-resolved dependency deltas, holistic intent-and-system-fit, optimality, conformance to the repo's own governing docs, and whether the change ships the telemetry needed to prove its impact and catch its own regressions. Depth-routed — a big-but-boring diff is priced cheaply while a small-but-dangerous one still gets a deep pass. Incrementally aware — a re-run reads its per-PR state record and reviews only the delta since the last reviewed SHA. Writes one report comment per PR, rewritten in place every run, plus append-only inline findings on a visible COMMENT review posted only when the run has new inline findings. Read-only — it never auto-fixes. Trigger with `/pr-review <PR-URL|#n>` or the Task tool — `Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--no-measurable] [--skip-gates] [--fix-links]")`. An agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
+description: Code reviewer for GitHub PRs — your own (self relation) and other people's (cross relation). Runs a pre-merge gate check (description vs. code, CI, unresolved review feedback, self-review signals, docs) then a review built from independent finders and an independent verifier — correctness, quality, description accuracy, consumer impact of every changed export, version-resolved dependency deltas, holistic intent-and-system-fit, optimality, conformance to the repo's own governing docs, and whether the change ships the telemetry needed to prove its impact and catch its own regressions. Depth-routed — a big-but-boring diff is priced cheaply while a small-but-dangerous one still gets a deep pass. Incrementally aware — a re-run reads its per-PR state record and reviews only the delta since the last reviewed SHA. Writes one report comment per PR, rewritten in place every run, plus append-only inline findings on a visible COMMENT review posted only when the run has new inline findings. Read-only — it never auto-fixes. Trigger with `/pr-review <PR-URL|#n>` or the Task tool — `Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--no-measurable] [--skip-gates] [--no-fix-links]")`. An agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, WebFetch, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write, mcp__github__pull_request_read, mcp__github__create_pull_request, mcp__github__update_pull_request, mcp__github__add_issue_comment, mcp__github__issue_read, mcp__github__pull_request_review_write, mcp__github__add_comment_to_pending_review, mcp__github__resolve_review_thread, mcp__github__get_job_logs, mcp__github__actions_list, mcp__github__actions_run_trigger, mcp__github__get_me
 model: opus
 ---
@@ -273,7 +273,7 @@ file because each is long, and because a phase the body only summarises is a pha
 - `agents/shared/rules/outcome-learning.md` — resolution-rate feedback loop; runs post-merge via `/review-outcomes`. Promotion reads from the `review-outcomes` candidate bus — the bus is NEVER loaded per-review.
 - `agents/shared/rules/comment-relevance-memory.md` — per-repo LoreKit memories of which comment patterns were relevant (fixed) vs. not-relevant (won't fix / ignored). Read before Step 1.1; written post-merge via `outcome-learning.md` gh-api signals. Memories that actually influence the review are rendered as pressable LoreKit links in the review-body diagnostics (Step 4).
 - `agents/shared/rules/thread-resolution.md` — on a re-review, auto-resolve the agent's own prior threads that are now fixed or declined and record the outcome to `reviewer-comment-relevance` (Step 2.9c, **before** the verdict and posting, so Gate 3 and the unblock checklist render post-resolution state). Consumes the `BOT_COMMENTS` + resolved-set from `prior-comment-awareness.md`.
-- `agents/shared/rules/comment-shape.md` — ≤ 240 chars, ≤ 2 sentences, no headings or bullets.
+- `agents/shared/rules/comment-shape.md` — the inline payload and its caps: a ≤ 60-char title on a claim, ≤ 200 chars of prose, ≤ 2 sentences, no headings or bullets. The body is rendered by `render-comment.mjs`, never hand-composed.
 - `agents/shared/rules/conventional-comments.md` — prefix table + decorations.
 - `agents/pr-reviewer/rules/line-validity.md` — RIGHT-side hunk-bounds pre-flight.
 - `agents/pr-reviewer/rules/report-rendering.md` — the shapes Step 4 posts: `REPORT_BODY`'s payload keys (including `RUN.tier` / `RUN.depth`, `IMPACT`, and `WITHHELD`), the headline forms, every optional `<details>` section, the Gate 3 slot pair, the gate-table cell rules, and `INLINE_COMMENTS_JSON`. Reference, not procedure — read it at Step 4, when there is a payload to build.
@@ -308,7 +308,8 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `--measurable-strict` | Pass `--strict` to `measurable audit`, so a `missing` signal on a new failure mode is an `issue:` rather than a `suggestion:`. Also settable as `measurable: strict` in the review config. `unlinked` findings stay advisory either way |
 | `--skip-gates` | Skip Gates 1–5, run inline review (Gate 6) only |
 | `--with a,b,c` | Up to 3 additional review lenses |
-| `--fix-links` | Render opt-in "Fix with Agent0" deep-link buttons on the report and inline findings (default off; `agents/shared/rules/agent0-fix-links.md`) |
+| `--no-fix-links` | Suppress the "Fix with Agent0" buttons for this run. They render by default wherever the review config names an `agent0_environment` (`agents/shared/rules/agent0-fix-links.md`); this is the per-run opt-out and beats every other signal. |
+| `--fix-links` | Force the buttons on for this run, even with no `agent0_environment` configured. Rarely needed now that a configured Agent0 implies them. |
 | `--effort high` | Force `DEPTH_TIER = deep`, enable Tier-2/3 receipts where the toolchain allows, and widen diversify-then-vote to N=5 ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#--effort)). Also settable as `effort: high` in the review config. `--full` is the narrower alias — it forces `deep` and nothing else |
 
 Parse the PR reference:
@@ -349,9 +350,17 @@ to improvise around it.
 `AGENT_SUPPORT` is a location, not a permission: resolving it says nothing about what this run may
 post, and failing to resolve it never licenses hand-writing an artifact the renderer owns.
 
-### `--fix-links` mode
+### Fix-with-Agent0 buttons (`--fix-links` / `--no-fix-links`)
 
-Resolve `AGENT0_FIX_LINKS` and `AGENT0_ENVIRONMENT` per `review-config.md § Run-level fields` — base config only, never subtree-merged, since these gate the whole run rather than one file's findings. Set `FIX_LINKS=on` when `--fix-links` is passed OR `AGENT0_FIX_LINKS=true` (default: **off** — emit no buttons and skip this block entirely). Pass `AGENT0_ENVIRONMENT` to the link builder as `--env <env>` (default `production`; `development` → `app.dash0-dev.com`). When on, render the "Fix with Agent0" buttons per `agents/shared/rules/agent0-fix-links.md`:
+Resolve `AGENT0_FIX_LINKS` and `AGENT0_ENVIRONMENT` per `review-config.md § Run-level fields` — base config only, never subtree-merged, since these gate the whole run rather than one file's findings. Then set `FIX_LINKS` by first match:
+
+| Signal | `FIX_LINKS` |
+|---|---|
+| `--no-fix-links` passed | `off` — the explicit per-run opt-out, and it beats everything below |
+| `--fix-links` passed | `on` |
+| `AGENT0_FIX_LINKS` resolved `true` / `false` | as resolved — which is `true` whenever the repo named an `agent0_environment` and did not explicitly say otherwise |
+
+**A repo that names an Agent0 gets the buttons.** They were off unless a flag was passed, and the cost of that was the point of having them: the affordance that turns a review into an action was absent from every run nobody remembered to flag. A repo with no `agent0_environment` still resolves `off` and renders nothing, so nothing changes outside Dash0. With `FIX_LINKS=off`, emit no buttons and skip this block entirely. Pass `AGENT0_ENVIRONMENT` to the link builder as `--env <env>` (default `production`; `development` → `app.dash0-dev.com`). When on, render the "Fix with Agent0" buttons per `agents/shared/rules/agent0-fix-links.md`:
 
 - **Fix all (report).** If `FIX_LINKS_UNAVAILABLE` is set, skip this bullet entirely — no `FIX_ALL_URL` slot, no abort. Otherwise, at Step 4, build the fix-all deep link — `node "$BUILD_LINK" --env <env> --source fix-all "<fix-all prompt>"` (`--source` is mandatory — `agent0-fix-links.md § Click attribution` — and is `fix-all` here, always), where `$BUILD_LINK="$AGENT_SUPPORT/pr-reviewer/scripts/build-agent0-link.mjs"` is derived from the **same already-resolved `$AGENT_MD`** Step 4a computes for `RENDER` (same block, same tool call — do not re-derive it, and never invoke the script by the bare path `agents/pr-reviewer/scripts/build-agent0-link.mjs`, which only resolves by accident when the shell's cwd happens to be this repo's own checkout). Pass the URL as the `FIX_ALL_URL` payload slot to `render-report.mjs` (`report-rendering.md`). The renderer turns it into the linked button above the accordion.
   - `{count}` is the count of open findings **authored by `{bot_login}`** — this run's `issue:` / `suggestion:` inline findings (the Step 4b payload — known here, even though the comments post after the report) plus the carried-forward `OPEN_THREADS` entries **whose author is `{bot_login}`**, deduplicated by `path:line`. Filter that subset explicitly rather than taking `OPEN_THREADS` whole: Gate 3 tracks every open thread, bot **or** human (Step 1.0 — "Both count"), so an unfiltered union overstates what the login-scoped query in the same prompt returns. That gap is not cosmetic — `{count}` is the only checksum Agent0 has for when it is done, so a count that exceeds the query's result sends it hunting for findings that do not exist under the filter. Nothing about the fill reads the report body or the sticky marker.
@@ -360,11 +369,11 @@ Resolve `AGENT0_FIX_LINKS` and `AGENT0_ENVIRONMENT` per `review-config.md § Run
   - **When `{bot_login}` is resolved and `{count}` is non-zero**, use the findings-based prompt from `agent0-fix-links.md § Prompt templates`, filled with `OWNER/REPO`, the PR number, `{count}`, and `{bot_login}`.
   - **When `{count}` is 0 but CI is not green** (Gate 2 WARN, `agent0-fix-links.md § Prompt templates` "Fix all — CI-only"), build that variant instead of omitting the button — reuse the failing check names already computed for `CI_NOTE`, never re-query CI a second time for this. A clean Gate 6 (code review) with a red CI check leaves nothing to fix, but the report still reads WARN, and that is exactly the state a human is most likely to click "fix" on.
   - **Omit the slot only** when `{count}` is 0 AND CI is green — including a Gate-1-only WARN (description vs. code) with clean CI and no findings: that gate is about the human-authored PR description, not something an autonomous code-fix run can act on.
-- **Fix this (inline).** When shaping an inline `issue:` / `suggestion:` finding (Step 2.8/2.9 — a **separate tool call from Step 4a**, so shell state including `$AGENT_MD` is gone; re-resolve it fresh here with the same `resolve()` idiom Step 1.2 uses for `CLASSIFY`, and re-check `[ -f "$BUILD_LINK" ]` fresh too — skip the button for this one finding, not the rest of the review, on a miss), append the Fix-this button as the final line after the fix block, per `comment-shape.md § Fix-with-Agent0 button`, built with **the same `--env <env>` resolved above** — `node "$BUILD_LINK" --env <env> --source fix-this "<fix-this prompt>"` (`--source` is mandatory and is `fix-this` here, always — `agent0-fix-links.md § Click attribution`; never the bare relative path — see the Fix-all bullet's note; a bare path silently resolves against whatever the shell's cwd is, which during a cross-repo dispatch is the *reviewed* repo, not this one) — and the fix-this prompt template, filled with the finding's `path:line` and its own lead line as `{lead}` (drop any `"` from it). Skip `nitpick` / `question` / `praise`. **This is the same `<env>` as the Fix-all bullet above, resolved once per run — never re-resolved or defaulted per finding.**
+- **Fix this (inline).** When shaping an inline `issue:` / `suggestion:` finding (Step 2.8/2.9 — a **separate tool call from Step 4a**, so shell state including `$AGENT_MD` is gone; re-resolve it fresh here with the same `resolve()` idiom Step 1.2 uses for `CLASSIFY`, and re-check `[ -f "$BUILD_LINK" ]` fresh too — skip the button for this one finding, not the rest of the review, on a miss), pass the deep link as the payload's `FIX_URL` and let `render-comment.mjs` build the button (theme-aware markup, host validation and alt text all live in `comment-spine.mjs`'s `fixButton()`; never hand-write the markup), built with **the same `--env <env>` resolved above** — `node "$BUILD_LINK" --env <env> --source fix-this "<fix-this prompt>"` (`--source` is mandatory and is `fix-this` here, always — `agent0-fix-links.md § Click attribution`; never the bare relative path — see the Fix-all bullet's note; a bare path silently resolves against whatever the shell's cwd is, which during a cross-repo dispatch is the *reviewed* repo, not this one) — and the fix-this prompt template, filled with the finding's `path:line` and its own lead line as `{lead}` (drop any `"` from it). Skip `nitpick` / `question` / `praise`. **This is the same `<env>` as the Fix-all bullet above, resolved once per run — never re-resolved or defaulted per finding.**
 
   This bullet never named `--env` at all prior to one fix, and never resolved the script path via `$AGENT_MD` prior to a second: a Fix-this button had no path to `development` regardless of what the run resolved for Fix-all, and even a correctly-resolved `<env>` could not reach a `production`/`development` decision if the bare-path invocation silently failed or fabricated output instead of using the script's own host map. Both were observed live: an inline Fix-this button on `mthines/lorekit#601` read `app.dash0.com` right after the `--env` gap was fixed, and the **Fix-all report button on `mthines/lorekit#318`** still read `app.dash0.com` hours after *both* fixes had merged, on a "no MCP tool access" dispatch that rebased the PR across repos — exactly the shape of dispatch where a bare relative path stops resolving to this repo's checkout.
 
-With `FIX_LINKS=off` (the default) supply no `FIX_ALL_URL` and append no inline button. Either way the buttons ride **inside** the reviewer's own sticky report and inline findings — they add no new comment and never push, fix, or approve anything; a human clicks and Agent0 acts.
+With `FIX_LINKS=off` supply no `FIX_ALL_URL` and pass no `FIX_URL` in any inline payload. **One flag governs both placements**, so a run has both buttons or neither — a report offering *Fix all* above findings with no *Fix this* was one of the inconsistencies this replaces. Either way the buttons ride **inside** the reviewer's own sticky report and inline findings — they add no new comment and never push, fix, or approve anything; a human clicks and Agent0 acts.
 
 ---
 
@@ -1918,7 +1927,7 @@ rubrics + finders produce raw candidates
                                        per-comment-confidence.md owns the threshold, defer band, and
                                        severity fan-out it is compared against)
   → 2.7b memory.md § Suppression      (relevance rules apply HERE, after verification — never before)
-  → 2.8  comment-shape.md             (≤ 240 chars prose, ≤ 2 sentences, no structure)
+  → 2.8  comment-shape.md             (render-comment.mjs: ≤ 60-char title, ≤ 200 chars prose)
   → 2.9  conventional-comments.md     (prefix + decoration)
   → 2.9b rubric-composition § Placement (inline caps 5/file + 20 total; overflow DEFERRED to body, never dropped)
 ```
@@ -2206,17 +2215,48 @@ Report the count as `Memory suppressions: <N>` in the Quality Gate summary
 Because these findings **cleared** the pipeline before being suppressed, they must be accounted for
 in the `<CL> − <DEF> == <F>` identity rather than silently vanishing from it.
 
-### 2.8 Comment shape
+### 2.8 Comment shape — **rendered, not written**
 
-See `agents/shared/rules/comment-shape.md`. ≤ 240 chars of **prose**, ≤ 2 sentences, no headings,
-no bullets. The cap measures prose only — a fenced patch, the `Evidence:` line, and the fingerprint
-marker are excluded before measuring, because an `issue:`/`suggestion:` is *required* to carry the
-fix fence and counting it would make every well-formed finding oversized.
+**Do not compose an inline comment body.** Build one JSON payload per surviving finding and render
+it:
+
+```bash
+RENDER_COMMENT=$(resolve pr-reviewer/scripts/render-comment.mjs)   # same idiom as CLASSIFY, Step 1.2
+BODY=$(node "$RENDER_COMMENT" /tmp/finding-1.json)
+```
+
+The payload keys are in [`comment-shape.md § The payload`](./shared/rules/comment-shape.md): the
+claim (`PREFIX`, `TIER`, `TITLE`, `BODY`, `BLOCKING`), the proof (`EVIDENCE[]` **or** `UNVERIFIED`,
+never both), the patch (`FENCE`), the identity (`FP`, `SHA`), and the affordance (`FIX_URL`).
+Everything a reader sees as structure — the tier label and its glyph, the bold title, the
+decoration and its position, the evidence separators, the fingerprint marker, the button markup and
+the shared footer — is derived from those fields.
+
+Two payload rules are worth stating here because they are the ones a run gets wrong:
+
+- **`TITLE` is required on `issue:` / `suggestion:` and rejected on the rest.** A claim needs a
+  handle, because GitHub shows only a comment's opening in the Files rail, the timeline, and the
+  notification email; a `nitpick:` needs to stay one line. It is a noun phrase ≤ 60 chars with no
+  sentence punctuation.
+- **`BODY` is ≤ 200 chars, ≤ 2 sentences, one paragraph.** The cap measures prose only — the title,
+  the fence, the `Evidence:` line, the button, the footer and the marker are all excluded and
+  separately bounded, because counting them would make every well-formed finding oversized.
+
+**On rejection, drop and log — never repair.** The renderer prints nothing on stdout when it
+refuses a payload, so a non-conforming finding cannot be posted half-formed. Log the payload and the
+error verbatim in the Step 5 terminal output so the finding is recoverable by hand, and continue with
+the rest of the review. Editing a rejected body into shape reintroduces exactly the drift the
+renderer exists to remove: this surface had a prose contract and a `passes_shape()` function nothing
+executed, and a real posted finding dropped three documented decorations at once.
+
+The reference renderings are in `scripts/eval/fixtures/inline-comment/*.expected.md`.
 
 ### 2.9 Conventional Comments
 
-See `agents/shared/rules/conventional-comments.md`. Prepend category prefix; append
-`(blocking)` / `(non-blocking)` decoration.
+See `agents/shared/rules/conventional-comments.md`. The prefix, the `(tier)` label, and the
+`**(blocking)**` / `**(non-blocking)**` decoration are all built by the renderer from `PREFIX`,
+`TIER` and `BLOCKING` — supply the fields, not the syntax. Line 1 stays machine-shaped
+(`^<prefix> (<tier>):`) because `record-comment-relevance.mjs` reads the tier from exactly there.
 
 ### 2.9b Placement
 
@@ -2463,7 +2503,7 @@ RENDER="$AGENT_SUPPORT/pr-reviewer/scripts/render-report.mjs"
 
 # BUILD_LINK: the Fix-all button's script, resolved from the SAME $AGENT_MD as RENDER above —
 # never a bare `agents/pr-reviewer/scripts/build-agent0-link.mjs`, which only happens to resolve
-# when the shell's cwd is this repo's own checkout (`--fix-links mode` § Fix all). When FIX_LINKS
+# when the shell's cwd is this repo's own checkout (§ Fix-with-Agent0 buttons → Fix all). When FIX_LINKS
 # is off this is unused; computing it here regardless costs nothing and keeps one resolution point.
 # Unlike RENDER, a missing script here is non-fatal — the buttons are opt-in decoration, not the
 # report itself — so skip them rather than abort()ing the whole review over a missing file.
@@ -2484,8 +2524,8 @@ marker or accordion all exit non-zero and print nothing, so a malformed report c
 
 `RUN.at` is required alongside `mode` / `sha` — an ISO-8601 UTC timestamp for **this** run (`date -u
 +%Y-%m-%dT%H:%M:%SZ`), the same format `runs[].at` already uses in the Step 0.7 state record. The
-renderer turns it into `UPDATED_LINE`, rendered directly under the headline, **outside** the
-`Review details` accordion. This exists because editing a GitHub comment sends no notification —
+renderer folds it into the shared footer's `updated <stamp> UTC` clause, rendered **below** the
+`Review details` accordion and therefore visible on the collapsed comment. This exists because editing a GitHub comment sends no notification —
 the sticky's "edited" tag was the only trace that a rewritten report had actually changed, and a
 reader had to open the edit history to see when. A visible timestamp does not create a
 notification either, but it turns "did this change since I last looked?" into a glance at the
@@ -2503,8 +2543,10 @@ one — the failure Phases A and C exist to fix:
 | `IMPACT` | `/tmp/pr-impact.json` (Step 1.2a), plus the per-symbol `verified_unaffected` / `findings` counts the consumer-impact finder actually produced | **Never fill `verified_unaffected` from the graph's consumer count.** It is what the finder *checked and cleared*; the renderer enforces `verified_unaffected + findings <= consumer_files` and states the untraced remainder, so an inflated figure is a claim of coverage that did not happen. Omit the whole slot when the graph is empty. |
 | `WITHHELD` | the `unobtainable` verdicts from Step 2.6b | `reason` is required; `prefix` may only be `suggestion` or `question`. |
 
-Put the routing inputs (`blast_radius=…`, `semver_delta=…`) in `RUN_NOTE`, and the tier
-distribution in `TIER_TALLY`.
+Put the routing inputs (`blast_radius=…`, `semver_delta=…`) in `RUN_NOTE`. There is no tier-tally
+slot to fill: supply `FINDINGS[]` — one entry per finding you posted inline, carrying the same
+`title` you gave `render-comment.mjs` — and the renderer derives the headline's count and glyph, the
+visible findings index, and the `Severity — ` tally from that one array.
 
 **A caveat about what the review covered goes in `RUN_ANOMALY`, never in `RUN_NOTE`.** `RUN_NOTE` is
 appended to the run line, which is the densest line in the report; `RUN_ANOMALY` renders on its own
@@ -2522,7 +2564,7 @@ that is the exact failure this replaces. Report the error verbatim in the Step 5
 along with the payload you built, post the inline findings (Step 4b still applies), and leave the
 sticky untouched. A missing report is recoverable; a malformed one that consumers then parse is not.
 
-**Assert these four things on `REPORT_BODY` immediately before the write, whatever produced it.**
+**Assert these six things on `REPORT_BODY` immediately before the write, whatever produced it.**
 The renderer guarantees them, so on the normal path this is redundant — and that is the point: it is
 the only check that survives the renderer being **bypassed**, which is the failure this whole
 section exists to prevent. A check that runs only inside the thing it is guarding guards nothing.
@@ -2540,7 +2582,15 @@ printf '%s\n' "$REPORT_BODY" | awk '
 ' || abort "no Review details accordion"
 grep -q '<details open>' <<< "$REPORT_BODY" && abort "accordion is pre-expanded"
 grep -q '\*\*Verdict\*\*' <<< "$REPORT_BODY" && abort "advisory verdict is terminal-only"
-grep -q '<sub>Updated .* UTC</sub>' <<< "$REPORT_BODY" || abort "no top-level UPDATED_LINE — freshness cue is missing"
+# The `### ` headline is what makes a report identifiable as a report at a glance — and it is the
+# one shape an inline finding never uses (a finding opens with its Conventional-Comments prefix and
+# a bold title). A report that lost it reads as a long comment.
+grep -q '^### ' <<< "$REPORT_BODY" || abort "no ### headline — the report has no report shape"
+# The shared attribution footer, built by comment-spine.mjs's footerLine() and identical on both
+# surfaces. It carries the reviewed sha, which a sticky has no commit_id for, plus the freshness
+# stamp that used to sit in its own <sub>Updated …</sub> line.
+grep -q '^<sup>`pr-reviewer` · commit `' <<< "$REPORT_BODY" \
+  || abort "no attribution footer — provenance and the freshness cue are both missing"
 ```
 
 On any `abort`: post no report object, name the failing assertion in the Step 5 output, and stop.
@@ -2701,6 +2751,11 @@ def payload_is_safe(payload: dict) -> tuple[bool, str]:
             c.get("body", ""),
         ):
             return (False, f"comment body missing Conventional-Comments prefix: {c['body'][:40]}")
+        # The shared attribution footer. Like the marker, only the renderer writes it,
+        # so its absence means this body did not come from `render-comment.mjs` — which
+        # is the one thing this pre-flight can still detect after the renderer landed.
+        if "<sup>`pr-reviewer` · commit `" not in c.get("body", ""):
+            return (False, f"comment body has no attribution footer (not rendered): {c.get('path')}")
         # Measure the PROSE, exactly as comment-shape.md does — not the whole body.
         # `len(body) > 240` on the raw body rejected every finding carrying the fix
         # fence that same rule requires for an `issue:` / `suggestion:`, and because
@@ -2710,12 +2765,29 @@ def payload_is_safe(payload: dict) -> tuple[bool, str]:
         import re as _re
         _prose = _re.sub(r"```[a-zA-Z0-9_+-]*\n.*?\n```", "", c.get("body", ""), flags=_re.DOTALL)
         _prose = _re.sub(r"^Evidence:.*$", "", _prose, flags=_re.MULTILINE)
+        _prose = _re.sub(r"^<sup>`pr-reviewer`.*$", "", _prose, flags=_re.MULTILINE)
+        # The Fix-with-Agent0 button. Strip it BEFORE measuring: its <picture> markup is
+        # ~430 chars of theme-switching boilerplate, which on its own pushes a
+        # well-formed finding past any prose ceiling. It is a rendered affordance, not
+        # argument, exactly like the fence.
+        _prose = _re.sub(r'^<a href="https://app\.dash0(?:-dev)?\.com/.*$', "", _prose,
+                         flags=_re.MULTILINE)
+        _prose = _re.sub(r"^_Pseudo-code — verify before applying\._$", "", _prose, flags=_re.MULTILINE)
         _prose = _re.sub(r"<!--\s*fp:v\d+:[^\s>]+?\s*-->", "", _prose).strip()
-        if len(_prose) > 240:
-            return (False, f"comment prose > 240 chars: {len(_prose)}")
-        # An absolute ceiling on the whole body still applies, generously: prose (240)
-        # + an evidence line (180) + a 10-line fence + the marker. Anything past this
-        # is a shape failure the pre-emit check should already have dropped.
+        # A LOOSE ceiling, deliberately — not a re-implementation of the caps.
+        # `render-comment.mjs` enforces the real ones per field (≤ 60-char title, ≤ 200
+        # chars of prose), and this pre-flight cannot see the field boundaries, only the
+        # rendered text: on a claim `_prose` is the title line plus the body, and on a
+        # one-liner the whole finding is the title line. Re-deriving a per-field cap from
+        # that would false-reject a well-formed one-liner, and this assertion aborts the
+        # WHOLE post rather than dropping one comment. So bound the sum generously
+        # (60 title + ~25 decoration + 200 prose) and let the renderer own precision.
+        if len(_prose) > 320:
+            return (False, f"comment prose > 320 chars: {len(_prose)}")
+        # An absolute ceiling on the whole body still applies, generously: a title line
+        # + prose (200) + an evidence line (180) + a 10-line fence + a button + the
+        # footer + the marker. The button markup alone is ~430 chars of <picture> element.
+        # Anything past this is a shape failure the renderer should already have refused.
         if len(c.get("body", "")) > 2000:
             return (False, f"comment body > 2000 chars: {len(c['body'])}")
         if len(_re.findall(r"<!--\s*fp:v\d+:", c.get("body", ""))) > 1:
