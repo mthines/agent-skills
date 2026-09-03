@@ -81,6 +81,47 @@ function ghApi(path) {
   return JSON.parse(raw);
 }
 
+/**
+ * Page size for the list endpoints. GitHub's default is 30, which is the whole bug
+ * this helper exists to fix: a PR with more than 30 review comments pushed this
+ * agent's own flag off page 1, and every caller below reads a *negative* signal from
+ * a comment's absence. So a truncated read does not degrade the signal, it INVERTS
+ * it — a line the reviewer did flag is recorded as `missed`, and the strongest
+ * amplify evidence the file has (`rule-amplify`, weight 3) is written as
+ * `hotspot-missed` (weight 1).
+ */
+const PAGE_SIZE = 100;
+const MAX_PAGES = 20; // 2,000 items — beyond this, truncation is reported, never silent.
+
+/**
+ * Paginated GET for endpoints that return a JSON array.
+ *
+ * Pages explicitly with `per_page` + `page` rather than `gh api --paginate`: the
+ * `--paginate` output for an array endpoint is concatenated JSON documents (invalid
+ * JSON past page 1) and the `--slurp` flag that fixes it is not present on every `gh`
+ * a caller's runner may have. Explicit paging behaves identically on every version and
+ * is checkable offline.
+ *
+ * Throws when the item count exceeds MAX_PAGES * PAGE_SIZE, because returning a
+ * silently short array here is exactly the failure mode being fixed.
+ */
+export function ghApiAll(path, fetch = ghApi) {
+  const sep = path.includes("?") ? "&" : "?";
+  const out = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const chunk = fetch(`${path}${sep}per_page=${PAGE_SIZE}&page=${page}`);
+    if (!Array.isArray(chunk)) {
+      throw new Error(`ghApiAll expected a JSON array from ${path}, got ${typeof chunk}`);
+    }
+    out.push(...chunk);
+    if (chunk.length < PAGE_SIZE) return out;
+  }
+  throw new Error(
+    `ghApiAll: ${path} exceeded ${MAX_PAGES * PAGE_SIZE} items; refusing to return a truncated list ` +
+      `because every caller reads absence as a negative signal`,
+  );
+}
+
 function ghGraphql(query, vars) {
   const args = Object.entries(vars).map(([k, v]) => `-F ${k}=${JSON.stringify(String(v))}`).join(" ");
   const raw = execSync(`gh api graphql -f query=${JSON.stringify(query)} ${args}`, {
@@ -229,7 +270,7 @@ function fetchReviewThreads({ repo, prNumber }) {
 function hasFixCommit({ repo, prNumber, path, line, since }) {
   const granularity = line > 0 ? "line" : "file";
   try {
-    const commits = ghApi(`/repos/${repo}/pulls/${prNumber}/commits`);
+    const commits = ghApiAll(`/repos/${repo}/pulls/${prNumber}/commits`);
     const afterComments = commits.filter((c) => new Date(c.commit.author.date) > new Date(since));
     for (const commit of afterComments) {
       try {
@@ -257,7 +298,7 @@ function hasFixCommit({ repo, prNumber, path, line, since }) {
 
 function thumbsDownFrom(repo, commentId, logins) {
   try {
-    const reactions = ghApi(`/repos/${repo}/pulls/comments/${commentId}/reactions`);
+    const reactions = ghApiAll(`/repos/${repo}/pulls/comments/${commentId}/reactions`);
     const hit = reactions.find((r) => r.content === "-1" && logins.includes(r.user?.login));
     return hit ? hit.user.login : null;
   } catch {
@@ -482,7 +523,7 @@ async function modeThreadResolved() {
 
   let replies = [];
   try {
-    const allComments = ghApi(`/repos/${repo}/pulls/${prNumber}/comments`);
+    const allComments = ghApiAll(`/repos/${repo}/pulls/${prNumber}/comments`);
     replies = allComments.filter((c) => String(c.in_reply_to_id) === String(commentId));
   } catch (err) {
     log("Could not fetch thread replies:", err.message);
@@ -540,7 +581,7 @@ async function modePrMerged() {
 
   let allComments = [];
   try {
-    allComments = ghApi(`/repos/${repo}/pulls/${prNumber}/comments`);
+    allComments = ghApiAll(`/repos/${repo}/pulls/${prNumber}/comments`);
   } catch (err) {
     log("Could not fetch PR comments:", err.message);
     return;
@@ -612,7 +653,7 @@ async function modePrMerged() {
 /** Any 👎 from anyone with write access counts as a decline signal (proposal § 4.7.4). */
 function thumbsDownAnyone(repo, commentId) {
   try {
-    const reactions = ghApi(`/repos/${repo}/pulls/comments/${commentId}/reactions`);
+    const reactions = ghApiAll(`/repos/${repo}/pulls/comments/${commentId}/reactions`);
     const hit = reactions.find((r) => r.content === "-1");
     return hit ? hit.user?.login ?? "unknown" : null;
   } catch {
@@ -645,7 +686,7 @@ async function modeHumanComment() {
 
   let ourComments = [];
   try {
-    ourComments = ghApi(`/repos/${repo}/pulls/${prNumber}/comments`)
+    ourComments = ghApiAll(`/repos/${repo}/pulls/${prNumber}/comments`)
       .filter((c) => resolveFingerprint(c.body ?? "", c.user?.login, c.user?.type).source.agent === "pr-reviewer");
   } catch (err) {
     log("Could not fetch PR comments:", err.message);
@@ -703,7 +744,7 @@ async function modeDeployRegression() {
 
   let ourComments = [];
   try {
-    ourComments = ghApi(`/repos/${repo}/pulls/${prNumber}/comments`);
+    ourComments = ghApiAll(`/repos/${repo}/pulls/${prNumber}/comments`);
   } catch (err) {
     log("Could not fetch PR comments:", err.message);
   }
@@ -768,6 +809,65 @@ function selfTest() {
   const open = { isResolved: false, isOutdated: false };
   const resolved = { isResolved: true, isOutdated: false };
   const outdated = { isResolved: false, isOutdated: true };
+
+  // ── pagination (DEFECT 4: absence is read as a negative signal, so a short read inverts it) ──
+  const fakePages = (total) => (p) => {
+    const page = Number(/[?&]page=(\d+)/.exec(p)[1]);
+    const start = (page - 1) * PAGE_SIZE;
+    return Array.from({ length: Math.max(0, Math.min(PAGE_SIZE, total - start)) }, (_, i) => ({ id: start + i }));
+  };
+
+  t("pagination: a single short page returns everything and stops", () =>
+    ghApiAll("/x", fakePages(7)).length === 7);
+
+  t("pagination: an exactly-full page is followed by a probe for the next", () => {
+    // Asserts the CALL, not the length: a page-1-only implementation also returns
+    // PAGE_SIZE items here, so length alone cannot tell the two apart.
+    let calls = 0;
+    const r = ghApiAll("/x", (p) => { calls++; return fakePages(PAGE_SIZE)(p); });
+    return calls === 2 && r.length === PAGE_SIZE;
+  });
+
+  t("pagination: 3 pages of comments are all returned, in order", () => {
+    const all = ghApiAll("/x", fakePages(PAGE_SIZE * 2 + 5));
+    return all.length === PAGE_SIZE * 2 + 5 && all[0].id === 0 && all.at(-1).id === PAGE_SIZE * 2 + 4;
+  });
+
+  t("pagination: the 31st comment is reachable — the exact defect, against an API that defaults to 30", () => {
+    // The fake honours per_page and falls back to GitHub's default of 30 when it is
+    // absent, which is what made the 31st comment invisible. Asserting against a
+    // fake that always honours per_page would pass without pagination at all,
+    // because 31 fits in one 100-item page.
+    const apiDefaulting = (p) => {
+      const size = Number(/[?&]per_page=(\d+)/.exec(p)?.[1] ?? 30);
+      const page = Number(/[?&]page=(\d+)/.exec(p)?.[1] ?? 1);
+      const start = (page - 1) * size;
+      return Array.from({ length: Math.max(0, Math.min(size, 31 - start)) }, (_, i) => ({ id: start + i }));
+    };
+    return PAGE_SIZE > 30 && ghApiAll("/x", apiDefaulting).some((c) => c.id === 30);
+  });
+
+  t("pagination: per_page is actually requested, not left to the API default", () => {
+    let seen = "";
+    ghApiAll("/x", (p) => { seen = p; return []; });
+    return seen.includes(`per_page=${PAGE_SIZE}`) && seen.includes("page=1");
+  });
+
+  t("pagination: an existing query string is appended to with &, not ?", () => {
+    let seen = "";
+    ghApiAll("/x?since=2026-01-01", (p) => { seen = p; return []; });
+    return seen.includes("?since=2026-01-01&per_page=");
+  });
+
+  t("pagination: overflow throws rather than silently truncating", () => {
+    try { ghApiAll("/x", fakePages(PAGE_SIZE * MAX_PAGES + 1)); return false; }
+    catch (e) { return /refusing to return a truncated list/.test(e.message); }
+  });
+
+  t("pagination: a non-array response throws instead of being spread", () => {
+    try { ghApiAll("/x", () => ({ message: "Not Found" })); return false; }
+    catch (e) { return /expected a JSON array/.test(e.message); }
+  });
 
   // ── thread-resolved ──
   t("a 👎 from the author is a decline", () =>

@@ -3045,4 +3045,74 @@ const isPollBlock = (block) =>
   }
 }
 
+// ── G40: a rule file may not state a contract the agent body does not implement ──
+//
+// The first review of the detection core found four instances of ONE shape: a new rule stating a
+// contract nothing binds, reads, or can render. That shape is invisible to every other guard here,
+// because each half is internally consistent — the rule reads correctly and the body runs
+// correctly, and only the seam between them is broken.
+//
+// The THREAD_OVERLAP case is the instructive one: a guard for it DID exist (the L2
+// shape-depth-routing suite) and was neutralised by being fed its own answer — every golden record
+// hands the model the value in its prompt, so the suite measures the table's ordering and never the
+// input's availability. A contract-existence check has to look at the binding, not the decision.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const body = read("agents/pr-reviewer.md");
+  const depth = read("agents/pr-reviewer/rules/depth-routing.md");
+  const cfg = read("agents/shared/rules/review-config.md");
+
+  // (a) Every input the routing table votes on is bound somewhere in the body.
+  //
+  // Matched case-insensitively on purpose: the rule names the impact.json field
+  // (`blast_radius.band`) while the body names the bound variable (`BLAST_RADIUS`). Those are the
+  // same concept in two conventions, and requiring one literal spelling across both files would
+  // fail on a naming difference rather than on a missing binding.
+  for (const input of ["THREAD_OVERLAP", "DEPTH_CAPABILITY", "BLAST_RADIUS", "TRAFFIC_BAND"]) {
+    const needle = input.toLowerCase();
+    s.check(`G40a ${input} is bound in the agent body, not only named in the rule`,
+      depth.toLowerCase().includes(needle) && body.toLowerCase().includes(needle),
+      `${input} appears in depth-routing.md but nothing in pr-reviewer.md binds it — the row that reads it can never fire`);
+  }
+  s.check("G40a THREAD_OVERLAP's binding states it is computed at tier-binding time, not read from Step 2.9c",
+    /THREAD_OVERLAP\s*=/.test(body) && /2\.9c/.test(body.slice(body.indexOf("THREAD_OVERLAP ="))),
+    "the body must show the formula AND say why Step 2.9c's predicate cannot be read directly (it runs after the tier is bound)");
+
+  // (b) A flag the rules advertise is parseable at the run's only parse point.
+  const step0 = body.slice(body.indexOf("| Token | Meaning |"), body.indexOf("Parse the PR reference:"));
+  s.check("G40b --effort is in Step 0's token table",
+    step0.includes("--effort"),
+    "depth-routing.md and CLAUDE.md advertise --effort, so Step 0 must accept it or both entry points are unreachable");
+  s.check("G40b the review-config half of --effort is defined",
+    /^\s*effort:/m.test(cfg),
+    "CLAUDE.md says '(or effort: in review-config)' — review-config.md must define the key it names");
+
+  // (c) No rule may mandate a payload key the fail-closed renderer rejects. Asserted against the
+  // renderer's real key sets, so adding a slot is what retires the check — not editing it.
+  const renderer = read("agents/pr-reviewer/scripts/render-report.mjs");
+  for (const f of ["agents/pr-reviewer/rules/depth-routing.md", "agents/pr-reviewer/rules/report-rendering.md"]) {
+    const txt = read(f);
+    const mandated = [...txt.matchAll(/\brender the headline with a `([A-Z_]+)`/gi)].map((m) => m[1]);
+    for (const key of mandated) {
+      s.check(`G40c ${f} mandates headline key ${key}, which the renderer must accept`,
+        renderer.includes(key),
+        `${key} is required by a rule but is not a renderer payload key — render-report.mjs fails closed, so a run that obeys the rule posts no report at all`);
+    }
+  }
+
+  // (d) The one-read-one-head invariant is not contradicted by a rule telling the run to re-read.
+  //
+  // Asserted as a PAIR — the mandate is absent AND the deferral is stated — rather than as
+  // "headRefOid is not re-read anywhere". A bare absence test cannot tell a mandate from the
+  // ❌-marked counter-example or from the prose that says the run does *not* re-read, so it fired
+  // on the very text that fixes the contradiction. Naming the exact retired sentence keeps the
+  // check specific, and the positive half is what stops the section from going silent instead.
+  s.check("G40d depth-routing.md no longer mandates a second headRefOid read before posting",
+    !/\*\*Immediately before Step 4 posts\*\*,\s*re-read/i.test(depth),
+    "Step 1.2 forbids a second headRefOid read (torn state: the diff and the SHA would describe different commits)");
+  s.check("G40d depth-routing.md states the one-read-one-head deferral instead",
+    /does \*\*not\*\* re-read/.test(depth) && /one read, one head/i.test(depth),
+    "removing the mandate is not enough — the section must say what the run does instead, or the moved-head case is simply unhandled");
+}
+
 process.exit(s.report() ? 0 : 1);

@@ -49,6 +49,15 @@ Nothing that clears the confidence threshold is hidden in either relation: the c
 
 profile: chill | balanced | assertive   # default: balanced
 
+effort: high                             # repo-wide default for the depth lever — equivalent to
+                                         # always passing --effort high: forces DEPTH_TIER = deep,
+                                         # enables Tier-2/3 receipts where the toolchain allows,
+                                         # and widens diversify-then-vote to N=5. Omit for the
+                                         # routed default. `high` is the only accepted value; the
+                                         # routed tiers are not settable here, because pinning a
+                                         # repo to `quick` would silently cap every review on it.
+                                         # See agents/pr-reviewer/rules/depth-routing.md#--effort
+
 severity_thresholds:                     # DEFAULT — values shown are the `balanced` defaults.
   critical: 65                           # The reviewer tiers every finding via
   high: 70                               # Skill("severity","finding") and gates it on the
@@ -218,6 +227,7 @@ Merge rules by field:
 | `filters` | **Union** — filters from all files in the hierarchy apply; a closer file cannot un-filter a category from the base |
 | `path_instructions` | **Concatenation** — all instructions from all files apply, with closer-file instructions listed first |
 | `agent0_fix_links`, `agent0_environment` | **Base only, never subtree-merged** — these gate the whole run (buttons on or off, which Agent0 host), not one file's findings, so a subtree `.review.yaml` cannot opt a directory in or out. Read from the repo-level base config alone; see § Run-level fields below. |
+| `effort` | **Base only, never subtree-merged** — the depth tier is one decision per run, made at Step 1.2b before any file is read, so there is no point in the run at which a subtree's value could apply. Read from the repo-level base config alone. |
 
 Example: if `.github/review.yaml` sets `profile: chill` and `src/payments/.review.yaml` sets `profile: assertive`, then files under `src/payments/` use `assertive` while all other files use `chill`.
 

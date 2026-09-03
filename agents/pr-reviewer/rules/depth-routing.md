@@ -36,10 +36,20 @@ This phase routes on **what the change reaches**, not how much of it there is.
 | `DELTA_LINES`, `NEW_FILES` | Step 1.2b delta triage, divergence-safe | how much changed since the last reviewed SHA |
 | `DELTA_SHAPES`, `HIGH_STAKES_FILES`, `PROPAGATION` | `classify-shape.mjs` | *what kind* of change it is — auth, payments, migration, concurrency, api-contract, infra, secrets, propagation |
 | `blast_radius.band`, `dependencies[].semver_delta` | `impact.json` ([`impact-graph.md`](./impact-graph.md)) | what the change reaches |
-| `THREAD_OVERLAP` | fraction of delta hunks within ±5 lines of an open or recently resolved reviewer thread (the Step 2.9c predicate, reused) | whether this push is *answering the review* |
+| `THREAD_OVERLAP` | **computed at Step 1.2b**, before the table is read — fraction of delta hunks within ±5 lines of a review thread open or resolved since the last reviewed SHA, any author | whether this push is *answering the review* |
 | `traffic_band` | `impact.json.production` ([`telemetry.md`](./telemetry.md)) | whether the touched code is actually exercised |
 
-Nothing here is new machinery except the middle row. `THREAD_OVERLAP` reuses a predicate the agent already computes for thread reconciliation.
+`THREAD_OVERLAP` is the only input this phase introduced, and it is the one to check when the
+`quick` override never seems to fire.
+It applies the **same ±5-line proximity test** Step 2.9c uses for thread reconciliation, but it is
+not the same variable and cannot be read from that step: 2.9c's predicate is a per-thread boolean
+over `SCANNED_FILES` and it runs eight steps *after* the tier is bound.
+The agent body owns the binding — see its `Bind DEPTH_TIER` step — and an unbound `THREAD_OVERLAP`
+must be read as `0`, which disables the override rather than crashing the routing.
+
+That failure is quiet by construction, so it is worth stating where the guards do **not** reach it:
+the `shape-depth-routing` L2 suite hands every record its `THREAD_OVERLAP` value in the prompt, so
+it measures whether the table orders correctly, never whether the input exists.
 
 ## The three tiers
 
@@ -122,16 +132,34 @@ This is the explicit-cost lever: more findings per run at the same precision, pa
 
 ## Superseded head
 
-**Immediately before Step 4 posts**, re-read `headRefOid`.
+A push during the review is handled by **not looking for it**, and that is a deliberate choice
+rather than an omission.
 
-If it moved since the review started:
+`HEAD_SHA` is read once, at Step 1.1 command A, and every downstream consumer — the review's
+`commit_id`, the state record, the delta triage — uses that one value.
+The agent body states the rule and the reason: a second read moments later opens a torn-state
+window in which the diff and the SHA describe different commits, so **one read, one head**.
+If the head moved, this run stays internally consistent and the next run reviews the newer commit.
 
-- **Post the inline findings anyway.** They are anchored to the reviewed `commit_id` and remain valid comments on the code that was reviewed.
-- **Write the state record**, so the next run's delta starts from this run's SHA.
-- **Render the headline with a `superseded by <sha7>` suffix.**
-- **Do not** count this run toward the deep-lens refresh counters.
+So the run does **not** re-read `headRefOid` before posting, does not label itself superseded, and
+needs no headline suffix:
 
-The alternative — abandoning the run — means a push burst produces no review at all, and each cancelled run's work is thrown away. This way a burst costs one incremental pass.
+```text
+❌ WRONG — re-read headRefOid before Step 4 and add a `superseded by <sha7>` suffix
+   Two failures at once. The second read is what the one-read rule forbids, and the suffix has no
+   renderer slot: `render-report.mjs` fails closed on an unknown payload key, so a run that adds
+   one exits 1 and posts no report at all — losing the whole review to gain a label.
+
+✅ RIGHT — post against the reviewed SHA; the next run picks up the newer commit
+```
+
+What still holds from the moved-head case is the part that needs no second read:
+
+- **Post the inline findings.** They are anchored to the reviewed `commit_id` and remain valid comments on the code that was reviewed, whatever landed after.
+- **Write the state record** at the reviewed SHA, so the next run's delta starts there and the push that arrived mid-review is reviewed as delta rather than skipped.
+
+A push burst therefore costs one incremental pass per run, with no run abandoned and no work thrown
+away — the property the old second-read design was reaching for, reached without the torn state.
 
 ## Zero-delta
 

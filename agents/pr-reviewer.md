@@ -270,6 +270,7 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `--skip-gates` | Skip Gates 1–5, run inline review (Gate 6) only |
 | `--with a,b,c` | Up to 3 additional review lenses |
 | `--fix-links` | Render opt-in "Fix with Agent0" deep-link buttons on the report and inline findings (default off; `agents/shared/rules/agent0-fix-links.md`) |
+| `--effort high` | Force `DEPTH_TIER = deep`, enable Tier-2/3 receipts where the toolchain allows, and widen diversify-then-vote to N=5 ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#--effort)). Also settable as `effort: high` in the review config. `--full` is the narrower alias — it forces `deep` and nothing else |
 
 Parse the PR reference:
 
@@ -1034,7 +1035,7 @@ computation on the Phase A workspace, cheapest steps first, no LLM:
 IMPACT="${AGENT_MD%/pr-reviewer.md}/pr-reviewer/scripts/build-impact-graph.mjs"
 node "$IMPACT" /tmp/pr-files.json \
   --workdir "$WORKDIR" --base-ref "$BASE_SHA" \
-  --repo "$RESOLVED_REPO" --pr "$PR_NUMBER" --overlaps \
+  --repo "$RESOLVED_REPO" --pr "$PR_NUMBER" \
   ${DASH0_EXPOSURE:+--production "$DASH0_EXPOSURE"} > /tmp/pr-impact.json
 ```
 
@@ -1251,9 +1252,33 @@ apply it. Its inputs are all already bound:
 |---|---|
 | `RUN_MODE` and `DELTA_LINES` | this step |
 | `PR_HIGH_STAKES_FILES` / `HIGH_STAKES_FILES`, `DELTA_RISKY_SHAPES`, `DELTA_PROPAGATION` | Step 1.2 / this step |
-| `BLAST_RADIUS`, `IMPACT_DEPS[].delta` | Step 1.2a |
+| `BLAST_RADIUS`, `IMPACT_DEPS[].semver_delta` | Step 1.2a |
 | `DEPTH_CAPABILITY` | Step 1.1b |
 | `INCR_RUNS_SINCE_FULL`, `CUM_DELTA_LINES`, `LAST_FULL_SHA` | Step 0.7 / this step |
+| `TRAFFIC_BAND` per changed symbol | Step 1.2a (`impact.json.production`; `none` when no telemetry is configured) |
+| `THREAD_OVERLAP` | **this step — compute it here, see below** |
+
+`THREAD_OVERLAP` is the one input nothing else in the run produces, so bind it before reading the
+table. It is the fraction of this delta's hunks that sit on top of existing review conversation:
+
+```text
+THREAD_OVERLAP = |{ hunk ∈ DELTA_HUNKS : ∃ t ∈ THREADS,
+                     t.path == hunk.path ∧ |t.line − hunk.anchor| ≤ 5 }| / |DELTA_HUNKS|
+
+THREADS      = open review threads + those resolved since LAST_REVIEWED_SHA (Step 1.0), any author
+DELTA_HUNKS  = the RIGHT-side hunks of this run's delta (Step 1.2)
+THREAD_OVERLAP = 0 when |DELTA_HUNKS| == 0 or THREADS is empty
+```
+
+Two properties this must keep, because getting either wrong silently disables the `quick` override:
+
+1. **Compute it here, not at Step 2.9c.** That step's predicate is a per-thread boolean over
+   `SCANNED_FILES` and it runs eight steps *after* the tier is bound, so reusing it directly would
+   read a value that does not exist yet. The rule file's "the Step 2.9c predicate, reused" means the
+   same ±5-line proximity test, not the same variable.
+2. **Threads from any author count.** A push answering `cursor[bot]`'s review is as much a
+   review-answering push as one answering this agent's, and filtering to this agent's own threads
+   would make the override fire on some review-answering pushes and not others.
 
 Two caps are mechanical and are applied **after** the table, in this order:
 
@@ -1268,7 +1293,7 @@ a bare tier name is unauditable:
 
 ```text
 Depth tier: <DEPTH_TIER> — <the matching rule>; inputs: blast_radius=<BLAST_RADIUS>,
-  semver_delta=<max of IMPACT_DEPS[].delta or "none">, high_stakes=<count>,
+  semver_delta=<max of IMPACT_DEPS[].semver_delta or "none">, high_stakes=<count>,
   risky_shapes=<joined or "none">, capability=<DEPTH_CAPABILITY>.
 ```
 
