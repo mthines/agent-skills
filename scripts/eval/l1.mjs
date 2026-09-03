@@ -2796,105 +2796,106 @@ const isPollBlock = (block) =>
     noSource.status !== 0 && noSource.stdout === "" && /source must be one of/.test(noSource.stderr),
     `status=${noSource.status} stdout=${JSON.stringify(noSource.stdout)} stderr=${noSource.stderr}`);
 
-  // G32: the Agent0 prompt templates are addresses, not identities. Fix-this hands Agent0 the one
-  // location it would otherwise spend a round trip discovering; Fix-all hands Agent0 a ready-to-run
-  // GraphQL command scoped to its own login, rather than a per-finding location list — the regression
-  // this guards is a revert to the marker hop ("open the pr-reviewer report comment (marker
-  // PR_REVIEWER_REPORT)"), which cost four discovery calls on mthines/lorekit#594 and is structurally
-  // stale: Gate 3 counts PRIOR threads, while the run's own findings post at 4b after the 4a render.
-  // The templates carry no code, so a fixture cannot cover them; assert the placeholders plus the
-  // length bound the fixed-query design buys back.
+  // G32: the Agent0 fix prompts are one `/pr-fix` invocation plus an address — the skill owns the
+  // method (gather the PR's comments, filter to one author, apply, commit, push), the URL owns the
+  // target. Two regressions this guards, in opposite directions. Backwards: a revert to the marker
+  // hop ("open the pr-reviewer report comment (marker PR_REVIEWER_REPORT)"), which cost four
+  // discovery calls on mthines/lorekit#594 and is structurally stale — Gate 3 counts PRIOR threads,
+  // while the run's own findings post at 4b after the 4a render. Forwards: re-inlining any part of
+  // what /pr-fix now owns — an embedded gh api graphql worklist, a {lead} excerpt, a {count}
+  // checksum — each of which is a second implementation that drifts, and together are what made the
+  // prompts ~1100 and ~880 chars. The templates carry no code, so a fixture cannot cover them;
+  // assert the argument grammar, the absence of the re-inlined parts, and the length win.
   const rule = readFileSync(join(REPO_ROOT, "agents/shared/rules/agent0-fix-links.md"), "utf8");
   const templates = [...rule.matchAll(/```text\n([^`]*?)\n```/g)].map((m) => m[1]);
-  const fixAll = templates.find((t) => t.includes("{bot_login}") && t.includes("gh api graphql"));
-  const fixThis = templates.find((t) => t.includes("{path}:{line}") && t.includes("{lead}"));
+  const implementTpls = templates.filter((t) => t.trimStart().startsWith("/pr-fix"));
+  const fixThis = implementTpls.find((t) => t.includes("{path}:{line}"));
+  const fixAll = implementTpls.find((t) => t.includes("{bot_login}") && !t.includes("{path}"));
+  const fallback = implementTpls.find((t) => t.includes("{report_comment_url}"));
   const ciOnly = templates.find((t) => t.includes("{failing_checks}"));
 
-  s.check("G32a the Fix-all template carries a ready-to-run query scoped to its own login ({bot_login} + {count} + gh api graphql)",
-    !!fixAll && fixAll.includes("{count}"),
-    "no ```text template carries {bot_login}, {count}, and a gh api graphql call — the ready-to-run query fill was dropped");
+  s.check("G32a the Fix-all template is a /pr-fix call carrying the PR URL and the reviewer's login",
+    !!fixAll && /^\/pr-fix https:\/\/github\.com\/\{owner\}\/\{repo\}\/pull\/\{n\} \{bot_login\}$/.test(fixAll.trim()),
+    `no text-fenced template is a bare "/pr-fix <pr-url> {bot_login}" — got ${JSON.stringify(fixAll ?? null)}`);
 
   s.check("G32b no template sends Agent0 to the report comment by marker first",
     !templates.some((t) => t.includes("PR_REVIEWER_REPORT")),
     "a prompt template names the PR_REVIEWER_REPORT marker again — that is the list-and-scan hop, and the report is stale for this run's own findings");
 
-  s.check("G32c the Fix-this template carries the finding's lead line, not just its location",
-    !!fixThis && fixThis.includes("{lead}"),
-    "the fix-this template lost {lead} — Agent0 is back to fetching before it knows the subject");
+  s.check("G32c the Fix-this template is a /pr-fix call scoping to one {path}:{line}",
+    !!fixThis && fixThis.includes("/pr-fix ") && fixThis.includes("{bot_login}"),
+    "the fix-this template lost its /pr-fix call, its {path}:{line} scope, or its {bot_login} author argument — without the scope it duplicates Fix-all, and without the author /pr-fix skips a bot reviewer's own findings");
 
-  // The Fix-all template embeds no per-finding data, so its length no longer scales with the open
-  // finding count — {count} is just a number substitution. The design target is 2500 — the point of
-  // the target is that MAX_URL (4000) stays a fail-closed guard rather than a routine ceiling, since
-  // the real cliff behind it is the 8k request-line buffer of a default nginx/Apache. Filled from the
-  // LIVE template, never hand-copied: a transcribed copy silently stops measuring the real prompt the
-  // moment the template gains a clause, which is exactly when the measurement matters.
+  // The login fallback is what narrowed the omit-the-button rule: an unresolved {bot_login} used to
+  // drop the Fix-all button outright, and now the report comment's own permalink names the author by
+  // naming a comment the reviewer wrote. It is unavailable on a first run (the sticky is POSTed after
+  // the body renders), so it must stay a fallback and never replace the login form.
+  s.check("G32l the Fix-all login fallback passes the report comment permalink to /pr-fix",
+    !!fallback && /^\/pr-fix \{report_comment_url\}$/.test(fallback.trim())
+      && /issuecomment-\{sticky_id\}/.test(rule)
+      && /fallback, not the default/.test(rule),
+    "the {report_comment_url} fallback, its #issuecomment-{sticky_id} definition, or its fallback-not-default rule is gone — an unresolved login is back to omitting the button");
+
+  // Nothing /pr-fix owns may be re-inlined into a prompt. Each of these three IS the shape the
+  // rewrite removed, so a match means a specific documented regression, not a style slip.
+  for (const [what, re, why] of [
+    ["an embedded gh api graphql worklist", /gh api graphql/,
+      "/pr-fix gathers the PR's comments itself; an embedded query is a second implementation that drifts"],
+    ["a {lead} body excerpt", /\{lead\}/,
+      "quoting the finding's lead line went stale on a § Hard caps prose trim and is what made Fix-this ~880 chars"],
+    ["a {count} checksum", /\{count\}/,
+      "/pr-fix reports what it applied; a count in the URL is a second, staler answer to the same question"],
+  ]) {
+    s.check(`G32m no /pr-fix template re-inlines ${what}`,
+      !implementTpls.some((t) => re.test(t)), why);
+  }
+
+  // The design target is 2500 — the point of the target is that MAX_URL (4000) stays a fail-closed
+  // guard rather than a routine ceiling, since the real cliff behind it is the 8k request-line buffer
+  // of a default nginx/Apache. G32k adds a much tighter bound to hold the /pr-fix win: without it,
+  // a re-added clause is absorbed into ~2200 chars of headroom and never reads as a regression.
+  // Filled from the LIVE templates, never hand-copied: a transcribed copy silently stops measuring
+  // the real prompt the moment a template gains a clause, which is exactly when it matters.
   const TARGET = 2500;
-  const fillTemplate = (t, count) => (t ?? "")
+  const SHORT = 500;
+  // A 94-char path is Fix-this's documented worst case; owner/repo/login are realistic.
+  const fillTemplate = (t) => (t ?? "")
     .replaceAll("{owner}", "mthines").replaceAll("{repo}", "lorekit")
-    .replaceAll("{n}", "594").replaceAll("{count}", String(count))
-    .replaceAll("{bot_login}", "dash0-dev[bot]");
-  const filledLow = fillTemplate(fixAll, 1);
-  const filledHigh = fillTemplate(fixAll, 999);
-  // A generic /\{[a-z_]+\}/ scan false-positives on the GraphQL query's own field selections (e.g.
-  // `author{login}` is valid query syntax, not an unsubstituted template placeholder), so check the
-  // known placeholder names this fill is supposed to substitute rather than any brace-wrapped word.
-  const KNOWN_PLACEHOLDERS = ["{owner}", "{repo}", "{n}", "{count}", "{bot_login}"];
-  const leftoverPlaceholder = KNOWN_PLACEHOLDERS.find((p) => filledLow.includes(p));
-  s.check("G32d0 the fill leaves no unsubstituted placeholder",
-    filledLow !== "" && !leftoverPlaceholder,
-    `template gained a placeholder this fill does not substitute: ${leftoverPlaceholder ?? "(no template)"}`);
-  const lenLow = buildLink(filledLow, "production", "fix-all").length;
-  const lenHigh = buildLink(filledHigh, "production", "fix-all").length;
-  s.check(`G32d a filled Fix-all URL stays under the ${TARGET}-char design target`,
-    lenLow < TARGET, `filled URL is ${lenLow} chars — the fixed-query design should sit far under ${TARGET}; a per-finding list crept back in`);
-
-  s.check("G32e the Fix-all URL length does not grow with the finding count",
-    Math.abs(lenHigh - lenLow) <= 4,
-    `a count=1 fill is ${lenLow} chars and a count=999 fill is ${lenHigh} chars — Fix-all should be flat in finding count (only the digits of {count} may differ), a per-finding list crept back in`);
-
-  // The embedded GraphQL query is the single source of truth for "what's still open" — it must scope
-  // to the reviewer's own login twice (once in the lead sentence, once in the filter clause) rather
-  // than an inferred "that same reviewer", and it must actually check isResolved so Agent0 never
-  // touches an already-closed thread.
-  s.check("G32h the Fix-all template's query checks isResolved and filters to {bot_login}'s own comments",
-    !!fixAll && /isResolved/.test(fixAll) && (fixAll.match(/\{bot_login\}/g) ?? []).length >= 2,
-    "Fix-all lost the isResolved check or the {bot_login} filter — Agent0 can no longer tell open threads from closed ones, or from another author's, without a second call");
-
-  // `reviewThreads` caps at first:100 and --paginate does not work for GraphQL — the guard
-  // prior-comment-awareness.md § Thread state states for this exact query, and which
-  // thread-resolution.md and outcome-learning.md both carry. It binds HARDER here: the query has no
-  // server-side author filter, so {bot_login} is applied client-side and the 100-cap falls on the
-  // unfiltered thread list. On a multi-reviewer PR this reviewer's own open threads can sit past the
-  // cap, and Agent0 then reports done having fixed a subset. Both halves must survive a reword.
-  s.check("G32j the Fix-all template's query carries the reviewThreads pagination walk",
-    !!fixAll && /pageInfo\{hasNextPage endCursor\}/.test(fixAll) && /after:/.test(fixAll),
-    "Fix-all dropped pageInfo{hasNextPage endCursor} or the after: clause — reviewThreads caps at first:100 with no server-side author filter, so this silently truncates the worklist on a multi-reviewer PR (prior-comment-awareness.md § Thread state)");
-
-  s.check("G32i the Fix-all template's GraphQL query has balanced braces",
-    !!fixAll && (() => {
-      const q = /query='(\{.*?\})'/.exec(fixAll)?.[1] ?? "";
-      if (!q) return false;
-      const opens = (q.match(/\{/g) ?? []).length;
-      const closes = (q.match(/\}/g) ?? []).length;
-      return opens > 0 && opens === closes;
-    })(),
-    "the embedded gh api graphql query is missing or has unbalanced braces — Agent0 would run a broken command verbatim");
+    .replaceAll("{n}", "594").replaceAll("{bot_login}", "dash0-dev[bot]")
+    .replaceAll("{path}", `packages/${"nested-directory/".repeat(4)}some-module-name.ts`)
+    .replaceAll("{line}", "1204");
+  const KNOWN_PLACEHOLDERS = ["{owner}", "{repo}", "{n}", "{bot_login}", "{path}", "{line}"];
+  for (const [name, tpl, source] of [["Fix-all", fixAll, "fix-all"], ["Fix-this", fixThis, "fix-this"]]) {
+    const filled = fillTemplate(tpl);
+    const leftover = KNOWN_PLACEHOLDERS.find((p) => filled.includes(p));
+    s.check(`G32d0 the ${name} fill leaves no unsubstituted placeholder`,
+      filled !== "" && !leftover,
+      `template gained a placeholder this fill does not substitute: ${leftover ?? "(no template)"}`);
+    const len = buildLink(filled, "production", source).length;
+    s.check(`G32d a filled ${name} URL stays under the ${TARGET}-char design target`,
+      len < TARGET, `filled URL is ${len} chars — over the ${TARGET} design target`);
+    s.check(`G32k a filled ${name} URL stays under the ${SHORT}-char /pr-fix bound`,
+      len < SHORT,
+      `filled URL is ${len} chars — the /pr-fix rewrite put both prompts near 200–300, so ${len} means a clause, a worklist, or an excerpt crept back in (agent0-fix-links.md § Deep-link format)`);
+  }
 
   // The Agent0 runner lacks the headroom for a raw tsc/eslint invocation — even one scoped to a
   // single changed package still walks that package's whole project graph and crashes the run, so
   // scoping by file count alone (the earlier wording) was not sufficient; observed live when a run
   // honored "only the files you changed" but still reached for `npx tsc --noEmit --project
-  // tsconfig.json` on the changed package. All three templates must instead route to the repo's own
-  // lint/typecheck/test scripts and allow skipping verification outright rather than inventing a raw
-  // invocation.
-  for (const [name, tpl] of [["Fix-all", fixAll], ["Fix-this", fixThis], ["Fix-all — CI-only", ciOnly]]) {
-    s.check(`G32g the ${name} template verifies via the repo's own scripts, never a raw call or a whole-repo pass`,
-      !!tpl
-        && /repo's own lint\/typecheck/.test(tpl)
-        && /never a raw [\w/-]+ call or a whole-repo pass/.test(tpl)
-        && /skip verification if none exist/.test(tpl),
-      `${name} lost the scoped-verification clause — a raw tsc/eslint call, even scoped to the changed package, still crashes the Agent0 runner on a large repo`);
-  }
+  // tsconfig.json` on the changed package. The CI-only template is the one that still carries its own
+  // method — the two /pr-fix templates delegate verification to the skill — so it must route to
+  // the repo's own lint/typecheck/test scripts and allow skipping verification outright.
+  s.check("G32g the Fix-all — CI-only template verifies via the repo's own scripts, never a raw call or a whole-repo pass",
+    !!ciOnly
+      && /repo's own lint\/typecheck/.test(ciOnly)
+      && /never a raw [\w/-]+ call or a whole-repo pass/.test(ciOnly)
+      && /skip verification if none exist/.test(ciOnly),
+    "Fix-all — CI-only lost the scoped-verification clause — a raw tsc/eslint call, even scoped to the changed package, still crashes the Agent0 runner on a large repo");
+
+  s.check("G32n the CI-only template is not a /pr-fix call",
+    !!ciOnly && !ciOnly.includes("/pr-fix") && /must not become one/.test(rule),
+    "the CI-only variant became a /pr-fix call — /pr-fix applies review comments, and a red check with zero findings has none to apply");
 
   const maxUrl = Number(/^const MAX_URL = (\d+)/m.exec(readFileSync(LINK_MOD, "utf8"))?.[1]);
   s.check("G32f MAX_URL stays under the 8k request-line cliff it was moved off",
@@ -3705,7 +3706,7 @@ const isPollBlock = (block) =>
     const { buildLink } = await import(
       pathToFileURL(join(REPO_ROOT, "agents/pr-reviewer/scripts/build-agent0-link.mjs")).href);
     const maxFixUrl = buildLink(
-      `/implement https://github.com/${"o".repeat(20)}/${"r".repeat(20)}/pull/165 pr-reviewer — `
+      `/pr-fix https://github.com/${"o".repeat(20)}/${"r".repeat(20)}/pull/165 pr-reviewer — `
         + "apply only the finding at ".repeat(6), "development", "fix-this");
     const tenLineFence = { lang: "ts", code: Array.from({ length: 10 },
       (_, i) => `  const someValue${i} = computeSomething(argumentOne, argumentTwo);`).join("\n") };
