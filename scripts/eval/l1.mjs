@@ -3093,9 +3093,36 @@ const isPollBlock = (block) =>
     s.check(`G38g workspace.md binds WORKDIR_CLEANUP=${disposition}`,
       new RegExp(`WORKDIR_CLEANUP=${disposition}\\b`).test(ws));
   }
-  s.check("G38g the cleanup dispatches on WORKDIR_CLEANUP, never a bare rm -rf",
-    /case\s+"\$WORKDIR_CLEANUP"/.test(ws) && !/trap\s+'rm -rf/.test(ws),
-    "an unconditional rm -rf disposal deletes worktrees through git's back");
+  // Assert the bare trap in BOTH files. The agent body is the file an agent actually executes,
+  // and a correct rule beside a wrong body loses: the body's line is the last word on cleanup.
+  // Guarding only `ws` is how a verbatim copy of workspace.md's own ❌ WRONG case sat at
+  // pr-reviewer.md:962 through a green 905/905 run.
+  for (const [name, src] of [["workspace.md", ws], ["the agent body", prm]]) {
+    s.check(`G38g ${name} dispatches disposal on WORKDIR_CLEANUP, never a bare rm -rf trap`,
+      /case\s+"\$WORKDIR_CLEANUP"/.test(src) && !/trap\s+'rm -rf/.test(src),
+      "an unconditional rm -rf trap deletes worktrees through git's back");
+  }
+  // The shell in these rule files is normative — an agent runs it verbatim — so a helper that is
+  // never defined is dead code, not shorthand. `$(origin_repo)` and `worktree_is_clean_at_head`
+  // both shipped undefined, which silently skipped the whole rung while still reporting
+  // `Depth: checkout`. Every snake_case command the block calls must be defined in the same file.
+  const SHELL_BUILTIN_UNDERSCORES = new Set([]);   // real commands with `_` are vanishingly rare
+  for (const [name, src] of [["workspace.md", ws], ["the agent body", prm]]) {
+    const blocks = [...src.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]).join("\n");
+    const called = new Set();
+    for (const m of blocks.matchAll(/\$\(([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\)/g)) called.add(m[1]);
+    for (const m of blocks.matchAll(
+      // Exclude `=` (assignment), `(` (a definition), and `:` / `,` — a `jq`/JSON key or a
+      // Python tuple unpack inside a bash-fenced heredoc is not a command call.
+      /(?:^|&&|\|\||;|\bthen\b|\belif\b|\bif\b)[ \t]*([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b(?![ \t]*[=(:,])/gm
+    )) called.add(m[1]);
+    const undefined_ = [...called].filter(
+      (fn) => !SHELL_BUILTIN_UNDERSCORES.has(fn) && !new RegExp(`^\\s*${fn}\\(\\)`, "m").test(src),
+    );
+    s.check(`G38g every snake_case helper the ${name} shell calls is defined in it`,
+      undefined_.length === 0,
+      `undefined helper(s) called but never defined: ${undefined_.join(", ")}`);
+  }
   s.check("G38g only the rm disposition uses rm -rf, and worktree uses git worktree remove",
     /worktree\)\s*git worktree remove/.test(ws) && /\brm\)\s*rm -rf/.test(ws));
   s.check("G38g workspace.md forbids removing a gw worktree at all",

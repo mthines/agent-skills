@@ -958,9 +958,23 @@ This is also `RUN.depth` in the Step 4 payload — the report declares its own c
 maintainer never reads a shallow run's silence as coverage.
 
 **A failed ladder is not a failed run.** If every rung fails, `DEPTH_CAPABILITY = diff-only` and
-the review proceeds at `standard` with the rungs it has. Remove the workspace on every exit path
-(`trap 'rm -rf "$WORKDIR"' EXIT`) — a private repo's source left in `/tmp` outlives the job that
-was authorized to read it.
+the review proceeds at `standard` with the rungs it has. Dispose of the workspace on every exit
+path — a private repo's source left in `/tmp` outlives the job that was authorized to read it —
+**by the method `WORKDIR_CLEANUP` names, never a bare `rm -rf`**:
+
+```bash
+trap 'case "$WORKDIR_CLEANUP" in
+        none)     : ;;
+        worktree) git worktree remove --force "$WORKDIR"; rmdir "$WORKTREE_PARENT" ;;
+        rm)       rm -rf "$WORKDIR" ;;
+      esac' EXIT
+```
+
+`rm -rf "$WORKDIR"` is correct only for the `rm` case. Applied to a worktree it deletes the
+user's uncommitted work (`none`) or removes a registered worktree behind git's back (`worktree`),
+leaving a stale `.git/worktrees` entry that breaks the repo the review was reviewing — see
+[`workspace.md`](./pr-reviewer/rules/workspace.md#cleanup), which owns this and enumerates both
+wrong forms.
 
 ### 1.2 Cache the patch list — single source of truth for line validity
 

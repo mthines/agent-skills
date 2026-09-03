@@ -55,17 +55,22 @@ Try each rung in order. Stop at the first that succeeds.
 # Rung 0 — a worktree over the LOCAL object store, when the current directory is a clone
 # of the PR's repo. No network clone, and full history rather than 50 commits.
 # Two implementations; `gw` is preferred, plain git is the fallback. See the section below.
-if [ "$(origin_repo)" = "$RESOLVED_REPO" ] \
+if git remote get-url origin 2>/dev/null \
+     | grep -qiE "[:/]${RESOLVED_REPO}(\.git)?/?$" \
    && git fetch origin "pull/$PR_NUMBER/head" 2>/dev/null; then
 
   if gw --help >/dev/null 2>&1 \
-     && WORKDIR="$(gw checkout --no-hooks "$PR_URL")" && worktree_is_clean_at_head; then
+     && WORKDIR="$(gw checkout --no-hooks "$PR_URL")" \
+     && [ -z "$(git -C "$WORKDIR" status --porcelain)" ] \
+     && [ "$(git -C "$WORKDIR" rev-parse HEAD)" = "$HEAD_SHA" ]; then
     WORKDIR_CLEANUP=none                    # gw owns its lifecycle; never remove it
     DEPTH_CAPABILITY=checkout
 
   # Fallback — plain `git worktree`, detached at the reviewed SHA. Available wherever
   # rung 0's precondition holds, so a missing `gw` costs the rung nothing.
-  elif WORKDIR="$(mktemp -d)/wt" \
+  # `git worktree add` requires a non-existent path, hence the named parent: the
+  # `worktree` disposition rmdir's it, so the temp dir is not orphaned.
+  elif WORKTREE_PARENT="$(mktemp -d)" && WORKDIR="$WORKTREE_PARENT/wt" \
        && git worktree add --detach "$WORKDIR" "$HEAD_SHA" 2>/dev/null; then
     WORKDIR_CLEANUP=worktree                # `git worktree remove`, never `rm -rf`
     DEPTH_CAPABILITY=checkout
@@ -240,12 +245,19 @@ Dispose of `$WORKDIR` at the end of the run, including on the error paths, **by 
 cleanup() {
   case "$WORKDIR_CLEANUP" in
     none)     : ;;                                            # the user's worktree; leave it
-    worktree) git worktree remove --force "$WORKDIR" ;;       # ours, but git owns the bookkeeping
+    worktree) git worktree remove --force "$WORKDIR"          # ours, but git owns the bookkeeping
+              rmdir "$WORKTREE_PARENT" ;;                     # …and the temp dir holding it
     rm)       rm -rf "$WORKDIR" ;;                            # a temp clone or tarball
   esac
 }
 trap cleanup EXIT
 ```
+
+The `rmdir` is not tidiness: `git worktree add` refuses an existing path, so the fallback creates
+`$WORKTREE_PARENT/wt` — and `git worktree remove` deletes only `wt`, leaving the `mktemp -d` parent
+behind on every run. One empty directory per review, forever, on a long-lived runner.
+`rmdir` rather than `rm -rf` because the parent must be empty by then; if it is not, something put
+a file there and silence is the wrong answer.
 
 A checkout left behind on a shared runner is both a disk leak and, on a private repo, source code sitting in `/tmp` after the job that was authorized to read it has ended.
 So two of the three cases do delete — the enum exists because *which* delete is not a detail.
