@@ -65,6 +65,16 @@ const AUTHORITY_RE = /(^|\/)(CLAUDE\.md|AGENTS\.md)$|(^|\/)\.claude\/rules\/.+\.
 const MANIFEST_RE = /(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|go\.(mod|sum)|Cargo\.(toml|lock)|requirements[^/]*\.txt|pyproject\.toml|poetry\.lock|pom\.xml|Gemfile(\.lock)?|composer\.(json|lock))$/;
 export const TEST_RE = /(\.test\.|\.spec\.|_test\.|(^|\/)(test|tests|__tests__|spec)\/)/;
 const DOCS_RE = /\.(md|mdx|rst|txt)$|(^|\/)docs\//;
+// Paths that are not reachable production code, and so cannot make a PR high-stakes however
+// production-shaped their names are. A fixture at
+// `scripts/eval/fixtures/impact-graph/head/src/billing/charge.ts` matched the `payments`
+// path detector and pushed every review of THIS repository onto the forced-full path. The
+// shape name is still recorded — a file under `auth/` is auth whatever it is for — but the
+// high-stakes escalation is not. Same exemption set, and the same reasoning, as the
+// `severity` skill's path floor: test, fixture, mock, example, generated, reverse migration.
+const NON_PRODUCTION_RE =
+  /(^|\/)(__mocks__|__fixtures__|fixtures?|mocks?|examples?|generated|testdata)\/|\.(gen|generated)\.|\.down\.(sql|ts|js)$/i;
+const isNonProduction = (name) => TEST_RE.test(name) || NON_PRODUCTION_RE.test(name);
 
 export function classify(files, extraHighStakes = []) {
   const shapes = new Set();
@@ -74,11 +84,16 @@ export function classify(files, extraHighStakes = []) {
 
   for (const f of files) {
     const name = f.filename ?? "";
+    // An explicit review-config glob is honoured verbatim, non-production or not: the
+    // repository named that path itself, which this script has no standing to overrule.
     if (extras.some((re) => re.test(name))) highStakesFiles.push(name);
     for (const [shape, re] of PATH_SHAPES) {
       if (!re.test(name)) continue;
       shapes.add(shape);
-      if (HIGH_STAKES_PATH_SHAPES.has(shape)) highStakesFiles.push(name);
+      // The built-in list escalates only on production code — see NON_PRODUCTION_RE.
+      if (HIGH_STAKES_PATH_SHAPES.has(shape) && !isNonProduction(name)) {
+        highStakesFiles.push(name);
+      }
     }
     // Content detectors run only on OPERATIVE lines — the prose-vs-code carve-out Gate 4
     // applies, keyed on the property (is this text executable?) rather than one file type:
@@ -157,6 +172,28 @@ function selfTest() {
       (r) => r.shapes.includes("auth") && r.risky],
     ["'author' is not auth", [{ filename: "src/author/profile.ts" }],
       (r) => !r.shapes.includes("auth") && r.high_stakes_files.length === 0],
+    // The shape name survives, the high-stakes escalation does not: a fixture whose path
+    // reads like production put every review of this repo on the forced-full path.
+    ["fixture under a payments path is NOT high-stakes",
+      [{ filename: "scripts/eval/fixtures/impact-graph/head/src/billing/charge.ts" }],
+      (r) => r.shapes.includes("payments") && r.high_stakes_files.length === 0],
+    ["a test under an auth path is NOT high-stakes",
+      [{ filename: "src/auth/login.test.ts" }],
+      (r) => r.shapes.includes("auth") && r.high_stakes_files.length === 0],
+    ["generated code under an auth path is NOT high-stakes",
+      [{ filename: "src/auth/client.gen.ts" }],
+      (r) => r.shapes.includes("auth") && r.high_stakes_files.length === 0],
+    ["a reverse migration is NOT high-stakes",
+      [{ filename: "db/migrations/0007_add_column.down.sql" }],
+      (r) => r.high_stakes_files.length === 0],
+    ["production code under the same paths still IS high-stakes",
+      [{ filename: "src/billing/charge.ts" }, { filename: "src/auth/login.ts" }],
+      (r) => r.high_stakes_files.length === 2 && r.risky],
+    // An explicit high_stakes_paths glob outranks the exemption: the repo named the path.
+    ["an explicit high_stakes_paths glob still fires on a fixture",
+      [{ filename: "scripts/eval/fixtures/x/billing/charge.ts" }],
+      (r, extras) => extras && r.high_stakes_files.length === 1,
+      ["fixtures/x/billing"]],
     ["'authored-delta.md' is not auth", [{ filename: "docs/authored-delta.md" }],
       (r) => !r.shapes.includes("auth")],
     ["payment singular via delimiter", [{ filename: "src/payment_processor.go" }],
@@ -201,9 +238,11 @@ function selfTest() {
       (r) => r.shapes.length === 0 && !r.risky && !r.propagation],
   ];
   let failed = 0;
-  for (const [name, files, ok] of cases) {
+  // A case may supply its own `high_stakes_paths` globs as a 4th element; otherwise a
+  // two-argument assertion gets the default ledger pattern.
+  for (const [name, files, ok, ownExtras] of cases) {
     const wantsExtras = ok.length === 2;
-    const result = classify(files, wantsExtras ? ["(^|/)ledger(/|$)"] : []);
+    const result = classify(files, ownExtras ?? (wantsExtras ? ["(^|/)ledger(/|$)"] : []));
     if (!ok(result, wantsExtras)) {
       failed++;
       process.stderr.write(`self-test FAIL: ${name} → ${JSON.stringify(result)}\n`);
