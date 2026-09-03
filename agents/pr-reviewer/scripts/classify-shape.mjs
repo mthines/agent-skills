@@ -63,7 +63,7 @@ const RISKY = new Set(["auth", "payments", "schema-migration", "concurrency", "a
 const AUTHORITY_RE = /(^|\/)(CLAUDE\.md|AGENTS\.md)$|(^|\/)\.claude\/rules\/.+\.md$/;
 
 const MANIFEST_RE = /(^|\/)(package(-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|go\.(mod|sum)|Cargo\.(toml|lock)|requirements[^/]*\.txt|pyproject\.toml|poetry\.lock|pom\.xml|Gemfile(\.lock)?|composer\.(json|lock))$/;
-const TEST_RE = /(\.test\.|\.spec\.|_test\.|(^|\/)(test|tests|__tests__|spec)\/)/;
+export const TEST_RE = /(\.test\.|\.spec\.|_test\.|(^|\/)(test|tests|__tests__|spec)\/)/;
 const DOCS_RE = /\.(md|mdx|rst|txt)$|(^|\/)docs\//;
 
 export function classify(files, extraHighStakes = []) {
@@ -118,6 +118,33 @@ export function classify(files, extraHighStakes = []) {
     high_stakes_files: [...new Set(highStakesFiles)].sort(),
     propagation,
   };
+}
+
+/**
+ * Parse the `/tmp/pr-files.json` input. Shared with build-impact-graph.mjs so the two
+ * scripts cannot disagree about what that file may look like.
+ *
+ * Accepts: a JSON array, `{files: [...]}`, a SINGLE file object, or NDJSON.
+ * A one-file NDJSON stream is itself valid JSON — a single object — so an object
+ * carrying `filename` is a single file entry, not a malformed wrapper. Without that
+ * branch every single-file PR failed the parse and silently degraded shape routing to
+ * size-only, on exactly the "15-line auth change" case the classifier exists for.
+ */
+export function parseFilesInput(raw) {
+  let files = null;
+  try {
+    const parsed = JSON.parse(raw);
+    files = Array.isArray(parsed) ? parsed
+      : Array.isArray(parsed?.files) ? parsed.files
+      : parsed && typeof parsed === "object" && "filename" in parsed ? [parsed]
+      : null;
+  } catch {
+    // NDJSON — the shape `gh api --paginate --jq '.[] | {…}'` emits (one compact object
+    // per line; multi-line pretty-printed objects are NOT supported).
+    files = raw.split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  }
+  if (!Array.isArray(files)) throw new Error("no files array");
+  return files;
 }
 
 // ── Self-test — executed by L1 (scripts/eval/l1.mjs), so a regex regression fails CI ────
@@ -209,23 +236,7 @@ function main() {
   if (!input) { process.stderr.write("usage: classify-shape.mjs <files.json> [--extra-high-stakes <regex>]... | --self-test\n"); process.exit(2); }
   let files;
   try {
-    const raw = readFileSync(input, "utf8");
-    try {
-      const parsed = JSON.parse(raw);
-      // A ONE-file NDJSON stream is itself valid JSON — a single object — so an object
-      // carrying `filename` is a single file entry, not a malformed wrapper. Without this
-      // branch every single-file PR failed the parse and silently degraded shape routing
-      // to size-only — on exactly the "15-line auth change" case the classifier exists for.
-      files = Array.isArray(parsed) ? parsed
-        : Array.isArray(parsed?.files) ? parsed.files
-        : parsed && typeof parsed === "object" && "filename" in parsed ? [parsed]
-        : null;
-    } catch {
-      // NDJSON — the shape `gh api --paginate --jq '.[] | {…}'` emits (one object per line,
-      // possibly multi-line pretty-printed objects are NOT supported; gh emits compact lines).
-      files = raw.split("\n").filter(Boolean).map((l) => JSON.parse(l));
-    }
-    if (!Array.isArray(files)) throw new Error("no files array");
+    files = parseFilesInput(readFileSync(input, "utf8"));
   } catch (e) {
     process.stderr.write(`cannot read ${input}: ${e.message}\n`); process.exit(2);
   }

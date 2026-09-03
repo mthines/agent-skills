@@ -1,0 +1,4 @@
+[
+  {"filename":"src/api/client.ts","status":"modified","patch":"@@ -1,3 +1,3 @@\n-export function retryRequest(job) {\n+export function retryRequest(job, attempts) {\n-  return null\n+  throw new RetryExhausted()\n }\n"},
+  {"filename":"package-lock.json","status":"modified","patch":"@@ -1 +1 @@\n-{\"lockfileVersion\":3,\"packages\":{\"node_modules/stripe\":{\"version\":\"14.2.0\"}}}\n+{\"lockfileVersion\":3,\"packages\":{\"node_modules/stripe\":{\"version\":\"16.0.1\"}}}\n"}
+]

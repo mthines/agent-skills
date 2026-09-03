@@ -1,0 +1,11 @@
+{
+  "sampled_at": "2026-09-03T09:12:00Z",
+  "services": [
+    { "service": "api", "paths": ["src/api/client.ts"], "req_per_min": 412, "error_rate": 0.0031, "p99_ms": 840 }
+  ],
+  "symbols": [
+    { "name": "retryRequest", "path": "src/api/client.ts", "spans_7d": 1240000, "error_rate": 0.012,
+      "exception_types_30d": [{ "type": "TimeoutError", "count": 3800 }], "traffic_band": "high" }
+  ],
+  "routes": []
+}
