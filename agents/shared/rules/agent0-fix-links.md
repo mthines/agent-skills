@@ -303,6 +303,26 @@ clear of the floor, and roughly as close to the platform minimum as this control
 GitHub mobile web view this is the tap target for the review's only action, so the extra 8 px is not
 cosmetic.
 
+**Width is derived, and the text width is pinned so it cannot depend on the reader's fonts.** The
+geometry is `12` left pad + `12` mark + `8` gap + `TEXT_W` + `12` right pad, giving 140 for
+`Fix with Agent0` (`TEXT_W` 96) and 158 for `Fix all with Agent0` (`TEXT_W` 114). Each `<text>`
+carries `textLength="{TEXT_W}" lengthAdjust="spacingAndGlyphs"`, which is what makes the box the
+same size in every renderer.
+
+Without that pin, the width has to be guessed against a font the asset does not ship, and the guess
+is wrong in both directions at once. Measured in Chromium at 13 px semibold, `Fix all with Agent0`
+is 113.7 px under Helvetica/Arial (what macOS and Windows resolve) and 137.6 px under DejaVu Sans
+(the Linux fallback) — a 24 px spread on a 158 px control. The first version of these assets was
+sized for the wide case, so the button carried 38 px of right padding against 12 on the left
+wherever the review is actually read, while `Fix with Agent0` at 152 px sat 4.6 px from clipping its
+own label on Linux. One number cannot serve both, so it serves neither: pin the text and derive the
+box.
+
+When a label changes, re-measure rather than estimating — `getComputedTextLength()` on an SVG
+`<text>` with the same `font-family` / `font-size` / `font-weight`, then round up to the next whole
+pixel. Measuring with a metrics table for a font the asset does not name is how the spread above got
+in.
+
 `{ASSET_BASE}` is not a runtime setting — it is shorthand for the hardcoded `ASSET_BASE` constant in
 `comment-spine.mjs`, and nothing exposes an override:
 
