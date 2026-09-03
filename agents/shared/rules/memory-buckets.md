@@ -113,8 +113,15 @@ hosts and silently halve every usage roll-up.
 
 | Bucket | Owner rule | Producer → Consumer | Lifetime | Read |
 | --- | --- | --- | --- | --- |
-| `review-knowledge` (symbol) | [`pr-reviewer/rules/memory.md`](../../pr-reviewer/rules/memory.md) | `pr-reviewer` (a verified finding, or a confirmed invariant) → `pr-reviewer` finders | durable 90d | When a changed symbol matches — never wholesale. |
-| `review-hotspot` | [`pr-reviewer/rules/memory.md`](../../pr-reviewer/rules/memory.md) | `scripts/record-comment-relevance.mjs` (`human-comment`, `deploy-regression`) + `pr-reviewer` → depth routing and finder priority | durable 90d | When a changed path matches. |
+| `review-knowledge` (symbol) | [`pr-reviewer/rules/memory.md`](../../pr-reviewer/rules/memory.md) | `pr-reviewer` **Step 4d**, deep tier only (a verified finding, or a confirmed invariant) → `pr-reviewer` finders | durable 90d | When a changed symbol matches — never wholesale. |
+| `review-hotspot` | [`pr-reviewer/rules/memory.md`](../../pr-reviewer/rules/memory.md) | `pr-reviewer` **Step 4d** (a confirmed finding on the file) + `scripts/record-comment-relevance.mjs` (`human-comment`, `deploy-regression`) → depth routing and finder priority | durable 90d | When a changed path matches. |
+
+**Both rows name a step, and that is the point of naming it.** These two buckets had a read rule, a
+match table, a TTL and a write budget, and — for the symbol record — no producer anywhere in the
+tree: neither the agent body nor the recorder wrote one. The read side passed every check it had,
+because a read against an empty bucket is indistinguishable from a read against a repository that
+happens to know nothing. Step 4d is the write site; a bucket in this taxonomy whose Producer column
+cannot name a step or a script is unimplemented, whatever its rule file says.
 
 Both are **`signal`** kind and **`reviewer`** host, set explicitly — LoreKit infers `kind`/`host` from a `loop::` tag only, and these are tagged `ci::`.
 They are the cross-branch, cross-author half of the memory layer: keyed by **symbol** and by **path**, not by branch or by PR, so what one author's PR taught the reviewer about `retryRequest` is available on the next author's PR that touches it.
@@ -129,7 +136,7 @@ Two properties keep them safe to read on every run:
 
 | Bucket | Owner | Producer → Consumer | Scope | Lifetime |
 | --- | --- | --- | --- | --- |
-| `pr-review-state` | [`pr-reviewer.md § Step 0.7`](../../pr-reviewer.md) | `pr-reviewer` Step 4c → `pr-reviewer` Step 0.7 (its own next run, and nothing else) | `branch::{owner}/{repo}::{head}` | 7d, refreshed on every write |
+| `pr-review-state` | [`pr-reviewer.md § Step 0.7`](../../pr-reviewer.md) | `pr-reviewer` Step 4c → `pr-reviewer` Step 0.7 (its own next run, and nothing else) | `branch::{owner}/{repo}::{head-branch-name}` | 7d, refreshed on every write |
 
 Tag `ci::pr-review-state`, key `ci-state::pr-review-<pr-number>`, `kind: bus`, `host: reviewer`
 (set explicitly — `kind`/`host` are inferred only from `loop::` tags, so a `ci::` tag leaves them
@@ -145,6 +152,12 @@ Three things about it are load-bearing and easy to get wrong:
   PRs it would displace the lessons that injection exists to deliver — the exact failure
   `ci-state-records.md § The cardinality rule` warns about. `branch::` also lets the record decay
   with the branch it describes.
+- **The third segment is the head branch's NAME, never its SHA.** `pr-reviewer` binds it from
+  `headRefName` at Step 0.5 for exactly this reason. Substituting `HEAD_SHA` still writes a valid
+  record — and mints a brand-new scope on every push, so the record is written once and never read
+  again: each re-review misses, takes the first-run path, and loses its delta baseline, its
+  carried findings, and `LAST_FULL_SHA` while reporting nothing wrong. A `branch::…::<40 hex>`
+  scope holding exactly one row is the signature of a run that made this substitution.
 - **It is authoritative, not advisory.** Unlike every other bucket here, a reader branches on it.
   That is why it is version-stamped (`v: 1`) and why an unrecognised version falls back to the
   first-run path instead of being parsed.

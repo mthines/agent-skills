@@ -38,6 +38,7 @@ a re-phrased finding starts over. See [`references/detection-research.md`](../re
 - [In-run signals](#in-run-signals)
 - [`/pr-review remember` — an explicit instruction needs no corroboration](#pr-review-remember--an-explicit-instruction-needs-no-corroboration)
 - [Lessons ∩ rules cross-check](#lessons--rules-cross-check)
+- [Write — the two calls this agent makes itself](#write--the-two-calls-this-agent-makes-itself)
 - [Write budget](#write-budget)
 - [What this rule does not do](#what-this-rule-does-not-do)
 
@@ -49,8 +50,12 @@ a re-phrased finding starts over. See [`references/detection-research.md`](../re
 | --- | --- | --- | --- | --- | --- |
 | **Symbol knowledge** | `ci::review-knowledge` / `knowledge::<symbol>@<path>` | `repo::{owner}/{repo}` | 90 d | verified facts about one symbol — contracts, invariants callers rely on, consumer count at last trace, covering tests — each with `verified_at_sha`; plus `history[]` of findings raised on it (`{pr, sha, fp, verdict, outcome}`, capped at 20) | No |
 | **Hotspot** | `ci::review-knowledge` / `hotspot::<path>` | `repo::{owner}/{repo}` | 90 d | per-file counters: `confirmed`, `missed` (a human caught something here that this agent did not flag), `regressed`, `last_touched_by[]` | No |
-| **Relevance rule** | `loop::reviewer-comment-relevance` / `rule::<fp>` | `repo::{owner}/{repo}` | 60 d | `direction: suppress \| amplify`, `status`, `evidence[]`, optional `scope_globs[]` | Yes — and only this one |
-| **PR state** | `ci::pr-review-state` / `ci-state::pr-review-<n>` | `branch::{owner}/{repo}::{head}` | 7 d | this agent's own run history for one PR | No |
+| **Relevance rule** | `loop::reviewer-comment-relevance` / `reviewer-comment-relevance::rule::<fp>` | `repo::{owner}/{repo}` | 60 d | `direction: suppress \| amplify`, `status`, `evidence[]`, optional `scope_globs[]` | Yes — and only this one |
+| **PR state** | `ci::pr-review-state` / `ci-state::pr-review-<n>` | `branch::{owner}/{repo}::{head-branch-name}` | 7 d | this agent's own run history for one PR | No |
+
+**The keys are quoted exactly, prefix included.** Only the relevance rule carries a bucket prefix, and the asymmetry is not decoration: its key space is shared with the v1 prose rows (`reviewer-comment-relevance::<gist>`), so `…::rule::` is the segment that separates the promotable half from the legacy half — `scripts/record-comment-relevance.mjs § writeRelevance` is the implementation and this table follows it, never the reverse. Knowledge and hotspot need no prefix because their bucket is identified by the `ci::review-knowledge` tag. A `memory_read` issued against `rule::<fp>` — the prefix dropped — returns nothing, indistinguishably from a repo that has never declined that finding.
+
+**`{head-branch-name}` is the branch name, never a SHA.** `STATE_SCOPE` is bound from `headRefName` at Step 0.5 for that reason. A SHA-keyed scope mints a fresh scope on every push, so the record is written once and never found again: every re-review reads a miss, takes the first-run path, and silently loses its delta baseline, its carry-forward, and `LAST_FULL_SHA`. That failure is not hypothetical — a `branch::…::570ee7e8…` scope holding exactly one row is what it looks like in a store.
 
 The first three are `repo::`-scoped **on purpose**: their entire value is that they outlive the branch.
 The fourth is `branch::`-scoped for the opposite reason — per-PR state in `repo::` would displace the lessons a SessionStart injection exists to deliver.
@@ -105,13 +110,17 @@ That marker is also the **attribution**: only this agent writes it, so its prese
 Memory is read **after** Phase B, because Phase B is what tells you which symbols and files to ask about.
 Reading before it means asking for the whole `repo::` scope and paging through noise.
 
-```bash
-# 1. The knowledge + hotspot records for this repo, kind/host filtered.
-mcp__lorekit__memory_list  scope="repo::{owner}/{repo}"  kind=signal  host=reviewer  limit=50
+```text
+# 1. The knowledge + hotspot + relevance-rule records for this repo, kind/host filtered.
+mcp__lorekit__memory_list    scope="repo::{owner}/{repo}"  kind=signal  host=reviewer  limit=50
 
 # 2. A targeted search on the symbols the impact graph says changed.
-mcp__lorekit__memory_search  scope="repo::{owner}/{repo}"  query="<symbol> <symbol> <symbol>"  limit=25
+mcp__lorekit__memory_search  q="<symbol> <symbol> <symbol>"  scopes=["repo::{owner}/{repo}"]  limit=25
 ```
+
+**The parameter names above are the tool's own, and the two tools disagree on purpose.** `memory_list` takes one `scope` (a string); `memory_search` takes `scopes` (an array) and puts the query in `q`. A call written as `memory_search scope=… query=…` — the shape a reader naturally generalises from call 1 — matches nothing in the schema and comes back a validation error, which this pipeline has no rung for: memory is a best-effort read, so the run continues and reports 0 memories applied. That is indistinguishable from an empty store, which is why the names are pinned here and guarded by L1 rather than left to be re-derived per run.
+
+All three record types arrive on **call 1**, relevance rules included: they carry `kind: signal, host: reviewer` exactly as knowledge and hotspot do. Nothing extra is needed to reach a `rule::` record, and no fourth call may be added to look for one.
 
 Two calls, matching the two the agent already makes for lessons — pointed at better data, not added on top.
 On a repo whose `repo::` scope exceeds the `memory_list` page, the search is what finds the record for a symbol that is not in the top 50; neither call alone is sufficient.
@@ -281,13 +290,82 @@ Two additions:
 - **The cross-check.** A matched lesson whose body names a path, symbol, or `fp` covered by an `active suppress` rule is handed to the finders as background **with the contradiction stated** — never silently dropped, never applied raw. A lesson minted from a finding that was later rejected must not outlive the rejection, and stating the conflict is how the finders get to weigh both.
 - **`detection::` trigger-context.** A lesson about a missed or false finding is tagged `detection::<finder>`, so the promotion loop can tell detection lessons from harness plumbing, and so each promoted one becomes a seeded case in the `bug-detection` eval suite.
 
+## Write — the two calls this agent makes itself
+
+A budget without a call site is a bucket with no producer, and a bucket with no producer reads empty forever while every rule about reading it still passes.
+That is what happened here: knowledge and hotspot had a documented read, a documented match table, and a documented cap, and the only committed writer in the tree was the webhook recorder — which writes `hotspot::` and never `knowledge::`.
+So a repo could accumulate hundreds of relevance rows and still answer *nothing* to "what does this repository know about `retryRequest`", because no run had ever been told to say.
+
+Both writes happen at **Step 4d**, after the state write, and both are subject to the [budget](#write-budget) below.
+
+```text
+# A. Symbol knowledge — deep tier only, one call per traced symbol, cap 10.
+mcp__lorekit__memory_write:
+  scope    = "repo::{owner}/{repo}"
+  key      = "knowledge::<symbol>@<path>"        # from impact.json — never hand-composed
+  value    = "<the JSON record below, serialised>"
+  tags     = ["ci::review-knowledge"]
+  kind     = "signal"
+  host     = "reviewer"
+  ttl_days = 90
+  origin_repo = "<RESOLVED_REPO>"   origin_pr = <PR_NUMBER>   origin_commit = "<HEAD_SHA>"
+
+# B. Hotspot — one call per file that carried a confirmed finding this run.
+mcp__lorekit__memory_write:
+  scope    = "repo::{owner}/{repo}"
+  key      = "hotspot::<path>"
+  value    = "<{v:1, path, confirmed:1, last_touched_by:[…]}, serialised>"
+  tags     = ["ci::review-knowledge", "signal::confirmed"]
+  kind     = "signal"
+  host     = "reviewer"
+  ttl_days = 90
+```
+
+`kind` and `host` are passed **explicitly on every write**. LoreKit infers them from a `loop::` tag only, and these records carry `ci::` tags, so omitting them leaves both NULL — at which point [read call 1](#read--two-calls-keyed-by-the-impact-graph), which filters `kind=signal host=reviewer`, cannot see the record the run just wrote. A write nothing can read is worse than no write: it reports success.
+
+The knowledge record's value:
+
+```jsonc
+{
+  "v": 1,
+  "symbol": "retryRequest",
+  "path": "src/api/client.ts",
+  "kind": "function",
+  "verified_at_sha": "26b4c28",
+  "facts": [
+    { "claim": "throws RetryExhausted after 3 attempts", "tier": 2 },
+    { "claim": "callers rely on the thrown error, not a null return", "tier": 1 }
+  ],
+  "consumer_files": 14,
+  "cross_package": true,
+  "covering_tests": ["src/api/client.test.ts"],
+  "history": [
+    { "pr": 164, "sha": "26b4c28", "fp": "consumer-impact:contract-break:retryRequest@src/api/client.ts",
+      "verdict": "confirmed", "outcome": "posted" }
+  ]
+}
+```
+
+Four rules on the knowledge write, each closing a way this record could become a liability:
+
+1. **Only what this run verified.** A `facts[]` entry carries the receipt tier that produced it ([`verification-receipt.md`](../../shared/rules/verification-receipt.md)). A claim the run inferred but did not check is not a fact and is not written — the next run would consume it as one, and [re-verification](#a-knowledge-fact-is-re-verified-or-dropped-never-trusted) only compares it against the code, it does not re-derive whether it was ever true.
+2. **`verified_at_sha` is this run's `HEAD_SHA`, always.** It is the whole mechanism by which the next run decides between "the fact stands" and "re-verify" — a stale or absent sha makes every fact permanently unverifiable, and rule 3 of that section then drops it on every future run.
+3. **Merge, never clobber.** Same scope + key is an UPDATE, so read the existing record first (it is already in hand from call 1) and append to `history[]` — capped at 20, oldest dropped. Overwriting it throws away the cross-author history that is the point of the record.
+4. **Facts about code, never about people or telemetry values.** No login, no comment text, no raw span attribute (`telemetry.md § Three rules that hold everywhere`, rule 3). A `traffic_band` and a `sampled_at` are aggregates and may be cached here; a request body may not.
+
+**Neither write is on the critical path.** A failure is logged and the run continues, exactly as the state write's rule 1 has it. Report the count in Step 5 — a run that wrote 0 knowledge records on a deep tier is a fact worth seeing, because it means either nothing was traced or the write is broken, and those look identical from the store.
+
+**The relevance rule is written at Step 2.9c, and its key is recovered rather than composed.** That write belongs to [`thread-resolution.md § Write the outcome to LoreKit`](../../shared/rules/thread-resolution.md#write-the-outcome-to-lorekit) — it fires on a re-review, once per thread this run resolved, and it takes the fingerprint out of the comment's own `<!-- fp:v2:… -->` marker. Nothing here re-derives a key from prose: a run that files its own marker-bearing finding under a prose gist writes into the non-promotable half of the bucket, where `seen_count` cannot accumulate and no suppression can ever arm.
+
+The [in-run signals](#in-run-signals) at Step 1.0 are the *evidence* that write carries, not a second write of their own.
+
 ## Write budget
 
 | Write | When | Cap |
 | --- | --- | --- |
 | knowledge | per traced symbol, **deep tier only** | 10 per run |
 | hotspot | per file with a confirmed finding | one per file |
-| relevance rule | per in-run signal observed | one per signal |
+| relevance rule | Step 2.9c, per thread resolved this run | one per thread |
 | PR state | Step 4c | one per run |
 
 Reads: the two Phase B calls, plus at most `MEMORY_READ_BUDGET` body reads, prioritised **knowledge → rules → hotspots → lessons**.

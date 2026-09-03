@@ -3370,9 +3370,12 @@ const isPollBlock = (block) =>
     && /\*\*top 10\*\* changed symbols/.test(mem));
   // Anchored on the mcp__ call lines, not on the budget table that repeats the same numbers —
   // a table row is a promise, the call is the thing that keeps it.
+  // The second pattern read `memory_search\s+scope=` until G44a was written, so this guard
+  // was asserting the broken call shape it was meant to bound — the parameter is `q`, and
+  // `scopes` is the array. A guard that mirrors a call by hand can pin the wrong one.
   s.check("G41h both memory reads carry an explicit limit at the call site",
     /mcp__lorekit__memory_list\s+scope=[^\n]*limit=50/.test(mem)
-    && /mcp__lorekit__memory_search\s+scope=[^\n]*limit=25/.test(mem));
+    && /mcp__lorekit__memory_search\s+q=[^\n]*limit=25/.test(mem));
 }
 
 // ── G42: the measurability lens is wired, bounded, and cannot block ──
@@ -3601,6 +3604,153 @@ const isPollBlock = (block) =>
     /BASE_SHA=\$\(jq -r '\.baseRefOid' <<< "\$PR_VIEW_JSON"\)/.test(rbody));
   s.check("G43b the merge-base rule refuses to run on an empty base OID",
     /\*\*the base OID itself empty\*\*/.test(readMd("agents/pr-reviewer/rules/workspace.md")));
+}
+
+// ── G44: the memory layer's read path can reach what its write path writes ───
+//
+// A memory bucket fails in one direction only, and it is the silent one: a read that
+// cannot reach the records is indistinguishable from a repository that knows nothing, so
+// every rule about reading still passes while the loop delivers nothing. An audit of the
+// live store found four such breaks at once, and each check below is the general form of
+// one:
+//
+//   G44a  `memory.md`'s second read call was written `memory_search scope=… query=…` —
+//         neither parameter exists (the tool takes `q` and `scopes[]`). A validation error
+//         on a best-effort read is swallowed, so the run reports 0 memories applied.
+//   G44b  The relevance key was quoted as `rule::<fp>` with the bucket prefix dropped, so
+//         a `memory_read` against it can only miss. The recorder is the authority; the
+//         expected form is extracted from its source rather than restated here.
+//   G44c  `knowledge::<symbol>@<path>` — the record the whole rule is named for — had a
+//         read, a match table, a TTL and a write budget, and no producer anywhere. Zero
+//         rows existed after four runs on the same PR.
+//   G44d  `thread-resolution.md`, the one write path that had actually fired on this repo,
+//         keyed every record into the v1 prose space (`promotable: false`) even though the
+//         comment it was resolving carried a v2 marker to recover. 273 legacy rows, no
+//         `rule::` row, `seen_count` accumulating on nothing.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const MEMORY_MD = read("agents/pr-reviewer/rules/memory.md");
+  const RELEVANCE_MD = read("agents/shared/rules/comment-relevance-memory.md");
+  const THREADS_MD = read("agents/shared/rules/thread-resolution.md");
+  const BODY = read("agents/pr-reviewer.md");
+  const RECORDER = read("scripts/record-comment-relevance.mjs");
+
+  // ---- G44a: documented memory tool calls use the tools' real parameter names ----
+  //
+  // The two tools disagree, which is the whole trap: `memory_list` takes a singular
+  // `scope` string, `memory_search` takes `scopes[]` plus `q`. Generalising either one to
+  // the other produces a call that validates away to nothing.
+  const memoryCalls = (text, tool) =>
+    [...text.matchAll(new RegExp(`mcp__lorekit__${tool}\\b([^\\n]*)`, "g"))].map((m) => m[1]);
+
+  for (const [file, text] of [
+    ["memory.md", MEMORY_MD],
+    ["comment-relevance-memory.md", RELEVANCE_MD],
+  ]) {
+    for (const args of memoryCalls(text, "memory_search")) {
+      // Skip a prose mention that passes no arguments at all (e.g. "issue it as a real
+      // mcp__lorekit__memory_search tool call"): there is no call shape to check.
+      if (!/[:=]/.test(args)) continue;
+      s.check(`G44a ${file}: memory_search puts the query in \`q\`, not \`query\``,
+        /\bq\s*=/.test(args) && !/\bquery\s*=/.test(args));
+      s.check(`G44a ${file}: memory_search takes \`scopes\` (array), not a singular \`scope\``,
+        /\bscopes\s*=/.test(args) && !/(^|[^s])\bscope\s*=/.test(args));
+    }
+    for (const args of memoryCalls(text, "memory_list")) {
+      if (!/[:=]/.test(args)) continue;
+      s.check(`G44a ${file}: memory_list takes a singular \`scope\`, not \`scopes\``,
+        !/\bscopes\s*=/.test(args));
+    }
+  }
+
+  // ---- G44b: the keys the read path quotes are the keys the recorder writes ----
+  //
+  // Extracted from the recorder's template literals, so the assertion tracks the writer.
+  // A prefix that changes there fails here instead of quietly re-keying the bucket.
+  // `[^`;]*` reaches across the ternary's newline to the first branch without escaping the
+  // statement, so the `key` position is what selects the literal — a `tags:` entry like
+  // `source::${method}` is the same shape and must not be read as a key prefix.
+  const recorderKeys = [...RECORDER.matchAll(/\bkey\s*[:=][^`;]*`([a-z-]+(?:::[a-z-]+)*::)\$\{/g)]
+    .map((m) => m[1]);
+  s.check(`G44b the recorder's key prefixes were extractable (saw: ${recorderKeys.join(" ") || "none"})`,
+    recorderKeys.length >= 2);
+  s.check("G44b the relevance rule's promotable key space is `reviewer-comment-relevance::rule::`",
+    recorderKeys.includes("reviewer-comment-relevance::rule::"));
+  for (const prefix of new Set(recorderKeys)) {
+    s.check(`G44b memory.md quotes the key \`${prefix}…\` exactly as the recorder builds it`,
+      MEMORY_MD.includes(prefix));
+  }
+
+  // ---- G44c: every record the read path matches on has a named producer ----
+  //
+  // `hotspot::` has two producers (the recorder and Step 4d); `knowledge::` has only
+  // Step 4d, which is why its absence went unnoticed for so long. Require the agent body
+  // to name a write for each — a match table pointed at rows nothing writes is the defect.
+  const step4d = BODY.split(/### 4d\./)[1]?.split(/\n### |\n## /)[0] ?? "";
+  s.check("G44c Step 4d exists and routes to the write section that holds the calls",
+    step4d !== "" && /#write--the-two-calls-this-agent-makes-itself/.test(step4d));
+  for (const record of ["knowledge", "hotspot"]) {
+    s.check(`G44c Step 4d names the \`${record}\` write`, step4d.includes(record));
+    // The literal key lives in one place — the rule file with the call — so the body
+    // routing to it cannot drift from the key it writes.
+    s.check(`G44c memory.md's write section spells the \`${record}::\` key`,
+      MEMORY_MD.includes(`key      = "${record}::`));
+  }
+  s.check("G44c the knowledge write passes kind + host explicitly (a `ci::` tag infers neither)",
+    /kind\s*=\s*"signal"/.test(MEMORY_MD) && /host\s*=\s*"reviewer"/.test(MEMORY_MD));
+  s.check("G44c the knowledge write is deep-tier only, so no unverified fact is stored",
+    /deep tier only/i.test(MEMORY_MD));
+
+  // ---- G44d: the in-run relevance write recovers its fingerprint, never re-derives it ----
+  s.check("G44d thread-resolution.md writes the v2 `rule::` key when a marker is present",
+    THREADS_MD.includes("reviewer-comment-relevance::rule::<fp>"));
+  s.check("G44d thread-resolution.md recovers the fingerprint through fingerprint.mjs",
+    /fingerprint\.mjs" extract/.test(THREADS_MD));
+  s.check("G44d thread-resolution.md keeps the prose key as the marker-less fallback only",
+    /fp_v: 1, promotable: false/.test(THREADS_MD));
+
+  // ---- G44e: one value shape, and the licence that broke it is gone ----
+  s.check("G44e the relevance bucket's value is JSON only",
+    /### One value shape: JSON/.test(RELEVANCE_MD));
+  s.check("G44e no write site still licenses a markdown record body",
+    !/record body as JSON or markdown/.test(RELEVANCE_MD));
+
+  // ---- G44f: the state scope's third segment is the branch NAME ----
+  //
+  // Derived from the body's own binding: a SHA-keyed scope mints a fresh scope per push,
+  // so the record is written once and never read again.
+  s.check("G44f STATE_SCOPE is bound from HEAD_REF, never HEAD_SHA",
+    /STATE_SCOPE="branch::\$\{RESOLVED_REPO\}::\$\{HEAD_REF\}"/.test(BODY));
+  for (const [file, text] of [
+    ["memory.md", MEMORY_MD],
+    ["memory-buckets.md", read("agents/shared/rules/memory-buckets.md")],
+  ]) {
+    s.check(`G44f ${file} names the state scope's third segment unambiguously`,
+      text.includes("branch::{owner}/{repo}::{head-branch-name}") &&
+      !/branch::\{owner\}\/\{repo\}::\{head\}/.test(text));
+  }
+
+  // ---- G44g: this repo calls the only committed writer it owns ----
+  //
+  // The reusable workflow was committed and documented as live while nothing in this
+  // repository called it, so its own store could never gain a v2 row. The self-caller
+  // mirrors the report-shape guard's: a local `uses:`, so a change here is exercised here.
+  const CALLER = "\.github/workflows/pr-relevance-memory.yml";
+  s.check("G44g this repo has a caller for reviewer-comment-relevance.yml",
+    existsSync(join(REPO_ROOT, ".github/workflows/pr-relevance-memory.yml")));
+  if (existsSync(join(REPO_ROOT, ".github/workflows/pr-relevance-memory.yml"))) {
+    const caller = read(".github/workflows/pr-relevance-memory.yml");
+    s.check("G44g the self-caller uses the local reusable workflow, not @main",
+      caller.includes("uses: ./.github/workflows/reviewer-comment-relevance.yml") &&
+      !caller.includes("reviewer-comment-relevance.yml@main"));
+    const modes = [...caller.matchAll(/mode:\s*([a-z-]+)/g)].map((m) => m[1]);
+    for (const mode of ["thread-resolved", "pr-merged", "human-comment"]) {
+      s.check(`G44g the self-caller wires up \`${mode}\``, modes.includes(mode));
+    }
+    s.check("G44g the self-caller passes the LoreKit secret through",
+      /lorekit_api_key:\s*\$\{\{\s*secrets\.LOREKIT_API_KEY\s*\}\}/.test(caller));
+  }
+  void CALLER;
 }
 
 process.exit(s.report() ? 0 : 1);

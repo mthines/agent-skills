@@ -107,6 +107,7 @@ guarantee in *REPORT_BODY format (the sticky comment)* below is void for that ru
 - Stop and report a BLOCKED result if the inline review sub-pipeline fails twice.
 - Tool-call budget, scaled to the size of the reviewed diff: **30** calls for ≤ 10 changed files, **60** for 11–30, **100** for > 30. `--full` on a large PR always uses the top band.
 - Memory-call budget, **inside** that total and scaled to the same bands: **1** `memory_read` for the PR-state record (Step 0.7) + **1** `memory_write` for it (Step 4c) + **4** `memory_list` calls (Step 1.0) + **1** `memory_search` (Step 1.2c) + a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` calls — so **12** of 30, **17** of 60, or **22** of 100. The two state calls are fixed cost, not part of `MEMORY_READ_BUDGET`, and must never be traded against it: the state read is what makes the run incremental at all, and the state write is what makes the *next* run incremental.
+- **Step 4d's writes sit outside that budget**, capped by their own rule (`memory.md § Write budget`: ≤ 10 knowledge, one hotspot per file with a confirmed finding, `deep` tier only for knowledge). They are the only calls here that are *not* traded against reads, for the same reason the state write is not: a read budget spent is this run's context, while a write skipped is every future run's memory. A run that trims 4d to stay under a read cap has optimised the wrong side of the ledger.
   `MEMORY_READ_BUDGET` is a **single pool spanning both read sites**: Step 1.2d (lesson bodies) and Step 2.7b (relevance bodies, per `comment-relevance-memory.md § Read`). Step 1.2d spends at most **half** of it, rounded down, so a lesson-heavy shortlist can never starve the relevance verdicts that decide what gets posted; Step 2.7b may spend the whole remainder, including anything 1.2d left unused. Decrement the pool as calls are made and stop at zero at either site.
   The reads trade call count for context: the four lists are summary-only (~15 KB for a typical fan-out instead of ~110 KB), and only shortlisted entries are ever expanded, so a review that matches nothing spends 5 calls and ~15 KB rather than 5 calls and ~110 KB.
 - If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` In the review body this goes in the `PARTIAL_BANNER` slot of the Step 4 templates (see *REPORT_BODY format (the sticky comment)*), never as free prose. Never present a budget-truncated run as a complete review.
@@ -912,9 +913,17 @@ own facts (which sha it reviewed, in which mode, which threads were open, which 
 deferred), parsed and branched on rather than weighed as advice, in a separate bucket
 (`ci::pr-review-state`, never `loop::…`) that the lesson read never touches. Distinguishing them
 matters practically: a reader who collapses "never writes lessons in-run" into "never writes
-in-run" will delete Step 4c and silently take the delta logic with it. The two writes this agent
-makes in-run — the state record (Step 4c) and the `reviewer-comment-relevance` outcome at Step 2.9c
-— are both records of what happened, never of what it concluded about how to review.
+in-run" will delete Step 4c and silently take the delta logic with it. The three writes this agent
+makes in-run — the state record (Step 4c), the `reviewer-comment-relevance` outcome at Step 2.9c,
+and the knowledge + hotspot records at Step 4d — are all records of what happened, never of what it
+concluded about how to review.
+
+**Step 4d is the same distinction, one step further out.** A knowledge record says "`retryRequest`
+throws `RetryExhausted` after 3 attempts, verified at `26b4c28`" — a fact about the code, carrying
+its receipt, which the next run [re-verifies or drops](./pr-reviewer/rules/memory.md#a-knowledge-fact-is-re-verified-or-dropped-never-trusted)
+rather than trusting. It cannot entrench a judgment because it contains none, and it is the one
+record that answers the question memory exists for: what does this repository already know about the
+code this diff touches. Without it the read side has a match table pointed at rows nothing writes.
 
 Retain each loaded memory's LoreKit `scope` and `key` alongside its
 `fingerprint`, `relevance`, and `seen_count` — Step 2.7b builds a deep link from
@@ -2967,6 +2976,28 @@ would live in the LoreKit repository, not here, and it is not shipped.
 
 This agent does **not** purge, on either path: `mcp__lorekit__memory_delete` is deliberately absent
 from its `tools:` grant, so a reviewer can never delete a memory as a side effect of reviewing.
+
+### 4d. Record what this run learned about the code
+
+The state record is about *this PR*. This step is about *this repository* — the half that outlives
+the branch and reaches the next author who touches the same symbol.
+
+Run the two writes in
+[`memory.md § Write — the two calls this agent makes itself`](./pr-reviewer/rules/memory.md#write--the-two-calls-this-agent-makes-itself):
+**knowledge** for each symbol this run traced (deep tier only, cap 10) and **hotspot** for each file
+that carried a confirmed finding (one per file). Both are `mcp__lorekit__memory_write` calls with
+`kind: "signal"`, `host: "reviewer"`, and `ttl_days: 90` — passed explicitly, because a `ci::` tag
+leaves both NULL and Step 1.0's `kind=signal host=reviewer` read then cannot see what was written.
+
+| Tier | What 4d writes |
+| --- | --- |
+| `deep` | knowledge + hotspot |
+| `standard` · `quick` | **hotspot only.** A knowledge fact needs a traced symbol and a receipt, and neither tier produces one; writing a fact the run did not verify is the failure mode rule 1 of that section exists to prevent. |
+
+Non-blocking, like 4c: a failed write is logged and the run continues. Report the counts in Step 5
+(`Memory written: <K> knowledge, <H> hotspot`) — **including the zeroes**. A deep-tier run that wrote
+0 knowledge records means either nothing was traced or the write is broken, and from the store those
+two are identical; the count is the only place they separate.
 
 ### The shapes: report body, headlines, sections, inline comments
 

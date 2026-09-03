@@ -40,6 +40,7 @@ is the cost of being the single source of truth for that record.
 - [Why this exists](#why-this-exists)
 - [Scope](#scope)
 - [Relevance memory record schema](#relevance-memory-record-schema)
+  - [One value shape: JSON](#one-value-shape-json)
 - [Read — loading memories into the review pipeline](#read--loading-memories-into-the-review-pipeline)
 - [Linking applied memories in the report](#linking-applied-memories-in-the-report)
 - [Write — capturing resolution outcomes](#write--capturing-resolution-outcomes)
@@ -282,6 +283,36 @@ outside it in another — both stated here because the owning contract does not 
   UPDATE for the contract to apply to (`outcome-learning.md § Signal (c) requires corroboration`).
 Opposite-direction sightings (a previously "not-relevant" pattern that gets
 fixed in a later PR) are flagged as contradictions, not silently overwritten.
+
+### One value shape: JSON
+
+**Every write to this bucket serialises the object above as JSON.** Not YAML, not a Markdown
+heading with bolded fields, not prose with a `Fingerprint:` line — JSON, `JSON.stringify` of the
+record, which is what `scripts/record-comment-relevance.mjs § writeRelevance` does and therefore
+what the schema means.
+
+This is a correction, not a preference. An earlier version of § Write said "record body as JSON or
+markdown", and that one word produced three incompatible serialisations inside a single bucket —
+verified in `repo::mthines/agent-skills`, where the same bucket holds JSON objects, YAML-ish
+`relevance: relevant\nresolution_method: fixed` bodies, and `# Reviewer flags …` Markdown with
+`- **Fingerprint:** …` bullets. A reader implementing one shape sees nothing at all in the other
+two, and "nothing at all" is exactly how an empty store looks, so the divergence is invisible from
+every consumer.
+
+**Reading a legacy body is tolerant; writing one is not.** A record whose value does not parse as
+JSON is a v1 row by construction — treat it as follows, and never rewrite it in place:
+
+| Legacy body | Treatment |
+| --- | --- |
+| Parses as JSON, has `relevance` + `seen_count` | full verdict, as documented above |
+| Parses as JSON, **missing `seen_count`** | `seen_count = 1`. Absent is not zero and not "many": the row was written once by a producer that did not record the field. It can DOWNGRADE, never DROP. |
+| Parses as JSON, `source` is a **string** rather than the `{login, type, agent}` object | fails the [`source.agent` filter](../../pr-reviewer/rules/memory.md#every-read-filters-on-sourceagent) — usable as hotspot signal, **never** as a relevance rule. A prose `source` cannot be attributed, and an unattributable row must not train this agent's suppressor. |
+| Does not parse as JSON | extract nothing. Count it in the indexed total, apply no verdict, and leave it to lapse at TTL. |
+
+The last row is deliberately blunt. Writing a YAML/Markdown parser for two shapes nobody will
+write again buys a handful of stale rows one TTL before they expire, at the cost of a permanent
+second parse path — and a partial parse that recovers `relevance` but not `seen_count` would DROP
+findings on evidence the row never carried.
 
 ---
 
@@ -697,7 +728,7 @@ memory.search { q: "<fingerprint slug>", scopes: ["repo::{owner}/{repo}", "globa
 memory.write {
   scope: "repo::{owner}/{repo}",   # or "global" for universal patterns
   key: "reviewer-comment-relevance::<category>:<claim-gist>",   # NO pr#/comment-id/sha — see § Key format
-  value: "<record body as JSON or markdown>",
+  value: "<the record above, serialised as JSON>",   # JSON only — see § One value shape
   tags: ["loop::reviewer-comment-relevance", "source::<resolution_method>"],
   source_agent: "implement-suggestion",
   trigger: "outcome-emit"

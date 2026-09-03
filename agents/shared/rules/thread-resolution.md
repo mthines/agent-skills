@@ -434,22 +434,59 @@ rule, and `seen_count` UPDATE contract defined in
 adds the trigger. Writes are append-only, non-blocking, and a silent no-op when
 `memory.*` is not connected.
 
+**Recover the fingerprint from the comment; never re-derive it from the prose.**
+Every inline comment this agent posts ends with its own `<!-- fp:v2:… -->` marker,
+and `BOT_COMMENTS` already holds the body — so the v2 key is *read back*, not
+reconstructed:
+
+```bash
+# One call per comment being written. The script is the single implementation of the
+# grammar (comment-relevance-memory.md § Key format); parsing the marker by hand is
+# how the read and write paths fork into two key spaces for one finding.
+FP=$(node "$AGENT_SUPPORT/pr-reviewer/scripts/fingerprint.mjs" extract --file /tmp/thread-comment.md)
 ```
+
+```text
+# v2 — a marker was recovered. Promotable: this key is structural and accumulates.
 memory.write {
-  scope: "repo::{owner}/{repo}",            # or "global" for a universal pattern
-  key:   "reviewer-comment-relevance::<category>:<claim-gist>",   # NO pr#/comment-id/sha — see below
-  value: "<record body: relevance, resolution_method, reason, examples, seen_count, expires>",
+  scope: "repo::{owner}/{repo}",
+  key:   "reviewer-comment-relevance::rule::<fp>",     # <fp> = the extracted fingerprint
+  value: "<record body per comment-relevance-memory.md § schema, with fp_v: 2, promotable: true>",
   tags:  ["loop::reviewer-comment-relevance", "source::<resolution_method>"],
+  kind: "signal", host: "reviewer",
   source_agent: "pr-reviewer",
   trigger: "re-review-reconcile"
 }
+
+# v1 — no marker (a comment posted before markers existed). Legacy key, read-only half.
+memory.write {
+  key:   "reviewer-comment-relevance::<category>:<claim-gist>",   # NO pr#/comment-id/sha
+  value: "<same shape, with fp_v: 1, promotable: false>",
+  …
+}
 ```
 
-The key's fingerprint segment is `<category>:<claim-gist>` and **nothing else** —
-never a `pr{N}-{commentId}` or any other coordinate. Encoding coordinates makes the key
-unique per occurrence, so `seen_count` never accumulates and the signal is inert
-(this is the drift that produced duplicate rows on `dash0hq/dash0`). Put the PR
-and comment id in the record's `examples` field. See the ✅/❌ examples and
+**Which key space a write lands in decides whether it can ever do anything**, and
+this rule wrote every record into the wrong one for as long as it said
+`<category>:<claim-gist>` unconditionally. A prose key is marked
+`promotable: false` by design (`comment-relevance-memory.md § Key format`), so a
+run that resolves its own marker-bearing thread and files it under a prose gist has
+written a row that is read for back-compat, counted toward nothing, and left to
+lapse — while the `rule::<fp>` row that *would* have accumulated is never created.
+A store in that state looks healthy: hundreds of rows, `seen_count` climbing on
+none of them, and zero memories applied on every run.
+
+`source` in the record body is the **object** from the schema
+(`{login, type: "bot", agent: "pr-reviewer"}`), never a prose string. Read call 1
+filters on `source.agent`, so a record whose `source` is a sentence is dropped on
+every future read — the same silent no-op as a wrong key, arriving through the
+value instead.
+
+The v1 fallback's fingerprint segment is `<category>:<claim-gist>` and **nothing
+else** — never a `pr{N}-{commentId}` or any other coordinate. Encoding coordinates
+makes the key unique per occurrence, so `seen_count` never accumulates and the
+signal is inert (this is the drift that produced duplicate rows on `dash0hq/dash0`).
+Put the PR and comment id in the record's `examples` field. See the ✅/❌ examples and
 self-check in [`comment-relevance-memory.md` § Key format](./comment-relevance-memory.md#key-format).
 
 The `loop::reviewer-comment-relevance` tag conveys the bucket's kind (`signal`)
