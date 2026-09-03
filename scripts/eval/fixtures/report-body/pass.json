@@ -29,5 +29,5 @@
     "medium": 3,
     "low": 1
   },
-  "FIX_ALL_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=Fix%20the%20pr-reviewer%20findings%20on%20owner%2Frepo%20PR%20%23123"
+  "FIX_ALL_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=%2Fimplement%20https%3A%2F%2Fgithub.com%2Fowner%2Frepo%2Fpull%2F123%20pr-review-bot&utm_source=pr-reviewer-fix-all"
 }
