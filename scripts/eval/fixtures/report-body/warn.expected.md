@@ -11,7 +11,7 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 | Backoff jitter is seeded once per process | [`src/api/backoff.ts:41`](https://github.com/o/r/pull/1#discussion_r12) | 🟡 medium |
 | `sync.ts` still branches on the old null contract | [`src/jobs/sync.ts:88`](https://github.com/o/r/pull/1#discussion_r13) | 🟡 medium |
 
-<a href="https://app.dash0.com/goto/agent0?auto_submit=true&amp;initial_prompt=Fix%20the%203%20open%20pr-reviewer%20findings&amp;utm_source=pr-reviewer-fix-all"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets/fix-all-agent0-dark.svg"><img alt="Fix all 3 with Agent0" src="https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets/fix-all-agent0-light.svg" height="36"></picture></a>
+<a href="https://app.dash0.com/goto/agent0?auto_submit=true&amp;initial_prompt=Fix%20the%203%20open%20pr-reviewer%20findings&amp;utm_source=pr-reviewer-fix-all"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets/fix-all-agent0-dark.svg"><img alt="Fix all with Agent0" src="https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets/fix-all-agent0-light.svg" height="36"></picture></a>
 
 <details>
 <summary>2 more findings — verified, too minor to comment on</summary>

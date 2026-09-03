@@ -2249,6 +2249,23 @@ the rest of the review. Editing a rejected body into shape reintroduces exactly 
 renderer exists to remove: this surface had a prose contract and a `passes_shape()` function nothing
 executed, and a real posted finding dropped three documented decorations at once.
 
+**Check each body on the way out, because this surface has no repair.** Inline comments are
+append-only and this agent never edits one, so a corrupted inline finding stays corrupted for the
+life of the PR — unlike the sticky, which § *The bytes that get posted are the renderer's bytes*
+can `PATCH`. Write each rendered body to a file and run the shared checker on it before it reaches
+`add_comment_to_pending_review`:
+
+```bash
+node "$RENDER_COMMENT" /tmp/finding-$i.json > /tmp/finding-$i.md || { log; continue; }
+node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --check /tmp/finding-$i.md \
+  || { log "finding $i: body is not renderer output — dropped"; continue; }
+```
+
+Then reproduce that file **byte-for-byte** into the tool-call argument. The hazard is the same one
+that mangled all five inline comments on `mthines/agent-skills#165`: the button is one very long
+line of inline HTML, and reformatting or escaping it while reproducing it destroys it. A body that
+fails the check is dropped and logged, exactly like a render failure — never posted, never repaired.
+
 The reference renderings are in `scripts/eval/fixtures/inline-comment/*.expected.md`.
 
 ### 2.9 Conventional Comments
@@ -2564,7 +2581,7 @@ that is the exact failure this replaces. Report the error verbatim in the Step 5
 along with the payload you built, post the inline findings (Step 4b still applies), and leave the
 sticky untouched. A missing report is recoverable; a malformed one that consumers then parse is not.
 
-**Assert these six things on `REPORT_BODY` immediately before the write, whatever produced it.**
+**Assert these seven things on `REPORT_BODY` immediately before the write, whatever produced it.**
 The renderer guarantees them, so on the normal path this is redundant — and that is the point: it is
 the only check that survives the renderer being **bypassed**, which is the failure this whole
 section exists to prevent. A check that runs only inside the thing it is guarding guards nothing.
@@ -2591,18 +2608,62 @@ grep -q '^### ' <<< "$REPORT_BODY" || abort "no ### headline — the report has 
 # stamp that used to sit in its own <sub>Updated …</sub> line.
 grep -q '^<sup>`pr-reviewer` · commit `' <<< "$REPORT_BODY" \
   || abort "no attribution footer — provenance and the freshness cue are both missing"
+# The last gate: is this still renderer output, or has the markup been re-encoded in transit?
+# Run the shared checker rather than re-deriving its signatures as greps — it is the same function
+# both renderers call, so this cannot drift away from them.
+printf '%s\n' "$REPORT_BODY" > /tmp/report-body.md
+node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --check /tmp/report-body.md \
+  || abort "body is no longer renderer output (see stderr) — post the rendered bytes verbatim"
 ```
 
 On any `abort`: post no report object, name the failing assertion in the Step 5 output, and stop.
 Do not repair the body by hand — a body that fails these was not built from the template, and
 editing it into shape reintroduces exactly the drift the renderer removes.
 
+#### The bytes that get posted are the renderer's bytes
+
+Everything above runs **before** the body leaves the shell. That is a complete guarantee on the
+`gh` path, which posts from the file (`--field body=@/tmp/report-body.md`) and never re-reads the
+text. It is **not** a guarantee on the MCP path: `add_issue_comment` and
+`add_comment_to_pending_review` take the body as a tool-call **argument**, so the text has to be
+reproduced into that argument — a copy no shell performs, no assertion above covers, and nothing
+downstream re-checks.
+
+That copy is a real failure site, not a theoretical one. On `mthines/agent-skills#165` all six
+artifacts of one run — the sticky and all five inline comments — arrived with the button markup
+HTML-escaped and wrapped in a double-backtick code span (`<a href="``https://…"&gt;&lt;picture&gt;`),
+so every button rendered as a wall of literal text with a dead link. The renderer had emitted them
+correctly; the corruption entered after its last post-condition, and the run's own report parsed
+fine because the markers and footers survived. **Reformatting a long HTML line while reproducing it
+is the specific hazard** — the markup is one very long line by design (a blank line inside inline
+HTML ends the HTML block), and "improving" it is what breaks it.
+
+So on the MCP path, two extra obligations:
+
+1. **Reproduce the file byte-for-byte.** Read `/tmp/report-body.md` and pass exactly what it
+   contains. Never wrap anything in backticks, never escape `<` or `>`, never re-wrap a long line,
+   never re-indent. The body is already final; there is nothing left to format.
+2. **Verify after the write, and repair once.** Fetch the comment back and diff it against the file.
+   A sticky is editable, so a mismatch is fixable — `PATCH` it once with the correct bytes and note
+   the repair in the Step 5 output:
+
+   ```bash
+   # after the write, with $STICKY_COMMENT_ID known
+   gh api repos/$RESOLVED_REPO/issues/comments/$STICKY_COMMENT_ID --jq .body > /tmp/posted-body.md
+   diff -q /tmp/report-body.md /tmp/posted-body.md \
+     || echo "posted body differs from the rendered body — PATCH once with the file, then re-diff"
+   ```
+
+   On the **inline** surface there is no repair: comments are append-only and this agent never edits
+   one. So the check runs **before** the write there — see Step 2.8 — and a comment that cannot be
+   reproduced faithfully is dropped and logged, exactly like a render failure.
+
 Write the rendered body as-is — **nothing is appended to it**. The body a reader sees is the whole
 body; the run history lives in the state record (Step 4c), not in an HTML comment at the bottom of
 the report:
 
 ```bash
-printf '%s\n' "$REPORT_BODY" > /tmp/report-body.md
+# /tmp/report-body.md was written by the assertion block above — the same bytes, unmodified.
 
 # Capture html_url in every branch — Step 4c records it as the state record's sticky_url. The
 # marker-only pointer no longer links to it (the Full-report link lives in the sticky itself).

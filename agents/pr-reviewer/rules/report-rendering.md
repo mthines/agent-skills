@@ -752,4 +752,4 @@ Use `[]` if no surviving inline findings.
 The `side` field is required by the GitHub API — omitting it returns HTTP 422.
 
 The reference renderings live in `scripts/eval/fixtures/inline-comment/*.expected.md` — readable
-markdown, diffed by L1 (`G41`), and the answer to "what is an inline finding supposed to look like".
+markdown, diffed by L1 (`G46`), and the answer to "what is an inline finding supposed to look like".

@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
   TIERS, TIER_GLYPH, VERDICT_GLYPH, VERDICTS, SHA7, GATE_DETAILS_MAX,
-  worstTier, tierTally, footerLine, fixButton, anchor,
+  worstTier, tierTally, footerLine, fixButton, anchor, assertPostable,
 } from "./comment-spine.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -971,8 +971,12 @@ function main() {
   // Fix-all Agent0 button (opt-in). Rendered only when FIX_ALL_URL is supplied — the agent builds
   // the deep link via scripts/build-agent0-link.mjs. The button image URL (ASSET) is a constant
   // here; Dash0 can repoint it at a hosted PNG for production (agent0-fix-links.md § Button markup).
-  // The label carries the count, so the button says what it will do rather than naming a mode —
-  // `Fix all 3 with Agent0` is a promise a reader can check against the index directly above it.
+  // The label must match the words rendered in the asset. It reaches only the `<img alt>`, and the
+  // asset's own `<text>` is the fixed string `Fix all with Agent0` with a pinned `textLength` — so
+  // a label carrying the finding count ("Fix all 5 with Agent0") was invisible to every sighted
+  // reader and left the accessible name disagreeing with the visible one, which is what WCAG 2.2
+  // SC 2.5.3 (Label in Name) is about. Nothing is lost by dropping it: the count is in the heading
+  // and the findings index directly above the button.
   // Markup, host validation, and the light/dark variant pair all come from the spine, so the
   // report's button and the inline one cannot drift into two different chips.
   let fixAllButton = "";
@@ -985,10 +989,8 @@ function main() {
       fail("FIX_ALL_URL with 0 findings and no CI_NOTE — there is nothing to fix; omit the button"
         + " (agent0-fix-links.md § Fix all — CI-only)");
     }
-    const label = n > 0 ? `Fix all ${n} with Agent0`
-      : "Fix the failing checks with Agent0";
     try {
-      fixAllButton = fixButton({ kind: "all", url: String(data.FIX_ALL_URL), label });
+      fixAllButton = fixButton({ kind: "all", url: String(data.FIX_ALL_URL) });
     } catch (e) { fail(`FIX_ALL_URL: ${e.message}`); }
   }
 
@@ -1081,8 +1083,14 @@ function main() {
   }
   if (!/<details>\n<summary>Review details/.test(body)) fail("rendered body has no `Review details` accordion");
   if (body.includes("<details open>")) fail("rendered body pre-expands a `<details>` block");
-  const caged = body.match(/``?\s*\[[^\]]*\]\([^)]*\)\s*``?/g);
-  if (caged) fail(`a markdown link is trapped inside a code span: ${caged[0].slice(0, 90)}`);
+  // The shared last-gate check (escaped inline HTML, a backtick in an href, a caged link). It runs
+  // here so a payload that smuggles one in never renders, and again from the CLI on the bytes about
+  // to be posted, which is the only place a corruption introduced AFTER this point can be caught.
+  try {
+    assertPostable("rendered body", body);
+  } catch (e) {
+    fail(e.message);
+  }
   // The `<mode> · <N> lines in delta` shape is now the ingest anchor for the run line: the group
   // heading carries the label, so the line itself must stay line-anchored and matchable.
   if (!/^(?:full|incremental|incremental-quick) · \d+ lines in delta/m.test(body)) {

@@ -46,6 +46,12 @@ export const CLAIM_PREFIXES = ["issue", "suggestion"];
 // used to do its job badly, it does not add to it.
 export const TITLE_MAX = 60;
 export const PROSE_MAX = 200;
+/**
+ * The `(unverified: …)` tag on line 1. Short because line 1 is the only part of a comment that is
+ * always read, and because the agent body's own 320-char line-1 ceiling budgets for
+ * `title + decoration + prose` and nothing else.
+ */
+export const UNVERIFIED_MAX = 40;
 export const EVIDENCE_MAX = 180;
 export const EVIDENCE_REFS_MAX = 3;
 export const FENCE_MAX_LINES = 10;
@@ -57,6 +63,14 @@ export const SHA7 = /^[0-9a-f]{7}$/;
 /** Where the button images live (`agent0-fix-links.md § Button markup`). */
 export const ASSET_BASE =
   "https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets";
+
+/**
+ * The words each button asset renders. Load-bearing, not documentation: `fixButton` uses these as
+ * the `alt` and rejects any other label, so the accessible name and the visible one cannot diverge.
+ * Change one of these and you must change the matching SVG's `<text>` (and re-measure `textLength`
+ * — `agent0-fix-links.md § Button markup`).
+ */
+export const ASSET_TEXT = { all: "Fix all with Agent0", this: "Fix with Agent0" };
 
 /** The two Agent0 hosts (`agent0-fix-links.md § Environment`). Anything else is rejected. */
 export const AGENT0_HOST_RE = /^https:\/\/app\.dash0(-dev)?\.com\//;
@@ -150,7 +164,20 @@ export function fixButton({ kind, url, label }) {
     throw new Error("fix-button host must be app.dash0.com or app.dash0-dev.com (agent0_environment)");
   }
   const stem = kind === "all" ? "fix-all-agent0" : "fix-this-agent0";
-  const alt = label ?? (kind === "all" ? "Fix all with Agent0" : "Fix with Agent0");
+  // The accessible name must be the words the asset actually renders. `alt` is the only part of
+  // this button a caller could vary, and the asset's `<text>` is a fixed string with a pinned
+  // `textLength` — so a caller-supplied label was a name no sighted reader could see, and one that
+  // disagreed with the visible label (WCAG 2.2 SC 2.5.3). `Fix all 5 with Agent0` and
+  // `Fix the failing checks with Agent0` were both reaching only the alt attribute.
+  //
+  // A label argument is still accepted so the call sites read explicitly, but it may only restate
+  // the asset's text. Anything a caller wants to say beyond that belongs in the prose next to the
+  // button, or in a new asset — the chip's pixels are the contract.
+  const alt = ASSET_TEXT[kind];
+  if (label !== undefined && label !== null && label !== alt) {
+    throw new Error(`fix-button label must match the asset's rendered text (${JSON.stringify(alt)})`
+      + ` — got ${JSON.stringify(label)}, which no sighted reader would see`);
+  }
   // The label lands in an `alt` attribute and an `href`, so anything that could close either is
   // rejected rather than escaped: every caller passes a literal, so a reject here means a bug in
   // the caller, not a value that needs rescuing.
@@ -180,6 +207,69 @@ export function assertBareUrl(url) {
   if (!/^https?:\/\//.test(u)) throw new Error(`url must be http(s), got ${JSON.stringify(u.slice(0, 60))}`);
   if (/[)\s]/.test(u)) {
     throw new Error("url must be bare (no spaces or ')') — encode per build-agent0-link.mjs");
+  }
+  // Whitelist RFC 3986's characters rather than blacklisting the ones seen to break: a URL that
+  // needs anything else needs percent-encoding, which `build-agent0-link.mjs` already does.
+  //
+  // The backtick is why this is a whitelist. A backtick inside an `href` is doubly fatal on
+  // GitHub — it corrupts the attribute AND opens a markdown code span, so the parser escapes the
+  // rest of the inline HTML and the button renders as a wall of `&gt;&lt;picture&gt;` text with a
+  // dead link. Observed on mthines/agent-skills#165. The old blacklist caught a backtick only at
+  // position 0 (via the scheme test) and passed one anywhere else.
+  const illegal = [...u].find((c) => !/[A-Za-z0-9\-._~:/?#[\]@!$&'*+,;=%]/.test(c));
+  if (illegal !== undefined) {
+    throw new Error(`url contains ${JSON.stringify(illegal)}, which is not a legal URL character`
+      + " — percent-encode it (build-agent0-link.mjs)");
+  }
+}
+
+/**
+ * The last gate before a body is posted: does this text still look like renderer output?
+ *
+ * Every other guard in this pipeline runs **before** the renderer writes to stdout. That is enough
+ * on the `gh` path, which posts the bytes from a file (`--field body=@/tmp/report-body.md`), but
+ * not on the MCP path, where the body has to travel through a tool-call argument — a copy no shell
+ * performs and nothing downstream re-checks. On #165 that copy arrived HTML-escaped and wrapped in
+ * a code span, on both surfaces, and every upstream guard had already passed.
+ *
+ * So this function takes the FINAL text, not a payload, and is meant to be run on whatever is
+ * actually about to be written. It is exported as a CLI (`node comment-spine.mjs --check <file>`)
+ * for exactly that reason.
+ *
+ * Fenced regions are excluded first: a ``` fence contains a double backtick as a substring, and a
+ * quoted diff can legitimately contain anything at all.
+ */
+export function assertPostable(where, body) {
+  const s = String(body);
+  const bare = s.replace(/^```[\s\S]*?^```/gm, "");
+
+  // 1. Escaped inline HTML. The renderers emit `<a>`, `<picture>`, `<source>`, `<img>` and
+  //    `<details>` raw; an escaped form means something re-encoded the markup in transit.
+  for (const sig of ["&lt;picture", "&lt;source", "&lt;a href", "&gt;&lt;", "&lt;img", "&lt;/a&gt;"]) {
+    if (bare.includes(sig)) {
+      throw new Error(`${where} carries escaped inline HTML (${sig}) — the markup was re-encoded`
+        + " after the renderer wrote it; post the renderer's bytes verbatim");
+    }
+  }
+
+  // 2. A backtick inside an href. Fatal for the reason assertBareUrl now rejects it, and worth
+  //    checking again here because this sees the assembled body, including any hand-added slot.
+  const hrefs = bare.match(/href="[^"]*"/g) ?? [];
+  for (const h of hrefs) {
+    if (h.includes("`")) {
+      throw new Error(`${where} has a backtick inside an href (${h.slice(0, 60)}…) — it closes the`
+        + " attribute and opens a code span, which escapes the surrounding markup");
+    }
+  }
+
+  // 3. A link caged in a code span, in either direction: the whole link wrapped, or a stray
+  //    backtick opening right after `](`. Both render as dead monospace text.
+  const caged = bare.match(/``?\s*\[[^\]]*\]\([^)]*\)\s*``?/g);
+  if (caged) throw new Error(`${where} traps a markdown link inside a code span: ${caged[0].slice(0, 90)}`);
+  const cagedUrl = bare.match(/\]\(\s*`/);
+  if (cagedUrl) {
+    throw new Error(`${where} opens a code span inside a link target — the url must sit bare`
+      + " between the parentheses");
   }
 }
 
@@ -247,4 +337,42 @@ export function assertAbsent(where, v, why) {
   if (v !== undefined && v !== null && String(v).trim() !== "") {
     throw new Error(`${where} must be absent — ${why}`);
   }
+}
+
+// ── CLI ──────────────────────────────────────────────────────────────────────────────────────────
+//
+// `node comment-spine.mjs --check <file>` runs `assertPostable` over a final body and exits
+// non-zero with the reason on stderr. This is the only executable form of the "post the renderer's
+// bytes verbatim" rule, and it exists so the pre-write assertion blocks in `pr-reviewer.md` can
+// call the same code the renderers do instead of re-deriving the signatures as greps that drift.
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const argv = process.argv.slice(2);
+  const flags = { check: null };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--check") flags.check = argv[++i];
+    else {
+      process.stderr.write(`unknown argument: ${a}\nusage: comment-spine.mjs --check <body-file>\n`);
+      process.exit(2);
+    }
+  }
+  if (!flags.check) {
+    process.stderr.write("usage: comment-spine.mjs --check <body-file>\n");
+    process.exit(2);
+  }
+  const { readFileSync } = await import("node:fs");
+  let body;
+  try {
+    body = readFileSync(flags.check, "utf8");
+  } catch (e) {
+    process.stderr.write(`cannot read ${flags.check}: ${e.message}\n`);
+    process.exit(2);
+  }
+  try {
+    assertPostable(flags.check, body);
+  } catch (e) {
+    process.stderr.write(`${e.message}\n`);
+    process.exit(1);
+  }
+  process.stdout.write("ok\n");
 }

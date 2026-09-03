@@ -72,7 +72,7 @@ agent0_fix_links: false                  # explicit override for the "Fix with A
                                          # (named ⇒ on, absent ⇒ off) —
                                          # true is equivalent to always passing --fix-links,
                                          # false to always passing --no-fix-links
-                                         # (default false); see agents/shared/rules/agent0-fix-links.md
+                                         # see agents/shared/rules/agent0-fix-links.md
 
 agent0_environment: production           # which Agent0 the fix buttons link to —
                                          # production → app.dash0.com, development → app.dash0-dev.com

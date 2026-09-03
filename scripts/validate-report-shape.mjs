@@ -194,6 +194,39 @@ export function validate(body) {
       "the report has no `### ` headline — it renders as a long comment rather than a report");
   }
 
+  // ── the markup survived the trip ─────────────────────────────────────────────────────────────
+  //
+  // This is the one violation class that is invisible from inside the agent. Every other guard —
+  // the renderer's post-conditions, the Step 4a assertions, the ingest round-trip — runs before the
+  // body leaves the shell, and on the MCP write path the body then has to be reproduced into a
+  // tool-call argument. On mthines/agent-skills#165 that copy arrived HTML-escaped and wrapped in a
+  // code span on all six of a run's artifacts, and no in-agent check could have seen it.
+  //
+  // Fenced regions are excluded: a ``` fence contains a double backtick as a substring, and a
+  // quoted diff can legitimately contain escaped markup.
+  const unfenced = body.replace(/^```[\s\S]*?^```/gm, "");
+  for (const sig of ["&lt;picture", "&lt;source", "&lt;a href", "&gt;&lt;", "&lt;img"]) {
+    if (unfenced.includes(sig)) {
+      add("escaped-inline-html",
+        `the posted body carries escaped inline HTML (${sig}) — the markup was re-encoded after the`
+        + " renderer wrote it, so the buttons render as literal text with dead links");
+      break;
+    }
+  }
+  for (const h of unfenced.match(/href="[^"]*"/g) ?? []) {
+    if (h.includes("`")) {
+      add("backtick-in-href",
+        `a backtick sits inside an href (${h.slice(0, 50)}…) — it closes the attribute and opens a`
+        + " code span, which escapes the surrounding markup");
+      break;
+    }
+  }
+  if (/\]\(\s*`/.test(unfenced)) {
+    add("caged-link-target",
+      "a code span opens inside a link target — the URL must sit bare between the parentheses,"
+      + " or the link renders as dead monospace text");
+  }
+
   // The findings index is the report's worklist. Inside the accordion it is a worklist nobody
   // reads, so its position is part of the contract, not a layout preference.
   if (/^\|\s*Finding\s*\|\s*Where\s*\|\s*Severity\s*\|/m.test(body)

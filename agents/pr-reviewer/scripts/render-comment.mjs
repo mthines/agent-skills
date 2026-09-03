@@ -33,8 +33,9 @@ import { readFileSync } from "node:fs";
 import { marker, isFingerprintV2 } from "./fingerprint.mjs";
 import {
   TIERS, TIER_GLYPH, CONV_PREFIXES, CLAIM_PREFIXES,
-  TITLE_MAX, PROSE_MAX, EVIDENCE_MAX, EVIDENCE_REFS_MAX, FENCE_MAX_LINES, SHA7,
+  TITLE_MAX, PROSE_MAX, EVIDENCE_MAX, EVIDENCE_REFS_MAX, FENCE_MAX_LINES, SHA7, UNVERIFIED_MAX,
   footerLine, fixButton, anchor, assertPlain, assertNoStructure, assertAbsent, sentenceCount,
+  assertPostable,
 } from "./comment-spine.mjs";
 
 const SCALARS = ["PREFIX", "TIER", "TITLE", "BODY", "BLOCKING", "PSEUDO", "FP", "FIX_URL", "SHA",
@@ -121,7 +122,13 @@ function build(data) {
         + " notification email, where the body is not visible");
     }
     title = String(data.TITLE).trim();
-    assertPlain("TITLE", title);
+    // `allowCode: true`, matching how render-report.mjs validates FINDINGS[].title — the SAME
+    // string, since the findings index and the inline comment carry one title between them. Without
+    // the parity a title naming a dotted symbol had no legal form on this surface: the backticked
+    // `render-report.mjs` was rejected as markup, and the bare form trips `sentenceCount` on the
+    // dot. The title renders inside `**…**`, where an inline code span is well-formed, and
+    // `sentenceCount` already ignores punctuation inside backticks.
+    assertPlain("TITLE", title, { allowCode: true });
     assertNoStructure("TITLE", title);
     if (title.length > TITLE_MAX) {
       bad(`TITLE is ${title.length} chars, over the ${TITLE_MAX}-char cap — it is a noun phrase,`
@@ -163,6 +170,16 @@ function build(data) {
       && String(data.UNVERIFIED).trim() !== "") {
     unverified = String(data.UNVERIFIED).trim();
     assertPlain("UNVERIFIED", unverified, { allowCode: true });
+    // Capped, because it renders on line 1 and line 1 is the only part of the comment that is
+    // always read. Uncapped, it was also the one rendered element the agent body's `payload_is_safe`
+    // never stripped before measuring, so a long reason was charged against a ceiling budgeted for
+    // `title + decoration + prose` — and that predicate aborts the whole review post, not the one
+    // comment. A reason for why a receipt was unobtainable is a short noun phrase
+    // ("no test runner", "upstream unreachable"); anything longer belongs in BODY.
+    if (unverified.length > UNVERIFIED_MAX) {
+      bad(`UNVERIFIED is ${unverified.length} chars, over the ${UNVERIFIED_MAX}-char cap — it`
+        + " renders on line 1; put the detail in BODY");
+    }
     if (prefix === "issue") {
       bad("UNVERIFIED on an issue: — nothing was verified, so nothing is asserted; re-frame it as a"
         + " suggestion: or a question: (verification-receipt.md)");
@@ -320,8 +337,10 @@ function build(data) {
   if ((out.match(/<!--\s*fp:v\d+:/g) ?? []).length > (fpMarker ? 1 : 0)) {
     bad("rendered body carries a duplicate fingerprint marker");
   }
-  const caged = out.match(/``?\s*\[[^\]]*\]\([^)]*\)\s*``?/g);
-  if (caged) bad(`a markdown link is trapped inside a code span: ${caged[0].slice(0, 90)}`);
+  // The shared last-gate check, identical to the report's. Same reason it is shared: this surface
+  // was the one that shipped an escaped, code-span-wrapped button on #165, and a local copy of
+  // these signatures would be the second definition to drift.
+  assertPostable("rendered body", out);
   if (!out.includes("<sup>`pr-reviewer` · commit `")) {
     bad("rendered body lost its attribution footer — it is the only record of who reviewed what,"
       + " and the only one visible in a notification email");
@@ -373,6 +392,12 @@ function selfTest() {
       return e instanceof Bad && (!needle || e.message.includes(needle));
     }
     return false;
+  });
+  // The other polarity. A cap is only half-specified by the shape it refuses: the parity fixes
+  // below are about a legal shape the renderer wrongly REFUSED, which no `rejects` case can express.
+  const accepts = (name, payload, predicate) => t(name, () => {
+    const out = renderComment(payload);
+    return predicate ? predicate(out) === true : typeof out === "string" && out.length > 0;
   });
 
   const ISSUE = {
@@ -469,6 +494,16 @@ function selfTest() {
     { ...ISSUE, FIX_URL: "https://evil.example.com/goto/agent0" }, "app.dash0.com");
   rejects("an unencoded button url",
     { ...ISSUE, FIX_URL: "https://app.dash0.com/goto/agent0?p=fix(this)" }, "must be bare");
+  // Parity with render-report.mjs's FINDINGS[].title, which validates the same string with
+  // allowCode. Both routes to naming a dotted symbol were closed before: the backticked form as
+  // markup, the bare form on the dot.
+  accepts("a title naming a backticked dotted symbol",
+    { ...ISSUE, TITLE: "`render-report.mjs` rejects a caged link" },
+    (out) => out.includes("**`render-report.mjs` rejects a caged link**"));
+  rejects("an over-long unverified reason",
+    { ...ISSUE, PREFIX: "suggestion", BLOCKING: false, EVIDENCE: [],
+      UNVERIFIED: "the upstream release notes are unreachable from this runner and no cached copy exists" },
+    "over the 40-char cap");
   rejects("a button on a nitpick",
     { PREFIX: "nitpick", BODY: "x.", SHA: "7389036", FIX_URL: "https://app.dash0.com/g?x=1" },
     "nothing for Agent0 to fix");

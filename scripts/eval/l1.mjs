@@ -1724,7 +1724,10 @@ function checksInSync(plan, checks) {
     // aborted every run. A guard that checks a command's TEXT cannot see that. Run the block.
     {
       const preWrite = sliceBetween(prReviewer,
-        "**Assert these six things on `REPORT_BODY` immediately before the write",
+        // Anchored on the invariant half of the sentence, never the count: the count changes every
+        // time an assertion is added, and a stale anchor CRASHES the whole run rather than failing
+        // one check (`sliceBetween` throws), which surfaces as zero checks and no `✗` line at all.
+        "things on `REPORT_BODY` immediately before the write",
         "On any `abort`: post no report object");
       const fence = preWrite.match(/```bash\n([\s\S]*?)```/);
       s.check("G25 the pre-write assertion block is extractable", !!fence);
@@ -1732,8 +1735,15 @@ function checksInSync(plan, checks) {
         const script = `abort() { printf 'ABORT: %s\\n' "$*"; exit 3; }\n${fence[1]}\nexit 0\n`;
         const good = spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"),
           join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.json")], { encoding: "utf8" }).stdout;
+        // AGENT_SUPPORT is what the block resolves the shared checker through, so the extracted
+        // block runs the REAL comment-spine.mjs rather than failing on an unset path. Without it
+        // the `node` call errors and every case below aborts for the wrong reason — which is how
+        // this omission was caught.
         const runAssert = (body) =>
-          spawnSync("bash", ["-c", script], { env: { ...process.env, REPORT_BODY: body }, encoding: "utf8" });
+          spawnSync("bash", ["-c", script], {
+            env: { ...process.env, REPORT_BODY: body, AGENT_SUPPORT: join(REPO_ROOT, "agents") },
+            encoding: "utf8",
+          });
 
         // A valid rendered body must PASS. This is the check that was missing.
         const ok = runAssert(good);
@@ -1746,6 +1756,13 @@ function checksInSync(plan, checks) {
           ["a flattened body (no accordion)", good.replace(/<details>\n<summary>Review details[^\n]*\n/, "")],
           ["a pre-expanded accordion", good.replace("<details>\n<summary>Review details", "<details open>\n<summary>Review details")],
           ["a smuggled **Verdict** line", `${good}\n**Verdict**: PASS\n`],
+          // The MCP-write-path corruption (#165): renderer output re-encoded while being
+          // reproduced into a tool-call argument. Every other case here is a body that was
+          // never built from the template; this one WAS, and was damaged afterwards.
+          ["a body whose inline HTML was escaped in transit",
+            good.replace('"><picture><source', '"&gt;&lt;picture&gt;&lt;source')],
+          ["a body with a backtick smuggled into an href",
+            good.replace('<a href="https://', '<a href="``https://')],
         ];
         for (const [why, body] of cases) {
           const r = runAssert(body);
@@ -1799,7 +1816,10 @@ function checksInSync(plan, checks) {
     // aborted every run. A guard that checks a command's TEXT cannot see that. Run the block.
     {
       const preWrite = sliceBetween(prReviewer,
-        "**Assert these six things on `REPORT_BODY` immediately before the write",
+        // Anchored on the invariant half of the sentence, never the count: the count changes every
+        // time an assertion is added, and a stale anchor CRASHES the whole run rather than failing
+        // one check (`sliceBetween` throws), which surfaces as zero checks and no `✗` line at all.
+        "things on `REPORT_BODY` immediately before the write",
         "On any `abort`: post no report object");
       const fence = preWrite.match(/```bash\n([\s\S]*?)```/);
       s.check("G25 the pre-write assertion block is extractable", !!fence);
@@ -1807,8 +1827,15 @@ function checksInSync(plan, checks) {
         const script = `abort() { printf 'ABORT: %s\\n' "$*"; exit 3; }\n${fence[1]}\nexit 0\n`;
         const good = spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"),
           join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.json")], { encoding: "utf8" }).stdout;
+        // AGENT_SUPPORT is what the block resolves the shared checker through, so the extracted
+        // block runs the REAL comment-spine.mjs rather than failing on an unset path. Without it
+        // the `node` call errors and every case below aborts for the wrong reason — which is how
+        // this omission was caught.
         const runAssert = (body) =>
-          spawnSync("bash", ["-c", script], { env: { ...process.env, REPORT_BODY: body }, encoding: "utf8" });
+          spawnSync("bash", ["-c", script], {
+            env: { ...process.env, REPORT_BODY: body, AGENT_SUPPORT: join(REPO_ROOT, "agents") },
+            encoding: "utf8",
+          });
 
         // A valid rendered body must PASS. This is the check that was missing.
         const ok = runAssert(good);
@@ -1821,6 +1848,13 @@ function checksInSync(plan, checks) {
           ["a flattened body (no accordion)", good.replace(/<details>\n<summary>Review details[^\n]*\n/, "")],
           ["a pre-expanded accordion", good.replace("<details>\n<summary>Review details", "<details open>\n<summary>Review details")],
           ["a smuggled **Verdict** line", `${good}\n**Verdict**: PASS\n`],
+          // The MCP-write-path corruption (#165): renderer output re-encoded while being
+          // reproduced into a tool-call argument. Every other case here is a body that was
+          // never built from the template; this one WAS, and was damaged afterwards.
+          ["a body whose inline HTML was escaped in transit",
+            good.replace('"><picture><source', '"&gt;&lt;picture&gt;&lt;source')],
+          ["a body with a backtick smuggled into an href",
+            good.replace('<a href="https://', '<a href="``https://')],
         ];
         for (const [why, body] of cases) {
           const r = runAssert(body);
@@ -2016,6 +2050,10 @@ function checksInSync(plan, checks) {
       ["lorekit-503-flat.md", ["missing-report-marker", "no-review-details-accordion",
         "accordion-owned-line-at-top-level"]],
       ["lorekit-503-report-as-pointer.md", ["report-marked-as-pointer"]],
+      // The MCP-write-path corruption: correct renderer output, re-encoded while being reproduced
+      // into a tool-call argument. Invisible to every in-agent guard, which is why it belongs here.
+      ["agent-skills-165-escaped-button.md",
+        ["escaped-inline-html", "backtick-in-href", "caged-link-target"]],
     ];
     for (const [file, expectedCodes] of REAL) {
       const p = join(POSTED, file);
@@ -3316,7 +3354,7 @@ const isPollBlock = (block) =>
   }
 }
 
-// ── G41: the inline comment surface has a renderer, and it shares ONE vocabulary with the report ──
+// ── G46: the inline comment surface has a renderer, and it shares ONE vocabulary with the report ──
 //
 // The report got `render-report.mjs` because runs stopped copying its template and started
 // remembering it. The inline surface had the same problem and the opposite treatment: a prose rule
@@ -3335,14 +3373,14 @@ const isPollBlock = (block) =>
     return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
   };
 
-  s.check("G41a the inline renderer and the shared spine both exist",
+  s.check("G46a the inline renderer and the shared spine both exist",
     existsSync(RENDER) && existsSync(SPINE));
 
   if (existsSync(RENDER) && existsSync(SPINE)) {
     // (a) The renderer's own self-test. Every case in it is a shape that shipped or was one edit
     // from shipping, so a regression in the caps is a CI failure rather than a posted comment.
     const st = spawnSync("node", [RENDER, "--self-test"], { encoding: "utf8" });
-    s.check("G41b the inline renderer's self-test passes", st.status === 0,
+    s.check("G46b the inline renderer's self-test passes", st.status === 0,
       ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("—"))
         .join("; ").slice(0, 400));
 
@@ -3350,18 +3388,18 @@ const isPollBlock = (block) =>
     const fixtures = existsSync(FIX)
       ? readdirSync(FIX).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort()
       : [];
-    s.check("G41c the inline surface has committed reference renderings", fixtures.length >= 3,
+    s.check("G46c the inline surface has committed reference renderings", fixtures.length >= 3,
       `${fixtures.length} fixture(s)`);
     for (const name of fixtures) {
       const expectedPath = join(FIX, `${name}.expected.md`);
       if (!existsSync(expectedPath)) {
-        s.check(`G41d ${name} fixture + snapshot present`, false, "missing snapshot");
+        s.check(`G46d ${name} fixture + snapshot present`, false, "missing snapshot");
         continue;
       }
       const r = run([join(FIX, `${name}.json`)]);
-      s.check(`G41d ${name}.json renders without error`, r.ok, r.err);
+      s.check(`G46d ${name}.json renders without error`, r.ok, r.err);
       const expected = readFileSync(expectedPath, "utf8");
-      s.check(`G41d ${name} output matches its committed snapshot`, r.out === expected,
+      s.check(`G46d ${name} output matches its committed snapshot`, r.out === expected,
         r.out === expected ? "" : "output drifted — regenerate the snapshot and review the diff");
     }
 
@@ -3374,29 +3412,29 @@ const isPollBlock = (block) =>
       const first = body.split("\n")[0];
       // The prefix stays at position 0 with the tier immediately after it, because
       // record-comment-relevance.mjs reads the tier off exactly that shape.
-      s.check(`G41e ${name} opens with a Conventional-Comments prefix`,
+      s.check(`G46e ${name} opens with a Conventional-Comments prefix`,
         /^(praise|nitpick|suggestion|issue|question)( \((critical|high|medium|low)\)):/.test(first),
         first.slice(0, 60));
       // The recorder's own regex, verbatim — a guard that paraphrases it is not a guard on it.
-      s.check(`G41e ${name} tier is readable by the relevance recorder's SEVERITY_RE`,
+      s.check(`G46e ${name} tier is readable by the relevance recorder's SEVERITY_RE`,
         /^\s*\*{0,2}(?:issue|suggestion|nitpick|nit|question|praise|chore)\s*\((critical|high|medium|low)\)/i
           .test(body), first.slice(0, 60));
       // The blocking/non-blocking token is bold and on line 1 — other rules parse it, and Gate 3
       // reads it to decide whether an open thread fails a PR.
       if (/\*\*\(blocking\)\*\*|\*\*\(non-blocking\)\*\*/.test(body)) {
-        s.check(`G41e ${name} keeps its bold decoration on line 1`,
+        s.check(`G46e ${name} keeps its bold decoration on line 1`,
           /\*\*\((?:non-)?blocking\)\*\*\s*$/.test(first), first.slice(-40));
       }
       // The footer is the cue that makes an inline finding and the report the same reviewer, and
       // the only attribution visible in a notification email.
-      s.check(`G41e ${name} carries the shared attribution footer`,
+      s.check(`G46e ${name} carries the shared attribution footer`,
         /^<sup>`pr-reviewer` · commit `[0-9a-f]{7}` · \[how these findings are produced\]/m.test(body));
       // No heading, no bullets — the shape rule the report's `### ` headline is the counterpart of.
-      s.check(`G41e ${name} uses no heading`, !/^#{1,6} /m.test(body));
+      s.check(`G46e ${name} uses no heading`, !/^#{1,6} /m.test(body));
       // A claim carries a title in bold; a one-liner carries none. Both are checked, because the
       // interesting failure is a nitpick that grew a title as much as an issue that lost one.
       const isClaim = /^(issue|suggestion)/.test(first);
-      s.check(`G41e ${name} ${isClaim ? "carries" : "carries no"} a bold title`,
+      s.check(`G46e ${name} ${isClaim ? "carries" : "carries no"} a bold title`,
         /\*\*[^*(]/.test(first) === isClaim, first.slice(0, 70));
     }
 
@@ -3407,24 +3445,24 @@ const isPollBlock = (block) =>
     const inline = readFileSync(RENDER, "utf8");
     const report = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"), "utf8");
     for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
-      s.check(`G41f ${file} imports the shared spine`,
+      s.check(`G46f ${file} imports the shared spine`,
         /from "\.\/comment-spine\.mjs"/.test(src));
       for (const shared of ["TIER_GLYPH", "footerLine"]) {
-        s.check(`G41f ${file} takes ${shared} from the spine, not a local copy`,
+        s.check(`G46f ${file} takes ${shared} from the spine, not a local copy`,
           new RegExp(`import[\\s\\S]*?${shared}[\\s\\S]*?comment-spine`).test(src)
           && !new RegExp(`(const|function)\\s+${shared}\\b`).test(src));
       }
     }
     // The glyph set is defined exactly once in the repo's renderer layer.
     for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
-      s.check(`G41f ${file} declares no second glyph map`,
+      s.check(`G46f ${file} declares no second glyph map`,
         !/\{\s*critical:\s*"/.test(src.replace(/^import[\s\S]*?;$/m, "")));
     }
-    s.check("G41f the spine is where the glyph set lives", /TIER_GLYPH = \{ critical:/.test(spine));
+    s.check("G46f the spine is where the glyph set lives", /TIER_GLYPH = \{ critical:/.test(spine));
 
     // (e) WCAG 1.4.1: the glyph is never the sole carrier of the tier. `🔴 3 · 🟠 1` is unreadable
     // to anyone who does not already know the mapping and announces as four colour names.
-    s.check("G41g the tally pairs every glyph with its word",
+    s.check("G46g the tally pairs every glyph with its word",
       /`\$\{TIER_GLYPH\[t\]\} \$\{counts\[t\]\} \$\{t\}`/.test(spine));
 
     // (e2) The Step 4b pre-flight and the renderer must agree about what a well-formed body is.
@@ -3438,7 +3476,7 @@ const isPollBlock = (block) =>
     {
       const agentBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
       const m = agentBody.match(/^def payload_is_safe\([\s\S]*?\n    return \(True, ""\)$/m);
-      s.check("G41i the Step 4b pre-flight is extractable from the agent body", !!m,
+      s.check("G46i the Step 4b pre-flight is extractable from the agent body", !!m,
         "payload_is_safe not found — the fence shape changed");
       if (m) {
         const comments = fixtures.map((name) => {
@@ -3449,11 +3487,11 @@ const isPollBlock = (block) =>
           + `ok, why = payload_is_safe({"event":"COMMENT","body":"<!-- PR_REVIEWER_POINTER -->",`
           + `"comments": json.loads(sys.argv[1])})\nprint(json.dumps([ok, why]))\n`;
         const r = spawnSync("python3", ["-c", prog, JSON.stringify(comments)], { encoding: "utf8" });
-        s.check("G41i the pre-flight runs", r.status === 0, (r.stderr || "").slice(0, 300));
+        s.check("G46i the pre-flight runs", r.status === 0, (r.stderr || "").slice(0, 300));
         if (r.status === 0) {
           let verdict = [null, ""];
           try { verdict = JSON.parse(r.stdout); } catch { /* reported below */ }
-          s.check("G41i the pre-flight accepts every rendered reference body", verdict[0] === true,
+          s.check("G46i the pre-flight accepts every rendered reference body", verdict[0] === true,
             `rejected: ${verdict[1]}`);
         }
       }
@@ -3471,8 +3509,8 @@ const isPollBlock = (block) =>
       ["malformed JSON", "{nope"],
     ]) {
       const r = run([], payload);
-      s.check(`G41h the inline renderer rejects ${why}`, !r.ok, r.ok ? "ACCEPTED" : "");
-      s.check(`G41h rejecting ${why} emits nothing on stdout`, r.out === "", r.out.slice(0, 60));
+      s.check(`G46h the inline renderer rejects ${why}`, !r.ok, r.ok ? "ACCEPTED" : "");
+      s.check(`G46h rejecting ${why} emits nothing on stdout`, r.out === "", r.out.slice(0, 60));
     }
   }
 }
