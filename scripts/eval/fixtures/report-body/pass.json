@@ -21,6 +21,7 @@
   "INTEGRATIONS": "not activated",
   "OPTIMALITY_LOG": "ran · 2 judged · 2 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
   "STANDARDS_LOG": "ran · 2 docs · 0 finding(s)",
+  "MEASURABILITY_LOG": "ran · 3 paths classified · 0 missing · 0 unlinked",
   "SKIPPED_FILES": "none",
   "TIER_TALLY": {
     "critical": 1,

@@ -37,6 +37,17 @@ const LEDGER_RE = /<!-- PR_REVIEWER_LEDGER [\s\S]*?-->/;
 // classifier uses — otherwise a body could classify as a report on the regex and then escape this
 // check on the literal.
 const ACCORDION_OWNED = [
+  // Current shape — the three group headings and the collapsed-lens footnote. Only the headings
+  // are listed, never a plain in-group label (`Quality — `, `Memories — `): model-authored
+  // optimality cards render above the accordion, and a card discussing quality would trip a
+  // substring match on one.
+  "**Needs attention**",
+  "**Found**",
+  "**Run**",
+  "<sup>Nothing to report —",
+  // Pre-grouping shape. Kept because this validator runs against LIVE bodies, and a report posted
+  // before the accordion was grouped is still judged by the contract it was written under — the
+  // same reason `**Open bot threads (` survives below.
   "**Run mode**",
   "**Memories**",
   "**Quality**",
@@ -66,7 +77,12 @@ const ACCORDION_OWNED = [
 // `**Run mode**`, so a two-of-N rule over the diagnostic lines missed it. Column spacing varies
 // between runs (`| --- |` vs `|---|`), so match the header cells, not a fixed string.
 const GATE_TABLE_RE = /^\|\s*Gate\s*\|\s*Status\s*\|\s*Details\s*\|/m;
+// Both shapes are listed: a current body carries `**Found**` + `**Run**`, a pre-grouping one
+// carries two or more of the bold diagnostic labels. Two signals is still the bar, so one
+// incidental bold label in a human comment never classifies as a report.
 const REPORT_SIGNALS = [
+  "**Found**",
+  "**Run**",
   "**Run mode**",
   "**Standards (2.4d)**",
   "**Optimality (2.4c)**",

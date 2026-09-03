@@ -56,6 +56,14 @@ Skipping reports as `Optimality review: skipped (trivial diff).` in the Quality 
 
 Step **2.4c** — after the holistic pass (2.4) and its targeted escalation (2.4b), and **before** Step 2.5 (dedupe), so optimality proposals participate in dedupe and can collide-and-win against a line-level finding on the same `(file, line)`.
 
+**`deep` tier only.** An approach-level judgement needs the whole change in view: "is this the best
+way to do this" is unanswerable from a delta, and asked of one anyway it produces proposals to
+restructure code whose surrounding shape the run never saw. On `standard` and `quick` the lens is
+skipped and logged `skipped (tier: <t>)` — the same disposition as the existing
+`skipped (incremental-quick)`, generalised now that the run modes are tiers
+([`depth-routing.md`](../../pr-reviewer/rules/depth-routing.md)). A caller that wants the lens on a
+small change asks for it with `--full` or `--effort high`, which is a request for a `deep` tier.
+
 **2.4c always runs `report` mode — read-only, no file mutation.** This is deliberate: mutating files mid-pipeline would invalidate the diff snapshot the later gates (and, in `pr-reviewer`, line-validity) read.
 
 ```
@@ -180,7 +188,7 @@ Every report that carries a Quality Gate summary **must** render this block, in 
 
 ```text
 Optimality review (2.4c):
-  Status:             ran | skipped (trivial diff) | skipped (--no-optimize) | skipped (incremental-quick) | skipped (skill not installed)
+  Status:             ran | skipped (trivial diff) | skipped (--no-optimize) | skipped (tier: standard|quick) | skipped (skill not installed)
   Units judged:       <N>
   Optimal:            <O>
   Proposals:          <P> (cap 2)

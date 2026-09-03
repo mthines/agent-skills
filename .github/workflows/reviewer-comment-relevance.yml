@@ -6,9 +6,15 @@
 # the agents re-raise the same dismissed nitpick on every PR forever, because nothing ever
 # told them it was dismissed.
 #
-# Two modes, both driven from GitHub webhooks by the caller:
-#   thread-resolved  A reviewer resolved one thread  -> relevant/fixed or not-relevant/wont-fix.
-#   pr-merged        A PR merged                     -> sweep still-open threads as ignored-at-merge.
+# Four modes, driven from GitHub webhooks (and, for the last one, a deployment) by the caller:
+#   thread-resolved    A reviewer resolved one thread  -> relevant/fixed or not-relevant/wont-fix.
+#   pr-merged          A PR merged                     -> sweep still-open threads as ignored-at-merge.
+#   human-comment      A human commented on a changed line this agent did not flag -> a `missed`
+#                      hotspot signal, the only direct evidence that detection came up short.
+#   deploy-regression  A post-deploy telemetry comparison -> amplify a dismissed finding that
+#                      regressed, or record a hotspot miss on a file nothing flagged. This script
+#                      holds no telemetry credentials: the caller computes the comparison and
+#                      passes the result in as `regression_report`.
 #
 # Behaviour: read-only on GitHub. It never posts, edits, resolves, or deletes anything on the PR;
 # its only side effect is a LoreKit write. scripts/record-comment-relevance.mjs always exits 0 —
@@ -25,9 +31,9 @@ on:
     inputs:
       mode:
         description: >
-          Which signal to record: `thread-resolved` for a single resolved thread, or `pr-merged`
-          to sweep the threads still open when a PR merged. An unrecognised value is a logged
-          no-op, not a failure.
+          Which signal to record: `thread-resolved`, `pr-merged`, `human-comment`, or
+          `deploy-regression` (see the header for each). An unrecognised value is a logged no-op,
+          not a failure.
         required: true
         type: string
       pr_number:
@@ -66,6 +72,36 @@ on:
         required: false
         type: string
         default: ""
+      comment_author:
+        description: Login of the comment's author, recorded as the signal's provenance.
+        required: false
+        type: string
+        default: ""
+      comment_author_type:
+        description: >
+          `User` or `Bot`. Required in `human-comment` mode, where a bot comment is not a
+          missed-detection signal and is skipped.
+        required: false
+        type: string
+        default: ""
+      reviewer_login:
+        description: >
+          Login the reviewer agent posts under. Optional: a comment this agent wrote carries its
+          own `<!-- fp:v2:... -->` marker, which is self-attributing, so this only widens
+          attribution to pre-marker comments.
+        required: false
+        type: string
+        default: ""
+      regression_report:
+        description: >
+          `deploy-regression` mode only. Either inline JSON or a path to a file in the caller's
+          workspace, shaped
+          `{ "pr": N, "sha": "...", "regressions": [ { "path", "symbol", "exception_type",
+          "before_rate", "after_rate" } ] }`. An empty `regressions` array writes nothing —
+          silence is not evidence of safety, so there is no confirmed-safe counter-record.
+        required: false
+        type: string
+        default: ""
     secrets:
       lorekit_api_key:
         description: >
@@ -94,7 +130,11 @@ jobs:
           # caller pinning `@v1` still gets main's recorder.
           repository: mthines/agent-skills
           ref: main
-          sparse-checkout: scripts/record-comment-relevance.mjs
+          # Both paths are required: the recorder imports the fingerprint grammar rather than
+          # carrying a second copy, so omitting the second path fails the job at import time.
+          sparse-checkout: |
+            scripts/record-comment-relevance.mjs
+            agents/pr-reviewer/scripts/fingerprint.mjs
           sparse-checkout-cone-mode: false
 
       - uses: actions/setup-node@v4
@@ -118,6 +158,10 @@ jobs:
           FIRST_COMMENT_LINE: ${{ inputs.comment_line }}
           FIRST_COMMENT_BODY: ${{ inputs.comment_body }}
           FIRST_COMMENT_CREATED_AT: ${{ inputs.comment_created_at }}
+          FIRST_COMMENT_AUTHOR: ${{ inputs.comment_author }}
+          FIRST_COMMENT_AUTHOR_TYPE: ${{ inputs.comment_author_type }}
+          REVIEWER_LOGIN: ${{ inputs.reviewer_login }}
+          REGRESSION_REPORT: ${{ inputs.regression_report }}
           MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail

@@ -17,22 +17,17 @@
 | Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
 | Code review | ✅ | The multi-lens review found no blocking issues. |
 
-**Run mode** — full · 128 lines in delta
+**Found**
 
-**Memories** — 53 indexed · 0 used
+Quality — produced 3 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0
+Severity — 🔴 1 · 🟠 2 · 🟡 3 · ⚪ 1
 
+**Run**
 
-**Severity** — 🔴 1 · 🟠 2 · 🟡 3 · ⚪ 1
+full · 128 lines in delta
+Memories — 53 indexed · 0 used
 
-**Quality** — produced 3 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0
-
-**Integrations** — not activated
-
-**Optimality (2.4c)** — ran · 2 judged · 2 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld
-
-**Standards (2.4d)** — ran · 2 docs · 0 finding(s)
-
-**Skipped files** — none
+<sup>Nothing to report — standards (2 docs), optimality (2 judged), measurability (3 paths classified), integrations (not activated), 0 files skipped.</sup>
 
 <sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
 

@@ -1,0 +1,87 @@
+# PR relevance memory — this repo's own caller.
+#
+# Generated from plugins/pr-relevance-memory/templates/pr-relevance-caller.yml, with the `uses:`
+# pointed at the local path instead of @main so a change to the reusable workflow is exercised by
+# this repository rather than only by its consumers.
+#
+# Why this file exists: this repository owns the only committed writer for the v2
+# `reviewer-comment-relevance` key space, and until this caller landed it did not call it. The
+# result was a store holding hundreds of legacy prose-keyed rows, zero `rule::<fp>` rows, and a
+# review run reporting "51 lessons indexed, 0 applied" — which reads as a tuning problem and is
+# actually a missing producer.
+#
+# Requires LOREKIT_API_KEY in Settings → Secrets and variables → Actions. Without it the reusable
+# workflow is a graceful no-op: scripts/record-comment-relevance.mjs logs the missing key and
+# returns, so the job goes green and writes nothing. That is the intended behaviour on a fork PR,
+# where secrets are unavailable by design.
+#
+# Note the same caveat the report-shape self-caller carries: `pull_request_review_thread`,
+# `pull_request`, and `pull_request_review_comment` workflows always run the DEFAULT branch's copy,
+# so an edit to either file here takes effect after merge, not on the PR that makes it. Pre-merge
+# coverage comes from the recorder's own `--self-test`, which L1 executes.
+#
+# See: plugins/pr-relevance-memory/README.md
+
+name: PR relevance memory
+
+on:
+  pull_request_review_thread:
+    types: [resolved]
+  pull_request:
+    types: [closed]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  thread-resolved:
+    name: Record resolved thread
+    if: github.event_name == 'pull_request_review_thread'
+    uses: ./.github/workflows/reviewer-comment-relevance.yml
+    with:
+      mode: thread-resolved
+      pr_number: ${{ github.event.pull_request.number }}
+      comment_id: ${{ github.event.thread.comments[0].id }}
+      comment_path: ${{ github.event.thread.comments[0].path }}
+      comment_line: ${{ github.event.thread.comments[0].line }}
+      comment_body: ${{ github.event.thread.comments[0].body }}
+      comment_created_at: ${{ github.event.thread.comments[0].created_at }}
+      comment_author: ${{ github.event.thread.comments[0].user.login }}
+      comment_author_type: ${{ github.event.thread.comments[0].user.type }}
+    secrets:
+      lorekit_api_key: ${{ secrets.LOREKIT_API_KEY }}
+
+  pr-merged:
+    name: Sweep open threads at merge
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    uses: ./.github/workflows/reviewer-comment-relevance.yml
+    with:
+      mode: pr-merged
+      pr_number: ${{ github.event.pull_request.number }}
+    secrets:
+      lorekit_api_key: ${{ secrets.LOREKIT_API_KEY }}
+
+  human-comment:
+    name: Record a missed detection
+    # A human's own review comment on a changed line. The `user.type` guard is belt and braces: the
+    # recorder skips bot comments itself, but skipping the job entirely saves a runner minute on
+    # every review bot's comment.
+    if: >
+      github.event_name == 'pull_request_review_comment'
+      && github.event.comment.user.type == 'User'
+    uses: ./.github/workflows/reviewer-comment-relevance.yml
+    with:
+      mode: human-comment
+      pr_number: ${{ github.event.pull_request.number }}
+      comment_id: ${{ github.event.comment.id }}
+      comment_path: ${{ github.event.comment.path }}
+      comment_line: ${{ github.event.comment.line }}
+      comment_body: ${{ github.event.comment.body }}
+      comment_created_at: ${{ github.event.comment.created_at }}
+      comment_author: ${{ github.event.comment.user.login }}
+      comment_author_type: ${{ github.event.comment.user.type }}
+    secrets:
+      lorekit_api_key: ${{ secrets.LOREKIT_API_KEY }}

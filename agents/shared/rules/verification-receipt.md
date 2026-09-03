@@ -42,7 +42,7 @@ Skill("verify-behavior", "claim")
   caller: "pr-reviewer"
 ```
 
-The skill returns a receipt whose final line reads `[receipt] verdict: <confirms|contradicts|ambiguous|null>` — the same shape this rule already produces at Tier 1 — see [`skills/quality/verify-behavior/rules/receipt.md`](../../../skills/quality/verify-behavior/rules/receipt.md) for the full contract. That receipt is consumed by Step 2.7 exactly like a Tier 1 receipt; the 2.6 → 2.6b → 2.7 pipeline order does not change, and the null-drop invariant below applies identically regardless of which tier produced the receipt.
+The skill returns a receipt whose final line reads `[receipt] verdict: <confirms|contradicts|ambiguous|null|unobtainable>` — the same shape this rule already produces at Tier 1 — see [`skills/quality/verify-behavior/rules/receipt.md`](../../../skills/quality/verify-behavior/rules/receipt.md) for the full contract. That receipt is consumed by Step 2.7 exactly like a Tier 1 receipt; the 2.6 → 2.6b → 2.7 pipeline order does not change, and the null-drop invariant below applies identically regardless of which tier produced the receipt.
 
 **When `verify-behavior` is unavailable:** log `verify-behavior — not available, continuing` and degrade to today's static-only behavior — Tier 1 proof tools decide what they can, and a claim that needs Tier 2/3 to decide survives with only a partial (Tier 1) receipt, exactly as before this rule delegated. Do not block the review on a missing skill.
 
@@ -103,10 +103,55 @@ Store the raw output as the receipt.
 | Output is **ambiguous** (pattern present but in a different code path) | Downgrade the finding to a `question:` and attach receipt |
 | Output is **null / empty** and the claim asserts presence | **DROP** the finding as unverified — a null result is NOT confirmation |
 | Output **contradicts** the claim | **DROP** the finding — the model was wrong |
+| The check **could not run at all** | `unobtainable` — **re-frame, do not drop.** See below. |
 
 > **Hard rule: a null or empty proof result DROPS the finding.**
 > It is never interpreted as "confirmed bug."
 > The grounding step (2.6) already confirmed the symbol exists; if a behavioral claim about that symbol returns no evidence, the claim is unverified noise.
+
+### `unobtainable` is not `null`
+
+The two look alike and mean opposite things.
+
+| Verdict | The check | The claim |
+| --- | --- | --- |
+| `null` | **ran**, and found no evidence for the claim | unsupported ⇒ drop |
+| `unobtainable` | **could not run** | untested ⇒ re-frame |
+
+`unobtainable` is the honest verdict when the proof was never available: the upstream changelog is
+unreachable, no type-checker resolved for this language, `workspace.install` is off and the receipt
+needed resolved types, the target is a binary or generated file, or `DEPTH_CAPABILITY = diff-only`
+and the claim is about a file the run never had.
+
+Collapsing it into `null` is what made the pipeline **systematically drop its highest-value
+findings**. The claims whose truth lives outside the repo — a breaking change in a dependency, a
+contract in a service this code calls — are exactly the ones no in-repo grep can confirm, so a rule
+that drops on "no proof" drops precisely those and keeps the ones a grep happens to reach.
+
+An `unobtainable` finding is therefore:
+
+1. **Re-framed as the in-repo conditional it actually is** — what the code does, plus what would
+   have to be true elsewhere for it to be a defect.
+2. **Decorated `(unverified: <reason>)`**, with the reason naming which rung was unavailable.
+3. **Capped at `suggestion:` or `question:`** — never `issue:`, never `(blocking)`. Nothing was
+   verified, so nothing is asserted.
+4. **Listed in the report's withheld section** when it has no valid anchor.
+
+```text
+[receipt] tier: 2 | tool: none | target: node_modules/internal-sdk
+[receipt] command: (registry, GitHub releases, changelog, clone — all failed)
+[receipt] verdict: unobtainable — upstream release notes unreachable; RE-FRAME, do not drop
+```
+
+```markdown
+suggestion: `internal-sdk` 3.1.0 → 4.0.0 is a major bump whose release notes were not
+reachable from this runner. The 4 usage sites are `src/auth/session.ts:22`, `…:41`,
+`src/api/mw.ts:9`, `src/api/mw.ts:57`. (unverified: upstream unreachable)
+```
+
+**Never reach `unobtainable` without trying.** It is a verdict about the *tooling*, established by
+exhausting the ladder, not a shortcut past a check that was merely inconvenient. A receipt claiming
+`unobtainable` names the rungs it attempted, as the example above does.
 
 ---
 
@@ -129,7 +174,7 @@ Attach the receipt to the finding as an internal annotation (not emitted to GitH
 Receipts are consumed by Step 2.7 as part of the `Evidence` input to `Skill("confidence", "code")`:
 
 ```
-Evidence: <patch hunk> + receipt: <raw tool output> + verdict: <confirms|contradicts|ambiguous|null>
+Evidence: <patch hunk> + receipt: <raw tool output> + verdict: <confirms|contradicts|ambiguous|null|unobtainable>
 ```
 
 This makes the confidence score sharper — the skill is scoring a claim + its own proof, not a claim alone.

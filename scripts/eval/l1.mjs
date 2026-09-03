@@ -11,6 +11,17 @@ import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, e
 const AW = join(REPO_ROOT, "skills/workflow/autonomous-workflow");
 const s = new Suite("L1 deterministic contract checks");
 
+// Every report-body fixture, discovered from disk rather than listed. G25/G26/G27 each iterate
+// the fixtures, and an explicit list meant a new fixture was silently exempt from all three —
+// the guards would have kept passing while the reference rendering it locks in went unchecked.
+// A fixture is `<name>.json` + `<name>.expected.md`; the presence checks below catch a half-pair.
+const REPORT_FIXTURES = (() => {
+  const dir = join(REPO_ROOT, "scripts/eval/fixtures/report-body");
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir).filter((f) => f.endsWith(".json"))
+    .map((f) => f.replace(/\.json$/, "")).sort();
+})();
+
 // ── Check A: link + anchor integrity (skips code fences + templates/) ──
 // Catches the broken-anchor class (e.g. the #lesson-promotion bug we shipped + fixed).
 // The repo has pre-existing link debt in example/scaffold prose, so this gates on
@@ -630,16 +641,29 @@ function checksInSync(plan, checks) {
     // Scope to each function's own body. `fnBody` must handle `async function`: an
     // earlier version terminated on "\nfunction " only, so modeThreadResolved's window
     // ran to EOF, swallowed modePrMerged, and stayed green when its own call was cut.
+    // `export ` must be tolerated too: the decline logic now lives in exported pure
+    // deciders, and a pattern anchored on a bare `function` silently returned "" for
+    // each of them — which reads as "the call is missing" rather than "the guard cannot
+    // see the function", the same false-green shape the async fix above closed.
+    const FN_START = "^(?:export\\s+)?(?:async\\s+)?function";
     const fnBody = (name) => {
-      const i = rec.search(new RegExp(`^(?:async\\s+)?function ${name}\\(`, "m"));
+      const i = rec.search(new RegExp(`${FN_START} ${name}\\(`, "m"));
       if (i < 0) return "";
       const rest = rec.slice(i + 1);
-      const j = rest.search(/^(?:async\s+)?function \w+\(/m);
+      const j = rest.search(new RegExp(`${FN_START} \\w+\\(`, "m"));
       return j < 0 ? rec.slice(i) : rec.slice(i, i + 1 + j);
     };
-    s.check("G24f both script modes still apply decline detection",
-      /hasWontFixReply\s*\(/.test(fnBody("modeThreadResolved")) &&
-      /hasWontFixReply\s*\(/.test(fnBody("modePrMerged")));
+    // Decline detection moved out of the two mode functions and into the pure deciders
+    // they call, so asserting the call site inside each mode body no longer proves
+    // anything. Assert the whole path instead — each mode delegates, and each decider
+    // it delegates to applies the matcher. Four assertions where there were two: a
+    // decider that drops the matcher fails, and so does a mode that stops delegating.
+    s.check("G24f both deciders apply decline detection",
+      /hasWontFixReply\s*\(/.test(fnBody("decideResolvedThread")) &&
+      /hasWontFixReply\s*\(/.test(fnBody("decideMergeSweep")));
+    s.check("G24f both script modes delegate to the decider that applies it",
+      /decideResolvedThread\s*\(/.test(fnBody("modeThreadResolved")) &&
+      /decideMergeSweep\s*\(/.test(fnBody("modePrMerged")));
 
     // (i) The acknowledged-no-fix carve-out must exist AND precede the ignored-at-merge
     // bullet whose condition it satisfies in full. Deleting it (which I did) sends an
@@ -766,6 +790,7 @@ function checksInSync(plan, checks) {
       const OTHER_BUCKET_TTLS = new Set([
         30,  // `review-outcomes` — the volatile bus; G12a owns it.
         7,   // `pr-review-state` — pr-reviewer's per-PR state record; G24i owns it.
+        90,  // `review-knowledge` — symbol + hotspot records; G16g below owns it.
       ]);
       const found = [...content.matchAll(stale)]
         .map((m) => Number(m[1] ?? m[2] ?? m[3] ?? m[4]))
@@ -773,6 +798,16 @@ function checksInSync(plan, checks) {
       s.check(`G16f ${label} carries no reviewer-comment-relevance TTL other than ${TTL_DAYS}`,
         found.length === 0, found.length ? `stale: ${[...new Set(found)].join(", ")}` : "");
     }
+
+    // G16g owns the OTHER durable TTL in the same file. Excusing 90 in G16f without an
+    // owning check would let the knowledge TTL drift freely under cover of the excuse.
+    const KNOWLEDGE_TTL_DAYS = 90;
+    const buckets = read("agents/shared/rules/memory-buckets.md");
+    s.check(`G16g record-comment-relevance.mjs computes the knowledge/hotspot expiry from ${KNOWLEDGE_TTL_DAYS} days`,
+      recorder.includes(`KNOWLEDGE_TTL_MS = ${KNOWLEDGE_TTL_DAYS} * 24 * 60 * 60 * 1000`));
+    s.check(`G16g memory-buckets.md states the knowledge/hotspot lifetime as ${KNOWLEDGE_TTL_DAYS}d`,
+      new RegExp(`review-knowledge\`? \\(symbol\\)[^\n]*durable ${KNOWLEDGE_TTL_DAYS}d`).test(buckets) &&
+      new RegExp(`review-hotspot\`?[^\n]*durable ${KNOWLEDGE_TTL_DAYS}d`).test(buckets));
   }
 
   // G17: standards-conformance.md exists and is wired into pr-reviewer.
@@ -824,10 +859,18 @@ function checksInSync(plan, checks) {
     // carve-out's "conflict residue"), so it asserts nothing about the 2.4d statement. Same shape
     // as the G17c fix above — assert the new content, not a word that was already there.
     s.check("G17e pr-reviewer.md has standards diagnostics line + 2.4d precedence paragraph + Conflicts-surfaced counter",
-      (prReviewer.includes("Standards (2.4d)")
-        || read("agents/pr-reviewer/rules/report-rendering.md").includes("Standards (2.4d)")) &&
+      // The posted-body label dropped its step number when the accordion was grouped
+      // (`**Standards (2.4d)** —` → `Standards — ` under the `Found` heading), so match the
+      // current label there and the step reference in the agent body. Either surface satisfies it;
+      // the assertion is that a standards run-state line EXISTS, not what it is called.
+      (prReviewer.includes("Standards conformance (2.4d)")
+        || read("agents/pr-reviewer/rules/report-rendering.md").includes("`Standards — `")) &&
       /Precedence: when a standards finding conflicts with the PR author's stated intent or a review-config\s+explicit override, the author-intent and config \*\*win\*\*/.test(prReviewer) &&
-      prReviewer.includes("Conflicts surfaced:"));
+      // The diagnostics counter lives in whichever surface renders the log block: the terminal
+      // template (now terminal-report.md) or the posted-body reference. Accept either — the
+      // assertion is that the counter EXISTS, not which file it moved to.
+      (prReviewer.includes("Conflicts surfaced:")
+        || read("agents/pr-reviewer/rules/terminal-report.md").includes("Conflicts surfaced:")));
 
     // G17f: pr-reviewer.md has --no-standards in the arg table AND the frontmatter description,
     // standards-conformance.md in the Imports list, and 2.4d in the pipeline block.
@@ -945,19 +988,26 @@ function checksInSync(plan, checks) {
   // for WARN, and pr-reviewer.md's WARN line names the report-rendering.md contract explicitly so
   // a future edit to one side is not made in ignorance of the other.
   {
-    const step3WarnRow = sliceBetween(prReviewer, "| Presentation | `**Verdict**` line |", "`VERDICT` (PASS/WARN/FAIL");
-    s.check("G33a pr-reviewer.md Step 3 WARN verdict line carries no bare PASS token",
+    // The template moved out of the agent body into terminal-report.md; the agent body keeps the
+    // routing line. Read the surface that actually owns the verdict rows, and assert the agent
+    // still routes to it — otherwise a future move could orphan these three checks silently.
+    const terminalReport = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/terminal-report.md"), "utf8");
+    s.check("G33 pr-reviewer.md routes Step 3 to terminal-report.md",
+      prReviewer.includes("pr-reviewer/rules/terminal-report.md"),
+      "Step 3 no longer names the file that owns the terminal template");
+    const step3WarnRow = sliceBetween(terminalReport, "| Presentation | `**Verdict**` line |", "`VERDICT` (PASS/WARN/FAIL");
+    s.check("G33a terminal-report.md Step 3 WARN verdict line carries no bare PASS token",
       !/\|\s*WARN\s*\|\s*`PASS\s*—/.test(step3WarnRow),
       "Step 3's WARN row still prints a `PASS —` verdict, which contradicts a harness VERDICT: FAIL");
-    s.check("G33b pr-reviewer.md Step 3 WARN verdict line matches the posted-body wording",
+    s.check("G33b terminal-report.md Step 3 WARN verdict line matches the posted-body wording",
       /No blocking issues — <WARN_GATE_COUNT> warning\(s\): <WARN_REASONS>\./.test(step3WarnRow),
       "Step 3's WARN row no longer reads 'No blocking issues — <N> warning(s): <reasons>.' — re-sync it with report-rendering.md § Headlines");
     s.check("G33c report-rendering.md's posted-body WARN headline carries no bare PASS token",
       !/no blocking issues.*\*\*PASS\*\*|PASS\s*—\s*no blocking issues/i.test(reportRendering),
       "report-rendering.md's WARN headline regained a PASS token");
-    s.check("G33d pr-reviewer.md's WARN row cites report-rendering.md so the two cannot drift silently",
-      /report-rendering\.md[\s\S]{0,40}byte-identical|byte-identical[\s\S]{0,40}report-rendering\.md/.test(prReviewer),
-      "pr-reviewer.md's Step 3 WARN explanation no longer cross-references report-rendering.md as the source of truth");
+    s.check("G33d terminal-report.md's WARN row cites report-rendering.md so the two cannot drift silently",
+      /report-rendering\.md[\s\S]{0,40}byte-identical|byte-identical[\s\S]{0,40}report-rendering\.md/.test(terminalReport),
+      "terminal-report.md's Step 3 WARN explanation no longer cross-references report-rendering.md as the source of truth");
   }
 
   // G34: prior-comment-awareness.md requires verifying a "resolved" thread against HEAD before
@@ -1204,7 +1254,7 @@ function checksInSync(plan, checks) {
 
     // (a) Snapshot parity. A template or renderer change that alters the output must be
     // accompanied by a regenerated snapshot, so the diff shows the reader exactly what moved.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of REPORT_FIXTURES) {
       const payload = join(FIX, `${name}.json`);
       const expectedPath = join(FIX, `${name}.expected.md`);
       if (!existsSync(payload) || !existsSync(expectedPath)) {
@@ -1219,7 +1269,7 @@ function checksInSync(plan, checks) {
     }
 
     // (b) Structural invariants on every snapshot. These are what the five failed runs broke.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of REPORT_FIXTURES) {
       const p = join(FIX, `${name}.expected.md`);
       if (!existsSync(p)) continue;
       const body = readFileSync(p, "utf8");
@@ -1230,8 +1280,8 @@ function checksInSync(plan, checks) {
       s.check(`G25 ${name} carries no **Verdict** line`, !body.includes("**Verdict**"));
       // Nothing the accordion owns may render above the first <details>.
       const head = body.split("<details>")[0];
-      for (const owned of ["| Gate | Status | Details |", "**Run mode**", "**Memories**",
-        "**Quality**", "**Skipped files**"]) {
+      for (const owned of ["| Gate | Status | Details |", "**Needs attention**", "**Found**",
+        "**Run**", "<sup>Nothing to report \u2014"]) {
         s.check(`G25 ${name} keeps ${owned} inside the accordion`, !head.includes(owned));
       }
     }
@@ -1370,7 +1420,7 @@ function checksInSync(plan, checks) {
       s.check("G25 the renderer built the link, not the model",
         r.out.includes("[`a-lesson-key`](https://lorekit.io/lore?x=1) — promoted"));
       s.check("G25 the used count is derived from the list",
-        r.out.includes("**Memories** — 53 indexed · 1 used"));
+        r.out.includes("Memories — 53 indexed · 1 used"));
     }
 
     // A zero-delta run parses under the same {mode, delta_lines} grammar as every other mode,
@@ -1381,7 +1431,7 @@ function checksInSync(plan, checks) {
       }));
       s.check("G25 a zero-delta run renders", r.ok, r.err);
       s.check("G25 zero-delta parses as {incremental, 0}",
-        r.out.includes("**Run mode** — incremental · 0 lines in delta"));
+        /^incremental · 0 lines in delta$/m.test(r.out));
       s.check("G25 zero-delta keeps its footer form",
         r.out.includes("No code changes since `70cf147` — gate checks only for commit `bde3c2f`."));
     }
@@ -1433,21 +1483,10 @@ function checksInSync(plan, checks) {
         },
         "Run mode": (b) => {
           // One shape for every mode, zero-delta included — it renders `incremental · 0 lines in
-          // delta`, so there is no second alternative to carry.
-          const m = b.match(/^\*\*Run mode\*\* — (full|incremental|incremental-quick) · (\d+) lines in delta/m);
+          // delta`, so there is no second alternative to carry. The `**Run mode**` label is gone:
+          // the `**Run**` group heading carries it and the line's own shape is the anchor.
+          const m = b.match(/^(full|incremental|incremental-quick) · (\d+) lines in delta/m);
           return m ? { mode: m[1], delta_lines: Number(m[2]) } : null;
-        },
-        "Standards log": (b) => {
-          const m = b.match(/^\*\*Standards \(2\.4d\)\*\* — (ran|skipped)/m);
-          return m ? { ran: m[1] === "ran" } : null;
-        },
-        "Optimality log": (b) => {
-          const m = b.match(/^\*\*Optimality \(2\.4c\)\*\* — (ran|skipped)/m);
-          return m ? { ran: m[1] === "ran" } : null;
-        },
-        "Skipped files": (b) => {
-          const m = b.match(/^\*\*Skipped files\*\* — (.+)$/m);
-          return m ? { files: m[1] === "none" ? [] : [m[1]] } : null;
         },
         "Headline": (b) => {
           const lines = b.split("\n").filter((l) => l.trim() !== "");
@@ -1465,7 +1504,7 @@ function checksInSync(plan, checks) {
           /^### Optimality proposal — \S+:\d+$/m],
         "Partial-review banner": [/⚠️ \*\*Partial review — tool budget exhausted after \d+ calls; \d+ of \d+ files scanned\.\*\*/, null],
       };
-      for (const name of ["pass", "warn", "fail"]) {
+      for (const name of REPORT_FIXTURES) {
         const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
         if (!existsSync(p)) continue;
         const body = readFileSync(p, "utf8");
@@ -1478,6 +1517,23 @@ function checksInSync(plan, checks) {
         const rows = [...body.matchAll(/^\| (Description vs\. code|Prior review feedback|Documentation|Self-review signals|Code review) \| (✅|⚠️|❌|⏭️) \| ([^|]*) \|$/gm)];
         s.check(`G25 round-trip: ${name} — the gate table parses to 5 typed rows`, rows.length === 5,
           `parsed ${rows.length}`);
+        // A collapsible lens renders EITHER its own labelled line in a group OR one entry in the
+        // `Nothing to report` footnote — never both, and never neither. Both would say the same
+        // thing twice; neither would silently drop a lens's run-state, which is the failure the
+        // old always-render shape traded vertical space to avoid.
+        const footnote = (body.match(/^<sup>Nothing to report — (.+)\.<\/sup>$/m) || [, ""])[1];
+        for (const [lens, lineRe, token] of [
+          ["Standards log", /^Standards — (ran|skipped)/m, "standards"],
+          ["Optimality log", /^Optimality — (ran|skipped)/m, "optimality"],
+          ["Integrations", /^Integrations — \S/m, "integrations"],
+          ["Skipped files", /^Skipped files — \S/m, "files skipped"],
+          ["Severity", /^Severity — \S/m, "severity"],
+        ]) {
+          const asLine = lineRe.test(body);
+          const asFootnote = footnote.includes(token);
+          s.check(`G25 round-trip: ${name} — "${lens}" renders as a line xor a footnote entry`,
+            asLine !== asFootnote, `line=${asLine} footnote=${asFootnote} (footnote: ${footnote})`);
+        }
         // Counts in a summary must equal the bullets rendered under it.
         for (const [section, [summaryRe, bulletRe]] of Object.entries(CONDITIONAL)) {
           const m = body.match(summaryRe);
@@ -1493,7 +1549,7 @@ function checksInSync(plan, checks) {
 
     // (i) Derived counts cannot disagree with the lists they count — the whole point of moving
     // counts out of the payload. Assert it on the rendered output, per fixture.
-    for (const name of ["warn", "fail"]) {
+    for (const name of REPORT_FIXTURES) {
       const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
       if (!existsSync(p)) continue;
       const body = readFileSync(p, "utf8");
@@ -1508,6 +1564,61 @@ function checksInSync(plan, checks) {
           suffix && Number(suffix[1]) === Number(declared[1]),
           suffix ? `summary ${suffix[1]} vs list ${declared[1]}` : "no summary counter");
       }
+    }
+
+    // (i2) The grouped accordion. Nine flat `**Label** — value` lines became three groups, and
+    // three properties of that shape are load-bearing rather than cosmetic: the group headings
+    // are the only bold lines left inside the accordion (so the eye lands on them), the
+    // attention heading asserts something and therefore must not appear over an all-✅ table,
+    // and a run caveat gets its own ⚠️ line instead of riding at the tail of the densest line.
+    {
+      const tpl = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/templates/report-body.md"), "utf8");
+      for (const slot of ["{{#NEEDS_ATTENTION}}**Needs attention**", "**Found**\n\n{{FOUND_LINES}}",
+        "**Run**\n\n{{RUN_LINES}}", "<sup>Nothing to report — {{NOTHING_TO_REPORT}}.</sup>"]) {
+        s.check(`G25 the template carries ${slot.split("\n")[0]}`, tpl.includes(slot));
+      }
+      // The pre-grouping labels must not come back: they are what the grouping replaced, and a
+      // template carrying both shapes would render every line twice.
+      for (const gone of ["**Run mode**", "**Memories**", "**Quality**", "**Integrations**",
+        "**Optimality (2.4c)**", "**Standards (2.4d)**", "**Skipped files** —"]) {
+        s.check(`G25 the template no longer carries the flat label ${gone}`, !tpl.includes(gone));
+      }
+
+      // `Needs attention` tracks the five gate rows, and only them. CI is excluded on purpose:
+      // Gate 2 warns and never fails, so a red build must not label the gate table.
+      const allPass = run([join(FIX, "pass.json")]);
+      s.check("G25 an all-✅ gate table renders no attention heading",
+        allPass.ok && !allPass.out.includes("**Needs attention**"), allPass.err);
+      const oneWarn = run([], mutate((c) => { c.GATE_DOCS_STATUS = "⚠️"; c.GATE_DOCS_DETAILS = "x"; }));
+      s.check("G25 one ⚠️ gate renders the attention heading",
+        oneWarn.ok && oneWarn.out.includes("**Needs attention**"), oneWarn.err);
+      const ciOnly = run([], mutate((c) => { c.CI_NOTE = "2 checks red on `bde3c2f`."; }));
+      s.check("G25 red CI alone renders no attention heading — Gate 2 warns, never fails",
+        ciOnly.ok && !ciOnly.out.includes("**Needs attention**"), ciOnly.err);
+
+      // RUN_ANOMALY owns its own line; the renderer owns the glyph.
+      const anom = run([], mutate((c) => { c.RUN_ANOMALY = "a base-branch merge polluted the compare range"; }));
+      s.check("G25 RUN_ANOMALY renders on its own ⚠️ line",
+        anom.ok && /^⚠️ a base-branch merge polluted the compare range$/m.test(anom.out), anom.err);
+      for (const [why, payload] of [
+        ["a RUN_NOTE carrying a ⚠️", mutate((c) => { c.RUN_NOTE = "⚠️ compare range polluted"; })],
+        ["a RUN_ANOMALY supplying its own glyph", mutate((c) => { c.RUN_ANOMALY = "⚠️ compare range polluted"; })],
+      ]) {
+        const r = run([], payload);
+        s.check(`G25 the renderer rejects ${why}`, !r.ok && r.out === "", `exit ok=${r.ok}`);
+      }
+
+      // The xor above is asserted on the committed snapshots, so it only fires once a snapshot is
+      // regenerated. Assert both directions against a LIVE render too, so a renderer change that
+      // stops collapsing (or stops rendering) is caught before the snapshots are touched.
+      const noisy = run([], mutate((c) => { c.STANDARDS_LOG = "ran · 2 docs · 3 finding(s)"; }));
+      s.check("G25 a standards lens with findings renders its own line, not a footnote entry",
+        noisy.ok && /^Standards — ran · 2 docs · 3 finding\(s\)$/m.test(noisy.out)
+          && !/Nothing to report —[^\n]*standards/.test(noisy.out), noisy.err);
+      const hushed = run([], mutate((c) => { c.STANDARDS_LOG = "ran · 2 docs · 0 finding(s)"; }));
+      s.check("G25 a standards lens with nothing to say collapses to a footnote entry",
+        hushed.ok && !/^Standards — /m.test(hushed.out)
+          && /Nothing to report —[^\n]*standards \(2 docs\)/.test(hushed.out), hushed.err);
     }
 
     // (d) The agent must delegate, not hand-render. The old three-template shape is gone and
@@ -1834,7 +1945,7 @@ function checksInSync(plan, checks) {
     // validator, the two disagree about the contract and one of them is wrong.
     // A missing snapshot must FAIL, exactly as an absent posted fixture does in case (a). A bare
     // `continue` here ran zero checks, so deleting all three snapshots would have passed by vacuity.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of REPORT_FIXTURES) {
       const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
       if (!existsSync(p)) { s.check(`G26 report-body snapshot ${name}.expected.md present`, false); continue; }
       const r = run(readFileSync(p, "utf8"));
@@ -2077,7 +2188,7 @@ function checksInSync(plan, checks) {
     }
     // The reference fixtures must not demonstrate the shape G27 forbids — G25 diffs them, so a
     // stale fixture locks the forbidden headline in as the expected rendering.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of REPORT_FIXTURES) {
       for (const ext of ["json", "expected.md"]) {
         const f = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.${ext}`);
         if (!existsSync(f)) continue;
@@ -2092,7 +2203,7 @@ function checksInSync(plan, checks) {
     // rendering. warn.json read `**2 warning(s)**` while three gates warned (Prior review feedback,
     // Code review, and CI via CI_NOTE), which is exactly the miscount this change introduces the
     // risk of. Derive the counts from the payload and compare them to the rendered headline.
-    for (const name of ["pass", "warn", "fail"]) {
+    for (const name of REPORT_FIXTURES) {
       const pj = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.json`);
       if (!existsSync(pj)) { s.check(`G27 fixture ${name}.json present`, false); continue; }
       const d = JSON.parse(readFileSync(pj, "utf8"));
@@ -2686,13 +2797,16 @@ const isPollBlock = (block) =>
     `status=${one.status} ${(one.stderr || "").slice(0, 80)}`);
 
   // Shell state does not persist between the agent's tool calls, so resolve() is defined at
-  // BOTH call sites (Step 1.2 and Step 4a) with an edit-them-together note. This asserts the
-  // two bodies have not drifted — the regression that shipped was defining it at only one.
+  // EVERY call site — § Locating this agent's own files / Step 0.1, Step 1.2 (CLASSIFY), and
+  // Step 4a (RENDER) — each with an edit-them-together note. This asserts the bodies have not
+  // drifted; the regression that shipped was defining it at only one.
+  const RESOLVE_SITES = 3;
   const resolves = [...readRepo("agents/pr-reviewer.md")
     .matchAll(/resolve\(\)\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1].replace(/\s+/g, " ").trim());
-  s.check("G33i resolve() is defined at both call sites and the bodies are identical",
-    resolves.length === 2 && resolves[0] === resolves[1],
-    `found ${resolves.length} definition(s)${resolves.length === 2 && resolves[0] !== resolves[1] ? " that differ" : ""}`);
+  const allSame = resolves.length > 0 && resolves.every((r) => r === resolves[0]);
+  s.check("G33i resolve() is defined at every call site and the bodies are identical",
+    resolves.length === RESOLVE_SITES && allSame,
+    `found ${resolves.length} definition(s)${allSame ? "" : " that differ"}`);
 }
 
 // ── G34: the defer-floor formula has one owner ──
@@ -2765,7 +2879,7 @@ const isPollBlock = (block) =>
 //     `comments` array 422s as "is not an array" — 5 independent lessons converged on this fix).
 // (b) Step 1.2/3.5 must partition undiffable (binary) paths and route their findings to the
 //     gate table as ANCHORLESS-BY-CONSTRUCTION, never as an ordinary line-validity casualty.
-// (c) Persona 4 must name the cross-owner `gh api` 401 as scoping (not breakage) and pivot to a
+// (c) The dependency finder must name the cross-owner `gh api` 401 as scoping (not breakage) and pivot to a
 //     `webfetch` HTTP fallback for any pin/spec verification outside the PR's own repository.
 {
   const prm = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
@@ -2784,13 +2898,21 @@ const isPollBlock = (block) =>
   s.check("G36b Step 3.5 names ANCHORLESS-BY-CONSTRUCTION as a distinct, non-casualty outcome",
     /ANCHORLESS-BY-CONSTRUCTION.{0,400}never a line-validity casualty/s.test(prm));
 
-  // (c) Cross-owner 401-is-scoping regression lock.
-  s.check("G36c Persona 4 states the injected gh credential is scoped to the PR's own repository",
-    prm.includes("The injected `gh` credential is scoped to this PR's own repository"));
-  s.check("G36c Persona 4 prescribes the webfetch/raw.githubusercontent fallback for cross-owner targets",
-    prm.includes("`webfetch` against `api.github.com`") && prm.includes("raw.githubusercontent.com"));
+  // (c) Cross-owner 401-is-scoping regression lock. The lesson moved out of the agent body with
+  // Persona 4's retirement — the dependency finder is what reads an upstream changelog now, so
+  // that is where the anchors have to be. Reverting the move without carrying the lesson leaves
+  // rung 2 (`gh api repos/<upstream>/releases`) reading its own 401 as "unverifiable", which is
+  // the exact defect this locks: a cross-owner 401 is credential scope, not an unreachable target.
+  const dep = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/finder-dependency.md"), "utf8");
+  s.check("G36c the dependency finder states the injected gh credential is scoped to the PR's own repository",
+    dep.includes("The injected `gh` credential is scoped to this PR's own repository"));
+  s.check("G36c the dependency finder prescribes the webfetch/raw.githubusercontent fallback for cross-owner targets",
+    dep.includes("`webfetch` against `api.github.com`") && dep.includes("raw.githubusercontent.com"));
   s.check("G36c a dependency-bump PR's upstream claim is labelled unverified rather than asserted when unreachable",
-    prm.includes("unverified (upstream unreachable)"));
+    dep.includes("unverified (upstream unreachable)"));
+  // And the lesson must not be orphaned: the agent body has to route to the file that carries it.
+  s.check("G36c the agent body routes dependency review to finder-dependency.md",
+    prm.includes("pr-reviewer/rules/finder-dependency.md"));
 
   // Guard-bites proof (documented, not executed, per the mock-that-reimplements lesson):
   // reverting any of the three edits above removes the literal anchor G36a/b/c greps for,
@@ -2812,9 +2934,935 @@ const isPollBlock = (block) =>
     s.check(`G37a ${f} never invokes build-agent0-link.mjs by a bare relative path`,
       !BARE_INVOCATION.test(readRepo(f)));
   }
-  s.check("G37b pr-reviewer.md derives BUILD_LINK from the same $AGENT_MD as RENDER",
-    /BUILD_LINK="\$\{AGENT_MD%\/pr-reviewer\.md\}\/pr-reviewer\/scripts\/build-agent0-link\.mjs"/.test(
+  // Every script the agent runs is addressed through $AGENT_SUPPORT — the one variable
+  // `Locating this agent's own files` derives from the resolved definition path. A call site
+  // that re-derives `${AGENT_MD%/pr-reviewer.md}` inline is drift: it works, but it puts the
+  // support-tree contract in N places, which is how the rule-file paths came to be bare
+  // repo-relative in the first place.
+  s.check("G37b pr-reviewer.md derives BUILD_LINK from $AGENT_SUPPORT, same as RENDER",
+    /BUILD_LINK="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/build-agent0-link\.mjs"/.test(
+      readRepo("agents/pr-reviewer.md"))
+    && /RENDER="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/render-report\.mjs"/.test(
       readRepo("agents/pr-reviewer.md")));
+}
+
+// ── G38: the detection core — Phases A–F must actually be wired, not merely present ──
+//
+// Every phase shipped as a rule file plus a routing line in the agent body. The failure mode a
+// text-presence check cannot see is a rule file that exists and is never read: the file is
+// correct, the review does not run it, and nothing is red. So these assert the JOINT condition —
+// the rule exists AND the agent body routes to it at a named step — plus the handful of
+// invariants that are the whole reason each phase was split out.
+{
+  const prm = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+  const ruleOf = (p) => {
+    const f = join(REPO_ROOT, p);
+    return existsSync(f) ? readFileSync(f, "utf8") : null;
+  };
+
+  // (a) Each phase: file present, and routed from the body.
+  const PHASES = [
+    ["A workspace", "agents/pr-reviewer/rules/workspace.md", "1.1b"],
+    ["B impact graph", "agents/pr-reviewer/rules/impact-graph.md", "1.2a"],
+    ["C depth routing", "agents/pr-reviewer/rules/depth-routing.md", "1.2b"],
+    ["D finders", "agents/pr-reviewer/rules/finders.md", "Step 2"],
+    ["D consumer-impact", "agents/pr-reviewer/rules/finder-consumer-impact.md", "Step 2"],
+    ["D dependency", "agents/pr-reviewer/rules/finder-dependency.md", "Step 2"],
+    ["E verifier", "agents/shared/rules/finding-verifier.md", "2.6b"],
+    ["memory contract", "agents/pr-reviewer/rules/memory.md", "1.0"],
+    ["telemetry", "agents/pr-reviewer/rules/telemetry.md", "1.0"],
+  ];
+  for (const [label, path, step] of PHASES) {
+    const body = ruleOf(path);
+    s.check(`G38a Phase ${label} rule exists (${path})`, body !== null);
+    if (!body) continue;
+    // The basename is what a routing line must name; a rule nobody names is a rule nobody reads.
+    const base = path.split("/").pop();
+    s.check(`G38a the agent body routes to ${base} (Phase ${label}, ~Step ${step})`,
+      prm.includes(base), "rule file present but never referenced from the agent body");
+  }
+
+  // (b) The polarity rule. This is the one invariant that, if lost, silently reverts the whole
+  // refactor: a finder that knows the confidence bar prunes against it, and a candidate pruned
+  // pre-verification is a defect nobody adjudicated. Assert it in the rule AND in the body.
+  const finders = ruleOf("agents/pr-reviewer/rules/finders.md") || "";
+  s.check("G38b finders.md states that a finder never sees the confidence bar",
+    /never sees|does not see|never knows/.test(finders) && /confidence|threshold|bar/.test(finders));
+  s.check("G38b the agent body carries the polarity rule at Step 2",
+    /finder'?s? job is to \*\*flag\*\*|[Ff]inders flag, the verifier filters/.test(prm));
+  s.check("G38b the candidate record requires bad_outcome and verify_by",
+    finders.includes("bad_outcome") && finders.includes("verify_by")
+    && prm.includes("bad_outcome") && prm.includes("verify_by"));
+
+  // (c) The four verdicts, and the two that are NOT drops. `unobtainable` collapsing back into
+  // `null` is the regression that silently discards every claim the runner could not check.
+  const verifier = ruleOf("agents/shared/rules/finding-verifier.md") || "";
+  const receipt = readFileSync(join(REPO_ROOT, "agents/shared/rules/verification-receipt.md"), "utf8");
+  for (const v of ["confirmed", "contradicted", "ambiguous", "unobtainable"]) {
+    s.check(`G38c finding-verifier.md defines the ${v} verdict`, verifier.includes(v));
+  }
+  s.check("G38c verification-receipt.md distinguishes unobtainable from null",
+    receipt.includes("unobtainable") && /could not run/.test(receipt),
+    "the unobtainable row is gone — a check that could not run is being read as a check that found nothing");
+  s.check("G38c an unobtainable finding is re-framed, never asserted as an issue",
+    /re-frame, do not drop/i.test(receipt)
+    && /Capped at `suggestion:`[\s\S]{0,80}never `issue:`/.test(receipt),
+    "the unobtainable cap is gone — an unverified claim can be filed as a blocking issue");
+  s.check("G38c a contradicted candidate is logged with its reason, not silently dropped",
+    /contradicted[\s\S]{0,600}(log|logged|record)/i.test(verifier),
+    "an unlogged contradiction is a lesson the loop never learns");
+
+  // (d) Suppression AFTER verification, and the two never-suppressible classes. Reverting the
+  // step order drops the fourth instance of a pattern — the one that is actually a bug — on the
+  // strength of the first three being won't-fixed.
+  s.check("G38d the agent body applies memory suppression at 2.7b, after the verifier",
+    /### 2\.7b Memory suppression \(after verification\)/.test(prm));
+  s.check("G38d 2.7b comes after 2.6b in the body, not before it",
+    prm.indexOf("### 2.7b Memory suppression") > prm.indexOf("### 2.6b Verify each candidate"));
+  s.check("G38d no relevance-filtering step survives at 2.2",
+    !/### 2\.2 Relevance-memory filtering/.test(prm),
+    "the pre-verification suppression step is back");
+  const rubric = readFileSync(join(REPO_ROOT, "agents/shared/rules/rubric-composition.md"), "utf8");
+  for (const surface of [["the agent body", prm], ["rubric-composition.md", rubric],
+    ["memory.md", ruleOf("agents/pr-reviewer/rules/memory.md") || ""]]) {
+    s.check(`G38d ${surface[0]} names standards and (blocking) as never-suppressible`,
+      /standards/i.test(surface[1]) && /\(blocking\)/.test(surface[1]) && /suppress/i.test(surface[1]));
+  }
+
+  // (e) Memory must be keyed structurally and filtered by author, or it cannot do the one thing
+  // it was redesigned for: carry what one author's PR taught the reviewer onto the next author's.
+  const memory = ruleOf("agents/pr-reviewer/rules/memory.md") || "";
+  s.check("G38e memory.md keys records structurally, not by branch or PR",
+    /finder:defect-class:symbol@path|fp_v/.test(memory));
+  s.check("G38e memory.md requires a source.agent filter on every read",
+    /source\.agent|source\.\{?login/.test(memory) && /filter/i.test(memory));
+  s.check("G38e the agent body states the author filter is not optional",
+    /source\.agent/.test(prm) && /not optional/.test(prm));
+  s.check("G38e memory.md requires a knowledge fact to be re-verified or dropped",
+    /re-verif/i.test(memory) && /drop/i.test(memory));
+  // The filter's one carve-out has to be a FIELD the read path can key on. `/pr-review remember`
+  // writes `type: human, agent: other` — byte-identical to the incidental human comment the filter
+  // rejects — so without `explicit` on both sides, a literal implementation of the filter drops
+  // every rule a maintainer ever wrote, silently.
+  const rememberSkill = readFileSync(join(REPO_ROOT, "skills/quality/pr-review/SKILL.md"), "utf8");
+  for (const [name, src] of [["memory.md", memory], ["the agent body", prm],
+    ["pr-review/SKILL.md", rememberSkill]]) {
+    s.check(`G38e ${name} carves out the remember rule with source.explicit, not prose`,
+      /source\.explicit|explicit: true/.test(src),
+      "the /pr-review remember carve-out names no field the read path can key on");
+  }
+  s.check("G38e the filter predicate names both usable cases",
+    /source\.agent == "pr-reviewer"\s*(?:∨|\|\|)\s*source\.explicit == true/.test(memory)
+    && /source\.agent == "pr-reviewer"\s*(?:∨|\|\|)\s*source\.explicit == true/.test(prm),
+    "memory.md and the agent body must state the same two-case predicate");
+
+  // (f) Telemetry's three invariants. Any of the three lost turns an exposure signal into a
+  // correctness verdict about code that has, by construction, no telemetry yet.
+  const tele = ruleOf("agents/pr-reviewer/rules/telemetry.md") || "";
+  s.check("G38f telemetry.md states it raises priority and never lowers it",
+    /raise/i.test(tele) && /never lower/i.test(tele));
+  s.check("G38f telemetry.md states it never blocks", /never block/i.test(tele));
+  s.check("G38f telemetry.md carries aggregates and signatures only",
+    /aggregate/i.test(tele) && /signature/i.test(tele));
+  // FAIL_REASONS is what flips the verdict. Telemetry contributing a phrase to it would make an
+  // exposure figure blocking, which is exactly what invariant 2 forbids.
+  s.check("G38f no telemetry term reaches FAIL_REASONS in the agent body",
+    !/FAIL_REASONS[^\n]{0,200}(telemetry|traffic_band|span)/i.test(prm)
+    && !/(telemetry|traffic_band)[^\n]{0,200}FAIL_REASONS/i.test(prm));
+
+  // (g) The tier vocabulary is one vocabulary. Three surfaces name the tiers and a fourth
+  // validates them; a rename applied to some of them is how a report claims a tier the router
+  // cannot produce.
+  const depth = ruleOf("agents/pr-reviewer/rules/depth-routing.md") || "";
+  const renderer = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"), "utf8");
+  for (const tier of ["deep", "standard", "quick"]) {
+    s.check(`G38g the tier "${tier}" is named by depth-routing.md, the body, and the renderer`,
+      depth.includes(tier) && prm.includes(tier) && renderer.includes(tier));
+  }
+  for (const cap of ["checkout", "tarball", "diff-only"]) {
+    s.check(`G38g the capability "${cap}" is named by workspace.md, the body, and the renderer`,
+      (ruleOf("agents/pr-reviewer/rules/workspace.md") || "").includes(cap)
+      && prm.includes(cap) && renderer.includes(cap));
+  }
+  s.check("G38g depth-routing.md caps a diff-only run below deep",
+    /diff-only[\s\S]{0,300}cap/i.test(depth));
+  s.check("G38g the renderer rejects tier deep with depth diff-only",
+    /diff-only[\s\S]{0,300}deep|deep[\s\S]{0,300}diff-only/.test(renderer));
+  // Rung 0 reaches `checkout` through a worktree the USER owns, which makes the cleanup line the
+  // one place in this pipeline that can destroy data: an unconditional `rm -rf "$WORKDIR"` deletes
+  // their uncommitted work and leaves a stale entry in the parent repo's `.git/worktrees`. Guard
+  // both halves — the flag has to exist, and the trap has to read it.
+  const ws = ruleOf("agents/pr-reviewer/rules/workspace.md") || "";
+  s.check("G38g workspace.md passes --no-hooks on every gw invocation",
+    /gw checkout/.test(ws) && !/gw checkout(?!.*--no-hooks)[^\n]*<(?:PR_NUMBER|PR_URL|PR)>/.test(ws),
+    "a gw checkout without --no-hooks would install dependencies as a side effect of rung 0");
+  // Rung 0 has THREE dispositions, not two, so the disposal method is an enum rather than an
+  // owned/not-owned boolean: `rm -rf` on either kind of worktree leaves a stale entry in the
+  // parent repo's .git/worktrees, which breaks the repo the review was reviewing.
+  for (const disposition of ["none", "worktree", "rm"]) {
+    s.check(`G38g workspace.md binds WORKDIR_CLEANUP=${disposition}`,
+      new RegExp(`WORKDIR_CLEANUP=${disposition}\\b`).test(ws));
+  }
+  // Assert the bare trap in BOTH files. The agent body is the file an agent actually executes,
+  // and a correct rule beside a wrong body loses: the body's line is the last word on cleanup.
+  // Guarding only `ws` is how a verbatim copy of workspace.md's own ❌ WRONG case sat at
+  // pr-reviewer.md:962 through a green 905/905 run.
+  for (const [name, src] of [["workspace.md", ws], ["the agent body", prm]]) {
+    s.check(`G38g ${name} dispatches disposal on WORKDIR_CLEANUP, never a bare rm -rf trap`,
+      /case\s+"\$WORKDIR_CLEANUP"/.test(src) && !/trap\s+'rm -rf/.test(src),
+      "an unconditional rm -rf trap deletes worktrees through git's back");
+  }
+  // The shell in these rule files is normative — an agent runs it verbatim — so a helper that is
+  // never defined is dead code, not shorthand. `$(origin_repo)` and `worktree_is_clean_at_head`
+  // both shipped undefined, which silently skipped the whole rung while still reporting
+  // `Depth: checkout`. Every snake_case command the block calls must be defined in the same file.
+  const SHELL_BUILTIN_UNDERSCORES = new Set([]);   // real commands with `_` are vanishingly rare
+  for (const [name, src] of [["workspace.md", ws], ["the agent body", prm]]) {
+    const blocks = [...src.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]).join("\n");
+    const called = new Set();
+    for (const m of blocks.matchAll(/\$\(([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\)/g)) called.add(m[1]);
+    for (const m of blocks.matchAll(
+      // Exclude `=` (assignment), `(` (a definition), and `:` / `,` — a `jq`/JSON key or a
+      // Python tuple unpack inside a bash-fenced heredoc is not a command call.
+      /(?:^|&&|\|\||;|\bthen\b|\belif\b|\bif\b)[ \t]*([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b(?![ \t]*[=(:,])/gm
+    )) called.add(m[1]);
+    const undefined_ = [...called].filter(
+      (fn) => !SHELL_BUILTIN_UNDERSCORES.has(fn) && !new RegExp(`^\\s*${fn}\\(\\)`, "m").test(src),
+    );
+    s.check(`G38g every snake_case helper the ${name} shell calls is defined in it`,
+      undefined_.length === 0,
+      `undefined helper(s) called but never defined: ${undefined_.join(", ")}`);
+  }
+  s.check("G38g only the rm disposition uses rm -rf, and worktree uses git worktree remove",
+    /worktree\)\s*git worktree remove/.test(ws) && /\brm\)\s*rm -rf/.test(ws));
+  s.check("G38g workspace.md forbids removing a gw worktree at all",
+    /never\*{0,2}\s+removed by this agent|not even with `gw remove`/i.test(ws));
+  // The fallback is the point of the rung: `gw` is ergonomics, the local object store is the
+  // capability. A rule that made `gw` a precondition would drop the rung on every machine
+  // without it and pay for a network clone it did not need.
+  s.check("G38g rung 0 falls back to plain git worktree when gw is absent",
+    /git worktree add --detach/.test(ws) && /fallback/i.test(ws));
+  s.check("G38g rung 0's precondition is the local clone, not gw being installed",
+    /not\*{0,2}\s+a precondition/i.test(ws),
+    "gw must select the implementation, never gate the rung");
+  s.check("G38g rung 0 fetches the pull/<n>/head ref so fork PRs are not excluded",
+    /pull\/\$PR_NUMBER\/head/.test(ws) && /fork/i.test(ws));
+  s.check("G38g the agent body names the disposal hazard and the fallback, not just the command",
+    /WORKDIR_CLEANUP/.test(prm) && /--no-hooks/.test(prm) && /\.git\/worktrees/.test(prm)
+    && /git worktree add --detach/.test(prm),
+    "Step 1.1b must carry the disposal rule and the no-gw path, since that is where it binds");
+
+  // (h) The two pre-table routing rules in depth-routing.md. Both exist because "first match wins"
+  // over the raw table produced a wrong answer that the file's own worked example contradicted:
+  // a 412-line generated refresh routed `deep` on line count while reaching nothing, and a
+  // review-answering push was claimed by the standard row's size band.
+  s.check("G38h depth-routing.md excludes docs/test-only/generated deltas from the size triggers",
+    /docs-only[\s\S]{0,200}test-only[\s\S]{0,400}size\s+trigger/i.test(depth));
+  s.check("G38h the size exclusion still routes on every other row",
+    /excused\s+from size, not from review/.test(depth));
+  // Both conjuncts matter: `indexOf` on an absent string returns -1, which is less than any real
+  // index, so a check that only compared positions would PASS on an override that had been
+  // deleted outright — the very regression it exists to catch.
+  const overrideAt = depth.indexOf("The `quick` override");
+  const tableAt = depth.indexOf("| **deep**");
+  s.check("G38h the quick override is stated, and before the table rather than as a row",
+    overrideAt >= 0 && tableAt >= 0 && overrideAt < tableAt,
+    overrideAt < 0 ? "the quick override is gone"
+      : "the override sits inside or below the table, where first-match-wins lets the standard row outrank it");
+  s.check("G38h the semver standard trigger is qualified by usage sites",
+    /semver_delta`?\s*\*\*with ≥ 1 usage site\*\*/.test(depth),
+    "an unused bump routes to standard again, so every automated bump PR buys a finder pass");
+}
+
+// ── G39: the bug-detection eval is executable and its golden set is well-formed ──
+//
+// A golden set is the only thing that says whether the detection core actually detects. Executing
+// the runner's own self-test here means a malformed record — a control carrying a defect, a defect
+// anchored in a file the finder is never shown — is caught in CI rather than by a strange L2 score
+// nobody can explain. This runs offline; the LLM half needs a key and stays out of L1.
+{
+  const RUNNER = join(REPO_ROOT, "scripts/eval/l2-detection.mjs");
+  const GOLDEN = join(REPO_ROOT, "scripts/eval/golden/bug-detection.jsonl");
+  s.check("G39a the detection runner and its golden set exist",
+    existsSync(RUNNER) && existsSync(GOLDEN));
+  if (existsSync(RUNNER) && existsSync(GOLDEN)) {
+    const r = spawnSync("node", [RUNNER, "--self-test"], { encoding: "utf8" });
+    s.check("G39b the detection runner's self-test passes", r.status === 0,
+      ((r.stdout || "") + (r.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 300));
+
+    // The runner exits 0 without a key. That is correct behaviour, and it is also how a broken
+    // runner hides: assert the skip is a SKIP and not a silent pass of the real thing.
+    const noKey = spawnSync("node", [RUNNER], { encoding: "utf8", env: { ...process.env, ANTHROPIC_API_KEY: "" } });
+    s.check("G39c the detection runner skips cleanly with no API key",
+      noKey.status === 0 && /no ANTHROPIC_API_KEY/.test(noKey.stdout || ""));
+  }
+}
+
+// ── G40: a rule file may not state a contract the agent body does not implement ──
+//
+// The first review of the detection core found four instances of ONE shape: a new rule stating a
+// contract nothing binds, reads, or can render. That shape is invisible to every other guard here,
+// because each half is internally consistent — the rule reads correctly and the body runs
+// correctly, and only the seam between them is broken.
+//
+// The THREAD_OVERLAP case is the instructive one: a guard for it DID exist (the L2
+// shape-depth-routing suite) and was neutralised by being fed its own answer — every golden record
+// hands the model the value in its prompt, so the suite measures the table's ordering and never the
+// input's availability. A contract-existence check has to look at the binding, not the decision.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const body = read("agents/pr-reviewer.md");
+  const depth = read("agents/pr-reviewer/rules/depth-routing.md");
+  const cfg = read("agents/shared/rules/review-config.md");
+
+  // (a) Every input the routing table votes on is bound somewhere in the body.
+  //
+  // Matched case-insensitively on purpose: the rule names the impact.json field
+  // (`blast_radius.band`) while the body names the bound variable (`BLAST_RADIUS`). Those are the
+  // same concept in two conventions, and requiring one literal spelling across both files would
+  // fail on a naming difference rather than on a missing binding.
+  // The body's OWN input table is excluded from the search, and that exclusion is the whole
+  // check. Its rows are claims *about* the bindings, not the bindings — `TRAFFIC_BAND` occurred
+  // exactly once in the body, in the row asserting Step 1.2a bound it, and nothing did. A
+  // presence test over the whole file reads that row as its own evidence.
+  const inputTable = sliceBetween(body, "| Input | Bound at |", "`THREAD_OVERLAP` is the one input");
+  const bodyOutsideTable = body.replace(inputTable, "");
+  for (const input of ["THREAD_OVERLAP", "DEPTH_CAPABILITY", "BLAST_RADIUS", "TRAFFIC_BAND"]) {
+    const needle = input.toLowerCase();
+    s.check(`G40a ${input} is named in depth-routing.md`, depth.toLowerCase().includes(needle));
+    s.check(`G40a ${input} is bound outside the body's own input table`,
+      bodyOutsideTable.toLowerCase().includes(needle),
+      `${input} appears in depth-routing.md and in the "Bound at" table, but nowhere that binds it`
+      + " — a row claiming a binding is not one, and the row that reads it can never fire");
+  }
+  // The two graph-sourced inputs must be fields the producing script actually emits, or the
+  // binding sentence names a value that never arrives.
+  const graph = read("agents/pr-reviewer/scripts/build-impact-graph.mjs");
+  for (const field of ["traffic_band", "blast_radius"]) {
+    s.check(`G40a build-impact-graph.mjs emits ${field}, which the routing table reads`,
+      new RegExp(`${field}:`).test(graph),
+      `depth-routing.md routes on impact.json's ${field} but the script does not emit it`);
+  }
+  s.check("G40a THREAD_OVERLAP's binding states it is computed at tier-binding time, not read from Step 2.9c",
+    /THREAD_OVERLAP\s*=/.test(body) && /2\.9c/.test(body.slice(body.indexOf("THREAD_OVERLAP ="))),
+    "the body must show the formula AND say why Step 2.9c's predicate cannot be read directly (it runs after the tier is bound)");
+
+  // (b) A flag the rules advertise is parseable at the run's only parse point.
+  const step0 = body.slice(body.indexOf("| Token | Meaning |"), body.indexOf("Parse the PR reference:"));
+  s.check("G40b --effort is in Step 0's token table",
+    step0.includes("--effort"),
+    "depth-routing.md and CLAUDE.md advertise --effort, so Step 0 must accept it or both entry points are unreachable");
+  s.check("G40b the review-config half of --effort is defined",
+    /^\s*effort:/m.test(cfg),
+    "CLAUDE.md says '(or effort: in review-config)' — review-config.md must define the key it names");
+
+  // (c) No rule may mandate a payload key the fail-closed renderer rejects. Asserted against the
+  // renderer's real key sets, so adding a slot is what retires the check — not editing it.
+  const renderer = read("agents/pr-reviewer/scripts/render-report.mjs");
+  for (const f of ["agents/pr-reviewer/rules/depth-routing.md", "agents/pr-reviewer/rules/report-rendering.md"]) {
+    const txt = read(f);
+    const mandated = [...txt.matchAll(/\brender the headline with a `([A-Z_]+)`/gi)].map((m) => m[1]);
+    for (const key of mandated) {
+      s.check(`G40c ${f} mandates headline key ${key}, which the renderer must accept`,
+        renderer.includes(key),
+        `${key} is required by a rule but is not a renderer payload key — render-report.mjs fails closed, so a run that obeys the rule posts no report at all`);
+    }
+  }
+
+  // (d) The one-read-one-head invariant is not contradicted by a rule telling the run to re-read.
+  //
+  // Asserted as a PAIR — the mandate is absent AND the deferral is stated — rather than as
+  // "headRefOid is not re-read anywhere". A bare absence test cannot tell a mandate from the
+  // ❌-marked counter-example or from the prose that says the run does *not* re-read, so it fired
+  // on the very text that fixes the contradiction. Naming the exact retired sentence keeps the
+  // check specific, and the positive half is what stops the section from going silent instead.
+  s.check("G40d depth-routing.md no longer mandates a second headRefOid read before posting",
+    !/\*\*Immediately before Step 4 posts\*\*,\s*re-read/i.test(depth),
+    "Step 1.2 forbids a second headRefOid read (torn state: the diff and the SHA would describe different commits)");
+  s.check("G40d depth-routing.md states the one-read-one-head deferral instead",
+    /does \*\*not\*\* re-read/.test(depth) && /one read, one head/i.test(depth),
+    "removing the mandate is not enough — the section must say what the run does instead, or the moved-head case is simply unhandled");
+}
+
+// ── G41: the five defects two production runs exposed, each pinned where it failed ──
+//
+// A `/pr-review` dispatch at dash0hq/dash0#17523 improvised its way past five rules that were
+// either absent or stated only once, in prose, somewhere the run never reached. All five had the
+// same signature: the run produced *plausible* output, so nothing downstream was red. These are
+// the joint conditions — the rule is stated AND the thing it forbids does not appear.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const body = read("agents/pr-reviewer.md");
+
+  // (a) The support-tree contract exists and derives AGENT_SUPPORT from the resolved path.
+  s.check("G41a the agent body has a support-tree section that derives AGENT_SUPPORT",
+    /^### Locating this agent's own files$/m.test(body)
+    && /AGENT_SUPPORT="\$\{AGENT_MD%\/pr-reviewer\.md\}"/.test(body));
+
+  // (b) The naive install path is banned as a probe. The observed run ran `ls` against
+  // $HOME/.claude/agents/pr-reviewer/scripts/, read the ENOENT as proof the tree was missing,
+  // and hand-wrote its report. The ban has to be stated, because the probe looks reasonable.
+  s.check("G41b probing the un-resolved install path is banned by name",
+    /Never probe the un-resolved install path/i.test(body)
+    && /`?resolve\(\)`? is the only admissible test/i.test(body));
+
+  // (c) Resolution happens at Step 0.1 — BEFORE Step 0.5 — so a degraded run is known to be
+  // degraded while nothing is invested, not discovered at Step 4a with findings in hand.
+  const i01 = body.indexOf("### 0.1 Resolve the support tree");
+  const i05 = body.indexOf("## Step 0.5");
+  s.check("G41c the support tree is resolved at Step 0.1, ahead of Step 0.5",
+    i01 !== -1 && i05 !== -1 && i01 < i05,
+    `0.1 at ${i01}, 0.5 at ${i05}`);
+  s.check("G41c resolving the support tree is not read as a permission to post",
+    /AGENT_SUPPORT` is a location, not a permission/.test(body));
+
+  // (d) One derivation point. Every script call site addresses $AGENT_SUPPORT; the
+  // `${AGENT_MD%/pr-reviewer.md}` form appears exactly where AGENT_SUPPORT is defined.
+  const derivations = [...body.matchAll(/\$\{AGENT_MD%\/pr-reviewer\.md\}/g)].length;
+  s.check("G41d ${AGENT_MD%/pr-reviewer.md} appears only where AGENT_SUPPORT is defined",
+    derivations === 1, `found ${derivations} occurrence(s)`);
+  s.check("G41d no script is addressed by a bare agents/pr-reviewer/scripts/ path in a node call",
+    !/node\s+"?agents\/pr-reviewer\/scripts\//.test(body));
+
+  // (e) The sticky-write not-a-reason list. The run stood down on two invented rules — the
+  // sticky's author login, and an unchanged verdict — and left the delta baseline pinned.
+  for (const phrase of [
+    /is \*\*diagnostic only\*\*/,
+    /The sticky's author login is not this run's `ME`/,
+    /The verdict is unchanged since the prior run/,
+    /The run produced no new inline findings/,
+    /Another bot already reviews this PR/,
+    /It is the caller's own PR \(self relation\)/,
+  ]) {
+    s.check(`G41e the sticky not-a-reason list names ${phrase.source.slice(0, 46)}`,
+      phrase.test(body));
+  }
+  s.check("G41e the not-a-reason list closes with the imperative",
+    /If a\s*\nsituation is not a row in the table above, \*\*write the sticky\*\*/.test(body));
+
+  // (f) No brace-escaped STICKY default survives. The expression was correct; its escaped brace
+  // did not survive being retyped, and the run took four jq parse errors on the one rung that
+  // recovers the delta baseline. A correct-but-fragile idiom is a defect at this scale.
+  // The ban is on the LIVE idiom, not on the comment that explains why it was retired — the
+  // explanation has to be able to quote the shape it is warning about.
+  s.check("G41f no ${STICKY:-…} brace default is used at a read site",
+    !/<<<\s*"\$\{STICKY:-/.test(body));
+  s.check("G41f STICKY is normalised to a brace-free JSON literal once",
+    /\[ -n "\$STICKY" \] \|\| STICKY=null/.test(body));
+
+  // (g) The empty merge-base guard, in the phase that owns the workspace. Both forms must be
+  // named: the three-dot failure (loud, benign) and the two-dot hazard (silent, wrong).
+  const ws = read("agents/pr-reviewer/rules/workspace.md");
+  s.check("G41g workspace.md guards an empty merge-base",
+    /empty `MERGE_BASE` is a hard branch/i.test(ws)
+    && /no merge base/.test(ws)
+    && /two-dot form succeeds, and that is the dangerous one/i.test(ws));
+  s.check("G41g the empty-merge-base fallback is the authoritative per-file patches",
+    /DIFF_SOURCE=api/.test(ws) && /per-file patches/.test(ws));
+  s.check("G41g the fallback is announced in RUN_ANOMALY, not RUN_NOTE",
+    /RUN_ANOMALY/.test(ws) && !/RUN_NOTE:/.test(ws));
+
+  // (h) The memory read budget is a bound, not a description.
+  const mem = read("agents/pr-reviewer/rules/memory.md");
+  s.check("G41h memory.md states a fixed read budget with no pagination",
+    /calls per run \| exactly \*\*2\*\*/.test(mem)
+    && /\| pagination \| \*\*never\.\*\*/.test(mem)
+    && /\*\*top 10\*\* changed symbols/.test(mem));
+  // Anchored on the mcp__ call lines, not on the budget table that repeats the same numbers —
+  // a table row is a promise, the call is the thing that keeps it.
+  // The second pattern read `memory_search\s+scope=` until G44a was written, so this guard
+  // was asserting the broken call shape it was meant to bound — the parameter is `q`, and
+  // `scopes` is the array. A guard that mirrors a call by hand can pin the wrong one.
+  s.check("G41h both memory reads carry an explicit limit at the call site",
+    /mcp__lorekit__memory_list\s+scope=[^\n]*limit=50/.test(mem)
+    && /mcp__lorekit__memory_search\s+q=[^\n]*limit=25/.test(mem));
+}
+
+// ── G42: the measurability lens is wired, bounded, and cannot block ──
+//
+// Same joint-condition discipline as G38: the rule existing proves nothing if the body never
+// routes to it, and a lens with no quiet-exit gates is one the author learns to ignore.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const body = read("agents/pr-reviewer.md");
+  const rule = read("agents/shared/rules/measurability-review.md");
+
+  s.check("G42a measurability-review.md exists and the body routes to it at Step 2.4e",
+    rule.length > 0
+    && /^### 2\.4e Measurability review/m.test(body)
+    && /measurability-review\.md/.test(body));
+
+  // audit mode only — pr-reviewer is read-only in both relations.
+  s.check("G42b the lens is audit-mode only and says so in both files",
+    /Skill\("measurable", "audit"\)/.test(rule) && /Skill\("measurable", "audit"\)/.test(body)
+    && /\*\*Never\*\* `Skill\("measurable", "implement"\)`/.test(rule));
+  s.check("G42b neither file ever calls measurable in implement mode",
+    !/Skill\("measurable",\s*"implement"\)/.test(body)
+    && !/^\s*Skill\("measurable",\s*"implement"\)/m.test(rule));
+
+  // Two quiet-exit gates. Without them the lens asks "where's the telemetry" on every diff.
+  s.check("G42c both quiet-exit gates are defined",
+    /### Gate 1 — the diff touches a path kind that needs a signal/.test(rule)
+    && /### Gate 2 — the change adds or alters observable behaviour/.test(rule)
+    && /new failure mode/.test(rule));
+
+  // The non-blocking invariant, stated the way telemetry.md states its own.
+  s.check("G42d no measurability finding reaches FAIL_REASONS by default",
+    /never lowers or fails a verdict/.test(rule)
+    && /FAIL_REASONS/.test(rule)
+    && /never blocking in any\s*\nconfiguration|Never `issue:`, never blocking/.test(rule));
+  s.check("G42d strict is a repository setting, not the reviewer's judgment",
+    /never on the reviewer's own judgment/.test(rule)
+    && /measurable: strict/.test(rule) && /--measurable-strict/.test(body));
+
+  // The seam with telemetry.md — two rules, opposite questions, neither answers the other's.
+  s.check("G42e the seam with telemetry.md is stated in both directions",
+    /## Seam with `telemetry\.md`/.test(rule)
+    && /\*\*today\*\*/.test(rule) && /\*\*tomorrow\*\*/.test(rule));
+
+  // The renderer accepts the slot and treats a clean audit as quiet. A required slot the
+  // fail-closed renderer rejects would mean a run that obeys the rule posts no report at all.
+  const renderer = read("agents/pr-reviewer/scripts/render-report.mjs");
+  // Membership of REQUIRED_SCALARS specifically: the name appears in three places in the
+  // renderer, so a bare substring test passes while the slot is no longer required.
+  const requiredBlock = /const REQUIRED_SCALARS = \[([\s\S]*?)\];/.exec(renderer)?.[1] ?? "";
+  s.check("G42f MEASURABILITY_LOG is a required renderer slot",
+    requiredBlock.includes('"MEASURABILITY_LOG"'));
+  s.check("G42f the renderer folds a clean measurability run into the footnote",
+    /key: "MEASURABILITY_LOG"/.test(renderer)
+    && /0 missing\\b/.test(renderer)
+    && /0 unlinked\\b/.test(renderer));
+  s.check("G42f the lens log grammar is shared by rule and renderer",
+    /MEASURABILITY_LOG: <ran\|skipped \(<reason>\)> · <N> paths classified · <M> missing · <U> unlinked/
+      .test(rule)
+    && /\["OPTIMALITY_LOG", "STANDARDS_LOG", "MEASURABILITY_LOG"\]/.test(renderer));
+
+  // The flag exists in Step 0's token table, or a documented opt-out is unreachable.
+  s.check("G42g --no-measurable is in Step 0's token table",
+    /\| `--no-measurable` \| Skip the measurability review step \(Step 2\.4e\) \|/.test(body));
+}
+
+
+// ── G43: the normative shell in these files is executable ────────────────────
+//
+// The shell in the agent body and its rule files is not illustration — an agent runs it
+// verbatim — so an invocation that cannot parse and a variable that was never bound are
+// both broken rungs, not shorthand. Both halves below are the general form of a defect a
+// live review found, rather than a string match on the specific instance:
+//
+//   G43a  Three documented `build-impact-graph.mjs` invocations fed the input on stdin
+//         where the script takes a positional path (`exit=2`, usage string, zero bytes
+//         written), and one carried a bare value-less `--overlaps`, which silently
+//         swallows the next argument. The contract is derived from the script's own argv
+//         parser, so it tracks the script instead of restating it.
+//   G43b  `BASE_SHA` was read in four places and bound in none: Step 1.1 fetched
+//         `baseRefName` (a branch name) and never `baseRefOid`. It failed quietly at every
+//         reader — `merge-base ""` exits 128 into a `|| true`, and the impact graph's base
+//         reader degrades to `() => null` and still exits 0 — so a `checkout` run reported
+//         full depth while reading no base side at all.
+{
+  const SHELL_MD = [
+    "agents/pr-reviewer.md",
+    ...readdirSync(join(REPO_ROOT, "agents/pr-reviewer/rules"))
+      .filter((f) => f.endsWith(".md"))
+      .map((f) => `agents/pr-reviewer/rules/${f}`),
+  ];
+  const readMd = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const bashBlocks = (text) => [...text.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]);
+
+  // ---- G43a: documented invocations must satisfy the script's own argv parser ----
+
+  // Join `\`-continued lines, then drop `${VAR:+ … }` conditional wrappers, keeping their
+  // contents — the tokens inside are real arguments whenever the variable is set.
+  const commandsIn = (block) =>
+    block
+      .replace(/\\\n\s*/g, " ")
+      .split("\n")
+      .map((l) => l.replace(/\$\{[A-Z_]+:\+(.*?)\}/g, "$1").trim())
+      .filter((l) => /^node\s/.test(l));
+
+  const tokenize = (cmd) => cmd.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+
+  // The parser contract, read out of the script rather than restated here. Two shapes are
+  // in use and both must be understood, or a script parsing the other way reports every
+  // flag as unknown — a guard failing on itself, not a defect in the docs.
+  const flagContract = (src) => {
+    const takesValue = new Set();
+    const boolean = new Set();
+    // Shape 1 — a switch over argv (build-impact-graph.mjs).
+    for (const m of src.matchAll(/a === "(--[a-z-]+)"\)\s*flags\.\w+\s*=\s*([^;\n]+)/g)) {
+      (/argv\[\+\+i\]/.test(m[2]) ? takesValue : boolean).add(m[1]);
+    }
+    // Shape 2 — an indexOf lookup helper (fingerprint.mjs's `flag(args, "name")`), which
+    // returns `args[i + 1]`, so every name it reads takes a value.
+    for (const m of src.matchAll(/\bflag\(args,\s*"([a-z-]+)"\)/g)) takesValue.add(`--${m[1]}`);
+    // Positional switches are boolean by construction.
+    for (const m of src.matchAll(/args\[\d+\] === "(--[a-z-]+)"/g)) boolean.add(m[1]);
+    for (const m of src.matchAll(/cmd === "(--[a-z-]+)"/g)) boolean.add(m[1]);
+    return { takesValue, boolean };
+  };
+
+  let invocations = 0;
+  for (const mdPath of SHELL_MD) {
+    for (const block of bashBlocks(readMd(mdPath))) {
+      for (const cmd of commandsIn(block)) {
+        const all = tokenize(cmd);
+        const scriptTok = all.find((t) => t.replace(/"/g, "").endsWith(".mjs"));
+        if (!scriptTok) continue;
+        const base = scriptTok.replace(/"/g, "").split("/").pop();
+        const scriptPath = join(REPO_ROOT, "agents/pr-reviewer/scripts", base);
+        if (!existsSync(scriptPath)) continue;
+        invocations++;
+        const src = readFileSync(scriptPath, "utf8");
+        const { takesValue, boolean } = flagContract(src);
+        const needsPositional = /usage: \S+ <[a-z-]+\.json>/.test(src);
+        const where = `${mdPath} → ${base}`;
+
+        // The stdin defect. A script taking a positional path writes nothing when fed on
+        // stdin, and an `exit 2` inside a `$(…)` or a pipeline is easy to read past.
+        s.check(`G43a ${where}: input is not fed on stdin`,
+          !needsPositional || !/(^|\s)<\s/.test(cmd));
+
+        const toks = all.slice(all.indexOf(scriptTok) + 1);
+        const positional = [];
+        const unknownFlags = [];
+        const valuelessFlags = [];
+        for (let i = 0; i < toks.length; i++) {
+          const t = toks[i];
+          if (t === ">" || t === ">>" || t === "2>" || t === "|") { i++; continue; }
+          if (t.startsWith(">") || t.startsWith("2>")) continue;
+          if (!t.startsWith("--")) { positional.push(t); continue; }
+          if (takesValue.has(t)) {
+            const next = toks[i + 1];
+            if (!next || next.startsWith("-") || next.startsWith(">")) valuelessFlags.push(t);
+            else i++;
+            continue;
+          }
+          if (!boolean.has(t)) unknownFlags.push(t);
+        }
+
+        // Guard the guard: an empty contract means the extractor did not understand this
+        // script's parser, and every flag would read as unknown.
+        const flagsUsed = toks.filter((t) => t.startsWith("--"));
+        s.check(`G43a ${where}: the parser contract was extractable`,
+          flagsUsed.length === 0 || takesValue.size + boolean.size > 0);
+        s.check(`G43a ${where}: every flag is one the parser knows (saw: ${unknownFlags.join(" ") || "none"})`,
+          unknownFlags.length === 0);
+        // A value-taking flag written bare eats the next argument, so the command still
+        // exits 0 while one argument has silently become another's value.
+        s.check(`G43a ${where}: no value-taking flag is written bare (saw: ${valuelessFlags.join(" ") || "none"})`,
+          valuelessFlags.length === 0);
+        s.check(`G43a ${where}: the required input path is passed positionally`,
+          !needsPositional || positional.some((p) => p.replace(/"/g, "").endsWith(".json")));
+      }
+    }
+  }
+  // The guard is worthless if the extractor silently matches nothing.
+  s.check(`G43a the invocation extractor found the documented commands (${invocations})`,
+    invocations >= 4);
+
+  // ---- G43b: every variable a normative block reads has a binding ----
+
+  // Provided by the shell or the environment, never by this pipeline.
+  const SHELL_PROVIDED = new Set(["HOME", "PATH", "ARG", "BASH_REMATCH", "DASH0_EXPOSURE"]);
+  // Payloads the run constructs in context rather than in shell. Named explicitly so the
+  // list stays a decision: anything NOT here must have an assignment that exists.
+  const RUN_CONSTRUCTED = new Set([
+    "VERDICT", "PR_STATE", "CARRIED_FINDINGS_JSON", "DIAGNOSTICS_JSON",
+    "INLINE_COMMENTS_JSON", "OPEN_BOT_COMMENT_IDS_JSON",
+  ]);
+
+  const boundVars = new Set();
+  const varReads = new Map();
+  for (const mdPath of SHELL_MD) {
+    const text = readMd(mdPath);
+    // An assignment anywhere in the file counts: `elif WORKTREE_PARENT="$(mktemp -d)"` is a
+    // binding, and requiring column 0 would have read it as unbound.
+    for (const m of text.matchAll(/\b([A-Z][A-Z0-9_]{2,})=/g)) boundVars.add(m[1]);
+    for (const block of bashBlocks(text)) {
+      // Strip `#` comments first. A comment is not executed, and a rule explaining why a
+      // variable was retired names it — G41f made exactly this mistake and flagged the
+      // sentence documenting a fix as the defect.
+      const live = block.replace(/(^|\s)#[^\n]*/g, "$1");
+      for (const m of live.matchAll(/\$\{?([A-Z][A-Z0-9_]{2,})\b/g)) {
+        if (!varReads.has(m[1])) varReads.set(m[1], mdPath);
+      }
+    }
+  }
+  const unbound = [...varReads.keys()]
+    .filter((v) => !boundVars.has(v) && !SHELL_PROVIDED.has(v) && !RUN_CONSTRUCTED.has(v))
+    .sort();
+  s.check(`G43b every variable read in a normative block is bound (unbound: ${unbound.join(", ") || "none"})`,
+    unbound.length === 0);
+
+  // BASE_SHA specifically, because every one of its readers fails silently: assert the
+  // fetch that makes it available and the assignment that binds it, not just the reads.
+  const rbody = readMd("agents/pr-reviewer.md");
+  s.check("G43b Step 1.1 requests baseRefOid, not only baseRefName",
+    /--json [^\n]*\bbaseRefOid\b/.test(rbody));
+  s.check("G43b BASE_SHA is bound from that response, next to HEAD_SHA",
+    /BASE_SHA=\$\(jq -r '\.baseRefOid' <<< "\$PR_VIEW_JSON"\)/.test(rbody));
+  s.check("G43b the merge-base rule refuses to run on an empty base OID",
+    /\*\*the base OID itself empty\*\*/.test(readMd("agents/pr-reviewer/rules/workspace.md")));
+}
+
+// ── G44: the memory layer's read path can reach what its write path writes ───
+//
+// A memory bucket fails in one direction only, and it is the silent one: a read that
+// cannot reach the records is indistinguishable from a repository that knows nothing, so
+// every rule about reading still passes while the loop delivers nothing. An audit of the
+// live store found four such breaks at once, and each check below is the general form of
+// one:
+//
+//   G44a  `memory.md`'s second read call was written `memory_search scope=… query=…` —
+//         neither parameter exists (the tool takes `q` and `scopes[]`). A validation error
+//         on a best-effort read is swallowed, so the run reports 0 memories applied.
+//   G44b  The relevance key was quoted as `rule::<fp>` with the bucket prefix dropped, so
+//         a `memory_read` against it can only miss. The recorder is the authority; the
+//         expected form is extracted from its source rather than restated here.
+//   G44c  `knowledge::<symbol>@<path>` — the record the whole rule is named for — had a
+//         read, a match table, a TTL and a write budget, and no producer anywhere. Zero
+//         rows existed after four runs on the same PR.
+//   G44d  `thread-resolution.md`, the one write path that had actually fired on this repo,
+//         keyed every record into the v1 prose space (`promotable: false`) even though the
+//         comment it was resolving carried a v2 marker to recover. 273 legacy rows, no
+//         `rule::` row, `seen_count` accumulating on nothing.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const MEMORY_MD = read("agents/pr-reviewer/rules/memory.md");
+  const RELEVANCE_MD = read("agents/shared/rules/comment-relevance-memory.md");
+  const THREADS_MD = read("agents/shared/rules/thread-resolution.md");
+  const BODY = read("agents/pr-reviewer.md");
+  const RECORDER = read("scripts/record-comment-relevance.mjs");
+
+  // ---- G44a: documented memory tool calls use the tools' real parameter names ----
+  //
+  // The two tools disagree, which is the whole trap: `memory_list` takes a singular
+  // `scope` string, `memory_search` takes `scopes[]` plus `q`. Generalising either one to
+  // the other produces a call that validates away to nothing.
+  const memoryCalls = (text, tool) =>
+    [...text.matchAll(new RegExp(`mcp__lorekit__${tool}\\b([^\\n]*)`, "g"))].map((m) => m[1]);
+
+  for (const [file, text] of [
+    ["memory.md", MEMORY_MD],
+    ["comment-relevance-memory.md", RELEVANCE_MD],
+  ]) {
+    for (const args of memoryCalls(text, "memory_search")) {
+      // Skip a prose mention that passes no arguments at all (e.g. "issue it as a real
+      // mcp__lorekit__memory_search tool call"): there is no call shape to check.
+      if (!/[:=]/.test(args)) continue;
+      s.check(`G44a ${file}: memory_search puts the query in \`q\`, not \`query\``,
+        /\bq\s*=/.test(args) && !/\bquery\s*=/.test(args));
+      s.check(`G44a ${file}: memory_search takes \`scopes\` (array), not a singular \`scope\``,
+        /\bscopes\s*=/.test(args) && !/(^|[^s])\bscope\s*=/.test(args));
+    }
+    for (const args of memoryCalls(text, "memory_list")) {
+      if (!/[:=]/.test(args)) continue;
+      s.check(`G44a ${file}: memory_list takes a singular \`scope\`, not \`scopes\``,
+        !/\bscopes\s*=/.test(args));
+    }
+  }
+  // The knowledge read is tag-filtered, not just kind/host-filtered. Both buckets carry
+  // `kind: signal, host: reviewer`, and the relevance bucket grows per resolved thread while
+  // this one grows per traced symbol — measured on this repo, an untagged call spent 48 of
+  // its 50 recency-ordered slots on relevance rows the Step 1.0 calls already fetch.
+  s.check("G44a memory.md's knowledge read filters on the `ci::review-knowledge` tag",
+    /mcp__lorekit__memory_list[^\n]*tags=\["ci::review-knowledge"\][^\n]*limit=50/.test(MEMORY_MD));
+
+  // ---- G44b: the keys the read path quotes are the keys the recorder writes ----
+  //
+  // Extracted from the recorder's template literals, so the assertion tracks the writer.
+  // A prefix that changes there fails here instead of quietly re-keying the bucket.
+  // `[^`;]*` reaches across the ternary's newline to the first branch without escaping the
+  // statement, so the `key` position is what selects the literal — a `tags:` entry like
+  // `source::${method}` is the same shape and must not be read as a key prefix.
+  const recorderKeys = [...RECORDER.matchAll(/\bkey\s*[:=][^`;]*`([a-z-]+(?:::[a-z-]+)*::)\$\{/g)]
+    .map((m) => m[1]);
+  s.check(`G44b the recorder's key prefixes were extractable (saw: ${recorderKeys.join(" ") || "none"})`,
+    recorderKeys.length >= 2);
+  s.check("G44b the relevance rule's promotable key space is `reviewer-comment-relevance::rule::`",
+    recorderKeys.includes("reviewer-comment-relevance::rule::"));
+  for (const prefix of new Set(recorderKeys)) {
+    s.check(`G44b memory.md quotes the key \`${prefix}…\` exactly as the recorder builds it`,
+      MEMORY_MD.includes(prefix));
+  }
+
+  // ---- G44c: every record the read path matches on has a named producer ----
+  //
+  // `hotspot::` has two producers (the recorder and Step 4d); `knowledge::` has only
+  // Step 4d, which is why its absence went unnoticed for so long. Require the agent body
+  // to name a write for each — a match table pointed at rows nothing writes is the defect.
+  const step4d = BODY.split(/### 4d\./)[1]?.split(/\n### |\n## /)[0] ?? "";
+  s.check("G44c Step 4d exists and routes to the write section that holds the calls",
+    step4d !== "" && /#write--the-two-calls-this-agent-makes-itself/.test(step4d));
+  for (const record of ["knowledge", "hotspot"]) {
+    s.check(`G44c Step 4d names the \`${record}\` write`, step4d.includes(record));
+    // The literal key lives in one place — the rule file with the call — so the body
+    // routing to it cannot drift from the key it writes.
+    s.check(`G44c memory.md's write section spells the \`${record}::\` key`,
+      MEMORY_MD.includes(`key      = "${record}::`));
+  }
+  // Per call, not file-wide: with the two calls in one section, a file-wide test passes on
+  // either one's properties and the other can silently lose them.
+  const writeCalls = {
+    knowledge: MEMORY_MD.split("# A. Symbol knowledge")[1]?.split("# B. Hotspot")[0] ?? "",
+    hotspot: MEMORY_MD.split("# B. Hotspot")[1]?.split("```")[0] ?? "",
+  };
+  for (const [name, call] of Object.entries(writeCalls)) {
+    s.check(`G44c the ${name} write passes kind + host explicitly (a \`ci::\` tag infers neither)`,
+      /kind\s*=\s*"signal"/.test(call) && /host\s*=\s*"reviewer"/.test(call));
+    s.check(`G44c the ${name} write sets an explicit 90-day TTL`, /ttl_days\s*=\s*90/.test(call));
+  }
+  s.check("G44c the knowledge write is deep-tier only, so no unverified fact is stored",
+    /deep tier only/i.test(MEMORY_MD));
+
+  // ---- G44d: the in-run relevance write recovers its fingerprint, never re-derives it ----
+  s.check("G44d thread-resolution.md writes the v2 `rule::` key when a marker is present",
+    THREADS_MD.includes("reviewer-comment-relevance::rule::<fp>"));
+  s.check("G44d thread-resolution.md recovers the fingerprint through fingerprint.mjs",
+    /fingerprint\.mjs" extract/.test(THREADS_MD));
+  s.check("G44d thread-resolution.md keeps the prose key as the marker-less fallback only",
+    /fp_v: 1, promotable: false/.test(THREADS_MD));
+
+  // ---- G44e: one value shape, and the licence that broke it is gone ----
+  s.check("G44e the relevance bucket's value is JSON only",
+    /### One value shape: JSON/.test(RELEVANCE_MD));
+  s.check("G44e no write site still licenses a markdown record body",
+    !/record body as JSON or markdown/.test(RELEVANCE_MD));
+
+  // ---- G44f: the state scope's third segment is the branch NAME ----
+  //
+  // Derived from the body's own binding: a SHA-keyed scope mints a fresh scope per push,
+  // so the record is written once and never read again.
+  s.check("G44f STATE_SCOPE is bound from HEAD_REF, never HEAD_SHA",
+    /STATE_SCOPE="branch::\$\{RESOLVED_REPO\}::\$\{HEAD_REF\}"/.test(BODY));
+  for (const [file, text] of [
+    ["memory.md", MEMORY_MD],
+    ["memory-buckets.md", read("agents/shared/rules/memory-buckets.md")],
+  ]) {
+    s.check(`G44f ${file} names the state scope's third segment unambiguously`,
+      text.includes("branch::{owner}/{repo}::{head-branch-name}") &&
+      !/branch::\{owner\}\/\{repo\}::\{head\}/.test(text));
+  }
+
+  // ---- G44g: this repo calls the only committed writer it owns ----
+  //
+  // The reusable workflow was committed and documented as live while nothing in this
+  // repository called it, so its own store could never gain a v2 row. The self-caller
+  // mirrors the report-shape guard's: a local `uses:`, so a change here is exercised here.
+  const CALLER = "\.github/workflows/pr-relevance-memory.yml";
+  s.check("G44g this repo has a caller for reviewer-comment-relevance.yml",
+    existsSync(join(REPO_ROOT, ".github/workflows/pr-relevance-memory.yml")));
+  if (existsSync(join(REPO_ROOT, ".github/workflows/pr-relevance-memory.yml"))) {
+    const caller = read(".github/workflows/pr-relevance-memory.yml");
+    s.check("G44g the self-caller uses the local reusable workflow, not @main",
+      caller.includes("uses: ./.github/workflows/reviewer-comment-relevance.yml") &&
+      !caller.includes("reviewer-comment-relevance.yml@main"));
+    const modes = [...caller.matchAll(/mode:\s*([a-z-]+)/g)].map((m) => m[1]);
+    for (const mode of ["thread-resolved", "pr-merged", "human-comment"]) {
+      s.check(`G44g the self-caller wires up \`${mode}\``, modes.includes(mode));
+    }
+    s.check("G44g the self-caller passes the LoreKit secret through",
+      /lorekit_api_key:\s*\$\{\{\s*secrets\.LOREKIT_API_KEY\s*\}\}/.test(caller));
+  }
+  void CALLER;
+
+  // ---- G45a: the knowledge read has a call site, not just a rule ----
+  //
+  // G44 guarded the write side and said so in its own comment. The read side stayed
+  // prescribed-only: `memory.md § Read` carried two calls, a match table, a budget and a TTL,
+  // while `agents/pr-reviewer.md` mentioned `ci::review-knowledge`, `knowledge::` and
+  // `hotspot::` zero times — so Step 4d's producer had no consumer, and a run reported
+  // "0 memories applied" indistinguishably from a repo that had learned nothing.
+  s.check("G45a the agent body issues the `ci::review-knowledge` read",
+    BODY.includes('tags=["ci::review-knowledge"]'));
+  s.check("G45a the agent body's knowledge read passes kind=signal host=reviewer",
+    /tags=\["ci::review-knowledge"\][^\n]*kind="signal"[^\n]*host="reviewer"/.test(BODY));
+  // The call site is Phase B's tail, per memory.md. Assert it positionally rather than by
+  // heading text: the read must come after the graph exists and before depth routing reads it.
+  const iGraph = BODY.indexOf("#### 1.2a Build the impact graph (Phase B)");
+  const iKnowledgeRead = BODY.indexOf('tags=["ci::review-knowledge"]');
+  const iDepthRouting = BODY.indexOf("### 1.2b Delta triage and depth routing (Phase C)");
+  s.check("G45a the knowledge read sits inside Step 1.2a, after the graph is built",
+    iGraph > 0 && iKnowledgeRead > iGraph && iDepthRouting > iKnowledgeRead);
+  // Both files must name the other's half of the loop, so moving one fails here.
+  s.check("G45a memory.md names its call site in the agent body",
+    /call site is the tail of Step 1\.2a/.test(MEMORY_MD));
+  s.check("G45a the agent body routes the read back to memory.md § Read",
+    /Read — two calls, keyed by the impact graph|#read--two-calls-keyed-by-the-impact-graph/
+      .test(BODY));
+
+  // ---- G45b: the hotspot write merges its counters instead of clobbering them ----
+  //
+  // The template was a literal `confirmed:1` with field list `{v, path, confirmed,
+  // last_touched_by}`, and the merge rule was scoped to "the knowledge write" by its own
+  // heading — so every run reset a counter the read side classifies `hot` on, and the
+  // `missed[]` the in-run signals table promises had nowhere to land.
+  const hotspotBlock = MEMORY_MD.split("# B. Hotspot")[1]?.split("```")[0] ?? "";
+  s.check("G45b the hotspot write is documented", hotspotBlock.length > 0);
+  s.check("G45b the hotspot write merges onto the record read at Step 1.2a",
+    /MERGED onto the record read at Step 1\.2a/.test(hotspotBlock));
+  s.check("G45b the hotspot write template does not hardcode `confirmed:1`",
+    !/confirmed\s*:\s*1\b/.test(hotspotBlock));
+  // Every counter the read side branches on must exist in the written record. `missed` and
+  // `regressed` are named by the four-records table and the match table; omitting them from
+  // the write is what made those rows unreachable.
+  for (const field of ["missed", "regressed", "classes", "confirmed_examples"]) {
+    s.check(`G45b the hotspot record's value carries \`${field}\``,
+      new RegExp(`"${field}"`).test(MEMORY_MD));
+  }
+  s.check("G45b the merge rule covers both writes, not the knowledge write alone",
+    /Merge, never clobber — on both writes/.test(MEMORY_MD)
+    && !/Four rules on the knowledge write/.test(MEMORY_MD));
+  s.check("G45b Step 4d tells the run to merge rather than write the literals",
+    /never write the rule file's literals/.test(BODY));
+
+  // ---- G45c: `indexed` and `used` count one population ----
+  //
+  // The body defined `MEMORIES_READ_COUNT` as relevance-only and called itself authoritative;
+  // a later step extended `MEMORIES_USED[]` to knowledge and hotspot; `render-report.mjs`
+  // derives `used` from that array's length and FAILS CLOSED when it exceeds indexed. A run
+  // applying a hotspot on a repo with no armed relevance rule therefore rendered nothing at
+  // all — and that is the normal shape for a bucket in its first weeks.
+  const RENDERING_MD = read("agents/pr-reviewer/rules/report-rendering.md");
+  // Each file states the widened population in its own words, so each is pinned to its own
+  // sentence rather than to proximity: a `MEMORIES_READ_COUNT … hotspot` window check passes
+  // on the unrelated `kind` ∈ `rule`/`knowledge`/`hotspot` mention a few lines away, which is
+  // how a probe that narrowed the definition back to relevance-only stayed green.
+  for (const [file, text, claim] of [
+    ["pr-reviewer.md", BODY, /plus the knowledge and hotspot records the\s+Step 1\.2a read returns/],
+    ["report-rendering.md", RENDERING_MD,
+      /relevance rules\s*\n?\(Step 1\.0\) \*\*plus\*\* knowledge and hotspot records \(Step 1\.2a\)/],
+  ]) {
+    s.check(`G45c ${file}: MEMORIES_READ_COUNT counts knowledge and hotspot too`,
+      claim.test(text));
+    s.check(`G45c ${file}: no relevance-only claim survives beside the widened pair`,
+      !/MEMORIES_READ_COUNT[^\n]*counts `reviewer-comment-relevance` memories only/.test(text)
+      && !/is how many relevance memories were loaded/.test(text));
+  }
+  // The renderer's fail-closed rule is the reason the two must agree; assert it is still there,
+  // so a future relaxation of the docs cannot pass while the code still rejects the payload.
+  const RENDER = read("agents/pr-reviewer/scripts/render-report.mjs");
+  s.check("G45c the renderer still fails closed on used > indexed",
+    /indexed is always >= used/.test(RENDER));
+
+  // ---- G45d: relevance suppression is documented after verification, in every file ----
+  //
+  // G38d asserted the 2.7b ordering on the agent body alone, and G44a looped over both memory
+  // files without an ordering check, so `comment-relevance-memory.md` kept describing Step 2.2
+  // ("DROP the finding before it reaches the grounding step") at 1008/1008 green — the exact
+  // pre-verification suppression this PR moved.
+  for (const [file, text] of [
+    ["comment-relevance-memory.md", RELEVANCE_MD],
+    ["pr-reviewer.md", BODY],
+  ]) {
+    s.check(`G45d ${file}: no site claims relevance filtering runs at Step 2.2`,
+      !/[Ss]tep 2\.2\b/.test(text));
+    s.check(`G45d ${file}: no site drops a finding before grounding`,
+      !/before it reaches the grounding step/.test(text));
+  }
+  s.check("G45d comment-relevance-memory.md names Step 2.7b as the match point",
+    /In `pr-reviewer` that is Step 2\.7b/.test(RELEVANCE_MD));
 }
 
 process.exit(s.report() ? 0 : 1);

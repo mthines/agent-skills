@@ -77,10 +77,13 @@ const SUITES = [
   {
     name: "shape-depth-routing",
     golden: "golden/shape-depth-routing.jsonl",
-    rubric: { file: "agents/pr-reviewer.md", section: "### 1.2b Delta triage (incremental modes only)" },
-    instruction: "You are pr-reviewer at Step 1.2b, after the delta and its shape classification are computed. Using ONLY the rules below, pick the routing outcome: 'full' when any upgrade rule forces RUN_MODE=full, 'escalate' when the run stays incremental but ESCALATE_IN_INCREMENTAL is set (a risky content shape with no upgrade trigger), and 'cheap' when the run stays incremental with no escalation.",
+    // The routing table moved into its own rule file with the Phase C split, so the rubric reads
+    // the file that OWNS the decision. Reading pr-reviewer.md § 1.2b instead would extract the
+    // step that routes here and none of the rows the labels are derived from.
+    rubric: { file: "agents/pr-reviewer/rules/depth-routing.md", section: null }, // whole file
+    instruction: "You are pr-reviewer at Step 1.2b Phase C, after the delta, its shape classification, and the impact graph are computed. Using ONLY the depth-routing rules below, pick the tier. Apply the two pre-table rules first (the quick override, then the size exclusion), then the three-tier table first-match-wins top to bottom.",
     inputKey: "input", inputLabel: "Delta",
-    choices: ["full", "escalate", "cheap"],
+    choices: ["deep", "standard", "quick"],
   },
   {
     name: "code-review-retrieval-relevance",

@@ -369,7 +369,7 @@ Whichever way it goes, the run's own outcome is what gets written back (`pr-revi
 `Additional findings` is not the only body-only output of a review pass.
 A gate finding has **no inline anchor by design** — a `❌` on *Prior review feedback*, *Documentation*, or *Self-review signals* (or a `⚠️` on the tri-state *Prior review feedback*) exists only as a row in the gate-status table inside the `Review details` accordion.
 Optimality proposals (2.4c) are rendered as body cards and never inline.
-The `**Standards (2.4d)**` log line records whether that lens ran at all; its individual findings go inline or into `Additional findings`, so they travel with `CARRIED_FINDINGS` and are not re-parsed here.
+The `Standards — ` log line records whether that lens ran at all; its individual findings go inline or into `Additional findings`, so they travel with `CARRIED_FINDINGS` and are not re-parsed here.
 None of these are re-derivable from the delta, and 2.4c and 2.4d are both **skipped** in `incremental-quick`.
 Without this rule a re-review silently drops every one of them, and the PR conversation loses context the author still needs.
 

@@ -32,7 +32,9 @@
 
 <sup>{{FOOTER_LINE}}</sup>
 
-| Gate | Status | Details |
+{{#NEEDS_ATTENTION}}**Needs attention**
+
+{{/NEEDS_ATTENTION}}| Gate | Status | Details |
 |---|---|---|
 | Description vs. code | {{GATE_DESCRIPTION_STATUS}} | {{GATE_DESCRIPTION_DETAILS}} |
 | Prior review feedback | {{GATE_PRIOR_STATUS}} | {{GATE_PRIOR_DETAILS}} |
@@ -43,32 +45,31 @@
 **Open review threads ({{OPEN_THREADS_COUNT}})**{{RESOLVED_SINCE}}
 
 {{OPEN_THREADS}}
-{{/OPEN_THREADS}}{{#CI_NOTE}}
-**CI** — {{CI_NOTE}}
-{{/CI_NOTE}}{{#VERIFIED_NOTE}}
-**Verified** — {{VERIFIED_NOTE}}
-{{/VERIFIED_NOTE}}
-**Run mode** — {{RUN_MODE}}
+{{/OPEN_THREADS}}
+{{#IMPACT_SECTION}}<details>
+<summary>Impact — {{IMPACT_SUMMARY}}</summary>
 
-**Memories** — {{MEMORIES_SUMMARY}}
-{{#MEMORIES_BULLETS}}
-{{MEMORIES_BULLETS}}
-{{/MEMORIES_BULLETS}}
+{{IMPACT_SECTION}}
 
-{{#TIER_BREAKDOWN}}**Severity** — {{TIER_BREAKDOWN}}
+</details>
 
-{{/TIER_BREAKDOWN}}**Quality** — {{QUALITY}}
-{{#QUALITY_DROPPED}}
-- dropped: {{QUALITY_DROPPED}}
-{{/QUALITY_DROPPED}}
-**Integrations** — {{INTEGRATIONS}}
+{{/IMPACT_SECTION}}{{#WITHHELD}}<details>
+<summary>Withheld ({{WITHHELD_COUNT}}) — could not be verified from this runner</summary>
 
-**Optimality (2.4c)** — {{OPTIMALITY_LOG}}
+{{WITHHELD}}
 
-**Standards (2.4d)** — {{STANDARDS_LOG}}
+</details>
 
-**Skipped files** — {{SKIPPED_FILES}}
+{{/WITHHELD}}**Found**
 
+{{FOUND_LINES}}
+
+**Run**
+
+{{RUN_LINES}}
+{{#NOTHING_TO_REPORT}}
+<sup>Nothing to report — {{NOTHING_TO_REPORT}}.</sup>
+{{/NOTHING_TO_REPORT}}
 <sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
 
 </details>

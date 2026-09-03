@@ -15,6 +15,8 @@ Reviewed your changes — no blocking issues, **3 warning(s)**: 2 open review th
 
 <sup>Incremental review for commit `2c2bd19` (delta since `70cf147`).</sup>
 
+**Needs attention**
+
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ✅ | The description matches what the diff does. |
@@ -28,28 +30,22 @@ Reviewed your changes — no blocking issues, **3 warning(s)**: 2 open review th
 - [`packages/web/src/lib/filters.ts:23`](https://github.com/o/r/pull/1#discussion_r1) — the docblock still names filtersToQueryParams (human · `umanwizard`)
 - [`packages/schemas/src/memory.ts:735`](https://github.com/o/r/pull/1#discussion_r2) — the advertised bound is 5x what the hop survives (bot · `cursor`)
 
-**CI** — `Integration smoke (local Supabase)` is red on one case — `POST /memories/list` expected 200, got 500.
+**Found**
 
-**Verified** — `node scripts/sync-edge-schemas.mjs --check` in sync (15 files).
+Quality — produced 7 → posted inline 3 · cleared 3 · carried forward 0 · deferred 2 · below-bar 0
+Dropped — relevance 0 · dedupe 1 · grounding 0 · confidence 2 · shape 0
+Measurability — ran · 2 paths classified · 1 missing · 0 unlinked
+Verified — `node scripts/sync-edge-schemas.mjs --check` in sync (15 files).
 
-**Run mode** — incremental · 256 lines in delta · 27 files touched
+**Run**
 
-**Memories** — 62 indexed · 1 used
+incremental · 256 lines in delta · 27 files touched
+CI — `Integration smoke (local Supabase)` is red on one case — `POST /memories/list` expected 200, got 500.
+Memories — 62 indexed · 1 used
 
 - [`pre-flight-logic:token-membership-tests-mis-ordered`](https://lorekit.io/lore?scope=%22repo%3A%3Ao%2Fr%22) — promoted, seen 2x
 
-
-**Quality** — produced 7 → posted inline 3 · cleared 3 · carried forward 0 · deferred 2 · below-bar 0
-
-- dropped: relevance 0 · dedupe 1 · grounding 0 · confidence 2 · shape 0
-
-**Integrations** — not activated
-
-**Optimality (2.4c)** — ran · 3 judged · 3 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld
-
-**Standards (2.4d)** — ran · 1 doc · 0 finding(s)
-
-**Skipped files** — none
+<sup>Nothing to report — standards (1 doc), optimality (3 judged), integrations (not activated), severity, 0 files skipped.</sup>
 
 <sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
 

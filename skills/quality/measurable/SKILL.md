@@ -155,6 +155,14 @@ checked for coverage gaps, without writing anything.
    team has opted in, not on day one.
 5. Never auto-edit in `audit` mode — that is what `implement` mode is for.
 
+**Callers of `audit` mode.** `autonomous-workflow` Phase 4 (its Observability Gate) and the
+`pr-reviewer` agent's measurability lens (Step 2.4e, via
+`agents/shared/rules/measurability-review.md`) are both `audit`-only consumers, and both are
+advisory unless their own caller opted into strict. The reviewer additionally gates the call behind
+two conditions of its own — the diff must touch a `web`/`mobile`/`api`/`worker` path **and** add or
+alter observable behaviour — so a refactor PR never reaches this mode at all. Neither caller may
+invoke `implement`: one is a gate, the other is read-only.
+
 ### Setup mode
 
 First-time (or repo-onboarding) interview that records durable project

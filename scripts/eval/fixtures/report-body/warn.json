@@ -71,5 +71,6 @@
   "INTEGRATIONS": "not activated",
   "OPTIMALITY_LOG": "ran · 3 judged · 3 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
   "STANDARDS_LOG": "ran · 1 doc · 0 finding(s)",
+  "MEASURABILITY_LOG": "ran · 2 paths classified · 1 missing · 0 unlinked",
   "SKIPPED_FILES": "none"
 }

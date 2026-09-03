@@ -49,6 +49,15 @@ Nothing that clears the confidence threshold is hidden in either relation: the c
 
 profile: chill | balanced | assertive   # default: balanced
 
+effort: high                             # repo-wide default for the depth lever — equivalent to
+                                         # always passing --effort high: forces DEPTH_TIER = deep,
+                                         # enables Tier-2/3 receipts where the toolchain allows,
+                                         # and widens diversify-then-vote to N=5. Omit for the
+                                         # routed default. `high` is the only accepted value; the
+                                         # routed tiers are not settable here, because pinning a
+                                         # repo to `quick` would silently cap every review on it.
+                                         # See agents/pr-reviewer/rules/depth-routing.md#--effort
+
 severity_thresholds:                     # DEFAULT — values shown are the `balanced` defaults.
   critical: 65                           # The reviewer tiers every finding via
   high: 70                               # Skill("severity","finding") and gates it on the
@@ -218,6 +227,7 @@ Merge rules by field:
 | `filters` | **Union** — filters from all files in the hierarchy apply; a closer file cannot un-filter a category from the base |
 | `path_instructions` | **Concatenation** — all instructions from all files apply, with closer-file instructions listed first |
 | `agent0_fix_links`, `agent0_environment` | **Base only, never subtree-merged** — these gate the whole run (buttons on or off, which Agent0 host), not one file's findings, so a subtree `.review.yaml` cannot opt a directory in or out. Read from the repo-level base config alone; see § Run-level fields below. |
+| `effort` | **Base only, never subtree-merged** — the depth tier is one decision per run, made at Step 1.2b before any file is read, so there is no point in the run at which a subtree's value could apply. Read from the repo-level base config alone. |
 
 Example: if `.github/review.yaml` sets `profile: chill` and `src/payments/.review.yaml` sets `profile: assertive`, then files under `src/payments/` use `assertive` while all other files use `chill`.
 
@@ -423,6 +433,36 @@ downstream quality gate unchanged.
 Use `path_instructions` when you want the reviewer to weigh a contextual consideration during
 confidence scoring.
 Use `standards` when you want the reviewer to enforce a written rule as an explicit finding.
+
+---
+
+## Measurable
+
+`measurable:` sets how hard the measurability lens
+([`measurability-review.md`](./measurability-review.md), Step 2.4e) presses on a missing signal.
+It is a single scalar, not a list, because it configures a bar rather than a scope.
+
+```yaml
+measurable: strict        # advisory (default) | strict
+```
+
+| Value | Effect |
+|---|---|
+| absent, or `advisory` | The lens runs and reports. A `missing` signal is a `suggestion:`; nothing it emits reaches `FAIL_REASONS`. |
+| `strict` | `--strict` is passed to `measurable audit`, so a `missing` signal on a path with a **new failure mode** is an `issue:` and counts like any other `issue:`. |
+
+Two properties this field deliberately does **not** have:
+
+- **It cannot make `unlinked` blocking.** A signal that exists but maps to no named regression
+  detector stays a `nitpick:` in every configuration — the `measurable` skill's own rule, honoured
+  here rather than re-litigated.
+- **It has no reviewer-side override.** Strictness is a claim about the repository's release bar, so
+  only the repository (this field) or an explicit `--measurable-strict` on the invocation sets it;
+  the reviewer never escalates on its own judgment.
+
+To turn the lens off entirely, pass `--no-measurable` on the invocation. There is deliberately no
+`measurable: off`: a repository silently disabling a lens for every reviewer is the shape that makes
+a review's silence unreadable, whereas a flag is visible in the run announcement.
 
 ---
 

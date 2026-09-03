@@ -25,7 +25,7 @@ This file does not restate those — it only names the buckets and says which ki
 
 - [The kinds](#the-kinds)
 - [The `review*` trio (the confusing one)](#the-review-trio-the-confusing-one)
-- [Master table — all 15 buckets](#master-table--all-15-buckets)
+- [Master table — all 17 buckets](#master-table--all-17-buckets)
 - [First-class properties in LoreKit (`kind` + `host`)](#first-class-properties-in-lorekit-kind--host)
 - [Why the tags are not kind-prefixed](#why-the-tags-are-not-kind-prefixed)
 - [See also](#see-also)
@@ -71,7 +71,7 @@ reviewer-comment-relevance
 
 ---
 
-## Master table — all 15 buckets
+## Master table — all 17 buckets
 
 ### Lessons (`loop::<host>-lessons`, key `<host>-lessons::<slug>`)
 
@@ -107,13 +107,36 @@ hosts and silently halve every usage roll-up.
 
 | Bucket | Owner rule | Producer → Consumer | Lifetime | Read |
 | --- | --- | --- | --- | --- |
-| `reviewer-comment-relevance` | [`comment-relevance-memory.md`](./comment-relevance-memory.md) | GH Action `reviewer-comment-relevance.yml` (**not yet committed** — see below) + `implement-suggestion` + `reviewer`/`pr-reviewer` post-merge fallback → `reviewer`/`pr-reviewer` | durable 60d | Every review run (`reviewer` Step 0.7 / `pr-reviewer` Step 1.0); applied at Step 2.2. |
+| `reviewer-comment-relevance` | [`comment-relevance-memory.md`](./comment-relevance-memory.md) | GH Action `reviewer-comment-relevance.yml` (committed — see below) + `implement-suggestion` + `reviewer`/`pr-reviewer` post-merge fallback → `reviewer`/`pr-reviewer` | durable 60d | Every review run (`reviewer` Step 0.7 / `pr-reviewer` Step 1.0); applied **after** verification. |
+
+### Knowledge (`ci::review-knowledge`, keys `knowledge::<symbol>@<path>` and `hotspot::<path>`)
+
+| Bucket | Owner rule | Producer → Consumer | Lifetime | Read |
+| --- | --- | --- | --- | --- |
+| `review-knowledge` (symbol) | [`pr-reviewer/rules/memory.md`](../../pr-reviewer/rules/memory.md) | `pr-reviewer` **Step 4d**, deep tier only (a verified finding, or a confirmed invariant) → `pr-reviewer` finders | durable 90d | When a changed symbol matches — never wholesale. |
+| `review-hotspot` | [`pr-reviewer/rules/memory.md`](../../pr-reviewer/rules/memory.md) | `pr-reviewer` **Step 4d** (a confirmed finding on the file) + `scripts/record-comment-relevance.mjs` (`human-comment`, `deploy-regression`) → depth routing and finder priority | durable 90d | When a changed path matches. |
+
+**Both rows name a step, and that is the point of naming it.** These two buckets had a read rule, a
+match table, a TTL and a write budget, and — for the symbol record — no producer anywhere in the
+tree: neither the agent body nor the recorder wrote one. The read side passed every check it had,
+because a read against an empty bucket is indistinguishable from a read against a repository that
+happens to know nothing. Step 4d is the write site; a bucket in this taxonomy whose Producer column
+cannot name a step or a script is unimplemented, whatever its rule file says.
+
+Both are **`signal`** kind and **`reviewer`** host, set explicitly — LoreKit infers `kind`/`host` from a `loop::` tag only, and these are tagged `ci::`.
+They are the cross-branch, cross-author half of the memory layer: keyed by **symbol** and by **path**, not by branch or by PR, so what one author's PR taught the reviewer about `retryRequest` is available on the next author's PR that touches it.
+Neither is a lesson and neither is advice — a symbol record holds a fact about the code (a checked invariant, a caller that depends on a signature, a defect this symbol produced before) and a hotspot record holds counters (`missed`, `confirmed`, `regressed`).
+
+Two properties keep them safe to read on every run:
+
+- **They raise priority, never lower a tier and never suppress.** A hotspot cannot silence a finding, and an empty hotspot record is not evidence of safety. Suppression lives entirely in `reviewer-comment-relevance`, behind verification.
+- **They are keyed to something structural.** A record keyed by prose re-keys on every re-phrasing and accumulates nothing; `knowledge::<symbol>@<path>` and `hotspot::<path>` survive a rename of the finding but not a rename of the code, which is the correct sensitivity.
 
 ### State records (`ci::<host>-state`, key `ci-state::<slug>`)
 
 | Bucket | Owner | Producer → Consumer | Scope | Lifetime |
 | --- | --- | --- | --- | --- |
-| `pr-review-state` | [`pr-reviewer.md § Step 0.7`](../../pr-reviewer.md) | `pr-reviewer` Step 4c → `pr-reviewer` Step 0.7 (its own next run, and nothing else) | `branch::{owner}/{repo}::{head}` | 7d, refreshed on every write |
+| `pr-review-state` | [`pr-reviewer.md § Step 0.7`](../../pr-reviewer.md) | `pr-reviewer` Step 4c → `pr-reviewer` Step 0.7 (its own next run, and nothing else) | `branch::{owner}/{repo}::{head-branch-name}` | 7d, refreshed on every write |
 
 Tag `ci::pr-review-state`, key `ci-state::pr-review-<pr-number>`, `kind: bus`, `host: reviewer`
 (set explicitly — `kind`/`host` are inferred only from `loop::` tags, so a `ci::` tag leaves them
@@ -129,6 +152,12 @@ Three things about it are load-bearing and easy to get wrong:
   PRs it would displace the lessons that injection exists to deliver — the exact failure
   `ci-state-records.md § The cardinality rule` warns about. `branch::` also lets the record decay
   with the branch it describes.
+- **The third segment is the head branch's NAME, never its SHA.** `pr-reviewer` binds it from
+  `headRefName` at Step 0.5 for exactly this reason. Substituting `HEAD_SHA` still writes a valid
+  record — and mints a brand-new scope on every push, so the record is written once and never read
+  again: each re-review misses, takes the first-run path, and loses its delta baseline, its
+  carried findings, and `LAST_FULL_SHA` while reporting nothing wrong. A `branch::…::<40 hex>`
+  scope holding exactly one row is the signature of a run that made this substitution.
 - **It is authoritative, not advisory.** Unlike every other bucket here, a reader branches on it.
   That is why it is version-stamped (`v: 1`) and why an unrecognised version falls back to the
   first-run path instead of being parsed.
@@ -144,7 +173,7 @@ Three things about it are load-bearing and easy to get wrong:
   that agent's `tools:` grant, so a reviewer can never delete a memory as a side effect of
   reviewing.
 
-> **Availability note on the GH Action producer.** `.github/workflows/` in this repo currently contains only `evals-l1.yml` and `evals-l2.yml`; the reusable workflow `reviewer-comment-relevance.yml` that `plugins/pr-relevance-memory/templates/pr-relevance-caller.yml` and [`comment-relevance-memory.md`](./comment-relevance-memory.md) point at with `uses: mthines/agent-skills/.github/workflows/reviewer-comment-relevance.yml@main` has not been committed. Its classifier (`scripts/record-comment-relevance.mjs`) and the caller template both ship, so the write path is designed and callable once the workflow lands — but until it does, a caller repo wiring up that `uses:` reference will fail to resolve it, and the only live producers are `implement-suggestion` and the post-merge fallback. Re-check with `ls .github/workflows/` rather than trusting this note.
+> **The GH Action producer is committed and live.** `.github/workflows/reviewer-comment-relevance.yml` is a reusable workflow in this repo, so the `uses: mthines/agent-skills/.github/workflows/reviewer-comment-relevance.yml@main` reference in [`plugins/pr-relevance-memory/templates/pr-relevance-caller.yml`](../../../plugins/pr-relevance-memory/templates/pr-relevance-caller.yml) resolves. It runs four modes — `thread-resolved`, `pr-merged`, `human-comment` (a missed-detection hotspot signal), and `deploy-regression` (§ 4.8.5 of the redesign proposal; the caller supplies the telemetry comparison, the workflow holds no credentials) — and it sparse-checks out **two** paths, because `scripts/record-comment-relevance.mjs` imports the fingerprint grammar from `agents/pr-reviewer/scripts/fingerprint.mjs` rather than carrying a second copy. This note previously said the workflow had not been committed; that was wrong for as long as it stood, and three write defects were documented as "latent" on the strength of it while they were in fact live. Verify with `ls .github/workflows/` rather than trusting any prose here, this sentence included.
 
 ---
 
@@ -187,7 +216,7 @@ Do not, unless the whole ecosystem moves together.
 The bucket names are a **cross-tool contract**, not internal identifiers:
 
 - The `loop::<host>-lessons` tag convention is defined by the external `lorekit-setup` and `lorekit-memory` skills — renaming forks from it.
-- `reviewer-comment-relevance` is written verbatim by `scripts/record-comment-relevance.mjs`, by the caller template in `plugins/pr-relevance-memory/`, and by the `reviewer-comment-relevance.yml` GitHub Action those two are built around (not yet committed — see the availability note above). A rename would have to land in the shipped script and template regardless.
+- `reviewer-comment-relevance` is written verbatim by `scripts/record-comment-relevance.mjs`, by the caller template in `plugins/pr-relevance-memory/`, and by the committed `reviewer-comment-relevance.yml` GitHub Action those two are built around. A rename would have to land in the shipped script, the template, and the workflow together.
 - The L1 eval enumerates the lessons bucket names: Check E (`scripts/eval/l1.mjs`) asserts that no `memory/<bucket>/` directory is committed here, one assertion per bucket, so a rename must be mirrored into that array. Note what it does **not** do — it keys on the bucket *name*, never on the `loop::…` tag, so no check would catch a tag rename that left the names alone. Nothing in the evals pins the tag strings.
 - LoreKit keys memories by `scope` + `key`; a rename orphans every memory already written under the old name — it does not migrate them.
 
