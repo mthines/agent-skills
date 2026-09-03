@@ -34,6 +34,7 @@ and both the renderer and the L1 guards match some of these headings as literal 
   - [REPORT_BODY payload](#reportbody-payload)
   - [`UPDATED_LINE` — the freshness cue outside the accordion](#updatedline--the-freshness-cue-outside-the-accordion)
   - [`RUN.tier` and `RUN.depth` — the depth declaration](#runtier-and-rundepth--the-depth-declaration)
+  - [The three groups inside the accordion](#the-three-groups-inside-the-accordion)
   - [Headlines](#headlines)
 - [The Gate 3 open threads: the count on the summary, the list in the accordion](#the-gate-3-open-threads-the-count-on-the-summary-the-list-in-the-accordion)
   - [`OPEN_THREADS_SUFFIX` — the counter on the summary](#openthreadssuffix--the-counter-on-the-summary)
@@ -129,9 +130,24 @@ own top-level scalar: one run produces one wall-clock moment, and `RUN` is alrea
 moment's other derived text (the footer) comes from — a second, independent timestamp field could
 disagree with it.
 
-The `Run mode` line renders as `<mode> · <N> lines in delta`, which is the shape
-`reviewer-report-ingest.md` parses. Extra colour goes in the optional `RUN_NOTE` scalar and is
-appended after it, so the parseable prefix survives.
+The run line renders as `<mode> · <N> lines in delta`, which is the shape
+`reviewer-report-ingest.md` parses — and, since the `**Run**` group heading now carries the label,
+that shape is also the line's whole anchor. Extra colour goes in the optional `RUN_NOTE` scalar and
+is appended after it, so the parseable prefix survives.
+
+**`RUN_NOTE` is routing colour; `RUN_ANOMALY` is a caveat about coverage.** They are two slots
+because they are two different claims, and conflating them cost a real report its most important
+sentence: a compare-range pollution notice — which changed *what the review actually covered* —
+rode at the tail of the longest line in the accordion, after `depth checkout`, and went unread.
+
+| Slot | Renders | Use it for |
+| --- | --- | --- |
+| `RUN_NOTE` | appended to the run line after the parseable prefix | why the router chose this tier — `blast_radius=high · semver_delta=major`, `27 files touched` |
+| `RUN_ANOMALY` | its own line directly under the run line, prefixed `⚠️` by the renderer | something that changed what this run reviewed — a polluted compare range, a capability cap, a truncated fetch |
+
+The renderer rejects a `RUN_NOTE` containing `⚠️` (that is an anomaly wearing colour's clothes) and
+a `RUN_ANOMALY` that supplies its own leading glyph (the renderer owns it, so a supplied one
+doubles). Both are single-line.
 
 #### `RUN.tier` and `RUN.depth` — the depth declaration
 
@@ -141,7 +157,9 @@ These two slots put both facts on the `Run mode` line, **after** the parseable
 `<mode> · <N> lines in delta` prefix, so the ingest grammar is untouched:
 
 ```markdown
-**Run mode** — incremental · 84 lines in delta · tier standard · depth tarball (no git history)
+**Run**
+
+incremental · 84 lines in delta · tier standard · depth tarball (no git history)
 ```
 
 - `tier` is the routing outcome from [`depth-routing.md`](./depth-routing.md) — `deep`, `standard`,
@@ -177,13 +195,70 @@ length**, so there is no count to supply and none to get wrong:
 | `LOW_CONFIDENCE_FINDINGS` | `[{…same…}]` | Advisory only (`reviewer-report-ingest.md`). |
 | `OPTIMALITY_CARDS` | `[markdown, …]` | The one place model-authored markdown remains, because a card is a multi-line block with its own table. Each must contain a `### Optimality proposal — <path>:<line>` heading, which the renderer checks. |
 | `PARTIAL_REVIEW` | `{calls, scanned, total}` | Integers; emits the tool-budget banner. |
-| `TIER_TALLY` | `{critical?, high?, medium?, low?}` | Non-negative integers. Renders the `**Severity**` line as a glyph breakdown (`🔴 <c> · 🟠 <h> · 🟡 <m> · ⚪ <l>`), omitting zero tiers; the whole line is dropped when all are zero or absent. Named `TIER_TALLY` to avoid the `SEVERITY_TALLY` headline term (error/warning count) — this is the finding-severity-tier distribution from the `severity` skill. Supply it on every run that tiered findings (the default; see `review-config.md` § Severity-aware thresholds), counting posted inline + advisory findings by tier. |
+| `TIER_TALLY` | `{critical?, high?, medium?, low?}` | Non-negative integers. Renders the `Severity — ` line as a glyph breakdown (`🔴 <c> · 🟠 <h> · 🟡 <m> · ⚪ <l>`), omitting zero tiers; the whole line is dropped when all are zero or absent. Named `TIER_TALLY` to avoid the `SEVERITY_TALLY` headline term (error/warning count) — this is the finding-severity-tier distribution from the `severity` skill. Supply it on every run that tiered findings (the default; see `review-config.md` § Severity-aware thresholds), counting posted inline + advisory findings by tier. |
 
 **Optional — scalars:** `CI_NOTE` (Gate 2's substance — which checks are red and on what),
-`VERIFIED_NOTE` (what this run checked itself), `QUALITY_DROPPED`, `RUN_NOTE`, `FIX_ALL_URL`
+`VERIFIED_NOTE` (what this run checked itself), `QUALITY_DROPPED`, `RUN_NOTE`, `RUN_ANOMALY`
+(the two are not interchangeable — see *`RUN.tier` and `RUN.depth`* above), `FIX_ALL_URL`
 (opt-in — the Agent0 "Fix all" deep link, validated `http(s)` and bare of `)`; the renderer turns
 it into a linked button above the accordion, rendered only when supplied, i.e. when the
 `--fix-links` mode is on — see `agents/shared/rules/agent0-fix-links.md`).
+
+
+#### The three groups inside the accordion
+
+The accordion used to be **nine flat `**Label** — value` lines at identical visual weight**, and on
+a typical run four of them said nothing happened while costing exactly as much vertical space as the
+ones that did. Reading it meant reading all nine to find the two that mattered.
+
+Nothing was removed. The same lines are grouped by **the question each answers**, and the payload is
+unchanged apart from the new `RUN_ANOMALY` slot — the grouping is entirely renderer-derived:
+
+| Group | Heading | Holds | Rendered when |
+| --- | --- | --- | --- |
+| Attention | `**Needs attention**` | the gate table, then `Open review threads` | the heading only when a gate row is ⚠️ or ❌; the table always |
+| Found | `**Found**` | `Quality`, `Dropped`, `Severity`, `Optimality`, `Standards`, `Verified` | always (`QUALITY` is required, so the group is never empty) |
+| Run | `**Run**` | the run line, the `⚠️` anomaly line, `Skipped files`, `Integrations`, `CI`, `Memories` + its bullets | always |
+
+Three properties are load-bearing rather than cosmetic, and L1 `G25` asserts each:
+
+- **The group headings are the only bold lines left inside the accordion.** In-group labels are
+  plain (`Quality — `, `CI — `), so the eye lands on the two or three headings first. Re-bolding an
+  in-group label puts it back at the heading's weight and undoes the grouping.
+- **`**Needs attention**` asserts something, so it renders only when a gate is not ✅.** Over an
+  all-✅ table it would say the opposite of what the table says. **Gate 2 (CI) is deliberately not
+  consulted** — it warns and never fails, so a red build must not label the gate table; CI lives in
+  the `Run` group with the rest of the run context.
+- **A lens with nothing to report is named once in a footnote**, never on a line of its own.
+
+#### Quiet lenses collapse into a footnote
+
+```markdown
+<sup>Nothing to report — standards (1 doc), optimality (3 judged), integrations (not activated), severity, 0 files skipped.</sup>
+```
+
+Five slots are collapsible, and **emptiness is read from each one's own documented grammar** — never
+guessed from prose length or a bare substring search:
+
+| Slot | Quiet when | Footnote entry |
+| --- | --- | --- |
+| `STANDARDS_LOG` | begins `skipped`, or contains `0 finding(s)` | `standards (<N> doc[s]>)` · `standards (skipped)` |
+| `OPTIMALITY_LOG` | begins `skipped`, or contains both `0 proposal(s)` and `0 withheld` | `optimality (<N> judged)` · `optimality (skipped)` |
+| `INTEGRATIONS` | exactly `not activated`, or begins `skipped` | `integrations (not activated)` · `integrations (skipped)` |
+| `SKIPPED_FILES` | exactly `none` | `0 files skipped` |
+| `TIER_TALLY` | absent, or every tier zero | `severity` |
+
+Two rules follow, and both are enforced:
+
+- **A lens renders as its own line xor a footnote entry — never both, never neither.** Both would
+  say the same thing twice; neither would silently drop a lens's run-state, which is what the
+  always-render shape was paying vertical space to avoid.
+- **An unrecognised value renders its own line.** The fallback is *more* visible, never silence: a
+  producing rule that changes its wording loses the collapse, not the information.
+
+You still supply these slots exactly as before — required, prose, one line each. Whether a value is
+worth a line is the renderer's decision, not the run's, precisely so two runs with the same state
+render the same report.
 
 **Do not write a markdown link into a structured field.** `path`, `ask`, `body`, `key` and `note`
 carry text, not markup — the renderer builds the link from `url`. Markdown link syntax in any of
@@ -444,14 +519,14 @@ cap) and must not be mixed into that section — the two carry different confide
 **Carried anchorless entries.** Entries carried from the prior review body per
 `prior-comment-awareness.md § Carry-forward of anchorless findings` render in their own section —
 a carried gate finding in the gate-status table's Details cell, a carried optimality card in
-`OPTIMALITY_SECTION`, a carried 2.4d run-state on the `**Standards (2.4d)**` log line — each
+`OPTIMALITY_SECTION`, a carried 2.4d run-state on the `Standards — ` log line — each
 suffixed ` (carried from <PRIOR_SHA_SHORT>)`. The suffix is mandatory: it is the only
 thing distinguishing a finding this run verified from one it merely preserved because the owning
 step was skipped. A carried entry never changes the gate table's ✅/⚠️/❌ status, which Step 1.8
 always sets from the current PR state, and never affects the verdict.
 
-`MEMORIES_SECTION` is the persistent memory block inside `Review details` (replacing the old
-applied-only list). It **always renders** — never omit the slot. `LOREKIT_CONNECTED` selects which
+`MEMORIES_SECTION` is the persistent memory block inside `Review details`, the last entry in the
+`Run` group (replacing the old applied-only list). It **always renders** — never omit the slot. `LOREKIT_CONNECTED` selects which
 of the two shapes below it takes, so a reader always sees either both counts or an explicit
 `not connected`, not only when something fired.
 
@@ -460,7 +535,7 @@ of the two shapes below it takes, so a reader always sees either both counts or 
   exact memory and see why a finding was dropped, downgraded, or promoted:
 
   ```text
-  **Memories** — <MEMORIES_READ_COUNT> indexed · <MEMORIES_USED_COUNT> used
+  Memories — <MEMORIES_READ_COUNT> indexed · <MEMORIES_USED_COUNT> used
 
   - [`issue:missing-abort-signal`](<url>) — promoted, seen 3×
   - [`nitpick:map-vs-record-preference`](<url>) — downgraded, seen 2×
@@ -470,7 +545,7 @@ of the two shapes below it takes, so a reader always sees either both counts or 
   This is the **rendered** shape, not the payload: supply `MEMORIES_SUMMARY: "<N> indexed"` and the
   `APPLIED_MEMORIES[]` bullets as `MEMORIES_USED`, and the renderer derives ` · <N> used` from that
   array — so `MEMORIES_USED_COUNT` is never typed by hand and can never disagree with the bullets.
-- **Not connected** (`LOREKIT_CONNECTED=false` — the `mcp__lorekit__memory_list` tool call still errored after the Step 1.0 retries were exhausted, or the tool was unavailable: not in the agent's `tools:` grant, or the LoreKit MCP server did not connect this session so the tool is unregistered — `No such tool available`) — render exactly `**Memories** — not connected`, no bullets.
+- **Not connected** (`LOREKIT_CONNECTED=false` — the `mcp__lorekit__memory_list` tool call still errored after the Step 1.0 retries were exhausted, or the tool was unavailable: not in the agent's `tools:` grant, or the LoreKit MCP server did not connect this session so the tool is unregistered — `No such tool available`) — render exactly `Memories — not connected`, no bullets.
   This shape MUST NOT appear when the read was merely skipped or assumed, nor off a single transient throw — it only appears after a genuine failed attempt that survived retries.
 
 `MEMORIES_READ_COUNT` (Step 1.0) is how many relevance memories were loaded into the index;
@@ -485,8 +560,8 @@ Build each `<url>` from the memory's retained `scope` + `key`, per
 fabricated URL.
 
 **There is no memories tag on the `<summary>`.** The retired `MEMORIES_USED_SUFFIX` appended
-` (<N> memories used)` there, restating `MEMORIES` a few lines below and spending the report's one
-scannable line on a number that is `0` on most runs. The template has no such slot and the renderer
+` (<N> memories used)` there, restating the `Memories` line a few lines below and spending the
+report's one scannable line on a number that is `0` on most runs. The template has no such slot and the renderer
 rejects the key, so this is now impossible rather than merely forbidden.
 
 #### The accordion is the renderer's job, not yours
@@ -565,10 +640,10 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   top-level WARN and FAIL headlines (the latter via `SEVERITY_TALLY`).
 - Never add rows, sections, or prose outside the template above (except the four `<details>`
   blocks — `Review details`, `Optimality review`, `Additional findings`, and
-  `Low-confidence findings` — the `MEMORIES_SECTION` and `OPEN_THREADS_LIST` slots inside
-  `Review details`, the `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the
-  `PARTIAL_BANNER` and `UPDATED_LINE` lines — all of which are slots in the template, not added
-  prose).
+  `Low-confidence findings` — the three group headings, the `MEMORIES_SECTION` and
+  `OPEN_THREADS_LIST` slots and the `Nothing to report` footnote inside `Review details`, the
+  `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the `PARTIAL_BANNER` and `UPDATED_LINE`
+  lines — all of which are slots in the template, not added prose).
   Besides the headline, the banner, and `UPDATED_LINE` (all three renderer-derived or
   renderer-validated, never hand-composed), **no** prose of the agent's own is permitted at the top
   level of the body.

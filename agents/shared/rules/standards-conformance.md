@@ -247,7 +247,7 @@ The `Review details` `<details>` block in Step 4 carries a standards diagnostics
 three bodies (PASS, WARN, FAIL):
 
 ```text
-**Standards (2.4d)** — <ran | skipped (reason)> · <N> docs · <FE> finding(s)
+Standards — <ran | skipped (reason)> · <N> docs · <FE> finding(s)
 ```
 
 ## What this rule does not do

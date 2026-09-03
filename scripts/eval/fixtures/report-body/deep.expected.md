@@ -7,6 +7,8 @@ Reviewed your changes — **1 error**, **2 warning(s)**: 1 blocking finding(s); 
 
 <sup>Reviewed for commit `a1b2c3d`.</sup>
 
+**Needs attention**
+
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ✅ | The description matches what the diff does. |
@@ -18,8 +20,6 @@ Reviewed your changes — **1 error**, **2 warning(s)**: 1 blocking finding(s); 
 **Open review threads (1)**
 
 - [`src/jobs/sync.ts:88`](https://github.com/o/r/pull/1#discussion_r9) — `retryRequest` now throws where it returned `null` (bot · `cursor`)
-
-**CI** — 3 checks pending on `a1b2c3d`.
 
 <details>
 <summary>Impact — 2 changed exports · 18 consumers checked · 1 dependency delta · 1 open-PR overlap</summary>
@@ -40,28 +40,26 @@ Reviewed your changes — **1 error**, **2 warning(s)**: 1 blocking finding(s); 
 
 </details>
 
-**Run mode** — full · 12 lines in delta · tier deep · depth checkout · blast_radius=high · semver_delta=major
+**Found**
 
-**Memories** — 48 indexed · 3 used (1 knowledge · 1 hotspot · 1 rule)
+Quality — produced 9 → posted inline 4 · cleared 4 · carried forward 0 · deferred 0 · below-bar 1 · memory suppressions 1
+Dropped — relevance 1 · dedupe 2 · grounding 0 · verifier contradicted 2 · shape 0
+Severity — 🟠 1 · 🟡 2
+Optimality — ran · 3 judged · 2 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld
+Standards — ran · 2 docs · 3 finding(s)
+
+**Run**
+
+full · 12 lines in delta · tier deep · depth checkout · blast_radius=high · semver_delta=major
+⚠️ a base-branch merge polluted the compare range; reviewed the PR's own 44-file diff, not the 130-commit range
+CI — 3 checks pending on `a1b2c3d`.
+Memories — 48 indexed · 3 used (1 knowledge · 1 hotspot · 1 rule)
 
 - **knowledge** [`knowledge::retryRequest@src/api/client.ts`](https://lorekit.io/lore?scope=%22repo%3A%3Ao%2Fr%22) — 4 facts, verified at 9f8e7d6 (re-verified this run: 4/4)
 - **hotspot** `hotspot::src/api/client.ts` — hot — 5 confirmed, 1 missed, 90 d
 - **rule** `rule::correctness:nil-deref:-@src/legacy` — suppress, active <sup>evidence #88 #91 #97</sup>
 
-
-**Severity** — 🟠 1 · 🟡 2
-
-**Quality** — produced 9 → posted inline 4 · cleared 4 · carried forward 0 · deferred 0 · below-bar 1 · memory suppressions 1
-
-- dropped: relevance 1 · dedupe 2 · grounding 0 · verifier contradicted 2 · shape 0
-
-**Integrations** — not activated
-
-**Optimality (2.4c)** — ran · 3 judged · 2 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld
-
-**Standards (2.4d)** — ran · 2 docs · 0 finding(s)
-
-**Skipped files** — none
+<sup>Nothing to report — integrations (not activated), 0 files skipped.</sup>
 
 <sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
 

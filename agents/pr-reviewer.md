@@ -870,7 +870,7 @@ Loaded `reviewer-lessons` are reported separately by the `<L> reviewer-lessons m
 announce line, which is emitted at Step 1.2e — matching has not happened yet at this step, so the
 count does not exist here.
 Both counters feed the Step 4 `Review details`
-**Memories** line (`MEMORIES_USED_COUNT` is computed at Step 2.7b) — see *REPORT_BODY format (the sticky comment)*.
+`Memories` line (`MEMORIES_USED_COUNT` is computed at Step 2.7b) — see *REPORT_BODY format (the sticky comment)*.
 Neither reaches the collapsed `<summary>`, which carries the open-threads count and nothing else.
 Announce the concrete resolved scope so the read is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <N> entries indexed.` The matched-lesson count is announced at Step 1.2e, once matching has run.
 The `<D> suppressions, <P> promotions` figures are NOT announced here: they come from `relevance` and `seen_count` in record BODIES, which are not fetched until Step 2.7b. Step 2.7b announces them once they exist.
@@ -2289,7 +2289,15 @@ one — the failure Phases A and C exist to fix:
 | `WITHHELD` | the `unobtainable` verdicts from Step 2.6b | `reason` is required; `prefix` may only be `suggestion` or `question`. |
 
 Put the routing inputs (`blast_radius=…`, `semver_delta=…`) in `RUN_NOTE`, and the tier
-distribution in `TIER_TALLY`. `MEMORIES_USED[]` entries carry `kind` (`knowledge` / `hotspot` /
+distribution in `TIER_TALLY`.
+
+**A caveat about what the review covered goes in `RUN_ANOMALY`, never in `RUN_NOTE`.** `RUN_NOTE` is
+appended to the run line, which is the densest line in the report; `RUN_ANOMALY` renders on its own
+`⚠️` line directly beneath it. A polluted compare range, an applied capability cap, or a truncated
+fetch changes what the review *is*, so it gets the visible line — the renderer rejects a `RUN_NOTE`
+carrying a `⚠️` for exactly that reason. Do not prefix your own glyph; the renderer adds it.
+
+`MEMORIES_USED[]` entries carry `kind` (`knowledge` / `hotspot` /
 `rule`) and, for a `rule`, a non-empty `evidence` array of the PR numbers it was learned from — the
 renderer rejects a `rule` without one, because a suppression with no evidence trail is exactly the
 unauditable suppression [`memory.md`](./pr-reviewer/rules/memory.md) forbids.

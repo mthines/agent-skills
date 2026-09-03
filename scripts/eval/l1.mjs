@@ -859,8 +859,12 @@ function checksInSync(plan, checks) {
     // carve-out's "conflict residue"), so it asserts nothing about the 2.4d statement. Same shape
     // as the G17c fix above — assert the new content, not a word that was already there.
     s.check("G17e pr-reviewer.md has standards diagnostics line + 2.4d precedence paragraph + Conflicts-surfaced counter",
-      (prReviewer.includes("Standards (2.4d)")
-        || read("agents/pr-reviewer/rules/report-rendering.md").includes("Standards (2.4d)")) &&
+      // The posted-body label dropped its step number when the accordion was grouped
+      // (`**Standards (2.4d)** —` → `Standards — ` under the `Found` heading), so match the
+      // current label there and the step reference in the agent body. Either surface satisfies it;
+      // the assertion is that a standards run-state line EXISTS, not what it is called.
+      (prReviewer.includes("Standards conformance (2.4d)")
+        || read("agents/pr-reviewer/rules/report-rendering.md").includes("`Standards — `")) &&
       /Precedence: when a standards finding conflicts with the PR author's stated intent or a review-config\s+explicit override, the author-intent and config \*\*win\*\*/.test(prReviewer) &&
       // The diagnostics counter lives in whichever surface renders the log block: the terminal
       // template (now terminal-report.md) or the posted-body reference. Accept either — the
@@ -1276,8 +1280,8 @@ function checksInSync(plan, checks) {
       s.check(`G25 ${name} carries no **Verdict** line`, !body.includes("**Verdict**"));
       // Nothing the accordion owns may render above the first <details>.
       const head = body.split("<details>")[0];
-      for (const owned of ["| Gate | Status | Details |", "**Run mode**", "**Memories**",
-        "**Quality**", "**Skipped files**"]) {
+      for (const owned of ["| Gate | Status | Details |", "**Needs attention**", "**Found**",
+        "**Run**", "<sup>Nothing to report \u2014"]) {
         s.check(`G25 ${name} keeps ${owned} inside the accordion`, !head.includes(owned));
       }
     }
@@ -1416,7 +1420,7 @@ function checksInSync(plan, checks) {
       s.check("G25 the renderer built the link, not the model",
         r.out.includes("[`a-lesson-key`](https://lorekit.io/lore?x=1) — promoted"));
       s.check("G25 the used count is derived from the list",
-        r.out.includes("**Memories** — 53 indexed · 1 used"));
+        r.out.includes("Memories — 53 indexed · 1 used"));
     }
 
     // A zero-delta run parses under the same {mode, delta_lines} grammar as every other mode,
@@ -1427,7 +1431,7 @@ function checksInSync(plan, checks) {
       }));
       s.check("G25 a zero-delta run renders", r.ok, r.err);
       s.check("G25 zero-delta parses as {incremental, 0}",
-        r.out.includes("**Run mode** — incremental · 0 lines in delta"));
+        /^incremental · 0 lines in delta$/m.test(r.out));
       s.check("G25 zero-delta keeps its footer form",
         r.out.includes("No code changes since `70cf147` — gate checks only for commit `bde3c2f`."));
     }
@@ -1479,21 +1483,10 @@ function checksInSync(plan, checks) {
         },
         "Run mode": (b) => {
           // One shape for every mode, zero-delta included — it renders `incremental · 0 lines in
-          // delta`, so there is no second alternative to carry.
-          const m = b.match(/^\*\*Run mode\*\* — (full|incremental|incremental-quick) · (\d+) lines in delta/m);
+          // delta`, so there is no second alternative to carry. The `**Run mode**` label is gone:
+          // the `**Run**` group heading carries it and the line's own shape is the anchor.
+          const m = b.match(/^(full|incremental|incremental-quick) · (\d+) lines in delta/m);
           return m ? { mode: m[1], delta_lines: Number(m[2]) } : null;
-        },
-        "Standards log": (b) => {
-          const m = b.match(/^\*\*Standards \(2\.4d\)\*\* — (ran|skipped)/m);
-          return m ? { ran: m[1] === "ran" } : null;
-        },
-        "Optimality log": (b) => {
-          const m = b.match(/^\*\*Optimality \(2\.4c\)\*\* — (ran|skipped)/m);
-          return m ? { ran: m[1] === "ran" } : null;
-        },
-        "Skipped files": (b) => {
-          const m = b.match(/^\*\*Skipped files\*\* — (.+)$/m);
-          return m ? { files: m[1] === "none" ? [] : [m[1]] } : null;
         },
         "Headline": (b) => {
           const lines = b.split("\n").filter((l) => l.trim() !== "");
@@ -1524,6 +1517,23 @@ function checksInSync(plan, checks) {
         const rows = [...body.matchAll(/^\| (Description vs\. code|Prior review feedback|Documentation|Self-review signals|Code review) \| (✅|⚠️|❌|⏭️) \| ([^|]*) \|$/gm)];
         s.check(`G25 round-trip: ${name} — the gate table parses to 5 typed rows`, rows.length === 5,
           `parsed ${rows.length}`);
+        // A collapsible lens renders EITHER its own labelled line in a group OR one entry in the
+        // `Nothing to report` footnote — never both, and never neither. Both would say the same
+        // thing twice; neither would silently drop a lens's run-state, which is the failure the
+        // old always-render shape traded vertical space to avoid.
+        const footnote = (body.match(/^<sup>Nothing to report — (.+)\.<\/sup>$/m) || [, ""])[1];
+        for (const [lens, lineRe, token] of [
+          ["Standards log", /^Standards — (ran|skipped)/m, "standards"],
+          ["Optimality log", /^Optimality — (ran|skipped)/m, "optimality"],
+          ["Integrations", /^Integrations — \S/m, "integrations"],
+          ["Skipped files", /^Skipped files — \S/m, "files skipped"],
+          ["Severity", /^Severity — \S/m, "severity"],
+        ]) {
+          const asLine = lineRe.test(body);
+          const asFootnote = footnote.includes(token);
+          s.check(`G25 round-trip: ${name} — "${lens}" renders as a line xor a footnote entry`,
+            asLine !== asFootnote, `line=${asLine} footnote=${asFootnote} (footnote: ${footnote})`);
+        }
         // Counts in a summary must equal the bullets rendered under it.
         for (const [section, [summaryRe, bulletRe]] of Object.entries(CONDITIONAL)) {
           const m = body.match(summaryRe);
@@ -1554,6 +1564,61 @@ function checksInSync(plan, checks) {
           suffix && Number(suffix[1]) === Number(declared[1]),
           suffix ? `summary ${suffix[1]} vs list ${declared[1]}` : "no summary counter");
       }
+    }
+
+    // (i2) The grouped accordion. Nine flat `**Label** — value` lines became three groups, and
+    // three properties of that shape are load-bearing rather than cosmetic: the group headings
+    // are the only bold lines left inside the accordion (so the eye lands on them), the
+    // attention heading asserts something and therefore must not appear over an all-✅ table,
+    // and a run caveat gets its own ⚠️ line instead of riding at the tail of the densest line.
+    {
+      const tpl = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/templates/report-body.md"), "utf8");
+      for (const slot of ["{{#NEEDS_ATTENTION}}**Needs attention**", "**Found**\n\n{{FOUND_LINES}}",
+        "**Run**\n\n{{RUN_LINES}}", "<sup>Nothing to report — {{NOTHING_TO_REPORT}}.</sup>"]) {
+        s.check(`G25 the template carries ${slot.split("\n")[0]}`, tpl.includes(slot));
+      }
+      // The pre-grouping labels must not come back: they are what the grouping replaced, and a
+      // template carrying both shapes would render every line twice.
+      for (const gone of ["**Run mode**", "**Memories**", "**Quality**", "**Integrations**",
+        "**Optimality (2.4c)**", "**Standards (2.4d)**", "**Skipped files** —"]) {
+        s.check(`G25 the template no longer carries the flat label ${gone}`, !tpl.includes(gone));
+      }
+
+      // `Needs attention` tracks the five gate rows, and only them. CI is excluded on purpose:
+      // Gate 2 warns and never fails, so a red build must not label the gate table.
+      const allPass = run([join(FIX, "pass.json")]);
+      s.check("G25 an all-✅ gate table renders no attention heading",
+        allPass.ok && !allPass.out.includes("**Needs attention**"), allPass.err);
+      const oneWarn = run([], mutate((c) => { c.GATE_DOCS_STATUS = "⚠️"; c.GATE_DOCS_DETAILS = "x"; }));
+      s.check("G25 one ⚠️ gate renders the attention heading",
+        oneWarn.ok && oneWarn.out.includes("**Needs attention**"), oneWarn.err);
+      const ciOnly = run([], mutate((c) => { c.CI_NOTE = "2 checks red on `bde3c2f`."; }));
+      s.check("G25 red CI alone renders no attention heading — Gate 2 warns, never fails",
+        ciOnly.ok && !ciOnly.out.includes("**Needs attention**"), ciOnly.err);
+
+      // RUN_ANOMALY owns its own line; the renderer owns the glyph.
+      const anom = run([], mutate((c) => { c.RUN_ANOMALY = "a base-branch merge polluted the compare range"; }));
+      s.check("G25 RUN_ANOMALY renders on its own ⚠️ line",
+        anom.ok && /^⚠️ a base-branch merge polluted the compare range$/m.test(anom.out), anom.err);
+      for (const [why, payload] of [
+        ["a RUN_NOTE carrying a ⚠️", mutate((c) => { c.RUN_NOTE = "⚠️ compare range polluted"; })],
+        ["a RUN_ANOMALY supplying its own glyph", mutate((c) => { c.RUN_ANOMALY = "⚠️ compare range polluted"; })],
+      ]) {
+        const r = run([], payload);
+        s.check(`G25 the renderer rejects ${why}`, !r.ok && r.out === "", `exit ok=${r.ok}`);
+      }
+
+      // The xor above is asserted on the committed snapshots, so it only fires once a snapshot is
+      // regenerated. Assert both directions against a LIVE render too, so a renderer change that
+      // stops collapsing (or stops rendering) is caught before the snapshots are touched.
+      const noisy = run([], mutate((c) => { c.STANDARDS_LOG = "ran · 2 docs · 3 finding(s)"; }));
+      s.check("G25 a standards lens with findings renders its own line, not a footnote entry",
+        noisy.ok && /^Standards — ran · 2 docs · 3 finding\(s\)$/m.test(noisy.out)
+          && !/Nothing to report —[^\n]*standards/.test(noisy.out), noisy.err);
+      const hushed = run([], mutate((c) => { c.STANDARDS_LOG = "ran · 2 docs · 0 finding(s)"; }));
+      s.check("G25 a standards lens with nothing to say collapses to a footnote entry",
+        hushed.ok && !/^Standards — /m.test(hushed.out)
+          && /Nothing to report —[^\n]*standards \(2 docs\)/.test(hushed.out), hushed.err);
     }
 
     // (d) The agent must delegate, not hand-render. The old three-template shape is gone and

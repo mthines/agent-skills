@@ -27,6 +27,8 @@ Reviewed your changes — **1 error, 2 warnings** need attention before human re
 
 <sup>Reviewed for commit `69b0de8`.</sup>
 
+**Needs attention**
+
 | Gate | Status | Details |
 |---|---|---|
 | Description vs. code | ⚠️ | Claims `nx affected` is green; not true at this SHA. |
@@ -39,24 +41,20 @@ Reviewed your changes — **1 error, 2 warnings** need attention before human re
 
 - [`supabase/functions/memories/handlers/list.ts:235`](https://github.com/o/r/pull/1#discussion_r3) — applyScalarFilter still puts the whole dimension into a PostgREST URL operand (bot · `cursor`)
 
-**CI** — `Integration smoke (local Supabase)` is red on `POST /memories/list` (expected 200, got 500) — the open thread above. Reported, not blocking.
+**Found**
 
-**Run mode** — full · 2172 lines in delta
+Quality — produced 6 → posted inline 4 · cleared 4 · carried forward 0 · deferred 0 · below-bar 1
+Dropped — relevance 0 · dedupe 0 · grounding 0 · confidence 2 · shape 0
+Optimality — ran · 4 judged · 3 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld
 
-**Memories** — not connected
+**Run**
 
+full · 2172 lines in delta
+Skipped files — packages/legacy/**
+CI — `Integration smoke (local Supabase)` is red on `POST /memories/list` (expected 200, got 500) — the open thread above. Reported, not blocking.
+Memories — not connected
 
-**Quality** — produced 6 → posted inline 4 · cleared 4 · carried forward 0 · deferred 0 · below-bar 1
-
-- dropped: relevance 0 · dedupe 0 · grounding 0 · confidence 2 · shape 0
-
-**Integrations** — skipped (incremental-quick)
-
-**Optimality (2.4c)** — ran · 4 judged · 3 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld
-
-**Standards (2.4d)** — skipped (--no-standards)
-
-**Skipped files** — packages/legacy/**
+<sup>Nothing to report — standards (skipped), integrations (skipped), severity.</sup>
 
 <sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
 

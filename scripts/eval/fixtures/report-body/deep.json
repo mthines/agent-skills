@@ -9,6 +9,7 @@
     "depth": "checkout"
   },
   "RUN_NOTE": "blast_radius=high · semver_delta=major",
+  "RUN_ANOMALY": "a base-branch merge polluted the compare range; reviewed the PR's own 44-file diff, not the 130-commit range",
   "GATE_DESCRIPTION_STATUS": "✅",
   "GATE_DESCRIPTION_DETAILS": "The description matches what the diff does.",
   "GATE_PRIOR_STATUS": "⚠️",
@@ -100,7 +101,11 @@
       "kind": "rule",
       "key": "rule::correctness:nil-deref:-@src/legacy",
       "note": "suppress, active",
-      "evidence": [88, 91, 97]
+      "evidence": [
+        88,
+        91,
+        97
+      ]
     }
   ],
   "CI_NOTE": "3 checks pending on `a1b2c3d`.",
@@ -108,6 +113,6 @@
   "QUALITY_DROPPED": "relevance 1 · dedupe 2 · grounding 0 · verifier contradicted 2 · shape 0",
   "INTEGRATIONS": "not activated",
   "OPTIMALITY_LOG": "ran · 3 judged · 2 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld",
-  "STANDARDS_LOG": "ran · 2 docs · 0 finding(s)",
+  "STANDARDS_LOG": "ran · 2 docs · 3 finding(s)",
   "SKIPPED_FILES": "none"
 }

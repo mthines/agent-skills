@@ -45,6 +45,8 @@ const DEPTH_LABEL = {
   "diff-only": "diff-only — consumer, type, and test verification unavailable",
 };
 const SHA7 = /^[0-9a-f]{7}$/;
+// The glyphs the renderer owns. RUN_NOTE may carry none of them; RUN_ANOMALY may not lead with one.
+const WARN_GLYPH = /[\u26a0\u274c]|\u{1F534}/u;
 const GATE_DETAILS_MAX = 120;
 
 // Scalar slots the model supplies verbatim. Prose only — no counts, no links, no parsed shapes.
@@ -58,7 +60,8 @@ const REQUIRED_SCALARS = [
   "MEMORIES_SUMMARY", "QUALITY", "INTEGRATIONS",
   "OPTIMALITY_LOG", "STANDARDS_LOG", "SKIPPED_FILES",
 ];
-const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NOTE", "FIX_ALL_URL"];
+const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NOTE", "RUN_ANOMALY",
+  "FIX_ALL_URL"];
 
 // Structured slots. Each is an object or an array; the renderer turns it into markdown.
 const STRUCTURED = ["RUN", "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED",
@@ -378,7 +381,30 @@ function main() {
 
   if (data.RUN_NOTE) {
     assertPlainish("RUN_NOTE", data.RUN_NOTE);
+    // Routing colour only. Anything warning-shaped changes what the review *covered* and belongs
+    // on its own line, where a reader scanning the collapsed groups cannot miss it — see
+    // RUN_ANOMALY below. A ⚠️ appended here rides at the tail of the densest line in the report,
+    // which is exactly where the compare-range-pollution notice went unread.
+    // Match the base codepoints, not the emoji-presentation sequences: `⚠` renders as a warning
+    // sign with or without the U+FE0F variation selector, so an `includes("⚠️")` test misses the
+    // bare form.
+    if (WARN_GLYPH.test(String(data.RUN_NOTE))) {
+      fail("RUN_NOTE carries a ⚠️ — a caveat about what the review covered goes in RUN_ANOMALY,"
+        + " which renders on its own line; RUN_NOTE is routing colour appended to the run shape");
+    }
     runLine += ` · ${data.RUN_NOTE}`;
+  }
+
+  // RUN_ANOMALY — one line naming something that changed what this run actually reviewed (a
+  // polluted compare range, a capability cap, a truncated fetch). The renderer owns the ⚠️, so a
+  // payload supplying its own would double it.
+  let anomalyLine = "";
+  if (data.RUN_ANOMALY) {
+    assertPlainish("RUN_ANOMALY", data.RUN_ANOMALY);
+    if (new RegExp(`^\\s*(?:${WARN_GLYPH.source})`, "u").test(String(data.RUN_ANOMALY))) {
+      fail("RUN_ANOMALY must not begin with a glyph — the renderer prefixes ⚠️");
+    }
+    anomalyLine = `⚠️ ${data.RUN_ANOMALY}`;
   }
 
   // ── the log slots reviewer-report-ingest.md parses for run-state ───────────────────────────
@@ -694,6 +720,107 @@ function main() {
     return `- ${anchor}${w.prefix}: ${w.body} <sup>(unverified: ${w.reason})</sup>`;
   }).join("\n");
 
+  // ── the three groups ───────────────────────────────────────────────────────────────────────
+  //
+  // The accordion used to be nine flat `**Label** — value` lines at identical visual weight, and
+  // on a typical run four of them said nothing happened while costing exactly as much vertical
+  // space as the ones that did. Nothing is removed here: the lines are grouped by the question
+  // they answer — what needs attention, what the review found, how the review ran — and a lens
+  // with nothing to say is named once in a footnote instead of on a line of its own.
+  //
+  // Emptiness is read from each slot's **own documented grammar**, never guessed from prose:
+  //
+  //   STANDARDS_LOG   `<ran|skipped (reason)> · <N> docs · <F> finding(s)`   standards-conformance.md
+  //   OPTIMALITY_LOG  `<ran|skipped (reason)> · <N> judged · … · <P> proposal(s) · … · <W> withheld`
+  //   INTEGRATIONS    `not activated` · `skipped (<reason>)` · a rung description
+  //   SKIPPED_FILES   `none` · a path list
+  //
+  // Both logs are already required to begin `ran` or `skipped` (checked above), which is what
+  // makes the `skipped` arm reliable; the quiet arms match the literal zero-counts their
+  // producing rule emits. A slot whose grammar the checks below cannot recognise renders its own
+  // line — the fallback is *more* visible, never silence.
+  // Echo the matched clause verbatim rather than rebuilding it, so a producing rule that
+  // pluralises against its own count (`1 doc` / `2 docs`) keeps its wording.
+  const countClause = (s, re) => {
+    const m = re.exec(s);
+    return m ? m[0] : "";
+  };
+  const isSkipped = (s) => /^skipped\b/.test(s);
+  const DOCS_RE = /\d+ docs?\b/;
+  const JUDGED_RE = /\d+ judged\b/;
+  const QUIET_LENSES = [
+    {
+      key: "STANDARDS_LOG",
+      label: "Standards",
+      quiet: (s) => isSkipped(s) || /\b0 finding\(s\)/.test(s),
+      footnote: (s) => (isSkipped(s) ? "standards (skipped)"
+        : `standards${countClause(s, DOCS_RE) ? ` (${countClause(s, DOCS_RE)})` : ""}`),
+    },
+    {
+      key: "OPTIMALITY_LOG",
+      label: "Optimality",
+      quiet: (s) => isSkipped(s) || (/\b0 proposal\(s\)/.test(s) && /\b0 withheld\b/.test(s)),
+      footnote: (s) => (isSkipped(s) ? "optimality (skipped)"
+        : `optimality${countClause(s, JUDGED_RE) ? ` (${countClause(s, JUDGED_RE)})` : ""}`),
+    },
+    {
+      key: "INTEGRATIONS",
+      label: "Integrations",
+      quiet: (s) => s === "not activated" || isSkipped(s),
+      footnote: (s) => (s === "not activated" ? "integrations (not activated)" : "integrations (skipped)"),
+    },
+    {
+      key: "SKIPPED_FILES",
+      label: "Skipped files",
+      quiet: (s) => s === "none",
+      footnote: () => "0 files skipped",
+    },
+  ];
+  const lens = {};
+  const footnotes = {};
+  for (const l of QUIET_LENSES) {
+    const s = String(data[l.key]).trim();
+    lens[l.key] = l.quiet(s) ? "" : `${l.label} — ${s}`;
+    if (l.quiet(s)) footnotes[l.key] = l.footnote(s);
+  }
+
+  // `Found` — what the review produced. QUALITY is required, so this group is never empty.
+  const foundLines = [`Quality — ${String(data.QUALITY).trim()}`];
+  // `Dropped` is its own labelled line rather than a `- ` bullet under Quality: a bullet may
+  // interrupt the preceding paragraph, so the same two lines rendered as a paragraph plus a
+  // one-item list depending on what sat above them.
+  if (data.QUALITY_DROPPED) foundLines.push(`Dropped — ${String(data.QUALITY_DROPPED).trim()}`);
+  if (tierBreakdown) foundLines.push(`Severity — ${tierBreakdown}`);
+  if (lens.OPTIMALITY_LOG) foundLines.push(lens.OPTIMALITY_LOG);
+  if (lens.STANDARDS_LOG) foundLines.push(lens.STANDARDS_LOG);
+  if (data.VERIFIED_NOTE) foundLines.push(`Verified — ${String(data.VERIFIED_NOTE).trim()}`);
+
+  // `Run` — how the review ran and what it covered. The run-shape line comes first because it is
+  // both the group's headline fact and the line reviewer-report-ingest.md keys on.
+  const runLines = [runLine];
+  if (anomalyLine) runLines.push(anomalyLine);
+  if (lens.SKIPPED_FILES) runLines.push(lens.SKIPPED_FILES);
+  if (lens.INTEGRATIONS) runLines.push(lens.INTEGRATIONS);
+  if (data.CI_NOTE) runLines.push(`CI — ${String(data.CI_NOTE).trim()}`);
+  runLines.push(`Memories — ${memoriesLine}`);
+  if (memoriesUsed) runLines.push("", memoriesUsed);
+
+  // The footnote. Fixed order, so two runs with the same quiet lenses render the same line.
+  const nothingToReport = [
+    footnotes.STANDARDS_LOG,
+    footnotes.OPTIMALITY_LOG,
+    footnotes.INTEGRATIONS,
+    tierBreakdown ? "" : "severity",
+    footnotes.SKIPPED_FILES,
+  ].filter((f) => f).join(", ");
+
+  // `Needs attention` labels the gate group only when a gate is actually not passing. Rendering
+  // it over an all-✅ table would assert the opposite of what the table says. Gate 2 (CI) is
+  // deliberately not consulted: it warns and never fails, so it lives in `Run`.
+  const gateStatuses = ["GATE_DESCRIPTION_STATUS", "GATE_PRIOR_STATUS", "GATE_DOCS_STATUS",
+    "GATE_SELFREVIEW_STATUS", "GATE_CODEREVIEW_STATUS"].map((k) => String(data[k]).trim());
+  const needsAttention = gateStatuses.some((v) => v === "⚠️" || v === "❌") ? "yes" : "";
+
   // Fix-all Agent0 button (opt-in). Rendered only when FIX_ALL_URL is supplied — the agent builds
   // the deep link via scripts/build-agent0-link.mjs. The button image URL (ASSET) is a constant
   // here; Dash0 can repoint it at a hosted PNG for production (agent0-fix-links.md § Button markup).
@@ -711,11 +838,11 @@ function main() {
     HEADLINE: data.HEADLINE,
     FIX_ALL_BUTTON: fixAllButton,
     UPDATED_LINE: `<sub>Updated ${updatedStamp} UTC</sub>`,
-    TIER_BREAKDOWN: tierBreakdown,
     FOOTER_LINE: footer,
-    RUN_MODE: runLine,
-    MEMORIES_SUMMARY: memoriesLine,
-    MEMORIES_BULLETS: memoriesUsed,
+    NEEDS_ATTENTION: needsAttention,
+    FOUND_LINES: foundLines.join("\n"),
+    RUN_LINES: runLines.join("\n"),
+    NOTHING_TO_REPORT: nothingToReport,
     OPEN_THREADS: openBullets,
     OPEN_THREADS_COUNT: openThreads.length || "",
     OPEN_THREADS_SUFFIX: openSuffix,
@@ -785,10 +912,18 @@ function main() {
   if (body.includes("<details open>")) fail("rendered body pre-expands a `<details>` block");
   const caged = body.match(/``?\s*\[[^\]]*\]\([^)]*\)\s*``?/g);
   if (caged) fail(`a markdown link is trapped inside a code span: ${caged[0].slice(0, 90)}`);
+  // The `<mode> · <N> lines in delta` shape is now the ingest anchor for the run line: the group
+  // heading carries the label, so the line itself must stay line-anchored and matchable.
+  if (!/^(?:full|incremental|incremental-quick) · \d+ lines in delta/m.test(body)) {
+    fail("rendered body has no line starting `<mode> · <N> lines in delta` —"
+      + " reviewer-report-ingest.md keys the Run mode unit on that shape");
+  }
   const head = body.split("<details>")[0];
-  for (const owned of ["| Gate | Status | Details |", "**Run mode**", "**Memories**",
-    "**Quality**", "**Integrations**", "**Optimality (2.4c)**", "**Standards (2.4d)**",
-    "**Skipped files**", "**Open review threads (", "<sup>Reviewed for commit",
+  // Only the group headings and the structural literals are listed. A plain in-group label
+  // (`Quality — `, `Memories — `) is deliberately absent: model-authored optimality cards render
+  // above the accordion, and a card discussing quality would trip a substring match on one.
+  for (const owned of ["| Gate | Status | Details |", "**Needs attention**", "**Found**", "**Run**",
+    "**Open review threads (", "<sup>Nothing to report —", "<sup>Reviewed for commit",
     "<sup>Incremental review for commit", "<sup>No code changes since", "<sup>Reviewed by the",
     "<summary>Impact —", "<summary>Withheld (", "**Telemetry:**"]) {
     if (head.includes(owned)) fail(`${owned} rendered above the accordion`);

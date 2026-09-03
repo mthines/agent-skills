@@ -474,13 +474,13 @@ memory as plain text `` `<scope> · <key>` `` with no hyperlink.
 
 ### Render shape
 
-A persistent **Memories** block headed by the read and used counts, followed —
+A persistent `Memories` block headed by the indexed and used counts, followed —
 only when at least one memory fired — by one bullet per applied memory. Each bullet is a
 Markdown link whose text names the `fingerprint`, the action taken, and the recurrence count,
 so multiple memories render as multiple independently-pressable links:
 
 ```markdown
-**Memories** — <read> read · <used> used
+Memories — <indexed> indexed · <used> used
 
 - [`suggestion:null-check-guaranteed-upstream`](https://…) — dropped, seen 4×
 - [`nitpick:map-vs-record-preference`](https://…) — downgraded, seen 2×
@@ -490,9 +490,10 @@ so multiple memories render as multiple independently-pressable links:
 The bullet count MUST equal the `used` count — the number of memories that fired this run (drops +
 downgrades + promotes). A mismatch means an applied memory was dropped from the list instead of
 linked. When nothing fired, render only the header line (`… · 0 used`). Which report surface renders
-this block is the consuming agent's contract — `pr-reviewer` renders it inside the posted review
-body's `Review details` block (Step 4), where the collapsed title also headlines the `used`
-count.
+this block is the consuming agent's contract — `pr-reviewer` renders it as the last entry of the
+`Run` group inside the sticky report's `Review details` accordion (Step 4). It is **not** echoed on
+the collapsed `<summary>`: the retired `MEMORIES_USED_SUFFIX` did that and spent the report's one
+always-visible line on a count that is `0` on most runs.
 
 ---
 
