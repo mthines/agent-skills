@@ -109,7 +109,8 @@ Decide whether something is good before you commit to it.
 | **[verify-behavior](./skills/quality/verify-behavior/SKILL.md)** | Cheapest-first three-tier verification ladder: Tier 1 syntactic (grep / ast-grep / read), Tier 2 semantic-no-execution (typecheck / build / lint), Tier 3 execution (covering test or a minimal synthesized repro, run in a throwaway worktree). Reports an evidence receipt (`confirms` / `contradicts` / `ambiguous` / `null` — null never counts as confirmation); never scores — `confidence(code)` owns the number. Two consumer shapes: claim-verification (read-only) and change-verification (post-apply gate). Tier 3 is relation-keyed — default-on for a caller's own code, opt-in behind a sandbox for cross/untrusted callers. Delegated into by `verification-receipt.md` (pr-reviewer), `bug-fix-verifier`, `feature-pr-verifier`, and `aw-executor` Phase 4 — each keeps its own grading. | `Skill()` |
 | **[/ai-engineering](./skills/quality/ai-engineering/SKILL.md)** | Reviews LLM/AI application engineering across 13 concerns: prompts, caching, RAG, agents, resilience, memory, evals, safety, observability. | `/` |
 | **[/dx](./skills/quality/dx/SKILL.md)** | Reviews CLI tools, shell scripts, and developer tooling against clig.dev, 12 Factor CLI, and Heroku CLI Style Guide. | `/` |
-| **[/review-changes](./skills/quality/review-changes/SKILL.md)** | Reviews branch changes or a PR. Dispatches to the [`pr-reviewer`](#agents-at-a-glance) agent (self or cross per relation). | `/` |
+| **[/pr-review](./skills/quality/pr-review/SKILL.md)** | One-shot **read-only** review of a PR — dispatches the [`pr-reviewer`](#agents-at-a-glance) agent once and reports its verdict, run mode, and blocking findings. Never applies, pushes, resolves a thread, or loops, so your working tree is exactly where you left it; that is the distinction from `/review-changes` and `review-loop`. Defaults to the current branch's open PR, and forwards its flag tail verbatim rather than validating it. A missing `Task` tool is a clean skip, never an in-context self-review labelled as a reviewer's. `/pr-review remember <fact>` writes a maintainer relevance rule (`active` with no corroboration bar, keyed by a real fingerprint, and never able to suppress a `standards` or blocking finding). | `/` |
+| **[/review-changes](./skills/quality/review-changes/SKILL.md)** | Reviews branch changes or a PR and **converges** it — routes to [`review-loop`](./skills/quality/review-loop/SKILL.md) for the bounded review-apply-simplify loop. `--report` degrades it to one read-only [`pr-reviewer`](#agents-at-a-glance) dispatch, which is what `/pr-review` names directly. | `/` |
 
 ### `delivery/` — Git, PR, CI
 
@@ -290,7 +291,8 @@ Slash commands are typed explicitly.
 /docs readme
 /docs audit
 /resolve-conflicts
-/review-changes --comments 42
+/pr-review 42
+/review-changes 42
 /implement-suggestion <pr-url> [<pr-url> ...]
 /create-pr
 /ci-auto-fix <run-id|pr-url>
@@ -465,7 +467,7 @@ That is the entire integration.
 ## Repository structure
 
 ```
-skills/                   52 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
+skills/                   54 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
   testing/test-auto-fix/    stack-agnostic test healer — bootstrap, classify, confidence-gate, regression-detect
 agents/                   5 agents (pr-reviewer, linear-ticket-investigator, rca-investigator, bug-fix-verifier, feature-pr-verifier)
 plugins/                  3 Claude Code plugins (agent-tasks-hooks, pr-relevance-memory, pr-reviewer-shape-guard)
