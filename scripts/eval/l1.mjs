@@ -3662,6 +3662,12 @@ const isPollBlock = (block) =>
         !/\bscopes\s*=/.test(args));
     }
   }
+  // The knowledge read is tag-filtered, not just kind/host-filtered. Both buckets carry
+  // `kind: signal, host: reviewer`, and the relevance bucket grows per resolved thread while
+  // this one grows per traced symbol — measured on this repo, an untagged call spent 48 of
+  // its 50 recency-ordered slots on relevance rows the Step 1.0 calls already fetch.
+  s.check("G44a memory.md's knowledge read filters on the `ci::review-knowledge` tag",
+    /mcp__lorekit__memory_list[^\n]*tags=\["ci::review-knowledge"\][^\n]*limit=50/.test(MEMORY_MD));
 
   // ---- G44b: the keys the read path quotes are the keys the recorder writes ----
   //

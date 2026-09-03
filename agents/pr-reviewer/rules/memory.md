@@ -111,8 +111,8 @@ Memory is read **after** Phase B, because Phase B is what tells you which symbol
 Reading before it means asking for the whole `repo::` scope and paging through noise.
 
 ```text
-# 1. The knowledge + hotspot + relevance-rule records for this repo, kind/host filtered.
-mcp__lorekit__memory_list    scope="repo::{owner}/{repo}"  kind=signal  host=reviewer  limit=50
+# 1. The knowledge + hotspot records for this repo. Tag-filtered, not just kind/host.
+mcp__lorekit__memory_list    scope="repo::{owner}/{repo}"  tags=["ci::review-knowledge"]  kind=signal  host=reviewer  limit=50
 
 # 2. A targeted search on the symbols the impact graph says changed.
 mcp__lorekit__memory_search  q="<symbol> <symbol> <symbol>"  scopes=["repo::{owner}/{repo}"]  limit=25
@@ -120,7 +120,9 @@ mcp__lorekit__memory_search  q="<symbol> <symbol> <symbol>"  scopes=["repo::{own
 
 **The parameter names above are the tool's own, and the two tools disagree on purpose.** `memory_list` takes one `scope` (a string); `memory_search` takes `scopes` (an array) and puts the query in `q`. A call written as `memory_search scope=… query=…` — the shape a reader naturally generalises from call 1 — matches nothing in the schema and comes back a validation error, which this pipeline has no rung for: memory is a best-effort read, so the run continues and reports 0 memories applied. That is indistinguishable from an empty store, which is why the names are pinned here and guarded by L1 rather than left to be re-derived per run.
 
-All three record types arrive on **call 1**, relevance rules included: they carry `kind: signal, host: reviewer` exactly as knowledge and hotspot do. Nothing extra is needed to reach a `rule::` record, and no fourth call may be added to look for one.
+**`tags` on call 1 is what makes its one page selective, and the tag is not redundant with `kind`/`host`.** Relevance rules carry the same `kind: signal, host: reviewer` as knowledge and hotspot, so a `kind`/`host` filter alone returns both buckets mixed — and they grow at wildly different rates: one row per traced symbol versus one row per resolved thread, forever. Measured on `repo::mthines/agent-skills`, an untagged call returned **48 legacy relevance rows and 2 knowledge rows in its 50 slots**, and the knowledge rows only made the page because they were the two most recently written; `order` defaults to `recency`, so a symbol traced last month is simply not in the page. The tag costs nothing, changes no call count, and turns "the top 50 rows in the scope" into "the knowledge bucket".
+
+Relevance rules are **not** read here. They have their own tag-filtered pair of calls at Step 1.0 ([`comment-relevance-memory.md § When to read`](../../shared/rules/comment-relevance-memory.md#when-to-read)), and the untagged call was silently duplicating that read while crowding out the records it was itself for. Do not add a call here to fetch them.
 
 Two calls, matching the two the agent already makes for lessons — pointed at better data, not added on top.
 On a repo whose `repo::` scope exceeds the `memory_list` page, the search is what finds the record for a symbol that is not in the top 50; neither call alone is sufficient.
