@@ -927,7 +927,7 @@ capability ladder once, here, and bind `DEPTH_CAPABILITY` to the rung that succe
 
 | `DEPTH_CAPABILITY` | How | What it unlocks |
 |---|---|---|
-| `checkout` | **rung 0** — `gw checkout --no-hooks <PR>` when `gw` is installed and the current directory is a clone of the PR's repo, else **rung 1** — `git clone --depth 50` of the head ref | Everything — consumer tracing, `tsc`/`go vet`/`cargo check` receipts, running a covering test. Rung 0 additionally has full history rather than 50 commits. |
+| `checkout` | **rung 0** — a worktree over the local object store when the cwd is a clone of the PR's repo: `gw checkout --no-hooks <PR>` if `gw` is installed, else `git worktree add --detach <path> $HEAD_SHA`. Otherwise **rung 1** — `git clone --depth 50` of the head ref | Everything — consumer tracing, `tsc`/`go vet`/`cargo check` receipts, running a covering test. Rung 0 additionally has full history rather than 50 commits. |
 | `tarball` | `gh api .../tarball/<head>` | The whole tree at the head, so consumer tracing and grep-based rungs work. No git history, so cross-commit questions are `unobtainable`. |
 | `diff-only` | Nothing materialized — the diff and the API are all there is | Tier 1 grep against the patch text. **Caps the tier at `standard`** and makes the consumer, type, and test rungs `unobtainable` by construction. |
 
@@ -936,12 +936,17 @@ Bind `TIER2_CHECKER` from the toolchain the workspace actually has (`tsc`, `go v
 `workspace.install` — **forced to `false` for a fork head in `cross` relation**, because
 `npm install` runs code from the diff.
 
-Also bind `WORKDIR_OWNED`, and read the rule before writing the cleanup: a rung-0 worktree
-belongs to the user, so `rm -rf` on it destroys their uncommitted work and leaves a stale entry
-in the parent repo's `.git/worktrees`. `gw checkout` is always `--no-hooks` — a review reads code
-rather than building it, and a hook that runs `pnpm install` would both contradict
-`workspace.install: false` and execute a fork's install scripts through a path this pipeline
-never chose.
+Also bind `WORKDIR_CLEANUP` ∈ `none` / `worktree` / `rm`, and read the rule before writing the
+cleanup: `rm -rf` is correct only for a temp clone or tarball. On a `gw` worktree it destroys the
+user's uncommitted work; on either kind of worktree it leaves a stale entry in the parent repo's
+`.git/worktrees`, so the review breaks the repo it was reviewing. A worktree is removed through
+`git worktree remove` or not at all.
+
+`gw` is preferred but **not required** — when it is absent, `git worktree add --detach` at
+`HEAD_SHA` reaches the same rung, so a missing `gw` never drops the review to a network clone.
+Whenever `gw` is used it is always `--no-hooks`: a review reads code rather than building it, and a
+hook that runs `pnpm install` would both contradict `workspace.install: false` and execute a fork's
+install scripts through a path this pipeline never chose.
 
 Every downstream verification rung reads these three. A rung whose capability is absent returns
 `unobtainable` with the reason named, never `null` — the distinction is

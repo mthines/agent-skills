@@ -20,7 +20,7 @@ It is **a shallow review that renders the same report as a deep one**, so nobody
 
 - [Run once, before any finder](#run-once-before-any-finder)
 - [The capability ladder](#the-capability-ladder)
-- [Rung 0 — a `gw` worktree](#rung-0--a-gw-worktree)
+- [Rung 0 — a worktree over the local object store](#rung-0--a-worktree-over-the-local-object-store)
 - [What each capability costs you](#what-each-capability-costs-you)
 - [Toolchain detection](#toolchain-detection)
 - [Dependency install is opt-in](#dependency-install-is-opt-in)
@@ -42,23 +42,39 @@ Two variables come out of this phase, and the second one exists only so cleanup 
 | Variable | Meaning |
 | --- | --- |
 | `WORKDIR` | the absolute path everything downstream reads from |
-| `WORKDIR_OWNED` | `true` when this run created `WORKDIR` and may delete it; `false` when `WORKDIR` is a pre-existing directory belonging to the user |
+| `WORKDIR_CLEANUP` | how this run is allowed to dispose of `WORKDIR`: `none` (it is the user's), `worktree` (`git worktree remove`), or `rm` (`rm -rf`) |
+
+`WORKDIR_CLEANUP` is an enum rather than an owned/not-owned boolean because there are three dispositions and only two of them are "delete it".
+A git worktree deleted with `rm -rf` leaves the parent repo broken, so "we created it" does not by itself say how to remove it.
 
 ## The capability ladder
 
 Try each rung in order. Stop at the first that succeeds.
 
 ```bash
-# Rung 0 — a `gw` worktree. Preferred when available; see the section below for the
-# preconditions and the verification it requires. Full history, no clone cost.
-if gw_worktree_available; then
-  WORKDIR="$(gw checkout --no-hooks "$PR_NUMBER" ...)"   # see below
-  WORKDIR_OWNED=false
-  DEPTH_CAPABILITY=checkout
+# Rung 0 — a worktree over the LOCAL object store, when the current directory is a clone
+# of the PR's repo. No network clone, and full history rather than 50 commits.
+# Two implementations; `gw` is preferred, plain git is the fallback. See the section below.
+if [ "$(origin_repo)" = "$RESOLVED_REPO" ] \
+   && git fetch origin "pull/$PR_NUMBER/head" 2>/dev/null; then
 
-else
+  if gw --help >/dev/null 2>&1 \
+     && WORKDIR="$(gw checkout --no-hooks "$PR_URL")" && worktree_is_clean_at_head; then
+    WORKDIR_CLEANUP=none                    # gw owns its lifecycle; never remove it
+    DEPTH_CAPABILITY=checkout
+
+  # Fallback — plain `git worktree`, detached at the reviewed SHA. Available wherever
+  # rung 0's precondition holds, so a missing `gw` costs the rung nothing.
+  elif WORKDIR="$(mktemp -d)/wt" \
+       && git worktree add --detach "$WORKDIR" "$HEAD_SHA" 2>/dev/null; then
+    WORKDIR_CLEANUP=worktree                # `git worktree remove`, never `rm -rf`
+    DEPTH_CAPABILITY=checkout
+  fi
+fi
+
+if [ -z "$DEPTH_CAPABILITY" ]; then
   WORKDIR="$(mktemp -d)"
-  WORKDIR_OWNED=true
+  WORKDIR_CLEANUP=rm
 
   # Rung 1 — a real checkout. Depth 50 is enough for blame and for a base..head diff
   # on any PR a human would review, and bounded so a monorepo does not cost minutes.
@@ -84,17 +100,66 @@ The rule is that the run continues, degraded, and says so.
 
 **Never fabricate the rung.** If the clone failed, the capability is not `checkout` because a later step happened to read one file successfully.
 
-## Rung 0 — a `gw` worktree
+## Rung 0 — a worktree over the local object store
 
 When the run is already inside a clone of the PR's repository, cloning it again over the network to read files that are on the local disk is waste.
-[`gw`](https://github.com/mthines/gw-tools) materializes the head branch as a git worktree sharing the existing object store, which is both faster than rung 1 and strictly more capable: **full history**, so blame and `log` are available rather than bounded at 50 commits.
+A worktree shares the existing object store, so it is both faster than rung 1 and strictly more capable: **full history**, so blame and `log` are available rather than bounded at 50 commits.
+
+The rung is about the **local clone**, not about any particular tool.
+[`gw`](https://github.com/mthines/gw-tools) is the ergonomic way to get one and is tried first; plain `git worktree` is the fallback, and it is a fallback in convenience only — the capability is identical.
+
+### The precondition is the local clone, and it is shared
+
+Rung 0 is skipped — not failed — unless both of these hold. Fall through to rung 1.
+
+| Precondition | Check |
+| --- | --- |
+| the current directory is a clone of the PR's repo | the origin remote resolves to `$RESOLVED_REPO` |
+| the PR's head is fetchable into it | `git fetch origin "pull/$PR_NUMBER/head"` exits 0 |
+
+Fetch the **`pull/<n>/head` ref**, not `$HEAD_REF`. A fork PR's head branch does not exist on `origin`, and `git fetch origin <branch>` fails for exactly the PRs where a local clone is most useful — so branch-fetching would silently restrict rung 0 to same-repo PRs.
+
+`gw` being installed is **not** a precondition. It selects the implementation.
+
+### Implementation A — `gw checkout` (preferred)
 
 ```bash
-gw checkout --no-hooks <PR_NUMBER>      # same repo as the current directory
 gw checkout --no-hooks <PR_URL>         # explicit, and the form to prefer in a script
+gw checkout --no-hooks <PR_NUMBER>      # same repo as the current directory
 ```
 
 Capture the resulting absolute path from the command output; that is `WORKDIR`.
+`gw` gives the worktree a stable, discoverable path in the user's workspace and reuses one that already exists, which is why it is first.
+
+That reuse is also its one drawback, and it is what the verification below exists for: unlike a fresh worktree, the directory may already have state in it.
+
+### Implementation B — `git worktree add --detach` (fallback)
+
+```bash
+git worktree add --detach "$WORKDIR" "$HEAD_SHA"
+```
+
+Available wherever rung 0's precondition holds, so **a missing `gw` costs the rung nothing** — it does not drop the review to a network clone.
+
+Two deliberate choices, both of which make this path simpler than implementation A rather than merely equivalent:
+
+- **`--detach`,** so no branch is checked out. A read-only review needs a tree, not a branch, and `git worktree add <branch>` fails outright when that branch is already checked out in another worktree — which is the common case on the PR a developer is working on.
+- **at `$HEAD_SHA`,** not at a ref. That satisfies the one-read-one-head rule *by construction*: there is no window in which the worktree resolves to a commit other than the one this run is reviewing, so the SHA half of the verification below cannot fail.
+
+### Verify before trusting a reused worktree
+
+Implementation A reuses, so both checks are mandatory there.
+Implementation B creates a fresh detached worktree at the SHA, so only the cleanliness check is meaningful and it cannot fail in practice.
+
+```bash
+git -C "$WORKDIR" status --porcelain     # must be empty
+git -C "$WORKDIR" rev-parse HEAD         # must equal $HEAD_SHA
+```
+
+- **Dirty tree** → fall through to the next implementation, then to rung 1. Do **not** stash, reset, or clean: those are the user's uncommitted changes, and a review is not worth destroying them. A finding produced from a dirty tree is also wrong twice over — it may describe code that is not in the PR, attributed to the PR's author.
+- **`HEAD != HEAD_SHA`** → `git fetch origin "pull/$PR_NUMBER/head" && git merge --ff-only FETCH_HEAD` once, then re-check; still mismatched → fall through. `HEAD_SHA` was bound once at Step 1.1 and is the commit this whole run is about, so reviewing a different tree would silently break the one-read-one-head rule.
+
+Never `git checkout <branch>` in the user's main worktree to reach the PR's head — that mutates their working state without consent. A worktree, or a rung below.
 
 ### `--no-hooks` is not optional here
 
@@ -108,37 +173,13 @@ Passing `--no-hooks` is what keeps this rung honest about two rules this file al
 So: `--no-hooks` on every invocation, in every relation, whatever the config says.
 When `workspace.install` is `true` **and** the relation is safe, run the install command that [toolchain detection](#toolchain-detection) resolved, explicitly and visibly — one policy, one owner, one place it can be audited.
 
-### Preconditions, all three required
-
-Rung 0 is skipped — not failed — unless all of these hold. Fall through to rung 1.
-
-| Precondition | Check |
-| --- | --- |
-| `gw` is installed | `gw --help` exits 0 |
-| the current directory is a clone of the PR's repo | the origin remote resolves to `$RESOLVED_REPO` |
-| the PR's head is fetchable | `git fetch origin "$HEAD_REF"` exits 0 |
-
-The middle one is the common miss: reviewing an arbitrary PR in a repo this machine has no clone of is the normal case on a runner, and `gw checkout` cannot invent one.
-
-### Verify before trusting it
-
-`gw checkout` **reuses** an existing worktree, so unlike a fresh clone the directory may already have state in it. Two checks, both mandatory:
-
-```bash
-git -C "$WORKDIR" status --porcelain     # must be empty
-git -C "$WORKDIR" rev-parse HEAD         # must equal $HEAD_SHA
-```
-
-- **Dirty tree** → fall through to rung 1. Do **not** stash, reset, or clean: those are the user's uncommitted changes, and a review is not worth destroying them. A finding produced from a dirty tree is also wrong twice over — it may describe code that is not in the PR, attributed to the PR's author.
-- **`HEAD != HEAD_SHA`** → `git fetch origin "$HEAD_REF" && git merge --ff-only` once, then re-check; still mismatched → fall through to rung 1. `HEAD_SHA` was bound once at Step 1.1 and is the commit this whole run is about, so reviewing a different tree would silently break the one-read-one-head rule.
-
-Never `git checkout <branch>` in the user's main worktree to reach the PR's head — that mutates their working state without consent. A worktree, or a rung below.
+The plain-git fallback has no hooks to suppress, which is the one respect in which it needs no rule: `git worktree add` runs nothing.
 
 ## What each capability costs you
 
 | Capability | Consumer trace | Type check | Covering test | Blame / log | Report line |
 | --- | --- | --- | --- | --- | --- |
-| `checkout` via rung 0 (`gw`) | yes | yes, if the toolchain resolves | yes, in self relation | yes, **full history** | `Depth: checkout` |
+| `checkout` via rung 0 (worktree, either implementation) | yes | yes, if the toolchain resolves | yes, in self relation | yes, **full history** | `Depth: checkout` |
 | `checkout` via rung 1 (clone) | yes | yes, if the toolchain resolves | yes, in self relation | yes, bounded at 50 commits | `Depth: checkout` |
 | `tarball` | yes | yes, if the toolchain resolves | yes, in self relation | **no** — declare `unobtainable` | `Depth: tarball (no git history)` |
 | `diff-only` | **no** — the graph degrades to declared symbols with no consumers | **no** | **no** | no | `Depth: diff-only — consumer, type, and test verification unavailable` |
@@ -193,25 +234,38 @@ A report that omits it is asserting full capability by default, which is exactly
 
 ## Cleanup
 
-Remove `$WORKDIR` at the end of the run, including on the error paths — **only when this run created it**.
+Dispose of `$WORKDIR` at the end of the run, including on the error paths, **by the method `WORKDIR_CLEANUP` names** — and by no other.
 
 ```bash
-trap '[ "$WORKDIR_OWNED" = true ] && rm -rf "$WORKDIR"' EXIT
+cleanup() {
+  case "$WORKDIR_CLEANUP" in
+    none)     : ;;                                            # the user's worktree; leave it
+    worktree) git worktree remove --force "$WORKDIR" ;;       # ours, but git owns the bookkeeping
+    rm)       rm -rf "$WORKDIR" ;;                            # a temp clone or tarball
+  esac
+}
+trap cleanup EXIT
 ```
 
 A checkout left behind on a shared runner is both a disk leak and, on a private repo, source code sitting in `/tmp` after the job that was authorized to read it has ended.
+So two of the three cases do delete — the enum exists because *which* delete is not a detail.
 
-The guard is what makes rung 0 safe to add, and it is the one line in this file that destroys data if it is wrong:
+This is the one place in the file that destroys data if it is wrong, and there are two distinct ways to get it wrong:
 
 ```text
-❌ WRONG — an unconditional `rm -rf "$WORKDIR"` after a rung-0 run
-   Deletes the user's worktree, which they created and may have branches or notes in. Worse, a
-   `git worktree` directory removed behind git's back leaves a stale entry in the parent repo's
-   `.git/worktrees`, so the next `gw checkout` of that branch reports a corrupt worktree until
-   someone runs `git worktree prune`. The review has then broken the repo it was reviewing.
+❌ WRONG — `rm -rf "$WORKDIR"` on a `none` (gw) worktree
+   Deletes the user's worktree, which they created and may have uncommitted work in.
 
-✅ RIGHT — leave a rung-0 worktree exactly as found; `gw` owns its lifecycle
+❌ WRONG — `rm -rf "$WORKDIR"` on a `worktree` (plain-git) worktree
+   The directory is ours to remove, but removing it behind git's back leaves a stale entry in the
+   parent repo's `.git/worktrees`. The next `git worktree add` at that path fails and `gw` reports
+   a corrupt worktree until someone runs `git worktree prune`. The review has then broken the
+   repo it was reviewing — while deleting only its own scratch directory.
+
+✅ RIGHT — `none` → leave it; `worktree` → `git worktree remove`; `rm` → `rm -rf`
 ```
 
-A rung-0 worktree is **never** removed by this agent, not even with `gw remove`.
-It is a read-only review: it did not create the worktree, so it does not get to decide the worktree is finished.
+So `rm -rf` is correct **only** for a directory this run filled with a clone or a tarball.
+A worktree is removed through git or not at all.
+
+An implementation-A worktree is **never** removed by this agent, not even with `gw remove`, and the reason is that `gw checkout` reuses: its output does not distinguish "created for you just now" from "the one you have had open for a week", so there is no signal on which removal could be made safe. A read-only review that cannot tell the difference does not get to decide the worktree is finished.

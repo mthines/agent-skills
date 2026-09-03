@@ -3086,16 +3086,34 @@ const isPollBlock = (block) =>
   s.check("G38g workspace.md passes --no-hooks on every gw invocation",
     /gw checkout/.test(ws) && !/gw checkout(?!.*--no-hooks)[^\n]*<(?:PR_NUMBER|PR_URL|PR)>/.test(ws),
     "a gw checkout without --no-hooks would install dependencies as a side effect of rung 0");
-  s.check("G38g workspace.md binds WORKDIR_OWNED to distinguish the two checkout rungs",
-    /WORKDIR_OWNED/.test(ws) && /WORKDIR_OWNED=false/.test(ws) && /WORKDIR_OWNED=true/.test(ws));
-  s.check("G38g the cleanup trap is conditional on WORKDIR_OWNED",
-    /trap\s+'\[\s*"\$WORKDIR_OWNED"\s*=\s*true\s*\][^\n]*rm -rf/.test(ws),
-    "an unconditional rm -rf in the trap deletes a rung-0 worktree the user owns");
-  s.check("G38g workspace.md forbids removing a rung-0 worktree at all",
+  // Rung 0 has THREE dispositions, not two, so the disposal method is an enum rather than an
+  // owned/not-owned boolean: `rm -rf` on either kind of worktree leaves a stale entry in the
+  // parent repo's .git/worktrees, which breaks the repo the review was reviewing.
+  for (const disposition of ["none", "worktree", "rm"]) {
+    s.check(`G38g workspace.md binds WORKDIR_CLEANUP=${disposition}`,
+      new RegExp(`WORKDIR_CLEANUP=${disposition}\\b`).test(ws));
+  }
+  s.check("G38g the cleanup dispatches on WORKDIR_CLEANUP, never a bare rm -rf",
+    /case\s+"\$WORKDIR_CLEANUP"/.test(ws) && !/trap\s+'rm -rf/.test(ws),
+    "an unconditional rm -rf disposal deletes worktrees through git's back");
+  s.check("G38g only the rm disposition uses rm -rf, and worktree uses git worktree remove",
+    /worktree\)\s*git worktree remove/.test(ws) && /\brm\)\s*rm -rf/.test(ws));
+  s.check("G38g workspace.md forbids removing a gw worktree at all",
     /never\*{0,2}\s+removed by this agent|not even with `gw remove`/i.test(ws));
-  s.check("G38g the agent body names the rung-0 ownership hazard, not just the command",
-    /WORKDIR_OWNED/.test(prm) && /--no-hooks/.test(prm) && /\.git\/worktrees/.test(prm),
-    "Step 1.1b must carry the ownership rule, since that is where the variable is bound");
+  // The fallback is the point of the rung: `gw` is ergonomics, the local object store is the
+  // capability. A rule that made `gw` a precondition would drop the rung on every machine
+  // without it and pay for a network clone it did not need.
+  s.check("G38g rung 0 falls back to plain git worktree when gw is absent",
+    /git worktree add --detach/.test(ws) && /fallback/i.test(ws));
+  s.check("G38g rung 0's precondition is the local clone, not gw being installed",
+    /not\*{0,2}\s+a precondition/i.test(ws),
+    "gw must select the implementation, never gate the rung");
+  s.check("G38g rung 0 fetches the pull/<n>/head ref so fork PRs are not excluded",
+    /pull\/\$PR_NUMBER\/head/.test(ws) && /fork/i.test(ws));
+  s.check("G38g the agent body names the disposal hazard and the fallback, not just the command",
+    /WORKDIR_CLEANUP/.test(prm) && /--no-hooks/.test(prm) && /\.git\/worktrees/.test(prm)
+    && /git worktree add --detach/.test(prm),
+    "Step 1.1b must carry the disposal rule and the no-gw path, since that is where it binds");
 
   // (h) The two pre-table routing rules in depth-routing.md. Both exist because "first match wins"
   // over the raw table produced a wrong answer that the file's own worked example contradicted:
