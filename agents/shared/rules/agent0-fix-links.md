@@ -32,6 +32,7 @@ problems and offers no way to act on them is doing the hard half and skipping th
 - [Click attribution](#click-attribution)
 - [Prompt templates](#prompt-templates)
 - [Button markup](#button-markup)
+- [Relay length limit](#relay-length-limit)
 - [Safety](#safety)
 
 ## Opt-in
@@ -343,11 +344,70 @@ and it does not 404 on branches before merge. Repointing production is a code ch
   `issue:` / `suggestion:` finding (`comment-shape.md § The payload`). The renderer **rejects** it on
   `nitpick` / `question` / `praise` — there is nothing for Agent0 to fix.
 - **Fix all** — rendered in the report from the `FIX_ALL_URL` payload slot
-  (`report-rendering.md`), and its label carries the count (`Fix all 3 with Agent0`) so the button
-  states what it will do rather than naming a mode. The renderer **rejects** it when there are zero
+  (`report-rendering.md`). Its `alt` is the asset's own rendered text, `Fix all with Agent0`, and the
+  renderer rejects any other label: a count in the accessible name that no sighted reader can see
+  fails WCAG 2.5.3 Label in Name. The renderer **rejects** it when there are zero
   findings and no `CI_NOTE`: a button that hands Agent0 an empty worklist is worse than no button,
   because it invites a click that spends a run discovering there is no work. The one legitimate
   zero-finding case is the CI-only template below, which requires a CI note to exist.
+
+## Relay length limit
+
+**Some write paths cannot carry these buttons at all, and the correct response is to withhold them
+— never to shorten the prompt until it fits.**
+
+A write path that carries the body as a **tool-call argument** rather than a file passes it through a
+relay that rewrites long unbroken runs: it wraps the run in a `` `` `` code span, which closes the
+`href` and escapes everything after it, so the button renders as a wall of `&gt;&lt;picture&gt;` text
+with a dead link. The renderer's markup is correct — the transform happens after it, which is why
+every pre-render guard passes and the damage is visible only in the **stored** body.
+
+Measured on [`mthines/agent-skills#165`](https://github.com/mthines/agent-skills/pull/165) by posting
+URLs through the relay and reading each stored body back. Lengths are of the URL **as it sits in the
+body**: `&` is written `&amp;` inside an `href`, so a two-param URL is 8 chars longer here than
+`url.length` reports — and measuring the unescaped form under-counts exactly the shape this pipeline
+builds.
+
+| URL under test | in body | stored |
+| --- | --- | --- |
+| Agent0 host + path, no query | 56 | intact |
+| + `auto_submit=true` | 78 | intact |
+| + short `initial_prompt` | 109 | intact |
+| prose-encoded prompt | 140 | intact |
+| prose-encoded prompt | 167 | wrapped |
+| prose-encoded prompt | 200 | wrapped |
+| a real `fix-this` link | 230 | wrapped |
+
+**Length is the whole trigger.** Host, path, `auto_submit=true`, and prompt-like query content are
+each innocent — every short URL survived, including ones carrying `initial_prompt=Fix…`. A run of
+repeated identical characters trips it earlier (~75 chars), so the budget is stated against
+prose-encoded URLs, the only shape this pipeline builds.
+
+**No markup change evades it.** Breaking the tag across lines leaves the URL itself as one unbroken
+run, and a pure-markdown linked image — no inline HTML at all — is rewritten too.
+
+So `RELAY_SAFE_URL_MAX = 140` in `comment-spine.mjs` is a fact about the relay, not a budget to
+design the link around. A `fix-this` link spends ~110 body chars before the prompt starts, leaving
+~30 — enough for `Fix <basename>:<line>` and not the repo, the PR, or the finding. A button that
+opens a session with no idea what to fix is worse than no button.
+
+**The rule:**
+
+```bash
+# Before a relayed write, on the body that is actually about to be posted.
+node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md \
+  || rerender_with --no-fix-links     # withhold the buttons; keep the report
+```
+
+- Exit 0 (`relay-safe`) — post as rendered.
+- Exit 1 — **re-render with `--no-fix-links`** and post that. Both renderers already omit the button
+  when the URL slot is absent, so this needs no renderer change and costs only the affordance.
+- Note the withholding in the run line, so a reader who expects a button knows why there is none.
+
+This is **advisory**, unlike `assertPostable`: it predicts what one write path would do, and a
+file-based path (`gh --field body=@file`) does none of it — there the buttons post intact and stay.
+The post-write verify in `agents/pr-reviewer.md` § *The bytes that get posted are the renderer's
+bytes* remains the backstop for whatever this check does not predict.
 
 ## Safety
 

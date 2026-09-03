@@ -2259,12 +2259,20 @@ can `PATCH`. Write each rendered body to a file and run the shared checker on it
 node "$RENDER_COMMENT" /tmp/finding-$i.json > /tmp/finding-$i.md || { log; continue; }
 node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --check /tmp/finding-$i.md \
   || { log "finding $i: body is not renderer output — dropped"; continue; }
+# On a relayed write, an over-budget fix URL is mangled no matter how faithfully it is copied.
+# Re-render this finding without FIX_URL rather than drop it — the finding is worth more than
+# its button (agent0-fix-links.md § Relay length limit).
+node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/finding-$i.md \
+  || { jq 'del(.FIX_URL)' /tmp/finding-$i.json > /tmp/finding-$i.nofix.json
+       node "$RENDER_COMMENT" /tmp/finding-$i.nofix.json > /tmp/finding-$i.md \
+         || { log "finding $i: re-render without the fix link failed — dropped"; continue; }
+       log "finding $i: fix link withheld (relay would mangle it)"; }
 ```
 
-Then reproduce that file **byte-for-byte** into the tool-call argument. The hazard is the same one
-that mangled all five inline comments on `mthines/agent-skills#165`: the button is one very long
-line of inline HTML, and reformatting or escaping it while reproducing it destroys it. A body that
-fails the check is dropped and logged, exactly like a render failure — never posted, never repaired.
+Then reproduce that file **byte-for-byte** into the tool-call argument. A body that fails `--check`
+is dropped and logged, exactly like a render failure — never posted, never repaired. A body that
+fails `--relay-check` is posted **without its button**, because the button is the only part the
+relay breaks and the finding still needs to reach the author.
 
 The reference renderings are in `scripts/eval/fixtures/inline-comment/*.expected.md`.
 
@@ -2634,18 +2642,37 @@ artifacts of one run — the sticky and all five inline comments — arrived wit
 HTML-escaped and wrapped in a double-backtick code span (`<a href="``https://…"&gt;&lt;picture&gt;`),
 so every button rendered as a wall of literal text with a dead link. The renderer had emitted them
 correctly; the corruption entered after its last post-condition, and the run's own report parsed
-fine because the markers and footers survived. **Reformatting a long HTML line while reproducing it
-is the specific hazard** — the markup is one very long line by design (a blank line inside inline
-HTML ends the HTML block), and "improving" it is what breaks it.
+fine because the markers and footers survived.
 
-So on the MCP path, two extra obligations:
+**The cause is the relay, not the copy — and that took measurement to establish.** The first
+diagnosis here blamed reproducing the body by hand ("reformatting a long HTML line is the hazard")
+and was wrong: posting the renderer's exact bytes through this path reproduces the damage
+identically, and posting a *short*-URL button by hand does not. What the relay rewrites is a long
+unbroken run — over ~140 chars it wraps the run in a code span, which closes the `href` and escapes
+the markup after it. `agent0-fix-links.md` § *Relay length limit* has the measured table. Three
+obligations, and the first is now the load-bearing one:
 
-1. **Reproduce the file byte-for-byte.** Read `/tmp/report-body.md` and pass exactly what it
+1. **Check before the write, and withhold the buttons rather than post them broken.** No amount of
+   faithful copying saves an over-budget URL:
+
+   ```bash
+   node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md \
+     || RERENDER_WITH_NO_FIX_LINKS=1   # re-render, post that, and say so in the run line
+   ```
+
+   Exit 0 (`relay-safe`) posts as rendered. Exit 1 means re-render with `--no-fix-links` — both
+   renderers omit the button when the URL slot is absent, so the report is unchanged apart from the
+   affordance. Do **not** shorten the prompt to fit: a `fix-this` link spends ~102 chars before the
+   prompt starts (in body chars, `&amp;` included), and a button that opens a session with no idea
+   what to fix is worse than none.
+   This is advisory and path-specific — on the `gh` path the buttons post intact and stay.
+2. **Reproduce the file byte-for-byte.** Read `/tmp/report-body.md` and pass exactly what it
    contains. Never wrap anything in backticks, never escape `<` or `>`, never re-wrap a long line,
-   never re-indent. The body is already final; there is nothing left to format.
-2. **Verify after the write, and repair once.** Fetch the comment back and diff it against the file.
-   A sticky is editable, so a mismatch is fixable — `PATCH` it once with the correct bytes and note
-   the repair in the Step 5 output:
+   never re-indent. The body is already final; there is nothing left to format. This is no longer
+   the diagnosis, but it is still the only way the check above means anything.
+3. **Verify after the write, and repair once.** The backstop for whatever `--relay-check` does not
+   predict. Fetch the comment back and diff it against the file. A sticky is editable, so a mismatch
+   is fixable — `PATCH` it once with the correct bytes and note the repair in the Step 5 output:
 
    ```bash
    # after the write, with $STICKY_COMMENT_ID known

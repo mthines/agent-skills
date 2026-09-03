@@ -4,7 +4,8 @@
 //   node scripts/eval/l1.mjs
 // Exits non-zero if any check fails.
 import { execSync, spawnSync } from "node:child_process";
-import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, extractSection, Suite } from "./lib.mjs";
 
@@ -3512,6 +3513,72 @@ const isPollBlock = (block) =>
       s.check(`G46h the inline renderer rejects ${why}`, !r.ok, r.ok ? "ACCEPTED" : "");
       s.check(`G46h rejecting ${why} emits nothing on stdout`, r.out === "", r.out.slice(0, 60));
     }
+
+    // (j) The relay length budget. A write path that carries the body as a tool-call argument
+    // rewrites a long unbroken run into a code span, which closes the href and escapes the markup
+    // after it — measured on mthines/agent-skills#165. The budget is executable, not prose: it is a
+    // number in the spine that both the agent body and the rule have to agree with, because the
+    // whole failure mode was a correct renderer plus a documented cause that was wrong.
+    const relay = (body) => {
+      const f = join(tmpdir(), `l1-relay-${Math.random().toString(36).slice(2)}.md`);
+      writeFileSync(f, body);
+      const r = spawnSync("node", [SPINE, "--relay-check", f], { encoding: "utf8" });
+      rmSync(f, { force: true });
+      return r;
+    };
+    const budget = 140;
+    s.check("G46j the spine states the relay budget as an executable constant",
+      new RegExp(`RELAY_SAFE_URL_MAX = ${budget}`).test(spine),
+      "RELAY_SAFE_URL_MAX must be a named export the agent and the rule can both cite");
+
+    const shortUrl = `https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=Fix`;
+    const longUrl = shortUrl + "%20" + "x".repeat(budget);
+    s.check(`G46j a URL inside the ${budget}-char budget is relay-safe`,
+      relay(`<a href="${shortUrl}"><img alt="Fix with Agent0" src="x"></a>`).status === 0,
+      `rejected a ${shortUrl.length}-char url`);
+    const over = relay(`<a href="${longUrl}"><img alt="Fix with Agent0" src="x"></a>`);
+    s.check("G46j an over-budget URL is reported, with its length and the budget",
+      over.status === 1 && /relay-unsafe url \(\d+ chars, over 140\)/.test(over.stderr),
+      (over.stderr || "").slice(0, 200));
+    s.check("G46j the over-budget message names the remedy, not a shorter prompt",
+      /--no-fix-links|from a file/.test(over.stderr) && !/shorten the prompt/.test(over.stderr),
+      "withholding the button is the remedy; truncating the prompt ships a useless button");
+    // A fenced quote may legitimately contain anything, including a long url from the diff.
+    s.check("G46j a long URL inside a fence is not a relay finding",
+      relay(`before\n\n\`\`\`\n${longUrl}\n\`\`\`\n\nafter\n`).status === 0);
+    // The real link is the case that matters: it does NOT fit, and the docs must not pretend it can.
+    const realLink = spawnSync("node",
+      [join(REPO_ROOT, "agents/pr-reviewer/scripts/build-agent0-link.mjs"),
+        "--env", "production", "--source", "fix-this",
+        "Fix the finding at agents/pr-reviewer/scripts/comment-spine.mjs:180 on mthines/agent-skills#165."],
+      { encoding: "utf8" });
+    s.check("G46j a full-fidelity fix-this link is over the budget, as documented",
+      realLink.status === 0 && realLink.stdout.trim().length > budget,
+      `link was ${realLink.stdout.trim().length} chars — if this now fits, the rule's table is stale`);
+
+    // The rule and the agent body both have to carry it. The wrong-cause version of this section
+    // read as correct and was invisible to every other guard here.
+    const fixRule = readFileSync(join(REPO_ROOT, "agents/shared/rules/agent0-fix-links.md"), "utf8");
+    s.check("G46j the rule documents the relay length limit",
+      /## Relay length limit/.test(fixRule) && /RELAY_SAFE_URL_MAX = 140/.test(fixRule),
+      "agent0-fix-links.md must own the measured table and cite the same constant");
+    s.check("G46j the rule forbids shrinking the prompt to fit",
+      /worse than no button/.test(fixRule),
+      "a truncated prompt opens a session with no idea what to fix — say so");
+    const agentBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+    // Anchor each call site by the file it checks, not by counting the flag: the body mentions
+    // `--relay-check` in prose too, so a count-based guard passed with a call site deleted.
+    for (const [surface, target] of [
+      ["the sticky", "--relay-check /tmp/report-body.md"],
+      ["the inline surface", "--relay-check /tmp/finding-$i.md"],
+    ]) {
+      s.check(`G46j ${surface} runs the relay check on the body it is about to post`,
+        agentBody.includes(target), `no \`${target}\` call site`);
+    }
+    s.check("G46j the agent body no longer blames the copy for the #165 mangling",
+      /The cause is the relay, not the copy/.test(agentBody)
+        && !/is the specific hazard\*\*/.test(agentBody),
+      "the first diagnosis was falsified by measurement; a stale root cause misroutes the next fix");
   }
 }
 

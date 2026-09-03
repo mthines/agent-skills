@@ -224,6 +224,58 @@ export function assertBareUrl(url) {
 }
 
 /**
+ * The longest URL that survives a relayed write intact.
+ *
+ * Some write paths carry the body as a tool-call argument rather than a file, and a relay on that
+ * path rewrites long unbroken runs — it wraps the run in a `` `` `` code span, which closes the
+ * `href` and escapes the markup after it, so the button renders as a wall of `&gt;&lt;picture&gt;`
+ * text with a dead link. The renderer's markup is correct; the transform happens after it.
+ *
+ * Measured on mthines/agent-skills#165 by posting URLs through the relay and reading the stored
+ * body back. Lengths are of the URL **as it sits in the body** — `&` is written `&amp;` inside an
+ * `href`, so a URL with two params is 8 chars longer here than `url.length` says. Measuring the
+ * unescaped form is a real bug: it under-counts exactly the shape this pipeline builds.
+ *
+ *   | URL                            | in body | stored  |
+ *   | ------------------------------ | ------- | ------- |
+ *   | Agent0 host+path, no query     |      56 | intact  |
+ *   | + `auto_submit=true`           |      78 | intact  |
+ *   | + short `initial_prompt`       |     109 | intact  |
+ *   | prose-encoded prompt           |     140 | intact  |
+ *   | prose-encoded prompt           |     167 | wrapped |
+ *   | prose-encoded prompt           |     200 | wrapped |
+ *   | a real `fix-this` link         |     230 | wrapped |
+ *
+ * Host, path, `auto_submit`, and prompt-like query content are all innocent — every short URL
+ * survived, including ones carrying `initial_prompt=Fix…`. Length is the whole trigger. A run of
+ * repeated identical characters trips it earlier (~75), which is why the budget is stated against
+ * prose-encoded URLs, the only shape this pipeline actually builds.
+ *
+ * No markup change can evade it. Breaking the tag across lines leaves the URL itself as one
+ * unbroken run, and a pure-markdown linked image is rewritten too.
+ *
+ * So the budget is a fact about the relay, not a limit worth designing the link around: a
+ * full-fidelity Agent0 prompt does not fit in 140 chars, and truncating it to fit would ship a
+ * button that opens a session with no idea what to fix. The rule is therefore to WITHHOLD the
+ * button on a relayed write (`--no-fix-links`) and keep it on a file-based one — see
+ * `agents/shared/rules/agent0-fix-links.md` § Relay length limit.
+ */
+export const RELAY_SAFE_URL_MAX = 140;
+
+/**
+ * The URLs in `body` that a relayed write would rewrite. Empty ⇒ the body is relay-safe.
+ *
+ * Advisory, unlike `assertPostable`: it predicts damage a specific write path would do, and the
+ * file-based path does none of it. The caller decides — the reviewer withholds fix links; nothing
+ * fails a render.
+ */
+export function relayUnsafeUrls(body) {
+  const bare = String(body).replace(/^```[\s\S]*?^```/gm, "");
+  const urls = bare.match(/https?:\/\/[^\s"'()<>]+/g) ?? [];
+  return [...new Set(urls.filter((u) => u.length > RELAY_SAFE_URL_MAX))];
+}
+
+/**
  * The last gate before a body is posted: does this text still look like renderer output?
  *
  * Every other guard in this pipeline runs **before** the renderer writes to stdout. That is enough
@@ -347,17 +399,40 @@ export function assertAbsent(where, v, why) {
 // call the same code the renderers do instead of re-deriving the signatures as greps that drift.
 if (import.meta.url === `file://${process.argv[1]}`) {
   const argv = process.argv.slice(2);
-  const flags = { check: null };
+  const flags = { check: null, relayCheck: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--check") flags.check = argv[++i];
+    else if (a === "--relay-check") flags.relayCheck = argv[++i];
     else {
-      process.stderr.write(`unknown argument: ${a}\nusage: comment-spine.mjs --check <body-file>\n`);
+      process.stderr.write(`unknown argument: ${a}\n`
+        + "usage: comment-spine.mjs --check <body-file> | --relay-check <body-file>\n");
       process.exit(2);
     }
   }
+  if (flags.relayCheck) {
+    const { readFileSync } = await import("node:fs");
+    let relayBody;
+    try {
+      relayBody = readFileSync(flags.relayCheck, "utf8");
+    } catch (e) {
+      process.stderr.write(`cannot read ${flags.relayCheck}: ${e.message}\n`);
+      process.exit(2);
+    }
+    const unsafe = relayUnsafeUrls(relayBody);
+    if (unsafe.length) {
+      for (const u of unsafe) {
+        process.stderr.write(`relay-unsafe url (${u.length} chars, over ${RELAY_SAFE_URL_MAX}): ${u}\n`);
+      }
+      process.stderr.write("a relayed write would wrap these in a code span and break the markup"
+        + " — withhold the fix links (--no-fix-links) or write the body from a file\n");
+      process.exit(1);
+    }
+    process.stdout.write("relay-safe\n");
+    process.exit(0);
+  }
   if (!flags.check) {
-    process.stderr.write("usage: comment-spine.mjs --check <body-file>\n");
+    process.stderr.write("usage: comment-spine.mjs --check <body-file> | --relay-check <body-file>\n");
     process.exit(2);
   }
   const { readFileSync } = await import("node:fs");
