@@ -58,7 +58,7 @@ const REQUIRED_SCALARS = [
   "GATE_SELFREVIEW_STATUS", "GATE_SELFREVIEW_DETAILS",
   "GATE_CODEREVIEW_STATUS", "GATE_CODEREVIEW_DETAILS",
   "MEMORIES_SUMMARY", "QUALITY", "INTEGRATIONS",
-  "OPTIMALITY_LOG", "STANDARDS_LOG", "SKIPPED_FILES",
+  "OPTIMALITY_LOG", "STANDARDS_LOG", "MEASURABILITY_LOG", "SKIPPED_FILES",
 ];
 const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NOTE", "RUN_ANOMALY",
   "FIX_ALL_URL"];
@@ -408,7 +408,7 @@ function main() {
   }
 
   // ── the log slots reviewer-report-ingest.md parses for run-state ───────────────────────────
-  for (const k of ["OPTIMALITY_LOG", "STANDARDS_LOG"]) {
+  for (const k of ["OPTIMALITY_LOG", "STANDARDS_LOG", "MEASURABILITY_LOG"]) {
     const s = String(data[k]);
     if (!/^(ran|skipped)\b/.test(s)) {
       fail(`${k} must begin with "ran" or "skipped (reason)" so its run-state parses — got`
@@ -732,6 +732,7 @@ function main() {
   //
   //   STANDARDS_LOG   `<ran|skipped (reason)> · <N> docs · <F> finding(s)`   standards-conformance.md
   //   OPTIMALITY_LOG  `<ran|skipped (reason)> · <N> judged · … · <P> proposal(s) · … · <W> withheld`
+  //   MEASURABILITY_LOG `<ran|skipped (reason)> · <N> path(s) classified · <M> missing · <U> unlinked`
   //   INTEGRATIONS    `not activated` · `skipped (<reason>)` · a rung description
   //   SKIPPED_FILES   `none` · a path list
   //
@@ -748,6 +749,7 @@ function main() {
   const isSkipped = (s) => /^skipped\b/.test(s);
   const DOCS_RE = /\d+ docs?\b/;
   const JUDGED_RE = /\d+ judged\b/;
+  const PATHS_RE = /\d+ paths? classified\b/;
   const QUIET_LENSES = [
     {
       key: "STANDARDS_LOG",
@@ -762,6 +764,16 @@ function main() {
       quiet: (s) => isSkipped(s) || (/\b0 proposal\(s\)/.test(s) && /\b0 withheld\b/.test(s)),
       footnote: (s) => (isSkipped(s) ? "optimality (skipped)"
         : `optimality${countClause(s, JUDGED_RE) ? ` (${countClause(s, JUDGED_RE)})` : ""}`),
+    },
+    {
+      // A measurability run with nothing missing and nothing unlinked is the common case on a
+      // refactor or a docs-adjacent diff — both gates in measurability-review.md are designed to
+      // reach it — so it is quiet by the same rule the other lenses use.
+      key: "MEASURABILITY_LOG",
+      label: "Measurability",
+      quiet: (s) => isSkipped(s) || (/\b0 missing\b/.test(s) && /\b0 unlinked\b/.test(s)),
+      footnote: (s) => (isSkipped(s) ? "measurability (skipped)"
+        : `measurability${countClause(s, PATHS_RE) ? ` (${countClause(s, PATHS_RE)})` : ""}`),
     },
     {
       key: "INTEGRATIONS",
@@ -793,6 +805,7 @@ function main() {
   if (tierBreakdown) foundLines.push(`Severity — ${tierBreakdown}`);
   if (lens.OPTIMALITY_LOG) foundLines.push(lens.OPTIMALITY_LOG);
   if (lens.STANDARDS_LOG) foundLines.push(lens.STANDARDS_LOG);
+  if (lens.MEASURABILITY_LOG) foundLines.push(lens.MEASURABILITY_LOG);
   if (data.VERIFIED_NOTE) foundLines.push(`Verified — ${String(data.VERIFIED_NOTE).trim()}`);
 
   // `Run` — how the review ran and what it covered. The run-shape line comes first because it is
@@ -809,6 +822,7 @@ function main() {
   const nothingToReport = [
     footnotes.STANDARDS_LOG,
     footnotes.OPTIMALITY_LOG,
+    footnotes.MEASURABILITY_LOG,
     footnotes.INTEGRATIONS,
     tierBreakdown ? "" : "severity",
     footnotes.SKIPPED_FILES,

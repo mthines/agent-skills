@@ -54,7 +54,7 @@ Skipped files — packages/legacy/**
 CI — `Integration smoke (local Supabase)` is red on `POST /memories/list` (expected 200, got 500) — the open thread above. Reported, not blocking.
 Memories — not connected
 
-<sup>Nothing to report — standards (skipped), integrations (skipped), severity.</sup>
+<sup>Nothing to report — standards (skipped), measurability (skipped), integrations (skipped), severity.</sup>
 
 <sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
 

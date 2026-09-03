@@ -29,6 +29,7 @@ a re-phrased finding starts over. See [`references/detection-research.md`](../re
 - [The four records](#the-four-records)
 - [One fingerprint, and where it comes from](#one-fingerprint-and-where-it-comes-from)
 - [Read — two calls, keyed by the impact graph](#read--two-calls-keyed-by-the-impact-graph)
+  - [The read budget is fixed, and it is these two calls](#the-read-budget-is-fixed-and-it-is-these-two-calls)
 - [Every read filters on `source.agent`](#every-read-filters-on-sourceagent)
 - [A knowledge fact is re-verified or dropped, never trusted](#a-knowledge-fact-is-re-verified-or-dropped-never-trusted)
 - [Suppression happens after verification, never before](#suppression-happens-after-verification-never-before)
@@ -109,11 +110,29 @@ Reading before it means asking for the whole `repo::` scope and paging through n
 mcp__lorekit__memory_list  scope="repo::{owner}/{repo}"  kind=signal  host=reviewer  limit=50
 
 # 2. A targeted search on the symbols the impact graph says changed.
-mcp__lorekit__memory_search  scope="repo::{owner}/{repo}"  query="<symbol> <symbol> <symbol>"
+mcp__lorekit__memory_search  scope="repo::{owner}/{repo}"  query="<symbol> <symbol> <symbol>"  limit=25
 ```
 
 Two calls, matching the two the agent already makes for lessons — pointed at better data, not added on top.
 On a repo whose `repo::` scope exceeds the `memory_list` page, the search is what finds the record for a symbol that is not in the top 50; neither call alone is sufficient.
+
+### The read budget is fixed, and it is these two calls
+
+"Keyed by the impact graph, never paging the whole scope" is a **bound**, not an aspiration, so it is written as one:
+
+| Rule | Value |
+| --- | --- |
+| calls per run | exactly **2** — the `memory_list` above and the `memory_search` above |
+| `memory_list` page | `limit=50`, **one page** |
+| `memory_search` page | `limit=25`, **one page** |
+| symbols in the search query | the **top 10** changed symbols by `blast_radius`, from `impact.json` |
+| pagination | **never.** No cursor is followed, on either call |
+
+A third call, a followed cursor, or an unbounded query is the failure this section exists to prevent, and it fails in a way nothing downstream notices: the review still runs, having spent its context on records for code the diff does not touch.
+When a symbol the impact graph named is not in either page, it has **no memory this run** — that is a miss, and a miss costs nothing, because [a knowledge fact is re-verified or dropped, never trusted](#a-knowledge-fact-is-re-verified-or-dropped-never-trusted) anyway.
+Widening the read to chase it trades a bounded cost for an unbounded one to acquire a hint the pipeline is required to re-derive regardless.
+
+The one permitted extra read is the **per-PR state record** (Step 0.7), which is a different scope (`branch::`), a different question, and already exactly one call.
 
 Then match:
 

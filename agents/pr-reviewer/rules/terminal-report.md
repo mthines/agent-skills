@@ -118,6 +118,18 @@ Standards conformance (2.4d):
 When a standards finding conflicts with author-stated intent or an explicit review-config entry,
 the author intent and config win; the conflict is surfaced in the diagnostics, not silently enforced.
 
+Measurability review (2.4e):
+  Status:             ran | skipped (trivial diff) | skipped (--no-measurable) | skipped (tier: quick) | skipped (skill not installed)
+  Gate 1 (path kind): pass (<kinds>) | fail (<kinds>)
+  Gate 2 (behaviour): pass (<trigger>) | fail (no new observable behaviour)
+  Paths classified:   <N>
+  Missing:            <M>
+  Unlinked:           <U> (aggregated into <0|1> finding)
+  Profile:            found | none (signal-level findings only)
+  Strict:             true (<source>) | false
+A `fail` on either gate is a quiet no-op, not a finding. `Missing` and `Unlinked` never reach
+`FAIL_REASONS` unless the repository opted into strict, and `Unlinked` never does at all.
+
 Shape routing (1.2 / 1.2b):
   Shapes:             <PR or delta shapes, joined> | none
   High-stakes files:  <count> (<first 3 paths>)

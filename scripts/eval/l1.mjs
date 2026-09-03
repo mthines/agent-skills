@@ -2797,13 +2797,16 @@ const isPollBlock = (block) =>
     `status=${one.status} ${(one.stderr || "").slice(0, 80)}`);
 
   // Shell state does not persist between the agent's tool calls, so resolve() is defined at
-  // BOTH call sites (Step 1.2 and Step 4a) with an edit-them-together note. This asserts the
-  // two bodies have not drifted — the regression that shipped was defining it at only one.
+  // EVERY call site — § Locating this agent's own files / Step 0.1, Step 1.2 (CLASSIFY), and
+  // Step 4a (RENDER) — each with an edit-them-together note. This asserts the bodies have not
+  // drifted; the regression that shipped was defining it at only one.
+  const RESOLVE_SITES = 3;
   const resolves = [...readRepo("agents/pr-reviewer.md")
     .matchAll(/resolve\(\)\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1].replace(/\s+/g, " ").trim());
-  s.check("G33i resolve() is defined at both call sites and the bodies are identical",
-    resolves.length === 2 && resolves[0] === resolves[1],
-    `found ${resolves.length} definition(s)${resolves.length === 2 && resolves[0] !== resolves[1] ? " that differ" : ""}`);
+  const allSame = resolves.length > 0 && resolves.every((r) => r === resolves[0]);
+  s.check("G33i resolve() is defined at every call site and the bodies are identical",
+    resolves.length === RESOLVE_SITES && allSame,
+    `found ${resolves.length} definition(s)${allSame ? "" : " that differ"}`);
 }
 
 // ── G34: the defer-floor formula has one owner ──
@@ -2931,8 +2934,15 @@ const isPollBlock = (block) =>
     s.check(`G37a ${f} never invokes build-agent0-link.mjs by a bare relative path`,
       !BARE_INVOCATION.test(readRepo(f)));
   }
-  s.check("G37b pr-reviewer.md derives BUILD_LINK from the same $AGENT_MD as RENDER",
-    /BUILD_LINK="\$\{AGENT_MD%\/pr-reviewer\.md\}\/pr-reviewer\/scripts\/build-agent0-link\.mjs"/.test(
+  // Every script the agent runs is addressed through $AGENT_SUPPORT — the one variable
+  // `Locating this agent's own files` derives from the resolved definition path. A call site
+  // that re-derives `${AGENT_MD%/pr-reviewer.md}` inline is drift: it works, but it puts the
+  // support-tree contract in N places, which is how the rule-file paths came to be bare
+  // repo-relative in the first place.
+  s.check("G37b pr-reviewer.md derives BUILD_LINK from $AGENT_SUPPORT, same as RENDER",
+    /BUILD_LINK="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/build-agent0-link\.mjs"/.test(
+      readRepo("agents/pr-reviewer.md"))
+    && /RENDER="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/render-report\.mjs"/.test(
       readRepo("agents/pr-reviewer.md")));
 }
 
@@ -3272,6 +3282,161 @@ const isPollBlock = (block) =>
   s.check("G40d depth-routing.md states the one-read-one-head deferral instead",
     /does \*\*not\*\* re-read/.test(depth) && /one read, one head/i.test(depth),
     "removing the mandate is not enough — the section must say what the run does instead, or the moved-head case is simply unhandled");
+}
+
+// ── G41: the five defects two production runs exposed, each pinned where it failed ──
+//
+// A `/pr-review` dispatch at dash0hq/dash0#17523 improvised its way past five rules that were
+// either absent or stated only once, in prose, somewhere the run never reached. All five had the
+// same signature: the run produced *plausible* output, so nothing downstream was red. These are
+// the joint conditions — the rule is stated AND the thing it forbids does not appear.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const body = read("agents/pr-reviewer.md");
+
+  // (a) The support-tree contract exists and derives AGENT_SUPPORT from the resolved path.
+  s.check("G41a the agent body has a support-tree section that derives AGENT_SUPPORT",
+    /^### Locating this agent's own files$/m.test(body)
+    && /AGENT_SUPPORT="\$\{AGENT_MD%\/pr-reviewer\.md\}"/.test(body));
+
+  // (b) The naive install path is banned as a probe. The observed run ran `ls` against
+  // $HOME/.claude/agents/pr-reviewer/scripts/, read the ENOENT as proof the tree was missing,
+  // and hand-wrote its report. The ban has to be stated, because the probe looks reasonable.
+  s.check("G41b probing the un-resolved install path is banned by name",
+    /Never probe the un-resolved install path/i.test(body)
+    && /`?resolve\(\)`? is the only admissible test/i.test(body));
+
+  // (c) Resolution happens at Step 0.1 — BEFORE Step 0.5 — so a degraded run is known to be
+  // degraded while nothing is invested, not discovered at Step 4a with findings in hand.
+  const i01 = body.indexOf("### 0.1 Resolve the support tree");
+  const i05 = body.indexOf("## Step 0.5");
+  s.check("G41c the support tree is resolved at Step 0.1, ahead of Step 0.5",
+    i01 !== -1 && i05 !== -1 && i01 < i05,
+    `0.1 at ${i01}, 0.5 at ${i05}`);
+  s.check("G41c resolving the support tree is not read as a permission to post",
+    /AGENT_SUPPORT` is a location, not a permission/.test(body));
+
+  // (d) One derivation point. Every script call site addresses $AGENT_SUPPORT; the
+  // `${AGENT_MD%/pr-reviewer.md}` form appears exactly where AGENT_SUPPORT is defined.
+  const derivations = [...body.matchAll(/\$\{AGENT_MD%\/pr-reviewer\.md\}/g)].length;
+  s.check("G41d ${AGENT_MD%/pr-reviewer.md} appears only where AGENT_SUPPORT is defined",
+    derivations === 1, `found ${derivations} occurrence(s)`);
+  s.check("G41d no script is addressed by a bare agents/pr-reviewer/scripts/ path in a node call",
+    !/node\s+"?agents\/pr-reviewer\/scripts\//.test(body));
+
+  // (e) The sticky-write not-a-reason list. The run stood down on two invented rules — the
+  // sticky's author login, and an unchanged verdict — and left the delta baseline pinned.
+  for (const phrase of [
+    /is \*\*diagnostic only\*\*/,
+    /The sticky's author login is not this run's `ME`/,
+    /The verdict is unchanged since the prior run/,
+    /The run produced no new inline findings/,
+    /Another bot already reviews this PR/,
+    /It is the caller's own PR \(self relation\)/,
+  ]) {
+    s.check(`G41e the sticky not-a-reason list names ${phrase.source.slice(0, 46)}`,
+      phrase.test(body));
+  }
+  s.check("G41e the not-a-reason list closes with the imperative",
+    /If a\s*\nsituation is not a row in the table above, \*\*write the sticky\*\*/.test(body));
+
+  // (f) No brace-escaped STICKY default survives. The expression was correct; its escaped brace
+  // did not survive being retyped, and the run took four jq parse errors on the one rung that
+  // recovers the delta baseline. A correct-but-fragile idiom is a defect at this scale.
+  // The ban is on the LIVE idiom, not on the comment that explains why it was retired — the
+  // explanation has to be able to quote the shape it is warning about.
+  s.check("G41f no ${STICKY:-…} brace default is used at a read site",
+    !/<<<\s*"\$\{STICKY:-/.test(body));
+  s.check("G41f STICKY is normalised to a brace-free JSON literal once",
+    /\[ -n "\$STICKY" \] \|\| STICKY=null/.test(body));
+
+  // (g) The empty merge-base guard, in the phase that owns the workspace. Both forms must be
+  // named: the three-dot failure (loud, benign) and the two-dot hazard (silent, wrong).
+  const ws = read("agents/pr-reviewer/rules/workspace.md");
+  s.check("G41g workspace.md guards an empty merge-base",
+    /empty `MERGE_BASE` is a hard branch/i.test(ws)
+    && /no merge base/.test(ws)
+    && /two-dot form succeeds, and that is the dangerous one/i.test(ws));
+  s.check("G41g the empty-merge-base fallback is the authoritative per-file patches",
+    /DIFF_SOURCE=api/.test(ws) && /per-file patches/.test(ws));
+  s.check("G41g the fallback is announced in RUN_ANOMALY, not RUN_NOTE",
+    /RUN_ANOMALY/.test(ws) && !/RUN_NOTE:/.test(ws));
+
+  // (h) The memory read budget is a bound, not a description.
+  const mem = read("agents/pr-reviewer/rules/memory.md");
+  s.check("G41h memory.md states a fixed read budget with no pagination",
+    /calls per run \| exactly \*\*2\*\*/.test(mem)
+    && /\| pagination \| \*\*never\.\*\*/.test(mem)
+    && /\*\*top 10\*\* changed symbols/.test(mem));
+  // Anchored on the mcp__ call lines, not on the budget table that repeats the same numbers —
+  // a table row is a promise, the call is the thing that keeps it.
+  s.check("G41h both memory reads carry an explicit limit at the call site",
+    /mcp__lorekit__memory_list\s+scope=[^\n]*limit=50/.test(mem)
+    && /mcp__lorekit__memory_search\s+scope=[^\n]*limit=25/.test(mem));
+}
+
+// ── G42: the measurability lens is wired, bounded, and cannot block ──
+//
+// Same joint-condition discipline as G38: the rule existing proves nothing if the body never
+// routes to it, and a lens with no quiet-exit gates is one the author learns to ignore.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const body = read("agents/pr-reviewer.md");
+  const rule = read("agents/shared/rules/measurability-review.md");
+
+  s.check("G42a measurability-review.md exists and the body routes to it at Step 2.4e",
+    rule.length > 0
+    && /^### 2\.4e Measurability review/m.test(body)
+    && /measurability-review\.md/.test(body));
+
+  // audit mode only — pr-reviewer is read-only in both relations.
+  s.check("G42b the lens is audit-mode only and says so in both files",
+    /Skill\("measurable", "audit"\)/.test(rule) && /Skill\("measurable", "audit"\)/.test(body)
+    && /\*\*Never\*\* `Skill\("measurable", "implement"\)`/.test(rule));
+  s.check("G42b neither file ever calls measurable in implement mode",
+    !/Skill\("measurable",\s*"implement"\)/.test(body)
+    && !/^\s*Skill\("measurable",\s*"implement"\)/m.test(rule));
+
+  // Two quiet-exit gates. Without them the lens asks "where's the telemetry" on every diff.
+  s.check("G42c both quiet-exit gates are defined",
+    /### Gate 1 — the diff touches a path kind that needs a signal/.test(rule)
+    && /### Gate 2 — the change adds or alters observable behaviour/.test(rule)
+    && /new failure mode/.test(rule));
+
+  // The non-blocking invariant, stated the way telemetry.md states its own.
+  s.check("G42d no measurability finding reaches FAIL_REASONS by default",
+    /never lowers or fails a verdict/.test(rule)
+    && /FAIL_REASONS/.test(rule)
+    && /never blocking in any\s*\nconfiguration|Never `issue:`, never blocking/.test(rule));
+  s.check("G42d strict is a repository setting, not the reviewer's judgment",
+    /never on the reviewer's own judgment/.test(rule)
+    && /measurable: strict/.test(rule) && /--measurable-strict/.test(body));
+
+  // The seam with telemetry.md — two rules, opposite questions, neither answers the other's.
+  s.check("G42e the seam with telemetry.md is stated in both directions",
+    /## Seam with `telemetry\.md`/.test(rule)
+    && /\*\*today\*\*/.test(rule) && /\*\*tomorrow\*\*/.test(rule));
+
+  // The renderer accepts the slot and treats a clean audit as quiet. A required slot the
+  // fail-closed renderer rejects would mean a run that obeys the rule posts no report at all.
+  const renderer = read("agents/pr-reviewer/scripts/render-report.mjs");
+  // Membership of REQUIRED_SCALARS specifically: the name appears in three places in the
+  // renderer, so a bare substring test passes while the slot is no longer required.
+  const requiredBlock = /const REQUIRED_SCALARS = \[([\s\S]*?)\];/.exec(renderer)?.[1] ?? "";
+  s.check("G42f MEASURABILITY_LOG is a required renderer slot",
+    requiredBlock.includes('"MEASURABILITY_LOG"'));
+  s.check("G42f the renderer folds a clean measurability run into the footnote",
+    /key: "MEASURABILITY_LOG"/.test(renderer)
+    && /0 missing\\b/.test(renderer)
+    && /0 unlinked\\b/.test(renderer));
+  s.check("G42f the lens log grammar is shared by rule and renderer",
+    /MEASURABILITY_LOG: <ran\|skipped \(<reason>\)> · <N> paths classified · <M> missing · <U> unlinked/
+      .test(rule)
+    && /\["OPTIMALITY_LOG", "STANDARDS_LOG", "MEASURABILITY_LOG"\]/.test(renderer));
+
+  // The flag exists in Step 0's token table, or a documented opt-out is unreachable.
+  s.check("G42g --no-measurable is in Step 0's token table",
+    /\| `--no-measurable` \| Skip the measurability review step \(Step 2\.4e\) \|/.test(body));
 }
 
 process.exit(s.report() ? 0 : 1);

@@ -129,6 +129,7 @@ finding.
 | Run mode | a line **beginning** `<mode> · <N> lines in delta` — `/^(full\|incremental\|incremental-quick) · (\d+) lines in delta/m` | `{mode, delta_lines}`, from that single shape — every mode renders it, a zero-delta run as `incremental · 0 lines in delta`. The zero-delta form is named by the Footer SHA line, not here. | n/a |
 | Standards log | `Standards —`, the first line of the `Found` group's standards entry | `{ran, docs_scanned, finding_count}` — run-state only. **Absent when the lens had nothing to report** (see *Quiet lenses collapse into a footnote*). | n/a |
 | Optimality log | `Optimality —` | `{ran, judged, optimal, proposals, withheld}` — run-state only. Absent when quiet. | n/a |
+| Measurability log | `Measurability —` | `{ran, paths_classified, missing, unlinked}` — run-state only. Absent when quiet (`0 missing` and `0 unlinked`). | n/a |
 | Skipped files | `Skipped files —` | file paths. **Absent on `none`** — an empty skip list renders as `0 files skipped` in the footnote, never as its own line. | n/a |
 | Footer SHA | `<sup>Reviewed for commit \`<sha>\`` / `<sup>Incremental review for commit \`<sha>\`` / `<sup>No code changes since \`<prior>\` — gate checks only for commit \`<sha>\`` | the reviewed SHA — **all three** run-mode forms. Match on `commit \`<sha>\`` alone, never on a leading phrase: anchoring on `review for commit` matches only the incremental form and silently misses the other two. This section is load-bearing provenance for a sticky, which has no `commit_id` — and it is what `pr-reviewer`'s own fallback rung reads to recover a delta baseline when its state record is unusable, so the three forms must stay matchable by `commit \`<sha>\`` alone. | n/a |
 
@@ -138,7 +139,8 @@ Inside `Review details` the run-state lines sit under three bold group headings 
 `**Needs attention**` (rendered only when a gate is not ✅), `**Found**`, and `**Run**`. The
 headings are **layout, not sections**: they have no row in the table above, carry no extractable
 unit, and must never be matched as a section boundary. Their sole grammatical consequence is that
-the in-group labels are plain (`Standards — `, `Optimality — `, `Skipped files — `) rather than
+the in-group labels are plain (`Standards — `, `Optimality — `, `Measurability — `, `Skipped files — `)
+rather than
 bold, because the heading carries the visual weight.
 
 **The run line lost its label, and that is why its own shape is the anchor.** It used to read
@@ -154,14 +156,14 @@ A lens that ran and found nothing is named once, in a `<sup>` footnote at the en
 instead of spending a full line on a value that carries no information:
 
 ```markdown
-<sup>Nothing to report — standards (1 doc), optimality (3 judged), integrations (not activated), severity, 0 files skipped.</sup>
+<sup>Nothing to report — standards (1 doc), optimality (3 judged), measurability (4 paths classified), integrations (not activated), severity, 0 files skipped.</sup>
 ```
 
 Consequences for a consumer, and they matter more than the cosmetics:
 
-- **An absent `Standards —` / `Optimality —` / `Skipped files —` line is not a missing section.** It
-  means the lens had nothing to report — `0 finding(s)`, `0 proposal(s)` and `0 withheld`, or `none`
-  respectively. Parsing rule 1 already says an absent heading yields an empty result, which is the
+- **An absent `Standards —` / `Optimality —` / `Measurability —` / `Skipped files —` line is not a
+  missing section.** It means the lens had nothing to report — `0 finding(s)`, `0 proposal(s)` and
+  `0 withheld`, `0 missing` and `0 unlinked`, or `none` respectively. Parsing rule 1 already says an absent heading yields an empty result, which is the
   correct reading here; do not infer that the lens was skipped.
 - **A lens renders as a line xor a footnote entry, never both and never neither.** That exclusivity
   is enforced by L1, so a consumer can rely on exactly one of the two being present per lens.

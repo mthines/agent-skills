@@ -91,7 +91,7 @@ of those was a real defect before it became derived.
 | `MEMORIES_SUMMARY` | The **indexed half only** — `<MEMORIES_READ_COUNT> indexed`, or `not connected`. Never write ` · <N> used`: the renderer derives that from `MEMORIES_USED`'s length and rejects a payload that supplies its own, reports fewer indexed than used, or pairs `not connected` with a non-empty `MEMORIES_USED`. |
 | `QUALITY` | Must begin `produced <N> → posted inline <N> …`. |
 | `INTEGRATIONS` | Names + versions + spec URLs, or `not activated`, or `skipped (<reason>)` — e.g. `skipped (tier: quick)`. |
-| `OPTIMALITY_LOG` · `STANDARDS_LOG` | Must begin `ran` or `skipped (reason)` so the run-state parses. |
+| `OPTIMALITY_LOG` · `STANDARDS_LOG` · `MEASURABILITY_LOG` | Must begin `ran` or `skipped (reason)` so the run-state parses. |
 | `SKIPPED_FILES` | A list, or `none`. |
 
 **Required — `RUN`**, the object the footer line, the `Run mode` line, and the top-level freshness
@@ -217,7 +217,7 @@ unchanged apart from the new `RUN_ANOMALY` slot — the grouping is entirely ren
 | Group | Heading | Holds | Rendered when |
 | --- | --- | --- | --- |
 | Attention | `**Needs attention**` | the gate table, then `Open review threads` | the heading only when a gate row is ⚠️ or ❌; the table always |
-| Found | `**Found**` | `Quality`, `Dropped`, `Severity`, `Optimality`, `Standards`, `Verified` | always (`QUALITY` is required, so the group is never empty) |
+| Found | `**Found**` | `Quality`, `Dropped`, `Severity`, `Optimality`, `Standards`, `Measurability`, `Verified` | always (`QUALITY` is required, so the group is never empty) |
 | Run | `**Run**` | the run line, the `⚠️` anomaly line, `Skipped files`, `Integrations`, `CI`, `Memories` + its bullets | always |
 
 Three properties are load-bearing rather than cosmetic, and L1 `G25` asserts each:
@@ -234,16 +234,17 @@ Three properties are load-bearing rather than cosmetic, and L1 `G25` asserts eac
 #### Quiet lenses collapse into a footnote
 
 ```markdown
-<sup>Nothing to report — standards (1 doc), optimality (3 judged), integrations (not activated), severity, 0 files skipped.</sup>
+<sup>Nothing to report — standards (1 doc), optimality (3 judged), measurability (4 paths classified), integrations (not activated), severity, 0 files skipped.</sup>
 ```
 
-Five slots are collapsible, and **emptiness is read from each one's own documented grammar** — never
+Six slots are collapsible, and **emptiness is read from each one's own documented grammar** — never
 guessed from prose length or a bare substring search:
 
 | Slot | Quiet when | Footnote entry |
 | --- | --- | --- |
 | `STANDARDS_LOG` | begins `skipped`, or contains `0 finding(s)` | `standards (<N> doc[s]>)` · `standards (skipped)` |
 | `OPTIMALITY_LOG` | begins `skipped`, or contains both `0 proposal(s)` and `0 withheld` | `optimality (<N> judged)` · `optimality (skipped)` |
+| `MEASURABILITY_LOG` | begins `skipped`, or contains both `0 missing` and `0 unlinked` | `measurability (<N> paths classified)` · `measurability (skipped)` |
 | `INTEGRATIONS` | exactly `not activated`, or begins `skipped` | `integrations (not activated)` · `integrations (skipped)` |
 | `SKIPPED_FILES` | exactly `none` | `0 files skipped` |
 | `TIER_TALLY` | absent, or every tier zero | `severity` |

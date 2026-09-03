@@ -27,7 +27,7 @@ Severity — 🔴 1 · 🟠 2 · 🟡 3 · ⚪ 1
 full · 128 lines in delta
 Memories — 53 indexed · 0 used
 
-<sup>Nothing to report — standards (2 docs), optimality (2 judged), integrations (not activated), 0 files skipped.</sup>
+<sup>Nothing to report — standards (2 docs), optimality (2 judged), measurability (3 paths classified), integrations (not activated), 0 files skipped.</sup>
 
 <sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
 

@@ -47,6 +47,7 @@ Dropped — relevance 1 · dedupe 2 · grounding 0 · verifier contradicted 2 ·
 Severity — 🟠 1 · 🟡 2
 Optimality — ran · 3 judged · 2 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld
 Standards — ran · 2 docs · 3 finding(s)
+Measurability — ran · 5 paths classified · 2 missing · 1 unlinked · no profile
 
 **Run**
 

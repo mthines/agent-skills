@@ -436,6 +436,36 @@ Use `standards` when you want the reviewer to enforce a written rule as an expli
 
 ---
 
+## Measurable
+
+`measurable:` sets how hard the measurability lens
+([`measurability-review.md`](./measurability-review.md), Step 2.4e) presses on a missing signal.
+It is a single scalar, not a list, because it configures a bar rather than a scope.
+
+```yaml
+measurable: strict        # advisory (default) | strict
+```
+
+| Value | Effect |
+|---|---|
+| absent, or `advisory` | The lens runs and reports. A `missing` signal is a `suggestion:`; nothing it emits reaches `FAIL_REASONS`. |
+| `strict` | `--strict` is passed to `measurable audit`, so a `missing` signal on a path with a **new failure mode** is an `issue:` and counts like any other `issue:`. |
+
+Two properties this field deliberately does **not** have:
+
+- **It cannot make `unlinked` blocking.** A signal that exists but maps to no named regression
+  detector stays a `nitpick:` in every configuration — the `measurable` skill's own rule, honoured
+  here rather than re-litigated.
+- **It has no reviewer-side override.** Strictness is a claim about the repository's release bar, so
+  only the repository (this field) or an explicit `--measurable-strict` on the invocation sets it;
+  the reviewer never escalates on its own judgment.
+
+To turn the lens off entirely, pass `--no-measurable` on the invocation. There is deliberately no
+`measurable: off`: a repository silently disabling a lens for every reviewer is the shape that makes
+a review's silence unreadable, whereas a flag is visible in the run announcement.
+
+---
+
 ## What this rule does not do
 
 - Define how rubrics are authored or loaded — that is `rubric-composition.md`.

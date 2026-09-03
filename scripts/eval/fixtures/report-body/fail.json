@@ -51,5 +51,6 @@
   "INTEGRATIONS": "skipped (incremental-quick)",
   "OPTIMALITY_LOG": "ran · 4 judged · 3 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld",
   "STANDARDS_LOG": "skipped (--no-standards)",
+  "MEASURABILITY_LOG": "skipped (--no-measurable)",
   "SKIPPED_FILES": "packages/legacy/**"
 }

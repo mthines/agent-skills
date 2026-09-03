@@ -22,6 +22,7 @@ It is **a shallow review that renders the same report as a deep one**, so nobody
 - [The capability ladder](#the-capability-ladder)
 - [Rung 0 — a worktree over the local object store](#rung-0--a-worktree-over-the-local-object-store)
 - [What each capability costs you](#what-each-capability-costs-you)
+- [The base of the diff, and the empty merge-base trap](#the-base-of-the-diff-and-the-empty-merge-base-trap)
 - [Toolchain detection](#toolchain-detection)
 - [Dependency install is opt-in](#dependency-install-is-opt-in)
 - [Declare the capability in the report](#declare-the-capability-in-the-report)
@@ -191,6 +192,46 @@ The plain-git fallback has no hooks to suppress, which is the one respect in whi
 
 A `diff-only` run may still post findings.
 What it may not do is present a claim about code it never read as though it had read it: on `diff-only`, a behavioral `issue:` needs its receipt marked `unobtainable (no workspace)` per [`verification-receipt.md`](../../shared/rules/verification-receipt.md), and the depth tier is capped at `standard` regardless of what Phase C would otherwise choose — a `deep` tier whose deep lenses cannot run is a label, not a review.
+
+## The base of the diff, and the empty merge-base trap
+
+A workspace on its own is not a diff.
+Every rung above materializes the **head** tree; what the review is *about* is head against the PR's base, and that comparison is the one place a local object store can be silently incomplete.
+
+Bind the base from the PR itself, never from a branch name:
+
+```bash
+# BASE_SHA comes from the PR's own base.sha (bound at Step 1.1 with HEAD_SHA), not from a
+# local ref. `main` in the local clone is whatever was last fetched — possibly months old,
+# possibly absent — and naming a branch here makes the diff depend on that.
+MERGE_BASE=$(git -C "$WORKDIR" merge-base "$BASE_SHA" "$HEAD_SHA" 2>/dev/null || true)
+```
+
+**An empty `MERGE_BASE` is a hard branch, not a warning to read past.**
+It means the object store holds no commit reachable from both sides, which is the *expected* outcome of three states this ladder itself produces: rung 1 clones `--depth 50` on the head branch alone, rung 0 fetched `pull/<n>/head` and nothing else, and `tarball` has no history at all.
+
+| `MERGE_BASE` | What to do |
+| --- | --- |
+| non-empty | Compute the delta locally: `git -C "$WORKDIR" diff "$MERGE_BASE" "$HEAD_SHA"`. |
+| empty, and `DEPTH_CAPABILITY == checkout` | One deepening attempt: `git -C "$WORKDIR" fetch --deepen 100 origin "$BASE_SHA" 2>/dev/null` (fall back to `fetch origin "$BASE_SHA"`), then recompute **once**. Still empty ⇒ next row. |
+| empty, after the deepening attempt, or `DEPTH_CAPABILITY != checkout` | Take the delta from the **authoritative per-file patches** — the PR files API (`pull_request_read` with `method: "get_files"`, or `gh pr diff`) — set `DIFF_SOURCE=api`, and emit the `RUN_ANOMALY` line below. |
+
+Two forms must never appear once `MERGE_BASE` is empty, and they are the whole reason this section is a table rather than a sentence:
+
+- **`git diff <base>...<head>`** — the three-dot form *is* "diff against the merge base", so with no merge base it exits non-zero with `fatal: <base>...<head>: no merge base`. That is the benign failure: loud, and it stops.
+- **`git diff <base> <head>`** — the two-dot form succeeds, and that is the dangerous one. It reports every difference between two unrelated trees, so the "delta" becomes the whole divergence of the base branch as well as the PR's own commits. Findings then get raised against code the author never touched and attributed to them.
+
+The observed failure took the first form and recovered by improvising the API patches — the right destination, reached by a path this file had no rule for, so nothing guaranteed the next run would land there rather than on the two-dot form.
+That recovery is now the table's last row.
+
+**Say it in the report.** The delta arrived from a different source than usual, which is a caveat about what the run compared, so it goes in `RUN_ANOMALY` (never `RUN_NOTE` — [`report-rendering.md § Run slots`](./report-rendering.md)):
+
+```text
+RUN_ANOMALY: local clone has no shared history with the base — delta taken from the PR's per-file patches
+```
+
+`DIFF_SOURCE=api` costs the review nothing in coverage: the patches are the same hunks GitHub anchors inline comments against, so [`line-validity.md`](./line-validity.md) is if anything *more* reliable on them.
+What it does cost is `git`-derived context — blame on a base-side line, and `log` on a file the PR does not touch — so a receipt needing either is `unobtainable`, exactly as on `tarball`.
 
 ## Toolchain detection
 

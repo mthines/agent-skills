@@ -34,6 +34,7 @@ Reviewed your changes — no blocking issues, **3 warning(s)**: 2 open review th
 
 Quality — produced 7 → posted inline 3 · cleared 3 · carried forward 0 · deferred 2 · below-bar 0
 Dropped — relevance 0 · dedupe 1 · grounding 0 · confidence 2 · shape 0
+Measurability — ran · 2 paths classified · 1 missing · 0 unlinked
 Verified — `node scripts/sync-edge-schemas.mjs --check` in sync (15 files).
 
 **Run**
