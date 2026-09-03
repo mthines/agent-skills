@@ -2871,4 +2871,178 @@ const isPollBlock = (block) =>
       readRepo("agents/pr-reviewer.md")));
 }
 
+// ── G38: the detection core — Phases A–F must actually be wired, not merely present ──
+//
+// Every phase shipped as a rule file plus a routing line in the agent body. The failure mode a
+// text-presence check cannot see is a rule file that exists and is never read: the file is
+// correct, the review does not run it, and nothing is red. So these assert the JOINT condition —
+// the rule exists AND the agent body routes to it at a named step — plus the handful of
+// invariants that are the whole reason each phase was split out.
+{
+  const prm = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+  const ruleOf = (p) => {
+    const f = join(REPO_ROOT, p);
+    return existsSync(f) ? readFileSync(f, "utf8") : null;
+  };
+
+  // (a) Each phase: file present, and routed from the body.
+  const PHASES = [
+    ["A workspace", "agents/pr-reviewer/rules/workspace.md", "1.1b"],
+    ["B impact graph", "agents/pr-reviewer/rules/impact-graph.md", "1.2a"],
+    ["C depth routing", "agents/pr-reviewer/rules/depth-routing.md", "1.2b"],
+    ["D finders", "agents/pr-reviewer/rules/finders.md", "Step 2"],
+    ["D consumer-impact", "agents/pr-reviewer/rules/finder-consumer-impact.md", "Step 2"],
+    ["D dependency", "agents/pr-reviewer/rules/finder-dependency.md", "Step 2"],
+    ["E verifier", "agents/shared/rules/finding-verifier.md", "2.6b"],
+    ["memory contract", "agents/pr-reviewer/rules/memory.md", "1.0"],
+    ["telemetry", "agents/pr-reviewer/rules/telemetry.md", "1.0"],
+  ];
+  for (const [label, path, step] of PHASES) {
+    const body = ruleOf(path);
+    s.check(`G38a Phase ${label} rule exists (${path})`, body !== null);
+    if (!body) continue;
+    // The basename is what a routing line must name; a rule nobody names is a rule nobody reads.
+    const base = path.split("/").pop();
+    s.check(`G38a the agent body routes to ${base} (Phase ${label}, ~Step ${step})`,
+      prm.includes(base), "rule file present but never referenced from the agent body");
+  }
+
+  // (b) The polarity rule. This is the one invariant that, if lost, silently reverts the whole
+  // refactor: a finder that knows the confidence bar prunes against it, and a candidate pruned
+  // pre-verification is a defect nobody adjudicated. Assert it in the rule AND in the body.
+  const finders = ruleOf("agents/pr-reviewer/rules/finders.md") || "";
+  s.check("G38b finders.md states that a finder never sees the confidence bar",
+    /never sees|does not see|never knows/.test(finders) && /confidence|threshold|bar/.test(finders));
+  s.check("G38b the agent body carries the polarity rule at Step 2",
+    /finder'?s? job is to \*\*flag\*\*|[Ff]inders flag, the verifier filters/.test(prm));
+  s.check("G38b the candidate record requires bad_outcome and verify_by",
+    finders.includes("bad_outcome") && finders.includes("verify_by")
+    && prm.includes("bad_outcome") && prm.includes("verify_by"));
+
+  // (c) The four verdicts, and the two that are NOT drops. `unobtainable` collapsing back into
+  // `null` is the regression that silently discards every claim the runner could not check.
+  const verifier = ruleOf("agents/shared/rules/finding-verifier.md") || "";
+  const receipt = readFileSync(join(REPO_ROOT, "agents/shared/rules/verification-receipt.md"), "utf8");
+  for (const v of ["confirmed", "contradicted", "ambiguous", "unobtainable"]) {
+    s.check(`G38c finding-verifier.md defines the ${v} verdict`, verifier.includes(v));
+  }
+  s.check("G38c verification-receipt.md distinguishes unobtainable from null",
+    receipt.includes("unobtainable") && /could not run/.test(receipt),
+    "the unobtainable row is gone — a check that could not run is being read as a check that found nothing");
+  s.check("G38c an unobtainable finding is re-framed, never asserted as an issue",
+    /re-frame, do not drop/i.test(receipt)
+    && /Capped at `suggestion:`[\s\S]{0,80}never `issue:`/.test(receipt),
+    "the unobtainable cap is gone — an unverified claim can be filed as a blocking issue");
+  s.check("G38c a contradicted candidate is logged with its reason, not silently dropped",
+    /contradicted[\s\S]{0,600}(log|logged|record)/i.test(verifier),
+    "an unlogged contradiction is a lesson the loop never learns");
+
+  // (d) Suppression AFTER verification, and the two never-suppressible classes. Reverting the
+  // step order drops the fourth instance of a pattern — the one that is actually a bug — on the
+  // strength of the first three being won't-fixed.
+  s.check("G38d the agent body applies memory suppression at 2.7b, after the verifier",
+    /### 2\.7b Memory suppression \(after verification\)/.test(prm));
+  s.check("G38d 2.7b comes after 2.6b in the body, not before it",
+    prm.indexOf("### 2.7b Memory suppression") > prm.indexOf("### 2.6b Verify each candidate"));
+  s.check("G38d no relevance-filtering step survives at 2.2",
+    !/### 2\.2 Relevance-memory filtering/.test(prm),
+    "the pre-verification suppression step is back");
+  const rubric = readFileSync(join(REPO_ROOT, "agents/shared/rules/rubric-composition.md"), "utf8");
+  for (const surface of [["the agent body", prm], ["rubric-composition.md", rubric],
+    ["memory.md", ruleOf("agents/pr-reviewer/rules/memory.md") || ""]]) {
+    s.check(`G38d ${surface[0]} names standards and (blocking) as never-suppressible`,
+      /standards/i.test(surface[1]) && /\(blocking\)/.test(surface[1]) && /suppress/i.test(surface[1]));
+  }
+
+  // (e) Memory must be keyed structurally and filtered by author, or it cannot do the one thing
+  // it was redesigned for: carry what one author's PR taught the reviewer onto the next author's.
+  const memory = ruleOf("agents/pr-reviewer/rules/memory.md") || "";
+  s.check("G38e memory.md keys records structurally, not by branch or PR",
+    /finder:defect-class:symbol@path|fp_v/.test(memory));
+  s.check("G38e memory.md requires a source.agent filter on every read",
+    /source\.agent|source\.\{?login/.test(memory) && /filter/i.test(memory));
+  s.check("G38e the agent body states the author filter is not optional",
+    /source\.agent/.test(prm) && /not optional/.test(prm));
+  s.check("G38e memory.md requires a knowledge fact to be re-verified or dropped",
+    /re-verif/i.test(memory) && /drop/i.test(memory));
+
+  // (f) Telemetry's three invariants. Any of the three lost turns an exposure signal into a
+  // correctness verdict about code that has, by construction, no telemetry yet.
+  const tele = ruleOf("agents/pr-reviewer/rules/telemetry.md") || "";
+  s.check("G38f telemetry.md states it raises priority and never lowers it",
+    /raise/i.test(tele) && /never lower/i.test(tele));
+  s.check("G38f telemetry.md states it never blocks", /never block/i.test(tele));
+  s.check("G38f telemetry.md carries aggregates and signatures only",
+    /aggregate/i.test(tele) && /signature/i.test(tele));
+  // FAIL_REASONS is what flips the verdict. Telemetry contributing a phrase to it would make an
+  // exposure figure blocking, which is exactly what invariant 2 forbids.
+  s.check("G38f no telemetry term reaches FAIL_REASONS in the agent body",
+    !/FAIL_REASONS[^\n]{0,200}(telemetry|traffic_band|span)/i.test(prm)
+    && !/(telemetry|traffic_band)[^\n]{0,200}FAIL_REASONS/i.test(prm));
+
+  // (g) The tier vocabulary is one vocabulary. Three surfaces name the tiers and a fourth
+  // validates them; a rename applied to some of them is how a report claims a tier the router
+  // cannot produce.
+  const depth = ruleOf("agents/pr-reviewer/rules/depth-routing.md") || "";
+  const renderer = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"), "utf8");
+  for (const tier of ["deep", "standard", "quick"]) {
+    s.check(`G38g the tier "${tier}" is named by depth-routing.md, the body, and the renderer`,
+      depth.includes(tier) && prm.includes(tier) && renderer.includes(tier));
+  }
+  for (const cap of ["checkout", "tarball", "diff-only"]) {
+    s.check(`G38g the capability "${cap}" is named by workspace.md, the body, and the renderer`,
+      (ruleOf("agents/pr-reviewer/rules/workspace.md") || "").includes(cap)
+      && prm.includes(cap) && renderer.includes(cap));
+  }
+  s.check("G38g depth-routing.md caps a diff-only run below deep",
+    /diff-only[\s\S]{0,300}cap/i.test(depth));
+  s.check("G38g the renderer rejects tier deep with depth diff-only",
+    /diff-only[\s\S]{0,300}deep|deep[\s\S]{0,300}diff-only/.test(renderer));
+
+  // (h) The two pre-table routing rules in depth-routing.md. Both exist because "first match wins"
+  // over the raw table produced a wrong answer that the file's own worked example contradicted:
+  // a 412-line generated refresh routed `deep` on line count while reaching nothing, and a
+  // review-answering push was claimed by the standard row's size band.
+  s.check("G38h depth-routing.md excludes docs/test-only/generated deltas from the size triggers",
+    /docs-only[\s\S]{0,200}test-only[\s\S]{0,400}size\s+trigger/i.test(depth));
+  s.check("G38h the size exclusion still routes on every other row",
+    /excused\s+from size, not from review/.test(depth));
+  // Both conjuncts matter: `indexOf` on an absent string returns -1, which is less than any real
+  // index, so a check that only compared positions would PASS on an override that had been
+  // deleted outright — the very regression it exists to catch.
+  const overrideAt = depth.indexOf("The `quick` override");
+  const tableAt = depth.indexOf("| **deep**");
+  s.check("G38h the quick override is stated, and before the table rather than as a row",
+    overrideAt >= 0 && tableAt >= 0 && overrideAt < tableAt,
+    overrideAt < 0 ? "the quick override is gone"
+      : "the override sits inside or below the table, where first-match-wins lets the standard row outrank it");
+  s.check("G38h the semver standard trigger is qualified by usage sites",
+    /semver_delta`?\s*\*\*with ≥ 1 usage site\*\*/.test(depth),
+    "an unused bump routes to standard again, so every automated bump PR buys a finder pass");
+}
+
+// ── G39: the bug-detection eval is executable and its golden set is well-formed ──
+//
+// A golden set is the only thing that says whether the detection core actually detects. Executing
+// the runner's own self-test here means a malformed record — a control carrying a defect, a defect
+// anchored in a file the finder is never shown — is caught in CI rather than by a strange L2 score
+// nobody can explain. This runs offline; the LLM half needs a key and stays out of L1.
+{
+  const RUNNER = join(REPO_ROOT, "scripts/eval/l2-detection.mjs");
+  const GOLDEN = join(REPO_ROOT, "scripts/eval/golden/bug-detection.jsonl");
+  s.check("G39a the detection runner and its golden set exist",
+    existsSync(RUNNER) && existsSync(GOLDEN));
+  if (existsSync(RUNNER) && existsSync(GOLDEN)) {
+    const r = spawnSync("node", [RUNNER, "--self-test"], { encoding: "utf8" });
+    s.check("G39b the detection runner's self-test passes", r.status === 0,
+      ((r.stdout || "") + (r.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 300));
+
+    // The runner exits 0 without a key. That is correct behaviour, and it is also how a broken
+    // runner hides: assert the skip is a SKIP and not a silent pass of the real thing.
+    const noKey = spawnSync("node", [RUNNER], { encoding: "utf8", env: { ...process.env, ANTHROPIC_API_KEY: "" } });
+    s.check("G39c the detection runner skips cleanly with no API key",
+      noKey.status === 0 && /no ANTHROPIC_API_KEY/.test(noKey.stdout || ""));
+  }
+}
+
 process.exit(s.report() ? 0 : 1);

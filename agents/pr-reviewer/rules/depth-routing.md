@@ -43,16 +43,38 @@ Nothing here is new machinery except the middle row. `THREAD_OVERLAP` reuses a p
 
 ## The three tiers
 
-**First match wins, top to bottom.**
+**First match wins, top to bottom** — with two rules that run *before* the table, because
+"first match wins" would otherwise let a lower row's broad condition outrank them.
+
+**The `quick` override.** When `THREAD_OVERLAP ≥ 0.8` **and** `blast_radius.band == none`, the tier
+is `quick`, whatever the table would say.
+A push whose hunks sit almost entirely on top of existing review threads and which reaches nothing
+is a developer answering the review; the `standard` row's `11 ≤ DELTA_LINES ≤ 100` band would
+otherwise claim it and buy a full lens pass to re-read the reviewer's own asks.
+
+**One exclusion runs before the table.** A delta whose shapes are exclusively `docs-only`,
+`test-only`, or generated, **and** whose `blast_radius.band == none`, does not consider the size
+triggers at all — neither `DELTA_LINES > 100` / `NEW_FILES > 0` in the `deep` row nor the
+`11 ≤ DELTA_LINES ≤ 100` band in the `standard` row.
+Size there is measuring text nobody executes, and without the exclusion a 400-line generated-client
+refresh routes `deep` on line count while reaching nothing — the exact wrong-proxy failure this
+phase exists to fix, arriving through the phase's own table.
+Such a delta still routes on **every other** row: a test file that imports a changed export still
+has a blast radius, and a docs edit to a governing document is still `PROPAGATION`. It is excused
+from size, not from review.
 
 | Tier | Chosen when | Runs |
 | --- | --- | --- |
 | **deep** | first run · `--full` · `--effort high` · a refresh counter fired · `HIGH_STAKES_FILES` non-empty · `PROPAGATION` · `blast_radius.band ∈ {medium, high}` · any `semver_delta == major` · any changed symbol with `traffic_band: high` **and** `change ∈ {signature, removed}` · `DELTA_LINES > 100` · `NEW_FILES > 0` | every finder over the **whole PR**; consumer-impact over **every** changed export with ≥ 1 consumer; dependency finder over every delta; verifier Tier 2 where available; optimality lens (report-only) |
-| **standard** | `DELTA_RISKY_SHAPES` non-empty · `blast_radius.band == low` · any `semver_delta` · an `overlaps[].kind == same-symbol` · `11 ≤ DELTA_LINES ≤ 100` | correctness + quality on the delta **with enclosing-function context**; consumer-impact over changed exports in the delta; dependency finder over this push's deltas; intent over the PR; standards on delta files; verifier Tier 1–2 |
-| **quick** | otherwise — and **always** when `THREAD_OVERLAP ≥ 0.8` and `blast_radius.band == none` | correctness on delta hunks with enclosing-function context; thread reconciliation; gates; nothing else |
+| **standard** | `DELTA_RISKY_SHAPES` non-empty · `blast_radius.band == low` · any `semver_delta` **with ≥ 1 usage site** · an `overlaps[].kind == same-symbol` · `11 ≤ DELTA_LINES ≤ 100` | correctness + quality on the delta **with enclosing-function context**; consumer-impact over changed exports in the delta; dependency finder over this push's deltas; intent over the PR; standards on delta files; verifier Tier 1–2 |
+| **quick** | otherwise (the `quick` override above reaches here directly) | correctness on delta hunks with enclosing-function context; thread reconciliation; gates; nothing else |
 
-The `quick` override is the case worth naming: a push whose hunks sit almost entirely on top of existing review threads and which reaches nothing is a developer answering the review.
-Re-running every lens over it produces no new information and costs a full review's budget. It gets one finder.
+Re-running every lens over a review-answering push produces no new information and costs a full review's budget. It gets one finder.
+
+The `semver_delta` row is qualified by usage because an unused bump has nothing to check: a
+lockfile-only patch of a package this repo imports nowhere is a dependency delta with an empty
+intersection, and routing it to `standard` makes every automated bump PR pay for a finder pass that
+can only conclude `breaking-but-unused`. A bump with usage sites is the opposite case and stays in.
 
 The inverse case is the one that justifies the whole phase:
 
@@ -61,7 +83,7 @@ DELTA_LINES = 12 · blast_radius.band = high (retryRequest: 14 consumer files, 3
 → deep
 
 DELTA_LINES = 340 · shapes = [docs-only] · band = none
-→ quick
+→ quick        (the size exclusion above applies, and 340 is outside standard's 11–100 band)
 ```
 
 ## Announce the decision with its inputs
