@@ -3825,13 +3825,17 @@ const isPollBlock = (block) =>
   // applying a hotspot on a repo with no armed relevance rule therefore rendered nothing at
   // all — and that is the normal shape for a bucket in its first weeks.
   const RENDERING_MD = read("agents/pr-reviewer/rules/report-rendering.md");
-  for (const [file, text] of [
-    ["pr-reviewer.md", BODY],
-    ["report-rendering.md", RENDERING_MD],
+  // Each file states the widened population in its own words, so each is pinned to its own
+  // sentence rather than to proximity: a `MEMORIES_READ_COUNT … hotspot` window check passes
+  // on the unrelated `kind` ∈ `rule`/`knowledge`/`hotspot` mention a few lines away, which is
+  // how a probe that narrowed the definition back to relevance-only stayed green.
+  for (const [file, text, claim] of [
+    ["pr-reviewer.md", BODY, /plus the knowledge and hotspot records the\s+Step 1\.2a read returns/],
+    ["report-rendering.md", RENDERING_MD,
+      /relevance rules\s*\n?\(Step 1\.0\) \*\*plus\*\* knowledge and hotspot records \(Step 1\.2a\)/],
   ]) {
     s.check(`G45c ${file}: MEMORIES_READ_COUNT counts knowledge and hotspot too`,
-      /MEMORIES_READ_COUNT[\s\S]{0,700}?hotspot/.test(text)
-      || /hotspot[\s\S]{0,700}?MEMORIES_READ_COUNT/.test(text));
+      claim.test(text));
     s.check(`G45c ${file}: no relevance-only claim survives beside the widened pair`,
       !/MEMORIES_READ_COUNT[^\n]*counts `reviewer-comment-relevance` memories only/.test(text)
       && !/is how many relevance memories were loaded/.test(text));
