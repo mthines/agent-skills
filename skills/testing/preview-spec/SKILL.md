@@ -15,7 +15,7 @@ description: >
   authoring loop. Triggers on "write a preview spec", "add a UI verification
   spec", "verify this PR's preview", "run the preview spec", "test the
   preview deployment", "/preview-spec".
-disable-model-invocation: true
+disable-model-invocation: false
 argument-hint: '[author|run] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright]'
 license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Read Edit Write Grep Glob Skill Task AskUserQuestion mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
