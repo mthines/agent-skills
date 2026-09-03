@@ -666,6 +666,10 @@ step and Step 1.2c issue, and three of its rules are easy to violate by accident
 1. **Filter by `source.agent` on every read.** A record this agent wrote is memory; a record
    another tool wrote about the same repository is not, and merging the two silently imports
    another product's calibration. The filter is not optional and not a performance hint.
+   It has exactly one carve-out, and it is a **field**, not a judgement call: a rule carrying
+   `source.explicit: true` is a maintainer's `/pr-review remember` instruction and is usable, so the
+   predicate is `source.agent == "pr-reviewer" ∨ source.explicit == true`. Implementing the filter
+   without that disjunct drops every rule a maintainer ever wrote.
 2. **Records are keyed structurally** — `finder:defect-class:symbol@path`, `fp_v 2` — never by
    branch, author, or PR number. That is what makes what one author's PR taught the reviewer
    available on the next author's PR touching the same symbol, which is the whole point of the
@@ -1042,9 +1046,12 @@ node "$IMPACT" /tmp/pr-files.json \
 Bind from it: `IMPACT_SYMBOLS` (changed exports, each with its consumer files and whether the
 change was `signature` / `body` / `removed`), `IMPACT_DEPS` (dependency deltas with resolved
 from/to versions and this repo's usage sites), `IMPACT_OVERLAPS` (the same symbol changed on
-another open PR), and `BLAST_RADIUS` (`none` · `low` · `medium` · `high`).
+another open PR), `BLAST_RADIUS` (`none` · `low` · `medium` · `high`), and `TRAFFIC_BAND` per
+changed symbol from `symbols[].production.traffic_band` (`high` · `medium` · `low` · `unknown` —
+`unknown` is what the graph emits when no telemetry is configured or the symbol has no matching
+service, so it is the value to expect on most repositories, not a missing-data error).
 
-`BLAST_RADIUS` is a Phase C routing input, and the graph's per-symbol consumer lists are what the
+`BLAST_RADIUS` and `TRAFFIC_BAND` are Phase C routing inputs, and the graph's per-symbol consumer lists are what the
 consumer-impact finder walks (Step 2) — without them that finder has nothing to iterate and
 degrades to guessing which callers exist.
 
@@ -1255,22 +1262,24 @@ apply it. Its inputs are all already bound:
 | `BLAST_RADIUS`, `IMPACT_DEPS[].semver_delta` | Step 1.2a |
 | `DEPTH_CAPABILITY` | Step 1.1b |
 | `INCR_RUNS_SINCE_FULL`, `CUM_DELTA_LINES`, `LAST_FULL_SHA` | Step 0.7 / this step |
-| `TRAFFIC_BAND` per changed symbol | Step 1.2a (`impact.json.production`; `none` when no telemetry is configured) |
+| `TRAFFIC_BAND` per changed symbol | Step 1.2a (`symbols[].production.traffic_band`; `unknown` when no telemetry is configured — `none` is `BLAST_RADIUS`'s sentinel, not this one's) |
 | `THREAD_OVERLAP` | **this step — compute it here, see below** |
 
 `THREAD_OVERLAP` is the one input nothing else in the run produces, so bind it before reading the
 table. It is the fraction of this delta's hunks that sit on top of existing review conversation:
 
 ```text
-THREAD_OVERLAP = |{ hunk ∈ DELTA_HUNKS : ∃ t ∈ THREADS,
-                     t.path == hunk.path ∧ |t.line − hunk.anchor| ≤ 5 }| / |DELTA_HUNKS|
+THREAD_OVERLAP = |{ hunk ∈ DELTA_HUNKS : ∃ t ∈ THREADS, matches(t, hunk) }| / |DELTA_HUNKS|
 
-THREADS      = open review threads + those resolved since LAST_REVIEWED_SHA (Step 1.0), any author
+matches(t, hunk) = t.path == hunk.path
+                   ∧ (t.anchor == null ∨ |t.anchor − hunk.anchor| ≤ 5)
+t.anchor     = t.line ?? t.original_line          (null on a file-level thread)
+THREADS      = open review threads + those resolved since `PRIOR_SHA` (Step 1.0), any author
 DELTA_HUNKS  = the RIGHT-side hunks of this run's delta (Step 1.2)
 THREAD_OVERLAP = 0 when |DELTA_HUNKS| == 0 or THREADS is empty
 ```
 
-Two properties this must keep, because getting either wrong silently disables the `quick` override:
+Three properties this must keep, because getting any wrong silently disables the `quick` override:
 
 1. **Compute it here, not at Step 2.9c.** That step's predicate is a per-thread boolean over
    `SCANNED_FILES` and it runs eight steps *after* the tier is bound, so reusing it directly would
@@ -1279,6 +1288,13 @@ Two properties this must keep, because getting either wrong silently disables th
 2. **Threads from any author count.** A push answering `cursor[bot]`'s review is as much a
    review-answering push as one answering this agent's, and filtering to this agent's own threads
    would make the override fire on some review-answering pushes and not others.
+3. **Read `line ?? original_line`, never `line` alone.** GitHub nulls `line` on an **outdated**
+   thread — one whose diff hunk the head no longer contains — and a push that answers a review is
+   precisely what outdates the threads it answers. Reading `line` alone therefore drives
+   `THREAD_OVERLAP` toward 0 on exactly the population the override exists for, and the override
+   silently never fires. `original_line` carries the anchor in that case; a file-level thread has
+   neither and matches on `path` alone, which keeps the estimate from under-counting in the same
+   direction. `record-comment-relevance.mjs` already reads the pair this way for the same reason.
 
 Two caps are mechanical and are applied **after** the table, in this order:
 

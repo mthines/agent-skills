@@ -3030,6 +3030,21 @@ const isPollBlock = (block) =>
     /source\.agent/.test(prm) && /not optional/.test(prm));
   s.check("G38e memory.md requires a knowledge fact to be re-verified or dropped",
     /re-verif/i.test(memory) && /drop/i.test(memory));
+  // The filter's one carve-out has to be a FIELD the read path can key on. `/pr-review remember`
+  // writes `type: human, agent: other` — byte-identical to the incidental human comment the filter
+  // rejects — so without `explicit` on both sides, a literal implementation of the filter drops
+  // every rule a maintainer ever wrote, silently.
+  const rememberSkill = readFileSync(join(REPO_ROOT, "skills/quality/pr-review/SKILL.md"), "utf8");
+  for (const [name, src] of [["memory.md", memory], ["the agent body", prm],
+    ["pr-review/SKILL.md", rememberSkill]]) {
+    s.check(`G38e ${name} carves out the remember rule with source.explicit, not prose`,
+      /source\.explicit|explicit: true/.test(src),
+      "the /pr-review remember carve-out names no field the read path can key on");
+  }
+  s.check("G38e the filter predicate names both usable cases",
+    /source\.agent == "pr-reviewer"\s*(?:∨|\|\|)\s*source\.explicit == true/.test(memory)
+    && /source\.agent == "pr-reviewer"\s*(?:∨|\|\|)\s*source\.explicit == true/.test(prm),
+    "memory.md and the agent body must state the same two-case predicate");
 
   // (f) Telemetry's three invariants. Any of the three lost turns an exposure signal into a
   // correctness verdict about code that has, by construction, no telemetry yet.
@@ -3133,11 +3148,27 @@ const isPollBlock = (block) =>
   // (`blast_radius.band`) while the body names the bound variable (`BLAST_RADIUS`). Those are the
   // same concept in two conventions, and requiring one literal spelling across both files would
   // fail on a naming difference rather than on a missing binding.
+  // The body's OWN input table is excluded from the search, and that exclusion is the whole
+  // check. Its rows are claims *about* the bindings, not the bindings — `TRAFFIC_BAND` occurred
+  // exactly once in the body, in the row asserting Step 1.2a bound it, and nothing did. A
+  // presence test over the whole file reads that row as its own evidence.
+  const inputTable = sliceBetween(body, "| Input | Bound at |", "`THREAD_OVERLAP` is the one input");
+  const bodyOutsideTable = body.replace(inputTable, "");
   for (const input of ["THREAD_OVERLAP", "DEPTH_CAPABILITY", "BLAST_RADIUS", "TRAFFIC_BAND"]) {
     const needle = input.toLowerCase();
-    s.check(`G40a ${input} is bound in the agent body, not only named in the rule`,
-      depth.toLowerCase().includes(needle) && body.toLowerCase().includes(needle),
-      `${input} appears in depth-routing.md but nothing in pr-reviewer.md binds it — the row that reads it can never fire`);
+    s.check(`G40a ${input} is named in depth-routing.md`, depth.toLowerCase().includes(needle));
+    s.check(`G40a ${input} is bound outside the body's own input table`,
+      bodyOutsideTable.toLowerCase().includes(needle),
+      `${input} appears in depth-routing.md and in the "Bound at" table, but nowhere that binds it`
+      + " — a row claiming a binding is not one, and the row that reads it can never fire");
+  }
+  // The two graph-sourced inputs must be fields the producing script actually emits, or the
+  // binding sentence names a value that never arrives.
+  const graph = read("agents/pr-reviewer/scripts/build-impact-graph.mjs");
+  for (const field of ["traffic_band", "blast_radius"]) {
+    s.check(`G40a build-impact-graph.mjs emits ${field}, which the routing table reads`,
+      new RegExp(`${field}:`).test(graph),
+      `depth-routing.md routes on impact.json's ${field} but the script does not emit it`);
   }
   s.check("G40a THREAD_OVERLAP's binding states it is computed at tier-binding time, not read from Step 2.9c",
     /THREAD_OVERLAP\s*=/.test(body) && /2\.9c/.test(body.slice(body.indexOf("THREAD_OVERLAP ="))),

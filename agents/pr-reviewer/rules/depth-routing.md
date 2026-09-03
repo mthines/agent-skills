@@ -40,7 +40,10 @@ This phase routes on **what the change reaches**, not how much of it there is.
 | `traffic_band` | `impact.json.production` ([`telemetry.md`](./telemetry.md)) | whether the touched code is actually exercised |
 
 `THREAD_OVERLAP` is the only input this phase introduced, and it is the one to check when the
-`quick` override never seems to fire.
+`quick` override never seems to fire. Two things silently zero it, and the agent body's binding step
+states both: reading a thread's `line` without falling back to `original_line` (GitHub nulls `line`
+on an **outdated** thread, and a review-answering push is what outdates threads), and not binding it
+at all.
 It applies the **same ±5-line proximity test** Step 2.9c uses for thread reconciliation, but it is
 not the same variable and cannot be read from that step: 2.9c's predicate is a per-thread boolean
 over `SCANNED_FILES` and it runs eight steps *after* the tier is bound.

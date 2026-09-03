@@ -206,13 +206,22 @@ mcp__lorekit__memory_write
   key:    rule::<fp>
   scope:  repo::{owner}/{repo}
   ttl:    60d
-  body:   { direction, status: "active", source: { type: "human", agent: "other" },
+  body:   { direction, status: "active",
+            source: { type: "human", agent: "other", explicit: true },
             reason: "<the fact, verbatim>", scope_globs: [<glob>] }
 ```
 
 `status: active` immediately, with no corroboration threshold: a maintainer saying "don't flag this"
 **is** the evidence, and requiring three PRs' worth of it would be requiring them to say it three
 times.
+
+**`explicit: true` is required.** The agent filters every relevance-rule read on
+`source.agent == "pr-reviewer" ∨ source.explicit == true`
+([`memory.md`](../../../agents/pr-reviewer/rules/memory.md#every-read-filters-on-sourceagent)), and
+without the flag this record is byte-identical to the incidental human comment that filter exists to
+reject. Omitting it writes a rule the reviewer will never read — the same
+looks-like-success-stores-nothing failure as inventing a prose key, arriving through the body
+instead of the key.
 
 ### Two rules `remember` cannot write
 

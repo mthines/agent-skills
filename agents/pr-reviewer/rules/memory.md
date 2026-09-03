@@ -122,6 +122,7 @@ Then match:
 ```jsonc
 // Keep
 { "source": { "login": "…", "type": "bot", "agent": "pr-reviewer" } }
+{ "source": { "login": "a-maintainer", "type": "human", "agent": "other", "explicit": true } }
 
 // Read for hotspot counters, but NEVER as a relevance rule
 { "source": { "login": "some-other-bot", "type": "bot", "agent": "other" } }
@@ -132,7 +133,21 @@ Another bot's declined finding says nothing about which of **this** agent's find
 A human's own review comment is not a verdict on this agent's output either.
 Both are still valuable as hotspot signal — someone found something here — so they are stored and counted; they simply never train this agent's suppressor.
 
-The one exception is [`/pr-review remember`](#pr-review-remember--an-explicit-instruction-needs-no-corroboration), where a human is deliberately writing a rule rather than incidentally leaving a comment.
+The predicate, stated once so the read path has something to implement:
+
+```text
+usable as a relevance rule  ⇔  source.agent == "pr-reviewer"  ∨  source.explicit == true
+```
+
+`source.explicit: true` is the **only** carve-out, and it means one thing: a maintainer wrote this
+rule by [`/pr-review remember`](#pr-review-remember--an-explicit-instruction-needs-no-corroboration)
+— an instruction — rather than leaving a review comment this agent inferred a preference from.
+The flag is what makes the two distinguishable at read time.
+Without it the two records are byte-identical (`type: human`, `agent: other`), the filter drops
+both, and every `remember` rule a maintainer writes is stored where nothing will ever read it —
+a silent no-op that looks like a successful write.
+Absent or `false` ⇒ not usable; a `remember` write that omits it has failed, whatever the tool
+returned.
 
 ## A knowledge fact is re-verified or dropped, never trusted
 
@@ -217,7 +232,11 @@ The same rule, applied to the webhook write path, is [`comment-relevance-memory.
 
 ## `/pr-review remember` — an explicit instruction needs no corroboration
 
-A maintainer commenting `/pr-review remember <fact>` on a PR writes a `repo::` rule immediately, `status: active`, `source.type: human`.
+A maintainer commenting `/pr-review remember <fact>` on a PR writes a `repo::` rule immediately, `status: active`, `source: { type: "human", agent: "other", explicit: true }`.
+
+`explicit: true` is **required**, not decorative: it is the discriminator the
+[`source.agent` filter](#every-read-filters-on-sourceagent) keys the carve-out on, and a rule
+written without it is dropped on every subsequent read.
 
 | Wording | `direction` | `scope_globs[]` |
 | --- | --- | --- |
