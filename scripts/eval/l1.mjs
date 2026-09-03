@@ -3078,6 +3078,24 @@ const isPollBlock = (block) =>
     /diff-only[\s\S]{0,300}cap/i.test(depth));
   s.check("G38g the renderer rejects tier deep with depth diff-only",
     /diff-only[\s\S]{0,300}deep|deep[\s\S]{0,300}diff-only/.test(renderer));
+  // Rung 0 reaches `checkout` through a worktree the USER owns, which makes the cleanup line the
+  // one place in this pipeline that can destroy data: an unconditional `rm -rf "$WORKDIR"` deletes
+  // their uncommitted work and leaves a stale entry in the parent repo's `.git/worktrees`. Guard
+  // both halves — the flag has to exist, and the trap has to read it.
+  const ws = ruleOf("agents/pr-reviewer/rules/workspace.md") || "";
+  s.check("G38g workspace.md passes --no-hooks on every gw invocation",
+    /gw checkout/.test(ws) && !/gw checkout(?!.*--no-hooks)[^\n]*<(?:PR_NUMBER|PR_URL|PR)>/.test(ws),
+    "a gw checkout without --no-hooks would install dependencies as a side effect of rung 0");
+  s.check("G38g workspace.md binds WORKDIR_OWNED to distinguish the two checkout rungs",
+    /WORKDIR_OWNED/.test(ws) && /WORKDIR_OWNED=false/.test(ws) && /WORKDIR_OWNED=true/.test(ws));
+  s.check("G38g the cleanup trap is conditional on WORKDIR_OWNED",
+    /trap\s+'\[\s*"\$WORKDIR_OWNED"\s*=\s*true\s*\][^\n]*rm -rf/.test(ws),
+    "an unconditional rm -rf in the trap deletes a rung-0 worktree the user owns");
+  s.check("G38g workspace.md forbids removing a rung-0 worktree at all",
+    /never\*{0,2}\s+removed by this agent|not even with `gw remove`/i.test(ws));
+  s.check("G38g the agent body names the rung-0 ownership hazard, not just the command",
+    /WORKDIR_OWNED/.test(prm) && /--no-hooks/.test(prm) && /\.git\/worktrees/.test(prm),
+    "Step 1.1b must carry the ownership rule, since that is where the variable is bound");
 
   // (h) The two pre-table routing rules in depth-routing.md. Both exist because "first match wins"
   // over the raw table produced a wrong answer that the file's own worked example contradicted:

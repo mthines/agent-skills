@@ -927,7 +927,7 @@ capability ladder once, here, and bind `DEPTH_CAPABILITY` to the rung that succe
 
 | `DEPTH_CAPABILITY` | How | What it unlocks |
 |---|---|---|
-| `checkout` | `git clone --depth 50` of the head ref | Everything — consumer tracing, `tsc`/`go vet`/`cargo check` receipts, running a covering test. |
+| `checkout` | **rung 0** — `gw checkout --no-hooks <PR>` when `gw` is installed and the current directory is a clone of the PR's repo, else **rung 1** — `git clone --depth 50` of the head ref | Everything — consumer tracing, `tsc`/`go vet`/`cargo check` receipts, running a covering test. Rung 0 additionally has full history rather than 50 commits. |
 | `tarball` | `gh api .../tarball/<head>` | The whole tree at the head, so consumer tracing and grep-based rungs work. No git history, so cross-commit questions are `unobtainable`. |
 | `diff-only` | Nothing materialized — the diff and the API are all there is | Tier 1 grep against the patch text. **Caps the tier at `standard`** and makes the consumer, type, and test rungs `unobtainable` by construction. |
 
@@ -935,6 +935,13 @@ Bind `TIER2_CHECKER` from the toolchain the workspace actually has (`tsc`, `go v
 `cargo check`, `pyright`, or none), and `WORKSPACE_INSTALL` from the review config's
 `workspace.install` — **forced to `false` for a fork head in `cross` relation**, because
 `npm install` runs code from the diff.
+
+Also bind `WORKDIR_OWNED`, and read the rule before writing the cleanup: a rung-0 worktree
+belongs to the user, so `rm -rf` on it destroys their uncommitted work and leaves a stale entry
+in the parent repo's `.git/worktrees`. `gw checkout` is always `--no-hooks` — a review reads code
+rather than building it, and a hook that runs `pnpm install` would both contradict
+`workspace.install: false` and execute a fork's install scripts through a path this pipeline
+never chose.
 
 Every downstream verification rung reads these three. A rung whose capability is absent returns
 `unobtainable` with the reason named, never `null` — the distinction is
