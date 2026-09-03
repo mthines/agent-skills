@@ -19,6 +19,18 @@ Phase B answers three questions mechanically, before any model looks at the code
 
 It answers them with a script, not a model, because these are lookups and a model asked to do lookups invents plausible ones.
 
+The stronger reason it is a script is that the alternative was measured and found wanting.
+Graph-based consumer discovery is the design Greptile builds on
+([graph context](https://www.greptile.com/docs/how-greptile-works/graph-based-codebase-context)) and
+the gap Macroscope names as the one agentic search leaves — "changing a function in one file silently
+breaks a caller in another that the PR never touched"
+([comparison](https://macroscope.com/content/cursor-bugbot-vs-macroscope-ai-code-review)) — while an
+embedding search "returns the code most similar to your query, which is a different set from the
+[callers] that declare a dependency on what you are changing"
+([riftmap](https://riftmap.dev/blog/claude-code-cursor-cross-repo-context/)).
+A best-effort search cannot be an input to depth routing; a resolved graph can, which is why
+`blast_radius.band` is one. See [`references/detection-research.md`](../references/detection-research.md).
+
 ## Contents
 
 - [Run it](#run-it)

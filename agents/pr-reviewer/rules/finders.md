@@ -14,6 +14,16 @@ That is the wrong shape. A careful generator does the filters' job badly and in 
 
 Phase D inverts it. **Finders flag. The verifier filters.**
 
+That inversion is not this repo's idea, and it is worth knowing where it comes from before softening
+it: Cursor reports that their agentic Bugbot rebuild *under*-flagged until the prompts told it to
+"investigate every suspicious pattern and err on the side of flagging", with precision recovered by
+the pipeline around the generator rather than by a cautious generator
+([Building Bugbot](https://cursor.com/blog/building-bugbot)), and Claude Code Review runs parallel
+per-class finders followed by "a verification step [that] checks candidates against actual code
+behavior" ([docs](https://code.claude.com/docs/en/code-review)).
+Fuller citations, including what this design rejected, are in
+[`references/detection-research.md`](../references/detection-research.md).
+
 ## Contents
 
 - [The polarity rule](#the-polarity-rule)

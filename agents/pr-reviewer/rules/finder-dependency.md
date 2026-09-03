@@ -14,6 +14,15 @@ The diff says `14.2.0 → 16.0.1`. What broke is in the upstream's changelog, an
 
 This finder resolves all three: the **version that actually shipped**, the **documented breaks between them**, and the **places this repo calls the affected APIs**.
 
+There was nothing to copy here, which is worth saying plainly so the next reader does not go looking.
+A survey of the review bots found no documentation from any of them on reasoning about library
+versions, upgrade breaks, or lockfile diffs: Cursor routes library migrations to its coding agent
+rather than to its reviewer ([code modernization](https://cursor.com/for/code-modernization)), and its
+dependency scanning is a separate scheduled vulnerability product.
+So the three rules below — lockfile over manifest, the whole range rather than the endpoint, and the
+finding anchored at the call site rather than at the lockfile — are derived from the failure modes,
+not borrowed. See [`references/detection-research.md`](../references/detection-research.md).
+
 ## Contents
 
 - [Resolve the version from the lockfile](#resolve-the-version-from-the-lockfile)

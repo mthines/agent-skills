@@ -16,6 +16,14 @@ That framing is what makes the keys structural.
 A memory keyed by branch dies with the branch. A memory keyed by comment prose re-keys on every re-phrasing and accumulates nothing.
 A memory keyed by `symbol@path` survives both, and is available to the next author who touches that symbol.
 
+The lifecycle below — candidate accumulates signal, promotes to active, auto-disables on consistent
+negative signal, with an explicit `remember` for direct teaching — follows Cursor's learned rules
+([Bugbot learning](https://cursor.com/blog/bugbot-learning)), and the addressed-between-commits
+outcome signal follows Greptile
+([memory and learning](https://www.greptile.com/docs/how-greptile-works/memory-and-learning)).
+The structural key is the deliberate departure: both of those are per-repository and prose-keyed, so
+a re-phrased finding starts over. See [`references/detection-research.md`](../references/detection-research.md).
+
 ## Contents
 
 - [The four records](#the-four-records)

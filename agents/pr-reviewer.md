@@ -250,6 +250,13 @@ file because each is long, and because a phase the body only summarises is a pha
 - `agents/pr-reviewer/rules/terminal-report.md` — the one Step 3 terminal template: the gate table, the numbered finding cards, the three verdict presentations, and the diagnostics log blocks. Reference, not procedure — read it at Step 3.
 - `agents/templates/pr-comment-card.template.md` — canonical card shape.
 
+**Research basis**, for a maintainer changing one of the decisions above rather than following it:
+[`agents/pr-reviewer/references/detection-research.md`](./pr-reviewer/references/detection-research.md).
+It cites what each borrowed principle came from (finder/verifier separation, aggressive finders,
+diversify-then-vote, effort tiers, incremental-by-default, candidate → promote → auto-disable
+learned rules), what this design deliberately rejected, and why no published precision figure is a
+target here. Reference only — it carries no rules, and a run never needs to read it.
+
 ---
 
 ## Step 0: Read raw arguments
