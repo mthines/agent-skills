@@ -104,9 +104,9 @@ Two bounded queries per run fill an optional `production` block in `impact.json`
 Feed it in with `--production`:
 
 ```bash
-node agents/pr-reviewer/scripts/build-impact-graph.mjs \
+node "$AGENT_SUPPORT/pr-reviewer/scripts/build-impact-graph.mjs" /tmp/pr-files.json \
   --workdir "$WORKDIR" --production /tmp/production.json \
-  < /tmp/pr-files.json > /tmp/impact.json
+  > /tmp/pr-impact.json
 ```
 
 Symbol-level rows exist only where spans carry `code.function.name`, or where the span name *is* the function.

@@ -60,8 +60,11 @@ if git remote get-url origin 2>/dev/null \
      | grep -qiE "[:/]${RESOLVED_REPO}(\.git)?/?$" \
    && git fetch origin "pull/$PR_NUMBER/head" 2>/dev/null; then
 
+  # `$PR_NUMBER` (bound at Step 0), not a URL: this rung's own precondition just established
+  # that `origin` IS the PR's repo, so the bare number is unambiguous — and it is a binding
+  # that exists, where the URL form named a variable this pipeline never assigned.
   if gw --help >/dev/null 2>&1 \
-     && WORKDIR="$(gw checkout --no-hooks "$PR_URL")" \
+     && WORKDIR="$(gw checkout --no-hooks "$PR_NUMBER")" \
      && [ -z "$(git -C "$WORKDIR" status --porcelain)" ] \
      && [ "$(git -C "$WORKDIR" rev-parse HEAD)" = "$HEAD_SHA" ]; then
     WORKDIR_CLEANUP=none                    # gw owns its lifecycle; never remove it
@@ -130,8 +133,10 @@ Fetch the **`pull/<n>/head` ref**, not `$HEAD_REF`. A fork PR's head branch does
 ### Implementation A — `gw checkout` (preferred)
 
 ```bash
-gw checkout --no-hooks <PR_URL>         # explicit, and the form to prefer in a script
-gw checkout --no-hooks <PR_NUMBER>      # same repo as the current directory
+gw checkout --no-hooks "$PR_NUMBER"     # the ladder's form — rung 0 already proved
+                                        # `origin` is the PR's repo, so a bare number is
+                                        # unambiguous and `PR_NUMBER` is bound at Step 0
+gw checkout --no-hooks <owner/repo#n>   # accepted, but needs a binding this pipeline lacks
 ```
 
 Capture the resulting absolute path from the command output; that is `WORKDIR`.
@@ -201,9 +206,15 @@ Every rung above materializes the **head** tree; what the review is *about* is h
 Bind the base from the PR itself, never from a branch name:
 
 ```bash
-# BASE_SHA comes from the PR's own base.sha (bound at Step 1.1 with HEAD_SHA), not from a
-# local ref. `main` in the local clone is whatever was last fetched — possibly months old,
-# possibly absent — and naming a branch here makes the diff depend on that.
+# BASE_SHA is bound at Step 1.2 from command A's `baseRefOid`, alongside HEAD_SHA — the PR's
+# own base OID, not a local ref. `main` in the local clone is whatever was last fetched —
+# possibly months old, possibly absent — and naming a branch here makes the diff depend on that.
+# The emptiness check is not defensive noise: `merge-base "" "$HEAD_SHA"` exits 128 with
+# `fatal: Not a valid object name`, which `2>/dev/null || true` swallows into an empty
+# MERGE_BASE indistinguishable from a genuinely disjoint history — so an unbound base OID
+# reads as "no shared history" and pins every run to DIFF_SOURCE=api forever.
+[ -n "$BASE_SHA" ] || echo "BASE_SHA unbound — see pr-reviewer.md Step 1.2" >&2
+
 MERGE_BASE=$(git -C "$WORKDIR" merge-base "$BASE_SHA" "$HEAD_SHA" 2>/dev/null || true)
 ```
 
@@ -212,8 +223,9 @@ It means the object store holds no commit reachable from both sides, which is th
 
 | `MERGE_BASE` | What to do |
 | --- | --- |
+| **the base OID itself empty** | Do **not** run `merge-base`, and do not read the empty result as a disjoint history. This is a binding failure upstream, not a property of the object store: go straight to the last row, and name it in `RUN_ANOMALY` as an unbound base rather than as missing history — the two have different fixes and only one of them is the repo's. |
 | non-empty | Compute the delta locally: `git -C "$WORKDIR" diff "$MERGE_BASE" "$HEAD_SHA"`. |
-| empty, and `DEPTH_CAPABILITY == checkout` | One deepening attempt: `git -C "$WORKDIR" fetch --deepen 100 origin "$BASE_SHA" 2>/dev/null` (fall back to `fetch origin "$BASE_SHA"`), then recompute **once**. Still empty ⇒ next row. |
+| empty, and `DEPTH_CAPABILITY == checkout` | One deepening attempt: `git -C "$WORKDIR" fetch --deepen 100 origin "$BASE_SHA" 2>/dev/null` (fall back to `fetch origin "$BASE_SHA"`), then recompute **once**. Still empty ⇒ next row. Fetching *by OID* is deliberate and verified: it brings the base commit in and deepens the head's graft far enough for `merge-base` to resolve, where deepening the head branch alone need not reach the fork point. |
 | empty, after the deepening attempt, or `DEPTH_CAPABILITY != checkout` | Take the delta from the **authoritative per-file patches** — the PR files API (`pull_request_read` with `method: "get_files"`, or `gh pr diff`) — set `DIFF_SOURCE=api`, and emit the `RUN_ANOMALY` line below. |
 
 Two forms must never appear once `MERGE_BASE` is empty, and they are the whole reason this section is a table rather than a sentence:

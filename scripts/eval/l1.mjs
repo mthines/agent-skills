@@ -3439,4 +3439,168 @@ const isPollBlock = (block) =>
     /\| `--no-measurable` \| Skip the measurability review step \(Step 2\.4e\) \|/.test(body));
 }
 
+
+// ── G43: the normative shell in these files is executable ────────────────────
+//
+// The shell in the agent body and its rule files is not illustration — an agent runs it
+// verbatim — so an invocation that cannot parse and a variable that was never bound are
+// both broken rungs, not shorthand. Both halves below are the general form of a defect a
+// live review found, rather than a string match on the specific instance:
+//
+//   G43a  Three documented `build-impact-graph.mjs` invocations fed the input on stdin
+//         where the script takes a positional path (`exit=2`, usage string, zero bytes
+//         written), and one carried a bare value-less `--overlaps`, which silently
+//         swallows the next argument. The contract is derived from the script's own argv
+//         parser, so it tracks the script instead of restating it.
+//   G43b  `BASE_SHA` was read in four places and bound in none: Step 1.1 fetched
+//         `baseRefName` (a branch name) and never `baseRefOid`. It failed quietly at every
+//         reader — `merge-base ""` exits 128 into a `|| true`, and the impact graph's base
+//         reader degrades to `() => null` and still exits 0 — so a `checkout` run reported
+//         full depth while reading no base side at all.
+{
+  const SHELL_MD = [
+    "agents/pr-reviewer.md",
+    ...readdirSync(join(REPO_ROOT, "agents/pr-reviewer/rules"))
+      .filter((f) => f.endsWith(".md"))
+      .map((f) => `agents/pr-reviewer/rules/${f}`),
+  ];
+  const readMd = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const bashBlocks = (text) => [...text.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]);
+
+  // ---- G43a: documented invocations must satisfy the script's own argv parser ----
+
+  // Join `\`-continued lines, then drop `${VAR:+ … }` conditional wrappers, keeping their
+  // contents — the tokens inside are real arguments whenever the variable is set.
+  const commandsIn = (block) =>
+    block
+      .replace(/\\\n\s*/g, " ")
+      .split("\n")
+      .map((l) => l.replace(/\$\{[A-Z_]+:\+(.*?)\}/g, "$1").trim())
+      .filter((l) => /^node\s/.test(l));
+
+  const tokenize = (cmd) => cmd.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+
+  // The parser contract, read out of the script rather than restated here. Two shapes are
+  // in use and both must be understood, or a script parsing the other way reports every
+  // flag as unknown — a guard failing on itself, not a defect in the docs.
+  const flagContract = (src) => {
+    const takesValue = new Set();
+    const boolean = new Set();
+    // Shape 1 — a switch over argv (build-impact-graph.mjs).
+    for (const m of src.matchAll(/a === "(--[a-z-]+)"\)\s*flags\.\w+\s*=\s*([^;\n]+)/g)) {
+      (/argv\[\+\+i\]/.test(m[2]) ? takesValue : boolean).add(m[1]);
+    }
+    // Shape 2 — an indexOf lookup helper (fingerprint.mjs's `flag(args, "name")`), which
+    // returns `args[i + 1]`, so every name it reads takes a value.
+    for (const m of src.matchAll(/\bflag\(args,\s*"([a-z-]+)"\)/g)) takesValue.add(`--${m[1]}`);
+    // Positional switches are boolean by construction.
+    for (const m of src.matchAll(/args\[\d+\] === "(--[a-z-]+)"/g)) boolean.add(m[1]);
+    for (const m of src.matchAll(/cmd === "(--[a-z-]+)"/g)) boolean.add(m[1]);
+    return { takesValue, boolean };
+  };
+
+  let invocations = 0;
+  for (const mdPath of SHELL_MD) {
+    for (const block of bashBlocks(readMd(mdPath))) {
+      for (const cmd of commandsIn(block)) {
+        const all = tokenize(cmd);
+        const scriptTok = all.find((t) => t.replace(/"/g, "").endsWith(".mjs"));
+        if (!scriptTok) continue;
+        const base = scriptTok.replace(/"/g, "").split("/").pop();
+        const scriptPath = join(REPO_ROOT, "agents/pr-reviewer/scripts", base);
+        if (!existsSync(scriptPath)) continue;
+        invocations++;
+        const src = readFileSync(scriptPath, "utf8");
+        const { takesValue, boolean } = flagContract(src);
+        const needsPositional = /usage: \S+ <[a-z-]+\.json>/.test(src);
+        const where = `${mdPath} → ${base}`;
+
+        // The stdin defect. A script taking a positional path writes nothing when fed on
+        // stdin, and an `exit 2` inside a `$(…)` or a pipeline is easy to read past.
+        s.check(`G43a ${where}: input is not fed on stdin`,
+          !needsPositional || !/(^|\s)<\s/.test(cmd));
+
+        const toks = all.slice(all.indexOf(scriptTok) + 1);
+        const positional = [];
+        const unknownFlags = [];
+        const valuelessFlags = [];
+        for (let i = 0; i < toks.length; i++) {
+          const t = toks[i];
+          if (t === ">" || t === ">>" || t === "2>" || t === "|") { i++; continue; }
+          if (t.startsWith(">") || t.startsWith("2>")) continue;
+          if (!t.startsWith("--")) { positional.push(t); continue; }
+          if (takesValue.has(t)) {
+            const next = toks[i + 1];
+            if (!next || next.startsWith("-") || next.startsWith(">")) valuelessFlags.push(t);
+            else i++;
+            continue;
+          }
+          if (!boolean.has(t)) unknownFlags.push(t);
+        }
+
+        // Guard the guard: an empty contract means the extractor did not understand this
+        // script's parser, and every flag would read as unknown.
+        const flagsUsed = toks.filter((t) => t.startsWith("--"));
+        s.check(`G43a ${where}: the parser contract was extractable`,
+          flagsUsed.length === 0 || takesValue.size + boolean.size > 0);
+        s.check(`G43a ${where}: every flag is one the parser knows (saw: ${unknownFlags.join(" ") || "none"})`,
+          unknownFlags.length === 0);
+        // A value-taking flag written bare eats the next argument, so the command still
+        // exits 0 while one argument has silently become another's value.
+        s.check(`G43a ${where}: no value-taking flag is written bare (saw: ${valuelessFlags.join(" ") || "none"})`,
+          valuelessFlags.length === 0);
+        s.check(`G43a ${where}: the required input path is passed positionally`,
+          !needsPositional || positional.some((p) => p.replace(/"/g, "").endsWith(".json")));
+      }
+    }
+  }
+  // The guard is worthless if the extractor silently matches nothing.
+  s.check(`G43a the invocation extractor found the documented commands (${invocations})`,
+    invocations >= 4);
+
+  // ---- G43b: every variable a normative block reads has a binding ----
+
+  // Provided by the shell or the environment, never by this pipeline.
+  const SHELL_PROVIDED = new Set(["HOME", "PATH", "ARG", "BASH_REMATCH", "DASH0_EXPOSURE"]);
+  // Payloads the run constructs in context rather than in shell. Named explicitly so the
+  // list stays a decision: anything NOT here must have an assignment that exists.
+  const RUN_CONSTRUCTED = new Set([
+    "VERDICT", "PR_STATE", "CARRIED_FINDINGS_JSON", "DIAGNOSTICS_JSON",
+    "INLINE_COMMENTS_JSON", "OPEN_BOT_COMMENT_IDS_JSON",
+  ]);
+
+  const boundVars = new Set();
+  const varReads = new Map();
+  for (const mdPath of SHELL_MD) {
+    const text = readMd(mdPath);
+    // An assignment anywhere in the file counts: `elif WORKTREE_PARENT="$(mktemp -d)"` is a
+    // binding, and requiring column 0 would have read it as unbound.
+    for (const m of text.matchAll(/\b([A-Z][A-Z0-9_]{2,})=/g)) boundVars.add(m[1]);
+    for (const block of bashBlocks(text)) {
+      // Strip `#` comments first. A comment is not executed, and a rule explaining why a
+      // variable was retired names it — G41f made exactly this mistake and flagged the
+      // sentence documenting a fix as the defect.
+      const live = block.replace(/(^|\s)#[^\n]*/g, "$1");
+      for (const m of live.matchAll(/\$\{?([A-Z][A-Z0-9_]{2,})\b/g)) {
+        if (!varReads.has(m[1])) varReads.set(m[1], mdPath);
+      }
+    }
+  }
+  const unbound = [...varReads.keys()]
+    .filter((v) => !boundVars.has(v) && !SHELL_PROVIDED.has(v) && !RUN_CONSTRUCTED.has(v))
+    .sort();
+  s.check(`G43b every variable read in a normative block is bound (unbound: ${unbound.join(", ") || "none"})`,
+    unbound.length === 0);
+
+  // BASE_SHA specifically, because every one of its readers fails silently: assert the
+  // fetch that makes it available and the assignment that binds it, not just the reads.
+  const rbody = readMd("agents/pr-reviewer.md");
+  s.check("G43b Step 1.1 requests baseRefOid, not only baseRefName",
+    /--json [^\n]*\bbaseRefOid\b/.test(rbody));
+  s.check("G43b BASE_SHA is bound from that response, next to HEAD_SHA",
+    /BASE_SHA=\$\(jq -r '\.baseRefOid' <<< "\$PR_VIEW_JSON"\)/.test(rbody));
+  s.check("G43b the merge-base rule refuses to run on an empty base OID",
+    /\*\*the base OID itself empty\*\*/.test(readMd("agents/pr-reviewer/rules/workspace.md")));
+}
+
 process.exit(s.report() ? 0 : 1);

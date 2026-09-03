@@ -46,18 +46,24 @@ A best-effort search cannot be an input to depth routing; a resolved graph can, 
 ## Run it
 
 ```bash
-node agents/pr-reviewer/scripts/build-impact-graph.mjs \
+node "$AGENT_SUPPORT/pr-reviewer/scripts/build-impact-graph.mjs" /tmp/pr-files.json \
   --workdir "$WORKDIR" \
   --base-ref "$BASE_SHA" \
-  --repo "$RESOLVED_REPO" --pr "$PR_NUMBER" --overlaps \
-  < /tmp/pr-files.json > /tmp/impact.json
+  --repo "$RESOLVED_REPO" --pr "$PR_NUMBER" \
+  > /tmp/pr-impact.json
 ```
+
+The input path is **positional**, not stdin: the script takes `<pr-files.json>` as its first
+argument, and a `< /tmp/pr-files.json` redirect exits 2 with the usage string and writes nothing.
+The interpreter path goes through `$AGENT_SUPPORT` for the same reason every other path in this
+tree does — a bare `agents/…` path resolves against the *reviewed* repo's cwd during a cross-repo
+review, where it does not exist.
 
 | Flag | Effect |
 | --- | --- |
 | `--workdir` | required — the Phase A checkout |
 | `--base-ref` | base SHA for the lockfile and signature comparison; `--base-dir` instead when git history is unavailable (`tarball`) |
-| `--overlaps` | query other open PRs for file and symbol overlap (one `gh` call, capped at 30 PRs) |
+| `--overlaps <file>` | **takes a value** — a pre-fetched overlap payload, which skips the `gh` call. Omit it for the normal path: with `--repo` and `--pr` set the script fetches overlaps itself (one `gh pr list`, capped at 30 PRs) and degrades to no overlaps when `gh` is absent or unauthorized. A bare value-less `--overlaps` swallows the next argument. |
 | `--production <file>` | merge a telemetry exposure block, see [`telemetry.md`](./telemetry.md) |
 | `--no-rg` | force the JS search fallback; both backends are self-tested, so results agree |
 | `--self-test` | run the 48 offline cases and exit |
