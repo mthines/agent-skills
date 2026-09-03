@@ -3696,8 +3696,17 @@ const isPollBlock = (block) =>
     s.check(`G44c memory.md's write section spells the \`${record}::\` key`,
       MEMORY_MD.includes(`key      = "${record}::`));
   }
-  s.check("G44c the knowledge write passes kind + host explicitly (a `ci::` tag infers neither)",
-    /kind\s*=\s*"signal"/.test(MEMORY_MD) && /host\s*=\s*"reviewer"/.test(MEMORY_MD));
+  // Per call, not file-wide: with the two calls in one section, a file-wide test passes on
+  // either one's properties and the other can silently lose them.
+  const writeCalls = {
+    knowledge: MEMORY_MD.split("# A. Symbol knowledge")[1]?.split("# B. Hotspot")[0] ?? "",
+    hotspot: MEMORY_MD.split("# B. Hotspot")[1]?.split("```")[0] ?? "",
+  };
+  for (const [name, call] of Object.entries(writeCalls)) {
+    s.check(`G44c the ${name} write passes kind + host explicitly (a \`ci::\` tag infers neither)`,
+      /kind\s*=\s*"signal"/.test(call) && /host\s*=\s*"reviewer"/.test(call));
+    s.check(`G44c the ${name} write sets an explicit 90-day TTL`, /ttl_days\s*=\s*90/.test(call));
+  }
   s.check("G44c the knowledge write is deep-tier only, so no unverified fact is stored",
     /deep tier only/i.test(MEMORY_MD));
 
