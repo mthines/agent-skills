@@ -1333,6 +1333,13 @@ function checksInSync(plan, checks) {
         /<details>\n<summary>Review details/.test(body));
       s.check(`G25 ${name} pre-expands nothing`, !body.includes("<details open>"));
       s.check(`G25 ${name} carries no **Verdict** line`, !body.includes("**Verdict**"));
+      // The report is the ONE surface that carries the methodology link; G46e asserts its
+      // absence inline. Named here rather than left to the snapshot byte-diff, because a
+      // regenerated snapshot updates silently and both halves of an asymmetry need a guard
+      // that says which direction it points (`comment-shape.md § The footer`).
+      s.check(`G25 ${name} carries the methodology link (report-only)`,
+        body.includes("[how these findings are produced]"),
+        "the report owns this link once per review; inline findings carry the identity half only");
       // Nothing the accordion owns may render above the first <details>.
       const head = body.split("<details>")[0];
       for (const owned of ["| Gate | Status | Details |", "**Needs attention**", "**Found**",
@@ -3472,9 +3479,19 @@ const isPollBlock = (block) =>
           /\*\*\((?:non-)?blocking\)\*\*\s*$/.test(first), first.slice(-40));
       }
       // The footer is the cue that makes an inline finding and the report the same reviewer, and
-      // the only attribution visible in a notification email.
+      // the only attribution visible in a notification email. What is SHARED is the identity half
+      // — `pr-reviewer` plus the commit sha — and on this surface that is the whole footer: the
+      // methodology link is report-only (`comment-spine.mjs` § footerLine, `docs` off by default),
+      // because a reader asking how a finding was produced is asking about the run, and repeating
+      // one link per finding restated it 4–20 times on a busy PR.
       s.check(`G46e ${name} carries the shared attribution footer`,
-        /^<sup>`pr-reviewer` · commit `[0-9a-f]{7}` · \[how these findings are produced\]/m.test(body));
+        /^<sup>`pr-reviewer` · commit `[0-9a-f]{7}`<\/sup>$/m.test(body));
+      // Asserted as an absence too, in the direction this regresses: the check above matches the
+      // whole line, so it would already fail — but naming the link makes the failure say WHICH
+      // asymmetry broke rather than "the footer drifted".
+      s.check(`G46e ${name} carries no methodology link (report-only)`,
+        !body.includes("how these findings are produced"),
+        "the report owns that link once per review; an inline copy is the drift the docs flag prevents");
       // No heading, no bullets — the shape rule the report's `### ` headline is the counterpart of.
       s.check(`G46e ${name} uses no heading`, !/^#{1,6} /m.test(body));
       // A claim carries a title in bold; a one-liner carries none. Both are checked, because the

@@ -1034,7 +1034,9 @@ function main() {
     // One footer, both surfaces, and outside the accordion so a reader of the collapsed report can
     // still see who reviewed what. `run` and `at` are the report's own additions; an inline comment
     // passes neither, so the two footers differ only by what only the report knows.
-    FOOTER_SUP: footerLine({ sha: run.sha, run: footer, at: updatedStamp }),
+    // `docs: true` is the report's own opt-in — the methodology link belongs once per review, on
+    // the object that is the review, not repeated on every inline finding (`comment-spine.mjs`).
+    FOOTER_SUP: footerLine({ sha: run.sha, run: footer, at: updatedStamp, docs: true }),
     NEEDS_ATTENTION: needsAttention,
     FOUND_LINES: foundLines.join("\n"),
     RUN_LINES: runLines.join("\n"),

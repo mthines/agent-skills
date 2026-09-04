@@ -232,7 +232,7 @@ _Pseudo-code — verify before applying._      ← only when PSEUDO is set
 
 <Fix with Agent0 button>                      ← only when the mode is on
 
-<sup>`pr-reviewer` · commit `<sha7>` · [how these findings are produced](…)</sup>
+<sup>`pr-reviewer` · commit `<sha7>`</sup>
 <!-- fp:v2:<finder>:<class>:<symbol>@<path> -->
 ```
 
@@ -241,7 +241,7 @@ A **one-liner** (`nitpick` / `question` / `praise`) — the terse form, unchange
 ```
 <prefix> (<tier>): <≤ 2 sentences> **(non-blocking)**
 
-<sup>`pr-reviewer` · commit `<sha7>` · [how these findings are produced](…)</sup>
+<sup>`pr-reviewer` · commit `<sha7>`</sup>
 ```
 
 ## The footer
@@ -252,6 +252,17 @@ Every posted inline comment ends with the shared attribution footer, built by
 **One rule, no exceptions**, including `praise`. The exceptions are what drift: a per-prefix
 carve-out is a decision to re-make on every finding, and the cost of the rule as stated is one
 `<sup>` line on a rare comment.
+
+**Inline carries the identity half only — `` `pr-reviewer` · commit `<sha7>` `` and nothing else.**
+The shared function is the same; the *arguments* differ, and always have (the report passes its run
+line and its `updated` stamp, an inline finding passes neither). The **methodology link** belongs
+once per review, on the object that *is* the review — repeating
+`[how these findings are produced]` under all twenty inline findings spends a line per comment to
+say the same thing the report already says once, on the surface with the least room for it. So
+`footerLine()`'s `docs` flag defaults **off** and only `render-report.mjs` passes `docs: true`: a
+surface has to *ask* for the link, which is why this cannot silently come back. Guarded from both
+directions — L1 `G46e` asserts the four inline reference renderings carry the whole footer and no
+methodology link, and `G25` diffs the report's own renderings, which do carry it.
 
 It answers two questions nothing else on this surface could. *Who is speaking* — an inline comment
 is most often read in a notification email or the Files-changed rail, with no surrounding page to

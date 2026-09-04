@@ -428,7 +428,13 @@ function selfTest() {
     /^\s*\*{0,2}(?:issue|suggestion|nitpick|nit|question|praise|chore)\s*\((critical|high|medium|low)\)/i
       .exec(renderComment(ISSUE))[1] === "high");
   t("the footer names the reviewer and the commit", () =>
-    renderComment(ISSUE).includes("<sup>`pr-reviewer` · commit `7389036` · [how these findings"));
+    renderComment(ISSUE).includes("<sup>`pr-reviewer` · commit `7389036`</sup>"));
+  // The inline footer is the identity half and nothing else. Asserted as an ABSENCE because that is
+  // the direction this can regress: `footerLine`'s `docs` flag defaults off, so the link comes back
+  // only if this surface starts passing it — and the assertion above would still pass if it did,
+  // since it only checks a prefix. The methodology link belongs once per review, on the report.
+  t("the inline footer carries no methodology link", () =>
+    !renderComment(ISSUE).includes("how these findings are produced"));
   t("the fingerprint marker is built, not typed", () =>
     renderComment(ISSUE).includes("<!-- fp:v2:consumer-impact:contract-break:triggerKinds@src/kinds.ts -->"));
   t("the evidence line renders as inline-code anchors", () =>

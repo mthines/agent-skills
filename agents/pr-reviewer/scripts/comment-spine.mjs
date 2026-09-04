@@ -123,21 +123,31 @@ export function tierTally(counts) {
  * none at all — which matters most exactly where an inline comment is usually read, in a
  * notification email with no surrounding page to identify the author.
  *
- * `run` is the report's own addition (the run mode / delta phrase); `at` likewise. An inline
- * comment passes neither, so the two footers differ only by what only the report knows.
+ * What is shared is the **identity** half — `` `pr-reviewer` · commit `<sha>` `` — and it is
+ * byte-identical on both surfaces. Everything after it is the report's, because it is either
+ * something only the report knows (`run`, the run mode / delta phrase; `at`, the rewrite stamp) or
+ * something that reads as noise repeated per finding (`docs`).
+ *
+ * **`docs` is report-only, and off by default.** The methodology link belongs once per review, on
+ * the object that *is* the review — a reader asking "how were these produced" is asking about the
+ * run, not about the one finding in front of them. Repeating it on every inline comment spent a
+ * third of a one-line footer restating the same link 4–20 times on a busy PR, and pushed the commit
+ * sha (which is load-bearing, below) further from the eye. Defaulting it OFF rather than having the
+ * inline renderer opt out is deliberate: a surface has to *ask* for the link, so a new one cannot
+ * inherit it by omission, and the inline footer cannot silently regain it in a refactor.
  *
  * The `commit \`<sha>\`` substring is load-bearing provenance, not decoration: a sticky is an issue
  * comment and has no `commit_id`, so this is the only record of what was reviewed — and it is what
  * `pr-reviewer`'s own fallback rung reads to recover a delta baseline when its state record is
  * unusable (`reviewer-report-ingest.md § Footer SHA`). Keep it matchable by that substring alone.
  */
-export function footerLine({ sha, run = null, at = null }) {
+export function footerLine({ sha, run = null, at = null, docs = false }) {
   if (!SHA7.test(String(sha))) {
     throw new Error(`footer sha must be exactly 7 lowercase hex chars, got ${JSON.stringify(sha)}`);
   }
   const parts = [`\`${AGENT_NAME}\``, `commit \`${sha}\``];
   if (run) parts.push(String(run));
-  parts.push(`[how these findings are produced](${AGENT_URL})`);
+  if (docs) parts.push(`[how these findings are produced](${AGENT_URL})`);
   if (at) parts.push(`updated ${at} UTC`);
   return `<sup>${parts.join(" · ")}</sup>`;
 }
