@@ -940,6 +940,21 @@ function main() {
     fail(`FAIL_REASONS has ${arr("FAIL_REASONS").length} phrases but only ${failing} gate(s) are ❌`
       + " — one phrase per failing gate, and CI is never among them");
   }
+  if (verdict === "WARN" && arr("WARN_REASONS").length === 0) {
+    fail("VERDICT WARN with no WARN_REASONS — a warning gate names why in one noun phrase"
+      + " (report-rendering.md § Headlines)");
+  }
+  // The same cross-check FAIL_REASONS gets, and for the same reason: the reasons line is a count
+  // stated twice, once as a list and once as the gate table above it. `reasonList` truncates the
+  // rendering at two phrases, so an over-long list did not LOOK wrong — it silently dropped the
+  // third warning while the table showed one ⚠️, which is exactly the class of contradiction this
+  // renderer exists to make unrepresentable. Validating one polarity and not the other is the
+  // asymmetric-validation shape `FINDINGS[].title` had in this same file. CI *is* countable here,
+  // unlike in the FAIL branch: it is a warning gate, so `warning` already includes it.
+  if (arr("WARN_REASONS").length > warning) {
+    fail(`WARN_REASONS has ${arr("WARN_REASONS").length} phrases but only ${warning} gate(s) are ⚠️`
+      + `${data.CI_NOTE ? " (CI included)" : ""} — one phrase per warning gate`);
+  }
 
   // The count-forward headline. `<N> findings` is the number the author acts on, so it leads; the
   // gate state follows in the reasons line. A run with no findings still has a state to report,

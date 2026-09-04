@@ -3674,6 +3674,34 @@ const isPollBlock = (block) =>
     s.check("G46m rejecting an over-long title emits nothing on stdout", rr.stdout === "",
       (rr.stdout || "").slice(0, 80));
 
+    // The reasons line is the same count stated twice — once as a list, once as the gate table
+    // above it. FAIL_REASONS was cross-checked against the ❌ count and WARN_REASONS against
+    // nothing, so a WARN could claim more warnings than it had gates; `reasonList` truncates at
+    // two phrases, so it did not even look wrong. Both polarities or neither.
+    const renderReport = (mut) => {
+      const p = structuredClone(warnPayload); mut(p);
+      return spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs")],
+        { input: JSON.stringify(p), encoding: "utf8" });
+    };
+    // The gate statuses are individual `GATE_<NAME>_STATUS` slots, not one array, and CI has no
+    // row at all — `CI_NOTE` is its whole surface, and it counts as a warning gate.
+    const warnGates = Object.entries(warnPayload)
+      .filter(([k, v]) => /^GATE_[A-Z]+_STATUS$/.test(k) && v === "⚠️").length
+      + (warnPayload.CI_NOTE ? 1 : 0);
+    const tooManyWarn = renderReport((p) => {
+      p.WARN_REASONS = Array.from({ length: warnGates + 2 }, (_, i) => `phantom warning ${i + 1}`);
+    });
+    s.check("G46m the report renderer rejects more WARN_REASONS than ⚠️ gates",
+      tooManyWarn.status !== 0 && /WARN_REASONS has \d+ phrases but only \d+ gate/.test(tooManyWarn.stderr),
+      (tooManyWarn.stderr || "").slice(0, 160));
+    s.check("G46m a WARN verdict with no WARN_REASONS is rejected",
+      renderReport((p) => { p.WARN_REASONS = []; }).status !== 0,
+      "the FAIL branch requires a reason phrase; the WARN branch cannot be laxer");
+    s.check("G46m the cross-check is symmetric in the source, not just in behaviour",
+      /WARN_REASONS"\)\.length > warning/.test(reportRenderer)
+        && /FAIL_REASONS"\)\.length > failing/.test(reportRenderer),
+      "one polarity validated and not the other is the shape FINDINGS[].title had in this file");
+
     // The rule and the agent body both have to carry it. The wrong-cause version of this section
     // read as correct and was invisible to every other guard here.
     s.check("G46j the rule documents the relay length limit",
