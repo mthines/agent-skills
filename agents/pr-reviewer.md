@@ -121,7 +121,7 @@ Two axes, bound at different steps and reported separately:
 
 | Axis | Values | Bound at | What it decides |
 |---|---|---|---|
-| **Run mode** | `full` · `incremental` · `incremental-quick` · *(zero-delta)* | Step 0.7, refined at 1.2b | **What is reviewed** — the full PR diff, or the delta since the last reviewed SHA. |
+| **Run mode** | `full` · `incremental` · `incremental-quick` · *(zero-delta)* | Step 0.7, fast-pathed at 0.8, refined at 1.2b | **What is reviewed** — the full PR diff, or the delta since the last reviewed SHA. |
 | **Depth tier** | `deep` · `standard` · `quick` | Step 1.2b ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md)) | **How hard it is looked at** — which lenses run, which finders run, how many escalation traces, whether a Tier-2 receipt is mandatory. |
 
 They correspond one-to-one on the happy path (`full`↔`deep`, `incremental`↔`standard`,
@@ -137,14 +137,15 @@ give this run — a checkout, a tarball, or nothing but the diff. It caps the ti
 run can never be `deep`) and it is declared in the report, because a shallow review that renders
 like a deep one is the failure Phases A and C exist to fix.
 
-The run modes themselves, chosen automatically in Step 0.7:
+The run modes themselves, chosen automatically in Step 0.7 (fast-pathed at Step 0.8 for a
+re-review whose `HEAD_SHA` has not moved):
 
 | Mode | When | What runs |
 |---|---|---|
 | `full` | No prior review found, OR `--full` passed, OR delta > 100 lines, OR new files in delta, OR high-stakes paths touched (classifier-owned list + repo `high_stakes_paths:`), OR **a propagation shape in the delta** (governing doc + restatements — Step 1.2b), OR **cumulative delta since the last full review > `FULL_REFRESH_DELTA` (150) lines**, OR **≥ `FULL_REFRESH_RUNS` (3) incremental reviews since the last full review**, OR **no prior full review is recorded** (including every run on the Step 0.7 fallback rung, which recovers a baseline but no history) | Tier `deep`: every finder, holistic broad + targeted escalation (cap 10), optimality. Gate 4 and inline review scan the full PR diff. |
 | `incremental` | Prior review found, delta 11–100 lines, no new files, no high-stakes paths, no propagation shape | Tier `standard`: every finder, holistic broad pass (2.4) skipped; **targeted escalation (2.4b) runs on the delta findings (cap 3) when the delta carries a risky content shape** (`ESCALATE_IN_INCREMENTAL`, Step 1.2b). Optimality (2.4c) skipped — it is `deep`-tier only; measurability (2.4e) runs on the delta files. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
 | `incremental-quick` | Prior review found, delta ≤ 10 lines, no new files, no high-stakes paths, no propagation shape | Tier `quick`: correctness, quality, and description finders only. Holistic broad pass (2.4), optimality (2.4c), measurability (2.4e), and the consumer-impact and dependency finders skipped; **targeted escalation (2.4b) still runs (cap 3) when the delta carries a risky content shape**. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
-| *(zero-delta)* | Prior review found, zero lines changed, no new files | Gate checks only (no inline review). Announced and handled as a special case of `incremental-quick`. |
+| *(zero-delta)* | Prior review found, zero lines changed, no new files | Gate checks only (no inline review). Announced and handled as a special case of `incremental-quick`. Detected at Step 0.8 (identical `HEAD_SHA`, no fetch pipeline spent) or, on a rebase/amend that changes `HEAD_SHA` without an authored delta, at Step 1.2b. |
 
 Findings carried forward from a prior run's `Additional findings` list are re-admitted in **every** mode, including the incremental ones — they were already found on the full diff, so scanning only the delta does not lose them (`prior-comment-awareness.md § Carry-forward of deferred findings`).
 
@@ -384,12 +385,18 @@ With `FIX_LINKS=off` supply no `FIX_ALL_URL` and pass no `FIX_URL` in any inline
 # wrapped `gh` that injects a per-call repo-scoped credential — both of which are ordinary
 # hosted-runner setups, not exotic ones. Treat a failure as "identity unknown", never as "".
 ME=$(gh api user --jq .login 2>/dev/null || echo "")
-# One call, two values: the author decides the relation, the head branch is the
-# PR-state record's scope (Step 0.7). Reading both here rather than waiting for
-# Step 1.1 command A costs nothing and lets Step 0.7 address the record.
-PR_META=$(gh pr view $PR_NUMBER $GH_REPO_FLAG --json author,headRefName)
+# One call, four values: the author decides the relation, the head branch is the
+# PR-state record's scope (Step 0.7), and headRefOid/state/mergedAt are folded in here —
+# at zero extra cost — so a HEAD_SHA reading is already available before Step 1 spends
+# anything, which is what Step 0.8's fast zero-delta pre-check needs.
+# EARLY_HEAD_SHA is deliberately a distinct name from the canonical HEAD_SHA that Step 1.2
+# binds from Step 1.1 command A's own response — that naming keeps the "never from a second
+# read" single-source-of-truth invariant intact for the full pipeline (Step 1.2's comment)
+# while still letting Step 0.8 make its call off a value that predates Step 1 entirely.
+PR_META=$(gh pr view $PR_NUMBER $GH_REPO_FLAG --json author,headRefName,headRefOid,state,mergedAt)
 AUTHOR=$(jq -r '.author.login' <<< "$PR_META")
 HEAD_REF=$(jq -r '.headRefName' <<< "$PR_META")
+EARLY_HEAD_SHA=$(jq -r '.headRefOid' <<< "$PR_META")
 
 if [[ -z "$ME" ]]; then
   REVIEW_RELATION="cross"
@@ -719,6 +726,73 @@ removed deliberately rather than lost:
 | `PRIOR_REVIEW_SHA` as a second baseline | `PRIOR_SHA` was blanked under `--full` | the record supplies the provenance SHA in every mode |
 | `PRIOR_BLOCKING_FINGERPRINTS` | Step 4b's condition 4 | Step 4b has one condition (§ Step 4b) |
 | `PRIOR_RUN_STATE_UNKNOWN` as a distinct flag | a failed comments read had to be told apart from a genuine first pass | `STATE_STATUS` + `STICKY_READ_FAILED` say it directly, and the announcements above name all four combinations |
+
+---
+
+## Step 0.8: Fast zero-delta pre-check (before the expensive fetch pipeline)
+
+The pipeline already had a zero-delta short-circuit — Step 1.2b's delta triage — but it fires
+only after Step 1.0's memory fan-out, Step 1.1's diff/file fetch, and Phase A/B's workspace
+checkout and impact graph have all already run and been paid for. On a re-review whose branch
+has not moved since the last pass, that whole cost buys nothing (observed: a multi-minute run
+that ended by discovering there was nothing to review). This step catches that common case
+**before** any of it starts, using only values Step 0.5 and Step 0.7 already bound.
+
+```bash
+# EARLY_HEAD_SHA came from Step 0.5's PR_META, at zero extra API cost.
+# PRIOR_SHA came from Step 0.7 (the PR-state record or its GitHub fallback rung).
+if [[ -n "$PRIOR_SHA" && "$EARLY_HEAD_SHA" == "$PRIOR_SHA" ]]; then
+  FAST_ZERO_DELTA=true
+else
+  FAST_ZERO_DELTA=false
+fi
+```
+
+An identical commit has an empty diff against itself by construction — no `compare` call is
+needed to prove it, unlike the rebase/amend case Step 1.2b's blob-diff route still exists for
+(see below). `PRIOR_SHA` empty means no prior run is known (first review, or a `--full` that
+still carries a baseline per Step 0.7) — that path always proceeds to Step 1 unchanged, since
+there is nothing to compare against yet.
+
+**On `FAST_ZERO_DELTA == true`:**
+- Set `RUN_MODE = "incremental-quick"`, `REVIEW_DIFF = ""`, `HEAD_SHA = "$EARLY_HEAD_SHA"`,
+  `DELTA_SOURCE = "identical HEAD_SHA (Step 0.8 fast path)"`.
+- Announce: `HEAD_SHA unchanged since the last review (\`<HEAD_SHA short>\`) — skipping the
+  memory fan-out, workspace checkout, and impact graph; running gate checks only.`
+- **Skip Step 1.0's memory fan-out (the four `mcp__lorekit__memory_list` calls) and Step
+  1.1's Phase A/B (workspace materialization, impact graph) entirely** — none of them have
+  anything to operate on when the diff is empty. Fetch only what the gates still need, with
+  the narrowest calls that supply it:
+  - Thread state (`reviewThreads { id isResolved }`, paged past 100) for Gate 3 — the same
+    query `prior-comment-awareness.md § fetch existing PR comment state` issues, run standalone
+    here instead of as part of Step 1.0's larger fan-out. Bind `RESOLVED_THREAD_IDS`,
+    `COMMENT_TO_THREAD`, and `OPEN_BOT_COMMENTS[]` exactly as that rule specifies.
+  - CI status (`gh pr checks $PR_NUMBER $GH_REPO_FLAG`) for the report's CI line (Gate 2).
+  - PR title/body are already in `PR_META` from Step 0.5 — no extra call. Gate 5
+    (documentation adequacy) re-compares this text against `PRIOR_DIAGNOSTICS.gate_rows`'
+    carried verdict, since an edited description needs no new commit and this fast path must
+    not blind itself to one; an unchanged description carries the prior gate row forward
+    verbatim (`⏭️`, per Step 1.8's carry-forward table).
+  - Gates 1, 4, and 6 (description-vs-code match, self-review signals, code review) carry
+    forward unconditionally from `PRIOR_DIAGNOSTICS` — the code they graded has not moved.
+  - Relevance and lessons memory are **not** fetched on this path. With no diff and no new
+    inline findings possible, there is nothing for a lesson to calibrate against. Report
+    `Memories — skipped (zero-delta fast path)` in the sticky footer, distinct from `not
+    connected`, so a deliberate skip is never misread as an outage.
+  - Bind `DEPTH_TIER` per `depth-routing.md` exactly as any zero-delta run would — Phase C
+    still runs; it is cheap, local, and every downstream template reads it.
+- Proceed directly to Step 1.8 (gate checks), then **Step 2.9c** (thread reconciliation — it
+  runs on this path; see its preamble), then Step 3 (no inline findings). Step 1.0, Step 1.1's
+  Phase A/B, and Step 2 never run.
+
+**On `FAST_ZERO_DELTA == false`,** this step does nothing further — proceed to Step 1 exactly
+as before. Step 1.2b's own zero-delta short-circuit remains in place as a second, later check
+for the one shape this fast path cannot see by construction: a **rebase or amend that
+reintroduces the same tree at a new SHA** (`HEAD_SHA` changes, so `EARLY_HEAD_SHA != PRIOR_SHA`,
+but the authored delta is still zero once the blob-diff route resolves it). That shape needs the
+full `compare`/blob-diff logic in 1.2b to detect — this step is an addition to that logic, not a
+replacement of it, and only removes the cost for the far more common case: an untouched branch
+re-triggered by a `/review` comment, a scheduled re-check, or another bot's comment on the PR.
 
 ---
 
@@ -1778,9 +1852,10 @@ Quality Gate summary. Gate 6 (inline review) always runs regardless of gate outc
 
 ## Step 2: Inline review pipeline
 
-**Skip this step entirely** if the zero-delta short-circuit fired in Step 1.2b
-(`REVIEW_DIFF == ""`). Proceed to Step 1.8 with no inline findings, then to Step 2.9c —
-which is a **top-level step, not part of Step 2**, and runs whether or not Step 2 ran.
+**Skip this step entirely** if the zero-delta short-circuit fired, whether at Step 0.8's fast
+path (`FAST_ZERO_DELTA == true`) or Step 1.2b's later check (`REVIEW_DIFF == ""`). Proceed to
+Step 1.8 with no inline findings, then to Step 2.9c — which is a **top-level step, not part of
+Step 2**, and runs whether or not Step 2 ran.
 
 **Diff used for inline review (`REVIEW_DIFF`):**
 - `RUN_MODE == "full"` entered directly (first run, `--full`, or any upgrade rule): `REVIEW_DIFF` = the full PR diff from Step 1.1 command B.
@@ -2335,8 +2410,9 @@ the PR has certainly been reviewed before; keying off the carried state there wo
 reconciling nothing and `RESOLVED_SINCE_PRIOR` unbound.
 
 **This is a top-level step, deliberately not a subsection of Step 2.** Step 2 is skipped wholesale
-when the zero-delta short-circuit fires (Step 1.2b), and a zero-delta run happens **only** on a
-re-review — precisely the population this step exists for. The commonest shape is an author who
+when the zero-delta short-circuit fires (Step 0.8's fast path, or Step 1.2b's later check on the
+rebase/amend shape 0.8 cannot see), and a zero-delta run happens **only** on a re-review —
+precisely the population this step exists for. The commonest shape is an author who
 resolves threads and re-runs the reviewer without pushing code, which is exactly what `review-loop`
 produces on convergence. Nesting this under Step 2 would silently exempt those runs from
 reconciliation, from the Gate 3 refresh, and from the `reviewer-comment-relevance` write, while
