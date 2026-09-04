@@ -8,8 +8,9 @@ output we generated ourselves.
 | --- | --- | --- |
 | `lorekit-503-flat.md` | `mthines/lorekit#503` review `4964475125` (2026-08-18 18:31 UTC) | violations — no marker, no accordion, gate table and diagnostics at top level |
 | `lorekit-503-report-as-pointer.md` | shape of reviews `4964076700` / `4964171425` / `4964277130` | violations — a full report body stamped `<!-- PR_REVIEWER_POINTER -->` |
+| `agent-skills-165-escaped-button.md` | `mthines/agent-skills#165` sticky `5531138994` (2026-09-03 19:39 UTC) | violations — escaped inline HTML, a backtick inside an `href`, a caged link target |
 
-Both are abridged to the structure under test; the prose is not load-bearing. They exist because a
+All three are abridged to the structure under test; the prose is not load-bearing. They exist because a
 validator written only against self-generated fixtures tends to encode the shape we *expect* to see
 rather than the shape that actually shipped — the flat body omitted `**Run mode**`, which broke the
 first classifier I wrote.

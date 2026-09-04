@@ -4,8 +4,10 @@
 //   node scripts/eval/l1.mjs
 // Exits non-zero if any check fails.
 import { execSync, spawnSync } from "node:child_process";
-import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, extractSection, Suite } from "./lib.mjs";
 
 const AW = join(REPO_ROOT, "skills/workflow/autonomous-workflow");
@@ -941,17 +943,59 @@ function checksInSync(plan, checks) {
   // a self-comparison (aw-lessons::mock-that-reimplements-the-thing-under-test).
   // Mirrors the G18 literal-sentence + positional-slice idiom.
   {
-    // G19a: the three concise headline sentences are present (PASS / WARN / FAIL).
-    // These are literal anchors grepped from the rewritten Step 4 section.
-    s.check("G19a the PASS concise headline has an affirming checkmark lead",
-      reportRendering.includes("✅ Reviewed your changes — no issues found."));
+    // G19a-c: the three headline forms. They used to be three prose sentences the run composed
+    // and the renderer accepted unchecked, which is how a headline matching none of them shipped;
+    // they are now derived shapes, so the checks assert the RENDERED forms against the real
+    // renderer and the doc that specifies them, not a prose literal.
+    s.check("G19a the PASS form is a heading with an affirming checkmark lead",
+      reportRendering.includes("`### ✅ No issues found`"));
 
-    s.check("G19b the WARN concise headline is led by WARN_GATE_COUNT and names the warned gates",
-      reportRendering.includes("Reviewed your changes — no blocking issues, **<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>."));
+    s.check("G19b the zero-finding non-PASS form names the gate count",
+      reportRendering.includes("`### <verdict glyph> No findings — <M> gates need attention`"));
 
-    s.check("G19c the FAIL concise headline is led by SEVERITY_TALLY and names the blocking gates",
-      reportRendering.includes("Reviewed your changes — **<SEVERITY_TALLY>** need attention before human review.") &&
-      reportRendering.includes("Blocking: <FAIL_REASONS>."));
+    s.check("G19c the with-findings form leads with the count and the blocking subset",
+      reportRendering.includes("`### <worst-tier glyph> <N> findings — <K> blocking`")
+      && /never rendered as `0 blocking`/.test(reportRendering));
+
+    // Every form the doc specifies must be reachable from the renderer, and every form the
+    // renderer emits must be specified. Executed against the real script, because a spec/impl
+    // agreement asserted by reading only the spec is the exact gap this replaces.
+    {
+      const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
+      const FIX = join(REPO_ROOT, "scripts/eval/fixtures/report-body");
+      const base = JSON.parse(readFileSync(join(FIX, "pass.json"), "utf8"));
+      const render = (fn) => {
+        const c = structuredClone(base); fn(c);
+        const r = spawnSync("node", [RENDER], { input: JSON.stringify(c), encoding: "utf8" });
+        return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
+      };
+      const passForm = render(() => {});
+      s.check("G19a the renderer emits the PASS form", passForm.ok
+        && /^### ✅ No issues found$/m.test(passForm.out), passForm.err);
+      const warnForm = render((c) => {
+        c.VERDICT = "WARN"; c.GATE_DOCS_STATUS = "⚠️"; c.GATE_DOCS_DETAILS = "x";
+        c.WARN_REASONS = ["1 doc gap"];
+      });
+      s.check("G19b the renderer emits the zero-finding non-PASS form", warnForm.ok
+        && /^### ⚠️ No findings — 1 gate needs? attention$/m.test(warnForm.out), warnForm.err);
+      const withFindings = render((c) => {
+        c.QUALITY = "produced 3 → posted inline 2 · cleared 2 · carried forward 0 · deferred 0 · below-bar 0";
+        c.FINDINGS = [
+          { title: "A blocking finding", path: "a.ts", line: 1, tier: "high", blocking: true },
+          { title: "A quieter one", path: "b.ts", line: 2, tier: "low" },
+        ];
+      });
+      s.check("G19c the renderer emits the with-findings form", withFindings.ok
+        && /^### 🟠 2 findings — 1 blocking$/m.test(withFindings.out), withFindings.err);
+      // `0 blocking` is never rendered — the clause is dropped, not zero-filled.
+      const noBlocking = render((c) => {
+        c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
+        c.FINDINGS = [{ title: "A quieter one", path: "b.ts", line: 2, tier: "low" }];
+      });
+      s.check("G19c the renderer drops the blocking clause at zero", noBlocking.ok
+        && /^### ⚪ 1 finding$/m.test(noBlocking.out) && !/0 blocking/.test(noBlocking.out),
+        noBlocking.err);
+    }
 
     // G19d / G19g retired: they scanned the three embedded Step-4 templates for
     // gate-table-inside-accordion and footer-inside-accordion. Those templates no longer exist —
@@ -1005,9 +1049,20 @@ function checksInSync(plan, checks) {
     s.check("G33c report-rendering.md's posted-body WARN headline carries no bare PASS token",
       !/no blocking issues.*\*\*PASS\*\*|PASS\s*—\s*no blocking issues/i.test(reportRendering),
       "report-rendering.md's WARN headline regained a PASS token");
+    // The two surfaces now count different things on purpose — the posted headline counts
+    // FINDINGS, this line counts gates — so the old assertion (a `byte-identical` claim next to a
+    // `report-rendering.md` reference) would now enforce a coupling that is itself the bug: it is
+    // what made the posted headline count gates. What must still agree is the FACT, so assert the
+    // cross-reference plus the named shared values, and assert the retired claim is gone.
     s.check("G33d terminal-report.md's WARN row cites report-rendering.md so the two cannot drift silently",
-      /report-rendering\.md[\s\S]{0,40}byte-identical|byte-identical[\s\S]{0,40}report-rendering\.md/.test(terminalReport),
-      "terminal-report.md's Step 3 WARN explanation no longer cross-references report-rendering.md as the source of truth");
+      /report-rendering\.md/.test(terminalReport)
+      && /verdict token[\s\S]{0,200}reason phrases/.test(terminalReport),
+      "terminal-report.md's Step 3 WARN explanation no longer cross-references report-rendering.md,"
+      + " or no longer names the verdict token and reason phrases as the values that must agree");
+    s.check("G33d the retired byte-identity coupling is not re-asserted",
+      /byte-identity rule this paragraph used to state/.test(terminalReport)
+      && !/must stay \*\*byte-identical\*\*/.test(terminalReport),
+      "a byte-identity claim between the terminal line and the posted headline is back");
   }
 
   // G34: prior-comment-awareness.md requires verifying a "resolved" thread against HEAD before
@@ -1291,7 +1346,31 @@ function checksInSync(plan, checks) {
     const base = JSON.parse(readFileSync(join(FIX, "pass.json"), "utf8"));
     const mutate = (fn) => { const c = structuredClone(base); fn(c); return JSON.stringify(c); };
     const rejects = [
-      ["a missing required slot", mutate((c) => { delete c.HEADLINE; })],
+      ["a missing required slot", mutate((c) => { delete c.SUMMARY; })],
+      // The verdict is cross-checked against the gate table it sits above. A `reviewer-lessons`
+      // entry records a posted report whose gate table read PASS while the run's own contract said
+      // FAIL; the gates decide, so a disagreement is a rejection rather than a rendered
+      // contradiction.
+      ["a VERDICT that contradicts the gate table",
+        mutate((c) => { c.GATE_DOCS_STATUS = "❌"; c.GATE_DOCS_DETAILS = "no docs"; })],
+      // The findings index and the QUALITY tally are the same number stated twice.
+      ["a findings index that disagrees with the QUALITY tally", mutate((c) => {
+        c.FINDINGS = [{ title: "A finding", path: "a.ts", line: 1, tier: "high" }];
+      })],
+      // A tier is an enum, not prose: the glyph is looked up from it.
+      ["a findings entry with an unknown tier", mutate((c) => {
+        c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
+        c.FINDINGS = [{ title: "A finding", path: "a.ts", line: 1, tier: "urgent" }];
+      })],
+      // A pipe in a title splits the index row into phantom columns.
+      ["a findings title carrying a table pipe", mutate((c) => {
+        c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
+        c.FINDINGS = [{ title: "A | B", path: "a.ts", line: 1, tier: "high" }];
+      })],
+      // Zero findings and no CI note means the Fix-all button would hand Agent0 an empty worklist.
+      ["a Fix-all button with nothing to fix", mutate((c) => {
+        c.FIX_ALL_URL = "https://app.dash0.com/goto/agent0?auto_submit=true";
+      })],
       ["an unknown key (typo'd slot)", mutate((c) => { c.HEADLIN = "x"; })],
       ["an invalid gate glyph", mutate((c) => { c.GATE_PRIOR_STATUS = "FAIL"; })],
       // `RUN_MODE` is a v1 slot, so mutating it only proved the unknown-key check. Smuggle the
@@ -1433,7 +1512,7 @@ function checksInSync(plan, checks) {
       s.check("G25 zero-delta parses as {incremental, 0}",
         /^incremental · 0 lines in delta$/m.test(r.out));
       s.check("G25 zero-delta keeps its footer form",
-        r.out.includes("No code changes since `70cf147` — gate checks only for commit `bde3c2f`."));
+        r.out.includes("commit `bde3c2f` · no code changes since `70cf147`, gate checks only"));
     }
 
     // A prose field carries the source comment's own wording, backticks and all. Step 1.0 requires
@@ -1477,7 +1556,7 @@ function checksInSync(plan, checks) {
         // anchoring on "review for commit" catches only the incremental form. Take the last such
         // match, since the zero-delta form names the prior sha first.
         "Footer SHA": (b) => {
-          const line = (b.match(/^<sup>(?:Reviewed|Incremental review|No code changes)[^\n]*<\/sup>$/m) || [""])[0];
+          const line = (b.match(/^<sup>`pr-reviewer` · commit[^\n]*<\/sup>$/m) || [""])[0];
           const all = [...line.matchAll(/commit `([0-9a-f]{7})`/g)];
           return all.length ? { sha: all[all.length - 1][1] } : null;
         },
@@ -1496,11 +1575,11 @@ function checksInSync(plan, checks) {
       };
       // Sections that only appear on some fixtures: assert they parse WHERE PRESENT.
       const CONDITIONAL = {
-        "Additional findings": [/<summary>Additional findings \((\d+)\) — cleared review, not inlined<\/summary>/,
+        "Additional findings": [/<summary>(\d+) more findings — verified, too minor to comment on<\/summary>/,
           /^- (?:\[)?`[^`]+`(?:\]\([^)]+\))? — \w+: .+ \(confidence \d+\)$/m],
-        "Low-confidence findings": [/<summary>Low-confidence findings \((\d+)\) — advisory, below the confidence bar<\/summary>/,
+        "Low-confidence findings": [/<summary>Less certain \((\d+)\) — advisory, below the confidence bar<\/summary>/,
           /^- (?:\[)?`[^`]+`(?:\]\([^)]+\))? — \w+: .+ \(confidence \d+\)$/m],
-        "Optimality cards": [/<summary>Optimality review \((\d+)\) — is this the best approach\?<\/summary>/,
+        "Optimality cards": [/<summary>Is there a better approach\? \((\d+)\)<\/summary>/,
           /^### Optimality proposal — \S+:\d+$/m],
         "Partial-review banner": [/⚠️ \*\*Partial review — tool budget exhausted after \d+ calls; \d+ of \d+ files scanned\.\*\*/, null],
       };
@@ -1589,10 +1668,20 @@ function checksInSync(plan, checks) {
       const allPass = run([join(FIX, "pass.json")]);
       s.check("G25 an all-✅ gate table renders no attention heading",
         allPass.ok && !allPass.out.includes("**Needs attention**"), allPass.err);
-      const oneWarn = run([], mutate((c) => { c.GATE_DOCS_STATUS = "⚠️"; c.GATE_DOCS_DETAILS = "x"; }));
+      // The verdict travels with the gate change: the renderer now rejects a VERDICT that
+      // contradicts the table, so a ⚠️ gate implies WARN and the payload has to say so.
+      const oneWarn = run([], mutate((c) => {
+        c.GATE_DOCS_STATUS = "⚠️"; c.GATE_DOCS_DETAILS = "x";
+        c.VERDICT = "WARN"; c.WARN_REASONS = ["1 doc gap"];
+      }));
       s.check("G25 one ⚠️ gate renders the attention heading",
         oneWarn.ok && oneWarn.out.includes("**Needs attention**"), oneWarn.err);
-      const ciOnly = run([], mutate((c) => { c.CI_NOTE = "2 checks red on `bde3c2f`."; }));
+      // Red CI raises the verdict to WARN (`report-rendering.md`: with no ❌ the run renders the
+      // WARN headline) but it must NOT label the gate table, because CI has no row in it.
+      const ciOnly = run([], mutate((c) => {
+        c.CI_NOTE = "2 checks red on `bde3c2f`.";
+        c.VERDICT = "WARN"; c.WARN_REASONS = ["CI red: build, lint"];
+      }));
       s.check("G25 red CI alone renders no attention heading — Gate 2 warns, never fails",
         ciOnly.ok && !ciOnly.out.includes("**Needs attention**"), ciOnly.err);
 
@@ -1637,7 +1726,10 @@ function checksInSync(plan, checks) {
     // aborted every run. A guard that checks a command's TEXT cannot see that. Run the block.
     {
       const preWrite = sliceBetween(prReviewer,
-        "**Assert these four things on `REPORT_BODY` immediately before the write",
+        // Anchored on the invariant half of the sentence, never the count: the count changes every
+        // time an assertion is added, and a stale anchor CRASHES the whole run rather than failing
+        // one check (`sliceBetween` throws), which surfaces as zero checks and no `✗` line at all.
+        "things on `REPORT_BODY` immediately before the write",
         "On any `abort`: post no report object");
       const fence = preWrite.match(/```bash\n([\s\S]*?)```/);
       s.check("G25 the pre-write assertion block is extractable", !!fence);
@@ -1645,8 +1737,15 @@ function checksInSync(plan, checks) {
         const script = `abort() { printf 'ABORT: %s\\n' "$*"; exit 3; }\n${fence[1]}\nexit 0\n`;
         const good = spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"),
           join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.json")], { encoding: "utf8" }).stdout;
+        // AGENT_SUPPORT is what the block resolves the shared checker through, so the extracted
+        // block runs the REAL comment-spine.mjs rather than failing on an unset path. Without it
+        // the `node` call errors and every case below aborts for the wrong reason — which is how
+        // this omission was caught.
         const runAssert = (body) =>
-          spawnSync("bash", ["-c", script], { env: { ...process.env, REPORT_BODY: body }, encoding: "utf8" });
+          spawnSync("bash", ["-c", script], {
+            env: { ...process.env, REPORT_BODY: body, AGENT_SUPPORT: join(REPO_ROOT, "agents") },
+            encoding: "utf8",
+          });
 
         // A valid rendered body must PASS. This is the check that was missing.
         const ok = runAssert(good);
@@ -1659,6 +1758,13 @@ function checksInSync(plan, checks) {
           ["a flattened body (no accordion)", good.replace(/<details>\n<summary>Review details[^\n]*\n/, "")],
           ["a pre-expanded accordion", good.replace("<details>\n<summary>Review details", "<details open>\n<summary>Review details")],
           ["a smuggled **Verdict** line", `${good}\n**Verdict**: PASS\n`],
+          // The MCP-write-path corruption (#165): renderer output re-encoded while being
+          // reproduced into a tool-call argument. Every other case here is a body that was
+          // never built from the template; this one WAS, and was damaged afterwards.
+          ["a body whose inline HTML was escaped in transit",
+            good.replace('"><picture><source', '"&gt;&lt;picture&gt;&lt;source')],
+          ["a body with a backtick smuggled into an href",
+            good.replace('<a href="https://', '<a href="``https://')],
         ];
         for (const [why, body] of cases) {
           const r = runAssert(body);
@@ -1712,7 +1818,10 @@ function checksInSync(plan, checks) {
     // aborted every run. A guard that checks a command's TEXT cannot see that. Run the block.
     {
       const preWrite = sliceBetween(prReviewer,
-        "**Assert these four things on `REPORT_BODY` immediately before the write",
+        // Anchored on the invariant half of the sentence, never the count: the count changes every
+        // time an assertion is added, and a stale anchor CRASHES the whole run rather than failing
+        // one check (`sliceBetween` throws), which surfaces as zero checks and no `✗` line at all.
+        "things on `REPORT_BODY` immediately before the write",
         "On any `abort`: post no report object");
       const fence = preWrite.match(/```bash\n([\s\S]*?)```/);
       s.check("G25 the pre-write assertion block is extractable", !!fence);
@@ -1720,8 +1829,15 @@ function checksInSync(plan, checks) {
         const script = `abort() { printf 'ABORT: %s\\n' "$*"; exit 3; }\n${fence[1]}\nexit 0\n`;
         const good = spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"),
           join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.json")], { encoding: "utf8" }).stdout;
+        // AGENT_SUPPORT is what the block resolves the shared checker through, so the extracted
+        // block runs the REAL comment-spine.mjs rather than failing on an unset path. Without it
+        // the `node` call errors and every case below aborts for the wrong reason — which is how
+        // this omission was caught.
         const runAssert = (body) =>
-          spawnSync("bash", ["-c", script], { env: { ...process.env, REPORT_BODY: body }, encoding: "utf8" });
+          spawnSync("bash", ["-c", script], {
+            env: { ...process.env, REPORT_BODY: body, AGENT_SUPPORT: join(REPO_ROOT, "agents") },
+            encoding: "utf8",
+          });
 
         // A valid rendered body must PASS. This is the check that was missing.
         const ok = runAssert(good);
@@ -1734,6 +1850,13 @@ function checksInSync(plan, checks) {
           ["a flattened body (no accordion)", good.replace(/<details>\n<summary>Review details[^\n]*\n/, "")],
           ["a pre-expanded accordion", good.replace("<details>\n<summary>Review details", "<details open>\n<summary>Review details")],
           ["a smuggled **Verdict** line", `${good}\n**Verdict**: PASS\n`],
+          // The MCP-write-path corruption (#165): renderer output re-encoded while being
+          // reproduced into a tool-call argument. Every other case here is a body that was
+          // never built from the template; this one WAS, and was damaged afterwards.
+          ["a body whose inline HTML was escaped in transit",
+            good.replace('"><picture><source', '"&gt;&lt;picture&gt;&lt;source')],
+          ["a body with a backtick smuggled into an href",
+            good.replace('<a href="https://', '<a href="``https://')],
         ];
         for (const [why, body] of cases) {
           const r = runAssert(body);
@@ -1929,6 +2052,10 @@ function checksInSync(plan, checks) {
       ["lorekit-503-flat.md", ["missing-report-marker", "no-review-details-accordion",
         "accordion-owned-line-at-top-level"]],
       ["lorekit-503-report-as-pointer.md", ["report-marked-as-pointer"]],
+      // The MCP-write-path corruption: correct renderer output, re-encoded while being reproduced
+      // into a tool-call argument. Invisible to every in-agent guard, which is why it belongs here.
+      ["agent-skills-165-escaped-button.md",
+        ["escaped-inline-html", "backtick-in-href", "caged-link-target"]],
     ];
     for (const [file, expectedCodes] of REAL) {
       const p = join(POSTED, file);
@@ -2131,18 +2258,22 @@ function checksInSync(plan, checks) {
     s.check("G27 the FAIL verdict rule names only Gates 4 and 5",
       /verdict is \*\*FAIL\*\* when Gate 4 or Gate 5 fails/.test(prReviewer));
 
-    // The tally and reasons must carry no CI token. These are the two strings that produced the
-    // misleading headline, so assert on the rendered vocabulary rather than on prose about it.
-    const tally = sliceBetween(reportRendering, "`SEVERITY_TALLY` (the **FAIL** headline",
-      "`FAIL_REASONS` / `WARN_REASONS`");
-    s.check("G27 SEVERITY_TALLY is ordered errors-then-warnings, with no CI term",
-      /ordered errors-then-warnings/.test(tally) &&
-      !/prefix `CI failing`/.test(tally));
-    s.check("G27 SEVERITY_TALLY states CI never appears in it",
-      /\*\*CI never appears in the tally\.\*\*/.test(tally));
-    const reasons = sliceBetween(reportRendering, "`FAIL_REASONS` / `WARN_REASONS`", "| Gate | ❌ reason");
+    // CI must not reach the posted headline at all. The gate-count tally that used to lead it is
+    // gone — the headline counts FINDINGS now, and `SEVERITY_TALLY` is terminal-only — so the
+    // assertion moves to the two places CI could still leak into a verdict: the WARN ceiling in
+    // the headline rules, and the reasons array.
+    const headlines = sliceBetween(reportRendering, "#### Headlines", "| Gate | ❌ reason");
+    s.check("G27 the headline rules cap CI at WARN and never past it",
+      /raises the verdict to `WARN` and \*\*never past it\*\*/.test(headlines));
+    s.check("G27 the headline counts findings, not gate statuses",
+      /\*\*It counts findings, not gates\.\*\*/.test(headlines));
+    s.check("G27 SEVERITY_TALLY no longer reaches the posted headline",
+      /`SEVERITY_TALLY` is a \*\*terminal-only\*\* term/.test(reportRendering));
+    s.check("G27 the posted headline region carries no CI token",
+      !/CI failing/.test(headlines));
     s.check("G27 FAIL_REASONS no longer leads with a CI phrase",
-      !/leading\s*\n?`CI checks failing`/.test(reasons) && /CI is\s*\n?never among them/.test(reasons));
+      !/leading\s*\n?`CI checks failing`/.test(headlines)
+      && /CI is never\s*\n?among them/.test(headlines));
 
     // The reason table's CI row must offer a ⚠️ phrase and no ❌ phrase.
     const ciRow = (reportRendering.match(/^\| CI \(Gate 2\) \|[^\n]*$/m) || [""])[0];
@@ -2198,34 +2329,61 @@ function checksInSync(plan, checks) {
       }
     }
     // Every prior guard here checks whether a STRING is present or absent. That cannot see a
-    // fixture whose headline COUNT disagrees with its own gate statuses — and because G25 diffs
-    // the snapshots byte-for-byte, such a fixture locks the wrong semantics in as the reference
-    // rendering. warn.json read `**2 warning(s)**` while three gates warned (Prior review feedback,
-    // Code review, and CI via CI_NOTE), which is exactly the miscount this change introduces the
-    // risk of. Derive the counts from the payload and compare them to the rendered headline.
+    // fixture whose headline COUNT disagrees with the payload it was rendered from — and because
+    // G25 diffs the snapshots byte-for-byte, such a fixture locks the wrong semantics in as the
+    // reference rendering.
+    //
+    // The headline used to count GATES (`1 error, 2 warnings`), which is what these checks read.
+    // It now counts FINDINGS, because that is the number the author acts on and the one the inline
+    // comments are — the gate/finding mismatch was why the report and the inline surface never
+    // added up to one number. So the invariants change shape: the finding count and the blocking
+    // subset are checked against FINDINGS[], and the verdict is checked against the gates that
+    // decide it, CI included.
     for (const name of REPORT_FIXTURES) {
       const pj = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.json`);
+      const mj = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
       if (!existsSync(pj)) { s.check(`G27 fixture ${name}.json present`, false); continue; }
       const d = JSON.parse(readFileSync(pj, "utf8"));
-      const statuses = Object.entries(d).filter(([k]) => k.endsWith("_STATUS")).map(([, v]) => v);
+      const statuses = ["GATE_DESCRIPTION_STATUS", "GATE_PRIOR_STATUS", "GATE_DOCS_STATUS",
+        "GATE_SELFREVIEW_STATUS", "GATE_CODEREVIEW_STATUS"].map((k) => d[k]);
       const errors = statuses.filter((v) => v === "❌").length;
-      // CI is a warning gate now, and CI_NOTE is its only surface — a populated CI_NOTE means ⚠️.
+      // CI is a warning gate, and CI_NOTE is its only surface — a populated CI_NOTE means ⚠️.
       const warnings = statuses.filter((v) => v === "⚠️").length + (d.CI_NOTE ? 1 : 0);
-      const h = String(d.HEADLINE);
-      const claimedErr = Number((h.match(/\*\*(\d+) errors?/) || [0, 0])[1]);
-      const claimedWarn = Number((h.match(/(\d+) warnings?/) || [0, 0])[1]);
-      s.check(`G27 ${name} headline's error count matches its gate statuses`,
-        claimedErr === errors, `headline ${claimedErr}, gates ${errors}`);
-      s.check(`G27 ${name} headline's warning count matches its gate statuses (CI included)`,
-        claimedWarn === warnings, `headline ${claimedWarn}, gates ${warnings}`);
-      // A warning gate must be NAMED where WARN_REASONS renders — which is the WARN headline only.
-      // On a FAIL run the spec counts warning gates in the tally but names them in the accordion,
-      // never in the headline, so requiring the phrase there would contradict the file. Scope this
-      // to the no-errors case rather than "wherever CI_NOTE is set".
+      const implied = errors > 0 ? "FAIL" : warnings > 0 ? "WARN" : "PASS";
+      s.check(`G27 ${name} VERDICT agrees with its own gate statuses (CI included)`,
+        d.VERDICT === implied, `payload ${d.VERDICT}, gates imply ${implied}`);
+      // CI can raise the verdict to WARN and never past it: a red check is never an error.
+      s.check(`G27 ${name} CI alone never produces a FAIL`,
+        !(errors === 0 && d.VERDICT === "FAIL"), `${d.VERDICT} with 0 ❌ gates`);
+      // One FAIL_REASONS phrase per ❌ gate, and CI is never among them.
+      const reasons = Array.isArray(d.FAIL_REASONS) ? d.FAIL_REASONS : [];
+      s.check(`G27 ${name} has one FAIL_REASONS phrase per ❌ gate`,
+        reasons.length === errors, `${reasons.length} phrase(s), ${errors} ❌ gate(s)`);
+      s.check(`G27 ${name} names no CI phrase in FAIL_REASONS`,
+        !reasons.some((r) => /\bCI\b/.test(r)), reasons.join("; ").slice(0, 90));
+      // A warning gate must be NAMED where WARN_REASONS renders — the WARN verdict only. On a FAIL
+      // run the spec names warning gates in the accordion, never in the headline region.
       if (d.CI_NOTE && errors === 0) {
+        const warnReasons = (Array.isArray(d.WARN_REASONS) ? d.WARN_REASONS : []).join("; ");
         s.check(`G27 ${name} names CI in WARN_REASONS when CI_NOTE reports a red check`,
-          /CI red:|CI still pending/.test(h), h.slice(0, 90));
+          /CI red:|CI still pending/.test(warnReasons), warnReasons.slice(0, 90));
       }
+      if (!existsSync(mj)) continue;
+      const body = readFileSync(mj, "utf8");
+      const findings = Array.isArray(d.FINDINGS) ? d.FINDINGS : [];
+      const blocking = findings.filter((f) => f.blocking === true).length;
+      const head = (body.match(/^### .*$/m) || [""])[0];
+      const claimed = Number((head.match(/(\d+) findings?/) || [0, 0])[1]);
+      s.check(`G27 ${name} headline's finding count matches FINDINGS[]`,
+        claimed === findings.length, `headline ${claimed}, payload ${findings.length}`);
+      const claimedBlocking = Number((head.match(/(\d+) blocking/) || [0, 0])[1]);
+      s.check(`G27 ${name} headline's blocking count matches FINDINGS[].blocking`,
+        claimedBlocking === blocking, `headline ${claimedBlocking}, payload ${blocking}`);
+      // The index is the worklist, so it must carry one row per finding and sit above the accordion.
+      const indexRows = (body.split("<details>")[0].match(/^\| .* \| .* \| .* \|$/gm) || [])
+        .filter((r) => !/^\|\s*(Finding|-{3})/.test(r) && !/^\|---\|/.test(r));
+      s.check(`G27 ${name} findings index has one visible row per finding`,
+        indexRows.length === findings.length, `${indexRows.length} row(s), ${findings.length} finding(s)`);
     }
     s.check("G27 diagnostic-surface carries the CI-never-fails invariant",
       /\*\*CI never fails the verdict\.\*\*/.test(prReviewerDiag));
@@ -3055,6 +3213,26 @@ const isPollBlock = (block) =>
     /source\.agent == "pr-reviewer"\s*(?:∨|\|\|)\s*source\.explicit == true/.test(memory)
     && /source\.agent == "pr-reviewer"\s*(?:∨|\|\|)\s*source\.explicit == true/.test(prm),
     "memory.md and the agent body must state the same two-case predicate");
+  // A record value with no closed field set grows fields nobody reads. Observed once as a hotspot
+  // carrying `fp_v` and `source{}` lifted off the relevance-rule schema, a `window_days` restating
+  // the TTL LoreKit stores as a column, and three prose sections — one of them the checklist line
+  // the READ side renders from the counters, frozen at write time so the next increment made it
+  // wrong. Nothing objected, because the schemas were examples rather than contracts.
+  s.check("G38e memory.md closes both record schemas against extra fields",
+    /field sets are closed/i.test(memory) && /not listed is not written/i.test(memory),
+    "the knowledge/hotspot value schemas must be stated as closed, not shown as examples");
+  s.check("G38e memory.md forbids restating a LoreKit first-class property",
+    /Never restate what LoreKit already stores as a first-class property/.test(memory)
+    && /source_agent/.test(memory) && /`window_days: 90` in the value/.test(memory),
+    "memory.md must name the columns a value may not duplicate, window_days included");
+  s.check("G38e memory.md keeps in-value expires as the stated exception",
+    /deliberate exception is the in-value \*\*`expires`\*\*/.test(memory)
+    && /by \*marking\* it, not by dropping it/.test(memory),
+    "the expires carve-out must give its mechanical reason: LoreKit marks rather than drops");
+  s.check("G38e memory.md bans storing what the read side derives",
+    /Never store what the read side derives/.test(memory)
+    && /facts and not advice|facts, not advice/i.test(memory),
+    "memory.md must forbid writing the rendered checklist line into the record");
 
   // (f) Telemetry's three invariants. Any of the three lost turns an exposure signal into a
   // correctness verdict about code that has, by construction, no telemetry yet.
@@ -3195,6 +3373,500 @@ const isPollBlock = (block) =>
     const noKey = spawnSync("node", [RUNNER], { encoding: "utf8", env: { ...process.env, ANTHROPIC_API_KEY: "" } });
     s.check("G39c the detection runner skips cleanly with no API key",
       noKey.status === 0 && /no ANTHROPIC_API_KEY/.test(noKey.stdout || ""));
+  }
+}
+
+// ── G46: the inline comment surface has a renderer, and it shares ONE vocabulary with the report ──
+//
+// The report got `render-report.mjs` because runs stopped copying its template and started
+// remembering it. The inline surface had the same problem and the opposite treatment: a prose rule
+// plus a `passes_shape()` function in Python that nothing ever executed — so on dash0hq/dash0#18362
+// one posted finding dropped three documented decorations at once (the severity label, the bold on
+// `**(blocking)**`, and its position) and omitted the fix fence its own rule requires.
+//
+// These checks are behavioural, not textual, for the same reason G25's are: text-matching a correct
+// prose spec was never going to catch a run that ignores it.
+{
+  const SPINE = join(REPO_ROOT, "agents/pr-reviewer/scripts/comment-spine.mjs");
+  const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-comment.mjs");
+  const FIX = join(REPO_ROOT, "scripts/eval/fixtures/inline-comment");
+  const run = (args, input) => {
+    const r = spawnSync("node", [RENDER, ...args], { input, encoding: "utf8" });
+    return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
+  };
+
+  s.check("G46a the inline renderer and the shared spine both exist",
+    existsSync(RENDER) && existsSync(SPINE));
+
+  if (existsSync(RENDER) && existsSync(SPINE)) {
+    // (a) The renderer's own self-test. Every case in it is a shape that shipped or was one edit
+    // from shipping, so a regression in the caps is a CI failure rather than a posted comment.
+    const st = spawnSync("node", [RENDER, "--self-test"], { encoding: "utf8" });
+    s.check("G46b the inline renderer's self-test passes", st.status === 0,
+      ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("—"))
+        .join("; ").slice(0, 400));
+
+    // (b) Snapshot parity, discovered from disk so a new fixture is never silently exempt.
+    const fixtures = existsSync(FIX)
+      ? readdirSync(FIX).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort()
+      : [];
+    s.check("G46c the inline surface has committed reference renderings", fixtures.length >= 3,
+      `${fixtures.length} fixture(s)`);
+    for (const name of fixtures) {
+      const expectedPath = join(FIX, `${name}.expected.md`);
+      if (!existsSync(expectedPath)) {
+        s.check(`G46d ${name} fixture + snapshot present`, false, "missing snapshot");
+        continue;
+      }
+      const r = run([join(FIX, `${name}.json`)]);
+      s.check(`G46d ${name}.json renders without error`, r.ok, r.err);
+      const expected = readFileSync(expectedPath, "utf8");
+      s.check(`G46d ${name} output matches its committed snapshot`, r.out === expected,
+        r.out === expected ? "" : "output drifted — regenerate the snapshot and review the diff");
+    }
+
+    // (c) The invariants the posted comment in the screenshots broke. Asserted on every snapshot,
+    // because these are the properties that make the two surfaces read as one reviewer.
+    for (const name of fixtures) {
+      const p = join(FIX, `${name}.expected.md`);
+      if (!existsSync(p)) continue;
+      const body = readFileSync(p, "utf8");
+      const first = body.split("\n")[0];
+      // The prefix stays at position 0 with the tier immediately after it, because
+      // record-comment-relevance.mjs reads the tier off exactly that shape.
+      s.check(`G46e ${name} opens with a Conventional-Comments prefix`,
+        /^(praise|nitpick|suggestion|issue|question)( \((critical|high|medium|low)\)):/.test(first),
+        first.slice(0, 60));
+      // The recorder's own regex, verbatim — a guard that paraphrases it is not a guard on it.
+      s.check(`G46e ${name} tier is readable by the relevance recorder's SEVERITY_RE`,
+        /^\s*\*{0,2}(?:issue|suggestion|nitpick|nit|question|praise|chore)\s*\((critical|high|medium|low)\)/i
+          .test(body), first.slice(0, 60));
+      // The blocking/non-blocking token is bold and on line 1 — other rules parse it, and Gate 3
+      // reads it to decide whether an open thread fails a PR.
+      if (/\*\*\(blocking\)\*\*|\*\*\(non-blocking\)\*\*/.test(body)) {
+        s.check(`G46e ${name} keeps its bold decoration on line 1`,
+          /\*\*\((?:non-)?blocking\)\*\*\s*$/.test(first), first.slice(-40));
+      }
+      // The footer is the cue that makes an inline finding and the report the same reviewer, and
+      // the only attribution visible in a notification email.
+      s.check(`G46e ${name} carries the shared attribution footer`,
+        /^<sup>`pr-reviewer` · commit `[0-9a-f]{7}` · \[how these findings are produced\]/m.test(body));
+      // No heading, no bullets — the shape rule the report's `### ` headline is the counterpart of.
+      s.check(`G46e ${name} uses no heading`, !/^#{1,6} /m.test(body));
+      // A claim carries a title in bold; a one-liner carries none. Both are checked, because the
+      // interesting failure is a nitpick that grew a title as much as an issue that lost one.
+      const isClaim = /^(issue|suggestion)/.test(first);
+      s.check(`G46e ${name} ${isClaim ? "carries" : "carries no"} a bold title`,
+        /\*\*[^*(]/.test(first) === isClaim, first.slice(0, 70));
+    }
+
+    // (d) The two surfaces import the SAME vocabulary. This is the check that makes consistency
+    // structural: a glyph map or footer builder copied into one renderer would drift on the first
+    // edit that touched only one of them, which is how the two surfaces came to share nothing.
+    const spine = readFileSync(SPINE, "utf8");
+    const inline = readFileSync(RENDER, "utf8");
+    const report = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"), "utf8");
+    for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
+      s.check(`G46f ${file} imports the shared spine`,
+        /from "\.\/comment-spine\.mjs"/.test(src));
+      for (const shared of ["TIER_GLYPH", "footerLine"]) {
+        s.check(`G46f ${file} takes ${shared} from the spine, not a local copy`,
+          new RegExp(`import[\\s\\S]*?${shared}[\\s\\S]*?comment-spine`).test(src)
+          && !new RegExp(`(const|function)\\s+${shared}\\b`).test(src));
+      }
+    }
+    // The glyph set is defined exactly once in the repo's renderer layer.
+    for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
+      s.check(`G46f ${file} declares no second glyph map`,
+        !/\{\s*critical:\s*"/.test(src.replace(/^import[\s\S]*?;$/m, "")));
+    }
+    s.check("G46f the spine is where the glyph set lives", /TIER_GLYPH = \{ critical:/.test(spine));
+
+    // `assertPlain` needs its own form. The report renderer legitimately WRAPS it — the spine
+    // throws and this renderer must exit non-zero with nothing on stdout — so the no-local-binding
+    // test above would reject a correct delegation. The defect it must catch is a second
+    // IMPLEMENTATION, and the signal for that is the spine's own error strings appearing in a
+    // renderer: this file carried a behaviourally identical copy through the whole parity change,
+    // validating the same fields against a second definition of "plain".
+    for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
+      s.check(`G46f ${file} imports assertPlain from the spine`,
+        /import[\s\S]*?assertPlain[\s\S]*?comment-spine/.test(src),
+        "one definition of plain, or the two surfaces validate the same field two ways");
+      s.check(`G46f ${file} carries no second assertPlain implementation`,
+        !/contains a markdown link/.test(src) && !/contains a backtick/.test(src),
+        "a behaviourally identical local copy is the drift the spine exists to prevent");
+    }
+
+    // The pipe is the FOURTH check on the finding title, and the one the parity change missed.
+    // `render-report.mjs` rejects it (a table cell cannot be escaped out of) and the inline
+    // renderer did not — the worst available failure ordering, since every comment posts and then
+    // the report indexing them is lost. Both surfaces bound this string or neither does.
+    for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
+      s.check(`G46f ${file} rejects a pipe in the finding title`,
+        /includes\("\|"\)/.test(src), "the title is one string on two surfaces");
+    }
+    const pipeTitle = JSON.parse(readFileSync(join(FIX, "issue-blocking.json"), "utf8"));
+    pipeTitle.TITLE = "Fix button | costs too much";
+    const pipeRun = run([], JSON.stringify(pipeTitle));
+    s.check("G46f the inline renderer rejects a piped title", !pipeRun.ok,
+      "it renders fine in bold and destroys the report row that indexes it");
+    s.check("G46f rejecting a piped title emits nothing on stdout", (pipeRun.out || "") === "",
+      (pipeRun.out || "").slice(0, 80));
+
+    // (e) WCAG 1.4.1: the glyph is never the sole carrier of the tier. `🔴 3 · 🟠 1` is unreadable
+    // to anyone who does not already know the mapping and announces as four colour names.
+    s.check("G46g the tally pairs every glyph with its word",
+      /`\$\{TIER_GLYPH\[t\]\} \$\{counts\[t\]\} \$\{t\}`/.test(spine));
+
+    // (e2) The Step 4b pre-flight and the renderer must agree about what a well-formed body is.
+    // They are two implementations of one contract in two languages, and the pre-flight aborts the
+    // WHOLE post rather than dropping one comment — so a disagreement does not lose a finding, it
+    // loses the review. Caught exactly that while writing this: the <picture> button markup is
+    // ~430 chars and was being measured as prose, which rejected every rendered claim.
+    //
+    // Executed, not text-matched: extract `payload_is_safe` from the agent body and run the
+    // committed reference renderings through it.
+    {
+      const agentBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+      const m = agentBody.match(/^def payload_is_safe\([\s\S]*?\n    return \(True, ""\)$/m);
+      s.check("G46i the Step 4b pre-flight is extractable from the agent body", !!m,
+        "payload_is_safe not found — the fence shape changed");
+      if (m) {
+        const comments = fixtures.map((name) => {
+          const body = readFileSync(join(FIX, `${name}.expected.md`), "utf8");
+          return { path: "a.ts", line: 1, side: "RIGHT", body };
+        });
+        const prog = `${m[0]}\nimport json,sys\n`
+          + `ok, why = payload_is_safe({"event":"COMMENT","body":"<!-- PR_REVIEWER_POINTER -->",`
+          + `"comments": json.loads(sys.argv[1])})\nprint(json.dumps([ok, why]))\n`;
+        const r = spawnSync("python3", ["-c", prog, JSON.stringify(comments)], { encoding: "utf8" });
+        s.check("G46i the pre-flight runs", r.status === 0, (r.stderr || "").slice(0, 300));
+        if (r.status === 0) {
+          let verdict = [null, ""];
+          try { verdict = JSON.parse(r.stdout); } catch { /* reported below */ }
+          s.check("G46i the pre-flight accepts every rendered reference body", verdict[0] === true,
+            `rejected: ${verdict[1]}`);
+        }
+      }
+    }
+
+    // (f) Fail-closed, and silent on stdout — a caller that pipes stdout can never post a fragment.
+    const good = JSON.parse(readFileSync(join(FIX, "issue-blocking.json"), "utf8"));
+    const mutate = (fn) => { const c = structuredClone(good); fn(c); return JSON.stringify(c); };
+    for (const [why, payload] of [
+      ["a missing title on a claim", mutate((c) => { delete c.TITLE; })],
+      ["a hand-typed fingerprint", mutate((c) => { c.FP = "persona1:vibes:f@a.ts"; })],
+      ["a typo'd slot", mutate((c) => { c.TITEL = "x"; })],
+      ["a non-Agent0 button host", mutate((c) => { c.FIX_URL = "https://evil.example.com/x"; })],
+      ["a 40-char sha", mutate((c) => { c.SHA = "7389036aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; })],
+      ["malformed JSON", "{nope"],
+    ]) {
+      const r = run([], payload);
+      s.check(`G46h the inline renderer rejects ${why}`, !r.ok, r.ok ? "ACCEPTED" : "");
+      s.check(`G46h rejecting ${why} emits nothing on stdout`, r.out === "", r.out.slice(0, 60));
+    }
+
+    // (j) The relay length budget. A write path that carries the body as a tool-call argument
+    // rewrites a long unbroken run into a code span, which closes the href and escapes the markup
+    // after it — measured on mthines/agent-skills#165. The budget is executable, not prose: it is a
+    // number in the spine that both the agent body and the rule have to agree with, because the
+    // whole failure mode was a correct renderer plus a documented cause that was wrong.
+    // Read once, up front: the (j) / (k) / (l) / (m) groups all cross-check the same three
+    // documents against the spine's live exports.
+    const fixRule = readFileSync(join(REPO_ROOT, "agents/shared/rules/agent0-fix-links.md"), "utf8");
+    const agentBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+    const assetMod = await import(pathToFileURL(SPINE).href);
+    const relay = (body) => {
+      const f = join(tmpdir(), `l1-relay-${Math.random().toString(36).slice(2)}.md`);
+      writeFileSync(f, body);
+      const r = spawnSync("node", [SPINE, "--relay-check", f], { encoding: "utf8" });
+      rmSync(f, { force: true });
+      return r;
+    };
+    const budget = 140;
+    s.check("G46j the spine states the relay budget as an executable constant",
+      new RegExp(`RELAY_SAFE_URL_MAX = ${budget}`).test(spine),
+      "RELAY_SAFE_URL_MAX must be a named export the agent and the rule can both cite");
+
+    const shortUrl = `https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=Fix`;
+    const longUrl = shortUrl + "%20" + "x".repeat(budget);
+    s.check(`G46j a URL inside the ${budget}-char budget is relay-safe`,
+      relay(`<a href="${shortUrl}"><img alt="Fix with Agent0" src="x"></a>`).status === 0,
+      `rejected a ${shortUrl.length}-char url`);
+    const over = relay(`<a href="${longUrl}"><img alt="Fix with Agent0" src="x"></a>`);
+    s.check("G46j an over-budget URL is reported, with its length and the budget",
+      over.status === 1 && /relay-unsafe url \(\d+ chars, over 140\)/.test(over.stderr),
+      (over.stderr || "").slice(0, 200));
+    s.check("G46j the over-budget message names the remedy, not a shorter prompt",
+      /--no-fix-links|from a file/.test(over.stderr) && !/shorten the prompt/.test(over.stderr),
+      "withholding the button is the remedy; truncating the prompt ships a useless button");
+    // A fenced quote may legitimately contain anything, including a long url from the diff.
+    s.check("G46j a long URL inside a fence is not a relay finding",
+      relay(`before\n\n\`\`\`\n${longUrl}\n\`\`\`\n\nafter\n`).status === 0);
+    // The real link is the case that matters: it does NOT fit, and the docs must not pretend it can.
+    const realLink = spawnSync("node",
+      [join(REPO_ROOT, "agents/pr-reviewer/scripts/build-agent0-link.mjs"),
+        "--env", "production", "--source", "fix-this",
+        "Fix the finding at agents/pr-reviewer/scripts/comment-spine.mjs:180 on mthines/agent-skills#165."],
+      { encoding: "utf8" });
+    s.check("G46j a full-fidelity fix-this link is over the budget, as documented",
+      realLink.status === 0 && realLink.stdout.trim().length > budget,
+      `link was ${realLink.stdout.trim().length} chars — if this now fits, the rule's table is stale`);
+
+    // The exit code has to name what the REMEDY reaches, not what the relay damages. Reporting a
+    // long non-fix-link as exit 1 sent the caller to `--no-fix-links`, which removes Agent0 deep
+    // links and nothing else: the re-render failed the identical check with nothing left to try.
+    const longDoc = `https://lorekit.example.com/${"d".repeat(budget)}`;
+    const otherOver = relay(`see <${longDoc}>\n`);
+    s.check("G46j a long URL that is not a fix link exits 3, not 1",
+      otherOver.status === 3,
+      `exit ${otherOver.status} — exit 1 points at a remedy that cannot remove this URL`);
+    s.check("G46j the exit-3 message says the remedy does not apply",
+      /--no-fix-links removes none of them/.test(otherOver.stderr),
+      (otherOver.stderr || "").slice(0, 200));
+    s.check("G46j a fix link still exits 1 when both kinds are over budget",
+      relay(`see <${longDoc}>\n\n<a href="${longUrl}"><img alt="Fix with Agent0" src="x"></a>`)
+        .status === 1,
+      "a remediable URL present anywhere makes the run remediable");
+    s.check("G46j the spine exports the fix-link partition",
+      /export function relayUnsafeFixLinks\(/.test(spine),
+      "the two classes need different answers, so the partition has to be a function");
+    for (const [surface, target] of [
+      ["the sticky", "--relay-check /tmp/report-body.md"],
+      ["the inline surface", "--relay-check /tmp/finding-$i.md"],
+    ]) {
+      const idx = agentBody.indexOf(target);
+      s.check(`G46j ${surface} branches on the relay exit code rather than on truthiness`,
+        idx > 0 && /^\s*case \$\? in/m.test(agentBody.slice(idx, idx + 320)),
+        "`|| withhold` collapses 3 into 1 and re-renders a body that cannot pass");
+    }
+    s.check("G46j the rule documents exit 3 as post-as-rendered",
+      /Exit 3 — something else is over budget/.test(fixRule)
+        && /relayUnsafeFixLinks\(\)/.test(fixRule),
+      "agent0-fix-links.md owns the exit-code table; a third code that is not in it is invisible");
+
+    // The codes are ONE exit status, so 1 outranks 3 and the exit-3 condition can survive the
+    // withhold: a body with both a fix link and a cited link over budget re-renders, posts, and
+    // never names the citation the relay is still going to mangle. Every place that acts on exit 1
+    // must therefore ask again on the re-rendered body — both call sites and the rule that owns
+    // the table, or the obligation is discharged in one and dropped in the others.
+    for (const [where, src, anchorRe] of [
+      ["the inline call site", agentBody, /finding-\$i\.md[\s\S]{0,400}?rc=\$\?/],
+      ["the sticky call site", agentBody, /RERENDER_WITH_NO_FIX_LINKS[\s\S]{0,400}?rc=\$\?/],
+      ["the rule", fixRule, /1 outranks 3[\s\S]{0,200}?rc=\$\?/],
+    ]) {
+      s.check(`G46j ${where} re-checks the relay after the exit-1 remedy`, anchorRe.test(src),
+        "exit 1 means this RUN is remediable, not that the body is otherwise clean");
+    }
+    s.check("G46j the surviving exit-3 condition reaches the run line",
+      /NOTE_MANGLED_LINK=1/.test(agentBody) && /note_mangled_link/.test(fixRule),
+      "a re-check whose result goes nowhere is the same silence with an extra step");
+
+    // (l) The post pre-flight's prose ceiling, measured against the renderer rather than restated.
+    // `UNVERIFIED_MAX` was added to the spine and this ceiling did not move, so a finding legal
+    // under every per-field cap tripped a predicate that ABORTS THE WHOLE POST — one maximal
+    // finding took the entire batch down. The guard renders the maximal legal payload for each
+    // shape and applies the pre-flight's own documented strips, so the next cap added to the spine
+    // fails a check here instead of a review in production.
+    const ceilingM = agentBody.match(/if len\(_prose\) > (\d+):/);
+    s.check("G46l the post pre-flight states its prose ceiling as a number L1 can read",
+      !!ceilingM, "payload_is_safe must keep the `if len(_prose) > N:` form");
+    const ceiling = Number(ceilingM?.[1] ?? 0);
+    // Exactly the strips payload_is_safe performs, in its order.
+    const preflightProse = (body) => body
+      .replace(/```[a-zA-Z0-9_+-]*\n[\s\S]*?\n```/g, "")
+      .replace(/^Evidence:.*$/gm, "")
+      .replace(/^<sup>`pr-reviewer`.*$/gm, "")
+      .replace(/^<a href="https:\/\/app\.dash0(?:-dev)?\.com\/.*$/gm, "")
+      .replace(/^_Pseudo-code — verify before applying\._$/gm, "")
+      .replace(/\s*\(unverified: [^)]*\)/g, "")
+      .replace(/<!--\s*fp:v\d+:[^\s>]+?\s*-->/g, "")
+      .trim();
+    // The SECOND ceiling in the same predicate, on the whole body rather than the prose. It had no
+    // coverage at all while the prose one did, which is how it came to describe the fix button as
+    // "~430 chars" long after the theme split doubled that element into two <source> plus an <img>.
+    // Measured: a legal `issue:` at every cap with a 10-line fence and a 408-char link renders 2208
+    // chars, 933 of it button — over a 2000 ceiling that ABORTS THE WHOLE POST. Both ceilings are
+    // read out of the source and both are measured here, so neither can drift alone again.
+    const bodyCeilingM = agentBody.match(/if len\(_body\) > (\d+):/);
+    s.check("G46l the post pre-flight states its whole-body ceiling as a number L1 can read",
+      !!bodyCeilingM, "payload_is_safe must keep the `if len(_body) > N:` form");
+    const bodyCeiling = Number(bodyCeilingM?.[1] ?? 0);
+    // The one strip the body measurement performs: the button, whose length is the deep link's.
+    // Applied HERE only if the source actually applies it — a hand-copied strip would make this
+    // measurement pass on a predicate that no longer strips anything, which is a guard measuring
+    // its own copy of the rule. Conditioning on the source makes the measurement the real gate.
+    const bodyStripsButton = /_body = _re\.sub\(\s*r'\^<a href="https:\/\/app\\\.dash0/.test(agentBody);
+    const preflightBody = (body) => bodyStripsButton
+      ? body.replace(/^<a href="https:\/\/app\.dash0(?:-dev)?\.com\/.*$/gm, "")
+      : body;
+    // A real link through the real builder, at a realistic prompt length — the encoding and the
+    // `<picture>` markup around it are what this measures, so neither may be approximated here.
+    const { buildLink } = await import(
+      pathToFileURL(join(REPO_ROOT, "agents/pr-reviewer/scripts/build-agent0-link.mjs")).href);
+    const maxFixUrl = buildLink(
+      `/implement https://github.com/${"o".repeat(20)}/${"r".repeat(20)}/pull/165 pr-reviewer — `
+        + "apply only the finding at ".repeat(6), "development", "fix-this");
+    const tenLineFence = { lang: "ts", code: Array.from({ length: 10 },
+      (_, i) => `  const someValue${i} = computeSomething(argumentOne, argumentTwo);`).join("\n") };
+    const maximal = [
+      ["a claim at every cap, unverified", "suggestion-pseudo",
+        { TITLE: "T".repeat(assetMod.TITLE_MAX), BODY: "P".repeat(assetMod.PROSE_MAX),
+          UNVERIFIED: "U".repeat(assetMod.UNVERIFIED_MAX), EVIDENCE: undefined }],
+      ["a claim at every cap, verified", "suggestion-pseudo",
+        { TITLE: "T".repeat(assetMod.TITLE_MAX), BODY: "P".repeat(assetMod.PROSE_MAX) }],
+      ["a one-liner at its cap", "nitpick", { BODY: "P".repeat(assetMod.PROSE_MAX) }],
+      // The shape that broke the whole-body ceiling: every cap, a 10-line fence AND a fix button.
+      ["a blocking claim at every cap with a 10-line fence and a fix button", "issue-blocking",
+        { TITLE: "T".repeat(assetMod.TITLE_MAX), BODY: "P".repeat(assetMod.PROSE_MAX),
+          FENCE: tenLineFence, FIX_URL: maxFixUrl }],
+    ];
+    for (const [label, base, over] of maximal) {
+      const payload = { ...JSON.parse(readFileSync(join(FIX, `${base}.json`), "utf8")), ...over };
+      for (const k of Object.keys(over)) if (over[k] === undefined) delete payload[k];
+      const r = run([], JSON.stringify(payload));
+      s.check(`G46l ${label} renders`, r.ok, (r.err || "").slice(0, 140));
+      if (!r.ok) continue;
+      const n = preflightProse(r.out).length;
+      s.check(`G46l ${label} fits the ${ceiling}-char prose pre-flight (${n})`, n <= ceiling,
+        `${n} > ${ceiling} — payload_is_safe aborts the WHOLE post, so this drops every finding`);
+      const b = preflightBody(r.out).length;
+      s.check(`G46l ${label} fits the ${bodyCeiling}-char body pre-flight (${b})`, b <= bodyCeiling,
+        `${b} > ${bodyCeiling} — payload_is_safe aborts the WHOLE post, so this drops every finding`);
+    }
+    s.check("G46l the pre-flight strips the unverified tag it does not bound",
+      /_prose = _re\.sub\(r"\\s\*\\\(unverified: \[\^\)\]\*\\\)"/.test(agentBody),
+      "the tag is a rendered decoration like the fence and the button — strip it, do not re-bound it");
+    // The body measurement is only survivable because the button is stripped from it too: the
+    // element is ~525 chars of boilerplate plus a URL `build-agent0-link.mjs` bounds at 4000, so a
+    // maximal button alone can exceed any ceiling this predicate could name.
+    s.check("G46l the whole-body ceiling excludes the fix button",
+      bodyStripsButton && /fix button excluded/.test(agentBody),
+      "measure the body without the button, exactly as the prose measurement does");
+
+    // (m) The finding title is one string on two surfaces, so one cap governs both. The report
+    // renderer had `assertPlain` and no length check while the comment renderer enforced
+    // TITLE_MAX — so an over-long title rendered a report row and then failed the comment that
+    // row indexes, after the report had already been written.
+    const reportRenderer = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"), "utf8");
+    s.check("G46m the report renderer imports TITLE_MAX from the spine",
+      /TITLE_MAX/.test(reportRenderer.slice(0, reportRenderer.indexOf('} from "./comment-spine.mjs"'))),
+      "a local copy of the cap is the drift this spine exists to prevent");
+    const warnPayload = JSON.parse(readFileSync(join(FIX, "../report-body/warn.json"), "utf8"));
+    const overTitle = structuredClone(warnPayload);
+    overTitle.FINDINGS[0].title = "W".repeat(assetMod.TITLE_MAX + 1);
+    const rr = spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs")],
+      { input: JSON.stringify(overTitle), encoding: "utf8" });
+    s.check("G46m the report renderer rejects a title over TITLE_MAX", rr.status !== 0,
+      "the report indexes the inline finding; a title it accepts must be one the comment can post");
+    s.check("G46m rejecting an over-long title emits nothing on stdout", rr.stdout === "",
+      (rr.stdout || "").slice(0, 80));
+
+    // The reasons line is the same count stated twice — once as a list, once as the gate table
+    // above it. FAIL_REASONS was cross-checked against the ❌ count and WARN_REASONS against
+    // nothing, so a WARN could claim more warnings than it had gates; `reasonList` truncates at
+    // two phrases, so it did not even look wrong. Both polarities or neither.
+    const renderReport = (mut) => {
+      const p = structuredClone(warnPayload); mut(p);
+      return spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs")],
+        { input: JSON.stringify(p), encoding: "utf8" });
+    };
+    // The gate statuses are individual `GATE_<NAME>_STATUS` slots, not one array, and CI has no
+    // row at all — `CI_NOTE` is its whole surface, and it counts as a warning gate.
+    const warnGates = Object.entries(warnPayload)
+      .filter(([k, v]) => /^GATE_[A-Z]+_STATUS$/.test(k) && v === "⚠️").length
+      + (warnPayload.CI_NOTE ? 1 : 0);
+    const tooManyWarn = renderReport((p) => {
+      p.WARN_REASONS = Array.from({ length: warnGates + 2 }, (_, i) => `phantom warning ${i + 1}`);
+    });
+    s.check("G46m the report renderer rejects more WARN_REASONS than ⚠️ gates",
+      tooManyWarn.status !== 0 && /WARN_REASONS has \d+ phrases but only \d+ gate/.test(tooManyWarn.stderr),
+      (tooManyWarn.stderr || "").slice(0, 160));
+    s.check("G46m a WARN verdict with no WARN_REASONS is rejected",
+      renderReport((p) => { p.WARN_REASONS = []; }).status !== 0,
+      "the FAIL branch requires a reason phrase; the WARN branch cannot be laxer");
+    // Parity is all three checks the inline renderer applies to the same string, not just the
+    // length one — a title is a noun phrase on both surfaces or on neither.
+    for (const [what, bad] of [
+      ["sentence punctuation", "The registry is never wired up."],
+      ["block structure", "- a bulleted title"],
+    ]) {
+      s.check(`G46m the report renderer rejects a title carrying ${what}`,
+        renderReport((p) => { p.FINDINGS[0].title = bad; }).status !== 0,
+        `render-comment.mjs rejects it, so the row that indexes it cannot accept it`);
+    }
+    s.check("G46m the cross-check is symmetric in the source, not just in behaviour",
+      /WARN_REASONS"\)\.length > warning/.test(reportRenderer)
+        && /FAIL_REASONS"\)\.length > failing/.test(reportRenderer),
+      "one polarity validated and not the other is the shape FINDINGS[].title had in this file");
+
+    // The rule and the agent body both have to carry it. The wrong-cause version of this section
+    // read as correct and was invisible to every other guard here.
+    s.check("G46j the rule documents the relay length limit",
+      /## Relay length limit/.test(fixRule) && /RELAY_SAFE_URL_MAX = 140/.test(fixRule),
+      "agent0-fix-links.md must own the measured table and cite the same constant");
+    s.check("G46j the rule forbids shrinking the prompt to fit",
+      /worse than no button/.test(fixRule),
+      "a truncated prompt opens a session with no idea what to fix — say so");
+    // (k) The button's image has to exist at the URL the markup names. Offline, so this asserts the
+    // FILE is in the repo and the markup follows GitHub's documented three-element form; the 404
+    // case is a live HEAD check the agent runs (`--assets-check`), because whether a path is on the
+    // default branch is not knowable from a working tree.
+    const ASSETS = join(REPO_ROOT, "agents/pr-reviewer/assets");
+    s.check("G46k the spine enumerates every asset file it can reference",
+      Array.isArray(assetMod.ASSET_FILES) && assetMod.ASSET_FILES.length === 6,
+      `ASSET_FILES = ${JSON.stringify(assetMod.ASSET_FILES)}`);
+    for (const f of assetMod.ASSET_FILES ?? []) {
+      s.check(`G46k ${f} exists in the repo`, existsSync(join(ASSETS, f)),
+        "fixButton names it, so a missing file is a broken-image icon on every review");
+    }
+    // The unsuffixed default is what email and RSS render — they ignore <source> entirely — and it
+    // is the one filename that predates the theme split, so it must equal the light variant rather
+    // than being left as whatever art shipped before.
+    for (const stem of ["fix-this-agent0", "fix-all-agent0"]) {
+      const dflt = join(ASSETS, `${stem}.svg`);
+      const light = join(ASSETS, `${stem}-light.svg`);
+      s.check(`G46k ${stem}.svg (the <img> default) matches the light variant`,
+        existsSync(dflt) && existsSync(light)
+          && readFileSync(dflt, "utf8") === readFileSync(light, "utf8"),
+        "email and RSS render the default, so it cannot be stale art");
+    }
+    const btn = assetMod.fixButton({ kind: "this", url: "https://app.dash0.com/goto/agent0?x=1" });
+    s.check("G46k the button follows GitHub's documented picture form (dark, light, then default)",
+      /<picture><source media="\(prefers-color-scheme: dark\)"[^>]*><source media="\(prefers-color-scheme: light\)"[^>]*><img alt="[^"]+" src="[^"]*\/fix-this-agent0\.svg"/.test(btn),
+      btn.slice(0, 200));
+    s.check("G46k the <img> default is not a theme-suffixed file",
+      !/<img[^>]*src="[^"]*-(dark|light)\.svg"/.test(btn),
+      "picture does NOT fall back to img on a failed srcset, so the default must be the stable name");
+    const assetsUrls = assetMod.assetUrls(btn);
+    s.check("G46k assetUrls() finds all three of a button's assets", assetsUrls.length === 3,
+      JSON.stringify(assetsUrls));
+    s.check("G46k assetUrls() ignores a non-asset url",
+      assetMod.assetUrls("see https://example.com/x.svg").length === 0);
+    s.check("G46k the rule documents the asset-availability failure and its three exit codes",
+      /## Asset availability/.test(fixRule) && /inconclusive is not a missing asset/.test(fixRule),
+      "a network failure must never withhold a button that would have rendered");
+    for (const [surface, target] of [
+      ["the sticky", "--assets-check /tmp/report-body.md"],
+      ["the inline surface", "--assets-check /tmp/finding-$i.md"],
+    ]) {
+      s.check(`G46k ${surface} checks its button assets before posting`,
+        agentBody.includes(target), `no \`${target}\` call site`);
+    }
+
+    // Anchor each call site by the file it checks, not by counting the flag: the body mentions
+    // `--relay-check` in prose too, so a count-based guard passed with a call site deleted.
+    for (const [surface, target] of [
+      ["the sticky", "--relay-check /tmp/report-body.md"],
+      ["the inline surface", "--relay-check /tmp/finding-$i.md"],
+    ]) {
+      s.check(`G46j ${surface} runs the relay check on the body it is about to post`,
+        agentBody.includes(target), `no \`${target}\` call site`);
+    }
+    s.check("G46j the agent body no longer blames the copy for the #165 mangling",
+      /The cause is the relay, not the copy/.test(agentBody)
+        && !/is the specific hazard\*\*/.test(agentBody),
+      "the first diagnosis was falsified by measurement; a stale root cause misroutes the next fix");
   }
 }
 

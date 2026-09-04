@@ -15,8 +15,15 @@ Opt-in "Fix with Agent0" buttons on the reviewer's output — the Agent0 equival
 button per inline finding. Each links to an Agent0 deep link that auto-submits a prompt which fixes
 the finding and commits to the same PR.
 
-This is **off by default**. Non-Dash0 repos have no Agent0, so the buttons only render when the
-review config opts in.
+**On wherever an Agent0 exists; off everywhere else.** The gate is whether the repo's review config
+resolves an `agent0_environment` (§ Environment) — a repo that has said which Agent0 it uses has
+already answered the only question the button depends on. Non-Dash0 repos configure no environment,
+render no buttons, and are unaffected.
+
+The buttons used to be off unless a flag was passed, and the cost of that was the whole point of
+having them: the affordance that turns a review into an action was absent from every run nobody
+remembered to flag — including the runs a screenshot gets taken of. A review that finds four real
+problems and offers no way to act on them is doing the hard half and skipping the cheap one.
 
 ## Contents
 
@@ -25,28 +32,36 @@ review config opts in.
 - [Click attribution](#click-attribution)
 - [Prompt templates](#prompt-templates)
 - [Button markup](#button-markup)
+- [Asset availability](#asset-availability)
+- [Relay length limit](#relay-length-limit)
 - [Safety](#safety)
 
 ## Opt-in
 
-Off by default. It is a **runtime mode**, enabled per-run with the `--fix-links` flag on the
-`pr-reviewer` invocation:
+Resolution order, first match wins:
 
-```text
-Task(subagent_type="pr-reviewer", prompt="<PR-URL> --fix-links")
-```
-
-`--fix-links` is the mode the Agent0 automation passes for the runs it owns, so nobody else's
-reviews change and no repo has to commit a config file. A repo that *always* wants the buttons can
-set the equivalent default in its review config instead:
+| Signal | Result |
+| --- | --- |
+| `--no-fix-links` on the invocation | **off** — the explicit opt-out, and it beats everything below |
+| `--fix-links` on the invocation | **on** |
+| `agent0_fix_links: true` / `false` in the review config | as set — an explicit repo-wide answer |
+| `agent0_environment` resolves in the review config | **on** — the default this section is about |
+| nothing configured | **off** |
 
 ```yaml
 # .github/review.yaml
-agent0_fix_links: true   # repo-wide default — equivalent to always passing --fix-links (default: false)
+agent0_environment: production      # this alone turns the buttons on
+agent0_fix_links: false             # …unless the repo explicitly says otherwise
 ```
 
-With neither the flag nor the config set (the default), the reviewer emits no buttons anywhere and
-behaves exactly as before.
+```text
+Task(subagent_type="pr-reviewer", prompt="<PR-URL> --no-fix-links")   # opt out for one run
+```
+
+Two properties are worth stating because they are what make the default safe. A repo with no
+`agent0_environment` still gets nothing, so the change is invisible outside Dash0. And the two
+placements are governed by **one** flag, so a run either has both buttons or neither — a report
+offering *Fix all* above findings with no *Fix this* was one of the inconsistencies this replaces.
 
 ## Environment
 
@@ -101,7 +116,7 @@ state included, in a single call. That makes the **Fix all** URL length **indepe
 count** — it no longer grows with how many findings are open, which is what let a large PR's worklist
 crowd the 2500 target before. Measured from the live template with a realistic owner/repo/login: ~1100
 chars, flat regardless of `{count}`. **Fix this** is ~880 at its worst case (a 94-char path plus the
-full 240-char lead cap). The figures are not guesses — L1 `G32d` fills the live template and measures
+full lead-line cap). The figures are not guesses — L1 `G32d` fills the live template and measures
 it (the `&utm_source=...` tag from § Click attribution is a small, fixed addition on top and does not
 move either shape closer to the target), so a clause added here is measured on the next run.
 
@@ -145,7 +160,7 @@ Fix the pr-reviewer finding at {path}:{line} on {owner}/{repo}#{n} — "{lead}".
 ```
 
 `{lead}` is the finding's own first line as posted (the Conventional-Comments prefix plus its first
-sentence, ≤ 240 chars by `comment-shape.md § Hard caps`), with any double quotes dropped so it
+sentence, ≤ 200 chars by `comment-shape.md § Hard caps`, plus its ≤ 60-char title), with any double quotes dropped so it
 cannot break out of its quoted span. It is the reviewer's own authored text, not a third party's.
 
 Why `{path}:{line}` and not a `#discussion_r<id>` permalink: GitHub assigns the comment's `r<id>`
@@ -258,33 +273,210 @@ count was not sufficient on its own).
 
 ## Button markup
 
-Each button is a linked image — the image is the button, the link is the deep link:
+**Built by one function, `comment-spine.mjs`'s `fixButton()`, which both renderers call.** Never
+hand-write this markup: the host validation, the `)`-in-URL rejection, the alt text and the theme
+pair all live in that function, and a second copy is how the report's button and the inline one
+drift into two different chips.
 
-```text
-[![Fix with Agent0]({ASSET_BASE}/fix-this-agent0.svg)]({DEEP_LINK})
-[![Fix all with Agent0]({ASSET_BASE}/fix-all-agent0.svg)]({DEEP_LINK})
+Each button is a **theme-aware** linked image:
+
+```html
+<a href="{DEEP_LINK}"><picture><source media="(prefers-color-scheme: dark)" srcset="{ASSET_BASE}/fix-this-agent0-dark.svg"><img alt="Fix with Agent0" src="{ASSET_BASE}/fix-this-agent0-light.svg" height="36"></picture></a>
 ```
 
-`{ASSET_BASE}` is not a runtime setting — it is shorthand in this doc for the hardcoded `ASSET`
-constant in `render-report.mjs` (currently the committed SVGs below), and nothing exposes an
-override for it:
+**The anchor is HTML, not markdown link syntax, and it is one line.** Wrapping the `<picture>`
+element in markdown link brackets puts a block of raw HTML inside a markdown link, and whether the
+parser treats that HTML as the link's inline content is not something this repo can verify without
+posting a comment — a broken
+button reads as a broken reviewer. `<a href>` wrapping `<picture>` needs no markdown parsing at all,
+and both elements are on GitHub's comment HTML allowlist. One line because a blank line inside
+inline HTML ends the HTML block.
+
+`<picture>` with `media="(prefers-color-scheme: dark)"` is how GitHub does theme-aware images, and
+it is why there are two variants. A single dark chip reads as a near-black blob in GitHub's light
+theme, where every other control is light — this is the primary call to action of the whole review,
+so it should not be the one element that ignores the reader's theme. The light variant uses
+GitHub's own control colours (`#d0d7de` border, `#1f2328` ink) so it reads as part of the page.
+
+**Both variants are 36 px tall.** The originals were 28. WCAG 2.2 SC 2.5.8 sets a 24×24 floor
+(28 cleared it, barely); SC 2.5.5 and the iOS HIG want 44×44 and Android 48 dp, which a chip sitting
+beside body text cannot reach without dominating the comment. 36 is the compromise: comfortably
+clear of the floor, and roughly as close to the platform minimum as this control can get. On the
+GitHub mobile web view this is the tap target for the review's only action, so the extra 8 px is not
+cosmetic.
+
+**Width is derived, and the text width is pinned so it cannot depend on the reader's fonts.** The
+geometry is `12` left pad + `12` mark + `8` gap + `TEXT_W` + `12` right pad, giving 140 for
+`Fix with Agent0` (`TEXT_W` 96) and 158 for `Fix all with Agent0` (`TEXT_W` 114). Each `<text>`
+carries `textLength="{TEXT_W}" lengthAdjust="spacingAndGlyphs"`, which is what makes the box the
+same size in every renderer.
+
+Without that pin, the width has to be guessed against a font the asset does not ship, and the guess
+is wrong in both directions at once. Measured in Chromium at 13 px semibold, `Fix all with Agent0`
+is 113.7 px under Helvetica/Arial (what macOS and Windows resolve) and 137.6 px under DejaVu Sans
+(the Linux fallback) — a 24 px spread on a 158 px control. The first version of these assets was
+sized for the wide case, so the button carried 38 px of right padding against 12 on the left
+wherever the review is actually read, while `Fix with Agent0` at 152 px sat 4.6 px from clipping its
+own label on Linux. One number cannot serve both, so it serves neither: pin the text and derive the
+box.
+
+When a label changes, re-measure rather than estimating — `getComputedTextLength()` on an SVG
+`<text>` with the same `font-family` / `font-size` / `font-weight`, then round up to the next whole
+pixel. Measuring with a metrics table for a font the asset does not name is how the spread above got
+in.
+
+`{ASSET_BASE}` is not a runtime setting — it is shorthand for the hardcoded `ASSET_BASE` constant in
+`comment-spine.mjs`, and nothing exposes an override:
 
 ```text
 https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets
 ```
 
+The pre-theme `fix-this-agent0.svg` / `fix-all-agent0.svg` are **kept in place and unreferenced**.
+Comments posted before this change embed those exact raw URLs, and deleting the files would 404 the
+button image in every already-posted finding.
+
 For production, Dash0 should host PNG equivalents on `app.dash0.com` (like Cursor's own CDN button)
 — a brand-controlled PNG renders more reliably through GitHub's image proxy than a repo-hosted SVG,
-and it does not 404 on branches before merge. Repointing production is a code change: edit the
-`ASSET` constant in `render-report.mjs` directly (and wire the equivalent constant when the **Fix
-this** per-finding button is implemented) rather than looking for a config flag — none exists. The
-button source lives in `agents/pr-reviewer/assets/*.svg`.
+and it does not 404 on branches before merge. Repointing production is a code change: edit
+`ASSET_BASE` in `comment-spine.mjs`, which now moves **both** placements at once rather than one.
 
-- **Fix this** — appended after the fix block on each inline `issue:` / `suggestion:` finding, only
-  when the flag is on (`comment-shape.md § Fix-with-Agent0 button`). Skipped for `nitpick` /
-  `question` / `praise`.
-- **Fix all** — rendered in the report via the `FIX_ALL_URL` payload slot
-  (`report-rendering.md`), which the renderer turns into the linked button.
+- **Fix this** — rendered from the inline payload's `FIX_URL` slot, after the fix block, on each
+  `issue:` / `suggestion:` finding (`comment-shape.md § The payload`). The renderer **rejects** it on
+  `nitpick` / `question` / `praise` — there is nothing for Agent0 to fix.
+- **Fix all** — rendered in the report from the `FIX_ALL_URL` payload slot
+  (`report-rendering.md`). Its `alt` is the asset's own rendered text, `Fix all with Agent0`, and the
+  renderer rejects any other label: a count in the accessible name that no sighted reader can see
+  fails WCAG 2.5.3 Label in Name. The renderer **rejects** it when there are zero
+  findings and no `CI_NOTE`: a button that hands Agent0 an empty worklist is worse than no button,
+  because it invites a click that spends a run discovering there is no work. The one legitimate
+  zero-finding case is the CI-only template below, which requires a CI note to exist.
+
+## Asset availability
+
+**A button whose image 404s is not a working button.** The markup is intact and the link works, so
+every offline guard passes — the reader sees a broken-image icon next to link text, which reads as a
+broken reviewer just as badly as mangled markup does.
+
+`ASSET_BASE` is pinned to this repo's **default branch**, so an asset added on a feature branch does
+not exist at the URL the renderer builds until that branch merges. That is not a hypothetical: every
+button on [`mthines/agent-skills#165`](https://github.com/mthines/agent-skills/pull/165) pointed at a
+404 for the whole life of the PR, *including* the runs whose markup survived intact — the theme-aware
+split introduced `fix-this-agent0-dark.svg` / `-light.svg`, and only the pre-existing unsuffixed
+`fix-this-agent0.svg` was on the default branch. The buttons had worked before precisely because the
+filename they named was already merged.
+
+**`<picture>` does not rescue this.** It selects a `<source>` by media query and does **not** fall
+back to `<img>` when the chosen resource fails to load. The `<img>` default is what renderers that
+ignore `<source>` entirely display — GitHub notification emails and RSS among them, which is where an
+inline finding is very often read first. So the default points at the unsuffixed `{stem}.svg`, the
+one filename that predates any theme split, and the two `<source>` elements carry the themed
+variants. Follow GitHub's
+[documented form](https://github.blog/changelog/2022-08-15-specify-theme-context-for-images-in-markdown-ga/)
+— dark `<source>`, light `<source>`, then the `<img>` default — rather than letting one variant do
+double duty.
+
+**The check:**
+
+```bash
+node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --assets-check /tmp/report-body.md
+```
+
+| Exit | Meaning | Action |
+| --- | --- | --- |
+| 0 | every referenced asset answers 200 with an `image/*` content type | post as rendered |
+| 1 | at least one 404s, or answers a non-image type | **re-render with `--no-fix-links`** |
+| 3 | the network is unreachable | **post as rendered** — inconclusive is not a missing asset |
+
+Exit 3 is a separate code on purpose. Withholding a button because a `HEAD` request failed would
+degrade every offline or proxied run, so an inconclusive check never withholds; only an answer does.
+The non-image content type is checked alongside the status because `raw.githubusercontent.com`
+answers some missing paths with a `text/plain` body, and GitHub's image proxy enforces a
+content-type allowlist of its own.
+
+**When you add or rename an asset**, the buttons stay withheld until that change is on the default
+branch. That is the correct behaviour, not a bug to work around — do not point `ASSET_BASE` at a
+feature branch to make a screenshot look right, because every other repo's review would then depend
+on a branch that gets deleted.
+
+## Relay length limit
+
+**Some write paths cannot carry these buttons at all, and the correct response is to withhold them
+— never to shorten the prompt until it fits.**
+
+A write path that carries the body as a **tool-call argument** rather than a file passes it through a
+relay that rewrites long unbroken runs: it wraps the run in a `` `` `` code span, which closes the
+`href` and escapes everything after it, so the button renders as a wall of `&gt;&lt;picture&gt;` text
+with a dead link. The renderer's markup is correct — the transform happens after it, which is why
+every pre-render guard passes and the damage is visible only in the **stored** body.
+
+Measured on [`mthines/agent-skills#165`](https://github.com/mthines/agent-skills/pull/165) by posting
+URLs through the relay and reading each stored body back. Lengths are of the URL **as it sits in the
+body**: `&` is written `&amp;` inside an `href`, so a two-param URL is 8 chars longer here than
+`url.length` reports — and measuring the unescaped form under-counts exactly the shape this pipeline
+builds.
+
+| URL under test | in body | stored |
+| --- | --- | --- |
+| Agent0 host + path, no query | 56 | intact |
+| + `auto_submit=true` | 78 | intact |
+| + short `initial_prompt` | 109 | intact |
+| prose-encoded prompt | 140 | intact |
+| prose-encoded prompt | 167 | wrapped |
+| prose-encoded prompt | 200 | wrapped |
+| a real `fix-this` link | 230 | wrapped |
+
+**Length is the whole trigger.** Host, path, `auto_submit=true`, and prompt-like query content are
+each innocent — every short URL survived, including ones carrying `initial_prompt=Fix…`. A run of
+repeated identical characters trips it earlier (~75 chars), so the budget is stated against
+prose-encoded URLs, the only shape this pipeline builds.
+
+**No markup change evades it.** Breaking the tag across lines leaves the URL itself as one unbroken
+run, and a pure-markdown linked image — no inline HTML at all — is rewritten too.
+
+So `RELAY_SAFE_URL_MAX = 140` in `comment-spine.mjs` is a fact about the relay, not a budget to
+design the link around. A `fix-this` link spends ~110 body chars before the prompt starts, leaving
+~30 — enough for `Fix <basename>:<line>` and not the repo, the PR, or the finding. A button that
+opens a session with no idea what to fix is worse than no button.
+
+**The rule:**
+
+```bash
+# Before a relayed write, on the body that is actually about to be posted.
+node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
+case $? in
+  1) rerender_with --no-fix-links
+     # 1 outranks 3, so the exit-3 condition can SURVIVE the remedy — ask the re-rendered body.
+     node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
+     rc=$?; [ "$rc" -eq 3 ] && note_mangled_link ;;
+  3) note_mangled_link ;;              # not a fix link — the remedy cannot reach it
+esac
+```
+
+- Exit 0 (`relay-safe`) — post as rendered.
+- Exit 1 — a **fix link** is over budget. **Re-render with `--no-fix-links`** and post that. Both
+  renderers already omit the button when the URL slot is absent, so this needs no renderer change
+  and costs only the affordance. Note the withholding in the run line, so a reader who expects a
+  button knows why there is none. Then **re-check the re-rendered body**: the codes are one exit
+  status, so a body carrying both kinds reports the remediable one — 1 says *this run* is
+  remediable, never that the body is otherwise clean — and the surviving exit-3 condition would
+  otherwise go unnamed on exactly the runs that had two problems rather than one.
+- Exit 3 — something else is over budget: a cited doc URL, a `raw.githubusercontent.com` asset
+  path, a permalink out of the diff. **Post as rendered** and name the mangled link in the run line.
+
+**The two are separated because only one of them has a remedy, and conflating them is a dead end.**
+The check first reported *every* long URL as exit 1, whose documented answer is `--no-fix-links` —
+which removes Agent0 deep links and nothing else. A report citing a 169-char LoreKit URL therefore
+failed the check, re-rendered without its buttons, failed the identical check again, and had
+nothing left to try; the run could not distinguish that from a condition it could fix. `relayUnsafeFixLinks()`
+is the partition, and exit 3 is the honest answer for the other half: a citation cannot be dropped
+to satisfy a relay, and the damage is not symmetric — a mangled doc link is a URL the reader
+retypes, while a mangled button is a primary CTA that silently does nothing.
+
+This is **advisory**, unlike `assertPostable`: it predicts what one write path would do, and a
+file-based path (`gh --field body=@file`) does none of it — there the buttons post intact and stay.
+The post-write verify in `agents/pr-reviewer.md` § *The bytes that get posted are the renderer's
+bytes* remains the backstop for whatever this check does not predict.
 
 ## Safety
 

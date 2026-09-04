@@ -1,10 +1,45 @@
 {
+  "VERDICT": "FAIL",
+  "SUMMARY": "Adds `github.check_run` to the trigger-kind union but leaves four keyed registries unwired.",
+  "FAIL_REASONS": [
+    "1 unanswered blocking review thread"
+  ],
+  "FINDINGS": [
+    {
+      "title": "Check-run variables rejected at runtime",
+      "path": "src/triggers/variables.ts",
+      "line": 12,
+      "url": "https://github.com/o/r/pull/1#discussion_r21",
+      "tier": "high",
+      "blocking": true
+    },
+    {
+      "title": "Hover card has no label for the new kind",
+      "path": "src/ui/hover-card.tsx",
+      "line": 40,
+      "url": "https://github.com/o/r/pull/1#discussion_r22",
+      "tier": "medium"
+    },
+    {
+      "title": "`triggerKinds` fixture asserts the old arity",
+      "path": "src/triggers/kinds.test.ts",
+      "line": 64,
+      "url": "https://github.com/o/r/pull/1#discussion_r23",
+      "tier": "medium"
+    },
+    {
+      "title": "Migration backfill skips existing rows",
+      "path": "db/migrations/0042.sql",
+      "line": 7,
+      "url": "https://github.com/o/r/pull/1#discussion_r24",
+      "tier": "low"
+    }
+  ],
   "PARTIAL_REVIEW": {
     "calls": 180,
     "scanned": 22,
     "total": 31
   },
-  "HEADLINE": "Reviewed your changes — **1 error, 2 warnings** need attention before human review. Blocking: 1 unanswered blocking review thread.",
   "RUN": {
     "mode": "full",
     "sha": "69b0de8",

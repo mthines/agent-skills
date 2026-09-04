@@ -77,11 +77,20 @@ The WARN line carries no `PASS` token. Seven production sightings
 `PASS — no blocking issues, <N> warning(s)` beside a harness `VERDICT: FAIL` (forced by
 `ACTIONABLE >= 1`, independent of gate severity) reads to a human as an unexplained contradiction —
 a PASS banner with no green check. Dropping the word rather than annotating it is the sighting-7
-conclusion: there is then nothing to reconcile. This line **must stay byte-identical** to
-`report-rendering.md`'s WARN headline (`Reviewed your changes — no blocking issues,
-**<WARN_GATE_COUNT> warning(s)**: <WARN_REASONS>.`, modulo the `**Verdict**:` vs. `Reviewed your
-changes —` lead) — the Step 3 terminal report and the posted body must never re-diverge the way
-they did before this fix landed (see L1 `G33`). `VERDICT` (PASS/WARN/FAIL, the presentation
+conclusion: there is then nothing to reconcile. **The terminal line and the posted headline now count different things, deliberately.** The
+byte-identity rule this paragraph used to state (terminal WARN ≡ the posted WARN headline) is
+retired, because the posted headline — specified in
+[`report-rendering.md § Headlines`](./report-rendering.md#headlines) — counts **findings**
+(`### 🟠 4 findings — 1 blocking`, derived from `FINDINGS[]`), while this line counts **gates**,
+which is what an operator reading a terminal verdict wants. Two audiences, two numbers; forcing one string to serve both is what made the posted
+headline count gates in the first place, and left the report's number unable to reconcile with the
+inline comments it sat above.
+
+What must still agree is the **fact**, not the wording: the verdict token
+(`PASS`/`WARN`/`FAIL`) and the reason phrases (`WARN_REASONS` / `FAIL_REASONS`) are the same values
+on both surfaces, and `render-report.mjs` now rejects a `VERDICT` that disagrees with its own gate
+table — so the class of divergence the old rule was written against is caught mechanically rather
+than by keeping two strings in sync by hand. `VERDICT` (PASS/WARN/FAIL, the presentation
 selector) stays a distinct concept from this printed line — Step 4a's `VERDICT` binding explains
 why the two must not be conflated.
 

@@ -1,0 +1,7 @@
+{
+  "PREFIX": "question",
+  "TIER": "medium",
+  "BODY": "Is the empty `catch {}` here deliberate, or should a `NotFoundError` still surface to the caller?",
+  "UNVERIFIED": "no test runner in this workspace",
+  "SHA": "7389036"
+}

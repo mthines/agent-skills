@@ -1,0 +1,15 @@
+{
+  "PREFIX": "issue",
+  "TIER": "high",
+  "TITLE": "Check-run variables rejected at runtime",
+  "BODY": "The exhaustive `Record<TriggerKind>` maps `TRIGGER_VARIABLES` and `DESCRIPTIONS` both omit the new kind, so both fail `tsc`.",
+  "BLOCKING": true,
+  "EVIDENCE": [
+    { "path": "src/triggers/variables.ts", "line": 12, "note": "map" },
+    { "path": "src/ui/hover-card.tsx", "line": 40 }
+  ],
+  "FENCE": { "lang": "ts", "code": "\"github.check_run\": [\"conclusion\", \"name\", \"started_at\"]," },
+  "FP": "consumer-impact:contract-break:triggerKinds@src/triggers/kinds.ts",
+  "FIX_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=Fix%20the%20finding&utm_source=pr-reviewer-fix-this",
+  "SHA": "7389036"
+}

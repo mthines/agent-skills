@@ -1,5 +1,7 @@
 {
-  "HEADLINE": "✅ Reviewed your changes — no issues found.",
+  "VERDICT": "PASS",
+  "SUMMARY": "Adds a `check_run` trigger kind and wires every registry keyed by the union.",
+  "FINDINGS": [],
   "RUN": {
     "mode": "full",
     "sha": "bde3c2f",
@@ -22,12 +24,5 @@
   "OPTIMALITY_LOG": "ran · 2 judged · 2 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
   "STANDARDS_LOG": "ran · 2 docs · 0 finding(s)",
   "MEASURABILITY_LOG": "ran · 3 paths classified · 0 missing · 0 unlinked",
-  "SKIPPED_FILES": "none",
-  "TIER_TALLY": {
-    "critical": 1,
-    "high": 2,
-    "medium": 3,
-    "low": 1
-  },
-  "FIX_ALL_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=Fix%20the%20pr-reviewer%20findings%20on%20owner%2Frepo%20PR%20%23123"
+  "SKIPPED_FILES": "none"
 }

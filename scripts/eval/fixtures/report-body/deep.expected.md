@@ -1,11 +1,19 @@
 <!-- PR_REVIEWER_REPORT -->
-Reviewed your changes — **1 error**, **2 warning(s)**: 1 blocking finding(s); 1 open review thread(s); CI pending.
-<sub>Updated 2026-09-03 09:12 UTC</sub>
+### 🟠 4 findings — 1 blocking
+
+Replaces the in-process memory index with a `LocalStore` backed search path.
+
+**Blocking:** 1 blocking finding (see inline)
+
+| Finding | Where | Severity |
+|---|---|---|
+| `LocalStore.search` drops the tenant filter | [`src/store/local.ts:96`](https://github.com/o/r/pull/2#discussion_r31) | 🟠 high · blocking |
+| Index rebuild runs on every cold start | [`src/store/index.ts:18`](https://github.com/o/r/pull/2#discussion_r32) | 🟡 medium |
+| Scalar filter is interpolated into a PostgREST operand | [`src/store/filter.ts:235`](https://github.com/o/r/pull/2#discussion_r33) | 🟡 medium |
+| Cold-start rebuild has no covering test | [`src/store/index.test.ts:12`](https://github.com/o/r/pull/2#discussion_r34) | 🟡 medium |
 
 <details>
 <summary>Review details — 1 open review thread (1 blocking)</summary>
-
-<sup>Reviewed for commit `a1b2c3d`.</sup>
 
 **Needs attention**
 
@@ -44,7 +52,7 @@ Reviewed your changes — **1 error**, **2 warning(s)**: 1 blocking finding(s); 
 
 Quality — produced 9 → posted inline 4 · cleared 4 · carried forward 0 · deferred 0 · below-bar 1 · memory suppressions 1
 Dropped — relevance 1 · dedupe 2 · grounding 0 · verifier contradicted 2 · shape 0
-Severity — 🟠 1 · 🟡 2
+Severity — 🟠 1 high · 🟡 3 medium
 Optimality — ran · 3 judged · 2 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld
 Standards — ran · 2 docs · 3 finding(s)
 Measurability — ran · 5 paths classified · 2 missing · 1 unlinked · no profile
@@ -62,6 +70,6 @@ Memories — 48 indexed · 3 used (1 knowledge · 1 hotspot · 1 rule)
 
 <sup>Nothing to report — integrations (not activated), 0 files skipped.</sup>
 
-<sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
-
 </details>
+
+<sup>`pr-reviewer` · commit `a1b2c3d` · full review · [how these findings are produced](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) · updated 2026-09-03 09:12 UTC</sup>

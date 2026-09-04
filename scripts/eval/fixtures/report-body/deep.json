@@ -1,5 +1,40 @@
 {
-  "HEADLINE": "Reviewed your changes — **1 error**, **2 warning(s)**: 1 blocking finding(s); 1 open review thread(s); CI pending.",
+  "VERDICT": "FAIL",
+  "SUMMARY": "Replaces the in-process memory index with a `LocalStore` backed search path.",
+  "FAIL_REASONS": [
+    "1 blocking finding (see inline)"
+  ],
+  "FINDINGS": [
+    {
+      "title": "`LocalStore.search` drops the tenant filter",
+      "path": "src/store/local.ts",
+      "line": 96,
+      "url": "https://github.com/o/r/pull/2#discussion_r31",
+      "tier": "high",
+      "blocking": true
+    },
+    {
+      "title": "Index rebuild runs on every cold start",
+      "path": "src/store/index.ts",
+      "line": 18,
+      "url": "https://github.com/o/r/pull/2#discussion_r32",
+      "tier": "medium"
+    },
+    {
+      "title": "Scalar filter is interpolated into a PostgREST operand",
+      "path": "src/store/filter.ts",
+      "line": 235,
+      "url": "https://github.com/o/r/pull/2#discussion_r33",
+      "tier": "medium"
+    },
+    {
+      "title": "Cold-start rebuild has no covering test",
+      "path": "src/store/index.test.ts",
+      "line": 12,
+      "url": "https://github.com/o/r/pull/2#discussion_r34",
+      "tier": "medium"
+    }
+  ],
   "RUN": {
     "mode": "full",
     "sha": "a1b2c3d",
@@ -80,10 +115,6 @@
       "is_bot": true
     }
   ],
-  "TIER_TALLY": {
-    "high": 1,
-    "medium": 2
-  },
   "MEMORIES_SUMMARY": "48 indexed",
   "MEMORIES_USED": [
     {

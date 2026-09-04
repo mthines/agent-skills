@@ -2,26 +2,33 @@
 {{#PARTIAL_BANNER}}⚠️ **Partial review — tool budget exhausted after {{BUDGET_CALLS}} calls; {{BUDGET_SCANNED}} of {{BUDGET_TOTAL}} files scanned.**
 
 {{/PARTIAL_BANNER}}{{HEADLINE}}
-{{UPDATED_LINE}}
-{{#FIX_ALL_BUTTON}}
+
+{{SUMMARY_LINE}}
+{{#REASONS_LINE}}
+{{REASONS_LINE}}
+{{/REASONS_LINE}}{{#ADVISORY_LINE}}
+{{ADVISORY_LINE}}
+{{/ADVISORY_LINE}}{{#FINDINGS_INDEX}}
+{{FINDINGS_INDEX}}
+{{/FINDINGS_INDEX}}{{#FIX_ALL_BUTTON}}
 {{FIX_ALL_BUTTON}}
 {{/FIX_ALL_BUTTON}}{{#OPTIMALITY_CARDS}}
 <details>
-<summary>Optimality review ({{OPTIMALITY_COUNT}}) — is this the best approach?</summary>
+<summary>Is there a better approach? ({{OPTIMALITY_COUNT}})</summary>
 
 {{OPTIMALITY_CARDS}}
 
 </details>
 {{/OPTIMALITY_CARDS}}{{#ADDITIONAL_FINDINGS}}
 <details>
-<summary>Additional findings ({{ADDITIONAL_COUNT}}) — cleared review, not inlined</summary>
+<summary>{{ADDITIONAL_COUNT}} more findings — verified, too minor to comment on</summary>
 
 {{ADDITIONAL_FINDINGS}}
 
 </details>
 {{/ADDITIONAL_FINDINGS}}{{#LOW_CONFIDENCE_FINDINGS}}
 <details>
-<summary>Low-confidence findings ({{LOW_CONFIDENCE_COUNT}}) — advisory, below the confidence bar</summary>
+<summary>Less certain ({{LOW_CONFIDENCE_COUNT}}) — advisory, below the confidence bar</summary>
 
 {{LOW_CONFIDENCE_FINDINGS}}
 
@@ -29,8 +36,6 @@
 {{/LOW_CONFIDENCE_FINDINGS}}
 <details>
 <summary>Review details{{OPEN_THREADS_SUFFIX}}</summary>
-
-<sup>{{FOOTER_LINE}}</sup>
 
 {{#NEEDS_ATTENTION}}**Needs attention**
 
@@ -70,6 +75,6 @@
 {{#NOTHING_TO_REPORT}}
 <sup>Nothing to report — {{NOTHING_TO_REPORT}}.</sup>
 {{/NOTHING_TO_REPORT}}
-<sup>Reviewed by the [`pr-reviewer`](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) agent — open it to read how these gates and findings are produced.</sup>
-
 </details>
+
+{{FOOTER_SUP}}

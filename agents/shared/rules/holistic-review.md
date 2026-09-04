@@ -239,7 +239,7 @@ Holistic findings are not exempt from the downstream gates:
 1. **dedupe + consolidate** (`rubric-composition.md § Consolidation`) — holistic findings enter the same dedupe pass as rubric findings; on a `(file, line)` collision with a line-level finding, the holistic claim wins (broader context).
 2. **finding-grounding** — every backticked symbol must grep-resolve in the changed file or in a caller surfaced during Phase R1.
 3. **per-comment-confidence** — `Skill("confidence", "code")` ≥ 80, same threshold as line-level findings.
-4. **comment-shape** — ≤ 240 chars, ≤ 2 sentences. A holistic finding that needs more space than this either (a) gets trimmed once and re-checked, or (b) gets dropped and listed in the terminal Quality Gate summary so the user can paste manually.
+4. **comment-shape** — a ≤ 60-char title plus ≤ 200 chars of prose, ≤ 2 sentences. A holistic finding that needs more space than this either (a) gets trimmed once and re-checked, or (b) gets dropped and listed in the terminal Quality Gate summary so the user can paste manually.
 
 A holistic finding that survives all four gates is emitted as a card in the review body and posted to GitHub at Step 4, in both relations. It is also printed in the Step 3 terminal report, which is uncapped in both relations.
 

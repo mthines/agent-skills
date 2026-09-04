@@ -217,7 +217,7 @@ review pass
   → finding-grounding.md  (symbol exists?)         [2.6]
   → verification-receipt.md (claim proven?)        [2.6b]  ← this rule
   → per-comment-confidence (confidence ≥ 80?)      [2.7]
-  → comment-shape.md      (≤ 240 chars, shape?)    [2.8]
+  → comment-shape.md      (render-comment.mjs?)    [2.8]
   → conventional-comments.md (prefix + decoration) [2.9]
   → (PR Mode only) line-validity.md               [3.5]
 ```
