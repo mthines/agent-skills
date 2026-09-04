@@ -49,7 +49,7 @@ a re-phrased finding starts over. See [`references/detection-research.md`](../re
 | Record | Tag / key | Scope | TTL | Holds | Can it suppress? |
 | --- | --- | --- | --- | --- | --- |
 | **Symbol knowledge** | `codebase-knowledge` / `knowledge::<symbol>@<path>` | `repo::{owner}/{repo}` | 90 d | verified facts about one symbol — contracts, invariants callers rely on, consumer count at last trace, covering tests — each with `verified_at_sha`; plus `history[]` of findings raised on it (`{pr, sha, fp, verdict, outcome}`, capped at 20) | No |
-| **Hotspot** | `codebase-knowledge` / `hotspot::<path>` | `repo::{owner}/{repo}` | 90 d | per-file counters: `confirmed`, `missed` (a human caught something here that this agent did not flag), `regressed`, `last_touched_by[]` | No |
+| **Hotspot** | `codebase-knowledge` / `hotspot::<path>` | `repo::{owner}/{repo}` | 90 d | per-file counters: `confirmed`, `missed` (a human caught something here that this agent did not flag), `regressed`, `flaky` (a test file empirically flaky then stabilised, written by `e2e-pr-stabilizer`), `last_touched_by[]` | No |
 | **Relevance rule** | `loop::reviewer-comment-relevance` / `reviewer-comment-relevance::rule::<fp>` | `repo::{owner}/{repo}` | 60 d | `direction: suppress \| amplify`, `status`, `evidence[]`, optional `scope_globs[]` | Yes — and only this one |
 | **PR state** | `ci::pr-review-state` / `ci-state::pr-review-<n>` | `branch::{owner}/{repo}::{head-branch-name}` | 7 d | this agent's own run history for one PR | No |
 
@@ -339,6 +339,7 @@ this run incremented:
   "confirmed": 4,
   "missed": 1,
   "regressed": 0,
+  "flaky": 0,
   "classes": ["contract-break", "nil-deref"],
   "confirmed_examples": [
     { "pr": 164, "sha": "47b969a",
