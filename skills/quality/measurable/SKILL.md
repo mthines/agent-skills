@@ -157,11 +157,13 @@ checked for coverage gaps, without writing anything.
 
 **Callers of `audit` mode.** `autonomous-workflow` Phase 4 (its Observability Gate) and the
 `pr-reviewer` agent's measurability lens (Step 2.4e, via
-`agents/shared/rules/measurability-review.md`) are both `audit`-only consumers, and both are
-advisory unless their own caller opted into strict. The reviewer additionally gates the call behind
-two conditions of its own — the diff must touch a `web`/`mobile`/`api`/`worker` path **and** add or
-alter observable behaviour — so a refactor PR never reaches this mode at all. Neither caller may
-invoke `implement`: one is a gate, the other is read-only.
+`agents/shared/rules/measurability-review.md`) are both `audit`-only consumers. `autonomous-workflow`
+stays advisory unless a run opts into `--observability-strict`; the **reviewer defaults to strict** (a
+repo opts down with `measurable: advisory`), because a merged change that ships a new failure mode with
+no signal is the case the lens exists for. The reviewer additionally gates the call behind two
+conditions of its own — the diff must touch a `web`/`mobile`/`api`/`worker` path **and** add or alter
+observable behaviour — so a refactor PR never reaches this mode at all. Neither caller may invoke
+`implement`: one is a gate, the other is read-only.
 
 ### Setup mode
 

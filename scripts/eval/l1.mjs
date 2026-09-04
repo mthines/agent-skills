@@ -4293,14 +4293,17 @@ const isPollBlock = (block) =>
     && /### Gate 2 — the change adds or alters observable behaviour/.test(rule)
     && /new failure mode/.test(rule));
 
-  // The non-blocking invariant, stated the way telemetry.md states its own.
-  s.check("G42d no measurability finding reaches FAIL_REASONS by default",
-    /never lowers or fails a verdict/.test(rule)
+  // The bounded-blocking invariant: strict is the default, but the lens never lowers a verdict
+  // and `unlinked` never blocks under either level — only a `missing` new-failure-mode gates.
+  s.check("G42d unlinked never blocks, and the lens never lowers a verdict",
+    /never \*\*lowers\*\* a verdict/.test(rule)
     && /FAIL_REASONS/.test(rule)
-    && /never blocking in any\s*\nconfiguration|Never `issue:`, never blocking/.test(rule));
-  s.check("G42d strict is a repository setting, not the reviewer's judgment",
-    /never on the reviewer's own judgment/.test(rule)
-    && /measurable: strict/.test(rule) && /--measurable-strict/.test(body));
+    && /never blocks and is never an `issue:`/.test(rule));
+  s.check("G42d the level is a repository claim, not the reviewer's own judgment",
+    /on (the reviewer's|its) own judgment/.test(rule)
+    && /Strict is the \*\*default\*\*/.test(rule)
+    && /measurable: strict/.test(rule) && /--measurable-strict/.test(body)
+    && /--measurable-advisory/.test(body));
 
   // The seam with telemetry.md — two rules, opposite questions, neither answers the other's.
   s.check("G42e the seam with telemetry.md is stated in both directions",
