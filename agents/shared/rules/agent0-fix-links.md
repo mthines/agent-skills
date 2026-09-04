@@ -226,9 +226,20 @@ named explicitly, without a login on hand.
 
 This form is a **fallback, not the default**: it is unavailable on a first run, where the sticky is
 created by POST and its id does not exist until after the body that would have to contain it. Prefer
-the explicit `{bot_login}` above whenever the identity ladder resolves. **Omit the Fix-all button
-entirely** only when *both* are unavailable — no login and no prior sticky — which is strictly
-narrower than the old rule, where an unresolved login omitted the button outright.
+the explicit `{bot_login}` above whenever the identity ladder resolves.
+
+**Identity and count are independent conditions, and both templates above need both.** This form
+answers *how the author gets named*, not *whether there is anything to apply* — so it is reached only
+when the open reviewer-finding count is **non-zero**, exactly like the `{bot_login}` form. At a count
+of 0 the choice is between the CI-only variant below and omitting the button, and having a sticky id
+on hand says nothing about which. Stated because the identity ladder is the newer condition and it is
+the natural place to stop reading: a fallback that fired on identity alone would answer a question it
+was never asked, and it would answer it with a `/pr-fix` call in the one state the next section
+forbids one.
+
+So the Fix-all button is omitted when the count is 0 **and** CI is green, and — at a non-zero count —
+when *both* identity paths are unavailable (no login and no prior sticky). That second half is
+strictly narrower than the old rule, where an unresolved login omitted the button outright.
 
 **Fix all — CI-only** (report, zero open findings) — the report can read WARN with **zero** findings:
 Gate 2 (CI) is soft-warning-only (`pr-reviewer.md § Gate states`), so a PR with a clean Gate 6 (code
@@ -477,6 +488,21 @@ So `RELAY_SAFE_URL_MAX = 140` in `comment-spine.mjs` is a fact about the relay, 
 design the link around. A `fix-this` link spends ~110 body chars before the prompt starts, leaving
 ~30 — enough for `Fix <basename>:<line>` and not the repo, the PR, or the finding. A button that
 opens a session with no idea what to fix is worse than no button.
+
+**On a relayed write the buttons are unreachable by construction — the floor is above the ceiling.**
+The deep-link scaffold alone (`https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=`
+plus `&utm_source=pr-reviewer-fix-all`) is **105 body chars** empty, leaving 35 for the encoded
+prompt; the shortest conceivable filled Fix-all — a one-character owner, repo and login, PR #1 —
+measures **164**, and a realistic one measures **200**. Every one is over 140 before any prompt
+content is chosen. This is why *"do not shorten the prompt to fit"* is stated as an absolute rather
+than a preference: no prompt exists that fits, so shortening trades the affordance's usefulness for
+nothing. It also bounds what the `/pr-fix` rewrite bought. Taking Fix-all from ~1100 to ~190 is a
+large win against the **2500 design target** and `MAX_URL`, and **no** win against the relay budget,
+which those figures still exceed by 60 chars. **The remedy is the write path, not the link:** post
+the body from a **file** (`gh api … --field body=@file`, `gh pr review --body-file`) and no rewrite
+happens, so the buttons render intact. A caller that can only pass the body as a tool-call argument
+gets a correctly-withheld button on every run, permanently — worth knowing before reading a missing
+button as a bug in the renderer.
 
 **The rule:**
 

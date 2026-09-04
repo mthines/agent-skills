@@ -2836,6 +2836,29 @@ const isPollBlock = (block) =>
       && /fallback, not the default/.test(rule),
     "the {report_comment_url} fallback, its #issuecomment-{sticky_id} definition, or its fallback-not-default rule is gone — an unresolved login is back to omitting the button");
 
+  // G32l-count: the routing bullets are FIRST-MATCH-WINS, so the fallback branch needs the count
+  // condition as well as the identity one. Shipped without it: an unresolved login plus a matched
+  // sticky pre-empted the CI-only bullet AND the omit bullet below, emitting a /pr-fix call at a
+  // count of 0 — the one state § Prompt templates forbids one in ("must not become one"). The
+  // branch it replaced carried an explicit precedence marker ("regardless of {count} or CI state")
+  // and the rewrite dropped it, which is what made the ordering ambiguous rather than merely terse.
+  //
+  // Anchored on the fallback bullet's own sentence, not on a file-wide count of OPEN_FINDING_COUNT:
+  // the identifier appears in four bullets here, so a whole-body match would pass with this exact
+  // condition deleted. Both owners are asserted — the agent body routes, the rule file explains —
+  // because the two said different things and only the rule file was wrong-in-prose.
+  const routingBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+  const fallbackBullet = /\*\*When `\{bot_login\}` is unresolved\*\*[^\n]*/.exec(routingBody)?.[0] ?? "";
+  s.check("G32l the Fix-all login fallback is gated on OPEN_FINDING_COUNT, not on identity alone",
+    /OPEN_FINDING_COUNT` is non-zero/.test(fallbackBullet),
+    "first-match-wins: an identity-only fallback pre-empts the CI-only variant and the omit rule,"
+      + " emitting a /pr-fix call at a finding count of 0");
+  s.check("G32l the rule file states identity and count as independent conditions",
+    /Identity and count are independent conditions/.test(rule)
+      && /reached only\s*\nwhen the open reviewer-finding count is \*\*non-zero\*\*/.test(rule),
+    "the rule file said to omit the button 'only when both identity paths are unavailable', which"
+      + " reads as licensing a fallback at a count of 0");
+
   // Nothing /pr-fix owns may be re-inlined into a prompt. Each of these three IS the shape the
   // rewrite removed, so a match means a specific documented regression, not a style slip.
   for (const [what, re, why] of [
