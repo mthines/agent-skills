@@ -3697,6 +3697,16 @@ const isPollBlock = (block) =>
     s.check("G46m a WARN verdict with no WARN_REASONS is rejected",
       renderReport((p) => { p.WARN_REASONS = []; }).status !== 0,
       "the FAIL branch requires a reason phrase; the WARN branch cannot be laxer");
+    // Parity is all three checks the inline renderer applies to the same string, not just the
+    // length one — a title is a noun phrase on both surfaces or on neither.
+    for (const [what, bad] of [
+      ["sentence punctuation", "The registry is never wired up."],
+      ["block structure", "- a bulleted title"],
+    ]) {
+      s.check(`G46m the report renderer rejects a title carrying ${what}`,
+        renderReport((p) => { p.FINDINGS[0].title = bad; }).status !== 0,
+        `render-comment.mjs rejects it, so the row that indexes it cannot accept it`);
+    }
     s.check("G46m the cross-check is symmetric in the source, not just in behaviour",
       /WARN_REASONS"\)\.length > warning/.test(reportRenderer)
         && /FAIL_REASONS"\)\.length > failing/.test(reportRenderer),

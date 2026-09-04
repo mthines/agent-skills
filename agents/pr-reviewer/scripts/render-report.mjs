@@ -30,6 +30,7 @@ import { dirname, join } from "node:path";
 import {
   TIERS, TIER_GLYPH, VERDICT_GLYPH, VERDICTS, SHA7, GATE_DETAILS_MAX, TITLE_MAX,
   worstTier, tierTally, footerLine, fixButton, anchor, assertPostable,
+  assertNoStructure, sentenceCount,
 } from "./comment-spine.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -576,6 +577,11 @@ function main() {
     if (String(f.title).length > TITLE_MAX) {
       fail(`${where}.title is ${String(f.title).length} chars, over ${TITLE_MAX}`
         + " — the same cap render-comment.mjs applies to the finding this row indexes");
+    }
+    assertNoStructure(`${where}.title`, f.title);
+    if (sentenceCount(f.title) > 0) {
+      fail(`${where}.title carries sentence punctuation — it is a noun phrase, not a sentence`
+        + ` (got: ${f.title})`);
     }
     // A pipe would split the row into phantom columns, and a table cell cannot be escaped out of.
     if (String(f.title).includes("|")) fail(`${where}.title contains a pipe — it would break the row`);
