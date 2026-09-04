@@ -174,7 +174,7 @@ A PR FAILS if Gate 4 or Gate 5 is not met, or if the Prior review feedback (Gate
 
 Gates 4 and 5 are **hard** gates: binary ✅ / ❌, and any ❌ fails the PR.
 
-The other four are **graded** — a non-blocking problem yields a warning (⚠️) that never fails the PR and is never counted in `FAILING_GATE_COUNT`. Gates 1 and 2 are two-state (they can only warn); Gates 3 and 6 are tri-state and reach ❌ only on a blocking item:
+The other three are **graded** — a non-blocking problem yields a warning (⚠️) that never fails the PR and is never counted in `FAILING_GATE_COUNT`. Gate 1 is two-state (it can only warn); Gates 3 and 6 are tri-state and reach ❌ only on a blocking item. Gate 2 (CI) is neither hard nor graded — it is informational-in-`Run` and out of the grade entirely:
 
 **Gate 2 (CI) is informational, never part of the grade.** Red CI is a fact about the branch, not a
 finding about the diff, and this agent neither diagnosed it nor can it tell a real regression from a

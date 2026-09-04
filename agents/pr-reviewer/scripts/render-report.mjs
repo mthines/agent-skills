@@ -931,7 +931,7 @@ function main() {
   }
   const failing = gateStatuses.filter((v) => v === "❌").length;
   // Gate 2 (CI) has no row in the table and no vote here either — `CI_NOTE` is purely
-  // informational (it renders in `Run`, line 886). CI is a timing/branch fact, not a signal about
+  // informational (it renders in `Run`, via the `CI —` line). CI is a timing/branch fact, not a signal about
   // the diff, and the orchestrators already own CI convergence, so a pending or red check can never
   // move the verdict away from what the five real gates already say.
   const warning = gateStatuses.filter((v) => v === "⚠️").length;

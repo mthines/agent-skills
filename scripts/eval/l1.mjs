@@ -2262,8 +2262,10 @@ function checksInSync(plan, checks) {
   // reviewer as having found something blocking when it had not.
   {
     const gateStates = sliceBetween(prReviewer, "### Gate states", "`--skip-gates` bypasses");
-    s.check("G27 Gate 2 is declared informational, not a hard one",
-      /Gates 1 and 2 are two-state/.test(gateStates) &&
+    s.check("G27 Gate 2 is declared informational, not a graded warning gate",
+      /Gate 1 is two-state/.test(gateStates) &&
+      !/Gates 1 and 2 are two-state/.test(gateStates) &&
+      /Gate 2 \(CI\) is neither hard nor graded/.test(gateStates) &&
       /\*\*Gate 2 \(CI\) is informational, never part of the grade\.\*\*/.test(gateStates));
     s.check("G27 the hard-gate set no longer contains Gate 2",
       /Gates 4 and 5 are \*\*hard\*\* gates/.test(gateStates) &&
