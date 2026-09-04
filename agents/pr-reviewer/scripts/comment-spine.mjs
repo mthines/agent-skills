@@ -156,6 +156,16 @@ export function footerLine({ sha, run = null, at = null }) {
  * as a broken reviewer. `<a href>` wrapping `<picture>` needs no markdown parsing at all, and both
  * elements are on GitHub's comment HTML allowlist. It is written on ONE line because a blank line
  * inside inline HTML ends the HTML block.
+ *
+ * **Two `<source>` elements and a plain `<img>` default — GitHub's documented form**, not one
+ * `<source>` with the light asset doing double duty as the default. `<picture>` picks a `<source>`
+ * by media query and, crucially, does NOT fall back to `<img>` when the chosen resource fails to
+ * load, so the default is not a safety net for a bad `srcset`; it is what renderers that ignore
+ * `<source>` altogether display — and that set includes GitHub's own notification emails and RSS,
+ * where an inline finding is very often first read. Pointing the default at the theme-suffixed
+ * light file made those readers depend on a file that only shipped with the theme split; the
+ * unsuffixed `{stem}.svg` has been on the default branch since before it, so it degrades to a
+ * button rather than to a broken image.
  */
 export function fixButton({ kind, url, label }) {
   if (!["this", "all"].includes(kind)) throw new Error(`fixButton kind must be this|all`);
@@ -193,7 +203,30 @@ export function fixButton({ kind, url, label }) {
   const href = url.replace(/&/g, "&amp;");
   return `<a href="${href}"><picture>`
     + `<source media="(prefers-color-scheme: dark)" srcset="${ASSET_BASE}/${stem}-dark.svg">`
-    + `<img alt="${alt}" src="${ASSET_BASE}/${stem}-light.svg" height="36"></picture></a>`;
+    + `<source media="(prefers-color-scheme: light)" srcset="${ASSET_BASE}/${stem}-light.svg">`
+    + `<img alt="${alt}" src="${ASSET_BASE}/${stem}.svg" height="36"></picture></a>`;
+}
+
+/** Every asset file `fixButton` can reference, as bare filenames under `agents/pr-reviewer/assets`. */
+export const ASSET_FILES = ["fix-this-agent0", "fix-all-agent0"]
+  .flatMap((stem) => [`${stem}.svg`, `${stem}-dark.svg`, `${stem}-light.svg`]);
+
+/**
+ * The distinct `ASSET_BASE` URLs a body references.
+ *
+ * Separate from `relayUnsafeUrls` because it answers a different question, and one no offline check
+ * can: does the image this button is made of actually exist at the URL the markup names? A button
+ * whose asset 404s is not a mangled comment — the markup is intact and the link works — it is a
+ * broken-image icon next to link text, which reads as a broken reviewer just as badly.
+ *
+ * This is a live failure mode, not a hypothetical. `ASSET_BASE` is pinned to the default branch, so
+ * an asset added on a feature branch does not exist at the URL the renderer builds until that
+ * branch merges — every button on mthines/agent-skills#165 pointed at a 404 for exactly that
+ * reason, including on the runs whose markup survived the relay intact.
+ */
+export function assetUrls(body) {
+  const base = ASSET_BASE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return [...new Set(String(body).match(new RegExp(`${base}/[A-Za-z0-9._-]+`, "g")) ?? [])];
 }
 
 /**
@@ -399,16 +432,61 @@ export function assertAbsent(where, v, why) {
 // call the same code the renderers do instead of re-deriving the signatures as greps that drift.
 if (import.meta.url === `file://${process.argv[1]}`) {
   const argv = process.argv.slice(2);
-  const flags = { check: null, relayCheck: null };
+  const flags = { check: null, relayCheck: null, assetsCheck: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--check") flags.check = argv[++i];
     else if (a === "--relay-check") flags.relayCheck = argv[++i];
+    else if (a === "--assets-check") flags.assetsCheck = argv[++i];
     else {
       process.stderr.write(`unknown argument: ${a}\n`
-        + "usage: comment-spine.mjs --check <body-file> | --relay-check <body-file>\n");
+        + "usage: comment-spine.mjs --check <body-file> | --relay-check <body-file>"
+        + " | --assets-check <body-file>\n");
       process.exit(2);
     }
+  }
+  if (flags.assetsCheck) {
+    const { readFileSync } = await import("node:fs");
+    let assetBody;
+    try {
+      assetBody = readFileSync(flags.assetsCheck, "utf8");
+    } catch (e) {
+      process.stderr.write(`cannot read ${flags.assetsCheck}: ${e.message}\n`);
+      process.exit(2);
+    }
+    const urls = assetUrls(assetBody);
+    if (urls.length === 0) {
+      process.stdout.write("no assets referenced\n");
+      process.exit(0);
+    }
+    const bad = [];
+    for (const u of urls) {
+      let why = null;
+      try {
+        // HEAD, so nothing is downloaded. A non-image content type is as fatal as a 404: raw.
+        // githubusercontent answers a missing path with 200-shaped `text/plain` on some rungs, and
+        // GitHub's image proxy enforces a content-type allowlist of its own.
+        const res = await fetch(u, { method: "HEAD", redirect: "follow" });
+        const ct = res.headers.get("content-type") ?? "";
+        if (!res.ok) why = `HTTP ${res.status}`;
+        else if (!/^image\//.test(ct)) why = `content-type ${ct || "(none)"}`;
+      } catch (e) {
+        // A network failure is NOT a missing asset. Say so rather than withholding a button that
+        // would have rendered — the caller treats an inconclusive check differently from a 404.
+        process.stderr.write(`asset check inconclusive (${e.message}) — network unreachable, not a`
+          + " missing asset; post as rendered\n");
+        process.exit(3);
+      }
+      if (why) bad.push(`${u} — ${why}`);
+    }
+    if (bad.length) {
+      for (const b of bad) process.stderr.write(`unreachable asset: ${b}\n`);
+      process.stderr.write("the button would render as a broken image — withhold the fix links"
+        + " (--no-fix-links) until the assets are on the branch ASSET_BASE points at\n");
+      process.exit(1);
+    }
+    process.stdout.write(`assets ok (${urls.length})\n`);
+    process.exit(0);
   }
   if (flags.relayCheck) {
     const { readFileSync } = await import("node:fs");
@@ -432,7 +510,8 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exit(0);
   }
   if (!flags.check) {
-    process.stderr.write("usage: comment-spine.mjs --check <body-file> | --relay-check <body-file>\n");
+    process.stderr.write("usage: comment-spine.mjs --check <body-file> | --relay-check <body-file>"
+      + " | --assets-check <body-file>\n");
     process.exit(2);
   }
   const { readFileSync } = await import("node:fs");

@@ -7,6 +7,7 @@ import { execSync, spawnSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, extractSection, Suite } from "./lib.mjs";
 
 const AW = join(REPO_ROOT, "skills/workflow/autonomous-workflow");
@@ -3566,6 +3567,53 @@ const isPollBlock = (block) =>
       /worse than no button/.test(fixRule),
       "a truncated prompt opens a session with no idea what to fix — say so");
     const agentBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+    // (k) The button's image has to exist at the URL the markup names. Offline, so this asserts the
+    // FILE is in the repo and the markup follows GitHub's documented three-element form; the 404
+    // case is a live HEAD check the agent runs (`--assets-check`), because whether a path is on the
+    // default branch is not knowable from a working tree.
+    const ASSETS = join(REPO_ROOT, "agents/pr-reviewer/assets");
+    const assetMod = await import(pathToFileURL(SPINE).href);
+    s.check("G46k the spine enumerates every asset file it can reference",
+      Array.isArray(assetMod.ASSET_FILES) && assetMod.ASSET_FILES.length === 6,
+      `ASSET_FILES = ${JSON.stringify(assetMod.ASSET_FILES)}`);
+    for (const f of assetMod.ASSET_FILES ?? []) {
+      s.check(`G46k ${f} exists in the repo`, existsSync(join(ASSETS, f)),
+        "fixButton names it, so a missing file is a broken-image icon on every review");
+    }
+    // The unsuffixed default is what email and RSS render — they ignore <source> entirely — and it
+    // is the one filename that predates the theme split, so it must equal the light variant rather
+    // than being left as whatever art shipped before.
+    for (const stem of ["fix-this-agent0", "fix-all-agent0"]) {
+      const dflt = join(ASSETS, `${stem}.svg`);
+      const light = join(ASSETS, `${stem}-light.svg`);
+      s.check(`G46k ${stem}.svg (the <img> default) matches the light variant`,
+        existsSync(dflt) && existsSync(light)
+          && readFileSync(dflt, "utf8") === readFileSync(light, "utf8"),
+        "email and RSS render the default, so it cannot be stale art");
+    }
+    const btn = assetMod.fixButton({ kind: "this", url: "https://app.dash0.com/goto/agent0?x=1" });
+    s.check("G46k the button follows GitHub's documented picture form (dark, light, then default)",
+      /<picture><source media="\(prefers-color-scheme: dark\)"[^>]*><source media="\(prefers-color-scheme: light\)"[^>]*><img alt="[^"]+" src="[^"]*\/fix-this-agent0\.svg"/.test(btn),
+      btn.slice(0, 200));
+    s.check("G46k the <img> default is not a theme-suffixed file",
+      !/<img[^>]*src="[^"]*-(dark|light)\.svg"/.test(btn),
+      "picture does NOT fall back to img on a failed srcset, so the default must be the stable name");
+    const assetsUrls = assetMod.assetUrls(btn);
+    s.check("G46k assetUrls() finds all three of a button's assets", assetsUrls.length === 3,
+      JSON.stringify(assetsUrls));
+    s.check("G46k assetUrls() ignores a non-asset url",
+      assetMod.assetUrls("see https://example.com/x.svg").length === 0);
+    s.check("G46k the rule documents the asset-availability failure and its three exit codes",
+      /## Asset availability/.test(fixRule) && /inconclusive is not a missing asset/.test(fixRule),
+      "a network failure must never withhold a button that would have rendered");
+    for (const [surface, target] of [
+      ["the sticky", "--assets-check /tmp/report-body.md"],
+      ["the inline surface", "--assets-check /tmp/finding-$i.md"],
+    ]) {
+      s.check(`G46k ${surface} checks its button assets before posting`,
+        agentBody.includes(target), `no \`${target}\` call site`);
+    }
+
     // Anchor each call site by the file it checks, not by counting the flag: the body mentions
     // `--relay-check` in prose too, so a count-based guard passed with a call site deleted.
     for (const [surface, target] of [

@@ -32,6 +32,7 @@ problems and offers no way to act on them is doing the hard half and skipping th
 - [Click attribution](#click-attribution)
 - [Prompt templates](#prompt-templates)
 - [Button markup](#button-markup)
+- [Asset availability](#asset-availability)
 - [Relay length limit](#relay-length-limit)
 - [Safety](#safety)
 
@@ -350,6 +351,53 @@ and it does not 404 on branches before merge. Repointing production is a code ch
   findings and no `CI_NOTE`: a button that hands Agent0 an empty worklist is worse than no button,
   because it invites a click that spends a run discovering there is no work. The one legitimate
   zero-finding case is the CI-only template below, which requires a CI note to exist.
+
+## Asset availability
+
+**A button whose image 404s is not a working button.** The markup is intact and the link works, so
+every offline guard passes — the reader sees a broken-image icon next to link text, which reads as a
+broken reviewer just as badly as mangled markup does.
+
+`ASSET_BASE` is pinned to this repo's **default branch**, so an asset added on a feature branch does
+not exist at the URL the renderer builds until that branch merges. That is not a hypothetical: every
+button on [`mthines/agent-skills#165`](https://github.com/mthines/agent-skills/pull/165) pointed at a
+404 for the whole life of the PR, *including* the runs whose markup survived intact — the theme-aware
+split introduced `fix-this-agent0-dark.svg` / `-light.svg`, and only the pre-existing unsuffixed
+`fix-this-agent0.svg` was on the default branch. The buttons had worked before precisely because the
+filename they named was already merged.
+
+**`<picture>` does not rescue this.** It selects a `<source>` by media query and does **not** fall
+back to `<img>` when the chosen resource fails to load. The `<img>` default is what renderers that
+ignore `<source>` entirely display — GitHub notification emails and RSS among them, which is where an
+inline finding is very often read first. So the default points at the unsuffixed `{stem}.svg`, the
+one filename that predates any theme split, and the two `<source>` elements carry the themed
+variants. Follow GitHub's
+[documented form](https://github.blog/changelog/2022-08-15-specify-theme-context-for-images-in-markdown-ga/)
+— dark `<source>`, light `<source>`, then the `<img>` default — rather than letting one variant do
+double duty.
+
+**The check:**
+
+```bash
+node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --assets-check /tmp/report-body.md
+```
+
+| Exit | Meaning | Action |
+| --- | --- | --- |
+| 0 | every referenced asset answers 200 with an `image/*` content type | post as rendered |
+| 1 | at least one 404s, or answers a non-image type | **re-render with `--no-fix-links`** |
+| 3 | the network is unreachable | **post as rendered** — inconclusive is not a missing asset |
+
+Exit 3 is a separate code on purpose. Withholding a button because a `HEAD` request failed would
+degrade every offline or proxied run, so an inconclusive check never withholds; only an answer does.
+The non-image content type is checked alongside the status because `raw.githubusercontent.com`
+answers some missing paths with a `text/plain` body, and GitHub's image proxy enforces a
+content-type allowlist of its own.
+
+**When you add or rename an asset**, the buttons stay withheld until that change is on the default
+branch. That is the correct behaviour, not a bug to work around — do not point `ASSET_BASE` at a
+feature branch to make a screenshot look right, because every other repo's review would then depend
+on a branch that gets deleted.
 
 ## Relay length limit
 

@@ -2267,6 +2267,14 @@ node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/f
        node "$RENDER_COMMENT" /tmp/finding-$i.nofix.json > /tmp/finding-$i.md \
          || { log "finding $i: re-render without the fix link failed — dropped"; continue; }
        log "finding $i: fix link withheld (relay would mangle it)"; }
+# A reachable-looking button whose image 404s is a broken-image icon, not a button. Same re-render.
+node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --assets-check /tmp/finding-$i.md
+if [ $? -eq 1 ]; then
+  jq 'del(.FIX_URL)' /tmp/finding-$i.json > /tmp/finding-$i.nofix.json
+  node "$RENDER_COMMENT" /tmp/finding-$i.nofix.json > /tmp/finding-$i.md \
+    || { log "finding $i: re-render without the fix link failed — dropped"; continue; }
+  log "finding $i: fix link withheld (button asset unreachable)"
+fi
 ```
 
 Then reproduce that file **byte-for-byte** into the tool-call argument. A body that fails `--check`
@@ -2658,6 +2666,14 @@ obligations, and the first is now the load-bearing one:
    ```bash
    node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md \
      || RERENDER_WITH_NO_FIX_LINKS=1   # re-render, post that, and say so in the run line
+
+   # Same lever, different failure: the markup is fine but the button's image is not there.
+   # Exit 3 is inconclusive (network), NOT a missing asset — post as rendered on 3.
+   node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --assets-check /tmp/report-body.md
+   case $? in
+     1) RERENDER_WITH_NO_FIX_LINKS=1 ;;   # 404 or wrong content-type — a broken-image icon
+     3) : ;;                              # unreachable network — do not withhold on a guess
+   esac
    ```
 
    Exit 0 (`relay-safe`) posts as rendered. Exit 1 means re-render with `--no-fix-links` — both
