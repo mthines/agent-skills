@@ -34,17 +34,25 @@ Follow the multi-writer contract in
 [`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md)
 — every bullet, not a subset:
 
+The `value` is the **knowledge JSON record** (the shape in
+[`pr-reviewer/rules/memory.md`](../../../../agents/pr-reviewer/rules/memory.md):
+`v / symbol / path / kind / verified_at_sha / facts[] / consumer_files /
+covering_tests / history[]`), serialised — the value is that JSON and nothing else,
+**merged onto the record read first**, never an ad-hoc blob:
+
 ```text
-# Merge, never clobber: read the existing record, append to the capped history[],
-# carry the rest through unchanged. Same scope+key updates in place.
+# Merge, never clobber: read the existing record, append the confirmed fact to the
+# capped facts[]/history[], carry every other field through unchanged. Same
+# scope+key updates in place.
 memory.read  { scope: "repo::{owner}/{repo}", key: "knowledge::<symbol>@<path>" }
 memory.write {
-  scope: "repo::{owner}/{repo}",
-  key:   "knowledge::<symbol>@<path>",
-  value: "<yaml: invariant / consumer-count / defect + verified_at_sha:<analyzed SHA>>",
-  tags:  ["codebase-knowledge", "signal::knowledge"],
-  kind:  "signal",
-  host:  "holistic-analysis"
+  scope:    "repo::{owner}/{repo}",
+  key:      "knowledge::<symbol>@<path>",
+  value:    "<the knowledge JSON record, serialised — verified_at_sha:<analyzed SHA>, facts[]/history[] capped, MERGED onto the read record>",
+  tags:     ["codebase-knowledge"],
+  kind:     "signal",
+  host:     "holistic-analysis",
+  ttl_days: 90
 }
 ```
 

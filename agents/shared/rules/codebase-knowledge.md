@@ -23,13 +23,23 @@ person be consumed by a loop wired by another. The taxonomy entry is
 | **Kind** | `signal` (a durable per-repo filter, read on every run that touches code) |
 | **Scope** | `repo::{owner}/{repo}` — a codebase fact is repo-bound |
 | **TTL** | ~90 days, refreshed on re-verification |
-| **Keys** | `knowledge::<symbol>@<path>` — verified facts about one symbol (an invariant it holds, its consumer/dependent count, a defect it produced before, plus a capped `history[]` of findings); `hotspot::<path>` — per-file counters (`confirmed`, `missed`, `regressed`, `classes`, `confirmed_examples`, `last_touched_by`) |
+| **Keys** | `knowledge::<symbol>@<path>` — verified facts about one symbol (an invariant it holds, its consumer/dependent count, a defect it produced before, plus a capped `history[]` of findings); `hotspot::<path>` — per-file counters (`confirmed`, `missed`, `regressed`, `flaky`, `classes`, `confirmed_examples`, `last_touched_by`) |
 
 The keys are **structural** on purpose: a key survives a rename of the *finding*
 but not a rename of the *code*, which is exactly the sensitivity that lets a
 different loop match it against the files it is about to touch. Set `kind: signal`
 and `host` explicitly on every write — LoreKit infers them only from a `loop::`
 tag, and this bucket is not tagged that way.
+
+Both records are a **closed JSON object** (the `hotspot` and `knowledge` shapes in
+[`pr-reviewer/rules/memory.md`](../../pr-reviewer/rules/memory.md) are the
+reference), the value is that JSON and nothing else, and a `hotspot` field set is
+shared across writers: `flaky` counts the times a test file was empirically flaky
+then stabilised (written by `e2e-pr-stabilizer`), the way `confirmed` / `missed` /
+`regressed` count review outcomes. A writer **increments only the counters it
+earned this run and carries the rest through unchanged** — which is what lets a
+`pr-reviewer` write and an `e2e-pr-stabilizer` write to the same `hotspot::<path>`
+compose instead of clobber.
 
 ## Read side — automatic for any code-changing host
 
@@ -112,6 +122,10 @@ host invent its own.
 | `implement-suggestion` | apply seam, once the target files are known | Reader |
 | `fix-bug` | fast-lane plan seam (`aw-create-plan`) | Reader |
 | `ci-auto-fix` | the fix subagent, once the failing files are known | Reader |
+| `optimize-approach` | plan mode, judging a plan's approach (aw-planner Phase 1) | Reader |
+| `test-auto-fix` | Phase 2 (read) / Phase 6–7 (write) | Reader + writer |
+| `e2e-pr-stabilizer` | Phase 7, on the CI-ratified verdict | Writer (`hotspot` `flaky`) |
+| `holistic-analysis` | its verification output, best-effort | Writer-primary (no read) |
 
 A reader that verifies a structural fact while doing its work may write it back
 under the contract above; otherwise it reads only.

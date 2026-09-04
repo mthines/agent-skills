@@ -221,17 +221,28 @@ Write it **only on the ratified verdict** (same honesty gate as the lessons writ
 keyed structurally by the test file's path, under the contract in
 [`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md):
 
+The `value` is the shared **hotspot JSON record** (the closed field set in
+[`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md)
+and the reference shape in
+[`pr-reviewer/rules/memory.md`](../../../../agents/pr-reviewer/rules/memory.md):
+`v / path / confirmed / missed / regressed / flaky / classes / confirmed_examples /
+last_touched_by / expires`), serialised — the value is that JSON and nothing else.
+This is the same record `pr-reviewer` writes, so the two **compose** on a shared
+`hotspot::<test.file>` key: increment only `flaky` (the counter this run earned) and
+carry every other counter through unchanged:
+
 ```text
-# Merge, never clobber: read the existing record first, then increment the counter
-# this run proved and append to the capped history[]. Same scope+key updates in place.
+# Merge, never clobber: read the existing record first, increment ONLY the counter
+# this run proved, carry the rest through unchanged. Same scope+key updates in place.
 memory.read  { scope: "repo::{owner}/{repo}", key: "hotspot::<test.file>" }
 memory.write {
-  scope: "repo::{owner}/{repo}",
-  key:   "hotspot::<test.file>",
-  value: "<yaml: flaky:<n+1> regressed:<m> last verdict + verified_at_sha:<ratified SHA>>",
-  tags:  ["codebase-knowledge", "signal::flaky"],
-  kind:  "signal",
-  host:  "e2e-pr-stabilizer"
+  scope:    "repo::{owner}/{repo}",
+  key:      "hotspot::<test.file>",
+  value:    "<the hotspot JSON record: flaky incremented, regressed if Phase 7 came back regressed, every other counter carried through, expires:<now+90d> — MERGED onto the read record>",
+  tags:     ["codebase-knowledge", "signal::confirmed"],
+  kind:     "signal",
+  host:     "e2e-pr-stabilizer",
+  ttl_days: 90
 }
 ```
 

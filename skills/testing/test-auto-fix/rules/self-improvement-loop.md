@@ -248,18 +248,32 @@ under the contract in
 | A real product defect fixed in source (verdict `prod-bug`, fix landed, green) | `knowledge::<symbol>@<path>` — the defect + the SHA it was fixed at | Phase 7, green, on a source fix (not a test-only fix) |
 | A test file that went red repeatedly across the outer loop | `hotspot::<test.file>` counter | Phase 6 / 7, when the same file recurred |
 
+Both records are the shared JSON shapes from
+[`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md)
+(reference in
+[`pr-reviewer/rules/memory.md`](../../../../agents/pr-reviewer/rules/memory.md)) —
+the value is that JSON and nothing else, **merged onto the record read first**, so a
+`test-auto-fix` write and a `pr-reviewer` write to the same key compose:
+
 ```text
-# Merge, never clobber: read first, increment/append, same scope+key updates in place.
+# The defect → knowledge JSON record. Merge, never clobber: read first, append the
+# defect to the capped history[], carry the rest through. Same scope+key updates in place.
 memory.read  { scope: "repo::{owner}/{repo}", key: "knowledge::<symbol>@<path>" }
 memory.write {
-  scope: "repo::{owner}/{repo}",
-  key:   "knowledge::<symbol>@<path>",
-  value: "<yaml: defect + fix + verified_at_sha:<green SHA>, history[] capped>",
-  tags:  ["codebase-knowledge", "signal::defect"],
-  kind:  "signal",
-  host:  "test-auto-fix"
+  scope:    "repo::{owner}/{repo}",
+  key:      "knowledge::<symbol>@<path>",
+  value:    "<the knowledge JSON record: the defect + fix, verified_at_sha:<green SHA>, history[] capped — MERGED onto the read record>",
+  tags:     ["codebase-knowledge"],
+  kind:     "signal",
+  host:     "test-auto-fix",
+  ttl_days: 90
 }
 ```
+
+The recurring-red **`hotspot::<test.file>`** write follows the same rule: read the
+shared hotspot JSON record, increment only `regressed` (or `flaky`), carry every
+other counter through, `tags: ["codebase-knowledge", "signal::confirmed"]`,
+`kind: signal`, `host: test-auto-fix`, `ttl_days: 90`.
 
 - **Only what THIS run verified** against a green re-run — never a guess, and never
   a fact about a person or a telemetry reading. A fact about code, keyed to code.
