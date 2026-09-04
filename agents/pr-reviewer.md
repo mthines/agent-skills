@@ -2268,7 +2268,14 @@ case $? in
   1) jq 'del(.FIX_URL)' /tmp/finding-$i.json > /tmp/finding-$i.nofix.json
      node "$RENDER_COMMENT" /tmp/finding-$i.nofix.json > /tmp/finding-$i.md \
        || { log "finding $i: re-render without the fix link failed — dropped"; continue; }
-     log "finding $i: fix link withheld (relay would mangle it)" ;;
+     log "finding $i: fix link withheld (relay would mangle it)"
+     # 1 wins over 3 when a body carries BOTH kinds, so the exit-3 condition can SURVIVE the
+     # remedy. Ask again on the re-rendered body or the mangled citation is never reported.
+     node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/finding-$i.md
+     rc=$?
+     if [ "$rc" -eq 3 ]; then
+       log "finding $i: a cited link is also over the relay budget — posted as is"
+     fi ;;
   3) log "finding $i: a cited link is over the relay budget and will be mangled — posted as is" ;;
 esac
 # A reachable-looking button whose image 404s is a broken-image icon, not a button. Same re-render.
@@ -2674,8 +2681,17 @@ obligations, and the first is now the load-bearing one:
    node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
    case $? in
      1) RERENDER_WITH_NO_FIX_LINKS=1 ;;   # re-render, post that, and say so in the run line
-     3) : ;;                              # not remediable here — post, and note it
+     3) NOTE_MANGLED_LINK=1 ;;            # not remediable here — post, and note it
    esac
+
+   # 1 wins over 3 when a body carries BOTH kinds — one remediable URL makes the RUN remediable,
+   # not the body clean — so the exit-3 condition can SURVIVE the withhold. Re-render first, then
+   # ask again, or a mangled citation goes unnamed on exactly the runs that had two problems.
+   if [ -n "$RERENDER_WITH_NO_FIX_LINKS" ]; then
+     node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
+     rc=$?
+     [ "$rc" -eq 3 ] && NOTE_MANGLED_LINK=1
+   fi
 
    # Same lever, different failure: the markup is fine but the button's image is not there.
    # Exit 3 is inconclusive (network), NOT a missing asset — post as rendered on 3.
@@ -2910,12 +2926,29 @@ def payload_is_safe(payload: dict) -> tuple[bool, str]:
         # (60 title + ~25 decoration + 200 prose) and let the renderer own precision.
         if len(_prose) > 320:
             return (False, f"comment prose > 320 chars: {len(_prose)}")
-        # An absolute ceiling on the whole body still applies, generously: a title line
-        # + prose (200) + an evidence line (180) + a 10-line fence + a button + the
-        # footer + the marker. The button markup alone is ~430 chars of <picture> element.
-        # Anything past this is a shape failure the renderer should already have refused.
-        if len(c.get("body", "")) > 2000:
-            return (False, f"comment body > 2000 chars: {len(c['body'])}")
+        # An absolute ceiling on the REST of the body still applies, generously: a title
+        # line + prose (200) + an evidence line (180) + a 10-line fence + the footer +
+        # the marker. Anything past this is a shape failure the renderer should already
+        # have refused.
+        #
+        # The button is stripped first, exactly as it is for the prose measurement above
+        # and for the same reason: its length is the deep link's, not the finding's.
+        # `fixButton` emits ~525 chars of <picture> boilerplate PLUS the URL, and
+        # `build-agent0-link.mjs` bounds that URL at MAX_URL = 4000 — so a maximal button
+        # on its own can exceed any ceiling this predicate could name. The stale "~430
+        # chars" this comment used to claim was measured before the theme split doubled
+        # the element (two <source> plus an <img>, three URLs). Measured at 65b21a4: a
+        # legal `issue:` at every cap with a 10-line fence and a 408-char link renders
+        # 2208 chars, of which 933 is the button — over a ceiling that aborts the WHOLE
+        # post, so one maximal finding took the entire batch down. Stripping it is the fix
+        # rather than raising the number, for the same reason as the `(unverified: …)` tag
+        # above: the renderer bounds every field it owns, and a second bound here would be
+        # the same stale copy again. L1 `G46l` measures a maximal render against this
+        # ceiling too, so the next thing that grows fails a check instead of a post.
+        _body = _re.sub(r'^<a href="https://app\.dash0(?:-dev)?\.com/.*$', "",
+                        c.get("body", ""), flags=_re.MULTILINE)
+        if len(_body) > 2000:
+            return (False, f"comment body > 2000 chars, fix button excluded: {len(_body)}")
         if len(_re.findall(r"<!--\s*fp:v\d+:", c.get("body", ""))) > 1:
             return (False, f"comment carries more than one fingerprint marker: {c.get('path')}")
     return (True, "")

@@ -3482,6 +3482,37 @@ const isPollBlock = (block) =>
     }
     s.check("G46f the spine is where the glyph set lives", /TIER_GLYPH = \{ critical:/.test(spine));
 
+    // `assertPlain` needs its own form. The report renderer legitimately WRAPS it — the spine
+    // throws and this renderer must exit non-zero with nothing on stdout — so the no-local-binding
+    // test above would reject a correct delegation. The defect it must catch is a second
+    // IMPLEMENTATION, and the signal for that is the spine's own error strings appearing in a
+    // renderer: this file carried a behaviourally identical copy through the whole parity change,
+    // validating the same fields against a second definition of "plain".
+    for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
+      s.check(`G46f ${file} imports assertPlain from the spine`,
+        /import[\s\S]*?assertPlain[\s\S]*?comment-spine/.test(src),
+        "one definition of plain, or the two surfaces validate the same field two ways");
+      s.check(`G46f ${file} carries no second assertPlain implementation`,
+        !/contains a markdown link/.test(src) && !/contains a backtick/.test(src),
+        "a behaviourally identical local copy is the drift the spine exists to prevent");
+    }
+
+    // The pipe is the FOURTH check on the finding title, and the one the parity change missed.
+    // `render-report.mjs` rejects it (a table cell cannot be escaped out of) and the inline
+    // renderer did not — the worst available failure ordering, since every comment posts and then
+    // the report indexing them is lost. Both surfaces bound this string or neither does.
+    for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
+      s.check(`G46f ${file} rejects a pipe in the finding title`,
+        /includes\("\|"\)/.test(src), "the title is one string on two surfaces");
+    }
+    const pipeTitle = JSON.parse(readFileSync(join(FIX, "issue-blocking.json"), "utf8"));
+    pipeTitle.TITLE = "Fix button | costs too much";
+    const pipeRun = run([], JSON.stringify(pipeTitle));
+    s.check("G46f the inline renderer rejects a piped title", !pipeRun.ok,
+      "it renders fine in bold and destroys the report row that indexes it");
+    s.check("G46f rejecting a piped title emits nothing on stdout", (pipeRun.out || "") === "",
+      (pipeRun.out || "").slice(0, 80));
+
     // (e) WCAG 1.4.1: the glyph is never the sole carrier of the tier. `🔴 3 · 🟠 1` is unreadable
     // to anyone who does not already know the mapping and announces as four colour names.
     s.check("G46g the tally pairs every glyph with its word",
@@ -3614,6 +3645,23 @@ const isPollBlock = (block) =>
         && /relayUnsafeFixLinks\(\)/.test(fixRule),
       "agent0-fix-links.md owns the exit-code table; a third code that is not in it is invisible");
 
+    // The codes are ONE exit status, so 1 outranks 3 and the exit-3 condition can survive the
+    // withhold: a body with both a fix link and a cited link over budget re-renders, posts, and
+    // never names the citation the relay is still going to mangle. Every place that acts on exit 1
+    // must therefore ask again on the re-rendered body — both call sites and the rule that owns
+    // the table, or the obligation is discharged in one and dropped in the others.
+    for (const [where, src, anchorRe] of [
+      ["the inline call site", agentBody, /finding-\$i\.md[\s\S]{0,400}?rc=\$\?/],
+      ["the sticky call site", agentBody, /RERENDER_WITH_NO_FIX_LINKS[\s\S]{0,400}?rc=\$\?/],
+      ["the rule", fixRule, /1 outranks 3[\s\S]{0,200}?rc=\$\?/],
+    ]) {
+      s.check(`G46j ${where} re-checks the relay after the exit-1 remedy`, anchorRe.test(src),
+        "exit 1 means this RUN is remediable, not that the body is otherwise clean");
+    }
+    s.check("G46j the surviving exit-3 condition reaches the run line",
+      /NOTE_MANGLED_LINK=1/.test(agentBody) && /note_mangled_link/.test(fixRule),
+      "a re-check whose result goes nowhere is the same silence with an extra step");
+
     // (l) The post pre-flight's prose ceiling, measured against the renderer rather than restated.
     // `UNVERIFIED_MAX` was added to the spine and this ceiling did not move, so a finding legal
     // under every per-field cap tripped a predicate that ABORTS THE WHOLE POST — one maximal
@@ -3634,6 +3682,33 @@ const isPollBlock = (block) =>
       .replace(/\s*\(unverified: [^)]*\)/g, "")
       .replace(/<!--\s*fp:v\d+:[^\s>]+?\s*-->/g, "")
       .trim();
+    // The SECOND ceiling in the same predicate, on the whole body rather than the prose. It had no
+    // coverage at all while the prose one did, which is how it came to describe the fix button as
+    // "~430 chars" long after the theme split doubled that element into two <source> plus an <img>.
+    // Measured: a legal `issue:` at every cap with a 10-line fence and a 408-char link renders 2208
+    // chars, 933 of it button — over a 2000 ceiling that ABORTS THE WHOLE POST. Both ceilings are
+    // read out of the source and both are measured here, so neither can drift alone again.
+    const bodyCeilingM = agentBody.match(/if len\(_body\) > (\d+):/);
+    s.check("G46l the post pre-flight states its whole-body ceiling as a number L1 can read",
+      !!bodyCeilingM, "payload_is_safe must keep the `if len(_body) > N:` form");
+    const bodyCeiling = Number(bodyCeilingM?.[1] ?? 0);
+    // The one strip the body measurement performs: the button, whose length is the deep link's.
+    // Applied HERE only if the source actually applies it — a hand-copied strip would make this
+    // measurement pass on a predicate that no longer strips anything, which is a guard measuring
+    // its own copy of the rule. Conditioning on the source makes the measurement the real gate.
+    const bodyStripsButton = /_body = _re\.sub\(\s*r'\^<a href="https:\/\/app\\\.dash0/.test(agentBody);
+    const preflightBody = (body) => bodyStripsButton
+      ? body.replace(/^<a href="https:\/\/app\.dash0(?:-dev)?\.com\/.*$/gm, "")
+      : body;
+    // A real link through the real builder, at a realistic prompt length — the encoding and the
+    // `<picture>` markup around it are what this measures, so neither may be approximated here.
+    const { buildLink } = await import(
+      pathToFileURL(join(REPO_ROOT, "agents/pr-reviewer/scripts/build-agent0-link.mjs")).href);
+    const maxFixUrl = buildLink(
+      `/implement https://github.com/${"o".repeat(20)}/${"r".repeat(20)}/pull/165 pr-reviewer — `
+        + "apply only the finding at ".repeat(6), "development", "fix-this");
+    const tenLineFence = { lang: "ts", code: Array.from({ length: 10 },
+      (_, i) => `  const someValue${i} = computeSomething(argumentOne, argumentTwo);`).join("\n") };
     const maximal = [
       ["a claim at every cap, unverified", "suggestion-pseudo",
         { TITLE: "T".repeat(assetMod.TITLE_MAX), BODY: "P".repeat(assetMod.PROSE_MAX),
@@ -3641,6 +3716,10 @@ const isPollBlock = (block) =>
       ["a claim at every cap, verified", "suggestion-pseudo",
         { TITLE: "T".repeat(assetMod.TITLE_MAX), BODY: "P".repeat(assetMod.PROSE_MAX) }],
       ["a one-liner at its cap", "nitpick", { BODY: "P".repeat(assetMod.PROSE_MAX) }],
+      // The shape that broke the whole-body ceiling: every cap, a 10-line fence AND a fix button.
+      ["a blocking claim at every cap with a 10-line fence and a fix button", "issue-blocking",
+        { TITLE: "T".repeat(assetMod.TITLE_MAX), BODY: "P".repeat(assetMod.PROSE_MAX),
+          FENCE: tenLineFence, FIX_URL: maxFixUrl }],
     ];
     for (const [label, base, over] of maximal) {
       const payload = { ...JSON.parse(readFileSync(join(FIX, `${base}.json`), "utf8")), ...over };
@@ -3649,12 +3728,21 @@ const isPollBlock = (block) =>
       s.check(`G46l ${label} renders`, r.ok, (r.err || "").slice(0, 140));
       if (!r.ok) continue;
       const n = preflightProse(r.out).length;
-      s.check(`G46l ${label} fits the ${ceiling}-char post pre-flight (${n})`, n <= ceiling,
+      s.check(`G46l ${label} fits the ${ceiling}-char prose pre-flight (${n})`, n <= ceiling,
         `${n} > ${ceiling} — payload_is_safe aborts the WHOLE post, so this drops every finding`);
+      const b = preflightBody(r.out).length;
+      s.check(`G46l ${label} fits the ${bodyCeiling}-char body pre-flight (${b})`, b <= bodyCeiling,
+        `${b} > ${bodyCeiling} — payload_is_safe aborts the WHOLE post, so this drops every finding`);
     }
     s.check("G46l the pre-flight strips the unverified tag it does not bound",
       /_prose = _re\.sub\(r"\\s\*\\\(unverified: \[\^\)\]\*\\\)"/.test(agentBody),
       "the tag is a rendered decoration like the fence and the button — strip it, do not re-bound it");
+    // The body measurement is only survivable because the button is stripped from it too: the
+    // element is ~525 chars of boilerplate plus a URL `build-agent0-link.mjs` bounds at 4000, so a
+    // maximal button alone can exceed any ceiling this predicate could name.
+    s.check("G46l the whole-body ceiling excludes the fix button",
+      bodyStripsButton && /fix button excluded/.test(agentBody),
+      "measure the body without the button, exactly as the prose measurement does");
 
     // (m) The finding title is one string on two surfaces, so one cap governs both. The report
     // renderer had `assertPlain` and no length check while the comment renderer enforced

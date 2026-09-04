@@ -138,6 +138,15 @@ function build(data) {
       bad("TITLE carries sentence punctuation — it is a noun phrase, not a sentence"
         + ` (got: ${title})`);
     }
+    // The fourth check on this string, and the one the parity work missed. A pipe is legal in
+    // `**…**` here and illegal in the report's table cell (`render-report.mjs` rejects it, since a
+    // cell cannot be escaped out of) — so the failure ordering is the worst available: every
+    // comment posts, and then the report that indexes them is lost. A bound on a shared string
+    // binds both surfaces or neither.
+    if (title.includes("|")) {
+      bad("TITLE contains a pipe — the report row that indexes this finding renders in a table"
+        + " cell, which a pipe would split into phantom columns");
+    }
   } else {
     assertAbsent("TITLE", data.TITLE, `a ${prefix}: renders as one line and takes no title`);
   }

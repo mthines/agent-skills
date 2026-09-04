@@ -445,8 +445,11 @@ opens a session with no idea what to fix is worse than no button.
 # Before a relayed write, on the body that is actually about to be posted.
 node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
 case $? in
-  1) rerender_with --no-fix-links ;;   # withhold the buttons; keep the report
-  3) : ;;                              # not a fix link — the remedy cannot reach it
+  1) rerender_with --no-fix-links
+     # 1 outranks 3, so the exit-3 condition can SURVIVE the remedy — ask the re-rendered body.
+     node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
+     rc=$?; [ "$rc" -eq 3 ] && note_mangled_link ;;
+  3) note_mangled_link ;;              # not a fix link — the remedy cannot reach it
 esac
 ```
 
@@ -454,7 +457,10 @@ esac
 - Exit 1 — a **fix link** is over budget. **Re-render with `--no-fix-links`** and post that. Both
   renderers already omit the button when the URL slot is absent, so this needs no renderer change
   and costs only the affordance. Note the withholding in the run line, so a reader who expects a
-  button knows why there is none.
+  button knows why there is none. Then **re-check the re-rendered body**: the codes are one exit
+  status, so a body carrying both kinds reports the remediable one — 1 says *this run* is
+  remediable, never that the body is otherwise clean — and the surviving exit-3 condition would
+  otherwise go unnamed on exactly the runs that had two problems rather than one.
 - Exit 3 — something else is over budget: a cited doc URL, a `raw.githubusercontent.com` asset
   path, a permalink out of the diff. **Post as rendered** and name the mangled link in the run line.
 

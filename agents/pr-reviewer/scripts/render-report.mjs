@@ -30,7 +30,7 @@ import { dirname, join } from "node:path";
 import {
   TIERS, TIER_GLYPH, VERDICT_GLYPH, VERDICTS, SHA7, GATE_DETAILS_MAX, TITLE_MAX,
   worstTier, tierTally, footerLine, fixButton, anchor, assertPostable,
-  assertNoStructure, sentenceCount,
+  assertNoStructure, sentenceCount, assertPlain as spineAssertPlain,
 } from "./comment-spine.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -117,32 +117,32 @@ function assertNoStrayFields(where, obj, allowed) {
 }
 
 /**
- * Reject markdown syntax the renderer is going to add itself.
+ * Reject markdown syntax the renderer is going to add itself — the spine's check, routed through
+ * `fail()`.
  *
- * Two field classes, two bars:
- *   - IDENTIFIER fields (`path`, `key`) — the renderer wraps these in a code span itself, so a
- *     backtick inside one would terminate that span. Rejected.
- *   - PROSE fields (`ask`, `body`, `note`) — `allowCode: true`. An inline code span is the source
- *     comment's own wording. Step 1.0 requires `ask` be another bot's lead line "truncated, not
- *     paraphrased", and those lead lines name symbols in backticks (the `OPEN_THREADS_LIST`
- *     example in pr-reviewer.md is itself one), so rejecting a backtick here aborted the whole
- *     render on input the spec mandates.
+ * This file used to hold a behaviourally identical copy that differed only in how it reported, and
+ * that is exactly the drift the spine exists to prevent: the parity work that brought
+ * `assertNoStructure` and `sentenceCount` here imported both and left this one local, so the two
+ * surfaces went on validating the same fields against two definitions of "plain". The wrapper is
+ * the only real difference — the spine throws, and this renderer must exit non-zero with **nothing**
+ * on stdout, so a rejection can never post a partial body.
  *
- * The hazard this guard was built for — a markdown link caged in a code span — is caught by the
- * link test below, which matches inside backticks too, and again by the rendered-body
+ * The spine's docblock owns the two-bar rule (identifier fields reject a backtick; prose fields pass
+ * `allowCode: true`). Why the report needs the loose half: Step 1.0 requires an `ask` be another
+ * bot's lead line "truncated, not paraphrased", and those lead lines name symbols in backticks (the
+ * `OPEN_THREADS_LIST` example in pr-reviewer.md is itself one), so rejecting a backtick there
+ * aborted the whole render on input the spec mandates.
+ *
+ * The hazard the check was built for — a markdown link caged in a code span — is caught by the
+ * spine's link test, which matches inside backticks too, and again by the rendered-body
  * post-condition in main(). Neither depends on banning backticks outright.
  */
-function assertPlain(where, v, { allowCode = false } = {}) {
-  const s = String(v);
-  if (/\[[^\]]*\]\([^)]*\)/.test(s)) {
-    fail(`${where} contains a markdown link — supply the url in its own field and let the`
-      + ` renderer build the link (got: ${s.slice(0, 60)})`);
+function assertPlain(where, v, opts) {
+  try {
+    spineAssertPlain(where, v, opts);
+  } catch (e) {
+    fail(e.message);
   }
-  if (!allowCode && s.includes("`")) {
-    fail(`${where} contains a backtick — supply plain text; the renderer adds code formatting`
-      + ` (got: ${s.slice(0, 60)})`);
-  }
-  if (s.includes("\n")) fail(`${where} contains a newline — it must be a single line`);
 }
 
 /** `- [`path:line`](url) — ask`, or unlinked inline code when no url is available. */
