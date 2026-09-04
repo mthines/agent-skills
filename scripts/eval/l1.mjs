@@ -4773,7 +4773,7 @@ const isPollBlock = (block) =>
   const FIX_LINKS = read("agents/shared/rules/agent0-fix-links.md");
 
   const bodyTrigger = sliceBetween(BODY,
-    "**When `OPEN_FINDING_COUNT` is 0 but CI has", "**Omit the slot**");
+    "**When `{bot_login}` is unresolved**", "**Omit the slot**");
   const bodyOmit = sliceBetween(BODY,
     "**Omit the slot**", "- **Fix this (inline).**");
 
