@@ -59,4 +59,4 @@ Memories — 62 indexed · 1 used
 
 </details>
 
-<sup>`pr-reviewer` · commit `2c2bd19` · incremental review, delta since `70cf147` · [how these findings are produced](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) · updated 2026-08-20 14:33 UTC</sup>
+<sup>`pr-reviewer` · commit `2c2bd19` · incremental review, delta since `70cf147` · [how these findings are produced](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) · updated <relative-time datetime="2026-08-20T14:33:00.000Z">Aug 20, 2026 2:33pm UTC</relative-time></sup>
