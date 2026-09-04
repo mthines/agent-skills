@@ -266,7 +266,7 @@ file because each is long, and because a phase the body only summarises is a pha
 - `agents/shared/rules/holistic-review.md` — default-on intent-match + system-fit pass via `Skill("holistic-analysis", "review")`.
 - `agents/shared/rules/optimality-review.md` — default-on "is this the best approach" pass via `Skill("optimize-approach", "report")` (Step 2.4c); report-only in cross-review.
 - `agents/shared/rules/standards-conformance.md` — default-on governing-docs enforcement lens (Step 1.7b discovery + Step 2.4d lens); runs on every invocation unless `--no-standards`; produces `issue:` / `suggestion:` findings citing the governing-doc `path:line` as grounding evidence.
-- `agents/shared/rules/measurability-review.md` — default-on measurability lens (Step 2.4e) via `Skill("measurable", "audit")`: will this change's impact be provable and its regressions visible after merge? Two gates keep it quiet (a `web`/`mobile`/`api`/`worker` path, **and** new or changed observable behaviour); advisory by default and it never blocks the verdict; skip via `--no-measurable`. Read-only — `audit` mode only, never `implement`.
+- `agents/shared/rules/measurability-review.md` — default-on measurability lens (Step 2.4e) via `Skill("measurable", "audit")`: will this change's impact be provable and its regressions visible after merge? Two gates keep it quiet (a `web`/`mobile`/`api`/`worker` path, **and** new or changed observable behaviour); strict by default (a repo opts down with `measurable: advisory`), so a `missing` on a new failure mode can block the verdict while `unlinked` never does; skip via `--no-measurable`. Read-only — `audit` mode only, never `implement`.
 - `agents/shared/rules/finding-grounding.md` — grep claimed symbols; drop on miss (Step 2.6).
 - `agents/shared/rules/verification-receipt.md` — executed proof for behavioral claims; drop on null result (Step 2.6b).
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ profile threshold (Step 2.7).
@@ -1915,7 +1915,7 @@ rubrics + finders produce raw candidates
   → 2.4d standards-conformance.md     (governing-docs enforcement — default on; skip via --no-standards or trivial-skip;
                                        findings cite governing-doc path:line and pass all downstream gates)
   → 2.4e measurability-review.md      (Skill("measurable", "audit") — default on; two gates keep it quiet;
-                                       advisory, never reaches FAIL_REASONS unless the repo opted into strict)
+                                       strict by default — a `missing` new failure mode reaches FAIL_REASONS, `unlinked` never blocks; opt down with `measurable: advisory`)
   → 2.5  rubric-composition § Consolidation (dedupe + group + sort — no cap, nothing dropped)
   → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.5b prior-comment-awareness.md § Dedup (drop if already said in a prior review pass)
