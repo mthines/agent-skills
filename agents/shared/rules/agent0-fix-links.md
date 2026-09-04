@@ -493,12 +493,12 @@ opens a session with no idea what to fix is worse than no button.
 The deep-link scaffold alone (`https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=`
 plus `&utm_source=pr-reviewer-fix-all`) is **105 body chars** empty, leaving 35 for the encoded
 prompt; the shortest conceivable filled Fix-all — a one-character owner, repo and login, PR #1 —
-measures **164**, and a realistic one measures **200**. Every one is over 140 before any prompt
-content is chosen. This is why *"do not shorten the prompt to fit"* is stated as an absolute rather
+measures **164**, and a realistic one (`mthines/agent-skills` #168) measures **195**. Every one is
+over 140 before any prompt content is chosen. This is why *"do not shorten the prompt to fit"* is stated as an absolute rather
 than a preference: no prompt exists that fits, so shortening trades the affordance's usefulness for
 nothing. It also bounds what the `/pr-fix` rewrite bought. Taking Fix-all from ~1100 to ~190 is a
 large win against the **2500 design target** and `MAX_URL`, and **no** win against the relay budget,
-which those figures still exceed by 60 chars. **The remedy is the write path, not the link:** post
+which those figures still exceed by 55 chars. **The remedy is the write path, not the link:** post
 the body from a **file** (`gh api … --field body=@file`, `gh pr review --body-file`) and no rewrite
 happens, so the buttons render intact. A caller that can only pass the body as a tool-call argument
 gets a correctly-withheld button on every run, permanently — worth knowing before reading a missing
