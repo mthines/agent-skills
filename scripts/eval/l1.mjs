@@ -1319,8 +1319,17 @@ function checksInSync(plan, checks) {
       const r = run([payload]);
       s.check(`G25 ${name}.json renders without error`, r.ok, r.err);
       const expected = readFileSync(expectedPath, "utf8");
-      s.check(`G25 ${name} output matches its committed snapshot`, r.out === expected,
-        r.out === expected ? "" : "output drifted — regenerate the snapshot and review the diff");
+      let diffDetail = "";
+      if (r.out !== expected) {
+        let i = 0;
+        const min = Math.min(r.out.length, expected.length);
+        while (i < min && r.out[i] === expected[i]) i++;
+        const ctx = (s2, at) => JSON.stringify(s2.slice(Math.max(0, at - 20), at + 20));
+        diffDetail = `output drifted — regenerate the snapshot and review the diff (lengths`
+          + ` ${r.out.length} vs ${expected.length}, first diff at index ${i}: got`
+          + ` ${ctx(r.out, i)} want ${ctx(expected, i)})`;
+      }
+      s.check(`G25 ${name} output matches its committed snapshot`, r.out === expected, diffDetail);
     }
 
     // (b) Structural invariants on every snapshot. These are what the five failed runs broke.
