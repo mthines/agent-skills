@@ -4,7 +4,7 @@
 //   node scripts/eval/l1.mjs
 // Exits non-zero if any check fails.
 import { execSync, spawnSync } from "node:child_process";
-import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -2998,6 +2998,108 @@ const isPollBlock = (block) =>
       + " is relayed, so renaming the token here silently inverts the fail-safe: the comparison"
       + " goes always-false, WRITE_IS_RELAYED stays unset, and every write is treated as"
       + " file-based — posting a mangled button, the direction the default exists to avoid");
+
+  // G32q: the buttons are ON BY DEFAULT, and that is a fact about the SHELL, not about a
+  // sentence. Two prior defaults failed the same way — off-unless-flagged, then
+  // on-only-where-an-agent0_environment-was-named — and in both the affordance was missing from
+  // every run nobody had remembered to configure. So EXECUTE the resolution block from
+  // review-config.md against fixture configs and assert what it resolves. A prose-presence check
+  // would pass while a `[ "$fl" = "true" ]` truthiness test read every absent key as `false` and
+  // quietly restored off-by-default, with the table, the schema and the prose all still claiming
+  // otherwise — the same shape as G32p's unconditional --relay-check.
+  {
+    const cfg = readFileSync(join(REPO_ROOT, "agents/shared/rules/review-config.md"), "utf8");
+    const block = [...cfg.matchAll(/```bash\n([\s\S]*?)```/g)]
+      .map((m) => m[1])
+      .find((b) => /^AGENT0_FIX_LINKS=/m.test(b));
+    // Drop the fetch half — it needs `gh` and the network. The resolution half starts at the
+    // first AGENT0_ variable and is pure string handling, so it runs as-is.
+    const tail = block?.slice(block.search(/^AGENT0_FIX_LINKS=/m));
+    const resolve = (content, readFailed = 0) => {
+      const r = spawnSync("bash", ["-c",
+        `CONFIG_READ_FAILED=${readFailed}\n`
+        + `BASE_CONFIG_CONTENT=$(cat)\n${tail}\n`
+        + `printf '%s %s\\n' "$AGENT0_FIX_LINKS" "$AGENT0_ENVIRONMENT"`,
+      ], { input: content, encoding: "utf8" });
+      return (r.stdout || "").trim();
+    };
+
+    s.check("G32q the review-config resolution block is still where this guard reads it",
+      !!tail && /agent0_fix_links/.test(tail),
+      "no bash block in review-config.md binds AGENT0_FIX_LINKS — the resolution moved;"
+        + " re-anchor this guard rather than deleting it");
+
+    if (tail) {
+      // The whole point of the inversion: nothing configured must render buttons.
+      s.check("G32q nothing configured resolves the buttons ON at the production host",
+        resolve("") === "true production",
+        `an empty config resolved "${resolve("")}" — a repo that configured nothing gets no`
+          + " buttons again, which is the default this change replaced");
+      s.check("G32q a config that never mentions Agent0 still resolves ON",
+        resolve("profile: balanced\nfilters:\n  - naming-nits\n") === "true production",
+        "an unrelated review config turned the buttons off — only `agent0_fix_links: false` may");
+
+      // The one opt-out has to actually work: it is all that stands between a repo that declined
+      // and a deep link to a host its readers cannot sign in to.
+      s.check("G32q `agent0_fix_links: false` is a real opt-out",
+        resolve("agent0_fix_links: false\n").startsWith("false"),
+        "the documented repo-wide opt-out did not resolve off — the only way for a non-Dash0 repo"
+          + " to decline the buttons is broken, and the config says it works");
+      s.check("G32q the opt-out survives an inline comment after the value",
+        resolve("agent0_fix_links: false   # we do not use Agent0\n").startsWith("false"),
+        "an inline comment defeated the opt-out — the schema's own documented style puts one"
+          + " there (the PR #149 regression, in the direction that now fails open)");
+
+      // agent0_environment is HOST ONLY. It gated the buttons before; one key carrying both
+      // meanings made them unsettable independently.
+      s.check("G32q agent0_environment picks the host and does not gate rendering",
+        resolve("agent0_environment: development\n") === "true development"
+          && resolve("agent0_fix_links: false\nagent0_environment: development\n")
+            === "false development",
+        "agent0_environment still moves AGENT0_FIX_LINKS — a repo on `development` cannot turn"
+          + " the buttons off without also losing its host, which is what splitting them fixed");
+
+      // Fail-safe: an unreadable config may have carried the opt-out, so withhold.
+      s.check("G32q an unreadable config withholds the buttons",
+        resolve("", 1).startsWith("false"),
+        "a config that could not be read resolved ON — the opt-out is discarded by any transient"
+          + " read failure, which is the one direction that is not recoverable");
+
+      // …and the fetch has to tell those two apart. EXECUTE it against a stub `gh`: the first
+      // version of this function used `2>&1`, which put a success-path warning inside the JSON,
+      // failed `--jq`, and returned empty — so a config carrying `agent0_fix_links: false` read
+      // as "no config" and the buttons rendered. Verified: the `2>&1` form returns empty on
+      // case 4 below. The fail-safe above cannot catch it, because the fetch reports success.
+      const fetchFn = block.slice(0, block.indexOf("\nCONFIG_READ_FAILED=0"));
+      const B64 = Buffer.from("agent0_fix_links: false\n").toString("base64");
+      const withStub = (ghBody) => {
+        const dir = mkdtempSync(join(tmpdir(), "l1-cfg-"));
+        writeFileSync(join(dir, "gh"), `#!/bin/bash\n${ghBody}\n`, { mode: 0o755 });
+        const r = spawnSync("bash", ["-c",
+          `RESOLVED_REPO=o/r\n${fetchFn}\n`
+          + `out=$(fetch_base_config .github/review.yaml)\nprintf '%s|%s' "$?" "$out"`,
+        ], { encoding: "utf8", env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } });
+        rmSync(dir, { recursive: true, force: true });
+        return (r.stdout || "").trim();
+      };
+      const cases = [
+        ["a readable config returns its content", `echo "${B64}"`,
+          `0|agent0_fix_links: false`],
+        ["an absent config (404) is an answer, not a failure",
+          'echo "gh: Not Found (HTTP 404)" >&2; exit 1', "0|"],
+        ["an unreadable config (403) exits 2 so the caller withholds",
+          'echo "gh: Resource not accessible (HTTP 403)" >&2; exit 1', "2|"],
+        ["a warning on the SUCCESS path does not erase the config",
+          `echo "warning: token from env" >&2; echo "${B64}"`, `0|agent0_fix_links: false`],
+      ];
+      for (const [what, stub, want] of cases) {
+        const got = withStub(stub);
+        s.check(`G32q fetch_base_config — ${what}`, got === want,
+          `got "${got}", want "${want}" — the fetch cannot tell an absent config from an`
+            + " unreadable one, so the only repo-wide opt-out is silently discardable");
+      }
+    }
+  }
 
   const maxUrl = Number(/^const MAX_URL = (\d+)/m.exec(readFileSync(LINK_MOD, "utf8"))?.[1]);
   s.check("G32f MAX_URL stays under the 8k request-line cliff it was moved off",

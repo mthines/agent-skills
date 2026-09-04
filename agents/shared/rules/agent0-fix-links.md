@@ -19,15 +19,24 @@ The prompt is a call to Agent0's **`/pr-fix`** skill plus an address — the PR,
 (for **Fix this**) which one. The skill owns the method; the URL owns the target. See
 § Prompt templates.
 
-**On wherever an Agent0 exists; off everywhere else.** The gate is whether the repo's review config
-resolves an `agent0_environment` (§ Environment) — a repo that has said which Agent0 it uses has
-already answered the only question the button depends on. Non-Dash0 repos configure no environment,
-render no buttons, and are unaffected.
+**On by default; off only when a repo says so.** There is no configuration to add: a repo with no
+review config at all, or one that never mentions Agent0, gets the buttons pointed at `production`
+(§ Environment). The single way to turn them off repo-wide is to say so — `agent0_fix_links: false`
+in `.github/review.yaml` — and `--no-fix-links` turns them off for one run.
 
-The buttons used to be off unless a flag was passed, and the cost of that was the whole point of
-having them: the affordance that turns a review into an action was absent from every run nobody
-remembered to flag — including the runs a screenshot gets taken of. A review that finds four real
-problems and offers no way to act on them is doing the hard half and skipping the cheap one.
+The buttons were off unless a flag was passed, then on only where an `agent0_environment` was
+named, and both defaults cost the same thing: the affordance that turns a review into an action was
+absent from every run nobody had remembered to configure — including the runs a screenshot gets
+taken of. A review that finds four real problems and offers no way to act on them is doing the hard
+half and skipping the cheap one, and requiring a config line to fix that just moves the forgetting
+one level up.
+
+**What defaulting on costs, stated rather than buried.** `agent0_environment` no longer gates
+anything, so it only picks the host, and its own default is `production`. A repo that has never
+heard of Agent0 therefore renders buttons deep-linking to `app.dash0.com`, where the click lands a
+reader without a Dash0 account on a sign-in page. That is a dead link for them, not a data leak —
+the URL carries the PR reference and the reviewer's login, both already public on a public PR, and
+nothing from the diff (§ Safety). Repos in that position set `agent0_fix_links: false` once.
 
 ## Contents
 
@@ -48,25 +57,28 @@ Resolution order, first match wins:
 | --- | --- |
 | `--no-fix-links` on the invocation | **off** — the explicit opt-out, and it beats everything below |
 | `--fix-links` on the invocation | **on** |
-| `agent0_fix_links: true` / `false` in the review config | as set — an explicit repo-wide answer |
-| `agent0_environment` resolves in the review config | **on** — the default this section is about |
-| nothing configured | **off** |
+| `agent0_fix_links: true` / `false` in the review config | as set — the only repo-wide answer, and the only way to turn them off |
+| nothing configured | **on**, at `agent0_environment`'s own default of `production` |
+
+There is deliberately **no** `agent0_environment` row: naming an environment picks the host and says
+nothing about whether the buttons render. It used to be the gate, and the two meanings riding on one
+key made "which Agent0" and "buttons or not" impossible to set independently — a repo on
+`development` could not turn the buttons off without also losing its host, and a repo wanting
+buttons on the default host had to write a line whose value it did not care about.
 
 ```yaml
 # .github/review.yaml
-agent0_environment: production      # this alone turns the buttons on
-agent0_fix_links: false             # …unless the repo explicitly says otherwise
+agent0_fix_links: false             # the only way to turn the buttons off repo-wide
+agent0_environment: development     # host only — has no bearing on whether they render
 ```
 
 ```text
 Task(subagent_type="pr-reviewer", prompt="<PR-URL> --no-fix-links")   # opt out for one run
 ```
 
-Two properties are worth stating because they are what make the default safe. A repo with no
-`agent0_environment` still gets nothing, so the change is invisible outside Dash0. And the two
-placements are governed by **one** flag — there is no per-placement opt-out, so the *flag* can never
-produce a report offering *Fix all* above findings with no *Fix this*, one of the inconsistencies
-this replaces.
+The two placements are governed by **one** flag — there is no per-placement opt-out, so the *flag*
+can never produce a report offering *Fix all* above findings with no *Fix this*, one of the
+inconsistencies this replaces.
 
 **The flag is the invariant's whole scope. One identity state diverges the placements anyway:** an
 unresolved `{bot_login}` with a matched prior sticky renders *Fix all* through the
@@ -80,7 +92,9 @@ self-link that cannot exist.
 
 ## Environment
 
-Which Agent0 the buttons link to is set by `agent0_environment` in the review config:
+Which Agent0 the buttons link to is set by `agent0_environment` in the review config. It picks the
+**host and nothing else** — it is not an on/off switch (§ Opt-in), so a repo that omits it gets
+buttons on `production` rather than no buttons:
 
 ```yaml
 # .github/review.yaml
