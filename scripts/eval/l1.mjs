@@ -4755,4 +4755,51 @@ const isPollBlock = (block) =>
     /In `pr-reviewer` that is Step 2\.7b/.test(RELEVANCE_MD));
 }
 
+// ── G47: the CI-only Fix-all trigger fires on a red/failed check, never on pending-only ──
+//
+// The trigger's own prose read "CI is not green", which subsumes a pending check that has
+// produced no failure and no logs to view — the button then sent Agent0 to "fix the failing
+// CI checks" on a check that had not failed (observed on mthines/lorekit#647: zero findings,
+// CI state `pending (Darkplane auto-approval)`, a Fix-all button with nothing to fix). The
+// fix narrows the trigger to the `CI red:` subset `CI_NOTE` already computes
+// (`report-rendering.md`); this guard reads the two real shipped surfaces and asserts the
+// red-only condition is present and the broader "not green" phrase is gone. Slices are bound
+// on stable neighbouring headings/bullets, never on the reworded trigger sentence itself — a
+// `sliceBetween` anchor pinned to the very text being edited throws on the next rename, and a
+// thrown slice reads as 0 checks / green through a `grep "✗"` pipe (recorded repeat-failure).
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const BODY = read("agents/pr-reviewer.md");
+  const FIX_LINKS = read("agents/shared/rules/agent0-fix-links.md");
+
+  const bodyTrigger = sliceBetween(BODY,
+    "**When `OPEN_FINDING_COUNT` is 0 but CI has", "**Omit the slot**");
+  const bodyOmit = sliceBetween(BODY,
+    "**Omit the slot**", "- **Fix this (inline).**");
+
+  s.check("G47 agent body: the CI-only trigger fires on a red/failed check",
+    /red\/failed/i.test(bodyTrigger));
+  s.check("G47 agent body: the CI-only trigger no longer reads \"not green\"",
+    !/not green/i.test(bodyTrigger));
+  s.check("G47 agent body: the omit rule covers both green and pending-only CI",
+    /pending/i.test(bodyOmit));
+
+  const ruleSection = sliceBetween(FIX_LINKS,
+    "**Fix all — CI-only**", "**This one is not a `/pr-fix` invocation");
+  const ruleOmit = sliceBetween(FIX_LINKS,
+    "So the Fix-all button is omitted", "**Fix all — CI-only**");
+
+  s.check("G47 agent0-fix-links.md: the CI-only trigger fires on a red/failed check",
+    /red\/failed/i.test(ruleSection));
+  s.check("G47 agent0-fix-links.md: the CI-only trigger no longer reads \"not green\"",
+    !/not green/i.test(ruleSection));
+  s.check("G47 agent0-fix-links.md: the omit summary covers pending-only, not just green",
+    /pending/i.test(ruleOmit));
+
+  // The template body is unchanged — still legitimately imperative about a real failure,
+  // because the trigger now only fires when one has actually occurred.
+  s.check("G47 the CI-only template body still reads \"Fix the failing CI checks\"",
+    /Fix the failing CI checks on \{owner\}\/\{repo\}#\{n\}/.test(FIX_LINKS));
+}
+
 process.exit(s.report() ? 0 : 1);

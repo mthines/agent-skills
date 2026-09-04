@@ -262,16 +262,19 @@ the natural place to stop reading: a fallback that fired on identity alone would
 was never asked, and it would answer it with a `/pr-fix` call in the one state the next section
 forbids one.
 
-So the Fix-all button is omitted when the count is 0 **and** CI is green, and — at a non-zero count —
-when *both* identity paths are unavailable (no login and no prior sticky). That second half is
-strictly narrower than the old rule, where an unresolved login omitted the button outright.
+So the Fix-all button is omitted when the count is 0 **and** CI has no red/failed check — green **or**
+merely pending-only, since a pending check has produced no failure and no logs to view — and, at a
+non-zero count, when *both* identity paths are unavailable (no login and no prior sticky). That second
+half is strictly narrower than the old rule, where an unresolved login omitted the button outright.
 
 **Fix all — CI-only** (report, zero open findings) — the report can read WARN with **zero** findings:
 Gate 2 (CI) is soft-warning-only (`pr-reviewer.md § Gate states`), so a PR with a clean Gate 6 (code
 review) and a red CI check has no comments for `/pr-fix` to apply, yet the report is visibly not a
 clean pass. Omitting the button in that case leaves the one state a human is most likely to click
 "fix" on with no button to click. Use this template instead of the `/pr-fix` one when the open
-reviewer-finding count is 0 but CI is not green.
+reviewer-finding count is 0 but CI has at least one red/failed check — keyed on the `CI red:` subset
+`CI_NOTE` already computes (`report-rendering.md`), never on a merely pending-only state with nothing
+to fix.
 
 **This one is not a `/pr-fix` invocation, and must not become one.** `/pr-fix` applies a PR's
 review comments; a red check with no findings has none to apply, so the task is a different task and
