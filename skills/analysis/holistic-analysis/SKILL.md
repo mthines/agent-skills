@@ -53,6 +53,7 @@ code.
 - [Phase 7: Plan the Change — Words Before Code](#phase-7-plan-the-change--words-before-code)
 - [Phase 8: Implement and Verify](#phase-8-implement-and-verify) — `/confidence code` gate
 - [Output Format](#output-format)
+- [Contribute verified facts to codebase-knowledge](#contribute-verified-facts-to-codebase-knowledge) — writer-primary, best-effort, gated on real verification
 - [Anti-Patterns — What NOT to Do](#anti-patterns--what-not-to-do)
 
 ## Mode Detection
@@ -344,6 +345,23 @@ Present the analysis using this structure:
 ### Implementation Confidence (/confidence code)
 [Score and dimension breakdown from Phase 8]
 ```
+
+---
+
+## Contribute verified facts to codebase-knowledge
+
+This skill is the engine that *confirms the why* — an invariant a symbol upholds
+(Step 1c), a consumer count swept in Context Gathering, a root-cause defect pinned at
+a SHA (Phase 4 → Phase 6). Those confirmed facts are the scarcest, most reusable
+entries in the shared **`codebase-knowledge`** bucket. When a run has genuinely
+verified such a fact against the code, contribute it back so the next code-changer
+(`aw`, `fix-bug`, `implement-suggestion`, `ci-auto-fix`, `optimize-approach`,
+`test-auto-fix`) plans with it in hand.
+
+This is a **writer-primary, best-effort** step: it never blocks or reshapes the
+analysis above, writes only what THIS run verified, and follows the multi-writer
+contract. Full procedure and the gate on real verification:
+[`rules/codebase-knowledge-write.md`](./rules/codebase-knowledge-write.md).
 
 ---
 

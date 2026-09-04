@@ -262,6 +262,12 @@ tools (the `lorekit-memory` skill); if LoreKit is not connected the loop is a
 silent no-op. Full contract:
 [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
 
+Beyond its own lessons, it also **reads** the shared **`codebase-knowledge`** signal
+at Phase 2 for the files a failure touches (advisory, raise-care) and **writes** back
+a verified structural fact — a real product defect fixed in source at a SHA, or a
+repeatedly-red test file as a hotspot — under the multi-writer contract
+([`../../../agents/shared/rules/codebase-knowledge.md`](../../../agents/shared/rules/codebase-knowledge.md); mechanics in the loop file's cross-bucket read/write sections).
+
 ## Definition of done
 
 The run is done when ANY of the following is true:

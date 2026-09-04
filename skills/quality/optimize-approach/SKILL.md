@@ -143,6 +143,7 @@ Load on demand — do not preload.
 This skill runs a two-tier self-improvement loop keyed by the `optimize-approach-lessons` bucket (LoreKit tag `loop::optimize-approach-lessons`).
 The fast tier (LoreKit `memory.*` tools, via the `lorekit-memory` skill) reads lessons at O0 and writes them at O5 to calibrate the optimal-vs-suboptimal bar and the apply-safety judgment.
 A lesson reaching `seen_count >= 3` becomes promotion-eligible for the slow tier (`/create-skill diagnose optimize-approach`).
+In `plan` mode it also reads the shared **`codebase-knowledge`** signal for the plan's files — a known hotspot or invariant sharpens the optimality call — read-only, advisory (see the loop file's cross-bucket read section and [`../../../agents/shared/rules/codebase-knowledge.md`](../../../agents/shared/rules/codebase-knowledge.md)).
 Full contract: [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md).
 
 ## Core Principles

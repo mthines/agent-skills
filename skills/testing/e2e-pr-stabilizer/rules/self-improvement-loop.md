@@ -34,6 +34,7 @@ tier is a silent no-op (log one line, continue).
 - [Scope and the two-tier split](#scope-and-the-two-tier-split)
 - [Read lessons (Phase 4)](#read-lessons-phase-4)
 - [Write lessons (Phase 7 ratification)](#write-lessons-phase-7-ratification)
+- [Cross-bucket write — codebase-knowledge (flaky hotspots)](#cross-bucket-write--codebase-knowledge-flaky-hotspots)
 - [Lesson promotion](#lesson-promotion)
 - [Entrenchment guards](#entrenchment-guards)
 
@@ -205,6 +206,48 @@ Log (include the resolved scope and the ratification verdict):
 - [TIMESTAMP] Phase 7: lorekit(memory.write global e2e-pr-stabilizer-lessons::<slug>) — UPDATE, seen_count→3 — ratified fixed
 - [TIMESTAMP] Phase 7: lorekit(memory.write repo::{owner}/{repo} e2e-pr-stabilizer-lessons::<slug>) — ADD — ratified regressed, project-bound
 ```
+
+---
+
+## Cross-bucket write — codebase-knowledge (flaky hotspots)
+
+The lessons above are this skill's **own** bucket — prose about race-shapes and
+locator strategies. This skill also holds a fact no other host can produce: **which
+test file was empirically flaky**. When Phase 7 CI ratifies a verdict for a specific
+test file, contribute a structural counter to the shared `codebase-knowledge` bucket
+so every later code-changer plans around a known-unstable file.
+
+Write it **only on the ratified verdict** (same honesty gate as the lessons write),
+keyed structurally by the test file's path, under the contract in
+[`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md):
+
+```text
+# Merge, never clobber: read the existing record first, then increment the counter
+# this run proved and append to the capped history[]. Same scope+key updates in place.
+memory.read  { scope: "repo::{owner}/{repo}", key: "hotspot::<test.file>" }
+memory.write {
+  scope: "repo::{owner}/{repo}",
+  key:   "hotspot::<test.file>",
+  value: "<yaml: flaky:<n+1> regressed:<m> last verdict + verified_at_sha:<ratified SHA>>",
+  tags:  ["codebase-knowledge", "signal::flaky"],
+  kind:  "signal",
+  host:  "e2e-pr-stabilizer"
+}
+```
+
+- **Only what THIS run verified.** Increment `flaky` when CI ratified the file was
+  flaky (whether or not the stabilization held); increment `regressed` when Phase 7
+  came back `regressed`. Never write a guess or a local-only streak.
+- **`verified_at_sha` + `source_agent` on every write** — the ratified SHA and
+  `host: e2e-pr-stabilizer`, so a reader knows who proved it and when.
+- **Raise care, never suppress.** A flaky-file hotspot tells a later run to add
+  coverage and expect instability; it never silences a finding or lowers a bar.
+- **Privacy pre-flight.** A test-file path carries no product data; still drop any
+  candidate that would.
+
+This is a **write only** on the ratified verdict — it does not replace the lessons
+write, and this skill does not read `codebase-knowledge` (it acts on a named failing
+test, not a plan of files it chose).
 
 ---
 

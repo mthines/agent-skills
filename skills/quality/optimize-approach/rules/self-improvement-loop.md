@@ -22,6 +22,7 @@ Do not re-implement memory mechanics here.
 - [Scope](#scope)
 - [What the loop calibrates](#what-the-loop-calibrates)
 - [Fast tier — read (Phase O0)](#fast-tier--read-phase-o0)
+- [Cross-bucket read — codebase-knowledge (plan seam)](#cross-bucket-read--codebase-knowledge-plan-seam)
 - [Fast tier — write (Phase O5)](#fast-tier--write-phase-o5)
 - [Promotion — slow tier](#promotion--slow-tier)
 - [Entrenchment guards](#entrenchment-guards)
@@ -64,6 +65,30 @@ Match each lesson's `trigger-context` against the current run (caller, stack, ch
 Apply matches as **advisory** considerations on the O2 judgment and the O5 apply-safety call — never as a hard override of the rubric.
 `repo::` wins over `global` on conflict; log the conflict.
 No consolidation pass — LoreKit owns storage and dedups on write; stale beliefs decay via `expires`.
+
+## Cross-bucket read — codebase-knowledge (plan seam)
+
+The read above is this skill's **own** bucket. There is one cross-bucket read worth
+making in plan mode: the shared `codebase-knowledge` signal — the cross-branch,
+cross-author record of what prior loops learned about this repo's symbols and files
+(`knowledge::<symbol>@<path>` facts, `hotspot::<path>` counters). Do it once the plan
+under judgment names the concrete files it will change — that is when the structural
+key is matchable, and it sharpens the optimal-vs-suboptimal call.
+
+```text
+memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }
+# Keep only hotspot::<path> / knowledge::<symbol>@<path> whose <path> the plan will
+# touch. Fold into the O2 judgment: a known regression hotspot raises the bar for
+# "is this approach safe and optimal here"; a known invariant / consumer count is a
+# constraint the chosen approach must respect.
+```
+
+The read is **read-only, structural, bounded to the plan, advisory, and raises care
+without suppressing** — the full contract is
+[`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md).
+Skip silently when `memory.*` is not connected, there is no git remote, or nothing
+matches. `optimize-approach` is a **reader only** here — it never writes this bucket.
+Never wholesale-read another host's `loop::<host>-lessons`.
 
 ## Fast tier — write (Phase O5)
 

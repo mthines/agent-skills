@@ -194,6 +194,12 @@ never relax a guard-rail, an empirical gate, or the 3-consecutive-pass
 requirement. A recurring lesson (`seen_count >= 3`) is promotion-eligible via
 `/create-skill diagnose e2e-pr-stabilizer`.
 
+On the Phase 7 ratified verdict it also contributes a **flaky hotspot** to the
+shared **`codebase-knowledge`** bucket (`hotspot::<test.file>` counter) — a fact no
+other host produces, so every later code-changer plans around a known-unstable file.
+Write only, merge-never-clobber, on the ratified SHA (contract:
+[`../../../agents/shared/rules/codebase-knowledge.md`](../../../agents/shared/rules/codebase-knowledge.md); mechanics in the loop file's cross-bucket write section).
+
 `optimize` mode skips the loop (no fix, no ratification signal). Lessons run
 through LoreKit's `memory.*` tools (the `lorekit-memory` skill); if LoreKit is
 not connected the loop is a silent no-op. Full contract:
