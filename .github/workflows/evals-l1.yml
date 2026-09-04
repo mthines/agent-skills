@@ -21,16 +21,5 @@ jobs:
         with:
           node-version: "20"
       # No install step — the harness is zero-dependency (node builtins + bash).
-      - name: DEBUG isolate the relative-time mangling
-        run: |
-          echo "=== git identity ==="
-          git rev-parse HEAD
-          git log --oneline -3
-          echo "=== sha256 of the files in play, as checked out ==="
-          sha256sum agents/pr-reviewer/scripts/render-report.mjs agents/pr-reviewer/scripts/comment-spine.mjs agents/pr-reviewer/templates/report-body.md scripts/eval/fixtures/report-body/pass-ci-pending.expected.md scripts/eval/fixtures/report-body/pass-ci-pending.json
-          echo "=== direct shell invocation ==="
-          node agents/pr-reviewer/scripts/render-report.mjs scripts/eval/fixtures/report-body/pass-ci-pending.json | tail -3
-          echo "=== expected snapshot file, tail ==="
-          tail -3 scripts/eval/fixtures/report-body/pass-ci-pending.expected.md
       - name: L1 contract checks
         run: node scripts/eval/l1.mjs

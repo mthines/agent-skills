@@ -1328,13 +1328,6 @@ function checksInSync(plan, checks) {
         diffDetail = `output drifted — regenerate the snapshot and review the diff (lengths`
           + ` ${r.out.length} vs ${expected.length}, first diff at index ${i}: got`
           + ` ${ctx(r.out, i)} want ${ctx(expected, i)})`;
-        if (name === "pass-ci-pending") {
-          console.error(`\n--- FULL got (base64) for ${name} ---`);
-          console.error(Buffer.from(r.out, "utf8").toString("base64"));
-          console.error(`--- FULL want (base64) for ${name} ---`);
-          console.error(Buffer.from(expected, "utf8").toString("base64"));
-          console.error(`--- node ${process.version} platform ${process.platform} ---`);
-        }
       }
       s.check(`G25 ${name} output matches its committed snapshot`, r.out === expected, diffDetail);
     }

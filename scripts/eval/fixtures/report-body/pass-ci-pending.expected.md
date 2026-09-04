@@ -28,4 +28,4 @@ Memories — 53 indexed · 0 used
 
 </details>
 
-<sup>`pr-reviewer` · commit `bde3c2f` · full review · [how these findings are produced](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) · updated 2026-08-15 09:12 UTC</sup>
+<sup>`pr-reviewer` · commit `bde3c2f` · full review · [how these findings are produced](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) · updated <relative-time datetime="2026-08-15T09:12:00.000Z">Aug 15, 2026 9:12am UTC</relative-time></sup>
