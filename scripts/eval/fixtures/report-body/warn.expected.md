@@ -3,7 +3,7 @@
 
 Reworks the retry path so `retryRequest` throws instead of returning `null`.
 
-**Warnings:** 2 open review threads; 3 non-blocking findings; +1 more
+**Warnings:** 2 open review threads; 3 non-blocking findings
 
 | Finding | Where | Severity |
 |---|---|---|
