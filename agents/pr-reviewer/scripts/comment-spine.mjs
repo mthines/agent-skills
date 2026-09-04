@@ -148,7 +148,21 @@ export function footerLine({ sha, run = null, at = null, docs = false }) {
   const parts = [`\`${AGENT_NAME}\``, `commit \`${sha}\``];
   if (run) parts.push(String(run));
   if (docs) parts.push(`[how these findings are produced](${AGENT_URL})`);
-  if (at) parts.push(`updated ${at} UTC`);
+  // The freshness stamp. `at` is an object `{ datetime, display }`: `datetime` is a full ISO-8601
+  // UTC instant, `display` a human fallback (e.g. `Sep 4, 2026 9:12am`). GitHub renders
+  // `<relative-time>` LIVE in a comment body ("2 hours ago", auto-refreshing, matching the comment
+  // header) and, when its user-content sanitizer strips the custom element, the reader still sees
+  // the `display` fallback between the tags. Either way a real timestamp shows — never a bare
+  // "updated  UTC". Only the report passes `at` (the inline footer omits it), so this is a
+  // report-only render on the shared builder, exactly like `docs`. A plain string is still accepted
+  // for backwards compatibility with any caller that has not moved to the object form.
+  if (at) {
+    if (typeof at === "object" && at.datetime) {
+      parts.push(`updated <relative-time datetime="${at.datetime}">${at.display} UTC</relative-time>`);
+    } else {
+      parts.push(`updated ${at} UTC`);
+    }
+  }
   return `<sup>${parts.join(" · ")}</sup>`;
 }
 
