@@ -280,6 +280,8 @@ Keep steps atomic and bug-specific — add one step per `File` block when the pr
 
 Every file listed here must also appear in the Evidence Record's affected-files table — the Out of Scope rule and the verifier's diff-sanity check both key off that table.
 
+Once this table is drafted, issue the fast-lane `codebase-knowledge` read for exactly these paths, per [`self-improvement-loop.md § Cross-bucket read — codebase-knowledge`](./self-improvement-loop.md#cross-bucket-read--codebase-knowledge-fast-lane-plan-seam). The fast lane skips `aw-planner`, so this is the only point the shared bucket is read before the fix is written; fold a matched hotspot or invariant into the plan and note it under `## Lessons applied`.
+
 ### 14. Verification
 
 ```markdown

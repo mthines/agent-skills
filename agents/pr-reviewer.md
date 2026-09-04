@@ -1326,7 +1326,7 @@ and they live here because the graph is what makes them selective — the same r
 # 1. The knowledge + hotspot records for this repo. The tag is what makes one page selective:
 #    relevance rules carry the same kind/host, so a kind/host filter alone returns both buckets
 #    mixed and the knowledge rows lose the page to whichever bucket grew fastest.
-mcp__lorekit__memory_list:   scope="repo::{owner}/{repo}" tags=["ci::review-knowledge"] kind="signal" host="reviewer" limit=50
+mcp__lorekit__memory_list:   scope="repo::{owner}/{repo}" tags=["codebase-knowledge"] kind="signal" host="reviewer" limit=50
 
 # 2. A targeted search on the top 10 changed symbols by blast radius, from impact.json.
 #    Note the parameter names: memory_search takes `q` + `scopes` (array), NOT `query` + `scope`.

@@ -265,6 +265,14 @@ declined comment with its `disposition` (`answer` / `discussion` / `decline` /
 `flag`), thread ID, and the exact reply text the worker will post. The worker's
 step-6 pass consumes this section.
 
+Once the pack names its files, read the shared **`codebase-knowledge`** signal for
+exactly those paths and fold the matches into the pack as apply-time constraints (a
+known hotspot → tighter change + more coverage; a recorded invariant / consumer
+count → preserve it). This is the cross-bucket read specified in
+[`rules/self-improvement-loop.md § Cross-bucket read — codebase-knowledge`](./rules/self-improvement-loop.md#cross-bucket-read--codebase-knowledge-phase-5-apply-seam);
+it is read-only, structural, and bounded to the pack (the fast lane needs it most,
+since it skips `aw-planner`, which reads the same bucket on the standard lane).
+
 ### Phase 6 — Handoff (lane-split)
 
 Lane is picked from the pack's complexity signals:

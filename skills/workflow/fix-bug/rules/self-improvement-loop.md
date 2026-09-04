@@ -25,6 +25,7 @@ and the entrenchment guards are canonical in
 - [What this loop owns vs. what aw-lessons owns](#what-this-loop-owns-vs-what-aw-lessons-owns)
 - [Scope](#scope)
 - [Read lessons (Phase 0.5)](#read-lessons-phase-05)
+- [Cross-bucket read — codebase-knowledge (fast-lane plan seam)](#cross-bucket-read--codebase-knowledge-fast-lane-plan-seam)
 - [Write lessons (Phase 5 / 7 / 8 + triage events)](#write-lessons)
 - [Lesson promotion to skill source](#lesson-promotion)
 - [Entrenchment guards](#entrenchment-guards)
@@ -134,6 +135,37 @@ Log to the ledger:
 - [TIMESTAMP] Phase 0.5: lorekit(memory.list global loop::fix-bug-lessons) — M lessons matched
 - [TIMESTAMP] Phase 0.5: lorekit — memory.* not connected, continuing
 ```
+
+---
+
+## Cross-bucket read — codebase-knowledge (fast-lane plan seam)
+
+**Anchor:** `knowledge-read`
+
+The read above is this loop's **own** bucket. There is one cross-bucket read worth
+making: the shared `codebase-knowledge` signal — the cross-branch, cross-author
+record of what prior reviews learned about this repo's symbols and files
+(`knowledge::<symbol>@<path>` facts, `hotspot::<path>` counters). On the
+**standard lane** `aw-executor` runs through `aw`, which reads this bucket itself
+([`autonomous-workflow/rules/self-improvement-loop.md § knowledge-read`](../../autonomous-workflow/rules/self-improvement-loop.md#fast-tier--read-the-repos-codebase-knowledge-cross-bucket-read-only)).
+The **fast lane** dispatches `aw-executor` from an `aw-create-plan` plan **without
+`aw-planner`**, so that read never fires — `/fix-bug` must issue it itself, once the
+fast-lane `plan.md` File Changes table is drafted:
+
+```text
+memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }
+# Keep only hotspot::<path> / knowledge::<symbol>@<path> whose <path> the File
+# Changes table will touch. Fold in as planning inputs: a known regression hotspot
+# on the fix's file → plan more coverage; a recorded invariant / consumer count →
+# design the fix around it. Record applied matches in plan.md `## Lessons applied`
+# marked `(codebase-knowledge)`.
+```
+
+The read is **read-only, structural, bounded to the plan, advisory, and raises care
+without suppressing** — the full contract is
+[`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md).
+Skip silently when `memory.*` is not connected, there is no git remote, or nothing
+matches. Never wholesale-read another host's `loop::<host>-lessons`.
 
 ---
 

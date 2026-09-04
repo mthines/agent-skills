@@ -4,7 +4,7 @@
  *
  * Records the relevance signal for PR review threads into the LoreKit
  * `reviewer-comment-relevance` bucket, and the missed/regressed signals into
- * `ci::review-knowledge`. This is the write half of the reviewer's memory that needs
+ * `codebase-knowledge`. This is the write half of the reviewer's memory that needs
  * no agent in the loop.
  *
  * Invoked by the GitHub Actions workflow `.github/workflows/reviewer-comment-relevance.yml`.
@@ -488,7 +488,7 @@ function writeHotspot({ repo, path, prNumber, kind, detail }) {
     scope: `repo::${repo.toLowerCase()}`,
     key: `hotspot::${path}`,
     value: record,
-    tags: ["ci::review-knowledge", `signal::${kind}`],
+    tags: ["codebase-knowledge", `signal::${kind}`],
     // `signal`, not `bus`: a hotspot is a durable per-repo priority input read at the
     // start of every run, not raw material awaiting distillation. `kind`/`host` are set
     // explicitly because LoreKit infers them only from a `loop::` tag.

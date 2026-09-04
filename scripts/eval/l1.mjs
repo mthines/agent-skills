@@ -792,7 +792,7 @@ function checksInSync(plan, checks) {
       const OTHER_BUCKET_TTLS = new Set([
         30,  // `review-outcomes` — the volatile bus; G12a owns it.
         7,   // `pr-review-state` — pr-reviewer's per-PR state record; G24i owns it.
-        90,  // `review-knowledge` — symbol + hotspot records; G16g below owns it.
+        90,  // `codebase-knowledge` — symbol + hotspot records; G16g below owns it.
       ]);
       const found = [...content.matchAll(stale)]
         .map((m) => Number(m[1] ?? m[2] ?? m[3] ?? m[4]))
@@ -808,8 +808,8 @@ function checksInSync(plan, checks) {
     s.check(`G16g record-comment-relevance.mjs computes the knowledge/hotspot expiry from ${KNOWLEDGE_TTL_DAYS} days`,
       recorder.includes(`KNOWLEDGE_TTL_MS = ${KNOWLEDGE_TTL_DAYS} * 24 * 60 * 60 * 1000`));
     s.check(`G16g memory-buckets.md states the knowledge/hotspot lifetime as ${KNOWLEDGE_TTL_DAYS}d`,
-      new RegExp(`review-knowledge\`? \\(symbol\\)[^\n]*durable ${KNOWLEDGE_TTL_DAYS}d`).test(buckets) &&
-      new RegExp(`review-hotspot\`?[^\n]*durable ${KNOWLEDGE_TTL_DAYS}d`).test(buckets));
+      new RegExp(`codebase-knowledge\`? \\(symbol\\)[^\n]*durable ${KNOWLEDGE_TTL_DAYS}d`).test(buckets) &&
+      new RegExp(`codebase-knowledge\`? \\(hotspot\\)[^\n]*durable ${KNOWLEDGE_TTL_DAYS}d`).test(buckets));
   }
 
   // G17: standards-conformance.md exists and is wired into pr-reviewer.
@@ -4573,8 +4573,8 @@ const isPollBlock = (block) =>
   // `kind: signal, host: reviewer`, and the relevance bucket grows per resolved thread while
   // this one grows per traced symbol — measured on this repo, an untagged call spent 48 of
   // its 50 recency-ordered slots on relevance rows the Step 1.0 calls already fetch.
-  s.check("G44a memory.md's knowledge read filters on the `ci::review-knowledge` tag",
-    /mcp__lorekit__memory_list[^\n]*tags=\["ci::review-knowledge"\][^\n]*limit=50/.test(MEMORY_MD));
+  s.check("G44a memory.md's knowledge read filters on the `codebase-knowledge` tag",
+    /mcp__lorekit__memory_list[^\n]*tags=\["codebase-knowledge"\][^\n]*limit=50/.test(MEMORY_MD));
 
   // ---- G44b: the keys the read path quotes are the keys the recorder writes ----
   //
@@ -4678,17 +4678,17 @@ const isPollBlock = (block) =>
   //
   // G44 guarded the write side and said so in its own comment. The read side stayed
   // prescribed-only: `memory.md § Read` carried two calls, a match table, a budget and a TTL,
-  // while `agents/pr-reviewer.md` mentioned `ci::review-knowledge`, `knowledge::` and
+  // while `agents/pr-reviewer.md` mentioned `codebase-knowledge`, `knowledge::` and
   // `hotspot::` zero times — so Step 4d's producer had no consumer, and a run reported
   // "0 memories applied" indistinguishably from a repo that had learned nothing.
-  s.check("G45a the agent body issues the `ci::review-knowledge` read",
-    BODY.includes('tags=["ci::review-knowledge"]'));
+  s.check("G45a the agent body issues the `codebase-knowledge` read",
+    BODY.includes('tags=["codebase-knowledge"]'));
   s.check("G45a the agent body's knowledge read passes kind=signal host=reviewer",
-    /tags=\["ci::review-knowledge"\][^\n]*kind="signal"[^\n]*host="reviewer"/.test(BODY));
+    /tags=\["codebase-knowledge"\][^\n]*kind="signal"[^\n]*host="reviewer"/.test(BODY));
   // The call site is Phase B's tail, per memory.md. Assert it positionally rather than by
   // heading text: the read must come after the graph exists and before depth routing reads it.
   const iGraph = BODY.indexOf("#### 1.2a Build the impact graph (Phase B)");
-  const iKnowledgeRead = BODY.indexOf('tags=["ci::review-knowledge"]');
+  const iKnowledgeRead = BODY.indexOf('tags=["codebase-knowledge"]');
   const iDepthRouting = BODY.indexOf("### 1.2b Delta triage and depth routing (Phase C)");
   s.check("G45a the knowledge read sits inside Step 1.2a, after the graph is built",
     iGraph > 0 && iKnowledgeRead > iGraph && iDepthRouting > iKnowledgeRead);
