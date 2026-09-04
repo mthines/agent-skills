@@ -466,7 +466,8 @@ on a branch that gets deleted.
 — never to shorten the prompt until it fits.**
 
 **`--relay-check` is asked only on those paths — the condition is the feature.** Gate it on
-`ACCESS_PATH == "mcp"` ([`github-access.md § Step 0`](./github-access.md#step-0--resolve-your-path-once-before-any-github-step)),
+`ACCESS_PATH == "mcp"`
+([`github-access.md § Step 0`](./github-access.md#step-0--resolve-your-path-once-before-any-github-step)),
 which is also where a caller learns whether its body travels as a file or as a tool-call argument.
 Every fix link exceeds the 140-char budget by construction — the floor below is 164 — so a check run
 **unconditionally** withholds the buttons on every run of every repo, `gh` runs included, where

@@ -2964,14 +2964,40 @@ const isPollBlock = (block) =>
         ? `no bash block calls --relay-check ${marker} — the call site moved; re-anchor this guard`
         : "the call is unconditional, so the buttons are withheld on the `gh` path too and the"
           + " affordance never renders anywhere");
+
+    // A gate that always answers "relayed" is the unconditional check wearing an `if`. The probe
+    // shipped reading `repos/$RESOLVED_REPO`, which is bound at ONE site in a different tool call
+    // — so it was empty here, probed `repos/`, 404'd, and pinned ACCESS_PATH to `mcp` forever.
+    // The check above passed the whole time, which is why this one exists: assert the probe can
+    // actually reach `gh`, not merely that a condition is written. G43b cannot see this — it
+    // asks whether a name is bound anywhere in the file, and this one is.
+    s.check(`G32p the ${site} write-path probe derives its own repo`,
+      blocks.every((b) => !/repos\/\$RESOLVED_REPO/.test(b)
+        && (!/gh api "repos\//.test(b) || /TARGET_REPO="\$\{RESOLVED_REPO:-/.test(b))),
+      "the probe reads $RESOLVED_REPO, which Step 0.2 binds in a different tool call — empty here,"
+        + " so it probes `repos/`, 404s, and reports `mcp` on every path including `gh`");
   }
+
+  // The exit-3 re-check is meaningless without a re-render: asking the SAME file returns the same
+  // 1 forever, so the branch reads as coverage while being dead. Its own comment said "re-render
+  // first" while the shell only re-asked — the identical prose-vs-shell split as the gate above.
+  const reportBlock = [...routingBody.matchAll(/```bash\n([\s\S]*?)```/g)]
+    .map((m) => m[1])
+    .find((b) => b.includes("--relay-check /tmp/report-body.md"));
+  s.check("G32p the report's exit-3 re-check re-renders before re-asking",
+    !!reportBlock && /del\(\.FIX_ALL_URL\)/.test(reportBlock)
+      && reportBlock.indexOf("del(.FIX_ALL_URL)") < reportBlock.lastIndexOf("--relay-check"),
+    "the second --relay-check reads an unchanged body, so it returns 1 again and can never reach"
+      + " 3 — NOTE_MANGLED_LINK is unreachable and a mangled citation goes unnamed");
   s.check("G32p github-access.md binds ACCESS_PATH with how the body travels",
     (() => {
       const ga = readFileSync(join(REPO_ROOT, "agents/shared/rules/github-access.md"), "utf8");
       return /`ACCESS_PATH`/.test(ga) && /tool-call argument/.test(ga) && /Body travels as/.test(ga);
     })(),
-    "the consumers read $ACCESS_PATH to decide whether their body is relayed — unbound, the"
-      + " comparison is always false and every write is treated as file-based");
+    "the consumers compare $ACCESS_PATH against the literal \"mcp\" to decide whether their body"
+      + " is relayed, so renaming the token here silently inverts the fail-safe: the comparison"
+      + " goes always-false, WRITE_IS_RELAYED stays unset, and every write is treated as"
+      + " file-based — posting a mangled button, the direction the default exists to avoid");
 
   const maxUrl = Number(/^const MAX_URL = (\d+)/m.exec(readFileSync(LINK_MOD, "utf8"))?.[1]);
   s.check("G32f MAX_URL stays under the 8k request-line cliff it was moved off",

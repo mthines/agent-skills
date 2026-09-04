@@ -2267,11 +2267,18 @@ node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --check /tmp/finding
 # unconditional check is a permanent, silent opt-out of the feature on every path
 # (agent0-fix-links.md § Relay length limit). This block is a separate tool call from Step 4a, so
 # resolve the path here with github-access.md § Step 0's own probe, as with $AGENT_MD above.
+# Derive the repo HERE. $RESOLVED_REPO is bound once at Step 0.2 and this is a different tool
+# call, so it is empty in this shell — and an empty one probes `repos/`, 404s, and reports "no
+# gh" on a session where gh works, withholding the button on the very path this gate exists to
+# protect. github-access.md § Step 0 names that variable as the one not to assume is bound.
+TARGET_REPO="${RESOLVED_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
 # Default to `mcp`: an inconclusive probe must WITHHOLD (a mangled button is worse than none),
-# so the fail-safe direction is "assume relayed", never "assume file".
+# so the fail-safe direction is "assume relayed", never "assume file". This is the one place
+# that DEPARTS from § Step 0's "undecided, defer the probe" rule, deliberately: the write happens
+# in this block, so there is no later step to defer to, and an undecided probe must still answer.
 ACCESS_PATH=mcp
-command -v gh >/dev/null 2>&1 \
-  && gh api "repos/$RESOLVED_REPO" --jq .full_name >/dev/null 2>&1 \
+[ -n "$TARGET_REPO" ] && command -v gh >/dev/null 2>&1 \
+  && gh api "repos/$TARGET_REPO" --jq .full_name >/dev/null 2>&1 \
   && ACCESS_PATH=gh
 [ "$ACCESS_PATH" = "mcp" ] && WRITE_IS_RELAYED=1
 # On a relayed write, an over-budget fix URL is mangled no matter how faithfully it is copied.
@@ -2696,11 +2703,15 @@ obligations, and the first is now the load-bearing one:
    # tool-call argument and rewrites long URLs; the `gh` path sends a FILE and rewrites nothing.
    # Bind this from the access path already resolved for the sticky write (§ When the sticky
    # cannot be written) — same run, same answer, do not re-probe.
-   # Default to `mcp` when the probe is inconclusive: withholding is recoverable, a mangled
-   # button is not. Same probe as github-access.md § Step 0, same run, one answer.
+   # Derive the repo rather than assuming $RESOLVED_REPO is in THIS shell — an empty one probes
+   # `repos/`, 404s, and reports "no gh" on a session where gh works (github-access.md § Step 0
+   # names it as the caller variable not to assume). Default to `mcp` when the probe is
+   # inconclusive: withholding is recoverable, a mangled button is not. Deliberately NOT § Step
+   # 0's "undecided, defer" rule — the write is in this block, so there is nothing to defer to.
+   TARGET_REPO="${RESOLVED_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
    ACCESS_PATH=mcp
-   command -v gh >/dev/null 2>&1 \
-     && gh api "repos/$RESOLVED_REPO" --jq .full_name >/dev/null 2>&1 \
+   [ -n "$TARGET_REPO" ] && command -v gh >/dev/null 2>&1 \
+     && gh api "repos/$TARGET_REPO" --jq .full_name >/dev/null 2>&1 \
      && ACCESS_PATH=gh
    [ "$ACCESS_PATH" = "mcp" ] && WRITE_IS_RELAYED=1
 
@@ -2715,9 +2726,15 @@ obligations, and the first is now the load-bearing one:
      esac
 
      # 1 wins over 3 when a body carries BOTH kinds — one remediable URL makes the RUN remediable,
-     # not the body clean — so the exit-3 condition can SURVIVE the withhold. Re-render first, then
-     # ask again, or a mangled citation goes unnamed on exactly the runs that had two problems.
+     # not the body clean — so the exit-3 condition can SURVIVE the withhold. RE-RENDER, then ask
+     # again, or a mangled citation goes unnamed on exactly the runs that had two problems.
+     # The re-render is the point: re-asking the SAME file returns the same 1 forever, so a
+     # second --relay-check on an unchanged body can never reach 3 and this branch would be dead
+     # code that reads as coverage. The inline block at Step 2.8 already does it this way.
      if [ -n "$RERENDER_WITH_NO_FIX_LINKS" ]; then
+       jq 'del(.FIX_ALL_URL)' /tmp/report-payload.json > /tmp/report-payload.nofix.json
+       node "$RENDER" /tmp/report-payload.nofix.json > /tmp/report-body.md \
+         || abort "re-render without the fix link failed — nothing on stdout, nothing to post"
        node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
        rc=$?
        [ "$rc" -eq 3 ] && NOTE_MANGLED_LINK=1
