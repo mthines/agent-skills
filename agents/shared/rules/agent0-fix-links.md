@@ -465,6 +465,19 @@ on a branch that gets deleted.
 **Some write paths cannot carry these buttons at all, and the correct response is to withhold them
 — never to shorten the prompt until it fits.**
 
+**`--relay-check` is asked only on those paths — the condition is the feature.** Gate it on
+`ACCESS_PATH == "mcp"` ([`github-access.md § Step 0`](./github-access.md#step-0--resolve-your-path-once-before-any-github-step)),
+which is also where a caller learns whether its body travels as a file or as a tool-call argument.
+Every fix link exceeds the 140-char budget by construction — the floor below is 164 — so a check run
+**unconditionally** withholds the buttons on every run of every repo, `gh` runs included, where
+nothing would have been rewritten. That is not a conservative default; it is a silent, permanent
+opt-out of a default-on affordance, indistinguishable from the feature being off. It shipped exactly
+that way: the consumer's report block carried *"on the `gh` path the buttons post intact and stay"*
+as prose while the shell above it asked on every path, and its inline block had neither the
+condition nor the sentence — so the buttons never rendered once anywhere. **A rule the shell does
+not execute is a rule the run does not follow**, which is why this paragraph names a variable and a
+comparison rather than describing an intent.
+
 A write path that carries the body as a **tool-call argument** rather than a file passes it through a
 relay that rewrites long unbroken runs: it wraps the run in a `` `` `` code span, which closes the
 `href` and escapes everything after it, so the button renders as a wall of `&gt;&lt;picture&gt;` text

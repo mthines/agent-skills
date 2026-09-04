@@ -2946,6 +2946,33 @@ const isPollBlock = (block) =>
         + " 'fixes' it by inventing a self-link GitHub cannot assign until POST");
   }
 
+  // G32p: --relay-check must be GATED ON THE WRITE PATH, in the shell, at both call sites.
+  // Every fix link is over the 140 budget by construction (floor 164), so an unconditional check
+  // withholds the buttons on every run of every repo — including `gh` runs that rewrite nothing —
+  // which is a silent permanent opt-out of a default-on affordance. It shipped that way: the
+  // report block carried "on the `gh` path the buttons post intact and stay" as PROSE while the
+  // shell asked unconditionally, and the inline block had neither. So this asserts the guard
+  // condition sits in the same fenced block as the call, not that a sentence about it exists.
+  for (const [site, marker] of [["report", "/tmp/report-body.md"], ["inline", "/tmp/finding-$i.md"]]) {
+    const blocks = [...routingBody.matchAll(/```bash\n([\s\S]*?)```/g)]
+      .map((m) => m[1])
+      .filter((b) => b.includes(`--relay-check ${marker}`));
+    s.check(`G32p the ${site} --relay-check call sits behind a write-path condition`,
+      blocks.length > 0 && blocks.every((b) => /ACCESS_PATH.*=.*"?mcp"?/.test(b)
+        && /if \[ -n "\$WRITE_IS_RELAYED" \]/.test(b)),
+      blocks.length === 0
+        ? `no bash block calls --relay-check ${marker} — the call site moved; re-anchor this guard`
+        : "the call is unconditional, so the buttons are withheld on the `gh` path too and the"
+          + " affordance never renders anywhere");
+  }
+  s.check("G32p github-access.md binds ACCESS_PATH with how the body travels",
+    (() => {
+      const ga = readFileSync(join(REPO_ROOT, "agents/shared/rules/github-access.md"), "utf8");
+      return /`ACCESS_PATH`/.test(ga) && /tool-call argument/.test(ga) && /Body travels as/.test(ga);
+    })(),
+    "the consumers read $ACCESS_PATH to decide whether their body is relayed — unbound, the"
+      + " comparison is always false and every write is treated as file-based");
+
   const maxUrl = Number(/^const MAX_URL = (\d+)/m.exec(readFileSync(LINK_MOD, "utf8"))?.[1]);
   s.check("G32f MAX_URL stays under the 8k request-line cliff it was moved off",
     Number.isFinite(maxUrl) && maxUrl <= 4000,

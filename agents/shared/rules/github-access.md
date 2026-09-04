@@ -48,13 +48,21 @@ if command -v gh >/dev/null 2>&1 && [ -n "$TARGET_REPO" ] \
 fi
 ```
 
+**Bind the answer to `ACCESS_PATH`** — `gh` | `mcp` | `none` — and use that name downstream. The
+probe's job is not only "can I reach GitHub" but **how a body travels to it**, and callers need the
+second answer as a variable rather than as a remembered fact: the `gh` path sends a **file**
+(`--body-file`, `--field body=@file`) and the MCP path sends the body as a **tool-call argument**,
+which rewrites long URLs (`agent0-fix-links.md § Relay length limit`). A caller that treats
+"relayed" as always-true withholds affordances on the path that never needed it; one that treats it
+as always-false posts mangled markup. Both are one unbound variable away.
+
 **If `TARGET_REPO` cannot be determined yet** — no checkout, and the repository arrives later in the run — the probe is *undecided*, not failed. Do not record "no `gh`": defer the probe to the first step that knows the repository, and run it then. A 404 on `repos/` is an unbound variable, never an access verdict.
 
-| Result | Your path | What to do |
-| ------ | --------- | ---------- |
-| `GH_OK` | **`gh` CLI** | Use the commands as written throughout the skills |
-| No output, **and** `mcp__github__*` appears in your available tools | **GitHub MCP** | Use the mapping below. Do not attempt `gh` — every call will fail |
-| No output, **and** no `mcp__github__*` in your tools | **No GitHub access** | See [No path](#no-path) — this is a hard stop for GitHub steps, not a reason to improvise |
+| Result | Your path | `ACCESS_PATH` | Body travels as | What to do |
+| ------ | --------- | --- | --- | ---------- |
+| `GH_OK` | **`gh` CLI** | `gh` | a **file** — nothing is rewritten | Use the commands as written throughout the skills |
+| No output, **and** `mcp__github__*` appears in your available tools | **GitHub MCP** | `mcp` | a **tool-call argument** — long URLs are rewritten | Use the mapping below. Do not attempt `gh` — every call will fail |
+| No output, **and** no `mcp__github__*` in your tools | **No GitHub access** | `none` | nothing is written | See [No path](#no-path) — this is a hard stop for GitHub steps, not a reason to improvise |
 
 `gh` present but genuinely **unauthenticated** counts as no `gh`: you cannot fix it (`gh auth login` is interactive), so fall through to MCP.
 

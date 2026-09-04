@@ -2261,10 +2261,24 @@ can `PATCH`. Write each rendered body to a file and run the shared checker on it
 node "$RENDER_COMMENT" /tmp/finding-$i.json > /tmp/finding-$i.md || { log; continue; }
 node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --check /tmp/finding-$i.md \
   || { log "finding $i: body is not renderer output — dropped"; continue; }
+# ONLY ask on a relayed write. The MCP path carries the body as a tool-call argument and rewrites
+# long URLs; the `gh` path sends a file and rewrites nothing, so asking there withholds a button
+# that would have posted intact. Every fix link is over budget by construction, so an
+# unconditional check is a permanent, silent opt-out of the feature on every path
+# (agent0-fix-links.md § Relay length limit). This block is a separate tool call from Step 4a, so
+# resolve the path here with github-access.md § Step 0's own probe, as with $AGENT_MD above.
+# Default to `mcp`: an inconclusive probe must WITHHOLD (a mangled button is worse than none),
+# so the fail-safe direction is "assume relayed", never "assume file".
+ACCESS_PATH=mcp
+command -v gh >/dev/null 2>&1 \
+  && gh api "repos/$RESOLVED_REPO" --jq .full_name >/dev/null 2>&1 \
+  && ACCESS_PATH=gh
+[ "$ACCESS_PATH" = "mcp" ] && WRITE_IS_RELAYED=1
 # On a relayed write, an over-budget fix URL is mangled no matter how faithfully it is copied.
 # Re-render this finding without FIX_URL rather than drop it — the finding is worth more than
-# its button (agent0-fix-links.md § Relay length limit). Exit 3 is a long URL that is NOT a fix
-# link, so dropping FIX_URL would not remove it: post as rendered and say so.
+# its button. Exit 3 is a long URL that is NOT a fix link, so dropping FIX_URL would not remove
+# it: post as rendered and say so.
+if [ -n "$WRITE_IS_RELAYED" ]; then
 node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/finding-$i.md
 case $? in
   1) jq 'del(.FIX_URL)' /tmp/finding-$i.json > /tmp/finding-$i.nofix.json
@@ -2280,6 +2294,7 @@ case $? in
      fi ;;
   3) log "finding $i: a cited link is over the relay budget and will be mangled — posted as is" ;;
 esac
+fi
 # A reachable-looking button whose image 404s is a broken-image icon, not a button. Same re-render.
 node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --assets-check /tmp/finding-$i.md
 if [ $? -eq 1 ]; then
@@ -2677,22 +2692,36 @@ obligations, and the first is now the load-bearing one:
    faithful copying saves an over-budget URL:
 
    ```bash
+   # WHO REWRITES THE BODY decides whether to ask at all. The MCP path carries the body as a
+   # tool-call argument and rewrites long URLs; the `gh` path sends a FILE and rewrites nothing.
+   # Bind this from the access path already resolved for the sticky write (§ When the sticky
+   # cannot be written) — same run, same answer, do not re-probe.
+   # Default to `mcp` when the probe is inconclusive: withholding is recoverable, a mangled
+   # button is not. Same probe as github-access.md § Step 0, same run, one answer.
+   ACCESS_PATH=mcp
+   command -v gh >/dev/null 2>&1 \
+     && gh api "repos/$RESOLVED_REPO" --jq .full_name >/dev/null 2>&1 \
+     && ACCESS_PATH=gh
+   [ "$ACCESS_PATH" = "mcp" ] && WRITE_IS_RELAYED=1
+
    # Exit 1 is a fix link over budget — the remedy removes it. Exit 3 is some OTHER long URL
    # (a cited doc, an asset path): --no-fix-links would not remove it, so re-rendering is a
    # loop with no exit. Post as rendered and name the mangled link in the run line.
-   node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
-   case $? in
-     1) RERENDER_WITH_NO_FIX_LINKS=1 ;;   # re-render, post that, and say so in the run line
-     3) NOTE_MANGLED_LINK=1 ;;            # not remediable here — post, and note it
-   esac
-
-   # 1 wins over 3 when a body carries BOTH kinds — one remediable URL makes the RUN remediable,
-   # not the body clean — so the exit-3 condition can SURVIVE the withhold. Re-render first, then
-   # ask again, or a mangled citation goes unnamed on exactly the runs that had two problems.
-   if [ -n "$RERENDER_WITH_NO_FIX_LINKS" ]; then
+   if [ -n "$WRITE_IS_RELAYED" ]; then
      node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
-     rc=$?
-     [ "$rc" -eq 3 ] && NOTE_MANGLED_LINK=1
+     case $? in
+       1) RERENDER_WITH_NO_FIX_LINKS=1 ;;   # re-render, post that, and say so in the run line
+       3) NOTE_MANGLED_LINK=1 ;;            # not remediable here — post, and note it
+     esac
+
+     # 1 wins over 3 when a body carries BOTH kinds — one remediable URL makes the RUN remediable,
+     # not the body clean — so the exit-3 condition can SURVIVE the withhold. Re-render first, then
+     # ask again, or a mangled citation goes unnamed on exactly the runs that had two problems.
+     if [ -n "$RERENDER_WITH_NO_FIX_LINKS" ]; then
+       node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
+       rc=$?
+       [ "$rc" -eq 3 ] && NOTE_MANGLED_LINK=1
+     fi
    fi
 
    # Same lever, different failure: the markup is fine but the button's image is not there.
@@ -2711,7 +2740,15 @@ obligations, and the first is now the load-bearing one:
    nothing left to try. Do **not** shorten the prompt to fit: a `fix-this` link spends 106 chars
    before the prompt starts (in body chars, `&amp;` included), and a button that opens a session
    with no idea what to fix is worse than none.
-   This is advisory and path-specific — on the `gh` path the buttons post intact and stay.
+
+   **The `if` is the whole feature.** Every fix link is over the 140-char budget by construction
+   (`agent0-fix-links.md § Relay length limit` — the floor is 164), so an *unconditional*
+   `--relay-check` withholds the buttons on **every run of every repo**, including the `gh` runs
+   where nothing would have been mangled — which is how a default-on affordance shipped and then
+   never rendered once. That the outcome is path-specific was stated in this very paragraph as
+   prose (*"on the `gh` path the buttons post intact and stay"*) while the block above it asked
+   unconditionally: a rule the shell does not execute is a rule the run does not follow. Gate the
+   *question*, not just the sentence about it.
 2. **Reproduce the file byte-for-byte.** Read `/tmp/report-body.md` and pass exactly what it
    contains. Never wrap anything in backticks, never escape `<` or `>`, never re-wrap a long line,
    never re-indent. The body is already final; there is nothing left to format. This is no longer
