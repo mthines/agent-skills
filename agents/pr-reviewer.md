@@ -2931,6 +2931,23 @@ def payload_is_safe(payload: dict) -> tuple[bool, str]:
     # from this budget and no second, larger budget to keep in step with it.
     if "<!-- PR_REVIEWER_LEDGER" in payload["body"]:
         return (False, "review body carries a ledger block — run state lives in the PR-state record")
+    # The body MUST be a `render-pointer.mjs` output, not hand-composed. Every pointer form opens
+    # with the pointer marker (render-pointer.mjs post-condition), the ordinary form is marker-only,
+    # and NO form carries a link — the report and its links live in the sticky (§ POINTER_BODY).
+    # Without these two checks an improvised "Review findings posted — see the [report comment](url)"
+    # body sailed through: it has no report marker, no ledger, and is under budget, so nothing here
+    # caught it — and the hand-built permalink came out as `https://github.com//pull/<n>#…` with an
+    # empty owner/repo slug (dash0hq/dash0#18451). These mirror render-pointer.mjs's own marker
+    # post-condition and `assertPlain` link rejection, so an improvised pointer is rejected here the
+    # same way the renderer would have refused to emit it.
+    if not payload["body"].startswith("<!-- PR_REVIEWER_POINTER -->"):
+        return (False, "review body is not a render-pointer output — it must open with "
+                "<!-- PR_REVIEWER_POINTER -->; do not hand-compose the body (§ POINTER_BODY)")
+    import re as _re_link
+    if _re_link.search(r"\[[^\]]*\]\([^)]*\)", payload["body"]):
+        return (False, "review body carries a markdown link — a pointer carries no links; the "
+                "report and its links live in the sticky (use the sticky's html_url, never a "
+                "hand-built permalink)")
     if len(payload["body"].strip()) > 600:
         return (False, f"review body is a pointer, not a report: {len(payload['body'])} chars")
     for c in payload.get("comments", []):

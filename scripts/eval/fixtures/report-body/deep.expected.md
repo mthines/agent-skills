@@ -72,4 +72,4 @@ Memories — 48 indexed · 3 used (1 knowledge · 1 hotspot · 1 rule)
 
 </details>
 
-<sup>`pr-reviewer` · commit `a1b2c3d` · full review · [how these findings are produced](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) · updated 2026-09-03 09:12 UTC</sup>
+<sup>`pr-reviewer` · commit `a1b2c3d` · full review · [how these findings are produced](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) · updated <relative-time datetime="2026-09-03T09:12:00.000Z">Sep 3, 2026 9:12am UTC</relative-time></sup>

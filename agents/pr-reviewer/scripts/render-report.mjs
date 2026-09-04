@@ -339,7 +339,21 @@ function main() {
   if (Number.isNaN(atDate.getTime()) || !/Z$/.test(String(run.at))) {
     fail(`RUN.at must be an ISO-8601 UTC timestamp ending in "Z" — got ${JSON.stringify(run.at)}`);
   }
-  const updatedStamp = atDate.toISOString().slice(0, 16).replace("T", " ");
+  // Two renderings of the same instant, both fed to `footerLine`: `datetime` is the full ISO-8601
+  // UTC instant GitHub's `<relative-time>` reads to show a live, self-refreshing "N hours ago";
+  // `display` is the human fallback shown verbatim when the element is stripped or JS is off. The
+  // display format is built from UTC getters (never a locale) so the output is deterministic — L1
+  // G25 byte-diffs it. `datetime` normalises through `toISOString()`, so a `RUN.at` with or without
+  // seconds renders identically.
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const h24 = atDate.getUTCHours();
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  const updatedAt = {
+    datetime: atDate.toISOString(),
+    display: `${MONTHS[atDate.getUTCMonth()]} ${atDate.getUTCDate()}, ${atDate.getUTCFullYear()} `
+      + `${h12}:${String(atDate.getUTCMinutes()).padStart(2, "0")}${h24 < 12 ? "am" : "pm"}`,
+  };
 
   // The run descriptor for the footer. It is a PHRASE, not a sentence, because `footerLine` already
   // renders `commit \`<sha>\`` — the substring every consumer matches on
@@ -1036,7 +1050,7 @@ function main() {
     // passes neither, so the two footers differ only by what only the report knows.
     // `docs: true` is the report's own opt-in — the methodology link belongs once per review, on
     // the object that is the review, not repeated on every inline finding (`comment-spine.mjs`).
-    FOOTER_SUP: footerLine({ sha: run.sha, run: footer, at: updatedStamp, docs: true }),
+    FOOTER_SUP: footerLine({ sha: run.sha, run: footer, at: updatedAt, docs: true }),
     NEEDS_ATTENTION: needsAttention,
     FOUND_LINES: foundLines.join("\n"),
     RUN_LINES: runLines.join("\n"),

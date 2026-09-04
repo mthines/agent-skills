@@ -69,4 +69,4 @@ Memories — not connected
 
 </details>
 
-<sup>`pr-reviewer` · commit `69b0de8` · full review · [how these findings are produced](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) · updated 2026-08-22 03:05 UTC</sup>
+<sup>`pr-reviewer` · commit `69b0de8` · full review · [how these findings are produced](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) · updated <relative-time datetime="2026-08-22T03:05:00.000Z">Aug 22, 2026 3:05am UTC</relative-time></sup>
