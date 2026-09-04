@@ -309,6 +309,29 @@ export function relayUnsafeUrls(body) {
 }
 
 /**
+ * Of the relay-unsafe URLs, the ones the documented remedy actually removes.
+ *
+ * This partition is the difference between a gate and a dead end. `relayUnsafeUrls` answers
+ * "what would the relay rewrite", which is every long URL in the body — but the remedy is
+ * `--no-fix-links`, and that removes exactly one kind: an Agent0 deep link. A long link to
+ * anything else (a `raw.githubusercontent.com` asset path, a LoreKit doc URL cited as evidence,
+ * a permalink from the diff) survives the remedy untouched, so a caller that treats the
+ * unpartitioned list as its withhold signal re-renders, re-checks, and gets the identical
+ * failure — with nothing left to try and no way to tell that it never could have passed.
+ *
+ * The two classes get different answers because only one of them has an honest fix:
+ *
+ * - **A fix-link over budget** — withhold the buttons. The affordance is lost, the report is
+ *   whole, and the next run on a file-based path posts it intact.
+ * - **Anything else over budget** — post as rendered and note it. A citation cannot be dropped to
+ *   satisfy a relay, and the damage is not symmetric: a mangled doc link is a citation the reader
+ *   has to retype, while a mangled button is a primary CTA that silently does nothing.
+ */
+export function relayUnsafeFixLinks(body) {
+  return relayUnsafeUrls(body).filter((u) => AGENT0_HOST_RE.test(u));
+}
+
+/**
  * The last gate before a body is posted: does this text still look like renderer output?
  *
  * Every other guard in this pipeline runs **before** the renderer writes to stdout. That is enough
@@ -502,9 +525,18 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       for (const u of unsafe) {
         process.stderr.write(`relay-unsafe url (${u.length} chars, over ${RELAY_SAFE_URL_MAX}): ${u}\n`);
       }
-      process.stderr.write("a relayed write would wrap these in a code span and break the markup"
-        + " — withhold the fix links (--no-fix-links) or write the body from a file\n");
-      process.exit(1);
+      // Exit on what the REMEDY can reach, not on what the relay would damage. Reporting a
+      // long doc link as exit 1 sent the caller to `--no-fix-links`, which cannot remove it:
+      // the re-render failed the same check with nothing left to try.
+      if (relayUnsafeFixLinks(relayBody).length) {
+        process.stderr.write("a relayed write would wrap these in a code span and break the markup"
+          + " — withhold the fix links (--no-fix-links) or write the body from a file\n");
+        process.exit(1);
+      }
+      process.stderr.write("none of these is a fix link, so --no-fix-links removes none of them"
+        + " — post as rendered and note the mangled link in the run line, or write the body"
+        + " from a file\n");
+      process.exit(3);
     }
     process.stdout.write("relay-safe\n");
     process.exit(0);

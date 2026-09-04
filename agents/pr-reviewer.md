@@ -2261,12 +2261,16 @@ node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --check /tmp/finding
   || { log "finding $i: body is not renderer output — dropped"; continue; }
 # On a relayed write, an over-budget fix URL is mangled no matter how faithfully it is copied.
 # Re-render this finding without FIX_URL rather than drop it — the finding is worth more than
-# its button (agent0-fix-links.md § Relay length limit).
-node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/finding-$i.md \
-  || { jq 'del(.FIX_URL)' /tmp/finding-$i.json > /tmp/finding-$i.nofix.json
-       node "$RENDER_COMMENT" /tmp/finding-$i.nofix.json > /tmp/finding-$i.md \
-         || { log "finding $i: re-render without the fix link failed — dropped"; continue; }
-       log "finding $i: fix link withheld (relay would mangle it)"; }
+# its button (agent0-fix-links.md § Relay length limit). Exit 3 is a long URL that is NOT a fix
+# link, so dropping FIX_URL would not remove it: post as rendered and say so.
+node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/finding-$i.md
+case $? in
+  1) jq 'del(.FIX_URL)' /tmp/finding-$i.json > /tmp/finding-$i.nofix.json
+     node "$RENDER_COMMENT" /tmp/finding-$i.nofix.json > /tmp/finding-$i.md \
+       || { log "finding $i: re-render without the fix link failed — dropped"; continue; }
+     log "finding $i: fix link withheld (relay would mangle it)" ;;
+  3) log "finding $i: a cited link is over the relay budget and will be mangled — posted as is" ;;
+esac
 # A reachable-looking button whose image 404s is a broken-image icon, not a button. Same re-render.
 node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --assets-check /tmp/finding-$i.md
 if [ $? -eq 1 ]; then
@@ -2664,8 +2668,14 @@ obligations, and the first is now the load-bearing one:
    faithful copying saves an over-budget URL:
 
    ```bash
-   node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md \
-     || RERENDER_WITH_NO_FIX_LINKS=1   # re-render, post that, and say so in the run line
+   # Exit 1 is a fix link over budget — the remedy removes it. Exit 3 is some OTHER long URL
+   # (a cited doc, an asset path): --no-fix-links would not remove it, so re-rendering is a
+   # loop with no exit. Post as rendered and name the mangled link in the run line.
+   node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
+   case $? in
+     1) RERENDER_WITH_NO_FIX_LINKS=1 ;;   # re-render, post that, and say so in the run line
+     3) : ;;                              # not remediable here — post, and note it
+   esac
 
    # Same lever, different failure: the markup is fine but the button's image is not there.
    # Exit 3 is inconclusive (network), NOT a missing asset — post as rendered on 3.
@@ -2678,9 +2688,11 @@ obligations, and the first is now the load-bearing one:
 
    Exit 0 (`relay-safe`) posts as rendered. Exit 1 means re-render with `--no-fix-links` — both
    renderers omit the button when the URL slot is absent, so the report is unchanged apart from the
-   affordance. Do **not** shorten the prompt to fit: a `fix-this` link spends ~102 chars before the
-   prompt starts (in body chars, `&amp;` included), and a button that opens a session with no idea
-   what to fix is worse than none.
+   affordance. **Exit 3 is not a withhold**: the over-budget URL is not a fix link, so the remedy
+   cannot reach it, and treating 3 as 1 re-renders a body that fails the identical check with
+   nothing left to try. Do **not** shorten the prompt to fit: a `fix-this` link spends 106 chars
+   before the prompt starts (in body chars, `&amp;` included), and a button that opens a session
+   with no idea what to fix is worse than none.
    This is advisory and path-specific — on the `gh` path the buttons post intact and stay.
 2. **Reproduce the file byte-for-byte.** Read `/tmp/report-body.md` and pass exactly what it
    contains. Never wrap anything in backticks, never escape `<` or `>`, never re-wrap a long line,
@@ -2877,6 +2889,16 @@ def payload_is_safe(payload: dict) -> tuple[bool, str]:
         _prose = _re.sub(r'^<a href="https://app\.dash0(?:-dev)?\.com/.*$', "", _prose,
                          flags=_re.MULTILINE)
         _prose = _re.sub(r"^_Pseudo-code — verify before applying\._$", "", _prose, flags=_re.MULTILINE)
+        # The `(unverified: …)` tag, same class as the fence and the button: a rendered
+        # decoration, not argument. `UNVERIFIED_MAX = 40` was added to the spine without
+        # this ceiling moving, and 40 was the whole overflow — a claim legal under every
+        # per-field cap measured 363 here against a 320 bound, and this predicate aborts
+        # the WHOLE post, so one maximal finding took the entire batch down. Stripping it
+        # is the fix rather than raising the number, because the renderer's own
+        # `UNVERIFIED_MAX` already bounds it and a second bound here would be the same
+        # stale copy again. L1 `G46l` measures a maximal render against this ceiling, so
+        # the next cap added to the spine fails a check instead of a post.
+        _prose = _re.sub(r"\s*\(unverified: [^)]*\)", "", _prose)
         _prose = _re.sub(r"<!--\s*fp:v\d+:[^\s>]+?\s*-->", "", _prose).strip()
         # A LOOSE ceiling, deliberately — not a re-implementation of the caps.
         # `render-comment.mjs` enforces the real ones per field (≤ 60-char title, ≤ 200

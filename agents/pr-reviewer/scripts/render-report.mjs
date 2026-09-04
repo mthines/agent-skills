@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  TIERS, TIER_GLYPH, VERDICT_GLYPH, VERDICTS, SHA7, GATE_DETAILS_MAX,
+  TIERS, TIER_GLYPH, VERDICT_GLYPH, VERDICTS, SHA7, GATE_DETAILS_MAX, TITLE_MAX,
   worstTier, tierTally, footerLine, fixButton, anchor, assertPostable,
 } from "./comment-spine.mjs";
 
@@ -568,6 +568,15 @@ function main() {
     const where = `FINDINGS[${i}]`;
     if (!f.title || String(f.title).trim() === "") fail(`${where}.title is required`);
     assertPlain(`${where}.title`, f.title, { allowCode: true });
+    // The SAME title the inline renderer posts, so the SAME cap — `render-comment.mjs` rejects a
+    // title over TITLE_MAX and this file accepted any length, which is a shared vocabulary held on
+    // one side only: a 198-char sentence rendered a report row fine and then failed the comment
+    // that row indexes, after the report had already been written. The index and the finding are
+    // one string stated twice; a bound either binds both or neither.
+    if (String(f.title).length > TITLE_MAX) {
+      fail(`${where}.title is ${String(f.title).length} chars, over ${TITLE_MAX}`
+        + " — the same cap render-comment.mjs applies to the finding this row indexes");
+    }
     // A pipe would split the row into phantom columns, and a table cell cannot be escaped out of.
     if (String(f.title).includes("|")) fail(`${where}.title contains a pipe — it would break the row`);
     if (!TIERS.includes(String(f.tier))) {

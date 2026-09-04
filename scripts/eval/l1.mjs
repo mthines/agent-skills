@@ -3540,6 +3540,11 @@ const isPollBlock = (block) =>
     // after it — measured on mthines/agent-skills#165. The budget is executable, not prose: it is a
     // number in the spine that both the agent body and the rule have to agree with, because the
     // whole failure mode was a correct renderer plus a documented cause that was wrong.
+    // Read once, up front: the (j) / (k) / (l) / (m) groups all cross-check the same three
+    // documents against the spine's live exports.
+    const fixRule = readFileSync(join(REPO_ROOT, "agents/shared/rules/agent0-fix-links.md"), "utf8");
+    const agentBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+    const assetMod = await import(pathToFileURL(SPINE).href);
     const relay = (body) => {
       const f = join(tmpdir(), `l1-relay-${Math.random().toString(36).slice(2)}.md`);
       writeFileSync(f, body);
@@ -3577,22 +3582,111 @@ const isPollBlock = (block) =>
       realLink.status === 0 && realLink.stdout.trim().length > budget,
       `link was ${realLink.stdout.trim().length} chars — if this now fits, the rule's table is stale`);
 
+    // The exit code has to name what the REMEDY reaches, not what the relay damages. Reporting a
+    // long non-fix-link as exit 1 sent the caller to `--no-fix-links`, which removes Agent0 deep
+    // links and nothing else: the re-render failed the identical check with nothing left to try.
+    const longDoc = `https://lorekit.example.com/${"d".repeat(budget)}`;
+    const otherOver = relay(`see <${longDoc}>\n`);
+    s.check("G46j a long URL that is not a fix link exits 3, not 1",
+      otherOver.status === 3,
+      `exit ${otherOver.status} — exit 1 points at a remedy that cannot remove this URL`);
+    s.check("G46j the exit-3 message says the remedy does not apply",
+      /--no-fix-links removes none of them/.test(otherOver.stderr),
+      (otherOver.stderr || "").slice(0, 200));
+    s.check("G46j a fix link still exits 1 when both kinds are over budget",
+      relay(`see <${longDoc}>\n\n<a href="${longUrl}"><img alt="Fix with Agent0" src="x"></a>`)
+        .status === 1,
+      "a remediable URL present anywhere makes the run remediable");
+    s.check("G46j the spine exports the fix-link partition",
+      /export function relayUnsafeFixLinks\(/.test(spine),
+      "the two classes need different answers, so the partition has to be a function");
+    for (const [surface, target] of [
+      ["the sticky", "--relay-check /tmp/report-body.md"],
+      ["the inline surface", "--relay-check /tmp/finding-$i.md"],
+    ]) {
+      const idx = agentBody.indexOf(target);
+      s.check(`G46j ${surface} branches on the relay exit code rather than on truthiness`,
+        idx > 0 && /^\s*case \$\? in/m.test(agentBody.slice(idx, idx + 320)),
+        "`|| withhold` collapses 3 into 1 and re-renders a body that cannot pass");
+    }
+    s.check("G46j the rule documents exit 3 as post-as-rendered",
+      /Exit 3 — something else is over budget/.test(fixRule)
+        && /relayUnsafeFixLinks\(\)/.test(fixRule),
+      "agent0-fix-links.md owns the exit-code table; a third code that is not in it is invisible");
+
+    // (l) The post pre-flight's prose ceiling, measured against the renderer rather than restated.
+    // `UNVERIFIED_MAX` was added to the spine and this ceiling did not move, so a finding legal
+    // under every per-field cap tripped a predicate that ABORTS THE WHOLE POST — one maximal
+    // finding took the entire batch down. The guard renders the maximal legal payload for each
+    // shape and applies the pre-flight's own documented strips, so the next cap added to the spine
+    // fails a check here instead of a review in production.
+    const ceilingM = agentBody.match(/if len\(_prose\) > (\d+):/);
+    s.check("G46l the post pre-flight states its prose ceiling as a number L1 can read",
+      !!ceilingM, "payload_is_safe must keep the `if len(_prose) > N:` form");
+    const ceiling = Number(ceilingM?.[1] ?? 0);
+    // Exactly the strips payload_is_safe performs, in its order.
+    const preflightProse = (body) => body
+      .replace(/```[a-zA-Z0-9_+-]*\n[\s\S]*?\n```/g, "")
+      .replace(/^Evidence:.*$/gm, "")
+      .replace(/^<sup>`pr-reviewer`.*$/gm, "")
+      .replace(/^<a href="https:\/\/app\.dash0(?:-dev)?\.com\/.*$/gm, "")
+      .replace(/^_Pseudo-code — verify before applying\._$/gm, "")
+      .replace(/\s*\(unverified: [^)]*\)/g, "")
+      .replace(/<!--\s*fp:v\d+:[^\s>]+?\s*-->/g, "")
+      .trim();
+    const maximal = [
+      ["a claim at every cap, unverified", "suggestion-pseudo",
+        { TITLE: "T".repeat(assetMod.TITLE_MAX), BODY: "P".repeat(assetMod.PROSE_MAX),
+          UNVERIFIED: "U".repeat(assetMod.UNVERIFIED_MAX), EVIDENCE: undefined }],
+      ["a claim at every cap, verified", "suggestion-pseudo",
+        { TITLE: "T".repeat(assetMod.TITLE_MAX), BODY: "P".repeat(assetMod.PROSE_MAX) }],
+      ["a one-liner at its cap", "nitpick", { BODY: "P".repeat(assetMod.PROSE_MAX) }],
+    ];
+    for (const [label, base, over] of maximal) {
+      const payload = { ...JSON.parse(readFileSync(join(FIX, `${base}.json`), "utf8")), ...over };
+      for (const k of Object.keys(over)) if (over[k] === undefined) delete payload[k];
+      const r = run([], JSON.stringify(payload));
+      s.check(`G46l ${label} renders`, r.ok, (r.err || "").slice(0, 140));
+      if (!r.ok) continue;
+      const n = preflightProse(r.out).length;
+      s.check(`G46l ${label} fits the ${ceiling}-char post pre-flight (${n})`, n <= ceiling,
+        `${n} > ${ceiling} — payload_is_safe aborts the WHOLE post, so this drops every finding`);
+    }
+    s.check("G46l the pre-flight strips the unverified tag it does not bound",
+      /_prose = _re\.sub\(r"\\s\*\\\(unverified: \[\^\)\]\*\\\)"/.test(agentBody),
+      "the tag is a rendered decoration like the fence and the button — strip it, do not re-bound it");
+
+    // (m) The finding title is one string on two surfaces, so one cap governs both. The report
+    // renderer had `assertPlain` and no length check while the comment renderer enforced
+    // TITLE_MAX — so an over-long title rendered a report row and then failed the comment that
+    // row indexes, after the report had already been written.
+    const reportRenderer = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"), "utf8");
+    s.check("G46m the report renderer imports TITLE_MAX from the spine",
+      /TITLE_MAX/.test(reportRenderer.slice(0, reportRenderer.indexOf('} from "./comment-spine.mjs"'))),
+      "a local copy of the cap is the drift this spine exists to prevent");
+    const warnPayload = JSON.parse(readFileSync(join(FIX, "../report-body/warn.json"), "utf8"));
+    const overTitle = structuredClone(warnPayload);
+    overTitle.FINDINGS[0].title = "W".repeat(assetMod.TITLE_MAX + 1);
+    const rr = spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs")],
+      { input: JSON.stringify(overTitle), encoding: "utf8" });
+    s.check("G46m the report renderer rejects a title over TITLE_MAX", rr.status !== 0,
+      "the report indexes the inline finding; a title it accepts must be one the comment can post");
+    s.check("G46m rejecting an over-long title emits nothing on stdout", rr.stdout === "",
+      (rr.stdout || "").slice(0, 80));
+
     // The rule and the agent body both have to carry it. The wrong-cause version of this section
     // read as correct and was invisible to every other guard here.
-    const fixRule = readFileSync(join(REPO_ROOT, "agents/shared/rules/agent0-fix-links.md"), "utf8");
     s.check("G46j the rule documents the relay length limit",
       /## Relay length limit/.test(fixRule) && /RELAY_SAFE_URL_MAX = 140/.test(fixRule),
       "agent0-fix-links.md must own the measured table and cite the same constant");
     s.check("G46j the rule forbids shrinking the prompt to fit",
       /worse than no button/.test(fixRule),
       "a truncated prompt opens a session with no idea what to fix — say so");
-    const agentBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
     // (k) The button's image has to exist at the URL the markup names. Offline, so this asserts the
     // FILE is in the repo and the markup follows GitHub's documented three-element form; the 404
     // case is a live HEAD check the agent runs (`--assets-check`), because whether a path is on the
     // default branch is not knowable from a working tree.
     const ASSETS = join(REPO_ROOT, "agents/pr-reviewer/assets");
-    const assetMod = await import(pathToFileURL(SPINE).href);
     s.check("G46k the spine enumerates every asset file it can reference",
       Array.isArray(assetMod.ASSET_FILES) && assetMod.ASSET_FILES.length === 6,
       `ASSET_FILES = ${JSON.stringify(assetMod.ASSET_FILES)}`);

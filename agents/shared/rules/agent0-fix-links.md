@@ -443,14 +443,29 @@ opens a session with no idea what to fix is worse than no button.
 
 ```bash
 # Before a relayed write, on the body that is actually about to be posted.
-node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md \
-  || rerender_with --no-fix-links     # withhold the buttons; keep the report
+node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
+case $? in
+  1) rerender_with --no-fix-links ;;   # withhold the buttons; keep the report
+  3) : ;;                              # not a fix link — the remedy cannot reach it
+esac
 ```
 
 - Exit 0 (`relay-safe`) — post as rendered.
-- Exit 1 — **re-render with `--no-fix-links`** and post that. Both renderers already omit the button
-  when the URL slot is absent, so this needs no renderer change and costs only the affordance.
-- Note the withholding in the run line, so a reader who expects a button knows why there is none.
+- Exit 1 — a **fix link** is over budget. **Re-render with `--no-fix-links`** and post that. Both
+  renderers already omit the button when the URL slot is absent, so this needs no renderer change
+  and costs only the affordance. Note the withholding in the run line, so a reader who expects a
+  button knows why there is none.
+- Exit 3 — something else is over budget: a cited doc URL, a `raw.githubusercontent.com` asset
+  path, a permalink out of the diff. **Post as rendered** and name the mangled link in the run line.
+
+**The two are separated because only one of them has a remedy, and conflating them is a dead end.**
+The check first reported *every* long URL as exit 1, whose documented answer is `--no-fix-links` —
+which removes Agent0 deep links and nothing else. A report citing a 169-char LoreKit URL therefore
+failed the check, re-rendered without its buttons, failed the identical check again, and had
+nothing left to try; the run could not distinguish that from a condition it could fix. `relayUnsafeFixLinks()`
+is the partition, and exit 3 is the honest answer for the other half: a citation cannot be dropped
+to satisfy a relay, and the damage is not symmetric — a mangled doc link is a URL the reader
+retypes, while a mangled button is a primary CTA that silently does nothing.
 
 This is **advisory**, unlike `assertPostable`: it predicts what one write path would do, and a
 file-based path (`gh --field body=@file`) does none of it — there the buttons post intact and stay.
