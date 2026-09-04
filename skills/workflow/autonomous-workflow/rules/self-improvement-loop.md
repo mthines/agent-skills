@@ -24,6 +24,7 @@ contain thin invocation blocks that reference the anchors here.
 - [LoreKit in one screen](#lorekit-in-one-screen)
 - [The lesson record](#the-lesson-record)
 - [Fast tier — read lessons (Phase 1, Phase 3/4)](#fast-tier--read-lessons)
+- [Fast tier — read the repo's codebase-knowledge (cross-bucket, read-only)](#fast-tier--read-the-repos-codebase-knowledge-cross-bucket-read-only)
 - [Fast tier — write lessons (Phase 4 stuck-loop, Phase 7 end-of-run)](#fast-tier--write-lessons)
 - [Lesson promotion — slow tier](#lesson-promotion)
 - [Entrenchment guards (load-bearing)](#entrenchment-guards-load-bearing)
@@ -220,6 +221,69 @@ Log:
 - [TIMESTAMP] Phase 1: lorekit(memory.list repo::{owner}/{repo} loop::aw-lessons) — N lessons matched, applied as constraints
 - [TIMESTAMP] Phase 1: lorekit(memory.list global loop::aw-lessons) — M lessons matched
 - [TIMESTAMP] Phase 1: lorekit — memory.* not connected, continuing
+```
+
+---
+
+## Fast tier — read the repo's codebase-knowledge (cross-bucket, read-only)
+
+**Anchor:** `knowledge-read`
+
+The read above is this loop's **own** bucket (`loop::aw-lessons`). There is one
+**cross-bucket** read worth making, and only one: the shared `codebase-knowledge`
+signal — the cross-branch, cross-author record of what every prior PR taught the
+repo about its own symbols and files (`knowledge::<symbol>@<path>` facts and
+`hotspot::<path>` counters). Its primary writer is the `pr-reviewer` agent's
+Step 4d, but it is a shared, multi-writer bucket every code-changing host reads;
+the contract is [`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md).
+Reading it at plan time closes a real gap: without it, `aw` plans a change to a
+symbol prior reviews repeatedly flagged, or a file that is a known regression
+hotspot, blind to that history. This is the deliberate exception to bucket
+isolation — a **targeted, structural** cross-read, not a merge of another loop's
+lessons.
+
+Do this **once the plan's File Changes list is drafted** — not at the very start
+of Phase 1, since you need the candidate paths first — and match narrowly:
+
+```text
+# List the repo's codebase-knowledge signal (bounded per repo; tag-filtered).
+memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }
+```
+
+Keep only the records that match the plan:
+
+- a `hotspot::<path>` whose `<path>` is a file the plan will touch, and
+- a `knowledge::<symbol>@<path>` whose `<path>` is a planned file (and, where the
+  plan names symbols, whose `<symbol>` the plan will change).
+
+Apply the matches as **planning inputs**, under the same guards the bucket's
+contract sets:
+
+1. **Read-only in this loop. `aw` does not write `codebase-knowledge` here.** The
+   bucket is multi-writer under the contract, but wiring a write is out of scope
+   for the `aw` planner: it consumes the layer, and the primary writer stays
+   `pr-reviewer` Step 4d. A write, if ever added, must carry `verified_at_sha` and
+   `source_agent` per the contract — never a clobber of another host's record.
+2. **It raises care, never lowers it.** A `hotspot::<path>` carrying
+   `missed` / `regressed` counters means *plan more coverage and a tighter change
+   there* — it can never justify skipping a phase or a gate. An **absent** record
+   is not evidence a file is safe.
+3. **A `knowledge` fact is advisory and may be stale** — it carries a
+   `verified_at_sha`. Treat "symbol X has N consumers / holds invariant Y" as a
+   constraint to design around (plan the consumer sweep, preserve the invariant),
+   re-verified against the code at implementation time, never trusted blind.
+4. Record applied knowledge in `plan.md` under the same `## Lessons applied`
+   note, marked `(codebase-knowledge)` so a reviewer can tell it from an
+   `aw-lessons` entry.
+
+Skip silently when `memory.*` is not connected, when there is no git remote, or
+when no record matches the plan — the common case on a greenfield path.
+
+Log:
+
+```markdown
+- [TIMESTAMP] Phase 1: lorekit(memory.list repo::{owner}/{repo} codebase-knowledge) — K records matched planned paths, applied as planning inputs
+- [TIMESTAMP] Phase 1: lorekit — no codebase-knowledge match for planned paths, continuing
 ```
 
 ---

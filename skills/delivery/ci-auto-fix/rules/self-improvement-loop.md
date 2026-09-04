@@ -33,6 +33,7 @@ tier is a silent no-op (log one line, continue).
 - [Why the extra guardrails](#why-the-extra-guardrails)
 - [Scope](#scope)
 - [Read lessons (Phase 3)](#read-lessons-phase-3)
+- [Cross-bucket read — codebase-knowledge (Phase 3.5, plan-artifact seam)](#cross-bucket-read--codebase-knowledge-phase-35-plan-artifact-seam)
 - [Write lessons (Phase 8 / 9)](#write-lessons-phase-8--9)
 - [Lesson promotion (raised bars)](#lesson-promotion-raised-bars)
 - [Entrenchment guards (ci-auto-fix additions)](#entrenchment-guards-ci-auto-fix-additions)
@@ -145,6 +146,32 @@ Log:
 - [TIMESTAMP] Phase 3: lorekit(memory.list global loop::ci-auto-fix-lessons) — M regression lessons matched
 - [TIMESTAMP] Phase 3: lorekit — memory.* not connected, continuing
 ```
+
+---
+
+## Cross-bucket read — codebase-knowledge (Phase 3.5, plan-artifact seam)
+
+The read above is this loop's **own** bucket. There is one cross-bucket read worth
+making: the shared `codebase-knowledge` signal — the cross-branch, cross-author
+record of what prior reviews learned about this repo's symbols and files
+(`knowledge::<symbol>@<path>` facts, `hotspot::<path>` counters). `ci-auto-fix`
+runs Phase 7 as **its own** subagent, **not** `aw-executor`, so it does not inherit
+`aw`'s knowledge-read — it must issue this itself. Do it at **Phase 3.5**, once the
+plan artifact names the failing files the fix will edit:
+
+```text
+memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }
+# Keep only hotspot::<path> / knowledge::<symbol>@<path> whose <path> the fix will
+# edit. Fold into the plan artifact: a known regression hotspot on the failing file
+# → plan a tighter fix + a regression check; a recorded invariant → preserve it.
+```
+
+The read is **read-only, structural, bounded to the plan, advisory, and raises care
+without suppressing** — it can never relax the Phase 3 verdict gate or shrink the
+Phase 8 regression check. The full contract is
+[`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md).
+Skip silently when `memory.*` is not connected, there is no git remote, or nothing
+matches. Never wholesale-read another host's `loop::<host>-lessons`.
 
 ---
 

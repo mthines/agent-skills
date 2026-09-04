@@ -109,12 +109,12 @@ hosts and silently halve every usage roll-up.
 | --- | --- | --- | --- | --- |
 | `reviewer-comment-relevance` | [`comment-relevance-memory.md`](./comment-relevance-memory.md) | GH Action `reviewer-comment-relevance.yml` (committed — see below) + `implement-suggestion` + `reviewer`/`pr-reviewer` post-merge fallback → `reviewer`/`pr-reviewer` | durable 60d | Every review run (`reviewer` Step 0.7 / `pr-reviewer` Step 1.0); applied **after** verification. |
 
-### Knowledge (`ci::review-knowledge`, keys `knowledge::<symbol>@<path>` and `hotspot::<path>`)
+### Knowledge (`codebase-knowledge`, keys `knowledge::<symbol>@<path>` and `hotspot::<path>`)
 
 | Bucket | Owner rule | Producer → Consumer | Lifetime | Read |
 | --- | --- | --- | --- | --- |
-| `review-knowledge` (symbol) | [`pr-reviewer/rules/memory.md`](../../pr-reviewer/rules/memory.md) | `pr-reviewer` **Step 4d**, deep tier only (a verified finding, or a confirmed invariant) → `pr-reviewer` finders | durable 90d | When a changed symbol matches — never wholesale. |
-| `review-hotspot` | [`pr-reviewer/rules/memory.md`](../../pr-reviewer/rules/memory.md) | `pr-reviewer` **Step 4d** (a confirmed finding on the file) + `scripts/record-comment-relevance.mjs` (`human-comment`, `deploy-regression`) → depth routing and finder priority | durable 90d | When a changed path matches. |
+| `codebase-knowledge` (symbol) | [`pr-reviewer/rules/memory.md`](../../pr-reviewer/rules/memory.md) | `pr-reviewer` **Step 4d**, deep tier only (a verified finding, or a confirmed invariant) → `pr-reviewer` finders, and every code-changing host at its plan/apply seam | durable 90d | When a changed symbol matches — never wholesale. |
+| `codebase-knowledge` (hotspot) | [`pr-reviewer/rules/memory.md`](../../pr-reviewer/rules/memory.md) | `pr-reviewer` **Step 4d** (a confirmed finding on the file) + `scripts/record-comment-relevance.mjs` (`human-comment`, `deploy-regression`) → depth routing and finder priority, and every code-changing host at its plan/apply seam | durable 90d | When a changed path matches. |
 
 **Both rows name a step, and that is the point of naming it.** These two buckets had a read rule, a
 match table, a TTL and a write budget, and — for the symbol record — no producer anywhere in the
@@ -123,7 +123,7 @@ because a read against an empty bucket is indistinguishable from a read against 
 happens to know nothing. Step 4d is the write site; a bucket in this taxonomy whose Producer column
 cannot name a step or a script is unimplemented, whatever its rule file says.
 
-Both are **`signal`** kind and **`reviewer`** host, set explicitly — LoreKit infers `kind`/`host` from a `loop::` tag only, and these are tagged `ci::`.
+Both are **`signal`** kind and **`reviewer`** host, set explicitly — LoreKit infers `kind`/`host` from a `loop::` tag only, and these are tagged `codebase-knowledge`.
 They are the cross-branch, cross-author half of the memory layer: keyed by **symbol** and by **path**, not by branch or by PR, so what one author's PR taught the reviewer about `retryRequest` is available on the next author's PR that touches it.
 Neither is a lesson and neither is advice — a symbol record holds a fact about the code (a checked invariant, a caller that depends on a signature, a defect this symbol produced before) and a hotspot record holds counters (`missed`, `confirmed`, `regressed`).
 
@@ -131,6 +131,8 @@ Two properties keep them safe to read on every run:
 
 - **They raise priority, never lower a tier and never suppress.** A hotspot cannot silence a finding, and an empty hotspot record is not evidence of safety. Suppression lives entirely in `reviewer-comment-relevance`, behind verification.
 - **They are keyed to something structural.** A record keyed by prose re-keys on every re-phrasing and accumulates nothing; `knowledge::<symbol>@<path>` and `hotspot::<path>` survive a rename of the finding but not a rename of the code, which is the correct sensitivity.
+
+**`codebase-knowledge` is the one shared cross-loop bucket, read *and* written by many hosts.** Because these records are keyed by symbol and path rather than by loop, they are the one bucket every host reads across the tag boundary. `pr-reviewer` **Step 4d** is the primary writer — it traces symbols and confirms findings on a full review, so it produces the richest facts — but the bucket is **multi-writer**: `aw`, `implement-suggestion`, `fix-bug`, and `ci-auto-fix` each read it at their plan/apply seam (the moment they hold the concrete file/symbol list they will change), match `hotspot::<path>` / `knowledge::<symbol>@<path>` against those paths and symbols, and plan with that history in hand rather than blind. A host that itself *verifies* a structural fact contributes it back, so the layer compounds across every loop in the repo. Multi-writer is safe only behind the write contract in [`codebase-knowledge.md`](./codebase-knowledge.md): a structural key, `verified_at_sha` and `source_agent` on every fact, only what the run verified, merge-never-clobber, raise-care-never-suppress. The read is the sanctioned exception to bucket isolation — permitted precisely because the key is structural (`symbol@path`), the match is bounded to the plan, and it raises care without suppressing anything. It does **not** license wholesale cross-reads of another host's `loop::<host>-lessons`, which stay siloed by tag.
 
 ### State records (`ci::<host>-state`, key `ci-state::<slug>`)
 

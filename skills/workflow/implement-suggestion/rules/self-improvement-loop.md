@@ -30,6 +30,7 @@ tier is a silent no-op (log one line, continue).
 - [What this loop owns vs. what aw-lessons owns](#what-this-loop-owns-vs-what-aw-lessons-owns)
 - [Scope](#scope)
 - [Read lessons (Phase 3)](#read-lessons-phase-3)
+- [Cross-bucket read — codebase-knowledge (Phase 5, apply seam)](#cross-bucket-read--codebase-knowledge-phase-5-apply-seam)
 - [Write lessons (Phase 7 + watch re-flag)](#write-lessons)
 - [Lesson promotion to skill source](#lesson-promotion)
 - [Entrenchment guards](#entrenchment-guards)
@@ -148,6 +149,30 @@ Log:
 - [TIMESTAMP] Phase 3: lorekit(memory.list global loop::implement-suggestion-lessons) — M lessons matched
 - [TIMESTAMP] Phase 3: lorekit — memory.* not connected, continuing
 ```
+
+---
+
+## Cross-bucket read — codebase-knowledge (Phase 5, apply seam)
+
+The read above is this loop's **own** bucket. There is one cross-bucket read worth
+making: the shared `codebase-knowledge` signal — the cross-branch, cross-author
+record of what prior reviews learned about this repo's symbols and files
+(`knowledge::<symbol>@<path>` facts, `hotspot::<path>` counters). Do it at the
+**Phase 5 apply seam**, once the suggestion-pack names the concrete files each
+worker will edit — that is the moment the structural key is matchable.
+
+```text
+memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }
+# Keep only hotspot::<path> / knowledge::<symbol>@<path> whose <path> a pack entry
+# will edit. Fold into the pack as apply-time constraints: a known hotspot →
+# tighter change + more coverage; a known invariant / consumer count → preserve it.
+```
+
+The read is **read-only, structural, bounded to the pack, advisory, and raises care
+without suppressing** — the full contract, including when a run may write a verified
+fact back, is [`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md).
+Skip silently when `memory.*` is not connected, there is no git remote, or nothing
+matches. Never wholesale-read another host's `loop::<host>-lessons`.
 
 ---
 

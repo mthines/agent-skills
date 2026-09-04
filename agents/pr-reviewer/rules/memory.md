@@ -48,12 +48,12 @@ a re-phrased finding starts over. See [`references/detection-research.md`](../re
 
 | Record | Tag / key | Scope | TTL | Holds | Can it suppress? |
 | --- | --- | --- | --- | --- | --- |
-| **Symbol knowledge** | `ci::review-knowledge` / `knowledge::<symbol>@<path>` | `repo::{owner}/{repo}` | 90 d | verified facts about one symbol — contracts, invariants callers rely on, consumer count at last trace, covering tests — each with `verified_at_sha`; plus `history[]` of findings raised on it (`{pr, sha, fp, verdict, outcome}`, capped at 20) | No |
-| **Hotspot** | `ci::review-knowledge` / `hotspot::<path>` | `repo::{owner}/{repo}` | 90 d | per-file counters: `confirmed`, `missed` (a human caught something here that this agent did not flag), `regressed`, `last_touched_by[]` | No |
+| **Symbol knowledge** | `codebase-knowledge` / `knowledge::<symbol>@<path>` | `repo::{owner}/{repo}` | 90 d | verified facts about one symbol — contracts, invariants callers rely on, consumer count at last trace, covering tests — each with `verified_at_sha`; plus `history[]` of findings raised on it (`{pr, sha, fp, verdict, outcome}`, capped at 20) | No |
+| **Hotspot** | `codebase-knowledge` / `hotspot::<path>` | `repo::{owner}/{repo}` | 90 d | per-file counters: `confirmed`, `missed` (a human caught something here that this agent did not flag), `regressed`, `last_touched_by[]` | No |
 | **Relevance rule** | `loop::reviewer-comment-relevance` / `reviewer-comment-relevance::rule::<fp>` | `repo::{owner}/{repo}` | 60 d | `direction: suppress \| amplify`, `status`, `evidence[]`, optional `scope_globs[]` | Yes — and only this one |
 | **PR state** | `ci::pr-review-state` / `ci-state::pr-review-<n>` | `branch::{owner}/{repo}::{head-branch-name}` | 7 d | this agent's own run history for one PR | No |
 
-**The keys are quoted exactly, prefix included.** Only the relevance rule carries a bucket prefix, and the asymmetry is not decoration: its key space is shared with the v1 prose rows (`reviewer-comment-relevance::<gist>`), so `…::rule::` is the segment that separates the promotable half from the legacy half — `scripts/record-comment-relevance.mjs § writeRelevance` is the implementation and this table follows it, never the reverse. Knowledge and hotspot need no prefix because their bucket is identified by the `ci::review-knowledge` tag. A `memory_read` issued against `rule::<fp>` — the prefix dropped — returns nothing, indistinguishably from a repo that has never declined that finding.
+**The keys are quoted exactly, prefix included.** Only the relevance rule carries a bucket prefix, and the asymmetry is not decoration: its key space is shared with the v1 prose rows (`reviewer-comment-relevance::<gist>`), so `…::rule::` is the segment that separates the promotable half from the legacy half — `scripts/record-comment-relevance.mjs § writeRelevance` is the implementation and this table follows it, never the reverse. Knowledge and hotspot need no prefix because their bucket is identified by the `codebase-knowledge` tag. A `memory_read` issued against `rule::<fp>` — the prefix dropped — returns nothing, indistinguishably from a repo that has never declined that finding.
 
 **`{head-branch-name}` is the branch name, never a SHA.** `STATE_SCOPE` is bound from `headRefName` at Step 0.5 for that reason. A SHA-keyed scope mints a fresh scope on every push, so the record is written once and never found again: every re-review reads a miss, takes the first-run path, and silently loses its delta baseline, its carry-forward, and `LAST_FULL_SHA`. That failure is not hypothetical — a `branch::…::570ee7e8…` scope holding exactly one row is what it looks like in a store.
 
@@ -117,7 +117,7 @@ zero calls against it. If you change where the read happens, change both files i
 
 ```text
 # 1. The knowledge + hotspot records for this repo. Tag-filtered, not just kind/host.
-mcp__lorekit__memory_list    scope="repo::{owner}/{repo}"  tags=["ci::review-knowledge"]  kind=signal  host=reviewer  limit=50
+mcp__lorekit__memory_list    scope="repo::{owner}/{repo}"  tags=["codebase-knowledge"]  kind=signal  host=reviewer  limit=50
 
 # 2. A targeted search on the symbols the impact graph says changed.
 mcp__lorekit__memory_search  q="<symbol> <symbol> <symbol>"  scopes=["repo::{owner}/{repo}"]  limit=25
@@ -311,7 +311,7 @@ mcp__lorekit__memory_write:
   scope    = "repo::{owner}/{repo}"
   key      = "knowledge::<symbol>@<path>"        # from impact.json — never hand-composed
   value    = "<the JSON record below, serialised>"
-  tags     = ["ci::review-knowledge"]
+  tags     = ["codebase-knowledge"]
   kind     = "signal"
   host     = "reviewer"
   ttl_days = 90
@@ -323,7 +323,7 @@ mcp__lorekit__memory_write:
   scope    = "repo::{owner}/{repo}"
   key      = "hotspot::<path>"
   value    = "<the JSON record below, serialised — MERGED onto the record read at Step 1.2a>"
-  tags     = ["ci::review-knowledge", "signal::confirmed"]
+  tags     = ["codebase-knowledge", "signal::confirmed"]
   kind     = "signal"
   host     = "reviewer"
   ttl_days = 90

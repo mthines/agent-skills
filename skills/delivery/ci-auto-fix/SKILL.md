@@ -158,6 +158,7 @@ Verdicts at a glance:
 
 1. Write or update the plan at `.agent/{branch}/ci-auto-fix-plan.md` using [`templates/plan-artifact.md`](./templates/plan-artifact.md).
    The plan is read-only documentation of intent — the user can pre-empt before any code is written.
+   Once the plan names the failing files, read the shared **`codebase-knowledge`** signal for exactly those paths and fold matches into the plan (a known regression hotspot → a tighter fix + a regression check; a recorded invariant → preserve it), per [`rules/self-improvement-loop.md § Cross-bucket read — codebase-knowledge`](./rules/self-improvement-loop.md#cross-bucket-read--codebase-knowledge-phase-35-plan-artifact-seam). This subagent does not run `aw-executor`, so it is the only point the bucket is read; the read is read-only and never relaxes the confidence gate below.
 
 2. Run the confidence gate per [`rules/confidence-gate.md`](./rules/confidence-gate.md):
 
