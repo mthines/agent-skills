@@ -32,7 +32,7 @@ rule owns only when to call it, how to turn its output into review findings, and
 - [When to run (the call)](#when-to-run-the-call)
 - [Signal strength mapping](#signal-strength-mapping)
 - [Placement and gates](#placement-and-gates)
-- [It never blocks the verdict](#it-never-blocks-the-verdict)
+- [What it can and cannot fail](#what-it-can-and-cannot-fail)
 - [Seam with `telemetry.md`](#seam-with-telemetrymd)
 - [No profile is not no lens](#no-profile-is-not-no-lens)
 - [Logging](#logging)
@@ -123,17 +123,20 @@ in the same pass as the other body-level lenses, so one classification serves bo
 Skill("measurable", "audit", "<changed paths, gate-1 kinds only>")
 ```
 
-Pass `--strict` **only** when the repository asked for it — never on the reviewer's own judgment:
+Strict is the **default**. Pass `--strict` to `measurable audit` unless the repository or the
+invocation opts down — and never change the level on the reviewer's own judgment:
 
 | Source | Effect |
 | --- | --- |
+| nothing set (the default) | `--strict` is passed |
 | `measurable: strict` in the review config (`review-config.md`) | `--strict` is passed |
 | `--measurable-strict` on the invocation | `--strict` is passed |
-| anything else | advisory, the default |
+| `measurable: advisory` in the review config | advisory — `--strict` withheld |
+| `--measurable-advisory` on the invocation | advisory — `--strict` withheld |
 
-Strictness is a repository policy about its own release bar, so it belongs to the repository.
-This mirrors how the `--observability-strict` opt-in works in `autonomous-workflow` Phase 4: the
-lens shipped advisory, and a hard gate is earned by a team opting in, not asserted on day one.
+Strictness is a repository policy about its own release bar, so it belongs to the repository, which
+opts **down** to advisory when a missing signal should be surfaced but never gate a merge. The
+reviewer never sets the level on its own judgment.
 
 ## Signal strength mapping
 
@@ -142,9 +145,9 @@ Map them:
 
 | Skill verdict | Condition | Review finding |
 | --- | --- | --- |
-| `missing` | on a gate-1 path **and** the trigger was a new failure mode | `suggestion:` — or `issue:` when `--strict` was passed |
+| `missing` | on a gate-1 path **and** the trigger was a new failure mode | `issue:` under strict (the default); `suggestion:` under advisory |
 | `missing` | on a gate-1 path, any other trigger | `suggestion:` |
-| `unlinked` | any | `nitpick:`, **aggregated** — see below. Never `issue:`, never blocking, **not even under `--strict`** |
+| `unlinked` | any | **aggregated** — see below. `suggestion:` under strict (the default), `nitpick:` under advisory. `unlinked` never blocks and is never an `issue:`, in either level |
 | `pass` | any | nothing. Not a finding, not a line, not a comment |
 
 `unlinked` means the signal exists but maps to no named regression detector.
@@ -174,20 +177,29 @@ Two specifics:
   ([`verification-receipt.md`](./verification-receipt.md)) — never `unobtainable`, and never a Tier 3
   run. The lens never needs to execute anything.
 
-## It never blocks the verdict
+## What it can and cannot fail
 
-By default, no measurability finding contributes a token to `SEVERITY_TALLY` or a phrase to
-`FAIL_REASONS`.
-The invariant, stated the same way [`telemetry.md`](../../pr-reviewer/rules/telemetry.md) states its own:
-**the lens raises attention, and never lowers or fails a verdict.**
+The lens never **lowers** a verdict — like [`telemetry.md`](../../pr-reviewer/rules/telemetry.md) it
+raises attention, never removes it.
+What it may *fail* depends on the level, and only ever through a `missing` signal:
 
-Under `--strict` a `missing` finding on a gate-1 path with a new failure mode is an `issue:` and is
-then counted like any other `issue:` — that is what the repository opted into.
-`unlinked` stays advisory in every configuration.
+- **Strict (the default).** A `missing` finding on a gate-1 path with a **new failure mode** is an
+  `issue:`, contributes a token to `SEVERITY_TALLY`, and can put a phrase in `FAIL_REASONS` — a new
+  error branch nothing can see is the exact case this lens exists for, so under the default it
+  carries weight. Every other `missing` is a `suggestion:` and does not block.
+- **Advisory (opt-down).** No measurability finding contributes a token to `SEVERITY_TALLY` or a
+  phrase to `FAIL_REASONS`. Every `missing` is a `suggestion:`. A repository sets `measurable:
+  advisory` (or a run passes `--measurable-advisory`) when a missing signal should be surfaced but
+  never gate the merge.
 
-The reason for the default is that a missing signal is a gap in *observability*, not a defect in the
-change: the code does what it says, and blocking a correct change on a dashboard is how a lens gets
-turned off. Advisory findings on every PR change behaviour faster than a hard gate nobody enables.
+`unlinked` never blocks and is never an `issue:`, in either level — a `suggestion:` under strict and
+a `nitpick:` under advisory, always aggregated to one finding per run. A signal that exists but is
+unwatched is worth the author's attention; it is not worth failing a correct change.
+
+Strict is the default rather than the opt-in because a change that ships a new failure mode with no
+signal is silently wrong in production the first time it fires, and a reviewer is the last cheap point
+to catch it. A repository that would rather not gate on that opts down in one line; the lens no longer
+waits to be switched on before it can matter.
 
 ## Seam with `telemetry.md`
 
@@ -233,8 +245,8 @@ MEASURABILITY_LOG: <ran|skipped (<reason>)> · <N> paths classified · <M> missi
 Pluralise the count naturally — `1 path classified` / `2 paths classified` — the same way
 `STANDARDS_LOG` writes `1 doc` / `2 docs`; the renderer echoes the matched clause verbatim into the
 footnote, so its wording is this rule's to own.
-Append ` · no profile` when no Observability Profile was found, and ` · strict` when `--strict` was
-passed.
+Append ` · no profile` when no Observability Profile was found, and ` · advisory` when the level was
+opted down (strict is the default, so it is the silent case and needs no marker).
 The renderer treats `skipped (…)` and `0 missing · 0 unlinked` as quiet and folds the lens into the
 report's `Nothing to report` footnote ([`report-rendering.md`](../../pr-reviewer/rules/report-rendering.md)).
 

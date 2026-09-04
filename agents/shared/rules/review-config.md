@@ -502,22 +502,23 @@ Use `standards` when you want the reviewer to enforce a written rule as an expli
 It is a single scalar, not a list, because it configures a bar rather than a scope.
 
 ```yaml
-measurable: strict        # advisory (default) | strict
+measurable: advisory      # strict (default) | advisory
 ```
 
 | Value | Effect |
 |---|---|
-| absent, or `advisory` | The lens runs and reports. A `missing` signal is a `suggestion:`; nothing it emits reaches `FAIL_REASONS`. |
-| `strict` | `--strict` is passed to `measurable audit`, so a `missing` signal on a path with a **new failure mode** is an `issue:` and counts like any other `issue:`. |
+| absent, or `strict` | `--strict` is passed to `measurable audit`. A `missing` signal on a path with a **new failure mode** is an `issue:` and counts like any other `issue:`; an `unlinked` signal is an aggregated `suggestion:`. This is the default. |
+| `advisory` | The lens still runs and reports, but nothing it emits reaches `FAIL_REASONS`. A `missing` signal is a `suggestion:`; an `unlinked` signal is an aggregated `nitpick:`. Opt down here when a missing signal should be surfaced but never gate a merge. |
 
 Two properties this field deliberately does **not** have:
 
 - **It cannot make `unlinked` blocking.** A signal that exists but maps to no named regression
-  detector stays a `nitpick:` in every configuration — the `measurable` skill's own rule, honoured
-  here rather than re-litigated.
-- **It has no reviewer-side override.** Strictness is a claim about the repository's release bar, so
-  only the repository (this field) or an explicit `--measurable-strict` on the invocation sets it;
-  the reviewer never escalates on its own judgment.
+  detector is never an `issue:` and never blocks, in either level — the `measurable` skill's own
+  rule, honoured here rather than re-litigated. Strict only raises it from a `nitpick:` to a
+  `suggestion:` so a regression-detector gap carries weight without failing a correct change.
+- **It has no reviewer-side self-escalation.** The level is a claim about the repository's release
+  bar, so it comes from the default (strict), this field, or an explicit `--measurable-strict` /
+  `--measurable-advisory` on the invocation; the reviewer never changes it on its own judgment.
 
 To turn the lens off entirely, pass `--no-measurable` on the invocation. There is deliberately no
 `measurable: off`: a repository silently disabling a lens for every reviewer is the shape that makes

@@ -266,7 +266,7 @@ file because each is long, and because a phase the body only summarises is a pha
 - `agents/shared/rules/holistic-review.md` — default-on intent-match + system-fit pass via `Skill("holistic-analysis", "review")`.
 - `agents/shared/rules/optimality-review.md` — default-on "is this the best approach" pass via `Skill("optimize-approach", "report")` (Step 2.4c); report-only in cross-review.
 - `agents/shared/rules/standards-conformance.md` — default-on governing-docs enforcement lens (Step 1.7b discovery + Step 2.4d lens); runs on every invocation unless `--no-standards`; produces `issue:` / `suggestion:` findings citing the governing-doc `path:line` as grounding evidence.
-- `agents/shared/rules/measurability-review.md` — default-on measurability lens (Step 2.4e) via `Skill("measurable", "audit")`: will this change's impact be provable and its regressions visible after merge? Two gates keep it quiet (a `web`/`mobile`/`api`/`worker` path, **and** new or changed observable behaviour); advisory by default and it never blocks the verdict; skip via `--no-measurable`. Read-only — `audit` mode only, never `implement`.
+- `agents/shared/rules/measurability-review.md` — default-on measurability lens (Step 2.4e) via `Skill("measurable", "audit")`: will this change's impact be provable and its regressions visible after merge? Two gates keep it quiet (a `web`/`mobile`/`api`/`worker` path, **and** new or changed observable behaviour); strict by default (a repo opts down with `measurable: advisory`), so a `missing` on a new failure mode can block the verdict while `unlinked` never does; skip via `--no-measurable`. Read-only — `audit` mode only, never `implement`.
 - `agents/shared/rules/finding-grounding.md` — grep claimed symbols; drop on miss (Step 2.6).
 - `agents/shared/rules/verification-receipt.md` — executed proof for behavioral claims; drop on null result (Step 2.6b).
 - `agents/shared/rules/per-comment-confidence.md` — `Skill("confidence", "code")` ≥ profile threshold (Step 2.7).
@@ -305,7 +305,8 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `--no-optimize` | Skip the optimality review step (Step 2.4c) |
 | `--no-standards` | Skip the standards-conformance review step (Step 2.4d) |
 | `--no-measurable` | Skip the measurability review step (Step 2.4e) |
-| `--measurable-strict` | Pass `--strict` to `measurable audit`, so a `missing` signal on a new failure mode is an `issue:` rather than a `suggestion:`. Also settable as `measurable: strict` in the review config. `unlinked` findings stay advisory either way |
+| `--measurable-strict` | Force the measurability lens to strict for this run. Strict is already the default, so this re-asserts the bar (`missing` on a new failure mode is an `issue:`, `unlinked` is a `suggestion:`) only when the repo set `measurable: advisory`. Also settable as `measurable: strict` in the review config |
+| `--measurable-advisory` | Opt the measurability lens down to advisory for this run, so no measurability finding reaches `FAIL_REASONS` (`missing` → `suggestion:`, `unlinked` → aggregated `nitpick:`). Also settable as `measurable: advisory` in the review config |
 | `--skip-gates` | Skip Gates 1–5, run inline review (Gate 6) only |
 | `--with a,b,c` | Up to 3 additional review lenses |
 | `--no-fix-links` | Suppress the "Fix with Agent0" buttons for this run. They render by default everywhere (`agents/shared/rules/agent0-fix-links.md`); this is the per-run opt-out and beats every other signal. |
@@ -1914,7 +1915,7 @@ rubrics + finders produce raw candidates
   → 2.4d standards-conformance.md     (governing-docs enforcement — default on; skip via --no-standards or trivial-skip;
                                        findings cite governing-doc path:line and pass all downstream gates)
   → 2.4e measurability-review.md      (Skill("measurable", "audit") — default on; two gates keep it quiet;
-                                       advisory, never reaches FAIL_REASONS unless the repo opted into strict)
+                                       strict by default — a `missing` new failure mode reaches FAIL_REASONS, `unlinked` never blocks; opt down with `measurable: advisory`)
   → 2.5  rubric-composition § Consolidation (dedupe + group + sort — no cap, nothing dropped)
   → 2.5a rubric-composition § Cross-rubric agreement (agreement-promoted flag)
   → 2.5b prior-comment-awareness.md § Dedup (drop if already said in a prior review pass)
@@ -2068,17 +2069,21 @@ change, or a behaviour-identical refactor fails gate 2 by construction. The gate
 reason this lens is worth having on by default: asked of every diff, "where's the telemetry" is noise
 the author is right to dismiss.
 
-Mapping: `missing` → `suggestion:` (an `issue:` only when the repo opted into strict, and only on a
-new failure mode); `unlinked` → **one** aggregated `nitpick:` per run, never blocking in any
-configuration; `pass` → nothing at all. Findings name the **signal, not the library**, and pass
-2.5–2.9b unchanged with a Tier-1 receipt — "no emit call exists on this path" is a `grep` claim, so
-it never needs Tier 3.
+Mapping (strict is the default): `missing` on a new failure mode → `issue:` under strict,
+`suggestion:` under advisory; every other `missing` → `suggestion:`; `unlinked` → **one** aggregated
+finding per run — a `suggestion:` under strict, a `nitpick:` under advisory — never an `issue:` and
+never blocking in either level; `pass` → nothing at all. Findings name the **signal, not the
+library**, and pass 2.5–2.9b unchanged with a Tier-1 receipt — "no emit call exists on this path" is
+a `grep` claim, so it never needs Tier 3.
 
-Strict is a **repository** setting (`measurable: strict` in the review config, or
-`--measurable-strict`), never the reviewer's own judgment. By default no measurability finding
-contributes a token to `SEVERITY_TALLY` or a phrase to `FAIL_REASONS` — same invariant
-[`telemetry.md`](./pr-reviewer/rules/telemetry.md) holds, for the same reason: a blocked-but-correct
-change is how a lens gets turned off.
+Strict is the **default** and advisory is the opt-down: a repository sets `measurable: advisory` in
+the review config (or a run passes `--measurable-advisory`) to keep every measurability finding out
+of `SEVERITY_TALLY` and `FAIL_REASONS`. The level is a repository claim about its release bar, never
+the reviewer's own judgment. Under strict, only a `missing` signal on a new failure mode reaches
+`FAIL_REASONS`; the lens never **lowers** a verdict, and `unlinked` never blocks under either level.
+Strict is the default because a new failure mode that emits no signal is silently wrong in production
+the first time it fires, and the review is the last cheap point to catch it — same invariant shape
+[`telemetry.md`](./pr-reviewer/rules/telemetry.md) holds, tuned to gate only that one case.
 
 Do not confuse this lens with `telemetry.md`. That one reads what the touched code did **yesterday**
 (an exposure input to priority); this one asks what the change will show **tomorrow**. The single
