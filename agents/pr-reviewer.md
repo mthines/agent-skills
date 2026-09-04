@@ -772,13 +772,14 @@ caller a full-mode run, not a silent downgrade to `incremental-quick`.
     here instead of as part of Step 1.0's larger fan-out. Bind `RESOLVED_THREAD_IDS`,
     `COMMENT_TO_THREAD`, and `OPEN_BOT_COMMENTS[]` exactly as that rule specifies.
   - CI status (`gh pr checks $PR_NUMBER $GH_REPO_FLAG`) for the report's CI line (Gate 2).
-  - PR title/body are already in `PR_META` from Step 0.5 — no extra call. Gate 5
-    (documentation adequacy) re-compares this text against `PRIOR_DIAGNOSTICS.gate_rows`'
-    carried verdict, since an edited description needs no new commit and this fast path must
-    not blind itself to one; an unchanged description carries the prior gate row forward
-    verbatim (`⏭️`, per Step 1.8's carry-forward table).
-  - Gates 1, 4, and 6 (description-vs-code match, self-review signals, code review) carry
-    forward unconditionally from `PRIOR_DIAGNOSTICS` — the code they graded has not moved.
+  - PR title/body are already in `PR_META` from Step 0.5 — no extra call. Gates 1 and 5
+    (description-vs-code match, documentation adequacy) both grade this text, so both
+    re-compare it against `PRIOR_DIAGNOSTICS.gate_rows`' carried verdict, since an edited
+    description needs no new commit and this fast path must not blind itself to one on either
+    gate; an unchanged description carries both prior gate rows forward verbatim (`⏭️`, per
+    Step 1.8's carry-forward table).
+  - Gates 4 and 6 (self-review signals, code review) carry forward unconditionally from
+    `PRIOR_DIAGNOSTICS` — the code they graded has not moved, and neither reads the description.
   - Relevance and lessons memory are **not** fetched on this path. With no diff and no new
     inline findings possible, there is nothing for a lesson to calibrate against. Report
     `Memories — skipped (zero-delta fast path)` in the sticky footer, distinct from `not
