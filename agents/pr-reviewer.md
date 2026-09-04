@@ -298,7 +298,7 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 |---|---|
 | PR URL `https://github.com/<owner>/<repo>/pull/<n>` | The target PR |
 | `#<n>` or bare positive integer | PR number in current repo |
-| `--full` | Force full review mode regardless of delta size or prior run |
+| `--full` | Force full review mode regardless of delta size or prior run. Binds `FLAG_FULL=true`, read at Step 0.8 and Step 0.7 as the same flag. |
 | `--critical` | Force adversarial pre-mortem via `Skill("critical", "code")` |
 | `--no-critical` | Suppress auto-engage of `critical` |
 | `--no-holistic` | Skip the holistic review step (Step 2.4) and targeted escalation (Step 2.4b) |
@@ -741,7 +741,9 @@ that ended by discovering there was nothing to review). This step catches that c
 ```bash
 # EARLY_HEAD_SHA came from Step 0.5's PR_META, at zero extra API cost.
 # PRIOR_SHA came from Step 0.7 (the PR-state record or its GitHub fallback rung).
-if [[ -n "$PRIOR_SHA" && "$EARLY_HEAD_SHA" == "$PRIOR_SHA" ]]; then
+# FLAG_FULL came from Step 0's argument parse — `--full` always forces `full` mode
+# (Step 0.7's rule), and a fast path that ignored it would silently override that invariant.
+if [[ "$FLAG_FULL" != true && -n "$PRIOR_SHA" && "$EARLY_HEAD_SHA" == "$PRIOR_SHA" ]]; then
   FAST_ZERO_DELTA=true
 else
   FAST_ZERO_DELTA=false
@@ -752,7 +754,9 @@ An identical commit has an empty diff against itself by construction — no `com
 needed to prove it, unlike the rebase/amend case Step 1.2b's blob-diff route still exists for
 (see below). `PRIOR_SHA` empty means no prior run is known (first review, or a `--full` that
 still carries a baseline per Step 0.7) — that path always proceeds to Step 1 unchanged, since
-there is nothing to compare against yet.
+there is nothing to compare against yet. `FLAG_FULL == true` always proceeds to Step 1 unchanged
+too, regardless of `PRIOR_SHA`/`EARLY_HEAD_SHA` — an unmoved head under `--full` still owes the
+caller a full-mode run, not a silent downgrade to `incremental-quick`.
 
 **On `FAST_ZERO_DELTA == true`:**
 - Set `RUN_MODE = "incremental-quick"`, `REVIEW_DIFF = ""`, `HEAD_SHA = "$EARLY_HEAD_SHA"`,
