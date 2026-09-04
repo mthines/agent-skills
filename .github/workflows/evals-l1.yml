@@ -23,8 +23,17 @@ jobs:
       # No install step — the harness is zero-dependency (node builtins + bash).
       - name: DEBUG isolate the relative-time mangling
         run: |
-          echo "NODE_OPTIONS=[$NODE_OPTIONS]"
-          node -e 'console.log("updated 2026-08-15 09:12 UTC");'
-          node --version
+          echo "=== direct shell invocation ==="
+          node agents/pr-reviewer/scripts/render-report.mjs scripts/eval/fixtures/report-body/pass-ci-pending.json | tail -3
+          echo "=== nested spawnSync invocation (mirrors l1.mjs G25) ==="
+          node -e '
+            const { spawnSync } = require("node:child_process");
+            const r = spawnSync("node", ["agents/pr-reviewer/scripts/render-report.mjs", "scripts/eval/fixtures/report-body/pass-ci-pending.json"], { encoding: "utf8" });
+            console.log(JSON.stringify(r.stdout.slice(-250)));
+          '
+          echo "=== full env dump ==="
+          node -e 'console.log(JSON.stringify(process.env, null, 0))'
+          echo "=== Date.prototype.toISOString source ==="
+          node -e 'console.log(Date.prototype.toISOString.toString())'
       - name: L1 contract checks
         run: node scripts/eval/l1.mjs
