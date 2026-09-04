@@ -21,5 +21,10 @@ jobs:
         with:
           node-version: "20"
       # No install step — the harness is zero-dependency (node builtins + bash).
+      - name: DEBUG isolate the relative-time mangling
+        run: |
+          echo "NODE_OPTIONS=[$NODE_OPTIONS]"
+          node -e 'console.log("updated 2026-08-15 09:12 UTC");'
+          node --version
       - name: L1 contract checks
         run: node scripts/eval/l1.mjs
