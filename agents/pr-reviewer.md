@@ -331,6 +331,14 @@ GH_REPO_FLAG=${PR_REPO:+--repo "$PR_REPO"}
 RESOLVED_REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
 OWNER="${RESOLVED_REPO%%/*}"
 REPO="${RESOLVED_REPO##*/}"
+
+# --full is the one flag read downstream as an executable variable (Step 0.7's mode rule and
+# Step 0.8's fast-path gate both branch on `$FLAG_FULL`), so bind it here rather than leaving
+# the flag table's "Binds FLAG_FULL=true" as prose only. Without this line `$FLAG_FULL` is
+# empty even when `--full` is passed, `"" != true` is true, and Step 0.8 downgrades a `--full`
+# run on an unmoved head to `incremental-quick` — the exact regression its guard exists to stop.
+FLAG_FULL=false
+[[ " $ARG " == *" --full "* ]] && FLAG_FULL=true
 ```
 
 If no PR reference found, abort: `pr-reviewer requires a PR URL, #<n>, or bare PR number — got: <args>`.
@@ -747,12 +755,13 @@ that ended by discovering there was nothing to review). This step catches that c
 # PRIOR_SHA came from Step 0.7 (the PR-state record or its GitHub fallback rung).
 # FLAG_FULL came from Step 0's argument parse — `--full` always forces `full` mode
 # (Step 0.7's rule), and a fast path that ignored it would silently override that invariant.
-# Compare on a 7-char prefix, never the raw strings: EARLY_HEAD_SHA is the full 40-char
-# headRefOid, while PRIOR_SHA is 7-char on both of its sources — the PR-state record stores
-# the short sha (Step 4c writes `runs[].sha`, e.g. `353fd32`) and the GitHub fallback rung
-# reads it from the sticky footer, which `comment-spine.mjs` enforces to exactly 7 chars. A
-# raw `==` compares 40 chars against 7 and can never match, leaving the fast path permanently
-# dead — the whole optimization a silent no-op.
+# Compare on a 7-char prefix, never the raw strings, so the check is robust to whatever length
+# Step 0.7 bound PRIOR_SHA at: the GitHub fallback rung reads it from the sticky footer, which
+# `comment-spine.mjs` enforces to exactly 7 chars, while the PR-state record stores whatever
+# HEAD_SHA Step 4c wrote (the full 40-char headRefOid on the current writer; a 7-char sha on
+# records written by an older one). EARLY_HEAD_SHA is the full 40-char headRefOid, so a raw
+# `==` against the 7-char footer value can never match — leaving the fast path permanently
+# dead — and truncating both operands to 7 chars is what makes it match on every source.
 # STATE_STATUS == "read" gates the fast path to the full-record path only. On the GitHub
 # fallback rung PRIOR_SHA is recovered but PRIOR_DIAGNOSTICS is NOT (Step 0.7), so a
 # fast-path run there would carry Gates 4/6 forward from nothing; the fallback rung must
