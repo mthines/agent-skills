@@ -266,12 +266,13 @@ So the Fix-all button is omitted when the count is 0 **and** CI is green, and �
 when *both* identity paths are unavailable (no login and no prior sticky). That second half is
 strictly narrower than the old rule, where an unresolved login omitted the button outright.
 
-**Fix all — CI-only** (report, zero open findings) — the report can read WARN with **zero** findings:
-Gate 2 (CI) is soft-warning-only (`pr-reviewer.md § Gate states`), so a PR with a clean Gate 6 (code
-review) and a red CI check has no comments for `/pr-fix` to apply, yet the report is visibly not a
-clean pass. Omitting the button in that case leaves the one state a human is most likely to click
-"fix" on with no button to click. Use this template instead of the `/pr-fix` one when the open
-reviewer-finding count is 0 but CI is not green.
+**Fix all — CI-only** (report, zero open findings) — the report can render a clean PASS with **zero**
+findings while CI is still red: Gate 2 (CI) is informational-in-`Run` (`pr-reviewer.md § Gate
+states`), never part of the verdict, so a PR with a clean Gate 6 (code review) and a red CI check has
+no comments for `/pr-fix` to apply even though the report itself reads PASS. Omitting the button in
+that case leaves the one state a human is most likely to click "fix" on with no button to click. Use
+this template instead of the `/pr-fix` one when the open reviewer-finding count is 0 but CI is not
+green.
 
 **This one is not a `/pr-fix` invocation, and must not become one.** `/pr-fix` applies a PR's
 review comments; a red check with no findings has none to apply, so the task is a different task and

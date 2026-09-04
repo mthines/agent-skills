@@ -18,7 +18,7 @@ title: pr-reviewer — terminal report reference
 Produce two views before posting: a summary with the gate table, then numbered detail cards.
 Always include the run mode and delta context in the header:
 
-Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 4/5 all ✅) and neither tri-state gate — Prior review feedback, Code review — is ❌, but at least one graded gate — Description vs. code, CI, Prior review feedback, or Code review — is ⚠️ (still a PASS verdict); **FAIL** when Gate 4 or Gate 5 fails or the Prior review feedback or Code review gate is ❌ (CI never fails it).
+Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 4/5 all ✅) and neither tri-state gate — Prior review feedback, Code review — is ❌, but at least one graded gate — Description vs. code, Prior review feedback, or Code review — is ⚠️ (still a PASS verdict); **FAIL** when Gate 4 or Gate 5 fails or the Prior review feedback or Code review gate is ❌ (CI is informational-in-`Run` and never affects the verdict).
 
 All three presentations share **one** template; only the `**Verdict**` line and the allowed Status
 glyphs differ, both tabulated under it. (Three near-copies is what drifted into a remembered

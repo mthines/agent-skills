@@ -1671,7 +1671,7 @@ function checksInSync(plan, checks) {
       }
 
       // `Needs attention` tracks the five gate rows, and only them. CI is excluded on purpose:
-      // Gate 2 warns and never fails, so a red build must not label the gate table.
+      // Gate 2 is informational-in-`Run`, so a red build must not label the gate table.
       const allPass = run([join(FIX, "pass.json")]);
       s.check("G25 an all-✅ gate table renders no attention heading",
         allPass.ok && !allPass.out.includes("**Needs attention**"), allPass.err);
@@ -1683,14 +1683,15 @@ function checksInSync(plan, checks) {
       }));
       s.check("G25 one ⚠️ gate renders the attention heading",
         oneWarn.ok && oneWarn.out.includes("**Needs attention**"), oneWarn.err);
-      // Red CI raises the verdict to WARN (`report-rendering.md`: with no ❌ the run renders the
-      // WARN headline) but it must NOT label the gate table, because CI has no row in it.
+      // Red CI is informational-in-`Run` and never raises the verdict — it has no row in the gate
+      // table and never contributes to `warning`, so an all-✅ payload with a red CI_NOTE stays a
+      // clean PASS end to end.
       const ciOnly = run([], mutate((c) => {
         c.CI_NOTE = "2 checks red on `bde3c2f`.";
-        c.VERDICT = "WARN"; c.WARN_REASONS = ["CI red: build, lint"];
       }));
-      s.check("G25 red CI alone renders no attention heading — Gate 2 warns, never fails",
-        ciOnly.ok && !ciOnly.out.includes("**Needs attention**"), ciOnly.err);
+      s.check("G25 red CI alone renders the clean PASS headline — Gate 2 is informational, never a gate",
+        ciOnly.ok && !ciOnly.out.includes("**Needs attention**")
+          && /^### ✅ No issues found$/m.test(ciOnly.out), ciOnly.err);
 
       // RUN_ANOMALY owns its own line; the renderer owns the glyph.
       const anom = run([], mutate((c) => { c.RUN_ANOMALY = "a base-branch merge polluted the compare range"; }));
@@ -2243,17 +2244,18 @@ function checksInSync(plan, checks) {
     }
   }
 
-  // ── G27: Gate 2 (CI) warns, it never fails. Red CI is a fact about the branch, not a finding
-  // about the diff — this agent did not diagnose it and cannot tell a regression from a flaky job,
+  // ── G27: Gate 2 (CI) is informational-in-`Run`, it never grades and never fails. Red CI is a
+  // fact about the branch, not a finding about the diff — this agent did not diagnose it and
+  // cannot tell a regression from a flaky job,
   // a quota, a check that does not run on this base branch, or a draft with no workflow. GitHub
   // already blocks the merge on a required check. Observed on mthines/lorekit#490, whose headline
   // read "CI failing, 1 error, 2 warnings … Blocking: CI checks failing" — i.e. it reported the
   // reviewer as having found something blocking when it had not.
   {
     const gateStates = sliceBetween(prReviewer, "### Gate states", "`--skip-gates` bypasses");
-    s.check("G27 Gate 2 is declared a soft/warning gate, not a hard one",
+    s.check("G27 Gate 2 is declared informational, not a hard one",
       /Gates 1 and 2 are two-state/.test(gateStates) &&
-      /\*\*Gate 2 \(CI\) warns, it does not fail\.\*\*/.test(gateStates));
+      /\*\*Gate 2 \(CI\) is informational, never part of the grade\.\*\*/.test(gateStates));
     s.check("G27 the hard-gate set no longer contains Gate 2",
       /Gates 4 and 5 are \*\*hard\*\* gates/.test(gateStates) &&
       !/plus Gate 2 \(CI\), are \*\*hard\*\*/.test(gateStates));
@@ -2270,8 +2272,8 @@ function checksInSync(plan, checks) {
     // assertion moves to the two places CI could still leak into a verdict: the WARN ceiling in
     // the headline rules, and the reasons array.
     const headlines = sliceBetween(reportRendering, "#### Headlines", "| Gate | ❌ reason");
-    s.check("G27 the headline rules cap CI at WARN and never past it",
-      /raises the verdict to `WARN` and \*\*never past it\*\*/.test(headlines));
+    s.check("G27 the headline rules exclude CI from the verdict entirely",
+      /`CI_NOTE` \*\*never counts as a gate\*\*/.test(headlines));
     s.check("G27 the headline counts findings, not gate statuses",
       /\*\*It counts findings, not gates\.\*\*/.test(headlines));
     s.check("G27 SEVERITY_TALLY no longer reaches the posted headline",
@@ -2282,47 +2284,50 @@ function checksInSync(plan, checks) {
       !/leading\s*\n?`CI checks failing`/.test(headlines)
       && /CI is never\s*\n?among them/.test(headlines));
 
-    // The reason table's CI row must offer a ⚠️ phrase and no ❌ phrase.
+    // The reason table's CI row must offer neither a ❌ phrase nor a ⚠️ phrase — CI never grades.
     const ciRow = (reportRendering.match(/^\| CI \(Gate 2\) \|[^\n]*$/m) || [""])[0];
-    s.check("G27 the reason table's CI row has no ❌ phrase", /warns, never fails/.test(ciRow), ciRow.slice(0, 90));
-    s.check("G27 the reason table's CI row supplies a ⚠️ phrase", /CI red:/.test(ciRow), ciRow.slice(0, 90));
+    s.check("G27 the reason table's CI row is declared informational, not a gate",
+      /informational-in-`Run`, never a gate/.test(ciRow), ciRow.slice(0, 90));
+    s.check("G27 the reason table's CI row supplies no ⚠️ phrase either — CI never joins WARN_REASONS",
+      !/CI red:/.test(ciRow) && !/CI still pending/.test(ciRow), ciRow.slice(0, 90));
 
-    // Gate 2's own result line must be two-state.
+    // Gate 2's own result line must be two-state, informational, and explicitly never ❌.
     const gate2 = sliceBetween(prReviewer, "**Gate 2 — CI status**", "**Gate 3 —");
-    s.check("G27 Gate 2's result is PASS/WARN and explicitly never ❌",
-      /Never ❌/.test(gate2) && /WARN \(⚠️\)/.test(gate2));
+    s.check("G27 Gate 2's result is PASS/WARN, informational-in-Run, and explicitly never ❌",
+      /Never ❌/.test(gate2) && /WARN \(⚠️\)/.test(gate2)
+      && /informational-in-`Run`/.test(gate2) && /never feeds/.test(gate2));
 
     // Registered in the diagnostic surface, as an invariant and a failure mode.
     s.check("G27 diagnostic-surface registers F-ci-failed-the-verdict",
       prReviewerDiag.includes("F-ci-failed-the-verdict"));
-    // Absence is not sufficiency. Dropping Gate 2 from the hard set only lands if CI is ADDED
-    // wherever the WARNING gates are enumerated — the WARN presentation selectors and the
-    // WARN_GATE_COUNT definition. All three omitted it while L1 was green at 549/549, so a
-    // CI-only ⚠️ selected neither PASS ("every gate is ✅") nor WARN, and would have rendered
-    // `**0 warning(s)**`. Assert the presence side too.
-    // The two selectors now live in different files: Step 3's terminal one in the agent body,
-    // Step 4's body-template one in the rendering reference. Pair each anchor with its source
-    // rather than assuming one haystack.
+    // Absence is not sufficiency here either: CI must be excluded consistently everywhere the
+    // graded/warning gates are enumerated — the WARN presentation selectors and the
+    // WARN_GATE_COUNT definition — or one surface would render a WARN a sibling surface calls
+    // PASS for the identical payload.
+    // The two selectors live in different files: Step 3's terminal one in the agent body, Step 4's
+    // body-template one in the rendering reference. Pair each anchor with its source rather than
+    // assuming one haystack.
     for (const [what, src, anchor] of [
       ["the Step 3 WARN selector", prReviewer, "Pick the presentation by verdict"],
       ["the Step 4 WARN selector", reportRendering, "Pick the body by verdict"],
     ]) {
       const sel = sliceBetween(src, anchor, "\n\n");
-      s.check(`G27 ${what} lists CI among the graded gates`,
-        /at least one graded gate — Description vs\. code, CI, Prior review feedback/.test(sel),
+      s.check(`G27 ${what} no longer lists CI among the graded gates`,
+        !/graded gate — Description vs\. code, CI,/.test(sel)
+        && /graded gate — Description vs\. code, Prior review feedback, or Code review/.test(sel),
         sel.slice(0, 120));
     }
     {
       const wgc = sliceBetween(reportRendering, "- `WARN_GATE_COUNT` = the number of gates showing",
         "The top-level WARN headline leads with");
-      s.check("G27 WARN_GATE_COUNT counts CI among the warning gates",
-        /\*\*CI\*\*/.test(wgc) && /so 0 to 4/.test(wgc), wgc.slice(0, 140));
+      s.check("G27 WARN_GATE_COUNT excludes CI from the warning gates",
+        !/\*\*CI\*\*/.test(wgc) && /so 0 to 3/.test(wgc), wgc.slice(0, 140));
     }
     // The criteria list is read as normative, so it must not still call CI verdict-bearing.
     {
       const crit = sliceBetween(prReviewer, "2. **CI status**", "3. **Prior review feedback**");
-      s.check("G27 criterion 2 declares CI a soft-warning gate, not verdict-bearing",
-        /soft-warning gate/.test(crit) && !/Contributes to verdict/.test(crit), crit.slice(0, 120));
+      s.check("G27 criterion 2 declares CI informational-in-Run, not verdict-bearing",
+        /informational-in-`Run`/.test(crit) && !/Contributes to verdict/.test(crit), crit.slice(0, 120));
     }
     // The reference fixtures must not demonstrate the shape G27 forbids — G25 diffs them, so a
     // stale fixture locks the forbidden headline in as the expected rendering.
@@ -2345,7 +2350,7 @@ function checksInSync(plan, checks) {
     // comments are — the gate/finding mismatch was why the report and the inline surface never
     // added up to one number. So the invariants change shape: the finding count and the blocking
     // subset are checked against FINDINGS[], and the verdict is checked against the gates that
-    // decide it, CI included.
+    // decide it — CI excluded, since it is informational-in-`Run` only.
     for (const name of REPORT_FIXTURES) {
       const pj = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.json`);
       const mj = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
@@ -2354,12 +2359,13 @@ function checksInSync(plan, checks) {
       const statuses = ["GATE_DESCRIPTION_STATUS", "GATE_PRIOR_STATUS", "GATE_DOCS_STATUS",
         "GATE_SELFREVIEW_STATUS", "GATE_CODEREVIEW_STATUS"].map((k) => d[k]);
       const errors = statuses.filter((v) => v === "❌").length;
-      // CI is a warning gate, and CI_NOTE is its only surface — a populated CI_NOTE means ⚠️.
-      const warnings = statuses.filter((v) => v === "⚠️").length + (d.CI_NOTE ? 1 : 0);
+      // CI never counts toward `warning` — it is informational-in-`Run`, not a gate.
+      const warnings = statuses.filter((v) => v === "⚠️").length;
       const implied = errors > 0 ? "FAIL" : warnings > 0 ? "WARN" : "PASS";
-      s.check(`G27 ${name} VERDICT agrees with its own gate statuses (CI included)`,
+      s.check(`G27 ${name} VERDICT agrees with its own gate statuses (CI excluded)`,
         d.VERDICT === implied, `payload ${d.VERDICT}, gates imply ${implied}`);
-      // CI can raise the verdict to WARN and never past it: a red check is never an error.
+      // CI can never move the verdict at all: a red check is never an error, and — since it is
+      // excluded from `warnings` too — never even a warning.
       s.check(`G27 ${name} CI alone never produces a FAIL`,
         !(errors === 0 && d.VERDICT === "FAIL"), `${d.VERDICT} with 0 ❌ gates`);
       // One FAIL_REASONS phrase per ❌ gate, and CI is never among them.
@@ -2368,12 +2374,12 @@ function checksInSync(plan, checks) {
         reasons.length === errors, `${reasons.length} phrase(s), ${errors} ❌ gate(s)`);
       s.check(`G27 ${name} names no CI phrase in FAIL_REASONS`,
         !reasons.some((r) => /\bCI\b/.test(r)), reasons.join("; ").slice(0, 90));
-      // A warning gate must be NAMED where WARN_REASONS renders — the WARN verdict only. On a FAIL
-      // run the spec names warning gates in the accordion, never in the headline region.
-      if (d.CI_NOTE && errors === 0) {
-        const warnReasons = (Array.isArray(d.WARN_REASONS) ? d.WARN_REASONS : []).join("; ");
-        s.check(`G27 ${name} names CI in WARN_REASONS when CI_NOTE reports a red check`,
-          /CI red:|CI still pending/.test(warnReasons), warnReasons.slice(0, 90));
+      // A populated CI_NOTE with every real gate ✅ must never force a WARN_REASONS phrase — CI
+      // is not a warning gate, so it names nothing there.
+      if (d.CI_NOTE && errors === 0 && warnings === 0) {
+        const warnReasonsArr = Array.isArray(d.WARN_REASONS) ? d.WARN_REASONS : [];
+        s.check(`G27 ${name} names no CI phrase in WARN_REASONS when only CI_NOTE is populated`,
+          !warnReasonsArr.some((r) => /\bCI\b/.test(r)), warnReasonsArr.join("; ").slice(0, 90));
       }
       if (!existsSync(mj)) continue;
       const body = readFileSync(mj, "utf8");
@@ -3987,10 +3993,10 @@ const isPollBlock = (block) =>
         { input: JSON.stringify(p), encoding: "utf8" });
     };
     // The gate statuses are individual `GATE_<NAME>_STATUS` slots, not one array, and CI has no
-    // row at all — `CI_NOTE` is its whole surface, and it counts as a warning gate.
+    // row at all — `CI_NOTE` is its whole surface, and it is informational-in-`Run` only, so it
+    // never counts toward the warning-gate total.
     const warnGates = Object.entries(warnPayload)
-      .filter(([k, v]) => /^GATE_[A-Z]+_STATUS$/.test(k) && v === "⚠️").length
-      + (warnPayload.CI_NOTE ? 1 : 0);
+      .filter(([k, v]) => /^GATE_[A-Z]+_STATUS$/.test(k) && v === "⚠️").length;
     const tooManyWarn = renderReport((p) => {
       p.WARN_REASONS = Array.from({ length: warnGates + 2 }, (_, i) => `phantom warning ${i + 1}`);
     });

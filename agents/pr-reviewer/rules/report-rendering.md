@@ -72,7 +72,7 @@ The `<sup>` footer depends on run mode (substituted before posting):
 - `incremental` / `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
 - Zero-delta short-circuit: `<sup>No code changes since \`PRIOR_SHA_SHORT\` — gate checks only for commit \`HEAD_SHA\`.</sup>`
 
-Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (all clear), **WARN** (hard Gates 4/5 ✅ and at least one graded gate — Description vs. code, CI, Prior review feedback, or Code review — is ⚠️, none ❌; still a PASS verdict), or **FAIL** (Gate 4 or Gate 5 fails, or Prior review feedback / Code review is ❌). Gate 2 (CI) is excluded from the failing-gate count in every case.
+Pick the body by verdict, exactly as in Step 3 (see *Gate states*): **PASS** (all clear), **WARN** (hard Gates 4/5 ✅ and at least one graded gate — Description vs. code, Prior review feedback, or Code review — is ⚠️, none ❌; still a PASS verdict), or **FAIL** (Gate 4 or Gate 5 fails, or Prior review feedback / Code review is ❌). Gate 2 (CI) is informational-in-`Run` and is excluded from both the failing-gate and warning-gate counts in every case.
 
 #### REPORT_BODY payload
 
@@ -327,8 +327,9 @@ line.
 
 **`VERDICT` is cross-checked against the gate table and a disagreement is rejected.** Any ❌ implies
 `FAIL`; otherwise any ⚠️ implies `WARN`; otherwise `PASS`. Gate 2 (CI) has no table row —
-`CI_NOTE` is its whole surface — but a populated `CI_NOTE` counts as one warning gate, so red or
-pending CI raises the verdict to `WARN` and **never past it**. A `reviewer-lessons` entry records a
+`CI_NOTE` is its whole surface — and `CI_NOTE` **never counts as a gate**: CI is a timing/branch
+fact, not a signal about the diff, and a red or pending check can never move the verdict away from
+what the five real gates already say — a `PASS` may carry a populated `CI_NOTE`. A `reviewer-lessons` entry records a
 posted gate table reading PASS while the run's own contract said FAIL; the gates decide, and a
 mismatch now stops the render rather than shipping the contradiction.
 
@@ -362,7 +363,7 @@ a WARN as of a PASS.
 | Self-review signals | `debug logs left in` · `leftover TODO/stub` | — |
 | Code review | `<K> blocking finding(s) (see inline)` | `<N> non-blocking finding(s)` |
 | Description vs. code | — (soft gate — warns, never fails) | `description omits <thing>` |
-| CI (Gate 2) | — (**warns, never fails** — see *Gate states*) | `CI red: <check names>` · `CI still pending` |
+| CI (Gate 2) | — (**informational-in-`Run`, never a gate** — see *Gate states*) | — (never a warning gate either; the substance renders as a `Run` line via `CI_NOTE`) |
 
 The old `FAIL_BLOCKING_SUFFIX` slot is retired: the blocking-finding count now rides inside the
 Code-review entry of `FAIL_REASONS` (`(see inline)`), so the pointer is kept without a second clause.
@@ -678,10 +679,11 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   `conventional-comments.md` (Step 2.9) — NOT the `issue:` prefix count, since a non-blocking
   `issue:` is not blocking (see *Gate states*).
   These reuse the Quality-line values already computed at Step 2.9b — no separate counter.
-- `WARN_GATE_COUNT` = the number of gates showing ⚠️ in this run — Description vs. code, **CI**,
-  Prior review feedback, and/or Code review, so 0 to 4. CI is in this set precisely because it warns
-  and never fails: leaving it out made a CI-only red render `**0 warning(s)**`, which this file
-  forbids. It counts ⚠️ gates on a **FAIL** run too, not only a
+- `WARN_GATE_COUNT` = the number of gates showing ⚠️ in this run — Description vs. code,
+  Prior review feedback, and/or Code review, so 0 to 3. CI is deliberately excluded from this set:
+  it is informational-in-`Run`, not a graded gate, so a CI-only red or pending check with all other
+  gates ✅ correctly renders `**0 warning(s)**` and a clean PASS headline — CI is a timing/branch
+  fact, not a signal about the diff, and the orchestrators already own CI convergence. It counts ⚠️ gates on a **FAIL** run too, not only a
   WARN run, so the Step 3 terminal FAIL verdict's `SEVERITY_TALLY` can report warnings alongside
   errors. (`SEVERITY_TALLY` is a **terminal-only** term now — see
   [`terminal-report.md`](./terminal-report.md); the posted headline counts findings.)
