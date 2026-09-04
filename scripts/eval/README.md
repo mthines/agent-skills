@@ -28,7 +28,7 @@ Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
 - **Links/anchors** resolve across `skills/`, `memory/`, root docs (skips code
   fences + templates; ratchets on a baseline of pre-existing debt — see the
   `BASELINE` set, burn it down, never add to it).
-- **Tier table** in `aw.agent.md` is byte-identical to `SKILL.md` Step 1.
+- **Tier table** has exactly one home: present in `SKILL.md` Step 1, absent from the `aw` dispatcher skill, which links it (`G2b`).
 - **plan.md Core contract** — runs the *actual* `confidence` rule #2 (8 Core
   sections), rule #3 (Acceptance Criteria non-empty, the #31 fix), rule #9
   (every `[user-stated]` requirement covered by a `(covers: R…)` annotation),

@@ -13,7 +13,7 @@ argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no
 license: MIT
 metadata:
   author: mthines
-  version: '3.22.0'
+  version: '3.23.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -290,20 +290,21 @@ for the full how-to.
 
 ## Templates
 
-The skill installs **four agents** under the **`aw-` namespace prefix** (short
-for "autonomous-workflow") so they group together in `.claude/agents/` and are
-unmistakable when listed alongside unrelated agents:
+The skill ships **one dispatcher skill** and **three agents**. The agents use the
+**`aw-` namespace prefix** (short for "autonomous-workflow") so they group
+together in `.claude/agents/` and are unmistakable when listed alongside
+unrelated agents:
 
-| Agent          | Role | Terminal artifact                              | Exit gate                                          |
-| -------------- | ---- | ---------------------------------------------- | -------------------------------------------------- |
-| `aw`           | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes single-pass vs the split, owns the self-improvement loop for every tier. | — (delegates) | Task routed + exit lesson written |
-| `aw-planner`   | Full-tier, phases 0–2 | `.agent/{branch}/plan.md` + `checks.yaml` + `specs.md` (UI tasks) | `confidence(plan) ≥ 90%` (or user-approved) |
-| `aw-executor`  | Full-tier, phases 3–7 | `.agent/{branch}/walkthrough.md` + draft PR    | Walkthrough shown inline, Phase 7 CI gate run      |
-| `aw-tester`    | Phase 4 (UI) spec verification — **cold pass only** (Phase 4 entry, escalation, Phase 7 rehearsal). Iteration uses the persisted `last-run.spec.ts` directly via Bash, not a sub-agent. | Verdict block (~200 tokens) with `hot_loop:` paths for direct re-run | `green` or `inconclusive` before lint/type/test |
+| Unit           | Kind  | Role | Terminal artifact                              | Exit gate                                          |
+| -------------- | ----- | ---- | ---------------------------------------------- | -------------------------------------------------- |
+| `aw`           | **skill** | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes single-pass vs the split, owns the self-improvement loop for every tier. | — (delegates) | Task routed + exit lesson written |
+| `aw-planner`   | agent | Full-tier, phases 0–2 | `.agent/{branch}/plan.md` + `checks.yaml` + `specs.md` (UI tasks) | `confidence(plan) ≥ 90%` (or user-approved) |
+| `aw-executor`  | agent | Full-tier, phases 3–7 | `.agent/{branch}/walkthrough.md` + draft PR    | Walkthrough shown inline, Phase 7 CI gate run      |
+| `aw-tester`    | agent | Phase 4 (UI) spec verification — **cold pass only** (Phase 4 entry, escalation, Phase 7 rehearsal). Iteration uses the persisted `last-run.spec.ts` directly via Bash, not a sub-agent. | Verdict block (~200 tokens) with `hot_loop:` paths for direct re-run | `green` or `inconclusive` before lint/type/test |
 
 **`aw` is the single entry point developers opt into** (a trigger phrase or
-`@aw`). It is adaptive, not always-heavy: Micro/Lite run single-pass in `aw`'s
-own context; **Full** hands off to the planner→executor split. The split is
+`/aw`). It is adaptive, not always-heavy: Micro/Lite run single-pass in the
+caller's context; **Full** hands off to the planner→executor split. The split is
 along the Phase 2 → Phase 3 context boundary, mediated by `plan.md`, and is
 reserved for Full because its context-isolation + resumable-artifact benefits
 only pay for complex/long tasks (always-planning wastes compute and degrades
@@ -314,16 +315,26 @@ automatically; borderline plans pause for user approval. The design rationale
 the full handoff contract is in
 [`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md).
 
+**The dispatcher is a skill, not an agent** (since v3.23). It fails the repo's
+own third-agent test — `references/anthropic-architecture-research.md` §2.2:
+*"any future proposal to add a third agent must demonstrate a third independent
+context — not a third role"* — and being an agent cost it a delegation rung, a
+duplicated tier table with an L1 guard to police it, and a triplicated tool
+grant. As a skill it runs in the caller's context, so `aw-planner` /
+`aw-executor` are dispatched from the top-level session. Rationale:
+[`CLAUDE.md`](./CLAUDE.md#the-dispatcher-is-a-skill-not-an-agent--design-intent).
+
 **When the harness disables sub-agent dispatch** (no `Task` tool — e.g. Claude
 Code on the web), the split is structurally unavailable and Full does **not**
 drop to the Micro/Lite single-pass path. `aw` runs a **single-context Full**
 instead: it plays the planner role (Phases 0–2, producing `plan.md` +
 `checks.yaml` and clearing `confidence(plan) ≥ 90%`) then the executor role
 (Phases 3–7) in one window, preserving the plan artifact and the confidence gate
-and conceding only context isolation. The step-by-step procedure — and the rule
-that this is never a licence to skip an *available* split — lives in
-[`templates/aw.agent.md`](./templates/aw.agent.md) under "When sub-agent dispatch
-is unavailable".
+and conceding only context isolation. Note the dispatcher itself needs no `Task`
+to start — that is the difference from the agent form, which could not be
+reached at all. The step-by-step procedure — and the rule that this is never a
+licence to skip an *available* split — lives in
+[`aw/SKILL.md`](./aw/SKILL.md) under "When sub-agent dispatch is unavailable".
 
 **UI verification prerequisite:** run `/aw-setup` once per project before the
 first autonomous UI task. This scaffolds `.claude/aw-targets/local.yml` and
@@ -332,7 +343,7 @@ exists — do not auto-scaffold.
 
 | Template                                                         | Purpose                                  |
 | ---------------------------------------------------------------- | ---------------------------------------- |
-| [aw.agent.md](./templates/aw.agent.md)                           | `aw` dispatcher agent (tier routing + loop) |
+| [aw/SKILL.md](./aw/SKILL.md) *(a skill, not a template)*          | `aw` dispatcher (tier routing + loop) — installed as a skill, invoked `/aw` |
 | [aw-planner.agent.md](./templates/aw-planner.agent.md)           | Planner agent definition (phases 0-2) — emits specs.md for UI tasks |
 | [aw-executor.agent.md](./templates/aw-executor.agent.md)         | Executor agent definition (phases 3-7)   |
 | [aw-tester.agent.md](./templates/aw-tester.agent.md)             | Spec-driven UI verification (Phase 4) — dispatched by executor |
@@ -352,13 +363,14 @@ cd agent-skills
 bash scripts/sync-symlinks.sh --aw
 ```
 
-`--aw` symlinks the autonomous-workflow skill and its companion skills
-into `~/.claude/skills/`, plus the `aw` / `aw-planner` / `aw-executor` agents
-into `~/.claude/agents/`. The `review-loop` skill (Phase 6/7 review passes) is
-also linked; if absent Phase 7 logs `review-loop — not available, continuing`
-and proceeds. Edits to the cloned repo are picked up live on the next agent turn.
+`--aw` symlinks the autonomous-workflow skill, the `aw` dispatcher skill, and
+the companion skills into `~/.claude/skills/`, plus the `aw-planner` /
+`aw-executor` / `aw-tester` agents into `~/.claude/agents/`. The `review-loop`
+skill (Phase 6/7 review passes) is also linked; if absent Phase 7 logs
+`review-loop — not available, continuing` and proceeds. Edits to the cloned repo
+are picked up live on the next agent turn.
 
-The routing rule dispatches `aw`, which detects the tier and routes —
+The routing rule invokes `Skill("aw")`, which detects the tier and routes —
 Micro/Lite single-pass, or planner→executor for Full. After install, Claude
 auto-triggers on phrases like *"implement X independently"*, *"in isolation"*,
 *"end-to-end"*.

@@ -15,6 +15,12 @@ tools:
   - Skill
   - WebFetch
   - WebSearch
+  # Sub-agent dispatch — the Phase 1 parallel `Explore` fan-out (one sub-agent
+  # per package / concern) is documented in rules/phase-1-planning.md and was
+  # unreachable without this grant. Same rung argument as aw-executor: since the
+  # `aw` dispatcher became a skill (v3.23) this agent is dispatched from the
+  # top-level session, not from inside another agent.
+  - Task
   # LoreKit self-improvement loop. The planner READS aw-lessons at Phase 1, and
   # its Phase-1 companion optimize-approach(plan) WRITES a lesson at O5 — so the
   # write tool is needed too, or that companion write silently no-ops (the exact
@@ -77,7 +83,7 @@ finished — even if the work feels done.
    `SKILL.md` Auto-Trigger Setup section). Do not attempt to plan without it.
 
 2. **Detect workflow mode** — output the canonical block (field-for-field
-   identical to `SKILL.md` Step 1 and the dispatcher template) before doing
+   identical to `SKILL.md` Step 1, which is the tier table's only home) before doing
    anything else:
 
    ```

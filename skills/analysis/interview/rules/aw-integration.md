@@ -67,7 +67,7 @@ The wiring touched these `autonomous-workflow` surfaces; a future change to the 
 - `rules/companion-skills.md` — Phase 0 `interview` registry row + disable link.
 - `rules/phase-1-planning.md` — `## Scope Brief` step (anchor `scope-brief`) reads `brief.md` + checklist item.
 - `templates/aw-planner.agent.md` — Phase 0 companion row + Plan-Quality-Gates delegation note.
-- `templates/aw.agent.md` — flag pass-through + Micro/Lite `--interview` force path.
+- `aw/SKILL.md` — flag pass-through + Micro/Lite `--interview` force path.
 - `rules/diagnostic-surface.md` — Phase 0 guard row + typical gaps.
 - `SKILL.md`, `README.md`, `CLAUDE.md` — companion table, `argument-hint` flags, version, history.
 

@@ -80,19 +80,35 @@ const REPORT_FIXTURES = (() => {
   s.check("no NEW broken links/anchors (baseline-ratcheted)", newBroken === 0, newBroken ? `${newBroken} new` : `${baselined} pre-existing baselined`);
 }
 
-// ── Check B: the `aw` tier-detection table is identical in dispatcher + SKILL (R5 drift guard) ──
+// ── Check B / G2b: the tier-detection table has exactly ONE home ──
+// Until v3.23 the dispatcher was an agent, which boots cold and so carried its
+// own inline copy of the table; this check compared the two copies byte-for-byte.
+// The dispatcher is now the `aw` SKILL, which runs in the caller's context with
+// SKILL.md already loaded — so the second copy buys nothing and can only rot.
+// The guard inverts accordingly: assert the canonical table still exists, and
+// that the dispatcher did not silently re-fork it.
 function tierQuestions(file) {
-  // pull the 4 decision rows from the first markdown table whose rows mention Full/Lite/Micro
+  // pull the decision rows from the first markdown table whose rows mention Full/Lite/Micro
   return readFileSync(file, "utf8")
     .split("\n")
     .filter((l) => /^\|\s*\d\s*\|/.test(l) && /\*\*(Full|Lite|Micro)\*\*/.test(l))
     .map((l) => l.replace(/\s+/g, " ").trim());
 }
 {
-  const a = tierQuestions(join(AW, "templates/aw.agent.md"));
-  const b = tierQuestions(join(AW, "SKILL.md"));
-  s.check("dispatcher tier table ≡ SKILL.md Step 1", a.length >= 4 && JSON.stringify(a) === JSON.stringify(b),
-    a.length !== b.length ? `row count ${a.length} vs ${b.length}` : "rows differ");
+  const canonical = tierQuestions(join(AW, "SKILL.md"));
+  s.check("G2b tier table present in SKILL.md Step 1 (canonical)", canonical.length >= 4,
+    `${canonical.length} decision rows`);
+
+  const dispatcher = tierQuestions(join(AW, "aw/SKILL.md"));
+  s.check("G2b aw dispatcher does not duplicate the tier table", dispatcher.length === 0,
+    dispatcher.length ? `${dispatcher.length} tier rows re-forked into aw/SKILL.md` : "single source of truth");
+
+  // The dispatcher must still POINT at the canonical table, or "no copy" would
+  // pass trivially on a dispatcher that forgot tier detection altogether.
+  const body = readFileSync(join(AW, "aw/SKILL.md"), "utf8");
+  s.check("G2b aw dispatcher links the canonical tier table",
+    /\.\.\/SKILL\.md#step-1-detect-workflow-mode-mandatory/.test(body),
+    "expected a link to ../SKILL.md#step-1-detect-workflow-mode-mandatory");
 }
 
 // ── Check C: plan.md Core-section contract — runs the ACTUAL confidence rule-checks ──
@@ -2609,7 +2625,29 @@ const isPollBlock = (block) =>
       "parent's MCP tools, so without this it reports the task blocked",
     );
   }
-  s.check("G24 found the GitHub-using agents to guard", checked >= 3, `found ${checked}`);
+  // Sentinel so the guard can't silently stop finding agents. Was 3 until v3.23,
+  // when the `aw` dispatcher stopped being an agent. A SKILL cannot grant itself
+  // tools — it inherits the caller's — so the frontmatter invariant genuinely
+  // does not apply to it. The equivalent obligation for the skill form is to
+  // DEGRADE VISIBLY instead, which is checked immediately below rather than
+  // dropped.
+  s.check("G24 found the GitHub-using agents to guard", checked >= 2, `found ${checked}`);
+
+  // G24b — the skill-shaped counterpart of G24. `aw` reaches GitHub through
+  // create-pr / review-loop but has no `tools:` block to grant anything, so its
+  // contract is that a missing grant is named in the terminal report, never
+  // silently swallowed.
+  // Collapse whitespace first: this repo uses semantic line breaks, so a phrase
+  // that reads as one sentence is routinely split across lines mid-clause.
+  const awSkill = readFileSync(join(REPO_ROOT, "skills/workflow/autonomous-workflow/aw/SKILL.md"), "utf8")
+    .replace(/\s+/g, " ");
+  s.check(
+    "G24b aw dispatcher skill documents tool-grant degradation",
+    /inherit tools rather than declaring them/i.test(awSkill)
+      && /absent from the caller's tool grant/i.test(awSkill),
+    "aw/SKILL.md must state that it inherits the caller's grant and that a " +
+    "missing tool is named in Degraded: — it cannot grant itself tools like an agent can",
+  );
 }
 
 // ── G28: the verify-behavior skill exists and its wiring into verification-receipt.md +

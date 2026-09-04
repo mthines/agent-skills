@@ -300,7 +300,7 @@ Each names the file(s) it touches.
 | **P2** | **Existing Code Survey** section (Core, Full-tier) + reuse rule check | 1 | `aw-create-plan` template, `confidence` plan rules, `phase-1-planning.md` | Medium | Medium-high — directly targets the "implement-box"; enforce the search, verdict quality is still LLM-judged |
 | **P2** | **Restate-and-diff** the perceived spec in Phase 0 | 2 | `phase-0-validation.md` | Low | Medium — Specine-style, cheap, human-in-loop |
 | **P2** | **EARS-form** acceptance criteria (preferred, not forced) | 2, 4 | `aw-create-plan` template | Low | Medium — bridges to executable checks |
-| **P3** | **`checks.yaml`** executable acceptance artifact + executor loop drives against it + anti-cheat guardrails | 4 | `aw-create-plan` template, `phase-4-testing.md`, `aw-executor.agent.md`, `aw.agent.md`, `safety-guardrails.md` | High | Medium (mechanism-backed, no direct repo-level A/B) — **instrument, don't assume** |
+| **P3** | **`checks.yaml`** executable acceptance artifact + executor loop drives against it + anti-cheat guardrails | 4 | `aw-create-plan` template, `phase-4-testing.md`, `aw-executor.agent.md`, `aw/SKILL.md`, `safety-guardrails.md` | High | Medium (mechanism-backed, no direct repo-level A/B) — **instrument, don't assume** |
 | **P3** | Graph-first localization in Phase 1 research (`nx graph`, def/ref-first grep) | 1 | `phase-1-planning.md` | Low-medium | Medium — better grounding input for the survey |
 
 **Sequencing note.**

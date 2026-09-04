@@ -105,8 +105,10 @@ skills/workflow/autonomous-workflow/
 │   ├── diagnostic-surface.md   # Phase model + failure taxonomy + guards table consumed by `/create-skill diagnose autonomous-workflow`.
 │   ├── self-improvement-loop.md # Episodic-lessons fast tier (LoreKit loop::aw-lessons) + promotion to diagnose. Read Phase 1; write Phase 4/7.
 │   └── _template.md            # Boilerplate for new rule files.
+├── aw/
+│   └── SKILL.md                    # THE DISPATCHER. A nested skill (like aw-setup), not an agent —
+│                                   # opt-in entry, tier routing, universal lessons loop. Invoked /aw.
 ├── templates/
-│   ├── aw.agent.md                 # aw dispatcher agent (opt-in entry; tier routing + universal loop). Linked by install.sh as aw.md.
 │   ├── aw-planner.agent.md         # aw-planner agent (phases 0-2). Linked by install.sh as aw-planner.md.
 │   ├── aw-executor.agent.md        # aw-executor agent (phases 3-7). Linked by install.sh as aw-executor.md.
 │   ├── _deprecated-single-agent.md # DEPRECATED — kept for backward compat only. Not linked.
@@ -316,12 +318,19 @@ When in doubt, choose the heavier tier. Micro/Lite are for genuinely small
 changes — not for "the user said it's small." **Phase 0 and Phase 2 are
 mandatory in every tier**, Micro included.
 
-The **`aw` dispatcher** (`templates/aw.agent.md`) is the opt-in,
-single entry point that owns this decision: it reads `aw-lessons`, detects the
-tier, and routes (single-pass for Micro/Lite, the split for Full). It replaced
-the old "routing rule dispatches the planner first" behavior, which sent Lite
-tasks — that have no `plan.md` — to the planner anyway. See the design-intent
-section below.
+The **`aw` dispatcher** (`aw/SKILL.md` — a nested *skill*, not an agent) is the
+opt-in, single entry point that owns this decision: it reads `aw-lessons`,
+detects the tier, and routes (single-pass for Micro/Lite, the split for Full).
+It replaced the old "routing rule dispatches the planner first" behavior, which
+sent Lite tasks — that have no `plan.md` — to the planner anyway. See the two
+design-intent sections below.
+
+**The tier table has exactly one home: `SKILL.md` Step 1.** The dispatcher links
+it rather than restating it (L1 `G2b`). While the dispatcher was an agent it
+carried an inline copy — an agent boots cold, so having the rows in the prompt
+was worth something — and the copies were kept honest by a byte-comparison L1
+check. A skill runs in the caller's context with `SKILL.md` already loaded, so
+the copy buys nothing and can only rot.
 
 Phase 0 and Phase 2 are mandatory regardless of mode. Phase 5
 `docs update` runs in both modes (the self-improving doc loop is
@@ -390,10 +399,13 @@ When editing this skill, do not break these — they're load-bearing:
   `lint`, `build`, and `test` commands are forbidden inside sub-agents and
   reserved for orchestrator-only boundaries (Phase 4 Step 6, Phase 6 pre-PR).
   See [`rules/parallel-coordination.md#sub-agent-resource-discipline`](./rules/parallel-coordination.md#sub-agent-resource-discipline).
-- **`aw` is a thin, opt-in router.** It detects the tier and routes (single-pass
-  for Micro/Lite, planner→executor for Full) and owns the universal lessons loop.
-  It must not accrue domain knowledge, must not force Full on light tasks, and
-  must not silently wrap casual edits. The planner/executor split is Full-only —
+- **`aw` is a thin, opt-in router, and it is a skill.** It detects the tier and
+  routes (single-pass for Micro/Lite, planner→executor for Full) and owns the
+  universal lessons loop. It must not accrue domain knowledge, must not force
+  Full on light tasks, and must not silently wrap casual edits. It must not
+  regrow a `tools:` block, a `model:` line, or an inline tier table — see
+  [the shape design-intent section](#the-dispatcher-is-a-skill-not-an-agent--design-intent).
+  The planner/executor split is Full-only —
   **except** when the harness disables sub-agent dispatch (`Task`), where `aw`
   runs the Full phases single-context (planner + executor roles in one window)
   rather than downgrading to Lite. That fallback preserves the `plan.md` artifact
@@ -500,10 +512,88 @@ discipline that governs every other companion.
 
 ---
 
-## Adaptive dispatch (the `aw` agent) — design intent
+## The dispatcher is a skill, not an agent — design intent
 
-v3.11 added a third agent, **`aw`** — a thin, opt-in dispatcher — to resolve two
-tensions at once:
+v3.23 converted `aw` from an agent (`templates/aw.agent.md`, symlinked to
+`~/.claude/agents/aw.md`) into a nested **skill** (`aw/SKILL.md`, invoked `/aw`).
+The routing decision, the tier table, the Micro/Lite single-pass path, the
+lessons loop, and the single-context Full fallback are unchanged — only the
+*shape* moved. `aw-planner` and `aw-executor` remain agents.
+
+**Why.** This repo wrote the deciding test before `aw` existed, in
+[`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md) §2.2:
+
+> any future proposal to add a third agent must demonstrate a third independent
+> context — not a third role. If the third agent would re-read the same
+> `plan.md` and the same diff that the executor already has, it is a skill, not
+> an agent.
+
+`aw` was that third agent, and its context boundary is *conditional*: real when
+the routing rule fires mid-conversation (Micro/Lite edit churn stays out of the
+user's window), absent when a developer opens a session specifically to run
+`/aw` — where there is nothing to protect, and the single-threaded-continuity
+argument this skill already cites for making Micro/Lite single-pass argues
+against isolating them at all. `aw-planner` / `aw-executor` pass the same test
+unconditionally (the planner's exploration history is genuine dead weight for
+the executor, and `plan.md` is a real cold-read handoff), which is why they were
+not touched.
+
+Three costs the agent form was paying, all removed:
+
+1. **It burned the delegation rung the executor needs.** `aw` held `Task`;
+   `aw-planner` / `aw-executor` did not. Three documented behaviours were
+   therefore unreachable by construction — the Phase 1 parallel `Explore`
+   fan-out, the Phase 3 file-disjoint fan-out (cap 3), the Phase 7 `ci-auto-fix`
+   fan-out (cap 2) — and so was `create-pr`'s Phase 6 `review-loop` pass, which
+   is what produced the `NOT REVIEWED` draft PRs recorded in `aw-lessons`
+   (`executor-context-lacks-subagent-dispatch-skips-review-loop`, `seen_count` 2).
+   With the dispatcher in-context, both agents are dispatched from the top-level
+   session — the rung that observably kept `Task` — so v3.23 grants them `Task`.
+   Belt-and-braces: `aw` still re-runs `review-loop` itself when the executor
+   reports the pass as skipped.
+2. **A duplicated tier table with a CI guard to police it.** L1 Check B
+   byte-compared `aw.agent.md`'s copy against `SKILL.md` Step 1. The duplication
+   was an artifact of the shape, not of the domain. The check is now `G2b`, which
+   asserts the *absence* of a second copy plus the presence of a link to the
+   canonical one.
+3. **A triplicated tool grant.** The agent enumerated 4 LoreKit + 11 GitHub tools
+   with two paragraphs explaining that sub-agents inherit neither MCP tools nor
+   `gh`. A skill inherits the caller's grant.
+
+**Costs accepted, stated plainly:**
+
+- **No `model:` pinning.** The agent pinned `model: opus`; a skill runs on
+  whatever the session is using.
+- **Micro/Lite transcripts land in the user's window.** Previously isolated.
+  This is the conditional-boundary trade above, taken deliberately.
+- **No `tools:` block.** `aw` cannot grant itself anything. Its obligation is to
+  degrade *visibly* instead — a missing `memory.*`, `gh`, or GitHub MCP grant is
+  named in the terminal contract's `Degraded:` line, never silently swallowed.
+  L1 `G24b` guards this; it is the skill-shaped counterpart of `G24`.
+- **Existing installs get a dangling `~/.claude/agents/aw.md`** until they re-run
+  `install.sh`, which removes it (the same legacy-symlink cleanup the pre-`aw-`
+  namespace rename used). Deleting the agent file outright, rather than leaving
+  it deprecated in place, is deliberate: two `aw` entries with near-identical
+  auto-trigger descriptions is a worse failure than a dangling symlink.
+
+Design rules that keep this from rotting:
+
+- **Do not re-add a `tools:` block, a `model:` line, or an inline tier table to
+  `aw/SKILL.md`.** Each one is a step back toward the agent form; the first two
+  are meaningless in a skill and the third is guarded by `G2b`.
+- **Do not convert `aw-planner` / `aw-executor` to skills.** They pass §2.2 on
+  their own merits; collapsing them loses the context isolation that is the
+  entire justification for the split.
+- **`aw` still must not accrue domain knowledge.** The ~200-line ceiling and the
+  thin-router invariant below apply unchanged — the shape changed, the
+  discipline did not.
+
+## Adaptive dispatch (the `aw` dispatcher) — design intent
+
+v3.11 added **`aw`** — a thin, opt-in dispatcher — to resolve two tensions at
+once. (It shipped as a third agent and became a skill in v3.23; the section
+above covers that move. The two tensions below, and the design rules that
+follow, are shape-independent and unchanged.)
 
 1. **One entry point, but not always-heavy.** Developers wanted a single thing
    to invoke. But "always run the planner/executor" is the wrong answer: the
@@ -525,11 +615,17 @@ Design rules that keep this from rotting:
 
 - **`aw` stays thin.** It routes and owns the loop. It must not accrue
   planning/coding domain knowledge — that lives in the skill, companions, and
-  the planner/executor. If the dispatcher template grows past ~200 lines of
-  system prompt, it is drifting toward a god-agent (`create-skill` anti-pattern
-  S1).
+  the planner/executor. The target is ~200 lines of body (`create-skill`
+  anti-pattern S1 is a god-skill). **This target is currently breached and has
+  been for several versions** — the dispatcher is ~294 body lines as of v3.23
+  (it was ~274 as an agent), because each of v3.19 single-context Full, v3.21
+  follow-ups, and v3.23 skill-semantics + review-recovery added a section
+  without one being removed. Recorded rather than quietly re-baselined: the
+  next contributor to touch this file should push *down*, and the reduction
+  most likely to pay is moving the single-context Full procedure into a rule
+  file the way the lessons loop already is.
 - **Opt-in, not a wrapper.** `aw` runs because the user phrased autonomous work
-  or invoked `@aw`. It must not intercept casual single-file edits, questions,
+  or invoked `/aw`. It must not intercept casual single-file edits, questions,
   or interactive coding. The routing rule's exclusion list enforces this.
 - **The split is Full-only.** Do not collapse planner+executor into `aw` for
   Full (loses the documented context-isolation win), and do not route Micro/Lite
@@ -675,16 +771,29 @@ autonomy and going rogue.
 4. If the change affects companion behavior, update `rules/companion-skills.md`
    in the same PR.
 
+### Editing the dispatcher
+
+The dispatcher is `aw/SKILL.md` — a **nested skill**, discovered by
+`scripts/sync-symlinks.sh`'s recursive walk and linked as `~/.claude/skills/aw`
+(the same treatment `aw-setup` and `aw-tester-chrome` get; `install.sh` also
+links it directly in `--development` mode). It is edited like any other skill,
+and it is **not** an agent — do not give it a `tools:` block or a `model:` line,
+and do not restate the tier table in it. See
+[the shape design-intent section](#the-dispatcher-is-a-skill-not-an-agent--design-intent)
+for why, and `G2b` / `G24b` in `scripts/eval/l1.mjs` for the guards. It must stay
+thin (router + loop only) — see the ~200-line body target and its current
+breach under
+[design rules](#adaptive-dispatch-the-aw-dispatcher--design-intent).
+
 ### Editing the agent templates
 
-`aw.agent.md`, `aw-planner.agent.md`, and `aw-executor.agent.md` are
-what get symlinked into `~/.claude/agents/` as `aw.md`, `aw-planner.md`, and
-`aw-executor.md` by `install.sh` (the `aw-` prefix is the autonomous-workflow
-namespace — keeps the agents grouped together and unmistakable when listed
-alongside unrelated agents). Keep all three lean — they should reference
-`SKILL.md` and `rules/companion-skills.md` rather than duplicate their content.
-The dispatcher especially must stay thin (router + loop only; ~200-line system
-prompt ceiling).
+`aw-planner.agent.md`, `aw-executor.agent.md`, and `aw-tester.agent.md` are
+what get symlinked into `~/.claude/agents/` as `aw-planner.md`,
+`aw-executor.md`, and `aw-tester.md` by `install.sh` (the `aw-` prefix is the
+autonomous-workflow namespace — keeps the agents grouped together and
+unmistakable when listed alongside unrelated agents). Keep all three lean — they
+should reference `SKILL.md` and `rules/companion-skills.md` rather than
+duplicate their content.
 
 The agent **`name:` frontmatter values** must match the symlinked file
 basenames (`aw-planner`, `aw-executor`) — Claude Code dispatches by the
@@ -692,6 +801,11 @@ frontmatter name, and the routing rule references it by the same string.
 If you ever rename the namespace, update all four (frontmatter name,
 install.sh symlink target, routing rule dispatch, and every doc reference)
 in the same PR.
+
+**Both agents hold `Task`** (since v3.23) so their documented fan-outs — Phase 1
+`Explore`, Phase 3 file-disjoint slices, Phase 7 `ci-auto-fix`, and `create-pr`'s
+`review-loop` pass — are reachable at all. Do not remove the grant without also
+removing those behaviours from the phase rules; they were dead letters before.
 
 The deprecated `_deprecated-single-agent.md` (single-agent) is still present for backward
 compat but is **not** linked by `install.sh`. Do not add new behavior there.
@@ -714,19 +828,26 @@ companion list, do both runs.
 
 The dispatcher's two load-bearing runtime behaviors have **no static check** —
 they must be exercised live (markdown can't prove them). Run this after editing
-`aw.agent.md`, the tier tables, or the routing rule:
+`aw/SKILL.md`, the tier table, or the routing rule:
 
-1. **Install** all three agents: `bash install.sh --development` (links `aw.md`,
-   `aw-planner.md`, `aw-executor.md`) and confirm `readlink ~/.claude/agents/aw.md`
-   resolves.
-2. **Micro routing (single-pass, no split):** invoke `@aw` on a 1-file mechanical
+1. **Install** the dispatcher skill + the agents: `bash install.sh --development`
+   and confirm both chains resolve — `readlink ~/.claude/skills/aw` (the
+   dispatcher) and `readlink ~/.claude/agents/aw-planner.md`. Also confirm
+   `~/.claude/agents/aw.md` is **gone** (the pre-v3.23 agent symlink; install.sh
+   removes it). A surviving `aw.md` means two `aw` entries compete for the same
+   trigger phrases.
+2. **Micro routing (single-pass, no split):** invoke `/aw` on a 1-file mechanical
    change (e.g. fix a typo in a README). Expect: `MODE SELECTION: Tier: Micro`,
    no `aw-planner` dispatch, a worktree + draft PR, **no `plan.md`**.
-3. **Full routing (nested dispatch — the R1 risk):** invoke `@aw` on a 4-file /
-   architectural task. Expect: `Tier: Full`, then `aw` **dispatches `aw-planner`**
-   (a gated `plan.md` appears), then **`aw-executor`**. If the harness refuses
-   nested sub-agent dispatch (e.g. Claude Code on the web, where `Task` is
-   disabled), `aw` must run the **single-context Full** fallback: play the planner
+3. **Full routing (dispatch from the caller's context — the R1 risk):** invoke
+   `/aw` on a 4-file / architectural task. Expect: `Tier: Full`, then
+   **`aw-planner` is dispatched**
+   (a gated `plan.md` appears), then **`aw-executor`**. Also confirm the executor
+   did **not** report `review-loop` as skipped — with the dispatcher in-context
+   the executor sits one rung higher and holds `Task`, which is the whole point
+   of v3.23. If it did report a skip, `aw` must re-run `review-loop` itself
+   before handing back. If the harness refuses sub-agent dispatch entirely (e.g.
+   `Task` disabled), `aw` must run the **single-context Full** fallback: play the planner
    role in-context to produce a gated `plan.md` + `checks.yaml`, clear
    `confidence(plan) ≥ 90%`, then play the executor role through Phases 3–7 — all
    in the one window. Confirm it produces `plan.md` and clears the gate, and that
@@ -739,7 +860,7 @@ they must be exercised live (markdown can't prove them). Run this after editing
    - **Project-bound lesson:** run a task that produces a repo-bound lesson (trigger-context referencing a repo path) and confirm the lesson lands in the **`repo::{owner}/{repo}`** scope — NOT in `global`. If it landed in `global`, the classifier is broken.
    - **Storage delegation:** confirm the workflow never creates directories or commits lesson files in the cwd repo — where a `repo::` lesson physically lives is LoreKit's control model (`remote` / local `.lorekit/`), not the loop's. The loop must only call `memory.write` with a scope.
 5. **Opt-in boundary:** in an interactive session, make a casual single-file edit
-   **without** a trigger phrase or `@aw`. Expect: `aw` does **not** engage.
+   **without** a trigger phrase or `/aw`. Expect: `aw` does **not** engage.
 
 Steps 3 and 4 are the gate — they cover the only two behaviors that reading the
 source cannot verify.
@@ -763,6 +884,50 @@ end-user-facing; this file is contributor-facing.
 ---
 
 ## History
+
+- **v3.23.0** — The dispatcher becomes a skill. `aw` moved from
+  `templates/aw.agent.md` (symlinked to `~/.claude/agents/aw.md`) to `aw/SKILL.md`
+  (a nested skill, invoked `/aw`). Routing behaviour, the tier semantics, the
+  Micro/Lite single-pass path, the lessons loop, the follow-ups rule, and the
+  single-context Full fallback are all unchanged — only the shape moved.
+  `aw-planner` / `aw-executor` / `aw-tester` remain agents. Full rationale and
+  the accepted costs:
+  [design intent](#the-dispatcher-is-a-skill-not-an-agent--design-intent).
+  - **Why:** `aw` was the third agent §2.2 of
+    `references/anthropic-architecture-research.md` warned about — its context
+    boundary is *conditional* (real on auto-routing, absent when a developer
+    opens a session to run `/aw`), unlike the planner/executor boundary, which is
+    unconditional. It was paying three costs for that: a burned delegation rung,
+    a duplicated tier table with a CI guard to police it, and a triplicated tool
+    grant.
+  - **`aw-planner` and `aw-executor` gained `Task`.** Four documented behaviours
+    were unreachable by construction while the dispatcher occupied the top rung —
+    Phase 1 `Explore` fan-out, Phase 3 file-disjoint fan-out (cap 3), Phase 7
+    `ci-auto-fix` fan-out (cap 2), and `create-pr`'s Phase 6 `review-loop` pass.
+    The last is the one with a field report: `aw-lessons::executor-context-lacks-
+    subagent-dispatch-skips-review-loop` (`seen_count` 2, confidence 92), whose
+    recorded symptom is `NOT REVIEWED` draft PRs. `aw` additionally re-runs
+    `review-loop` itself when the executor reports the pass as skipped.
+  - **The tier table now has one home.** L1 Check B byte-compared the
+    dispatcher's copy against `SKILL.md` Step 1; it is replaced by `G2b`, which
+    asserts the *absence* of a second copy plus a link to the canonical one. The
+    L2 `tier-routing` suite reads `SKILL.md § Step 1` directly.
+  - **New L1 `G24b`** — the skill-shaped counterpart of `G24`. A skill cannot
+    grant itself tools, so its obligation is to degrade *visibly*: `aw/SKILL.md`
+    must state that it inherits the caller's grant and that a missing tool is
+    named in `Degraded:`. `G24`'s sentinel drops 3 → 2 accordingly.
+  - **`install.sh`** stops linking the agent, links the dispatcher skill in
+    `--development` mode, and adds `aw.md` to its legacy-symlink cleanup so an
+    upgrading install does not end up with both an `aw` agent and an `aw` skill
+    competing for the same trigger phrases. `scripts/sync-symlinks.sh` gains `aw`
+    in `AW_SKILLS`.
+  - **Costs accepted:** no `model: opus` pinning, Micro/Lite transcripts land in
+    the user's window, and a dangling `~/.claude/agents/aw.md` on installs that
+    never re-run `install.sh`. All three are argued in the design-intent section.
+  - **Deliberately NOT changed:** the planner→executor split (it passes §2.2 on
+    its own merits), the tier table's content, the `confidence(plan)` gate, every
+    `checks.yaml` integrity rule, and the routing rule's trigger vocabulary and
+    exclusion list.
 
 - **v3.22.0** — Bounded waits, a stateless CI gate, an honest `review-loop` skip,
   and a terminal contract for `aw`. Field report: `aw` runs on Claude Code for
@@ -1065,7 +1230,7 @@ end-user-facing; this file is contributor-facing.
   reads/writes become the Full-tier specialization) — planning depth and learning
   coverage decoupled. Routing rule now dispatches `aw` instead of "planner first"
   (fixing the Lite-has-no-plan.md impedance mismatch). `aw` is **opt-in**: invoked
-  via a trigger phrase or `@aw`, never a wrapper on casual edits. Coupled surfaces
+  via a trigger phrase or `/aw`, never a wrapper on casual edits. Coupled surfaces
   updated: `install.sh` (links `aw.md` + 3-agent summary), `routing.rule.md`,
   `SKILL.md` (3-tier detection + dispatcher in Templates + version 3.12.0),
   `phase-0-validation.md` (3-tier MODE SELECTION), this file, `README.md`,
