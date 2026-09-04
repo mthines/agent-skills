@@ -31,7 +31,9 @@ tier is a silent no-op (log one line, continue).
 - [Lessons vs. the surface file](#lessons-vs-the-surface-file)
 - [Scope](#scope)
 - [Read lessons (Phase 2)](#read-lessons-phase-2)
+- [Cross-bucket read — codebase-knowledge (Phase 2)](#cross-bucket-read--codebase-knowledge-phase-2)
 - [Write lessons (Phase 6 / 7)](#write-lessons-phase-6--7)
+- [Cross-bucket write — codebase-knowledge (verified structural facts)](#cross-bucket-write--codebase-knowledge-verified-structural-facts)
 - [Lesson promotion](#lesson-promotion)
 - [Entrenchment guards](#entrenchment-guards)
 
@@ -155,6 +157,29 @@ Log:
 
 ---
 
+## Cross-bucket read — codebase-knowledge (Phase 2)
+
+The read above is this skill's **own** bucket. When the failures name concrete
+source files (a failing test points at the module under test), also read the shared
+`codebase-knowledge` signal for those files — the cross-branch, cross-author record
+of what prior loops learned about this repo's symbols and files
+(`knowledge::<symbol>@<path>` facts, `hotspot::<path>` counters):
+
+```text
+memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }
+# Keep only hotspot::<path> / knowledge::<symbol>@<path> whose <path> a failing test
+# or its module under test covers. A known invariant / consumer count is a constraint
+# the fix must preserve; a hotspot raises care on a fix that touches source, not test.
+```
+
+**Read-only, structural, bounded to the run's files, advisory, raises care without
+suppressing** — full contract in
+[`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md).
+It never relaxes the verdict rubric or the confidence gate. Skip silently when
+`memory.*` is not connected, there is no git remote, or nothing matches.
+
+---
+
 ## Write lessons (Phase 6 / 7)
 
 **Anchor:** `lessons-write`
@@ -207,6 +232,58 @@ Log (include the resolved scope + verdict shape + outcome):
 - [TIMESTAMP] Phase 7: lorekit(memory.write repo::{owner}/{repo} test-auto-fix-lessons::<slug>) — UPDATE, seen_count→3 — green
 - [TIMESTAMP] Phase 6: lorekit(memory.write global test-auto-fix-lessons::<slug>) — ADD — regression reverted
 ```
+
+---
+
+## Cross-bucket write — codebase-knowledge (verified structural facts)
+
+The lessons above are prose about *this skill's own judgment*. A run also sometimes
+**verifies a durable structural fact about the code** — the kind another
+code-changer would want. Contribute those to the shared `codebase-knowledge` bucket
+under the contract in
+[`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md):
+
+| What this run verified | Key | Written when |
+| ---------------------- | --- | ------------ |
+| A real product defect fixed in source (verdict `prod-bug`, fix landed, green) | `knowledge::<symbol>@<path>` — the defect + the SHA it was fixed at | Phase 7, green, on a source fix (not a test-only fix) |
+| A test file that went red repeatedly across the outer loop | `hotspot::<test.file>` counter | Phase 6 / 7, when the same file recurred |
+
+Both records are the shared JSON shapes from
+[`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md)
+(reference in
+[`pr-reviewer/rules/memory.md`](../../../../agents/pr-reviewer/rules/memory.md)) —
+the value is that JSON and nothing else, **merged onto the record read first**, so a
+`test-auto-fix` write and a `pr-reviewer` write to the same key compose:
+
+```text
+# The defect → knowledge JSON record. Merge, never clobber: read first, append the
+# defect to the capped history[], carry the rest through. Same scope+key updates in place.
+memory.read  { scope: "repo::{owner}/{repo}", key: "knowledge::<symbol>@<path>" }
+memory.write {
+  scope:    "repo::{owner}/{repo}",
+  key:      "knowledge::<symbol>@<path>",
+  value:    "<the knowledge JSON record: the defect + fix, verified_at_sha:<green SHA>, history[] capped — MERGED onto the read record>",
+  tags:     ["codebase-knowledge"],
+  kind:     "signal",
+  host:     "test-auto-fix",
+  ttl_days: 90
+}
+```
+
+The recurring-red **`hotspot::<test.file>`** write follows the same rule: read the
+shared hotspot JSON record, increment only `regressed` (or `flaky`), carry every
+other counter through, `tags: ["codebase-knowledge", "signal::confirmed"]`,
+`kind: signal`, `host: test-auto-fix`, `ttl_days: 90`.
+
+- **Only what THIS run verified** against a green re-run — never a guess, and never
+  a fact about a person or a telemetry reading. A fact about code, keyed to code.
+- **`verified_at_sha` + `source_agent: test-auto-fix`** on every write.
+- **Raise care, never suppress**, and **never** encode a test-weakening action — the
+  same hard refusal as the lessons write.
+- **Privacy pre-flight** — drop any candidate carrying product data.
+
+This is separate from and additional to the lessons write; skip it silently when the
+run verified no durable structural fact.
 
 ---
 
