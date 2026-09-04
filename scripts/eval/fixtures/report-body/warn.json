@@ -3,8 +3,7 @@
   "SUMMARY": "Reworks the retry path so `retryRequest` throws instead of returning `null`.",
   "WARN_REASONS": [
     "2 open review threads",
-    "3 non-blocking findings",
-    "CI red: Integration smoke"
+    "3 non-blocking findings"
   ],
   "FINDINGS": [
     {

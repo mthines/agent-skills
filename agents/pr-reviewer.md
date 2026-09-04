@@ -162,29 +162,30 @@ Gate checks (Step 1.8) always run against the full PR state in every mode — CI
 A PR PASSES when ALL of the following are true:
 
 1. **Description vs. code** — the description accurately reflects what the diff does; an independent reader reaches the same conclusion about intent and scope from the description alone as from the diff. A mismatch is a **soft warning** (⚠️), not a failure — see *Gate states* below.
-2. **CI status** — all build, test, lint, and docs checks are green. This is a soft-warning gate — red or pending CI yields ⚠️ and never fails the PR (see *Gate states*). It is NOT shown as a row in the review table; GitHub's checks section shows the detail, and `CI_NOTE` carries the substance.
+2. **CI status** — all build, test, lint, and docs checks are green. CI is informational-in-`Run`, not a graded gate — red or pending CI never contributes to this PR's verdict (see *Gate states*). It is NOT shown as a row in the review table; GitHub's checks section shows the detail, and `CI_NOTE` carries the substance.
 3. **Prior review feedback** — all prior review comments — from bots (Cursor, Claude, other agents) or human reviewers — are resolved or explicitly dismissed. An open thread whose ask is non-blocking, or which has already been answered on-thread, is a **soft warning** (⚠️) — only an *unanswered blocking* ask fails this gate. See *Gate states* below.
 4. **Self-review signals** — no debug logs, commented-out code, leftover TODO/FIXME/HACK markers on new lines, or obvious unreviewed AI stubs in the diff.
 5. **Documentation adequacy** — description, inline comments, and any docs are sufficient for an independent reader to understand the change's purpose and behavior.
 6. **Code review** — the finder + verifier pass (Phases D–E) finds no blocking issues. Non-blocking findings do **not** fail this gate (see *Gate states* below).
 
-A PR FAILS if Gate 4 or Gate 5 is not met, or if the Prior review feedback (Gate 3) or Code review (Gate 6) gate is ❌. Gate 1 (Description vs. code) **and Gate 2 (CI)** are soft-warning gates — each yields ⚠️ and never fails the PR; Gates 3 and 6 are tri-state and reach ❌ only on a *blocking* item.
+A PR FAILS if Gate 4 or Gate 5 is not met, or if the Prior review feedback (Gate 3) or Code review (Gate 6) gate is ❌. Gate 1 (Description vs. code) is a soft-warning gate — it yields ⚠️ and never fails the PR; Gate 2 (CI) is informational-in-`Run` and never contributes to the verdict; Gates 3 and 6 are tri-state and reach ❌ only on a *blocking* item.
 
 ### Gate states
 
 Gates 4 and 5 are **hard** gates: binary ✅ / ❌, and any ❌ fails the PR.
 
-The other four are **graded** — a non-blocking problem yields a warning (⚠️) that never fails the PR and is never counted in `FAILING_GATE_COUNT`. Gates 1 and 2 are two-state (they can only warn); Gates 3 and 6 are tri-state and reach ❌ only on a blocking item:
+The other three are **graded** — a non-blocking problem yields a warning (⚠️) that never fails the PR and is never counted in `FAILING_GATE_COUNT`. Gate 1 is two-state (it can only warn); Gates 3 and 6 are tri-state and reach ❌ only on a blocking item. Gate 2 (CI) is neither hard nor graded — it is informational-in-`Run` and out of the grade entirely:
 
-**Gate 2 (CI) warns, it does not fail.** Red CI is a fact about the branch, not a finding about the
-diff, and this agent neither diagnosed it nor can it tell a real regression from a flaky job, an
-infrastructure quota, a check that does not run on this base branch, or a draft with no workflow
-wired up — all four observed in practice. GitHub already blocks the merge on a required check, so
-failing the review as well added no signal and mislabelled the review's own verdict: `mthines/lorekit#490`
-led with `CI failing, 1 error, 2 warnings` and `Blocking: CI checks failing`, which reads as *the
-reviewer found something* when it had not. The state is still reported in full — see `CI_NOTE` — and
-a red check that the *diff* demonstrably causes is a Gate 6 finding on this reviewer's own evidence,
-where it blocks properly.
+**Gate 2 (CI) is informational, never part of the grade.** Red CI is a fact about the branch, not a
+finding about the diff, and this agent neither diagnosed it nor can it tell a real regression from a
+flaky job, an infrastructure quota, a check that does not run on this base branch, or a draft with no
+workflow wired up — all four observed in practice. GitHub already blocks the merge on a required
+check, and the orchestrators (`create-pr`, `review-loop`, `autonomous-workflow`) already own CI
+convergence, so letting CI move this review's own verdict as well added no signal and mislabelled it:
+`mthines/lorekit#490` led with `CI failing, 1 error, 2 warnings` and `Blocking: CI checks failing`,
+which reads as *the reviewer found something* when it had not. The state is still reported in full —
+see `CI_NOTE` in `Run` — and a red check that the *diff* demonstrably causes is a Gate 6 finding on
+this reviewer's own evidence, where it blocks properly.
 
 **Gate 1 — Description vs. code** is two-state:
 
@@ -331,6 +332,14 @@ GH_REPO_FLAG=${PR_REPO:+--repo "$PR_REPO"}
 RESOLVED_REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
 OWNER="${RESOLVED_REPO%%/*}"
 REPO="${RESOLVED_REPO##*/}"
+
+# --full is the one flag read downstream as an executable variable (Step 0.7's mode rule and
+# Step 0.8's fast-path gate both branch on `$FLAG_FULL`), so bind it here rather than leaving
+# the flag table's "Binds FLAG_FULL=true" as prose only. Without this line `$FLAG_FULL` is
+# empty even when `--full` is passed, `"" != true` is true, and Step 0.8 downgrades a `--full`
+# run on an unmoved head to `incremental-quick` — the exact regression its guard exists to stop.
+FLAG_FULL=false
+[[ " $ARG " == *" --full "* ]] && FLAG_FULL=true
 ```
 
 If no PR reference found, abort: `pr-reviewer requires a PR URL, #<n>, or bare PR number — got: <args>`.
@@ -369,7 +378,7 @@ Resolve `AGENT0_FIX_LINKS` and `AGENT0_ENVIRONMENT` per `review-config.md § Run
   - `{bot_login}` is `ME` (Step 0.5), falling back to `PRIOR_REPORT_AUTHOR` (Step 0.7) — the same identity ladder `prior-comment-awareness.md` uses, already resolved earlier in this run; do not re-query it here.
   - **When `{bot_login}` is resolved and `OPEN_FINDING_COUNT` is non-zero**, use the `/pr-fix` prompt from `agent0-fix-links.md § Prompt templates`, filled with the PR URL and `{bot_login}`. Fill the `<author>` argument always — `/pr-fix` excludes bot authors unless one is named, so an omitted login silently skips every finding of a reviewer posting as a bot.
   - **When `{bot_login}` is unresolved** (both `ME` and `PRIOR_REPORT_AUTHOR` empty), **a prior sticky was matched**, **and `OPEN_FINDING_COUNT` is non-zero**, use the login-fallback template instead, filled with `https://github.com/OWNER/REPO/pull/<n>#issuecomment-<sticky_id>` — the id the Step 0.7 marker match already returned for the PATCH, never a fresh lookup. Naming the reviewer's own comment is how `/pr-fix` resolves the author without a login. **The count condition is not redundant with the bullet above.** These bullets are first-match-wins, so an identity-only condition here would pre-empt both bullets below: at `OPEN_FINDING_COUNT` 0 with red CI it would emit a `/pr-fix` call where the CI-only variant is required (`agent0-fix-links.md § Prompt templates` — "This one is not a `/pr-fix` invocation, and must not become one"), and at 0 with green CI it would render a button the omit rule says to leave off. Identity picks *which* `/pr-fix` template; the count still decides whether a `/pr-fix` template is the right one at all.
-  - **When `OPEN_FINDING_COUNT` is 0 but CI has at least one red/failed check** (Gate 2 WARN, `agent0-fix-links.md § Prompt templates` "Fix all — CI-only"), build that variant instead of omitting the button — key on the `CI red:` subset `CI_NOTE` already computes, reuse the failing check names already computed for `CI_NOTE`, never re-query CI a second time for this. A clean Gate 6 (code review) with a red CI check leaves nothing for `/pr-fix` to apply, but the report still reads WARN, and that is exactly the state a human is most likely to click "fix" on. This variant is **not** a `/pr-fix` call and keeps its own verification clause. A **pending-only** CI state (`CI still pending`, no red subset) is NOT this case — a pending check has produced no failure and no logs to view, so the trigger must not fire on it (see the omit bullet below).
+  - **When `OPEN_FINDING_COUNT` is 0 but CI has at least one red/failed check** (a populated `CI_NOTE` with a `CI red:` subset, `agent0-fix-links.md § Prompt templates` "Fix all — CI-only"), build that variant instead of omitting the button — key on the `CI red:` subset `CI_NOTE` already computes, reuse the failing check names already computed for `CI_NOTE`, never re-query CI a second time for this. A clean Gate 6 (code review) leaves nothing for `/pr-fix` to apply even though the report itself renders a clean PASS, and CI is exactly the state a human is most likely to click "fix" on regardless. This variant is **not** a `/pr-fix` call and keeps its own verification clause. A **pending-only** CI state (`CI still pending`, no red subset) is NOT this case — a pending check has produced no failure and no logs to view, so the trigger must not fire on it (see the omit bullet below).
   - **Omit the slot** when `OPEN_FINDING_COUNT` is 0 AND CI has no red/failed check — green **or** merely pending-only — including a Gate-1-only WARN (description vs. code) with clean CI and no findings: that gate is about the human-authored PR description, not something an autonomous code-fix run can act on. Also omit it when `OPEN_FINDING_COUNT` is non-zero but **neither** `{bot_login}` **nor** a prior sticky id is available: with no way to name the author, `/pr-fix` would fall back to its own author resolution and could apply a third party's comments.
 - **Fix this (inline).** When shaping an inline `issue:` / `suggestion:` finding (Step 2.8/2.9 — a **separate tool call from Step 4a**, so shell state including `$AGENT_MD` is gone; re-resolve it fresh here with the same `resolve()` idiom Step 1.2 uses for `CLASSIFY`, and re-check `[ -f "$BUILD_LINK" ]` fresh too — skip the button for this one finding, not the rest of the review, on a miss), pass the deep link as the payload's `FIX_URL` and let `render-comment.mjs` build the button (theme-aware markup, host validation and alt text all live in `comment-spine.mjs`'s `fixButton()`; never hand-write the markup), built with **the same `--env <env>` resolved above** — `node "$BUILD_LINK" --env <env> --source fix-this "<fix-this prompt>"` (`--source` is mandatory and is `fix-this` here, always — `agent0-fix-links.md § Click attribution`; never the bare relative path — see the Fix-all bullet's note; a bare path silently resolves against whatever the shell's cwd is, which during a cross-repo dispatch is the *reviewed* repo, not this one) — and the fix-this prompt template, filled with the PR URL, `{bot_login}`, and this finding's own `path:line`. The finding's **body plays no part in the URL** — no lead line, no quoted text — so the link is stable across a § Hard caps prose trim. Skip the button when `{bot_login}` is unresolved (the inline template has no comment-permalink fallback: a comment cannot link to itself), and skip it for `nitpick` / `question` / `praise`. **This is the same `<env>` as the Fix-all bullet above, resolved once per run — never re-resolved or defaulted per finding.**
 
@@ -747,12 +756,13 @@ that ended by discovering there was nothing to review). This step catches that c
 # PRIOR_SHA came from Step 0.7 (the PR-state record or its GitHub fallback rung).
 # FLAG_FULL came from Step 0's argument parse — `--full` always forces `full` mode
 # (Step 0.7's rule), and a fast path that ignored it would silently override that invariant.
-# Compare on a 7-char prefix, never the raw strings: EARLY_HEAD_SHA is the full 40-char
-# headRefOid, while PRIOR_SHA is 7-char on both of its sources — the PR-state record stores
-# the short sha (Step 4c writes `runs[].sha`, e.g. `353fd32`) and the GitHub fallback rung
-# reads it from the sticky footer, which `comment-spine.mjs` enforces to exactly 7 chars. A
-# raw `==` compares 40 chars against 7 and can never match, leaving the fast path permanently
-# dead — the whole optimization a silent no-op.
+# Compare on a 7-char prefix, never the raw strings, so the check is robust to whatever length
+# Step 0.7 bound PRIOR_SHA at: the GitHub fallback rung reads it from the sticky footer, which
+# `comment-spine.mjs` enforces to exactly 7 chars, while the PR-state record stores whatever
+# HEAD_SHA Step 4c wrote (the full 40-char headRefOid on the current writer; a 7-char sha on
+# records written by an older one). EARLY_HEAD_SHA is the full 40-char headRefOid, so a raw
+# `==` against the 7-char footer value can never match — leaving the fast path permanently
+# dead — and truncating both operands to 7 chars is what makes it match on every source.
 # STATE_STATUS == "read" gates the fast path to the full-record path only. On the GitHub
 # fallback rung PRIOR_SHA is recovered but PRIOR_DIAGNOSTICS is NOT (Step 0.7), so a
 # fast-path run there would carry Gates 4/6 forward from nothing; the fallback rung must
@@ -1791,10 +1801,12 @@ description omits or misrepresents.
 Finding format: one sentence per mismatch, file names only (no diff quotes).
 Result: PASS (✅) or WARN (⚠️) with finding text — a mismatch is a soft warning, never a hard failure (see *Gate states*).
 
-**Gate 2 — CI status** (reported, never blocking — excluded from the review body table)
+**Gate 2 — CI status** (reported, informational-in-`Run` — excluded from the review body table and
+from the verdict computation)
 Read the CI checks output (Step 1.1 command C). List every failing or still-pending
 check by name, and — where the output makes it readable — say what each failure is on.
-Result: PASS (✅, all green) or WARN (⚠️) with the failing check names. **Never ❌** — see
+Result: PASS (✅, all green) or WARN (⚠️) with the failing check names, for reporting purposes only —
+it never feeds `FAILING_GATE_COUNT` or `WARN_GATE_COUNT`. **Never ❌** — see
 *Gate states*. Report the detail in `CI_NOTE`; a red check the diff demonstrably causes is filed
 under Gate 6 instead, on this reviewer's own evidence.
 
@@ -2571,7 +2583,7 @@ See [`agents/pr-reviewer/rules/terminal-report.md`](./pr-reviewer/rules/terminal
 the template. Produce two views before posting: a summary with the gate table, then numbered
 detail cards. Always include the run mode, the depth tier, and the delta context in the header.
 
-Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 4/5 all ✅) and neither tri-state gate — Prior review feedback, Code review — is ❌, but at least one graded gate — Description vs. code, CI, Prior review feedback, or Code review — is ⚠️ (still a PASS verdict); **FAIL** when Gate 4 or Gate 5 fails or the Prior review feedback or Code review gate is ❌ (CI never fails it).
+Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 4/5 all ✅) and neither tri-state gate — Prior review feedback, Code review — is ❌, but at least one graded gate — Description vs. code, Prior review feedback, or Code review — is ⚠️ (still a PASS verdict); **FAIL** when Gate 4 or Gate 5 fails or the Prior review feedback or Code review gate is ❌ (CI is informational-in-`Run` and never affects the verdict).
 
 All three presentations share **one** template; only the `**Verdict**` line and the allowed Status
 glyphs differ, both tabulated in that file. Three near-copies is what drifted into a remembered
@@ -3513,7 +3525,7 @@ Include:
   - `state: none — first review of this PR`.
   - `state: unknown — neither the record nor the PR's comments could be read` — reviewed blind: no
     carry-forward, and dedup against its own prior comments operated on an empty set.
-- Gate verdicts (Gates 1/3/4/5/6 — Gate 2 shown separately as CI PASS/WARN; it never fails the verdict).
+- Gate verdicts (Gates 1/3/4/5/6 — Gate 2 shown separately as CI PASS/WARN; informational only, it never moves the verdict).
 - Integrations checked by the dependency finder and their spec versions, or "no integration changes detected".
 - Any findings dropped at line-validity for manual posting (verbatim).
 - Direct link: `https://github.com/<repo>/pull/<n>/files`.

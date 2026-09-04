@@ -930,16 +930,15 @@ function main() {
     fail(`VERDICT must be one of ${VERDICTS.join(" | ")} — got ${JSON.stringify(data.VERDICT)}`);
   }
   const failing = gateStatuses.filter((v) => v === "❌").length;
-  // Gate 2 (CI) has no row in the table — `CI_NOTE` is its whole surface — but it is still a
-  // warning gate, and a red or pending check renders the WARN headline rather than PASS
-  // (`report-rendering.md`: "with no failing hard gate and no ❌ there is nothing to tally, and the
-  // run renders the WARN headline"). It can raise the verdict to WARN and never past it.
-  const warning = gateStatuses.filter((v) => v === "⚠️").length + (data.CI_NOTE ? 1 : 0);
+  // Gate 2 (CI) has no row in the table and no vote here either — `CI_NOTE` is purely
+  // informational (it renders in `Run`, via the `CI —` line). CI is a timing/branch fact, not a signal about
+  // the diff, and the orchestrators already own CI convergence, so a pending or red check can never
+  // move the verdict away from what the five real gates already say.
+  const warning = gateStatuses.filter((v) => v === "⚠️").length;
   const impliedVerdict = failing > 0 ? "FAIL" : warning > 0 ? "WARN" : "PASS";
   if (verdict !== impliedVerdict) {
-    fail(`VERDICT ${verdict} contradicts the gate table — ${failing} ❌ and ${warning} ⚠️`
-      + `${data.CI_NOTE ? " (CI included)" : ""} imply ${impliedVerdict}. The gates decide the`
-      + " verdict; fix whichever is wrong before rendering");
+    fail(`VERDICT ${verdict} contradicts the gate table — ${failing} ❌ and ${warning} ⚠️ imply`
+      + ` ${impliedVerdict}. The gates decide the verdict; fix whichever is wrong before rendering`);
   }
 
   const reasonList = (k) => {
@@ -969,11 +968,11 @@ function main() {
   // rendering at two phrases, so an over-long list did not LOOK wrong — it silently dropped the
   // third warning while the table showed one ⚠️, which is exactly the class of contradiction this
   // renderer exists to make unrepresentable. Validating one polarity and not the other is the
-  // asymmetric-validation shape `FINDINGS[].title` had in this same file. CI *is* countable here,
-  // unlike in the FAIL branch: it is a warning gate, so `warning` already includes it.
+  // asymmetric-validation shape `FINDINGS[].title` had in this same file. CI is never counted here,
+  // same as the FAIL branch above — it is informational-in-`Run`, not a warning gate.
   if (arr("WARN_REASONS").length > warning) {
     fail(`WARN_REASONS has ${arr("WARN_REASONS").length} phrases but only ${warning} gate(s) are ⚠️`
-      + `${data.CI_NOTE ? " (CI included)" : ""} — one phrase per warning gate`);
+      + " — one phrase per warning gate, and CI is never among them");
   }
 
   // The count-forward headline. `<N> findings` is the number the author acts on, so it leads; the
