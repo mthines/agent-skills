@@ -109,6 +109,43 @@ the host map (the single source, so both button sites resolve the same host), an
 falls back to `production`. The report renderer rejects a `FIX_ALL_URL` whose host is neither
 `app.dash0.com` nor `app.dash0-dev.com`.
 
+**A button that opens a signed-out session is not this renderer's bug, and the symptom looks exactly
+like one.** A click that lands on a sign-in page, or opens Agent0 with a mangled prompt, is reported
+as "the Fix button is broken" and then debugged here, in the encoder and the markup — which are the
+two places it cannot be. Establish the host's own behaviour first:
+
+```bash
+curl -sS -D- -o /dev/null "$(node agents/pr-reviewer/scripts/build-agent0-link.mjs \
+  --env development --source fix-all '/pr-fix https://github.com/o/r/pull/1 some[bot]')"
+```
+
+A `307` carrying `x-clerk-auth-reason: dev-browser-missing` means the click is going through a
+sign-in redirect, and everything below follows from that — none of it from the link.
+
+**The redirect re-serializes the query, and `%20` becomes `+`.** The `redirect_url` the host hands
+Clerk is rebuilt with a form-urlencoded serializer, so `initial_prompt=%2Fpr-fix%20https%3A%2F%2F…`
+returns as `initial_prompt=%2Fpr-fix+https%3A%2F%2F…`. Under
+[`application/x-www-form-urlencoded`](https://url.spec.whatwg.org/#urlencoded-parsing) that is
+lossless — `URLSearchParams` decodes `+` to a space and recovers the prompt exactly — but a handler
+that splits the raw query itself and calls `decodeURIComponent` on the value gets
+`/pr-fix+https://github.com/o/r/pull/1+some[bot]`, with literal plus signs where the argument
+separators were, and `/pr-fix` never parses. Observed on
+[`mthines/agent-skills#175`](https://github.com/mthines/agent-skills/pull/175).
+
+**This is why a Fix button can work in one browser and fail in another with no per-browser difference
+in the link.** The URL is byte-identical; the only variable is whether that browser holds a live
+session and therefore skips the round-trip. A reader signed in on Chrome and signed out on Firefox
+sees a Chrome-only feature. The discriminating test is one private window in the *working* browser:
+if it fails there too, the browser was never the variable.
+
+`development` carries this risk far more than `production` does, because a Clerk **development**
+instance puts its sign-in on an `*.accounts.dev` domain — a different registrable domain from
+`app.dash0-dev.com`, so the dev-browser handshake is cross-site and depends on cookie policy that
+Firefox and Safari set more strictly than Chrome by default. A repo that hits this has three
+answers, none of them in this rule file: fix the handler to parse with `URLSearchParams`, move the
+host to a production Clerk instance on a same-site subdomain, or set `agent0_environment:
+production` for that repo.
+
 ## Deep-link format
 
 ```text
