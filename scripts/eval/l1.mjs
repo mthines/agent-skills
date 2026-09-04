@@ -2927,6 +2927,25 @@ const isPollBlock = (block) =>
     !!ciOnly && !ciOnly.includes("/pr-fix") && /must not become one/.test(rule),
     "the CI-only variant became a /pr-fix call — /pr-fix applies review comments, and a red check with zero findings has none to apply");
 
+  // G32o: the both-buttons-or-neither invariant must be scoped to the FLAG, and the one state
+  // that diverges the placements must be named in the same breath. Shipped unqualified in both
+  // owners while the login fallback renders Fix-all and skips Fix-this for its ENTIRE population
+  // (an inline comment has no permalink to itself), so the absolute was false exactly where a
+  // reader would go looking — the same contradiction class as CLAUDE.md's "always named".
+  // Two checks, not one: the phrase is what a reader quotes, the exception is what makes it true.
+  for (const [file, body] of [["agents/pr-reviewer.md", routingBody], ["agent0-fix-links.md", rule]]) {
+    s.check(`G32o ${file} scopes both-buttons-or-neither to the flag`,
+      !/(?:a run (?:has|either has)|so a run either has) both buttons or neither/.test(body)
+        && /no per-placement opt-out/.test(body),
+      "the invariant is stated as a property of the run, but the login fallback renders Fix all"
+        + " with no Fix this for every run that reaches it — scope the claim to the flag");
+    s.check(`G32o ${file} names the fallback's one-button divergence`,
+      /has no permalink to itself|no permalink to itself/.test(body)
+        && /entire\*\* population|\*\*entire\*\* population/.test(body),
+      "the divergence is undocumented, so a reader treats the absent Fix this as a defect and"
+        + " 'fixes' it by inventing a self-link GitHub cannot assign until POST");
+  }
+
   const maxUrl = Number(/^const MAX_URL = (\d+)/m.exec(readFileSync(LINK_MOD, "utf8"))?.[1]);
   s.check("G32f MAX_URL stays under the 8k request-line cliff it was moved off",
     Number.isFinite(maxUrl) && maxUrl <= 4000,
