@@ -308,8 +308,8 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `--measurable-strict` | Pass `--strict` to `measurable audit`, so a `missing` signal on a new failure mode is an `issue:` rather than a `suggestion:`. Also settable as `measurable: strict` in the review config. `unlinked` findings stay advisory either way |
 | `--skip-gates` | Skip Gates 1–5, run inline review (Gate 6) only |
 | `--with a,b,c` | Up to 3 additional review lenses |
-| `--no-fix-links` | Suppress the "Fix with Agent0" buttons for this run. They render by default wherever the review config names an `agent0_environment` (`agents/shared/rules/agent0-fix-links.md`); this is the per-run opt-out and beats every other signal. |
-| `--fix-links` | Force the buttons on for this run, even with no `agent0_environment` configured. Rarely needed now that a configured Agent0 implies them. |
+| `--no-fix-links` | Suppress the "Fix with Agent0" buttons for this run. They render by default everywhere (`agents/shared/rules/agent0-fix-links.md`); this is the per-run opt-out and beats every other signal. |
+| `--fix-links` | Force the buttons on for this run, overriding an `agent0_fix_links: false` in the review config. Rarely needed — they are already on by default. |
 | `--effort high` | Force `DEPTH_TIER = deep`, enable Tier-2/3 receipts where the toolchain allows, and widen diversify-then-vote to N=5 ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#--effort)). Also settable as `effort: high` in the review config. `--full` is the narrower alias — it forces `deep` and nothing else |
 
 Parse the PR reference:
@@ -358,22 +358,24 @@ Resolve `AGENT0_FIX_LINKS` and `AGENT0_ENVIRONMENT` per `review-config.md § Run
 |---|---|
 | `--no-fix-links` passed | `off` — the explicit per-run opt-out, and it beats everything below |
 | `--fix-links` passed | `on` |
-| `AGENT0_FIX_LINKS` resolved `true` / `false` | as resolved — which is `true` whenever the repo named an `agent0_environment` and did not explicitly say otherwise |
+| `AGENT0_FIX_LINKS` resolved `true` / `false` | as resolved — which is `true` unless the repo's review config says `agent0_fix_links: false`, or its config could not be read at all |
 
-**A repo that names an Agent0 gets the buttons.** They were off unless a flag was passed, and the cost of that was the point of having them: the affordance that turns a review into an action was absent from every run nobody remembered to flag. A repo with no `agent0_environment` still resolves `off` and renders nothing, so nothing changes outside Dash0. With `FIX_LINKS=off`, emit no buttons and skip this block entirely. Pass `AGENT0_ENVIRONMENT` to the link builder as `--env <env>` (default `production`; `development` → `app.dash0-dev.com`). When on, render the "Fix with Agent0" buttons per `agents/shared/rules/agent0-fix-links.md`:
+**The buttons are on by default; a repo opts out, it does not opt in.** They were off unless a flag was passed, then on only where an `agent0_environment` was named, and both defaults cost the same thing — the affordance that turns a review into an action was absent from every run nobody had remembered to configure. `agent0_environment` now picks the **host only** and no longer gates anything, so a repo that configured nothing renders buttons pointing at `production`. With `FIX_LINKS=off`, emit no buttons and skip this block entirely. Pass `AGENT0_ENVIRONMENT` to the link builder as `--env <env>` (default `production`; `development` → `app.dash0-dev.com`). When on, render the "Fix with Agent0" buttons per `agents/shared/rules/agent0-fix-links.md`:
 
 - **Fix all (report).** If `FIX_LINKS_UNAVAILABLE` is set, skip this bullet entirely — no `FIX_ALL_URL` slot, no abort. Otherwise, at Step 4, build the fix-all deep link — `node "$BUILD_LINK" --env <env> --source fix-all "<fix-all prompt>"` (`--source` is mandatory — `agent0-fix-links.md § Click attribution` — and is `fix-all` here, always), where `$BUILD_LINK="$AGENT_SUPPORT/pr-reviewer/scripts/build-agent0-link.mjs"` is derived from the **same already-resolved `$AGENT_MD`** Step 4a computes for `RENDER` (same block, same tool call — do not re-derive it, and never invoke the script by the bare path `agents/pr-reviewer/scripts/build-agent0-link.mjs`, which only resolves by accident when the shell's cwd happens to be this repo's own checkout). Pass the URL as the `FIX_ALL_URL` payload slot to `render-report.mjs` (`report-rendering.md`). The renderer turns it into the linked button above the accordion.
-  - `{count}` is the count of open findings **authored by `{bot_login}`** — this run's `issue:` / `suggestion:` inline findings (the Step 4b payload — known here, even though the comments post after the report) plus the carried-forward `OPEN_THREADS` entries **whose author is `{bot_login}`**, deduplicated by `path:line`. Filter that subset explicitly rather than taking `OPEN_THREADS` whole: Gate 3 tracks every open thread, bot **or** human (Step 1.0 — "Both count"), so an unfiltered union overstates what the login-scoped query in the same prompt returns. That gap is not cosmetic — `{count}` is the only checksum Agent0 has for when it is done, so a count that exceeds the query's result sends it hunting for findings that do not exist under the filter. Nothing about the fill reads the report body or the sticky marker.
+  - `OPEN_FINDING_COUNT` — the count of open findings **authored by `{bot_login}`**: this run's `issue:` / `suggestion:` inline findings (the Step 4b payload — known here, even though the comments post after the report) plus the carried-forward `OPEN_THREADS` entries **whose author is `{bot_login}`**, deduplicated by `path:line`. It is a **routing input only** and is never filled into a prompt — its sole job is to pick between the `/pr-fix` template and the CI-only variant below. Filter that subset explicitly rather than taking `OPEN_THREADS` whole: Gate 3 tracks every open thread, bot **or** human (Step 1.0 — "Both count"), so an unfiltered union would route a PR with only human threads open to the `/pr-fix` template when `/pr-fix` has nothing of this reviewer's to apply. Nothing about the fill reads the report body or the sticky marker.
   - `{bot_login}` is `ME` (Step 0.5), falling back to `PRIOR_REPORT_AUTHOR` (Step 0.7) — the same identity ladder `prior-comment-awareness.md` uses, already resolved earlier in this run; do not re-query it here.
-  - **When `{bot_login}` is unresolved** (both `ME` and `PRIOR_REPORT_AUTHOR` empty), omit the slot entirely regardless of `{count}` or CI state: without a real login the "ignore every other author" guarantee has no safe filter value to run on.
-  - **When `{bot_login}` is resolved and `{count}` is non-zero**, use the findings-based prompt from `agent0-fix-links.md § Prompt templates`, filled with `OWNER/REPO`, the PR number, `{count}`, and `{bot_login}`.
-  - **When `{count}` is 0 but CI is not green** (Gate 2 WARN, `agent0-fix-links.md § Prompt templates` "Fix all — CI-only"), build that variant instead of omitting the button — reuse the failing check names already computed for `CI_NOTE`, never re-query CI a second time for this. A clean Gate 6 (code review) with a red CI check leaves nothing to fix, but the report still reads WARN, and that is exactly the state a human is most likely to click "fix" on.
-  - **Omit the slot only** when `{count}` is 0 AND CI is green — including a Gate-1-only WARN (description vs. code) with clean CI and no findings: that gate is about the human-authored PR description, not something an autonomous code-fix run can act on.
-- **Fix this (inline).** When shaping an inline `issue:` / `suggestion:` finding (Step 2.8/2.9 — a **separate tool call from Step 4a**, so shell state including `$AGENT_MD` is gone; re-resolve it fresh here with the same `resolve()` idiom Step 1.2 uses for `CLASSIFY`, and re-check `[ -f "$BUILD_LINK" ]` fresh too — skip the button for this one finding, not the rest of the review, on a miss), pass the deep link as the payload's `FIX_URL` and let `render-comment.mjs` build the button (theme-aware markup, host validation and alt text all live in `comment-spine.mjs`'s `fixButton()`; never hand-write the markup), built with **the same `--env <env>` resolved above** — `node "$BUILD_LINK" --env <env> --source fix-this "<fix-this prompt>"` (`--source` is mandatory and is `fix-this` here, always — `agent0-fix-links.md § Click attribution`; never the bare relative path — see the Fix-all bullet's note; a bare path silently resolves against whatever the shell's cwd is, which during a cross-repo dispatch is the *reviewed* repo, not this one) — and the fix-this prompt template, filled with the finding's `path:line` and its own lead line as `{lead}` (drop any `"` from it). Skip `nitpick` / `question` / `praise`. **This is the same `<env>` as the Fix-all bullet above, resolved once per run — never re-resolved or defaulted per finding.**
+  - **When `{bot_login}` is resolved and `OPEN_FINDING_COUNT` is non-zero**, use the `/pr-fix` prompt from `agent0-fix-links.md § Prompt templates`, filled with the PR URL and `{bot_login}`. Fill the `<author>` argument always — `/pr-fix` excludes bot authors unless one is named, so an omitted login silently skips every finding of a reviewer posting as a bot.
+  - **When `{bot_login}` is unresolved** (both `ME` and `PRIOR_REPORT_AUTHOR` empty), **a prior sticky was matched**, **and `OPEN_FINDING_COUNT` is non-zero**, use the login-fallback template instead, filled with `https://github.com/OWNER/REPO/pull/<n>#issuecomment-<sticky_id>` — the id the Step 0.7 marker match already returned for the PATCH, never a fresh lookup. Naming the reviewer's own comment is how `/pr-fix` resolves the author without a login. **The count condition is not redundant with the bullet above.** These bullets are first-match-wins, so an identity-only condition here would pre-empt both bullets below: at `OPEN_FINDING_COUNT` 0 with red CI it would emit a `/pr-fix` call where the CI-only variant is required (`agent0-fix-links.md § Prompt templates` — "This one is not a `/pr-fix` invocation, and must not become one"), and at 0 with green CI it would render a button the omit rule says to leave off. Identity picks *which* `/pr-fix` template; the count still decides whether a `/pr-fix` template is the right one at all.
+  - **When `OPEN_FINDING_COUNT` is 0 but CI is not green** (Gate 2 WARN, `agent0-fix-links.md § Prompt templates` "Fix all — CI-only"), build that variant instead of omitting the button — reuse the failing check names already computed for `CI_NOTE`, never re-query CI a second time for this. A clean Gate 6 (code review) with a red CI check leaves nothing for `/pr-fix` to apply, but the report still reads WARN, and that is exactly the state a human is most likely to click "fix" on. This variant is **not** a `/pr-fix` call and keeps its own verification clause.
+  - **Omit the slot** when `OPEN_FINDING_COUNT` is 0 AND CI is green — including a Gate-1-only WARN (description vs. code) with clean CI and no findings: that gate is about the human-authored PR description, not something an autonomous code-fix run can act on. Also omit it when `OPEN_FINDING_COUNT` is non-zero but **neither** `{bot_login}` **nor** a prior sticky id is available: with no way to name the author, `/pr-fix` would fall back to its own author resolution and could apply a third party's comments.
+- **Fix this (inline).** When shaping an inline `issue:` / `suggestion:` finding (Step 2.8/2.9 — a **separate tool call from Step 4a**, so shell state including `$AGENT_MD` is gone; re-resolve it fresh here with the same `resolve()` idiom Step 1.2 uses for `CLASSIFY`, and re-check `[ -f "$BUILD_LINK" ]` fresh too — skip the button for this one finding, not the rest of the review, on a miss), pass the deep link as the payload's `FIX_URL` and let `render-comment.mjs` build the button (theme-aware markup, host validation and alt text all live in `comment-spine.mjs`'s `fixButton()`; never hand-write the markup), built with **the same `--env <env>` resolved above** — `node "$BUILD_LINK" --env <env> --source fix-this "<fix-this prompt>"` (`--source` is mandatory and is `fix-this` here, always — `agent0-fix-links.md § Click attribution`; never the bare relative path — see the Fix-all bullet's note; a bare path silently resolves against whatever the shell's cwd is, which during a cross-repo dispatch is the *reviewed* repo, not this one) — and the fix-this prompt template, filled with the PR URL, `{bot_login}`, and this finding's own `path:line`. The finding's **body plays no part in the URL** — no lead line, no quoted text — so the link is stable across a § Hard caps prose trim. Skip the button when `{bot_login}` is unresolved (the inline template has no comment-permalink fallback: a comment cannot link to itself), and skip it for `nitpick` / `question` / `praise`. **This is the same `<env>` as the Fix-all bullet above, resolved once per run — never re-resolved or defaulted per finding.**
 
   This bullet never named `--env` at all prior to one fix, and never resolved the script path via `$AGENT_MD` prior to a second: a Fix-this button had no path to `development` regardless of what the run resolved for Fix-all, and even a correctly-resolved `<env>` could not reach a `production`/`development` decision if the bare-path invocation silently failed or fabricated output instead of using the script's own host map. Both were observed live: an inline Fix-this button on `mthines/lorekit#601` read `app.dash0.com` right after the `--env` gap was fixed, and the **Fix-all report button on `mthines/lorekit#318`** still read `app.dash0.com` hours after *both* fixes had merged, on a "no MCP tool access" dispatch that rebased the PR across repos — exactly the shape of dispatch where a bare relative path stops resolving to this repo's checkout.
 
-With `FIX_LINKS=off` supply no `FIX_ALL_URL` and pass no `FIX_URL` in any inline payload. **One flag governs both placements**, so a run has both buttons or neither — a report offering *Fix all* above findings with no *Fix this* was one of the inconsistencies this replaces. Either way the buttons ride **inside** the reviewer's own sticky report and inline findings — they add no new comment and never push, fix, or approve anything; a human clicks and Agent0 acts.
+With `FIX_LINKS=off` supply no `FIX_ALL_URL` and pass no `FIX_URL` in any inline payload. **One flag governs both placements**: there is no per-placement opt-out, so the *flag* can never produce a report offering *Fix all* above findings with no *Fix this* — one of the inconsistencies this replaces.
+
+**One state diverges the two placements, and it is not the flag.** When `{bot_login}` is unresolved and a prior sticky was matched, *Fix all* renders through the login-fallback template and *Fix this* is skipped — because the fallback names the reviewer's own report comment, and an inline comment has no permalink to itself (GitHub assigns a review comment's id only on POST, and inline comments are append-only). So the divergence is not an oversight to be repaired by rendering *Fix this* anyway; there is nothing to fill it with. It is stated here because it is the fallback bullet's **entire** population — a run reaching that bullet has *Fix all* and no *Fix this* every time, not occasionally — and because an unqualified "both buttons or neither" read as licensing a reader to treat the missing *Fix this* as a bug. The honest scope of the invariant is the flag; the honest scope of the exception is one identity state. Either way the buttons ride **inside** the reviewer's own sticky report and inline findings — they add no new comment and never push, fix, or approve anything; a human clicks and Agent0 acts.
 
 ---
 
@@ -2259,10 +2261,31 @@ can `PATCH`. Write each rendered body to a file and run the shared checker on it
 node "$RENDER_COMMENT" /tmp/finding-$i.json > /tmp/finding-$i.md || { log; continue; }
 node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --check /tmp/finding-$i.md \
   || { log "finding $i: body is not renderer output — dropped"; continue; }
+# ONLY ask on a relayed write. The MCP path carries the body as a tool-call argument and rewrites
+# long URLs; the `gh` path sends a file and rewrites nothing, so asking there withholds a button
+# that would have posted intact. Every fix link is over budget by construction, so an
+# unconditional check is a permanent, silent opt-out of the feature on every path
+# (agent0-fix-links.md § Relay length limit). This block is a separate tool call from Step 4a, so
+# resolve the path here with github-access.md § Step 0's own probe, as with $AGENT_MD above.
+# Derive the repo HERE. $RESOLVED_REPO is bound once at Step 0.2 and this is a different tool
+# call, so it is empty in this shell — and an empty one probes `repos/`, 404s, and reports "no
+# gh" on a session where gh works, withholding the button on the very path this gate exists to
+# protect. github-access.md § Step 0 names that variable as the one not to assume is bound.
+TARGET_REPO="${RESOLVED_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
+# Default to `mcp`: an inconclusive probe must WITHHOLD (a mangled button is worse than none),
+# so the fail-safe direction is "assume relayed", never "assume file". This is the one place
+# that DEPARTS from § Step 0's "undecided, defer the probe" rule, deliberately: the write happens
+# in this block, so there is no later step to defer to, and an undecided probe must still answer.
+ACCESS_PATH=mcp
+[ -n "$TARGET_REPO" ] && command -v gh >/dev/null 2>&1 \
+  && gh api "repos/$TARGET_REPO" --jq .full_name >/dev/null 2>&1 \
+  && ACCESS_PATH=gh
+[ "$ACCESS_PATH" = "mcp" ] && WRITE_IS_RELAYED=1
 # On a relayed write, an over-budget fix URL is mangled no matter how faithfully it is copied.
 # Re-render this finding without FIX_URL rather than drop it — the finding is worth more than
-# its button (agent0-fix-links.md § Relay length limit). Exit 3 is a long URL that is NOT a fix
-# link, so dropping FIX_URL would not remove it: post as rendered and say so.
+# its button. Exit 3 is a long URL that is NOT a fix link, so dropping FIX_URL would not remove
+# it: post as rendered and say so.
+if [ -n "$WRITE_IS_RELAYED" ]; then
 node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/finding-$i.md
 case $? in
   1) jq 'del(.FIX_URL)' /tmp/finding-$i.json > /tmp/finding-$i.nofix.json
@@ -2278,6 +2301,7 @@ case $? in
      fi ;;
   3) log "finding $i: a cited link is over the relay budget and will be mangled — posted as is" ;;
 esac
+fi
 # A reachable-looking button whose image 404s is a broken-image icon, not a button. Same re-render.
 node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --assets-check /tmp/finding-$i.md
 if [ $? -eq 1 ]; then
@@ -2675,22 +2699,46 @@ obligations, and the first is now the load-bearing one:
    faithful copying saves an over-budget URL:
 
    ```bash
+   # WHO REWRITES THE BODY decides whether to ask at all. The MCP path carries the body as a
+   # tool-call argument and rewrites long URLs; the `gh` path sends a FILE and rewrites nothing.
+   # Bind this from the access path already resolved for the sticky write (§ When the sticky
+   # cannot be written) — same run, same answer, do not re-probe.
+   # Derive the repo rather than assuming $RESOLVED_REPO is in THIS shell — an empty one probes
+   # `repos/`, 404s, and reports "no gh" on a session where gh works (github-access.md § Step 0
+   # names it as the caller variable not to assume). Default to `mcp` when the probe is
+   # inconclusive: withholding is recoverable, a mangled button is not. Deliberately NOT § Step
+   # 0's "undecided, defer" rule — the write is in this block, so there is nothing to defer to.
+   TARGET_REPO="${RESOLVED_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
+   ACCESS_PATH=mcp
+   [ -n "$TARGET_REPO" ] && command -v gh >/dev/null 2>&1 \
+     && gh api "repos/$TARGET_REPO" --jq .full_name >/dev/null 2>&1 \
+     && ACCESS_PATH=gh
+   [ "$ACCESS_PATH" = "mcp" ] && WRITE_IS_RELAYED=1
+
    # Exit 1 is a fix link over budget — the remedy removes it. Exit 3 is some OTHER long URL
    # (a cited doc, an asset path): --no-fix-links would not remove it, so re-rendering is a
    # loop with no exit. Post as rendered and name the mangled link in the run line.
-   node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
-   case $? in
-     1) RERENDER_WITH_NO_FIX_LINKS=1 ;;   # re-render, post that, and say so in the run line
-     3) NOTE_MANGLED_LINK=1 ;;            # not remediable here — post, and note it
-   esac
-
-   # 1 wins over 3 when a body carries BOTH kinds — one remediable URL makes the RUN remediable,
-   # not the body clean — so the exit-3 condition can SURVIVE the withhold. Re-render first, then
-   # ask again, or a mangled citation goes unnamed on exactly the runs that had two problems.
-   if [ -n "$RERENDER_WITH_NO_FIX_LINKS" ]; then
+   if [ -n "$WRITE_IS_RELAYED" ]; then
      node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
-     rc=$?
-     [ "$rc" -eq 3 ] && NOTE_MANGLED_LINK=1
+     case $? in
+       1) RERENDER_WITH_NO_FIX_LINKS=1 ;;   # re-render, post that, and say so in the run line
+       3) NOTE_MANGLED_LINK=1 ;;            # not remediable here — post, and note it
+     esac
+
+     # 1 wins over 3 when a body carries BOTH kinds — one remediable URL makes the RUN remediable,
+     # not the body clean — so the exit-3 condition can SURVIVE the withhold. RE-RENDER, then ask
+     # again, or a mangled citation goes unnamed on exactly the runs that had two problems.
+     # The re-render is the point: re-asking the SAME file returns the same 1 forever, so a
+     # second --relay-check on an unchanged body can never reach 3 and this branch would be dead
+     # code that reads as coverage. The inline block at Step 2.8 already does it this way.
+     if [ -n "$RERENDER_WITH_NO_FIX_LINKS" ]; then
+       jq 'del(.FIX_ALL_URL)' /tmp/report-payload.json > /tmp/report-payload.nofix.json
+       node "$RENDER" /tmp/report-payload.nofix.json > /tmp/report-body.md \
+         || abort "re-render without the fix link failed — nothing on stdout, nothing to post"
+       node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
+       rc=$?
+       [ "$rc" -eq 3 ] && NOTE_MANGLED_LINK=1
+     fi
    fi
 
    # Same lever, different failure: the markup is fine but the button's image is not there.
@@ -2709,7 +2757,15 @@ obligations, and the first is now the load-bearing one:
    nothing left to try. Do **not** shorten the prompt to fit: a `fix-this` link spends 106 chars
    before the prompt starts (in body chars, `&amp;` included), and a button that opens a session
    with no idea what to fix is worse than none.
-   This is advisory and path-specific — on the `gh` path the buttons post intact and stay.
+
+   **The `if` is the whole feature.** Every fix link is over the 140-char budget by construction
+   (`agent0-fix-links.md § Relay length limit` — the floor is 164), so an *unconditional*
+   `--relay-check` withholds the buttons on **every run of every repo**, including the `gh` runs
+   where nothing would have been mangled — which is how a default-on affordance shipped and then
+   never rendered once. That the outcome is path-specific was stated in this very paragraph as
+   prose (*"on the `gh` path the buttons post intact and stay"*) while the block above it asked
+   unconditionally: a rule the shell does not execute is a rule the run does not follow. Gate the
+   *question*, not just the sentence about it.
 2. **Reproduce the file byte-for-byte.** Read `/tmp/report-body.md` and pass exactly what it
    contains. Never wrap anything in backticks, never escape `<` or `>`, never re-wrap a long line,
    never re-indent. The body is already final; there is nothing left to format. This is no longer

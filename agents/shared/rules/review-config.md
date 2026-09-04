@@ -67,16 +67,17 @@ severity_thresholds:                     # DEFAULT — values shown are the `bal
                                          # A flat per_comment_confidence_threshold: N
                                          # override collapses all tiers back to N.
 
-agent0_fix_links: false                  # explicit override for the "Fix with Agent0" buttons —
-                                         # omit it and the buttons follow agent0_environment
-                                         # (named ⇒ on, absent ⇒ off) —
-                                         # true is equivalent to always passing --fix-links,
-                                         # false to always passing --no-fix-links
+agent0_fix_links: false                  # the ONLY repo-wide switch for the "Fix with Agent0"
+                                         # buttons. They are ON by default, so this key exists
+                                         # mainly to turn them off — false is equivalent to always
+                                         # passing --no-fix-links, true to always passing
+                                         # --fix-links (i.e. a no-op restating the default)
                                          # see agents/shared/rules/agent0-fix-links.md
 
-agent0_environment: production           # which Agent0 the fix buttons link to —
+agent0_environment: production           # which Agent0 host the fix buttons link to —
                                          # production → app.dash0.com, development → app.dash0-dev.com
-                                         # (default production); see agents/shared/rules/agent0-fix-links.md
+                                         # (default production). HOST ONLY — it does not gate whether
+                                         # the buttons render; see agents/shared/rules/agent0-fix-links.md
 
 high_stakes_paths:                       # repo-specific critical paths (regex, case-insensitive)
   - "(^|/)ledger(/|$)"                   # EXTENDS the built-in list (auth, payments, migrations,
@@ -309,30 +310,64 @@ is a repo-wide setting, not something that varies with one PR's diff, so there i
 
 ```bash
 # Run-level fields — read over the GitHub API, no local file check, no subtree walk, no per-file loop.
+# Distinguish "no such file" from "could not read it". With the buttons ON by default,
+# `agent0_fix_links: false` is the only thing standing between a repo and a deep link it did not
+# ask for, so a swallowed read error would silently discard that opt-out: the config would say off
+# and the run would render buttons anyway. A 404 is an *answer* (the file is absent, take the
+# defaults); any other failure is not, and must not be read as one.
+#
+# The signal is the function's EXIT STATUS, never a variable it assigns. The call below is a
+# command substitution, so the function runs in a subshell and any global it sets is discarded
+# when that subshell exits — a `CONFIG_READ_FAILED=1` inside here would read as 0 at every use
+# site, which is the fail-open outcome this whole branch exists to prevent.
+# Exit 0 = answered (content on stdout, empty when the file is absent); 2 = unreadable.
+# Keep stderr on its OWN channel — never `2>&1`. Folding it into stdout puts any `gh` warning
+# emitted on a SUCCESSFUL call inside the JSON, `--jq` then fails, the content comes back empty,
+# and an existing config carrying `agent0_fix_links: false` reads as "no config" — the fail-open
+# outcome, arriving through the redirect rather than through the missing branch.
 fetch_base_config() {  # $1 = path, e.g. ".github/review.yaml"
-  gh api "repos/$RESOLVED_REPO/contents/$1" --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true
+  local body status err
+  err=$(mktemp)
+  body=$(gh api "repos/$RESOLVED_REPO/contents/$1" --jq '.content' 2>"$err")
+  status=$?
+  if [ "$status" -ne 0 ]; then
+    case "$(cat "$err")" in
+      *"Not Found"*|*404*) rm -f "$err"; return 0 ;;   # absent — the defaults apply
+      *) rm -f "$err"; return 2 ;;                     # unreadable — the caller withholds
+    esac
+  fi
+  rm -f "$err"
+  printf '%s' "$body" | base64 -d 2>/dev/null || true
 }
-BASE_CONFIG_CONTENT=$(fetch_base_config ".github/review.yaml")
-[ -z "$BASE_CONFIG_CONTENT" ] && BASE_CONFIG_CONTENT=$(fetch_base_config ".review.yaml")   # deprecated legacy location
 
-AGENT0_FIX_LINKS="false"          # off unless an Agent0 is configured, below
+CONFIG_READ_FAILED=0
+BASE_CONFIG_CONTENT=$(fetch_base_config ".github/review.yaml") || CONFIG_READ_FAILED=1
+if [ -z "$BASE_CONFIG_CONTENT" ] && [ "$CONFIG_READ_FAILED" -eq 0 ]; then
+  # deprecated legacy location
+  BASE_CONFIG_CONTENT=$(fetch_base_config ".review.yaml") || CONFIG_READ_FAILED=1
+fi
+
+AGENT0_FIX_LINKS="true"           # ON by default — `agent0_fix_links: false` is the only way off
 AGENT0_ENVIRONMENT="production"
-AGENT0_ENV_CONFIGURED="false"     # did the repo actually name an Agent0?
+# An unreadable config is not an absent one: it may have carried the opt-out. Fail SAFE — withhold
+# the buttons — because a withheld button is recoverable (re-run, or pass --fix-links) and a deep
+# link a repo explicitly declined is not.
+[ "$CONFIG_READ_FAILED" -eq 1 ] && AGENT0_FIX_LINKS="false"
 if [ -n "$BASE_CONFIG_CONTENT" ]; then
   # Strip a trailing `# comment` and surrounding quotes before comparing — the schema's own
   # documented style (§ Config schema above) puts an inline comment after the value, and an
   # end-of-line-anchored match against the raw line silently reads that as "unset" (found in
   # review of PR #149).
   strip() { sed -E 's/#.*$//; s/^[^:]+:[[:space:]]*//; s/["'"'"']//g; s/[[:space:]]*$//'; }
+  # HOST ONLY. `agent0_environment` does not gate whether the buttons render — it used to, and
+  # one key carrying both meanings made them unsettable independently (a repo on `development`
+  # could not turn the buttons off without also losing its host). An unrecognised or absent value
+  # leaves the `production` default in place.
   env=$(grep -E '^agent0_environment:' <<< "$BASE_CONFIG_CONTENT" | strip)
   case "$env" in
-    development) AGENT0_ENVIRONMENT="development"; AGENT0_ENV_CONFIGURED="true" ;;
-    production)  AGENT0_ENVIRONMENT="production";  AGENT0_ENV_CONFIGURED="true" ;;
+    development) AGENT0_ENVIRONMENT="development" ;;
+    production)  AGENT0_ENVIRONMENT="production" ;;
   esac
-  # A repo that named an Agent0 has already answered the only question the buttons depend on, so
-  # they default ON there. `agent0_fix_links` is read AFTER, as the explicit override in either
-  # direction — which is why the empty case has to be distinguished from `false`.
-  [ "$AGENT0_ENV_CONFIGURED" = "true" ] && AGENT0_FIX_LINKS="true"
   fl=$(grep -E '^agent0_fix_links:' <<< "$BASE_CONFIG_CONTENT" | strip)
   case "$fl" in
     true)  AGENT0_FIX_LINKS="true" ;;
@@ -341,15 +376,18 @@ if [ -n "$BASE_CONFIG_CONTENT" ]; then
 fi
 ```
 
-`agent0_environment` defaults to `production` (`app.dash0.com`) when absent or unrecognised, and
-`agent0_fix_links` derives from it: **naming an Agent0 turns the buttons on**, and an explicit
-`agent0_fix_links: true|false` overrides that in either direction. A repo with no
-`agent0_environment` line resolves `AGENT0_FIX_LINKS=false` and renders no buttons anywhere — which
-is every non-Dash0 repo, so the default is invisible outside Dash0.
+**The buttons are on by default and the two keys are independent.** `AGENT0_FIX_LINKS` starts
+`true` and only `agent0_fix_links: false` turns it off; `agent0_environment` picks the host and
+defaults to `production` (`app.dash0.com`) when absent or unrecognised, with no bearing on whether
+anything renders. So a repo with no review config at all, or one that has never heard of Agent0,
+gets buttons deep-linking to `app.dash0.com` — the cost of the default, stated in
+`agent0-fix-links.md § Opt-in` rather than left to be discovered, and one line to decline.
 
-Note the `case` rather than a `[ "$fl" = "true" ]` test: `false` and *absent* have to be
-distinguishable now, because absent means "inherit from the environment" and `false` means "no,
-really, off". A truthiness check would collapse the two and make the override unwritable.
+Note the `case` rather than a `[ "$fl" = "true" ]` test: `false` and *absent* have to stay
+distinguishable, because absent means "take the default" — which is now **on** — and `false` means
+"no, really, off". A truthiness check would read every absent key as `false` and quietly restore the
+old off-by-default behaviour, with the config, the table above and this paragraph all still claiming
+otherwise.
 `pr-reviewer.md` combines `AGENT0_FIX_LINKS` with the invocation flags to decide `FIX_LINKS`
 (`--no-fix-links` wins, then `--fix-links`, then this value),
 and passes `AGENT0_ENVIRONMENT` to `build-agent0-link.mjs` as `--env` — **on both the Fix-all and

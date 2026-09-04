@@ -102,5 +102,5 @@
   "STANDARDS_LOG": "ran · 1 doc · 0 finding(s)",
   "MEASURABILITY_LOG": "ran · 2 paths classified · 1 missing · 0 unlinked",
   "SKIPPED_FILES": "none",
-  "FIX_ALL_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=Fix%20the%203%20open%20pr-reviewer%20findings&utm_source=pr-reviewer-fix-all"
+  "FIX_ALL_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=%2Fpr-fix%20https%3A%2F%2Fgithub.com%2Fowner%2Frepo%2Fpull%2F123%20pr-review-bot&utm_source=pr-reviewer-fix-all"
 }

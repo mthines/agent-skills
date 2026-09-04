@@ -232,7 +232,7 @@ _Pseudo-code — verify before applying._      ← only when PSEUDO is set
 
 <Fix with Agent0 button>                      ← only when the mode is on
 
-<sup>`pr-reviewer` · commit `<sha7>` · [how these findings are produced](…)</sup>
+<sup>`pr-reviewer` · commit `<sha7>`</sup>
 <!-- fp:v2:<finder>:<class>:<symbol>@<path> -->
 ```
 
@@ -241,7 +241,7 @@ A **one-liner** (`nitpick` / `question` / `praise`) — the terse form, unchange
 ```
 <prefix> (<tier>): <≤ 2 sentences> **(non-blocking)**
 
-<sup>`pr-reviewer` · commit `<sha7>` · [how these findings are produced](…)</sup>
+<sup>`pr-reviewer` · commit `<sha7>`</sup>
 ```
 
 ## The footer
@@ -252,6 +252,17 @@ Every posted inline comment ends with the shared attribution footer, built by
 **One rule, no exceptions**, including `praise`. The exceptions are what drift: a per-prefix
 carve-out is a decision to re-make on every finding, and the cost of the rule as stated is one
 `<sup>` line on a rare comment.
+
+**Inline carries the identity half only — `` `pr-reviewer` · commit `<sha7>` `` and nothing else.**
+The shared function is the same; the *arguments* differ, and always have (the report passes its run
+line and its `updated` stamp, an inline finding passes neither). The **methodology link** belongs
+once per review, on the object that *is* the review — repeating
+`[how these findings are produced]` under all twenty inline findings spends a line per comment to
+say the same thing the report already says once, on the surface with the least room for it. So
+`footerLine()`'s `docs` flag defaults **off** and only `render-report.mjs` passes `docs: true`: a
+surface has to *ask* for the link, which is why this cannot silently come back. Guarded from both
+directions — L1 `G46e` asserts the four inline reference renderings carry the whole footer and no
+methodology link, and `G25` diffs the report's own renderings, which do carry it.
 
 It answers two questions nothing else on this surface could. *Who is speaking* — an inline comment
 is most often read in a notification email or the Files-changed rail, with no surrounding page to
@@ -426,12 +437,12 @@ The reviewer tiers every finding by default (`review-config.md` § Severity-awar
 
 ## Fix-with-Agent0 button
 
-When the buttons are on (`agents/shared/rules/agent0-fix-links.md § Opt-in` — the default wherever the review config names an `agent0_environment`), build the deep link and pass it as the payload's **`FIX_URL`**. `render-comment.mjs` renders the button itself, from `comment-spine.mjs`'s `fixButton()`, after the fix block — **never hand-write the markup**, since the host validation, the theme pair and the alt text all live in that one function and a second copy is how the report's button and this one drift apart. Build the link with **the same `--env <env>` the run resolved once at `pr-reviewer.md § Fix-with-Agent0 buttons` (`review-config.md § Run-level fields`) — never rebuild or default the environment per finding — and `--source fix-this` (always this literal value here; `agent0-fix-links.md § Click attribution`).** Omitting `--env` here silently falls back to `build-agent0-link.mjs`'s own `production` default regardless of `agent0_environment`, which is exactly the bug this line now guards against (a `development`-configured repo whose Fix-all report button correctly linked to `app.dash0-dev.com` while its inline Fix-this buttons still linked to `app.dash0.com`). `--source` has no default at all — the script throws rather than silently mis-tagging or dropping the click-attribution data.
+When the buttons are on (`agents/shared/rules/agent0-fix-links.md § Opt-in` — on by default; a repo opts out with `agent0_fix_links: false`), build the deep link and pass it as the payload's **`FIX_URL`**. `render-comment.mjs` renders the button itself, from `comment-spine.mjs`'s `fixButton()`, after the fix block — **never hand-write the markup**, since the host validation, the theme pair and the alt text all live in that one function and a second copy is how the report's button and this one drift apart. Build the link with **the same `--env <env>` the run resolved once at `pr-reviewer.md § Fix-with-Agent0 buttons` (`review-config.md § Run-level fields`) — never rebuild or default the environment per finding — and `--source fix-this` (always this literal value here; `agent0-fix-links.md § Click attribution`).** Omitting `--env` here silently falls back to `build-agent0-link.mjs`'s own `production` default regardless of `agent0_environment`, which is exactly the bug this line now guards against (a `development`-configured repo whose Fix-all report button correctly linked to `app.dash0-dev.com` while its inline Fix-this buttons still linked to `app.dash0.com`). `--source` has no default at all — the script throws rather than silently mis-tagging or dropping the click-attribution data.
 
 **Invoke the script by its `$AGENT_MD`-resolved path, never a bare `agents/pr-reviewer/scripts/build-agent0-link.mjs`.** This step (Step 2.8/2.9) is its own tool call, separate from Step 4a — shell state including any previously-resolved `$AGENT_MD` is gone, so re-resolve it fresh here with the same `resolve()` idiom `pr-reviewer.md § Step 1.2` uses for `CLASSIFY` (`pr-reviewer.md § Fix-with-Agent0 buttons` shows the exact `BUILD_LINK` derivation). A bare relative path only happens to resolve when the shell's cwd is this repo's own checkout, which is not guaranteed on every dispatch — silent failure here reads as a fabricated or defaulted URL rather than a loud error, which is how a `production` link survived on `mthines/lorekit#318` well after the `--env` gap above was already fixed.
 
 Like the severity label it is rendered outside the prose, so it is excluded from the 200-char prose cap — and it is skipped, not aborted, when `$BUILD_LINK` doesn't exist: re-check `[ -f "$BUILD_LINK" ]` fresh at this same re-resolution point (`pr-reviewer.md § Fix-with-Agent0 buttons`'s Fix-this bullet re-checks it per finding, since this is a separate tool call from Step 4a where the existence check was first added) — omit `FIX_URL` from that one payload rather than dropping the finding. The renderer **rejects** `FIX_URL` on `nitpick` / `question` / `praise`, so the skip for those is enforced rather than remembered; omit it entirely when the mode is off.
 
-Its deep link embeds the finding's **lead line** — the prefix plus first sentence of the body this check just cleared — so read the prompt template in `agent0-fix-links.md § Prompt templates` rather than assuming the URL is finding-independent. Build the link from the *final* body: a prose trim under § Hard caps changes the lead line, and a link built before the trim would quote text the comment does not contain.
+Its deep link is a call to Agent0's `/pr-fix` skill carrying the PR URL, the reviewer's login, and this finding's own `path:line` — **no part of the body** (`agent0-fix-links.md § Prompt templates`). It is finding-*located* but not finding-*quoting*, so the link is unaffected by a prose trim under § Hard caps and may be built before or after it. Do not re-add a `{lead}` line or any other excerpt: the body is read live by `/pr-fix` from the posted comment, and quoting it into the URL is how the link went stale on a trim and grew to ~880 chars.
 
-Unlike the severity label, the button is not unbounded either: the embedded deep link is capped by `build-agent0-link.mjs`'s own `MAX_URL` guard (4000 chars — read that constant for why it is not the 8000 it once was), which applies identically to the **Fix this** and **Fix all** links since both are built by that script's `encodePrompt` / `buildLink`. If a **Fix this** prompt would push the link past that bound, omit the button for that finding rather than truncate the URL — log the omission in the agent's terminal output the same way an unrecoverable `passes_shape` drop is logged above, so the finding is never silently shortened into a broken link.
+Unlike the severity label, the button is not unbounded either: the embedded deep link is capped by `build-agent0-link.mjs`'s own `MAX_URL` guard (4000 chars — read that constant for why it is not the 8000 it once was), which applies identically to the **Fix this** and **Fix all** links since both are built by that script's `encodePrompt` / `buildLink`. Both now sit between ~190 and ~360 chars, so the guard is a guard; if a **Fix this** prompt would somehow push the link past that bound (a pathologically long path), omit the button for that finding rather than truncate the URL — log the omission in the agent's terminal output the same way an unrecoverable `passes_shape` drop is logged above, so the finding is never silently shortened into a broken link.

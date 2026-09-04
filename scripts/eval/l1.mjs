@@ -4,7 +4,7 @@
 //   node scripts/eval/l1.mjs
 // Exits non-zero if any check fails.
 import { execSync, spawnSync } from "node:child_process";
-import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -1333,6 +1333,13 @@ function checksInSync(plan, checks) {
         /<details>\n<summary>Review details/.test(body));
       s.check(`G25 ${name} pre-expands nothing`, !body.includes("<details open>"));
       s.check(`G25 ${name} carries no **Verdict** line`, !body.includes("**Verdict**"));
+      // The report is the ONE surface that carries the methodology link; G46e asserts its
+      // absence inline. Named here rather than left to the snapshot byte-diff, because a
+      // regenerated snapshot updates silently and both halves of an asymmetry need a guard
+      // that says which direction it points (`comment-shape.md § The footer`).
+      s.check(`G25 ${name} carries the methodology link (report-only)`,
+        body.includes("[how these findings are produced]"),
+        "the report owns this link once per review; inline findings carry the identity half only");
       // Nothing the accordion owns may render above the first <details>.
       const head = body.split("<details>")[0];
       for (const owned of ["| Gate | Status | Details |", "**Needs attention**", "**Found**",
@@ -2796,104 +2803,302 @@ const isPollBlock = (block) =>
     noSource.status !== 0 && noSource.stdout === "" && /source must be one of/.test(noSource.stderr),
     `status=${noSource.status} stdout=${JSON.stringify(noSource.stdout)} stderr=${noSource.stderr}`);
 
-  // G32: the Agent0 prompt templates are addresses, not identities. Fix-this hands Agent0 the one
-  // location it would otherwise spend a round trip discovering; Fix-all hands Agent0 a ready-to-run
-  // GraphQL command scoped to its own login, rather than a per-finding location list — the regression
-  // this guards is a revert to the marker hop ("open the pr-reviewer report comment (marker
-  // PR_REVIEWER_REPORT)"), which cost four discovery calls on mthines/lorekit#594 and is structurally
-  // stale: Gate 3 counts PRIOR threads, while the run's own findings post at 4b after the 4a render.
-  // The templates carry no code, so a fixture cannot cover them; assert the placeholders plus the
-  // length bound the fixed-query design buys back.
+  // G32: the Agent0 fix prompts are one `/pr-fix` invocation plus an address — the skill owns the
+  // method (gather the PR's comments, filter to one author, apply, commit, push), the URL owns the
+  // target. Two regressions this guards, in opposite directions. Backwards: a revert to the marker
+  // hop ("open the pr-reviewer report comment (marker PR_REVIEWER_REPORT)"), which cost four
+  // discovery calls on mthines/lorekit#594 and is structurally stale — Gate 3 counts PRIOR threads,
+  // while the run's own findings post at 4b after the 4a render. Forwards: re-inlining any part of
+  // what /pr-fix now owns — an embedded gh api graphql worklist, a {lead} excerpt, a {count}
+  // checksum — each of which is a second implementation that drifts, and together are what made the
+  // prompts ~1100 and ~880 chars. The templates carry no code, so a fixture cannot cover them;
+  // assert the argument grammar, the absence of the re-inlined parts, and the length win.
   const rule = readFileSync(join(REPO_ROOT, "agents/shared/rules/agent0-fix-links.md"), "utf8");
   const templates = [...rule.matchAll(/```text\n([^`]*?)\n```/g)].map((m) => m[1]);
-  const fixAll = templates.find((t) => t.includes("{bot_login}") && t.includes("gh api graphql"));
-  const fixThis = templates.find((t) => t.includes("{path}:{line}") && t.includes("{lead}"));
+  const implementTpls = templates.filter((t) => t.trimStart().startsWith("/pr-fix"));
+  const fixThis = implementTpls.find((t) => t.includes("{path}:{line}"));
+  const fixAll = implementTpls.find((t) => t.includes("{bot_login}") && !t.includes("{path}"));
+  const fallback = implementTpls.find((t) => t.includes("{report_comment_url}"));
   const ciOnly = templates.find((t) => t.includes("{failing_checks}"));
 
-  s.check("G32a the Fix-all template carries a ready-to-run query scoped to its own login ({bot_login} + {count} + gh api graphql)",
-    !!fixAll && fixAll.includes("{count}"),
-    "no ```text template carries {bot_login}, {count}, and a gh api graphql call — the ready-to-run query fill was dropped");
+  s.check("G32a the Fix-all template is a /pr-fix call carrying the PR URL and the reviewer's login",
+    !!fixAll && /^\/pr-fix https:\/\/github\.com\/\{owner\}\/\{repo\}\/pull\/\{n\} \{bot_login\}$/.test(fixAll.trim()),
+    `no text-fenced template is a bare "/pr-fix <pr-url> {bot_login}" — got ${JSON.stringify(fixAll ?? null)}`);
 
   s.check("G32b no template sends Agent0 to the report comment by marker first",
     !templates.some((t) => t.includes("PR_REVIEWER_REPORT")),
     "a prompt template names the PR_REVIEWER_REPORT marker again — that is the list-and-scan hop, and the report is stale for this run's own findings");
 
-  s.check("G32c the Fix-this template carries the finding's lead line, not just its location",
-    !!fixThis && fixThis.includes("{lead}"),
-    "the fix-this template lost {lead} — Agent0 is back to fetching before it knows the subject");
+  s.check("G32c the Fix-this template is a /pr-fix call scoping to one {path}:{line}",
+    !!fixThis && fixThis.includes("/pr-fix ") && fixThis.includes("{bot_login}"),
+    "the fix-this template lost its /pr-fix call, its {path}:{line} scope, or its {bot_login} author argument — without the scope it duplicates Fix-all, and without the author /pr-fix skips a bot reviewer's own findings");
 
-  // The Fix-all template embeds no per-finding data, so its length no longer scales with the open
-  // finding count — {count} is just a number substitution. The design target is 2500 — the point of
-  // the target is that MAX_URL (4000) stays a fail-closed guard rather than a routine ceiling, since
-  // the real cliff behind it is the 8k request-line buffer of a default nginx/Apache. Filled from the
-  // LIVE template, never hand-copied: a transcribed copy silently stops measuring the real prompt the
-  // moment the template gains a clause, which is exactly when the measurement matters.
+  // The login fallback is what narrowed the omit-the-button rule: an unresolved {bot_login} used to
+  // drop the Fix-all button outright, and now the report comment's own permalink names the author by
+  // naming a comment the reviewer wrote. It is unavailable on a first run (the sticky is POSTed after
+  // the body renders), so it must stay a fallback and never replace the login form.
+  s.check("G32l the Fix-all login fallback passes the report comment permalink to /pr-fix",
+    !!fallback && /^\/pr-fix \{report_comment_url\}$/.test(fallback.trim())
+      && /issuecomment-\{sticky_id\}/.test(rule)
+      && /fallback, not the default/.test(rule),
+    "the {report_comment_url} fallback, its #issuecomment-{sticky_id} definition, or its fallback-not-default rule is gone — an unresolved login is back to omitting the button");
+
+  // G32l-count: the routing bullets are FIRST-MATCH-WINS, so the fallback branch needs the count
+  // condition as well as the identity one. Shipped without it: an unresolved login plus a matched
+  // sticky pre-empted the CI-only bullet AND the omit bullet below, emitting a /pr-fix call at a
+  // count of 0 — the one state § Prompt templates forbids one in ("must not become one"). The
+  // branch it replaced carried an explicit precedence marker ("regardless of {count} or CI state")
+  // and the rewrite dropped it, which is what made the ordering ambiguous rather than merely terse.
+  //
+  // Anchored on the fallback bullet's own sentence, not on a file-wide count of OPEN_FINDING_COUNT:
+  // the identifier appears in four bullets here, so a whole-body match would pass with this exact
+  // condition deleted. Both owners are asserted — the agent body routes, the rule file explains —
+  // because the two said different things and only the rule file was wrong-in-prose.
+  const routingBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+  const fallbackBullet = /\*\*When `\{bot_login\}` is unresolved\*\*[^\n]*/.exec(routingBody)?.[0] ?? "";
+  s.check("G32l the Fix-all login fallback is gated on OPEN_FINDING_COUNT, not on identity alone",
+    /OPEN_FINDING_COUNT` is non-zero/.test(fallbackBullet),
+    "first-match-wins: an identity-only fallback pre-empts the CI-only variant and the omit rule,"
+      + " emitting a /pr-fix call at a finding count of 0");
+  s.check("G32l the rule file states identity and count as independent conditions",
+    /Identity and count are independent conditions/.test(rule)
+      && /reached only\s*\nwhen the open reviewer-finding count is \*\*non-zero\*\*/.test(rule),
+    "the rule file said to omit the button 'only when both identity paths are unavailable', which"
+      + " reads as licensing a fallback at a count of 0");
+
+  // Nothing /pr-fix owns may be re-inlined into a prompt. Each of these three IS the shape the
+  // rewrite removed, so a match means a specific documented regression, not a style slip.
+  for (const [what, re, why] of [
+    ["an embedded gh api graphql worklist", /gh api graphql/,
+      "/pr-fix gathers the PR's comments itself; an embedded query is a second implementation that drifts"],
+    ["a {lead} body excerpt", /\{lead\}/,
+      "quoting the finding's lead line went stale on a § Hard caps prose trim and is what made Fix-this ~880 chars"],
+    ["a {count} checksum", /\{count\}/,
+      "/pr-fix reports what it applied; a count in the URL is a second, staler answer to the same question"],
+  ]) {
+    s.check(`G32m no /pr-fix template re-inlines ${what}`,
+      !implementTpls.some((t) => re.test(t)), why);
+  }
+
+  // The design target is 2500 — the point of the target is that MAX_URL (4000) stays a fail-closed
+  // guard rather than a routine ceiling, since the real cliff behind it is the 8k request-line buffer
+  // of a default nginx/Apache. G32k adds a much tighter bound to hold the /pr-fix win: without it,
+  // a re-added clause is absorbed into ~2200 chars of headroom and never reads as a regression.
+  // Filled from the LIVE templates, never hand-copied: a transcribed copy silently stops measuring
+  // the real prompt the moment a template gains a clause, which is exactly when it matters.
   const TARGET = 2500;
-  const fillTemplate = (t, count) => (t ?? "")
+  const SHORT = 500;
+  // A 94-char path is Fix-this's documented worst case; owner/repo/login are realistic.
+  const fillTemplate = (t) => (t ?? "")
     .replaceAll("{owner}", "mthines").replaceAll("{repo}", "lorekit")
-    .replaceAll("{n}", "594").replaceAll("{count}", String(count))
-    .replaceAll("{bot_login}", "dash0-dev[bot]");
-  const filledLow = fillTemplate(fixAll, 1);
-  const filledHigh = fillTemplate(fixAll, 999);
-  // A generic /\{[a-z_]+\}/ scan false-positives on the GraphQL query's own field selections (e.g.
-  // `author{login}` is valid query syntax, not an unsubstituted template placeholder), so check the
-  // known placeholder names this fill is supposed to substitute rather than any brace-wrapped word.
-  const KNOWN_PLACEHOLDERS = ["{owner}", "{repo}", "{n}", "{count}", "{bot_login}"];
-  const leftoverPlaceholder = KNOWN_PLACEHOLDERS.find((p) => filledLow.includes(p));
-  s.check("G32d0 the fill leaves no unsubstituted placeholder",
-    filledLow !== "" && !leftoverPlaceholder,
-    `template gained a placeholder this fill does not substitute: ${leftoverPlaceholder ?? "(no template)"}`);
-  const lenLow = buildLink(filledLow, "production", "fix-all").length;
-  const lenHigh = buildLink(filledHigh, "production", "fix-all").length;
-  s.check(`G32d a filled Fix-all URL stays under the ${TARGET}-char design target`,
-    lenLow < TARGET, `filled URL is ${lenLow} chars — the fixed-query design should sit far under ${TARGET}; a per-finding list crept back in`);
-
-  s.check("G32e the Fix-all URL length does not grow with the finding count",
-    Math.abs(lenHigh - lenLow) <= 4,
-    `a count=1 fill is ${lenLow} chars and a count=999 fill is ${lenHigh} chars — Fix-all should be flat in finding count (only the digits of {count} may differ), a per-finding list crept back in`);
-
-  // The embedded GraphQL query is the single source of truth for "what's still open" — it must scope
-  // to the reviewer's own login twice (once in the lead sentence, once in the filter clause) rather
-  // than an inferred "that same reviewer", and it must actually check isResolved so Agent0 never
-  // touches an already-closed thread.
-  s.check("G32h the Fix-all template's query checks isResolved and filters to {bot_login}'s own comments",
-    !!fixAll && /isResolved/.test(fixAll) && (fixAll.match(/\{bot_login\}/g) ?? []).length >= 2,
-    "Fix-all lost the isResolved check or the {bot_login} filter — Agent0 can no longer tell open threads from closed ones, or from another author's, without a second call");
-
-  // `reviewThreads` caps at first:100 and --paginate does not work for GraphQL — the guard
-  // prior-comment-awareness.md § Thread state states for this exact query, and which
-  // thread-resolution.md and outcome-learning.md both carry. It binds HARDER here: the query has no
-  // server-side author filter, so {bot_login} is applied client-side and the 100-cap falls on the
-  // unfiltered thread list. On a multi-reviewer PR this reviewer's own open threads can sit past the
-  // cap, and Agent0 then reports done having fixed a subset. Both halves must survive a reword.
-  s.check("G32j the Fix-all template's query carries the reviewThreads pagination walk",
-    !!fixAll && /pageInfo\{hasNextPage endCursor\}/.test(fixAll) && /after:/.test(fixAll),
-    "Fix-all dropped pageInfo{hasNextPage endCursor} or the after: clause — reviewThreads caps at first:100 with no server-side author filter, so this silently truncates the worklist on a multi-reviewer PR (prior-comment-awareness.md § Thread state)");
-
-  s.check("G32i the Fix-all template's GraphQL query has balanced braces",
-    !!fixAll && (() => {
-      const q = /query='(\{.*?\})'/.exec(fixAll)?.[1] ?? "";
-      if (!q) return false;
-      const opens = (q.match(/\{/g) ?? []).length;
-      const closes = (q.match(/\}/g) ?? []).length;
-      return opens > 0 && opens === closes;
-    })(),
-    "the embedded gh api graphql query is missing or has unbalanced braces — Agent0 would run a broken command verbatim");
+    .replaceAll("{n}", "594").replaceAll("{bot_login}", "dash0-dev[bot]")
+    .replaceAll("{path}", `packages/${"nested-directory/".repeat(4)}some-module-name.ts`)
+    .replaceAll("{line}", "1204");
+  const KNOWN_PLACEHOLDERS = ["{owner}", "{repo}", "{n}", "{bot_login}", "{path}", "{line}"];
+  for (const [name, tpl, source] of [["Fix-all", fixAll, "fix-all"], ["Fix-this", fixThis, "fix-this"]]) {
+    const filled = fillTemplate(tpl);
+    const leftover = KNOWN_PLACEHOLDERS.find((p) => filled.includes(p));
+    s.check(`G32d0 the ${name} fill leaves no unsubstituted placeholder`,
+      filled !== "" && !leftover,
+      `template gained a placeholder this fill does not substitute: ${leftover ?? "(no template)"}`);
+    const len = buildLink(filled, "production", source).length;
+    s.check(`G32d a filled ${name} URL stays under the ${TARGET}-char design target`,
+      len < TARGET, `filled URL is ${len} chars — over the ${TARGET} design target`);
+    s.check(`G32k a filled ${name} URL stays under the ${SHORT}-char /pr-fix bound`,
+      len < SHORT,
+      `filled URL is ${len} chars — the /pr-fix rewrite put both prompts near 200–300, so ${len} means a clause, a worklist, or an excerpt crept back in (agent0-fix-links.md § Deep-link format)`);
+  }
 
   // The Agent0 runner lacks the headroom for a raw tsc/eslint invocation — even one scoped to a
   // single changed package still walks that package's whole project graph and crashes the run, so
   // scoping by file count alone (the earlier wording) was not sufficient; observed live when a run
   // honored "only the files you changed" but still reached for `npx tsc --noEmit --project
-  // tsconfig.json` on the changed package. All three templates must instead route to the repo's own
-  // lint/typecheck/test scripts and allow skipping verification outright rather than inventing a raw
-  // invocation.
-  for (const [name, tpl] of [["Fix-all", fixAll], ["Fix-this", fixThis], ["Fix-all — CI-only", ciOnly]]) {
-    s.check(`G32g the ${name} template verifies via the repo's own scripts, never a raw call or a whole-repo pass`,
-      !!tpl
-        && /repo's own lint\/typecheck/.test(tpl)
-        && /never a raw [\w/-]+ call or a whole-repo pass/.test(tpl)
-        && /skip verification if none exist/.test(tpl),
-      `${name} lost the scoped-verification clause — a raw tsc/eslint call, even scoped to the changed package, still crashes the Agent0 runner on a large repo`);
+  // tsconfig.json` on the changed package. The CI-only template is the one that still carries its own
+  // method — the two /pr-fix templates delegate verification to the skill — so it must route to
+  // the repo's own lint/typecheck/test scripts and allow skipping verification outright.
+  s.check("G32g the Fix-all — CI-only template verifies via the repo's own scripts, never a raw call or a whole-repo pass",
+    !!ciOnly
+      && /repo's own lint\/typecheck/.test(ciOnly)
+      && /never a raw [\w/-]+ call or a whole-repo pass/.test(ciOnly)
+      && /skip verification if none exist/.test(ciOnly),
+    "Fix-all — CI-only lost the scoped-verification clause — a raw tsc/eslint call, even scoped to the changed package, still crashes the Agent0 runner on a large repo");
+
+  s.check("G32n the CI-only template is not a /pr-fix call",
+    !!ciOnly && !ciOnly.includes("/pr-fix") && /must not become one/.test(rule),
+    "the CI-only variant became a /pr-fix call — /pr-fix applies review comments, and a red check with zero findings has none to apply");
+
+  // G32o: the both-buttons-or-neither invariant must be scoped to the FLAG, and the one state
+  // that diverges the placements must be named in the same breath. Shipped unqualified in both
+  // owners while the login fallback renders Fix-all and skips Fix-this for its ENTIRE population
+  // (an inline comment has no permalink to itself), so the absolute was false exactly where a
+  // reader would go looking — the same contradiction class as CLAUDE.md's "always named".
+  // Two checks, not one: the phrase is what a reader quotes, the exception is what makes it true.
+  for (const [file, body] of [["agents/pr-reviewer.md", routingBody], ["agent0-fix-links.md", rule]]) {
+    s.check(`G32o ${file} scopes both-buttons-or-neither to the flag`,
+      !/(?:a run (?:has|either has)|so a run either has) both buttons or neither/.test(body)
+        && /no per-placement opt-out/.test(body),
+      "the invariant is stated as a property of the run, but the login fallback renders Fix all"
+        + " with no Fix this for every run that reaches it — scope the claim to the flag");
+    s.check(`G32o ${file} names the fallback's one-button divergence`,
+      /has no permalink to itself|no permalink to itself/.test(body)
+        && /entire\*\* population|\*\*entire\*\* population/.test(body),
+      "the divergence is undocumented, so a reader treats the absent Fix this as a defect and"
+        + " 'fixes' it by inventing a self-link GitHub cannot assign until POST");
+  }
+
+  // G32p: --relay-check must be GATED ON THE WRITE PATH, in the shell, at both call sites.
+  // Every fix link is over the 140 budget by construction (floor 164), so an unconditional check
+  // withholds the buttons on every run of every repo — including `gh` runs that rewrite nothing —
+  // which is a silent permanent opt-out of a default-on affordance. It shipped that way: the
+  // report block carried "on the `gh` path the buttons post intact and stay" as PROSE while the
+  // shell asked unconditionally, and the inline block had neither. So this asserts the guard
+  // condition sits in the same fenced block as the call, not that a sentence about it exists.
+  for (const [site, marker] of [["report", "/tmp/report-body.md"], ["inline", "/tmp/finding-$i.md"]]) {
+    const blocks = [...routingBody.matchAll(/```bash\n([\s\S]*?)```/g)]
+      .map((m) => m[1])
+      .filter((b) => b.includes(`--relay-check ${marker}`));
+    s.check(`G32p the ${site} --relay-check call sits behind a write-path condition`,
+      blocks.length > 0 && blocks.every((b) => /ACCESS_PATH.*=.*"?mcp"?/.test(b)
+        && /if \[ -n "\$WRITE_IS_RELAYED" \]/.test(b)),
+      blocks.length === 0
+        ? `no bash block calls --relay-check ${marker} — the call site moved; re-anchor this guard`
+        : "the call is unconditional, so the buttons are withheld on the `gh` path too and the"
+          + " affordance never renders anywhere");
+
+    // A gate that always answers "relayed" is the unconditional check wearing an `if`. The probe
+    // shipped reading `repos/$RESOLVED_REPO`, which is bound at ONE site in a different tool call
+    // — so it was empty here, probed `repos/`, 404'd, and pinned ACCESS_PATH to `mcp` forever.
+    // The check above passed the whole time, which is why this one exists: assert the probe can
+    // actually reach `gh`, not merely that a condition is written. G43b cannot see this — it
+    // asks whether a name is bound anywhere in the file, and this one is.
+    s.check(`G32p the ${site} write-path probe derives its own repo`,
+      blocks.every((b) => !/repos\/\$RESOLVED_REPO/.test(b)
+        && (!/gh api "repos\//.test(b) || /TARGET_REPO="\$\{RESOLVED_REPO:-/.test(b))),
+      "the probe reads $RESOLVED_REPO, which Step 0.2 binds in a different tool call — empty here,"
+        + " so it probes `repos/`, 404s, and reports `mcp` on every path including `gh`");
+  }
+
+  // The exit-3 re-check is meaningless without a re-render: asking the SAME file returns the same
+  // 1 forever, so the branch reads as coverage while being dead. Its own comment said "re-render
+  // first" while the shell only re-asked — the identical prose-vs-shell split as the gate above.
+  const reportBlock = [...routingBody.matchAll(/```bash\n([\s\S]*?)```/g)]
+    .map((m) => m[1])
+    .find((b) => b.includes("--relay-check /tmp/report-body.md"));
+  s.check("G32p the report's exit-3 re-check re-renders before re-asking",
+    !!reportBlock && /del\(\.FIX_ALL_URL\)/.test(reportBlock)
+      && reportBlock.indexOf("del(.FIX_ALL_URL)") < reportBlock.lastIndexOf("--relay-check"),
+    "the second --relay-check reads an unchanged body, so it returns 1 again and can never reach"
+      + " 3 — NOTE_MANGLED_LINK is unreachable and a mangled citation goes unnamed");
+  s.check("G32p github-access.md binds ACCESS_PATH with how the body travels",
+    (() => {
+      const ga = readFileSync(join(REPO_ROOT, "agents/shared/rules/github-access.md"), "utf8");
+      return /`ACCESS_PATH`/.test(ga) && /tool-call argument/.test(ga) && /Body travels as/.test(ga);
+    })(),
+    "the consumers compare $ACCESS_PATH against the literal \"mcp\" to decide whether their body"
+      + " is relayed, so renaming the token here silently inverts the fail-safe: the comparison"
+      + " goes always-false, WRITE_IS_RELAYED stays unset, and every write is treated as"
+      + " file-based — posting a mangled button, the direction the default exists to avoid");
+
+  // G32q: the buttons are ON BY DEFAULT, and that is a fact about the SHELL, not about a
+  // sentence. Two prior defaults failed the same way — off-unless-flagged, then
+  // on-only-where-an-agent0_environment-was-named — and in both the affordance was missing from
+  // every run nobody had remembered to configure. So EXECUTE the resolution block from
+  // review-config.md against fixture configs and assert what it resolves. A prose-presence check
+  // would pass while a `[ "$fl" = "true" ]` truthiness test read every absent key as `false` and
+  // quietly restored off-by-default, with the table, the schema and the prose all still claiming
+  // otherwise — the same shape as G32p's unconditional --relay-check.
+  {
+    const cfg = readFileSync(join(REPO_ROOT, "agents/shared/rules/review-config.md"), "utf8");
+    const block = [...cfg.matchAll(/```bash\n([\s\S]*?)```/g)]
+      .map((m) => m[1])
+      .find((b) => /^AGENT0_FIX_LINKS=/m.test(b));
+    // Drop the fetch half — it needs `gh` and the network. The resolution half starts at the
+    // first AGENT0_ variable and is pure string handling, so it runs as-is.
+    const tail = block?.slice(block.search(/^AGENT0_FIX_LINKS=/m));
+    const resolve = (content, readFailed = 0) => {
+      const r = spawnSync("bash", ["-c",
+        `CONFIG_READ_FAILED=${readFailed}\n`
+        + `BASE_CONFIG_CONTENT=$(cat)\n${tail}\n`
+        + `printf '%s %s\\n' "$AGENT0_FIX_LINKS" "$AGENT0_ENVIRONMENT"`,
+      ], { input: content, encoding: "utf8" });
+      return (r.stdout || "").trim();
+    };
+
+    s.check("G32q the review-config resolution block is still where this guard reads it",
+      !!tail && /agent0_fix_links/.test(tail),
+      "no bash block in review-config.md binds AGENT0_FIX_LINKS — the resolution moved;"
+        + " re-anchor this guard rather than deleting it");
+
+    if (tail) {
+      // The whole point of the inversion: nothing configured must render buttons.
+      s.check("G32q nothing configured resolves the buttons ON at the production host",
+        resolve("") === "true production",
+        `an empty config resolved "${resolve("")}" — a repo that configured nothing gets no`
+          + " buttons again, which is the default this change replaced");
+      s.check("G32q a config that never mentions Agent0 still resolves ON",
+        resolve("profile: balanced\nfilters:\n  - naming-nits\n") === "true production",
+        "an unrelated review config turned the buttons off — only `agent0_fix_links: false` may");
+
+      // The one opt-out has to actually work: it is all that stands between a repo that declined
+      // and a deep link to a host its readers cannot sign in to.
+      s.check("G32q `agent0_fix_links: false` is a real opt-out",
+        resolve("agent0_fix_links: false\n").startsWith("false"),
+        "the documented repo-wide opt-out did not resolve off — the only way for a non-Dash0 repo"
+          + " to decline the buttons is broken, and the config says it works");
+      s.check("G32q the opt-out survives an inline comment after the value",
+        resolve("agent0_fix_links: false   # we do not use Agent0\n").startsWith("false"),
+        "an inline comment defeated the opt-out — the schema's own documented style puts one"
+          + " there (the PR #149 regression, in the direction that now fails open)");
+
+      // agent0_environment is HOST ONLY. It gated the buttons before; one key carrying both
+      // meanings made them unsettable independently.
+      s.check("G32q agent0_environment picks the host and does not gate rendering",
+        resolve("agent0_environment: development\n") === "true development"
+          && resolve("agent0_fix_links: false\nagent0_environment: development\n")
+            === "false development",
+        "agent0_environment still moves AGENT0_FIX_LINKS — a repo on `development` cannot turn"
+          + " the buttons off without also losing its host, which is what splitting them fixed");
+
+      // Fail-safe: an unreadable config may have carried the opt-out, so withhold.
+      s.check("G32q an unreadable config withholds the buttons",
+        resolve("", 1).startsWith("false"),
+        "a config that could not be read resolved ON — the opt-out is discarded by any transient"
+          + " read failure, which is the one direction that is not recoverable");
+
+      // …and the fetch has to tell those two apart. EXECUTE it against a stub `gh`: the first
+      // version of this function used `2>&1`, which put a success-path warning inside the JSON,
+      // failed `--jq`, and returned empty — so a config carrying `agent0_fix_links: false` read
+      // as "no config" and the buttons rendered. Verified: the `2>&1` form returns empty on
+      // case 4 below. The fail-safe above cannot catch it, because the fetch reports success.
+      const fetchFn = block.slice(0, block.indexOf("\nCONFIG_READ_FAILED=0"));
+      const B64 = Buffer.from("agent0_fix_links: false\n").toString("base64");
+      const withStub = (ghBody) => {
+        const dir = mkdtempSync(join(tmpdir(), "l1-cfg-"));
+        writeFileSync(join(dir, "gh"), `#!/bin/bash\n${ghBody}\n`, { mode: 0o755 });
+        const r = spawnSync("bash", ["-c",
+          `RESOLVED_REPO=o/r\n${fetchFn}\n`
+          + `out=$(fetch_base_config .github/review.yaml)\nprintf '%s|%s' "$?" "$out"`,
+        ], { encoding: "utf8", env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } });
+        rmSync(dir, { recursive: true, force: true });
+        return (r.stdout || "").trim();
+      };
+      const cases = [
+        ["a readable config returns its content", `echo "${B64}"`,
+          `0|agent0_fix_links: false`],
+        ["an absent config (404) is an answer, not a failure",
+          'echo "gh: Not Found (HTTP 404)" >&2; exit 1', "0|"],
+        ["an unreadable config (403) exits 2 so the caller withholds",
+          'echo "gh: Resource not accessible (HTTP 403)" >&2; exit 1', "2|"],
+        ["a warning on the SUCCESS path does not erase the config",
+          `echo "warning: token from env" >&2; echo "${B64}"`, `0|agent0_fix_links: false`],
+      ];
+      for (const [what, stub, want] of cases) {
+        const got = withStub(stub);
+        s.check(`G32q fetch_base_config — ${what}`, got === want,
+          `got "${got}", want "${want}" — the fetch cannot tell an absent config from an`
+            + " unreadable one, so the only repo-wide opt-out is silently discardable");
+      }
+    }
   }
 
   const maxUrl = Number(/^const MAX_URL = (\d+)/m.exec(readFileSync(LINK_MOD, "utf8"))?.[1]);
@@ -3448,9 +3653,19 @@ const isPollBlock = (block) =>
           /\*\*\((?:non-)?blocking\)\*\*\s*$/.test(first), first.slice(-40));
       }
       // The footer is the cue that makes an inline finding and the report the same reviewer, and
-      // the only attribution visible in a notification email.
+      // the only attribution visible in a notification email. What is SHARED is the identity half
+      // — `pr-reviewer` plus the commit sha — and on this surface that is the whole footer: the
+      // methodology link is report-only (`comment-spine.mjs` § footerLine, `docs` off by default),
+      // because a reader asking how a finding was produced is asking about the run, and repeating
+      // one link per finding restated it 4–20 times on a busy PR.
       s.check(`G46e ${name} carries the shared attribution footer`,
-        /^<sup>`pr-reviewer` · commit `[0-9a-f]{7}` · \[how these findings are produced\]/m.test(body));
+        /^<sup>`pr-reviewer` · commit `[0-9a-f]{7}`<\/sup>$/m.test(body));
+      // Asserted as an absence too, in the direction this regresses: the check above matches the
+      // whole line, so it would already fail — but naming the link makes the failure say WHICH
+      // asymmetry broke rather than "the footer drifted".
+      s.check(`G46e ${name} carries no methodology link (report-only)`,
+        !body.includes("how these findings are produced"),
+        "the report owns that link once per review; an inline copy is the drift the docs flag prevents");
       // No heading, no bullets — the shape rule the report's `### ` headline is the counterpart of.
       s.check(`G46e ${name} uses no heading`, !/^#{1,6} /m.test(body));
       // A claim carries a title in bold; a one-liner carries none. Both are checked, because the
@@ -3705,7 +3920,7 @@ const isPollBlock = (block) =>
     const { buildLink } = await import(
       pathToFileURL(join(REPO_ROOT, "agents/pr-reviewer/scripts/build-agent0-link.mjs")).href);
     const maxFixUrl = buildLink(
-      `/implement https://github.com/${"o".repeat(20)}/${"r".repeat(20)}/pull/165 pr-reviewer — `
+      `/pr-fix https://github.com/${"o".repeat(20)}/${"r".repeat(20)}/pull/165 pr-reviewer — `
         + "apply only the finding at ".repeat(6), "development", "fix-this");
     const tenLineFence = { lang: "ts", code: Array.from({ length: 10 },
       (_, i) => `  const someValue${i} = computeSomething(argumentOne, argumentTwo);`).join("\n") };
