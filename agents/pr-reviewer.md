@@ -385,15 +385,15 @@ With `FIX_LINKS=off` supply no `FIX_ALL_URL` and pass no `FIX_URL` in any inline
 # wrapped `gh` that injects a per-call repo-scoped credential — both of which are ordinary
 # hosted-runner setups, not exotic ones. Treat a failure as "identity unknown", never as "".
 ME=$(gh api user --jq .login 2>/dev/null || echo "")
-# One call, four values: the author decides the relation, the head branch is the
-# PR-state record's scope (Step 0.7), and headRefOid/state/mergedAt are folded in here —
-# at zero extra cost — so a HEAD_SHA reading is already available before Step 1 spends
-# anything, which is what Step 0.8's fast zero-delta pre-check needs.
+# One call, three values: the author decides the relation, the head branch is the
+# PR-state record's scope (Step 0.7), and headRefOid is folded in here — at zero extra
+# cost — so a HEAD_SHA reading is already available before Step 1 spends anything, which
+# is what Step 0.8's fast zero-delta pre-check needs.
 # EARLY_HEAD_SHA is deliberately a distinct name from the canonical HEAD_SHA that Step 1.2
 # binds from Step 1.1 command A's own response — that naming keeps the "never from a second
 # read" single-source-of-truth invariant intact for the full pipeline (Step 1.2's comment)
 # while still letting Step 0.8 make its call off a value that predates Step 1 entirely.
-PR_META=$(gh pr view $PR_NUMBER $GH_REPO_FLAG --json author,headRefName,headRefOid,state,mergedAt)
+PR_META=$(gh pr view $PR_NUMBER $GH_REPO_FLAG --json author,headRefName,headRefOid)
 AUTHOR=$(jq -r '.author.login' <<< "$PR_META")
 HEAD_REF=$(jq -r '.headRefName' <<< "$PR_META")
 EARLY_HEAD_SHA=$(jq -r '.headRefOid' <<< "$PR_META")
@@ -634,6 +634,7 @@ run: one full review, after which it has a record and a sticky like any other.
 On `STATE_STATUS == "read"`, bind from `data` — no parsing, no fallback ladders:
 
 ```bash
+STATE_STATUS="read"   # the full record was read; Step 0.8's fast path keys on this
 PRIOR_SHA=$(jq -r '.data.runs | last.sha // ""'        <<< "$PR_STATE")
 PRIOR_VERDICT=$(jq -r '.data.runs | last.verdict // ""' <<< "$PR_STATE")
 PRIOR_OPEN_THREAD_IDS=$(jq -c '.data.open_thread_ids // []' <<< "$PR_STATE")
@@ -743,7 +744,17 @@ that ended by discovering there was nothing to review). This step catches that c
 # PRIOR_SHA came from Step 0.7 (the PR-state record or its GitHub fallback rung).
 # FLAG_FULL came from Step 0's argument parse — `--full` always forces `full` mode
 # (Step 0.7's rule), and a fast path that ignored it would silently override that invariant.
-if [[ "$FLAG_FULL" != true && -n "$PRIOR_SHA" && "$EARLY_HEAD_SHA" == "$PRIOR_SHA" ]]; then
+# Compare on a 7-char prefix, never the raw strings: EARLY_HEAD_SHA is the full 40-char
+# headRefOid, while PRIOR_SHA is 7-char on both of its sources — the PR-state record stores
+# the short sha (Step 4c writes `runs[].sha`, e.g. `353fd32`) and the GitHub fallback rung
+# reads it from the sticky footer, which `comment-spine.mjs` enforces to exactly 7 chars. A
+# raw `==` compares 40 chars against 7 and can never match, leaving the fast path permanently
+# dead — the whole optimization a silent no-op.
+# STATE_STATUS == "read" gates the fast path to the full-record path only. On the GitHub
+# fallback rung PRIOR_SHA is recovered but PRIOR_DIAGNOSTICS is NOT (Step 0.7), so a
+# fast-path run there would carry Gates 4/6 forward from nothing; the fallback rung must
+# instead fall through to Step 1, where an empty LAST_FULL_SHA promotes it to full.
+if [[ "$FLAG_FULL" != true && "$STATE_STATUS" == "read" && -n "$PRIOR_SHA" && "${EARLY_HEAD_SHA:0:7}" == "${PRIOR_SHA:0:7}" ]]; then
   FAST_ZERO_DELTA=true
 else
   FAST_ZERO_DELTA=false
@@ -756,7 +767,12 @@ needed to prove it, unlike the rebase/amend case Step 1.2b's blob-diff route sti
 still carries a baseline per Step 0.7) — that path always proceeds to Step 1 unchanged, since
 there is nothing to compare against yet. `FLAG_FULL == true` always proceeds to Step 1 unchanged
 too, regardless of `PRIOR_SHA`/`EARLY_HEAD_SHA` — an unmoved head under `--full` still owes the
-caller a full-mode run, not a silent downgrade to `incremental-quick`.
+caller a full-mode run, not a silent downgrade to `incremental-quick`. The GitHub fallback rung
+(`STATE_STATUS != read`) proceeds to Step 1 unchanged as well: it recovers `PRIOR_SHA` but not
+`PRIOR_DIAGNOSTICS`, so the fast path's Gate 4/6 carry-forward would read from nothing — the
+`STATE_STATUS == "read"` guard keeps the optimization to the path that actually holds the
+diagnostics it carries, and the fallback rung falls through to Step 1.2b, where an empty
+`LAST_FULL_SHA` promotes it to `full` (the documented safe direction).
 
 **On `FAST_ZERO_DELTA == true`:**
 - Set `RUN_MODE = "incremental-quick"`, `REVIEW_DIFF = ""`, `HEAD_SHA = "$EARLY_HEAD_SHA"`,
@@ -784,8 +800,11 @@ caller a full-mode run, not a silent downgrade to `incremental-quick`.
     inline findings possible, there is nothing for a lesson to calibrate against. Report
     `Memories — skipped (zero-delta fast path)` in the sticky footer, distinct from `not
     connected`, so a deliberate skip is never misread as an outage.
-  - Bind `DEPTH_TIER` per `depth-routing.md` exactly as any zero-delta run would — Phase C
-    still runs; it is cheap, local, and every downstream template reads it.
+  - Bind `DEPTH_TIER` per `depth-routing.md`. Phase C still runs — it is cheap, local, and
+    every downstream template reads it — though on this path its impact-graph inputs
+    (`BLAST_RADIUS`, `semver_delta`, `TRAFFIC_BAND`) are unset, since Phase B is skipped
+    above. That is benign for a zero-delta run: with no diff and no inline review, the tier
+    only selects which report templates render.
 - Proceed directly to Step 1.8 (gate checks), then **Step 2.9c** (thread reconciliation — it
   runs on this path; see its preamble), then Step 3 (no inline findings). Step 1.0, Step 1.1's
   Phase A/B, and Step 2 never run.
