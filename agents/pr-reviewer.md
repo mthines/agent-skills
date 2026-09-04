@@ -783,10 +783,16 @@ diagnostics it carries, and the fallback rung falls through to Step 1.2b, where 
   1.1's Phase A/B (workspace materialization, impact graph) entirely** — none of them have
   anything to operate on when the diff is empty. Fetch only what the gates still need, with
   the narrowest calls that supply it:
-  - Thread state (`reviewThreads { id isResolved }`, paged past 100) for Gate 3 — the same
-    query `prior-comment-awareness.md § fetch existing PR comment state` issues, run standalone
-    here instead of as part of Step 1.0's larger fan-out. Bind `RESOLVED_THREAD_IDS`,
-    `COMMENT_TO_THREAD`, and `OPEN_BOT_COMMENTS[]` exactly as that rule specifies.
+  - Prior comment state for Gate 3 **and** Step 2.9c — run `prior-comment-awareness.md § fetch
+    existing PR comment state` in full, standalone here instead of as part of Step 1.0's larger
+    fan-out. "In full" is load-bearing: that step is both the `pulls/{n}/comments` REST fetch
+    into `/tmp/prior-comments.json` — the source of `OPEN_BOT_COMMENTS[]`'s `url` / `ask` /
+    `is_bot` fields **and** of `BOT_COMMENTS` — and the `reviewThreads { id isResolved }`
+    resolution state, not the thread-state query alone, which supplies neither. Bind
+    `BOT_COMMENTS`, `RESOLVED_THREAD_IDS`, `COMMENT_TO_THREAD`, and `OPEN_BOT_COMMENTS[]` exactly
+    as that rule specifies, so Step 2.9c has its `BOT_COMMENTS` input on this path — the
+    `review-loop` convergence case (threads resolved or declined, re-run on an unmoved head) is
+    precisely a fast-path run where thread reconciliation must still fire.
   - CI status (`gh pr checks $PR_NUMBER $GH_REPO_FLAG`) for the report's CI line (Gate 2).
   - PR title/body are already in `PR_META` from Step 0.5 — no extra call. Gates 1 and 5
     (description-vs-code match, documentation adequacy) both grade this text, so both
