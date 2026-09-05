@@ -63,10 +63,11 @@ export function buildLink(prompt, env, source, org = null) {
     throw new Error(`build-agent0-link: source must be one of ${SOURCES.join(", ")} (got ${JSON.stringify(source)})`);
   }
   const host = HOSTS[resolveEnv(env)];
-  // Appended last, and only when set. Absent is the default — see ORG_RE.
+  // Appended last, and only when set. Absent is the default — see ORG_RE. Undefined, null, "" and
+  // whitespace all collapse to the same "absent" here, so the caller never has to normalise.
+  const slug = String(org ?? "").trim();
   let orgParam = "";
-  if (org !== undefined && org !== null && String(org).trim() !== "") {
-    const slug = String(org).trim();
+  if (slug !== "") {
     if (!ORG_RE.test(slug)) {
       throw new Error(`build-agent0-link: org must match ${ORG_RE} (got ${JSON.stringify(slug)})`);
     }

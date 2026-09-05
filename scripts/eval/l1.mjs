@@ -3012,8 +3012,9 @@ const isPollBlock = (block) =>
   // Rejected, not sanitized and not dropped: the slug lands UNENCODED in the query string, so a
   // stray `&`/`#`/space would append a parameter, truncate at the fragment, or break the href — and
   // a silently dropped org renders a button that looks right and opens the wrong organization.
-  for (const bad of ["a&b=c", "a#b", "a b", "-leading", "", "x".repeat(64), "a/b", "a?b"]) {
-    if (bad === "") continue; // empty is "absent", asserted above
+  // "" is deliberately absent from this list — an empty org is "absent", not malformed, and is
+  // asserted by G31j above.
+  for (const bad of ["a&b=c", "a#b", "a b", "-leading", "x".repeat(64), "a/b", "a?b"]) {
     s.check(`G31l buildLink rejects the malformed org ${JSON.stringify(bad)}`,
       (() => { try { buildLink("hi", "production", "fix-all", bad); return false; } catch { return true; } })(),
       "a malformed org slug was accepted — it reaches the query string unencoded");
