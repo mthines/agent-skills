@@ -2995,6 +2995,30 @@ const isPollBlock = (block) =>
     buildLink("hi", "production", "fix-all").includes("&utm_source=pr-reviewer-fix-all")
     && buildLink("hi", "production", "fix-this").includes("&utm_source=pr-reviewer-fix-this"));
 
+  // G31j–l: the optional `org` param (agent0-fix-links.md § Organization). Three properties, and
+  // the first is the one a regression would take: ABSENT means no parameter at all. A default slug
+  // or a bare `&org=` would send every repo that never configured one into somebody else's
+  // organization — the same class of silent misrouting `agent0_environment` produced when it
+  // defaulted while also gating.
+  for (const [what, org] of [["omitted", undefined], ["null", null], ["empty", ""], ["blank", "  "]]) {
+    s.check(`G31j buildLink sends no org param when the org is ${what}`,
+      !buildLink("hi", "production", "fix-all", org).includes("org="),
+      `an ${what} org still produced an org parameter: ${buildLink("hi", "production", "fix-all", org)}`);
+  }
+  s.check("G31k buildLink appends &org=<slug> last when one is configured",
+    buildLink("hi", "production", "fix-all", "dash0-development")
+      === `${buildLink("hi", "production", "fix-all")}&org=dash0-development`,
+    `got ${buildLink("hi", "production", "fix-all", "dash0-development")}`);
+  // Rejected, not sanitized and not dropped: the slug lands UNENCODED in the query string, so a
+  // stray `&`/`#`/space would append a parameter, truncate at the fragment, or break the href — and
+  // a silently dropped org renders a button that looks right and opens the wrong organization.
+  for (const bad of ["a&b=c", "a#b", "a b", "-leading", "", "x".repeat(64), "a/b", "a?b"]) {
+    if (bad === "") continue; // empty is "absent", asserted above
+    s.check(`G31l buildLink rejects the malformed org ${JSON.stringify(bad)}`,
+      (() => { try { buildLink("hi", "production", "fix-all", bad); return false; } catch { return true; } })(),
+      "a malformed org slug was accepted — it reaches the query string unencoded");
+  }
+
   const runCli = (args) => spawnSync("node", [LINK_MOD, ...args], { encoding: "utf8" });
 
   const empty = runCli(["--source", "fix-all", ""]);
@@ -3016,6 +3040,22 @@ const isPollBlock = (block) =>
   s.check("G31i CLI rejects a missing --source: non-zero exit, nothing on stdout",
     noSource.status !== 0 && noSource.stdout === "" && /source must be one of/.test(noSource.stderr),
     `status=${noSource.status} stdout=${JSON.stringify(noSource.stdout)} stderr=${noSource.stderr}`);
+
+  // The CLI is the only form the agent invokes, so --org has to survive argv parsing next to the
+  // other two flags, in either order, and a bad slug must fail closed there too.
+  const withOrg = runCli(["--env", "development", "--org", "dash0-development", "--source", "fix-this", "fix it"]);
+  s.check("G31m CLI --org appends the param and composes with --env / --source",
+    withOrg.status === 0
+      && withOrg.stdout.trim() === buildLink("fix it", "development", "fix-this", "dash0-development"),
+    `status=${withOrg.status} stdout=${JSON.stringify(withOrg.stdout)} stderr=${withOrg.stderr}`);
+  const noOrg = runCli(["--source", "fix-all", "fix it"]);
+  s.check("G31m CLI omits the org param when --org is not passed",
+    noOrg.status === 0 && !noOrg.stdout.includes("org="),
+    `stdout=${JSON.stringify(noOrg.stdout)}`);
+  const badOrg = runCli(["--org", "bad&org", "--source", "fix-all", "fix it"]);
+  s.check("G31m CLI rejects a malformed --org: non-zero exit, nothing on stdout",
+    badOrg.status !== 0 && badOrg.stdout === "" && /org must match/.test(badOrg.stderr),
+    `status=${badOrg.status} stdout=${JSON.stringify(badOrg.stdout)} stderr=${badOrg.stderr}`);
 
   // G32: the Agent0 fix prompts are one `/pr-fix` invocation plus an address — the skill owns the
   // method (gather the PR's comments, filter to one author, apply, commit, push), the URL owns the
@@ -3233,7 +3273,7 @@ const isPollBlock = (block) =>
       const r = spawnSync("bash", ["-c",
         `CONFIG_READ_FAILED=${readFailed}\n`
         + `BASE_CONFIG_CONTENT=$(cat)\n${tail}\n`
-        + `printf '%s %s\\n' "$AGENT0_FIX_LINKS" "$AGENT0_ENVIRONMENT"`,
+        + `printf '%s %s %s\\n' "$AGENT0_FIX_LINKS" "$AGENT0_ENVIRONMENT" "\${AGENT0_ORG:-(none)}"`,
       ], { input: content, encoding: "utf8" });
       return (r.stdout || "").trim();
     };
@@ -3246,11 +3286,11 @@ const isPollBlock = (block) =>
     if (tail) {
       // The whole point of the inversion: nothing configured must render buttons.
       s.check("G32q nothing configured resolves the buttons ON at the production host",
-        resolve("") === "true production",
+        resolve("") === "true production (none)",
         `an empty config resolved "${resolve("")}" — a repo that configured nothing gets no`
           + " buttons again, which is the default this change replaced");
       s.check("G32q a config that never mentions Agent0 still resolves ON",
-        resolve("profile: balanced\nfilters:\n  - naming-nits\n") === "true production",
+        resolve("profile: balanced\nfilters:\n  - naming-nits\n") === "true production (none)",
         "an unrelated review config turned the buttons off — only `agent0_fix_links: false` may");
 
       // The one opt-out has to actually work: it is all that stands between a repo that declined
@@ -3267,11 +3307,37 @@ const isPollBlock = (block) =>
       // agent0_environment is HOST ONLY. It gated the buttons before; one key carrying both
       // meanings made them unsettable independently.
       s.check("G32q agent0_environment picks the host and does not gate rendering",
-        resolve("agent0_environment: development\n") === "true development"
+        resolve("agent0_environment: development\n") === "true development (none)"
           && resolve("agent0_fix_links: false\nagent0_environment: development\n")
-            === "false development",
+            === "false development (none)",
         "agent0_environment still moves AGENT0_FIX_LINKS — a repo on `development` cannot turn"
           + " the buttons off without also losing its host, which is what splitting them fixed");
+
+      // agent0_org is the third independent key: a DESTINATION, optional, and absent by default.
+      // The default matters more than the set case — a slug that appears when nobody asked for one
+      // sends every unconfigured repo's readers into an organization that is not theirs.
+      s.check("G32q agent0_org is absent unless configured",
+        resolve("agent0_environment: development\n").endsWith(" (none)")
+          && resolve("profile: balanced\n").endsWith(" (none)"),
+        "an org resolved from a config that never named one — the link would carry a slug nobody set");
+      s.check("G32q agent0_org resolves and gates nothing",
+        resolve("agent0_org: dash0-development\n") === "true production dash0-development"
+          && resolve("agent0_fix_links: false\nagent0_org: dash0-development\n")
+            === "false production dash0-development",
+        "agent0_org moved AGENT0_FIX_LINKS or AGENT0_ENVIRONMENT — it picks an organization and"
+          + " nothing else, the same separation agent0_environment needed");
+      s.check("G32q agent0_org survives an inline comment after the value",
+        resolve("agent0_org: dash0-development   # our org\n")
+          === "true production dash0-development",
+        "an inline comment defeated the org — the schema's own documented style puts one there");
+      // A typo'd slug must leave the variable EMPTY, not pass garbage to the link builder: the
+      // value lands unencoded in a query string, and `--org 'a&b=c'` would append a parameter.
+      for (const bad of ["a&b=c", "a b c", "-leading", "x".repeat(64)]) {
+        s.check(`G32q a malformed agent0_org (${JSON.stringify(bad)}) resolves to no org at all`,
+          resolve(`agent0_org: ${bad}\n`).endsWith(" (none)"),
+          `resolved "${resolve(`agent0_org: ${bad}\n`)}" — a malformed slug reached AGENT0_ORG and`
+            + " would be passed to build-agent0-link.mjs verbatim");
+      }
 
       // Fail-safe: an unreadable config may have carried the opt-out, so withhold.
       s.check("G32q an unreadable config withholds the buttons",
@@ -3521,6 +3587,25 @@ const isPollBlock = (block) =>
       readRepo("agents/pr-reviewer.md"))
     && /RENDER="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/render-report\.mjs"/.test(
       readRepo("agents/pr-reviewer.md")));
+
+  // G37c: every once-per-run destination argument must be named at BOTH button sites. This is the
+  // exact drift `--env` already took — the Fix-this bullet never named it, so a `development`-
+  // configured repo's inline buttons silently linked to app.dash0.com while its report button did
+  // not (mthines/lorekit#601). `--org` is the same shape of argument (resolved once, filled at two
+  // sites, invisible when wrong), so it is asserted the same way rather than trusted to prose.
+  {
+    const body = readRepo("agents/pr-reviewer.md");
+    for (const source of ["fix-all", "fix-this"]) {
+      const invocation = new RegExp(`node "\\$BUILD_LINK"[^\`]*--source ${source}`).exec(body)?.[0] ?? "";
+      for (const flag of ["--env", "--org"]) {
+        s.check(`G37c the ${source} invocation names ${flag}`, invocation.includes(flag),
+          invocation === ""
+            ? `no \`node "$BUILD_LINK" … --source ${source}\` invocation found — re-anchor this guard`
+            : `the ${source} call site does not pass ${flag}, so it silently takes the script's own`
+              + " default while the other site takes the run's resolved value");
+      }
+    }
+  }
 }
 
 // ── G38: the detection core — Phases A–F must actually be wired, not merely present ──
