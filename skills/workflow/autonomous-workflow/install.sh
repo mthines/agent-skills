@@ -30,9 +30,15 @@
 # The `aw` dispatcher is deliberately NOT in that list — it is a SKILL
 # (aw/SKILL.md), invoked as /aw, so it runs in the caller's context and
 # dispatches the two agents from there. See CLAUDE.md → "The dispatcher is
-# a skill, not an agent". Development mode links it; --global / --project
-# rely on the normal skill-install path (scripts/sync-symlinks.sh or
-# `npx skills add`), same as every other skill in the repo.
+# a skill, not an agent".
+#
+# It is still THIS script's job to link it, in every mode. Skills are
+# discovered under a flat installed name, so the nested aw/SKILL.md is not
+# reachable as /aw from the autonomous-workflow skill directory alone — the
+# normal skill-install path cannot place it the way it places a top-level
+# skill. And the legacy-cleanup pass below removes the pre-v3.23 `aw` AGENT
+# in every mode, so a --global / --project install that did not create the
+# replacement link would delete /aw outright.
 #
 # Modes:
 #   --project      Per-project install (default). Links into ./.claude/.
@@ -186,21 +192,33 @@ if [[ "$MODE" == "development" ]]; then
   ln -sfn "$DISCOVERY_DIR" "$CLAUDE_DIR/skills/autonomous-workflow"
   vlog "✓ Claude skill: $CLAUDE_DIR/skills/autonomous-workflow → $DISCOVERY_DIR"
 
-  # The `aw` dispatcher is a nested skill, not an agent (see CLAUDE.md →
-  # "The dispatcher is a skill, not an agent"). Skills live under a flat
-  # installed name, so link it as its own two-tier chain.
+  # Development mode adds the cross-tool discovery hop for the dispatcher, so
+  # Codex / Cursor / OpenCode see it too. The Claude-side link is created for
+  # every mode below.
   if [[ -e "$HOME/.agents/skills/aw" && ! -L "$HOME/.agents/skills/aw" ]]; then
     echo "error: $HOME/.agents/skills/aw already exists and is not a symlink" >&2
     exit 1
   fi
-  if [[ -e "$CLAUDE_DIR/skills/aw" && ! -L "$CLAUDE_DIR/skills/aw" ]]; then
-    echo "error: $CLAUDE_DIR/skills/aw already exists and is not a symlink" >&2
-    exit 1
-  fi
   ln -sfn "$SKILL_DIR/aw" "$HOME/.agents/skills/aw"
-  ln -sfn "$HOME/.agents/skills/aw" "$CLAUDE_DIR/skills/aw"
-  vlog "✓ Dispatcher:   $CLAUDE_DIR/skills/aw (opt-in entry point; tier routing + self-improvement loop)"
+  AW_LINK_TARGET="$HOME/.agents/skills/aw"
 fi
+
+# Link the `aw` dispatcher in EVERY mode. It is a nested skill, not an agent
+# (see CLAUDE.md → "The dispatcher is a skill, not an agent"), and skills are
+# discovered under a FLAT installed name — a nested
+# `.claude/skills/autonomous-workflow/aw/SKILL.md` is not found as `/aw`. So the
+# normal skill-install path cannot reach it the way it reaches a top-level
+# skill, and this script has to place it. That is load-bearing: the legacy
+# cleanup below removes the pre-v3.23 `aw` AGENT unconditionally, so a
+# --global / --project upgrade that skipped this link would delete /aw and
+# leave no way back.
+mkdir -p "$CLAUDE_DIR/skills"
+if [[ -e "$CLAUDE_DIR/skills/aw" && ! -L "$CLAUDE_DIR/skills/aw" ]]; then
+  echo "error: $CLAUDE_DIR/skills/aw already exists and is not a symlink" >&2
+  exit 1
+fi
+ln -sfn "${AW_LINK_TARGET:-$SKILL_DIR/aw}" "$CLAUDE_DIR/skills/aw"
+vlog "✓ Dispatcher:   $CLAUDE_DIR/skills/aw (opt-in entry point; tier routing + self-improvement loop)"
 
 # Clean up legacy agent symlinks from older installs. We only remove them when
 # they're symlinks pointing at our templates — never touch hand-authored files.

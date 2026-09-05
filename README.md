@@ -252,7 +252,7 @@ Full-tier plans are **grounded, traceable, and executable** (v3.15): every plann
 
 ### Setup
 
-The [clone + symlink](#recommended-clone--symlink) install already links the three `aw-` agents and the routing rule — `sync-symlinks.sh` runs the dispatcher installer for you. If you used `npx skills add` instead, run the dispatcher installer manually:
+The [clone + symlink](#recommended-clone--symlink) install already links the `aw` dispatcher skill, the two `aw-` agents, and the routing rule — `sync-symlinks.sh` runs the dispatcher installer for you. If you used `npx skills add` instead, run the dispatcher installer manually (it places the `aw` dispatcher, which a plain skill install cannot reach — it is nested inside the autonomous-workflow skill):
 
 ```bash
 bash ~/.claude/skills/autonomous-workflow/install.sh --global
