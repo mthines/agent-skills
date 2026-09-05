@@ -62,7 +62,7 @@ request/response, so there is no MCP `--watch`:
 
 | `gh`-path form | `mcp`-path form |
 | -------------- | --------------- |
-| `gh pr checks <n>` (stateless query) | `pull_request_read` method `get_check_runs` |
+| `gh pr checks <n>` (stateless query) | `pull_request_read` method `get_check_runs` **union** method `get_status` — `gh pr checks` aggregates check runs *and* legacy commit statuses; `get_check_runs` alone drops the latter |
 | `timeout 540 gh pr checks <n> --watch` | **No equivalent.** Poll `get_check_runs` on the bounded schedule below |
 | `timeout 540 gh run watch <run-id>` | **No equivalent.** Same bounded poll |
 | `gh run rerun <run-id> --failed` | `actions_run_trigger` |
@@ -77,12 +77,19 @@ also keeps — they are properties of the phase, not of `gh`:**
    state of the *current* head. Never cache a verdict across iterations, phases,
    or subagents — a remembered verdict is only correct until someone pushes, and
    several things in Phase 6/7 push in parallel.
-2. **Every wait is bounded at both levels.** A poll iteration sleeps at most 60 s
-   and the poll runs **at most 4 attempts total** within this phase — the same
-   cap as the `--watch` form's exit-124 row. Issue any Bash call carrying an
-   inner `timeout` with the tool parameter `timeout: 600000`; the tool's
-   **default is 120000**, which would kill a 540 s wait at 2 minutes and leave
-   the exit-code handling unreachable.
+2. **Every wait is bounded at both levels — and the two paths are matched on
+   wall-clock, not on iteration count.** Issue any Bash call carrying an inner
+   `timeout` with the tool parameter `timeout: 600000`; the tool's **default is
+   120000**, which would kill a 540 s wait at 2 minutes and leave the exit-code
+   handling unreachable.
+
+   The units differ, so the numbers must not be copied between paths. An
+   *attempt* on the `gh` path is a **540 s watch**; an *iteration* on the `mcp`
+   path is a **60 s sleep**. Equating the two counts would bound the poll at
+   4 × 60 s = **4 minutes** against the watch's 4 × 540 s ≈ **36 minutes** — so
+   the path this rule exists to enable would escalate with checks pending before
+   most CI has settled. The `mcp` poll therefore runs **at most 36 iterations
+   60 s apart (≈ 36 min)**: the same wall-clock bound, a different count.
 
 With **`ACCESS_PATH = none`**, this phase cannot observe CI at all. It does
 **not** hard-stop and discard delivered work — Phase 6 has already pushed, and
@@ -149,14 +156,26 @@ timeout 540 gh run watch <run-id>
 | 127, or stderr matching `command not found` / `could not resolve` / `authentication` / `rate limit` | **Tooling failure, not a CI failure** — `timeout` is absent on stock macOS (use `gtimeout`). If it is `gh` itself that is missing, you took the wrong path: re-read Step 0 and use the `mcp` branch rather than reporting a failure. Report any genuine command failure; do **not** route to Auto Fix |
 | Any other non-zero | A check genuinely failed — go to Step 2 |
 
-**`ACCESS_PATH = mcp`** — no `--watch` exists ([Gap](../../../../agents/shared/rules/github-access.md#gaps)), so watching is a bounded poll. Same caps, same outcomes:
+**`ACCESS_PATH = mcp`** — no `--watch` exists ([Gap](../../../../agents/shared/rules/github-access.md#gaps)), so watching is a bounded poll. Same wall-clock bound, same outcomes:
 
-1. Call `pull_request_read` method `get_check_runs`.
-2. All terminal and passing → Step 4. Any terminal failure → Step 2.
-3. Any still pending → sleep at most 60 s and repeat, **at most 4 attempts total**, counted within this phase.
-4. Cap reached with checks still pending → report the pending checks and escalate — the `exit 124` row's behaviour, reached by a different route.
+1. Call **both** `pull_request_read` method `get_check_runs` **and** method
+   `get_status`, and union the results. `gh pr checks` aggregates check runs *and*
+   the legacy commit Status API; `get_check_runs` returns only the former, so
+   reading it alone silently drops every status-API check — a repo whose CI
+   reports through statuses would look like it has no CI at all.
+2. **If the union is empty, it is never green.** "All terminal and passing" is
+   vacuously true of an empty set, so testing it first routes an unregistered
+   push straight to success. Test emptiness *first* and map it with the Step 1
+   table's three states: query errored → tooling failure, escalate; just pushed →
+   run the [registration poll](../../../delivery/create-pr/rules/registration-poll.md#the-poll);
+   genuinely no CI on this repo → treat as success.
+3. Union non-empty **and** every member terminal and passing → Step 4. Any
+   terminal failure → Step 2.
+4. Any still pending → sleep at most 60 s and repeat, **at most 36 iterations**
+   (≈ 36 min), counted within this phase.
+5. Bound reached with checks still pending → report the pending checks and escalate — the `exit 124` row's behaviour, reached by a different route.
 
-Re-read the state on **every** iteration; never carry a verdict between them. An authorization error from the MCP call is a `tooling-failure` (escalate), **not** "no checks" — the same three-state distinction the Step 1 table draws.
+Re-read the state on **every** iteration; never carry a verdict between them. An authorization error from either MCP call is a `tooling-failure` (escalate), **not** "no checks" — the same three-state distinction the Step 1 table draws.
 
 **No budget is shared with `create-pr` or with any subagent.** Each counts its own attempts inside its own invocation. Phase 7 may therefore re-watch checks `create-pr` already watched — that costs time, never correctness, and the stateless query above makes it rare. An earlier design threaded a counter through a state file across both phases and the `ci-auto-fix` fan-out; it produced racing writers, a counter that could be read before it was written, and a skip that could report an unobserved commit as green. Do not reintroduce it.
 

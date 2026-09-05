@@ -101,13 +101,15 @@ tests, and exploit weak comparisons to force green. These rules are
 
 ## Tool Prerequisites
 
-| Tool   | Status        | Behavior if missing                                                       |
-| ------ | ------------- | ------------------------------------------------------------------------- |
-| `gh`   | **REQUIRED**  | Stop. Phase 6 (PR creation) and Phase 7 (CI gate) cannot proceed.         |
+| Capability | Status | Behavior if missing |
+| ---------- | ------ | ------------------- |
+| GitHub access | **REQUIRED (the capability, not the binary)** | Resolve `ACCESS_PATH` (`gh` \| `mcp` \| `none`) per [`github-access.md` § Step 0](../../../../agents/shared/rules/github-access.md#step-0--resolve-your-path-once-before-any-github-step). Only `none` degrades Phases 6–7 — report it precisely and name it in `Degraded:`; never improvise, and never report a GitHub step you could not perform as done. See [prerequisites#github-access-path](./prerequisites.md#github-access-path). |
 | `gw`   | Recommended   | Continue with native `git worktree` fallback; emit one-time warning. See [prerequisites#fallback-to-native-git-worktree](./prerequisites.md#fallback-to-native-git-worktree). |
 
-**`gw` is NOT a hard prerequisite.** The workflow falls back to native
-`git worktree` when `gw` is missing. Only `gh` is hard-required.
+**Neither `gw` nor `gh` is a hard prerequisite.** The workflow falls back to
+native `git worktree` when `gw` is missing, and `gh` is one of *two* GitHub
+paths — absent by design in Claude Code cloud sessions, where `mcp__github__*`
+is the path. **Never gate a phase on `which gh`.**
 
 ## Companion-Skill Safety
 

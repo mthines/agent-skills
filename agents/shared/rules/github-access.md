@@ -45,9 +45,16 @@ Probe with a **repo-scoped API call against the repository you are about to work
 # case this probe exists to detect (no `gh`), so it cannot distinguish "no gh" from
 # "repo unknown". Any run with a checkout can answer from the remote instead, which
 # makes the probe decisive rather than accidentally-right.
+# Take the last two path segments, splitting on both `/` and `:`. This handles every
+# remote form in the wild — `https://host/o/r`, `git@host:o/r`, `ssh://git@host/o/r`,
+# and `ssh://git@host:22/o/r` — where a prefix-stripping regex has to enumerate them
+# and silently passes the whole URL through on the one it forgot. That failure is
+# worse than no answer: the result is non-empty, so the fallback rung below never
+# fires and the probe 404s on `repos/ssh://...` — reporting "no gh" on a working gh.
 TARGET_REPO="${TARGET_REPO:-${RESOLVED_REPO:-$(
   git remote get-url origin 2>/dev/null \
-    | sed -E 's#^(https://[^/]+/|git@[^:]+:)##; s#\.git$##'
+    | sed 's#\.git$##' \
+    | awk -F'[/:]' 'NF>1 {print $(NF-1)"/"$NF}'
 )}}"
 # Last resort when there is no checkout and gh happens to exist:
 TARGET_REPO="${TARGET_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"

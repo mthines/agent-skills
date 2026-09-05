@@ -5026,14 +5026,26 @@ const isPollBlock = (block) =>
 // present and the prose forbade using it. Assert the wiring in all three places at once,
 // because fixing any one alone leaves the run stopping at another.
 {
-  const PREREQ = readFileSync(join(REPO_ROOT,
-    "skills/workflow/autonomous-workflow/rules/prerequisites.md"), "utf8");
-  const PHASE7 = readFileSync(join(REPO_ROOT,
-    "skills/workflow/autonomous-workflow/rules/phase-7-ci-gate.md"), "utf8");
-  const PLANNER = readFileSync(join(REPO_ROOT,
-    "skills/workflow/autonomous-workflow/templates/aw-planner.agent.md"), "utf8");
-  const EXECUTOR = readFileSync(join(REPO_ROOT,
-    "skills/workflow/autonomous-workflow/templates/aw-executor.agent.md"), "utf8");
+  const AW = "skills/workflow/autonomous-workflow/";
+  const rd = (p) => readFileSync(join(REPO_ROOT, AW + p), "utf8");
+  const PREREQ = rd("rules/prerequisites.md");
+  const PHASE7 = rd("rules/phase-7-ci-gate.md");
+  const PLANNER = rd("templates/aw-planner.agent.md");
+  const EXECUTOR = rd("templates/aw-executor.agent.md");
+  // The four surfaces a first pass missed. Grepping for `gh` COMMANDS finds the call
+  // sites; it does not find the POLICY, and the policy is what stops the run. In
+  // particular `SKILL.md` Step 2 is a live gate one hop from the planner's Critical
+  // First Action, so removing the planner's own hard-stop while leaving this one
+  // fixed nothing; and `diagnostic-surface.md` carries the CLAUDE.md invariant
+  // verbatim, so a diagnoser reading only that copy would score this change AS the
+  // regression. Both are in the assertion set now for that reason.
+  const SKILLMD = rd("SKILL.md");
+  const GUARDRAILS = rd("rules/safety-guardrails.md");
+  const OVERVIEW = rd("rules/overview.md");
+  const DIAGSURF = rd("rules/diagnostic-surface.md");
+
+  const POLICY_SURFACES = [["SKILL.md", SKILLMD], ["safety-guardrails.md", GUARDRAILS],
+    ["overview.md", OVERVIEW], ["diagnostic-surface.md", DIAGSURF]];
 
   // Each surface must CITE the owner rather than restate its mapping.
   for (const [name, src] of [["prerequisites.md", PREREQ], ["phase-7-ci-gate.md", PHASE7],
@@ -5052,14 +5064,70 @@ const isPollBlock = (block) =>
   // rather than the bare substring — `prerequisites.md` legitimately NAMES `which gh` in order
   // to say do-not-gate-on-it, and a bare-substring assertion would forbid the very sentence
   // that fixes the defect (the same shape G2d had to solve for the parent's description).
-  for (const [name, src] of [["prerequisites.md", PREREQ], ["aw-planner.agent.md", PLANNER]]) {
+  // Match the CLAIMING shapes, never a bare substring. Every surface here has to NAME
+  // `which gh` in order to forbid it, so a substring test would flag the sentence that
+  // fixes the defect — and an `/i` on a `STOP` alternative additionally matches the
+  // ordinary word "stop" in "turns a workable cloud session into a hard stop". Both
+  // false positives were observed. G2d solved the same problem the same way.
+  const ghHardStopDirective = (src) =>
+    // a tool-status table row marking `gh` itself REQUIRED
+    /`gh`\s*\|\s*\*\*REQUIRED\*\*/.test(src)
+    // "`which gh` (REQUIRED, hard-stop if missing)"
+    || /which gh[^\n]*\(\s*REQUIRED/i.test(src)
+    || /hard-stop if missing/i.test(src)
+    // The two prose forms are scoped to lines that are ABOUT gh — otherwise they catch
+    // any unrelated install directive (observed: safety-guardrails' `confidence` companion
+    // row, "Stop, ask user to install before continuing", which concerns neither gh nor CI).
+    || src.split("\n").some((L) => /\bgh\b/.test(L) && (
+      // "**STOP** — install via Homebrew or download"
+      /\*\*STOP\*\*[^\n]*\binstall\b/.test(L)
+      // "Stop, prompt user to install" / "Stop. Phase 6 … cannot proceed."
+      || /\bStop[,.]\s[^\n]*\b(install|cannot proceed)\b/.test(L)));
+
+  for (const [name, src] of [["prerequisites.md", PREREQ], ["aw-planner.agent.md", PLANNER],
+    ...POLICY_SURFACES]) {
     s.check(`G48 ${name} does not hard-stop on \`which gh\``,
-      !/which gh[^\n]*\b(REQUIRED|hard-stop|STOP)\b/i.test(src)
-        && !/\bSTOP\b[^\n]*install (?:via )?(?:Homebrew|gh)/i.test(src),
+      !ghHardStopDirective(src),
       "a `which gh` hard-stop is un-actionable in a cloud session — the documented remedy"
         + " (\"install via Homebrew\") cannot be followed, so the agent improvises or stalls,"
         + " which github-access.md names as the dominant source of a run that spins");
   }
+
+  // The policy claim itself, separate from the gate. A surface can drop the `which gh`
+  // check and still assert `gh` is hard-required in prose — which is what the planner's
+  // Critical First Action would then delegate to.
+  for (const [name, src] of POLICY_SURFACES) {
+    s.check(`G48 ${name} does not claim \`gh\` is hard-required`,
+      !/`gh`[^\n]{0,40}\b(is|remains) hard-required/i.test(src)
+        && !/only `gh` is hard-required/i.test(src)
+        && !/hard-required CLI tool is `gh`/i.test(src),
+      "the binary is one of two paths; a surface still calling it hard-required re-creates"
+        + " the stop this change removed, one hop from where it was removed");
+  }
+  // CLAUDE.md's v3.1 CHANGELOG entry legitimately records "gh remains hard-required" as
+  // history. Assert the live invariant changed without forbidding the historical record —
+  // otherwise the guard would demand rewriting a changelog, which is not a contract surface.
+  s.check("G48 the live CLAUDE.md invariant states a GitHub access path, not a gh dependency",
+    (() => {
+      const cm = rd("CLAUDE.md");
+      const inv = sliceBetween(cm, "## Things to keep invariant", "## Diagnose participation");
+      return /GitHub \*?access path\*? is required/i.test(inv)
+        && !/`gh` is hard-required/.test(inv);
+    })(),
+    "two copies of this invariant exist (CLAUDE.md and diagnostic-surface.md); updating one"
+      + " leaves a diagnoser reading the other and scoring this very change as the regression");
+
+  // Two correctness properties of the mcp poll, both of which a prose substitution loses.
+  s.check("G48 phase-7's mcp poll matches the gh path on wall-clock, not iteration count",
+    /wall-clock/i.test(PHASE7) && /36/.test(PHASE7),
+    "an `attempt` on the gh path is a 540 s watch and an `iteration` here is a 60 s sleep,"
+      + " so copying the count bounds the mcp poll at 4 minutes against the watch's ~36 —"
+      + " escalating with checks pending on the very path this rule exists to enable");
+  s.check("G48 phase-7's mcp poll never reads an empty check set as green",
+    /vacuously true/i.test(PHASE7) && /get_status/.test(PHASE7),
+    "\"all terminal and passing\" is vacuously true of an empty set, so an unregistered push"
+      + " routes to success; and get_check_runs alone drops every legacy commit-status check,"
+      + " which reads as \"no CI\" on a repo that has it");
 
   // `gh auth status` is not a valid probe: it inspects a stored token, so it exits non-zero
   // under a per-call credential proxy while every real API call succeeds.

@@ -154,8 +154,11 @@ Phase 7: CI Gate + Optional Cleanup
 **Note on tooling:** The workflow uses [`gw`](https://github.com/mthines/gw-tools)
 when available (recommended for auto-copy of secrets, pre/post-checkout hooks,
 and smart cleanup), but falls back to native `git worktree` when `gw` is not
-installed. The only hard-required CLI tool is `gh`. See
-[prerequisites](./prerequisites.md#fallback-to-native-git-worktree) for details.
+installed. There is **no** hard-required CLI tool: GitHub access is required as a
+*capability*, reached through either `gh` or the `mcp__github__*` tools, and
+resolved once per run via
+[`github-access.md` § Step 0](../../../../agents/shared/rules/github-access.md#step-0--resolve-your-path-once-before-any-github-step).
+See [prerequisites](./prerequisites.md#github-access-path) for details.
 
 ## Workflow Modes
 

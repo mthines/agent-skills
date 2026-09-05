@@ -120,12 +120,16 @@ field-for-field identically.
 
 ### Step 2: Verify Prerequisites
 
-| Tool | Status      | Check       | If missing                                                  |
-| ---- | ----------- | ----------- | ----------------------------------------------------------- |
-| `gh` | **REQUIRED**| `which gh`  | Stop, prompt user to install                                |
+| Capability | Status | Check | If missing |
+| ---------- | ------ | ----- | ---------- |
+| GitHub access | **REQUIRED (the capability, not the binary)** | Resolve `ACCESS_PATH` per [`github-access.md` § Step 0](../../../agents/shared/rules/github-access.md#step-0--resolve-your-path-once-before-any-github-step) — **never** `which gh`, never `gh auth status` | Only `ACCESS_PATH = none` degrades Phases 6–7; name it in `Degraded:` and never report a GitHub step you could not perform as done |
 | `gw` | Recommended | `which gw`  | Continue with native `git worktree` fallback (warn user once)|
 
-`gh` is hard-required for Phase 6 (PR creation) and Phase 7 (CI gate).
+**`gh` is not hard-required — it is one of two GitHub paths**, and it is absent
+in Claude Code cloud sessions where the `mcp__github__*` tools are present (both
+`aw-planner` and `aw-executor` carry them in their `tools:` frontmatter). Gating
+on `which gh` turns a workable cloud session into a hard stop; detail in
+[`rules/prerequisites.md`](./rules/prerequisites.md#github-access-path).
 `gw` is recommended — it adds auto-copy of secrets, pre/post-checkout hooks,
 and smart cleanup — but the workflow falls back to native `git worktree` if
 it's not installed. See [`rules/prerequisites.md`](./rules/prerequisites.md)
