@@ -111,7 +111,8 @@ MODE SELECTION:
 - Lessons applied: [N matched, or none]
 ```
 
-This block is canonical — the dispatcher template, the planner template, and
+This block is canonical — the [`aw` dispatcher skill](./aw/SKILL.md), the
+planner template, and
 [`rules/phase-0-validation.md`](./rules/phase-0-validation.md) emit it
 field-for-field identically.
 
