@@ -110,8 +110,9 @@ production failure mode being guarded against. → fix the prompt, not the
 golden case.
 
 **`eval-bug`**: the `tier-routing` suite's golden case for a 6-file
-change expects `Lite`, but the dispatcher's own routing table (the live
-rubric this suite reads) was intentionally changed in this PR to route
+change expects `Lite`, but the tier table in `autonomous-workflow`'s
+`SKILL.md` Step 1 (the live rubric this suite reads — the `aw` dispatcher
+links it rather than holding a copy) was intentionally changed in this PR to route
 6-file changes to `Full` — a deliberate, documented decision in the same
 PR. → the golden case is stale, not the code. Update it with a `notes`
 line explaining the routing-table change it now reflects, gated per
