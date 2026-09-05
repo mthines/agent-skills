@@ -221,17 +221,17 @@ The rest of this section is the under-the-hood reference.
 
 `aw` is the opt-in entry point to the **`autonomous-workflow`** skill — the phase-based machinery (0–7) and companion-skill orchestration behind it. You drive `aw`; `autonomous-workflow` is how it works under the hood.
 
-### Three agents, one workflow
+### One dispatcher, two agents
 
-`aw` installs as an opt-in **dispatcher** plus the two specialist agents it routes to for complex work, connected by `plan.md`:
+`aw` installs as an opt-in **dispatcher skill** plus the two specialist agents it routes to for complex work, connected by `plan.md`:
 
-| Agent | Role | Exit gate |
-|-------|------|-----------|
-| `aw`          | Opt-in dispatcher: reads lessons, detects tier (Micro/Lite/Full), routes single-pass vs the split, owns the self-improvement loop for every tier | Task routed + exit lesson written |
-| `aw-planner`  | Full tier, 0–2 (validate, plan, worktree + `plan.md`) | `confidence(plan) ≥ 90%` |
-| `aw-executor` | Full tier, 3–7 (implement, test, docs, PR, CI) | CI green, walkthrough delivered |
+| Unit | Kind | Role | Exit gate |
+|------|------|------|-----------|
+| `aw`          | skill | Opt-in dispatcher: reads lessons, detects tier (Micro/Lite/Full), routes single-pass vs the split, owns the self-improvement loop for every tier | Task routed + exit lesson written |
+| `aw-planner`  | agent | Full tier, 0–2 (validate, plan, worktree + `plan.md`) | `confidence(plan) ≥ 90%` |
+| `aw-executor` | agent | Full tier, 3–7 (implement, test, docs, PR, CI) | CI green, walkthrough delivered |
 
-All share the **`aw-`** prefix ("autonomous-workflow"): deliberate namespace so they group together in `~/.claude/agents/` and disambiguate from agents installed by other skills. `aw` is adaptive — it only invokes the planner→executor split for **Full** tasks; Micro/Lite run single-pass.
+The two agents share the **`aw-`** prefix ("autonomous-workflow"): deliberate namespace so they group together in `~/.claude/agents/` and disambiguate from agents installed by other skills. `aw` carries no prefix and does not live there at all — it is a skill in `~/.claude/skills/`, which is precisely what lets the agents it dispatches sit at the top-level rung and keep their own sub-agent dispatch. `aw` is adaptive — it only invokes the planner→executor split for **Full** tasks; Micro/Lite run single-pass.
 
 ### Phases
 
@@ -252,7 +252,7 @@ Full-tier plans are **grounded, traceable, and executable** (v3.15): every plann
 
 ### Setup
 
-The [clone + symlink](#recommended-clone--symlink) install already links the `aw` dispatcher skill, the two `aw-` agents, and the routing rule — `sync-symlinks.sh` runs the dispatcher installer for you. If you used `npx skills add` instead, run the dispatcher installer manually (it places the `aw` dispatcher, which a plain skill install cannot reach — it is nested inside the autonomous-workflow skill):
+The [clone + symlink](#recommended-clone--symlink) install already links the `aw` dispatcher skill, the three `aw-` agents, and the routing rule — `sync-symlinks.sh` runs the dispatcher installer for you. If you used `npx skills add` instead, run the dispatcher installer manually (it places the `aw` dispatcher, which a plain skill install cannot reach — it is nested inside the autonomous-workflow skill):
 
 ```bash
 bash ~/.claude/skills/autonomous-workflow/install.sh --global
