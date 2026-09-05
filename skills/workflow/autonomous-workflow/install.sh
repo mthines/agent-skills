@@ -167,6 +167,15 @@ template_required "aw-executor.agent.md"
 template_required "aw-tester.agent.md"
 template_required "routing.rule.md"
 
+# The dispatcher is a nested skill rather than a template, so it needs its own
+# check — without it an incomplete skill directory yields a dangling /aw
+# symlink instead of an error.
+if [[ ! -f "$SKILL_DIR/aw/SKILL.md" ]]; then
+  echo "error: missing $SKILL_DIR/aw/SKILL.md" >&2
+  echo "the skill directory exists but appears incomplete" >&2
+  exit 1
+fi
+
 mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/rules"
 
 # In development mode, set up the cross-tool discovery symlink chain so
