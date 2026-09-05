@@ -588,6 +588,64 @@ Design rules that keep this from rotting:
   thin-router invariant below apply unchanged — the shape changed, the
   discipline did not.
 
+## One natural-language entry point — design intent
+
+v3.24 made `aw` the **sole** natural-language destination. Before it, two skills
+competed for the same request: `aw`'s description advertised `"autonomously"`,
+`"end-to-end"`, `"in a worktree"`, and the parent `autonomous-workflow`'s
+description advertised near-identical phrasing (`"autonomously"`,
+`"independently"`, `"end-to-end"`, `"in isolation"`, `"take care of this"`). The
+harness matches descriptions; nothing arbitrated between them.
+
+The cost of losing that race is not cosmetic. A request landing on the parent
+runs the phase machinery with **tier detection skipped** (so a Micro typo fix
+pays the Full planner→executor handoff, or a Full task runs single-pass with no
+`plan.md` and no `confidence(plan)` gate) and the **universal lessons loop
+skipped** (the read and write were hoisted to the dispatcher in v3.12 precisely
+so every tier contributes). Those two are the dispatcher's entire job, so
+bypassing it silently un-does the v3.12 design.
+
+The fix is one-directional: the parent's description now states what it is (the
+phase machinery), states that it is not the entry point, and names `aw` — while
+quoting no trigger phrase and making no `Triggers on` / `Use when` claim.
+`/autonomous-workflow` still runs the machinery directly for anyone who wants to
+bypass tier detection deliberately; the marker in the repo inventory moved
+`auto` → `/` to say so.
+
+**Why the routing rule still carries the full trigger list**, even though it now
+duplicates `aw`'s description: frontmatter cannot link a canonical home the way
+`aw/SKILL.md` links the tier table, so one of the two surfaces has to hold the
+words — and this file is *also* the live rubric the L2 `aw-should-trigger` suite
+reads (`scripts/eval/l2.mjs` passes the whole file), so slimming it to a pointer
+would leave that suite with no vocabulary to decide `trigger` on. The
+duplication is forced by the two consumers, so it is kept honest by assertion
+instead of eliminated.
+
+That assertion is **L1 `G2d`**, which guards both halves:
+
+1. The parent's description quotes none of the trigger vocabulary and makes no
+   `Triggers on` / `Use when` claim. It matches the *claiming* forms (a quoted
+   phrase, or those two clauses) rather than bare substrings, because the
+   sentence that fixes the problem — "a natural-language request to do work
+   autonomously … belongs to the `aw` skill" — necessarily names the words it is
+   disclaiming.
+2. Every phrase `aw` advertises appears in the routing rule. This fired on its
+   first run: `aw` advertised `"implement autonomously"`, which the rule had
+   never listed contiguously, and which was the phrasing just deleted from the
+   parent. It needed a home, and the guard is what said so.
+
+Design rules that keep this from rotting:
+
+- **Never add trigger vocabulary back to the parent's description.** If a phrase
+  should fire the workflow, it goes in `aw`'s description *and* the routing
+  rule, in the same change. `G2d` enforces both directions.
+- **Never slim the routing rule's positive trigger list to a pointer.** It is
+  the L2 rubric; a pointer would silently gut the `aw-should-trigger` suite.
+- **`G2d`'s phrase-count sentinel is pinned to the live count, not a floor.**
+  A loose floor lets phrases drop out of the description one at a time in
+  silence — the same defect a reviewer caught in `G2c`. When you add or remove a
+  phrase, move the number.
+
 ## Adaptive dispatch (the `aw` dispatcher) — design intent
 
 v3.11 added **`aw`** — a thin, opt-in dispatcher — to resolve two tensions at
@@ -884,6 +942,35 @@ end-user-facing; this file is contributor-facing.
 ---
 
 ## History
+
+- **v3.24.0** — `aw` becomes the only natural-language entry point. v3.23 made
+  the dispatcher a skill but left the parent `autonomous-workflow` skill's
+  description advertising the same trigger vocabulary, so two skills competed
+  for one request and the harness had nothing to arbitrate with. Losing that
+  race skips tier detection and the universal lessons loop — the dispatcher's
+  entire job. Full rationale and the design rules:
+  [design intent](#one-natural-language-entry-point--design-intent).
+  - **`SKILL.md`'s description rewritten** to describe the phase machinery,
+    state that it is not the entry point, and name `aw` — quoting no trigger
+    phrase and making no `Triggers on` / `Use when` claim. `/autonomous-workflow`
+    still runs the machinery directly for a deliberate bypass.
+  - **`templates/routing.rule.md`** gained `"implement autonomously"` (the
+    phrasing deleted from the parent needed a home — `G2d` caught its absence on
+    the guard's first run) and a note stating that `aw` is the only
+    natural-language destination, why the duplication with `aw`'s description is
+    forced, and that `G2d` keeps the two honest.
+  - **New L1 `G2d`**, two halves. Half 1: the parent quotes no trigger phrase
+    and makes no trigger claim — matched on the *claiming* forms, since the
+    sentence that fixes the problem must name the words it disclaims. Half 2:
+    every phrase `aw` advertises exists in the routing rule. Its phrase-count
+    sentinel is pinned to the live count (14), not a floor — the loose-floor
+    defect a reviewer caught in `G2c`, verified by mutation.
+  - **Inventory marker `auto` → `/`** for `autonomous-workflow` in the root
+    `CLAUDE.md` and `README.md`; `aw` keeps `auto`.
+  - **Deliberately NOT changed:** the routing rule's positive trigger list stays
+    in full (it is the live L2 `aw-should-trigger` rubric — a pointer would gut
+    that suite), the exclusion list, the continuation phrases, the tier table's
+    single home, and every gate.
 
 - **v3.23.0** — The dispatcher becomes a skill. `aw` moved from
   `templates/aw.agent.md` (symlinked to `~/.claude/agents/aw.md`) to `aw/SKILL.md`

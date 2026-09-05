@@ -357,7 +357,20 @@ After installing, trigger autonomous execution with natural language:
 "Handle this in isolation — refactor the API client to use retry logic"
 ```
 
-You can also invoke explicitly: `@autonomous-workflow implement X`.
+Those go to the **`aw` dispatcher**, which detects the tier and routes.
+`aw` owns the natural-language surface; this skill is the phase machinery behind
+it and is deliberately not auto-triggered, so a request never lands on the
+phases with tier detection and the lessons loop skipped.
+
+Note what is *not* a trigger. Bare "implement this", "let's go", and "start" are
+excluded on purpose — the routing rule's exclusion list keeps `aw` off casual
+interactive edits. "go", "continue", "proceed", "execute", and "ship it" are
+**continuation** phrases: they dispatch `aw-executor` when a plan already exists
+at `.agent/{branch}/plan.md`, rather than starting a fresh run.
+
+You can also invoke explicitly: `/aw implement X` for the dispatcher, or
+`/autonomous-workflow` to run the phase machinery directly and bypass tier
+detection.
 
 ---
 

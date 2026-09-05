@@ -2,17 +2,28 @@
 
 When the user asks to implement something using phrases that signal independent, isolated work — such as:
 
-- "independently", "autonomously", "in isolation", "alone", "on your own"
+- "independently", "autonomously", "implement autonomously", "in isolation", "alone", "on your own"
 - "end-to-end", "full implementation", "implement X with tests and PR"
 - "work on this in a worktree", "do this in parallel"
 - "take care of this", "handle this without me"
 - "ship this", "land this", "all the way to a PR", "through CI"
 
 > This trigger vocabulary is mirrored in the `aw` skill's `description:`
-> frontmatter (`aw/SKILL.md`) — the two are one coherent discovery surface. When
-> you add, remove, or reword a trigger phrase here, update the description's
-> `Use when …` / `Triggers on …` clauses in the same change so the rule and the
-> skill never drift.
+> frontmatter (`aw/SKILL.md`) — the two are one coherent discovery surface, and
+> the duplication is forced: frontmatter cannot link a canonical home the way
+> `aw/SKILL.md` links the tier table, and this file is also the live rubric the
+> L2 `aw-should-trigger` suite reads. So the lists are kept honest by assertion
+> instead: L1 `G2d` requires every phrase quoted in the description to appear
+> here. When you add, remove, or reword a trigger phrase, update both in the
+> same change.
+>
+> **`aw` is the only natural-language destination.** The parent
+> `autonomous-workflow` skill is the phase machinery, not an entry point — its
+> description carries no trigger vocabulary and it is reached by
+> `/autonomous-workflow` or by `aw` itself. Never route a phrase above straight
+> to it: that skips tier detection and the lessons loop, which is the whole job
+> of the dispatcher. `G2d` also asserts the parent's description stays clear of
+> these phrases, so the two cannot start competing for the same request again.
 
 Invoke the **`aw` dispatcher skill** with the user's full request:
 

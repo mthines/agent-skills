@@ -1,19 +1,21 @@
 ---
 name: autonomous-workflow
 description: >
-  Execute complete feature development cycles autonomously — from task intake
-  through tested PR delivery — using isolated Git worktrees. Phase-based
-  workflow (0–7) with optional companion skills for planning, quality gates,
-  TDD, UX, code quality, docs, and CI verification. Companions skip silently
-  if not installed. Triggers on "implement autonomously", "end-to-end", "in
-  isolation", "in a worktree", or independent feature work. Invoke with
-  /autonomous-workflow.
+  The phase-based machinery (0–7) behind the `aw` dispatcher — task intake
+  through tested PR delivery in an isolated Git worktree, with optional
+  companion skills for planning, quality gates, TDD, UX, code quality, docs,
+  and CI verification. Companions skip silently if not installed. NOT the entry
+  point and not auto-triggered: a natural-language request to do work
+  autonomously, end-to-end, in isolation, or in a worktree belongs to the `aw`
+  skill, which detects the task tier and routes. Reach for this skill only to
+  read or run the phase machinery directly, bypassing tier detection — invoke
+  with /autonomous-workflow.
 disable-model-invocation: false
 argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no-interview]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.23.0'
+  version: '3.24.0'
   workflow_type: orchestrator
   tags:
     - autonomous

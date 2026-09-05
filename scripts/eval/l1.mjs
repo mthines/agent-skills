@@ -208,6 +208,69 @@ function tierQuestions(file) {
   s.check("G2c found the aw- agent count claims to guard", claimsSeen >= 9, `found ${claimsSeen}`);
 }
 
+// ── Check B3 / G2d: `aw` owns the natural-language triggers, alone ──────────
+// `aw` and its parent `autonomous-workflow` used to auto-trigger on near-
+// identical vocabulary, so "implement this autonomously" could land on the
+// phase machinery with tier detection and the lessons loop skipped. v3.24
+// made `aw` the sole entry point. Two halves, both asserted, because either
+// one alone silently re-opens the gap:
+//
+//   1. The parent's description carries none of the trigger vocabulary.
+//   2. Every phrase quoted in `aw`'s description exists in the routing rule.
+//
+// Half 2 is the drift guard the tier table got from `G2b` — but by assertion
+// rather than by deletion, because neither copy can link the other here:
+// frontmatter has no link mechanism, and the routing rule is the live rubric
+// the L2 `aw-should-trigger` suite reads, so slimming it would leave that
+// suite with no vocabulary to decide `trigger` on.
+{
+  const frontmatter = (src) => {
+    const m = src.match(/^---\n([\s\S]*?)\n---/);
+    return m ? m[1] : "";
+  };
+  const describe = (src) => {
+    const fm = frontmatter(src);
+    // `description: >` folded block — everything until the next top-level key.
+    const m = fm.match(/^description:\s*>\s*\n([\s\S]*?)(?=\n[a-z-]+:)/m);
+    return (m ? m[1] : "").replace(/\s+/g, " ").toLowerCase();
+  };
+
+  const awDesc = describe(readFileSync(join(AW, "aw/SKILL.md"), "utf8"));
+  const parentDesc = describe(readFileSync(join(AW, "SKILL.md"), "utf8"));
+  const rule = readFileSync(join(AW, "templates/routing.rule.md"), "utf8").toLowerCase();
+
+  s.check("G2d both aw and parent descriptions were parsed", awDesc.length > 100 && parentDesc.length > 100,
+    `aw ${awDesc.length} chars, parent ${parentDesc.length} chars`);
+
+  // Half 1. The parent may NAME the vocabulary while disclaiming it ("belongs
+  // to the `aw` skill"), so a bare substring test would fire on the sentence
+  // that fixes the problem. Match the claiming forms instead: a quoted phrase,
+  // or a `Triggers on` / `Use when` clause.
+  const VOCAB = [
+    "autonomously", "independently", "in isolation", "in a worktree",
+    "end-to-end", "all the way to a pr", "ship this", "land this",
+    "take care of this", "handle this without me",
+  ];
+  const claimed = VOCAB.filter((p) => new RegExp(`["'\`]${p}["'\`]`).test(parentDesc));
+  s.check("G2d the parent skill's description quotes no trigger phrase", claimed.length === 0,
+    claimed.length ? `quoted: ${claimed.join(", ")}` : "none quoted");
+  s.check("G2d the parent skill's description makes no trigger claim",
+    !/\b(triggers on|use when)\b/.test(parentDesc),
+    parentDesc.match(/\b(triggers on|use when)\b/)?.[0] ?? "no claim");
+
+  // Half 2. Every phrase `aw` advertises must be one the routing rule lists,
+  // or the two discovery surfaces disagree about what fires the dispatcher.
+  const quotedInAw = [...awDesc.matchAll(/"([^"]{4,40})"/g)].map((m) => m[1])
+    .filter((p) => !p.startsWith("/"));           // `/aw` is an invocation, not a phrase
+  const missing = quotedInAw.filter((p) => !rule.includes(p));
+  s.check("G2d every phrase aw advertises appears in the routing rule", missing.length === 0,
+    missing.length ? `not in rule: ${missing.join(", ")}` : `${quotedInAw.length} phrases, all present`);
+  // Sentinel, pinned to the live count for the same reason G2c's is: a loose
+  // floor lets phrases drop out of the description one at a time in silence.
+  s.check("G2d found the advertised trigger phrases to guard", quotedInAw.length >= 14,
+    `found ${quotedInAw.length}`);
+}
+
 // ── Check C: plan.md Core-section contract — runs the ACTUAL confidence rule-checks ──
 // against fixtures. Encodes the #30 Core contract + the #31 Acceptance-Criteria-non-empty fix.
 // We execute the exact idioms documented in skills/quality/confidence/SKILL.md rules #2 and #3,
