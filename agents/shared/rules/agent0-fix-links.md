@@ -41,6 +41,8 @@ nothing from the diff (§ Safety). Repos in that position set `agent0_fix_links:
 ## Contents
 
 - [Opt-in](#opt-in)
+- [Environment](#environment)
+- [Organization](#organization)
 - [Deep-link format](#deep-link-format)
 - [Click attribution](#click-attribution)
 - [Prompt templates](#prompt-templates)
@@ -60,8 +62,8 @@ Resolution order, first match wins:
 | `agent0_fix_links: true` / `false` in the review config | as set — the only repo-wide answer, and the only way to turn them off |
 | nothing configured | **on**, at `agent0_environment`'s own default of `production` |
 
-There is deliberately **no** `agent0_environment` row: naming an environment picks the host and says
-nothing about whether the buttons render. It used to be the gate, and the two meanings riding on one
+There is deliberately **no** `agent0_environment` row, and none for `agent0_org` either: those two
+name a destination (which host, which organization) and say nothing about whether the buttons render. It used to be the gate, and the two meanings riding on one
 key made "which Agent0" and "buttons or not" impossible to set independently — a repo on
 `development` could not turn the buttons off without also losing its host, and a repo wanting
 buttons on the default host had to write a line whose value it did not care about.
@@ -70,6 +72,7 @@ buttons on the default host had to write a line whose value it did not care abou
 # .github/review.yaml
 agent0_fix_links: false             # the only way to turn the buttons off repo-wide
 agent0_environment: development     # host only — has no bearing on whether they render
+agent0_org: dash0-development       # optional org slug — omitted means no `org=` param at all
 ```
 
 ```text
@@ -109,14 +112,64 @@ the host map (the single source, so both button sites resolve the same host), an
 falls back to `production`. The report renderer rejects a `FIX_ALL_URL` whose host is neither
 `app.dash0.com` nor `app.dash0-dev.com`.
 
+## Organization
+
+Which Dash0 organization the button opens Agent0 in is set by `agent0_org` in the review config.
+**It is absent by default, and an absent `org` is a working link, not a degraded one** — Agent0
+resolves the reader's own organization, which is the right answer for anyone who has exactly one.
+A repo whose readers belong to several sets it once, and every button on every review opens the
+intended one instead of whichever the reader last used:
+
+```yaml
+# .github/review.yaml
+agent0_org: dash0-development   # optional — omit and no `org=` param is sent at all
+```
+
+- set → `&org=<slug>` is appended to the deep link
+- omitted, empty, or unset → **no `org` parameter at all**, not `org=` and not a default slug
+
+`pr-reviewer` resolves it alongside `agent0_environment` (`review-config.md § Run-level fields`,
+base config only) and passes it to `build-agent0-link.mjs` as `--org <slug>` at **both** button
+sites — the same once-per-run resolution as `--env`, never re-read or defaulted per finding. The
+script owns the slug's validation and the parameter's placement, so the two sites cannot append it
+differently.
+
+**Like `agent0_environment`, this key picks a destination and gates nothing.** Setting it does not
+turn the buttons on, and omitting it does not turn them off — `agent0_fix_links` is still the only
+repo-wide switch (§ Opt-in). Keeping the three keys independent is the same lesson `agent0_environment`
+taught when it was both host and gate: a repo could not change one without changing the other.
+
+**A malformed slug is rejected, never dropped.** `build-agent0-link.mjs`'s `ORG_RE`
+(`^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$`) is checked before the parameter is appended and the script
+exits non-zero on a miss. Two reasons it fails closed rather than sanitizing: the value lands
+**unencoded** in a query string, so a slug carrying `&`, `#`, or a space would append a parameter of
+its own, truncate the URL at the fragment, or break the `href` the button is made of; and a silently
+dropped `org` renders a button that looks correct and opens the wrong organization — the same
+invisible-failure shape that made `--source` mandatory and `--env` explicit at both call sites. The
+shell resolution in `review-config.md` applies the identical **validation** pattern, so a typo in
+the config leaves `AGENT0_ORG` empty (no parameter) rather than reaching the script as garbage.
+
+It does **not** reuse that block's shared `strip()` helper, and the exception is deliberate:
+`strip()` cuts at the first `#` unanchored, so `agent0_org: org#123` would arrive as `org` — a
+valid-looking slug for a different organization, which passes the pattern and defeats the paragraph
+above. The two enum keys tolerate that because a mangled value fails their `case` and falls through
+to a safe default; a free-form value has no backstop, so `org` uses YAML's own rule (a `#` opens a
+comment only after whitespace) and leaves `org#123` intact to be rejected.
+
+The slug is not secret and carries no diff content — it is the organization name already visible in
+every Dash0 URL its readers use — so it adds nothing to § Safety beyond its own length (§ Relay
+length limit).
+
 ## Deep-link format
 
 ```text
-https://<app-host>/goto/agent0?auto_submit=true&initial_prompt=<ENCODED_PROMPT>&utm_source=pr-reviewer-<SOURCE>
+https://<app-host>/goto/agent0?auto_submit=true&initial_prompt=<ENCODED_PROMPT>&utm_source=pr-reviewer-<SOURCE>[&org=<ORG>]
 ```
 
 `<app-host>` is `app.dash0.com` (production) or `app.dash0-dev.com` (development), per § Environment.
-`<SOURCE>` is `fix-all` or `fix-this`, per § Click attribution.
+`<SOURCE>` is `fix-all` or `fix-this`, per § Click attribution. `&org=<ORG>` is present only when the
+repo configured one, per § Organization — it is the last parameter, so the prefix through
+`utm_source` is the same URL either way.
 
 `<ENCODED_PROMPT>` is built by `agents/pr-reviewer/scripts/build-agent0-link.mjs`'s `encodePrompt` —
 the single source of truth for this encoding, so the report renderer and the inline-comment step
@@ -543,10 +596,13 @@ node agents/pr-reviewer/scripts/build-agent0-link.mjs --env production --source 
   | perl -pe 's/&/&amp;/g' | tr -d '\n' | wc -c
 ```
 
-The only variable is the login, and it moves the figure by its own length: `mthines` gives 189,
-`claude[bot]` 197, `dash0-dev[bot]` 200, each **+4** on `development` (a longer host). Quote the
-fill, never just the PR — an earlier revision cited `mthines/agent-skills#168` for **195**, which is
-that PR with a 13-character bot login and not the 189 its actual reviewer login produces.
+The login moves the figure by its own length: `mthines` gives 189, `claude[bot]` 197,
+`dash0-dev[bot]` 200, each **+4** on `development` (a longer host). A configured `agent0_org`
+(§ Organization) adds `&org=<slug>` as `&amp;org=<slug>` in the body — **+9 plus the slug**, so
+`dash0-development` costs 26 and takes the `mthines` fill to 215. Add `--org <slug>` to the command
+above when re-deriving for a repo that sets one. Quote the fill, never just the PR — an earlier
+revision cited `mthines/agent-skills#168` for **195**, which is that PR with a 13-character bot login
+and not the 189 its actual reviewer login produces.
 
 Every one of those is over 140 before any prompt content is chosen. That is why *"do not shorten the
 prompt to fit"* is an absolute rather than a preference: no prompt exists that fits, so shortening

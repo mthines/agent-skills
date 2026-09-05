@@ -6,7 +6,8 @@
 // literal, and a literal ')' would terminate a `](url)` markdown link, so they must be escaped for
 // the URL to survive inside a linked-image button.
 //
-// Usage:  node build-agent0-link.mjs --source <fix-all|fix-this> "<prompt>"     (or: … < prompt.txt)
+// Usage:  node build-agent0-link.mjs --source <fix-all|fix-this> [--org <slug>] "<prompt>"
+//         (or: … < prompt.txt)
 // Output: the full https://app.dash0.com/goto/agent0?... URL on stdout. Any problem exits non-zero
 //         with a reason on stderr and prints nothing to stdout.
 
@@ -33,6 +34,19 @@ const MAX_URL = 4000;
 // — the same failure shape --env had before it was made mandatory-by-convention. Fail closed instead.
 const SOURCES = ["fix-all", "fix-this"];
 
+// The optional Dash0 organization slug (agent0-fix-links.md § Organization). Absent by default: a
+// link with no `org=` lands the reader in whichever org Agent0 resolves for them, which is the right
+// answer for anyone with exactly one. A repo whose readers belong to several sets `agent0_org` and
+// every button then opens the intended one.
+//
+// Validated rather than escaped, and rejected rather than dropped. The value comes from a repo's own
+// `.github/review.yaml`, so it is config, not user input — but it lands unencoded in a query string,
+// and a slug carrying `&`, `#`, or a space would append a parameter, truncate the URL, or break the
+// `href` the button is made of. A slug that does not match this is a typo in the config, and a
+// silently-dropped `org` is exactly the shape of failure `--source` and `--env` were both hardened
+// against: the button renders, nothing looks wrong, and it opens the wrong organization.
+const ORG_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
+
 export function resolveEnv(env) {
   return env === "development" || env === "production" ? env : "production";
 }
@@ -44,12 +58,22 @@ export function encodePrompt(prompt) {
     .replace(/'/g, "%27");
 }
 
-export function buildLink(prompt, env, source) {
+export function buildLink(prompt, env, source, org = null) {
   if (!SOURCES.includes(source)) {
     throw new Error(`build-agent0-link: source must be one of ${SOURCES.join(", ")} (got ${JSON.stringify(source)})`);
   }
   const host = HOSTS[resolveEnv(env)];
-  return `${host}/goto/agent0?auto_submit=true&initial_prompt=${encodePrompt(prompt)}&utm_source=pr-reviewer-${source}`;
+  // Appended last, and only when set. Absent is the default — see ORG_RE. Undefined, null, "" and
+  // whitespace all collapse to the same "absent" here, so the caller never has to normalise.
+  const slug = String(org ?? "").trim();
+  let orgParam = "";
+  if (slug !== "") {
+    if (!ORG_RE.test(slug)) {
+      throw new Error(`build-agent0-link: org must match ${ORG_RE} (got ${JSON.stringify(slug)})`);
+    }
+    orgParam = `&org=${slug}`;
+  }
+  return `${host}/goto/agent0?auto_submit=true&initial_prompt=${encodePrompt(prompt)}&utm_source=pr-reviewer-${source}${orgParam}`;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -60,6 +84,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   let source;
   const si = args.indexOf("--source");
   if (si >= 0) { source = args[si + 1]; args.splice(si, 2); }
+  let org = process.env.AGENT0_ORG;
+  const oi = args.indexOf("--org");
+  if (oi >= 0) { org = args[oi + 1]; args.splice(oi, 2); }
   const prompt = args.length ? args.join(" ") : readFileSync(0, "utf8");
   if (!prompt || !prompt.trim()) {
     process.stderr.write("build-agent0-link: empty prompt\n");
@@ -67,7 +94,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   let url;
   try {
-    url = buildLink(prompt.trim(), resolveEnv(env), source);
+    url = buildLink(prompt.trim(), resolveEnv(env), source, org);
   } catch (e) {
     process.stderr.write(`${e.message}\n`);
     process.exit(1);

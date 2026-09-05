@@ -79,6 +79,14 @@ agent0_environment: production           # which Agent0 host the fix buttons lin
                                          # (default production). HOST ONLY — it does not gate whether
                                          # the buttons render; see agents/shared/rules/agent0-fix-links.md
 
+agent0_org: dash0-development            # OPTIONAL — which Dash0 organization the fix buttons open
+                                         # Agent0 in, appended as &org=<slug>. Omit it (the default)
+                                         # and no org param is sent at all, which is correct for
+                                         # readers who have exactly one org. Like agent0_environment
+                                         # it picks a destination and gates nothing. Must match
+                                         # ^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$ — anything else is
+                                         # ignored here and rejected by build-agent0-link.mjs
+
 high_stakes_paths:                       # repo-specific critical paths (regex, case-insensitive)
   - "(^|/)ledger(/|$)"                   # EXTENDS the built-in list (auth, payments, migrations,
   - "(^|/)provisioning(/|$)"             # infra, secrets, …) owned by
@@ -230,7 +238,7 @@ Merge rules by field:
 | `profile` | Closer file wins — the most specific `.review.yaml` (or the `.github/review.yaml` base) sets the profile |
 | `filters` | **Union** — filters from all files in the hierarchy apply; a closer file cannot un-filter a category from the base |
 | `path_instructions` | **Concatenation** — all instructions from all files apply, with closer-file instructions listed first |
-| `agent0_fix_links`, `agent0_environment` | **Base only, never subtree-merged** — these gate the whole run (buttons on or off, which Agent0 host), not one file's findings, so a subtree `.review.yaml` cannot opt a directory in or out. Read from the repo-level base config alone; see § Run-level fields below. |
+| `agent0_fix_links`, `agent0_environment`, `agent0_org` | **Base only, never subtree-merged** — these govern the whole run (buttons on or off, which Agent0 host, which organization), not one file's findings, so a subtree `.review.yaml` cannot opt a directory in or out, nor point one directory's buttons at a different org. Read from the repo-level base config alone; see § Run-level fields below. |
 | `effort` | **Base only, never subtree-merged** — the depth tier is one decision per run, made at Step 1.2b before any file is read, so there is no point in the run at which a subtree's value could apply. Read from the repo-level base config alone. |
 
 Example: if `.github/review.yaml` sets `profile: chill` and `src/payments/.review.yaml` sets `profile: assertive`, then files under `src/payments/` use `assertive` while all other files use `chill`.
@@ -289,14 +297,14 @@ The effective config is consumed by:
 - `per-comment-confidence.md` (2.7) — reads the profile's threshold.
 - The filter evaluation (**Step 2.3**, early in Step 2, before holistic review) — drops findings in suppressed categories.
 - The path-instruction injection at `per-comment-confidence.md` (2.7) — appends instruction to Evidence.
-- `pr-reviewer.md`'s `Fix-with-Agent0 buttons` section (`agents/shared/rules/agent0-fix-links.md`) — reads `agent0_fix_links` and `agent0_environment`, resolved per § Run-level fields below.
+- `pr-reviewer.md`'s `Fix-with-Agent0 buttons` section (`agents/shared/rules/agent0-fix-links.md`) — reads `agent0_fix_links`, `agent0_environment`, and `agent0_org`, resolved per § Run-level fields below.
 
-### Run-level fields (`agent0_fix_links`, `agent0_environment`)
+### Run-level fields (`agent0_fix_links`, `agent0_environment`, `agent0_org`)
 
-Unlike `profile` / `filters` / `path_instructions`, these two are **not** part of the per-changed-file
-walk above: they decide whether "Fix with Agent0" buttons render at all and which Agent0 host they
-point at — a property of the *run*, not of any one file's findings. Resolve them once, from the
-repo-level base config only, before Step 0.5.
+Unlike `profile` / `filters` / `path_instructions`, these three are **not** part of the per-changed-file
+walk above: they decide whether "Fix with Agent0" buttons render at all, which Agent0 host they
+point at, and which organization they open — a property of the *run*, not of any one file's findings.
+Resolve them once, from the repo-level base config only, before Step 0.5.
 
 **Read the file via the GitHub API, never a local path check.** A local `[[ -f ".github/review.yaml" ]]`
 assumes the shell's cwd is the reviewed repo's checked-out root. Nothing in this agent's definition
@@ -349,6 +357,7 @@ fi
 
 AGENT0_FIX_LINKS="true"           # ON by default — `agent0_fix_links: false` is the only way off
 AGENT0_ENVIRONMENT="production"
+AGENT0_ORG=""                     # OPTIONAL and empty by default — no `org=` param is sent at all
 # An unreadable config is not an absent one: it may have carried the opt-out. Fail SAFE — withhold
 # the buttons — because a withheld button is recoverable (re-run, or pass --fix-links) and a deep
 # link a repo explicitly declined is not.
@@ -373,13 +382,39 @@ if [ -n "$BASE_CONFIG_CONTENT" ]; then
     true)  AGENT0_FIX_LINKS="true" ;;
     false) AGENT0_FIX_LINKS="false" ;;
   esac
+  # DESTINATION ONLY, and OPTIONAL. Absent leaves AGENT0_ORG empty, and an empty AGENT0_ORG means
+  # the link carries no `org` parameter at all — not `org=`, not a default slug. Validated with the
+  # same pattern build-agent0-link.mjs enforces (agent0-fix-links.md § Organization), so a typo'd
+  # slug leaves the variable empty here instead of reaching the script as a value that would append
+  # a stray query parameter or break the button's href.
+  #
+  # MATCHED, NOT STRIPPED — and deliberately not via `strip()`. The two keys above can share that
+  # helper safely because a mangled value fails their `case` and lands on a safe default; a
+  # free-form value has no backstop — it BECOMES the setting. `strip()` peels a value in stages
+  # (cut the comment, drop the quotes, trim), and every stage is a chance to hand back a *prefix*
+  # of the configured text: `org#123` peels to `org` and `"org # 123"` peels to `org`, both
+  # valid-looking slugs for an organization the config never named. Patching the stages one at a
+  # time just moves the seam, so this key asserts the whole value in a single match instead: a
+  # bare slug, optionally followed by a YAML comment (`#` opens one only after whitespace).
+  # Anything else — an inner `#`, a quote, a space, 64 chars — matches nothing and leaves
+  # AGENT0_ORG empty, which is the fail-safe state (no `org` param at all).
+  #
+  # Two consequences worth stating. A QUOTED slug (`agent0_org: "dash0-development"`) is valid
+  # YAML and is rejected here; the cost is one absent parameter, never a wrong organization, and
+  # the schema documents the unquoted form. And anchoring the comment cut inside `strip()` — the
+  # tempting shared fix — would break a more important key: `agent0_fix_links: false#x` would stop
+  # matching `false` and fall through to the default, the opt-out failing OPEN.
+  org_line=$(grep -E '^agent0_org:' <<< "$BASE_CONFIG_CONTENT" | head -1)
+  if [[ "$org_line" =~ ^agent0_org:[[:space:]]*([A-Za-z0-9][A-Za-z0-9._-]{0,62})[[:space:]]*([[:space:]]#.*)?$ ]]; then
+    AGENT0_ORG="${BASH_REMATCH[1]}"
+  fi
 fi
 ```
 
-**The buttons are on by default and the two keys are independent.** `AGENT0_FIX_LINKS` starts
+**The buttons are on by default and the three keys are independent.** `AGENT0_FIX_LINKS` starts
 `true` and only `agent0_fix_links: false` turns it off; `agent0_environment` picks the host and
-defaults to `production` (`app.dash0.com`) when absent or unrecognised, with no bearing on whether
-anything renders. So a repo with no review config at all, or one that has never heard of Agent0,
+defaults to `production` (`app.dash0.com`) when absent or unrecognised, and `agent0_org` picks the
+organization and is simply absent when unset — neither has any bearing on whether anything renders. So a repo with no review config at all, or one that has never heard of Agent0,
 gets buttons deep-linking to `app.dash0.com` — the cost of the default, stated in
 `agent0-fix-links.md § Opt-in` rather than left to be discovered, and one line to decline.
 
@@ -390,10 +425,14 @@ old off-by-default behaviour, with the config, the table above and this paragrap
 otherwise.
 `pr-reviewer.md` combines `AGENT0_FIX_LINKS` with the invocation flags to decide `FIX_LINKS`
 (`--no-fix-links` wins, then `--fix-links`, then this value),
-and passes `AGENT0_ENVIRONMENT` to `build-agent0-link.mjs` as `--env` — **on both the Fix-all and
+and passes `AGENT0_ENVIRONMENT` to `build-agent0-link.mjs` as `--env`, plus a non-empty
+`AGENT0_ORG` as `--org` — **on both the Fix-all and
 Fix-this call sites** (§ Config loading step above lists both consumers; `agent0-fix-links.md §
 Button markup` and `comment-shape.md § Fix-with-Agent0 button` must not be read as excusing the
-inline site from passing it — see the note in each).
+inline site from passing it — see the note in each). Pass `--org` only when `AGENT0_ORG` is
+non-empty; the script treats an empty value as absent either way, but an unquoted `--org $AGENT0_ORG`
+with an empty variable would swallow the next argument, so build the flag conditionally
+(`${AGENT0_ORG:+--org "$AGENT0_ORG"}`) rather than interpolating it bare.
 
 ---
 
