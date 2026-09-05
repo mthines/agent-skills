@@ -146,8 +146,15 @@ exits non-zero on a miss. Two reasons it fails closed rather than sanitizing: th
 its own, truncate the URL at the fragment, or break the `href` the button is made of; and a silently
 dropped `org` renders a button that looks correct and opens the wrong organization — the same
 invisible-failure shape that made `--source` mandatory and `--env` explicit at both call sites. The
-shell resolution in `review-config.md` applies the identical pattern, so a typo in the config leaves
-`AGENT0_ORG` empty (no parameter) rather than reaching the script as garbage.
+shell resolution in `review-config.md` applies the identical **validation** pattern, so a typo in
+the config leaves `AGENT0_ORG` empty (no parameter) rather than reaching the script as garbage.
+
+It does **not** reuse that block's shared `strip()` helper, and the exception is deliberate:
+`strip()` cuts at the first `#` unanchored, so `agent0_org: org#123` would arrive as `org` — a
+valid-looking slug for a different organization, which passes the pattern and defeats the paragraph
+above. The two enum keys tolerate that because a mangled value fails their `case` and falls through
+to a safe default; a free-form value has no backstop, so `org` uses YAML's own rule (a `#` opens a
+comment only after whitespace) and leaves `org#123` intact to be rejected.
 
 The slug is not secret and carries no diff content — it is the organization name already visible in
 every Dash0 URL its readers use — so it adds nothing to § Safety beyond its own length (§ Relay

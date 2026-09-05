@@ -3330,9 +3330,23 @@ const isPollBlock = (block) =>
         resolve("agent0_org: dash0-development   # our org\n")
           === "true production dash0-development",
         "an inline comment defeated the org — the schema's own documented style puts one there");
+      // The fix for the `#` divergence must stay SCOPED to agent0_org. Anchoring the cut inside
+      // the shared strip() would fix org and break the opt-out: `false#x` would stop matching
+      // `false` and fall through to the default — the buttons ON for a repo that wrote "false",
+      // which is the one direction this whole block exists to prevent. Pin both halves.
+      s.check("G32q the org fix did not anchor the shared strip()'s comment cut",
+        resolve("agent0_fix_links: false#x\n").startsWith("false")
+          && resolve("agent0_org: org#123\n").endsWith(" (none)"),
+        "the `#` handling was changed in the shared strip() rather than for agent0_org alone —"
+          + " that resolves `agent0_fix_links: false#x` to the default (ON), failing the opt-out open");
       // A typo'd slug must leave the variable EMPTY, not pass garbage to the link builder: the
       // value lands unencoded in a query string, and `--org 'a&b=c'` would append a parameter.
-      for (const bad of ["a&b=c", "a b c", "-leading", "x".repeat(64)]) {
+      // `org#123` is the case the two validators disagreed on: the shell's shared strip() cut at
+      // the first `#` unanchored, so a slug naming ANOTHER organization arrived pre-truncated to a
+      // valid-looking `org` and passed — while the script rejected the same input. The
+      // script-level G31l always carried `a#b`; this list did not, which is why the divergence
+      // shipped. Keep the two lists' `#` coverage in sync.
+      for (const bad of ["a&b=c", "a b c", "-leading", "x".repeat(64), "org#123", "a#b"]) {
         s.check(`G32q a malformed agent0_org (${JSON.stringify(bad)}) resolves to no org at all`,
           resolve(`agent0_org: ${bad}\n`).endsWith(" (none)"),
           `resolved "${resolve(`agent0_org: ${bad}\n`)}" — a malformed slug reached AGENT0_ORG and`

@@ -387,7 +387,20 @@ if [ -n "$BASE_CONFIG_CONTENT" ]; then
   # same pattern build-agent0-link.mjs enforces (agent0-fix-links.md § Organization), so a typo'd
   # slug leaves the variable empty here instead of reaching the script as a value that would append
   # a stray query parameter or break the button's href.
-  org=$(grep -E '^agent0_org:' <<< "$BASE_CONFIG_CONTENT" | strip)
+  #
+  # NOT `strip()`, and the difference is load-bearing. `strip()` cuts at the first `#` unanchored,
+  # so `agent0_org: org#123` would resolve to `org` — a valid-looking slug for a DIFFERENT
+  # organization that sails through the check below. The two keys above can share `strip()` safely
+  # because a mangled value simply fails their `case` and falls through to a safe default; a
+  # free-form value has no such backstop — it BECOMES the setting. So `org` gets YAML's own comment
+  # rule (a `#` opens a comment only after whitespace), which leaves `org#123` intact to be
+  # rejected while still honouring the schema's documented ` # trailing comment` style.
+  #
+  # Anchoring the cut inside `strip()` itself would fix this key and break a more important one:
+  # `agent0_fix_links: false#x` would stop matching `false` and fall through to the default — the
+  # opt-out failing OPEN, the one direction this whole block exists to prevent.
+  org_strip() { sed -E 's/^[^:]+:[[:space:]]*//; s/[[:space:]]+#.*$//; s/["'"'"']//g; s/[[:space:]]*$//'; }
+  org=$(grep -E '^agent0_org:' <<< "$BASE_CONFIG_CONTENT" | org_strip)
   if [[ "$org" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$ ]]; then AGENT0_ORG="$org"; fi
 fi
 ```
