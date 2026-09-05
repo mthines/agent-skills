@@ -17,7 +17,9 @@ Real-world examples of error recovery during autonomous workflow execution.
 > [`rules/prerequisites.md#fallback-to-native-git-worktree`](../rules/prerequisites.md#fallback-to-native-git-worktree)
 > for command equivalents (e.g. `gw add` → `git worktree add -b`,
 > `gw remove` → `git worktree remove` + `git branch -d`,
-> `gw cd` → manual `cd <path>`). The only hard-required CLI tool is `gh`.
+> `gw cd` → manual `cd <path>`). There is no hard-required CLI tool: GitHub access
+> is a *capability*, reached through either `gh` or the `mcp__github__*` tools and
+> resolved once per run via `agents/shared/rules/github-access.md` § Step 0.
 
 ## Scenario 1: Test Failures Requiring Multiple Iterations
 
