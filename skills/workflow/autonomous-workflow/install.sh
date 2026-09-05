@@ -167,14 +167,18 @@ template_required "aw-executor.agent.md"
 template_required "aw-tester.agent.md"
 template_required "routing.rule.md"
 
-# The dispatcher is a nested skill rather than a template, so it needs its own
-# check — without it an incomplete skill directory yields a dangling /aw
-# symlink instead of an error.
-if [[ ! -f "$SKILL_DIR/aw/SKILL.md" ]]; then
-  echo "error: missing $SKILL_DIR/aw/SKILL.md" >&2
-  echo "the skill directory exists but appears incomplete" >&2
-  exit 1
-fi
+# Skills nested inside this skill directory. They are not templates, so they
+# need their own existence check — without it an incomplete skill directory
+# yields a dangling symlink instead of an error.
+NESTED_SKILLS=(aw aw-setup aw-tester-chrome)
+
+for nested in "${NESTED_SKILLS[@]}"; do
+  if [[ ! -f "$SKILL_DIR/$nested/SKILL.md" ]]; then
+    echo "error: missing $SKILL_DIR/$nested/SKILL.md" >&2
+    echo "the skill directory exists but appears incomplete" >&2
+    exit 1
+  fi
+done
 
 mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/rules"
 
@@ -201,33 +205,48 @@ if [[ "$MODE" == "development" ]]; then
   ln -sfn "$DISCOVERY_DIR" "$CLAUDE_DIR/skills/autonomous-workflow"
   vlog "✓ Claude skill: $CLAUDE_DIR/skills/autonomous-workflow → $DISCOVERY_DIR"
 
-  # Development mode adds the cross-tool discovery hop for the dispatcher, so
-  # Codex / Cursor / OpenCode see it too. The Claude-side link is created for
-  # every mode below.
-  if [[ -e "$HOME/.agents/skills/aw" && ! -L "$HOME/.agents/skills/aw" ]]; then
-    echo "error: $HOME/.agents/skills/aw already exists and is not a symlink" >&2
-    exit 1
-  fi
-  ln -sfn "$SKILL_DIR/aw" "$HOME/.agents/skills/aw"
-  AW_LINK_TARGET="$HOME/.agents/skills/aw"
+  # Development mode adds the cross-tool discovery hop for each nested skill,
+  # so Codex / Cursor / OpenCode see them too. The Claude-side links are
+  # created for every mode below.
+  mkdir -p "$HOME/.agents/skills"
+  for nested in "${NESTED_SKILLS[@]}"; do
+    if [[ -e "$HOME/.agents/skills/$nested" && ! -L "$HOME/.agents/skills/$nested" ]]; then
+      echo "error: $HOME/.agents/skills/$nested already exists and is not a symlink" >&2
+      exit 1
+    fi
+    ln -sfn "$SKILL_DIR/$nested" "$HOME/.agents/skills/$nested"
+  done
+  NESTED_LINK_BASE="$HOME/.agents/skills"
 fi
 
-# Link the `aw` dispatcher in EVERY mode. It is a nested skill, not an agent
-# (see CLAUDE.md → "The dispatcher is a skill, not an agent"), and skills are
-# discovered under a FLAT installed name — a nested
-# `.claude/skills/autonomous-workflow/aw/SKILL.md` is not found as `/aw`. So the
-# normal skill-install path cannot reach it the way it reaches a top-level
-# skill, and this script has to place it. That is load-bearing: the legacy
-# cleanup below removes the pre-v3.23 `aw` AGENT unconditionally, so a
-# --global / --project upgrade that skipped this link would delete /aw and
-# leave no way back.
+# Link every nested skill in EVERY mode. Skills are discovered under a FLAT
+# installed name, so a nested `.claude/skills/autonomous-workflow/aw/SKILL.md`
+# is not found as `/aw`. The normal skill-install path cannot reach any of them
+# the way it reaches a top-level skill, and this script has to place them —
+# which is why the loop covers all three rather than just the dispatcher:
+#
+#   aw               the dispatcher (a skill, not an agent — see CLAUDE.md →
+#                    "The dispatcher is a skill, not an agent"). Load-bearing:
+#                    the legacy cleanup below removes the pre-v3.23 `aw` AGENT
+#                    unconditionally, so a --global / --project upgrade that
+#                    skipped this link would delete /aw and leave no way back.
+#   aw-setup         scaffolds .claude/aw-targets/ for aw-tester. The summary
+#                    below tells the user to run it, and aw-planner HALTS on a
+#                    UI task until an aw-target exists while being forbidden to
+#                    scaffold one itself — so an unlinked /aw-setup is a dead
+#                    end with no recovery path, not a missing convenience.
+#   aw-tester-chrome the in-session Chrome runner preview-spec selects when the
+#                    extension is connected.
 mkdir -p "$CLAUDE_DIR/skills"
-if [[ -e "$CLAUDE_DIR/skills/aw" && ! -L "$CLAUDE_DIR/skills/aw" ]]; then
-  echo "error: $CLAUDE_DIR/skills/aw already exists and is not a symlink" >&2
-  exit 1
-fi
-ln -sfn "${AW_LINK_TARGET:-$SKILL_DIR/aw}" "$CLAUDE_DIR/skills/aw"
+for nested in "${NESTED_SKILLS[@]}"; do
+  if [[ -e "$CLAUDE_DIR/skills/$nested" && ! -L "$CLAUDE_DIR/skills/$nested" ]]; then
+    echo "error: $CLAUDE_DIR/skills/$nested already exists and is not a symlink" >&2
+    exit 1
+  fi
+  ln -sfn "${NESTED_LINK_BASE:-$SKILL_DIR}/$nested" "$CLAUDE_DIR/skills/$nested"
+done
 vlog "✓ Dispatcher:   $CLAUDE_DIR/skills/aw (opt-in entry point; tier routing + self-improvement loop)"
+vlog "✓ Nested skills: $CLAUDE_DIR/skills/{aw-setup,aw-tester-chrome}"
 
 # Clean up legacy agent symlinks from older installs. We only remove them when
 # they're symlinks pointing at our templates — never touch hand-authored files.
