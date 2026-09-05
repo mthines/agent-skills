@@ -67,7 +67,7 @@ It interrupts only for a genuine, load-bearing unknown — see [`rules/readiness
 
 ### Relation to `aw` and `ideate` (precedence)
 
-- **Autonomous-implementation asks** ("implement X autonomously", "ship this", `@aw`) are owned by `aw`, which runs this interview *inside* its Phase 0 (default-on for Full tier — see [`rules/aw-integration.md`](./rules/aw-integration.md)) — do not also fire standalone; let `aw` drive.
+- **Autonomous-implementation asks** ("implement X autonomously", "ship this", `/aw`) are owned by `aw`, which runs this interview *inside* its Phase 0 (default-on for Full tier — see [`rules/aw-integration.md`](./rules/aw-integration.md)) — do not also fire standalone; let `aw` drive.
 - **Standalone `/interview`** is for the explicit "help me scope this first" moment on non-`aw` or ambiguous work.
 - **For solution *options*, not scope**, use `/ideate` — it diverges and scores; this skill converges on the one scope.
 

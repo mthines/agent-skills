@@ -21,7 +21,9 @@ const SUITES = [
   {
     name: "tier-routing",
     golden: "golden/tier-routing.jsonl",
-    rubric: { file: "skills/workflow/autonomous-workflow/templates/aw.agent.md", section: "## Tier detection" },
+    // The dispatcher (skills/workflow/autonomous-workflow/aw/SKILL.md) deliberately
+    // does NOT restate the table — it links this section. Read the canonical home.
+    rubric: { file: "skills/workflow/autonomous-workflow/SKILL.md", section: "### Step 1: Detect Workflow Mode (MANDATORY)" },
     instruction: "You are the autonomous-workflow dispatcher. Using ONLY the tier-detection rules below, classify the task into exactly one tier.",
     inputKey: "task", inputLabel: "Task",
     choices: ["Micro", "Lite", "Full"],

@@ -1,4 +1,4 @@
-# `@aw` — Autonomous Workflow
+# `/aw` — Autonomous Workflow
 
 > Execute complete feature development cycles autonomously using isolated worktrees, layered companion skills, and a CI gate.
 
@@ -22,11 +22,11 @@ That's the whole thing. You describe the change you want, and `aw` does everythi
 
 ### It looks complex. Using it is one sentence.
 
-The machinery below — three agents, eight phases, a dozen companion skills, confidence gates — is the part that *does the work for you*. None of it is setup you have to do.
+The machinery below — a dispatcher skill, three agents, eight phases, a dozen companion skills, confidence gates — is the part that *does the work for you*. None of it is setup you have to do.
 
 | What you see in the docs | What you actually do |
 | ------------------------ | -------------------- |
-| 3 agents, 8 phases, 12 companions, confidence gates | Type one sentence (or `@aw`). |
+| 1 dispatcher skill, 3 agents, 8 phases, 12 companions, confidence gates | Type one sentence (or `/aw`). |
 | "Do I need to configure all this?" | No — it auto-picks how much process to run. |
 | "Will it run off and break things?" | No — isolated worktree, a gate at every step, and a draft PR you approve. |
 
@@ -124,9 +124,9 @@ cd agent-skills
 bash scripts/sync-symlinks.sh --aw
 ```
 
-`--aw` symlinks the autonomous-workflow skill and its 12 companion skills,
-plus the `aw` / `aw-planner` / `aw-executor` agents, into your `~/.claude/`
-directory. Edits to the cloned repo are picked up live on the next agent
+`--aw` symlinks the autonomous-workflow skill, the `aw` dispatcher skill, and
+its 12 companion skills, plus the `aw-planner` / `aw-executor` / `aw-tester`
+agents, into your `~/.claude/` directory. Edits to the cloned repo are picked up live on the next agent
 turn — `git pull` is the whole upgrade story.
 
 To install **every** skill and agent in this repo (not just the AW bundle),
@@ -135,22 +135,29 @@ drop the `--aw` flag. To preview without applying, add `--dry-run` (or `-n`).
 > **Prefer a no-clone install?** `npx skills add` still works — see the root
 > [README](../../../README.md#install) for the npx path and other options.
 
-Then say *"implement X independently"* (or invoke `@aw`) — the routing rule
-dispatches the **`aw` dispatcher**, which detects the tier and routes: Micro/Lite
+Then say *"implement X independently"* (or invoke `/aw`) — the routing rule
+invokes the **`aw` dispatcher**, which detects the tier and routes: Micro/Lite
 run single-pass; Full hands off to the planner→executor split.
 
 #### What gets installed
 
-Four agents linked into your `.claude/agents/` directory under the
-**`aw-` namespace** (short for "autonomous-workflow") so they group together
-and are unmistakable when listed alongside unrelated agents:
+The **`aw` dispatcher** as a skill in your `.claude/skills/` directory — it runs
+in your own context, which is what lets the agents it dispatches sit at the
+top-level rung and keep their own sub-agent dispatch (see
+[`CLAUDE.md`](./CLAUDE.md#the-dispatcher-is-a-skill-not-an-agent--design-intent)).
 
-| Agent | Role | Terminal artifact | Exit gate |
-|---|---|---|---|
-| `aw` | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes, owns the self-improvement loop for every tier. | — (delegates) | Task routed + exit lesson written |
-| `aw-planner` | Full tier, phases 0–2 (validation, planning, worktree + plan.md + checks.yaml + specs.md) | `.agent/{branch}/plan.md` + `checks.yaml` + `specs.md` (UI tasks) | `confidence(plan) ≥ 90%` (or user-approved override) |
-| `aw-executor` | Full tier, phases 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
-| `aw-tester` | Phase 4 spec-driven UI verification — dispatched by executor before lint/type/test | Verdict block (~200 tokens) | `green` or `inconclusive` |
+Plus three agents linked into your `.claude/agents/` directory under the
+**`aw-` namespace** (short for "autonomous-workflow") so they group together
+and are unmistakable when listed alongside unrelated agents.
+
+All four units, dispatcher included:
+
+| Unit | Kind | Role | Terminal artifact | Exit gate |
+|---|---|---|---|---|
+| `aw` | skill | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes, owns the self-improvement loop for every tier. | — (delegates) | Task routed + exit lesson written |
+| `aw-planner` | agent | Full tier, phases 0–2 (validation, planning, worktree + plan.md + checks.yaml + specs.md) | `.agent/{branch}/plan.md` + `checks.yaml` + `specs.md` (UI tasks) | `confidence(plan) ≥ 90%` (or user-approved override) |
+| `aw-executor` | agent | Full tier, phases 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
+| `aw-tester` | agent | Phase 4 spec-driven UI verification — dispatched by executor before lint/type/test | Verdict block (~200 tokens) | `green` or `inconclusive` |
 
 `aw` is **adaptive and opt-in**: it only pays the planner→executor handoff cost
 on Full tasks (where context isolation + a resumable `plan.md` earn it), and runs
@@ -350,7 +357,20 @@ After installing, trigger autonomous execution with natural language:
 "Handle this in isolation — refactor the API client to use retry logic"
 ```
 
-You can also invoke explicitly: `@autonomous-workflow implement X`.
+Those go to the **`aw` dispatcher**, which detects the tier and routes.
+`aw` owns the natural-language surface; this skill is the phase machinery behind
+it and is deliberately not auto-triggered, so a request never lands on the
+phases with tier detection and the lessons loop skipped.
+
+Note what is *not* a trigger. Bare "implement this", "let's go", and "start" are
+excluded on purpose — the routing rule's exclusion list keeps `aw` off casual
+interactive edits. "go", "continue", "proceed", "execute", and "ship it" are
+**continuation** phrases: they dispatch `aw-executor` when a plan already exists
+at `.agent/{branch}/plan.md`, rather than starting a fresh run.
+
+You can also invoke explicitly: `/aw implement X` for the dispatcher, or
+`/autonomous-workflow` to run the phase machinery directly and bypass tier
+detection.
 
 ---
 

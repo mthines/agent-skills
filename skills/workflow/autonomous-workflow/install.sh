@@ -16,9 +16,6 @@
 # group together in `.claude/agents/` and stay distinct from unrelated
 # agents:
 #
-#   • aw           — opt-in dispatcher: detects tier (Micro/Lite/Full),
-#                   routes single-pass vs planner/executor split, and owns
-#                   the self-improvement lessons loop for every tier.
 #   • aw-planner   — phases 0-2 (validation, planning,
 #                   worktree + plan.md generation).
 #                   Terminal artifact: .agent/{branch}/plan.md,
@@ -29,6 +26,19 @@
 #
 # The handoff between them is mediated by plan.md. See
 # rules/planner-executor-handoff.md for the contract.
+#
+# The `aw` dispatcher is deliberately NOT in that list — it is a SKILL
+# (aw/SKILL.md), invoked as /aw, so it runs in the caller's context and
+# dispatches the two agents from there. See CLAUDE.md → "The dispatcher is
+# a skill, not an agent".
+#
+# It is still THIS script's job to link it, in every mode. Skills are
+# discovered under a flat installed name, so the nested aw/SKILL.md is not
+# reachable as /aw from the autonomous-workflow skill directory alone — the
+# normal skill-install path cannot place it the way it places a top-level
+# skill. And the legacy-cleanup pass below removes the pre-v3.23 `aw` AGENT
+# in every mode, so a --global / --project install that did not create the
+# replacement link would delete /aw outright.
 #
 # Modes:
 #   --project      Per-project install (default). Links into ./.claude/.
@@ -152,11 +162,23 @@ template_required() {
   fi
 }
 
-template_required "aw.agent.md"
 template_required "aw-planner.agent.md"
 template_required "aw-executor.agent.md"
 template_required "aw-tester.agent.md"
 template_required "routing.rule.md"
+
+# Skills nested inside this skill directory. They are not templates, so they
+# need their own existence check — without it an incomplete skill directory
+# yields a dangling symlink instead of an error.
+NESTED_SKILLS=(aw aw-setup aw-tester-chrome)
+
+for nested in "${NESTED_SKILLS[@]}"; do
+  if [[ ! -f "$SKILL_DIR/$nested/SKILL.md" ]]; then
+    echo "error: missing $SKILL_DIR/$nested/SKILL.md" >&2
+    echo "the skill directory exists but appears incomplete" >&2
+    exit 1
+  fi
+done
 
 mkdir -p "$CLAUDE_DIR/agents" "$CLAUDE_DIR/rules"
 
@@ -182,13 +204,62 @@ if [[ "$MODE" == "development" ]]; then
   mkdir -p "$CLAUDE_DIR/skills"
   ln -sfn "$DISCOVERY_DIR" "$CLAUDE_DIR/skills/autonomous-workflow"
   vlog "✓ Claude skill: $CLAUDE_DIR/skills/autonomous-workflow → $DISCOVERY_DIR"
+
+  # Development mode adds the cross-tool discovery hop for each nested skill,
+  # so Codex / Cursor / OpenCode see them too. The Claude-side links are
+  # created for every mode below.
+  mkdir -p "$HOME/.agents/skills"
+  for nested in "${NESTED_SKILLS[@]}"; do
+    if [[ -e "$HOME/.agents/skills/$nested" && ! -L "$HOME/.agents/skills/$nested" ]]; then
+      echo "error: $HOME/.agents/skills/$nested already exists and is not a symlink" >&2
+      exit 1
+    fi
+    ln -sfn "$SKILL_DIR/$nested" "$HOME/.agents/skills/$nested"
+  done
+  NESTED_LINK_BASE="$HOME/.agents/skills"
 fi
 
-# Clean up legacy unprefixed names from older installs (pre-aw- namespace).
-# We only remove them when they're symlinks pointing at our templates — never
-# touch hand-authored files.
+# Link every nested skill in EVERY mode. Skills are discovered under a FLAT
+# installed name, so a nested `.claude/skills/autonomous-workflow/aw/SKILL.md`
+# is not found as `/aw`. The normal skill-install path cannot reach any of them
+# the way it reaches a top-level skill, and this script has to place them —
+# which is why the loop covers all three rather than just the dispatcher:
+#
+#   aw               the dispatcher (a skill, not an agent — see CLAUDE.md →
+#                    "The dispatcher is a skill, not an agent"). Load-bearing:
+#                    the legacy cleanup below removes the pre-v3.23 `aw` AGENT
+#                    unconditionally, so a --global / --project upgrade that
+#                    skipped this link would delete /aw and leave no way back.
+#   aw-setup         scaffolds .claude/aw-targets/ for aw-tester. The summary
+#                    below tells the user to run it, and aw-planner HALTS on a
+#                    UI task until an aw-target exists while being forbidden to
+#                    scaffold one itself — so an unlinked /aw-setup is a dead
+#                    end with no recovery path, not a missing convenience.
+#   aw-tester-chrome the in-session Chrome runner preview-spec selects when the
+#                    extension is connected.
+mkdir -p "$CLAUDE_DIR/skills"
+for nested in "${NESTED_SKILLS[@]}"; do
+  if [[ -e "$CLAUDE_DIR/skills/$nested" && ! -L "$CLAUDE_DIR/skills/$nested" ]]; then
+    echo "error: $CLAUDE_DIR/skills/$nested already exists and is not a symlink" >&2
+    exit 1
+  fi
+  ln -sfn "${NESTED_LINK_BASE:-$SKILL_DIR}/$nested" "$CLAUDE_DIR/skills/$nested"
+done
+vlog "✓ Dispatcher:   $CLAUDE_DIR/skills/aw (opt-in entry point; tier routing + self-improvement loop)"
+vlog "✓ Nested skills: $CLAUDE_DIR/skills/{aw-setup,aw-tester-chrome}"
+
+# Clean up legacy agent symlinks from older installs. We only remove them when
+# they're symlinks pointing at our templates — never touch hand-authored files.
+#
+#   autonomous-{planner,executor}.md — pre-`aw-` namespace names.
+#   aw.md                            — the dispatcher was an agent until v3.23;
+#                                      it is now the `aw` SKILL linked above.
+#                                      Leaving the agent in place would put two
+#                                      `aw` entries with near-identical
+#                                      auto-trigger descriptions in the harness.
 for legacy in "autonomous-planner.md:planner.template.md" \
-              "autonomous-executor.md:executor.template.md"; do
+              "autonomous-executor.md:executor.template.md" \
+              "aw.md:aw.agent.md"; do
   legacy_name="${legacy%%:*}"
   legacy_target="${legacy##*:}"
   legacy_path="$CLAUDE_DIR/agents/$legacy_name"
@@ -199,10 +270,8 @@ for legacy in "autonomous-planner.md:planner.template.md" \
 done
 
 # Link the agent definitions under the `aw-` namespace
-# (short for "autonomous-workflow").
-ln -sf "$SKILL_DIR/templates/aw.agent.md" "$CLAUDE_DIR/agents/aw.md"
-vlog "✓ Dispatcher:     $CLAUDE_DIR/agents/aw.md (opt-in entry point; tier routing + self-improvement loop)"
-
+# (short for "autonomous-workflow"). The dispatcher is NOT here — it is the
+# `aw` skill (see the dev-mode block above and CLAUDE.md).
 ln -sf "$SKILL_DIR/templates/aw-planner.agent.md" "$CLAUDE_DIR/agents/aw-planner.md"
 vlog "✓ Planner agent:  $CLAUDE_DIR/agents/aw-planner.md"
 
@@ -228,8 +297,10 @@ fi
 vlog ""
 vlog "done. autonomous-workflow is ready ($MODE mode)."
 vlog ""
-vlog "four agents installed (aw- = autonomous-workflow namespace):"
-vlog "  • aw           — opt-in dispatcher; detects tier (Micro/Lite/Full) + owns the lessons loop"
+vlog "dispatcher (a SKILL, not an agent — runs in your context):"
+vlog "  • /aw          — detects tier (Micro/Lite/Full) + owns the lessons loop"
+vlog ""
+vlog "three agents installed (aw- = autonomous-workflow namespace):"
 vlog "  • aw-planner   — phases 0-2, produces .agent/{branch}/plan.md (Full tier)"
 vlog "  • aw-executor  — phases 3-7, produces walkthrough.md + draft PR (Full tier)"
 vlog "  • aw-tester    — spec-driven UI verification; dispatched by executor in Phase 4 (before lint/type/test)"

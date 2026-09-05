@@ -12,6 +12,17 @@ tools:
   - Edit
   - Write
   - Skill
+  # Sub-agent dispatch. Three documented executor behaviours need it: the Phase 3
+  # file-disjoint fan-out (cap 3), the Phase 7 ci-auto-fix fan-out (cap 2), and
+  # `create-pr`'s Phase 6 review-loop / pr-reviewer pass. Granting it here does
+  # not by itself guarantee the harness allows a nested dispatch — but since the
+  # `aw` dispatcher became a skill (v3.23), this agent is dispatched from the
+  # top-level session rather than from inside another agent, so it now sits at
+  # the rung that historically kept `Task`. Without the grant those three
+  # behaviours are unreachable by construction, which is what produced the
+  # NOT REVIEWED draft PRs recorded in `aw-lessons`. `aw` still re-runs the
+  # review itself when this agent reports the pass as skipped.
+  - Task
   # LoreKit self-improvement loop — the executor READS lessons (no-planner paths)
   # and WRITES them at stuck-loop escalation (Phase 4) and end-of-run (Phase 7).
   # Sub-agents do NOT inherit the parent session's MCP tools, so they are granted

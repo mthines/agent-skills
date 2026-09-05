@@ -14,7 +14,7 @@ Methodology follows the repo's own [`ai-engineering/rules/evals.md`](../../skill
 | **Cost / speed** | Free, milliseconds. Runs in CI on every PR. | Costs API tokens, seconds–minutes. Run locally / nightly. |
 | **Scoring** | Exact assertions (pass/fail). | Accuracy vs human-labelled golden set (here: exact-match on a label; no LLM-judge needed for classification). |
 | **Catches** | Broken links/anchors, missing plan sections, gate-logic regressions, doc drift, version-collision. | "The skill biases the model the wrong way" — wrong tier routing, mis-classification, mis-calibrated confidence. Things reading the markdown can't prove. |
-| **Example here** | `l1.mjs` — incl. the #31 confidence-gate regression and the dispatcher↔SKILL tier-table drift. | `l2.mjs` — does `aw` route tasks to the right tier? does `/fix-bug` classify the bug right? |
+| **Example here** | `l1.mjs` — incl. the #31 confidence-gate regression, the tier table's single home (`G2b`), and the `aw-` agent count (`G2c`). | `l2.mjs` — does `aw` route tasks to the right tier? does `/fix-bug` classify the bug right? |
 
 **Why both?** L1 proves the *contract* (cheap, every PR). L2 proves the
 *behavior* (expensive, periodic). L1 would never have caught "the dispatcher
@@ -28,7 +28,7 @@ Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
 - **Links/anchors** resolve across `skills/`, `memory/`, root docs (skips code
   fences + templates; ratchets on a baseline of pre-existing debt — see the
   `BASELINE` set, burn it down, never add to it).
-- **Tier table** in `aw.agent.md` is byte-identical to `SKILL.md` Step 1.
+- **Tier table** has exactly one home: present in `SKILL.md` Step 1, absent from the `aw` dispatcher skill, which links it (`G2b`).
 - **plan.md Core contract** — runs the *actual* `confidence` rule #2 (8 Core
   sections), rule #3 (Acceptance Criteria non-empty, the #31 fix), rule #9
   (every `[user-stated]` requirement covered by a `(covers: R…)` annotation),
@@ -63,7 +63,7 @@ choice against the human label. Classification → exact-match, **no LLM-as-judg
 
 | Suite | Question | Rubric read from | Choices |
 | --- | --- | --- | --- |
-| `tier-routing` | Which tier for this task? | dispatcher `## Tier detection` | Micro / Lite / Full |
+| `tier-routing` | Which tier for this task? | autonomous-workflow `### Step 1: Detect Workflow Mode` — the table's one home; the `aw` dispatcher links it rather than restating it (`G2b`) | Micro / Lite / Full |
 | `bug-class` | What `bugClass` for this evidence? | fix-bug `### Step 0c` | the 9 classes |
 | `complexity-triage` | simple or complex bug? | fix-bug `## Phase 0.5` | simple / complex |
 | `aw-should-trigger` | should the routing rule auto-trigger? | the whole routing rule | trigger / skip |

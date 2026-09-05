@@ -69,6 +69,10 @@ A clean context reset at the planner→executor handoff produces measurable toke
 The corollary: any future proposal to add a third agent must demonstrate a third independent context — not a third role.
 If the third agent would re-read the same `plan.md` and the same diff that the executor already has, it is a skill, not an agent.
 
+**This test has been applied once, and it bit.**
+The `aw` dispatcher shipped as a third agent in v3.12 and was converted to a skill in v3.23, because its context boundary is *conditional* — real when the routing rule fires mid-conversation, absent when a developer opens a session specifically to run `/aw` — where the planner→executor boundary is unconditional.
+The decision record, including the three costs the agent form was paying and the costs the skill form accepts, is [`CLAUDE.md` → *The dispatcher is a skill, not an agent*](../CLAUDE.md#the-dispatcher-is-a-skill-not-an-agent--design-intent).
+
 ### 2.3 Divide by context boundaries, not by role
 
 > "Divide by context boundaries... Work should only be split when context can be truly isolated."
@@ -277,7 +281,7 @@ Phase 0 lives inside the planner agent, not in a dedicated clarifier.
 
 **Why rejected:**
 A clarifier → planner → implementer → tester → reviewer pipeline is the canonical anti-pattern Anthropic names.
-autonomous-workflow keeps the agent count to two (planner + executor), with all other roles realized as advisory skills. The deprecated monolithic template (`_deprecated-single-agent.md`) is backward-compat only.
+autonomous-workflow keeps the *pipeline* to two agents (planner + executor), with all other roles realized as advisory skills — the dispatcher above them is a skill, and `aw-tester` is a leaf the executor calls for UI verification, not a stage handing off to another stage. The deprecated monolithic template (`_deprecated-single-agent.md`) is backward-compat only.
 
 ### 3.3 A "code reviewer agent" parallel to the executor — REJECTED
 

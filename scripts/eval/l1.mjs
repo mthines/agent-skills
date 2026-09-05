@@ -80,19 +80,195 @@ const REPORT_FIXTURES = (() => {
   s.check("no NEW broken links/anchors (baseline-ratcheted)", newBroken === 0, newBroken ? `${newBroken} new` : `${baselined} pre-existing baselined`);
 }
 
-// ── Check B: the `aw` tier-detection table is identical in dispatcher + SKILL (R5 drift guard) ──
+// ── Check B / G2b: the tier-detection table has exactly ONE home ──
+// Until v3.23 the dispatcher was an agent, which boots cold and so carried its
+// own inline copy of the table; this check compared the two copies byte-for-byte.
+// The dispatcher is now the `aw` SKILL, which runs in the caller's context with
+// SKILL.md already loaded — so the second copy buys nothing and can only rot.
+// The guard inverts accordingly: assert the canonical table still exists, and
+// that the dispatcher did not silently re-fork it.
 function tierQuestions(file) {
-  // pull the 4 decision rows from the first markdown table whose rows mention Full/Lite/Micro
+  // pull the decision rows from the first markdown table whose rows mention Full/Lite/Micro
   return readFileSync(file, "utf8")
     .split("\n")
     .filter((l) => /^\|\s*\d\s*\|/.test(l) && /\*\*(Full|Lite|Micro)\*\*/.test(l))
     .map((l) => l.replace(/\s+/g, " ").trim());
 }
 {
-  const a = tierQuestions(join(AW, "templates/aw.agent.md"));
-  const b = tierQuestions(join(AW, "SKILL.md"));
-  s.check("dispatcher tier table ≡ SKILL.md Step 1", a.length >= 4 && JSON.stringify(a) === JSON.stringify(b),
-    a.length !== b.length ? `row count ${a.length} vs ${b.length}` : "rows differ");
+  const canonical = tierQuestions(join(AW, "SKILL.md"));
+  s.check("G2b tier table present in SKILL.md Step 1 (canonical)", canonical.length >= 4,
+    `${canonical.length} decision rows`);
+
+  const dispatcher = tierQuestions(join(AW, "aw/SKILL.md"));
+  s.check("G2b aw dispatcher does not duplicate the tier table", dispatcher.length === 0,
+    dispatcher.length ? `${dispatcher.length} tier rows re-forked into aw/SKILL.md` : "single source of truth");
+
+  // The dispatcher must still POINT at the canonical table, or "no copy" would
+  // pass trivially on a dispatcher that forgot tier detection altogether.
+  const body = readFileSync(join(AW, "aw/SKILL.md"), "utf8");
+  s.check("G2b aw dispatcher links the canonical tier table",
+    /\.\.\/SKILL\.md#step-1-detect-workflow-mode-mandatory/.test(body),
+    "expected a link to ../SKILL.md#step-1-detect-workflow-mode-mandatory");
+}
+
+// ── Check B2 / G2c: prose agent counts ≡ what install.sh actually links ──
+// The v3.23 dispatcher conversion moved `aw` out of the agent set, and the
+// resulting "how many aw- agents are there" claim went wrong three times across
+// two review rounds — each fix corrected the flagged line and left a twin, in a
+// different file, saying the other number. The count is mechanically derivable
+// from the installer, so derive it and make every prose claim answer to it.
+//
+// `aw` is deliberately NOT in the population: it is a skill, has no `aw-`
+// prefix, and is linked into skills/ rather than agents/. That distinction is
+// exactly what the prose kept losing.
+{
+  const installer = readFileSync(join(AW, "install.sh"), "utf8");
+  // `aw-[a-z0-9-]+` — NOT `aw-[a-z]+`. A hyphenated or numbered agent
+  // (`aw-ui-tester`) would otherwise be invisible to the extraction, and the
+  // whole guard would pass green while the installer linked one more agent
+  // than every prose claim admits.
+  const linked = [...installer.matchAll(/ln -sf[n]?\s+\S+\s+"\$CLAUDE_DIR\/agents\/(aw-[a-z0-9-]+)\.md"/g)]
+    .map((m) => m[1]);
+  const truth = new Set(linked);
+
+  s.check("G2c install.sh links a discoverable set of aw- agents", truth.size >= 2,
+    truth.size ? [...truth].join(", ") : "no `ln -sf` into agents/aw-*.md found");
+
+  // Second, independent derivation of the same truth. Everything below trusts
+  // one regex over one file; if that extraction silently under-reads — a
+  // renamed variable, a shape the pattern does not cover — every downstream
+  // assertion passes against a wrong number. The templates on disk are the
+  // other end of the same fact, so disagreement means the extraction is wrong,
+  // not the prose.
+  const templated = new Set(
+    readdirSync(join(AW, "templates"))
+      .filter((f) => /^aw-[a-z0-9-]+\.agent\.md$/.test(f))
+      .map((f) => f.replace(/\.agent\.md$/, "")),
+  );
+  const onlyLinked = [...truth].filter((a) => !templated.has(a));
+  const onlyTemplated = [...templated].filter((a) => !truth.has(a));
+  s.check("G2c the installer's aw- agent set matches templates/ on disk",
+    onlyLinked.length === 0 && onlyTemplated.length === 0,
+    onlyLinked.length || onlyTemplated.length
+      ? `linked-not-templated: [${onlyLinked}] · templated-not-linked: [${onlyTemplated}]`
+      : `${truth.size} agents agree`);
+
+  // Every agent the installer links must be inventoried in the root CLAUDE.md
+  // generated-from-templates list, or `agents/` stays the wrong place to look.
+  const rootClaude = readFileSync(join(REPO_ROOT, "CLAUDE.md"), "utf8");
+  const uninventoried = [...truth].filter((a) => !new RegExp("^- `" + a + "`", "m").test(rootClaude));
+  s.check("G2c every installed aw- agent is inventoried in CLAUDE.md",
+    uninventoried.length === 0,
+    uninventoried.length ? `missing: ${uninventoried.join(", ")}` : `${truth.size} inventoried`);
+
+  // Now the counts. Three phrasings carry the claim across the docs; each is
+  // anchored on something that pins it to the aw- set specifically, so an
+  // unrelated "agents" sentence elsewhere in these files is not swept in.
+  const WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+  const toNum = (w) => (/^\d+$/.test(w) ? Number(w) : WORDS[w.toLowerCase()]);
+  const CLAIMS = [
+    // "the three `aw-` agents", "links three `aw-` agents"
+    /(\w+)\s+`aw-`\s+agents/g,
+    // "Plus three agents linked into", "three agents installed"
+    /(\w+)\s+agents\s+(?:linked|installed)/g,
+    // "a dispatcher, three agents, eight phases"
+    /dispatcher(?:\s+skill)?,\s+(\w+)\s+agents/g,
+    // "**one dispatcher skill** and **three agents**" — SKILL.md's Templates
+    // intro, whose bolded form matches none of the three above.
+    /dispatcher\s+skill\*{0,2}\s+and\s+\*{0,2}(\w+)\s+agents/g,
+  ];
+  const SURFACES = [
+    ["README.md", readFileSync(join(REPO_ROOT, "README.md"), "utf8")],
+    ["autonomous-workflow/README.md", readFileSync(join(AW, "README.md"), "utf8")],
+    ["autonomous-workflow/SKILL.md", readFileSync(join(AW, "SKILL.md"), "utf8")],
+    ["autonomous-workflow/install.sh", installer],
+  ];
+  const wrong = [];
+  let claimsSeen = 0;
+  for (const [label, text] of SURFACES) {
+    for (const re of CLAIMS) {
+      for (const m of text.matchAll(re)) {
+        const n = toNum(m[1]);
+        if (n === undefined) continue;   // "the `aw-` agents" etc. — not a count
+        claimsSeen++;
+        if (n !== truth.size) wrong.push(`${label}: "${m[0].trim()}" (linked: ${truth.size})`);
+      }
+    }
+  }
+  s.check("G2c prose aw- agent counts match the installer", wrong.length === 0,
+    wrong.length ? wrong.join(" | ") : `${claimsSeen} count claims agree on ${truth.size}`);
+
+  // Sentinel: if the phrasings drift, the check above passes vacuously.
+  // Pinned to the live count, not a loose floor. A floor with headroom is the
+  // vacuous case in miniature — at `>= 5` against 9 live sites, rewording any
+  // ONE claim both un-matched every regex and mis-stated the count, and L1
+  // stayed green. One site at a time is how this class actually behaves, so
+  // the bar has to notice one site going missing. Adding a claim site is fine
+  // (9 → 10 passes); losing one is not.
+  s.check("G2c found the aw- agent count claims to guard", claimsSeen >= 9, `found ${claimsSeen}`);
+}
+
+// ── Check B3 / G2d: `aw` owns the natural-language triggers, alone ──────────
+// `aw` and its parent `autonomous-workflow` used to auto-trigger on near-
+// identical vocabulary, so "implement this autonomously" could land on the
+// phase machinery with tier detection and the lessons loop skipped. v3.24
+// made `aw` the sole entry point. Two halves, both asserted, because either
+// one alone silently re-opens the gap:
+//
+//   1. The parent's description carries none of the trigger vocabulary.
+//   2. Every phrase quoted in `aw`'s description exists in the routing rule.
+//
+// Half 2 is the drift guard the tier table got from `G2b` — but by assertion
+// rather than by deletion, because neither copy can link the other here:
+// frontmatter has no link mechanism, and the routing rule is the live rubric
+// the L2 `aw-should-trigger` suite reads, so slimming it would leave that
+// suite with no vocabulary to decide `trigger` on.
+{
+  const frontmatter = (src) => {
+    const m = src.match(/^---\n([\s\S]*?)\n---/);
+    return m ? m[1] : "";
+  };
+  const describe = (src) => {
+    const fm = frontmatter(src);
+    // `description: >` folded block — everything until the next top-level key.
+    const m = fm.match(/^description:\s*>\s*\n([\s\S]*?)(?=\n[a-z-]+:)/m);
+    return (m ? m[1] : "").replace(/\s+/g, " ").toLowerCase();
+  };
+
+  const awDesc = describe(readFileSync(join(AW, "aw/SKILL.md"), "utf8"));
+  const parentDesc = describe(readFileSync(join(AW, "SKILL.md"), "utf8"));
+  const rule = readFileSync(join(AW, "templates/routing.rule.md"), "utf8").toLowerCase();
+
+  s.check("G2d both aw and parent descriptions were parsed", awDesc.length > 100 && parentDesc.length > 100,
+    `aw ${awDesc.length} chars, parent ${parentDesc.length} chars`);
+
+  // Half 1. The parent may NAME the vocabulary while disclaiming it ("belongs
+  // to the `aw` skill"), so a bare substring test would fire on the sentence
+  // that fixes the problem. Match the claiming forms instead: a quoted phrase,
+  // or a `Triggers on` / `Use when` clause.
+  const VOCAB = [
+    "autonomously", "independently", "in isolation", "in a worktree",
+    "end-to-end", "all the way to a pr", "ship this", "land this",
+    "take care of this", "handle this without me",
+  ];
+  const claimed = VOCAB.filter((p) => new RegExp(`["'\`]${p}["'\`]`).test(parentDesc));
+  s.check("G2d the parent skill's description quotes no trigger phrase", claimed.length === 0,
+    claimed.length ? `quoted: ${claimed.join(", ")}` : "none quoted");
+  s.check("G2d the parent skill's description makes no trigger claim",
+    !/\b(triggers on|use when)\b/.test(parentDesc),
+    parentDesc.match(/\b(triggers on|use when)\b/)?.[0] ?? "no claim");
+
+  // Half 2. Every phrase `aw` advertises must be one the routing rule lists,
+  // or the two discovery surfaces disagree about what fires the dispatcher.
+  const quotedInAw = [...awDesc.matchAll(/"([^"]{4,40})"/g)].map((m) => m[1])
+    .filter((p) => !p.startsWith("/"));           // `/aw` is an invocation, not a phrase
+  const missing = quotedInAw.filter((p) => !rule.includes(p));
+  s.check("G2d every phrase aw advertises appears in the routing rule", missing.length === 0,
+    missing.length ? `not in rule: ${missing.join(", ")}` : `${quotedInAw.length} phrases, all present`);
+  // Sentinel, pinned to the live count for the same reason G2c's is: a loose
+  // floor lets phrases drop out of the description one at a time in silence.
+  s.check("G2d found the advertised trigger phrases to guard", quotedInAw.length >= 14,
+    `found ${quotedInAw.length}`);
 }
 
 // ── Check C: plan.md Core-section contract — runs the ACTUAL confidence rule-checks ──
@@ -2609,7 +2785,28 @@ const isPollBlock = (block) =>
       "parent's MCP tools, so without this it reports the task blocked",
     );
   }
-  s.check("G24 found the GitHub-using agents to guard", checked >= 3, `found ${checked}`);
+  // Sentinel so the guard can't silently stop finding agents. Was 3 until v3.23,
+  // when the `aw` dispatcher stopped being an agent. A SKILL cannot grant itself
+  // tools — it inherits the caller's — so the frontmatter invariant genuinely
+  // does not apply to it. The equivalent obligation for the skill form is to
+  // DEGRADE VISIBLY instead, which is checked immediately below rather than
+  // dropped.
+  s.check("G24 found the GitHub-using agents to guard", checked >= 2, `found ${checked}`);
+
+  // G24b — the skill-shaped counterpart of G24. `aw` reaches GitHub through
+  // create-pr / review-loop but has no `tools:` block to grant anything, so its
+  // contract is that a missing grant is named in the terminal report, never
+  // silently swallowed.
+  // Collapse whitespace first: this repo uses semantic line breaks, so a phrase
+  // that reads as one sentence is routinely split across lines mid-clause.
+  const awSkill = readFileSync(join(AW, "aw/SKILL.md"), "utf8").replace(/\s+/g, " ");
+  s.check(
+    "G24b aw dispatcher skill documents tool-grant degradation",
+    /inherit tools rather than declaring them/i.test(awSkill)
+      && /absent from the caller's tool grant/i.test(awSkill),
+    "aw/SKILL.md must state that it inherits the caller's grant and that a " +
+    "missing tool is named in Degraded: — it cannot grant itself tools like an agent can",
+  );
 }
 
 // ── G28: the verify-behavior skill exists and its wiring into verification-receipt.md +
