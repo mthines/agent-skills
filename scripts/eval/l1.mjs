@@ -123,12 +123,35 @@ function tierQuestions(file) {
 // exactly what the prose kept losing.
 {
   const installer = readFileSync(join(AW, "install.sh"), "utf8");
-  const linked = [...installer.matchAll(/ln -sf[n]?\s+\S+\s+"\$CLAUDE_DIR\/agents\/(aw-[a-z]+)\.md"/g)]
+  // `aw-[a-z0-9-]+` — NOT `aw-[a-z]+`. A hyphenated or numbered agent
+  // (`aw-ui-tester`) would otherwise be invisible to the extraction, and the
+  // whole guard would pass green while the installer linked one more agent
+  // than every prose claim admits.
+  const linked = [...installer.matchAll(/ln -sf[n]?\s+\S+\s+"\$CLAUDE_DIR\/agents\/(aw-[a-z0-9-]+)\.md"/g)]
     .map((m) => m[1]);
   const truth = new Set(linked);
 
   s.check("G2c install.sh links a discoverable set of aw- agents", truth.size >= 2,
     truth.size ? [...truth].join(", ") : "no `ln -sf` into agents/aw-*.md found");
+
+  // Second, independent derivation of the same truth. Everything below trusts
+  // one regex over one file; if that extraction silently under-reads — a
+  // renamed variable, a shape the pattern does not cover — every downstream
+  // assertion passes against a wrong number. The templates on disk are the
+  // other end of the same fact, so disagreement means the extraction is wrong,
+  // not the prose.
+  const templated = new Set(
+    readdirSync(join(AW, "templates"))
+      .filter((f) => /^aw-[a-z0-9-]+\.agent\.md$/.test(f))
+      .map((f) => f.replace(/\.agent\.md$/, "")),
+  );
+  const onlyLinked = [...truth].filter((a) => !templated.has(a));
+  const onlyTemplated = [...templated].filter((a) => !truth.has(a));
+  s.check("G2c the installer's aw- agent set matches templates/ on disk",
+    onlyLinked.length === 0 && onlyTemplated.length === 0,
+    onlyLinked.length || onlyTemplated.length
+      ? `linked-not-templated: [${onlyLinked}] · templated-not-linked: [${onlyTemplated}]`
+      : `${truth.size} agents agree`);
 
   // Every agent the installer links must be inventoried in the root CLAUDE.md
   // generated-from-templates list, or `agents/` stays the wrong place to look.
@@ -150,10 +173,14 @@ function tierQuestions(file) {
     /(\w+)\s+agents\s+(?:linked|installed)/g,
     // "a dispatcher, three agents, eight phases"
     /dispatcher(?:\s+skill)?,\s+(\w+)\s+agents/g,
+    // "**one dispatcher skill** and **three agents**" — SKILL.md's Templates
+    // intro, whose bolded form matches none of the three above.
+    /dispatcher\s+skill\*{0,2}\s+and\s+\*{0,2}(\w+)\s+agents/g,
   ];
   const SURFACES = [
     ["README.md", readFileSync(join(REPO_ROOT, "README.md"), "utf8")],
     ["autonomous-workflow/README.md", readFileSync(join(AW, "README.md"), "utf8")],
+    ["autonomous-workflow/SKILL.md", readFileSync(join(AW, "SKILL.md"), "utf8")],
     ["autonomous-workflow/install.sh", installer],
   ];
   const wrong = [];
@@ -172,7 +199,13 @@ function tierQuestions(file) {
     wrong.length ? wrong.join(" | ") : `${claimsSeen} count claims agree on ${truth.size}`);
 
   // Sentinel: if the phrasings drift, the check above passes vacuously.
-  s.check("G2c found the aw- agent count claims to guard", claimsSeen >= 5, `found ${claimsSeen}`);
+  // Pinned to the live count, not a loose floor. A floor with headroom is the
+  // vacuous case in miniature — at `>= 5` against 9 live sites, rewording any
+  // ONE claim both un-matched every regex and mis-stated the count, and L1
+  // stayed green. One site at a time is how this class actually behaves, so
+  // the bar has to notice one site going missing. Adding a claim site is fine
+  // (9 → 10 passes); losing one is not.
+  s.check("G2c found the aw- agent count claims to guard", claimsSeen >= 9, `found ${claimsSeen}`);
 }
 
 // ── Check C: plan.md Core-section contract — runs the ACTUAL confidence rule-checks ──
