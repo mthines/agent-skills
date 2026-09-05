@@ -3347,7 +3347,13 @@ const isPollBlock = (block) =>
       // valid-looking `org` and passed — while the script rejected the same input. The
       // script-level G31l always carried `a#b`; this list did not, which is why the divergence
       // shipped. Keep the two lists' `#` coverage in sync.
-      for (const bad of ["a&b=c", "a b c", "-leading", "x".repeat(64), "org#123", "a#b"]) {
+      // Every entry here is a value that must yield NO org rather than a prefix of itself. The
+      // quoted forms are the second seam the progressive-stripping approach leaked through:
+      // `"org # 123"` peeled to `org`, a valid-looking slug for an organization never named —
+      // the same class as the bare `org#123` case, reached through quotes. Both are why the
+      // resolution matches the whole value instead of peeling it.
+      for (const bad of ["a&b=c", "a b c", "-leading", "x".repeat(64), "org#123", "a#b",
+                         '"org # 123"', "'org # 123'", '"org#123"', 'org "x"']) {
         s.check(`G32q a malformed agent0_org (${JSON.stringify(bad)}) resolves to no org at all`,
           resolve(`agent0_org: ${bad}\n`).endsWith(" (none)"),
           `resolved "${resolve(`agent0_org: ${bad}\n`)}" — a malformed slug reached AGENT0_ORG and`

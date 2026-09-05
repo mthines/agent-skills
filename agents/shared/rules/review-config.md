@@ -388,20 +388,26 @@ if [ -n "$BASE_CONFIG_CONTENT" ]; then
   # slug leaves the variable empty here instead of reaching the script as a value that would append
   # a stray query parameter or break the button's href.
   #
-  # NOT `strip()`, and the difference is load-bearing. `strip()` cuts at the first `#` unanchored,
-  # so `agent0_org: org#123` would resolve to `org` — a valid-looking slug for a DIFFERENT
-  # organization that sails through the check below. The two keys above can share `strip()` safely
-  # because a mangled value simply fails their `case` and falls through to a safe default; a
-  # free-form value has no such backstop — it BECOMES the setting. So `org` gets YAML's own comment
-  # rule (a `#` opens a comment only after whitespace), which leaves `org#123` intact to be
-  # rejected while still honouring the schema's documented ` # trailing comment` style.
+  # MATCHED, NOT STRIPPED — and deliberately not via `strip()`. The two keys above can share that
+  # helper safely because a mangled value fails their `case` and lands on a safe default; a
+  # free-form value has no backstop — it BECOMES the setting. `strip()` peels a value in stages
+  # (cut the comment, drop the quotes, trim), and every stage is a chance to hand back a *prefix*
+  # of the configured text: `org#123` peels to `org` and `"org # 123"` peels to `org`, both
+  # valid-looking slugs for an organization the config never named. Patching the stages one at a
+  # time just moves the seam, so this key asserts the whole value in a single match instead: a
+  # bare slug, optionally followed by a YAML comment (`#` opens one only after whitespace).
+  # Anything else — an inner `#`, a quote, a space, 64 chars — matches nothing and leaves
+  # AGENT0_ORG empty, which is the fail-safe state (no `org` param at all).
   #
-  # Anchoring the cut inside `strip()` itself would fix this key and break a more important one:
-  # `agent0_fix_links: false#x` would stop matching `false` and fall through to the default — the
-  # opt-out failing OPEN, the one direction this whole block exists to prevent.
-  org_strip() { sed -E 's/^[^:]+:[[:space:]]*//; s/[[:space:]]+#.*$//; s/["'"'"']//g; s/[[:space:]]*$//'; }
-  org=$(grep -E '^agent0_org:' <<< "$BASE_CONFIG_CONTENT" | org_strip)
-  if [[ "$org" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$ ]]; then AGENT0_ORG="$org"; fi
+  # Two consequences worth stating. A QUOTED slug (`agent0_org: "dash0-development"`) is valid
+  # YAML and is rejected here; the cost is one absent parameter, never a wrong organization, and
+  # the schema documents the unquoted form. And anchoring the comment cut inside `strip()` — the
+  # tempting shared fix — would break a more important key: `agent0_fix_links: false#x` would stop
+  # matching `false` and fall through to the default, the opt-out failing OPEN.
+  org_line=$(grep -E '^agent0_org:' <<< "$BASE_CONFIG_CONTENT" | head -1)
+  if [[ "$org_line" =~ ^agent0_org:[[:space:]]*([A-Za-z0-9][A-Za-z0-9._-]{0,62})[[:space:]]*([[:space:]]#.*)?$ ]]; then
+    AGENT0_ORG="${BASH_REMATCH[1]}"
+  fi
 fi
 ```
 
