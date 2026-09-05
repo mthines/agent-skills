@@ -5093,9 +5093,14 @@ const isPollBlock = (block) =>
   // live body is swept like every other file, so a claim reintroduced above the changelog
   // is still caught. Exempting the whole file would have created a ninth blind spot of
   // exactly the kind this sweep exists to close.
+  // `lastIndexOf`, never `indexOf`: the changelog is the LAST `## History` in the file, and
+  // slicing at the first one lets a decoy heading inserted above the live body truncate the
+  // swept text and hide everything below it — verified green at 1441/1441 before this fix,
+  // which is the ninth blind spot the paragraph above claims to avoid. With `lastIndexOf` a
+  // decoy only shrinks the exempt region, so the failure direction is toward more coverage.
   const livePolicyText = (name, src) =>
     name.endsWith("autonomous-workflow/CLAUDE.md") && src.includes("\n## History")
-      ? src.slice(0, src.indexOf("\n## History"))
+      ? src.slice(0, src.lastIndexOf("\n## History"))
       : src;
 
   for (const [name, raw] of POLICY_SURFACES) {
