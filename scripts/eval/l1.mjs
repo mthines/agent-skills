@@ -2639,8 +2639,7 @@ const isPollBlock = (block) =>
   // silently swallowed.
   // Collapse whitespace first: this repo uses semantic line breaks, so a phrase
   // that reads as one sentence is routinely split across lines mid-clause.
-  const awSkill = readFileSync(join(REPO_ROOT, "skills/workflow/autonomous-workflow/aw/SKILL.md"), "utf8")
-    .replace(/\s+/g, " ");
+  const awSkill = readFileSync(join(AW, "aw/SKILL.md"), "utf8").replace(/\s+/g, " ");
   s.check(
     "G24b aw dispatcher skill documents tool-grant degradation",
     /inherit tools rather than declaring them/i.test(awSkill)
