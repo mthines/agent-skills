@@ -5023,7 +5023,7 @@ const isPollBlock = (block) =>
 // it. aw's two agent templates referenced the file only from a YAML comment inside `tools:`
 // (a note explaining the grant, not a step anyone executes), while `prerequisites.md` and the
 // planner's Critical First Actions carried a live `which gh` hard-stop. So the capability was
-// present and the prose forbade using it. Assert the wiring in all three places at once,
+// present and the prose forbade using it. Assert the wiring across every surface at once,
 // because fixing any one alone leaves the run stopping at another.
 {
   const AW = "skills/workflow/autonomous-workflow/";
@@ -5060,10 +5060,7 @@ const isPollBlock = (block) =>
         + " gh-path commands verbatim and every call fails in a cloud session");
   }
 
-  // The regression that started this: a live `which gh` hard-stop. Match the STOP pairing
-  // rather than the bare substring — `prerequisites.md` legitimately NAMES `which gh` in order
-  // to say do-not-gate-on-it, and a bare-substring assertion would forbid the very sentence
-  // that fixes the defect (the same shape G2d had to solve for the parent's description).
+  // The regression that started this: a live `which gh` hard-stop.
   // Match the CLAIMING shapes, never a bare substring. Every surface here has to NAME
   // `which gh` in order to forbid it, so a substring test would flag the sentence that
   // fixes the defect — and an `/i` on a `STOP` alternative additionally matches the
