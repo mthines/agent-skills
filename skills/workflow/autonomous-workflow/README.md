@@ -124,9 +124,9 @@ cd agent-skills
 bash scripts/sync-symlinks.sh --aw
 ```
 
-`--aw` symlinks the autonomous-workflow skill and its 12 companion skills,
-plus the `aw` / `aw-planner` / `aw-executor` agents, into your `~/.claude/`
-directory. Edits to the cloned repo are picked up live on the next agent
+`--aw` symlinks the autonomous-workflow skill, the `aw` dispatcher skill, and
+its 12 companion skills, plus the `aw-planner` / `aw-executor` agents, into
+your `~/.claude/` directory. Edits to the cloned repo are picked up live on the next agent
 turn — `git pull` is the whole upgrade story.
 
 To install **every** skill and agent in this repo (not just the AW bundle),
