@@ -5122,4 +5122,180 @@ const isPollBlock = (block) =>
     /Fix the failing CI checks on \{owner\}\/\{repo\}#\{n\}/.test(FIX_LINKS));
 }
 
+// ── G48: `aw` resolves a GitHub ACCESS PATH; it never hard-stops on `which gh` ──
+// `gh` is absent in Claude Code cloud sessions while `mcp__github__*` is present, and both
+// aw agents already carry those tools. The failure this guards is not a missing mapping —
+// `github-access.md` has owned that repo-wide for a while — but a CONSUMER that never reads
+// it. aw's two agent templates referenced the file only from a YAML comment inside `tools:`
+// (a note explaining the grant, not a step anyone executes), while `prerequisites.md` and the
+// planner's Critical First Actions carried a live `which gh` hard-stop. So the capability was
+// present and the prose forbade using it. Assert the wiring across every surface at once,
+// because fixing any one alone leaves the run stopping at another.
+{
+  const AW = "skills/workflow/autonomous-workflow/";
+  const rd = (p) => readFileSync(join(REPO_ROOT, AW + p), "utf8");
+  const PREREQ = rd("rules/prerequisites.md");
+  const PHASE7 = rd("rules/phase-7-ci-gate.md");
+  const PLANNER = rd("templates/aw-planner.agent.md");
+  const EXECUTOR = rd("templates/aw-executor.agent.md");
+  // ENUMERATE THE SIBLING SET, never the named instances. Grepping for `gh` COMMANDS
+  // finds the call sites; it does not find the POLICY, and the policy is what stops the
+  // run — `SKILL.md` Step 2 was a live gate one hop from the planner's Critical First
+  // Action, so removing the planner's own hard-stop while leaving that one fixed nothing.
+  //
+  // A hand-listed set was then wrong twice in a row: the first pass named four surfaces
+  // and missed four more; the second named eight and missed
+  // `references/error-recovery-scenarios.md`, which carried the exact sentence
+  // `overview.md` had just been changed to remove. The list is the defect, so it is gone:
+  // every `.md` under the skill is swept, and a surface added tomorrow is covered on the
+  // day it lands.
+  const AW_DIR = join(REPO_ROOT, AW);
+  const POLICY_SURFACES = walk(AW_DIR).map((f) => [rel(f), readFileSync(f, "utf8")]);
+  s.check("G48 the policy sweep actually reaches the skill's files",
+    POLICY_SURFACES.length >= 30,
+    "walk() returning empty or near-empty would pass every per-file assertion below"
+      + " vacuously — the sweep must be proved non-empty before it is trusted");
+
+  // Each surface must CITE the owner rather than restate its mapping.
+  for (const [name, src] of [["prerequisites.md", PREREQ], ["phase-7-ci-gate.md", PHASE7],
+    ["aw-planner.agent.md", PLANNER], ["aw-executor.agent.md", EXECUTOR]]) {
+    s.check(`G48 ${name} cites github-access.md`,
+      /github-access\.md/.test(src),
+      "aw is the only GitHub-touching surface that never resolved an access path; a citation"
+        + " here is what makes the cloud path reachable at all");
+    s.check(`G48 ${name} binds ACCESS_PATH`,
+      /ACCESS_PATH/.test(src),
+      "the phase rules branch on $ACCESS_PATH; a surface that never binds it falls back to the"
+        + " gh-path commands verbatim and every call fails in a cloud session");
+  }
+
+  // The regression that started this: a live `which gh` hard-stop.
+  // Match the CLAIMING shapes, never a bare substring. Every surface here has to NAME
+  // `which gh` in order to forbid it, so a substring test would flag the sentence that
+  // fixes the defect — and an `/i` on a `STOP` alternative additionally matches the
+  // ordinary word "stop" in "turns a workable cloud session into a hard stop". Both
+  // false positives were observed. G2d solved the same problem the same way.
+  const ghHardStopDirective = (src) =>
+    // a tool-status table row marking `gh` itself REQUIRED
+    /`gh`\s*\|\s*\*\*REQUIRED\*\*/.test(src)
+    // "`which gh` (REQUIRED, hard-stop if missing)"
+    || /which gh[^\n]*\(\s*REQUIRED/i.test(src)
+    || /hard-stop if missing/i.test(src)
+    // The two prose forms are scoped to lines that are ABOUT gh — otherwise they catch
+    // any unrelated install directive (observed: safety-guardrails' `confidence` companion
+    // row, "Stop, ask user to install before continuing", which concerns neither gh nor CI).
+    || src.split("\n").some((L) => /\bgh\b/.test(L) && (
+      // "**STOP** — install via Homebrew or download"
+      /\*\*STOP\*\*[^\n]*\binstall\b/.test(L)
+      // "Stop, prompt user to install" / "Stop. Phase 6 … cannot proceed."
+      || /\bStop[,.]\s[^\n]*\b(install|cannot proceed)\b/.test(L)));
+
+  // Both assertions run over the WHOLE sweep — which now includes `aw-executor.agent.md`
+  // (the agent that actually runs Phases 6–7, omitted from the first hand-list) and
+  // `phase-7-ci-gate.md` itself.
+  //
+  // CLAUDE.md's `## History` is exempt: its v3.1 entry legitimately records "gh remains
+  // hard-required" as what was true then. Only that trailing section is sliced off — the
+  // live body is swept like every other file, so a claim reintroduced above the changelog
+  // is still caught. Exempting the whole file would have created a ninth blind spot of
+  // exactly the kind this sweep exists to close.
+  // `lastIndexOf`, never `indexOf`: the changelog is the LAST `## History` in the file, and
+  // slicing at the first one lets a decoy heading inserted above the live body truncate the
+  // swept text and hide everything below it — verified green at 1441/1441 before this fix,
+  // which is the ninth blind spot the paragraph above claims to avoid. With `lastIndexOf` a
+  // decoy only shrinks the exempt region, so the failure direction is toward more coverage.
+  const livePolicyText = (name, src) =>
+    name.endsWith("autonomous-workflow/CLAUDE.md") && src.includes("\n## History")
+      ? src.slice(0, src.lastIndexOf("\n## History"))
+      : src;
+
+  for (const [name, raw] of POLICY_SURFACES) {
+    const src = livePolicyText(name, raw);
+    s.check(`G48 ${name} does not hard-stop on \`which gh\``,
+      !ghHardStopDirective(src),
+      "a `which gh` hard-stop is un-actionable in a cloud session — the documented remedy"
+        + " (\"install via Homebrew\") cannot be followed, so the agent improvises or stalls,"
+        + " which github-access.md names as the dominant source of a run that spins");
+
+    // The policy claim itself, separate from the gate. A surface can drop the `which gh`
+    // check and still assert `gh` is hard-required in prose — which is what the planner's
+    // Critical First Action would then delegate to.
+    s.check(`G48 ${name} does not claim \`gh\` is hard-required`,
+      !/`gh`[^\n]{0,40}\b(is|remains) hard-required/i.test(src)
+        && !/only `gh` is hard-required/i.test(src)
+        && !/hard-required CLI tool is `gh`/i.test(src),
+      "the binary is one of two paths; a surface still calling it hard-required re-creates"
+        + " the stop this change removed, one hop from where it was removed");
+  }
+  // CLAUDE.md's v3.1 CHANGELOG entry legitimately records "gh remains hard-required" as
+  // history. Assert the live invariant changed without forbidding the historical record —
+  // otherwise the guard would demand rewriting a changelog, which is not a contract surface.
+  s.check("G48 the live CLAUDE.md invariant states a GitHub access path, not a gh dependency",
+    (() => {
+      const cm = rd("CLAUDE.md");
+      const inv = sliceBetween(cm, "## Things to keep invariant", "## Diagnose participation");
+      return /GitHub \*?access path\*? is required/i.test(inv)
+        && !/`gh` is hard-required/.test(inv);
+    })(),
+    "two copies of this invariant exist (CLAUDE.md and diagnostic-surface.md); updating one"
+      + " leaves a diagnoser reading the other and scoring this very change as the regression");
+
+  // Two correctness properties of the mcp poll. Assert the OPERATIVE statement, sliced to
+  // the poll itself — never the paragraph that explains it, and never a bare number.
+  //
+  // The first version of these two checks grepped `/wall-clock/` and `/vacuously true/`,
+  // which are words from the *rationale*. Gutting the operative bound to "at most 4
+  // iterations" and inverting "it is never green" both left L1 at 1368/1368. They were
+  // mutation-"tested" by substituting the very strings being grepped, which proves the
+  // grep matches its own literal and nothing about the rule. A guard must fail when the
+  // RULE is broken, not when its explanation is reworded — and `/36/` additionally matched
+  // the gh path's own "≈ 36 min" on another line, so the mcp number was free to drift.
+  const MCP_POLL = sliceBetween(PHASE7, "**`ACCESS_PATH = mcp`**", "**No budget is shared");
+  s.check("G48 phase-7's mcp poll states the 36-iteration bound in its own operative text",
+    /at most 36 iterations/.test(MCP_POLL) && !/at most 4\b/.test(MCP_POLL),
+    "an `attempt` on the gh path is a 540 s watch and an `iteration` here is a 60 s sleep,"
+      + " so copying the count bounds the mcp poll at 4 minutes against the watch's ~36 —"
+      + " escalating with checks pending on the very path this rule exists to enable");
+  s.check("G48 phase-7's mcp poll tests emptiness BEFORE all-passing, and calls it not-green",
+    (() => {
+      const empty = MCP_POLL.indexOf("union is empty");
+      const passing = MCP_POLL.indexOf("every member terminal and passing");
+      return empty > -1 && passing > -1 && empty < passing
+        && /is never green/.test(MCP_POLL) && /get_status/.test(MCP_POLL);
+    })(),
+    "\"all terminal and passing\" is vacuously true of an empty set, so testing it first"
+      + " routes an unregistered push to success; and get_check_runs alone drops every legacy"
+      + " commit-status check, which reads as \"no CI\" on a repo that has it. Order is"
+      + " asserted positionally because a correct pair of sentences in the wrong order is"
+      + " still the bug (same technique as G38's suppression-after-verification check)");
+
+  // `gh auth status` is not a valid probe: it inspects a stored token, so it exits non-zero
+  // under a per-call credential proxy while every real API call succeeds.
+  s.check("G48 prerequisites.md does not verify access with `gh auth status`",
+    !/^\s*(?:\$\s*)?gh auth status\s*$/m.test(PREREQ)
+      && !/`gh auth status`\s*\|[^|]*Logged in to github\.com/.test(PREREQ),
+    "gh auth status lies under a wrapped gh that injects a scoped credential per call, so"
+      + " probing with it declares \"no gh\" on a session where gh works perfectly");
+
+  // Phase 7 must name the --watch Gap. It is the one verb here with NO MCP equivalent, so a
+  // mapping table that silently omitted it would send the mcp path at a command that cannot
+  // exist — and the bounded-poll substitute has to keep the phase's own two invariants.
+  s.check("G48 phase-7 names the --watch gap and its bounded-poll substitute",
+    /--watch/.test(PHASE7) && /\bpoll\b/i.test(PHASE7)
+      && /get_check_runs/.test(PHASE7),
+    "gh pr checks --watch streams until checks settle and MCP is request/response; without a"
+      + " stated substitute the mcp path either invents a --watch or silently skips the watch");
+  s.check("G48 phase-7's mcp poll keeps the queried-never-carried invariant",
+    /queried, never carried|never carry a verdict|re-read the state on \*\*every\*\*/i.test(PHASE7),
+    "a poll that caches a verdict between iterations reports some earlier commit as green;"
+      + " this is the invariant the reverted shared-watch-budget design broke (v3.22)");
+
+  // ACCESS_PATH=none must degrade visibly, never silently and never as success.
+  s.check("G48 phase-7 degrades visibly when there is no access path",
+    /Degraded:/.test(PHASE7)
+      && /never report CI as green|never treat "could not observe" as "no CI/i.test(PHASE7),
+    "\"could not observe CI\" and \"no CI configured\" are different states; collapsing them is"
+      + " how a green report gets written for a PR whose CI was never observed");
+}
+
 process.exit(s.report() ? 0 : 1);

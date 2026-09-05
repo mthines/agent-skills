@@ -40,7 +40,24 @@ Probe with a **repo-scoped API call against the repository you are about to work
 # (`RESOLVED_REPO` in pr-reviewer / review-loop, nothing at all in others), so derive it here
 # rather than assuming a caller variable is bound — an unset one probes `repos/` and 404s,
 # which reports "no gh" on a session where gh works.
-TARGET_REPO="${TARGET_REPO:-${RESOLVED_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}}"
+#
+# Prefer the git remote over `gh repo view`: the `gh` fallback is empty in exactly the
+# case this probe exists to detect (no `gh`), so it cannot distinguish "no gh" from
+# "repo unknown". Any run with a checkout can answer from the remote instead, which
+# makes the probe decisive rather than accidentally-right.
+# Take the last two path segments, splitting on both `/` and `:`. This handles every
+# remote form in the wild — `https://host/o/r`, `git@host:o/r`, `ssh://git@host/o/r`,
+# and `ssh://git@host:22/o/r` — where a prefix-stripping regex has to enumerate them
+# and silently passes the whole URL through on the one it forgot. That failure is
+# worse than no answer: the result is non-empty, so the fallback rung below never
+# fires and the probe 404s on `repos/ssh://...` — reporting "no gh" on a working gh.
+TARGET_REPO="${TARGET_REPO:-${RESOLVED_REPO:-$(
+  git remote get-url origin 2>/dev/null \
+    | sed 's#\.git$##' \
+    | awk -F'[/:]' 'NF>1 {print $(NF-1)"/"$NF}'
+)}}"
+# Last resort when there is no checkout and gh happens to exist:
+TARGET_REPO="${TARGET_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)}"
 
 if command -v gh >/dev/null 2>&1 && [ -n "$TARGET_REPO" ] \
   && gh api "repos/$TARGET_REPO" --jq .full_name >/dev/null 2>&1; then

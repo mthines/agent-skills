@@ -100,9 +100,18 @@ finished — even if the work feels done.
    single-pass; say so and stop rather than producing a `plan.md` the tier
    does not need.
 
-3. **Verify prerequisites** — `which gh` (REQUIRED, hard-stop if missing),
-   `which gw` (recommended; warn once and fall back to native `git worktree`).
-   Detail in [`rules/prerequisites.md`](../rules/prerequisites.md).
+3. **Verify prerequisites** — `which gw` (recommended; warn once and fall back
+   to native `git worktree`). Detail in
+   [`rules/prerequisites.md`](../rules/prerequisites.md).
+
+   **Do not hard-stop on `which gh`.** `gh` is one of two GitHub paths and is
+   absent in Claude Code cloud sessions, where the `mcp__github__*` tools you
+   hold in your `tools:` grant are the path. Resolve the path per
+   `agents/shared/rules/github-access.md` § Step 0 and bind `ACCESS_PATH`
+   (`gh` | `mcp` | `none`) — never by `which gh`, never by `gh auth status`
+   (it lies under a per-call credential proxy). Only `none` is a degradation,
+   and it degrades Phases 6–7 with a named `Degraded:` entry; it is not a
+   reason to refuse to plan.
 
 ## Scope of Work
 

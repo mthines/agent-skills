@@ -11,14 +11,21 @@ tags:
 
 # Prerequisites
 
-The autonomous workflow has **one required tool** and **one recommended tool**.
-Stop and ask the user to install anything missing — except `gw`, where the
-workflow falls back to native `git worktree` if it's absent.
+The autonomous workflow needs **a GitHub access path** (Phases 6–7) and
+**prefers `gw`** for worktree management (Phase 2). Neither specific binary is
+hard-required: each has a defined fallback, and the workflow must never block
+on a missing tool when a fallback exists.
 
-| Tool | Status      | Purpose                                     | Required for |
-| ---- | ----------- | ------------------------------------------- | ------------ |
-| `gh` | **REQUIRED**| GitHub CLI for PRs and CI checks            | Phase 6, 7   |
-| `gw` | Recommended | Worktree management with hooks + auto-sync  | Phase 2 (falls back to `git worktree`) |
+| Capability | Status | Provided by | Required for |
+| ---------- | ------ | ----------- | ------------ |
+| GitHub access | **REQUIRED (the capability, not the binary)** | `gh` CLI **or** `mcp__github__*` tools — see [GitHub access path](#github-access-path) | Phase 6, 7 |
+| Worktree management | Recommended | `gw`, falling back to native `git worktree` | Phase 2 |
+
+**`gh` is not a hard dependency.** It is one of two ways to reach GitHub, and it
+is **absent in Claude Code cloud sessions** (`which gh` returns nothing) while
+the `mcp__github__*` tools are present. Treating `gh` as required is what turns
+a perfectly workable cloud session into a hard stop — see
+[GitHub access path](#github-access-path).
 
 **If `gw` is not installed, the workflow uses native `git worktree` directly
 and warns the user about the features they're missing.** See [Fallback to
@@ -26,28 +33,56 @@ native `git worktree`](#fallback-to-native-git-worktree) below.
 
 ## Contents
 
+- [GitHub access path](#github-access-path)
 - [Verification](#verification)
 - [Fallback to native `git worktree`](#fallback-to-native-git-worktree)
 - [Installing `gw` (recommended)](#installing-gw-recommended)
-- [Installing `gh` (REQUIRED)](#installing-gh-required)
+- [Installing `gh` (one of two GitHub paths)](#installing-gh-one-of-two-github-paths)
 - [Troubleshooting](#troubleshooting)
 - [References](#references)
 
 ---
 
+## GitHub access path
+
+**Owner: [`agents/shared/rules/github-access.md`](../../../../agents/shared/rules/github-access.md).**
+Do not restate its mapping here — resolve the path through it.
+
+Before any GitHub step, resolve which path you have — `gh` CLI,
+`mcp__github__*` tools, or neither — per that file's
+[Step 0](../../../../agents/shared/rules/github-access.md#step-0--resolve-your-path-once-before-any-github-step).
+Resolve **once per run**, bind `ACCESS_PATH` (`gh` | `mcp` | `none`), state the
+path you took, and use it for the whole run. Discovering the answer at Phase 6
+is the bug.
+
+| `ACCESS_PATH` | What Phases 6–7 do |
+| ------------- | ------------------ |
+| `gh` | Use the commands as written in the phase rules |
+| `mcp` | Use the [verb mapping](../../../../agents/shared/rules/github-access.md#verb-mapping); do **not** attempt `gh` — every call fails. Mind the four documented [Gaps](../../../../agents/shared/rules/github-access.md#gaps), notably `gh pr checks --watch`, which has no MCP equivalent and becomes a bounded poll |
+| `none` | GitHub steps cannot be performed. Do the `git` work you can (commit, push), name the skipped steps in `Degraded:`, and **never report a step you could not perform as done** |
+
+Both `aw-planner` and `aw-executor` already carry `mcp__github__*` in their
+`tools:` frontmatter, so the MCP path is available to them by construction. A
+sub-agent inherits **neither** the parent's `gh` binary **nor** its MCP tools —
+that is why the grant is explicit there.
+
+---
+
 ## Verification
 
-Run these checks at the start of Phase 2. Only `gh` is hard-required.
+Run these checks at the start of Phase 2. Neither is a hard stop.
 
 ```bash
-which gh && gh --version && gh auth status     # REQUIRED — stop if missing
+# GitHub access: resolve via github-access.md § Step 0 and bind ACCESS_PATH.
+# Do NOT gate on `which gh` — it returns nothing in cloud sessions where the
+# MCP path works perfectly, and `gh auth status` lies under a per-call
+# credential proxy. The probe is a repo-scoped API call; see that file.
 which gw && gw --version || echo "gw not installed — using native git worktree"
 ```
 
 | Check                 | Pass output                                  | If missing                                       |
 | --------------------- | -------------------------------------------- | ------------------------------------------------ |
-| `which gh`            | path to `gh`                                 | **STOP** — install via Homebrew or download      |
-| `gh auth status`      | `Logged in to github.com`                    | Run `gh auth login`                              |
+| `ACCESS_PATH`         | `gh` or `mcp`                                | `none` — Phases 6–7 degrade; report precisely, never improvise |
 | `which gw`            | path to `gw`                                 | Continue with native fallback (warn the user once)|
 
 ---
@@ -162,7 +197,11 @@ path.
 
 ---
 
-## Installing `gh` (REQUIRED)
+## Installing `gh` (one of two GitHub paths)
+
+Install `gh` when you are working **locally** and want the CLI path. In a
+Claude Code cloud session there is nothing to install — the `mcp__github__*`
+tools are the path there, and `gh` is unavailable by design.
 
 ### Homebrew (macOS)
 
@@ -182,14 +221,18 @@ gh auth login
 ```
 
 Choose **GitHub.com**, **HTTPS**, **Login with a web browser** for the simplest
-setup. Verify with:
+setup.
 
-```bash
-gh auth status
-```
+**Do not verify with `gh auth status`.** It inspects a stored token, so it
+exits non-zero under a wrapped `gh` that injects a scoped credential per call
+(several CI images, some sandboxes) even though every real API call succeeds —
+declaring "no `gh`" on a session where `gh` works. Use the repo-scoped probe in
+[`github-access.md` § Step 0](../../../../agents/shared/rules/github-access.md#step-0--resolve-your-path-once-before-any-github-step)
+instead.
 
-Without `gh`, Phase 6 (PR creation) and Phase 7 (CI gate) cannot proceed —
-**this is hard-required**, no native fallback.
+Without **either** path, Phase 6 (PR creation) and Phase 7 (CI gate) cannot
+reach GitHub. That is a reported degradation, not a crash: commit and push
+still work, and the run says precisely what it could not do.
 
 ---
 
@@ -199,7 +242,9 @@ Without `gh`, Phase 6 (PR creation) and Phase 7 (CI gate) cannot proceed —
 | ------------------------------------ | ---------------------------------- | ---------------------------------- |
 | `gw: command not found`              | Not installed (optional)           | Use native `git worktree` fallback, or install gw |
 | `gw cd` does nothing                 | Shell integration not installed    | `gw install-shell` then re-source  |
-| `gh: not authenticated`              | Token missing or expired           | `gh auth login`                    |
+| `gh: command not found`              | Cloud session, or `gh` not installed | **Not a blocker.** Resolve `ACCESS_PATH` per [github-access.md § Step 0](../../../../agents/shared/rules/github-access.md#step-0--resolve-your-path-once-before-any-github-step) and take the `mcp` path |
+| `gh auth status` exits non-zero but API calls work | Wrapped `gh` injecting a per-call credential | Ignore `gh auth status` — probe with a repo-scoped `gh api repos/{owner}/{repo}` |
+| `gh: not authenticated`              | Token missing or expired           | `gh auth login`, or fall through to the MCP path |
 | `gh pr create` fails on push         | Remote `origin` not set or no perms| `git remote -v`, fix remote        |
 | `git worktree add` fails             | Branch already exists or path collision | Use a different branch name, or `git worktree list` to inspect |
 | `.gw/config.json` not found          | Repo never initialized (gw only)   | `gw init` (only if using gw)       |
