@@ -380,10 +380,17 @@ When editing this skill, do not break these — they're load-bearing:
 - **Artifact paths are `.agent/{branch}/`, never `.gw/{branch}/`.** The only
   acceptable mention of `.gw/` is a migration note or "never use this"
   reminder.
-- **`gh` is hard-required; `gw` is optional with a native fallback.** The
-  workflow must never block on a missing `gw` — Phase 2 detects it at Step 0
-  and falls back to native `git worktree` with a one-time warning. The only
-  hard tool prerequisite is `gh` (for Phases 6 and 7).
+- **A GitHub *access path* is required; `gh` is one of two, and `gw` is optional
+  with a native fallback.** The workflow must never block on a missing `gw` —
+  Phase 2 detects it at Step 0 and falls back to native `git worktree` with a
+  one-time warning. Nor may it block on a missing **`gh`**: that binary is
+  absent in Claude Code cloud sessions, where `mcp__github__*` is the path, and
+  both `aw-planner` and `aw-executor` already carry those tools in their
+  `tools:` frontmatter. Phases 6–7 resolve `ACCESS_PATH` (`gh` | `mcp` | `none`)
+  once via [`agents/shared/rules/github-access.md`](../../../agents/shared/rules/github-access.md)
+  — never by `which gh`, never by `gh auth status`. With `none`, GitHub steps
+  degrade and are named in `Degraded:`; they are never reported as done. Do not
+  restate that file's verb mapping in a phase rule — link it.
 - **The system-prompt for the agent template stays lean.** It references
   `SKILL.md` for procedures rather than duplicating them. If the agent
   template grows beyond ~250 lines of system prompt, it's drifting.

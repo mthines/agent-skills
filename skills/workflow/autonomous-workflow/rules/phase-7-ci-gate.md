@@ -14,6 +14,7 @@ tags:
 
 - [Overview](#overview)
 - [Core Principles](#core-principles)
+- [Step 0: Resolve your GitHub access path](#step-0-resolve-your-github-access-path)
 - [Procedure](#procedure)
 - [Auto Fix](#auto-fix)
 - [Parallel CI Fixes](#parallel-ci-fixes)
@@ -42,6 +43,56 @@ Gate: CI green OR user-approved stop. Worktree cleanup is optional and never aut
 - **Bound the loop**: hard cap of 2 `ci-auto-fix` handoffs per PR. Each handoff has its own internal retry budget; do not wrap it in another loop.
 - **Cleanup is opt-in**: never remove an open PR's worktree (whether via `gw remove` or `git worktree remove`).
 
+## Step 0: Resolve your GitHub access path
+
+Before any GitHub step, resolve which path you have — `gh` CLI, `mcp__github__*`
+tools, or neither — per **[`agents/shared/rules/github-access.md`](../../../../agents/shared/rules/github-access.md)**.
+Resolve once, bind `ACCESS_PATH` (`gh` | `mcp` | `none`), state the path you
+took, and use it for the whole phase.
+
+`gh` is **absent in Claude Code cloud sessions**, so every command written below
+is the `gh`-path form. On the `mcp` path use the
+[verb mapping](../../../../agents/shared/rules/github-access.md#verb-mapping)
+rather than attempting them.
+
+**One mapping in this phase is not a substitution — it is a
+[documented Gap](../../../../agents/shared/rules/github-access.md#gaps).**
+`gh pr checks --watch` streams until checks settle; MCP calls are
+request/response, so there is no MCP `--watch`:
+
+| `gh`-path form | `mcp`-path form |
+| -------------- | --------------- |
+| `gh pr checks <n>` (stateless query) | `pull_request_read` method `get_check_runs` |
+| `timeout 540 gh pr checks <n> --watch` | **No equivalent.** Poll `get_check_runs` on the bounded schedule below |
+| `timeout 540 gh run watch <run-id>` | **No equivalent.** Same bounded poll |
+| `gh run rerun <run-id> --failed` | `actions_run_trigger` |
+| `gh run view <id> --log-failed` | `get_job_logs` with `failed_only: true` |
+| `gh pr view <n> --json comments` | `issue_read` method `get_comments` |
+| `gh pr view <n> --json state,mergedAt` | `pull_request_read` method `get` |
+
+**The bounded poll keeps this phase's two invariants, which the `--watch` form
+also keeps — they are properties of the phase, not of `gh`:**
+
+1. **Watch state is queried, never carried.** Every poll iteration re-reads the
+   state of the *current* head. Never cache a verdict across iterations, phases,
+   or subagents — a remembered verdict is only correct until someone pushes, and
+   several things in Phase 6/7 push in parallel.
+2. **Every wait is bounded at both levels.** A poll iteration sleeps at most 60 s
+   and the poll runs **at most 4 attempts total** within this phase — the same
+   cap as the `--watch` form's exit-124 row. Issue any Bash call carrying an
+   inner `timeout` with the tool parameter `timeout: 600000`; the tool's
+   **default is 120000**, which would kill a 540 s wait at 2 minutes and leave
+   the exit-code handling unreachable.
+
+With **`ACCESS_PATH = none`**, this phase cannot observe CI at all. It does
+**not** hard-stop and discard delivered work — Phase 6 has already pushed, and
+[`github-access.md § No path`](../../../../agents/shared/rules/github-access.md#no-path)
+rule 2 is *do the work you can*. Instead:
+
+- Report precisely: *"CI was not observed — no GitHub access path (no `gh`, no `mcp__github__*` tools)."*
+- Name it in the run's `Degraded:` line.
+- **Never report CI as green, and never treat "could not observe" as "no CI configured"** (rule 3). Those are different states, and collapsing them is exactly the failure the Step 1 table below exists to prevent.
+
 ## Procedure
 
 ### Step 1: Identify the PR + Initial Watch
@@ -52,6 +103,8 @@ After Phase 6, you should already have the PR URL and number. Start watching:
 
 ```bash
 # No --watch: returns immediately with the state of the CURRENT head.
+# ACCESS_PATH=mcp → `pull_request_read` method `get_check_runs` (same semantics,
+# same classification table below).
 gh pr checks <pr-number>
 ```
 
@@ -75,6 +128,8 @@ The poll is a [shared rule with one owner](../../../delivery/create-pr/rules/reg
 
 This replaces carrying watch state across the Phase 6 → Phase 7 boundary. A query is correct by construction at the current head; a remembered verdict is only correct until someone pushes, and several things in Phase 6/7 push in parallel.
 
+**`ACCESS_PATH = gh`:**
+
 ```bash
 # Watch all checks on the PR — one bounded attempt.
 # Issue this Bash call with the tool parameter timeout: 600000.
@@ -91,8 +146,17 @@ timeout 540 gh run watch <run-id>
 | ---- | ---- |
 | 0 | All checks succeeded — go to Step 4 |
 | 124 | Still running — watch again, **at most 4 attempts total** (≈ 36 min), counted within this phase. Then run `gh pr checks <pr-number>` once, report the pending checks, and escalate |
-| 127, or stderr matching `command not found` / `could not resolve` / `authentication` / `rate limit` | **Tooling failure, not a CI failure** — `timeout` is absent on stock macOS (use `gtimeout`). Report the command failure; do **not** route to Auto Fix |
+| 127, or stderr matching `command not found` / `could not resolve` / `authentication` / `rate limit` | **Tooling failure, not a CI failure** — `timeout` is absent on stock macOS (use `gtimeout`). If it is `gh` itself that is missing, you took the wrong path: re-read Step 0 and use the `mcp` branch rather than reporting a failure. Report any genuine command failure; do **not** route to Auto Fix |
 | Any other non-zero | A check genuinely failed — go to Step 2 |
+
+**`ACCESS_PATH = mcp`** — no `--watch` exists ([Gap](../../../../agents/shared/rules/github-access.md#gaps)), so watching is a bounded poll. Same caps, same outcomes:
+
+1. Call `pull_request_read` method `get_check_runs`.
+2. All terminal and passing → Step 4. Any terminal failure → Step 2.
+3. Any still pending → sleep at most 60 s and repeat, **at most 4 attempts total**, counted within this phase.
+4. Cap reached with checks still pending → report the pending checks and escalate — the `exit 124` row's behaviour, reached by a different route.
+
+Re-read the state on **every** iteration; never carry a verdict between them. An authorization error from the MCP call is a `tooling-failure` (escalate), **not** "no checks" — the same three-state distinction the Step 1 table draws.
 
 **No budget is shared with `create-pr` or with any subagent.** Each counts its own attempts inside its own invocation. Phase 7 may therefore re-watch checks `create-pr` already watched — that costs time, never correctness, and the stateless query above makes it rare. An earlier design threaded a counter through a state file across both phases and the `ci-auto-fix` fan-out; it produced racing writers, a counter that could be read before it was written, and a skip that could report an unobserved commit as green. Do not reintroduce it.
 
@@ -120,6 +184,7 @@ Before invoking `ci-auto-fix`, decide whether the failure is mechanical or judgm
 
 ```bash
 # Re-run only failed jobs once if a flake is suspected
+# ACCESS_PATH=mcp → `actions_run_trigger`
 gh run rerun <run-id> --failed
 ```
 
@@ -249,6 +314,8 @@ change works end-to-end in the deployed environment, not just locally.
 
 ```bash
 # Try to find a preview URL from PR comments
+# ACCESS_PATH=mcp → `issue_read` method `get_comments`, then apply the same
+# regex to each body in the returned JSON (no --jq needed).
 gh pr view <pr-number> --json comments --jq '.comments[].body' \
   | grep -Eo 'https://[a-z0-9-]+\.(vercel\.app|netlify\.app|preview\.[a-z]+)[^ ]*' \
   | head -1
@@ -457,6 +524,7 @@ zero. A non-zero sum in any one of them means a commit landed. Otherwise:
 
 ```bash
 # No --watch: returns immediately with the state of the CURRENT head.
+# ACCESS_PATH=mcp → `pull_request_read` method `get_check_runs`.
 gh pr checks <pr-number>
 ```
 
@@ -543,6 +611,7 @@ After the PR is merged (state `MERGED`), optionally tear the worktree down to re
 ### Step 1: Confirm PR Is Merged
 
 ```bash
+# ACCESS_PATH=mcp → `pull_request_read` method `get` (read `state` / `merged_at`)
 gh pr view <pr-number> --json state,mergedAt
 ```
 

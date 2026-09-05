@@ -5016,4 +5016,78 @@ const isPollBlock = (block) =>
     /Fix the failing CI checks on \{owner\}\/\{repo\}#\{n\}/.test(FIX_LINKS));
 }
 
+// ── G48: `aw` resolves a GitHub ACCESS PATH; it never hard-stops on `which gh` ──
+// `gh` is absent in Claude Code cloud sessions while `mcp__github__*` is present, and both
+// aw agents already carry those tools. The failure this guards is not a missing mapping —
+// `github-access.md` has owned that repo-wide for a while — but a CONSUMER that never reads
+// it. aw's two agent templates referenced the file only from a YAML comment inside `tools:`
+// (a note explaining the grant, not a step anyone executes), while `prerequisites.md` and the
+// planner's Critical First Actions carried a live `which gh` hard-stop. So the capability was
+// present and the prose forbade using it. Assert the wiring in all three places at once,
+// because fixing any one alone leaves the run stopping at another.
+{
+  const PREREQ = readFileSync(join(REPO_ROOT,
+    "skills/workflow/autonomous-workflow/rules/prerequisites.md"), "utf8");
+  const PHASE7 = readFileSync(join(REPO_ROOT,
+    "skills/workflow/autonomous-workflow/rules/phase-7-ci-gate.md"), "utf8");
+  const PLANNER = readFileSync(join(REPO_ROOT,
+    "skills/workflow/autonomous-workflow/templates/aw-planner.agent.md"), "utf8");
+  const EXECUTOR = readFileSync(join(REPO_ROOT,
+    "skills/workflow/autonomous-workflow/templates/aw-executor.agent.md"), "utf8");
+
+  // Each surface must CITE the owner rather than restate its mapping.
+  for (const [name, src] of [["prerequisites.md", PREREQ], ["phase-7-ci-gate.md", PHASE7],
+    ["aw-planner.agent.md", PLANNER], ["aw-executor.agent.md", EXECUTOR]]) {
+    s.check(`G48 ${name} cites github-access.md`,
+      /github-access\.md/.test(src),
+      "aw is the only GitHub-touching surface that never resolved an access path; a citation"
+        + " here is what makes the cloud path reachable at all");
+    s.check(`G48 ${name} binds ACCESS_PATH`,
+      /ACCESS_PATH/.test(src),
+      "the phase rules branch on $ACCESS_PATH; a surface that never binds it falls back to the"
+        + " gh-path commands verbatim and every call fails in a cloud session");
+  }
+
+  // The regression that started this: a live `which gh` hard-stop. Match the STOP pairing
+  // rather than the bare substring — `prerequisites.md` legitimately NAMES `which gh` in order
+  // to say do-not-gate-on-it, and a bare-substring assertion would forbid the very sentence
+  // that fixes the defect (the same shape G2d had to solve for the parent's description).
+  for (const [name, src] of [["prerequisites.md", PREREQ], ["aw-planner.agent.md", PLANNER]]) {
+    s.check(`G48 ${name} does not hard-stop on \`which gh\``,
+      !/which gh[^\n]*\b(REQUIRED|hard-stop|STOP)\b/i.test(src)
+        && !/\bSTOP\b[^\n]*install (?:via )?(?:Homebrew|gh)/i.test(src),
+      "a `which gh` hard-stop is un-actionable in a cloud session — the documented remedy"
+        + " (\"install via Homebrew\") cannot be followed, so the agent improvises or stalls,"
+        + " which github-access.md names as the dominant source of a run that spins");
+  }
+
+  // `gh auth status` is not a valid probe: it inspects a stored token, so it exits non-zero
+  // under a per-call credential proxy while every real API call succeeds.
+  s.check("G48 prerequisites.md does not verify access with `gh auth status`",
+    !/^\s*(?:\$\s*)?gh auth status\s*$/m.test(PREREQ)
+      && !/`gh auth status`\s*\|[^|]*Logged in to github\.com/.test(PREREQ),
+    "gh auth status lies under a wrapped gh that injects a scoped credential per call, so"
+      + " probing with it declares \"no gh\" on a session where gh works perfectly");
+
+  // Phase 7 must name the --watch Gap. It is the one verb here with NO MCP equivalent, so a
+  // mapping table that silently omitted it would send the mcp path at a command that cannot
+  // exist — and the bounded-poll substitute has to keep the phase's own two invariants.
+  s.check("G48 phase-7 names the --watch gap and its bounded-poll substitute",
+    /--watch/.test(PHASE7) && /\bpoll\b/i.test(PHASE7)
+      && /get_check_runs/.test(PHASE7),
+    "gh pr checks --watch streams until checks settle and MCP is request/response; without a"
+      + " stated substitute the mcp path either invents a --watch or silently skips the watch");
+  s.check("G48 phase-7's mcp poll keeps the queried-never-carried invariant",
+    /queried, never carried|never carry a verdict|re-read the state on \*\*every\*\*/i.test(PHASE7),
+    "a poll that caches a verdict between iterations reports some earlier commit as green;"
+      + " this is the invariant the reverted shared-watch-budget design broke (v3.22)");
+
+  // ACCESS_PATH=none must degrade visibly, never silently and never as success.
+  s.check("G48 phase-7 degrades visibly when there is no access path",
+    /Degraded:/.test(PHASE7)
+      && /never report CI as green|never treat "could not observe" as "no CI/i.test(PHASE7),
+    "\"could not observe CI\" and \"no CI configured\" are different states; collapsing them is"
+      + " how a green report gets written for a PR whose CI was never observed");
+}
+
 process.exit(s.report() ? 0 : 1);

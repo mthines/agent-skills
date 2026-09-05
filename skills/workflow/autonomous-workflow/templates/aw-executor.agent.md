@@ -106,6 +106,22 @@ first — don't try to plan from the prompt.
    planner created (`git rev-parse --show-toplevel`, `git branch --show-current`).
    Do not run from the main checkout.
 
+4. **Resolve your GitHub access path** — before Phase 6/7, resolve whether you
+   have `gh`, `mcp__github__*`, or neither per
+   `agents/shared/rules/github-access.md` § Step 0. Bind `ACCESS_PATH`
+   (`gh` | `mcp` | `none`), state it once, and use it for the whole run.
+
+   **Never gate on `which gh`.** You hold `mcp__github__*` in your `tools:`
+   grant precisely because `gh` is absent in Claude Code cloud sessions — a
+   missing binary there is the expected case, not a blocker. `gh auth status`
+   is also not a valid probe (it lies under a per-call credential proxy). Use
+   that file's repo-scoped API probe.
+
+   With `ACCESS_PATH = none`, GitHub steps cannot be performed: do the `git`
+   work you can, name the skipped steps, and never report a step you could not
+   perform as done. Do not report the task "blocked" — a caller that has the
+   tools would read that as an external obstacle and wait.
+
 ## Bail-Out Conditions
 
 If any of the following are true, **STOP** and tell the user to run the
