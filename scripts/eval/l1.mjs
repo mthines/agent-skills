@@ -111,6 +111,70 @@ function tierQuestions(file) {
     "expected a link to ../SKILL.md#step-1-detect-workflow-mode-mandatory");
 }
 
+// ── Check B2 / G2c: prose agent counts ≡ what install.sh actually links ──
+// The v3.23 dispatcher conversion moved `aw` out of the agent set, and the
+// resulting "how many aw- agents are there" claim went wrong three times across
+// two review rounds — each fix corrected the flagged line and left a twin, in a
+// different file, saying the other number. The count is mechanically derivable
+// from the installer, so derive it and make every prose claim answer to it.
+//
+// `aw` is deliberately NOT in the population: it is a skill, has no `aw-`
+// prefix, and is linked into skills/ rather than agents/. That distinction is
+// exactly what the prose kept losing.
+{
+  const installer = readFileSync(join(AW, "install.sh"), "utf8");
+  const linked = [...installer.matchAll(/ln -sf[n]?\s+\S+\s+"\$CLAUDE_DIR\/agents\/(aw-[a-z]+)\.md"/g)]
+    .map((m) => m[1]);
+  const truth = new Set(linked);
+
+  s.check("G2c install.sh links a discoverable set of aw- agents", truth.size >= 2,
+    truth.size ? [...truth].join(", ") : "no `ln -sf` into agents/aw-*.md found");
+
+  // Every agent the installer links must be inventoried in the root CLAUDE.md
+  // generated-from-templates list, or `agents/` stays the wrong place to look.
+  const rootClaude = readFileSync(join(REPO_ROOT, "CLAUDE.md"), "utf8");
+  const uninventoried = [...truth].filter((a) => !new RegExp("^- `" + a + "`", "m").test(rootClaude));
+  s.check("G2c every installed aw- agent is inventoried in CLAUDE.md",
+    uninventoried.length === 0,
+    uninventoried.length ? `missing: ${uninventoried.join(", ")}` : `${truth.size} inventoried`);
+
+  // Now the counts. Three phrasings carry the claim across the docs; each is
+  // anchored on something that pins it to the aw- set specifically, so an
+  // unrelated "agents" sentence elsewhere in these files is not swept in.
+  const WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+  const toNum = (w) => (/^\d+$/.test(w) ? Number(w) : WORDS[w.toLowerCase()]);
+  const CLAIMS = [
+    // "the three `aw-` agents", "links three `aw-` agents"
+    /(\w+)\s+`aw-`\s+agents/g,
+    // "Plus three agents linked into", "three agents installed"
+    /(\w+)\s+agents\s+(?:linked|installed)/g,
+    // "a dispatcher, three agents, eight phases"
+    /dispatcher(?:\s+skill)?,\s+(\w+)\s+agents/g,
+  ];
+  const SURFACES = [
+    ["README.md", readFileSync(join(REPO_ROOT, "README.md"), "utf8")],
+    ["autonomous-workflow/README.md", readFileSync(join(AW, "README.md"), "utf8")],
+    ["autonomous-workflow/install.sh", installer],
+  ];
+  const wrong = [];
+  let claimsSeen = 0;
+  for (const [label, text] of SURFACES) {
+    for (const re of CLAIMS) {
+      for (const m of text.matchAll(re)) {
+        const n = toNum(m[1]);
+        if (n === undefined) continue;   // "the `aw-` agents" etc. — not a count
+        claimsSeen++;
+        if (n !== truth.size) wrong.push(`${label}: "${m[0].trim()}" (linked: ${truth.size})`);
+      }
+    }
+  }
+  s.check("G2c prose aw- agent counts match the installer", wrong.length === 0,
+    wrong.length ? wrong.join(" | ") : `${claimsSeen} count claims agree on ${truth.size}`);
+
+  // Sentinel: if the phrasings drift, the check above passes vacuously.
+  s.check("G2c found the aw- agent count claims to guard", claimsSeen >= 5, `found ${claimsSeen}`);
+}
+
 // ── Check C: plan.md Core-section contract — runs the ACTUAL confidence rule-checks ──
 // against fixtures. Encodes the #30 Core contract + the #31 Acceptance-Criteria-non-empty fix.
 // We execute the exact idioms documented in skills/quality/confidence/SKILL.md rules #2 and #3,

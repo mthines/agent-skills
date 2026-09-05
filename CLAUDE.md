@@ -106,6 +106,7 @@ The agents it hands off to are **generated from templates**, not stored as `agen
 
 - `aw-planner` — Full tier, phases 0–2 (validate, plan, worktree + `plan.md`), gated on `confidence(plan) ≥ 90%`. Source: [`templates/aw-planner.agent.md`](./skills/workflow/autonomous-workflow/templates/aw-planner.agent.md), installed as `aw-planner.md`
 - `aw-executor` — Full tier, phases 3–7 (implement, test, docs, PR, CI). Source: [`templates/aw-executor.agent.md`](./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md), installed as `aw-executor.md`
+- `aw-tester` — Phase 4 spec-driven UI verification, dispatched by `aw-executor` before the lint/type/test gates. Source: [`templates/aw-tester.agent.md`](./skills/workflow/autonomous-workflow/templates/aw-tester.agent.md), installed as `aw-tester.md`
 
 The agents below live as `agents/*.md` files and are dispatched by skills:
 
