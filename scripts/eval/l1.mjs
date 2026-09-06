@@ -5492,11 +5492,21 @@ const isPollBlock = (block) =>
     /\|\s*anything else\s*\|/.test(RL) && /unrecognised outcome/.test(RL),
     "`preview-spec run` gained returns this table had no row for; with no catch-all an"
       + " unmapped outcome is recorded as whatever the run guesses — a pass or a skip");
-  s.check("G49 review-loop distinguishes an EMPTY spec block from an ABSENT one",
-    /empty preview-spec block/.test(RL) && /not run \(no preview-spec block\)/.test(RL),
+  // Anchored to the ROW, and the slot arm asserted separately. A bare
+  // `/empty preview-spec block/` over the whole file was satisfied by the Step 3 report
+  // slot, which enumerates the same string — so deleting the table row left L1 green.
+  // Same shape as the `"authored"` ⊂ `"not authored"` bug this block already fixed once:
+  // a substring that two different surfaces can satisfy asserts neither of them.
+  s.check("G49 review-loop's outcome table maps an EMPTY spec block",
+    /^\|\s*`empty spec`[^\n]*\|[^\n]*empty preview-spec block/m.test(RL),
     "markers present with an empty body means `author` ran and embedded nothing — a"
-      + " spec-authoring bug; folding it into `no spec` reports that bug as the healthy"
-      + " case of a PR that legitimately needed no spec");
+      + " spec-authoring bug; with no row for it the runner's return falls through to the"
+      + " catch-all and loses the distinction the row exists to draw");
+  s.check("G49 review-loop keeps EMPTY and ABSENT as two report values",
+    /^Preview spec[^\n]*not run \(no preview-spec block\)[^\n]*not run \(empty preview-spec block\)/m
+      .test(RL),
+    "the two must be separately renderable in the report; collapsing them there reports a"
+      + " spec-authoring bug as the healthy case of a PR that legitimately needed no spec");
 
   // 4. The report slot. Every skip condition Step 6.4 enumerates needs a rendered outcome,
   //    or the degraded path reports as success.
