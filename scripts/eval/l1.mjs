@@ -1423,8 +1423,13 @@ function checksInSync(plan, checks) {
   // heading-level-aware cut back to a cut-at-any-heading — fails this guard. The suite list
   // is parsed live out of l2.mjs so the guard can never drift from the shipped suites.
   const BODY_MIN = 80; // a real rubric body dwarfs this; a bare title never reaches it.
+  // The trailing `,?` is load-bearing: without it a suite written `section: "…",` (a trailing
+  // comma before the closing brace — legal JS and the house style everywhere else in this
+  // file) fell out of the parse entirely. Every shipped suite happens to omit it, so the
+  // brittleness was invisible until a mutation added one, and under the old `>= 7` floor it
+  // would have stayed invisible: the suite would simply have gone unchecked.
   const rubricEntries = [...l2.matchAll(
-    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*section:\s*(null|"([^"]+)")\s*\}/g,
+    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*section:\s*(null|"([^"]+)")\s*,?\s*\}/g,
   )].map((m) => ({ file: m[1], section: m[2] === "null" ? null : m[3] }));
   // The `sections: [...]` form (a decision split across sibling subsections) is a SECOND
   // rubric shape, so it needs its own parse — and the count sentinel below has to be a
