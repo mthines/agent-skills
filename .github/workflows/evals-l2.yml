@@ -215,6 +215,13 @@ jobs:
           # scripts/eval/README.md.
           EVAL_GATE: "70"
 
+          # This run was explicitly opted into (the `run-evals` label or a
+          # workflow_dispatch), so an absent key is a FAILURE, not a skip: the runner
+          # exits 0 without measuring anything, and 232 consecutive runs were green
+          # for exactly that reason. The warning step above is still there for the
+          # human-readable cause; this is what makes the check stop lying.
+          EVAL_REQUIRE_KEY: "1"
+
           # OTLP telemetry (traces + metrics) — see scripts/eval/telemetry.mjs.
           # Entirely OFF when the endpoint variable is unset, which is the default
           # and what keeps forks and fresh clones from attempting an export. The

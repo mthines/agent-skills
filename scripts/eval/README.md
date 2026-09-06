@@ -45,7 +45,12 @@ Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
   (`G21h`), the opt-in gate and its documented label (`G21i`), and every suite's
   `choices` ↔ golden labels in both directions (`G21j`), and the telemetry module's
   own self-test plus its four rules — off by default, a miss is not a span error, the
-  flush precedes the gate exit, and CI forwards the OTLP config (`G21k`). L1 gates the
+  flush precedes the gate exit, and CI forwards the OTLP config (`G21k`), and the
+  **scorer and the gate** — `parseChoice` is extracted from the live runner and
+  *executed*, so a reply enumerating every choice must read as ambiguous rather than
+  as the first one; a miss must print the raw reply; only a suite at or above the
+  case floor can breach the gate; an absent key fails an opted-in run; the rubric
+  travels as a cached system block (`G21l`). L1 gates the
   *plumbing* of L2, which is why an unrun L2 still cannot silently rot.
 - **frontmatter** — SKILL versions are semver; `name` matches the directory.
 - **cross-file contracts** — locks contracts that span producer and consumer
@@ -88,9 +93,28 @@ EVAL_MODEL=… EVAL_GATE=70 node scripts/eval/l2.mjs
 
 - **Report-only** by default (each golden set is < 50 — `evals.md` calls that
   noisy). `EVAL_GATE=<pct>` soft-gates: fail if any suite is below the floor.
-- A **miss** means one of two things — inspect it: the model got it wrong
-  (improve the rubric), or the golden label is itself debatable (fix the label).
-  That feedback loop *is* the eval. Skips cleanly (exit 0) with no API key.
+- **A suite under `EVAL_GATE_MIN_CASES` (default 10) cannot breach the gate.**
+  It still runs, still prints its accuracy, and is labelled `[advisory]` — but
+  below ten cases one case moves accuracy by ≥ 10 points, so a 70% floor on a
+  5-case set allows exactly one miss and is decided by a coin flip rather than by
+  the rubric's health. Raise the case count to make a suite gate again; do not
+  lower the floor.
+- A **miss** means one of *three* things — the printed line now includes the
+  model's raw reply so you can tell them apart: the model got it wrong (improve
+  the rubric), the golden label is debatable (fix the label), or the reply never
+  named one choice at all and shows as `?(…)` (the model answered in a shape the
+  harness did not expect — usually because the rubric asks the agent to emit a
+  structured block). That feedback loop *is* the eval.
+- **A missing API key skips (exit 0) — unless `EVAL_REQUIRE_KEY=1`**, which fails
+  (exit 3). CI sets it on the opt-in path: a run someone explicitly asked for must
+  not report green having measured nothing. 232 consecutive CI runs were green for
+  exactly that reason.
+- **The rubric is sent as a cached system block.** It is byte-identical across
+  every case in a suite, so `cache_control: ephemeral` bills case 1 at 1.25× and
+  the rest at 0.1× — roughly **80% off** a suite's input cost, and no change to any
+  answer. The run's last line reports cache reads/writes; `cache MISSED` there means
+  the discount was lost (a prefix under ~1024 tokens, or cases spread past the
+  5-minute TTL).
 
 ### Telemetry — watching accuracy and cost over time
 
@@ -113,12 +137,12 @@ The shape, flushed once at exit (a batch job has no reason to stream):
 | Signal | Name | Carries |
 | --- | --- | --- |
 | span | `eval.run` | model, gate floor, suite/case/pass counts, run accuracy, total tokens |
-| span | `eval.suite <name>` | suite name, rubric file + section, `eval.rubric.chars`, accuracy, below-gate |
-| span | `eval.case <id>` (CLIENT) | expected, actual, `eval.case.match`, `gen_ai.usage.*_tokens` |
+| span | `eval.suite <name>` | suite name, rubric file + section, `eval.rubric.chars`, accuracy, `eval.suite.below_gate`, `eval.suite.gating` |
+| span | `eval.case <id>` (CLIENT) | expected, actual, `eval.case.match`, `gen_ai.usage.*_tokens` (input, output, and the two cache counters) |
 | metric | `eval.case.result` | Sum, delta, split by `eval.case.match` — accuracy as a ratio in the backend |
 | metric | `eval.suite.accuracy` / `eval.run.accuracy` | Gauge, `%` |
 | metric | `eval.case.duration` | Histogram, `s` |
-| metric | `gen_ai.client.token.usage` | Histogram, `{token}`, split by `gen_ai.token.type` |
+| metric | `gen_ai.client.token.usage` | Histogram, `{token}`, split by `gen_ai.token.type` — `input` / `output` / `cache_read` / `cache_write`, never summed together (a read bills at 0.1× and a write at 1.25×, so one total misreports the cost in both directions) |
 
 Four rules the module holds, each guarded by L1 `G21k`:
 
@@ -284,6 +308,63 @@ floor (or switch to 0%-regression-vs-baseline) and gate it hard.
 
 To require them: Settings → Branches → branch protection → "Require status
 checks" → pick **evals · L1** (and **evals · L2** once the secret is set).
+
+### The L2 baseline — first real run
+
+The suites existed for 232 CI runs without the `ANTHROPIC_API_KEY` secret, so every
+one of those greens measured nothing. This is the first run that actually executed,
+recorded here so the next change has something to compare against rather than a
+remembered number.
+
+`claude-sonnet-4-6` · `EVAL_GATE=70` · nine suites, 140 cases · **130/140 = 92.9%**:
+
+| suite | cases | accuracy | misses |
+| --- | --- | --- | --- |
+| `bug-class` | 18 | 100.0% | — |
+| `aw-should-trigger` | 15 | 100.0% | — |
+| `optimize-approach-optimality` | 15 | 100.0% | — |
+| `severity-tiering` | 15 | 100.0% | — |
+| `reviewer-agreement-bump` | 6 | 100.0% | — |
+| `complexity-triage` | 14 | 92.9% | `simple-5` (simple→complex) |
+| `shape-depth-routing` | 22 | 90.9% | `plain-logic`, `refresh-runs` (both →`quick`) |
+| `tier-routing` | 30 | 83.3% | 5, **all** →`Micro` |
+| `code-review-retrieval-relevance` | 5 | 60.0% | `…unrelated-diff`, `…seen2-below-threshold` (both surface→skip) |
+
+Three findings, in order of what they cost:
+
+1. **`tier-routing`'s five misses all landing on one label was the SCORER, not the
+   rubric** — or at least could not be distinguished from it. `Micro` is both the
+   first element of `choices` and the first token of the `[Micro | Lite | Full]`
+   placeholder in the rubric's own `MODE SELECTION:` block, and the old
+   earliest-substring parse scored that template line as a confident `Micro`. Fixed
+   (see `parseChoice`, `G21l`); the next run prints the raw reply, which settles it.
+   Note the fix cannot *raise* the number — an ambiguous reply is still a miss. It
+   only stops a wrong parse from being reported as a wrong answer.
+2. **`shape-depth-routing`'s two misses trace to the examples, not the table.** The
+   worked example in `depth-routing.md` shows a docs-only / `band: none` delta routing
+   `quick` **without stating its counter values**, so it reads as "docs-only ⇒ quick,
+   full stop" — which is what `refresh-runs` (a fired `FULL_REFRESH_RUNS` counter,
+   expected `deep`) got. And the middle tier, which the golden set calls "the middle
+   tier's default population", has **no worked example at all** while both extremes
+   do — which is what `plain-logic` (40 ordinary lines, expected `standard`) got.
+3. **`code-review-retrieval-relevance` should not have been gating.** 5 cases at a 70%
+   floor allows exactly one miss; its own golden notes say `BOOTSTRAP SEED — NOT A
+   REAL BASELINE`. It is now `[advisory]` under `EVAL_GATE_MIN_CASES`. Separately, its
+   rubric is the 67,630-char `## Step 1` section — 6.4× the next largest and a third of
+   the whole run's token bill — most of which is prior-comment awareness and gate
+   grading, while both misses turn on two facts the section only implies by *absence*
+   (the Step 1.0 `memory_list` is neither diff-filtered nor `seen_count`-gated) in the
+   presence of an explicit `seen_count ≥ 3` promotion rule that reads as a filter.
+   That is a defect in the shipped instructions, not just in the eval: an agent reading
+   that section can make the same inference. Stating both non-filters explicitly, and
+   repointing the suite at `agents/pr-reviewer/rules/memory.md` (the file that *owns*
+   the read contract — the same reasoning that moved `shape-depth-routing` to
+   `depth-routing.md`), would cut a third of the bill and remove the distractors.
+
+Cost of the full run, measured: **254,219 input tokens ≈ $0.77** at sonnet-4-6.
+Two suites are 56% of it (`code-review-retrieval-relevance` 33%, `shape-depth-routing`
+23%) because cost is `rubric_chars × cases`, not case count. With the system-block
+cache now in place that drops to roughly **$0.15**.
 
 ### The L1 baseline
 

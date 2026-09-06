@@ -27,6 +27,14 @@ import { EvalTelemetry } from "./telemetry.mjs";
 const MODEL = process.env.EVAL_MODEL || "claude-sonnet-4-6";
 const KEY = process.env.ANTHROPIC_API_KEY;
 const GATE = process.env.EVAL_GATE ? Number(process.env.EVAL_GATE) : null;
+// A suite this small cannot be gated meaningfully: below 10 cases one case moves
+// accuracy by ≥ 10 points, so a 70% floor is decided by a single coin flip rather
+// than by the rubric's health (5 cases ⇒ the floor allows exactly one miss). Such a
+// suite is still RUN and still REPORTED — it just cannot breach the gate, and the
+// runner says so on the line where its accuracy is printed. evals.md's "< 50 golden
+// items is statistically noisy" is the same argument; 10 is the point where the
+// blanket EVAL_GATE stops measuring anything at all.
+const GATE_MIN_CASES = process.env.EVAL_GATE_MIN_CASES ? Number(process.env.EVAL_GATE_MIN_CASES) : 10;
 const only = process.argv.includes("--suite") ? process.argv[process.argv.indexOf("--suite") + 1] : null;
 
 // An unknown --suite must be LOUD. CI drives this flag from a generated matrix, and
@@ -38,7 +46,16 @@ if (only !== null && !SUITES.some((s) => s.name === only)) {
   process.exit(2);
 }
 
+// A missing key is a legitimate skip for a fork or a fresh clone, and a silent
+// FAILURE for a run that was explicitly asked for. 232 consecutive CI runs were
+// green because the secret was unset — a green check that proves nothing is worse
+// than a red one, so the caller that opted in sets EVAL_REQUIRE_KEY and gets a
+// non-zero exit instead of a pass.
 if (!KEY) {
+  if (process.env.EVAL_REQUIRE_KEY === "1") {
+    console.error("✗ L2: EVAL_REQUIRE_KEY is set but ANTHROPIC_API_KEY is empty — this run was asked for and cannot measure anything. Failing instead of exiting 0.");
+    process.exit(3);
+  }
   console.log("⊘ L2: no ANTHROPIC_API_KEY — skipping (these are LLM evals; set the key to run).");
   process.exit(0);
 }
@@ -50,26 +67,54 @@ if (!KEY) {
 // makes a run worth recording: accuracy says whether the rubric works, tokens say
 // what asking cost. `usage` is null when the response omits it, and a null is
 // omitted from telemetry rather than reported as a zero.
+// The system prompt (instruction + rubric) is IDENTICAL for every case in a suite,
+// and the rubric is the bulk of it — shape-depth-routing re-sent the same 2,641
+// tokens 22 times. Marking it `cache_control: ephemeral` makes case 1 pay a 1.25×
+// write and every later case a 0.1× read, which is ~80% off the suite's input bill.
+// Two conditions this run satisfies: the cache needs a ≥ 1024-token prefix (every
+// rubric but the two smallest, which are also the two cheapest, so nothing is lost
+// when they miss), and the 5-minute TTL comfortably covers a suite that finishes in
+// under 90 seconds. It cannot change an answer — the same tokens reach the model
+// either way — so it is a pure cost change, not an eval change.
 async function ask(system, input) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 16, system, messages: [{ role: "user", content: input }] }),
+    body: JSON.stringify({
+      model: MODEL, max_tokens: 16,
+      system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: input }],
+    }),
   });
   if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 120)}`);
   const body = await res.json();
   return { text: (body.content?.[0]?.text || "").trim(), usage: body.usage || null };
 }
 
-// Pick the choice that appears earliest in the model's reply (case-insensitive).
+/**
+ * Read the model's choice, and refuse to guess when the reply names more than one.
+ *
+ * The prior rule was "whichever choice appears earliest wins", which silently
+ * converted an ENUMERATION into a confident answer: a rubric that asks the agent to
+ * emit a structured block (autonomous-workflow's `MODE SELECTION:` is the live case)
+ * outranks the harness's "reply with exactly one of", and its template line lists
+ * every choice — `- Tier: [Micro | Lite | Full]`. Earliest-substring scored that as
+ * `Micro`, the first element, which is how all five tier-routing misses landed on one
+ * label and read as a model that thinks a cross-cutting refactor is a one-file typo.
+ *
+ * An ambiguous reply is still a miss — it is just an HONEST one, printed with the raw
+ * text so the next reader can tell a wrong answer from a wrong parse.
+ */
 function parseChoice(text, choices) {
-  const low = text.toLowerCase();
-  let best = null, bestIdx = Infinity;
-  for (const c of choices) {
-    const idx = low.indexOf(c.toLowerCase());
-    if (idx >= 0 && idx < bestIdx) { best = c; bestIdx = idx; }
-  }
-  return best || `?(${text.slice(0, 24)})`;
+  const t = text.trim();
+  const eq = choices.find((c) => c.toLowerCase() === t.toLowerCase());
+  if (eq) return eq;
+  // A bracketed placeholder is scaffolding, not a claim: `Tier: Full [not Micro]`
+  // names one choice, and `[Micro | Lite | Full]` names none.
+  const low = t.replace(/\[[^\]]*\]/g, " ").toLowerCase();
+  const named = choices.filter((c) => low.includes(c.toLowerCase()));
+  if (named.length === 1) return named[0];
+  return `?(${t.slice(0, 40).replace(/\s+/g, " ")})`;
 }
 
 const summary = [];
@@ -83,7 +128,7 @@ const runSpan = T.span("eval.run", {
     "eval.gate.floor": GATE,
   },
 });
-let totalCases = 0, totalPass = 0, totalInTok = 0, totalOutTok = 0;
+let totalCases = 0, totalPass = 0, totalInTok = 0, totalOutTok = 0, totalCacheRead = 0, totalCacheWrite = 0;
 
 for (const suite of SUITES) {
   if (only && suite.name !== only) continue;
@@ -115,10 +160,11 @@ for (const suite of SUITES) {
         "gen_ai.operation.name": "chat", "gen_ai.request.model": MODEL, "gen_ai.provider.name": "anthropic",
       },
     });
-    let got, usage = null, apiError = null;
+    let got, usage = null, apiError = null, raw = null;
     try {
       const r = await ask(system, `${suite.inputLabel}: ${c[suite.inputKey]}`);
       usage = r.usage;
+      raw = r.text;
       got = parseChoice(r.text, suite.choices);
     } catch (e) { apiError = e.message; got = `ERR(${e.message.slice(0, 30)})`; }
     const ok = got === c.expected;
@@ -130,6 +176,10 @@ for (const suite of SUITES) {
       "eval.case.actual": got, "eval.case.match": ok,
       "gen_ai.usage.input_tokens": usage?.input_tokens ?? null,
       "gen_ai.usage.output_tokens": usage?.output_tokens ?? null,
+      // Cache accounting is the receipt for the prompt-cache win: a suite whose
+      // reads stay near zero is silently paying full price for the same rubric.
+      "gen_ai.usage.cache_read_input_tokens": usage?.cache_read_input_tokens ?? null,
+      "gen_ai.usage.cache_creation_input_tokens": usage?.cache_creation_input_tokens ?? null,
     };
     if (apiError) caseSpan.fail(apiError, caseAttrs); else caseSpan.end(caseAttrs);
 
@@ -143,34 +193,55 @@ for (const suite of SUITES) {
       T.histogram("gen_ai.client.token.usage", usage.output_tokens, { "gen_ai.token.type": "output", "gen_ai.request.model": MODEL, "eval.suite.name": suite.name }, "{token}");
       totalOutTok += usage.output_tokens;
     }
+    // Split out so the bill is reconstructable: a cache read is billed at 0.1× and a
+    // write at 1.25×, so summing them into `input` would misreport the cost either way.
+    if (usage?.cache_read_input_tokens) {
+      T.histogram("gen_ai.client.token.usage", usage.cache_read_input_tokens, { "gen_ai.token.type": "cache_read", "gen_ai.request.model": MODEL, "eval.suite.name": suite.name }, "{token}");
+      totalCacheRead += usage.cache_read_input_tokens;
+    }
+    if (usage?.cache_creation_input_tokens) {
+      T.histogram("gen_ai.client.token.usage", usage.cache_creation_input_tokens, { "gen_ai.token.type": "cache_write", "gen_ai.request.model": MODEL, "eval.suite.name": suite.name }, "{token}");
+      totalCacheWrite += usage.cache_creation_input_tokens;
+    }
 
-    results.push({ id: c.id, expected: c.expected, got, ok, input: c[suite.inputKey] });
+    results.push({ id: c.id, expected: c.expected, got, ok, raw, input: c[suite.inputKey] });
     console.log(`  ${ok ? "✓" : "✗"} ${c.id}: expected ${c.expected}, got ${got}`);
   }
   const pass = results.filter((r) => r.ok).length;
   const acc = (pass / results.length) * 100;
-  console.log(`  → ${suite.name}: ${pass}/${results.length} (${acc.toFixed(1)}%)`);
+  // A suite below the case floor is reported with its accuracy and labelled, never
+  // hidden — the number is still the measurement, it just does not decide the exit.
+  const gating = GATE !== null && results.length >= GATE_MIN_CASES;
+  const gateNote = GATE === null ? "" : gating ? "" : `  (advisory — ${results.length} cases < ${GATE_MIN_CASES}-case gate floor)`;
+  console.log(`  → ${suite.name}: ${pass}/${results.length} (${acc.toFixed(1)}%)${gateNote}`);
   const misses = results.filter((r) => !r.ok);
-  for (const m of misses) console.log(`    miss ${m.id}: ${m.expected}→${m.got}  «${m.input}»`);
-  summary.push({ name: suite.name, pass, total: results.length, acc, misses });
-  if (GATE !== null && acc < GATE) anyBelowGate = true;
+  // The RAW reply, not just the parsed label. A miss line showing only the parsed
+  // choice cannot distinguish a wrong answer from a wrong parse, which is exactly
+  // the ambiguity that made five tier-routing misses look like a rubric problem.
+  for (const m of misses) console.log(`    miss ${m.id}: ${m.expected}→${m.got}${m.raw !== null && m.raw !== m.got ? `  reply: «${m.raw.replace(/\s+/g, " ").slice(0, 80)}»` : ""}\n      case: «${m.input}»`);
+  summary.push({ name: suite.name, pass, total: results.length, acc, misses, gating });
+  if (gating && acc < GATE) anyBelowGate = true;
 
   totalCases += results.length; totalPass += pass;
   T.gauge("eval.suite.accuracy", acc, { "eval.suite.name": suite.name, "eval.model": MODEL }, "%");
   suiteSpan.end({
     "eval.suite.pass": pass, "eval.suite.accuracy": acc,
     "eval.suite.below_gate": GATE !== null ? acc < GATE : null,
+    // Distinct from below_gate: a suite can be under the floor AND unable to breach it.
+    "eval.suite.gating": GATE !== null ? gating : null,
   });
 }
 
 console.log(`\n=== L2 summary (model=${MODEL}) ===`);
-for (const s of summary) console.log(`  ${s.name}: ${s.pass}/${s.total} (${s.acc.toFixed(1)}%)`);
+for (const s of summary) console.log(`  ${s.name}: ${s.pass}/${s.total} (${s.acc.toFixed(1)}%)${s.gating === false && GATE !== null ? " [advisory]" : ""}`);
 
 const runAcc = totalCases ? (totalPass / totalCases) * 100 : null;
 runSpan.end({
   "eval.suite.count": summary.length, "eval.case.count": totalCases, "eval.pass.count": totalPass,
   "eval.accuracy": runAcc, "eval.gate.breached": GATE !== null ? anyBelowGate : null,
   "gen_ai.usage.input_tokens": totalInTok || null, "gen_ai.usage.output_tokens": totalOutTok || null,
+  "gen_ai.usage.cache_read_input_tokens": totalCacheRead || null,
+  "gen_ai.usage.cache_creation_input_tokens": totalCacheWrite || null,
 });
 if (runAcc !== null) T.gauge("eval.run.accuracy", runAcc, { "eval.model": MODEL, "eval.layer": "l2" }, "%");
 // Flushed BEFORE the gate exit below, so a red run still ships its own trace —
@@ -179,17 +250,26 @@ const exported = await T.flush();
 console.log(`  telemetry: ${T.traceNote()}${exported.exported ? "" : " (not exported)"}`);
 
 if (process.env.GITHUB_STEP_SUMMARY) {
-  let md = `### L2 behavioral evals — model \`${MODEL}\`\n\n| suite | accuracy | misses |\n| --- | --- | --- |\n`;
-  for (const s of summary) md += `| ${s.name} | ${s.pass}/${s.total} (${s.acc.toFixed(1)}%) | ${s.misses.map((m) => `${m.id}:${m.expected}→${m.got}`).join("; ") || "—"} |\n`;
+  let md = `### L2 behavioral evals — model \`${MODEL}\`\n\n| suite | accuracy | gate | misses |\n| --- | --- | --- | --- |\n`;
+  for (const s of summary) md += `| ${s.name} | ${s.pass}/${s.total} (${s.acc.toFixed(1)}%) | ${GATE === null ? "—" : s.gating ? `${GATE}%` : "advisory"} | ${s.misses.map((m) => `${m.id}:${m.expected}→${m.got}`).join("; ") || "—"} |\n`;
   // What the run cost, next to what it measured — the two numbers are read together
-  // when deciding whether a suite is worth its token bill.
-  if (totalInTok || totalOutTok) md += `\n${totalCases} cases · ${totalInTok.toLocaleString()} input + ${totalOutTok.toLocaleString()} output tokens\n`;
+  // when deciding whether a suite is worth its token bill. Cache reads are called out
+  // because a suite whose reads collapse to zero has silently lost the ~80% discount.
+  if (totalInTok || totalOutTok) md += `\n${totalCases} cases · ${totalInTok.toLocaleString()} input + ${totalOutTok.toLocaleString()} output tokens`;
+  if (totalCacheRead || totalCacheWrite) md += ` · cache ${totalCacheRead.toLocaleString()} read / ${totalCacheWrite.toLocaleString()} written`;
+  if (totalInTok || totalOutTok) md += `\n`;
   if (T.enabled) md += `\n<sup>trace \`${T.traceId}\`</sup>\n`;
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
 }
 
+if (totalInTok || totalOutTok) {
+  console.log(`  tokens: ${totalInTok.toLocaleString()} input + ${totalOutTok.toLocaleString()} output` +
+    (totalCacheRead || totalCacheWrite ? ` · cache ${totalCacheRead.toLocaleString()} read / ${totalCacheWrite.toLocaleString()} written` : " · cache MISSED (no read, no write — the rubric is being re-billed per case)"));
+}
+
 if (GATE !== null && anyBelowGate) {
-  console.error(`\n✗ a suite is below the EVAL_GATE floor of ${GATE}%`);
+  const breached = summary.filter((s) => s.gating && s.acc < GATE).map((s) => `${s.name} ${s.acc.toFixed(1)}%`);
+  console.error(`\n✗ below the EVAL_GATE floor of ${GATE}%: ${breached.join(", ")}`);
   process.exit(1);
 }
 process.exit(0);

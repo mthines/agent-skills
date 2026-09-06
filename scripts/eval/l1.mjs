@@ -1574,6 +1574,68 @@ function checksInSync(plan, checks) {
       s.check("G21k the OTLP endpoint comes from a repo variable and the token from a secret",
         /vars\.OTEL_EXPORTER_OTLP_ENDPOINT/.test(l2yml) && /secrets\.DASH0_AUTH_TOKEN/.test(l2yml));
     }
+
+    // G21l: the SCORER and the GATE. Both decide what a run reports while being
+    // invisible in its output, which is how each of them lied once already: the
+    // earliest-substring parse turned a rubric's `[Micro | Lite | Full]` template
+    // line into a confident `Micro` (five tier-routing misses, all one label), and
+    // a blanket 70% floor applied to a 5-case suite is decided by one coin flip.
+    // Every check here is executed against the runner's real behaviour, not its prose.
+    {
+      // The parse is pulled out of the live source and run, so a rewrite that
+      // reintroduces earliest-wins fails here rather than in a quarterly review.
+      const fnSrc = l2runner.slice(l2runner.indexOf("function parseChoice"), l2runner.indexOf("const summary = []"));
+      let parseChoice = null;
+      try { parseChoice = eval(`(${fnSrc.slice(fnSrc.indexOf("function parseChoice"))})`); } catch { /* reported below */ }
+      s.check("G21l parseChoice is extractable and callable from the live runner", typeof parseChoice === "function");
+      if (typeof parseChoice === "function") {
+        const C = ["Micro", "Lite", "Full"];
+        const amb = (r) => typeof r === "string" && r.startsWith("?(");
+        s.check("G21l a one-word reply parses to that choice",
+          parseChoice("Full", C) === "Full" && parseChoice("  lite ", C) === "Lite");
+        s.check("G21l a reply that ENUMERATES every choice is ambiguous, never the first one",
+          amb(parseChoice("- Tier: [Micro | Lite | Full]", C)) && amb(parseChoice("Micro | Lite | Full", C)),
+          `template→${parseChoice("- Tier: [Micro | Lite | Full]", C)}`);
+        s.check("G21l a structured reply the rubric asked for still parses",
+          parseChoice("MODE SELECTION:\n- Tier: Full", C) === "Full");
+        s.check("G21l a bracketed placeholder is scaffolding, not a second claim",
+          parseChoice("Tier: Full [not Micro]", C) === "Full");
+        s.check("G21l an unparseable reply carries its own raw text for the reader",
+          parseChoice("I decline", C).includes("I decline"));
+      }
+
+      // A miss line that shows only the parsed label cannot distinguish a wrong
+      // ANSWER from a wrong PARSE — the whole reason the scorer's defect read as a
+      // rubric defect for a full run.
+      // Assert the raw text is the INTERPOLATED VALUE, not merely mentioned: the first
+      // version of this check passed a probe that printed `m.got` in the value slot,
+      // because `m.raw` still appeared in the line's own guard clause.
+      s.check("G21l a miss prints the model's raw reply, not just the parsed choice",
+        /miss \$\{m\.id\}/.test(l2runner) && /reply: «\$\{m\.raw\b/.test(l2runner));
+
+      // Gate calibration: a floor exists, it is case-count-aware, and a suite it
+      // cannot grade is LABELLED rather than dropped from the report.
+      s.check("G21l the gate has a minimum case count, overridable but defaulted",
+        /GATE_MIN_CASES\s*=\s*process\.env\.EVAL_GATE_MIN_CASES\s*\?[\s\S]{0,60}:\s*10/.test(l2runner));
+      s.check("G21l only a suite at or above the case floor can breach the gate",
+        /const gating = GATE !== null && results\.length >= GATE_MIN_CASES/.test(l2runner) &&
+        /if \(gating && acc < GATE\) anyBelowGate = true/.test(l2runner));
+      s.check("G21l a suite below the floor is still reported, and labelled advisory",
+        /advisory/.test(l2runner) && /s\.gating === false/.test(l2runner));
+
+      // The missing-key silent green: an opted-in run must fail, an unasked one skips.
+      s.check("G21l an absent API key FAILS a run that asked for the evals",
+        /EVAL_REQUIRE_KEY === "1"/.test(l2runner) && /process\.exit\(3\)/.test(l2runner));
+      s.check("G21l evals-l2.yml sets EVAL_REQUIRE_KEY, so the opted-in check cannot pass unmeasured",
+        /EVAL_REQUIRE_KEY:\s*"1"/.test(l2yml));
+
+      // Cost: the system block is the rubric, identical across a suite's cases.
+      s.check("G21l the rubric is sent as a cacheable system block",
+        /cache_control: \{ type: "ephemeral" \}/.test(l2runner));
+      s.check("G21l cache reads and writes are accounted separately from plain input",
+        /cache_read_input_tokens/.test(l2runner) && /cache_creation_input_tokens/.test(l2runner) &&
+        /"gen_ai\.token\.type": "cache_read"/.test(l2runner));
+    }
   }
 
   // G21e: README carries the methodology NOTE for this suite (promotion → golden case),
