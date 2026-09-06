@@ -468,6 +468,12 @@ while ITERATION < CAP:
             CI_STATE = "unread"   # the handoff pushed a fix, so the recorded red
                                   # describes a commit that is no longer head.
                                   # ci_is_settled()'s unread arm re-reads it.
+        elif CI_STATE == "red":
+            # Red with the handoff budget spent. Stop rather than spinning to the
+            # cap: another review pass cannot fix a build ci-auto-fix already
+            # failed twice on.
+            STOP_REASON = "ci-red"
+            break
 
     # No-progress guard: nothing was applied or answered AND the open-thread
     # count did not drop → the remaining threads are human-judgment flags the
