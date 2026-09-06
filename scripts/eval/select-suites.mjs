@@ -32,8 +32,10 @@ const DETECTION_INPUTS = detectionInputs();
 
 /**
  * @param {string[]} changed  repo-relative changed paths
- * @returns {{ suites: string[], reason: string, matches: Record<string, string[]> }}
+ * @returns {{ suites: string[], detection: boolean, reason: string, matches: Record<string, string[]> }}
  *   `suites` in SUITES order (stable, so a matrix key is reproducible);
+ *   `detection` is the separate bug-detection runner's own decision — it is not a
+ *   `suites` entry, so the workflow reads it as its own job condition;
  *   `matches` maps each selecting path to the suites it selected.
  */
 export function selectSuites(changed) {
