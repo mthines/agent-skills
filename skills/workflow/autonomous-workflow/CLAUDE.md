@@ -924,8 +924,9 @@ they must be exercised live (markdown can't prove them). Run this after editing
    did **not** report `review-loop` as skipped — with the dispatcher in-context
    the executor sits one rung higher and holds `Task`, which is the whole point
    of v3.23. If it did report a skip, `aw` must re-run `review-loop` itself
-   before handing back. If the harness refuses sub-agent dispatch entirely (e.g.
-   `Task` disabled), `aw` must run the **single-context Full** fallback: play the planner
+   before handing back. If the harness refuses sub-agent dispatch entirely (no
+   available tool dispatches a sub-agent — `Task`, `Agent`, or another spelling),
+   `aw` must run the **single-context Full** fallback: play the planner
    role in-context to produce a gated `plan.md` + `checks.yaml`, clear
    `confidence(plan) ≥ 90%`, then play the executor role through Phases 3–7 — all
    in the one window. Confirm it produces `plan.md` and clears the gate, and that

@@ -331,15 +331,16 @@ grant. As a skill it runs in the caller's context, so `aw-planner` /
 `aw-executor` are dispatched from the top-level session. Rationale:
 [`CLAUDE.md`](./CLAUDE.md#the-dispatcher-is-a-skill-not-an-agent--design-intent).
 
-**When the harness disables sub-agent dispatch** (no `Task` tool — e.g. Claude
-Code on the web), the split is structurally unavailable and Full does **not**
+**When the harness disables sub-agent dispatch** (no available tool dispatches a
+sub-agent — `Task`, `Agent`, or another spelling — e.g. Claude Code on the web),
+the split is structurally unavailable and Full does **not**
 drop to the Micro/Lite single-pass path. `aw` runs a **single-context Full**
 instead: it plays the planner role (Phases 0–2, producing `plan.md` +
 `checks.yaml` and clearing `confidence(plan) ≥ 90%`) then the executor role
 (Phases 3–7) in one window, preserving the plan artifact and the confidence gate
-and conceding only context isolation. Note the dispatcher itself needs no `Task`
-to start — that is the difference from the agent form, which could not be
-reached at all. The step-by-step procedure — and the rule that this is never a
+and conceding only context isolation. Note the dispatcher itself needs no
+dispatch tool to start — that is the difference from the agent form, which could
+not be reached at all. The step-by-step procedure — and the rule that this is never a
 licence to skip an *available* split — lives in
 [`aw/SKILL.md`](./aw/SKILL.md) under "When sub-agent dispatch is unavailable".
 
