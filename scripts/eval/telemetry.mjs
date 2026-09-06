@@ -50,7 +50,6 @@ import { hostname } from "node:os";
 
 const HEX = (bytes) => randomBytes(bytes).toString("hex");
 const nowNs = () => String(BigInt(Date.now()) * 1_000_000n);
-const hrNs = (ms) => String(BigInt(Math.round(ms * 1e6)));
 
 /** Per-request export budget. Two posts per flush (traces, then metrics), so the
  *  worst case a dead ingress can cost the run is twice this. */
