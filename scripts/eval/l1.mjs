@@ -5328,6 +5328,24 @@ const isPollBlock = (block) =>
   const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
   const PS = read("skills/testing/preview-spec/SKILL.md");
   const CP = read("skills/delivery/create-pr/SKILL.md");
+  // Every `.test()` below reads a BOUNDED surface — a section slice, or a line-anchored
+  // pattern over a whole file. `G49-lint` (the block after this one) executes that as a
+  // rule, and this helper is what makes conforming cheap. `extractSection` throws on a
+  // renamed heading, which would abort the L1 run before `s.report()`, so a miss degrades
+  // to "" and each slice is proved non-empty by its own sentinel instead.
+  const section = (file, heading) => {
+    try {
+      return extractSection(file, heading);
+    } catch {
+      return "";
+    }
+  };
+  const PS_STEP0 = section(
+    "skills/testing/preview-spec/SKILL.md", "## Step 0: Resolve your GitHub access path");
+  s.check("G49 the guard reads preview-spec's Step 0 section",
+    PS_STEP0.length > 400,
+    "a renamed Step 0 heading yields an empty slice; the two access-path assertions below"
+      + " would report as satisfied by a section that no longer exists");
   // One named boundary, sliced both ways: the frontmatter is what grants, the body is what
   // documents, and every assertion below belongs to exactly one of them.
   const PS_FM_END = PS.indexOf("\n---", 4);
@@ -5384,15 +5402,24 @@ const isPollBlock = (block) =>
   // 2. Step 0 must NAME the mcp equivalents. `github-access.md` owns the repo-wide mapping,
   //    but a consumer that cites it and then prints only `gh` forms leaves the reader to
   //    invent the call — this is G48's lesson applied to a second consumer.
+  // Read over Step 0's slice, so the pair no longer needs a 400-char proximity window to
+  // stand in for a scope — and `mcp__github__update_pull_request` cannot be satisfied by
+  // its own mention in the `allowed-tools:` frontmatter, which is a grant, not a mapping.
   s.check("G49 preview-spec states the mcp-path equivalent of the body write",
-    /gh pr edit[\s\S]{0,400}mcp__github__update_pull_request/.test(PS),
+    /gh pr edit[\s\S]*mcp__github__update_pull_request/.test(PS_STEP0),
     "citing the access-path rule is not the same as naming the call; the gh form was"
       + " labelled authoritative and no mcp form appeared anywhere in the file");
 
   // 3. `run`'s deployment lookup genuinely has NO mcp equivalent, so the honest degradation
   //    must be stated rather than collapsed into the deployed/not-deployed verdict.
+  // Scoped to Step 0, which is where the degradation is stated. Over the whole file the
+  // `pass --url` half was VACUOUS: the literal occurs twice in `preview-spec/SKILL.md`
+  // (Step 0's outcome string and Operation `run`'s `--url` prose), so rewording Step 0's
+  // outcome left the check satisfied by the other mention — eighth instance of this
+  // block's one class, and the instance that motivated the lint below.
   s.check("G49 preview-spec distinguishes 'no access path' from 'preview not deployed'",
-    /pass --url/.test(PS) && /never report `inconclusive: preview not deployed`/.test(PS),
+    /pass --url/.test(PS_STEP0)
+      && /never report `inconclusive: preview not deployed`/.test(PS_STEP0),
     "no `mcp__github__*` tool exposes deployments; reporting a lookup that never happened"
       + " as `preview not deployed` asserts a fact about the deployment as if checked");
 
@@ -5403,9 +5430,18 @@ const isPollBlock = (block) =>
   //     forbidden string with nothing in its path to stop it — while L1 stayed green. A
   //     guard that green-lights the residue of its own bug is worse than no guard.
   const PUR = read("skills/testing/preview-spec/rules/preview-url-resolution.md");
+  const PUR_PRECOND = section(
+    "skills/testing/preview-spec/rules/preview-url-resolution.md",
+    "## The access-path precondition (check this before step 1)");
+  s.check("G49 the guard reads the precondition section",
+    PUR_PRECOND.length > 300,
+    "an empty slice would report the precondition's two halves as present in a section"
+      + " that no longer exists");
+  // Read over the precondition's own section: the claim is that THAT section states both
+  // halves, so a copy of either sentence elsewhere in the file must not satisfy it.
   s.check("G49 the owning file carries the access-path precondition",
-    /no access path for deployment lookup \(pass --url\)/.test(PUR)
-      && /[Nn]ever report `inconclusive: preview not deployed`/.test(PUR),
+    /no access path for deployment lookup \(pass --url\)/.test(PUR_PRECOND)
+      && /[Nn]ever report `inconclusive: preview not deployed`/.test(PUR_PRECOND),
     "`preview-url-resolution.md` owns the resolution outcome and `runner.md` treats it as"
       + " terminal, so a branch stated only in SKILL.md is unreachable by a conforming run");
   s.check("G49 the precondition precedes the steps it guards",
@@ -5496,12 +5532,16 @@ const isPollBlock = (block) =>
   //     is `re-run once the preview is up` — advice that can never come true when no lookup
   //     ran, so a UI PR reviewed on a cloud session got a permanently-false note in it.
   const RL = read("skills/quality/review-loop/SKILL.md");
+  // Both row-anchored, like the `empty spec` and catch-all pairs below. The claim is about
+  // a ROW of the outcome table, so the row is what the pattern has to match — and the
+  // remedy's `{0,320}` window is gone with the anchor, being the third instance of a
+  // character gap standing in for a scope (after the 400 and the 80).
   s.check("G49 review-loop maps the no-access-path outcome",
-    /no access path for deployment lookup \(pass --url\)/.test(RL),
+    /^\|[^\n|]*no access path for deployment lookup \(pass --url\)[^\n|]*\|/m.test(RL),
     "the delegate gained an outcome its primary programmatic caller could not render, so"
       + " even a correctly-behaving `run` fell through the outcome table unmapped");
   s.check("G49 review-loop's remedy for it is an explicit URL, not waiting for a build",
-    /no deployment lookup on this access path[\s\S]{0,320}--url <preview-url>/.test(RL),
+    /^\|[^\n]*no deployment lookup on this access path[^\n]*--url <preview-url>/m.test(RL),
     "`re-run once the preview is up` is unactionable here — nothing was looked up, so the"
       + " human re-runs and gets the same string; only passing a URL changes the outcome");
   // The other two rows added to that table landed as prose no check read, so reverting
@@ -5580,16 +5620,136 @@ const isPollBlock = (block) =>
   // A slot with no producer renders as whatever the run remembers — the failure class the
   // slot was added to close. Step 6.4 must record its branch as it leaves, and must map
   // the delegate's own `failed` return rather than softening it into a decline.
+  // Each read over the section that owns the claim: Step 6.4 PRODUCES the outcome, Step 10
+  // RENDERS it, and asserting either against the whole file lets one section satisfy a
+  // check about the other — the mechanism behind four of this block's eight vacuities.
+  const CP_S64 = section("skills/delivery/create-pr/SKILL.md",
+    "## Step 6.4: Author the UI verification spec (default ON for UI changes)");
+  const CP_S10 = section("skills/delivery/create-pr/SKILL.md", "## Step 10: Report");
+  s.check("G49 the guard reads create-pr's Step 6.4 and Step 10 sections",
+    CP_S64.length > 800 && CP_S10.length > 400,
+    "an empty slice on either side would report the producer or the renderer as compliant"
+      + " on the strength of a heading that no longer exists");
   s.check("G49 create-pr's Step 6.4 records the outcome it hands to the slot",
-    /Record which branch you took, now, before continuing/i.test(CP)
-      && /failed \(no GitHub access path\)/.test(CP),
+    /Record which branch you took, now, before continuing/i.test(CP_S64)
+      && /failed \(no GitHub access path\)/.test(CP_S64),
     "the six values are enumerated in Step 10 but were produced nowhere; in particular"
       + " `preview-spec`'s `failed (no GitHub access path)` had no mapping, so the one new"
       + " failure mode this fix introduced was the one the new slot could not show");
   s.check("G49 create-pr states the slot is mandatory on a non-UI diff too",
-    /mandatory on every run, including a non-UI diff/i.test(CP),
+    /mandatory on every run, including a non-UI diff/i.test(CP_S10),
     "the tempting omission is exactly the silent case: `not authored (no UI files in diff)`"
       + " is the informative answer, and dropping the line restores the blind spot");
+}
+
+// ── G49-lint: no assertion in the G49 block may test an UNBOUNDED whole-file string ──
+// This guard reads `l1.mjs` itself and lints the G49 block above. It exists because ONE
+// defect class recurred EIGHT times in the change that produced that block, five of them
+// inside the fix written for the previous one: a substring test whose satisfying
+// occurrence is not the one the check names. Every instance had the same shape — a
+// `.test()` against a whole file, passing because the literal also appears somewhere the
+// assertion was not about. Two examples, both bite-confirmed:
+//
+//   * `/pass --url/.test(PS)` — the literal occurs twice in `preview-spec/SKILL.md`
+//     (Step 0's outcome string, and Operation `run`'s `--url` prose). Deleting it from
+//     Step 0, which is the surface the check names, left L1 GREEN.
+//   * `/\|\s*anything else\s*\|/.test(RL)` — INVERTING the catch-all row so the table
+//     told the run to swallow an unmapped outcome also left L1 GREEN. Worse than
+//     deletion: the guard was silent while the rule said the opposite.
+//
+// A `length > N` sentinel cannot see any of this, because it is a LOWER bound and every
+// instance is an OVER-capture. So the rule is structural instead: an assertion reading a
+// whole file must be LINE-ANCHORED (`^` in the body, `m` in the flags), which pins the
+// match to one row or one line; anything narrower than a file — a section slice, a
+// frontmatter slice, a single extracted line — is already bounded and is not linted.
+// Re-pointing an assertion onto `extractSection(...)` is the other way to conform, and
+// the block's own `section()` helper is there to make that cheap.
+//
+// Fail-closed by construction: a `.test(binding)` whose receiver this lint cannot parse
+// as a regex literal is a VIOLATION, not an exemption. A receiver it cannot read is a
+// receiver it cannot prove bounded, and "unparseable" is exactly the hole a future
+// `new RegExp(...)` or a hoisted pattern constant would slip through.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const SELF = read("scripts/eval/l1.mjs").split("\n");
+  // Locate the block by the EXACT banner prefix. `// ── G49: ` and not `// ── G49`,
+  // because this lint's own banner starts `// ── G49-lint` and a prefix match would
+  // pick the lint up instead of its subject — a guard that lints only itself.
+  const bannerAt = SELF.findIndex((l) => l.startsWith("// ── G49: "));
+  // Guard blocks in this file are top-level `{ … }` with the braces alone at column 0
+  // and every inner brace indented, so the bounds are two exact-line matches. Deliberately
+  // not brace COUNTING: a `{` inside a string or a regex character class would throw the
+  // count off, and a mis-bounded block is how an over-capture gets in — the very failure
+  // this guard is about.
+  const openAt = bannerAt < 0 ? -1 : SELF.indexOf("{", bannerAt);
+  const closeAt = openAt < 0 ? -1 : SELF.indexOf("}", openAt);
+  const BLOCK = openAt >= 0 && closeAt > openAt
+    ? SELF.slice(openAt, closeAt + 1).join("\n")
+    : "";
+  // The banner is a multi-line comment header, so the `{` is not the line after it —
+  // only that it FOLLOWS it, with nothing but comment lines between.
+  const gap = bannerAt >= 0 && openAt > bannerAt
+    ? SELF.slice(bannerAt + 1, openAt).every((l) => l.startsWith("//"))
+    : false;
+  s.check("G49-lint located the G49 block in l1.mjs",
+    bannerAt >= 0 && openAt > bannerAt && gap && closeAt > openAt && BLOCK.length > 10000,
+    "the lint could not find its subject, so every assertion below would report as"
+      + " satisfied by an empty string — the exact vacuity it exists to forbid;"
+      + ` banner=${bannerAt} open=${openAt} close=${closeAt} len=${BLOCK.length}`);
+
+  // Whole-file bindings are DERIVED, not listed: a `read()` added to the block tomorrow
+  // is linted without editing this guard. A hardcoded list is a second place to forget.
+  const bindings = [...BLOCK.matchAll(/^\s*const (\w+) = read\("/gm)].map((m) => m[1]);
+  s.check("G49-lint derives the block's whole-file bindings",
+    bindings.length >= 3,
+    "no `const X = read(...)` bindings were recovered, so the scan below has nothing to"
+      + ` check and passes trivially; derived=[${bindings.join(", ")}]`);
+
+  const allTests = [...BLOCK.matchAll(/\.test\(/g)].length;
+  s.check("G49-lint's scan sees the block's assertions",
+    allTests >= 10,
+    "the block asserts through `.test()` throughout; recovering almost none of them means"
+      + ` the slice or the scan is wrong, not that the block got simpler; seen=${allTests}`);
+
+  // A regex literal, recovered by anchoring to the END of everything preceding `.test(`.
+  // The body class admits escapes (`\/`) and character classes (`[^\]]`) so a `/` inside
+  // either does not terminate the literal early, and excludes a raw newline so the match
+  // cannot run backwards past the assertion's own line into an earlier one.
+  const LITERAL = /\/((?:\\.|\[(?:\\.|[^\]\n])*\]|[^/\\\n])+)\/([a-z]*)$/;
+  let scanned = 0;
+  for (const binding of bindings) {
+    const re = new RegExp(`\\.test\\(${binding}\\)`, "g");
+    for (const m of BLOCK.matchAll(re)) {
+      scanned++;
+      const before = BLOCK.slice(0, m.index);
+      const lit = LITERAL.exec(before);
+      // `openAt` is a 0-indexed line index, so `openAt + <1-indexed line within BLOCK>`
+      // lands on the 1-indexed file line — the `{` itself is block line 1.
+      const lineNo = openAt + before.split("\n").length;
+      const where = `l1.mjs:${lineNo} .test(${binding})`;
+      if (lit === null) {
+        s.check(`G49-lint ${where} tests a whole file through a regex literal`, false,
+          "the receiver is not a parseable regex literal, so this lint cannot prove the"
+            + " match is line-anchored — bind the pattern inline, or re-point the"
+            + " assertion at a bounded slice via the block's `section()` helper");
+        continue;
+      }
+      const [, body, flags] = lit;
+      s.check(`G49-lint ${where} is line-anchored`,
+        body.includes("^") && flags.includes("m"),
+        "an unanchored pattern over a whole file is satisfied by ANY occurrence, including"
+          + " one on a surface the assertion is not about — the defect class that recurred"
+          + " eight times in the change this block came from. Either anchor it (`^` plus"
+          + " the `m` flag, pinning it to one line or one table row) or read a bounded"
+          + ` slice instead; body=/${body}/${flags}`);
+    }
+  }
+  // No sentinel on `scanned`: it is the quantity this rule DRIVES TO ZERO. Re-pointing
+  // every whole-file assertion onto a section slice is the ideal outcome, and a
+  // `scanned >= N` floor would redden on exactly that improvement.
+  s.check("G49-lint reports what it scanned",
+    Number.isInteger(scanned) && scanned >= 0,
+    `whole-file assertions scanned: ${scanned}`);
 }
 
 process.exit(s.report() ? 0 : 1);
