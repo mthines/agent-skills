@@ -52,6 +52,10 @@ const HEX = (bytes) => randomBytes(bytes).toString("hex");
 const nowNs = () => String(BigInt(Date.now()) * 1_000_000n);
 const hrNs = (ms) => String(BigInt(Math.round(ms * 1e6)));
 
+/** Per-request export budget. Two posts per flush (traces, then metrics), so the
+ *  worst case a dead ingress can cost the run is twice this. */
+const POST_TIMEOUT_MS = 10_000;
+
 /** OTLP/JSON AnyValue. Numbers split on integer-ness: an intValue for a count, a
  *  doubleValue for a rate — collapsing both to double loses the distinction and
  *  makes token counts render as 1.0e4 downstream. */
@@ -238,7 +242,17 @@ export class EvalTelemetry {
   }
 
   async #post(path, body) {
-    const res = await fetch(`${this.endpoint}${path}`, { method: "POST", headers: this.headers, body: JSON.stringify(body) });
+    // Node's fetch has no default timeout, and `flush()` is awaited BEFORE the gate
+    // exit — so an unresponsive ingress would hold the whole run open until the
+    // job's own cap killed it, losing the accuracy verdict the run exists to
+    // produce. A timeout turns that into what it already is everywhere else here:
+    // an export failure, caught by flush(), never an eval failure.
+    const res = await fetch(`${this.endpoint}${path}`, {
+      method: "POST",
+      headers: this.headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(POST_TIMEOUT_MS),
+    });
     if (!res.ok) throw new Error(`${path} → ${res.status} ${(await res.text()).slice(0, 160)}`);
   }
 
