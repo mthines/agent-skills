@@ -1638,6 +1638,76 @@ function checksInSync(plan, checks) {
     }
   }
 
+  // G21m: the bug-detection eval's CI wiring. This runner had real gates
+  // (recall ≥ 0.7, fp ≤ 0.2) and 30 golden records, and ran in NO workflow — only its
+  // `--self-test` executed, by G39, so the scoring plumbing was guarded while the
+  // measurement itself had never once run in CI. Every claim below is the wiring, not
+  // the runner: the inputs are DECLARED in the suite table (so no `paths:` mirror can
+  // reappear), the selector derives one boolean from them, the job consumes that
+  // boolean, and the aggregator READS the job's result — the last of which is the half
+  // that decides whether a red detection run can report green.
+  {
+    const detectionInputsInTable = /export const DETECTION = \{[\s\S]*?runner:\s*"scripts\/eval\/l2-detection\.mjs"[\s\S]*?rubrics:\s*\[[\s\S]*?finders\.md[\s\S]*?finding-verifier\.md[\s\S]*?golden:\s*"scripts\/eval\/golden\/bug-detection\.jsonl"/.test(l2);
+    s.check("G21m the detection eval's inputs are declared in the suite table, next to the suites",
+      detectionInputsInTable);
+
+    // The selector DERIVES from that declaration — it imports the accessor rather than
+    // restating the three paths, which is what makes a renamed rubric impossible to
+    // forget (the same reason the nine suites carry no paths mirror).
+    const selector  = read("scripts/eval/select-suites.mjs");
+    const detRunner = read("scripts/eval/l2-detection.mjs");
+    s.check("G21m the selector imports the declared detection inputs rather than restating them",
+      /import\s*\{[^}]*detectionInputs[^}]*\}\s*from\s*"\.\/suites\.mjs"/.test(selector) &&
+      !/l2-detection\.mjs"/.test(selector.replace(/^\/\/.*$/gm, "")));
+    s.check("G21m the selector reports detection as its own boolean, separate from the matrix",
+      /detection\b/.test(selector) && /detection:\s*result\.detection === true/.test(selector));
+
+    // The negative half of G21d, for the detection job: no rubric path may be spelled
+    // in the workflow.
+    const detPathsInYml = ["scripts/eval/golden/bug-detection.jsonl",
+      "agents/pr-reviewer/rules/finders.md",
+      "agents/shared/rules/finding-verifier.md"].filter((p) => l2yml.includes(p));
+    s.check("G21m evals-l2.yml carries no hand-maintained mirror of the detection eval's inputs",
+      detPathsInYml.length === 0,
+      detPathsInYml.length ? `still listed: ${detPathsInYml.join(", ")}` : "");
+
+    // The job exists, runs only when both the opt-in and the derived boolean say so,
+    // and runs the detection runner — gated and require-key, like the suites.
+    const detJob = (l2yml.match(/^\s{2}detection:[\s\S]*?(?=^\s{2}l2:)/m) || [""])[0];
+    const detIf = (detJob.match(/^\s{4}if:\s*(.+)$/m) || [])[1] || "";
+    s.check("G21m evals-l2.yml has a bug-detection job", detJob.length > 0);
+    s.check("G21m the detection job runs only on an opted-in run whose diff selected it",
+      detIf.includes("needs.gate.outputs.opted_in == 'true'") &&
+      detIf.includes("needs.select.outputs.detection == 'true'"), `detection if: ${detIf.trim()}`);
+    s.check("G21m the detection job runs the detection runner, gated, and cannot pass unmeasured",
+      /node scripts\/eval\/l2-detection\.mjs/.test(detJob) &&
+      /EVAL_DETECTION_GATE:\s*"1"/.test(detJob) &&
+      /EVAL_REQUIRE_KEY:\s*"1"/.test(detJob));
+    s.check("G21m the detection runner FAILS a run that asked for it with no API key",
+      /EVAL_REQUIRE_KEY === "1"/.test(detRunner) && /process\.exit\(3\)/.test(detRunner));
+
+    // The half that decides whether a red run can report green: the requireable check
+    // must both DEPEND on the detection job and branch on its result. `needs` alone is
+    // not enough — the aggregator is `if: always()`, so a failed dependency reaches it
+    // as a value to read, not as a skip.
+    const l2Job = (l2yml.match(/^\s{2}l2:[\s\S]*$/m) || [""])[0];
+    s.check("G21m the aggregator depends on the detection job",
+      /needs:\s*\[[^\]]*\bdetection\b[^\]]*\]/.test(l2Job));
+    // Asserted on the FAILURE PATH, not on the presence of an `exit 1` anywhere in the
+    // job: the gate and selection branches already carry one, so a whole-job
+    // `/exit 1/` stays green against a detection branch that merely prints a note.
+    // (The same defect the G21l raw-reply check had on its first version.)
+    const detCase = (l2Job.match(/case "\$DETECTION_RESULT" in[\s\S]*?esac/) || [""])[0];
+    s.check("G21m the aggregator reads the detection job's result and fails on it",
+      /DETECTION_RESULT:\s*\$\{\{\s*needs\.detection\.result\s*\}\}/.test(l2Job) &&
+      /^\s*\*\)[^\n]*FAILED=/m.test(detCase) &&
+      /if \[ -n "\$FAILED" \][\s\S]{0,120}exit 1/.test(l2Job));
+    // …and `skipped` stays a pass on BOTH jobs, or a PR that affects one eval and not
+    // the other would fail for having nothing to run.
+    s.check("G21m a skipped eval job is a pass, on both the matrix and the detection job",
+      /\bskipped\)/.test(l2Job) && (l2Job.match(/\bskipped\)/g) || []).length >= 2);
+  }
+
   // G21e: README carries the methodology NOTE for this suite (promotion → golden case),
   // not merely the suite table row. Assert on the note's own heading literal so a table
   // row alone can't satisfy it.

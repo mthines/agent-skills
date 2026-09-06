@@ -22,9 +22,13 @@
 //
 // Rule 1 is the deliberate fail-open direction: widening costs API tokens, narrowing
 // costs coverage, and a missed suite is the failure that hides itself.
-import { SUITES, HARNESS_FILES, goldenPath } from "./suites.mjs";
+// The detection eval rides the same derivation: its inputs are declared in
+// suites.mjs (SUITES.DETECTION) and reported as a separate boolean, because it is a
+// separate runner with its own gates rather than a matrix entry.
+import { SUITES, HARNESS_FILES, goldenPath, detectionInputs } from "./suites.mjs";
 
 const ALL = SUITES.map((s) => s.name);
+const DETECTION_INPUTS = detectionInputs();
 
 /**
  * @param {string[]} changed  repo-relative changed paths
@@ -54,12 +58,20 @@ export function selectSuites(changed) {
   }
 
   const suites = ALL.filter((n) => picked.has(n));
-  const reason = harness
-    ? `harness change (${harness}) → all ${ALL.length} suites`
-    : suites.length
-      ? `${suites.length} of ${ALL.length} suites affected by ${Object.keys(matches).length} changed file(s)`
-      : "no rubric, golden, or harness file changed → no suite affected";
-  return { suites, reason, matches };
+  // Detection is orthogonal to the matrix: a change to `finders.md` selects it and no
+  // suite, and a rubric change selects a suite and not it. A harness change selects
+  // both, on the same fail-open reasoning.
+  const detection = changed.some(
+    (p) => DETECTION_INPUTS.includes(p) || HARNESS_FILES.includes(p),
+  );
+  const parts = [];
+  if (harness) parts.push(`harness change (${harness}) → all ${ALL.length} suites`);
+  else if (suites.length) parts.push(`${suites.length} of ${ALL.length} suites affected by ${Object.keys(matches).length} changed file(s)`);
+  if (detection) parts.push("+ bug-detection");
+  const reason = parts.length
+    ? parts.join(" ")
+    : "no rubric, golden, or harness file changed → no suite affected";
+  return { suites, detection, reason, matches };
 }
 
 // ── self-test ──────────────────────────────────────────────────────────────────
@@ -93,12 +105,28 @@ function selfTest() {
     const all = selectSuites([h]);
     t(`harness file ${h} selects every suite`, all.suites.length === ALL.length,
       `→ ${all.suites.length}/${ALL.length}`);
+    t(`harness file ${h} also selects bug-detection`, all.detection === true);
   }
+
+  // Detection: each declared input selects it, and — the half that matters — selects
+  // it WITHOUT dragging in the nine suites, which is the whole point of keeping it
+  // out of the matrix.
+  for (const p of DETECTION_INPUTS) {
+    const d = selectSuites([p]);
+    t(`detection input ${p} selects bug-detection`, d.detection === true);
+    t(`detection input ${p} selects no classification suite`, d.suites.length === 0,
+      `→ [${d.suites}]`);
+  }
+  // And the inverse: a suite's own rubric must not select detection, or the "derived"
+  // claim would be cover for running it on everything.
+  const rubricOnly = selectSuites([SUITES[0].rubric.file]);
+  t("a suite rubric does not select bug-detection", rubricOnly.detection === false);
 
   // An unrelated path selects nothing (the narrowing half — without it a selector
   // that returned ALL for everything would pass every assertion above).
   const none = selectSuites(["README.md", "packages/vscode-agent-tasks/src/extension.ts"]);
   t("an unrelated path selects no suite", none.suites.length === 0, `→ [${none.suites}]`);
+  t("an unrelated path selects no detection run", none.detection === false);
 
   // A near-miss must NOT match: matching is exact, not prefix/substring, so a
   // sibling file in a rubric's directory cannot drag its suite in.
@@ -129,7 +157,7 @@ const positional = argv.filter((a) => !a.startsWith("--"));
 
 let result;
 if (argv.includes("--all")) {
-  result = { suites: [...ALL], reason: `--all → every suite (${ALL.length})`, matches: {} };
+  result = { suites: [...ALL], detection: true, reason: `--all → every suite (${ALL.length}) + bug-detection`, matches: {} };
 } else {
   const changed = positional.length
     ? positional
@@ -140,11 +168,15 @@ if (argv.includes("--all")) {
 if (asJson) {
   // One line, machine-read by the workflow: `suites` feeds the matrix, `count`
   // gates whether the matrix job runs at all (an empty matrix is an error in GHA).
-  console.log(JSON.stringify({ suites: result.suites, count: result.suites.length, reason: result.reason }));
+  console.log(JSON.stringify({
+    suites: result.suites, count: result.suites.length,
+    detection: result.detection === true, reason: result.reason,
+  }));
 } else {
   console.log(result.reason);
   for (const [path, names] of Object.entries(result.matches)) console.log(`  ${path} → ${names.join(", ")}`);
   for (const n of result.suites) console.log(n);
+  if (result.detection) console.log("bug-detection (separate runner)");
 }
 
 async function readStdin() {

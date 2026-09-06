@@ -50,7 +50,11 @@ Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
   *executed*, so a reply enumerating every choice must read as ambiguous rather than
   as the first one; a miss must print the raw reply; only a suite at or above the
   case floor can breach the gate; an absent key fails an opted-in run; the rubric
-  travels as a cached system block (`G21l`). L1 gates the
+  travels as a cached system block (`G21l`), and the **`bug-detection` CI chain** —
+  its inputs are declared in the suite table, the selector derives one boolean from
+  that declaration rather than restating the paths, the job consumes the boolean and
+  runs gated, and the aggregator both depends on the job *and* branches on its result
+  (`G21m`). L1 gates the
   *plumbing* of L2, which is why an unrun L2 still cannot silently rot.
 - **frontmatter** — SKILL versions are semver; `name` matches the directory.
 - **cross-file contracts** — locks contracts that span producer and consumer
@@ -225,8 +229,9 @@ job per suite — so labelling a one-rubric PR costs one suite, not nine.
 | --- | --- |
 | a suite's `rubric.file` | that suite (a rubric two suites read selects both — e.g. `fix-bug/SKILL.md` → `bug-class` + `complexity-triage`) |
 | a suite's `golden/*.jsonl` | that suite |
-| `l2.mjs`, `lib.mjs`, `suites.mjs`, `select-suites.mjs` | **every** suite — a runner change can alter any of them |
-| anything else | nothing; the aggregator job passes with "no suite is affected by this diff" |
+| `l2.mjs`, `lib.mjs`, `suites.mjs`, `select-suites.mjs` | **every** suite **and** `bug-detection` — a runner change can alter any of them |
+| `l2-detection.mjs`, `finders.md`, `finding-verifier.md`, `golden/bug-detection.jsonl` | **only** `bug-detection` — a separate job, never a matrix entry |
+| anything else | nothing; the aggregator job passes with "this diff affects no eval" |
 
 ```bash
 git diff --name-only main...HEAD | node scripts/eval/select-suites.mjs
@@ -246,11 +251,29 @@ missing from it (`severity/SKILL.md`, `optimality-rubric.md`, `depth-routing.md`
 listed paths backed no suite at all. `G21d` now asserts the derivation *and* the
 absence of a rubric-path mirror, so that class of drift cannot come back.
 
+**`bug-detection` rides the same derivation, in its own job.** It is a separate
+runner, not a single-choice suite, so it cannot ride the `--suite` flag — but it had
+the same CI problem every suite has, and for a long time the wrong answer: it ran in
+**no workflow at all**. Only its `--self-test` executed (L1 `G39`), so the scoring
+plumbing was guarded while the measurement it exists for — `recall ≥ 0.7` and
+`fp ≤ 0.2` against 30 golden records — had never once run in CI. Its inputs are now
+declared in `suites.mjs` as `SUITES.DETECTION` next to the suites, `select-suites.mjs`
+reports one extra boolean off that declaration, and the workflow's `detection` job
+consumes the boolean. No `paths:` mirror here either, and unlike the suites it runs
+**gated** (`EVAL_DETECTION_GATE=1`): the two rates *are* the contract, and a detection
+core that stops finding bugs while reporting green is the failure it was written for.
+`G21m` asserts the whole chain — declaration → selector → job → aggregator — with the
+last link the load-bearing one: the aggregator is `if: always()`, so a failed
+dependency arrives as a value to read, and reading only `needs.suite.result` is how a
+red detection run would report green.
+
 **Required check:** require **`evals · L2 (behavioral) / l2`** — the aggregator job,
 which runs on every PR whether or not it opted in and whether or not it affects a
-suite. Never require a per-suite job (`suite (tier-routing)`): those exist only on
-an opted-in PR, and a required check that does not run leaves the PR pending
-forever.
+suite. Never require a per-suite job (`suite (tier-routing)`) or the `bug-detection`
+job: those exist only on an opted-in PR that selected them, and a required check that
+does not run leaves the PR pending forever. The aggregator rolls both up — a failure
+in either fails it, and `skipped` is a pass on either, since a PR can legitimately
+affect one eval and not the other.
 
 ### The link to self-improvement
 
@@ -288,7 +311,7 @@ require via branch protection:
 | Workflow | Check name | Trigger | Needs a secret? | Gates? |
 | --- | --- | --- | --- | --- |
 | `.github/workflows/evals-l1.yml` | **evals · L1 (contract checks)** | every PR + push to `main` | no | **yes** — fails on any broken contract |
-| `.github/workflows/evals-l2.yml` | **evals · L2 (behavioral) / l2** | reports on every PR; **runs suites only on opt-in** — the `run-evals` label or a `workflow_dispatch` — and then only the affected ones ([details](#l2-in-ci-is-opt-in)) | `ANTHROPIC_API_KEY` | soft — `EVAL_GATE` floor (70%), per suite |
+| `.github/workflows/evals-l2.yml` | **evals · L2 (behavioral) / l2** | reports on every PR; **runs suites only on opt-in** — the `run-evals` label or a `workflow_dispatch` — and then only the affected ones ([details](#l2-in-ci-is-opt-in)) | `ANTHROPIC_API_KEY` | soft for the suites — `EVAL_GATE` floor (70%), per suite; **hard** for `bug-detection` (`recall ≥ 0.7`, `fp ≤ 0.2`) |
 
 **To enable L2:** add an `ANTHROPIC_API_KEY` repository secret (Settings →
 Secrets and variables → Actions). Without it the L2 job still runs and **passes**

@@ -15,7 +15,7 @@ argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no
 license: MIT
 metadata:
   author: mthines
-  version: '3.25.0'
+  version: '3.26.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -84,15 +84,29 @@ questions in order — the first `yes` selects Full Mode:
 | # | Question                                                                                  | If yes →     | If no →     |
 | - | ----------------------------------------------------------------------------------------- | ------------ | ----------- |
 | 1 | Is this task architectural / cross-cutting / does it require significant design decisions? | **Full**     | go to next  |
-| 2 | Does the task involve unfamiliar code or domains the agent hasn't worked in before?       | **Full**     | go to next  |
+| 2 | Does the task involve unfamiliar code or domains the agent hasn't worked in before, **or is the cause or location not yet known** — an investigation rather than a known edit? | **Full**     | go to next  |
 | 3 | Is the change touching 4+ files OR 2+ packages?                                           | **Full**     | go to next  |
 | 4 | Is the change 2–3 files, OR any non-trivial logic change?                                 | **Lite**     | **Micro**   |
 
-| Tier      | Files / shape                                  | Artifacts | Planning            | Companions      |
-| --------- | ---------------------------------------------- | --------- | ------------------- | --------------- |
-| **Full**  | complex / 4+ files / unfamiliar                | Required  | planner → `plan.md` | all applicable  |
-| **Lite**  | 2–3 files, simple logic                        | None      | brief mental plan   | per signal      |
-| **Micro** | 1 file, purely mechanical (typo, copy, bump)   | None      | none (skip planning)| none (docs if drift) |
+| Tier      | Files / shape                                                        | Artifacts | Planning            | Companions      |
+| --------- | -------------------------------------------------------------------- | --------- | ------------------- | --------------- |
+| **Full**  | complex / 4+ files / unfamiliar / cause or location unknown          | Required  | planner → `plan.md` | all applicable  |
+| **Lite**  | 2–3 files, **or 1 file carrying non-trivial logic**                  | None      | brief mental plan   | per signal      |
+| **Micro** | 1 file **and** purely mechanical (typo, copy, bump, string change)   | None      | none (skip planning)| none (docs if drift) |
+
+**The walk decides; the table only describes its outcomes.** Where the two seem to
+disagree, the walk wins. Two readings this exists to rule out, because the earlier
+wording invited both:
+
+- **Q4's `OR` is load-bearing.** A **one-file** change with non-trivial logic is
+  **Lite**, not Micro — Micro needs *both* one file *and* nothing to reason about.
+  Adding a prop and forwarding it, adding a CLI flag that changes behaviour, or
+  debouncing an input are all Lite at one file, because each has logic to get wrong.
+- **Q2 covers not knowing *where*, not only not knowing *the code*.** "Fix the leak
+  somewhere in the streaming pipeline, not sure which layer" is Full: the edit may
+  turn out to be one line, but the work is an investigation, and its file count is
+  unknown until the investigation finishes. Tiering on the *guessed* size of the
+  eventual patch is what Q1 and Q2 exist to prevent.
 
 **Micro** follows the same phase path as Lite but skips planning and all quality
 companions — it is the "skip planning when it's trivial" tier. **Phase 0 and

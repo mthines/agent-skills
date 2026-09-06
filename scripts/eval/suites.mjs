@@ -113,6 +113,37 @@ export const HARNESS_FILES = [
   "scripts/eval/select-suites.mjs",
 ];
 
+/**
+ * The bug-detection eval — `scripts/eval/l2-detection.mjs`, its own runner and NOT a
+ * `SUITES` entry, because it is not a single-choice classification (see that file's
+ * header). It nonetheless has the same CI problem every suite has: something must
+ * decide when to spend model tokens on it, and a hand-written `paths:` filter in the
+ * workflow is the drift surface this table exists to remove — the previous one had
+ * gone stale on four of nine rubric files.
+ *
+ * So its inputs are DECLARED here, next to the suites, and `select-suites.mjs`
+ * derives the decision. `rubrics` are the rule files the runner reads live as its
+ * finder and verifier prompts; `golden` is the record set; `runner` is the runner
+ * itself, since a change to the scoring can flip every record. A harness file
+ * selects it too, for the same fail-open reason it selects every suite.
+ */
+export const DETECTION = {
+  name: "bug-detection",
+  runner: "scripts/eval/l2-detection.mjs",
+  rubrics: [
+    "agents/pr-reviewer/rules/finders.md",
+    "agents/shared/rules/finding-verifier.md",
+  ],
+  golden: "scripts/eval/golden/bug-detection.jsonl",
+};
+
+/** Every path that should trigger a detection-eval run. */
+export const detectionInputs = () => [
+  DETECTION.runner,
+  ...DETECTION.rubrics,
+  DETECTION.golden,
+];
+
 // DELIBERATELY NOT a harness file: scripts/eval/telemetry.mjs. It is imported by
 // l2.mjs, so the instinct is to list it — but the fail-open rationale above turns on
 // a change being able to alter a suite's ANSWER, and telemetry cannot. It observes

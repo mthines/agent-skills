@@ -103,6 +103,7 @@ jobs:
     outputs:
       suites: ${{ steps.pick.outputs.suites }}
       count: ${{ steps.pick.outputs.count }}
+      detection: ${{ steps.pick.outputs.detection }}
       reason: ${{ steps.pick.outputs.reason }}
     steps:
       - name: Checkout (full history — the selector diffs against the PR base)
@@ -139,14 +140,20 @@ jobs:
           else
             # A dispatch naming suites explicitly. l2.mjs rejects an unknown name
             # with exit 2, so a typo fails loudly instead of running nothing.
+            # A dispatch naming suites explicitly opts OUT of the detection eval
+            # unless `bug-detection` is one of the names — it is a separate runner,
+            # so it cannot ride the `--suite` flag.
             node -e '
-              const names = process.argv[1].split(",").map((s) => s.trim()).filter(Boolean);
-              console.log(JSON.stringify({ suites: names, count: names.length, reason: "workflow_dispatch: " + names.join(", ") }));
+              const raw = process.argv[1].split(",").map((s) => s.trim()).filter(Boolean);
+              const detection = raw.includes("bug-detection");
+              const names = raw.filter((n) => n !== "bug-detection");
+              console.log(JSON.stringify({ suites: names, count: names.length, detection, reason: "workflow_dispatch: " + raw.join(", ") }));
             ' "$REQUESTED" | tee selection.json
           fi
           {
             echo "suites=$(jq -c '.suites' selection.json)"
             echo "count=$(jq -r '.count' selection.json)"
+            echo "detection=$(jq -r '.detection' selection.json)"
             echo "reason=$(jq -r '.reason' selection.json)"
           } >> "$GITHUB_OUTPUT"
 
@@ -236,12 +243,57 @@ jobs:
           OTEL_SERVICE_NAME: evals
         run: node scripts/eval/l2.mjs --suite "${{ matrix.suite }}"
 
+  detection:
+    # The bug-detection eval — a SEPARATE runner, not a `suite` matrix entry, because
+    # it is not a single-choice classification (see scripts/eval/l2-detection.mjs's
+    # header). It had real gates (recall ≥ 0.7, fp ≤ 0.2) and 30 golden records but ran
+    # in no workflow at all: only its `--self-test` was executed, by L1 G39, so the
+    # scoring plumbing was guarded while the measurement itself had never run in CI.
+    #
+    # Selection is DERIVED exactly like the matrix's: `SUITES.DETECTION` in
+    # scripts/eval/suites.mjs declares the runner, the two live rubric files it reads
+    # (finders.md, finding-verifier.md) and its golden set, and select-suites.mjs
+    # reports one boolean. No `paths:` mirror here either.
+    name: bug-detection
+    needs: [gate, select]
+    if: needs.gate.outputs.opted_in == 'true' && needs.select.outputs.detection == 'true'
+    runs-on: ubuntu-latest
+    # Higher than a suite's 20: this runner makes two model calls per record (finder,
+    # then verifier per candidate) across 30 records, at EVAL_CONCURRENCY 4.
+    timeout-minutes: 30
+    env:
+      HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Warn when the API key is absent
+        if: env.HAS_API_KEY != 'true'
+        run: |
+          echo "::warning title=Detection eval skipped::No ANTHROPIC_API_KEY secret — the eval cannot run. Add the secret under Settings → Secrets and variables → Actions."
+      - name: L2 bug-detection eval
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Gated, unlike the report-only default: the two rates ARE the contract this
+          # eval exists to hold, and a detection core that stops finding bugs while
+          # reporting green is the failure it was written for.
+          EVAL_DETECTION_GATE: "1"
+          EVAL_REQUIRE_KEY: "1"
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: Authorization=Bearer ${{ secrets.DASH0_AUTH_TOKEN }},Dash0-Dataset=${{ vars.DASH0_DATASET || 'default' }}
+          OTEL_SERVICE_NAME: evals
+        run: node scripts/eval/l2-detection.mjs
+
   l2:
     # The stable check name. Runs on every PR — opted in or not, affecting a suite
     # or not — so branch protection can require it without a workflow that skips
     # itself leaving a required check pending forever.
     name: l2
-    needs: [gate, select, suite]
+    needs: [gate, select, suite, detection]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -253,13 +305,15 @@ jobs:
           HOW: ${{ needs.gate.outputs.how }}
           SELECT_RESULT: ${{ needs.select.result }}
           SUITE_RESULT: ${{ needs.suite.result }}
+          DETECTION_RESULT: ${{ needs.detection.result }}
           COUNT: ${{ needs.select.outputs.count }}
+          DETECTION_SELECTED: ${{ needs.select.outputs.detection }}
           REASON: ${{ needs.select.outputs.reason }}
         run: |
           set -euo pipefail
           echo "gate: $GATE_RESULT (opted_in=${OPTED_IN:-?}, ${HOW:-?})"
-          echo "selection: ${REASON:-<none>} (count=${COUNT:-?})"
-          echo "select job: $SELECT_RESULT · suite jobs: $SUITE_RESULT"
+          echo "selection: ${REASON:-<none>} (count=${COUNT:-?}, detection=${DETECTION_SELECTED:-?})"
+          echo "select job: $SELECT_RESULT · suite jobs: $SUITE_RESULT · detection job: $DETECTION_RESULT"
 
           # A failed GATE is never green: "we could not tell whether to run" is not
           # the same state as "we were told not to", and collapsing them is how an
@@ -279,8 +333,27 @@ jobs:
             echo "✗ suite selection failed — the affected subset is unknown"
             exit 1
           fi
+          # Two independent measurement jobs roll up here, and BOTH must be read: the
+          # matrix (`suite`) and the separate detection runner. Reading only the matrix
+          # is how the detection eval could go red — recall below 0.7 — on a check that
+          # still reported green, which is the exact failure the gates exist to catch.
+          # `skipped` is a legitimate state for either one (nothing selected it), so it
+          # is a pass; anything else is not.
+          FAILED=""
           case "$SUITE_RESULT" in
             success) echo "✓ every selected suite passed" ;;
-            skipped) echo "✓ opted in, but no suite is affected by this diff — nothing to run" ;;
-            *)       echo "✗ a selected suite failed ($SUITE_RESULT)"; exit 1 ;;
+            skipped) echo "· no suite is affected by this diff — nothing to run" ;;
+            *)       echo "✗ a selected suite failed ($SUITE_RESULT)"; FAILED="suite" ;;
           esac
+          case "$DETECTION_RESULT" in
+            success) echo "✓ bug-detection passed its recall/false-positive gates" ;;
+            skipped) echo "· bug-detection not selected by this diff — nothing to run" ;;
+            *)       echo "✗ the bug-detection eval failed ($DETECTION_RESULT)"; FAILED="${FAILED:+$FAILED, }bug-detection" ;;
+          esac
+          if [ -n "$FAILED" ]; then
+            echo "✗ failing: $FAILED"
+            exit 1
+          fi
+          if [ "$SUITE_RESULT" = "skipped" ] && [ "$DETECTION_RESULT" = "skipped" ]; then
+            echo "✓ opted in, but this diff affects no eval — nothing to run"
+          fi

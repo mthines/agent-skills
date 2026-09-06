@@ -986,6 +986,25 @@ salience+recency top-N with no cursor to forget, so the window holds the *most u
 than the newest 50. The `repo::` buckets are small enough that recency still covers them; switch a
 repo read to `rank` only if it, too, reports `hasMore: true`.
 
+**This read is keyed by TAG and SCOPE, and by nothing else.** Two filters a reader
+reasonably expects here do not exist, and both absences are deliberate:
+
+- **It is not filtered by the diff.** Whether a lesson's gist has anything to do with
+  *these* changed files does not affect whether these four calls return it — the
+  changed-file list is not even known yet (Step 1.1 computes it). Diff relevance
+  governs only the *additional* Step 1.2c enriched search, which is an **OR** on top
+  of this read, never a filter that can remove something list-reachable. A lesson
+  carrying one of the two tags above surfaces on a PR that shares no symbol with it.
+- **It is not gated on `seen_count`.** `seen_count ≥ 3` is the *promotion* bar — what
+  makes a lesson a should-fire rather than a candidate (see the promotion rules below
+  and `memory.md § Lifecycle`). It is not a surfacing threshold. A `seen_count: 1`
+  lesson is read here and weighed as weak evidence; it is not withheld.
+
+What *does* exclude a record is being outside this read's scope: a different loop's
+namespace (`loop::fix-bug-lessons` is not one of the two tags), a scope neither
+`repo::{owner}/{repo}` nor `global`, or falling outside the `limit: 50` window — which
+is the gap Step 1.2c exists to close.
+
 Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
 Merge both lists per tag (`repo::` wins on key collision).
 Skip expired entries.

@@ -78,11 +78,20 @@ from size, not from review.
 
 | Tier | Chosen when | Runs |
 | --- | --- | --- |
-| **deep** | first run · `--full` · `--effort high` · a refresh counter fired · `HIGH_STAKES_FILES` non-empty · `PROPAGATION` · `blast_radius.band ∈ {medium, high}` · any `semver_delta == major` · any changed symbol with `traffic_band: high` **and** `change ∈ {signature, removed}` · `DELTA_LINES > 100` · `NEW_FILES > 0` | every finder over the **whole PR**; consumer-impact over **every** changed export with ≥ 1 consumer; dependency finder over every delta; verifier Tier 2 where available; optimality lens (report-only) |
+| **deep** | first run · `--full` · `--effort high` · **a refresh counter fired** (`CUM_DELTA_LINES > FULL_REFRESH_DELTA` 150 · `INCR_RUNS_SINCE_FULL ≥ FULL_REFRESH_RUNS` 3 · no prior `deep` pass recorded — [the deep-lens refresh](#the-deep-lens-refresh)) · `HIGH_STAKES_FILES` non-empty · `PROPAGATION` · `blast_radius.band ∈ {medium, high}` · any `semver_delta == major` · any changed symbol with `traffic_band: high` **and** `change ∈ {signature, removed}` · `DELTA_LINES > 100` · `NEW_FILES > 0` | every finder over the **whole PR**; consumer-impact over **every** changed export with ≥ 1 consumer; dependency finder over every delta; verifier Tier 2 where available; optimality lens (report-only) |
 | **standard** | `DELTA_RISKY_SHAPES` non-empty · `blast_radius.band == low` · any `semver_delta` **with ≥ 1 usage site** · an `overlaps[].kind == same-symbol` · `11 ≤ DELTA_LINES ≤ 100` | correctness + quality on the delta **with enclosing-function context**; consumer-impact over changed exports in the delta; dependency finder over this push's deltas; intent over the PR; standards on delta files; verifier Tier 1–2 |
 | **quick** | otherwise (the `quick` override above reaches here directly) | correctness on delta hunks with enclosing-function context; thread reconciliation; gates; nothing else |
 
 Re-running every lens over a review-answering push produces no new information and costs a full review's budget. It gets one finder.
+
+**`blast_radius.band == none` is not a `quick` condition.** `otherwise` means *no row
+above matched*, and the rows above are read top to bottom — so a delta that reaches
+nothing still routes `deep` when a refresh counter fired, and still routes `standard`
+on `11 ≤ DELTA_LINES ≤ 100`. Reaching nothing is the *default* state of most deltas;
+if it were sufficient on its own, the `standard` size band and the refresh triggers
+could never fire at all, and the two rows above would be dead text. The one place
+`band == none` decides anything by itself is the `quick` override — and that needs
+`THREAD_OVERLAP ≥ 0.8` alongside it.
 
 The `semver_delta` row is qualified by usage because an unused bump has nothing to check: a
 lockfile-only patch of a package this repo imports nowhere is a dependency delta with an empty
@@ -95,9 +104,19 @@ The inverse case is the one that justifies the whole phase:
 DELTA_LINES = 12 · blast_radius.band = high (retryRequest: 14 consumer files, 3 packages, signature)
 → deep
 
-DELTA_LINES = 340 · shapes = [docs-only] · band = none
+DELTA_LINES = 40 · shapes = [] · band = none · THREAD_OVERLAP = 0.0 · no counter fired
+→ standard     (band = none is not a quick condition; 40 is inside standard's 11–100 band)
+
+DELTA_LINES = 5 · shapes = [docs-only] · band = none · INCR_RUNS_SINCE_FULL = 3
+→ deep         (the refresh counter fired; the size exclusion waives SIZE triggers, not the others)
+
+DELTA_LINES = 340 · shapes = [docs-only] · band = none · no counter fired
 → quick        (the size exclusion above applies, and 340 is outside standard's 11–100 band)
 ```
+
+The middle and the fourth examples are the pair worth reading together: the same
+`docs-only`/`band: none` inputs route `deep` or `quick` depending only on a counter,
+which is why the last example states `no counter fired` rather than leaving it implied.
 
 ## Announce the decision with its inputs
 
