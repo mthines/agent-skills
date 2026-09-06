@@ -15,7 +15,7 @@ argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no
 license: MIT
 metadata:
   author: mthines
-  version: '3.24.0'
+  version: '3.25.0'
   workflow_type: orchestrator
   tags:
     - autonomous

@@ -16,7 +16,7 @@ argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -49,11 +49,17 @@ planner/executor agents.
 conversation history, its delegation budget. Three consequences are
 load-bearing:
 
-- **The `Task` budget is spent at your caller's level, not one below it.**
+- **The dispatch budget is spent at your caller's level, not one below it.**
   `aw-planner` / `aw-executor` are dispatched *from* the session that invoked
   you, so they sit one rung higher than they did under the retired `aw` agent
   and keep whatever nested dispatch the harness grants. That is the whole point
   of this being a skill — see [`CLAUDE.md`](../CLAUDE.md#the-dispatcher-is-a-skill-not-an-agent--design-intent).
+  The dispatch tool is **a capability, not a fixed name**: the Claude Code CLI
+  calls it `Task`, the Claude Agent SDK harness behind Claude Code on the web
+  calls it `Agent`. Wherever this file writes `Task(...)`, use whichever one the
+  caller's grant actually holds, and never read the absence of the single name
+  `Task` as "dispatch is unavailable" — that misread routes a fully dispatchable
+  cloud session into the degraded paths below.
 - **You inherit tools rather than declaring them.** If LoreKit's `memory.*`
   tools, `gh`, or the GitHub MCP tools are absent from the caller's grant, the
   affected step degrades and is named in `Degraded:` — it is never silently
@@ -119,7 +125,7 @@ MODE SELECTION:
 | ---- | ----------- | ------------- | ---------- |
 | **Micro** | **You, single-pass.** Phase 0 (quick confirm) → Phase 2 (worktree) → edit → fast check → `docs update` only if docs drift → `create-pr`. Skip planning and all quality companions. | none | none (except docs-if-needed) |
 | **Lite** | **You, single-pass.** Run the Lite path from `SKILL.md` in this one context (brief mental plan, no `plan.md`); light companions per task signal. `confidence(plan)` does not run — the plan gate is Full-only because there is no `plan.md` to gate. | none | per signal (Phase 5 docs, Phase 6 create-pr always) |
-| **Full** | **Hand off to the split — dispatch only, whenever sub-agent dispatch is available.** Dispatch `aw-planner` (it produces a gated `plan.md`), then on a cleared gate dispatch `aw-executor`. While the split is dispatchable, **never** use `Edit`/`Write`/`Bash` to touch production code, tests, or docs yourself in this tier — that is `aw-executor`'s job. When the harness disables `Task`, run the single-context Full fallback instead (see "When sub-agent dispatch is unavailable"), which keeps the `plan.md` artifact and the `confidence(plan)` gate. | `plan.md` | all applicable |
+| **Full** | **Hand off to the split — dispatch only, whenever sub-agent dispatch is available.** Dispatch `aw-planner` (it produces a gated `plan.md`), then on a cleared gate dispatch `aw-executor`. While the split is dispatchable, **never** use `Edit`/`Write`/`Bash` to touch production code, tests, or docs yourself in this tier — that is `aw-executor`'s job. When the harness exposes no dispatch tool under any name, run the single-context Full fallback instead (see "When sub-agent dispatch is unavailable"), which keeps the `plan.md` artifact and the `confidence(plan)` gate. | `plan.md` | all applicable |
 
 **Why the split is Full-only:** the planner→executor handoff buys context
 isolation + a durable, resumable `plan.md` — documented wins for complex/long
@@ -152,23 +158,47 @@ not need to re-read per phase.
 
 #### Review recovery when the executor could not dispatch
 
-`create-pr`'s Phase 6 `review-loop` pass is sub-agent-only. If the harness
-denies the executor nested dispatch, it hands back a draft PR flagged
-`NOT REVIEWED` — correctly reported, but unreviewed. **When the executor reports
-the review as skipped, run it yourself before handing back:**
+`create-pr`'s Phase 6 `review-loop` pass needs a sub-agent dispatch. A dispatched
+`aw-executor` has none — most harnesses give a sub-agent no dispatch tool under
+any name (a Claude Agent SDK sub-agent has neither `Task` nor `Agent`) — so it
+hands back a draft PR flagged `NOT REVIEWED`: correctly reported, but unreviewed.
+**When the executor reports the review as skipped, run it yourself before handing
+back** — and pick the invocation by what *your* context can do, because
+`review-loop`'s own first sub-step is a dispatch and it will skip at iteration 0
+exactly as the executor did:
 
-```
-Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")
-```
+| Your context | Invocation | Why |
+| --- | --- | --- |
+| You hold a sub-agent dispatch tool (`Task`, `Agent`, or another spelling) | `Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")` | The normal path. You are one rung above the executor, so the dispatch that failed there succeeds here. |
+| You hold none | `Skill("review-loop", "<pr-url> --no-ci --no-preview-run --external-review")` | The loop cannot produce a review, so it waits for one another process posts (a review bot, a CI-triggered agent) and still applies, resolves, and converges those threads. Drop `--critical` — it only ever configured `pr-reviewer`, and the loop warns and ignores it here. |
 
-Your context is one rung above the executor's, so it is usually still
-dispatchable there. If it is not, say so in `Degraded:` — a green-CI draft PR is
-not a reviewed one.
+Two rules keep this honest:
+
+- **Test the capability, not the name.** "No dispatch tool" means no available
+  tool dispatches a sub-agent under any spelling. Reading the absence of `Task`
+  alone as unavailability sends a fully dispatchable cloud session down the
+  `--external-review` row and silently downgrades a review that would have run.
+- **Fail closed toward `--external-review`, never toward the skip.** When you
+  cannot tell whether you hold the capability, pass `--external-review`: its
+  worst case is one bounded wait that finds nothing and converges over the
+  threads already on the PR, whereas a plain invocation's worst case is
+  `skipped (nested dispatch)` and no review at all. `--external-review` is
+  passed **deliberately by you as the caller** — that is the shape
+  [`review-loop`'s caller contract](../../../quality/review-loop/SKILL.md#caller-contract--run-this-loop-at-the-top-level-never-inside-a-sub-agent)
+  sanctions; the loop must never add the flag to itself.
+
+Either way, record the outcome in `Degraded:` — name `--external-review` when you
+used it, and say plainly when no review happened. A green-CI draft PR is not a
+reviewed one.
 
 #### When sub-agent dispatch is unavailable (e.g. Claude Code on the web)
 
-Some harnesses disable the `Task` tool, so the dispatch above fails outright
-(`Failed to run agent`). This is a **structural** unavailability of the split,
+Some harnesses expose no sub-agent dispatch tool at all, so the dispatch above
+fails outright (`Failed to run agent`). Establish that by capability — no
+available tool dispatches a sub-agent under any name — never from the absence of
+the single name `Task`; the harness behind Claude Code on the web has the
+capability and spells it `Agent`, so a name check would send every cloud session
+down this path needlessly. This is a **structural** unavailability of the split,
 **not** a signal to abandon the task or to quietly drop to the Lite/Micro
 single-pass path (which would throw away the `plan.md` artifact and the
 `confidence(plan)` gate). Instead, run the Full tier **in your own context**,
@@ -293,7 +323,8 @@ Two rules that keep it honest:
   knowledge here — it lives in the skill, companions, planner, and executor.
   Do not restate the tier table (see "Tier detection").
 - **Your `Edit`/`Write`/`Bash` budget is for Micro/Lite single-pass execution —
-  *and* for the single-context Full fallback when the harness disables `Task`.**
+  *and* for the single-context Full fallback when the harness exposes no
+  sub-agent dispatch tool.**
   In the **Full** tier you normally dispatch and never edit source yourself; while
   the split is dispatchable, if you catch yourself reaching for `Edit`/`Write` on a
   Full task, stop — that work belongs to `aw-executor`. (This is the same
@@ -302,6 +333,12 @@ Two rules that keep it honest:
   dispatch is unavailable"): when dispatch is structurally impossible, running the
   Full phases yourself — plan artifact and `confidence(plan)` gate intact — is the
   correct path, not a violation of this rule.
+- **Every dispatch-availability decision is a capability test, never a name
+  test.** `Task` and `Agent` are two harnesses' spellings of the same tool.
+  Concluding "no dispatch" from the absence of `Task` alone routes a fully
+  dispatchable session into the single-context fallback and the degraded review
+  path — both of which report as legitimate outcomes, so the mistake is
+  invisible. Ask instead: does *any* available tool dispatch a sub-agent?
 - **Opt-in, not a wrapper.** You run because the user phrased autonomous work or
   invoked `/aw`. Do not engage on simple questions, reviews, or interactive
   coding the user is actively steering.

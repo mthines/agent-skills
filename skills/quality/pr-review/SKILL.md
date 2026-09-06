@@ -10,7 +10,7 @@ argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--with a,
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: command
 ---
 
@@ -93,12 +93,18 @@ reason to skip the review.
 `pr-reviewer` is an **agent, not a skill**.
 
 ```text
-✅ RIGHT
+✅ RIGHT — through the harness's sub-agent dispatch tool
 Task(subagent_type="pr-reviewer", prompt="<PR_REF> <pass-through flags>")
 
 ❌ WRONG — there is no skill by that name; this errors with `Unknown skill: pr-reviewer`
 Skill("pr-reviewer", …)
 ```
+
+**That tool's NAME varies by harness — `Task` in the Claude Code CLI, `Agent` in
+the Claude Agent SDK harness behind Claude Code on the web.** Use whichever one
+this session exposes; the call shape is identical. A tool taking a
+`subagent_type` (or equivalent agent-name) parameter is the dispatch tool
+whatever it is spelled.
 
 Dispatch **once**. This command does not loop: a second pass over an unchanged head re-reads the
 same code and re-posts the same report, and iterating a review against fixes is what
@@ -106,7 +112,11 @@ same code and re-posts the same report, and iterating a review against fixes is 
 
 ### When sub-agent dispatch is unavailable
 
-Some harnesses disable the `Task` tool. When that happens, report the skip and stop:
+Some harnesses expose no sub-agent dispatch tool at all. Establish that by
+capability — **no** available tool dispatches a sub-agent under **any** name —
+never from the absence of the single name `Task`, which would skip the review on
+every harness that spells it `Agent`. When the capability is genuinely absent,
+report the skip and stop:
 
 ```markdown
 /pr-review — skipped (sub-agent dispatch unavailable; pr-reviewer requires it).
@@ -116,8 +126,8 @@ Some harnesses disable the `Task` tool. When that happens, report the skip and s
 The agent's review independence comes from running in a fresh, isolated context; performing it
 inline produces a self-review wearing a reviewer's label, which is worse than no review because it
 is reported as one.
-One missing-`Task` return is conclusive — the tool's absence is a property of the dispatch topology,
-settled before any code is read, so a retry costs a round trip and returns the same answer.
+One absent-dispatch return is conclusive — the capability's absence is a property of the dispatch
+topology, settled before any code is read, so a retry costs a round trip and returns the same answer.
 
 Where another process reviews the PR instead (a review bot, a CI-triggered agent), the supported
 path is `Skill("review-loop", "<PR> --external-review")`, which waits on that reviewer rather than
@@ -258,9 +268,9 @@ command for people already there.
 
 - **Read-only, always.** This command never edits a file, never commits, never pushes, and never resolves a thread. Applying is [`/implement-suggestion`](../../workflow/implement-suggestion/SKILL.md); applying-and-converging is [`review-loop`](../review-loop/SKILL.md).
 - **Never write to GitHub.** The agent posts its own sticky report and inline findings. This skill adds a terminal summary only — a second comment would duplicate a report that is rewritten in place precisely so a PR does not accumulate copies.
-- **Dispatch via `Task`, never `Skill()`.** `pr-reviewer` is an agent; `Skill("pr-reviewer", …)` errors with `Unknown skill`.
+- **Dispatch via the sub-agent dispatch tool, never `Skill()`.** `pr-reviewer` is an agent; `Skill("pr-reviewer", …)` errors with `Unknown skill`. The tool is named `Task` in some harnesses and `Agent` in others — use the one this session has.
 - **One dispatch per invocation. Do not loop.** Re-reviewing an unchanged head produces the same report at full cost.
-- **A missing `Task` tool is a skip, not a fallback.** Never review in this context and label it a `pr-reviewer` review; never retry the dispatch.
+- **Absent sub-agent dispatch is a skip, not a fallback — and it is a CAPABILITY test, not a name test.** Conclude it only when no available tool dispatches a sub-agent under any name; the absence of `Task` alone is not evidence. Then never review in this context and label it a `pr-reviewer` review, and never retry the dispatch.
 - **Never validate the pass-through flags.** Forward the tail verbatim; the agent owns that grammar and rejects what it does not know.
 - **Never re-adjudicate the verdict.** Report `PASS` / `WARN` / `FAIL` as returned, with the blocking findings named.
 - **`remember` writes an `fp`-keyed rule or asks.** A prose-slug key is unreadable by the read path and must never be invented to make a write appear to succeed.
