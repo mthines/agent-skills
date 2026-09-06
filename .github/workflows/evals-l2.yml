@@ -202,21 +202,8 @@ jobs:
 
       - name: Warn when the API key is absent
         if: env.HAS_API_KEY != 'true'
-        env:
-          # The `secrets` context, as JSON. GitHub masks every VALUE in it, but we
-          # never print one anyway — `jq 'keys'` below emits names only. Names are
-          # not secret, and they are the one thing that distinguishes the three ways
-          # this can fail: the secret was never added, it was added under a different
-          # name, or it was added in a store this job cannot read (an *Environment*
-          # secret needs `environment:` on the job; Dependabot and Codespaces secrets
-          # are separate stores that Actions never sees). Without this, all three look
-          # identical from the log — which cost several dispatch cycles to work out.
-          SECRET_NAMES_JSON: ${{ toJSON(secrets) }}
         run: |
-          set -euo pipefail
-          NAMES=$(printf '%s' "$SECRET_NAMES_JSON" | jq -r 'keys | join(", ")')
-          echo "::warning title=L2 evals skipped::No ANTHROPIC_API_KEY secret — the eval exits 0 without running a single case, so this green check proves nothing. Secrets this job CAN see: ${NAMES}. If ANTHROPIC_API_KEY is in that list the name is fine and the value is empty; if it is absent, it was added somewhere Actions cannot read it (Environment / Dependabot / Codespaces are separate stores). Repository Actions secrets: Settings → Secrets and variables → Actions."
-          echo "secrets visible to this job: ${NAMES}"
+          echo "::warning title=L2 evals skipped::No ANTHROPIC_API_KEY secret — the eval exits 0 without running a single case, so this green check proves nothing. Add the secret under Settings → Secrets and variables → Actions."
 
       - name: L2 behavioral evals — ${{ matrix.suite }}
         env:
