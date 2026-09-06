@@ -140,7 +140,23 @@ function parseChoice(text, choices) {
   // names one choice, and `[Micro | Lite | Full]` names none.
   const low = t.replace(/\[[^\]]*\]/g, " ").toLowerCase();
   const named = choices.filter((c) => low.includes(c.toLowerCase()));
-  if (named.length === 1) return named[0];
+  // Prefer the LONGEST match. Two suites have nested choices — `optimal` is a
+  // substring of `suboptimal`, `promoted` of `not-promoted` — so saying the longer
+  // one necessarily "names" the shorter one too, and a bare `named.length === 1`
+  // test made every reply but the byte-exact one ambiguous: `suboptimal.` scored
+  // `?(…)`, a miss indistinguishable from a wrong answer. Dropping a choice that
+  // another matched choice contains leaves exactly the one that was said.
+  //
+  // Known and accepted residue: for a nested pair this weakens the enumeration
+  // guard, because containment is the ONLY evidence available. `optimal |
+  // suboptimal` now reads as `suboptimal` rather than ambiguous. That is the right
+  // trade — the guard's live case is a rubric's own bracketed template line, which
+  // the bracket strip above already removes, so the loss is hypothetical while the
+  // defect it fixes was systematic. Do NOT "restore" ambiguity here without
+  // re-reading G21l's nested-choice checks, which pin both halves.
+  const top = named.filter((c) =>
+    !named.some((o) => o !== c && o.toLowerCase().includes(c.toLowerCase())));
+  if (top.length === 1) return top[0];
   return `?(${t.slice(0, 40).replace(/\s+/g, " ")})`;
 }
 
