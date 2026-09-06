@@ -202,7 +202,12 @@ async function ask(system, input) {
     headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({ model: MODEL, max_tokens: 16, system, messages: [{ role: "user", content: input }] }),
   });
-  if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 120)}`);
+  // 600 chars, not 120: an Anthropic error body opens with ~30 chars of JSON envelope
+  // (`{"type":"error","error":{"type":…`) before it reaches the human-readable `message`,
+  // and a model-not-found or context-length message can run past 120 on its own. This is
+  // the only place the API's own explanation enters the process, so truncating it here
+  // cannot be undone downstream.
+  if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 600)}`);
   return ((await res.json()).content?.[0]?.text || "").trim();
 }
 
@@ -219,6 +224,9 @@ function parseChoice(text, choices) {
 
 const summary = [];
 let anyBelowGate = false;
+// Distinct API error messages → how many cases hit each. A blanket transport failure is one
+// entry with a count equal to the whole run; a genuine per-case problem is a small count.
+const apiErrors = new Map();
 
 for (const suite of SUITES) {
   if (only && suite.name !== only) continue;
@@ -233,7 +241,17 @@ for (const suite of SUITES) {
   for (const c of cases) {
     let got;
     try { got = parseChoice(await ask(system, `${suite.inputLabel}: ${c[suite.inputKey]}`), suite.choices); }
-    catch (e) { got = `ERR(${e.message.slice(0, 30)})`; }
+    catch (e) {
+      // The per-case line stays short — 189 wrapped stack-widths is unreadable — but the
+      // message is RECORDED IN FULL and reprinted once per distinct value at the end.
+      // The prior 30-char slice rendered every failure as `ERR(API 400: {"type":"error","erro`,
+      // which is the JSON envelope and nothing else: a run where all nine suites scored 0.0%
+      // because every request was rejected was indistinguishable, in its output, from a run
+      // where the model simply answered wrongly 189 times. A transport failure must not be
+      // able to masquerade as an eval result.
+      apiErrors.set(e.message, (apiErrors.get(e.message) ?? 0) + 1);
+      got = `ERR(${e.message.slice(0, 60)}…)`;
+    }
     const ok = got === c.expected;
     results.push({ id: c.id, expected: c.expected, got, ok, input: c[suite.inputKey] });
     console.log(`  ${ok ? "✓" : "✗"} ${c.id}: expected ${c.expected}, got ${got}`);
@@ -250,12 +268,44 @@ for (const suite of SUITES) {
 console.log(`\n=== L2 summary (model=${MODEL}) ===`);
 for (const s of summary) console.log(`  ${s.name}: ${s.pass}/${s.total} (${s.acc.toFixed(1)}%)`);
 
+// A score is only an eval result if the requests behind it actually ran. Report the API
+// errors BEFORE the gate verdict, in full, with the share of the run they consumed — and
+// call the run INVALID rather than "below the floor" when they dominate it.
+const casesRun = summary.reduce((n, s) => n + s.total, 0);
+const casesErrored = [...apiErrors.values()].reduce((n, c) => n + c, 0);
+if (casesErrored > 0) {
+  console.error(`\n=== API errors: ${casesErrored}/${casesRun} cases, ${apiErrors.size} distinct ===`);
+  for (const [msg, count] of [...apiErrors].sort((a, b) => b[1] - a[1])) {
+    console.error(`  ${count}× ${msg}`);
+  }
+}
+// Half the run failing to transport is not a measurement. Naming it INVALID is the whole
+// point: a 0.0%-across-nine-suites run previously exited with "a suite is below the
+// EVAL_GATE floor", which reads as a rubric regression and sends the reader to the rubric.
+const RUN_INVALID = casesRun > 0 && casesErrored / casesRun > 0.5;
+
 if (process.env.GITHUB_STEP_SUMMARY) {
-  let md = `### L2 behavioral evals — model \`${MODEL}\`\n\n| suite | accuracy | misses |\n| --- | --- | --- |\n`;
+  let md = `### L2 behavioral evals — model \`${MODEL}\`\n\n`;
+  if (casesErrored > 0) {
+    md += RUN_INVALID
+      ? `> **INVALID RUN — not a measurement.** ${casesErrored} of ${casesRun} cases never reached the model.\n\n`
+      : `> **${casesErrored} of ${casesRun} cases errored** and are counted as misses below.\n\n`;
+    for (const [msg, count] of [...apiErrors].sort((a, b) => b[1] - a[1])) {
+      md += `> - \`${count}×\` ${msg.replace(/`/g, "'")}\n`;
+    }
+    md += "\n";
+  }
+  md += `| suite | accuracy | misses |\n| --- | --- | --- |\n`;
   for (const s of summary) md += `| ${s.name} | ${s.pass}/${s.total} (${s.acc.toFixed(1)}%) | ${s.misses.map((m) => `${m.id}:${m.expected}→${m.got}`).join("; ") || "—"} |\n`;
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
 }
 
+if (RUN_INVALID) {
+  console.error(`\n✗ INVALID RUN — ${casesErrored}/${casesRun} cases never reached the model.`
+    + ` The scores above measure nothing; fix the API errors listed above and re-run.`
+    + ` Do NOT read this as a rubric or golden-set regression.`);
+  process.exit(1);
+}
 if (GATE !== null && anyBelowGate) {
   console.error(`\n✗ a suite is below the EVAL_GATE floor of ${GATE}%`);
   process.exit(1);
