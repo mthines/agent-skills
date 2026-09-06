@@ -113,6 +113,14 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "24"
+          # MANDATORY here. setup-node@v5 defaults `package-manager-cache: true`,
+          # which auto-detects this repo's `packageManager: pnpm@…` field and then
+          # fails the step with "Unable to locate executable file: pnpm" — there is
+          # no pnpm on PATH because this workflow deliberately never installs. The
+          # eval harness is zero-dependency (node builtins only), so there is nothing
+          # to cache; @v4 did not have this input, which is why the version bump
+          # broke a workflow that had run 232 times.
+          package-manager-cache: false
 
       - name: Pick the affected suites
         id: pick
@@ -183,6 +191,14 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "24"
+          # MANDATORY here. setup-node@v5 defaults `package-manager-cache: true`,
+          # which auto-detects this repo's `packageManager: pnpm@…` field and then
+          # fails the step with "Unable to locate executable file: pnpm" — there is
+          # no pnpm on PATH because this workflow deliberately never installs. The
+          # eval harness is zero-dependency (node builtins only), so there is nothing
+          # to cache; @v4 did not have this input, which is why the version bump
+          # broke a workflow that had run 232 times.
+          package-manager-cache: false
 
       - name: Warn when the API key is absent
         if: env.HAS_API_KEY != 'true'
