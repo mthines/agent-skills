@@ -1371,9 +1371,16 @@ function checksInSync(plan, checks) {
   const d1Suite = (l2.match(
     /name:\s*"code-review-retrieval-relevance"[\s\S]*?rubric:\s*\{[^}]*\}/,
   ) || [""])[0];
-  s.check("G21a l2.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + section)",
+  // Both subsections are named, not `## Step 1`. That parent is heading-level-aware and so
+  // captured all ten `### 1.x` subsections — including `### 1.2d`, whose diff-keyed shortlist
+  // answers a different question from the one this suite's goldens label, which is what put
+  // the suite at 3/5 against a 70% floor. Asserting the two literals here means a silent
+  // widening back to the parent reds L1 rather than only the paid L2 run.
+  s.check("G21a l2.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + sections)",
     d1Suite.includes("agents/pr-reviewer.md") &&
-    d1Suite.includes("## Step 1: Fetch all inputs + load memories"));
+    d1Suite.includes("### 1.0 Prior-comment awareness + relevance memory load (default ON)") &&
+    d1Suite.includes("### 1.2c Diff-keyed lesson search (all modes)") &&
+    !d1Suite.includes("## Step 1: Fetch all inputs + load memories"));
 
   // G21b: golden JSONL exists and every non-empty line is valid JSON (locks the
   // test-plan claim that all lines parse). A bare non-empty count would pass on a
@@ -1419,8 +1426,25 @@ function checksInSync(plan, checks) {
   const rubricEntries = [...l2.matchAll(
     /rubric:\s*\{\s*file:\s*"([^"]+)",\s*section:\s*(null|"([^"]+)")\s*\}/g,
   )].map((m) => ({ file: m[1], section: m[2] === "null" ? null : m[3] }));
-  s.check("G21g parsed at least the 7 shipped rubric entries from l2.mjs",
-    rubricEntries.length >= 7);
+  // The `sections: [...]` form (a decision split across sibling subsections) is a SECOND
+  // rubric shape, so it needs its own parse — and the count sentinel below has to be a
+  // PARITY check against the suite count, not the `>= 7` floor it used to be. A floor is
+  // satisfied by the suites that still match, so a suite adopting an unrecognised rubric
+  // shape drops out of this loop while the sentinel stays green: the guard would then cover
+  // every suite except the one whose rubric had just changed.
+  for (const m of l2.matchAll(
+    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*sections:\s*\[([^\]]*)\]\s*,?\s*\}/g,
+  )) {
+    for (const q of m[2].matchAll(/"((?:[^"\\]|\\.)*)"/g)) {
+      rubricEntries.push({ file: m[1], section: q[1] });
+    }
+  }
+  const suiteCount = [...l2.matchAll(/^\s{4}name:\s*"/gm)].length;
+  s.check("G21g parses a rubric for every suite in l2.mjs (no unrecognised rubric shape)",
+    suiteCount >= 9 && rubricEntries.length >= suiteCount,
+    "a suite's `rubric:` matched neither the `section:` nor the `sections:` parse, so it would"
+      + " be silently exempt from the non-empty-body checks below —"
+      + ` suites=${suiteCount} rubric entries parsed=${rubricEntries.length}`);
   for (const { file, section } of rubricEntries) {
     if (section === null) continue; // whole-file rubrics have no heading to strip.
     // Guard the extraction: a renamed/moved rubric heading makes extractSection throw.

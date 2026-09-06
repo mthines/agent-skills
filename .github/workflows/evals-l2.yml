@@ -26,6 +26,13 @@ on:
       - "scripts/eval/lib.mjs"
       - "scripts/eval/golden/**"
   workflow_dispatch:
+    inputs:
+      suite:
+        description: >-
+          One suite name to run (e.g. code-review-retrieval-relevance).
+          Leave blank to run all of them.
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -47,4 +54,13 @@ jobs:
           # 0%-regression-vs-baseline) once a golden set reaches ≥ 50 — see
           # scripts/eval/README.md.
           EVAL_GATE: "70"
-        run: node scripts/eval/l2.mjs
+          # Only a workflow_dispatch carries an input; on pull_request this is empty and
+          # every suite runs. Iterating on one suite is otherwise a ~6-minute nine-suite
+          # run per attempt, all of it billed to the same key.
+          EVAL_SUITE: ${{ inputs.suite }}
+        run: |
+          if [ -n "$EVAL_SUITE" ]; then
+            node scripts/eval/l2.mjs --suite "$EVAL_SUITE"
+          else
+            node scripts/eval/l2.mjs
+          fi

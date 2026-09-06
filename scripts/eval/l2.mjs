@@ -11,8 +11,11 @@
 // statistically noisy). Skips cleanly (exit 0) without an API key.
 //
 // Add a suite: drop a golden JSONL in golden/ and append a config object below.
-// `rubric.section` is read LIVE from the skill source, so the eval always tests
-// the shipped instructions — not a copy.
+// `rubric.section` (or `rubric.sections`, for a decision split across sibling
+// subsections) is read LIVE from the skill source, so the eval always tests the
+// shipped instructions — not a copy. Point it at the prose that OWNS the decision
+// the goldens label: a rubric broader than the question invites the model to apply
+// a filter the labels never accounted for.
 import { readFileSync, existsSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { REPO_ROOT, extractSection } from "./lib.mjs";
@@ -90,7 +93,27 @@ const SUITES = [
   {
     name: "code-review-retrieval-relevance",
     golden: "golden/code-review-retrieval-relevance.jsonl",
-    rubric: { file: "agents/pr-reviewer.md", section: "## Step 1: Fetch all inputs + load memories" },
+    // Two subsections, NOT the whole of `## Step 1`. The instruction below names exactly the
+    // Step 1.0 list + Step 1.2c search, and CLAUDE.md's charter for this suite says the same;
+    // `## Step 1` is heading-level-aware and so captured all ten `### 1.x` subsections —
+    // 67,630 chars of impact graph, depth routing and divergence pre-check against the 27,568
+    // these two hold. Same lesson as shape-depth-routing above: feed the section that OWNS the
+    // decision.
+    //
+    // What this deliberately EXCLUDES, and why re-adding it would be a regression: `### 1.2d`
+    // shortlists the Step 1.0 index by changed directory / basename / symbol / integration /
+    // INTENT_PHRASE before fetching bodies. That is a real diff filter, correctly placed — but
+    // it answers a DIFFERENT question ("what reaches the finders") from the one these goldens
+    // label ("what the documented read returns"). With 1.2d in the rubric, a list-reachable
+    // lesson unrelated to the diff is legitimately `skip`, and the suite contradicted its own
+    // instruction. Widen this back and the labels stop being derivable from what the model sees.
+    rubric: {
+      file: "agents/pr-reviewer.md",
+      sections: [
+        "### 1.0 Prior-comment awareness + relevance memory load (default ON)",
+        "### 1.2c Diff-keyed lesson search (all modes)",
+      ],
+    },
     instruction: "You are pr-reviewer at Step 1. Using ONLY the Step 1 memory-read procedure below (Step 1.0 mcp__lorekit__memory_list + Step 1.2c mcp__lorekit__memory_search), decide whether the described candidate memory would be surfaced by the documented read for the given PR diff. Reply 'surface' if the documented read would return it, or 'skip' if it would not.",
     inputKey: "input", inputLabel: "Candidate + diff",
     choices: ["surface", "skip"],
@@ -107,8 +130,35 @@ if (!KEY) {
   process.exit(0);
 }
 
+// A misspelled `--suite` would otherwise match nothing, run zero cases, and exit 0 — a green
+// that graded nothing, which is indistinguishable from a green that graded everything. Fail
+// closed on the name instead, and name the suites so the next attempt is right.
+if (only && !SUITES.some((sx) => sx.name === only)) {
+  console.error(`✗ unknown --suite ${JSON.stringify(only)}. Suites: ${SUITES.map((sx) => sx.name).join(", ")}`);
+  process.exit(1);
+}
+
 // extractSection is heading-level-aware and shared from lib.mjs so l1.mjs's G21g
 // "eval actually contains a rubric" guard exercises the exact extraction this runs.
+
+/**
+ * Resolve a suite's rubric text. `section` (a heading literal, or `null` for the whole file)
+ * is the single-slice form; `sections` is an ordered list joined by a blank line, for a
+ * decision whose owning prose is split across sibling subsections. Fails CLOSED on the two
+ * ways this can silently produce an empty or wrong rubric — an empty list, and both keys set
+ * (where `sections` would win while `section: null` still reads as "whole file" to a reader).
+ */
+function rubricFor(suite) {
+  const { file, section, sections } = suite.rubric;
+  if (sections === undefined) return extractSection(file, section);
+  if (section !== undefined) {
+    throw new Error(`suite ${suite.name}: set rubric.section OR rubric.sections, not both`);
+  }
+  if (!Array.isArray(sections) || sections.length === 0) {
+    throw new Error(`suite ${suite.name}: rubric.sections must be a non-empty array`);
+  }
+  return sections.map((s) => extractSection(file, s)).join("\n\n");
+}
 
 async function ask(system, input) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -138,7 +188,7 @@ for (const suite of SUITES) {
   if (only && suite.name !== only) continue;
   const goldenPath = join(REPO_ROOT, "scripts/eval", suite.golden);
   if (!existsSync(goldenPath)) { console.log(`(skip ${suite.name}: no golden file)`); continue; }
-  const rubric = extractSection(suite.rubric.file, suite.rubric.section);
+  const rubric = rubricFor(suite);
   const system = `${suite.instruction}\nReply with exactly one of: ${suite.choices.join(", ")}. No explanation.\n\n${rubric}`;
   const cases = readFileSync(goldenPath, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
 
