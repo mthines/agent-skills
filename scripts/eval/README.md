@@ -39,6 +39,12 @@ Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
   uniquely resolvable by `skills/*/<name>/` (locks the path-resolution fix).
 - **lesson scopes** — no `memory/<scope>/` is committed in this repo (the loops'
   fast tier runs on LoreKit now, not committed markdown).
+- **the L2 wiring itself** (`G21`) — every suite extracts a non-empty rubric body
+  (`G21g`), the workflow derives its suite selection instead of mirroring the rubric
+  files (`G21d`), the selector's mapping self-test and the unknown-`--suite` exit
+  (`G21h`), the opt-in gate and its documented label (`G21i`), and every suite's
+  `choices` ↔ golden labels in both directions (`G21j`). L1 gates the *plumbing* of
+  L2, which is why an unrun L2 still cannot silently rot.
 - **frontmatter** — SKILL versions are semver; `name` matches the directory.
 - **cross-file contracts** — locks contracts that span producer and consumer
   files (the drift class link checks cannot see): the `seen_count` UPDATE
@@ -84,9 +90,36 @@ EVAL_MODEL=… EVAL_GATE=70 node scripts/eval/l2.mjs
   (improve the rubric), or the golden label is itself debatable (fix the label).
   That feedback loop *is* the eval. Skips cleanly (exit 0) with no API key.
 
+### Maintaining a suite as the skills change
+
+A suite reads its rubric **live**, which is the point — and the cost: a rubric edit
+silently becomes an unverified behavioural change unless someone runs the suite.
+`CLAUDE.md` § *Keeping the evals honest* is the mandatory trigger table (what you
+changed → what you must do). The mechanics behind its rows:
+
+- **Edited a rubric body** → `node scripts/eval/l2.mjs --suite <name>`. A miss is
+  information, not a failure: either the model got it wrong (fix the rubric) or the
+  golden label is debatable (fix the label). Most rubric edits move no label, and
+  reporting that is the deliverable.
+- **Renamed or re-levelled a heading** → update `rubric.section`. `extractSection`
+  throws on a missing anchor, so L1 `G21g` fails rather than feeding the model an
+  empty rubric.
+- **Moved or deleted the file** → repoint `rubric.file`, or remove the suite entry
+  and its `golden/*.jsonl` in the same commit.
+- **Changed a `choices` list** → every choice needs at least one golden case, and
+  every golden label must be a current choice. L1 `G21j` enforces both directions,
+  because each has its own failure: a new choice with no case is untested by
+  construction, and a *renamed* choice leaves every existing label unmatchable, so
+  the suite scores 0% and reads as a catastrophic rubric regression rather than the
+  label mismatch it is.
+- **Which suites does my change touch?** `git diff --name-only main...HEAD | node
+  scripts/eval/select-suites.mjs` — the same computation CI runs. Read it instead of
+  guessing; since CI is opt-in, an unverified rubric stays unverified.
+
 ### Add a suite
 
-1. Drop a `golden/<name>.jsonl` of `{"id","input","expected","notes"}` lines.
+1. Drop a `golden/<name>.jsonl` of `{"id","input","expected","notes"}` lines —
+   at least one per entry in `choices` (`G21j`).
 2. Append a config object to `SUITES` in `suites.mjs` — point `rubric.section` at
    the skill heading to read live, and list the `choices`.
 

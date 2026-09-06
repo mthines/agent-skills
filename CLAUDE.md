@@ -327,6 +327,32 @@ Regression evals for the skills live in [`scripts/eval/`](./scripts/eval/README.
 
 When a lesson is promoted via `diagnose`, add a golden case so the fix is locked. Methodology: [`ai-engineering/rules/evals.md`](./skills/quality/ai-engineering/rules/evals.md).
 
+### Keeping the evals honest (mandatory on every change)
+
+**A change that alters a decision the evals measure MUST update the evals in the SAME commit.**
+An eval is not follow-up work: a rubric edited without its suite re-run is an unverified behavioural change, and a suite left pointing at a deleted rubric is a red gate on the next author's PR.
+
+"Big change" is not the trigger — these are, and they are exhaustive.
+Look up what you touched:
+
+| You changed… | You MUST… |
+| --- | --- |
+| the body of a section a suite reads (any `SUITES[].rubric.file` + `section`) | run that suite (`node scripts/eval/l2.mjs --suite <name>`) and report the accuracy. Re-label or add golden cases if the decision boundary moved; a rubric edit that changes no label is the normal case, and saying so is the deliverable |
+| a section HEADING a suite reads (renamed, re-levelled, moved) | update `rubric.section` in `suites.mjs` — `extractSection` throws on a missing anchor and L1 `G21g` fails |
+| the FILE a suite reads (moved, renamed, deleted) | repoint `rubric.file`, or delete the suite entry **and** its `golden/*.jsonl` together. Never leave a suite whose extraction throws |
+| a `choices` list — a new tier, bug class, severity, verdict | add at least one golden case labelled with each new choice, and re-label the existing ones if you renamed a choice. L1 `G21j` enforces both directions |
+| added a new enumerable decision an agent makes (a routing table, a tier ladder, a class taxonomy) | add a suite: `golden/<name>.jsonl` + a `SUITES` entry. Two steps, no CI wiring — selection is derived |
+| deleted a skill, agent, or rule file | grep `suites.mjs` for its path first; a suite reading a deleted file fails L1, not L2 |
+| a MECHANICAL contract (a `plan.md` section list, a renderer payload key, a gate glyph, a shared verbatim sentence) | that is L1's job, not L2's — add or extend an `s.check` in `l1.mjs`, and **prove it bites** by breaking the thing it guards and watching it go red |
+| a finder or verifier rule (`finders.md`, `finding-verifier.md`) | add a `golden/bug-detection.jsonl` record — including a **decoy** (the same diff with the defect removed) when the change is meant to raise recall, or the false-positive rate cannot tell discrimination from difficulty |
+| promoted a lesson via `diagnose` (`seen_count ≥ 3`) | add the golden case, as above |
+
+**Two obligations the opt-in CI created.**
+Since suites no longer run unasked, nobody else will notice a rubric you did not verify: after any first-row change, either label the PR `run-evals` or run the affected suites locally, and put the accuracy in the PR description.
+And `node scripts/eval/select-suites.mjs` on your own changed files tells you which suites the first row covers — read it rather than guessing.
+
+**Definition of done:** the diff either touches the eval surfaces above, or the PR description says in one line why none applied.
+
 ## Prose Rules
 
 - One sentence per line (semantic line breaks).

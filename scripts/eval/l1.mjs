@@ -1480,6 +1480,42 @@ function checksInSync(plan, checks) {
     }
   }
 
+  // G21j: every suite's `choices` are EXERCISED by its golden set, both directions.
+  // This is the one mechanically-checkable half of the eval-maintenance obligation
+  // (CLAUDE.md § Keeping the evals honest): a decision surface that gains an option
+  // — a fourth tier, a tenth bug class, a new severity — is untested for that option
+  // by construction until a golden case carries it, and nothing else in the pipeline
+  // notices. The reverse direction catches the more dangerous edit: RENAMING a choice
+  // in suites.mjs leaves every existing label unmatchable, so the suite scores 0% and
+  // reads as a catastrophic rubric regression rather than the label mismatch it is.
+  // All nine suites cover every choice today, so this is a ratchet, not a baseline.
+  {
+    const suiteBlocks = [...l2.matchAll(
+      /name:\s*"([^"]+)",\s*\n\s*golden:\s*"([^"]+)"[\s\S]*?choices:\s*\[([^\]]*)\]/g,
+    )];
+    s.check("G21j parsed every shipped suite's golden + choices pair from suites.mjs",
+      suiteBlocks.length === SUITES_TABLE.length,
+      `${suiteBlocks.length} name/golden/choices blocks vs ${SUITES_TABLE.length} rubric entries`);
+
+    for (const [, name, goldenRel, choicesRaw] of suiteBlocks) {
+      const choices = [...choicesRaw.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+      const goldenAbs = join(REPO_ROOT, "scripts/eval", goldenRel);
+      if (!existsSync(goldenAbs)) {
+        s.check(`G21j ${name}: golden file exists`, false, goldenRel);
+        continue;
+      }
+      const labels = readFileSync(goldenAbs, "utf8").split("\n").filter(Boolean)
+        .map((l) => { try { return JSON.parse(l).expected; } catch { return null; } });
+      const seen = new Set(labels.filter(Boolean));
+      const uncovered = choices.filter((c) => !seen.has(c));
+      const unknown = [...seen].filter((e) => !choices.includes(e));
+      s.check(`G21j ${name}: every choice has at least one golden case`,
+        uncovered.length === 0, uncovered.length ? `no case labelled: ${uncovered.join(", ")}` : "");
+      s.check(`G21j ${name}: every golden label is one of the suite's choices`,
+        unknown.length === 0, unknown.length ? `label not in choices: ${unknown.join(", ")}` : "");
+    }
+  }
+
   // G21e: README carries the methodology NOTE for this suite (promotion → golden case),
   // not merely the suite table row. Assert on the note's own heading literal so a table
   // row alone can't satisfy it.
