@@ -5859,8 +5859,16 @@ const isPollBlock = (block) =>
   // today would satisfy it while being free to disagree tomorrow.
   s.check("G50b select-suites.mjs imports the suite table from suites.mjs",
     /^import \{ SUITES \} from "\.\/suites\.mjs";$/m.test(sel));
-  s.check("G50b select-suites.mjs does not re-parse the table out of l2.mjs",
-    !/l2\.mjs["'`]\s*\)/.test(sel.replace(/^\/\/.*$/gm, "")));
+  // The only legitimate mention of `l2.mjs` in the selector is its own HARNESS_FILES entry, so
+  // strip comments and that array and assert the name does not appear at all. Matching a
+  // specific call shape (`…l2.mjs")`) is not enough — it passes for the likeliest spelling,
+  // `readFileSync("scripts/eval/l2.mjs", "utf8")`, which is the exact defect being guarded.
+  {
+    const body = sel.replace(/^\/\/.*$/gm, "")
+      .replace(/const HARNESS_FILES = \[[\s\S]*?\];/, "");
+    s.check("G50b select-suites.mjs does not read or re-parse l2.mjs",
+      !body.includes("l2.mjs"), body.match(/.*l2\.mjs.*/)?.[0]?.trim() ?? "");
+  }
 
   // G50c: the rubric is sent as a CACHED system block. Both halves matter: the key must be
   // present, and the pre-change `system,` shorthand (a bare string, re-billed per case) must
@@ -5887,6 +5895,17 @@ const isPollBlock = (block) =>
     && l2.includes('onlyArg.split(",")'));
   s.check("G50e l2.mjs exits non-zero on an empty --suite selection",
     /^if \(only !== null && only\.length === 0\) \{$/m.test(l2));
+
+  // G50i: the harness-file set is pinned HERE, not only in the module. The self-test derives
+  // its expectations by iterating `HARNESS_FILES`, so deleting an entry deletes that entry's
+  // own coverage — a change to `l2.mjs` would then select no suite and skip the eval entirely,
+  // which is precisely the silent coverage loss the selector must not be able to cause. This
+  // is the one place a literal list belongs: a guard pins an invariant, a module derives.
+  for (const f of ["scripts/eval/l2.mjs", "scripts/eval/lib.mjs", "scripts/eval/suites.mjs",
+    "scripts/eval/select-suites.mjs", ".github/workflows/evals-l2.yml"]) {
+    s.check(`G50i select-suites.mjs treats ${f} as a harness file (selects every suite)`,
+      new RegExp(`^\\s*"${f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}",$`, "m").test(sel));
+  }
 
   // G50f: the workflow's selection step fails OPEN. This is the load-bearing safety property
   // of the whole change: an unusable diff or a broken selector must run every suite, never

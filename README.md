@@ -476,7 +476,8 @@ packages/                 VS Code extension (vscode-agent-tasks)
 .claude-plugin/           marketplace.json — plugin distribution manifest
 scripts/                  Local symlink sync (scripts/sync-symlinks.sh)
 scripts/eval/             Regression evals in three layers — l1.mjs (deterministic contract
-                          checks, no LLM), l2.mjs (behavioral classification suites), and
+                          checks, no LLM), l2.mjs (behavioral classification suites, table in
+                          suites.mjs, per-PR subset via select-suites.mjs), and
                           l2-detection.mjs (does the reviewer actually find the seeded bug —
                           recall and false-positive rate measured together)
 ```

@@ -51,6 +51,13 @@ Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
   the Contents list (G7 — `simplify` mode keys auto-apply on this
   classification, so an unclassified or doubly-classified recipe is a hard
   failure).
+- **L2 cost controls** (`G50`) — executes `select-suites.mjs --self-test`,
+  asserts the selector *imports* the suite table rather than re-parsing it, pins
+  the cached system block (and the absence of the bare-string form it replaced)
+  plus the token accounting that makes the cache observable, and reads a bounded
+  slice of `evals-l2.yml`'s select step to assert the fail-open shape as the
+  shell actually implements it: exactly two warning branches, exactly one
+  `none=true` write, and neither fail-open branch setting it.
 
 Add a check: append a `s.check(label, condition, detail)` in `l1.mjs`.
 
@@ -60,6 +67,12 @@ Data-driven: one runner, many suites. Each suite feeds a skill's **live** rubric
 section (read straight from the skill source, so the eval tests the *shipped*
 instructions) + a labelled input to the model, and exact-matches the model's
 choice against the human label. Classification → exact-match, **no LLM-as-judge**.
+
+The suite table lives in **[`suites.mjs`](./suites.mjs)**, not in the runner.
+It has two consumers that must never disagree — `l2.mjs` runs the suites, and
+[`select-suites.mjs`](./select-suites.mjs) maps a PR's changed files back to the
+suites those files can affect — so both import the same array rather than one of
+them re-parsing the other. See [Cost](#cost) below.
 
 | Suite | Question | Rubric read from | Choices |
 | --- | --- | --- | --- |
@@ -73,9 +86,11 @@ choice against the human label. Classification → exact-match, **no LLM-as-judg
 | `code-review-retrieval-relevance` | would the documented Step 1.0 + 1.2c read surface this candidate memory for the given PR diff? | `agents/pr-reviewer.md` `### 1.0` + `### 1.2c` (the two-section `rubric.sections` form — deliberately **not** the `## Step 1` parent, see the methodology note) | surface / skip |
 
 ```bash
-node scripts/eval/l2.mjs                 # all suites
+node scripts/eval/l2.mjs                          # all suites
 node scripts/eval/l2.mjs --suite bug-class
+node scripts/eval/l2.mjs --suite bug-class,tier-routing   # comma list
 node scripts/eval/l2.mjs --suite typo    # exits 1 and lists the suites — never a silent zero-case pass
+node scripts/eval/l2.mjs --suite ""      # exits 1 — an empty selection grades nothing, so it is never a pass
 EVAL_MODEL=… EVAL_GATE=70 node scripts/eval/l2.mjs
 ```
 
@@ -85,13 +100,52 @@ EVAL_MODEL=… EVAL_GATE=70 node scripts/eval/l2.mjs
   (improve the rubric), or the golden label is itself debatable (fix the label).
   That feedback loop *is* the eval. Skips cleanly (exit 0) with no API key.
 
+### Cost
+
+A full nine-suite run is 149 one-word answers, and it used to cost **~273k input
+tokens** because nearly all of that is rubric text sent over and over. Three
+controls, in order of effect — measure, don't assume: every run prints its own
+`=== tokens: … ===` line with the cache hit rate.
+
+1. **The rubric is a cached system block.** It is byte-identical across every
+   case in a suite, so a suite now pays for it roughly once instead of once per
+   case (~−63% on a full run). Honest limit: `tier-routing`, `bug-class`, and
+   `reviewer-agreement-bump` have rubrics under the model's minimum cacheable
+   length, so caching is a **no-op** for them — the four large suites are 76% of
+   the bill and all clear it. If a run prints `prompt cache INACTIVE`, the cache
+   is not working; a `cache_control` key the API silently declines otherwise
+   looks identical to a working one until the invoice arrives.
+2. **A PR runs only the suites its changed files can affect.** A suite's result
+   depends on exactly two inputs — the rubric file it reads live and the golden
+   set that labels it — so a PR touching one golden file cannot move the other
+   eight. `select-suites.mjs` does the mapping:
+
+   ```bash
+   git diff --name-only main...HEAD | node scripts/eval/select-suites.mjs
+   node scripts/eval/select-suites.mjs skills/workflow/fix-bug/SKILL.md  # → bug-class,complexity-triage
+   node scripts/eval/select-suites.mjs --self-test                        # offline; L1 G50a runs this
+   ```
+
+   It **fails open, in one direction only**: an unusable diff, a selector error,
+   or a non-`pull_request` event all run every suite. A selector bug must never
+   be able to silently skip coverage, and the worst case of failing open is the
+   price we were already paying. Only a genuine empty selection skips.
+   A change to a harness file (`l2.mjs`, `lib.mjs`, `suites.mjs`,
+   `select-suites.mjs`, `evals-l2.yml`) selects **all** suites, since the harness
+   can move any suite's score.
+3. **The trigger is path-filtered**, so an unrelated PR never starts the job.
+   Note the `paths:` list is currently *broader* than the suite table — it names
+   rubric sources no suite reads live — which is why the selector's
+   "nothing to run" branch is reachable.
+
 ### Add a suite
 
 1. Drop a `golden/<name>.jsonl` of `{"id","input","expected","notes"}` lines.
-2. Append a config object to `SUITES` in `l2.mjs` — point `rubric.section` at the
-   skill heading to read live, and list the `choices`.
+2. Append a config object to `SUITES` in **`suites.mjs`** — point `rubric.section`
+   at the skill heading to read live, and list the `choices`. Both the runner and
+   the selector pick it up from there; nothing else needs editing.
 3. Add the golden path / rubric file to `evals-l2.yml`'s `paths:` so CI runs it
-   when relevant files change.
+   when relevant files change. Miss this and the suite exists but never triggers.
 
 ### The link to self-improvement
 
@@ -176,7 +230,7 @@ require via branch protection:
 | Workflow | Check name | Trigger | Needs a secret? | Gates? |
 | --- | --- | --- | --- | --- |
 | `.github/workflows/evals-l1.yml` | **evals · L1 (contract checks)** | every PR + push to `main` | no | **yes** — fails on any broken contract |
-| `.github/workflows/evals-l2.yml` | **evals · L2 (behavioral)** | PRs touching a rubric/golden file, + manual `workflow_dispatch` | `ANTHROPIC_API_KEY` | soft — `EVAL_GATE` floor (70%), per suite |
+| `.github/workflows/evals-l2.yml` | **evals · L2 (behavioral)** | PRs touching a rubric/golden file (running only the [affected suites](#cost)), + manual `workflow_dispatch` | `ANTHROPIC_API_KEY` | soft — `EVAL_GATE` floor (70%), per suite |
 
 **To enable L2:** add an `ANTHROPIC_API_KEY` repository secret (Settings →
 Secrets and variables → Actions). Until then the L2 job still runs and **passes**
