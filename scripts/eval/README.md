@@ -427,6 +427,76 @@ run: **~$0.30, not the ~$0.15 a flat 80% would imply.** When the cache hits,
 `input_tokens` collapses (466 for a suite that read 79k), so read the cache counters as
 the cost, not the input figure.
 
+### The post-fix run, and the three rubric fixes it measured
+
+The three rubric defects the baseline diagnosed were fixed and the affected suites
+re-run on the same model. Read this next to the confirmation-run figures above:
+
+| suite | baseline | confirmation | post-fix | remaining miss |
+| --- | --- | --- | --- | --- |
+| `tier-routing` | 25/30 | 25/30 | **30/30** (100%) | — |
+| `shape-depth-routing` | 20/22 | 18/22 | **21/22** (95.5%) | `refresh-runs` (deep→quick) |
+| `code-review-retrieval-relevance` | 3/5 | 3/5 | **4/5** (80%) `[advisory]` | `…unrelated-diff` (surface→skip) |
+
+`tier-routing`'s five under-tierings all came from the same three ambiguities and all
+five closed: the walk-vs-table precedence, Micro's one-condition bar, and Q2's silence
+on an unknown location. Nothing was re-labelled and no golden case was added — the
+labels were right and the rubric was wrong, which is the outcome this suite exists to
+distinguish from model noise.
+
+The two remaining misses are **not** being chased, deliberately:
+
+- `refresh-runs` is one case at n=22, where the measured run-to-run variance is ±2
+  cases. Its specific ambiguity — whether the three refresh counters are `any-of` and
+  whether `≥` fires at equality — was fixed anyway, on the merits, because it is a
+  real grammar defect independent of the score.
+- `…unrelated-diff` sits in a **5-case advisory** suite whose golden file says
+  BOOTSTRAP SEED — NOT A REAL BASELINE in as many words. The remedy for a small suite
+  is more real-corpus cases, never more rubric tinkering: another precision edit
+  aimed at one golden line would be over-fitting the shipped instructions to the eval.
+
+### The L2-detection baseline — first run ever
+
+`bug-detection` had never executed in CI (it ran in no workflow; only its
+`--self-test` was exercised). This is its first real measurement, on the detection core
+as it already stood — the numbers describe the core, not this change:
+
+`claude-sonnet-4-6` · 30 records · 4-way concurrency · ~3.5 min:
+
+| stage | recall@class | fp_rate |
+| --- | --- | --- |
+| finder only | 75% (15/20 seeded) | 50% (5/10 controls dirty) |
+| + verifier | 75% | **30%** (3/10 controls dirty) |
+
+**Verdict: recall passes (75% ≥ 70%), fp_rate fails (30% > 20%).** The gate is red on
+the current core, and that is the eval working — it found something the run it was
+first permitted to make.
+
+Three things the run says that stdout-free years of it could not:
+
+- **The verifier earns its place, on precision only.** It halves the finder's false
+  positives (50% → 30%) and costs **zero** recall. That is exactly the polarity
+  `finders.md`'s "finders flag, the verifier filters" rule asserts, now measured
+  rather than argued.
+- **`intent-mismatch` is the weak class, by a wide margin** — 1/4, against 3/4
+  `logic`, 3/4 `consumer-break`, 4/4 `dep-breaking-change`, 4/4 `standards`. Three of
+  its four misses were never flagged at all, so this is a finder-recall gap, not a
+  verifier over-filter.
+- **One record failed on output shape, not detection.** `intent-revert-not-fix`'s
+  finder replied prose (`Looking at…`) instead of JSON. It is counted as a **miss**,
+  never as clean — the right bias, and worth keeping in mind when reading
+  `intent-mismatch`'s 1/4: one of those four is a parse failure. Do **not** loosen the
+  parse to recover it; a finder that cannot emit its own contract has not found
+  anything.
+
+**The fp_rate is not fixed here, and the gate is not lowered to accommodate it.**
+Raising the detection core's precision means editing `finders.md` /
+`finding-verifier.md` — the rubrics this eval measures — which per
+[the maintenance table](../../CLAUDE.md#keeping-the-evals-honest-mandatory-on-every-change)
+needs its own golden records (decoys included) and its own re-run. Lowering the gate to
+meet the current core is the fix-to-pass this repo forbids everywhere else, and it is
+what left the eval unrun in the first place.
+
 ### The L1 baseline
 
 `l1.mjs` keeps a `BASELINE` set of known pre-existing broken links so the gate
