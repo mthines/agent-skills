@@ -972,7 +972,7 @@ end-user-facing; this file is contributor-facing.
   reasoned about:
   - **The capability gates were name checks.** `review-loop`'s Step 0
     precondition read "check whether `Task` appears in your available tools",
-    and `pr-review` and `aw` carried the same literal in seven more places. The
+    and `pr-review` and `aw` carried the same literal in eight more places. The
     Claude Agent SDK harness behind Claude Code on the web and in cloud sessions
     holds the capability and spells the tool `Agent`, so the gate concluded "no
     dispatch available" and skipped the review on a PR that was fully
