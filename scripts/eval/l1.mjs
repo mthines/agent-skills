@@ -5426,21 +5426,32 @@ const isPollBlock = (block) =>
   // constant also failed the other way: `terminal for this run` sits ~155 chars in, so
   // adding a couple of sentences of legitimate prose ahead of it pushed it out of the
   // window and turned L1 red for a reflow that changed no rule.
-  // ONE slicer, shared by the Step 1 and Step 2 reads below. It was written twice, and
-  // both copies carried the same latent defect: the heading was matched with `indexOf` on
-  // its bare text, which also matches INSIDE a demoted `### Step 2: …`, and the only bound
-  // on the result was a `length > N` LOWER bound — structurally incapable of seeing an
-  // over-capture. Demoting every `## ` to `### ` in `runner.md` kept the match (at the
-  // `###` heading) and grew the "section" from 253 chars to 7126, so every assertion below
-  // ran against the whole document. The heading is therefore anchored to LINE START and to
-  // its exact level, and a level change now yields an empty slice, which the sentinels
-  // catch. One implementation, so the next defect is fixed once rather than twice.
+  // The shared `extractSection`, not a local slicer. Both bounds of a section are places a
+  // heading-level confusion can get in, and a hand-rolled slicer here got each of them
+  // wrong in turn:
+  //
+  //   * the START was `indexOf` on the bare heading text, which also matches inside a
+  //     DEEPER heading — demoting every `## ` to `### ` in `runner.md` kept the match and
+  //     grew the Step 2 "section" from 253 chars to 7126, so every assertion ran against
+  //     the whole document;
+  //   * the END was `indexOf("\n## ")`, level-blind in the other direction — PROMOTING the
+  //     next heading to `# ` grew the slice to 1813 chars, and moving Step 2's delegation
+  //     sentence into that top-level section then satisfied the delegation check from
+  //     outside Step 2 entirely, with L1 green. It was also fence-blind: a ```text block
+  //     inside Step 2 containing a `## ` line cut the slice at the fence.
+  //
+  // A `length > N` LOWER bound cannot see either over-capture, which is what kept both
+  // invisible. `extractSection` is level-aware AND fence-aware and is already imported, so
+  // this is one implementation for every caller instead of a third private copy — and its
+  // own start bound was the same bare `indexOf`, fixed there rather than worked around
+  // here. It throws on a missing section; the sentinels below want an empty slice, so the
+  // throw is converted rather than propagated.
   const runSection = (heading) => {
-    const m = new RegExp(`^## ${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m")
-      .exec(RUN);
-    if (m === null) return "";
-    const next = RUN.indexOf("\n## ", m.index + 1);
-    return RUN.slice(m.index, next === -1 ? RUN.length : next);
+    try {
+      return extractSection("skills/testing/preview-spec/rules/runner.md", `## ${heading}`);
+    } catch {
+      return "";
+    }
   };
   const RUN_STEP2 = runSection("Step 2: Resolve the preview URL");
   // Both checks below get their OWN sentinel. Relying on the empty slice to fail them by
@@ -5505,8 +5516,13 @@ const isPollBlock = (block) =>
   // and L1 green, which is the worse failure: the guard was silent while the rule it names
   // said the opposite of what it says. Fifth instance of one class in this block — a
   // substring test whose satisfying occurrence is not the one the check names.
+  // The cell is matched by its CONTENT within the row's first column (`[^\n|]*` either
+  // side), not by its exact text: bolding it to `| **anything else** |` says the same
+  // thing and previously turned L1 red. Anchoring is about which ROW satisfies the check,
+  // and that is what `^\|` plus the same-row `unrecognised outcome` establish; the cell's
+  // decoration carries no meaning and must not be part of the assertion.
   s.check("G49 review-loop's outcome table has a terminal catch-all row",
-    /^\|\s*anything else\s*\|[^\n]*unrecognised outcome/m.test(RL),
+    /^\|[^\n|]*anything else[^\n|]*\|[^\n]*unrecognised outcome/m.test(RL),
     "`preview-spec run` gained returns this table had no row for; with no catch-all an"
       + " unmapped outcome is recorded as whatever the run guesses — a pass or a skip");
   s.check("G49 review-loop's report renders the unrecognised-outcome value",
