@@ -5328,7 +5328,11 @@ const isPollBlock = (block) =>
   const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
   const PS = read("skills/testing/preview-spec/SKILL.md");
   const CP = read("skills/delivery/create-pr/SKILL.md");
-  const PS_FM = PS.slice(0, PS.indexOf("\n---", 4));
+  // One named boundary, sliced both ways: the frontmatter is what grants, the body is what
+  // documents, and every assertion below belongs to exactly one of them.
+  const PS_FM_END = PS.indexOf("\n---", 4);
+  const PS_FM = PS.slice(0, PS_FM_END);
+  const PS_BODY = PS.slice(PS_FM_END);
 
   // The sweep must be proved non-empty before any assertion over it is trusted.
   s.check("G49 the guard reads both surfaces",
@@ -5339,20 +5343,25 @@ const isPollBlock = (block) =>
   // 1. The grant must be able to reach GitHub on BOTH access paths, and to dispatch under
   //    either spelling. `Bash(gh *)` alone is the pre-fix state; `Task` alone is the exact
   //    literal-name defect PR #180 removed from this skill's PROSE while leaving it here.
-  s.check("G49 preview-spec's grant can write a PR body on the mcp path",
-    /mcp__github__update_pull_request/.test(PS_FM),
-    "the whole deliverable of `author` is a PR-body write; granting only `Bash(gh *)` makes"
-      + " it unreachable in every cloud session, where `gh` is absent");
-  s.check("G49 preview-spec's grant can read a PR on the mcp path",
-    /mcp__github__pull_request_read/.test(PS_FM),
-    "the block must be merged into the EXISTING body, so the body has to be readable first");
-  // Asserted over the `allowed-tools:` LINE, not the whole frontmatter: a grant is a
-  // permission allowlist, so only that line grants anything, and an `Agent` occurring in
-  // `description:` prose must not satisfy a check about what the skill may call.
+  //
+  // Every assertion in this group reads the `allowed-tools:` LINE, never the whole
+  // frontmatter: a grant is a permission allowlist, so only that line grants anything, and
+  // a tool named in `description:` prose must not satisfy a check about what the skill may
+  // CALL. The line is bound and proved non-empty FIRST — binding it after the assertions
+  // that depend on it, as an earlier revision did, left the two `mcp__github__*` checks
+  // reading `PS_FM` under a comment stating the rule they broke, so a grant that dropped
+  // `update_pull_request` while still mentioning it in `description:` passed green.
   const PS_TOOLS = (/^allowed-tools:.*$/m.exec(PS_FM) || [""])[0];
   s.check("G49 the guard reads preview-spec's grant line",
     /\bRead\b/.test(PS_TOOLS) && PS_TOOLS.length > 80,
     "a failed `allowed-tools:` match would make every grant assertion below vacuous");
+  s.check("G49 preview-spec's grant can write a PR body on the mcp path",
+    /mcp__github__update_pull_request/.test(PS_TOOLS),
+    "the whole deliverable of `author` is a PR-body write; granting only `Bash(gh *)` makes"
+      + " it unreachable in every cloud session, where `gh` is absent");
+  s.check("G49 preview-spec's grant can read a PR on the mcp path",
+    /mcp__github__pull_request_read/.test(PS_TOOLS),
+    "the block must be merged into the EXISTING body, so the body has to be readable first");
   // `run` dispatches the aw-tester agent, so this IS a dispatching skill: it must name
   // BOTH spellings. Stated as a conjunction over presence rather than the earlier
   // `!Task || Agent`, which went green on a grant naming NEITHER (the left disjunct is
@@ -5367,7 +5376,7 @@ const isPollBlock = (block) =>
   // exists for: a grant that silently disagreed with its own prose.
   for (const tool of PS_TOOLS.match(/mcp__github__\w+/g) ?? []) {
     s.check(`G49 preview-spec's prose accounts for the granted \`${tool}\``,
-      PS.slice(PS.indexOf("\n---", 4)).includes(tool),
+      PS_BODY.includes(tool),
       "a GitHub tool in the grant that no step names is either dead capability or an"
         + " undocumented call; both are how the grant and the prose drift apart");
   }
@@ -5404,6 +5413,24 @@ const isPollBlock = (block) =>
       && PUR.indexOf("## The access-path precondition") < PUR.indexOf("## Resolution steps"),
     "a precondition printed after the steps it gates is read too late; the condition is"
       + " `run` invoked without `--url`, which SKILL.md Step 0 cannot see at all");
+  // And the premise that makes the two checks above MEAN anything must itself be guarded.
+  // Placing the branch in the owning file is only sufficient because `runner.md § Step 2`
+  // (a) delegates resolution there and (b) declares any `inconclusive` from there terminal.
+  // Neither was asserted, so deleting either sentence from `runner.md` left L1 green while
+  // the branch became unreachable again — the guard resting on an unguarded premise.
+  const RUN = read("skills/testing/preview-spec/rules/runner.md");
+  const RUN_STEP2 = RUN.slice(RUN.indexOf("## Step 2: Resolve the preview URL"));
+  s.check("G49 runner.md Step 2 delegates resolution to the owning file",
+    RUN_STEP2.startsWith("## Step 2: Resolve the preview URL")
+      && /preview-url-resolution\.md/.test(RUN_STEP2.slice(0, 400)),
+    "the precondition is enforced in `preview-url-resolution.md`; a Step 2 that resolves the"
+      + " URL itself never reads that file, and the branch is unreachable however well it"
+      + " is written");
+  s.check("G49 runner.md Step 2 declares an inconclusive from that file terminal",
+    /`inconclusive: ?…`[^\n]*terminal for this run/.test(RUN_STEP2.slice(0, 400)),
+    "without terminality the runner may treat `no access path for deployment lookup` as a"
+      + " soft miss and carry on to dispatch, reporting a pass or a fail for a spec that"
+      + " never ran — the outcome the string exists to prevent");
 
   // 3c. The named downstream consumer must map the new outcome, and must NOT map it to the
   //     other one's remedy. `review-loop` had a row for `preview not deployed` whose note
@@ -5421,10 +5448,14 @@ const isPollBlock = (block) =>
 
   // 4. The report slot. Every skip condition Step 6.4 enumerates needs a rendered outcome,
   //    or the degraded path reports as success.
-  // Anchored at line start, because the report line IS a whole line while the string
-  // `Preview spec (Step 6.4):` also occurs mid-sentence in Step 6.4's own prose — an
-  // unanchored `exec` takes the FIRST match and would assert the enumeration against a
-  // paragraph. The alternation assertion below then proves the capture is the real slot.
+  // Anchored at line start, and paired with the arm count below. Neither is load-bearing
+  // TODAY — `Preview spec (Step 6.4):` occurs exactly once in the file, so anchored and
+  // unanchored `exec` capture the same six arms, and reverting either one keeps L1 green.
+  // Both are here because an earlier revision of Step 6.4's own prose DID repeat the
+  // literal mid-sentence, which made the unanchored `exec` take the paragraph as its first
+  // match and assert the enumeration against it; that prose was reworded rather than the
+  // guard being left to depend on the wording. Keep both: they cost nothing and they are
+  // what stops a re-added prose mention from silently re-breaking the capture.
   const SLOT = /^Preview spec \(Step 6\.4\):([^\n]*)/m.exec(CP);
   s.check("G49 create-pr's Step 10 report has a preview-spec slot",
     SLOT !== null && SLOT[1].split("|").length === 6,
