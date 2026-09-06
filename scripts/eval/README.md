@@ -330,41 +330,79 @@ remembered number.
 | `tier-routing` | 30 | 83.3% | 5, **all** →`Micro` |
 | `code-review-retrieval-relevance` | 5 | 60.0% | `…unrelated-diff`, `…seen2-below-threshold` (both surface→skip) |
 
-Three findings, in order of what they cost:
+A **confirmation run** on the same rubrics after the scorer fix (`tier-routing`,
+`shape-depth-routing`, `code-review-retrieval-relevance`) scored 25/30, 18/22 and 3/5.
+Read the two together — the difference between them is most of what there is to learn.
 
-1. **`tier-routing`'s five misses all landing on one label was the SCORER, not the
-   rubric** — or at least could not be distinguished from it. `Micro` is both the
-   first element of `choices` and the first token of the `[Micro | Lite | Full]`
-   placeholder in the rubric's own `MODE SELECTION:` block, and the old
-   earliest-substring parse scored that template line as a confident `Micro`. Fixed
-   (see `parseChoice`, `G21l`); the next run prints the raw reply, which settles it.
-   Note the fix cannot *raise* the number — an ambiguous reply is still a miss. It
-   only stops a wrong parse from being reported as a wrong answer.
-2. **`shape-depth-routing`'s two misses trace to the examples, not the table.** The
-   worked example in `depth-routing.md` shows a docs-only / `band: none` delta routing
-   `quick` **without stating its counter values**, so it reads as "docs-only ⇒ quick,
-   full stop" — which is what `refresh-runs` (a fired `FULL_REFRESH_RUNS` counter,
-   expected `deep`) got. And the middle tier, which the golden set calls "the middle
-   tier's default population", has **no worked example at all** while both extremes
-   do — which is what `plain-logic` (40 ordinary lines, expected `standard`) got.
-3. **`code-review-retrieval-relevance` should not have been gating.** 5 cases at a 70%
-   floor allows exactly one miss; its own golden notes say `BOOTSTRAP SEED — NOT A
-   REAL BASELINE`. It is now `[advisory]` under `EVAL_GATE_MIN_CASES`. Separately, its
-   rubric is the 67,630-char `## Step 1` section — 6.4× the next largest and a third of
-   the whole run's token bill — most of which is prior-comment awareness and gate
-   grading, while both misses turn on two facts the section only implies by *absence*
-   (the Step 1.0 `memory_list` is neither diff-filtered nor `seen_count`-gated) in the
-   presence of an explicit `seen_count ≥ 3` promotion rule that reads as a filter.
-   That is a defect in the shipped instructions, not just in the eval: an agent reading
-   that section can make the same inference. Stating both non-filters explicitly, and
-   repointing the suite at `agents/pr-reviewer/rules/memory.md` (the file that *owns*
-   the read contract — the same reasoning that moved `shape-depth-routing` to
-   `depth-routing.md`), would cut a third of the bill and remove the distractors.
+**1. The `tier-routing` misses are real, and one hypothesis died.** All five landing on
+`Micro` looked like a scoring artifact: `Micro` is both the first element of `choices`
+and the first token of the `[Micro | Lite | Full]` placeholder in the rubric's own
+`MODE SELECTION:` block, and the old earliest-substring parse scored that template line
+as a confident `Micro`. The raw replies now printed on every miss refute it — the model
+emits the block *filled in*: `MODE SELECTION: - Tier: Micro - Reasoning:`, and
+`full-unfamiliar` replied with the bare word `Micro`. So these are genuine under-tierings
+of the rubric, not a parse. The scorer fix stays (it closes a live failure mode and cost
+nothing), but it fixed no miss, and the raw-reply line is what turned a plausible story
+into a settled one in a single run.
 
-Cost of the full run, measured: **254,219 input tokens ≈ $0.77** at sonnet-4-6.
-Two suites are 56% of it (`code-review-retrieval-relevance` 33%, `shape-depth-routing`
-23%) because cost is `rubric_chars × cases`, not case count. With the system-block
-cache now in place that drops to roughly **$0.15**.
+The substance: `full-unfamiliar` — *"investigate and fix a memory leak somewhere in the
+streaming pipeline — I'm not sure which layer"* — routes `Micro`, against Question 2
+(*unfamiliar code or domains* ⇒ Full) and against **When in doubt, choose Full**. The
+three `Lite`→`Micro` misses have a structural cause: the decision walk's Q4 fires `Lite`
+on *"2–3 files **OR** any non-trivial logic change"*, while the tier table below it
+describes Lite as *"2–3 files, simple logic"* and Micro as *"1 file, purely mechanical"*.
+A one-file non-trivial logic change is `Lite` by the walk and `Micro` by the table, and
+the model resolves that contradiction toward the table every time. **Two tables in one
+section disagreeing on one cell is the finding** — not model noise.
+
+**2. `shape-depth-routing`: every miss is `→ quick`, and the second run found two more.**
+18/22, with `plain-logic` (40 lines, `band: none`), `blast-radius-none-medium-delta`
+(70 lines, `band: none`), `refresh-runs` (`FULL_REFRESH_RUNS` fired) and
+`refresh-cumulative` (`FULL_REFRESH_DELTA` fired) all routing `quick`. One cause covers
+all four: **`blast_radius.band == none` is being read as sufficient for `quick`**,
+overriding both the `standard` row's `11 ≤ DELTA_LINES ≤ 100` band and the `deep` row's
+*"a refresh counter fired"*. Three properties of the rule file feed it — the `quick` row's
+"Chosen when" is the single word `otherwise` with nothing saying `band: none` alone is not
+"otherwise"; the refresh triggers are four words in the `deep` row whose counters are
+defined in a section *below* the table and below `--effort`; and the worked-example block
+shows a `deep` and a `quick` and **no `standard`** — the tier the golden set calls "the
+middle tier's default population".
+
+**3. The variance is the third finding.** Same rubric, two runs: `shape-depth-routing`
+20/22 → 18/22, and `tier-routing` held at 5 misses while the *set* changed
+(`lite-error-toast` in, `full-api-refactor` out). At n=22, ±2 cases is ±9 points. The 70%
+catastrophic floor survives that; a "no regression vs baseline" gate would be pure noise
+at these sizes. Do not tighten a floor until a golden set reaches ≥ 50.
+
+**4. `code-review-retrieval-relevance` should not have been gating.** 5 cases at a 70%
+floor allows exactly one miss, and its own golden notes say `BOOTSTRAP SEED — NOT A REAL
+BASELINE`. It is now `[advisory]`. Separately, its rubric is the 67,630-char `## Step 1`
+section — 6.4× the next largest — most of which is prior-comment awareness and gate
+grading, while both misses turn on two facts the section only implies by *absence* (the
+Step 1.0 `memory_list` is neither diff-filtered nor `seen_count`-gated) in the presence of
+an explicit `seen_count ≥ 3` promotion rule that reads like a filter. That is a defect in
+the shipped instructions, not only in the eval: an agent reading that section can draw the
+same inference. Stating both non-filters explicitly, and repointing the suite at
+`agents/pr-reviewer/rules/memory.md` — the file that *owns* the read contract, the same
+reasoning that moved `shape-depth-routing` to `depth-routing.md` — would remove the
+distractors.
+
+**Cost, measured on both runs.** Uncached: **254,219 input tokens ≈ $0.77** at
+sonnet-4-6, and two suites are 56% of it, because cost is `rubric_chars × cases` rather
+than case count. With the cached system block, per suite:
+
+| suite | before | after (billed-equivalent) | |
+| --- | --- | --- | --- |
+| `code-review-retrieval-relevance` | 84,540 | 466 input + 19,767 write + 79,068 read ≈ **33,100** | −61% |
+| `shape-depth-routing` | 58,110 | 3,394 input + 3,014 write + 63,294 read ≈ **13,500** | −77% |
+| `tier-routing` | 18,390 | 21,618 — `cache MISSED` | 0% |
+
+The third row is the honest limit: a cache needs a ~1024-token prefix and `tier-routing`'s
+rubric is ~613, so it cannot benefit — nor can `bug-class` (~342) or
+`reviewer-agreement-bump` (~252), which are also the three cheapest suites. Projected full
+run: **~$0.30, not the ~$0.15 a flat 80% would imply.** When the cache hits,
+`input_tokens` collapses (466 for a suite that read 79k), so read the cache counters as
+the cost, not the input figure.
 
 ### The L1 baseline
 
