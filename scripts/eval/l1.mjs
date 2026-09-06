@@ -1442,6 +1442,44 @@ function checksInSync(plan, checks) {
       !/^const SUITES = \[/m.test(l2runner));
   }
 
+  // G21i: the opt-in gate. These evals cost model tokens per case, so a suite job
+  // must be reachable ONLY through an explicit ask (the PR label or a dispatch) —
+  // and the aggregator must still run on every PR, because dropping the
+  // `pull_request` trigger to make the workflow manual leaves a required check
+  // pending forever. Both halves are asserted: the gate exists AND the check does
+  // not depend on it firing.
+  {
+    // The label literal is EXTRACTED from the workflow, never re-encoded here, so
+    // this guard cannot pass against a workflow that renamed it
+    // (aw-lessons::mock-that-reimplements-the-thing-under-test).
+    const label = (l2yml.match(
+      /contains\(github\.event\.pull_request\.labels\.\*\.name,\s*'([^']+)'\)/,
+    ) || [])[1];
+    s.check("G21i evals-l2.yml resolves the opt-in from a PR label", Boolean(label),
+      "no contains(...labels.*.name, '<label>') expression found");
+
+    if (label) {
+      // The only path to a model call is an opted-in run. Asserted on the suite
+      // job's own `if`, so a re-added unconditional matrix fails here.
+      const suiteIf = (l2yml.match(/^\s{2}suite:[\s\S]*?^\s{4}if:\s*(.+)$/m) || [])[1] || "";
+      s.check("G21i the suite jobs run only on an opted-in run",
+        suiteIf.includes("needs.gate.outputs.opted_in == 'true'"), `suite if: ${suiteIf.trim()}`);
+
+      // …and the requireable check is NOT gated on the opt-in, or every
+      // non-opted-in PR would wait on a check that never runs.
+      const l2If = (l2yml.match(/^\s{2}l2:[\s\S]*?^\s{4}if:\s*(.+)$/m) || [])[1] || "";
+      s.check("G21i the aggregator check runs on every PR, opted in or not",
+        l2If.trim() === "always()", `l2 if: ${l2If.trim()}`);
+      s.check("G21i evals-l2.yml still triggers on pull_request (a manual-only trigger hangs a required check)",
+        /^on:[\s\S]*?^\s{2}pull_request:/m.test(l2yml));
+
+      // The label is an instruction to a human, so it has to be documented under
+      // the name the workflow actually reads.
+      s.check(`G21i the '${label}' opt-in label is documented in the eval README`,
+        readme.includes(label));
+    }
+  }
+
   // G21e: README carries the methodology NOTE for this suite (promotion → golden case),
   // not merely the suite table row. Assert on the note's own heading literal so a table
   // row alone can't satisfy it.

@@ -92,19 +92,42 @@ EVAL_MODEL=… EVAL_GATE=70 node scripts/eval/l2.mjs
 
 That is the whole change. There is **no** third step wiring the new suite into CI:
 `evals-l2.yml` derives which suites a PR affects from this table, so declaring the
-suite's `rubric.file` and `golden` is what makes CI run it.
+suite's `rubric.file` and `golden` is what makes CI run it on an opted-in PR.
 
-### Which suites run on a PR
+### L2 in CI is opt-in
 
-CI runs the **subset** a PR's changed files can affect, one job per suite — not all
-nine. `select-suites.mjs` computes that subset from the suite table:
+Every L2 case is a model call, so **CI runs no suite unless someone asks.**
+Two mechanisms, both manual:
 
-| A PR changes… | …and CI runs |
+| To run L2… | Do this |
+| --- | --- |
+| on a PR | add the **`run-evals`** label — the affected suites then run on that PR's every push until the label is removed |
+| ad hoc | Actions → *evals · L2 (behavioral)* → **Run workflow**; the `suites` input takes `all` (default) or a comma-separated list |
+
+A PR without the label pays one ~3-second bookkeeping job: no checkout, no Node,
+no API call. The `evals · L2 (behavioral) / l2` check reports `not opted in — no
+suites run, no tokens spent` and passes.
+
+**Why the workflow still triggers on `pull_request` at all.** The trigger governs
+whether the *check* appears; the gate governs whether *suites run*. A workflow with
+only `workflow_dispatch` never reports on a PR, so requiring its check leaves every
+PR pending forever — the same trap the old `paths:` filter set. Keeping the trigger
+and gating the spend gets both: an always-resolving required check and zero cost by
+default. `G21i` asserts both halves, and that the label name in the workflow is the
+one documented here.
+
+### Which suites run once you opt in
+
+Even opted in, CI runs only the **subset** the PR's changed files can affect, one
+job per suite — so labelling a one-rubric PR costs one suite, not nine.
+`select-suites.mjs` computes that subset from the suite table:
+
+| An opted-in PR changes… | …and CI runs |
 | --- | --- |
 | a suite's `rubric.file` | that suite (a rubric two suites read selects both — e.g. `fix-bug/SKILL.md` → `bug-class` + `complexity-triage`) |
 | a suite's `golden/*.jsonl` | that suite |
 | `l2.mjs`, `lib.mjs`, `suites.mjs`, `select-suites.mjs` | **every** suite — a runner change can alter any of them |
-| anything else | nothing; the aggregator job passes with "no suite affected" |
+| anything else | nothing; the aggregator job passes with "no suite is affected by this diff" |
 
 ```bash
 git diff --name-only main...HEAD | node scripts/eval/select-suites.mjs
@@ -125,9 +148,10 @@ listed paths backed no suite at all. `G21d` now asserts the derivation *and* the
 absence of a rubric-path mirror, so that class of drift cannot come back.
 
 **Required check:** require **`evals · L2 (behavioral) / l2`** — the aggregator job,
-which runs on every PR including one that affects no suite. Never require a
-per-suite job (`suite (tier-routing)`): those come and go with the diff, and a
-required check that does not run leaves the PR pending forever.
+which runs on every PR whether or not it opted in and whether or not it affects a
+suite. Never require a per-suite job (`suite (tier-routing)`): those exist only on
+an opted-in PR, and a required check that does not run leaves the PR pending
+forever.
 
 ### The link to self-improvement
 
@@ -165,7 +189,7 @@ require via branch protection:
 | Workflow | Check name | Trigger | Needs a secret? | Gates? |
 | --- | --- | --- | --- | --- |
 | `.github/workflows/evals-l1.yml` | **evals · L1 (contract checks)** | every PR + push to `main` | no | **yes** — fails on any broken contract |
-| `.github/workflows/evals-l2.yml` | **evals · L2 (behavioral) / l2** | every PR (runs only the affected suites — see [Which suites run on a PR](#which-suites-run-on-a-pr)), + manual `workflow_dispatch` | `ANTHROPIC_API_KEY` | soft — `EVAL_GATE` floor (70%), per suite |
+| `.github/workflows/evals-l2.yml` | **evals · L2 (behavioral) / l2** | reports on every PR; **runs suites only on opt-in** — the `run-evals` label or a `workflow_dispatch` — and then only the affected ones ([details](#l2-in-ci-is-opt-in)) | `ANTHROPIC_API_KEY` | soft — `EVAL_GATE` floor (70%), per suite |
 
 **To enable L2:** add an `ANTHROPIC_API_KEY` repository secret (Settings →
 Secrets and variables → Actions). Without it the L2 job still runs and **passes**
