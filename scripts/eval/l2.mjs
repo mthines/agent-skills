@@ -249,7 +249,13 @@ for (const suite of SUITES) {
       // because every request was rejected was indistinguishable, in its output, from a run
       // where the model simply answered wrongly 189 times. A transport failure must not be
       // able to masquerade as an eval result.
-      apiErrors.set(e.message, (apiErrors.get(e.message) ?? 0) + 1);
+      // Key on the message with the per-request identifiers STRIPPED. An Anthropic error
+      // body ends in a unique `"request_id":"req_…"`, so keying on the raw message made the
+      // Map a no-op: run 34048339749 printed one `1×` line per case, 149 of them, for a
+      // single account-wide cause. Dedup that does not dedup is worse than none — it is the
+      // same wall of noise, now claiming to be a summary.
+      const key = e.message.replace(/,?"request_id":\s*(?:"[^"]*"|null)/g, "");
+      apiErrors.set(key, (apiErrors.get(key) ?? 0) + 1);
       got = `ERR(${e.message.slice(0, 60)}…)`;
     }
     const ok = got === c.expected;
