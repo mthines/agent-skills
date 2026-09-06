@@ -1,44 +1,134 @@
 name: evals · L2 (behavioral)
 
 # Behavioral evals: do the skills make the right runtime decisions?
-# Suites: tier-routing, bug-class, complexity-triage, aw-should-trigger.
-# Each runs a model, so this needs a secret and costs a few tokens. To keep it
-# cheap and relevant it runs ONLY when a rubric/golden file changes (or on manual
-# dispatch).
+# Each case runs a model, so this costs tokens — which is why it runs only the
+# SUBSET of suites a PR's changed files can affect, one job per suite.
 #
-# Setup (one-time): add an ANTHROPIC_API_KEY repository secret
-#   (Settings → Secrets and variables → Actions → New repository secret).
-# Without the secret the job still runs and passes — the script skips cleanly —
-# so this is safe to require as a check and safe for fork PRs.
+# Selection is DERIVED, not hand-maintained: `scripts/eval/select-suites.mjs` maps
+# the changed-file list to suite names using the `rubric.file` / `golden` each suite
+# already declares in `scripts/eval/suites.mjs`. This workflow therefore carries NO
+# `paths:` filter and no list of rubric files — the previous hand-written mirror had
+# drifted (four of nine rubric files missing, two listed paths backing no suite), so
+# a severity-rubric edit shipped with its own eval never run.
+#
+# Requires an ANTHROPIC_API_KEY repository secret
+# (Settings → Secrets and variables → Actions → New repository secret).
+# Without it the script skips cleanly and the run is green — safe for fork PRs,
+# which cannot read secrets.
+#
+# Required-check shape: the aggregator job is `l2` (unchanged name, so existing
+# branch protection keeps working) and it runs on EVERY PR via `if: always()`.
+# The per-suite matrix jobs are `suite (<name>)` and come and go with the diff —
+# never require those, or a PR that legitimately affects no suite waits forever
+# on a check that never runs.
 
 on:
   pull_request:
-    paths:
-      # rubric sources (read live by the eval)
-      - "skills/workflow/autonomous-workflow/aw/SKILL.md"
-      - "skills/workflow/autonomous-workflow/templates/routing.rule.md"
-      - "skills/workflow/autonomous-workflow/SKILL.md"
-      - "skills/workflow/autonomous-workflow/rules/phase-0-validation.md"
-      - "skills/workflow/fix-bug/SKILL.md"
-      - "agents/pr-reviewer.md"
-      # eval harness + golden sets
-      - "scripts/eval/l2.mjs"
-      - "scripts/eval/lib.mjs"
-      - "scripts/eval/golden/**"
   workflow_dispatch:
+    inputs:
+      suites:
+        description: "Which suites to run: 'all', or a comma-separated list of suite names."
+        required: false
+        default: "all"
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  l2:
+  select:
+    name: select affected suites
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      suites: ${{ steps.pick.outputs.suites }}
+      count: ${{ steps.pick.outputs.count }}
+      reason: ${{ steps.pick.outputs.reason }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout (full history — the selector diffs against the PR base)
+        uses: actions/checkout@v5
         with:
-          node-version: "20"
-      - name: L2 behavioral evals
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Pick the affected suites
+        id: pick
+        env:
+          # Empty on workflow_dispatch — the step then honours the `suites` input.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          REQUESTED: ${{ inputs.suites }}
+        run: |
+          set -euo pipefail
+          if [ -n "$BASE_SHA" ]; then
+            git diff --name-only "$BASE_SHA" "${{ github.sha }}" | tee changed.txt
+            echo "--- selection ---"
+            node scripts/eval/select-suites.mjs --json < changed.txt | tee selection.json
+          elif [ "${REQUESTED:-all}" = "all" ]; then
+            node scripts/eval/select-suites.mjs --json --all | tee selection.json
+          else
+            # A dispatch naming suites explicitly. l2.mjs rejects an unknown name
+            # with exit 2, so a typo fails loudly instead of running nothing.
+            node -e '
+              const names = process.argv[1].split(",").map((s) => s.trim()).filter(Boolean);
+              console.log(JSON.stringify({ suites: names, count: names.length, reason: "workflow_dispatch: " + names.join(", ") }));
+            ' "$REQUESTED" | tee selection.json
+          fi
+          {
+            echo "suites=$(jq -c '.suites' selection.json)"
+            echo "count=$(jq -r '.count' selection.json)"
+            echo "reason=$(jq -r '.reason' selection.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Report the selection
+        run: |
+          set -euo pipefail
+          {
+            echo "### L2 suite selection"
+            echo ""
+            echo "${{ steps.pick.outputs.reason }}"
+            echo ""
+            echo '```json'
+            echo '${{ steps.pick.outputs.suites }}'
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  suite:
+    name: suite
+    needs: select
+    if: needs.select.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # `secrets` is not a context available to a step-level `if`, so the presence
+      # of the key is resolved once here into a plain env value the warning step
+      # below can branch on.
+      HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+    strategy:
+      # One red suite must not cancel the others — a run exists to report every
+      # suite's accuracy, and a half-reported run costs a second full run to read.
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(needs.select.outputs.suites) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+
+      - name: Warn when the API key is absent
+        if: env.HAS_API_KEY != 'true'
+        run: |
+          echo "::warning title=L2 evals skipped::No ANTHROPIC_API_KEY secret — the eval exits 0 without running a single case, so this green check proves nothing. Add the secret under Settings → Secrets and variables → Actions."
+
+      - name: L2 behavioral evals — ${{ matrix.suite }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Conservative catastrophic floor, applied per suite. A healthy rubric
@@ -47,4 +137,37 @@ jobs:
           # 0%-regression-vs-baseline) once a golden set reaches ≥ 50 — see
           # scripts/eval/README.md.
           EVAL_GATE: "70"
-        run: node scripts/eval/l2.mjs
+        run: node scripts/eval/l2.mjs --suite "${{ matrix.suite }}"
+
+  l2:
+    # The stable check name. Runs on every PR — including one that affects no suite —
+    # so branch protection can require it without a path-filtered workflow leaving a
+    # required check pending forever.
+    name: l2
+    needs: [select, suite]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Roll the per-suite results up to one verdict
+        env:
+          SELECT_RESULT: ${{ needs.select.result }}
+          SUITE_RESULT: ${{ needs.suite.result }}
+          COUNT: ${{ needs.select.outputs.count }}
+          REASON: ${{ needs.select.outputs.reason }}
+        run: |
+          set -euo pipefail
+          echo "selection: ${REASON:-<none>} (count=${COUNT:-?})"
+          echo "select job: $SELECT_RESULT · suite jobs: $SUITE_RESULT"
+          # `skipped` on the suite jobs is the legitimate no-affected-suite case.
+          # A failed SELECTION is never green: it means the subset is unknown, which
+          # is the one state that must not read as "nothing to run".
+          if [ "$SELECT_RESULT" != "success" ]; then
+            echo "✗ suite selection failed — the affected subset is unknown"
+            exit 1
+          fi
+          case "$SUITE_RESULT" in
+            success) echo "✓ every selected suite passed" ;;
+            skipped) echo "✓ no suite affected by this diff — nothing to run" ;;
+            *)       echo "✗ a selected suite failed ($SUITE_RESULT)"; exit 1 ;;
+          esac

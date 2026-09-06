@@ -87,10 +87,47 @@ EVAL_MODEL=… EVAL_GATE=70 node scripts/eval/l2.mjs
 ### Add a suite
 
 1. Drop a `golden/<name>.jsonl` of `{"id","input","expected","notes"}` lines.
-2. Append a config object to `SUITES` in `l2.mjs` — point `rubric.section` at the
-   skill heading to read live, and list the `choices`.
-3. Add the golden path / rubric file to `evals-l2.yml`'s `paths:` so CI runs it
-   when relevant files change.
+2. Append a config object to `SUITES` in `suites.mjs` — point `rubric.section` at
+   the skill heading to read live, and list the `choices`.
+
+That is the whole change. There is **no** third step wiring the new suite into CI:
+`evals-l2.yml` derives which suites a PR affects from this table, so declaring the
+suite's `rubric.file` and `golden` is what makes CI run it.
+
+### Which suites run on a PR
+
+CI runs the **subset** a PR's changed files can affect, one job per suite — not all
+nine. `select-suites.mjs` computes that subset from the suite table:
+
+| A PR changes… | …and CI runs |
+| --- | --- |
+| a suite's `rubric.file` | that suite (a rubric two suites read selects both — e.g. `fix-bug/SKILL.md` → `bug-class` + `complexity-triage`) |
+| a suite's `golden/*.jsonl` | that suite |
+| `l2.mjs`, `lib.mjs`, `suites.mjs`, `select-suites.mjs` | **every** suite — a runner change can alter any of them |
+| anything else | nothing; the aggregator job passes with "no suite affected" |
+
+```bash
+git diff --name-only main...HEAD | node scripts/eval/select-suites.mjs
+node scripts/eval/select-suites.mjs --json skills/quality/severity/SKILL.md
+node scripts/eval/select-suites.mjs --self-test    # executed by L1 G21h
+```
+
+Matching is **exact** on repo-relative paths — the spelling `git diff --name-only`
+prints and the table stores. Widening (the harness rule) is the deliberate
+fail-open direction: extra suites cost tokens, a missed suite costs coverage, and a
+suite that never ran reports as a green PR exactly like a suite that passed.
+
+**Why it is derived rather than listed.** The workflow used to carry a hand-written
+`paths:` mirror of the rubric files. It drifted: four of the nine rubric files were
+missing from it (`severity/SKILL.md`, `optimality-rubric.md`, `depth-routing.md`,
+`rubric-composition.md`), so editing those rubrics never ran their own eval, and two
+listed paths backed no suite at all. `G21d` now asserts the derivation *and* the
+absence of a rubric-path mirror, so that class of drift cannot come back.
+
+**Required check:** require **`evals · L2 (behavioral) / l2`** — the aggregator job,
+which runs on every PR including one that affects no suite. Never require a
+per-suite job (`suite (tier-routing)`): those come and go with the diff, and a
+required check that does not run leaves the PR pending forever.
 
 ### The link to self-improvement
 
@@ -128,13 +165,18 @@ require via branch protection:
 | Workflow | Check name | Trigger | Needs a secret? | Gates? |
 | --- | --- | --- | --- | --- |
 | `.github/workflows/evals-l1.yml` | **evals · L1 (contract checks)** | every PR + push to `main` | no | **yes** — fails on any broken contract |
-| `.github/workflows/evals-l2.yml` | **evals · L2 (behavioral)** | PRs touching a rubric/golden file, + manual `workflow_dispatch` | `ANTHROPIC_API_KEY` | soft — `EVAL_GATE` floor (70%), per suite |
+| `.github/workflows/evals-l2.yml` | **evals · L2 (behavioral) / l2** | every PR (runs only the affected suites — see [Which suites run on a PR](#which-suites-run-on-a-pr)), + manual `workflow_dispatch` | `ANTHROPIC_API_KEY` | soft — `EVAL_GATE` floor (70%), per suite |
 
 **To enable L2:** add an `ANTHROPIC_API_KEY` repository secret (Settings →
-Secrets and variables → Actions). Until then the L2 job still runs and **passes**
-(the script skips cleanly with no key), so it's safe to require immediately and
-safe for fork PRs (which can't read secrets). Accuracy + any misses are written
-to the PR's check summary.
+Secrets and variables → Actions). Without it the L2 job still runs and **passes**
+(the script skips cleanly with no key), which is what makes it safe to require
+immediately and safe for fork PRs (which can't read secrets) — but a green check
+in that state proves nothing, so the job emits a `::warning` naming the missing
+secret rather than passing silently. Accuracy + any misses are written to the PR's
+check summary.
+
+`workflow_dispatch` takes a `suites` input: `all` (default) or a comma-separated
+list of suite names, for re-running one suite without touching a file.
 
 **Why L2 only gates softly:** each golden set is < 50 cases, which `evals.md`
 calls statistically noisy. The 70% floor only catches a badly-broken rubric, not

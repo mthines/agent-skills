@@ -1358,11 +1358,22 @@ function checksInSync(plan, checks) {
 {
   const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
 
-  const l2 = read("scripts/eval/l2.mjs");
+  // The suite table lives in suites.mjs (shared with select-suites.mjs and l2.mjs),
+  // so every table assertion below reads THAT file — asserting against l2.mjs would
+  // pass vacuously now that it only imports the table.
+  const l2 = read("scripts/eval/suites.mjs");
+  const l2runner = read("scripts/eval/l2.mjs");
   const golden = read("scripts/eval/golden/code-review-retrieval-relevance.jsonl");
   const notes  = read("scripts/eval/golden/code-review-retrieval-relevance.NOTES.md");
   const l2yml  = read(".github/workflows/evals-l2.yml");
   const readme = read("scripts/eval/README.md");
+
+  // Every shipped suite's rubric declaration, parsed LIVE out of the table so both
+  // consumers below (G21d's no-mirror half, G21g's extraction check) read the same
+  // set and neither can drift from the suites that actually ship.
+  const SUITES_TABLE = [...l2.matchAll(
+    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*section:\s*(null|"([^"]+)")\s*\}/g,
+  )];
 
   // G21a: l2.mjs SUITES contains the new suite entry with the D1 rubric file + section.
   // Scoped to the code-review-retrieval-relevance suite object so the file/section
@@ -1371,7 +1382,7 @@ function checksInSync(plan, checks) {
   const d1Suite = (l2.match(
     /name:\s*"code-review-retrieval-relevance"[\s\S]*?rubric:\s*\{[^}]*\}/,
   ) || [""])[0];
-  s.check("G21a l2.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + section)",
+  s.check("G21a suites.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + section)",
     d1Suite.includes("agents/pr-reviewer.md") &&
     d1Suite.includes("## Step 1: Fetch all inputs + load memories"));
 
@@ -1389,9 +1400,47 @@ function checksInSync(plan, checks) {
   s.check("G21c loud BOOTSTRAP marker literal is present in the NOTES file",
     notes.includes("BOOTSTRAP SEED — NOT A REAL BASELINE"));
 
-  // G21d: evals-l2.yml paths lists agents/pr-reviewer.md (the live rubric source for the new suite).
-  s.check("G21d evals-l2.yml paths lists agents/pr-reviewer.md",
-    l2yml.includes("agents/pr-reviewer.md"));
+  // G21d: evals-l2.yml DERIVES its suite selection instead of mirroring the rubric
+  // files in a `paths:` filter. The mirror is what drifted — four of nine rubric
+  // files were absent from it (severity, optimality, depth-routing, rubric-composition),
+  // so editing those rubrics never ran their own eval, and two listed paths backed no
+  // suite at all. Asserting the derivation (the selector is invoked, the matrix drives
+  // `--suite`) is what makes that class of drift unrepresentable; a re-added rubric-path
+  // list is caught by the negative half below.
+  s.check("G21d evals-l2.yml derives the affected suites from the selector, not a paths mirror",
+    l2yml.includes("scripts/eval/select-suites.mjs") &&
+    l2yml.includes("--suite") &&
+    l2yml.includes("fromJSON(needs.select.outputs.suites)"));
+  const rubricFilesInYml = SUITES_TABLE
+    .map((m) => m[1])
+    .filter((f) => l2yml.includes(f));
+  s.check("G21d evals-l2.yml carries no hand-maintained mirror of the suites' rubric files",
+    rubricFilesInYml.length === 0,
+    rubricFilesInYml.length ? `still listed: ${rubricFilesInYml.join(", ")}` : "");
+
+  // G21h: the selector's own self-test. It asserts the MAPPING derived from the table
+  // (each suite is selected by its rubric file and by its golden file; a harness file
+  // selects all; an unrelated or near-miss path selects none; output is table-ordered),
+  // so adding a suite extends the coverage rather than aging the assertion. Executing
+  // it here is the difference between a selector that is documented to be right and one
+  // that is checked — a narrowing bug hides itself, because a suite that never ran
+  // reports as a green PR exactly like a suite that passed.
+  {
+    const SELECT = join(REPO_ROOT, "scripts/eval/select-suites.mjs");
+    const r = spawnSync("node", [SELECT, "--self-test"], { encoding: "utf8" });
+    s.check("G21h the suite selector's self-test passes", r.status === 0,
+      (r.stderr || r.stdout || "").trim().split("\n").slice(0, 6).join(" / "));
+
+    // The runner must reject an unknown --suite loudly. CI drives that flag from a
+    // generated matrix, so a run-nothing-exit-0 would report a typo as a passing eval.
+    const bad = spawnSync("node", [join(REPO_ROOT, "scripts/eval/l2.mjs"), "--suite", "no-such-suite"],
+      { encoding: "utf8", env: { ...process.env, ANTHROPIC_API_KEY: "" } });
+    s.check("G21h l2.mjs exits non-zero on an unknown --suite name", bad.status !== 0,
+      `exit ${bad.status}`);
+    s.check("G21h l2.mjs imports the shared suite table rather than declaring its own",
+      /import\s*\{[^}]*SUITES[^}]*\}\s*from\s*"\.\/suites\.mjs"/.test(l2runner) &&
+      !/^const SUITES = \[/m.test(l2runner));
+  }
 
   // G21e: README carries the methodology NOTE for this suite (promotion → golden case),
   // not merely the suite table row. Assert on the note's own heading literal so a table
@@ -1399,11 +1448,11 @@ function checksInSync(plan, checks) {
   s.check("G21e README carries the per-suite methodology note (promotion → golden case) for code-review-retrieval-relevance",
     readme.includes("### `code-review-retrieval-relevance` — methodology note"));
 
-  // G21f (regression lock): the six pre-existing suite names are still present in l2.mjs
+  // G21f (regression lock): the six pre-existing suite names are still present in the table
   // (negative half: the edit added, did not replace).
   for (const name of ["tier-routing", "bug-class", "complexity-triage", "aw-should-trigger",
     "optimize-approach-optimality", "reviewer-agreement-bump"]) {
-    s.check(`G21f l2.mjs still contains pre-existing suite '${name}' (add-not-replace)`,
+    s.check(`G21f suites.mjs still contains pre-existing suite '${name}' (add-not-replace)`,
       l2.includes(`name: "${name}"`));
   }
 
@@ -1414,12 +1463,10 @@ function checksInSync(plan, checks) {
   // the model an empty rubric. It runs the SAME shared extractSection l2.mjs feeds the model
   // (imported from lib.mjs), so a regression in that function — e.g. reverting the
   // heading-level-aware cut back to a cut-at-any-heading — fails this guard. The suite list
-  // is parsed live out of l2.mjs so the guard can never drift from the shipped suites.
+  // is parsed live out of suites.mjs so the guard can never drift from the shipped suites.
   const BODY_MIN = 80; // a real rubric body dwarfs this; a bare title never reaches it.
-  const rubricEntries = [...l2.matchAll(
-    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*section:\s*(null|"([^"]+)")\s*\}/g,
-  )].map((m) => ({ file: m[1], section: m[2] === "null" ? null : m[3] }));
-  s.check("G21g parsed at least the 7 shipped rubric entries from l2.mjs",
+  const rubricEntries = SUITES_TABLE.map((m) => ({ file: m[1], section: m[2] === "null" ? null : m[3] }));
+  s.check("G21g parsed at least the 7 shipped rubric entries from suites.mjs",
     rubricEntries.length >= 7);
   for (const { file, section } of rubricEntries) {
     if (section === null) continue; // whole-file rubrics have no heading to strip.
