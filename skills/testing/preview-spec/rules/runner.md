@@ -15,7 +15,8 @@ The runner is an **on-demand orchestrator** — it resolves and dispatches once,
 
 ## Step 1: Get the spec
 
-**From the PR (default).** Read the PR body: `gh pr view <pr> --json body -q .body`.
+**From the PR (default).** Read the PR body with the call for your resolved access path ([`SKILL.md` Step 0](../SKILL.md#step-0-resolve-your-github-access-path) holds the mapping): `gh pr view <pr> --json body -q .body` on the `gh` path, `mcp__github__pull_request_read` with `method: "get"` on the `mcp` path.
+Unlike the deployment lookup in Step 2, this read has an mcp equivalent, so an absent `gh` never blocks it.
 Extract the region between `<!-- preview-spec:v1 -->` and `<!-- /preview-spec:v1 -->` (see [`spec-format.md`](./spec-format.md)).
 The committed PR body is the **only** source the PR path reads. It never reads `.agent/{branch}/specs.md` — that file is gitignored and absent on a fresh checkout ([`spec-sources.md § Two artifacts, two lifetimes`](./spec-sources.md#two-artifacts-two-lifetimes)). Verifying against the PR is therefore independent of any local aw run.
 

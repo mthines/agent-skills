@@ -18,10 +18,10 @@ description: >
 disable-model-invocation: false
 argument-hint: '[author|run] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright]'
 license: MIT
-allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Read Edit Write Grep Glob Skill Task AskUserQuestion mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
+allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.2.0'
   workflow_type: slash-command
   tags:
     - playwright
@@ -90,6 +90,23 @@ Resolve which path you have — `gh` CLI, `mcp__github__*` tools, or neither —
 Resolve once, state the path, and use it for the whole run.
 The commands below are the `gh`-path form.
 
+**On the `mcp` path, use these equivalents.**
+Naming them here is load-bearing: the `gh`-path form above is not a mapping, and a reader who has to invent one writes nothing to the PR.
+
+| `gh`-path command | `mcp`-path equivalent |
+| --- | --- |
+| `gh pr view <pr> --json body` | `mcp__github__pull_request_read` with `method: "get"` |
+| `gh pr edit <pr> --body <body>` | `mcp__github__update_pull_request` with `body` |
+| `gh api repos/<owner>/<repo>/deployments?sha=…` | **none — see below** |
+
+**`author` works on both paths; `run`'s URL resolution does not.**
+[`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md) reads the GitHub deployments API, and no `mcp__github__*` tool exposes deployments.
+So on the `mcp` path, `run` must take an explicit `--url <preview-url>` argument.
+Without one, report `inconclusive: no access path for deployment lookup (pass --url)` and stop — never report `inconclusive: preview not deployed`, which claims a fact about the deployment that was never checked.
+
+This paragraph is a summary; the branch is **enforced** in [`rules/preview-url-resolution.md § The access-path precondition`](./rules/preview-url-resolution.md#the-access-path-precondition-check-this-before-step-1), which owns the resolution decision and which [`rules/runner.md § Step 2`](./rules/runner.md) treats as terminal.
+It has to live there because its condition is *`run` invoked without `--url`* — an argument this step cannot see.
+
 ## Operation `author`
 
 Inject one collapsed, marked UI verification spec into the PR body.
@@ -100,7 +117,9 @@ Inject one collapsed, marked UI verification spec into the PR body.
    - A `/fix-bug` reproduction artifact for a UI or visual bug — an `e2e-testing` flow or a `repro/<id>.md` checklist. Adapt its steps into the grammar.
    Both sources are gitignored, local-only files. This works because `author` runs in the same worktree that wrote them, and it copies their content into the **committed** PR body — the durable artifact `run` later reads. The gitignored file is never committed; only its lifted content reaches GitHub. See [`rules/spec-sources.md § Two artifacts, two lifetimes`](./rules/spec-sources.md#two-artifacts-two-lifetimes). When a source is found, seed the block from it and skip step 3, so the PR block matches what was verified locally rather than a second, divergent description of the same behavior.
 3. **Otherwise, write the spec from the diff.** Read the diff (`git diff <base>...HEAD --name-status` plus the relevant files), then write one `## Spec N:` block per user-visible behavior the diff changes, in `aw-tester`'s grammar. Prefer role-and-name locators; use `{testid: …}` only as an escape hatch. Keep it to the behaviors a reviewer would actually click through — 1 to 3 specs, not an exhaustive suite.
-4. **Wrap and inject** the spec in the marked collapsed block per [`rules/spec-format.md`](./rules/spec-format.md), and write it into the PR body with `gh pr edit --body`, preserving everything already there.
+4. **Wrap and inject** the spec in the marked collapsed block per [`rules/spec-format.md`](./rules/spec-format.md), and write it into the PR body with the body-write call for your resolved [access path](#step-0-resolve-your-github-access-path), preserving everything already there.
+Writing the block into the PR body is this operation's **only** deliverable, so a run that could not perform that write has not authored a spec.
+Report it as `failed (no GitHub access path)` rather than reporting the specs you drafted — a drafted spec that never reached the PR is indistinguishable from none to every later reader, including `run`.
 
 The block is **exempt from the `create-pr` description length ceiling** and is **preserved verbatim** by `review-loop`'s body refresh — both rules live in [`rules/spec-format.md`](./rules/spec-format.md) and in the [description contract](../../delivery/create-pr/rules/description-contract.md).
 
@@ -113,7 +132,7 @@ Run the embedded spec against the live preview.
 Full procedure: **[`rules/runner.md`](./rules/runner.md)**. In outline:
 
 1. **Get the spec.** Extract it from the PR body between the `<!-- preview-spec:v1 -->` markers — the committed PR body is the only source that works on any checkout and in any later session. As a shortcut for a local author→run loop, `run <specs-path>` reads a local `specs.md` directly (no PR, no extraction). Absent → report `no spec` and stop.
-2. **Resolve the preview URL** per [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md). A `--url <preview-url>` argument overrides resolution (required with a local `specs-path`). Not deployed yet → report `inconclusive: preview not deployed` and stop.
+2. **Resolve the preview URL** per [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md). A `--url <preview-url>` argument overrides resolution (required with a local `specs-path`, and required on the `mcp` path). Any `inconclusive: …` outcome from that file is terminal — report it and stop, without a pass or a fail. Its two commonest are `inconclusive: no access path for deployment lookup (pass --url)` (no lookup was possible) and `inconclusive: preview not deployed` (the lookup ran and found nothing).
 3. **Materialize** an ephemeral `specs.md` and an `aw-target.yml` overlay (`base_url` = resolved URL) under `.agent/{branch}/.preview-spec/`, reading auth and fixtures from a committed `.claude/aw-targets/preview.yml` when one exists.
 4. **Select the driver and run** per `--driver` (see [Drivers](#drivers) and [`rules/runner.md § Step 4`](./rules/runner.md)). `auto` invokes `aw-tester-chrome` in-session when the Chrome extension is connected; when Chrome is unavailable or a Chrome run returns `fallback: playwright`, it asks the user before running the `aw-tester` sub-agent rather than falling back silently. A forced `--driver chrome`/`playwright` never prompts. Mode `--all`.
 5. **Report** the verdict (pass / fail / inconclusive, per spec) — identical shape from either driver.

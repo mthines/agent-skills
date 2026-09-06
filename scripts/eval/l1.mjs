@@ -1371,9 +1371,16 @@ function checksInSync(plan, checks) {
   const d1Suite = (l2.match(
     /name:\s*"code-review-retrieval-relevance"[\s\S]*?rubric:\s*\{[^}]*\}/,
   ) || [""])[0];
-  s.check("G21a l2.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + section)",
+  // Both subsections are named, not `## Step 1`. That parent is heading-level-aware and so
+  // captured all ten `### 1.x` subsections — including `### 1.2d`, whose diff-keyed shortlist
+  // answers a different question from the one this suite's goldens label, which is what put
+  // the suite at 3/5 against a 70% floor. Asserting the two literals here means a silent
+  // widening back to the parent reds L1 rather than only the paid L2 run.
+  s.check("G21a l2.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + sections)",
     d1Suite.includes("agents/pr-reviewer.md") &&
-    d1Suite.includes("## Step 1: Fetch all inputs + load memories"));
+    d1Suite.includes("### 1.0 Prior-comment awareness + relevance memory load (default ON)") &&
+    d1Suite.includes("### 1.2c Diff-keyed lesson search (all modes)") &&
+    !d1Suite.includes("## Step 1: Fetch all inputs + load memories"));
 
   // G21b: golden JSONL exists and every non-empty line is valid JSON (locks the
   // test-plan claim that all lines parse). A bare non-empty count would pass on a
@@ -1416,11 +1423,33 @@ function checksInSync(plan, checks) {
   // heading-level-aware cut back to a cut-at-any-heading — fails this guard. The suite list
   // is parsed live out of l2.mjs so the guard can never drift from the shipped suites.
   const BODY_MIN = 80; // a real rubric body dwarfs this; a bare title never reaches it.
+  // The trailing `,?` is load-bearing: without it a suite written `section: "…",` (a trailing
+  // comma before the closing brace — legal JS and the house style everywhere else in this
+  // file) fell out of the parse entirely. Every shipped suite happens to omit it, so the
+  // brittleness was invisible until a mutation added one, and under the old `>= 7` floor it
+  // would have stayed invisible: the suite would simply have gone unchecked.
   const rubricEntries = [...l2.matchAll(
-    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*section:\s*(null|"([^"]+)")\s*\}/g,
+    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*section:\s*(null|"([^"]+)")\s*,?\s*\}/g,
   )].map((m) => ({ file: m[1], section: m[2] === "null" ? null : m[3] }));
-  s.check("G21g parsed at least the 7 shipped rubric entries from l2.mjs",
-    rubricEntries.length >= 7);
+  // The `sections: [...]` form (a decision split across sibling subsections) is a SECOND
+  // rubric shape, so it needs its own parse — and the count sentinel below has to be a
+  // PARITY check against the suite count, not the `>= 7` floor it used to be. A floor is
+  // satisfied by the suites that still match, so a suite adopting an unrecognised rubric
+  // shape drops out of this loop while the sentinel stays green: the guard would then cover
+  // every suite except the one whose rubric had just changed.
+  for (const m of l2.matchAll(
+    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*sections:\s*\[([^\]]*)\]\s*,?\s*\}/g,
+  )) {
+    for (const q of m[2].matchAll(/"((?:[^"\\]|\\.)*)"/g)) {
+      rubricEntries.push({ file: m[1], section: q[1] });
+    }
+  }
+  const suiteCount = [...l2.matchAll(/^\s{4}name:\s*"/gm)].length;
+  s.check("G21g parses a rubric for every suite in l2.mjs (no unrecognised rubric shape)",
+    suiteCount >= 9 && rubricEntries.length >= suiteCount,
+    "a suite's `rubric:` matched neither the `section:` nor the `sections:` parse, so it would"
+      + " be silently exempt from the non-empty-body checks below —"
+      + ` suites=${suiteCount} rubric entries parsed=${rubricEntries.length}`);
   for (const { file, section } of rubricEntries) {
     if (section === null) continue; // whole-file rubrics have no heading to strip.
     // Guard the extraction: a renamed/moved rubric heading makes extractSection throw.
@@ -5296,6 +5325,460 @@ const isPollBlock = (block) =>
       && /never report CI as green|never treat "could not observe" as "no CI/i.test(PHASE7),
     "\"could not observe CI\" and \"no CI configured\" are different states; collapsing them is"
       + " how a green report gets written for a PR whose CI was never observed");
+}
+
+// ── G49: the preview-spec author delegation is REACHABLE and its skip is VISIBLE ──
+// Measured, not hypothesised: of the 20 most recent lorekit PRs, all 20 merged after
+// preview-spec shipped (2026-09-01) and NONE carried a `preview-spec:v1` block —
+// including #651, whose diff matched create-pr Step 6.4's own UI heuristic on nine files.
+// Two independent defects produced that, and each one alone is sufficient:
+//
+//   1. `preview-spec`'s frontmatter granted `Bash(gh *)` and no `mcp__github__*`, so on a
+//      cloud session (no `gh`, which is where these runs happen) the operation's only
+//      deliverable — writing the block into the PR body — was unreachable. Its own Step 0
+//      told it to resolve to the mcp path that its grant then forbade.
+//   2. `create-pr`'s Step 10 report had no slot for the spec at all, so every skip and
+//      every failure rendered as a clean, successful PR. That is why defect 1 survived
+//      four days of UI PRs unnoticed: nothing downstream contradicted it.
+//
+// Assert both at once. Fixing the grant while leaving the report blind restores the
+// capability and keeps the next regression invisible, which is how this one lasted.
+//
+// On the relative weight of the two: a prompt-level A/B (pre-fix vs post-fix text, told
+// only that `gh` is absent and the mcp tools present) reproduced defect 2 in every
+// baseline run — the pre-fix arm answered "NO SLOT" 3/3 — but did NOT reproduce defect 1,
+// because a capable agent handed its tool inventory bridges the missing mapping itself.
+// That is a limit of the probe, not evidence the grant was harmless: `allowed-tools` is a
+// permission allowlist, so a tool absent from it is not callable however well the agent
+// reasons, and no prompt-level simulation can exercise permission enforcement. Defect 2
+// is therefore the one with measured behavioural support, and it alone is sufficient to
+// explain a silent 0-of-20; defect 1 rests on the allowlist contract.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const PS = read("skills/testing/preview-spec/SKILL.md");
+  const CP = read("skills/delivery/create-pr/SKILL.md");
+  // Every `.test()` below reads a BOUNDED surface — a section slice, or a line-anchored
+  // pattern over a whole file. `G49-lint` (the block after this one) executes that as a
+  // rule, and this helper is what makes conforming cheap. `extractSection` throws on a
+  // renamed heading, which would abort the L1 run before `s.report()`, so a miss degrades
+  // to "" and each slice is proved non-empty by its own sentinel instead.
+  const section = (file, heading) => {
+    try {
+      return extractSection(file, heading);
+    } catch {
+      return "";
+    }
+  };
+  const PS_STEP0 = section(
+    "skills/testing/preview-spec/SKILL.md", "## Step 0: Resolve your GitHub access path");
+  s.check("G49 the guard reads preview-spec's Step 0 section",
+    PS_STEP0.length > 400,
+    "a renamed Step 0 heading yields an empty slice; the two access-path assertions below"
+      + " would report as satisfied by a section that no longer exists");
+  // One named boundary, sliced both ways: the frontmatter is what grants, the body is what
+  // documents, and every assertion below belongs to exactly one of them.
+  const PS_FM_END = PS.indexOf("\n---", 4);
+  const PS_FM = PS.slice(0, PS_FM_END);
+  const PS_BODY = PS.slice(PS_FM_END);
+
+  // The sweep must be proved non-empty before any assertion over it is trusted.
+  s.check("G49 the guard reads both surfaces",
+    PS.length > 2000 && CP.length > 2000 && PS_FM.includes("allowed-tools:"),
+    "an empty read or a frontmatter slice that missed `allowed-tools:` would pass every"
+      + " assertion below vacuously");
+
+  // 1. The grant must be able to reach GitHub on BOTH access paths, and to dispatch under
+  //    either spelling. `Bash(gh *)` alone is the pre-fix state; `Task` alone is the exact
+  //    literal-name defect PR #180 removed from this skill's PROSE while leaving it here.
+  //
+  // Every assertion in this group reads the `allowed-tools:` LINE, never the whole
+  // frontmatter: a grant is a permission allowlist, so only that line grants anything, and
+  // a tool named in `description:` prose must not satisfy a check about what the skill may
+  // CALL. The line is bound and proved non-empty FIRST — binding it after the assertions
+  // that depend on it, as an earlier revision did, left the two `mcp__github__*` checks
+  // reading `PS_FM` under a comment stating the rule they broke, so a grant that dropped
+  // `update_pull_request` while still mentioning it in `description:` passed green.
+  const PS_TOOLS = (/^allowed-tools:.*$/m.exec(PS_FM) || [""])[0];
+  s.check("G49 the guard reads preview-spec's grant line",
+    /\bRead\b/.test(PS_TOOLS) && PS_TOOLS.length > 80,
+    "a failed `allowed-tools:` match would make every grant assertion below vacuous");
+  s.check("G49 preview-spec's grant can write a PR body on the mcp path",
+    /mcp__github__update_pull_request/.test(PS_TOOLS),
+    "the whole deliverable of `author` is a PR-body write; granting only `Bash(gh *)` makes"
+      + " it unreachable in every cloud session, where `gh` is absent");
+  s.check("G49 preview-spec's grant can read a PR on the mcp path",
+    /mcp__github__pull_request_read/.test(PS_TOOLS),
+    "the block must be merged into the EXISTING body, so the body has to be readable first");
+  // `run` dispatches the aw-tester agent, so this IS a dispatching skill: it must name
+  // BOTH spellings. Stated as a conjunction over presence rather than the earlier
+  // `!Task || Agent`, which went green on a grant naming NEITHER (the left disjunct is
+  // satisfied by absence) and on an `Agent`-only grant that breaks the Claude Code CLI.
+  s.check("G49 preview-spec's grant names BOTH dispatch spellings",
+    /\bTask\b/.test(PS_TOOLS) && /\bAgent\b/.test(PS_TOOLS),
+    "`run` dispatches the aw-tester agent; a grant naming only `Task` blocks it on the"
+      + " harness that spells the tool `Agent` — the F6 defect, one layer below the prose —"
+      + " and naming only `Agent` breaks it on the CLI. Both, or it cannot dispatch");
+  // The grant widened by seven tools in one commit. Pinning two of them leaves the next
+  // added-or-dropped entry invisible, which is the exact shape of the defect this guard
+  // exists for: a grant that silently disagreed with its own prose.
+  for (const tool of PS_TOOLS.match(/mcp__github__\w+/g) ?? []) {
+    s.check(`G49 preview-spec's prose accounts for the granted \`${tool}\``,
+      PS_BODY.includes(tool),
+      "a GitHub tool in the grant that no step names is either dead capability or an"
+        + " undocumented call; both are how the grant and the prose drift apart");
+  }
+
+  // 2. Step 0 must NAME the mcp equivalents. `github-access.md` owns the repo-wide mapping,
+  //    but a consumer that cites it and then prints only `gh` forms leaves the reader to
+  //    invent the call — this is G48's lesson applied to a second consumer.
+  // Read over Step 0's slice, so the pair no longer needs a 400-char proximity window to
+  // stand in for a scope — and `mcp__github__update_pull_request` cannot be satisfied by
+  // its own mention in the `allowed-tools:` frontmatter, which is a grant, not a mapping.
+  s.check("G49 preview-spec states the mcp-path equivalent of the body write",
+    /gh pr edit[\s\S]*mcp__github__update_pull_request/.test(PS_STEP0),
+    "citing the access-path rule is not the same as naming the call; the gh form was"
+      + " labelled authoritative and no mcp form appeared anywhere in the file");
+
+  // 3. `run`'s deployment lookup genuinely has NO mcp equivalent, so the honest degradation
+  //    must be stated rather than collapsed into the deployed/not-deployed verdict.
+  // Scoped to Step 0, which is where the degradation is stated. Over the whole file the
+  // `pass --url` half was VACUOUS: the literal occurs twice in `preview-spec/SKILL.md`
+  // (Step 0's outcome string and Operation `run`'s `--url` prose), so rewording Step 0's
+  // outcome left the check satisfied by the other mention — eighth instance of this
+  // block's one class, and the instance that motivated the lint below.
+  s.check("G49 preview-spec distinguishes 'no access path' from 'preview not deployed'",
+    /pass --url/.test(PS_STEP0)
+      && /never report `inconclusive: preview not deployed`/.test(PS_STEP0),
+    "no `mcp__github__*` tool exposes deployments; reporting a lookup that never happened"
+      + " as `preview not deployed` asserts a fact about the deployment as if checked");
+
+  // 3b. And it must bite in the file that OWNS the decision. Asserting it against SKILL.md
+  //     alone was structurally incapable of catching the residue: `runner.md § Step 2`
+  //     delegates resolution to `preview-url-resolution.md` and declares any `inconclusive`
+  //     from THERE terminal, so an agent following the file the skill points at reached the
+  //     forbidden string with nothing in its path to stop it — while L1 stayed green. A
+  //     guard that green-lights the residue of its own bug is worse than no guard.
+  const PUR = read("skills/testing/preview-spec/rules/preview-url-resolution.md");
+  const PUR_PRECOND = section(
+    "skills/testing/preview-spec/rules/preview-url-resolution.md",
+    "## The access-path precondition (check this before step 1)");
+  s.check("G49 the guard reads the precondition section",
+    PUR_PRECOND.length > 300,
+    "an empty slice would report the precondition's two halves as present in a section"
+      + " that no longer exists");
+  // Read over the precondition's own section: the claim is that THAT section states both
+  // halves, so a copy of either sentence elsewhere in the file must not satisfy it.
+  s.check("G49 the owning file carries the access-path precondition",
+    /no access path for deployment lookup \(pass --url\)/.test(PUR_PRECOND)
+      && /[Nn]ever report `inconclusive: preview not deployed`/.test(PUR_PRECOND),
+    "`preview-url-resolution.md` owns the resolution outcome and `runner.md` treats it as"
+      + " terminal, so a branch stated only in SKILL.md is unreachable by a conforming run");
+  s.check("G49 the precondition precedes the steps it guards",
+    PUR.indexOf("## The access-path precondition") !== -1
+      && PUR.indexOf("## The access-path precondition") < PUR.indexOf("## Resolution steps"),
+    "a precondition printed after the steps it gates is read too late; the condition is"
+      + " `run` invoked without `--url`, which SKILL.md Step 0 cannot see at all");
+  // And the premise that makes the two checks above MEAN anything must itself be guarded.
+  // Placing the branch in the owning file is only sufficient because `runner.md § Step 2`
+  // (a) delegates resolution there and (b) declares any `inconclusive` from there terminal.
+  // Neither was asserted, so deleting either sentence from `runner.md` left L1 green while
+  // the branch became unreachable again — the guard resting on an unguarded premise.
+  const RUN = read("skills/testing/preview-spec/rules/runner.md");
+  // Bounded by the NEXT HEADING, never by a character count. A `slice(0, 400)` window was
+  // scoped in name only: Step 2 is ~253 chars, so 147 chars of Step 3 sat inside every
+  // assertion and deleting Step 2's delegation while naming the file in Step 3's opening
+  // kept L1 green — a vacuous pass in the very guard added to close a vacuous guard. The
+  // constant also failed the other way: `terminal for this run` sits ~155 chars in, so
+  // adding a couple of sentences of legitimate prose ahead of it pushed it out of the
+  // window and turned L1 red for a reflow that changed no rule.
+  // The shared `extractSection`, not a local slicer. Both bounds of a section are places a
+  // heading-level confusion can get in, and a hand-rolled slicer here got each of them
+  // wrong in turn:
+  //
+  //   * the START was `indexOf` on the bare heading text, which also matches inside a
+  //     DEEPER heading — demoting every `## ` to `### ` in `runner.md` kept the match and
+  //     grew the Step 2 "section" from 253 chars to 7126, so every assertion ran against
+  //     the whole document;
+  //   * the END was `indexOf("\n## ")`, level-blind in the other direction — PROMOTING the
+  //     next heading to `# ` grew the slice to 1813 chars, and moving Step 2's delegation
+  //     sentence into that top-level section then satisfied the delegation check from
+  //     outside Step 2 entirely, with L1 green. It was also fence-blind: a ```text block
+  //     inside Step 2 containing a `## ` line cut the slice at the fence.
+  //
+  // A `length > N` LOWER bound cannot see either over-capture, which is what kept both
+  // invisible. `extractSection` is level-aware AND fence-aware and is already imported, so
+  // this is one implementation for every caller instead of a third private copy — and its
+  // own start bound was the same bare `indexOf`, fixed there rather than worked around
+  // here. It throws on a missing section; the sentinels below want an empty slice, so the
+  // throw is converted rather than propagated.
+  const runSection = (heading) => {
+    try {
+      return extractSection("skills/testing/preview-spec/rules/runner.md", `## ${heading}`);
+    } catch {
+      return "";
+    }
+  };
+  const RUN_STEP2 = runSection("Step 2: Resolve the preview URL");
+  // Both checks below get their OWN sentinel. Relying on the empty slice to fail them by
+  // side effect works but is invisible: a later edit that gives one of them a fallback
+  // would silently restore the vacuity with nothing naming what broke.
+  s.check("G49 the guard reads runner.md's Step 2 section",
+    RUN_STEP2.length > 120,
+    "a renamed, removed, or demoted Step 2 heading yields an empty slice; asserting over it"
+      + " would report the two premises below as satisfied by a section that no longer"
+      + " exists — or, on a demotion, by the rest of the file");
+  s.check("G49 runner.md Step 2 delegates resolution to the owning file",
+    /preview-url-resolution\.md/.test(RUN_STEP2),
+    "the precondition is enforced in `preview-url-resolution.md`; a Step 2 that resolves the"
+      + " URL itself never reads that file, and the branch is unreachable however well it"
+      + " is written");
+  // Matches the RULE, not its punctuation. Requiring the literal `…` made a reword to
+  // `inconclusive: <reason>` turn L1 red while the rule was still honoured — the wording
+  // dependency this block's own comments disavow. The gap is unbounded on purpose: the
+  // slice IS the scope, so a character window is a second, weaker scope that can only
+  // false-red. The `{0,80}` it replaces used 18 of its 80 chars, meaning one added clause
+  // between the code and the terminality claim turned L1 red for a reflow.
+  s.check("G49 runner.md Step 2 declares an inconclusive from that file terminal",
+    /`inconclusive:[^`]*`[\s\S]*terminal for this run/.test(RUN_STEP2),
+    "without terminality the runner may treat `no access path for deployment lookup` as a"
+      + " soft miss and carry on to dispatch, reporting a pass or a fail for a spec that"
+      + " never ran — the outcome the string exists to prevent");
+  // 3b-ii. Step 1's body read is the other half of the access-path fix, and it landed as
+  //        prose no check read — so reverting it to the gh-only form left L1 green. It
+  //        precedes the Step 2 precondition, so on the mcp path it was the FIRST command
+  //        a reader met, and a gh-only spelling there strands the run before Step 2.
+  const RUN_STEP1 = runSection("Step 1: Get the spec");
+  s.check("G49 the guard reads runner.md's Step 1 section",
+    RUN_STEP1.length > 200,
+    "an empty Step 1 slice would report the dual access path below as present");
+  s.check("G49 runner.md Step 1 gives the body read on BOTH access paths",
+    /gh pr view/.test(RUN_STEP1) && /mcp__github__pull_request_read/.test(RUN_STEP1),
+    "unlike Step 2's deployment lookup this read HAS an mcp equivalent, so naming only the"
+      + " gh form makes the mcp path look blocked at the first command when it is not");
+
+  // 3c. The named downstream consumer must map the new outcome, and must NOT map it to the
+  //     other one's remedy. `review-loop` had a row for `preview not deployed` whose note
+  //     is `re-run once the preview is up` — advice that can never come true when no lookup
+  //     ran, so a UI PR reviewed on a cloud session got a permanently-false note in it.
+  const RL = read("skills/quality/review-loop/SKILL.md");
+  // Both row-anchored, like the `empty spec` and catch-all pairs below. The claim is about
+  // a ROW of the outcome table, so the row is what the pattern has to match — and the
+  // remedy's `{0,320}` window is gone with the anchor, being the third instance of a
+  // character gap standing in for a scope (after the 400 and the 80).
+  s.check("G49 review-loop maps the no-access-path outcome",
+    /^\|[^\n|]*no access path for deployment lookup \(pass --url\)[^\n|]*\|/m.test(RL),
+    "the delegate gained an outcome its primary programmatic caller could not render, so"
+      + " even a correctly-behaving `run` fell through the outcome table unmapped");
+  s.check("G49 review-loop's remedy for it is an explicit URL, not waiting for a build",
+    /^\|[^\n]*no deployment lookup on this access path[^\n]*--url <preview-url>/m.test(RL),
+    "`re-run once the preview is up` is unactionable here — nothing was looked up, so the"
+      + " human re-runs and gets the same string; only passing a URL changes the outcome");
+  // The other two rows added to that table landed as prose no check read, so reverting
+  // either left L1 green. An unmapped return is the mechanism that put a permanently-false
+  // note in a report once already, which is what makes the catch-all load-bearing rather
+  // than tidy: without it a delegate can gain an outcome and the table just drops it.
+  // Anchored to the ROW, exactly as the `empty spec` pair below is, and for the same
+  // reason: `unrecognised outcome` is enumerated on TWO surfaces — this table row and the
+  // Step 3 report slot — so testing the two halves as independent substrings of the whole
+  // file asserted neither of them. Deleting the row left the slot satisfying the second
+  // half; INVERTING the row (mapping the catch-all to a pass) left BOTH halves satisfied
+  // and L1 green, which is the worse failure: the guard was silent while the rule it names
+  // said the opposite of what it says. Fifth instance of one class in this block — a
+  // substring test whose satisfying occurrence is not the one the check names.
+  // The cell is matched by its CONTENT within the row's first column (`[^\n|]*` either
+  // side), not by its exact text: bolding it to `| **anything else** |` says the same
+  // thing and previously turned L1 red. Anchoring is about which ROW satisfies the check,
+  // and that is what `^\|` plus the same-row `unrecognised outcome` establish; the cell's
+  // decoration carries no meaning and must not be part of the assertion.
+  s.check("G49 review-loop's outcome table has a terminal catch-all row",
+    /^\|[^\n|]*anything else[^\n|]*\|[^\n]*unrecognised outcome/m.test(RL),
+    "`preview-spec run` gained returns this table had no row for; with no catch-all an"
+      + " unmapped outcome is recorded as whatever the run guesses — a pass or a skip");
+  s.check("G49 review-loop's report renders the unrecognised-outcome value",
+    /^Preview spec[^\n]*unrecognised outcome/m.test(RL),
+    "the catch-all row above produces a value the Step 3 report must be able to print;"
+      + " asserted on its own surface so neither check can stand in for the other");
+  // Anchored to the ROW, and the slot arm asserted separately. A bare
+  // `/empty preview-spec block/` over the whole file was satisfied by the Step 3 report
+  // slot, which enumerates the same string — so deleting the table row left L1 green.
+  // Same shape as the `"authored"` ⊂ `"not authored"` bug this block already fixed once:
+  // a substring that two different surfaces can satisfy asserts neither of them.
+  s.check("G49 review-loop's outcome table maps an EMPTY spec block",
+    /^\|\s*`empty spec`[^\n]*\|[^\n]*empty preview-spec block/m.test(RL),
+    "markers present with an empty body means `author` ran and embedded nothing — a"
+      + " spec-authoring bug; with no row for it the runner's return falls through to the"
+      + " catch-all and loses the distinction the row exists to draw");
+  // Order-independent. A single regex pinned the two arms to the order they happen to be
+  // written in, so swapping them — which carries no meaning, the slot is an unordered
+  // `<a | b | c>` enumeration — turned L1 red for an edit that changed no rule. The claim
+  // is that BOTH values are renderable, so it is asserted as two membership tests over
+  // the one line that renders them.
+  const RL_SPEC_SLOT = (/^Preview spec[^\n]*/m.exec(RL) || [""])[0];
+  s.check("G49 review-loop keeps EMPTY and ABSENT as two report values",
+    RL_SPEC_SLOT.includes("not run (no preview-spec block)")
+      && RL_SPEC_SLOT.includes("not run (empty preview-spec block)"),
+    "the two must be separately renderable in the report; collapsing them there reports a"
+      + " spec-authoring bug as the healthy case of a PR that legitimately needed no spec");
+
+  // 4. The report slot. Every skip condition Step 6.4 enumerates needs a rendered outcome,
+  //    or the degraded path reports as success.
+  // Anchored at line start, and paired with the arm count below. Neither is load-bearing
+  // TODAY — `Preview spec (Step 6.4):` occurs exactly once in the file, so anchored and
+  // unanchored `exec` capture the same six arms, and reverting either one keeps L1 green.
+  // Both are here because an earlier revision of Step 6.4's own prose DID repeat the
+  // literal mid-sentence, which made the unanchored `exec` take the paragraph as its first
+  // match and assert the enumeration against it; that prose was reworded rather than the
+  // guard being left to depend on the wording. Keep both: they cost nothing and they are
+  // what stops a re-added prose mention from silently re-breaking the capture.
+  const SLOT = /^Preview spec \(Step 6\.4\):([^\n]*)/m.exec(CP);
+  s.check("G49 create-pr's Step 10 report has a preview-spec slot",
+    SLOT !== null && SLOT[1].split("|").length === 6,
+    "with no slot, all four skip conditions and the failure mode render as a clean PR —"
+      + " the reason the grant defect went unnoticed across four days of UI PRs. The arm"
+      + " count is asserted here so the per-outcome checks below cannot pass against prose");
+  // Delimited tokens, not bare substrings: `"authored"` is a substring of
+  // `"not authored"`, so the success outcome was previously asserted for free by the
+  // decline outcome's text and could have been deleted without turning L1 red.
+  for (const outcome of ["<authored (", "| not authored (", "| skipped (--no-preview-spec)",
+    "| skipped (--no-quality)", "| skipped (preview-spec not available)", "| failed ("]) {
+    s.check(`G49 the slot can render "${outcome}"`,
+      SLOT !== null && SLOT[1].includes(outcome),
+      "an outcome with no rendering collapses into a neighbouring one, which is how a"
+        + " failure gets reported as a correct decline");
+  }
+  // A slot with no producer renders as whatever the run remembers — the failure class the
+  // slot was added to close. Step 6.4 must record its branch as it leaves, and must map
+  // the delegate's own `failed` return rather than softening it into a decline.
+  // Each read over the section that owns the claim: Step 6.4 PRODUCES the outcome, Step 10
+  // RENDERS it, and asserting either against the whole file lets one section satisfy a
+  // check about the other — the mechanism behind four of this block's eight vacuities.
+  const CP_S64 = section("skills/delivery/create-pr/SKILL.md",
+    "## Step 6.4: Author the UI verification spec (default ON for UI changes)");
+  const CP_S10 = section("skills/delivery/create-pr/SKILL.md", "## Step 10: Report");
+  s.check("G49 the guard reads create-pr's Step 6.4 and Step 10 sections",
+    CP_S64.length > 800 && CP_S10.length > 400,
+    "an empty slice on either side would report the producer or the renderer as compliant"
+      + " on the strength of a heading that no longer exists");
+  s.check("G49 create-pr's Step 6.4 records the outcome it hands to the slot",
+    /Record which branch you took, now, before continuing/i.test(CP_S64)
+      && /failed \(no GitHub access path\)/.test(CP_S64),
+    "the six values are enumerated in Step 10 but were produced nowhere; in particular"
+      + " `preview-spec`'s `failed (no GitHub access path)` had no mapping, so the one new"
+      + " failure mode this fix introduced was the one the new slot could not show");
+  s.check("G49 create-pr states the slot is mandatory on a non-UI diff too",
+    /mandatory on every run, including a non-UI diff/i.test(CP_S10),
+    "the tempting omission is exactly the silent case: `not authored (no UI files in diff)`"
+      + " is the informative answer, and dropping the line restores the blind spot");
+}
+
+// ── G49-lint: no assertion in the G49 block may test an UNBOUNDED whole-file string ──
+// This guard reads `l1.mjs` itself and lints the G49 block above. It exists because ONE
+// defect class recurred EIGHT times in the change that produced that block, five of them
+// inside the fix written for the previous one: a substring test whose satisfying
+// occurrence is not the one the check names. Every instance had the same shape — a
+// `.test()` against a whole file, passing because the literal also appears somewhere the
+// assertion was not about. Two examples, both bite-confirmed:
+//
+//   * `/pass --url/.test(PS)` — the literal occurs twice in `preview-spec/SKILL.md`
+//     (Step 0's outcome string, and Operation `run`'s `--url` prose). Deleting it from
+//     Step 0, which is the surface the check names, left L1 GREEN.
+//   * `/\|\s*anything else\s*\|/.test(RL)` — INVERTING the catch-all row so the table
+//     told the run to swallow an unmapped outcome also left L1 GREEN. Worse than
+//     deletion: the guard was silent while the rule said the opposite.
+//
+// A `length > N` sentinel cannot see any of this, because it is a LOWER bound and every
+// instance is an OVER-capture. So the rule is structural instead: an assertion reading a
+// whole file must be LINE-ANCHORED (`^` in the body, `m` in the flags), which pins the
+// match to one row or one line; anything narrower than a file — a section slice, a
+// frontmatter slice, a single extracted line — is already bounded and is not linted.
+// Re-pointing an assertion onto `extractSection(...)` is the other way to conform, and
+// the block's own `section()` helper is there to make that cheap.
+//
+// Fail-closed by construction: a `.test(binding)` whose receiver this lint cannot parse
+// as a regex literal is a VIOLATION, not an exemption. A receiver it cannot read is a
+// receiver it cannot prove bounded, and "unparseable" is exactly the hole a future
+// `new RegExp(...)` or a hoisted pattern constant would slip through.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const SELF = read("scripts/eval/l1.mjs").split("\n");
+  // Locate the block by the EXACT banner prefix. `// ── G49: ` and not `// ── G49`,
+  // because this lint's own banner starts `// ── G49-lint` and a prefix match would
+  // pick the lint up instead of its subject — a guard that lints only itself.
+  const bannerAt = SELF.findIndex((l) => l.startsWith("// ── G49: "));
+  // Guard blocks in this file are top-level `{ … }` with the braces alone at column 0
+  // and every inner brace indented, so the bounds are two exact-line matches. Deliberately
+  // not brace COUNTING: a `{` inside a string or a regex character class would throw the
+  // count off, and a mis-bounded block is how an over-capture gets in — the very failure
+  // this guard is about.
+  const openAt = bannerAt < 0 ? -1 : SELF.indexOf("{", bannerAt);
+  const closeAt = openAt < 0 ? -1 : SELF.indexOf("}", openAt);
+  const BLOCK = openAt >= 0 && closeAt > openAt
+    ? SELF.slice(openAt, closeAt + 1).join("\n")
+    : "";
+  // The banner is a multi-line comment header, so the `{` is not the line after it —
+  // only that it FOLLOWS it, with nothing but comment lines between.
+  const gap = bannerAt >= 0 && openAt > bannerAt
+    ? SELF.slice(bannerAt + 1, openAt).every((l) => l.startsWith("//"))
+    : false;
+  s.check("G49-lint located the G49 block in l1.mjs",
+    bannerAt >= 0 && openAt > bannerAt && gap && closeAt > openAt && BLOCK.length > 10000,
+    "the lint could not find its subject, so every assertion below would report as"
+      + " satisfied by an empty string — the exact vacuity it exists to forbid;"
+      + ` banner=${bannerAt} open=${openAt} close=${closeAt} len=${BLOCK.length}`);
+
+  // Whole-file bindings are DERIVED, not listed: a `read()` added to the block tomorrow
+  // is linted without editing this guard. A hardcoded list is a second place to forget.
+  const bindings = [...BLOCK.matchAll(/^\s*const (\w+) = read\("/gm)].map((m) => m[1]);
+  s.check("G49-lint derives the block's whole-file bindings",
+    bindings.length >= 3,
+    "no `const X = read(...)` bindings were recovered, so the scan below has nothing to"
+      + ` check and passes trivially; derived=[${bindings.join(", ")}]`);
+
+  const allTests = [...BLOCK.matchAll(/\.test\(/g)].length;
+  s.check("G49-lint's scan sees the block's assertions",
+    allTests >= 10,
+    "the block asserts through `.test()` throughout; recovering almost none of them means"
+      + ` the slice or the scan is wrong, not that the block got simpler; seen=${allTests}`);
+
+  // A regex literal, recovered by anchoring to the END of everything preceding `.test(`.
+  // The body class admits escapes (`\/`) and character classes (`[^\]]`) so a `/` inside
+  // either does not terminate the literal early, and excludes a raw newline so the match
+  // cannot run backwards past the assertion's own line into an earlier one.
+  const LITERAL = /\/((?:\\.|\[(?:\\.|[^\]\n])*\]|[^/\\\n])+)\/([a-z]*)$/;
+  let scanned = 0;
+  for (const binding of bindings) {
+    const re = new RegExp(`\\.test\\(${binding}\\)`, "g");
+    for (const m of BLOCK.matchAll(re)) {
+      scanned++;
+      const before = BLOCK.slice(0, m.index);
+      const lit = LITERAL.exec(before);
+      // `openAt` is a 0-indexed line index, so `openAt + <1-indexed line within BLOCK>`
+      // lands on the 1-indexed file line — the `{` itself is block line 1.
+      const lineNo = openAt + before.split("\n").length;
+      const where = `l1.mjs:${lineNo} .test(${binding})`;
+      if (lit === null) {
+        s.check(`G49-lint ${where} tests a whole file through a regex literal`, false,
+          "the receiver is not a parseable regex literal, so this lint cannot prove the"
+            + " match is line-anchored — bind the pattern inline, or re-point the"
+            + " assertion at a bounded slice via the block's `section()` helper");
+        continue;
+      }
+      const [, body, flags] = lit;
+      s.check(`G49-lint ${where} is line-anchored`,
+        body.includes("^") && flags.includes("m"),
+        "an unanchored pattern over a whole file is satisfied by ANY occurrence, including"
+          + " one on a surface the assertion is not about — the defect class that recurred"
+          + " eight times in the change this block came from. Either anchor it (`^` plus"
+          + " the `m` flag, pinning it to one line or one table row) or read a bounded"
+          + ` slice instead; body=/${body}/${flags}`);
+    }
+  }
+  // No sentinel on `scanned`: it is the quantity this rule DRIVES TO ZERO. Re-pointing
+  // every whole-file assertion onto a section slice is the ideal outcome, and a
+  // `scanned >= N` floor would redden on exactly that improvement.
+  s.check("G49-lint reports what it scanned",
+    Number.isInteger(scanned) && scanned >= 0,
+    `whole-file assertions scanned: ${scanned}`);
 }
 
 process.exit(s.report() ? 0 : 1);
