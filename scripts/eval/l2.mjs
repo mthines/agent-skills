@@ -3,163 +3,33 @@
 // section + a labelled input to a model and exact-matches the model's choice
 // against the human label. Classification tasks → exact-match, no LLM-as-judge.
 //
-//   ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs            # all suites
+//   ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs                    # all suites
 //   ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs --suite bug-class
-//   EVAL_MODEL=…  EVAL_GATE=70  …                            # override actor / soft-gate
+//   ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs --suite a,b,c      # a selected subset
+//   EVAL_MODEL=…  EVAL_GATE=70  …                                   # override actor / soft-gate
 //
 // Report-only unless EVAL_GATE is set (golden sets are < 50 — evals.md calls that
 // statistically noisy). Skips cleanly (exit 0) without an API key.
 //
-// Add a suite: drop a golden JSONL in golden/ and append a config object below.
-// `rubric.section` (or `rubric.sections`, for a decision split across sibling
-// subsections) is read LIVE from the skill source, so the eval always tests the
-// shipped instructions — not a copy. Point it at the prose that OWNS the decision
-// the goldens label: a rubric broader than the question invites the model to apply
-// a filter the labels never accounted for.
+// The suite table — which rubric each suite reads, which golden set labels it, and how
+// to add one — lives in `suites.mjs`, because `select-suites.mjs` needs the same table
+// to map a PR's changed files onto the suites they can affect.
 import { readFileSync, existsSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { REPO_ROOT, extractSection } from "./lib.mjs";
 
-const SUITES = [
-  {
-    name: "tier-routing",
-    golden: "golden/tier-routing.jsonl",
-    // The dispatcher (skills/workflow/autonomous-workflow/aw/SKILL.md) deliberately
-    // does NOT restate the table — it links this section. Read the canonical home.
-    rubric: { file: "skills/workflow/autonomous-workflow/SKILL.md", section: "### Step 1: Detect Workflow Mode (MANDATORY)" },
-    instruction: "You are the autonomous-workflow dispatcher. Using ONLY the tier-detection rules below, classify the task into exactly one tier.",
-    inputKey: "task", inputLabel: "Task",
-    choices: ["Micro", "Lite", "Full"],
-  },
-  {
-    name: "bug-class",
-    golden: "golden/bug-class.jsonl",
-    rubric: { file: "skills/workflow/fix-bug/SKILL.md", section: "### Step 0c — Infer bug class" },
-    instruction: "You are /fix-bug at Phase 0c. Using ONLY the bug-class table below, infer the single best bugClass for the evidence.",
-    inputKey: "input", inputLabel: "Evidence",
-    choices: ["contract-mismatch", "null-deref", "off-by-one", "regression", "race", "perf", "config", "logic", "unknown"],
-  },
-  {
-    name: "complexity-triage",
-    golden: "golden/complexity-triage.jsonl",
-    rubric: { file: "skills/workflow/fix-bug/SKILL.md", section: "## Phase 0.5 — Complexity Triage" },
-    instruction: "You are /fix-bug at Phase 0.5. Using ONLY the triage rules below (conservative: pick complex when in doubt), classify the bug.",
-    inputKey: "input", inputLabel: "Bug",
-    choices: ["simple", "complex"],
-  },
-  {
-    name: "aw-should-trigger",
-    golden: "golden/aw-should-trigger.jsonl",
-    rubric: { file: "skills/workflow/autonomous-workflow/templates/routing.rule.md", section: null }, // whole file
-    instruction: "You apply the autonomous-workflow routing rule below. Decide whether it should auto-trigger on the user's message. Reply 'trigger' or 'skip'.",
-    inputKey: "input", inputLabel: "User message",
-    choices: ["trigger", "skip"],
-  },
-  {
-    name: "optimize-approach-optimality",
-    golden: "golden/optimize-approach-optimality.jsonl",
-    rubric: { file: "skills/quality/optimize-approach/rules/optimality-rubric.md", section: null }, // whole rubric
-    instruction: "You are the optimize-approach skill at Phase O2. Using ONLY the optimality rubric below, classify the described approach unit: 'suboptimal' only when a materially better approach exists AND no anti-overlap guard fires AND the materiality bar clears; otherwise 'optimal'.",
-    inputKey: "input", inputLabel: "Approach unit",
-    choices: ["optimal", "suboptimal"],
-  },
-  {
-    name: "reviewer-agreement-bump",
-    golden: "golden/reviewer-agreement-bump.jsonl",
-    rubric: { file: "agents/shared/rules/rubric-composition.md", section: "## Cross-rubric agreement" },
-    instruction: "You apply the Cross-rubric agreement rule from the reviewer pipeline. Given a scenario describing dedupe pass results, classify whether the surviving finding would be marked agreement-promoted.",
-    inputKey: "input", inputLabel: "Scenario",
-    choices: ["promoted", "not-promoted"],
-  },
-  {
-    name: "severity-tiering",
-    golden: "golden/severity-tiering.jsonl",
-    rubric: { file: "skills/quality/severity/SKILL.md", section: "## Severity rubric" },
-    instruction: "You are the severity skill. Using ONLY the rubric below, classify the finding into exactly one severity tier. Run the exclusion gate and the reachability cap before applying any path floor or escalator.",
-    inputKey: "input", inputLabel: "Finding",
-    choices: ["critical", "high", "medium", "low"],
-  },
-  {
-    name: "shape-depth-routing",
-    golden: "golden/shape-depth-routing.jsonl",
-    // The routing table moved into its own rule file with the Phase C split, so the rubric reads
-    // the file that OWNS the decision. Reading pr-reviewer.md § 1.2b instead would extract the
-    // step that routes here and none of the rows the labels are derived from.
-    rubric: { file: "agents/pr-reviewer/rules/depth-routing.md", section: null }, // whole file
-    instruction: "You are pr-reviewer at Step 1.2b Phase C, after the delta, its shape classification, and the impact graph are computed. Using ONLY the depth-routing rules below, pick the tier. Apply the two pre-table rules first (the quick override, then the size exclusion), then the three-tier table first-match-wins top to bottom.",
-    inputKey: "input", inputLabel: "Delta",
-    choices: ["deep", "standard", "quick"],
-  },
-  {
-    name: "code-review-retrieval-relevance",
-    golden: "golden/code-review-retrieval-relevance.jsonl",
-    // 14 cases, 8 `surface` / 6 `skip` — a 57.1% majority-class baseline, asserted by L1 `G21h`
-    // against the floor grepped out of evals-l2.yml. The split IS the measurement: at the seed
-    // set's 4/1 an always-`surface` responder scored 80% and cleared the 70% floor, so a green
-    // said only that the model had stopped answering `skip`.
-    //
-    // The six `skip` decoys are one per FILTER DIMENSION of the read under test, derived from
-    // the rubric rather than invented, so none is answerable without reading it: tag
-    // (`codebase-knowledge` — this agent's own bucket, but read at Step 1.2a and by neither path
-    // in scope), scope (a `branch::` scope, and a different repo's `repo::` carrying a
-    // deliberately on-topic gist), expiry, and source attribution (`source.agent: 'aw-executor'`).
-    // `global` and `source.explicit: true` are their positive counterparts, so scope and
-    // attribution are tested in both directions instead of only as rejections.
-    //
-    // The two originals this suite kept missing were NOT edited. They have explicitly-scoped
-    // superseding twins (`…-scoped`) that state the scope and source fields the originals leave
-    // silent, and the originals stay runnable as regression guards — per eval-iterate's
-    // no-overwrite-in-place rule.
-    //
-    // Two subsections, NOT the whole of `## Step 1`. The instruction below names exactly the
-    // Step 1.0 list + Step 1.2c search, and CLAUDE.md's charter for this suite says the same;
-    // `## Step 1` is heading-level-aware and so captured all ten `### 1.x` subsections —
-    // 67,630 chars of impact graph, depth routing and divergence pre-check against the 27,568
-    // these two hold. Same lesson as shape-depth-routing above: feed the section that OWNS the
-    // decision.
-    //
-    // What this deliberately EXCLUDES, and why re-adding it would be a regression: `### 1.2d`
-    // shortlists the Step 1.0 index by changed directory / basename / symbol / integration /
-    // INTENT_PHRASE before fetching bodies. That is a real diff filter, correctly placed — but
-    // it answers a DIFFERENT question ("what reaches the finders") from the one these goldens
-    // label ("what the documented read returns"). With 1.2d in the rubric, a list-reachable
-    // lesson unrelated to the diff is legitimately `skip`, and the suite contradicted its own
-    // instruction. Widen this back and the labels stop being derivable from what the model sees.
-    rubric: {
-      file: "agents/pr-reviewer.md",
-      sections: [
-        "### 1.0 Prior-comment awareness + relevance memory load (default ON)",
-        "### 1.2c Diff-keyed lesson search (all modes)",
-      ],
-    },
-    // The instruction asks a PROCEDURE-APPLICATION question, not a relevance question.
-    // The prior wording — "would be surfaced by the documented read FOR THE GIVEN PR DIFF" —
-    // put the diff in the framing of the question itself, which reads as an invitation to judge
-    // whether the record is relevant to the change. Two of the five seed cases turn on exactly
-    // that distinction (a list-reachable lesson whose gist has no overlap with the diff, and one
-    // below the promotion threshold), and both were answered `skip` with the reason the model
-    // could not state — including on a run where the rubric already said in as many words that
-    // narrowing this read by apparent relevance is a defect. The diff is still in the input, so
-    // the one sentence explaining WHY it is there is scoped to Step 1.2c, the only path that
-    // builds a query from it; whether Step 1.0 also keys on it is left to the rubric to state,
-    // because supplying that answer here is what would turn the instruction into an answer key.
-    //
-    // The verb is SURFACES, not "returns", and the difference is load-bearing for one whole
-    // dimension. Step 1.0's source-attribution filter runs on what the four calls returned, so a
-    // record another tool wrote IS returned by the call and then dropped — under "returns" the
-    // two source-attribution cases are answerable both ways and grade nothing. "Surfaces" is
-    // also the label vocabulary the suite already uses, so the question and the answers now
-    // name the same thing.
-    instruction: "You are pr-reviewer at Step 1. Using ONLY the memory-read procedure below (Step 1.0's mcp__lorekit__memory_list calls + Step 1.2c's mcp__lorekit__memory_search), decide whether that read surfaces the candidate record described to the finders. The PR diff is supplied as context because Step 1.2c builds its search query from it. Reply 'surface' if the read surfaces the record, or 'skip' if it does not.",
-    inputKey: "input", inputLabel: "Candidate + diff",
-    choices: ["surface", "skip"],
-  },
-];
+import { SUITES } from "./suites.mjs";
 
 const MODEL = process.env.EVAL_MODEL || "claude-sonnet-4-6";
 const KEY = process.env.ANTHROPIC_API_KEY;
 const GATE = process.env.EVAL_GATE ? Number(process.env.EVAL_GATE) : null;
-const only = process.argv.includes("--suite") ? process.argv[process.argv.indexOf("--suite") + 1] : null;
+// `--suite` takes one name or a comma-separated list. The list form is what lets CI run only
+// the suites a PR's changed files can affect (see select-suites.mjs) in ONE process, so the
+// nine rubrics are not all re-read and the accounting below covers the whole run.
+const onlyArg = process.argv.includes("--suite") ? process.argv[process.argv.indexOf("--suite") + 1] : null;
+const only = onlyArg === null || onlyArg === undefined
+  ? null
+  : onlyArg.split(",").map((n) => n.trim()).filter(Boolean);
 
 if (!KEY) {
   console.log("⊘ L2: no ANTHROPIC_API_KEY — skipping (these are LLM evals; set the key to run).");
@@ -169,8 +39,21 @@ if (!KEY) {
 // A misspelled `--suite` would otherwise match nothing, run zero cases, and exit 0 — a green
 // that graded nothing, which is indistinguishable from a green that graded everything. Fail
 // closed on the name instead, and name the suites so the next attempt is right.
-if (only && !SUITES.some((sx) => sx.name === only)) {
-  console.error(`✗ unknown --suite ${JSON.stringify(only)}. Suites: ${SUITES.map((sx) => sx.name).join(", ")}`);
+//
+// The list form adds a second way to grade nothing: `--suite ""` (or a bare `--suite` at the
+// end of argv) parses to an EMPTY selection, not to "all". That is now the likeliest spelling
+// of the bug, because CI passes a computed value — a selector that returned no suites, or a
+// shell that expanded an unset variable, would otherwise report a passing eval run. Both
+// spellings exit 1.
+if (only !== null && only.length === 0) {
+  console.error("✗ --suite was given an empty selection."
+    + " Omit the flag to run every suite; an empty value grades nothing and is never a pass.");
+  process.exit(1);
+}
+const unknown = only === null ? [] : only.filter((n) => !SUITES.some((sx) => sx.name === n));
+if (unknown.length > 0) {
+  console.error(`✗ unknown --suite ${unknown.map((n) => JSON.stringify(n)).join(", ")}.`
+    + ` Suites: ${SUITES.map((sx) => sx.name).join(", ")}`);
   process.exit(1);
 }
 
@@ -196,11 +79,33 @@ function rubricFor(suite) {
   return sections.map((s) => extractSection(file, s)).join("\n\n");
 }
 
+// Per-run token accounting, so "caching is on" is a measured claim and not a code comment.
+// Without this the only observable difference between a working cache and a `cache_control`
+// key the API silently ignored is the invoice, which arrives days later and off this surface.
+const tokens = { input: 0, cacheWrite: 0, cacheRead: 0, output: 0 };
+
 async function ask(system, input) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODEL, max_tokens: 16, system, messages: [{ role: "user", content: input }] }),
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 16,
+      // The system block is the suite's instruction + its LIVE rubric, and it is
+      // BYTE-IDENTICAL across every case in a suite — only the user turn varies. Sent as a
+      // bare string it was re-transmitted and re-billed once per case, which is the whole
+      // cost of this eval: `code-review-retrieval-relevance` re-sent the same ~7.4k-token
+      // rubric 14 times, 105k input tokens for 14 one-word answers, and a full nine-suite
+      // run measured ~273k input against ~2.4k output. Marking it ephemeral makes case 1 a
+      // cache WRITE and cases 2..n cache READS at a tenth of the price.
+      //
+      // Applied unconditionally on purpose: a block below the model's minimum cacheable
+      // length is not an error, the API just declines to cache it, so the three small-rubric
+      // suites (tier-routing, bug-class, reviewer-agreement-bump) are unaffected rather than
+      // broken. Cases run sequentially ~0.2s apart, far inside the 5-minute TTL.
+      system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: input }],
+    }),
   });
   // 600 chars, not 120: an Anthropic error body opens with ~30 chars of JSON envelope
   // (`{"type":"error","error":{"type":…`) before it reaches the human-readable `message`,
@@ -208,7 +113,13 @@ async function ask(system, input) {
   // the only place the API's own explanation enters the process, so truncating it here
   // cannot be undone downstream.
   if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 600)}`);
-  return ((await res.json()).content?.[0]?.text || "").trim();
+  const body = await res.json();
+  const u = body.usage ?? {};
+  tokens.input += u.input_tokens ?? 0;
+  tokens.cacheWrite += u.cache_creation_input_tokens ?? 0;
+  tokens.cacheRead += u.cache_read_input_tokens ?? 0;
+  tokens.output += u.output_tokens ?? 0;
+  return (body.content?.[0]?.text || "").trim();
 }
 
 // Pick the choice that appears earliest in the model's reply (case-insensitive).
@@ -229,7 +140,7 @@ let anyBelowGate = false;
 const apiErrors = new Map();
 
 for (const suite of SUITES) {
-  if (only && suite.name !== only) continue;
+  if (only !== null && !only.includes(suite.name)) continue;
   const goldenPath = join(REPO_ROOT, "scripts/eval", suite.golden);
   if (!existsSync(goldenPath)) { console.log(`(skip ${suite.name}: no golden file)`); continue; }
   const rubric = rubricFor(suite);
@@ -273,6 +184,29 @@ for (const suite of SUITES) {
 
 console.log(`\n=== L2 summary (model=${MODEL}) ===`);
 for (const s of summary) console.log(`  ${s.name}: ${s.pass}/${s.total} (${s.acc.toFixed(1)}%)`);
+
+// Token accounting. `cache read` near zero across a multi-case suite means the rubric is NOT
+// being cached — the block fell under the model's minimum, or a `cache_control` change stopped
+// taking effect — and the run costs what it did before. Printed unconditionally so a
+// regression is visible in the log of the very next run rather than in a later invoice.
+{
+  // Cost-equivalent, not a token count: the three input classes are priced differently
+  // (a cache write is 1.25x a fresh input token, a cache read 0.1x), so comparing raw
+  // token totals would understate the win. Both sides of the ratio are in units of
+  // "fresh input tokens", and the counterfactual is that every cache READ would instead
+  // have been a full re-send — which is exactly what the pre-cache code did.
+  const total = tokens.input + tokens.cacheWrite + tokens.cacheRead;
+  const costNow = tokens.input + tokens.cacheWrite * 1.25 + tokens.cacheRead * 0.1;
+  const costUncached = total;
+  const pct = costUncached > 0 ? (1 - costNow / costUncached) * 100 : 0;
+  console.log(`\n=== tokens: ${total.toLocaleString()} in (${tokens.input.toLocaleString()} fresh,`
+    + ` ${tokens.cacheWrite.toLocaleString()} cache write, ${tokens.cacheRead.toLocaleString()} cache read),`
+    + ` ${tokens.output.toLocaleString()} out ===`);
+  console.log(tokens.cacheRead > 0
+    ? `  prompt cache active — ~${pct.toFixed(0)}% lower input cost than re-sending each rubric`
+    : "  prompt cache INACTIVE (0 cache reads) — rubrics are being re-sent per case;"
+      + " expected only for a 1-case suite or a rubric under the model's minimum cacheable length");
+}
 
 // A score is only an eval result if the requests behind it actually ran. Report the API
 // errors BEFORE the gate verdict, in full, with the share of the run they consumed — and

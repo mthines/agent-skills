@@ -1,10 +1,15 @@
 name: evals · L2 (behavioral)
 
 # Behavioral evals: do the skills make the right runtime decisions?
-# Suites: tier-routing, bug-class, complexity-triage, aw-should-trigger.
-# Each runs a model, so this needs a secret and costs a few tokens. To keep it
-# cheap and relevant it runs ONLY when a rubric/golden file changes (or on manual
-# dispatch).
+# The suite list is `scripts/eval/suites.mjs` — never restated here, so it cannot drift.
+#
+# Each case runs a model, so this needs a secret and costs real tokens. Three things keep
+# the bill down, in order of effect:
+#   1. The rubric is sent as a CACHED system block, so a suite pays for its rubric once
+#      instead of once per case (`l2.mjs`, and its run prints the cache hit rate).
+#   2. A pull_request runs only the suites its changed files can affect
+#      (`scripts/eval/select-suites.mjs`), not all nine.
+#   3. The trigger is path-filtered, so an unrelated PR does not start it at all.
 #
 # Setup (one-time): add an ANTHROPIC_API_KEY repository secret
 #   (Settings → Secrets and variables → Actions → New repository secret).
@@ -42,10 +47,54 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so the changed-file diff below can reach the PR's merge base.
+          # A shallow clone makes that diff fail, which fails OPEN (every suite runs) —
+          # correct, but it silently spends the full nine-suite price on every PR.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+
+      # Which suites can this PR's changes actually affect? A suite's result depends on
+      # exactly two inputs — the rubric file it reads live and the golden set that labels
+      # it — so a PR touching one golden file has no way to move the other eight suites.
+      # Running all nine anyway cost ~273k input tokens per PR for 149 one-word answers.
+      #
+      # Fails OPEN, deliberately and in one direction: if the diff cannot be computed, or
+      # the selector errors, or this is not a pull_request, SUITES is left empty and every
+      # suite runs. A selector bug must never be able to silently skip coverage — the
+      # worst case is paying the old price, which is the price we were already paying.
+      - name: Select affected suites
+        id: select
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if ! CHANGED=$(git diff --name-only "$BASE_SHA...$HEAD_SHA" 2>&1); then
+            echo "::warning::could not diff $BASE_SHA...$HEAD_SHA — running every suite"
+            echo "$CHANGED"
+            exit 0
+          fi
+          echo "changed files:"; echo "$CHANGED" | sed 's/^/  /'
+          if ! SEL=$(printf '%s\n' "$CHANGED" | node scripts/eval/select-suites.mjs); then
+            echo "::warning::select-suites.mjs failed — running every suite"
+            exit 0
+          fi
+          if [ -z "$SEL" ]; then
+            # Reachable: the `paths:` filter above is broader than the suite table (it lists
+            # rubric sources that no suite reads live). Skipping is correct here — no suite's
+            # inputs changed — and is NOT the fail-open path above, which leaves this unset.
+            echo "no suite's rubric or golden set changed — nothing to run"
+            echo "none=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "selected: $SEL"
+            echo "suites=$SEL" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: L2 behavioral evals
+        if: steps.select.outputs.none != 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Conservative catastrophic floor, applied per suite. A healthy rubric
@@ -54,13 +103,18 @@ jobs:
           # 0%-regression-vs-baseline) once a golden set reaches ≥ 50 — see
           # scripts/eval/README.md.
           EVAL_GATE: "70"
-          # Only a workflow_dispatch carries an input; on pull_request this is empty and
-          # every suite runs. Iterating on one suite is otherwise a ~6-minute nine-suite
-          # run per attempt, all of it billed to the same key.
+          # Two independent sources, and a manual dispatch always wins so an operator can
+          # force a suite regardless of what changed. On pull_request `inputs.suite` is
+          # empty and the selector's list is used; if the selector failed open, BOTH are
+          # empty and every suite runs.
           EVAL_SUITE: ${{ inputs.suite }}
+          SELECTED_SUITES: ${{ steps.select.outputs.suites }}
         run: |
-          if [ -n "$EVAL_SUITE" ]; then
-            node scripts/eval/l2.mjs --suite "$EVAL_SUITE"
+          SUITE="${EVAL_SUITE:-$SELECTED_SUITES}"
+          if [ -n "$SUITE" ]; then
+            echo "running suites: $SUITE"
+            node scripts/eval/l2.mjs --suite "$SUITE"
           else
+            echo "running every suite"
             node scripts/eval/l2.mjs
           fi

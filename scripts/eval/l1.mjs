@@ -3,7 +3,7 @@
 // These assert the *mechanical contracts* the skills promise. Run in CI.
 //   node scripts/eval/l1.mjs
 // Exits non-zero if any check fails.
-import { execSync, spawnSync } from "node:child_process";
+import { execFileSync, execSync, spawnSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1358,7 +1358,12 @@ function checksInSync(plan, checks) {
 {
   const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
 
-  const l2 = read("scripts/eval/l2.mjs");
+  // The suite table lives in `suites.mjs`, not `l2.mjs` — `select-suites.mjs` needs the same
+  // table to map changed files onto suites, and a second parse of it would be the drift
+  // surface. These guards therefore assert against the file that OWNS the table: pointing
+  // them at `l2.mjs` after the move would have left every one of them green and vacuous,
+  // matching nothing in a file that no longer declares a suite.
+  const l2 = read("scripts/eval/suites.mjs");
   const golden = read("scripts/eval/golden/code-review-retrieval-relevance.jsonl");
   const notes  = read("scripts/eval/golden/code-review-retrieval-relevance.NOTES.md");
   const l2yml  = read(".github/workflows/evals-l2.yml");
@@ -1376,7 +1381,7 @@ function checksInSync(plan, checks) {
   // answers a different question from the one this suite's goldens label, which is what put
   // the suite at 3/5 against a 70% floor. Asserting the two literals here means a silent
   // widening back to the parent reds L1 rather than only the paid L2 run.
-  s.check("G21a l2.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + sections)",
+  s.check("G21a suites.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + sections)",
     d1Suite.includes("agents/pr-reviewer.md") &&
     d1Suite.includes("### 1.0 Prior-comment awareness + relevance memory load (default ON)") &&
     d1Suite.includes("### 1.2c Diff-keyed lesson search (all modes)") &&
@@ -1410,7 +1415,7 @@ function checksInSync(plan, checks) {
   // (negative half: the edit added, did not replace).
   for (const name of ["tier-routing", "bug-class", "complexity-triage", "aw-should-trigger",
     "optimize-approach-optimality", "reviewer-agreement-bump"]) {
-    s.check(`G21f l2.mjs still contains pre-existing suite '${name}' (add-not-replace)`,
+    s.check(`G21f suites.mjs still contains pre-existing suite '${name}' (add-not-replace)`,
       l2.includes(`name: "${name}"`));
   }
 
@@ -1421,7 +1426,7 @@ function checksInSync(plan, checks) {
   // the model an empty rubric. It runs the SAME shared extractSection l2.mjs feeds the model
   // (imported from lib.mjs), so a regression in that function — e.g. reverting the
   // heading-level-aware cut back to a cut-at-any-heading — fails this guard. The suite list
-  // is parsed live out of l2.mjs so the guard can never drift from the shipped suites.
+  // is parsed live out of suites.mjs so the guard can never drift from the shipped suites.
   const BODY_MIN = 80; // a real rubric body dwarfs this; a bare title never reaches it.
   // The trailing `,?` is load-bearing: without it a suite written `section: "…",` (a trailing
   // comma before the closing brace — legal JS and the house style everywhere else in this
@@ -1445,7 +1450,7 @@ function checksInSync(plan, checks) {
     }
   }
   const suiteCount = [...l2.matchAll(/^\s{4}name:\s*"/gm)].length;
-  s.check("G21g parses a rubric for every suite in l2.mjs (no unrecognised rubric shape)",
+  s.check("G21g parses a rubric for every suite in suites.mjs (no unrecognised rubric shape)",
     suiteCount >= 9 && rubricEntries.length >= suiteCount,
     "a suite's `rubric:` matched neither the `section:` nor the `sections:` parse, so it would"
       + " be silently exempt from the non-empty-body checks below —"
@@ -5813,6 +5818,119 @@ const isPollBlock = (block) =>
   s.check("G49-lint reports what it scanned",
     Number.isInteger(scanned) && scanned >= 0,
     `whole-file assertions scanned: ${scanned}`);
+}
+
+// ── G50: L2 cost controls — prompt caching + per-PR suite selection ──
+// Two optimisations, both of which fail SILENTLY if they regress: a dropped `cache_control`
+// key still returns correct answers at ~3x the price, and a selector that returns nothing
+// still exits 0 while grading nothing. Neither shows up in a score, so neither is visible in
+// the one output anyone reads. This block asserts the wiring; the run's own token line
+// (`cache read` > 0) is the runtime half.
+//
+// Assertions here are line-anchored (`^` + `m`) or read a bounded slice, per G49-lint's rule —
+// several of them test for the ABSENCE of a pre-change shape, and an unanchored absence test
+// over a whole file is satisfied by any stray occurrence, including one in a comment.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const l2 = read("scripts/eval/l2.mjs");
+  const sel = read("scripts/eval/select-suites.mjs");
+  const yml = read(".github/workflows/evals-l2.yml");
+
+  // G50a: the selector's self-test passes. Executed rather than described — the same posture
+  // as G39 for the detection runner. Every expectation inside it is derived from the imported
+  // suite table, so this also proves the table and the mapping agree.
+  {
+    let out = "", failed = false;
+    try {
+      out = execFileSync(process.execPath,
+        [join(REPO_ROOT, "scripts/eval/select-suites.mjs"), "--self-test"],
+        { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    } catch (e) {
+      failed = true;
+      out = `${e.stdout ?? ""}${e.stderr ?? ""}` || String(e);
+    }
+    s.check("G50a select-suites.mjs --self-test passes",
+      !failed && out.includes("self-test passed"), out.trim().slice(0, 600));
+  }
+
+  // G50b: the suite table is imported, never re-parsed. A regex parse of the table inside the
+  // selector is the one shape that reintroduces drift, and it would still pass G50a — the
+  // self-test derives its expectations from `SUITES`, so a parse that agreed with the table
+  // today would satisfy it while being free to disagree tomorrow.
+  s.check("G50b select-suites.mjs imports the suite table from suites.mjs",
+    /^import \{ SUITES \} from "\.\/suites\.mjs";$/m.test(sel));
+  s.check("G50b select-suites.mjs does not re-parse the table out of l2.mjs",
+    !/l2\.mjs["'`]\s*\)/.test(sel.replace(/^\/\/.*$/gm, "")));
+
+  // G50c: the rubric is sent as a CACHED system block. Both halves matter: the key must be
+  // present, and the pre-change `system,` shorthand (a bare string, re-billed per case) must
+  // be gone. Anchored, because `system:` appears in prose in this file too.
+  s.check("G50c l2.mjs sends the system prompt as an ephemeral cached block",
+    /^\s*system: \[\{ type: "text", text: system, cache_control: \{ type: "ephemeral" \} \}\],$/m.test(l2));
+  s.check("G50c l2.mjs no longer sends the system prompt as a bare uncached string",
+    !/^\s*body: JSON\.stringify\(\{ model: MODEL, max_tokens: 16, system,/m.test(l2));
+
+  // G50d: the run reports cache effectiveness. Without this, a `cache_control` key the API
+  // declined to honour is indistinguishable from a working cache until the invoice arrives,
+  // which is off this surface by days — the same self-concealing shape as the transport
+  // failure that read as a rubric regression.
+  s.check("G50d l2.mjs reads cache_read_input_tokens from the response usage",
+    /^\s*tokens\.cacheRead \+= u\.cache_read_input_tokens \?\? 0;$/m.test(l2));
+  s.check("G50d l2.mjs prints an INACTIVE notice when no cache read occurred",
+    l2.includes("prompt cache INACTIVE"));
+
+  // G50e: `--suite` accepts a list, and an EMPTY selection fails closed. The list form is what
+  // makes selection possible in one process; the empty-selection exit is what stops a selector
+  // bug, or a shell expanding an unset variable, from reporting a pass over zero cases.
+  s.check("G50e l2.mjs parses --suite as a comma-separated list",
+    /^const only = onlyArg === null \|\| onlyArg === undefined$/m.test(l2)
+    && l2.includes('onlyArg.split(",")'));
+  s.check("G50e l2.mjs exits non-zero on an empty --suite selection",
+    /^if \(only !== null && only\.length === 0\) \{$/m.test(l2));
+
+  // G50f: the workflow's selection step fails OPEN. This is the load-bearing safety property
+  // of the whole change: an unusable diff or a broken selector must run every suite, never
+  // skip. Asserted as the conjunction the shell actually implements — each failure branch
+  // warns and exits 0 WITHOUT setting `none`, so the run step's `if` cannot suppress it.
+  {
+    // Bounded slice: the selection step only, so `exit 0` elsewhere in the file cannot satisfy
+    // these. Anchored on the step's own `id:` and ended at the next step's `- name:`.
+    const lines = yml.split("\n");
+    const from = lines.findIndex((l) => /^\s+id: select$/.test(l));
+    const to = lines.findIndex((l, i) => i > from && /^\s{6}- name: L2 behavioral evals$/.test(l));
+    const step = from >= 0 && to > from ? lines.slice(from, to).join("\n") : "";
+    s.check("G50f located the select step in evals-l2.yml", step.length > 0,
+      `id: select at ${from}, next step at ${to}`);
+    const warnBranches = [...step.matchAll(/^\s*echo "::warning::.*running every suite"$/gm)];
+    s.check("G50f both selection failure branches warn that every suite will run",
+      warnBranches.length === 2,
+      `expected 2 fail-open warnings (diff failed, selector failed), found ${warnBranches.length}`);
+    // The `none=true` output is the ONLY thing that can skip the eval step, so it must be
+    // set on exactly one path: the legitimate "no suite's inputs changed" one. If a
+    // fail-open branch also set it, a selector crash would silently skip the whole eval.
+    const noneWrites = [...step.matchAll(/^\s*echo "none=true" >> "\$GITHUB_OUTPUT"$/gm)];
+    s.check("G50f `none=true` is written on exactly one path (the empty-selection one)",
+      noneWrites.length === 1,
+      `found ${noneWrites.length} writes of none=true; each one is a path that SKIPS the eval`);
+    for (const b of warnBranches) {
+      const after = step.slice(b.index, b.index + 400);
+      s.check(`G50f fail-open branch (${b[0].trim().slice(20, 60)}) does not set none=true`,
+        !after.includes("none=true"));
+    }
+  }
+
+  // G50g: a manual dispatch still overrides the selector, and an absent selection runs
+  // everything. `${EVAL_SUITE:-$SELECTED_SUITES}` is the whole precedence rule in one line.
+  s.check("G50g evals-l2.yml prefers the dispatch input over the computed selection",
+    /^\s*SUITE="\$\{EVAL_SUITE:-\$SELECTED_SUITES\}"$/m.test(yml));
+  s.check("G50g evals-l2.yml runs every suite when neither source names one",
+    /^\s*node scripts\/eval\/l2\.mjs$/m.test(yml));
+
+  // G50h: full history is fetched, so the changed-file diff can reach the merge base. A
+  // shallow clone fails open — correct, but it pays the full price on every PR while looking
+  // like the optimisation is working.
+  s.check("G50h evals-l2.yml checks out full history for the diff",
+    /^\s*fetch-depth: 0$/m.test(yml));
 }
 
 process.exit(s.report() ? 0 : 1);
