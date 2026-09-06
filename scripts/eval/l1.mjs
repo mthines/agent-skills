@@ -5419,18 +5419,57 @@ const isPollBlock = (block) =>
   // Neither was asserted, so deleting either sentence from `runner.md` left L1 green while
   // the branch became unreachable again — the guard resting on an unguarded premise.
   const RUN = read("skills/testing/preview-spec/rules/runner.md");
-  const RUN_STEP2 = RUN.slice(RUN.indexOf("## Step 2: Resolve the preview URL"));
+  // Bounded by the NEXT HEADING, never by a character count. A `slice(0, 400)` window was
+  // scoped in name only: Step 2 is ~253 chars, so 147 chars of Step 3 sat inside every
+  // assertion and deleting Step 2's delegation while naming the file in Step 3's opening
+  // kept L1 green — a vacuous pass in the very guard added to close a vacuous guard. The
+  // constant also failed the other way: `terminal for this run` sits ~155 chars in, so
+  // adding a couple of sentences of legitimate prose ahead of it pushed it out of the
+  // window and turned L1 red for a reflow that changed no rule.
+  const RUN_H2 = "## Step 2: Resolve the preview URL";
+  const RUN_I = RUN.indexOf(RUN_H2);
+  const RUN_NEXT = RUN_I === -1 ? -1 : RUN.indexOf("\n## ", RUN_I + 1);
+  const RUN_STEP2 = RUN_I === -1
+    ? ""
+    : RUN.slice(RUN_I, RUN_NEXT === -1 ? RUN.length : RUN_NEXT);
+  // Both checks below get their OWN sentinel. Relying on the empty slice to fail them by
+  // side effect works but is invisible: a later edit that gives one of them a fallback
+  // would silently restore the vacuity with nothing naming what broke.
+  s.check("G49 the guard reads runner.md's Step 2 section",
+    RUN_I !== -1 && RUN_STEP2.length > 120,
+    "a renamed or removed Step 2 heading yields an empty slice; asserting over it would"
+      + " report the two premises below as satisfied by a section that no longer exists");
   s.check("G49 runner.md Step 2 delegates resolution to the owning file",
-    RUN_STEP2.startsWith("## Step 2: Resolve the preview URL")
-      && /preview-url-resolution\.md/.test(RUN_STEP2.slice(0, 400)),
+    RUN_I !== -1 && /preview-url-resolution\.md/.test(RUN_STEP2),
     "the precondition is enforced in `preview-url-resolution.md`; a Step 2 that resolves the"
       + " URL itself never reads that file, and the branch is unreachable however well it"
       + " is written");
+  // Matches the RULE, not its punctuation. Requiring the literal `…` made a reword to
+  // `inconclusive: <reason>` turn L1 red while the rule was still honoured — the wording
+  // dependency this block's own comments disavow.
   s.check("G49 runner.md Step 2 declares an inconclusive from that file terminal",
-    /`inconclusive: ?…`[^\n]*terminal for this run/.test(RUN_STEP2.slice(0, 400)),
+    RUN_I !== -1
+      && /`inconclusive:[^`]*`[\s\S]{0,80}terminal for this run/.test(RUN_STEP2),
     "without terminality the runner may treat `no access path for deployment lookup` as a"
       + " soft miss and carry on to dispatch, reporting a pass or a fail for a spec that"
       + " never ran — the outcome the string exists to prevent");
+  // 3b-ii. Step 1's body read is the other half of the access-path fix, and it landed as
+  //        prose no check read — so reverting it to the gh-only form left L1 green. It
+  //        precedes the Step 2 precondition, so on the mcp path it was the FIRST command
+  //        a reader met, and a gh-only spelling there strands the run before Step 2.
+  const RUN_STEP1 = (() => {
+    const i = RUN.indexOf("## Step 1: Get the spec");
+    if (i === -1) return "";
+    const n = RUN.indexOf("\n## ", i + 1);
+    return RUN.slice(i, n === -1 ? RUN.length : n);
+  })();
+  s.check("G49 the guard reads runner.md's Step 1 section",
+    RUN_STEP1.length > 200,
+    "an empty Step 1 slice would report the dual access path below as present");
+  s.check("G49 runner.md Step 1 gives the body read on BOTH access paths",
+    /gh pr view/.test(RUN_STEP1) && /mcp__github__pull_request_read/.test(RUN_STEP1),
+    "unlike Step 2's deployment lookup this read HAS an mcp equivalent, so naming only the"
+      + " gh form makes the mcp path look blocked at the first command when it is not");
 
   // 3c. The named downstream consumer must map the new outcome, and must NOT map it to the
   //     other one's remedy. `review-loop` had a row for `preview not deployed` whose note
@@ -5445,6 +5484,19 @@ const isPollBlock = (block) =>
     /no deployment lookup on this access path[\s\S]{0,320}--url <preview-url>/.test(RL),
     "`re-run once the preview is up` is unactionable here — nothing was looked up, so the"
       + " human re-runs and gets the same string; only passing a URL changes the outcome");
+  // The other two rows added to that table landed as prose no check read, so reverting
+  // either left L1 green. An unmapped return is the mechanism that put a permanently-false
+  // note in a report once already, which is what makes the catch-all load-bearing rather
+  // than tidy: without it a delegate can gain an outcome and the table just drops it.
+  s.check("G49 review-loop's outcome table has a terminal catch-all row",
+    /\|\s*anything else\s*\|/.test(RL) && /unrecognised outcome/.test(RL),
+    "`preview-spec run` gained returns this table had no row for; with no catch-all an"
+      + " unmapped outcome is recorded as whatever the run guesses — a pass or a skip");
+  s.check("G49 review-loop distinguishes an EMPTY spec block from an ABSENT one",
+    /empty preview-spec block/.test(RL) && /not run \(no preview-spec block\)/.test(RL),
+    "markers present with an empty body means `author` ran and embedded nothing — a"
+      + " spec-authoring bug; folding it into `no spec` reports that bug as the healthy"
+      + " case of a PR that legitimately needed no spec");
 
   // 4. The report slot. Every skip condition Step 6.4 enumerates needs a rendered outcome,
   //    or the degraded path reports as success.
