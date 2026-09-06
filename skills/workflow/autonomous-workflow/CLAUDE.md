@@ -413,7 +413,8 @@ When editing this skill, do not break these — they're load-bearing:
   regrow a `tools:` block, a `model:` line, or an inline tier table — see
   [the shape design-intent section](#the-dispatcher-is-a-skill-not-an-agent--design-intent).
   The planner/executor split is Full-only —
-  **except** when the harness disables sub-agent dispatch (`Task`), where `aw`
+  **except** when no available tool dispatches a sub-agent (`Task`, `Agent`, or
+  another spelling), where `aw`
   runs the Full phases single-context (planner + executor roles in one window)
   rather than downgrading to Lite. That fallback preserves the `plan.md` artifact
   and the `confidence(plan)` gate; it is the one place `aw` uses `Edit`/`Write` on
