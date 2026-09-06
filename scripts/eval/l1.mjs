@@ -5346,10 +5346,31 @@ const isPollBlock = (block) =>
   s.check("G49 preview-spec's grant can read a PR on the mcp path",
     /mcp__github__pull_request_read/.test(PS_FM),
     "the block must be merged into the EXISTING body, so the body has to be readable first");
-  s.check("G49 preview-spec's grant names the dispatch capability, not one spelling",
-    !/\bTask\b/.test(PS_FM) || /\bAgent\b/.test(PS_FM),
+  // Asserted over the `allowed-tools:` LINE, not the whole frontmatter: a grant is a
+  // permission allowlist, so only that line grants anything, and an `Agent` occurring in
+  // `description:` prose must not satisfy a check about what the skill may call.
+  const PS_TOOLS = (/^allowed-tools:.*$/m.exec(PS_FM) || [""])[0];
+  s.check("G49 the guard reads preview-spec's grant line",
+    /\bRead\b/.test(PS_TOOLS) && PS_TOOLS.length > 80,
+    "a failed `allowed-tools:` match would make every grant assertion below vacuous");
+  // `run` dispatches the aw-tester agent, so this IS a dispatching skill: it must name
+  // BOTH spellings. Stated as a conjunction over presence rather than the earlier
+  // `!Task || Agent`, which went green on a grant naming NEITHER (the left disjunct is
+  // satisfied by absence) and on an `Agent`-only grant that breaks the Claude Code CLI.
+  s.check("G49 preview-spec's grant names BOTH dispatch spellings",
+    /\bTask\b/.test(PS_TOOLS) && /\bAgent\b/.test(PS_TOOLS),
     "`run` dispatches the aw-tester agent; a grant naming only `Task` blocks it on the"
-      + " harness that spells the tool `Agent` — the F6 defect, one layer below the prose");
+      + " harness that spells the tool `Agent` — the F6 defect, one layer below the prose —"
+      + " and naming only `Agent` breaks it on the CLI. Both, or it cannot dispatch");
+  // The grant widened by seven tools in one commit. Pinning two of them leaves the next
+  // added-or-dropped entry invisible, which is the exact shape of the defect this guard
+  // exists for: a grant that silently disagreed with its own prose.
+  for (const tool of PS_TOOLS.match(/mcp__github__\w+/g) ?? []) {
+    s.check(`G49 preview-spec's prose accounts for the granted \`${tool}\``,
+      PS.slice(PS.indexOf("\n---", 4)).includes(tool),
+      "a GitHub tool in the grant that no step names is either dead capability or an"
+        + " undocumented call; both are how the grant and the prose drift apart");
+  }
 
   // 2. Step 0 must NAME the mcp equivalents. `github-access.md` owns the repo-wide mapping,
   //    but a consumer that cites it and then prints only `gh` forms leaves the reader to
@@ -5366,20 +5387,69 @@ const isPollBlock = (block) =>
     "no `mcp__github__*` tool exposes deployments; reporting a lookup that never happened"
       + " as `preview not deployed` asserts a fact about the deployment as if checked");
 
+  // 3b. And it must bite in the file that OWNS the decision. Asserting it against SKILL.md
+  //     alone was structurally incapable of catching the residue: `runner.md § Step 2`
+  //     delegates resolution to `preview-url-resolution.md` and declares any `inconclusive`
+  //     from THERE terminal, so an agent following the file the skill points at reached the
+  //     forbidden string with nothing in its path to stop it — while L1 stayed green. A
+  //     guard that green-lights the residue of its own bug is worse than no guard.
+  const PUR = read("skills/testing/preview-spec/rules/preview-url-resolution.md");
+  s.check("G49 the owning file carries the access-path precondition",
+    /no access path for deployment lookup \(pass --url\)/.test(PUR)
+      && /[Nn]ever report `inconclusive: preview not deployed`/.test(PUR),
+    "`preview-url-resolution.md` owns the resolution outcome and `runner.md` treats it as"
+      + " terminal, so a branch stated only in SKILL.md is unreachable by a conforming run");
+  s.check("G49 the precondition precedes the steps it guards",
+    PUR.indexOf("## The access-path precondition") !== -1
+      && PUR.indexOf("## The access-path precondition") < PUR.indexOf("## Resolution steps"),
+    "a precondition printed after the steps it gates is read too late; the condition is"
+      + " `run` invoked without `--url`, which SKILL.md Step 0 cannot see at all");
+
+  // 3c. The named downstream consumer must map the new outcome, and must NOT map it to the
+  //     other one's remedy. `review-loop` had a row for `preview not deployed` whose note
+  //     is `re-run once the preview is up` — advice that can never come true when no lookup
+  //     ran, so a UI PR reviewed on a cloud session got a permanently-false note in it.
+  const RL = read("skills/quality/review-loop/SKILL.md");
+  s.check("G49 review-loop maps the no-access-path outcome",
+    /no access path for deployment lookup \(pass --url\)/.test(RL),
+    "the delegate gained an outcome its primary programmatic caller could not render, so"
+      + " even a correctly-behaving `run` fell through the outcome table unmapped");
+  s.check("G49 review-loop's remedy for it is an explicit URL, not waiting for a build",
+    /no deployment lookup on this access path[\s\S]{0,320}--url <preview-url>/.test(RL),
+    "`re-run once the preview is up` is unactionable here — nothing was looked up, so the"
+      + " human re-runs and gets the same string; only passing a URL changes the outcome");
+
   // 4. The report slot. Every skip condition Step 6.4 enumerates needs a rendered outcome,
   //    or the degraded path reports as success.
-  const SLOT = /Preview spec \(Step 6\.4\):([^\n]*)/.exec(CP);
+  // Anchored at line start, because the report line IS a whole line while the string
+  // `Preview spec (Step 6.4):` also occurs mid-sentence in Step 6.4's own prose — an
+  // unanchored `exec` takes the FIRST match and would assert the enumeration against a
+  // paragraph. The alternation assertion below then proves the capture is the real slot.
+  const SLOT = /^Preview spec \(Step 6\.4\):([^\n]*)/m.exec(CP);
   s.check("G49 create-pr's Step 10 report has a preview-spec slot",
-    SLOT !== null,
-    "with no slot, all five skip conditions and the failure mode render as a clean PR —"
-      + " the reason the grant defect went unnoticed across four days of UI PRs");
-  for (const outcome of ["authored", "not authored", "--no-preview-spec", "--no-quality",
-    "preview-spec not available", "failed"]) {
+    SLOT !== null && SLOT[1].split("|").length === 6,
+    "with no slot, all four skip conditions and the failure mode render as a clean PR —"
+      + " the reason the grant defect went unnoticed across four days of UI PRs. The arm"
+      + " count is asserted here so the per-outcome checks below cannot pass against prose");
+  // Delimited tokens, not bare substrings: `"authored"` is a substring of
+  // `"not authored"`, so the success outcome was previously asserted for free by the
+  // decline outcome's text and could have been deleted without turning L1 red.
+  for (const outcome of ["<authored (", "| not authored (", "| skipped (--no-preview-spec)",
+    "| skipped (--no-quality)", "| skipped (preview-spec not available)", "| failed ("]) {
     s.check(`G49 the slot can render "${outcome}"`,
       SLOT !== null && SLOT[1].includes(outcome),
       "an outcome with no rendering collapses into a neighbouring one, which is how a"
         + " failure gets reported as a correct decline");
   }
+  // A slot with no producer renders as whatever the run remembers — the failure class the
+  // slot was added to close. Step 6.4 must record its branch as it leaves, and must map
+  // the delegate's own `failed` return rather than softening it into a decline.
+  s.check("G49 create-pr's Step 6.4 records the outcome it hands to the slot",
+    /Record which branch you took, now, before continuing/i.test(CP)
+      && /failed \(no GitHub access path\)/.test(CP),
+    "the six values are enumerated in Step 10 but were produced nowhere; in particular"
+      + " `preview-spec`'s `failed (no GitHub access path)` had no mapping, so the one new"
+      + " failure mode this fix introduced was the one the new slot could not show");
   s.check("G49 create-pr states the slot is mandatory on a non-UI diff too",
     /mandatory on every run, including a non-UI diff/i.test(CP),
     "the tempting omission is exactly the silent case: `not authored (no UI files in diff)`"

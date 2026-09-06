@@ -33,7 +33,7 @@ argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--external-review] [--interv
 license: MIT
 metadata:
   author: mthines
-  version: '1.6.0'
+  version: '1.7.0'
   workflow_type: command
   tags:
     - review
@@ -637,6 +637,16 @@ Skill("preview-spec", "run <PR-URL>")
 preview URL via the GitHub deployments API, dispatches `aw-tester --all`, and
 returns a verdict. This loop only records the outcome.
 
+**Deliberately invoked with no `--url`.** The deployments API has no
+`mcp__github__*` equivalent, so on the `mcp` access path `preview-spec run`
+cannot resolve a URL and returns `inconclusive: no access path for deployment
+lookup (pass --url)` — the row below records it with an actionable note. This
+loop does **not** resolve the URL itself: that is `preview-spec`'s own concern
+([`preview-url-resolution.md`](../../testing/preview-spec/rules/preview-url-resolution.md)),
+and a second implementation here would be the drift surface this repo argues
+against. A caller that already holds a preview URL should run
+`/preview-spec run <PR-URL> --url <preview-url>` directly instead.
+
 **Report-only — this step never gates.** The verdict does **not** block convergence,
 does **not** reopen the loop, and does **not** undraft the PR — matching
 `autonomous-workflow`'s Phase 7 rehearsal, which also never auto-undrafts on the
@@ -649,6 +659,8 @@ Map its outcome into the report:
 | --- | --- |
 | `no spec` (no block — not a UI PR, or `author` never ran) | `not run (no preview-spec block)` — log and continue |
 | `inconclusive: preview not deployed` | `inconclusive (preview not deployed at exit)` — note `re-run /preview-spec run <PR-URL> once the preview is up`. Never a red |
+| `inconclusive: no access path for deployment lookup (pass --url)` | `inconclusive (no deployment lookup on this access path)` — note `re-run /preview-spec run <PR-URL> --url <preview-url>`. Never a red, and never recorded as `preview not deployed`: no lookup ran, so waiting for the build fixes nothing and only an explicit URL changes the outcome |
+| any other `inconclusive: <reason>` (`preview building`, `no preview environment`, `preview deploy failed`, `preview URL not published`) | `inconclusive (<reason> at exit)` — log the reason verbatim and continue. Never a red |
 | `green` | `green (<N> specs on <preview-url>)` |
 | `red` | `red (<N> failing on <preview-url>) — review before undrafting`. Report-only; does not reopen the loop |
 | `preview-spec` not installed / `Skill()` refused | `skipped (preview-spec not available)` — log one line and continue; it is a non-load-bearing companion |
@@ -716,7 +728,7 @@ Open threads at exit: <count>
 CI at exit: <green | pending | red (<failing check names>) | error (<verbatim query failure>) | not run (--no-ci) | none on this repo>
   ci-auto-fix handoffs: <CI_HANDOFFS> of 2
 
-Preview spec: <green (<N> specs on <url>) | red (<N> failing on <url>) — review before undrafting | inconclusive (preview not deployed at exit) | not run (no preview-spec block) | skipped (--no-preview-run) | skipped (--no-feedback) | skipped (preview-spec not available)>
+Preview spec: <green (<N> specs on <url>) | red (<N> failing on <url>) — review before undrafting | inconclusive (preview not deployed at exit) | inconclusive (no deployment lookup on this access path) | inconclusive (<reason> at exit) | not run (no preview-spec block) | skipped (--no-preview-run) | skipped (--no-feedback) | skipped (preview-spec not available)>
 
 PR description: <refreshed | unchanged (no code applied) | skipped (--no-refresh)>
 Linear note: <posted <ticket> | no ticket linked | Linear MCP unavailable | skipped>

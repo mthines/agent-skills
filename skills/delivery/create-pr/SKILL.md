@@ -17,7 +17,7 @@ argument-hint: '[--split] [--quick] [--no-review] [--no-simplify] [--no-quality]
 license: MIT
 metadata:
   author: mthines
-  version: '3.2.0'
+  version: '3.3.0'
   workflow_type: command
 ---
 
@@ -106,6 +106,19 @@ Skill("preview-spec", "author <pr-url>")
 ```
 
 `preview-spec` owns the spec grammar, the marker contract, and its authoring memory loop; it edits the PR body in place, adding one `<!-- preview-spec:v1 -->` block. The block is exempt from the description length budget and is preserved verbatim by the Step 6.5 review-loop's description refresh — both rules live in the [description contract](./rules/description-contract.md#ui-verification-spec-optional). Continue to Step 6.5 regardless of whether a spec was authored.
+
+**Record which branch you took, now, before continuing.** The Step 10 report has a mandatory preview-spec slot, and a slot whose value is reconstructed from memory at the end of a long run is the blind spot this step's own history demonstrates. Write down exactly one of the six values as you leave this step:
+
+| What happened here | Record |
+| --- | --- |
+| Delegated, `preview-spec` reported `<N>` specs authored | `authored (<N> specs)` |
+| Skipped: no changed file matched the UI heuristic | `not authored (no UI files in diff)` |
+| Skipped: `--no-preview-spec` in `$ARGUMENTS` | `skipped (--no-preview-spec)` |
+| Skipped: `--no-quality` in `$ARGUMENTS` | `skipped (--no-quality)` |
+| Skipped: `Skill()` raised — `preview-spec` not installed | `skipped (preview-spec not available)` |
+| Delegated, and `preview-spec` reported a failure — including its own `failed (no GitHub access path)`, which means the block never reached the PR body | `failed (<reason>)`, quoting its reason verbatim |
+
+The last row is the one that must never be softened into a skip. `preview-spec`'s `author` treats the PR-body write as its only deliverable, so a `failed` return means no later reader — the Step 6.5 review-loop's Step 1.6 included — will find a block to run. Reporting that as `not authored` claims a decline where there was an error.
 
 This step only **authors** the spec. The **run** is the review-loop's job: the default Step 6.5 invocation (`Skill("review-loop", "<pr-url> --no-ci")`) executes the block once against the live preview deployment at exit, report-only (its Step 1.6). `create-pr` deliberately does **not** pass `--no-preview-run` — that opt-out is for `autonomous-workflow`, whose Phase 7 rehearses the same specs itself. So a hand-driven UI PR gets both halves here: authored at 6.4, verified at 6.5.
 
@@ -359,7 +372,7 @@ Head commit: <sha — the latest state after both paths pushed>
 Because both paths push to the same branch, surface the final head SHA so the user sees the latest state at a glance.
 
 **The `Preview spec` line is mandatory on every run, including a non-UI diff.**
-Step 6.4 has five skip conditions and one failure mode, and every one of them previously reported as a clean, successful PR — the report had no slot for the spec at all, so an absent block was indistinguishable from a diff that needed none.
+Step 6.4 has four skip conditions (`--no-preview-spec`, `--no-quality`, a non-UI diff, `preview-spec` not installed) and one failure mode, and every one of them previously reported as a clean, successful PR — the report had no slot for the spec at all, so an absent block was indistinguishable from a diff that needed none.
 That is the same self-concealing shape as failure modes `F6`/`F7` in [`diagnostic-surface.md`](../../workflow/autonomous-workflow/rules/diagnostic-surface.md): a degraded path that reports as a legitimate outcome is never fixed, because nobody learns it happened.
 State which of the six outcomes applied, and never omit the line on the grounds that the diff was not a UI change — `not authored (no UI files in diff)` is the informative answer there, not silence.
 
