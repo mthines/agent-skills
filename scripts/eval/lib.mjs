@@ -100,9 +100,23 @@ export function sliceBetween(text, startAnchor, endAnchor) {
 export function extractSection(file, section) {
   const txt = readFileSync(join(REPO_ROOT, file), "utf8");
   if (!section) return txt.trim();
-  const i = txt.indexOf(section);
-  if (i < 0) throw new Error(`section "${section}" not found in ${file}`);
   const level = (/^#+/.exec(section.trim()) || [""])[0].length;
+  // The START bound is anchored to LINE START when `section` is a heading, because a bare
+  // substring search also matches inside a DEEPER heading — `### Step 2: …` contains
+  // `## Step 2: …` — and silently re-bases the section on a heading the caller did not
+  // name. The end scan below is already level-aware, so the start was the last place a
+  // level confusion could get in. Trailing spaces on the heading line are tolerated: they
+  // are invisible and meaning-preserving, so they must not move the bound (an exact `$`
+  // turned a trailing space into a hard failure). A non-heading `section` keeps the plain
+  // substring search — it has no level to anchor to.
+  const i = level === 0
+    ? txt.indexOf(section)
+    : (() => {
+      const m = new RegExp(
+        `^${section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[ \\t]*$`, "m").exec(txt);
+      return m === null ? -1 : m.index;
+    })();
+  if (i < 0) throw new Error(`section "${section}" not found in ${file}`);
   // Scan line-by-line from the section start, skipping ``` fenced code blocks, and
   // cut at the first REAL heading of level <= this section's level. Fence-skipping
   // matters because a `# ...` comment inside a ```text block (e.g. Step 1.0's

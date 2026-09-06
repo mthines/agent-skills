@@ -42,6 +42,10 @@ on:
     types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
     inputs:
+      # A comma-separated LIST, not a single name: the same input has to be able to
+      # name one suite (the cheap-iteration case main added this input for), several,
+      # or `all`, and it must also be able to name `bug-detection`, which is a separate
+      # runner and cannot ride l2.mjs's `--suite` flag.
       suites:
         description: "Which suites to run: 'all', or a comma-separated list of suite names."
         required: false

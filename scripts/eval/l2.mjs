@@ -60,8 +60,35 @@ if (!KEY) {
   process.exit(0);
 }
 
+// A misspelled `--suite` would otherwise match nothing, run zero cases, and exit 0 — a green
+// that graded nothing, which is indistinguishable from a green that graded everything. Fail
+// closed on the name instead, and name the suites so the next attempt is right.
+if (only && !SUITES.some((sx) => sx.name === only)) {
+  console.error(`✗ unknown --suite ${JSON.stringify(only)}. Suites: ${SUITES.map((sx) => sx.name).join(", ")}`);
+  process.exit(1);
+}
+
 // extractSection is heading-level-aware and shared from lib.mjs so l1.mjs's G21g
 // "eval actually contains a rubric" guard exercises the exact extraction this runs.
+
+/**
+ * Resolve a suite's rubric text. `section` (a heading literal, or `null` for the whole file)
+ * is the single-slice form; `sections` is an ordered list joined by a blank line, for a
+ * decision whose owning prose is split across sibling subsections. Fails CLOSED on the two
+ * ways this can silently produce an empty or wrong rubric — an empty list, and both keys set
+ * (where `sections` would win while `section: null` still reads as "whole file" to a reader).
+ */
+function rubricFor(suite) {
+  const { file, section, sections } = suite.rubric;
+  if (sections === undefined) return extractSection(file, section);
+  if (section !== undefined) {
+    throw new Error(`suite ${suite.name}: set rubric.section OR rubric.sections, not both`);
+  }
+  if (!Array.isArray(sections) || sections.length === 0) {
+    throw new Error(`suite ${suite.name}: rubric.sections must be a non-empty array`);
+  }
+  return sections.map((s) => extractSection(file, s)).join("\n\n");
+}
 
 // Returns the reply text AND the usage, because the token count is half of what
 // makes a run worth recording: accuracy says whether the rubric works, tokens say
@@ -134,7 +161,7 @@ for (const suite of SUITES) {
   if (only && suite.name !== only) continue;
   const goldenPath = join(REPO_ROOT, "scripts/eval", suite.golden);
   if (!existsSync(goldenPath)) { console.log(`(skip ${suite.name}: no golden file)`); continue; }
-  const rubric = extractSection(suite.rubric.file, suite.rubric.section);
+  const rubric = rubricFor(suite);
   const system = `${suite.instruction}\nReply with exactly one of: ${suite.choices.join(", ")}. No explanation.\n\n${rubric}`;
   const cases = readFileSync(goldenPath, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
 

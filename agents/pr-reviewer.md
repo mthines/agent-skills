@@ -1009,6 +1009,14 @@ Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
 Merge both lists per tag (`repo::` wins on key collision).
 Skip expired entries.
 
+**These four calls filter on three things and nothing else — tag, scope, and expiry.**
+They carry no diff parameter and no `seen_count` parameter, so neither narrows what this read returns.
+Diff-keying enters later and *additively*: Step 1.2c runs a diff-built `memory_search` on top of these lists, and Step 1.2d shortlists the merged index by changed path and symbol before spending body reads — so a lesson unrelated to these changed files is still in the pool this step loads, and stops being a candidate only downstream, where the diff is actually in hand.
+`seen_count` is not available here at all: it lives in record bodies, and this step loads the index only.
+It governs *promotion* (guard 2 below) and the Step 2.7b suppress / downgrade / promote decision — never whether an entry is returned.
+Narrowing this read by your own sense of what looks relevant to the diff is a defect, not an optimisation.
+The 50-per-tag window exists precisely so relevance is decided after the diff is read, by the steps that have it.
+
 **Why `view: "summary"`.** These four calls return up to **200** entries (50 per tag per scope). At
 the observed ~1.9 KB median body a saturated fan-out is ~380 KB of context — and even the ~61
 entries a typical run actually returns is ~110 KB — spent before the diff has been read, to answer

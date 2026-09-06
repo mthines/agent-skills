@@ -87,11 +87,12 @@ choice against the human label. Classification → exact-match, **no LLM-as-judg
 | `reviewer-agreement-bump` | is the surviving finding agreement-promoted? | reviewer `## Cross-rubric agreement` | promoted / not-promoted |
 | `optimize-approach-optimality` | is this approach optimal or suboptimal? | optimize-approach `optimality-rubric.md` (whole file) | optimal / suboptimal |
 | `shape-depth-routing` | given the computed delta, shapes, and impact graph, which depth tier does Phase C pick? | `agents/pr-reviewer/rules/depth-routing.md` (whole file) | deep / standard / quick |
-| `code-review-retrieval-relevance` | would the documented Step 1.0 + 1.2c read surface this candidate memory for the given PR diff? | `agents/pr-reviewer.md` `## Step 1: Fetch all inputs + load memories` | surface / skip |
+| `code-review-retrieval-relevance` | would the documented Step 1.0 + 1.2c read surface this candidate memory for the given PR diff? | `agents/pr-reviewer.md` `### 1.0` + `### 1.2c` (the two-section `rubric.sections` form — deliberately **not** the `## Step 1` parent, see the methodology note) | surface / skip |
 
 ```bash
 node scripts/eval/l2.mjs                 # all suites
 node scripts/eval/l2.mjs --suite bug-class
+node scripts/eval/l2.mjs --suite typo    # exits 1 and lists the suites — never a silent zero-case pass
 EVAL_MODEL=… EVAL_GATE=70 node scripts/eval/l2.mjs
 ```
 
@@ -287,6 +288,19 @@ The `diagnostic-surface.md` failure taxonomies are a proto-spec for this golden 
 This suite measures whether `pr-reviewer`'s documented Step 1.0 (`mcp__lorekit__memory_list`)
 + Step 1.2c (`mcp__lorekit__memory_search`, enriched query) read surfaces the lessons
 that should fire for a given PR diff + candidate memory pool.
+
+**The rubric is those two subsections and nothing else.**
+It reads `### 1.0` and `### 1.2c` through `rubric.sections`, not their `## Step 1` parent.
+`extractSection` is heading-level-aware, so the parent captured all ten `### 1.x` subsections —
+67,630 chars of impact graph, depth routing, and divergence pre-check against the 27,568 the two
+own — and the suite ran at 3/5 (60%) against the 70% floor on both `main` and a PR head.
+The material that decides it is `### 1.2d`, which shortlists Step 1.0's index by changed
+directory, basename, symbol, integration, or `INTENT_PHRASE` before fetching bodies.
+That is a real diff filter, correctly placed, but it answers a **different** question — *what
+reaches the finders* — from the one these labels state, *what the documented read returns*.
+With `1.2d` in the rubric a list-reachable lesson unrelated to the diff is legitimately `skip`,
+and the suite contradicts its own `instruction` string.
+Re-widening the rubric to the parent is a regression, and `G21a` reds on it.
 
 Ground truth is **defined by the outcome signal** — `loop::reviewer-lessons` /
 `loop::reviewer-comment-relevance` tags + `origin_pr` + `seen_count >= 3` marks a

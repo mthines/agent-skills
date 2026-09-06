@@ -90,7 +90,27 @@ export const SUITES = [
   {
     name: "code-review-retrieval-relevance",
     golden: "golden/code-review-retrieval-relevance.jsonl",
-    rubric: { file: "agents/pr-reviewer.md", section: "## Step 1: Fetch all inputs + load memories" },
+    // Two subsections, NOT the whole of `## Step 1`. The instruction below names exactly the
+    // Step 1.0 list + Step 1.2c search, and CLAUDE.md's charter for this suite says the same;
+    // `## Step 1` is heading-level-aware and so captured all ten `### 1.x` subsections —
+    // 67,630 chars of impact graph, depth routing and divergence pre-check against the 27,568
+    // these two hold. Same lesson as shape-depth-routing above: feed the section that OWNS the
+    // decision.
+    //
+    // What this deliberately EXCLUDES, and why re-adding it would be a regression: `### 1.2d`
+    // shortlists the Step 1.0 index by changed directory / basename / symbol / integration /
+    // INTENT_PHRASE before fetching bodies. That is a real diff filter, correctly placed — but
+    // it answers a DIFFERENT question ("what reaches the finders") from the one these goldens
+    // label ("what the documented read returns"). With 1.2d in the rubric, a list-reachable
+    // lesson unrelated to the diff is legitimately `skip`, and the suite contradicted its own
+    // instruction. Widen this back and the labels stop being derivable from what the model sees.
+    rubric: {
+      file: "agents/pr-reviewer.md",
+      sections: [
+        "### 1.0 Prior-comment awareness + relevance memory load (default ON)",
+        "### 1.2c Diff-keyed lesson search (all modes)",
+      ],
+    },
     instruction: "You are pr-reviewer at Step 1. Using ONLY the Step 1 memory-read procedure below (Step 1.0 mcp__lorekit__memory_list + Step 1.2c mcp__lorekit__memory_search), decide whether the described candidate memory would be surfaced by the documented read for the given PR diff. Reply 'surface' if the documented read would return it, or 'skip' if it would not.",
     inputKey: "input", inputLabel: "Candidate + diff",
     choices: ["surface", "skip"],
