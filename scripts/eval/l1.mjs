@@ -5298,4 +5298,82 @@ const isPollBlock = (block) =>
       + " how a green report gets written for a PR whose CI was never observed");
 }
 
+// ── G49: the preview-spec author delegation is REACHABLE and its skip is VISIBLE ──
+// Measured, not hypothesised: of the 20 most recent lorekit PRs, all 20 merged after
+// preview-spec shipped (2026-09-01) and NONE carried a `preview-spec:v1` block —
+// including #651, whose diff matched create-pr Step 6.4's own UI heuristic on nine files.
+// Two independent defects produced that, and each one alone is sufficient:
+//
+//   1. `preview-spec`'s frontmatter granted `Bash(gh *)` and no `mcp__github__*`, so on a
+//      cloud session (no `gh`, which is where these runs happen) the operation's only
+//      deliverable — writing the block into the PR body — was unreachable. Its own Step 0
+//      told it to resolve to the mcp path that its grant then forbade.
+//   2. `create-pr`'s Step 10 report had no slot for the spec at all, so every skip and
+//      every failure rendered as a clean, successful PR. That is why defect 1 survived
+//      four days of UI PRs unnoticed: nothing downstream contradicted it.
+//
+// Assert both at once. Fixing the grant while leaving the report blind restores the
+// capability and keeps the next regression invisible, which is how this one lasted.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const PS = read("skills/testing/preview-spec/SKILL.md");
+  const CP = read("skills/delivery/create-pr/SKILL.md");
+  const PS_FM = PS.slice(0, PS.indexOf("\n---", 4));
+
+  // The sweep must be proved non-empty before any assertion over it is trusted.
+  s.check("G49 the guard reads both surfaces",
+    PS.length > 2000 && CP.length > 2000 && PS_FM.includes("allowed-tools:"),
+    "an empty read or a frontmatter slice that missed `allowed-tools:` would pass every"
+      + " assertion below vacuously");
+
+  // 1. The grant must be able to reach GitHub on BOTH access paths, and to dispatch under
+  //    either spelling. `Bash(gh *)` alone is the pre-fix state; `Task` alone is the exact
+  //    literal-name defect PR #180 removed from this skill's PROSE while leaving it here.
+  s.check("G49 preview-spec's grant can write a PR body on the mcp path",
+    /mcp__github__update_pull_request/.test(PS_FM),
+    "the whole deliverable of `author` is a PR-body write; granting only `Bash(gh *)` makes"
+      + " it unreachable in every cloud session, where `gh` is absent");
+  s.check("G49 preview-spec's grant can read a PR on the mcp path",
+    /mcp__github__pull_request_read/.test(PS_FM),
+    "the block must be merged into the EXISTING body, so the body has to be readable first");
+  s.check("G49 preview-spec's grant names the dispatch capability, not one spelling",
+    !/\bTask\b/.test(PS_FM) || /\bAgent\b/.test(PS_FM),
+    "`run` dispatches the aw-tester agent; a grant naming only `Task` blocks it on the"
+      + " harness that spells the tool `Agent` — the F6 defect, one layer below the prose");
+
+  // 2. Step 0 must NAME the mcp equivalents. `github-access.md` owns the repo-wide mapping,
+  //    but a consumer that cites it and then prints only `gh` forms leaves the reader to
+  //    invent the call — this is G48's lesson applied to a second consumer.
+  s.check("G49 preview-spec states the mcp-path equivalent of the body write",
+    /gh pr edit[\s\S]{0,400}mcp__github__update_pull_request/.test(PS),
+    "citing the access-path rule is not the same as naming the call; the gh form was"
+      + " labelled authoritative and no mcp form appeared anywhere in the file");
+
+  // 3. `run`'s deployment lookup genuinely has NO mcp equivalent, so the honest degradation
+  //    must be stated rather than collapsed into the deployed/not-deployed verdict.
+  s.check("G49 preview-spec distinguishes 'no access path' from 'preview not deployed'",
+    /pass --url/.test(PS) && /never report `inconclusive: preview not deployed`/.test(PS),
+    "no `mcp__github__*` tool exposes deployments; reporting a lookup that never happened"
+      + " as `preview not deployed` asserts a fact about the deployment as if checked");
+
+  // 4. The report slot. Every skip condition Step 6.4 enumerates needs a rendered outcome,
+  //    or the degraded path reports as success.
+  const SLOT = /Preview spec \(Step 6\.4\):([^\n]*)/.exec(CP);
+  s.check("G49 create-pr's Step 10 report has a preview-spec slot",
+    SLOT !== null,
+    "with no slot, all five skip conditions and the failure mode render as a clean PR —"
+      + " the reason the grant defect went unnoticed across four days of UI PRs");
+  for (const outcome of ["authored", "not authored", "--no-preview-spec", "--no-quality",
+    "preview-spec not available", "failed"]) {
+    s.check(`G49 the slot can render "${outcome}"`,
+      SLOT !== null && SLOT[1].includes(outcome),
+      "an outcome with no rendering collapses into a neighbouring one, which is how a"
+        + " failure gets reported as a correct decline");
+  }
+  s.check("G49 create-pr states the slot is mandatory on a non-UI diff too",
+    /mandatory on every run, including a non-UI diff/i.test(CP),
+    "the tempting omission is exactly the silent case: `not authored (no UI files in diff)`"
+      + " is the informative answer, and dropping the line restores the blind spot");
+}
+
 process.exit(s.report() ? 0 : 1);

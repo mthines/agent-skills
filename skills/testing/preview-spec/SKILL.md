@@ -18,10 +18,10 @@ description: >
 disable-model-invocation: false
 argument-hint: '[author|run] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright]'
 license: MIT
-allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Read Edit Write Grep Glob Skill Task AskUserQuestion mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
+allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: slash-command
   tags:
     - playwright
@@ -90,6 +90,20 @@ Resolve which path you have — `gh` CLI, `mcp__github__*` tools, or neither —
 Resolve once, state the path, and use it for the whole run.
 The commands below are the `gh`-path form.
 
+**On the `mcp` path, use these equivalents.**
+Naming them here is load-bearing: the `gh`-path form above is not a mapping, and a reader who has to invent one writes nothing to the PR.
+
+| `gh`-path command | `mcp`-path equivalent |
+| --- | --- |
+| `gh pr view <pr> --json body` | `mcp__github__pull_request_read` with `method: "get"` |
+| `gh pr edit <pr> --body <body>` | `mcp__github__update_pull_request` with `body` |
+| `gh api repos/<owner>/<repo>/deployments?sha=…` | **none — see below** |
+
+**`author` works on both paths; `run`'s URL resolution does not.**
+[`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md) reads the GitHub deployments API, and no `mcp__github__*` tool exposes deployments.
+So on the `mcp` path, `run` must take an explicit `--url <preview-url>` argument.
+Without one, report `inconclusive: no access path for deployment lookup (pass --url)` and stop — never report `inconclusive: preview not deployed`, which claims a fact about the deployment that was never checked.
+
 ## Operation `author`
 
 Inject one collapsed, marked UI verification spec into the PR body.
@@ -100,7 +114,9 @@ Inject one collapsed, marked UI verification spec into the PR body.
    - A `/fix-bug` reproduction artifact for a UI or visual bug — an `e2e-testing` flow or a `repro/<id>.md` checklist. Adapt its steps into the grammar.
    Both sources are gitignored, local-only files. This works because `author` runs in the same worktree that wrote them, and it copies their content into the **committed** PR body — the durable artifact `run` later reads. The gitignored file is never committed; only its lifted content reaches GitHub. See [`rules/spec-sources.md § Two artifacts, two lifetimes`](./rules/spec-sources.md#two-artifacts-two-lifetimes). When a source is found, seed the block from it and skip step 3, so the PR block matches what was verified locally rather than a second, divergent description of the same behavior.
 3. **Otherwise, write the spec from the diff.** Read the diff (`git diff <base>...HEAD --name-status` plus the relevant files), then write one `## Spec N:` block per user-visible behavior the diff changes, in `aw-tester`'s grammar. Prefer role-and-name locators; use `{testid: …}` only as an escape hatch. Keep it to the behaviors a reviewer would actually click through — 1 to 3 specs, not an exhaustive suite.
-4. **Wrap and inject** the spec in the marked collapsed block per [`rules/spec-format.md`](./rules/spec-format.md), and write it into the PR body with `gh pr edit --body`, preserving everything already there.
+4. **Wrap and inject** the spec in the marked collapsed block per [`rules/spec-format.md`](./rules/spec-format.md), and write it into the PR body with the body-write call for your resolved [access path](#step-0-resolve-your-github-access-path), preserving everything already there.
+Writing the block into the PR body is this operation's **only** deliverable, so a run that could not perform that write has not authored a spec.
+Report it as `failed (no GitHub access path)` rather than reporting the specs you drafted — a drafted spec that never reached the PR is indistinguishable from none to every later reader, including `run`.
 
 The block is **exempt from the `create-pr` description length ceiling** and is **preserved verbatim** by `review-loop`'s body refresh — both rules live in [`rules/spec-format.md`](./rules/spec-format.md) and in the [description contract](../../delivery/create-pr/rules/description-contract.md).
 

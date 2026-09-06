@@ -17,7 +17,7 @@ argument-hint: '[--split] [--quick] [--no-review] [--no-simplify] [--no-quality]
 license: MIT
 metadata:
   author: mthines
-  version: '3.1.0'
+  version: '3.2.0'
   workflow_type: command
 ---
 
@@ -332,6 +332,8 @@ Short summary:
 PR: <pr-url>
 Title: <imperative title>
 
+Preview spec (Step 6.4): <authored (<N> specs) | not authored (no UI files in diff) | skipped (--no-preview-spec) | skipped (--no-quality) | skipped (preview-spec not available) | failed (<reason>)>
+
 Review loop (review-loop / pr-reviewer):
   Iterations: <N> of <cap>
   Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | skipped (--no-quality) | NOT REVIEWED (sub-agent dispatch unavailable)>
@@ -355,6 +357,11 @@ Head commit: <sha — the latest state after both paths pushed>
 ```
 
 Because both paths push to the same branch, surface the final head SHA so the user sees the latest state at a glance.
+
+**The `Preview spec` line is mandatory on every run, including a non-UI diff.**
+Step 6.4 has five skip conditions and one failure mode, and every one of them previously reported as a clean, successful PR — the report had no slot for the spec at all, so an absent block was indistinguishable from a diff that needed none.
+That is the same self-concealing shape as failure modes `F6`/`F7` in [`diagnostic-surface.md`](../../workflow/autonomous-workflow/rules/diagnostic-surface.md): a degraded path that reports as a legitimate outcome is never fixed, because nobody learns it happened.
+State which of the six outcomes applied, and never omit the line on the grounds that the diff was not a UI change — `not authored (no UI files in diff)` is the informative answer there, not silence.
 
 ## Split Mode (`--split`)
 
