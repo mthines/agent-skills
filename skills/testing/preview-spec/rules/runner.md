@@ -48,10 +48,10 @@ Never write the resolved URL or any credential into the committed `.claude/aw-ta
 Resolve `--driver` (default `auto`), then run the spec through the chosen runner. Both read the target from the `Aw-Target file:` path and the spec from the `Specs file:` path — the ephemeral overlay from Step 3, not the committed `preview.yml` placeholder. Both emit the identical verdict block ([spec-run contract § 4](../../../workflow/autonomous-workflow/rules/spec-run-contract.md#4-verdict-schema-mandatory--do-not-deviate)). `--all` runs every spec (not `--bail-on-first-red`) — an on-demand verification wants the full picture.
 
 **`auto` (default): resolve to a concrete driver — Chrome first, and never silently fall to Playwright.**
-The Chrome runner is in-session and needs the browser extension; the Playwright runner is a sub-agent and needs `Task`. Pick:
+The Chrome runner is in-session and needs the browser extension; the Playwright runner is a sub-agent and needs an available tool that dispatches one (`Task`, `Agent`, or another spelling). Pick:
 
 1. If the `mcp__claude-in-chrome__*` tools are available and `tabs_context_mcp` returns a connected browser → **chrome**.
-2. Else Chrome is unavailable. Do **not** auto-select Playwright — ask the user first per [§ The auto-mode Playwright prompt](#the-auto-mode-playwright-prompt). Run Playwright only if they accept; if they decline, report `NOT RUN (chrome unavailable, user declined Playwright)` and stop. If `Task` is also unavailable, there is nothing to offer — report `NOT RUN (no Chrome extension and no sub-agent dispatch available)` and stop without prompting.
+2. Else Chrome is unavailable. Do **not** auto-select Playwright — ask the user first per [§ The auto-mode Playwright prompt](#the-auto-mode-playwright-prompt). Run Playwright only if they accept; if they decline, report `NOT RUN (chrome unavailable, user declined Playwright)` and stop. If no available tool dispatches a sub-agent either, there is nothing to offer — report `NOT RUN (no Chrome extension and no sub-agent dispatch available)` and stop without prompting.
 
 **Driver `chrome` — invoke [`aw-tester-chrome`](../../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md) in-session:**
 
@@ -80,7 +80,7 @@ Task(
 )
 ```
 
-If `--driver playwright` is forced and `Task` is unavailable, say so and stop: the runner cannot substitute for `aw-tester` in-context, because its Playwright execution and locator-healing live in the isolated agent. Report `NOT RUN (sub-agent dispatch unavailable)`.
+If `--driver playwright` is forced and no available tool dispatches a sub-agent, say so and stop: the runner cannot substitute for `aw-tester` in-context, because its Playwright execution and locator-healing live in the isolated agent. Report `NOT RUN (sub-agent dispatch unavailable)`.
 
 ### The auto-mode Playwright prompt
 
@@ -91,7 +91,7 @@ Ask with `AskUserQuestion`:
 - **Question.** State why Chrome can't verify (`The Chrome extension isn't connected`, or `Chrome returned inconclusive: <reason>`), then ask whether to run the spec with Playwright (the `aw-tester` sub-agent) instead.
 - **Options.** `Use Playwright` — run the Playwright driver now. `Don't run` — stop without a Playwright run.
 
-On `Use Playwright`, run the Playwright driver block above; if `Task` is unavailable, report `NOT RUN (sub-agent dispatch unavailable)` and stop. On `Don't run`, do not dispatch: report the chrome `inconclusive` verdict when there is one, else `NOT RUN (chrome unavailable, user declined Playwright)`. Either way, stop.
+On `Use Playwright`, run the Playwright driver block above; if no available tool dispatches a sub-agent, report `NOT RUN (sub-agent dispatch unavailable)` and stop. On `Don't run`, do not dispatch: report the chrome `inconclusive` verdict when there is one, else `NOT RUN (chrome unavailable, user declined Playwright)`. Either way, stop.
 
 ## Step 5: Report the verdict
 

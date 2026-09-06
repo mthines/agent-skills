@@ -44,8 +44,9 @@ grants (that is why `aw` is a skill; see
 [`CLAUDE.md`](../CLAUDE.md#the-dispatcher-is-a-skill-not-an-agent--design-intent)).
 
 **There is no dispatch-unavailable branch for the dispatcher itself.** A skill
-needs no `Task` tool to start, so `aw` runs whether or not sub-agent dispatch
-exists. When `Task` is missing, `aw` handles it *internally* by running the
+needs no dispatch tool to start, so `aw` runs whether or not sub-agent dispatch
+exists. When no available tool dispatches a sub-agent (`Task`, `Agent`, or
+another spelling), `aw` handles it *internally* by running the
 **single-context Full** path (planner role → gated `plan.md` + `checks.yaml` →
 executor role through Phases 3–7 in one window), preserving the plan artifact
 and the `confidence(plan)` gate. Do not pre-empt that decision here.

@@ -75,7 +75,7 @@ Task(subagent_type="pr-reviewer", prompt="<pr-url-or-number> [--critical if pass
 | --- | --- |
 | `/review-changes` | Convergence loop on the current branch's open PR — `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` → CI, up to 5 iterations, converging until every review thread is resolved (fix or reply) **and** CI is not red. |
 | `/review-changes --no-ci` | Same, minus the CI sub-step. Pass this when something else already owns CI for the PR. |
-| `/review-changes --external-review` | Waits for an out-of-process reviewer (another agent, a review bot) instead of dispatching `pr-reviewer`, then applies + resolves + simplifies as usual. Also the path to use where the `Task` tool is unavailable. |
+| `/review-changes --external-review` | Waits for an out-of-process reviewer (another agent, a review bot) instead of dispatching `pr-reviewer`, then applies + resolves + simplifies as usual. Also the path to use where no available tool dispatches a sub-agent (`Task`, `Agent`, or another spelling). |
 | `/review-changes --report` | One-shot read-only review via `pr-reviewer` (no apply). |
 | `/review-changes --report --external-review` | **Refused.** Print `--report needs pr-reviewer; drop --external-review or drop --report.` and exit — the same refusal `review-loop` gives for `--no-feedback --external-review`, and for the same reason: report-only needs a reviewer to report, and `--external-review` removes the only one either path owns. Never silently ignore `--external-review` here. |
 | `/review-changes --critical` | Adds adversarial pre-mortem (`Skill("critical", "code")`) to each `pr-reviewer` call. |

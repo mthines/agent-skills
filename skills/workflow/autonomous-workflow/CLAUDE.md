@@ -413,7 +413,8 @@ When editing this skill, do not break these — they're load-bearing:
   regrow a `tools:` block, a `model:` line, or an inline tier table — see
   [the shape design-intent section](#the-dispatcher-is-a-skill-not-an-agent--design-intent).
   The planner/executor split is Full-only —
-  **except** when the harness disables sub-agent dispatch (`Task`), where `aw`
+  **except** when no available tool dispatches a sub-agent (`Task`, `Agent`, or
+  another spelling), where `aw`
   runs the Full phases single-context (planner + executor roles in one window)
   rather than downgrading to Lite. That fallback preserves the `plan.md` artifact
   and the `confidence(plan)` gate; it is the one place `aw` uses `Edit`/`Write` on
@@ -697,11 +698,24 @@ Design rules that keep this from rotting:
   through the split (pure handoff overhead). The two specialist agents remain
   the Full-tier realization; `aw` is the router + Micro/Lite single-pass runner.
   **The single-context Full fallback is the sole exception**, and only when the
-  split is *structurally* unavailable (the harness disables `Task`, e.g. Claude
-  Code on the web): there `aw` plays both roles in one window, keeping the
-  `plan.md` artifact + `confidence(plan)` gate but conceding context isolation
-  (which the harness has already made impossible). It is never a license to skip
-  an available split — the check is "can I dispatch?", not "do I feel like it?".
+  split is *structurally* unavailable (the harness exposes no sub-agent dispatch
+  tool at all): there `aw` plays both roles in one window, keeping the `plan.md`
+  artifact + `confidence(plan)` gate but conceding context isolation (which the
+  harness has already made impossible). It is never a license to skip an
+  available split — the check is "can I dispatch?", not "do I feel like it?".
+- **"Can I dispatch?" is a capability question, and the tool's NAME is not the
+  answer.** The Claude Code CLI calls it `Task`; the Claude Agent SDK harness
+  behind Claude Code on the web and in cloud sessions calls it `Agent`. Every
+  availability check across `aw`, [`review-loop`](../../quality/review-loop/SKILL.md),
+  and [`pr-review`](../../quality/pr-review/SKILL.md) therefore asks whether *any*
+  available tool dispatches a sub-agent, never whether one spelling is present.
+  A name check fails in the direction that hides itself: it routes a fully
+  dispatchable session into the single-context fallback and the degraded review
+  path, both of which report as legitimate outcomes. This is **not** the rejected
+  capability probe below — it decides nothing about *whether* to run a companion,
+  it only reads the name of a tool the context already holds, and every branch it
+  feeds fails closed (toward `--external-review`, toward single-context Full),
+  never toward a silent skip.
 - **Micro reuses the Lite phase path.** Micro is a routing tier, not a fourth
   set of phase rules — it follows Lite's phase behavior with planning and quality
   companions skipped. This keeps the phase rules from needing a third column.
@@ -911,8 +925,9 @@ they must be exercised live (markdown can't prove them). Run this after editing
    did **not** report `review-loop` as skipped — with the dispatcher in-context
    the executor sits one rung higher and holds `Task`, which is the whole point
    of v3.23. If it did report a skip, `aw` must re-run `review-loop` itself
-   before handing back. If the harness refuses sub-agent dispatch entirely (e.g.
-   `Task` disabled), `aw` must run the **single-context Full** fallback: play the planner
+   before handing back. If the harness refuses sub-agent dispatch entirely (no
+   available tool dispatches a sub-agent — `Task`, `Agent`, or another spelling),
+   `aw` must run the **single-context Full** fallback: play the planner
    role in-context to produce a gated `plan.md` + `checks.yaml`, clear
    `confidence(plan) ≥ 90%`, then play the executor role through Phases 3–7 — all
    in the one window. Confirm it produces `plan.md` and clears the gate, and that
@@ -949,6 +964,46 @@ end-user-facing; this file is contributor-facing.
 ---
 
 ## History
+
+- **v3.25.0** — Dispatch availability is a capability, not a tool name; and
+  `aw`'s review recovery stops re-running the dispatch that just failed. Field
+  report from a cloud session: a Full run delivered a draft PR with `NOT
+  REVIEWED`, and the recovery path fired but recovered nothing. Two independent
+  defects, both empirically confirmed by probing this harness rather than
+  reasoned about:
+  - **The capability gates were name checks.** `review-loop`'s Step 0
+    precondition read "check whether `Task` appears in your available tools",
+    and `pr-review` and `aw` carried the same literal in eight more places. The
+    Claude Agent SDK harness behind Claude Code on the web and in cloud sessions
+    holds the capability and spells the tool `Agent`, so the gate concluded "no
+    dispatch available" and skipped the review on a PR that was fully
+    reviewable. The failure hid itself: a skip is a documented legitimate
+    outcome, so nothing downstream contradicted it. Every check now asks whether
+    *any* available tool dispatches a sub-agent — a tool taking a
+    `subagent_type` (or equivalent) parameter is the dispatch tool whatever it is
+    called — and each file states the anti-pattern as a code example so the name
+    check reads as a defect rather than as the rule.
+  - **`aw`'s review recovery was a no-op in the case it exists for.** It invoked
+    `Skill("review-loop", …)` bare, so when `aw` itself held no dispatch tool the
+    loop skipped at iteration 0 exactly as the executor had. The recovery is now
+    a two-row table keyed on `aw`'s own capability, with the no-dispatch row
+    passing `--external-review` (deliberately, by the caller, which is the shape
+    `review-loop`'s caller contract sanctions) so the loop waits for whatever
+    reviewer *is* posting and still applies, resolves, and converges those
+    threads. `--critical` is dropped on that row: it only ever configured
+    `pr-reviewer`, and the loop warns and ignores it.
+  - **This is not the capability probe rejected in v3.22.** That probe's premise
+    was falsified and it would have gated quality companions failing *open*.
+    This reads the name of a tool the context already holds, gates nothing, and
+    every branch fails **closed** — toward `--external-review`, toward
+    single-context Full — never toward a silent skip.
+  - **Also fixed in `review-loop`:** the sub-step A comment claimed "the loop
+    always ENDS on a review pass"; two of its four exits (the no-progress guard
+    and the cap) fire after a push, not a review. And the post-loop report keyed
+    on `ITERATION == CAP`, which is also true of a report-only run (`--no-feedback`
+    forces `CAP=1`) and of a clean convergence on the last allowed iteration —
+    both were reported as "cap reached". Exits now set an explicit `STOP_REASON`
+    the report reads instead of re-deriving one from the iteration count.
 
 - **v3.24.0** — `aw` becomes the only natural-language entry point. v3.23 made
   the dispatcher a skill but left the parent `autonomous-workflow` skill's
@@ -1058,6 +1113,12 @@ end-user-facing; this file is contributor-facing.
     available and `gh` was not; and a probe gating quality companions fails
     *open*), a `gh`→MCP degradation matrix (a second source of truth that would
     drift), and a compaction re-anchor (never observed, Full-tier only).
+    *(v3.25 refined the first entry rather than reversing it: the premise was
+    falsified in the wrong direction too — a later harness holds the capability
+    under the name `Agent`, so the literal-`Task` gates these files kept were
+    themselves the bug. The name-agnostic capability check v3.25 installs gates
+    nothing and fails closed, which is what separates it from the probe rejected
+    here.)*
   - **A rejected design is recorded, not just removed.** The first attempt
     threaded a shared watch budget through a state file across `create-pr`,
     Phase 7 and the `ci-auto-fix` fan-out. It took six review rounds, was merged
