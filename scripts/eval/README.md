@@ -119,10 +119,44 @@ With `1.2d` in the rubric a list-reachable lesson unrelated to the diff is legit
 and the suite contradicts its own `instruction` string.
 Re-widening the rubric to the parent is a regression, and `G21a` reds on it.
 
+**The question is procedure application, not relevance, and the `instruction` says so.**
+The earlier wording asked whether the record "would be surfaced by the documented read *for the
+given PR diff*", which put the diff in the framing and reads as an invitation to judge whether the
+record is relevant to the change.
+Two cases turn on exactly that distinction, and both were answered `skip` on a run where the
+rubric already said in as many words that narrowing this read by apparent relevance is a defect —
+so the framing, not the rubric's size or content, was the last untried lever.
+The verb is **surfaces**, matching the labels: Step 1.0's source-attribution filter runs on what
+its four calls returned, so a record another tool wrote *is* returned and then dropped, and under
+"returns" the two source-attribution cases were answerable both ways.
+
 Ground truth is **defined by the outcome signal** — `loop::reviewer-lessons` /
 `loop::reviewer-comment-relevance` tags + `origin_pr` + `seen_count >= 3` marks a
 promotion-grade should-fire lesson.
 Labels are derived from this signal, not from re-running the read being measured.
+
+**The read filters on four dimensions, and every label is decided by one of them alone** — tag,
+scope (both paths read exactly `repo::{owner}/{repo}` and `global`, matched *exactly*: no
+`branch::` or other-repo record is reachable), expiry, and source attribution
+(`source.agent == "pr-reviewer" ∨ source.explicit == true`, applied to what the calls returned).
+A record in range on all four is `surface` whether or not its gist relates to the diff; any one
+out of range is `skip`.
+Diff-relevance is not a fifth dimension and neither is `seen_count`, which is not even available
+at Step 1.0 (`view="summary"` loads the index, not bodies).
+An earlier version of this note defined `skip` by the tag dimension only, so the other three had
+no ground truth here and the set tested none of them.
+
+**Label balance is a correctness property.**
+At 4 `surface` / 1 `skip` the majority-class baseline was 80% and cleared the 70% floor, so a
+green meant only "the model stopped answering `skip`" — not that anything reasoned about
+retrieval; and at N=5 one miss was 80% (pass) while two was 60% (fail), so the floor's own
+justification ("only trips on a badly-broken rubric, not 1–2 cases of model noise") did not hold.
+The set is now **14 cases, 8 `surface` / 6 `skip`** — a 57.1% baseline, so neither degenerate
+strategy passes, and the floor tolerates 4 misses rather than 1.
+L1 `G21h` asserts it, deriving the baseline from the JSONL and the floor from
+`.github/workflows/evals-l2.yml`, so re-degenerating the split reds L1 rather than only a paid L2
+run.
+Grow the set by adding decoys, never by moving the floor.
 
 **When a lesson is promoted via `diagnose`, add a golden case so the fix is locked.**
 Specifically: when a `loop::reviewer-lessons` or `loop::reviewer-comment-relevance` entry

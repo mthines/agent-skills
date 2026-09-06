@@ -93,6 +93,24 @@ const SUITES = [
   {
     name: "code-review-retrieval-relevance",
     golden: "golden/code-review-retrieval-relevance.jsonl",
+    // 14 cases, 8 `surface` / 6 `skip` — a 57.1% majority-class baseline, asserted by L1 `G21h`
+    // against the floor grepped out of evals-l2.yml. The split IS the measurement: at the seed
+    // set's 4/1 an always-`surface` responder scored 80% and cleared the 70% floor, so a green
+    // said only that the model had stopped answering `skip`.
+    //
+    // The six `skip` decoys are one per FILTER DIMENSION of the read under test, derived from
+    // the rubric rather than invented, so none is answerable without reading it: tag
+    // (`codebase-knowledge` — this agent's own bucket, but read at Step 1.2a and by neither path
+    // in scope), scope (a `branch::` scope, and a different repo's `repo::` carrying a
+    // deliberately on-topic gist), expiry, and source attribution (`source.agent: 'aw-executor'`).
+    // `global` and `source.explicit: true` are their positive counterparts, so scope and
+    // attribution are tested in both directions instead of only as rejections.
+    //
+    // The two originals this suite kept missing were NOT edited. They have explicitly-scoped
+    // superseding twins (`…-scoped`) that state the scope and source fields the originals leave
+    // silent, and the originals stay runnable as regression guards — per eval-iterate's
+    // no-overwrite-in-place rule.
+    //
     // Two subsections, NOT the whole of `## Step 1`. The instruction below names exactly the
     // Step 1.0 list + Step 1.2c search, and CLAUDE.md's charter for this suite says the same;
     // `## Step 1` is heading-level-aware and so captured all ten `### 1.x` subsections —
@@ -114,7 +132,25 @@ const SUITES = [
         "### 1.2c Diff-keyed lesson search (all modes)",
       ],
     },
-    instruction: "You are pr-reviewer at Step 1. Using ONLY the Step 1 memory-read procedure below (Step 1.0 mcp__lorekit__memory_list + Step 1.2c mcp__lorekit__memory_search), decide whether the described candidate memory would be surfaced by the documented read for the given PR diff. Reply 'surface' if the documented read would return it, or 'skip' if it would not.",
+    // The instruction asks a PROCEDURE-APPLICATION question, not a relevance question.
+    // The prior wording — "would be surfaced by the documented read FOR THE GIVEN PR DIFF" —
+    // put the diff in the framing of the question itself, which reads as an invitation to judge
+    // whether the record is relevant to the change. Two of the five seed cases turn on exactly
+    // that distinction (a list-reachable lesson whose gist has no overlap with the diff, and one
+    // below the promotion threshold), and both were answered `skip` with the reason the model
+    // could not state — including on a run where the rubric already said in as many words that
+    // narrowing this read by apparent relevance is a defect. The diff is still in the input, so
+    // the one sentence explaining WHY it is there is scoped to Step 1.2c, the only path that
+    // builds a query from it; whether Step 1.0 also keys on it is left to the rubric to state,
+    // because supplying that answer here is what would turn the instruction into an answer key.
+    //
+    // The verb is SURFACES, not "returns", and the difference is load-bearing for one whole
+    // dimension. Step 1.0's source-attribution filter runs on what the four calls returned, so a
+    // record another tool wrote IS returned by the call and then dropped — under "returns" the
+    // two source-attribution cases are answerable both ways and grade nothing. "Surfaces" is
+    // also the label vocabulary the suite already uses, so the question and the answers now
+    // name the same thing.
+    instruction: "You are pr-reviewer at Step 1. Using ONLY the memory-read procedure below (Step 1.0's mcp__lorekit__memory_list calls + Step 1.2c's mcp__lorekit__memory_search), decide whether that read surfaces the candidate record described to the finders. The PR diff is supplied as context because Step 1.2c builds its search query from it. Reply 'surface' if the read surfaces the record, or 'skip' if it does not.",
     inputKey: "input", inputLabel: "Candidate + diff",
     choices: ["surface", "skip"],
   },

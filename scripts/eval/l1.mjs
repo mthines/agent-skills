@@ -1467,6 +1467,40 @@ function checksInSync(plan, checks) {
       extractErr ?? `body length ${body.length} <= ${BODY_MIN}`);
   }
 
+  // G21h: the golden set's MAJORITY-CLASS BASELINE must sit BELOW the EVAL_GATE floor.
+  //
+  // A suite whose labels are lopsided grades nothing: at 4 `surface` / 1 `skip` an
+  // always-`surface` responder scored 80% and cleared a 70% floor without reading the
+  // rubric at all, so a green meant only "the model stopped answering skip". Nothing
+  // asserted the split, so the sole detector was a human noticing — and the limitation
+  // stood recorded in CLAUDE.md for two paid CI rounds while both hypotheses under test
+  // were about something else entirely.
+  //
+  // Both operands are GREPPED OUT of the shipped files, never re-encoded here: the labels
+  // from the golden JSONL, and the floor from evals-l2.yml, which is the authority because
+  // l2.mjs defaults GATE to null (report-only) and only CI sets it. Re-encoding either
+  // would let this guard stay green while the thing it guards moved.
+  {
+    const labels = goldenLines.map((ln) => JSON.parse(ln).expected);
+    const tally = new Map();
+    for (const v of labels) tally.set(v, (tally.get(v) ?? 0) + 1);
+    const majority = Math.max(...tally.values());
+    const baseline = (majority / labels.length) * 100;
+    // The floor CI actually enforces. Absent (someone dropped the env line) ⇒ fail closed:
+    // an unknown floor cannot be shown to exceed the baseline.
+    const gateLiteral = (l2yml.match(/EVAL_GATE:\s*"?(\d+)"?/) || [])[1];
+    const gate = gateLiteral === undefined ? null : Number(gateLiteral);
+    const split = [...tally.entries()].map(([k, v]) => `${k}=${v}`).sort().join(" ");
+    s.check("G21h code-review-retrieval-relevance majority-class baseline is below the EVAL_GATE floor",
+      gate !== null && baseline < gate,
+      gate === null
+        ? "no EVAL_GATE literal found in .github/workflows/evals-l2.yml — the floor this"
+          + " baseline must sit under is unknown, so the check fails closed"
+        : `majority-class baseline ${baseline.toFixed(1)}% >= gate ${gate}%`
+          + ` — a single-label responder would clear the floor without reading the rubric`
+          + ` (n=${labels.length}, ${split})`);
+  }
+
 }
 
 // ── G24: Gate 3 (Prior review feedback) tri-state + open-thread rendering contract ──

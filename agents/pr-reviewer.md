@@ -990,8 +990,20 @@ Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
 Merge both lists per tag (`repo::` wins on key collision).
 Skip expired entries.
 
+**The `scope` parameter matches exactly — it is not a prefix or a hierarchy.**
+`lorekit_memory_list`'s predicate is `m.scope = p_scope`, so `scope="repo::{owner}/{repo}"` returns
+records written at *that* scope and no other: not a `branch::{owner}/{repo}::…` record beneath it,
+and not another repository's `repo::` record. This is load-bearing in both directions — it is why
+[`memory.md`](./pr-reviewer/rules/memory.md) can put per-PR state in a `branch::` scope and rely on
+it staying out of the lesson read, and it is why these two scopes must be listed explicitly rather
+than assumed to be reachable from one broader query.
+
 **These four calls filter on three things and nothing else — tag, scope, and expiry.**
 They carry no diff parameter and no `seen_count` parameter, so neither narrows what this read returns.
+**A fourth filter then applies to what they returned: source attribution.**
+Rule 1 above binds every read this step issues, so a record failing `source.agent == "pr-reviewer" ∨ source.explicit == true` is dropped here rather than never fetched.
+The distinction is where the filter runs, not whether it applies: such a record does not reach the finders, exactly as a wrong-tag or expired one does not.
+Read together, tag, scope, expiry, and source attribution are the four — and the only four — things that decide whether this step surfaces a record.
 Diff-keying enters later and *additively*: Step 1.2c runs a diff-built `memory_search` on top of these lists, and Step 1.2d shortlists the merged index by changed path and symbol before spending body reads — so a lesson unrelated to these changed files is still in the pool this step loads, and stops being a candidate only downstream, where the diff is actually in hand.
 `seen_count` is not available here at all: it lives in record bodies, and this step loads the index only.
 It governs *promotion* (guard 2 below) and the Step 2.7b suppress / downgrade / promote decision — never whether an entry is returned.
