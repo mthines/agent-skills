@@ -5426,30 +5426,44 @@ const isPollBlock = (block) =>
   // constant also failed the other way: `terminal for this run` sits ~155 chars in, so
   // adding a couple of sentences of legitimate prose ahead of it pushed it out of the
   // window and turned L1 red for a reflow that changed no rule.
-  const RUN_H2 = "## Step 2: Resolve the preview URL";
-  const RUN_I = RUN.indexOf(RUN_H2);
-  const RUN_NEXT = RUN_I === -1 ? -1 : RUN.indexOf("\n## ", RUN_I + 1);
-  const RUN_STEP2 = RUN_I === -1
-    ? ""
-    : RUN.slice(RUN_I, RUN_NEXT === -1 ? RUN.length : RUN_NEXT);
+  // ONE slicer, shared by the Step 1 and Step 2 reads below. It was written twice, and
+  // both copies carried the same latent defect: the heading was matched with `indexOf` on
+  // its bare text, which also matches INSIDE a demoted `### Step 2: …`, and the only bound
+  // on the result was a `length > N` LOWER bound — structurally incapable of seeing an
+  // over-capture. Demoting every `## ` to `### ` in `runner.md` kept the match (at the
+  // `###` heading) and grew the "section" from 253 chars to 7126, so every assertion below
+  // ran against the whole document. The heading is therefore anchored to LINE START and to
+  // its exact level, and a level change now yields an empty slice, which the sentinels
+  // catch. One implementation, so the next defect is fixed once rather than twice.
+  const runSection = (heading) => {
+    const m = new RegExp(`^## ${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "m")
+      .exec(RUN);
+    if (m === null) return "";
+    const next = RUN.indexOf("\n## ", m.index + 1);
+    return RUN.slice(m.index, next === -1 ? RUN.length : next);
+  };
+  const RUN_STEP2 = runSection("Step 2: Resolve the preview URL");
   // Both checks below get their OWN sentinel. Relying on the empty slice to fail them by
   // side effect works but is invisible: a later edit that gives one of them a fallback
   // would silently restore the vacuity with nothing naming what broke.
   s.check("G49 the guard reads runner.md's Step 2 section",
-    RUN_I !== -1 && RUN_STEP2.length > 120,
-    "a renamed or removed Step 2 heading yields an empty slice; asserting over it would"
-      + " report the two premises below as satisfied by a section that no longer exists");
+    RUN_STEP2.length > 120,
+    "a renamed, removed, or demoted Step 2 heading yields an empty slice; asserting over it"
+      + " would report the two premises below as satisfied by a section that no longer"
+      + " exists — or, on a demotion, by the rest of the file");
   s.check("G49 runner.md Step 2 delegates resolution to the owning file",
-    RUN_I !== -1 && /preview-url-resolution\.md/.test(RUN_STEP2),
+    /preview-url-resolution\.md/.test(RUN_STEP2),
     "the precondition is enforced in `preview-url-resolution.md`; a Step 2 that resolves the"
       + " URL itself never reads that file, and the branch is unreachable however well it"
       + " is written");
   // Matches the RULE, not its punctuation. Requiring the literal `…` made a reword to
   // `inconclusive: <reason>` turn L1 red while the rule was still honoured — the wording
-  // dependency this block's own comments disavow.
+  // dependency this block's own comments disavow. The gap is unbounded on purpose: the
+  // slice IS the scope, so a character window is a second, weaker scope that can only
+  // false-red. The `{0,80}` it replaces used 18 of its 80 chars, meaning one added clause
+  // between the code and the terminality claim turned L1 red for a reflow.
   s.check("G49 runner.md Step 2 declares an inconclusive from that file terminal",
-    RUN_I !== -1
-      && /`inconclusive:[^`]*`[\s\S]{0,80}terminal for this run/.test(RUN_STEP2),
+    /`inconclusive:[^`]*`[\s\S]*terminal for this run/.test(RUN_STEP2),
     "without terminality the runner may treat `no access path for deployment lookup` as a"
       + " soft miss and carry on to dispatch, reporting a pass or a fail for a spec that"
       + " never ran — the outcome the string exists to prevent");
@@ -5457,12 +5471,7 @@ const isPollBlock = (block) =>
   //        prose no check read — so reverting it to the gh-only form left L1 green. It
   //        precedes the Step 2 precondition, so on the mcp path it was the FIRST command
   //        a reader met, and a gh-only spelling there strands the run before Step 2.
-  const RUN_STEP1 = (() => {
-    const i = RUN.indexOf("## Step 1: Get the spec");
-    if (i === -1) return "";
-    const n = RUN.indexOf("\n## ", i + 1);
-    return RUN.slice(i, n === -1 ? RUN.length : n);
-  })();
+  const RUN_STEP1 = runSection("Step 1: Get the spec");
   s.check("G49 the guard reads runner.md's Step 1 section",
     RUN_STEP1.length > 200,
     "an empty Step 1 slice would report the dual access path below as present");
@@ -5488,10 +5497,22 @@ const isPollBlock = (block) =>
   // either left L1 green. An unmapped return is the mechanism that put a permanently-false
   // note in a report once already, which is what makes the catch-all load-bearing rather
   // than tidy: without it a delegate can gain an outcome and the table just drops it.
+  // Anchored to the ROW, exactly as the `empty spec` pair below is, and for the same
+  // reason: `unrecognised outcome` is enumerated on TWO surfaces — this table row and the
+  // Step 3 report slot — so testing the two halves as independent substrings of the whole
+  // file asserted neither of them. Deleting the row left the slot satisfying the second
+  // half; INVERTING the row (mapping the catch-all to a pass) left BOTH halves satisfied
+  // and L1 green, which is the worse failure: the guard was silent while the rule it names
+  // said the opposite of what it says. Fifth instance of one class in this block — a
+  // substring test whose satisfying occurrence is not the one the check names.
   s.check("G49 review-loop's outcome table has a terminal catch-all row",
-    /\|\s*anything else\s*\|/.test(RL) && /unrecognised outcome/.test(RL),
+    /^\|\s*anything else\s*\|[^\n]*unrecognised outcome/m.test(RL),
     "`preview-spec run` gained returns this table had no row for; with no catch-all an"
       + " unmapped outcome is recorded as whatever the run guesses — a pass or a skip");
+  s.check("G49 review-loop's report renders the unrecognised-outcome value",
+    /^Preview spec[^\n]*unrecognised outcome/m.test(RL),
+    "the catch-all row above produces a value the Step 3 report must be able to print;"
+      + " asserted on its own surface so neither check can stand in for the other");
   // Anchored to the ROW, and the slot arm asserted separately. A bare
   // `/empty preview-spec block/` over the whole file was satisfied by the Step 3 report
   // slot, which enumerates the same string — so deleting the table row left L1 green.
@@ -5502,9 +5523,15 @@ const isPollBlock = (block) =>
     "markers present with an empty body means `author` ran and embedded nothing — a"
       + " spec-authoring bug; with no row for it the runner's return falls through to the"
       + " catch-all and loses the distinction the row exists to draw");
+  // Order-independent. A single regex pinned the two arms to the order they happen to be
+  // written in, so swapping them — which carries no meaning, the slot is an unordered
+  // `<a | b | c>` enumeration — turned L1 red for an edit that changed no rule. The claim
+  // is that BOTH values are renderable, so it is asserted as two membership tests over
+  // the one line that renders them.
+  const RL_SPEC_SLOT = (/^Preview spec[^\n]*/m.exec(RL) || [""])[0];
   s.check("G49 review-loop keeps EMPTY and ABSENT as two report values",
-    /^Preview spec[^\n]*not run \(no preview-spec block\)[^\n]*not run \(empty preview-spec block\)/m
-      .test(RL),
+    RL_SPEC_SLOT.includes("not run (no preview-spec block)")
+      && RL_SPEC_SLOT.includes("not run (empty preview-spec block)"),
     "the two must be separately renderable in the report; collapsing them there reports a"
       + " spec-authoring bug as the healthy case of a PR that legitimately needed no spec");
 
