@@ -338,8 +338,9 @@ Look up what you touched:
 | You changed… | You MUST… |
 | --- | --- |
 | the body of a section a suite reads (any `SUITES[].rubric.file` + `section`) | run that suite (`node scripts/eval/l2.mjs --suite <name>`) and report the accuracy. Re-label or add golden cases if the decision boundary moved; a rubric edit that changes no label is the normal case, and saying so is the deliverable |
-| a section HEADING a suite reads (renamed, re-levelled, moved) | update `rubric.section` in `suites.mjs` — `extractSection` throws on a missing anchor and L1 `G21g` fails |
+| a section HEADING a suite reads (renamed, re-levelled, moved) | update `rubric.section` — or the matching entry in `rubric.sections` — in `suites.mjs`; `extractSection` throws on a missing anchor and L1 `G21g` fails |
 | the FILE a suite reads (moved, renamed, deleted) | repoint `rubric.file`, or delete the suite entry **and** its `golden/*.jsonl` together. Never leave a suite whose extraction throws |
+| a HARNESS file (`HARNESS_FILES` in `suites.mjs` — `l2.mjs`, `lib.mjs`, `suites.mjs`, `select-suites.mjs`) | run **every** suite, plus `bug-detection`. That is the selector's own rule 1 and it is fail-open by design: one of these can alter any suite's answer, so the widening direction costs tokens while the narrowing direction costs coverage and reports green either way. `telemetry.mjs` is deliberately NOT one — it observes the run and cannot move a label |
 | a `choices` list — a new tier, bug class, severity, verdict | add at least one golden case labelled with each new choice, and re-label the existing ones if you renamed a choice. L1 `G21j` enforces both directions |
 | added a new enumerable decision an agent makes (a routing table, a tier ladder, a class taxonomy) | add a suite: `golden/<name>.jsonl` + a `SUITES` entry. Two steps, no CI wiring — selection is derived |
 | deleted a skill, agent, or rule file | grep `suites.mjs` for its path first; a suite reading a deleted file fails L1, not L2 |
