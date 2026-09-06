@@ -435,8 +435,29 @@ re-run on the same model. Read this next to the confirmation-run figures above:
 | suite | baseline | confirmation | post-fix | remaining miss |
 | --- | --- | --- | --- | --- |
 | `tier-routing` | 25/30 | 25/30 | **30/30** (100%) | — |
-| `shape-depth-routing` | 20/22 | 18/22 | **21/22** (95.5%) | `refresh-runs` (deep→quick) |
+| `shape-depth-routing` | 20/22 | 18/22 | **21/22** (95.5%) | `no-deep-pass-on-record` (deep→quick) |
 | `code-review-retrieval-relevance` | 3/5 | 3/5 | **4/5** (80%) `[advisory]` | `…unrelated-diff` (surface→skip) |
+
+`shape-depth-routing` took two edits, and **the intermediate run is the instructive
+one** — it is why the column above is a single figure per suite and this paragraph
+exists next to it. The first edit fixed the grammar of the refresh clause and
+`refresh-runs` duly passed, but the suite came back **20/22** with two *different*
+misses: `new-file` (deep→standard) and `no-deep-pass-on-record` (deep→quick). One miss
+had become two, and reading the pair together said why. Both were triggers buried
+deepest in a single overloaded table cell — `NEW_FILES > 0` was last of thirteen
+`·`-separated conditions, and the absence of a prior `deep` pass was nested one level
+down inside the refresh clause the edit had just made longer. A cell like that gets
+scanned until something matches and then abandoned, so the fix was structural rather
+than semantic: the conditions became an enumerated `D1`–`D13` checklist placed *before*
+the tier table, with the cell reduced to `ANY of D1–D13 above`. Same thirteen triggers,
+same order, same thresholds, and the surrounding prose now refers to them by ID instead
+of restating them.
+
+The lesson is about the *shape* of a rubric, not this rubric: a long `·`-separated cell
+reads as a sentence that can be finished early, and clarifying one clause inside it
+makes every later clause harder to reach. It is also a caution about single-suite
+iteration — the first edit looked like a fix (`refresh-runs` passed) and was in fact a
+net regression on the count.
 
 `tier-routing`'s five under-tierings all came from the same three ambiguities and all
 five closed: the walk-vs-table precedence, Micro's one-condition bar, and Q2's silence
@@ -446,10 +467,12 @@ distinguish from model noise.
 
 The two remaining misses are **not** being chased, deliberately:
 
-- `refresh-runs` is one case at n=22, where the measured run-to-run variance is ±2
-  cases. Its specific ambiguity — whether the three refresh counters are `any-of` and
-  whether `≥` fires at equality — was fixed anyway, on the merits, because it is a
-  real grammar defect independent of the score.
+- `no-deep-pass-on-record` is one case at n=22, where the measured run-to-run variance
+  is ±2 cases. Its trigger is now `D6` — its own row, its own `**no**`, and a paragraph
+  under the checklist stating that `D4`–`D6` are three independent triggers and that a
+  recorded prior `deep` pass satisfies neither of the other two. Three edits in, with
+  the condition stated three separate ways, a fourth aimed at this one golden line
+  would be tuning the shipped rule to the eval rather than to a reader.
 - `…unrelated-diff` sits in a **5-case advisory** suite whose golden file says
   BOOTSTRAP SEED — NOT A REAL BASELINE in as many words. The remedy for a small suite
   is more real-corpus cases, never more rubric tinkering: another precision edit
