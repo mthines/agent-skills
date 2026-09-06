@@ -1615,6 +1615,31 @@ function checksInSync(plan, checks) {
           parseChoice("Tier: Full [not Micro]", C) === "Full");
         s.check("G21l an unparseable reply carries its own raw text for the reader",
           parseChoice("I decline", C).includes("I decline"));
+
+        // The checks above all use choices where none contains another, so a
+        // containment defect passed them green — and there was one: two live
+        // suites use nested pairs, and every reply but the byte-exact one scored
+        // ambiguous. Probe the nesting itself, in BOTH directions (the contained
+        // choice must still be reachable), and for both live shapes: a substring
+        // inside a word (`optimal` in `suboptimal`) and a hyphenated prefix
+        // (`promoted` in `not-promoted`).
+        const N = ["optimal", "suboptimal"];
+        const P = ["promoted", "not-promoted"];
+        s.check("G21l a choice that CONTAINS another parses to the one that was said",
+          parseChoice("suboptimal.", N) === "suboptimal" &&
+          parseChoice("not-promoted.", P) === "not-promoted",
+          `suboptimal→${parseChoice("suboptimal.", N)} · not-promoted→${parseChoice("not-promoted.", P)}`);
+        s.check("G21l the CONTAINED choice is still reachable, not shadowed by the longer one",
+          parseChoice("optimal.", N) === "optimal" &&
+          parseChoice("promoted.", P) === "promoted",
+          `optimal→${parseChoice("optimal.", N)} · promoted→${parseChoice("promoted.", P)}`);
+        // The documented residue, asserted so it stays a KNOWN trade rather than
+        // drifting into an accident: for a nested pair, containment is the only
+        // evidence available, so an unbracketed enumeration resolves to the longer
+        // choice instead of reading as ambiguous. Pinned here because the fix for
+        // it would be to re-break the line above.
+        s.check("G21l an unbracketed enumeration of a NESTED pair resolves, by design, to the longer choice",
+          parseChoice("optimal | suboptimal", N) === "suboptimal");
       }
 
       // A miss line that shows only the parsed label cannot distinguish a wrong
