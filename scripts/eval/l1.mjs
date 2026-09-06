@@ -1516,6 +1516,66 @@ function checksInSync(plan, checks) {
     }
   }
 
+  // G21k: eval telemetry. A run is a tree with a token price on every leaf, and
+  // stdout can answer "what was today's accuracy" but never "has this rubric been
+  // drifting for three weeks" or "which suite is eating the budget" — both are trend
+  // questions and need a backend. The contracts worth mechanising are the ones a
+  // future edit would break silently:
+  //
+  //   1. OFF by default. An unset OTEL_EXPORTER_OTLP_ENDPOINT must mean no export
+  //      attempt at all, or every contributor's local run starts failing DNS.
+  //   2. A MISS is not a span error. A wrong answer is the measurement; only a
+  //      transport/API failure sets ERROR. Conflate them and every rubric regression
+  //      shows up in the trace list as an outage.
+  //   3. The flush happens BEFORE the gate exit. A red run is the one you most want
+  //      to look at, so it must ship its own trace — asserted positionally, since a
+  //      later refactor that moves the exit up would lose exactly that trace.
+  //   4. Export failure never changes the verdict. The accuracy is the product; the
+  //      span is the receipt.
+  {
+    const telRel = "scripts/eval/telemetry.mjs";
+    const telAbs = join(REPO_ROOT, telRel);
+    s.check("G21k the eval telemetry module exists", existsSync(telAbs));
+    if (existsSync(telAbs)) {
+      const tel = read(telRel);
+      const r = spawnSync(process.execPath, [telAbs, "--self-test"], { encoding: "utf8" });
+      s.check("G21k the telemetry self-test passes (OTLP encoding, span tree, metric shapes)",
+        r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 200));
+
+      s.check("G21k telemetry is off unless an OTLP endpoint is configured",
+        /this\.enabled\s*=\s*this\.endpoint\s*!==\s*""/.test(tel));
+      s.check("G21k a disabled harness hands back a no-op span so callers need no conditional",
+        /if\s*\(!this\.enabled\)\s*return\s*\{\s*spanId:\s*null/.test(tel));
+      s.check("G21k flush never throws — it reports the failure and returns",
+        /console\.error\(`⚠ telemetry export failed/.test(tel) && /async flush\(\)/.test(tel));
+
+      // l2.mjs is the only producer today; assert the wiring rather than trusting it.
+      s.check("G21k l2.mjs imports the telemetry harness", /from "\.\/telemetry\.mjs"/.test(l2runner));
+      s.check("G21k l2.mjs opens a run span, a suite span and a per-case span",
+        /T\.span\("eval\.run"/.test(l2runner)
+        && /T\.span\(`eval\.suite \$\{suite\.name\}`/.test(l2runner)
+        && /T\.span\(`eval\.case \$\{c\.id\}`/.test(l2runner));
+      s.check("G21k a case MISS ends the span normally; only an API error fails it",
+        /if\s*\(apiError\)\s*caseSpan\.fail\(apiError,\s*caseAttrs\);\s*else\s*caseSpan\.end\(caseAttrs\)/.test(l2runner));
+      s.check("G21k the per-case span carries expected, actual and match",
+        /"eval\.case\.expected"/.test(l2runner) && /"eval\.case\.actual"/.test(l2runner) && /"eval\.case\.match"/.test(l2runner));
+      s.check("G21k token usage is recorded under the upstream gen_ai semantic conventions",
+        /"gen_ai\.usage\.input_tokens"/.test(l2runner) && /gen_ai\.client\.token\.usage/.test(l2runner));
+
+      const flushAt = l2runner.indexOf("await T.flush()");
+      const gateExitAt = l2runner.indexOf("anyBelowGate) {");
+      s.check("G21k the telemetry flush precedes the gate exit, so a FAILING run still ships its trace",
+        flushAt > 0 && gateExitAt > flushAt, `flush@${flushAt} gate-exit@${gateExitAt}`);
+
+      // CI half: the workflow must pass the OTLP config through, or the whole thing
+      // is dead code on the only surface that runs it unattended.
+      s.check("G21k evals-l2.yml forwards the OTLP endpoint and headers to the suite job",
+        /OTEL_EXPORTER_OTLP_ENDPOINT:/.test(l2yml) && /OTEL_EXPORTER_OTLP_HEADERS:/.test(l2yml));
+      s.check("G21k the OTLP endpoint comes from a repo variable and the token from a secret",
+        /vars\.OTEL_EXPORTER_OTLP_ENDPOINT/.test(l2yml) && /secrets\.DASH0_AUTH_TOKEN/.test(l2yml));
+    }
+  }
+
   // G21e: README carries the methodology NOTE for this suite (promotion → golden case),
   // not merely the suite table row. Assert on the note's own heading literal so a table
   // row alone can't satisfy it.

@@ -112,3 +112,13 @@ export const HARNESS_FILES = [
   "scripts/eval/suites.mjs",
   "scripts/eval/select-suites.mjs",
 ];
+
+// DELIBERATELY NOT a harness file: scripts/eval/telemetry.mjs. It is imported by
+// l2.mjs, so the instinct is to list it — but the fail-open rationale above turns on
+// a change being able to alter a suite's ANSWER, and telemetry cannot. It observes
+// the run; it does not participate in the decision. Listing it would spend all nine
+// suites' tokens on a change that cannot move a single label. What guards it instead
+// is the free layer: its `--self-test` is executed by L1 `G21k` on every PR, which
+// is strictly better coverage for an encoding contract than nine model-call suites
+// that never look at a span. If telemetry ever gains a way to influence a result
+// (a retry that re-asks, a sampling decision that skips a case), it belongs here.

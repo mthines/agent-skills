@@ -214,6 +214,19 @@ jobs:
           # 0%-regression-vs-baseline) once a golden set reaches ≥ 50 — see
           # scripts/eval/README.md.
           EVAL_GATE: "70"
+
+          # OTLP telemetry (traces + metrics) — see scripts/eval/telemetry.mjs.
+          # Entirely OFF when the endpoint variable is unset, which is the default
+          # and what keeps forks and fresh clones from attempting an export. The
+          # endpoint is a repo VARIABLE (a hostname is not a secret) and only the
+          # token is a secret, so `vars` vs `secrets` mirrors what each thing is.
+          #
+          # One trace per suite job, not one per run: each matrix job is its own
+          # process. Group them in Dash0 by `cicd.pipeline.run.id`, which every
+          # span carries as a resource attribute.
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: Authorization=Bearer ${{ secrets.DASH0_AUTH_TOKEN }},Dash0-Dataset=${{ vars.DASH0_DATASET || 'default' }}
+          OTEL_SERVICE_NAME: evals
         run: node scripts/eval/l2.mjs --suite "${{ matrix.suite }}"
 
   l2:

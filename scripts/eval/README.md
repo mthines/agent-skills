@@ -43,8 +43,10 @@ Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
   (`G21g`), the workflow derives its suite selection instead of mirroring the rubric
   files (`G21d`), the selector's mapping self-test and the unknown-`--suite` exit
   (`G21h`), the opt-in gate and its documented label (`G21i`), and every suite's
-  `choices` ↔ golden labels in both directions (`G21j`). L1 gates the *plumbing* of
-  L2, which is why an unrun L2 still cannot silently rot.
+  `choices` ↔ golden labels in both directions (`G21j`), and the telemetry module's
+  own self-test plus its four rules — off by default, a miss is not a span error, the
+  flush precedes the gate exit, and CI forwards the OTLP config (`G21k`). L1 gates the
+  *plumbing* of L2, which is why an unrun L2 still cannot silently rot.
 - **frontmatter** — SKILL versions are semver; `name` matches the directory.
 - **cross-file contracts** — locks contracts that span producer and consumer
   files (the drift class link checks cannot see): the `seen_count` UPDATE
@@ -89,6 +91,46 @@ EVAL_MODEL=… EVAL_GATE=70 node scripts/eval/l2.mjs
 - A **miss** means one of two things — inspect it: the model got it wrong
   (improve the rubric), or the golden label is itself debatable (fix the label).
   That feedback loop *is* the eval. Skips cleanly (exit 0) with no API key.
+
+### Telemetry — watching accuracy and cost over time
+
+`stdout` answers *what was today's accuracy*.
+It cannot answer *has the tier-routing rubric been drifting down for three weeks* or *which suite is eating the token budget* — both are trend questions, and a trend needs a backend.
+So an L2 run also emits OTLP traces and metrics, via the zero-dependency [`telemetry.mjs`](./telemetry.mjs).
+
+**Off unless you configure an endpoint.** No `OTEL_EXPORTER_OTLP_ENDPOINT`, no export attempt — a fresh clone and a fork PR both run exactly as before.
+
+```bash
+OTEL_EXPORTER_OTLP_ENDPOINT=https://ingress.eu-west-1.aws.dash0.com \
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer auth_…,Dash0-Dataset=default" \
+ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs --suite bug-class
+```
+
+Behind an egress proxy, add `NODE_USE_ENV_PROXY=1` — node's built-in `fetch` ignores `HTTPS_PROXY` without it, and the export then fails with a misleading allowlist error from the wrong gateway.
+
+The shape, flushed once at exit (a batch job has no reason to stream):
+
+| Signal | Name | Carries |
+| --- | --- | --- |
+| span | `eval.run` | model, gate floor, suite/case/pass counts, run accuracy, total tokens |
+| span | `eval.suite <name>` | suite name, rubric file + section, `eval.rubric.chars`, accuracy, below-gate |
+| span | `eval.case <id>` (CLIENT) | expected, actual, `eval.case.match`, `gen_ai.usage.*_tokens` |
+| metric | `eval.case.result` | Sum, delta, split by `eval.case.match` — accuracy as a ratio in the backend |
+| metric | `eval.suite.accuracy` / `eval.run.accuracy` | Gauge, `%` |
+| metric | `eval.case.duration` | Histogram, `s` |
+| metric | `gen_ai.client.token.usage` | Histogram, `{token}`, split by `gen_ai.token.type` |
+
+Four rules the module holds, each guarded by L1 `G21k`:
+
+1. **A miss is not an error.** A wrong answer *is* the measurement, so the case span stays `UNSET`; only a transport or API failure sets `ERROR`. Conflating them makes every rubric regression look like an outage in the trace list.
+2. **An absent attribute is omitted, never a placeholder.** `unknown` is not queryable as absent.
+3. **The flush precedes the gate exit.** A failing run is the one you most want to look at, so it ships its trace before `EVAL_GATE` exits non-zero.
+4. **Export failure never changes the verdict.** The accuracy is the product; the span is the receipt. An unreachable backend prints a warning and nothing else.
+
+Attributes use upstream OpenTelemetry semantic conventions wherever one exists — `gen_ai.*` for the model call, `cicd.*` / `vcs.*` on the resource so a regression is attributable to a commit rather than to "some run last Tuesday". The `eval.*` namespace covers only what upstream has no convention for.
+
+In CI, the endpoint is a repository **variable** (`OTEL_EXPORTER_OTLP_ENDPOINT` — a hostname is not a secret) and only the token is a **secret** (`DASH0_AUTH_TOKEN`); `DASH0_DATASET` is an optional variable defaulting to `default`.
+Each matrix job is its own process, so an opted-in PR produces **one trace per suite**, not one per run — group them by the `cicd.pipeline.run.id` resource attribute every span carries.
 
 ### Maintaining a suite as the skills change
 
