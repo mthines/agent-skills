@@ -5314,6 +5314,16 @@ const isPollBlock = (block) =>
 //
 // Assert both at once. Fixing the grant while leaving the report blind restores the
 // capability and keeps the next regression invisible, which is how this one lasted.
+//
+// On the relative weight of the two: a prompt-level A/B (pre-fix vs post-fix text, told
+// only that `gh` is absent and the mcp tools present) reproduced defect 2 in every
+// baseline run — the pre-fix arm answered "NO SLOT" 3/3 — but did NOT reproduce defect 1,
+// because a capable agent handed its tool inventory bridges the missing mapping itself.
+// That is a limit of the probe, not evidence the grant was harmless: `allowed-tools` is a
+// permission allowlist, so a tool absent from it is not callable however well the agent
+// reasons, and no prompt-level simulation can exercise permission enforcement. Defect 2
+// is therefore the one with measured behavioural support, and it alone is sufficient to
+// explain a silent 0-of-20; defect 1 rests on the allowlist contract.
 {
   const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
   const PS = read("skills/testing/preview-spec/SKILL.md");
