@@ -98,11 +98,20 @@ function rubricFor(suite) {
 // and the rubric is the bulk of it — shape-depth-routing re-sent the same 2,641
 // tokens 22 times. Marking it `cache_control: ephemeral` makes case 1 pay a 1.25×
 // write and every later case a 0.1× read, which is ~80% off the suite's input bill.
-// Two conditions this run satisfies: the cache needs a ≥ 1024-token prefix (every
-// rubric but the two smallest, which are also the two cheapest, so nothing is lost
-// when they miss), and the 5-minute TTL comfortably covers a suite that finishes in
-// under 90 seconds. It cannot change an answer — the same tokens reach the model
-// either way — so it is a pure cost change, not an eval change.
+// Two conditions: the cache needs a ≥ 1024-token prefix, and the 5-minute TTL
+// comfortably covers a suite that finishes in under 90 seconds. It cannot change an
+// answer — the same tokens reach the model either way — so it is a pure cost change,
+// not an eval change.
+//
+// THREE suites fall under the prefix bound, not two, and they are not all cheap.
+// Measured from the live rubrics: `reviewer-agreement-bump` ~317 tokens, `bug-class`
+// ~405, and `tier-routing` ~935 — which misses the bound by under 90 tokens while
+// being the LARGEST uncached bill in the run (30 cases × ~1k = 30,168 input tokens,
+// more than any cached suite pays after its discount). So "nothing is lost when they
+// miss" is false for that one; a real discount is unavailable to the most expensive
+// suite here. Padding a rubric to reach the bound would be writing for the biller
+// instead of the reader, so the loss is accepted and named rather than engineered
+// away — but do not repeat the claim that it costs nothing.
 async function ask(system, input) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -172,6 +181,9 @@ const runSpan = T.span("eval.run", {
   },
 });
 let totalCases = 0, totalPass = 0, totalInTok = 0, totalOutTok = 0, totalCacheRead = 0, totalCacheWrite = 0;
+// Largest system block (instruction + rubric) built this run — the only part `ask()`
+// marks cacheable. Read by the cache note at the end; see the comment there.
+let maxSystemChars = 0;
 
 for (const suite of SUITES) {
   if (only && suite.name !== only) continue;
@@ -188,6 +200,7 @@ for (const suite of SUITES) {
   }
   const rubric = rubricFor(suite);
   const system = `${suite.instruction}\nReply with exactly one of: ${suite.choices.join(", ")}. No explanation.\n\n${rubric}`;
+  maxSystemChars = Math.max(maxSystemChars, system.length);
   const cases = readFileSync(goldenPath, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
   if (cases.length === 0) {
     console.error(`✗ L2: ${suite.name} has an EMPTY golden file (${suite.golden}) — zero cases scores NaN% and cannot breach the gate.`);
@@ -318,23 +331,35 @@ if (process.env.GITHUB_STEP_SUMMARY) {
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
 }
 
-// A prompt shorter than the model's minimum cacheable prefix cannot be cached at all,
+// A prefix shorter than the model's minimum cacheable length cannot be cached at all,
 // so the write is refused silently and every case is billed in full. That is NOT the
 // same failure as losing a discount that was available, and the first CI run proved the
 // distinction matters: three of nine suites reported MISSED purely because their rubric
-// slice is small, which sent a reader looking for a bug that does not exist. Naming the
-// likely cause costs one line and saves that hunt.
+// slice is small, which sent a reader looking for a bug that does not exist.
+//
+// Measure the PREFIX, not the prompt. Only the system block carries `cache_control`
+// (see `ask()`), while `input_tokens` also covers each case's user message — so
+// dividing total input by case count overstates the cached part and can cry MISSED at
+// a suite that was never cacheable. `maxSystemChars` is the largest system block the
+// run built: if even that is under the bound, no suite in the run could cache.
+//
+// Chars/token is an estimate and runs ~10% low against the observed writes, so a
+// prefix within ~15% above the bound reads as "not applicable". That is the direction
+// to err in — a false "nothing to fix" on a borderline suite costs a missed discount,
+// while a false MISSED costs a reader a hunt for a defect that does not exist, which
+// is the failure being fixed here.
 const MIN_CACHEABLE_TOKENS = 1024;
+const CHARS_PER_TOKEN = 4;
 
 if (totalInTok || totalOutTok) {
+  const prefixTok = Math.round(maxSystemChars / CHARS_PER_TOKEN);
   let cacheNote;
   if (totalCacheRead || totalCacheWrite) {
     cacheNote = ` · cache ${totalCacheRead.toLocaleString()} read / ${totalCacheWrite.toLocaleString()} written`;
-  } else if (totalCases && totalInTok / totalCases < MIN_CACHEABLE_TOKENS) {
-    const avg = Math.round(totalInTok / totalCases);
-    cacheNote = ` · cache not applicable (~${avg.toLocaleString()} tokens/case is below the ${MIN_CACHEABLE_TOKENS}-token minimum cacheable prefix — nothing to discount, not a defect)`;
+  } else if (maxSystemChars && prefixTok < MIN_CACHEABLE_TOKENS) {
+    cacheNote = ` · cache not applicable (largest cached prefix ~${prefixTok.toLocaleString()} tokens, below the ${MIN_CACHEABLE_TOKENS}-token minimum — nothing to discount, not a defect)`;
   } else {
-    cacheNote = " · cache MISSED (no read, no write, and the prompt is long enough to cache — the rubric is being re-billed per case)";
+    cacheNote = ` · cache MISSED (no read, no write, and the prefix is ~${prefixTok.toLocaleString()} tokens — long enough to cache, so the rubric is being re-billed per case)`;
   }
   console.log(`  tokens: ${totalInTok.toLocaleString()} input + ${totalOutTok.toLocaleString()} output${cacheNote}`);
 }
