@@ -943,13 +943,15 @@ Two lessons worth keeping:
 | 6 | 50 records, pre-repair | 90% (18/20) | 20% (6/30) — **on the boundary** | +13 |
 | 7 | 50 records, pre-repair | 80% (16/20) | 17% (5/30) | +20 |
 | 8 | 50 records, **post-repair** | 80% (16/20) | **10%** (3/30) | +12 |
+| 9 | 50 records, post-repair (repeat) | 80% (16/20) | **10%** (3/30) | +5 |
 
 Three dirty controls against six tolerated is the first reading with real margin, and it
 was bought by fixing fixtures rather than by touching either rubric or the gate.
 
-**This is one post-repair run.** The standing rule applies to it too — repeats before and
-after, three as a floor — so 10% is not yet an operating point, and the next reader should
-compare miss-set composition rather than the number.
+Run 9 is a **true repeat**: its commit changes only prose, so the fixtures, both rubrics
+and the runner are byte-identical to run 8's. Read the run-9 section below before treating
+the matching headline as a stable operating point — the number repeated and the set behind
+it did not.
 
 What changed in character is more informative than the rate. The three survivors are no
 longer defective fixtures; they are genuine borderline judgements:
@@ -973,6 +975,48 @@ over-filtering direction. Recall is still 80% against a 70% gate, but `intent-mi
 has now been the weak class in five of six runs (1/4, 2/4, 2/4, 4/4, 2/4, 1/4). That is
 the most consistent signal in the whole series and is the strongest candidate for the next
 piece of work — on the **finder** side, since most of its misses are never flagged at all.
+
+### Run 9 — the same number, a different three
+
+Run 9 repeats run 8 exactly: the commit between them (`062f9c5`) touches only this file and
+`CLAUDE.md`, so the golden set, `finders.md`, `finding-verifier.md` and the runner are
+identical. It came back with the identical headline — recall **80%** (16/20), fp **10%**
+(3/30) — and that agreement is the confirming repeat the standing rule asks for.
+
+The set behind the number is not the same, and that is the finding:
+
+| | run 8 | run 9 |
+| --- | --- | --- |
+| `control-any-in-non-exported` | dirty | dirty |
+| `control-lock-released-correctly` | dirty | dirty |
+| `control-off-by-one-that-is-correct` | dirty | **rescued** |
+| `control-description-matches-larger-diff` | rescued | **dirty** (2 of 2 candidates confirmed) |
+
+Two survivors are stable and two swapped places across the verifier boundary — including
+`control-description-matches-larger-diff`, cited in the run-7 write-up as evidence that the
+polarity holds on well-formed decoys. It is not well-formed: the finder observes that
+`{ ...u, email: u.email, phone: u.phone }` is identical to `u`, so the two explicit
+properties add nothing, and it is right. That makes it the sixth over-loaded fixture and the
+third **original** one, alongside the two run 7 caught. Repair it next, with
+`control-off-by-one-that-is-correct`'s missing consumer surface.
+
+Two things this repeat settles:
+
+- **Itemising was not optional.** Two runs agreeing on `10%` would, as a bare rate, have
+  read as a stable operating point. The named survivors show a third of it moving run to
+  run, and one of the moves pointed straight at a defective fixture the previous run's
+  analysis had used as evidence *for* the core.
+- **`lift` is noise at this sample size, again.** It read +12 in run 8 and **+5** in run 9
+  on identical inputs, because the finder alone came in at 30% fp instead of 20% while the
+  post-verifier result did not move. The retraction stands: no single run may be quoted for
+  or against the verifier's value.
+
+`intent-mismatch` came back **3/4**, against 1/4 in run 8 on the same fixtures — a two-case
+swing from sampling alone. The seven-run series is now 1/4, 2/4, 2/4, 4/4, 2/4, 1/4, 3/4,
+still the weakest class on average and still mostly *never flagged* rather than
+over-filtered, so the next piece of work is unchanged; but run 8's single-run reading of it
+was over-confident and this is what the variance costs. Per class in run 9: `logic` 2/4,
+`consumer-break` 4/4, `dep-breaking-change` 3/4, `intent-mismatch` 3/4, `standards` 4/4.
 
 ### The L1 baseline
 
