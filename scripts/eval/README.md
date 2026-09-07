@@ -68,6 +68,17 @@ Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
   the Contents list (G7 — `simplify` mode keys auto-apply on this
   classification, so an unclassified or doubly-classified recipe is a hard
   failure).
+- **L2 cost controls** (`G50`) — asserts the selector *imports* the suite table
+  (and the harness set) rather than re-parsing or restating either, pins the
+  cached system block (and the absence of the bare-string form it replaced) plus
+  the three-way cache notice that makes an uncacheable prefix distinguishable
+  from a missed cache, pins the `--suite` comma list and its empty-selection
+  exit, pins the harness-file set **and its two deliberate exclusions**
+  (`telemetry.mjs`, `evals-l2.yml` — neither can move a label), and reads the
+  `l2` aggregator to assert that a selection which did not *succeed* fails the
+  run loudly while the only thing that may suppress the matrix is a genuinely
+  empty count. Executing the selector's self-test is `G21h`'s job, not `G50`'s —
+  two IDs asserting one contract make a red build ambiguous about which broke.
 
 Add a check: append a `s.check(label, condition, detail)` in `l1.mjs`.
 
@@ -77,6 +88,12 @@ Data-driven: one runner, many suites. Each suite feeds a skill's **live** rubric
 section (read straight from the skill source, so the eval tests the *shipped*
 instructions) + a labelled input to the model, and exact-matches the model's
 choice against the human label. Classification → exact-match, **no LLM-as-judge**.
+
+The suite table lives in **[`suites.mjs`](./suites.mjs)**, not in the runner.
+It has two consumers that must never disagree — `l2.mjs` runs the suites, and
+[`select-suites.mjs`](./select-suites.mjs) maps a PR's changed files back to the
+suites those files can affect — so both import the same array rather than one of
+them re-parsing the other. See [Cost](#cost) below.
 
 | Suite | Question | Rubric read from | Choices |
 | --- | --- | --- | --- |
@@ -90,9 +107,11 @@ choice against the human label. Classification → exact-match, **no LLM-as-judg
 | `code-review-retrieval-relevance` | would the documented Step 1.0 + 1.2c read surface this candidate memory for the given PR diff? | `agents/pr-reviewer.md` `### 1.0` + `### 1.2c` (the two-section `rubric.sections` form — deliberately **not** the `## Step 1` parent, see the methodology note) | surface / skip |
 
 ```bash
-node scripts/eval/l2.mjs                 # all suites
+node scripts/eval/l2.mjs                          # all suites
 node scripts/eval/l2.mjs --suite bug-class
+node scripts/eval/l2.mjs --suite bug-class,tier-routing   # comma list
 node scripts/eval/l2.mjs --suite typo    # exits 1 and lists the suites — never a silent zero-case pass
+node scripts/eval/l2.mjs --suite ""      # exits 1 — an empty selection grades nothing, so it is never a pass
 EVAL_MODEL=… EVAL_GATE=70 node scripts/eval/l2.mjs
 ```
 
@@ -189,6 +208,57 @@ changed → what you must do). The mechanics behind its rows:
 - **Which suites does my change touch?** `git diff --name-only main...HEAD | node
   scripts/eval/select-suites.mjs` — the same computation CI runs. Read it instead of
   guessing; since CI is opt-in, an unverified rubric stays unverified.
+
+### Cost
+
+A full nine-suite run is ~150 one-word answers, and it used to cost **~273k input
+tokens** because nearly all of that is rubric text sent over and over. Three
+controls, in order of effect — measure, don't assume: every run prints its own
+`tokens: … input + … output · cache …` line.
+
+1. **Nothing runs unless someone asks.** The opt-in gate is the cheapest control
+   there is, because it takes the whole bill to zero on every PR that did not ask
+   for an eval — see [L2 in CI is opt-in](#l2-in-ci-is-opt-in).
+2. **The rubric is a cached system block.** It is byte-identical across every
+   case in a suite, so a suite pays for it roughly once instead of once per case
+   (~−63% on a full run). Honest limit: `tier-routing`, `bug-class`, and
+   `reviewer-agreement-bump` have rubrics under the model's minimum cacheable
+   prefix, so caching is a **no-op** for them — the four large suites are 76% of
+   the bill and all clear it.
+
+   The notice is three-way, and the distinction is the point. `cache <N> read /
+   <M> written` means it worked. **`cache not applicable`** means the largest
+   system block the run built is under the ~1024-token minimum: there is nothing
+   to discount and nothing to fix, which is the correct reading for those three
+   suites — an undifferentiated "inactive" sent readers hunting a defect that did
+   not exist. **`cache MISSED`** is the one worth investigating: the prefix was
+   long enough to cache and produced no read and no write anyway, so a
+   `cache_control` key the API silently declined is now distinguishable from a
+   working one before the invoice arrives. The branch is decided by the measured
+   prefix (`maxSystemChars`), never by dividing total input by case count — that
+   also counts each case's user message and can cry MISSED at a suite that was
+   never cacheable.
+3. **An opted-in PR runs only the suites its changed files can affect.** A
+   suite's result depends on exactly two inputs — the rubric file it reads live
+   and the golden set that labels it — so a PR touching one golden file cannot
+   move the other eight. `select-suites.mjs` does the mapping:
+
+   ```bash
+   git diff --name-only main...HEAD | node scripts/eval/select-suites.mjs
+   node scripts/eval/select-suites.mjs skills/workflow/fix-bug/SKILL.md  # → bug-class,complexity-triage
+   node scripts/eval/select-suites.mjs --self-test                        # offline; L1 G21h runs this
+   ```
+
+   Selection **widens** rather than narrows when in doubt: a change to a harness
+   file (`l2.mjs`, `lib.mjs`, `suites.mjs`, `select-suites.mjs`) selects **all**
+   suites plus `bug-detection`, since any of them can move a suite's score. A
+   selection that *fails* is a different thing from an empty one, and the two
+   must never collapse: selection runs as its own `select` job, so a failure
+   arrives at the aggregator as a value to read and the run goes **red** with
+   "the affected subset is unknown". Only a genuine empty count skips, and that
+   is the single condition guarding the matrix (`G50f`). Running all nine on a
+   selector crash — the fail-open answer an inline step is forced into, having no
+   check to report on — would spend the full bill to hide a bug instead.
 
 ### Add a suite
 
@@ -305,10 +375,44 @@ With `1.2d` in the rubric a list-reachable lesson unrelated to the diff is legit
 and the suite contradicts its own `instruction` string.
 Re-widening the rubric to the parent is a regression, and `G21a` reds on it.
 
+**The question is procedure application, not relevance, and the `instruction` says so.**
+The earlier wording asked whether the record "would be surfaced by the documented read *for the
+given PR diff*", which put the diff in the framing and reads as an invitation to judge whether the
+record is relevant to the change.
+Two cases turn on exactly that distinction, and both were answered `skip` on a run where the
+rubric already said in as many words that narrowing this read by apparent relevance is a defect —
+so the framing, not the rubric's size or content, was the last untried lever.
+The verb is **surfaces**, matching the labels: Step 1.0's source-attribution filter runs on what
+its four calls returned, so a record another tool wrote *is* returned and then dropped, and under
+"returns" the two source-attribution cases were answerable both ways.
+
 Ground truth is **defined by the outcome signal** — `loop::reviewer-lessons` /
 `loop::reviewer-comment-relevance` tags + `origin_pr` + `seen_count >= 3` marks a
 promotion-grade should-fire lesson.
 Labels are derived from this signal, not from re-running the read being measured.
+
+**The read filters on four dimensions, and every label is decided by one of them alone** — tag,
+scope (both paths read exactly `repo::{owner}/{repo}` and `global`, matched *exactly*: no
+`branch::` or other-repo record is reachable), expiry, and source attribution
+(`source.agent == "pr-reviewer" ∨ source.explicit == true`, applied to what the calls returned).
+A record in range on all four is `surface` whether or not its gist relates to the diff; any one
+out of range is `skip`.
+Diff-relevance is not a fifth dimension and neither is `seen_count`, which is not even available
+at Step 1.0 (`view="summary"` loads the index, not bodies).
+An earlier version of this note defined `skip` by the tag dimension only, so the other three had
+no ground truth here and the set tested none of them.
+
+**Label balance is a correctness property.**
+At 4 `surface` / 1 `skip` the majority-class baseline was 80% and cleared the 70% floor, so a
+green meant only "the model stopped answering `skip`" — not that anything reasoned about
+retrieval; and at N=5 one miss was 80% (pass) while two was 60% (fail), so the floor's own
+justification ("only trips on a badly-broken rubric, not 1–2 cases of model noise") did not hold.
+The set is now **14 cases, 8 `surface` / 6 `skip`** — a 57.1% baseline, so neither degenerate
+strategy passes, and the floor tolerates 4 misses rather than 1.
+L1 `G21n` asserts it, deriving the baseline from the JSONL and the floor from
+`.github/workflows/evals-l2.yml`, so re-degenerating the split reds L1 rather than only a paid L2
+run.
+Grow the set by adding decoys, never by moving the floor.
 
 **When a lesson is promoted via `diagnose`, add a golden case so the fix is locked.**
 Specifically: when a `loop::reviewer-lessons` or `loop::reviewer-comment-relevance` entry
@@ -331,12 +435,17 @@ require via branch protection:
 | `.github/workflows/evals-l2.yml` | **evals · L2 (behavioral) / l2** | reports on every PR; **runs suites only on opt-in** — the `run-evals` label or a `workflow_dispatch` — and then only the affected ones ([details](#l2-in-ci-is-opt-in)) | `ANTHROPIC_API_KEY` | soft for the suites — `EVAL_GATE` floor (70%), per suite; **hard** for `bug-detection` (`recall ≥ 0.7`, `fp ≤ 0.2`) |
 
 **To enable L2:** add an `ANTHROPIC_API_KEY` repository secret (Settings →
-Secrets and variables → Actions). Without it the L2 job still runs and **passes**
-(the script skips cleanly with no key), which is what makes it safe to require
-immediately and safe for fork PRs (which can't read secrets) — but a green check
-in that state proves nothing, so the job emits a `::warning` naming the missing
-secret rather than passing silently. Accuracy + any misses are written to the PR's
+Secrets and variables → Actions). Accuracy + any misses are written to the PR's
 check summary.
+
+Without the key the *script* still exits 0 — that keyless skip is what makes a
+fork PR (which cannot read secrets) and a fresh clone safe. **In CI it is not a
+pass**, because an opted-in run must not report green having measured nothing:
+the workflow sets `EVAL_REQUIRE_KEY=1`, so the runner exits 3 instead, and a
+`::warning` names the missing secret for the human reading the log. That
+distinction is not theoretical — 232 consecutive green runs were the keyless skip
+path, the same self-concealing shape as a review that skips and reports a
+legitimate outcome.
 
 `workflow_dispatch` takes a `suites` input: `all` (default) or a comma-separated
 list of suite names, for re-running one suite without touching a file.

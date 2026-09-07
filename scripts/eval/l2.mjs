@@ -3,16 +3,18 @@
 // section + a labelled input to a model and exact-matches the model's choice
 // against the human label. Classification tasks → exact-match, no LLM-as-judge.
 //
-//   ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs            # all suites
+//   ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs                    # all suites
 //   ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs --suite bug-class
-//   EVAL_MODEL=…  EVAL_GATE=70  …                            # override actor / soft-gate
+//   ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs --suite a,b,c      # a selected subset
+//   EVAL_MODEL=…  EVAL_GATE=70  …                                   # override actor / soft-gate
 //
 // Report-only unless EVAL_GATE is set (golden sets are < 50 — evals.md calls that
 // statistically noisy). Skips cleanly (exit 0) without an API key.
 //
-// The suite table lives in ./suites.mjs — shared with select-suites.mjs (which maps
-// a changed-file list to the affected subset) and l1.mjs's G21 guards, so there is
-// one definition of what each suite reads. Add a suite there.
+// The suite table — which rubric each suite reads, which golden set labels it, and how
+// to add one — lives in ./suites.mjs, because two other consumers need the same table:
+// select-suites.mjs (which maps a changed-file list to the affected subset) and l1.mjs's
+// G21 guards. Add a suite there.
 //
 // Telemetry (traces + metrics, OTLP) is emitted when OTEL_EXPORTER_OTLP_ENDPOINT is
 // set and is otherwise entirely off — see ./telemetry.mjs. It is best-effort: an
@@ -35,7 +37,21 @@ const GATE = process.env.EVAL_GATE ? Number(process.env.EVAL_GATE) : null;
 // items is statistically noisy" is the same argument; 10 is the point where the
 // blanket EVAL_GATE stops measuring anything at all.
 const GATE_MIN_CASES = process.env.EVAL_GATE_MIN_CASES ? Number(process.env.EVAL_GATE_MIN_CASES) : 10;
-const only = process.argv.includes("--suite") ? process.argv[process.argv.indexOf("--suite") + 1] : null;
+
+// `--suite` takes one name or a comma-separated LIST, and it is always parsed to an
+// array — never left as a string. The selection is tested with `.includes()`, and a
+// String's `.includes` is a SUBSTRING test: `--suite tier` would have matched
+// `tier-routing`, running a suite nobody named and reporting it as the one requested.
+// An array makes that an exact-membership test, which is what the unknown-name guard
+// below then has something to reject.
+//
+// The list form is also what would let one process run several suites; CI does not use
+// it (one suite per matrix job, so a red suite names itself in the check list), but a
+// hand-run `--suite a,b` works and the accounting below covers the whole run.
+const onlyArg = process.argv.includes("--suite") ? process.argv[process.argv.indexOf("--suite") + 1] : null;
+const only = onlyArg === null || onlyArg === undefined
+  ? null
+  : onlyArg.split(",").map((n) => n.trim()).filter(Boolean);
 
 // An unknown --suite must be LOUD. CI drives this flag from a generated matrix, and
 // the run-nothing-and-exit-0 alternative reports a typo (or a renamed suite whose
@@ -48,8 +64,20 @@ const only = process.argv.includes("--suite") ? process.argv[process.argv.indexO
 // exactly ONE such guard — a second copy further down was unreachable behind this one
 // and exited a different code, so a caller branching on the exit read a value nothing
 // could produce.
-if (only !== null && !SUITES.some((s) => s.name === only)) {
-  console.error(`✗ L2: unknown suite "${only}". Known: ${SUITES.map((s) => s.name).join(", ")}`);
+//
+// The list form adds a SECOND way to grade nothing, and it is now the likelier one:
+// `--suite ""`, or a bare `--suite` at the end of argv, parses to an EMPTY selection
+// rather than to "all". CI passes a computed value here, so a selector that returned
+// no suites or a shell that expanded an unset variable would otherwise report a
+// passing eval run. It gets its own exit code because it has its own remedy — fix the
+// caller, not the spelling.
+if (only !== null && only.length === 0) {
+  console.error("✗ L2: --suite was given an empty selection. Omit the flag to run every suite; an empty value grades nothing and is never a pass.");
+  process.exit(5);
+}
+const unknownSuites = only === null ? [] : only.filter((n) => !SUITES.some((s) => s.name === n));
+if (unknownSuites.length > 0) {
+  console.error(`✗ L2: unknown suite ${unknownSuites.map((n) => JSON.stringify(n)).join(", ")}. Known: ${SUITES.map((s) => s.name).join(", ")}`);
   process.exit(2);
 }
 
@@ -89,10 +117,6 @@ function rubricFor(suite) {
   return sections.map((s) => extractSection(file, s)).join("\n\n");
 }
 
-// Returns the reply text AND the usage, because the token count is half of what
-// makes a run worth recording: accuracy says whether the rubric works, tokens say
-// what asking cost. `usage` is null when the response omits it, and a null is
-// omitted from telemetry rather than reported as a zero.
 // The system prompt (instruction + rubric) is IDENTICAL for every case in a suite,
 // and the rubric is the bulk of it — shape-depth-routing re-sent the same 2,641
 // tokens 22 times. Marking it `cache_control: ephemeral` makes case 1 pay a 1.25×
@@ -111,18 +135,46 @@ function rubricFor(suite) {
 // suite here. Padding a rubric to reach the bound would be writing for the biller
 // instead of the reader, so the loss is accepted and named rather than engineered
 // away — but do not repeat the claim that it costs nothing.
+//
+// Whether the cache actually engaged is a MEASURED claim here, not a code comment: the
+// per-case `usage` below is summed into the run's cache-read / cache-write totals and
+// printed. Without that, a working cache and a `cache_control` key the API silently
+// ignored differ only on the invoice, which arrives days later and off this surface.
 async function ask(system, input) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
     body: JSON.stringify({
-      model: MODEL, max_tokens: 16,
+      model: MODEL,
+      max_tokens: 16,
+      // The system block is the suite's instruction + its LIVE rubric, and it is
+      // BYTE-IDENTICAL across every case in a suite — only the user turn varies. Sent as a
+      // bare string it was re-transmitted and re-billed once per case, which is the whole
+      // cost of this eval: `code-review-retrieval-relevance` re-sent the same ~7.4k-token
+      // rubric 14 times, 105k input tokens for 14 one-word answers, and a full nine-suite
+      // run measured ~273k input against ~2.4k output. Marking it ephemeral makes case 1 a
+      // cache WRITE and cases 2..n cache READS at a tenth of the price.
+      //
+      // Applied unconditionally on purpose: a block below the model's minimum cacheable
+      // length is not an error, the API just declines to cache it, so the three small-rubric
+      // suites (tier-routing, bug-class, reviewer-agreement-bump) are unaffected rather than
+      // broken. Cases run sequentially ~0.2s apart, far inside the 5-minute TTL.
       system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: input }],
     }),
   });
-  if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 120)}`);
+  // 600 chars, not 120: an Anthropic error body opens with ~30 chars of JSON envelope
+  // (`{"type":"error","error":{"type":…`) before it reaches the human-readable `message`,
+  // and a model-not-found or context-length message can run past 120 on its own. This is
+  // the only place the API's own explanation enters the process, so truncating it here
+  // cannot be undone downstream.
+  if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 600)}`);
   const body = await res.json();
+  // Returns the reply text AND the usage, because the token count is half of what makes a
+  // run worth recording: accuracy says whether the rubric works, tokens say what asking
+  // cost. The caller sums them per case (so each case span carries its own numbers) rather
+  // than a module-level accumulator doing it invisibly. `usage` is null when the response
+  // omits it, and a null is omitted from telemetry rather than reported as a zero.
   return { text: (body.content?.[0]?.text || "").trim(), usage: body.usage || null };
 }
 
@@ -170,12 +222,19 @@ function parseChoice(text, choices) {
 
 const summary = [];
 let anyBelowGate = false;
+// Distinct API error messages → how many cases hit each. A blanket transport failure is one
+// entry with a count equal to the whole run; a genuine per-case problem is a small count.
+const apiErrors = new Map();
 
 const T = new EvalTelemetry();
 const runSpan = T.span("eval.run", {
   attributes: {
     "eval.layer": "l2", "eval.model": MODEL,
-    "eval.suite.filter": only, // omitted on a full run — absent means "all suites"
+    // Joined explicitly rather than letting an array fall through to String(): the
+    // encoder's fallback would produce the same text, but relying on it makes the
+    // attribute's type an accident of the parse form. Omitted on a full run, where
+    // `only` is null — absent means "all suites", which is not the same as empty.
+    "eval.suite.filter": only === null ? null : only.join(","),
     "eval.gate.floor": GATE,
   },
 });
@@ -185,7 +244,7 @@ let totalCases = 0, totalPass = 0, totalInTok = 0, totalOutTok = 0, totalCacheRe
 let maxSystemChars = 0;
 
 for (const suite of SUITES) {
-  if (only && suite.name !== only) continue;
+  if (only !== null && !only.includes(suite.name)) continue;
   const goldenPath = join(REPO_ROOT, "scripts/eval", suite.golden);
   // A suite in the table with no cases to run is a BROKEN TABLE, not a skip. Deleting
   // its golden file used to print `(skip …)` and an emptied one ran zero cases, scored
@@ -234,7 +293,25 @@ for (const suite of SUITES) {
       usage = r.usage;
       raw = r.text;
       got = parseChoice(r.text, suite.choices);
-    } catch (e) { apiError = e.message; got = `ERR(${e.message.slice(0, 30)})`; }
+    } catch (e) {
+      apiError = e.message;
+      // The per-case line stays short — 189 wrapped stack-widths is unreadable — but the
+      // message is RECORDED IN FULL (on the case span, and in `apiErrors` for the
+      // end-of-run reprint). A 30-char slice rendered every failure as
+      // `ERR(API 400: {"type":"error","erro`, which is the JSON envelope and nothing else:
+      // a run where all nine suites scored 0.0% because every request was rejected was
+      // indistinguishable, in its OUTPUT, from a run where the model answered wrongly 189
+      // times. A transport failure must not be able to masquerade as an eval result.
+      //
+      // Key on the message with the per-request identifiers STRIPPED. An Anthropic error
+      // body ends in a unique `"request_id":"req_…"`, so keying on the raw message made the
+      // Map a no-op: run 34048339749 printed one `1×` line per case, 149 of them, for a
+      // single account-wide cause. Dedup that does not dedup is worse than none — it is the
+      // same wall of noise, now claiming to be a summary.
+      const key = e.message.replace(/,?"request_id":\s*(?:"[^"]*"|null)/g, "");
+      apiErrors.set(key, (apiErrors.get(key) ?? 0) + 1);
+      got = `ERR(${e.message.slice(0, 60)}…)`;
+    }
     const ok = got === c.expected;
 
     // A wrong answer is the measurement, not a fault — only a transport/API failure
@@ -317,8 +394,37 @@ if (runAcc !== null) T.gauge("eval.run.accuracy", runAcc, { "eval.model": MODEL,
 const exported = await T.flush();
 console.log(`  telemetry: ${T.traceNote()}${exported.exported ? "" : " (not exported)"}`);
 
+// A score is only an eval result if the requests behind it actually ran. Report the API
+// errors BEFORE the gate verdict, in full, with the share of the run they consumed — and
+// call the run INVALID rather than "below the floor" when they dominate it.
+const casesRun = summary.reduce((n, s) => n + s.total, 0);
+const casesErrored = [...apiErrors.values()].reduce((n, c) => n + c, 0);
+if (casesErrored > 0) {
+  console.error(`\n=== API errors: ${casesErrored}/${casesRun} cases, ${apiErrors.size} distinct ===`);
+  for (const [msg, count] of [...apiErrors].sort((a, b) => b[1] - a[1])) {
+    console.error(`  ${count}× ${msg}`);
+  }
+}
+// Half the run failing to transport is not a measurement. Naming it INVALID is the whole
+// point: a 0.0%-across-nine-suites run previously exited with "a suite is below the
+// EVAL_GATE floor", which reads as a rubric regression and sends the reader to the rubric.
+const RUN_INVALID = casesRun > 0 && casesErrored / casesRun > 0.5;
+
 if (process.env.GITHUB_STEP_SUMMARY) {
-  let md = `### L2 behavioral evals — model \`${MODEL}\`\n\n| suite | accuracy | gate | misses |\n| --- | --- | --- | --- |\n`;
+  let md = `### L2 behavioral evals — model \`${MODEL}\`\n\n`;
+  // The error preamble comes FIRST, above the accuracy table, because a table of low
+  // scores read without it is a rubric regression and read with it is an outage. Same
+  // reason the console output leads with the error tally.
+  if (casesErrored > 0) {
+    md += RUN_INVALID
+      ? `> **INVALID RUN — not a measurement.** ${casesErrored} of ${casesRun} cases never reached the model.\n\n`
+      : `> **${casesErrored} of ${casesRun} cases errored** and are counted as misses below.\n\n`;
+    for (const [msg, count] of [...apiErrors].sort((a, b) => b[1] - a[1])) {
+      md += `> - \`${count}×\` ${msg.replace(/`/g, "'")}\n`;
+    }
+    md += "\n";
+  }
+  md += `| suite | accuracy | gate | misses |\n| --- | --- | --- | --- |\n`;
   for (const s of summary) md += `| ${s.name} | ${s.pass}/${s.total} (${s.acc.toFixed(1)}%) | ${GATE === null ? "—" : s.gating ? `${GATE}%` : "advisory"} | ${s.misses.map((m) => `${m.id}:${m.expected}→${m.got}`).join("; ") || "—"} |\n`;
   // What the run cost, next to what it measured — the two numbers are read together
   // when deciding whether a suite is worth its token bill. Cache reads are called out
@@ -354,7 +460,16 @@ if (totalInTok || totalOutTok) {
   const prefixTok = Math.round(maxSystemChars / CHARS_PER_TOKEN);
   let cacheNote;
   if (totalCacheRead || totalCacheWrite) {
-    cacheNote = ` · cache ${totalCacheRead.toLocaleString()} read / ${totalCacheWrite.toLocaleString()} written`;
+    // Cost-equivalent, not a token count: the three input classes are priced
+    // differently (a cache write is 1.25× a fresh input token, a cache read 0.1×), so
+    // comparing raw token totals would understate the win. Both sides of the ratio are
+    // in units of "fresh input tokens", and the counterfactual is that every cache READ
+    // would instead have been a full re-send — which is what the pre-cache code did.
+    const equiv = totalInTok + totalCacheWrite + totalCacheRead;
+    const costNow = totalInTok + totalCacheWrite * 1.25 + totalCacheRead * 0.1;
+    const saved = equiv > 0 ? (1 - costNow / equiv) * 100 : 0;
+    cacheNote = ` · cache ${totalCacheRead.toLocaleString()} read / ${totalCacheWrite.toLocaleString()} written`
+      + ` (~${saved.toFixed(0)}% lower input cost than re-sending each rubric)`;
   } else if (maxSystemChars && prefixTok < MIN_CACHEABLE_TOKENS) {
     cacheNote = ` · cache not applicable (largest cached prefix ~${prefixTok.toLocaleString()} tokens, below the ${MIN_CACHEABLE_TOKENS}-token minimum — nothing to discount, not a defect)`;
   } else {
@@ -363,6 +478,17 @@ if (totalInTok || totalOutTok) {
   console.log(`  tokens: ${totalInTok.toLocaleString()} input + ${totalOutTok.toLocaleString()} output${cacheNote}`);
 }
 
+// An INVALID RUN exits before the gate check, deliberately. A run whose requests never
+// reached the model produces scores that measure nothing, and reporting that as a gate
+// breach names the wrong cause: the next reader goes looking at the rubric and the golden
+// set for a fault that is in the transport or the account. The gate below is only
+// meaningful over answers the model actually gave.
+if (RUN_INVALID) {
+  console.error(`\n✗ INVALID RUN — ${casesErrored}/${casesRun} cases never reached the model.`
+    + ` The scores above measure nothing; fix the API errors listed above and re-run.`
+    + ` Do NOT read this as a rubric or golden-set regression.`);
+  process.exit(1);
+}
 if (GATE !== null && anyBelowGate) {
   const breached = summary.filter((s) => s.gating && s.acc < GATE).map((s) => `${s.name} ${s.acc.toFixed(1)}%`);
   console.error(`\n✗ below the EVAL_GATE floor of ${GATE}%: ${breached.join(", ")}`);

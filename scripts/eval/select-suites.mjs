@@ -103,6 +103,16 @@ function selfTest() {
       `${goldenPath(s)} → [${byGolden.suites}]`);
   }
 
+  // The co-selection assertion above only proves something if a rubric file IS shared by
+  // two suites. Two read `skills/workflow/fix-bug/SKILL.md` today, and a first-match-wins
+  // bug would silently drop one of them — but if the table ever stops sharing a rubric,
+  // that loop passes vacuously and nothing says so. Assert the premise, not just the claim.
+  const sharedRubrics = [...new Set(SUITES.map((s) => s.rubric.file))]
+    .filter((f) => SUITES.filter((s) => s.rubric.file === f).length > 1);
+  t("at least one rubric file is shared by two suites", sharedRubrics.length > 0,
+    "no shared rubric, so the co-selection check above proves nothing about multi-select"
+    + " — either the table regressed, or delete this check if one-rubric-per-suite is now intended");
+
   for (const h of HARNESS_FILES) {
     const all = selectSuites([h]);
     t(`harness file ${h} selects every suite`, all.suites.length === ALL.length,
@@ -134,6 +144,21 @@ function selfTest() {
   // sibling file in a rubric's directory cannot drag its suite in.
   const near = selectSuites([`${SUITES[0].rubric.file}.bak`, "scripts/eval/golden/"]);
   t("a near-miss path selects no suite", near.suites.length === 0, `→ [${near.suites}]`);
+
+  // An EMPTY change set selects nothing, and must never be read as "all". This is the
+  // cheapest catastrophic bug available here: stdin arriving empty (a piped command that
+  // produced no output) would put every PR back on the full nine-suite bill, and the
+  // reason would be invisible because the run looks exactly like a legitimate full run.
+  const empty = selectSuites([]);
+  t("an empty change set selects no suite", empty.suites.length === 0, `→ [${empty.suites}]`);
+  t("an empty change set selects no detection run", empty.detection === false);
+
+  // The union is deduplicated: the same path twice, and two paths hitting one suite, must
+  // not emit a suite name twice — the matrix key has to stay unique.
+  const dup = selectSuites([goldenPath(SUITES[0]), goldenPath(SUITES[1]), goldenPath(SUITES[0])]);
+  t("a repeated path selects each suite once",
+    dup.suites.length === new Set(dup.suites).size && dup.suites.length === 2,
+    `→ [${dup.suites}]`);
 
   // Output order is the table's order, whatever order the changed files arrive in.
   const shuffled = selectSuites([goldenPath(SUITES[SUITES.length - 1]), goldenPath(SUITES[0])]);
