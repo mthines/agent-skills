@@ -550,10 +550,11 @@ BASELINE`. At 5 cases it was `[advisory]` and could not breach the floor.
 > was the suite's own `instruction` asking whether the read surfaces a record *"to the finders"*
 > — a question §1.0 answers the *other* way, since Step 1.2d shortlists by changed path before
 > the finders see anything — while the labels encode list-reachability. The question is now
-> scoped to what the read **returns**, and the next run measured **10/14 (71.4%)** — green, with
-> the three misses predicted to remain all recurring identically and one of the two targeted diff
-> cases flipping. One case is 7.1 points here, so read that composition rather than the number;
-> the per-case history, the full run table and what the fix did *not* close are in
+> scoped to what the read **returns**, and the two runs since measured **10/14 (71.4%)** and
+> **11/14 (78.6%)** — green both times, with the three misses predicted to remain recurring
+> identically in both and forming the *entire* miss set in the second. One case is 7.1 points
+> here, so quote that composition rather than either number; the per-case history, the full run
+> table and what the fix did *not* close are in
 > [`golden/code-review-retrieval-relevance.NOTES.md`](./golden/code-review-retrieval-relevance.NOTES.md).
 > Every figure for this suite below predates the decoys and describes 5 different cases; none of
 > them is comparable to a post-decoy run.
@@ -717,11 +718,16 @@ the strongest claim run 1 appeared to license:
   2's recall cost looking more like the outlier than the rule. Never quote a single
   detection run as evidence for or against the verifier, and never tune the two rubrics
   against one.
-- **`fp_rate` after the verifier is the stable number: 30% in runs 1 and 3, 40% in run
-  2 — never once at or under the 20% gate.** Recall swings 60–75% around a 70% bar and
-  has been on both sides of it. So the precision gap is the reproducible failure and the
-  recall gap is not yet distinguishable from noise; whoever works on this should aim at
-  the controls first.
+- **`fp_rate` after the verifier was the stable number — 30% in runs 1 and 3, 40% in run
+  2 — until run 4 cleared the 20% gate, so it is not stable either.** Recall swings 60–75%
+  around a 70% bar and has been on both sides of it. Run 4 (on #184, recall 15/20 = 75%,
+  `fp_rate` at or under 20%) is the first passing detection run of four and it retracts the
+  earlier reading that the precision gap is the *reproducible* failure: across four runs the
+  gate has been missed three times and met once, which is a flaky gate rather than a
+  standing red. Both rates are still worth aiming at — the controls first, since three of
+  four runs failed there — but do not treat either a red or a green detection run as
+  telling you the core changed. That is the same one-run rule as the bullet above,
+  now demonstrated on the gate itself rather than on the verifier's lift.
 - **`intent-mismatch` is the weak class in all three** — 1/4, 2/4, 2/4, against 3/4–4/4
   elsewhere; `standards` is 4/4 every time. Most of its misses were never flagged at all,
   so the gap is predominantly finder recall rather than verifier over-filtering. `logic`
