@@ -287,9 +287,14 @@ jobs:
           # reporting green is the failure it was written for.
           EVAL_DETECTION_GATE: "1"
           EVAL_REQUIRE_KEY: "1"
-          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
-          OTEL_EXPORTER_OTLP_HEADERS: Authorization=Bearer ${{ secrets.DASH0_AUTH_TOKEN }},Dash0-Dataset=${{ vars.DASH0_DATASET || 'default' }}
-          OTEL_SERVICE_NAME: evals
+          # No OTLP variables here, deliberately. `l2-detection.mjs` imports only
+          # `node:fs`, `node:path` and `lib.mjs` — it has no exporter and emits no
+          # spans — so an endpoint, a service name, and a bearer token carrying
+          # DASH0_AUTH_TOKEN would all be inert, and the token would be placed in an
+          # environment nothing reads. Trending this eval's two rates IS worth doing
+          # (the first two runs disagree by 15 recall points, which is exactly the
+          # question a backend answers and stdout cannot), but that means giving the
+          # runner a telemetry module first; the env goes back when it has one.
         run: node scripts/eval/l2-detection.mjs
 
   l2:
