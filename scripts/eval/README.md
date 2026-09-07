@@ -464,27 +464,49 @@ report, and on a small suite there is nothing to fix. The runner now separates t
 when the prompt was never cacheable, and keeps `cache MISSED` for the case that is
 actually worth investigating: a long prompt with no cache activity.
 
+**The projections above are estimates from character counts; the runner now measures
+the real thing.** The first wording decided between the two messages on total input ÷
+case count, which is the wrong quantity — only the system block carries
+`cache_control`, so a small rubric with large cases could be dragged over the bound by
+user-message tokens and cry `MISSED`. It now tracks the largest system block the run
+actually built. The next CI run printed `cache not applicable (largest cached prefix
+~935 tokens, …)` for `tier-routing`, matching the local measurement to the token — so
+the estimates in the paragraph above (~613/~342/~252) are the right *ordering* and are
+low by roughly a third in magnitude. The measured figures are ~935, ~405 and ~317, and
+`tier-routing` therefore misses the bound by under 90 tokens while carrying the largest
+uncached bill in the run (30,168 input tokens — more than any cached suite pays after
+its discount). Padding a rubric to reach the bound would be writing for the biller
+instead of the reader, so that loss is accepted and named rather than engineered away.
+
 ### The post-fix run, and the three rubric fixes it measured
 
 The three rubric defects the baseline diagnosed were fixed and the affected suites
 re-run on the same model. Read this next to the confirmation-run figures above:
 
-| suite | baseline | confirmation | post-fix | first CI run |
-| --- | --- | --- | --- | --- |
-| `tier-routing` | 25/30 | 25/30 | **30/30** (100%) | **30/30** (100%) |
-| `shape-depth-routing` | 20/22 | 18/22 | 21/22 (95.5%) | **20/22** (90.9%) |
-| `code-review-retrieval-relevance` | 3/5 | 3/5 | 4/5 (80%) `[advisory]` | **3/5** (60%) `[advisory]` |
+| suite | baseline | confirmation | post-fix | CI run 1 | CI run 2 |
+| --- | --- | --- | --- | --- | --- |
+| `tier-routing` | 25/30 | 25/30 | **30/30** (100%) | **30/30** (100%) | **30/30** (100%) |
+| `shape-depth-routing` | 20/22 | 18/22 | 21/22 (95.5%) | **20/22** (90.9%) | **20/22** (90.9%) |
+| `code-review-retrieval-relevance` | 3/5 | 3/5 | 4/5 (80%) `[advisory]` | **3/5** (60%) `[advisory]` | **3/5** (60%) `[advisory]` |
 
-**The last column is the authoritative one**, and two of the three suites came back a
-case *worse* in it than the local post-fix run — `shape-depth-routing` re-missed
+**The CI columns are the authoritative ones**, and two of the three suites came back a
+case *worse* in them than the local post-fix run — `shape-depth-routing` re-missed
 `mutex-small-delta` (standard→deep) alongside `no-deep-pass-on-record`, and
 `code-review-retrieval-relevance` re-missed `…seen2-below-threshold` (surface→skip)
-alongside `…unrelated-diff`. Nothing changed between the two runs but the sample. This
-is the ±1–2 case variance the paragraphs below already warn about, arriving immediately
-and on two suites at once, so treat a single post-fix run as *directional* — it says the
-edit did not make things worse — and never as a settled figure. `tier-routing`'s
-30/30 reproducing exactly is the one result here strong enough to quote on its own, and
-it is also the largest suite.
+alongside `…unrelated-diff`. Nothing changed between the local run and CI but the
+sample. This is the ±1–2 case variance the paragraphs below already warn about, arriving
+immediately and on two suites at once, so treat a single post-fix run as *directional* —
+it says the edit did not make things worse — and never as a settled figure.
+
+**All three then reproduced their CI figures exactly on the next push**, including
+`shape-depth-routing` re-missing the *same two* cases rather than two of comparable
+count. That changes how those two misses read: a figure that repeats with an identical
+miss set is a rubric defect, where one that moves around at the same total is sampling
+noise. So `mutex-small-delta` and `no-deep-pass-on-record` are real gaps to fix when
+someone next works that rubric — `no-deep-pass-on-record` still routing `deep`→`quick`
+means `D6` is being missed even now that it is its own numbered row. `tier-routing`'s
+30/30 has now reproduced three times and is the one result here strong enough to quote
+on its own; it is also the largest suite.
 
 `shape-depth-routing` took two edits, and **the intermediate run is the instructive
 one** — it is why the column above is a single figure per suite and this paragraph
@@ -528,7 +550,7 @@ the one it kept:
   is more real-corpus cases, never more rubric tinkering: another precision edit
   aimed at one golden line would be over-fitting the shipped instructions to the eval.
 
-### The L2-detection baseline — the first two runs
+### The L2-detection baseline — the first three runs
 
 `bug-detection` had never executed in CI (it ran in no workflow; only its
 `--self-test` was exercised). These are its first real measurements, on the detection
@@ -537,36 +559,50 @@ them:
 
 `claude-sonnet-4-6` · 30 records (20 seeded + 10 decoy controls) · 4-way concurrency · ~3 min:
 
-| stage | run 1 recall | run 1 fp | run 2 recall | run 2 fp |
-| --- | --- | --- | --- | --- |
-| finder only | 75% (15/20) | 50% (5/10) | 80% (16/20) | 50% (5/10) |
-| + verifier | 75% | **30%** (3/10) | 60% (12/20) | **40%** (4/10) |
+| stage | run 1 | run 2 | run 3 |
+| --- | --- | --- | --- |
+| finder only | 75% (15/20) · fp 50% (5/10) | 80% (16/20) · fp 50% (5/10) | 70% (14/20) · fp 40% (4/10) |
+| + verifier | 75% · fp **30%** (3/10) | 60% (12/20) · fp **40%** (4/10) | 70% · fp **30%** (3/10) |
+| verifier lift | **+20** (fp −20, recall −0) | **−10** (fp −10, recall −20) | **+10** (fp −10, recall −0) |
 
-**Verdict: red in both runs** — on `fp_rate` alone in run 1 (30% > 20%), and on both
-rates plus a negative verifier lift in run 2. The gate is red on the current core, and
-that is the eval working: it found something the moment it was first permitted to run.
+**Verdict: red in all three** — on `fp_rate` alone in runs 1 and 3 (30% > 20%), and on
+both rates plus a negative verifier lift in run 2. The gate is red on the current core,
+and that is the eval working: it found something the moment it was first permitted to
+run.
 
-**Read the two runs together, never one alone.** That is the first finding, and it
-retracts the strongest claim run 1 appeared to license:
+**Read the runs together, never one alone.** That is the first finding, and it retracts
+the strongest claim run 1 appeared to license:
 
-- **The verifier's value is NOT established.** Run 1 showed it halving the finder's
-  false positives (50% → 30%) at *zero* recall cost, which read as `finders.md`'s
-  "finders flag, the verifier filters" polarity measured rather than argued. Run 2 shows
-  it spending 20 points of recall to buy 10 points of precision — a **negative** lift the
-  runner names outright. At 20 seeded records and 10 controls, one case moves recall by 5
-  points and one control moves `fp_rate` by 10, so neither run's point estimate survives
-  the other. What the pair does establish is the *instability*, which is the more useful
-  fact: never quote a single detection run as evidence for or against the verifier, and
-  never tune the two rubrics against one.
-- **`intent-mismatch` is the weak class in both runs** — 1/4 then 2/4, against 3/4–4/4
-  elsewhere; `standards` is 4/4 in both. Most of its misses were never flagged at all, so
-  the gap is predominantly finder recall rather than verifier over-filtering. `logic`
-  moved 3/4 → 1/4 between runs, both losses being verifier drops — the same instability,
-  seen per class.
-- **One record failed on output shape, not detection.** In run 1
-  `intent-revert-not-fix`'s finder replied prose (`Looking at…`) instead of JSON. It is
+- **The verifier's value is NOT established** — and the third run does not establish it
+  either, it only narrows what the disagreement is about. Run 1 showed the verifier
+  halving the finder's false positives (50% → 30%) at *zero* recall cost, which read as
+  `finders.md`'s "finders flag, the verifier filters" polarity measured rather than
+  argued. Run 2 shows it spending 20 points of recall to buy 10 of precision — a
+  **negative** lift the runner names outright. Run 3 lands between them and looks like
+  run 1: −10 fp at −0 recall. So two of three runs show the polarity working and one
+  shows it inverted, across a lift spread of −10 to +20 points. At 20 seeded records and
+  10 controls, one case moves recall by 5 points and one control moves `fp_rate` by 10,
+  which is the whole spread — so the honest reading is still *unestablished*, with run
+  2's recall cost looking more like the outlier than the rule. Never quote a single
+  detection run as evidence for or against the verifier, and never tune the two rubrics
+  against one.
+- **`fp_rate` after the verifier is the stable number: 30% in runs 1 and 3, 40% in run
+  2 — never once at or under the 20% gate.** Recall swings 60–75% around a 70% bar and
+  has been on both sides of it. So the precision gap is the reproducible failure and the
+  recall gap is not yet distinguishable from noise; whoever works on this should aim at
+  the controls first.
+- **`intent-mismatch` is the weak class in all three** — 1/4, 2/4, 2/4, against 3/4–4/4
+  elsewhere; `standards` is 4/4 every time. Most of its misses were never flagged at all,
+  so the gap is predominantly finder recall rather than verifier over-filtering. `logic`
+  moved 3/4 → 1/4 → 3/4, both run-2 losses being verifier drops — the same instability,
+  seen per class, and the same partial recovery.
+- **One record failed on output shape, not detection — and it is the same record
+  twice.** In run 1 `intent-revert-not-fix`'s finder replied prose (`Looking at…`)
+  instead of JSON; in run 3 the same record failed the same way (`The descri…`). It is
   counted as a **miss**, never as clean — the right bias. Do **not** loosen the parse to
-  recover it; a finder that cannot emit its own contract has not found anything.
+  recover it; a finder that cannot emit its own contract has not found anything. That it
+  recurs on one specific record points at that record's prompt rather than at model
+  flakiness, which is a cheap thing to check before touching the parser.
 
 **Neither rate is fixed here, and the gate is not lowered to accommodate them.**
 Raising the detection core's precision means editing `finders.md` /
@@ -575,8 +611,10 @@ Raising the detection core's precision means editing `finders.md` /
 needs its own golden records (decoys included) and its own re-run. Lowering the gate to
 meet the current core is the fix-to-pass this repo forbids everywhere else, and it is
 what left the eval unrun in the first place. The variance above also says *how* to do
-that work when someone does: **repeat runs before and after**. A single post-change run,
-inside a ±20-point recall swing, cannot tell a rubric improvement from noise.
+that work when someone does: **repeat runs before and after**, and three is a floor
+rather than a target — it took the third run to tell run 2's recall cliff from a trend.
+A single post-change run, inside a ±20-point recall swing, cannot tell a rubric
+improvement from noise.
 
 ### The L1 baseline
 
