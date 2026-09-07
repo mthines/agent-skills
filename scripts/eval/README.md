@@ -936,6 +936,44 @@ Two lessons worth keeping:
   survivors pointed at the fixtures. Never tune a rubric against a rate you have not
   itemised.
 
+### Run 8 — after the repair
+
+| run | set | recall | fp_rate | lift |
+| --- | --- | --- | --- | --- |
+| 6 | 50 records, pre-repair | 90% (18/20) | 20% (6/30) — **on the boundary** | +13 |
+| 7 | 50 records, pre-repair | 80% (16/20) | 17% (5/30) | +20 |
+| 8 | 50 records, **post-repair** | 80% (16/20) | **10%** (3/30) | +12 |
+
+Three dirty controls against six tolerated is the first reading with real margin, and it
+was bought by fixing fixtures rather than by touching either rubric or the gate.
+
+**This is one post-repair run.** The standing rule applies to it too — repeats before and
+after, three as a floor — so 10% is not yet an operating point, and the next reader should
+compare miss-set composition rather than the number.
+
+What changed in character is more informative than the rate. The three survivors are no
+longer defective fixtures; they are genuine borderline judgements:
+
+- `control-any-in-non-exported` — the finder argues the `any` return type *leaks* into the
+  exported `track`. That is exactly the judgement this control exists to probe, so it is a
+  **legitimate measured false positive**. Leave it; it is the eval doing its job.
+- `control-lock-released-correctly` — three claims about unbounded `future.result()` with
+  no timeout. The lock *is* released correctly (the probe passes), but the placeholder
+  pattern the fixture uses is genuinely debatable on other grounds.
+- `control-off-by-one-that-is-correct` — "changed 0-indexed to 1-indexed without migrating
+  callers". The arithmetic is right, which is what the control asserts, but **no consumer
+  surface is supplied**, so the migration question is unanswerable from what the finder is
+  shown. The verifier rescued this one in run 7 and let it through in run 8, which is what
+  sitting on a boundary looks like. This is the one remaining fixture improvement worth
+  making: give it consumers already passing 1-indexed pages.
+
+Also worth watching, on the other side of the ledger: `intent-mismatch` came in 1/4, and
+`intent-undisclosed-scope` was *found by the finder and dropped by the verifier* — the
+over-filtering direction. Recall is still 80% against a 70% gate, but `intent-mismatch`
+has now been the weak class in five of six runs (1/4, 2/4, 2/4, 4/4, 2/4, 1/4). That is
+the most consistent signal in the whole series and is the strongest candidate for the next
+piece of work — on the **finder** side, since most of its misses are never flagged at all.
+
 ### The L1 baseline
 
 `l1.mjs` keeps a `BASELINE` set of known pre-existing broken links so the gate
