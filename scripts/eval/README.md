@@ -846,6 +846,52 @@ it is the half that can be gamed), so even a single-class run pays the 30. The t
 from the previous section is what makes that visible, and the cached prefixes are what
 make it affordable.
 
+### Run 6 — the first on the 50-record set
+
+`claude-sonnet-4-6` · 50 records (20 seeded + 30 decoy controls) · 4-way · ~5 min ·
+48,257 input + 21,303 output tokens, 323,650 cached reads (**~74% lower input cost**):
+
+| stage | recall@class | fp_rate |
+| --- | --- | --- |
+| finder only | 90% (18/20) | 33% (10/30) |
+| + verifier | 90% (18/20) | **20%** (6/30) |
+| verifier lift | **+13** (fp −13, recall −0) | |
+
+**The gate passed, on the boundary.** 6 dirty controls is exactly the tolerated count at
+a 20% gate; a seventh fails. Read that as *no margin*, not as a pass — the run-to-run
+variance in the five runs above is larger than one control.
+
+Four things this run establishes, and one it does not:
+
+- **The cache works.** 323,650 of the input tokens were cache reads. This is the measured
+  claim the token line exists to make, and it is what puts repeat runs inside reach.
+- **Run 6's `fp_rate` is NOT comparable to the 30/40/30/≤20/40 series.** Different
+  denominator *and* different records — 20 of the 30 controls are new. The comparable
+  observation is proportional: 6/30 here against 3/10, 4/10, 3/10, ≤2/10, 4/10 before.
+  Nothing says the core improved; what improved is that 20% now has 3.3-point neighbours
+  on either side instead of being one of four reachable values.
+- **The 20 new decoys are doing their job.** The finder raised candidates on 10 of 30
+  controls and the verifier killed 4 of them, which is the flag-then-filter polarity
+  behaving as `finders.md` describes. A control set that produced no candidates at all
+  would have measured nothing.
+- **`intent-mismatch` came back 4/4**, against 1/4, 2/4, 2/4 in runs 1–3, and
+  `dep-breaking-change` slipped to 3/4. One run each way; per the rule established above,
+  neither is a trend. Both seeded misses (`logic-timezone-date-boundary`,
+  `dep-behaviour-not-api`) were **never flagged**, so they are finder recall, not verifier
+  over-filtering.
+- **It does not establish the verifier's value.** +13 is its best lift yet, but the
+  standing rule is that no single detection run may be quoted for or against it, and a
+  run that happens to agree with the hypothesis is not an exception to that rule.
+
+**What run 6 changed about the next step.** The plan was to tune `finding-verifier.md`
+for precision. Run 6 says the target is real but narrow — get 6 dirty controls to 3 or 4
+without moving recall off 18/20 — and it exposed the gap that blocks doing it: the runner
+printed the seeded misses by name but the controls only as a **count**. Six decoys got
+through and the run said nothing about which six or on what claim, which is precisely the
+blind tuning the control growth exists to prevent. The runner now names them, and both
+neighbouring cases (a control the verifier *rescued*, and one the finder never flagged),
+because those are three different faults with three different fixes.
+
 ### The L1 baseline
 
 `l1.mjs` keeps a `BASELINE` set of known pre-existing broken links so the gate

@@ -479,6 +479,32 @@ if (broken.length) {
   for (const b of broken) console.log(`    ${b.id}: ${b.malformed || b.error}`);
 }
 
+// Which controls survived, and on what claim. The seeded half has always printed its misses; the
+// control half printed only a COUNT, so a red `fp_rate` said "six decoys got through" and nothing
+// about which six or why — and the only work that moves that number is editing the two rubrics
+// against the specific claims that survived. Guessing which decoy fooled the verifier is exactly
+// the blind tuning the golden-set growth exists to prevent, so the diagnosis has to be printed.
+//
+// Both stages are shown, because they are different faults with different fixes: a control the
+// finder never flagged is already clean, one the verifier dropped is the pipeline working, and one
+// that survived BOTH is the only kind that costs a point. The surviving claim is quoted because
+// the fix is usually visible in it — a claim naming a guard the code has is a Step 1 re-derivation
+// miss, one naming a rule the file is exempt from is a scope miss.
+const dirty = controls.filter((r) => r.confirmed.length > 0);
+if (dirty.length) {
+  console.log("\n  controls that survived the verifier (each one is a false positive):");
+  for (const c of dirty) {
+    console.log(`    ${c.id} — ${c.confirmed.length} of ${c.candidates.length} candidate(s) confirmed`);
+    for (const f of c.confirmed) {
+      console.log(`      ${f.path}:${f.line} [${f.defect_class}] ${String(f.claim ?? "").slice(0, 110)}`);
+    }
+  }
+}
+const filteredOut = controls.filter((r) => r.candidates.length > 0 && r.confirmed.length === 0);
+if (filteredOut.length) {
+  console.log(`\n  controls the verifier rescued (flagged then dropped): ${filteredOut.map((c) => c.id).join(", ")}`);
+}
+
 const misses = seeded.filter((r) => !isHit(r.confirmed, byId.get(r.id).defect));
 if (misses.length) {
   console.log("\n  missed:");
