@@ -761,6 +761,34 @@ rather than a target — it took the third run to tell run 2's recall cliff from
 A single post-change run, inside a ±20-point recall swing, cannot tell a rubric
 improvement from noise.
 
+That prescription — repeat runs, three as a floor — is what makes the detection
+runner's cost the binding constraint on this work, and it is why the runner is now
+instrumented the way `l2.mjs` already was.
+
+### The detection runner's token line
+
+`l2-detection.mjs` prints a `tokens:` line before either exit, and its two system
+blocks carry `cache_control: ephemeral`. Both are copies of what `l2.mjs` does, for
+the same reasons, and neither can move a measured number: the model receives identical
+tokens either way, so no result in this file needs re-baselining because of them.
+
+Three things are specific to this runner:
+
+- **Both prefixes are cacheable, so a `MISSED` here is a real defect.** `l2.mjs` has
+  three suites genuinely under the 1024-token minimum, where "cache not applicable" is
+  the honest report. Here the two prefixes are whole rule files (~2.5k tokens each), so
+  the self-test asserts they clear the bound — shrinking one below it reds L1 rather
+  than silently converting a discount into "nothing to discount".
+- **The verifier prefix is the larger bill.** The finder prefix is re-sent once per
+  record; the verifier prefix once per *candidate*, and a 30-record run raises well over
+  30 candidates. That asymmetry is also why the runner's cost scales with how noisy the
+  finders are, not just with the record count.
+- **The tokens are counted inside `ask()`, not returned to the caller.** `l2.mjs`
+  threads `usage` back so each case span carries its own numbers; this runner emits no
+  telemetry and makes 1 + N calls per record, so a record that throws on its third
+  verifier call would drop the two calls already billed. Counting where the request is
+  paid for cannot undercount.
+
 ### The L1 baseline
 
 `l1.mjs` keeps a `BASELINE` set of known pre-existing broken links so the gate

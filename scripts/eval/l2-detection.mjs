@@ -86,14 +86,53 @@ Re-derive the claim from the code and reply with ONLY a JSON object, no prose, n
 
 // ── API ─────────────────────────────────────────────────────────────────────────────────────────
 
+// The run's token bill, accumulated inside `ask()` itself.
+//
+// This DIVERGES from l2.mjs, which threads `usage` back to its caller and sums it there — with a
+// comment arguing against "a module-level accumulator doing it invisibly". That reasoning is
+// specific to l2.mjs: it stamps per-case telemetry spans, so each case's numbers must reach the
+// case. This runner emits no telemetry, and it has a failure mode l2.mjs does not: a record makes
+// 1 + N calls (one finder, one verifier per candidate) and can throw partway through, so a caller
+// that sums only what `runRecord` RETURNS drops the tokens of every call that already billed
+// before the throw. Counting at the one place a request is actually paid for cannot undercount.
+let totalInTok = 0, totalOutTok = 0, totalCacheRead = 0, totalCacheWrite = 0;
+
 async function ask(system, input, maxTokens) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "x-api-key": KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: input }] }),
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: maxTokens,
+        // Both system blocks are a live rule file plus a fixed harness preamble, and each is
+        // BYTE-IDENTICAL on every call in the run: `FINDERS` (~2.5k tokens) is re-sent once per
+        // record and `VERIFIER` (~2.4k) once per candidate — the candidate-side one being the
+        // larger bill, since a 30-record run raises well over 30 candidates. Marking them
+        // ephemeral makes the first call of each kind a 1.25× write and every later one a 0.1×
+        // read. Same change l2.mjs already made, for the same reason, and it CANNOT move a
+        // number here either: the model receives identical tokens either way, so this is a cost
+        // change, not an eval change, and needs no re-baseline.
+        //
+        // Two runner-specific notes. `CONCURRENCY` is 4, so the first batch races and may pay up
+        // to four writes instead of one before any cache exists to read — a fixed, bounded
+        // overhead, not a defect. And the 5-minute TTL is refreshed on every read, so a run of
+        // any length keeps both prefixes warm.
+        system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: input }],
+      }),
     });
-    if (res.ok) return ((await res.json()).content?.[0]?.text || "").trim();
+    if (res.ok) {
+      const body = await res.json();
+      const u = body.usage;
+      if (u) {
+        totalInTok += u.input_tokens || 0;
+        totalOutTok += u.output_tokens || 0;
+        totalCacheRead += u.cache_read_input_tokens || 0;
+        totalCacheWrite += u.cache_creation_input_tokens || 0;
+      }
+      return (body.content?.[0]?.text || "").trim();
+    }
     // 429/5xx are transport, not signal: a retried record is still a real measurement, whereas a
     // record dropped on a rate limit silently shrinks the denominator and flatters the score.
     if (res.status === 429 || res.status >= 500) {
@@ -103,6 +142,38 @@ async function ask(system, input, maxTokens) {
     throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 160)}`);
   }
   throw new Error("API failed after 3 attempts");
+}
+
+// Whether the cache ENGAGED is a measured claim, not a code comment: a `cache_control` key the API
+// silently declined and a working cache differ only on the invoice, which arrives days later and
+// off this surface. The three-way notice is l2.mjs's, and the distinction it draws is the point —
+// a prefix under the minimum cacheable length was never eligible ("nothing to discount"), which is
+// a different fact from an eligible prefix that cached nothing ("MISSED", worth investigating).
+const MIN_CACHEABLE_TOKENS = 1024;
+const CHARS_PER_TOKEN = 4;
+
+function cacheNote() {
+  // Measure the PREFIX, not the prompt: only the system block carries `cache_control`, while
+  // `input_tokens` also covers each call's user turn — which here is a whole diff plus, on the
+  // verifier call, a candidate record. Dividing total input by call count would badly overstate
+  // the cached part. Both system blocks are module constants, so the largest is known exactly.
+  const prefixTok = Math.round(Math.max(FINDER_SYSTEM.length, VERIFIER_SYSTEM.length) / CHARS_PER_TOKEN);
+  if (totalCacheRead || totalCacheWrite) {
+    // Cost-equivalent, not a token count: a write is 1.25× a fresh input token and a read 0.1×,
+    // so comparing raw totals understates the win. The counterfactual is that every read would
+    // instead have been a full re-send — which is exactly what this runner did before.
+    const equiv = totalInTok + totalCacheWrite + totalCacheRead;
+    const costNow = totalInTok + totalCacheWrite * 1.25 + totalCacheRead * 0.1;
+    const saved = equiv > 0 ? (1 - costNow / equiv) * 100 : 0;
+    return ` · cache ${totalCacheRead.toLocaleString()} read / ${totalCacheWrite.toLocaleString()} written`
+      + ` (~${saved.toFixed(0)}% lower input cost than re-sending each rubric)`;
+  }
+  if (prefixTok < MIN_CACHEABLE_TOKENS) {
+    return ` · cache not applicable (largest cached prefix ~${prefixTok.toLocaleString()} tokens,`
+      + ` below the ${MIN_CACHEABLE_TOKENS}-token minimum — nothing to discount, not a defect)`;
+  }
+  return ` · cache MISSED (no read, no write, and the prefix is ~${prefixTok.toLocaleString()} tokens —`
+    + ` long enough to cache, so the rubrics are being re-billed per call)`;
 }
 
 // Models wrap JSON in fences despite instructions. Strip one fence, then parse. A parse failure is
@@ -282,6 +353,29 @@ if (SELF_TEST) {
   t("parseJson rejects a JSON null where an object is expected",
     parseJson("null", "object").error !== undefined);
 
+  // The cache readout, offline. What makes it worth a self-test is that its three branches are
+  // indistinguishable from a passing run: a silently-declined `cache_control` and a working cache
+  // both produce correct accuracy numbers, and only this line tells them apart.
+  //
+  // The first assertion is the one that bites. Unlike l2.mjs — where three suites genuinely sit
+  // under the bound and "not applicable" is the honest report — BOTH prefixes here are whole rule
+  // files, so caching is expected to work and a MISSED is a real defect. If a rule file were
+  // shrunk below the bound, this reds rather than the runner quietly starting to report
+  // "nothing to discount" on a suite that used to be discounted.
+  const prefixTok = Math.round(Math.max(FINDER_SYSTEM.length, VERIFIER_SYSTEM.length) / CHARS_PER_TOKEN);
+  t("both system prefixes are long enough to cache", prefixTok >= MIN_CACHEABLE_TOKENS, `~${prefixTok} tokens`);
+
+  const savedTotals = [totalInTok, totalOutTok, totalCacheRead, totalCacheWrite];
+  totalInTok = 1000; totalCacheRead = 0; totalCacheWrite = 0;
+  t("a long prefix with no cache activity reports MISSED, not 'not applicable'",
+    cacheNote().includes("MISSED"));
+  totalCacheRead = 10_000; totalCacheWrite = 2_500;
+  const note = cacheNote();
+  // Sign, not magnitude: a saving computed with the weights inverted (read 1.25×, write 0.1×)
+  // would come out negative, which is the arithmetic slip this catches.
+  t("cache activity reports a positive saving", /~[1-9][0-9]?% lower input cost/.test(note), note);
+  [totalInTok, totalOutTok, totalCacheRead, totalCacheWrite] = savedTotals;
+
   console.log(failed ? `\n✗ ${failed} self-test failure(s)` : "\n✓ self-test passed");
   process.exit(failed ? 1 : 0);
 }
@@ -377,6 +471,13 @@ if (misses.length) {
     const found = isHit(m.candidates, byId.get(m.id).defect) ? "found by the finder, dropped by the verifier" : "never flagged";
     console.log(`    ${m.id} (${m.class}) — ${found}`);
   }
+}
+
+// Printed BEFORE either exit below, so the run someone most wants the cost of — the one that just
+// tripped the gate — still reports it. Accuracy is the product; this line is what makes the next
+// person's decision about re-running, or about growing the golden set, an informed one.
+if (totalInTok || totalOutTok) {
+  console.log(`\n  tokens: ${totalInTok.toLocaleString()} input + ${totalOutTok.toLocaleString()} output${cacheNote()}`);
 }
 
 // Report-only by default. The golden set is 30 records, which evals.md calls statistically noisy
