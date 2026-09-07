@@ -496,7 +496,11 @@ if (dirty.length) {
   for (const c of dirty) {
     console.log(`    ${c.id} — ${c.confirmed.length} of ${c.candidates.length} candidate(s) confirmed`);
     for (const f of c.confirmed) {
-      console.log(`      ${f.path}:${f.line} [${f.defect_class}] ${String(f.claim ?? "").slice(0, 110)}`);
+      // 180, not 110: run 7's output cut three of five claims mid-sentence, and the clause that
+      // decides whether a survivor is a verifier fault or a defective fixture is usually the
+      // second half ("…which loses the value" / "…is pre-existing"). A truncated diagnosis costs
+      // a whole run to recover.
+      console.log(`      ${f.path}:${f.line} [${f.defect_class}] ${String(f.claim ?? "").slice(0, 180)}`);
     }
   }
 }

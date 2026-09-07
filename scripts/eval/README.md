@@ -892,6 +892,50 @@ blind tuning the control growth exists to prevent. The runner now names them, an
 neighbouring cases (a control the verifier *rescued*, and one the finder never flagged),
 because those are three different faults with three different fixes.
 
+### Run 7 — the diagnosis, and why the verifier was not tuned
+
+Run 7 (recall 80% (16/20), fp **17%** (5/30), lift **+20**, gate passed) was the first run
+to name its surviving controls, and the answer overturned the plan. The intended next
+step was to tune `finding-verifier.md` for precision. **It was not done, and should not
+be**, because the false positives were not verifier failures:
+
+| survivor | what the finder said | verdict on the finding |
+| --- | --- | --- |
+| `control-any-in-non-exported` | `{ ...v }` on a primitive silently produces `{}`, losing the payload | **correct** — a real defect, unrelated to the `any`-scope rule this control probes |
+| `control-lock-released-correctly` | `Future` is used and never imported | **correct** — the import was in no surface the finder was shown |
+| `control-perf-claim-with-benchmark` | module-level state, unenforced call ordering, silent `undefined` before the first `index()` | **correct on all five candidates** — the perf claim was honest, the code carrying it was not clean |
+| `control-devdependency-major-tests-only` | vitest 3 changes `mockReset()` semantics at this usage site | **correct** — the record's own premise was wrong; a broken test is broken, "it is only a devDependency" is not a defence |
+| `control-retry-backoff-reset-correct` | `BASE_MS * 2 ** attempt` precedence; `throw …("unreachable")` reachable at `max <= 0` | **one false, one attributability artifact** — the only genuine verifier miss of the five |
+
+Four and a half of five were **defective fixtures**. Tightening the verifier against them
+would have been training it to reject *true* findings — the same fix-to-pass this eval's
+gate exists to prevent, one level up, and far harder to notice because `fp_rate` would
+have gone down.
+
+The evidence that the verifier is in fact working sits in the same output: it dropped
+**6 of 11** flagged controls, and every one it rescued was a well-formed decoy —
+`control-off-by-one-that-is-correct`, `control-major-bump-unused-api`,
+`control-description-matches-larger-diff`, `control-widened-param-type`,
+`control-rename-with-deprecated-alias`, `control-overload-added`. On decoys that are
+actually clean, the flag-then-filter polarity holds.
+
+So the fix was to the fixtures. All five are repaired, each carrying a dated note saying
+what was wrong and that the finder was right; two of them (`control-any-in-non-exported`,
+`control-lock-released-correctly`) are **original** controls whose defects had been
+invisible for the whole recorded baseline, which is a second reason not to read the
+earlier `fp_rate` series as a property of the detection core.
+
+Two lessons worth keeping:
+
+- **A control asserting "this diff is clean" is a claim about the whole diff, not about
+  the one thing being probed.** Four of these five probed their intended failure mode
+  correctly and were dirty for an unrelated reason. When writing a decoy, re-read the
+  fixture as an adversary would, not as the author of the probe.
+- **`fp_rate` alone cannot distinguish an over-permissive verifier from a defective
+  control set.** Five runs of a bare number pointed at the rubric; one run of named
+  survivors pointed at the fixtures. Never tune a rubric against a rate you have not
+  itemised.
+
 ### The L1 baseline
 
 `l1.mjs` keeps a `BASELINE` set of known pre-existing broken links so the gate
