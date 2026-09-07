@@ -689,6 +689,14 @@ the one it kept:
 core as it already stood — the numbers describe the core, not the change that permitted
 them:
 
+> **These five runs are on a 10-control denominator, and the set now has 30.** Every
+> `fp_rate` below is `dirty/10`; a current run reports `dirty/30`. The two are **not
+> comparable as numbers** — do not read a later 23% against the 30% here as an
+> improvement. What survives the change is the *shape*: a spread that four of five runs
+> put above the gate. The counts of dirty controls are quoted alongside each rate so the
+> underlying observation stays legible. See
+> [Why the controls grew to 30](#why-the-controls-grew-to-30).
+
 `claude-sonnet-4-6` · 30 records (20 seeded + 10 decoy controls) · 4-way concurrency · ~3 min:
 
 | stage | run 1 | run 2 | run 3 |
@@ -788,6 +796,55 @@ Three things are specific to this runner:
   telemetry and makes 1 + N calls per record, so a record that throws on its third
   verifier call would drop the two calls already billed. Counting where the request is
   paid for cannot undercount.
+
+### Why the controls grew to 30
+
+The golden set is now **50 records — 20 seeded, 30 controls**, up from 10 controls.
+This is a change to the *measuring instrument*, not to the core it measures, and it was
+made before touching either rubric on purpose.
+
+**At 10 controls, `fp_rate` could not express a verdict.** One control was 10 points, so
+the only readings the metric could produce were 0, 10, 20, 30, 40 — against a 20-point
+gate. There was no value between "passing" and "failing by half again", and the five
+recorded runs land exactly on that lattice: 30 · 40 · 30 · ≤20 · 40. A rubric edit that
+genuinely moved precision from, say, 27% to 21% would have shown up as `30 → 30`, or as
+`30 → 20` if one decoy happened to flip — indistinguishable from the run-to-run variance
+the same five runs demonstrate. Every conclusion drawn from that series is therefore
+about a metric with four usable states, which is why the earlier "the precision gap is
+the *reproducible* failure" reading had to be retracted once a fifth run arrived.
+
+At 30 controls a dirty control is 3.3 points and the gate tolerates 6. The self-test
+asserts this directly — `tolerated = floor(controlN × GATES.fp) >= 4` — so shrinking the
+control half reds L1 rather than quietly returning the gate to a coin flip. **The fix for
+that assertion is always more controls.** Lowering `GATES.fp` would not buy resolution;
+it shrinks the tolerated count, making the problem worse while looking like a
+concession.
+
+**Every one of the 20 new controls is a decoy, and each probes a named finder failure
+mode** — the same bar the original 10 met. A control that is merely a boring diff
+measures how hard the diff is, not whether the reviewer discriminates. Four per class
+family:
+
+| family | what the four decoys probe |
+| --- | --- |
+| `logic` | the defect removed (backoff reset made structural); code that IS the fix for a classic bug (`((i % n) + n) % n`); integer cents where a float rule does not apply; a deliberately serial `await` loop |
+| `consumer-break` | an *optional* field added; a parameter type *widened* (the safe direction); a rename with a deprecated alias in the same diff; an overload added over an unchanged implementation |
+| `dep-breaking-change` | a purely additive minor; a `0.x` **patch** (zerover promotes a minor, not a patch); a real major whose usage sites are fixed **in the same diff**; a devDependency major intersecting test files only |
+| `intent-mismatch` | a refactor honestly described; a perf claim with the benchmark in the diff; extra scope *disclosed* in the description; a revert described as a revert |
+| `standards` | raw SQL in the repository layer the rule permits; the logger *replacing* console (the fix, not the violation); a rollback in the paired `down.sql` the convention specifies; `any` in a test file the rule exempts |
+
+Two are deliberately the hardest of their family and are worth watching individually:
+`control-modulo-negative-guarded`, where the defect the finder is tempted to name is
+real in general and already handled here, and
+`control-major-bump-usage-updated-same-diff`, where a finder can correctly identify the
+break *and* correctly locate the usage and still be wrong, because the fix is in the diff
+it is reading.
+
+**Two costs, both accepted.** A full run is now 50 records rather than 30, and `--class`
+keeps all controls by design (a per-class recall figure with no false-positive rate beside
+it is the half that can be gamed), so even a single-class run pays the 30. The token line
+from the previous section is what makes that visible, and the cached prefixes are what
+make it affordable.
 
 ### The L1 baseline
 

@@ -319,6 +319,21 @@ if (SELF_TEST) {
   const controlN = recs.filter((r) => r.class === "control").length;
   t("the golden set has seeded records", seededN >= 10, `${seededN}`);
   t("the golden set has controls", controlN >= 5, `${controlN}`);
+
+  // A rate cannot be measured finer than one record, so the control count is what decides whether
+  // `fp_rate` can express a verdict against its gate at all. At 10 controls the metric moved in
+  // 10-point steps against a 20-point gate: the only readings available were 0, 10, 20, 30 — one
+  // control was the whole distance between passing and failing by half again, and no amount of
+  // rubric work could produce a value between them. That is a measurement fault, not a core fault,
+  // and it is why the first five runs read 30 · 40 · 30 · ≤20 · 40 and looked like a flaky gate.
+  //
+  // The bar is FOUR tolerated dirty controls, which is the smallest count where the gate survives
+  // one bad decoy and the rate has interior values to land on. The fix for a breach is more
+  // controls; lowering GATES.fp to buy resolution would be the fix-to-pass this eval exists to
+  // prevent, and lowering it would not buy resolution anyway — it shrinks the tolerated count.
+  const tolerated = Math.floor(controlN * GATES.fp);
+  t("fp_rate resolves finely enough to grade against its gate",
+    tolerated >= 4, `${controlN} controls × ${GATES.fp} gate tolerates ${tolerated} dirty`);
   for (const c of CLASSES) {
     const n = recs.filter((r) => r.class === c).length;
     t(`class ${c} is represented`, n >= 2, `${n}`);
@@ -480,8 +495,12 @@ if (totalInTok || totalOutTok) {
   console.log(`\n  tokens: ${totalInTok.toLocaleString()} input + ${totalOutTok.toLocaleString()} output${cacheNote()}`);
 }
 
-// Report-only by default. The golden set is 30 records, which evals.md calls statistically noisy
-// below 50, so a hard gate here would fail CI on sampling rather than on a regression.
+// Report-only by default; CI opts in with EVAL_DETECTION_GATE=1. The golden set is 50 records,
+// which reaches the bar evals.md sets for a set worth gating on — but the two halves reach it
+// unevenly and the local default stays report-only because of the weaker half: 30 controls put
+// `fp_rate` on 3.3-point steps, while 20 seeded records still put recall on 5-point steps against
+// a 70% gate, so a single case is a seventh of the distance to a breach. Grow the seeded half
+// before reading a local recall delta as a trend.
 if (!GATED) {
   console.log("\n⊘ report-only (set EVAL_DETECTION_GATE=1 to gate)");
   process.exit(0);
