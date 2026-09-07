@@ -550,11 +550,11 @@ BASELINE`. At 5 cases it was `[advisory]` and could not breach the floor.
 > was the suite's own `instruction` asking whether the read surfaces a record *"to the finders"*
 > — a question §1.0 answers the *other* way, since Step 1.2d shortlists by changed path before
 > the finders see anything — while the labels encode list-reachability. The question is now
-> scoped to what the read **returns**, and the two runs since measured **10/14 (71.4%)** and
-> **11/14 (78.6%)** — green both times, with the three misses predicted to remain recurring
-> identically in both and forming the *entire* miss set in the second. One case is 7.1 points
-> here, so quote that composition rather than either number; the per-case history, the full run
-> table and what the fix did *not* close are in
+> scoped to what the read **returns**, and the three runs since measured **10/14**, **11/14**
+> and **11/14** (71.4 / 78.6 / 78.6%) — green every time, with the three misses predicted to
+> remain recurring identically in all three and forming the *entire* miss set in the last two.
+> One case is 7.1 points here, so quote that composition rather than any of the numbers; the
+> per-case history, the full run table and what the fix did *not* close are in
 > [`golden/code-review-retrieval-relevance.NOTES.md`](./golden/code-review-retrieval-relevance.NOTES.md).
 > Every figure for this suite below predates the decoys and describes 5 different cases; none of
 > them is comparable to a post-decoy run.
@@ -718,16 +718,24 @@ the strongest claim run 1 appeared to license:
   2's recall cost looking more like the outlier than the rule. Never quote a single
   detection run as evidence for or against the verifier, and never tune the two rubrics
   against one.
-- **`fp_rate` after the verifier was the stable number — 30% in runs 1 and 3, 40% in run
-  2 — until run 4 cleared the 20% gate, so it is not stable either.** Recall swings 60–75%
-  around a 70% bar and has been on both sides of it. Run 4 (on #184, recall 15/20 = 75%,
-  `fp_rate` at or under 20%) is the first passing detection run of four and it retracts the
-  earlier reading that the precision gap is the *reproducible* failure: across four runs the
-  gate has been missed three times and met once, which is a flaky gate rather than a
-  standing red. Both rates are still worth aiming at — the controls first, since three of
-  four runs failed there — but do not treat either a red or a green detection run as
-  telling you the core changed. That is the same one-run rule as the bullet above,
-  now demonstrated on the gate itself rather than on the verifier's lift.
+- **`fp_rate` after the verifier looked like the stable number — 30% in runs 1 and 3, 40% in
+  run 2 — until runs 4 and 5 came back at or under 20% and back at 40%. It is not stable
+  either.** Five runs: `fp_rate` 30 · 40 · 30 · ≤20 · 40, recall 75 · 60 · 70 · 75 · 90%.
+  Runs 4 and 5 were both on #184, whose diff touches neither detection rubric, so that
+  pair is a clean same-content measurement and the spread between them is pure run-to-run
+  variance.
+
+  This **retracts** the earlier reading that the precision gap is the *reproducible*
+  failure. One meet in five is a flaky gate, not a standing red — and run 5 pairs the
+  worst `fp_rate` with the best recall yet (90%, only two records missed), which is the
+  finder-aggression trade the two rubrics encode showing up as noise at these sample
+  sizes rather than as a fixed operating point. Both rates are still worth aiming at, and
+  the controls first, since four of five runs failed there. But do not treat a red or a
+  green detection run as telling you the core changed: that is the same one-run rule as
+  the bullet above, now demonstrated on the gate itself and not merely on the verifier's
+  lift. Run 5 also lost one record to an unparseable finder reply
+  (`intent-revert-not-fix`, prose instead of JSON) — counted as a miss, never as clean,
+  and still never a reason to loosen the parse.
 - **`intent-mismatch` is the weak class in all three** — 1/4, 2/4, 2/4, against 3/4–4/4
   elsewhere; `standards` is 4/4 every time. Most of its misses were never flagged at all,
   so the gap is predominantly finder recall rather than verifier over-filtering. `logic`

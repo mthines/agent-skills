@@ -92,6 +92,7 @@ makes it a rubric/prompt defect rather than sampling noise:
 | `9e59b36` | 9/14 (64.3%) | same five, identical set |
 | `0512499` (the fix) | **10/14 (71.4%)** | four — `…unrelated-diff-scoped` passed |
 | `39e9d7d` (docs only) | **11/14 (78.6%)** | three — **exactly the predicted residue** |
+| `8389c80` (docs only) | **11/14 (78.6%)** | same three, identical set |
 
 All misses were `surface → skip`, never the reverse: the six `skip` decoys passed 6/6 every time.
 A read that under-returns on 5 of 8 positives while never over-returning is not a model that
@@ -124,14 +125,14 @@ Those three are a genuine measurement of a real weakness, so the fix is **not** 
 the four filters to the `instruction`. Extracting them from the rubric is the thing being measured,
 and restating them in the prompt would grade the prompt instead of the read.
 
-**What it closed — both diff cases, though it took two runs to show it.** Run 1 came back 10/14
-with `…unrelated-diff-scoped` flipped and the un-scoped twin still missing; run 2, on a docs-only
-commit, came back 11/14 with **both** diff cases passing. So the two runs disagree on the
-un-scoped twin, which puts it at the boundary rather than firmly on either side.
+**What it closed — both diff cases, on two of the three runs.** Run 1 came back 10/14 with
+`…unrelated-diff-scoped` flipped and the un-scoped twin still missing; runs 2 and 3, both on
+docs-only commits, came back 11/14 with **both** diff cases passing. So the un-scoped twin sits
+near the boundary — missed once, passed twice — rather than firmly on either side.
 
-What does not vary is the residue: the three non-diff misses above recurred **identically in both
-runs**, and in run 2 they are the *entire* miss set. That is the prediction holding exactly, and
-it is what carries the argument — not the 71.4% or the 78.6%. One case is 7.1 points at n=14 and
-the run-to-run variance the L2 README records is larger than the gap between the two runs, so
-quote the miss-set composition, never either score. Do not tune the remaining three to chase
-14/14: they are a real measurement of the model failing rules the rubric states plainly.
+What does not vary at all is the residue: the three non-diff misses above recurred **identically
+in all three runs**, and in runs 2 and 3 they are the *entire* miss set. That is the prediction
+holding exactly, and it is what carries the argument — not the 71.4% or the 78.6%. One case is
+7.1 points at n=14, larger than the spread between these runs, so quote the miss-set composition
+and never a score. Do not tune the remaining three to chase 14/14: they are a real measurement of
+the model failing rules the rubric states plainly.
