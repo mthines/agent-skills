@@ -51,7 +51,9 @@ Grow the set by adding decoys, never by moving the floor.
 
 ## What this suite measures
 
-Given a PR diff + a candidate memory (with its `tag`, `scope`, `source`, expiry, and gist), does the model — reading the live `### 1.0` + `### 1.2c` subsections of `agents/pr-reviewer.md` — correctly classify whether the documented Step 1.0 (`mcp__lorekit__memory_list`) + Step 1.2c (`mcp__lorekit__memory_search`) read surfaces that memory to the finders?
+Given a PR diff + a candidate memory (with its `tag`, `scope`, `source`, expiry, and gist), does the model — reading the live `### 1.0` + `### 1.2c` subsections of `agents/pr-reviewer.md` — correctly classify whether the documented Step 1.0 (`mcp__lorekit__memory_list`) + Step 1.2c (`mcp__lorekit__memory_search`) read **returns** that memory?
+
+Deliberately **not** "surfaces it to the finders". That phrasing named a different question — one that includes Step 1.2d's diff-keyed shortlist, which is out of this rubric and answers the opposite way for a diff-unrelated lesson. It sat in this sentence and in the `instruction` string simultaneously; see "Measured runs, and the instruction fix" below for what it cost.
 
 The rubric is those **two subsections**, deliberately not their `## Step 1` parent: `extractSection` is heading-level-aware, so the parent fed all ten `### 1.x` subsections (67,630 chars vs. 27,568) — including `### 1.2d`, whose diff-keyed shortlist answers *what reaches the finders* rather than *what the documented read returns*. With `1.2d` in scope, a list-reachable lesson unrelated to the diff is legitimately `skip` and the suite contradicts its own `instruction` string. L1 `G21a` reds on a re-widening.
 
@@ -75,5 +77,47 @@ dimensions is thinnest, and keep the case that motivated it.
 
 - **Rubric read from:** `agents/pr-reviewer.md`, sections `### 1.0 Prior-comment awareness + relevance memory load (default ON)` **and** `### 1.2c Diff-keyed lesson search (all modes)` — never the `## Step 1` parent
 - **Choices:** `surface` | `skip`
-- **Gate:** report-only until ≥ 50 real-corpus cases (current: 14 bootstrap cases, 8 `surface` / 6 `skip`)
+- **Gate:** **gating** — 14 cases is above `EVAL_GATE_MIN_CASES` (10), so it grades against the 70% floor and is not `[advisory]`. (This line previously read "report-only until ≥ 50 real-corpus cases", which described the 5-case set and stopped being true the moment the decoys landed. The ≥ 50 bar is about **raising** the floor, not about whether the current floor applies.)
 - **Real corpus requires:** LoreKit instance with real `reviewer-lessons` + `reviewer-comment-relevance` history
+
+## Measured runs, and the instruction fix
+
+The 14-case set has been measured three times, and the miss set is **stable** — which is what
+makes it a rubric/prompt defect rather than sampling noise:
+
+| head | score | misses |
+| --- | --- | --- |
+| `#183` head | 8/14 (57.1%) | the six below |
+| `e65c302` | 9/14 (64.3%) | five — `…seen2-below-threshold-scoped` passed |
+| `9e59b36` | 9/14 (64.3%) | same five, identical set |
+
+All misses were `surface → skip`, never the reverse: the six `skip` decoys passed 6/6 every time.
+A read that under-returns on 5 of 8 positives while never over-returning is not a model that
+cannot follow the rubric — it is a model applying a filter the rubric does not contain.
+
+**The question was asking for that filter.** The `instruction` asked whether the read surfaces the
+record *"to the finders"*. §1.0 uses that exact phrase for a record dropped by attribution — "such
+a record does not reach the finders" — and says diff-keying "enters later and *additively*", with
+**Step 1.2d** shortlisting the merged index by changed path and symbol before the finders see
+anything. So for a diff-unrelated lesson, `skip` was the *correct* answer to the question as
+posed, while the labels encode list-reachability. The prompt and the ground truth disagreed, and
+the labels were right.
+
+This is the second time this suite's question drifted off its labels: the verb was already
+corrected once (`would be surfaced … for the given PR diff` → `surfaces`) to remove exactly this
+relevance reading, and `to the finders` was left in place one clause over, reintroducing it.
+
+**What the fix is expected to close, and what it is not.** Only two of the five misses turn on the
+diff — `…unrelated-diff` and its scoped twin. The other three are the model failing to apply rules
+§1.0 states in as many words, and they are worth keeping visible:
+
+| miss | the rule it did not apply | stated at |
+| --- | --- | --- |
+| `seen2-below-threshold` | `seen_count` is the promotion bar, not a surfacing filter | §1.0 "It is not gated on `seen_count`" |
+| `global-scope-reachable` | `global` is one of the two scopes both paths read | §1.0 scope list; §1.2c `scopes` |
+| `source-explicit-maintainer-rule` | attribution is a **disjunction** — `source.explicit == true` carves in a human-authored record | §1.0 rule 1 |
+
+Those three are a genuine measurement of a real weakness, so the fix is **not** expected to reach
+14/14, and nothing here should be tuned until it does. Deliberately NOT done: adding a summary of
+the four filters to the `instruction`. Extracting them from the rubric is the thing being measured,
+and restating them in the prompt would grade the prompt instead of the read.

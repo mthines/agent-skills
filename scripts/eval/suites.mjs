@@ -155,7 +155,17 @@ export const SUITES = [
     // two source-attribution cases are answerable both ways and grade nothing. "Surfaces" is
     // also the label vocabulary the suite already uses, so the question and the answers now
     // name the same thing.
-    instruction: "You are pr-reviewer at Step 1. Using ONLY the memory-read procedure below (Step 1.0's mcp__lorekit__memory_list calls + Step 1.2c's mcp__lorekit__memory_search), decide whether that read surfaces the candidate record described to the finders. The PR diff is supplied as context because Step 1.2c builds its search query from it. Reply 'surface' if the read surfaces the record, or 'skip' if it does not.",
+    // The question is deliberately scoped to what the two READS RETURN, and says so twice.
+    // It previously asked whether the read surfaces the record "to the finders" — which the
+    // rubric itself answers the other way: §1.0 uses that exact phrase for a record dropped
+    // by attribution ("such a record does not reach the finders"), and states that Step 1.2d
+    // shortlists the merged index by changed path before the finders see anything. So for a
+    // diff-unrelated lesson "skip" was the CORRECT answer to the question asked, while the
+    // labels encode list-reachability — the prompt and the ground truth disagreed. Naming the
+    // downstream step and excluding it is the boundary this question needs; it is not a hint.
+    // Do NOT add a summary of which filters apply — the model extracting those from the rubric
+    // is the thing being measured, and restating them here would grade the prompt, not the read.
+    instruction: "You are pr-reviewer at Step 1. Using ONLY the memory-read procedure below (Step 1.0's mcp__lorekit__memory_list calls + Step 1.2c's mcp__lorekit__memory_search), decide whether that read RETURNS the candidate record — that is, whether the record is among what those calls load. Do NOT consider whether it would later survive Step 1.2d's diff-keyed shortlist, or whether its gist looks relevant to the diff: that is a separate, later step and is out of scope for this question. The PR diff is supplied only because Step 1.2c builds its search query from it. Reply 'surface' if the read returns the record, or 'skip' if it does not.",
     inputKey: "input", inputLabel: "Candidate + diff",
     choices: ["surface", "skip"],
   },

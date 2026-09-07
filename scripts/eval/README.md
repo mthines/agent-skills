@@ -544,12 +544,18 @@ at these sizes. Do not tighten a floor until a golden set reaches ≥ 50.
 floor allows exactly one miss, and its own golden notes say `BOOTSTRAP SEED — NOT A REAL
 BASELINE`. At 5 cases it was `[advisory]` and could not breach the floor.
 
-> **Superseded — it gates again, and it is red.** The decoy set took it to 14 cases, back
-> over `EVAL_GATE_MIN_CASES` (10), so it grades for real. Measured **9/14 (64.3%)** at
-> `e65c302` — below the floor. Every figure for this suite below predates that set and
-> describes 5 different cases; none of them is comparable to a post-decoy run. The
-> per-case history is in
+> **Superseded — it gates again.** The decoy set took it to 14 cases, back over
+> `EVAL_GATE_MIN_CASES` (10), so it grades for real. It measured **9/14 (64.3%)** three times
+> running with an identical miss set, which is a defect signature rather than noise: the cause
+> was the suite's own `instruction` asking whether the read surfaces a record *"to the finders"*
+> — a question §1.0 answers the *other* way, since Step 1.2d shortlists by changed path before
+> the finders see anything — while the labels encode list-reachability. The question is now
+> scoped to what the read **returns**. Three misses are expected to remain and are a real
+> measurement, not prompt noise; the per-case history, the run table and what the fix is *not*
+> expected to close are in
 > [`golden/code-review-retrieval-relevance.NOTES.md`](./golden/code-review-retrieval-relevance.NOTES.md).
+> Every figure for this suite below predates the decoys and describes 5 different cases; none of
+> them is comparable to a post-decoy run.
 
 Separately, its rubric is the 67,630-char `## Step 1`
 section — 6.4× the next largest — most of which is prior-comment awareness and gate
