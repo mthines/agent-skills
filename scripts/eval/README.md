@@ -467,6 +467,12 @@ remembered number.
 
 `claude-sonnet-4-6` · `EVAL_GATE=70` · nine suites, 140 cases · **130/140 = 92.9%**:
 
+> **The denominator has since moved: nine suites are now 149 cases, not 140.** The
+> retrieval suite's decoy set grew it 5 → 14. Every total on this page — `130/140`,
+> `131/140` — is correct for the run that produced it and is **not** comparable to a
+> current run; compare per suite, never on the aggregate. The row-level figures below are
+> likewise a record of what those runs measured, not a target to reproduce.
+
 | suite | cases | accuracy | misses |
 | --- | --- | --- | --- |
 | `bug-class` | 18 | 100.0% | — |
@@ -536,7 +542,16 @@ at these sizes. Do not tighten a floor until a golden set reaches ≥ 50.
 
 **4. `code-review-retrieval-relevance` should not have been gating.** 5 cases at a 70%
 floor allows exactly one miss, and its own golden notes say `BOOTSTRAP SEED — NOT A REAL
-BASELINE`. It is now `[advisory]`. Separately, its rubric is the 67,630-char `## Step 1`
+BASELINE`. At 5 cases it was `[advisory]` and could not breach the floor.
+
+> **Superseded — it gates again, and it is red.** The decoy set took it to 14 cases, back
+> over `EVAL_GATE_MIN_CASES` (10), so it grades for real. Measured **9/14 (64.3%)** at
+> `e65c302` — below the floor. Every figure for this suite below predates that set and
+> describes 5 different cases; none of them is comparable to a post-decoy run. The
+> per-case history is in
+> [`golden/code-review-retrieval-relevance.NOTES.md`](./golden/code-review-retrieval-relevance.NOTES.md).
+
+Separately, its rubric is the 67,630-char `## Step 1`
 section — 6.4× the next largest — most of which is prior-comment awareness and gate
 grading, while both misses turn on two facts the section only implies by *absence* (the
 Step 1.0 `memory_list` is neither diff-filtered nor `seen_count`-gated) in the presence of
