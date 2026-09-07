@@ -550,9 +550,10 @@ BASELINE`. At 5 cases it was `[advisory]` and could not breach the floor.
 > was the suite's own `instruction` asking whether the read surfaces a record *"to the finders"*
 > — a question §1.0 answers the *other* way, since Step 1.2d shortlists by changed path before
 > the finders see anything — while the labels encode list-reachability. The question is now
-> scoped to what the read **returns**. Three misses are expected to remain and are a real
-> measurement, not prompt noise; the per-case history, the run table and what the fix is *not*
-> expected to close are in
+> scoped to what the read **returns**, and the next run measured **10/14 (71.4%)** — green, with
+> the three misses predicted to remain all recurring identically and one of the two targeted diff
+> cases flipping. One case is 7.1 points here, so read that composition rather than the number;
+> the per-case history, the full run table and what the fix did *not* close are in
 > [`golden/code-review-retrieval-relevance.NOTES.md`](./golden/code-review-retrieval-relevance.NOTES.md).
 > Every figure for this suite below predates the decoys and describes 5 different cases; none of
 > them is comparable to a post-decoy run.
