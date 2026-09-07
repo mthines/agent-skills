@@ -39,8 +39,15 @@ const only = process.argv.includes("--suite") ? process.argv[process.argv.indexO
 
 // An unknown --suite must be LOUD. CI drives this flag from a generated matrix, and
 // the run-nothing-and-exit-0 alternative reports a typo (or a renamed suite whose
-// selector entry was missed) as a passing eval — the same silent-green failure mode
-// the missing API key had.
+// selector entry was missed) as a passing eval — a green that graded nothing, which
+// on a check page is indistinguishable from a green that graded everything. Same
+// silent-green failure mode the missing API key had.
+//
+// This runs BEFORE the key check on purpose: a misspelled suite name is wrong whether
+// or not a key is present, and diagnosing it should not depend on having one. There is
+// exactly ONE such guard — a second copy further down was unreachable behind this one
+// and exited a different code, so a caller branching on the exit read a value nothing
+// could produce.
 if (only !== null && !SUITES.some((s) => s.name === only)) {
   console.error(`✗ L2: unknown suite "${only}". Known: ${SUITES.map((s) => s.name).join(", ")}`);
   process.exit(2);
@@ -58,14 +65,6 @@ if (!KEY) {
   }
   console.log("⊘ L2: no ANTHROPIC_API_KEY — skipping (these are LLM evals; set the key to run).");
   process.exit(0);
-}
-
-// A misspelled `--suite` would otherwise match nothing, run zero cases, and exit 0 — a green
-// that graded nothing, which is indistinguishable from a green that graded everything. Fail
-// closed on the name instead, and name the suites so the next attempt is right.
-if (only && !SUITES.some((sx) => sx.name === only)) {
-  console.error(`✗ unknown --suite ${JSON.stringify(only)}. Suites: ${SUITES.map((sx) => sx.name).join(", ")}`);
-  process.exit(1);
 }
 
 // extractSection is heading-level-aware and shared from lib.mjs so l1.mjs's G21g
