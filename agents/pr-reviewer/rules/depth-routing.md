@@ -67,7 +67,8 @@ otherwise claim it and buy a full lens pass to re-read the reviewer's own asks.
 
 **One exclusion runs before the table.** A delta whose shapes are exclusively `docs-only`,
 `test-only`, or generated, **and** whose `blast_radius.band == none`, does not consider the size
-triggers at all — neither `D12` / `D13` in the `deep` row nor the
+triggers at all — neither of the two size triggers in the `deep` checklist below
+(**`D12`** `DELTA_LINES > 100` and **`D13`** `NEW_FILES > 0`) nor the
 `11 ≤ DELTA_LINES ≤ 100` band in the `standard` row.
 Size there is measuring text nobody executes, and without the exclusion a 400-line generated-client
 refresh routes `deep` on line count while reaching nothing — the exact wrong-proxy failure this
