@@ -176,10 +176,23 @@ let totalCases = 0, totalPass = 0, totalInTok = 0, totalOutTok = 0, totalCacheRe
 for (const suite of SUITES) {
   if (only && suite.name !== only) continue;
   const goldenPath = join(REPO_ROOT, "scripts/eval", suite.golden);
-  if (!existsSync(goldenPath)) { console.log(`(skip ${suite.name}: no golden file)`); continue; }
+  // A suite in the table with no cases to run is a BROKEN TABLE, not a skip. Deleting
+  // its golden file used to print `(skip …)` and an emptied one ran zero cases, scored
+  // NaN%, and could not breach the floor because `results.length >= GATE_MIN_CASES`
+  // fails — so the run exited 0 either way. That is the third door of the same
+  // silent-green class this file already closes for an unknown `--suite` and an absent
+  // API key, and it is the worst of the three: the suite still appears in the summary.
+  if (!existsSync(goldenPath)) {
+    console.error(`✗ L2: ${suite.name} is in the suite table but its golden file is missing (${suite.golden}). Delete the SUITES entry too, or restore the file.`);
+    process.exit(4);
+  }
   const rubric = rubricFor(suite);
   const system = `${suite.instruction}\nReply with exactly one of: ${suite.choices.join(", ")}. No explanation.\n\n${rubric}`;
   const cases = readFileSync(goldenPath, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  if (cases.length === 0) {
+    console.error(`✗ L2: ${suite.name} has an EMPTY golden file (${suite.golden}) — zero cases scores NaN% and cannot breach the gate.`);
+    process.exit(4);
+  }
 
   console.log(`\n## ${suite.name} (${cases.length} cases)`);
   const suiteSpan = T.span(`eval.suite ${suite.name}`, {
