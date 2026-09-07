@@ -1,51 +1,222 @@
 name: evals · L2 (behavioral)
 
 # Behavioral evals: do the skills make the right runtime decisions?
-# Suites: tier-routing, bug-class, complexity-triage, aw-should-trigger.
-# Each runs a model, so this needs a secret and costs a few tokens. To keep it
-# cheap and relevant it runs ONLY when a rubric/golden file changes (or on manual
-# dispatch).
+# Every case is a model call, so this workflow is OPT-IN — it spends nothing on a
+# PR nobody asked it to run on.
 #
-# Setup (one-time): add an ANTHROPIC_API_KEY repository secret
-#   (Settings → Secrets and variables → Actions → New repository secret).
-# Without the secret the job still runs and passes — the script skips cleanly —
-# so this is safe to require as a check and safe for fork PRs.
+# Two layers of cost control, in order:
+#
+#   1. OPT-IN GATE (this file, the `gate` job). Suites run only when a maintainer
+#      asks: put the `run-evals` label on the PR, or dispatch the workflow by hand.
+#      Without that, zero suites and zero API calls — one ~3s bookkeeping job.
+#   2. AFFECTED-SUBSET SELECTION (scripts/eval/select-suites.mjs). Once opted in,
+#      only the suites the PR's changed files can affect run, one job per suite —
+#      so opting in on a one-rubric PR costs one suite, not nine.
+#
+# Selection is DERIVED, not hand-maintained: the selector maps the changed-file
+# list to suite names using the `rubric.file` / `golden` each suite already declares
+# in `scripts/eval/suites.mjs`. This workflow therefore carries NO `paths:` filter
+# and no list of rubric files — the previous hand-written mirror had drifted (four of
+# nine rubric files missing, two listed paths backing no suite), so a severity-rubric
+# edit shipped with its own eval never run.
+#
+# Requires an ANTHROPIC_API_KEY repository secret
+# (Settings → Secrets and variables → Actions → New repository secret).
+# Without it the script skips cleanly and the run is green — safe for fork PRs,
+# which cannot read secrets.
+#
+# Required-check shape: the aggregator job is `l2` (unchanged name, so existing
+# branch protection keeps working) and it runs on EVERY PR via `if: always()`,
+# reporting "not opted in" as a pass. That separation is deliberate — dropping the
+# `pull_request` trigger to make the workflow manual would leave a required check
+# pending forever on every PR. The gate governs the SPEND; the trigger governs the
+# CHECK. The per-suite matrix jobs are `suite (<name>)` and exist only on an
+# opted-in PR — never require those.
 
 on:
   pull_request:
-    paths:
-      # rubric sources (read live by the eval)
-      - "skills/workflow/autonomous-workflow/aw/SKILL.md"
-      - "skills/workflow/autonomous-workflow/templates/routing.rule.md"
-      - "skills/workflow/autonomous-workflow/SKILL.md"
-      - "skills/workflow/autonomous-workflow/rules/phase-0-validation.md"
-      - "skills/workflow/fix-bug/SKILL.md"
-      - "agents/pr-reviewer.md"
-      # eval harness + golden sets
-      - "scripts/eval/l2.mjs"
-      - "scripts/eval/lib.mjs"
-      - "scripts/eval/golden/**"
+    # `labeled` is what makes the opt-in take effect immediately: adding `run-evals`
+    # re-fires the workflow with the label present. The label then persists for the
+    # PR, so later pushes re-run the affected suites against the new head — remove
+    # the label to stop spending on that PR.
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
     inputs:
-      suite:
-        description: >-
-          One suite name to run (e.g. code-review-retrieval-relevance).
-          Leave blank to run all of them.
+      # A comma-separated LIST, not a single name: the same input has to be able to
+      # name one suite (the cheap-iteration case main added this input for), several,
+      # or `all`, and it must also be able to name `bug-detection`, which is a separate
+      # runner and cannot ride l2.mjs's `--suite` flag.
+      suites:
+        description: "Which suites to run: 'all', or a comma-separated list of suite names."
         required: false
-        type: string
+        default: "all"
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  l2:
+  gate:
+    # No checkout, no Node, one echo — this is what a non-opted-in PR pays.
+    name: opt-in gate
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      opted_in: ${{ steps.g.outputs.opted_in }}
+      how: ${{ steps.g.outputs.how }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Resolve the opt-in
+        id: g
+        env:
+          # A dispatch IS the manual ask. On a PR the ask is the label.
+          IS_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+          HAS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'run-evals') }}
+        run: |
+          set -euo pipefail
+          if [ "$IS_DISPATCH" = "true" ]; then
+            OPTED_IN=true; HOW="workflow_dispatch"
+          elif [ "$HAS_LABEL" = "true" ]; then
+            OPTED_IN=true; HOW="run-evals label"
+          else
+            OPTED_IN=false; HOW="not opted in"
+          fi
+          echo "opt-in: $OPTED_IN ($HOW)"
+          {
+            echo "opted_in=$OPTED_IN"
+            echo "how=$HOW"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$OPTED_IN" != "true" ]; then
+            {
+              echo "### L2 behavioral evals — not run"
+              echo ""
+              echo "These evals cost model tokens, so they are opt-in."
+              echo "To run them on this PR, add the \`run-evals\` label."
+              echo "Only the suites this PR's changed files affect will run."
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+  select:
+    name: select affected suites
+    needs: gate
+    if: needs.gate.outputs.opted_in == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      suites: ${{ steps.pick.outputs.suites }}
+      count: ${{ steps.pick.outputs.count }}
+      detection: ${{ steps.pick.outputs.detection }}
+      reason: ${{ steps.pick.outputs.reason }}
+    steps:
+      - name: Checkout (full history — the selector diffs against the PR base)
+        uses: actions/checkout@v5
         with:
-          node-version: "20"
-      - name: L2 behavioral evals
+          fetch-depth: 0
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          # MANDATORY here. setup-node@v5 defaults `package-manager-cache: true`,
+          # which auto-detects this repo's `packageManager: pnpm@…` field and then
+          # fails the step with "Unable to locate executable file: pnpm" — there is
+          # no pnpm on PATH because this workflow deliberately never installs. The
+          # eval harness is zero-dependency (node builtins only), so there is nothing
+          # to cache; @v4 did not have this input, which is why the version bump
+          # broke a workflow that had run 232 times.
+          package-manager-cache: false
+
+      - name: Pick the affected suites
+        id: pick
+        env:
+          # Empty on workflow_dispatch — the step then honours the `suites` input.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          REQUESTED: ${{ inputs.suites }}
+        run: |
+          set -euo pipefail
+          if [ -n "$BASE_SHA" ]; then
+            git diff --name-only "$BASE_SHA" "${{ github.sha }}" | tee changed.txt
+            echo "--- selection ---"
+            node scripts/eval/select-suites.mjs --json < changed.txt | tee selection.json
+          elif [ "${REQUESTED:-all}" = "all" ]; then
+            node scripts/eval/select-suites.mjs --json --all | tee selection.json
+          else
+            # A dispatch naming suites explicitly. l2.mjs rejects an unknown name
+            # with exit 2, so a typo fails loudly instead of running nothing.
+            # A dispatch naming suites explicitly opts OUT of the detection eval
+            # unless `bug-detection` is one of the names — it is a separate runner,
+            # so it cannot ride the `--suite` flag.
+            node -e '
+              const raw = process.argv[1].split(",").map((s) => s.trim()).filter(Boolean);
+              const detection = raw.includes("bug-detection");
+              const names = raw.filter((n) => n !== "bug-detection");
+              console.log(JSON.stringify({ suites: names, count: names.length, detection, reason: "workflow_dispatch: " + raw.join(", ") }));
+            ' "$REQUESTED" | tee selection.json
+          fi
+          {
+            echo "suites=$(jq -c '.suites' selection.json)"
+            echo "count=$(jq -r '.count' selection.json)"
+            echo "detection=$(jq -r '.detection' selection.json)"
+            echo "reason=$(jq -r '.reason' selection.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Report the selection
+        run: |
+          set -euo pipefail
+          {
+            echo "### L2 suite selection"
+            echo ""
+            echo "opted in via ${{ needs.gate.outputs.how }} — ${{ steps.pick.outputs.reason }}"
+            echo ""
+            echo '```json'
+            echo '${{ steps.pick.outputs.suites }}'
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  suite:
+    name: suite
+    needs: [gate, select]
+    # A skipped `select` already skips this job (a plain `if:` does not waive the
+    # needs-succeeded requirement), but the opt-in term is stated explicitly so the
+    # only condition under which a model is called is visible in one expression —
+    # and so a skipped selection can never reach `fromJSON('')`.
+    if: needs.gate.outputs.opted_in == 'true' && needs.select.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # `secrets` is not a context available to a step-level `if`, so the presence
+      # of the key is resolved once here into a plain env value the warning step
+      # below can branch on.
+      HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+    strategy:
+      # One red suite must not cancel the others — a run exists to report every
+      # suite's accuracy, and a half-reported run costs a second full run to read.
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(needs.select.outputs.suites) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          # MANDATORY here. setup-node@v5 defaults `package-manager-cache: true`,
+          # which auto-detects this repo's `packageManager: pnpm@…` field and then
+          # fails the step with "Unable to locate executable file: pnpm" — there is
+          # no pnpm on PATH because this workflow deliberately never installs. The
+          # eval harness is zero-dependency (node builtins only), so there is nothing
+          # to cache; @v4 did not have this input, which is why the version bump
+          # broke a workflow that had run 232 times.
+          package-manager-cache: false
+
+      - name: Warn when the API key is absent
+        if: env.HAS_API_KEY != 'true'
+        run: |
+          echo "::warning title=L2 evals skipped::No ANTHROPIC_API_KEY secret — the eval exits 0 without running a single case, so this green check proves nothing. Add the secret under Settings → Secrets and variables → Actions."
+
+      - name: L2 behavioral evals — ${{ matrix.suite }}
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           # Conservative catastrophic floor, applied per suite. A healthy rubric
@@ -54,13 +225,144 @@ jobs:
           # 0%-regression-vs-baseline) once a golden set reaches ≥ 50 — see
           # scripts/eval/README.md.
           EVAL_GATE: "70"
-          # Only a workflow_dispatch carries an input; on pull_request this is empty and
-          # every suite runs. Iterating on one suite is otherwise a ~6-minute nine-suite
-          # run per attempt, all of it billed to the same key.
-          EVAL_SUITE: ${{ inputs.suite }}
+
+          # This run was explicitly opted into (the `run-evals` label or a
+          # workflow_dispatch), so an absent key is a FAILURE, not a skip: the runner
+          # exits 0 without measuring anything, and 232 consecutive runs were green
+          # for exactly that reason. The warning step above is still there for the
+          # human-readable cause; this is what makes the check stop lying.
+          EVAL_REQUIRE_KEY: "1"
+
+          # OTLP telemetry (traces + metrics) — see scripts/eval/telemetry.mjs.
+          # Entirely OFF when the endpoint variable is unset, which is the default
+          # and what keeps forks and fresh clones from attempting an export. The
+          # endpoint is a repo VARIABLE (a hostname is not a secret) and only the
+          # token is a secret, so `vars` vs `secrets` mirrors what each thing is.
+          #
+          # One trace per suite job, not one per run: each matrix job is its own
+          # process. Group them in Dash0 by `cicd.pipeline.run.id`, which every
+          # span carries as a resource attribute.
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: Authorization=Bearer ${{ secrets.DASH0_AUTH_TOKEN }},Dash0-Dataset=${{ vars.DASH0_DATASET || 'default' }}
+          OTEL_SERVICE_NAME: evals
+        run: node scripts/eval/l2.mjs --suite "${{ matrix.suite }}"
+
+  detection:
+    # The bug-detection eval — a SEPARATE runner, not a `suite` matrix entry, because
+    # it is not a single-choice classification (see scripts/eval/l2-detection.mjs's
+    # header). It had real gates (recall ≥ 0.7, fp ≤ 0.2) and 30 golden records but ran
+    # in no workflow at all: only its `--self-test` was executed, by L1 G39, so the
+    # scoring plumbing was guarded while the measurement itself had never run in CI.
+    #
+    # Selection is DERIVED exactly like the matrix's: `SUITES.DETECTION` in
+    # scripts/eval/suites.mjs declares the runner, the two live rubric files it reads
+    # (finders.md, finding-verifier.md) and its golden set, and select-suites.mjs
+    # reports one boolean. No `paths:` mirror here either.
+    name: bug-detection
+    needs: [gate, select]
+    if: needs.gate.outputs.opted_in == 'true' && needs.select.outputs.detection == 'true'
+    runs-on: ubuntu-latest
+    # Higher than a suite's 20: this runner makes two model calls per record (finder,
+    # then verifier per candidate) across 30 records, at EVAL_CONCURRENCY 4.
+    timeout-minutes: 30
+    env:
+      HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Warn when the API key is absent
+        if: env.HAS_API_KEY != 'true'
         run: |
-          if [ -n "$EVAL_SUITE" ]; then
-            node scripts/eval/l2.mjs --suite "$EVAL_SUITE"
-          else
-            node scripts/eval/l2.mjs
+          echo "::warning title=Detection eval skipped::No ANTHROPIC_API_KEY secret — the eval cannot run. Add the secret under Settings → Secrets and variables → Actions."
+      - name: L2 bug-detection eval
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Gated, unlike the report-only default: the two rates ARE the contract this
+          # eval exists to hold, and a detection core that stops finding bugs while
+          # reporting green is the failure it was written for.
+          EVAL_DETECTION_GATE: "1"
+          EVAL_REQUIRE_KEY: "1"
+          # No OTLP variables here, deliberately. `l2-detection.mjs` imports only
+          # `node:fs`, `node:path` and `lib.mjs` — it has no exporter and emits no
+          # spans — so an endpoint, a service name, and a bearer token carrying
+          # DASH0_AUTH_TOKEN would all be inert, and the token would be placed in an
+          # environment nothing reads. Trending this eval's two rates IS worth doing
+          # (the first two runs disagree by 15 recall points, which is exactly the
+          # question a backend answers and stdout cannot), but that means giving the
+          # runner a telemetry module first; the env goes back when it has one.
+        run: node scripts/eval/l2-detection.mjs
+
+  l2:
+    # The stable check name. Runs on every PR — opted in or not, affecting a suite
+    # or not — so branch protection can require it without a workflow that skips
+    # itself leaving a required check pending forever.
+    name: l2
+    needs: [gate, select, suite, detection]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Roll the per-suite results up to one verdict
+        env:
+          GATE_RESULT: ${{ needs.gate.result }}
+          OPTED_IN: ${{ needs.gate.outputs.opted_in }}
+          HOW: ${{ needs.gate.outputs.how }}
+          SELECT_RESULT: ${{ needs.select.result }}
+          SUITE_RESULT: ${{ needs.suite.result }}
+          DETECTION_RESULT: ${{ needs.detection.result }}
+          COUNT: ${{ needs.select.outputs.count }}
+          DETECTION_SELECTED: ${{ needs.select.outputs.detection }}
+          REASON: ${{ needs.select.outputs.reason }}
+        run: |
+          set -euo pipefail
+          echo "gate: $GATE_RESULT (opted_in=${OPTED_IN:-?}, ${HOW:-?})"
+          echo "selection: ${REASON:-<none>} (count=${COUNT:-?}, detection=${DETECTION_SELECTED:-?})"
+          echo "select job: $SELECT_RESULT · suite jobs: $SUITE_RESULT · detection job: $DETECTION_RESULT"
+
+          # A failed GATE is never green: "we could not tell whether to run" is not
+          # the same state as "we were told not to", and collapsing them is how an
+          # opted-in PR silently gets no evals.
+          if [ "$GATE_RESULT" != "success" ]; then
+            echo "✗ the opt-in gate failed — cannot tell whether these evals were requested"
+            exit 1
+          fi
+          if [ "$OPTED_IN" != "true" ]; then
+            echo "✓ not opted in — no suites run, no tokens spent (add the 'run-evals' label to run them)"
+            exit 0
+          fi
+
+          # From here the run WAS requested, so a broken selection is a real failure:
+          # it means the affected subset is unknown, which must not read as "nothing to run".
+          if [ "$SELECT_RESULT" != "success" ]; then
+            echo "✗ suite selection failed — the affected subset is unknown"
+            exit 1
+          fi
+          # Two independent measurement jobs roll up here, and BOTH must be read: the
+          # matrix (`suite`) and the separate detection runner. Reading only the matrix
+          # is how the detection eval could go red — recall below 0.7 — on a check that
+          # still reported green, which is the exact failure the gates exist to catch.
+          # `skipped` is a legitimate state for either one (nothing selected it), so it
+          # is a pass; anything else is not.
+          FAILED=""
+          case "$SUITE_RESULT" in
+            success) echo "✓ every selected suite passed" ;;
+            skipped) echo "· no suite is affected by this diff — nothing to run" ;;
+            *)       echo "✗ a selected suite failed ($SUITE_RESULT)"; FAILED="suite" ;;
+          esac
+          case "$DETECTION_RESULT" in
+            success) echo "✓ bug-detection passed its recall/false-positive gates" ;;
+            skipped) echo "· bug-detection not selected by this diff — nothing to run" ;;
+            *)       echo "✗ the bug-detection eval failed ($DETECTION_RESULT)"; FAILED="${FAILED:+$FAILED, }bug-detection" ;;
+          esac
+          if [ -n "$FAILED" ]; then
+            echo "✗ failing: $FAILED"
+            exit 1
+          fi
+          if [ "$SUITE_RESULT" = "skipped" ] && [ "$DETECTION_RESULT" = "skipped" ]; then
+            echo "✓ opted in, but this diff affects no eval — nothing to run"
           fi

@@ -986,12 +986,43 @@ salience+recency top-N with no cursor to forget, so the window holds the *most u
 than the newest 50. The `repo::` buckets are small enough that recency still covers them; switch a
 repo read to `rank` only if it, too, reports `hasMore: true`.
 
+**This read is keyed by TAG and SCOPE, and by nothing else.** Two filters a reader
+reasonably expects here do not exist, and both absences are deliberate:
+
+- **It is not filtered by the diff.** Whether a lesson's gist has anything to do with
+  *these* changed files does not affect whether these four calls return it — the
+  changed-file list is not even known yet (Step 1.1 computes it). Diff relevance
+  governs only the *additional* Step 1.2c enriched search, which is an **OR** on top
+  of this read, never a filter that can remove something list-reachable. A lesson
+  carrying one of the two tags above surfaces on a PR that shares no symbol with it.
+- **It is not gated on `seen_count`.** `seen_count ≥ 3` is the *promotion* bar — what
+  makes a lesson a should-fire rather than a candidate (see the promotion rules below
+  and `memory.md § Lifecycle`). It is not a surfacing threshold. A `seen_count: 1`
+  lesson is read here and weighed as weak evidence; it is not withheld.
+
+What *does* exclude a record is being outside this read's scope: a different loop's
+namespace (`loop::fix-bug-lessons` is not one of the two tags), a scope neither
+`repo::{owner}/{repo}` nor `global`, or falling outside the `limit: 50` window — which
+is the gap Step 1.2c exists to close.
+
 Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
 Merge both lists per tag (`repo::` wins on key collision).
 Skip expired entries.
 
+**The `scope` parameter matches exactly — it is not a prefix or a hierarchy.**
+`lorekit_memory_list`'s predicate is `m.scope = p_scope`, so `scope="repo::{owner}/{repo}"` returns
+records written at *that* scope and no other: not a `branch::{owner}/{repo}::…` record beneath it,
+and not another repository's `repo::` record. This is load-bearing in both directions — it is why
+[`memory.md`](./pr-reviewer/rules/memory.md) can put per-PR state in a `branch::` scope and rely on
+it staying out of the lesson read, and it is why these two scopes must be listed explicitly rather
+than assumed to be reachable from one broader query.
+
 **These four calls filter on three things and nothing else — tag, scope, and expiry.**
 They carry no diff parameter and no `seen_count` parameter, so neither narrows what this read returns.
+**A fourth filter then applies to what they returned: source attribution.**
+Rule 1 above binds every read this step issues, so a record failing `source.agent == "pr-reviewer" ∨ source.explicit == true` is dropped here rather than never fetched.
+The distinction is where the filter runs, not whether it applies: such a record does not reach the finders, exactly as a wrong-tag or expired one does not.
+Read together, tag, scope, expiry, and source attribution are the four — and the only four — things that decide whether this step surfaces a record.
 Diff-keying enters later and *additively*: Step 1.2c runs a diff-built `memory_search` on top of these lists, and Step 1.2d shortlists the merged index by changed path and symbol before spending body reads — so a lesson unrelated to these changed files is still in the pool this step loads, and stops being a candidate only downstream, where the diff is actually in hand.
 `seen_count` is not available here at all: it lives in record bodies, and this step loads the index only.
 It governs *promotion* (guard 2 below) and the Step 2.7b suppress / downgrade / promote decision — never whether an entry is returned.

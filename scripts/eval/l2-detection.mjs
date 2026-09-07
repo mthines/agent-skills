@@ -288,7 +288,13 @@ if (SELF_TEST) {
 
 // ── Main ────────────────────────────────────────────────────────────────────────────────────────
 
+// Same rule as l2.mjs: a fork or a fresh clone skips, a run someone asked for fails.
+// Exiting 0 with no key is what let 232 L2 runs report green having measured nothing.
 if (!KEY) {
+  if (process.env.EVAL_REQUIRE_KEY === "1") {
+    console.error("✗ L2-detection: EVAL_REQUIRE_KEY is set but ANTHROPIC_API_KEY is empty — this run was asked for and cannot measure anything. Failing instead of exiting 0.");
+    process.exit(3);
+  }
   console.log("⊘ L2-detection: no ANTHROPIC_API_KEY — skipping (this is an LLM eval; set the key to run).");
   process.exit(0);
 }

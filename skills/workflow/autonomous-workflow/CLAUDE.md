@@ -308,11 +308,24 @@ instructions.
 Every task starts with tier detection. The decision changes which artifacts are
 produced, which companions run, and whether the planner→executor split is used.
 
-| Tier      | Criteria                                      | Artifacts | Who runs it             | Companions                                   |
-| --------- | --------------------------------------------- | --------- | ----------------------- | -------------------------------------------- |
-| **Full**  | 4+ files OR complex / architectural / unfamiliar | Required  | planner → executor (split) | All applicable                            |
-| **Lite**  | 2–3 files AND simple                          | None      | single-pass             | Phase 0/2, Phase 5 docs, Phase 6 create-pr   |
-| **Micro** | 1 file, purely mechanical (typo/copy/bump)    | None      | single-pass             | none (docs only if drift)                    |
+The criteria live in **[`SKILL.md` Step 1](./SKILL.md#step-1-detect-workflow-mode-mandatory)**
+and nowhere else — see "exactly one home" below. What this section owns is the
+*shape* of that decision, which is what a reader of the design intent needs:
+
+- It is a **four-question walk**, not a lookup. The first `yes` selects the tier,
+  and the table below the walk only *describes* its outcomes — where the two seem
+  to disagree, the walk wins. That asymmetry is stated in Step 1 itself because the
+  `tier-routing` L2 suite's misses were readers resolving the table against the
+  walk and picking the table.
+- **Complexity is the primary signal; file count is the tie-breaker.** Questions 1
+  and 2 (architectural / cross-cutting; unfamiliar code *or* an unknown cause or
+  location) fire before the 4+-file question, so an investigation whose eventual
+  patch might be one line is still Full — tiering on the *guessed* size of the
+  patch is exactly what those two questions exist to prevent.
+- **Micro requires one file *and* nothing to reason about.** A one-file change
+  carrying non-trivial logic is Lite. The `OR` in question 4 is load-bearing.
+- Who runs it: Full is the planner → executor split (artifacts required), Micro
+  and Lite are single-pass with no artifacts.
 
 When in doubt, choose the heavier tier. Micro/Lite are for genuinely small
 changes — not for "the user said it's small." **Phase 0 and Phase 2 are
@@ -964,6 +977,33 @@ end-user-facing; this file is contributor-facing.
 ---
 
 ## History
+
+- **v3.26.0** — Step 1's tier walk says out loud which of its two halves wins,
+  after the `tier-routing` L2 suite measured 25/30 with **all five misses
+  under-tiering** (a `Full` labelled `Lite`, four `Lite` labelled `Micro`). The
+  scorer was ruled out first, empirically: the run prints each miss's raw reply,
+  and those replies show the model filling in the `MODE SELECTION:` block with a
+  considered tier, not a parse artifact. So the rubric was the defect, in three
+  specific places:
+  - **The walk and the table could disagree, and the table read as the
+    authority.** Q4 says "2–3 files, **OR** any non-trivial logic change ⇒ Lite"
+    while the table's Lite row said "2–3 files AND simple" — a one-file logic
+    change satisfies the walk and fails the row. Step 1 now states that **the
+    walk decides and the table only describes its outcomes**, and the Lite row
+    carries the one-file case explicitly.
+  - **Micro's bar was one condition, not two.** "1 file, purely mechanical" reads
+    as a file count with a parenthetical; it is now "1 file **and** purely
+    mechanical", with the three worked examples (add a prop and forward it, add a
+    behaviour-changing CLI flag, debounce an input) that are Lite at one file.
+  - **Q2 covered unfamiliar *code* but not an unknown *location*.** A task whose
+    cause or file set is unknown until it is investigated was being tiered on the
+    guessed size of the eventual patch. Q2 now names the investigation case and
+    the Full row says "cause or location unknown".
+  The design-intent copy of the tier table in this file is **gone** — it had
+  drifted to contradict Step 1 on both the Lite and the Full row, which is the
+  exact failure the "exactly one home" rule below exists to prevent, and it sat
+  30 lines above that rule. This section now carries the decision's *shape* and
+  links Step 1 for the criteria.
 
 - **v3.25.0** — Dispatch availability is a capability, not a tool name; and
   `aw`'s review recovery stops re-running the dispatch that just failed. Field

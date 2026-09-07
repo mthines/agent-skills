@@ -3,7 +3,7 @@
 // These assert the *mechanical contracts* the skills promise. Run in CI.
 //   node scripts/eval/l1.mjs
 // Exits non-zero if any check fails.
-import { execSync, spawnSync } from "node:child_process";
+import { execFileSync, execSync, spawnSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1358,11 +1358,32 @@ function checksInSync(plan, checks) {
 {
   const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
 
-  const l2 = read("scripts/eval/l2.mjs");
+  // The suite table lives in `suites.mjs`, not `l2.mjs` — both `l2.mjs` (which runs the
+  // suites) and `select-suites.mjs` (which maps changed files onto them) need the same
+  // table, and a second parse of it would be the drift surface. These guards therefore
+  // assert against the file that OWNS the table: pointing them at `l2.mjs` after the move
+  // would have left every one of them green and vacuous, matching nothing in a file that
+  // no longer declares a suite. The runner is read separately, under its own name, for the
+  // guards that are genuinely about the runner rather than the table.
+  const l2 = read("scripts/eval/suites.mjs");
+  const l2runner = read("scripts/eval/l2.mjs");
   const golden = read("scripts/eval/golden/code-review-retrieval-relevance.jsonl");
   const notes  = read("scripts/eval/golden/code-review-retrieval-relevance.NOTES.md");
   const l2yml  = read(".github/workflows/evals-l2.yml");
   const readme = read("scripts/eval/README.md");
+
+  // Every shipped suite's rubric declaration, parsed LIVE out of the table so both
+  // consumers below (G21d's no-mirror half, G21g's extraction check) read the same
+  // set and neither can drift from the suites that actually ship.
+  //
+  // The alternation covers BOTH declaration shapes — a single `section:` and the
+  // multi-section `sections: [...]` form — and matches each suite exactly ONCE, which
+  // is what the parity check at the end of this block depends on. A `section:`-only
+  // regex silently dropped every multi-section suite: the mirror check below then
+  // stopped asserting that suite's rubric file, and the parity count went 9 vs 8.
+  const SUITES_TABLE = [...l2.matchAll(
+    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*(?:section:\s*(null|"([^"]+)")|sections:\s*\[[^\]]*\])\s*,?\s*\}/g,
+  )];
 
   // G21a: l2.mjs SUITES contains the new suite entry with the D1 rubric file + section.
   // Scoped to the code-review-retrieval-relevance suite object so the file/section
@@ -1376,7 +1397,7 @@ function checksInSync(plan, checks) {
   // answers a different question from the one this suite's goldens label, which is what put
   // the suite at 3/5 against a 70% floor. Asserting the two literals here means a silent
   // widening back to the parent reds L1 rather than only the paid L2 run.
-  s.check("G21a l2.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + sections)",
+  s.check("G21a suites.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + sections)",
     d1Suite.includes("agents/pr-reviewer.md") &&
     d1Suite.includes("### 1.0 Prior-comment awareness + relevance memory load (default ON)") &&
     d1Suite.includes("### 1.2c Diff-keyed lesson search (all modes)") &&
@@ -1396,9 +1417,338 @@ function checksInSync(plan, checks) {
   s.check("G21c loud BOOTSTRAP marker literal is present in the NOTES file",
     notes.includes("BOOTSTRAP SEED — NOT A REAL BASELINE"));
 
-  // G21d: evals-l2.yml paths lists agents/pr-reviewer.md (the live rubric source for the new suite).
-  s.check("G21d evals-l2.yml paths lists agents/pr-reviewer.md",
-    l2yml.includes("agents/pr-reviewer.md"));
+  // G21d: evals-l2.yml DERIVES its suite selection instead of mirroring the rubric
+  // files in a `paths:` filter. The mirror is what drifted — four of nine rubric
+  // files were absent from it (severity, optimality, depth-routing, rubric-composition),
+  // so editing those rubrics never ran their own eval, and two listed paths backed no
+  // suite at all. Asserting the derivation (the selector is invoked, the matrix drives
+  // `--suite`) is what makes that class of drift unrepresentable; a re-added rubric-path
+  // list is caught by the negative half below.
+  s.check("G21d evals-l2.yml derives the affected suites from the selector, not a paths mirror",
+    l2yml.includes("scripts/eval/select-suites.mjs") &&
+    l2yml.includes("--suite") &&
+    l2yml.includes("fromJSON(needs.select.outputs.suites)"));
+  const rubricFilesInYml = SUITES_TABLE
+    .map((m) => m[1])
+    .filter((f) => l2yml.includes(f));
+  s.check("G21d evals-l2.yml carries no hand-maintained mirror of the suites' rubric files",
+    rubricFilesInYml.length === 0,
+    rubricFilesInYml.length ? `still listed: ${rubricFilesInYml.join(", ")}` : "");
+
+  // G21h: the selector's own self-test. It asserts the MAPPING derived from the table
+  // (each suite is selected by its rubric file and by its golden file; a harness file
+  // selects all; an unrelated or near-miss path selects none; output is table-ordered),
+  // so adding a suite extends the coverage rather than aging the assertion. Executing
+  // it here is the difference between a selector that is documented to be right and one
+  // that is checked — a narrowing bug hides itself, because a suite that never ran
+  // reports as a green PR exactly like a suite that passed.
+  {
+    const SELECT = join(REPO_ROOT, "scripts/eval/select-suites.mjs");
+    const r = spawnSync("node", [SELECT, "--self-test"], { encoding: "utf8" });
+    s.check("G21h the suite selector's self-test passes", r.status === 0,
+      (r.stderr || r.stdout || "").trim().split("\n").slice(0, 6).join(" / "));
+
+    // The runner must reject an unknown --suite loudly. CI drives that flag from a
+    // generated matrix, so a run-nothing-exit-0 would report a typo as a passing eval.
+    const bad = spawnSync("node", [join(REPO_ROOT, "scripts/eval/l2.mjs"), "--suite", "no-such-suite"],
+      { encoding: "utf8", env: { ...process.env, ANTHROPIC_API_KEY: "" } });
+    s.check("G21h l2.mjs exits non-zero on an unknown --suite name", bad.status !== 0,
+      `exit ${bad.status}`);
+    s.check("G21h l2.mjs imports the shared suite table rather than declaring its own",
+      /import\s*\{[^}]*SUITES[^}]*\}\s*from\s*"\.\/suites\.mjs"/.test(l2runner) &&
+      !/^const SUITES = \[/m.test(l2runner));
+  }
+
+  // G21i: the opt-in gate. These evals cost model tokens per case, so a suite job
+  // must be reachable ONLY through an explicit ask (the PR label or a dispatch) —
+  // and the aggregator must still run on every PR, because dropping the
+  // `pull_request` trigger to make the workflow manual leaves a required check
+  // pending forever. Both halves are asserted: the gate exists AND the check does
+  // not depend on it firing.
+  {
+    // The label literal is EXTRACTED from the workflow, never re-encoded here, so
+    // this guard cannot pass against a workflow that renamed it
+    // (aw-lessons::mock-that-reimplements-the-thing-under-test).
+    const label = (l2yml.match(
+      /contains\(github\.event\.pull_request\.labels\.\*\.name,\s*'([^']+)'\)/,
+    ) || [])[1];
+    s.check("G21i evals-l2.yml resolves the opt-in from a PR label", Boolean(label),
+      "no contains(...labels.*.name, '<label>') expression found");
+
+    if (label) {
+      // The only path to a model call is an opted-in run. Asserted on the suite
+      // job's own `if`, so a re-added unconditional matrix fails here.
+      const suiteIf = (l2yml.match(/^\s{2}suite:[\s\S]*?^\s{4}if:\s*(.+)$/m) || [])[1] || "";
+      s.check("G21i the suite jobs run only on an opted-in run",
+        suiteIf.includes("needs.gate.outputs.opted_in == 'true'"), `suite if: ${suiteIf.trim()}`);
+
+      // …and the requireable check is NOT gated on the opt-in, or every
+      // non-opted-in PR would wait on a check that never runs.
+      const l2If = (l2yml.match(/^\s{2}l2:[\s\S]*?^\s{4}if:\s*(.+)$/m) || [])[1] || "";
+      s.check("G21i the aggregator check runs on every PR, opted in or not",
+        l2If.trim() === "always()", `l2 if: ${l2If.trim()}`);
+      s.check("G21i evals-l2.yml still triggers on pull_request (a manual-only trigger hangs a required check)",
+        /^on:[\s\S]*?^\s{2}pull_request:/m.test(l2yml));
+
+      // The label is an instruction to a human, so it has to be documented under
+      // the name the workflow actually reads.
+      s.check(`G21i the '${label}' opt-in label is documented in the eval README`,
+        readme.includes(label));
+    }
+  }
+
+  // G21j: every suite's `choices` are EXERCISED by its golden set, both directions.
+  // This is the one mechanically-checkable half of the eval-maintenance obligation
+  // (CLAUDE.md § Keeping the evals honest): a decision surface that gains an option
+  // — a fourth tier, a tenth bug class, a new severity — is untested for that option
+  // by construction until a golden case carries it, and nothing else in the pipeline
+  // notices. The reverse direction catches the more dangerous edit: RENAMING a choice
+  // in suites.mjs leaves every existing label unmatchable, so the suite scores 0% and
+  // reads as a catastrophic rubric regression rather than the label mismatch it is.
+  // All nine suites cover every choice today, so this is a ratchet, not a baseline.
+  {
+    const suiteBlocks = [...l2.matchAll(
+      /name:\s*"([^"]+)",\s*\n\s*golden:\s*"([^"]+)"[\s\S]*?choices:\s*\[([^\]]*)\]/g,
+    )];
+    s.check("G21j parsed every shipped suite's golden + choices pair from suites.mjs",
+      suiteBlocks.length === SUITES_TABLE.length,
+      `${suiteBlocks.length} name/golden/choices blocks vs ${SUITES_TABLE.length} rubric entries`);
+
+    for (const [, name, goldenRel, choicesRaw] of suiteBlocks) {
+      const choices = [...choicesRaw.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+      const goldenAbs = join(REPO_ROOT, "scripts/eval", goldenRel);
+      if (!existsSync(goldenAbs)) {
+        s.check(`G21j ${name}: golden file exists`, false, goldenRel);
+        continue;
+      }
+      const labels = readFileSync(goldenAbs, "utf8").split("\n").filter(Boolean)
+        .map((l) => { try { return JSON.parse(l).expected; } catch { return null; } });
+      const seen = new Set(labels.filter(Boolean));
+      const uncovered = choices.filter((c) => !seen.has(c));
+      const unknown = [...seen].filter((e) => !choices.includes(e));
+      s.check(`G21j ${name}: every choice has at least one golden case`,
+        uncovered.length === 0, uncovered.length ? `no case labelled: ${uncovered.join(", ")}` : "");
+      s.check(`G21j ${name}: every golden label is one of the suite's choices`,
+        unknown.length === 0, unknown.length ? `label not in choices: ${unknown.join(", ")}` : "");
+    }
+  }
+
+  // G21k: eval telemetry. A run is a tree with a token price on every leaf, and
+  // stdout can answer "what was today's accuracy" but never "has this rubric been
+  // drifting for three weeks" or "which suite is eating the budget" — both are trend
+  // questions and need a backend. The contracts worth mechanising are the ones a
+  // future edit would break silently:
+  //
+  //   1. OFF by default. An unset OTEL_EXPORTER_OTLP_ENDPOINT must mean no export
+  //      attempt at all, or every contributor's local run starts failing DNS.
+  //   2. A MISS is not a span error. A wrong answer is the measurement; only a
+  //      transport/API failure sets ERROR. Conflate them and every rubric regression
+  //      shows up in the trace list as an outage.
+  //   3. The flush happens BEFORE the gate exit. A red run is the one you most want
+  //      to look at, so it must ship its own trace — asserted positionally, since a
+  //      later refactor that moves the exit up would lose exactly that trace.
+  //   4. Export failure never changes the verdict. The accuracy is the product; the
+  //      span is the receipt.
+  {
+    const telRel = "scripts/eval/telemetry.mjs";
+    const telAbs = join(REPO_ROOT, telRel);
+    s.check("G21k the eval telemetry module exists", existsSync(telAbs));
+    if (existsSync(telAbs)) {
+      const tel = read(telRel);
+      const r = spawnSync(process.execPath, [telAbs, "--self-test"], { encoding: "utf8" });
+      s.check("G21k the telemetry self-test passes (OTLP encoding, span tree, metric shapes)",
+        r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 200));
+
+      s.check("G21k telemetry is off unless an OTLP endpoint is configured",
+        /this\.enabled\s*=\s*this\.endpoint\s*!==\s*""/.test(tel));
+      s.check("G21k a disabled harness hands back a no-op span so callers need no conditional",
+        /if\s*\(!this\.enabled\)\s*return\s*\{\s*spanId:\s*null/.test(tel));
+      s.check("G21k flush never throws — it reports the failure and returns",
+        /console\.error\(`⚠ telemetry export failed/.test(tel) && /async flush\(\)/.test(tel));
+
+      // l2.mjs is the only producer today; assert the wiring rather than trusting it.
+      s.check("G21k l2.mjs imports the telemetry harness", /from "\.\/telemetry\.mjs"/.test(l2runner));
+      s.check("G21k l2.mjs opens a run span, a suite span and a per-case span",
+        /T\.span\("eval\.run"/.test(l2runner)
+        && /T\.span\(`eval\.suite \$\{suite\.name\}`/.test(l2runner)
+        && /T\.span\(`eval\.case \$\{c\.id\}`/.test(l2runner));
+      s.check("G21k a case MISS ends the span normally; only an API error fails it",
+        /if\s*\(apiError\)\s*caseSpan\.fail\(apiError,\s*caseAttrs\);\s*else\s*caseSpan\.end\(caseAttrs\)/.test(l2runner));
+      s.check("G21k the per-case span carries expected, actual and match",
+        /"eval\.case\.expected"/.test(l2runner) && /"eval\.case\.actual"/.test(l2runner) && /"eval\.case\.match"/.test(l2runner));
+      s.check("G21k token usage is recorded under the upstream gen_ai semantic conventions",
+        /"gen_ai\.usage\.input_tokens"/.test(l2runner) && /gen_ai\.client\.token\.usage/.test(l2runner));
+
+      const flushAt = l2runner.indexOf("await T.flush()");
+      const gateExitAt = l2runner.indexOf("anyBelowGate) {");
+      s.check("G21k the telemetry flush precedes the gate exit, so a FAILING run still ships its trace",
+        flushAt > 0 && gateExitAt > flushAt, `flush@${flushAt} gate-exit@${gateExitAt}`);
+
+      // CI half: the workflow must pass the OTLP config through, or the whole thing
+      // is dead code on the only surface that runs it unattended.
+      s.check("G21k evals-l2.yml forwards the OTLP endpoint and headers to the suite job",
+        /OTEL_EXPORTER_OTLP_ENDPOINT:/.test(l2yml) && /OTEL_EXPORTER_OTLP_HEADERS:/.test(l2yml));
+      s.check("G21k the OTLP endpoint comes from a repo variable and the token from a secret",
+        /vars\.OTEL_EXPORTER_OTLP_ENDPOINT/.test(l2yml) && /secrets\.DASH0_AUTH_TOKEN/.test(l2yml));
+    }
+
+    // G21l: the SCORER and the GATE. Both decide what a run reports while being
+    // invisible in its output, which is how each of them lied once already: the
+    // earliest-substring parse turned a rubric's `[Micro | Lite | Full]` template
+    // line into a confident `Micro` (five tier-routing misses, all one label), and
+    // a blanket 70% floor applied to a 5-case suite is decided by one coin flip.
+    // Every check here is executed against the runner's real behaviour, not its prose.
+    {
+      // The parse is pulled out of the live source and run, so a rewrite that
+      // reintroduces earliest-wins fails here rather than in a quarterly review.
+      const fnSrc = l2runner.slice(l2runner.indexOf("function parseChoice"), l2runner.indexOf("const summary = []"));
+      let parseChoice = null;
+      try { parseChoice = eval(`(${fnSrc.slice(fnSrc.indexOf("function parseChoice"))})`); } catch { /* reported below */ }
+      s.check("G21l parseChoice is extractable and callable from the live runner", typeof parseChoice === "function");
+      if (typeof parseChoice === "function") {
+        const C = ["Micro", "Lite", "Full"];
+        const amb = (r) => typeof r === "string" && r.startsWith("?(");
+        s.check("G21l a one-word reply parses to that choice",
+          parseChoice("Full", C) === "Full" && parseChoice("  lite ", C) === "Lite");
+        s.check("G21l a reply that ENUMERATES every choice is ambiguous, never the first one",
+          amb(parseChoice("- Tier: [Micro | Lite | Full]", C)) && amb(parseChoice("Micro | Lite | Full", C)),
+          `template→${parseChoice("- Tier: [Micro | Lite | Full]", C)}`);
+        s.check("G21l a structured reply the rubric asked for still parses",
+          parseChoice("MODE SELECTION:\n- Tier: Full", C) === "Full");
+        s.check("G21l a bracketed placeholder is scaffolding, not a second claim",
+          parseChoice("Tier: Full [not Micro]", C) === "Full");
+        s.check("G21l an unparseable reply carries its own raw text for the reader",
+          parseChoice("I decline", C).includes("I decline"));
+
+        // The checks above all use choices where none contains another, so a
+        // containment defect passed them green — and there was one: two live
+        // suites use nested pairs, and every reply but the byte-exact one scored
+        // ambiguous. Probe the nesting itself, in BOTH directions (the contained
+        // choice must still be reachable), and for both live shapes: a substring
+        // inside a word (`optimal` in `suboptimal`) and a hyphenated prefix
+        // (`promoted` in `not-promoted`).
+        const N = ["optimal", "suboptimal"];
+        const P = ["promoted", "not-promoted"];
+        s.check("G21l a choice that CONTAINS another parses to the one that was said",
+          parseChoice("suboptimal.", N) === "suboptimal" &&
+          parseChoice("not-promoted.", P) === "not-promoted",
+          `suboptimal→${parseChoice("suboptimal.", N)} · not-promoted→${parseChoice("not-promoted.", P)}`);
+        s.check("G21l the CONTAINED choice is still reachable, not shadowed by the longer one",
+          parseChoice("optimal.", N) === "optimal" &&
+          parseChoice("promoted.", P) === "promoted",
+          `optimal→${parseChoice("optimal.", N)} · promoted→${parseChoice("promoted.", P)}`);
+        // The documented residue, asserted so it stays a KNOWN trade rather than
+        // drifting into an accident: for a nested pair, containment is the only
+        // evidence available, so an unbracketed enumeration resolves to the longer
+        // choice instead of reading as ambiguous. Pinned here because the fix for
+        // it would be to re-break the line above.
+        s.check("G21l an unbracketed enumeration of a NESTED pair resolves, by design, to the longer choice",
+          parseChoice("optimal | suboptimal", N) === "suboptimal");
+      }
+
+      // A miss line that shows only the parsed label cannot distinguish a wrong
+      // ANSWER from a wrong PARSE — the whole reason the scorer's defect read as a
+      // rubric defect for a full run.
+      // Assert the raw text is the INTERPOLATED VALUE, not merely mentioned: the first
+      // version of this check passed a probe that printed `m.got` in the value slot,
+      // because `m.raw` still appeared in the line's own guard clause.
+      s.check("G21l a miss prints the model's raw reply, not just the parsed choice",
+        /miss \$\{m\.id\}/.test(l2runner) && /reply: «\$\{m\.raw\b/.test(l2runner));
+
+      // Gate calibration: a floor exists, it is case-count-aware, and a suite it
+      // cannot grade is LABELLED rather than dropped from the report.
+      s.check("G21l the gate has a minimum case count, overridable but defaulted",
+        /GATE_MIN_CASES\s*=\s*process\.env\.EVAL_GATE_MIN_CASES\s*\?[\s\S]{0,60}:\s*10/.test(l2runner));
+      s.check("G21l only a suite at or above the case floor can breach the gate",
+        /const gating = GATE !== null && results\.length >= GATE_MIN_CASES/.test(l2runner) &&
+        /if \(gating && acc < GATE\) anyBelowGate = true/.test(l2runner));
+      s.check("G21l a suite below the floor is still reported, and labelled advisory",
+        /advisory/.test(l2runner) && /s\.gating === false/.test(l2runner));
+
+      // The missing-key silent green: an opted-in run must fail, an unasked one skips.
+      s.check("G21l an absent API key FAILS a run that asked for the evals",
+        /EVAL_REQUIRE_KEY === "1"/.test(l2runner) && /process\.exit\(3\)/.test(l2runner));
+      s.check("G21l evals-l2.yml sets EVAL_REQUIRE_KEY, so the opted-in check cannot pass unmeasured",
+        /EVAL_REQUIRE_KEY:\s*"1"/.test(l2yml));
+
+      // Cost: the system block is the rubric, identical across a suite's cases.
+      s.check("G21l the rubric is sent as a cacheable system block",
+        /cache_control: \{ type: "ephemeral" \}/.test(l2runner));
+      s.check("G21l cache reads and writes are accounted separately from plain input",
+        /cache_read_input_tokens/.test(l2runner) && /cache_creation_input_tokens/.test(l2runner) &&
+        /"gen_ai\.token\.type": "cache_read"/.test(l2runner));
+    }
+  }
+
+  // G21m: the bug-detection eval's CI wiring. This runner had real gates
+  // (recall ≥ 0.7, fp ≤ 0.2) and 30 golden records, and ran in NO workflow — only its
+  // `--self-test` executed, by G39, so the scoring plumbing was guarded while the
+  // measurement itself had never once run in CI. Every claim below is the wiring, not
+  // the runner: the inputs are DECLARED in the suite table (so no `paths:` mirror can
+  // reappear), the selector derives one boolean from them, the job consumes that
+  // boolean, and the aggregator READS the job's result — the last of which is the half
+  // that decides whether a red detection run can report green.
+  {
+    const detectionInputsInTable = /export const DETECTION = \{[\s\S]*?runner:\s*"scripts\/eval\/l2-detection\.mjs"[\s\S]*?rubrics:\s*\[[\s\S]*?finders\.md[\s\S]*?finding-verifier\.md[\s\S]*?golden:\s*"scripts\/eval\/golden\/bug-detection\.jsonl"/.test(l2);
+    s.check("G21m the detection eval's inputs are declared in the suite table, next to the suites",
+      detectionInputsInTable);
+
+    // The selector DERIVES from that declaration — it imports the accessor rather than
+    // restating the three paths, which is what makes a renamed rubric impossible to
+    // forget (the same reason the nine suites carry no paths mirror).
+    const selector  = read("scripts/eval/select-suites.mjs");
+    const detRunner = read("scripts/eval/l2-detection.mjs");
+    s.check("G21m the selector imports the declared detection inputs rather than restating them",
+      /import\s*\{[^}]*detectionInputs[^}]*\}\s*from\s*"\.\/suites\.mjs"/.test(selector) &&
+      !/l2-detection\.mjs"/.test(selector.replace(/^\/\/.*$/gm, "")));
+    s.check("G21m the selector reports detection as its own boolean, separate from the matrix",
+      /detection\b/.test(selector) && /detection:\s*result\.detection === true/.test(selector));
+
+    // The negative half of G21d, for the detection job: no rubric path may be spelled
+    // in the workflow.
+    const detPathsInYml = ["scripts/eval/golden/bug-detection.jsonl",
+      "agents/pr-reviewer/rules/finders.md",
+      "agents/shared/rules/finding-verifier.md"].filter((p) => l2yml.includes(p));
+    s.check("G21m evals-l2.yml carries no hand-maintained mirror of the detection eval's inputs",
+      detPathsInYml.length === 0,
+      detPathsInYml.length ? `still listed: ${detPathsInYml.join(", ")}` : "");
+
+    // The job exists, runs only when both the opt-in and the derived boolean say so,
+    // and runs the detection runner — gated and require-key, like the suites.
+    const detJob = (l2yml.match(/^\s{2}detection:[\s\S]*?(?=^\s{2}l2:)/m) || [""])[0];
+    const detIf = (detJob.match(/^\s{4}if:\s*(.+)$/m) || [])[1] || "";
+    s.check("G21m evals-l2.yml has a bug-detection job", detJob.length > 0);
+    s.check("G21m the detection job runs only on an opted-in run whose diff selected it",
+      detIf.includes("needs.gate.outputs.opted_in == 'true'") &&
+      detIf.includes("needs.select.outputs.detection == 'true'"), `detection if: ${detIf.trim()}`);
+    s.check("G21m the detection job runs the detection runner, gated, and cannot pass unmeasured",
+      /node scripts\/eval\/l2-detection\.mjs/.test(detJob) &&
+      /EVAL_DETECTION_GATE:\s*"1"/.test(detJob) &&
+      /EVAL_REQUIRE_KEY:\s*"1"/.test(detJob));
+    s.check("G21m the detection runner FAILS a run that asked for it with no API key",
+      /EVAL_REQUIRE_KEY === "1"/.test(detRunner) && /process\.exit\(3\)/.test(detRunner));
+
+    // The half that decides whether a red run can report green: the requireable check
+    // must both DEPEND on the detection job and branch on its result. `needs` alone is
+    // not enough — the aggregator is `if: always()`, so a failed dependency reaches it
+    // as a value to read, not as a skip.
+    const l2Job = (l2yml.match(/^\s{2}l2:[\s\S]*$/m) || [""])[0];
+    s.check("G21m the aggregator depends on the detection job",
+      /needs:\s*\[[^\]]*\bdetection\b[^\]]*\]/.test(l2Job));
+    // Asserted on the FAILURE PATH, not on the presence of an `exit 1` anywhere in the
+    // job: the gate and selection branches already carry one, so a whole-job
+    // `/exit 1/` stays green against a detection branch that merely prints a note.
+    // (The same defect the G21l raw-reply check had on its first version.)
+    const detCase = (l2Job.match(/case "\$DETECTION_RESULT" in[\s\S]*?esac/) || [""])[0];
+    s.check("G21m the aggregator reads the detection job's result and fails on it",
+      /DETECTION_RESULT:\s*\$\{\{\s*needs\.detection\.result\s*\}\}/.test(l2Job) &&
+      /^\s*\*\)[^\n]*FAILED=/m.test(detCase) &&
+      /if \[ -n "\$FAILED" \][\s\S]{0,120}exit 1/.test(l2Job));
+    // …and `skipped` stays a pass on BOTH jobs, or a PR that affects one eval and not
+    // the other would fail for having nothing to run.
+    s.check("G21m a skipped eval job is a pass, on both the matrix and the detection job",
+      /\bskipped\)/.test(l2Job) && (l2Job.match(/\bskipped\)/g) || []).length >= 2);
+  }
 
   // G21e: README carries the methodology NOTE for this suite (promotion → golden case),
   // not merely the suite table row. Assert on the note's own heading literal so a table
@@ -1406,11 +1756,11 @@ function checksInSync(plan, checks) {
   s.check("G21e README carries the per-suite methodology note (promotion → golden case) for code-review-retrieval-relevance",
     readme.includes("### `code-review-retrieval-relevance` — methodology note"));
 
-  // G21f (regression lock): the six pre-existing suite names are still present in l2.mjs
+  // G21f (regression lock): the six pre-existing suite names are still present in the table
   // (negative half: the edit added, did not replace).
   for (const name of ["tier-routing", "bug-class", "complexity-triage", "aw-should-trigger",
     "optimize-approach-optimality", "reviewer-agreement-bump"]) {
-    s.check(`G21f l2.mjs still contains pre-existing suite '${name}' (add-not-replace)`,
+    s.check(`G21f suites.mjs still contains pre-existing suite '${name}' (add-not-replace)`,
       l2.includes(`name: "${name}"`));
   }
 
@@ -1421,7 +1771,7 @@ function checksInSync(plan, checks) {
   // the model an empty rubric. It runs the SAME shared extractSection l2.mjs feeds the model
   // (imported from lib.mjs), so a regression in that function — e.g. reverting the
   // heading-level-aware cut back to a cut-at-any-heading — fails this guard. The suite list
-  // is parsed live out of l2.mjs so the guard can never drift from the shipped suites.
+  // is parsed live out of suites.mjs so the guard can never drift from the shipped suites.
   const BODY_MIN = 80; // a real rubric body dwarfs this; a bare title never reaches it.
   // The trailing `,?` is load-bearing: without it a suite written `section: "…",` (a trailing
   // comma before the closing brace — legal JS and the house style everywhere else in this
@@ -1445,7 +1795,7 @@ function checksInSync(plan, checks) {
     }
   }
   const suiteCount = [...l2.matchAll(/^\s{4}name:\s*"/gm)].length;
-  s.check("G21g parses a rubric for every suite in l2.mjs (no unrecognised rubric shape)",
+  s.check("G21g parses a rubric for every suite in suites.mjs (no unrecognised rubric shape)",
     suiteCount >= 9 && rubricEntries.length >= suiteCount,
     "a suite's `rubric:` matched neither the `section:` nor the `sections:` parse, so it would"
       + " be silently exempt from the non-empty-body checks below —"
@@ -1465,6 +1815,44 @@ function checksInSync(plan, checks) {
     s.check(`G21g L2 rubric '${section}' in ${file} extracts a non-empty body (> heading line)`,
       extractErr === null && body.length > BODY_MIN,
       extractErr ?? `body length ${body.length} <= ${BODY_MIN}`);
+  }
+
+  // G21n: the golden set's MAJORITY-CLASS BASELINE must sit BELOW the EVAL_GATE floor.
+  //
+  // Numbered G21n, not G21h: this guard arrived on one branch while the suite-selector
+  // self-test arrived on another, both claiming G21h. Two different guards under one ID
+  // makes a red build ambiguous about which contract broke, so the newer one moved.
+  //
+  // A suite whose labels are lopsided grades nothing: at 4 `surface` / 1 `skip` an
+  // always-`surface` responder scored 80% and cleared a 70% floor without reading the
+  // rubric at all, so a green meant only "the model stopped answering skip". Nothing
+  // asserted the split, so the sole detector was a human noticing — and the limitation
+  // stood recorded in CLAUDE.md for two paid CI rounds while both hypotheses under test
+  // were about something else entirely.
+  //
+  // Both operands are GREPPED OUT of the shipped files, never re-encoded here: the labels
+  // from the golden JSONL, and the floor from evals-l2.yml, which is the authority because
+  // l2.mjs defaults GATE to null (report-only) and only CI sets it. Re-encoding either
+  // would let this guard stay green while the thing it guards moved.
+  {
+    const labels = goldenLines.map((ln) => JSON.parse(ln).expected);
+    const tally = new Map();
+    for (const v of labels) tally.set(v, (tally.get(v) ?? 0) + 1);
+    const majority = Math.max(...tally.values());
+    const baseline = (majority / labels.length) * 100;
+    // The floor CI actually enforces. Absent (someone dropped the env line) ⇒ fail closed:
+    // an unknown floor cannot be shown to exceed the baseline.
+    const gateLiteral = (l2yml.match(/EVAL_GATE:\s*"?(\d+)"?/) || [])[1];
+    const gate = gateLiteral === undefined ? null : Number(gateLiteral);
+    const split = [...tally.entries()].map(([k, v]) => `${k}=${v}`).sort().join(" ");
+    s.check("G21n code-review-retrieval-relevance majority-class baseline is below the EVAL_GATE floor",
+      gate !== null && baseline < gate,
+      gate === null
+        ? "no EVAL_GATE literal found in .github/workflows/evals-l2.yml — the floor this"
+          + " baseline must sit under is unknown, so the check fails closed"
+        : `majority-class baseline ${baseline.toFixed(1)}% >= gate ${gate}%`
+          + ` — a single-label responder would clear the floor without reading the rubric`
+          + ` (n=${labels.length}, ${split})`);
   }
 
 }
@@ -5779,6 +6167,172 @@ const isPollBlock = (block) =>
   s.check("G49-lint reports what it scanned",
     Number.isInteger(scanned) && scanned >= 0,
     `whole-file assertions scanned: ${scanned}`);
+}
+
+// ── G50: L2 cost controls — prompt caching + per-PR suite selection ──
+// Two optimisations, both of which fail SILENTLY if they regress: a dropped `cache_control`
+// key still returns correct answers at ~3x the price, and a selector that returns nothing
+// still exits 0 while grading nothing. Neither shows up in a score, so neither is visible in
+// the one output anyone reads. This block asserts the wiring; the run's own token line
+// (`cache read` > 0) is the runtime half.
+//
+// Assertions here are line-anchored (`^` + `m`) or read a bounded slice, per G49-lint's rule —
+// several of them test for the ABSENCE of a pre-change shape, and an unanchored absence test
+// over a whole file is satisfied by any stray occurrence, including one in a comment.
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const l2 = read("scripts/eval/l2.mjs");
+  const sel = read("scripts/eval/select-suites.mjs");
+  const yml = read(".github/workflows/evals-l2.yml");
+
+  // G50a is RETIRED, not missing: executing the selector's `--self-test` is `G21h`'s first
+  // check, and two guards under two IDs asserting one contract makes a red build ambiguous
+  // about which contract broke. The two arrived on separate branches; `G21h` is the survivor
+  // because the rest of its group covers the same workflow surface.
+
+  // G50b: the suite table is imported, never re-parsed. A regex parse of the table inside the
+  // selector is the one shape that reintroduces drift, and it would still pass G21h — the
+  // self-test derives its expectations from `SUITES`, so a parse that agreed with the table
+  // today would satisfy it while being free to disagree tomorrow.
+  // The named-import list is asserted as a SET, not as one literal line: the selector also
+  // imports `HARNESS_FILES` / `goldenPath` / `detectionInputs` from the same module (the
+  // harness set and the detection inputs live next to the suites they are derived from), and
+  // pinning the exact import line would red on any of those being added or reordered while
+  // proving nothing extra. What must hold is that each name comes FROM suites.mjs.
+  {
+    const importLine = sel.match(/^import \{([^}]*)\} from "\.\/suites\.mjs";$/m);
+    const named = importLine ? importLine[1].split(",").map((n) => n.trim()).filter(Boolean) : [];
+    s.check("G50b select-suites.mjs imports the suite table from suites.mjs",
+      named.includes("SUITES"), `named imports: [${named}]`);
+    s.check("G50b select-suites.mjs imports the harness set rather than declaring one",
+      named.includes("HARNESS_FILES") && !/^(export )?const HARNESS_FILES = \[/m.test(sel),
+      `named imports: [${named}]`);
+  }
+  // The selector must never READ `l2.mjs` — a regex re-parse of the runner is the one shape
+  // that reintroduces drift. Strip comments first; the name is legitimate in prose (the
+  // module header explains why the parse was rejected) and nowhere in the code.
+  {
+    const body = sel.replace(/^\s*\/\/.*$/gm, "");
+    s.check("G50b select-suites.mjs does not read or re-parse l2.mjs",
+      !body.includes("l2.mjs"), body.match(/.*l2\.mjs.*/)?.[0]?.trim() ?? "");
+  }
+
+  // G50c: the rubric is sent as a CACHED system block. Both halves matter: the key must be
+  // present, and the pre-change `system,` shorthand (a bare string, re-billed per case) must
+  // be gone. Anchored, because `system:` appears in prose in this file too.
+  s.check("G50c l2.mjs sends the system prompt as an ephemeral cached block",
+    /^\s*system: \[\{ type: "text", text: system, cache_control: \{ type: "ephemeral" \} \}\],$/m.test(l2));
+  s.check("G50c l2.mjs no longer sends the system prompt as a bare uncached string",
+    !/^\s*body: JSON\.stringify\(\{ model: MODEL, max_tokens: 16, system,/m.test(l2));
+
+  // G50d: the run reports cache effectiveness. Without this, a `cache_control` key the API
+  // declined to honour is indistinguishable from a working cache until the invoice arrives,
+  // which is off this surface by days — the same self-concealing shape as the transport
+  // failure that read as a rubric regression.
+  s.check("G50d l2.mjs reads cache_read_input_tokens from the response usage",
+    /^\s*totalCacheRead \+= usage\.cache_read_input_tokens;$/m.test(l2)
+    && /^\s*totalCacheWrite \+= usage\.cache_creation_input_tokens;$/m.test(l2));
+  // The notice is THREE-way, not two. An undifferentiated "cache inactive" sent readers
+  // after a non-existent defect on the three suites whose rubric slice is under the
+  // model's minimum cacheable prefix — there is nothing to discount there, so both the
+  // "nothing to fix" wording and the "long enough to cache, so it is being re-billed"
+  // wording must exist, and the branch must be decided by the measured PREFIX
+  // (`maxSystemChars`) rather than by dividing total input by case count, which counts
+  // each case's user message and can cry MISSED at a suite that was never cacheable.
+  s.check("G50d l2.mjs distinguishes an uncacheable prefix from a missed cache",
+    l2.includes("cache not applicable") && l2.includes("cache MISSED")
+    && /maxSystemChars \/ CHARS_PER_TOKEN/.test(l2));
+
+  // G50e: `--suite` accepts a list, and an EMPTY selection fails closed. The list form is what
+  // makes selection possible in one process; the empty-selection exit is what stops a selector
+  // bug, or a shell expanding an unset variable, from reporting a pass over zero cases.
+  s.check("G50e l2.mjs parses --suite as a comma-separated list",
+    /^const only = onlyArg === null \|\| onlyArg === undefined$/m.test(l2)
+    && l2.includes('onlyArg.split(",")'));
+  s.check("G50e l2.mjs exits non-zero on an empty --suite selection",
+    /^if \(only !== null && only\.length === 0\) \{$/m.test(l2));
+
+  // G50i: the harness-file set is pinned HERE, not only in the module that declares it. The
+  // selector's self-test derives its expectations by iterating `HARNESS_FILES`, so deleting an
+  // entry deletes that entry's own coverage — a change to `l2.mjs` would then select no suite
+  // and skip the eval entirely, which is precisely the silent coverage loss the selector must
+  // not be able to cause. This is the one place a literal list belongs: a guard pins an
+  // invariant, a module derives.
+  {
+    const suitesMod = read("scripts/eval/suites.mjs");
+    const decl = suitesMod.match(/export const HARNESS_FILES = \[([\s\S]*?)\];/);
+    const files = decl ? [...decl[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : [];
+    for (const f of ["scripts/eval/l2.mjs", "scripts/eval/lib.mjs", "scripts/eval/suites.mjs",
+      "scripts/eval/select-suites.mjs"]) {
+      s.check(`G50i ${f} is a harness file (a change to it selects every suite)`,
+        files.includes(f), `HARNESS_FILES = [${files}]`);
+    }
+    // The exclusions are asserted too, because the criterion is not "is imported by the
+    // runner" but "can alter a suite's ANSWER". `telemetry.mjs` observes the run and cannot
+    // move a label; the workflow decides WHEN suites run, not what they decide, and it is
+    // also the file that consumes the selection — listing it would make every workflow edit
+    // spend all nine suites' tokens on a change that cannot flip a single case. Both are
+    // guarded by the free layer instead (telemetry by its own `--self-test` at G21k, the
+    // workflow by G50f/G50g below).
+    for (const f of ["scripts/eval/telemetry.mjs", ".github/workflows/evals-l2.yml"]) {
+      s.check(`G50i ${f} is deliberately NOT a harness file`,
+        !files.includes(f), `HARNESS_FILES = [${files}]`);
+    }
+    s.check("G50i the harness set is exactly those four files", files.length === 4,
+      `HARNESS_FILES = [${files}]`);
+  }
+
+  // G50f: a selection that did not succeed fails CLOSED AND LOUD. Selection is a JOB here,
+  // not a step inside the run job, and that changes which direction is safe. The inline-step
+  // shape had to fail OPEN — a broken selector could not be reported without a check to
+  // report it on, so the only safe answer was to run all nine suites — whereas a `select`
+  // job's outcome is a value the aggregator READS, so the run can say "the affected subset is
+  // unknown" and go red without spending a token on nine suites nobody asked for. Both shapes
+  // refuse to let a selector bug read as "nothing to run"; this one refuses without paying.
+  //
+  // The three properties, asserted against the aggregator (which is the file's only reader of
+  // the selection): it depends on the select job, it fails on any non-`success`, and the ONLY
+  // condition that runs no suite is a genuinely empty count.
+  {
+    const lines = yml.split("\n");
+    const from = lines.findIndex((l) => /^\s{2}l2:$/.test(l));
+    const agg = from >= 0 ? lines.slice(from).join("\n") : "";
+    s.check("G50f located the l2 aggregator job in evals-l2.yml", agg.length > 0,
+      `l2: at ${from}`);
+    s.check("G50f the aggregator depends on the select job and reads its result",
+      /^\s*needs: \[gate, select, suite, detection\]$/m.test(agg)
+      && /^\s*SELECT_RESULT: \$\{\{ needs\.select\.result \}\}$/m.test(agg));
+    s.check("G50f a selection that did not succeed fails the run, loudly",
+      /if \[ "\$SELECT_RESULT" != "success" \]; then/.test(agg)
+      && /affected subset is unknown/.test(agg)
+      && /affected subset is unknown[\s\S]{0,120}exit 1/.test(agg));
+    // Exactly one condition may suppress the suites, and it must be the count. A second
+    // suppressing term — a `continue-on-error`, an `|| true`, a `success()` guard on the
+    // matrix — is how a failed selection would silently become an empty one.
+    const countGuards = [...yml.matchAll(/needs\.select\.outputs\.count != '0'/g)];
+    s.check("G50f the suite matrix is suppressed only by a genuinely empty selection",
+      countGuards.length === 1 && !/continue-on-error/.test(yml),
+      `${countGuards.length} count guards; continue-on-error present: ${/continue-on-error/.test(yml)}`);
+  }
+
+  // G50g: a manual dispatch overrides the derived selection, and `all` names every suite.
+  // The precedence lives in the select job's shell rather than in one `${A:-B}` expansion,
+  // because the dispatch input is a comma LIST that can also name `bug-detection` — which is
+  // a separate runner and cannot ride `--suite` — so the branch has to emit the same
+  // `{suites, count, detection}` shape the selector does, not just a suite name.
+  s.check("G50g evals-l2.yml prefers the dispatch input over the computed selection",
+    /^\s*REQUESTED: \$\{\{ inputs\.suites \}\}$/m.test(yml)
+    && /elif \[ "\$\{REQUESTED:-all\}" = "all" \]; then/.test(yml));
+  s.check("G50g a dispatch of `all` selects every suite through the same selector",
+    /^\s*node scripts\/eval\/select-suites\.mjs --json --all \| tee selection\.json$/m.test(yml));
+  s.check("G50g an explicit dispatch list can name the separate detection runner",
+    /raw\.includes\("bug-detection"\)/.test(yml));
+
+  // G50h: full history is fetched, so the changed-file diff can reach the merge base. A
+  // shallow clone fails open — correct, but it pays the full price on every PR while looking
+  // like the optimisation is working.
+  s.check("G50h evals-l2.yml checks out full history for the diff",
+    /^\s*fetch-depth: 0$/m.test(yml));
 }
 
 process.exit(s.report() ? 0 : 1);

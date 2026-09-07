@@ -67,7 +67,8 @@ otherwise claim it and buy a full lens pass to re-read the reviewer's own asks.
 
 **One exclusion runs before the table.** A delta whose shapes are exclusively `docs-only`,
 `test-only`, or generated, **and** whose `blast_radius.band == none`, does not consider the size
-triggers at all — neither `DELTA_LINES > 100` / `NEW_FILES > 0` in the `deep` row nor the
+triggers at all — neither of the two size triggers in the `deep` checklist below
+(**`D12`** `DELTA_LINES > 100` and **`D13`** `NEW_FILES > 0`) nor the
 `11 ≤ DELTA_LINES ≤ 100` band in the `standard` row.
 Size there is measuring text nobody executes, and without the exclusion a 400-line generated-client
 refresh routes `deep` on line count while reaching nothing — the exact wrong-proxy failure this
@@ -76,13 +77,51 @@ Such a delta still routes on **every other** row: a test file that imports a cha
 has a blast radius, and a docs edit to a governing document is still `PROPAGATION`. It is excused
 from size, not from review.
 
+**The `deep` triggers are a checklist, not a sentence.** They are enumerated here rather than
+packed into the table cell below, because that row is both the first one read and by far the
+longest: a cell holding thirteen `·`-separated conditions gets scanned until something matches
+and then abandoned, so the triggers that sat at the far end of it — `NEW_FILES > 0`, and the
+*absence* of a prior `deep` pass, which was nested one level down inside the refresh clause —
+were exactly the two the routing missed.
+**ANY** one of these is `deep`. Check every one before moving to the `standard` row.
+
+| # | Trigger |
+| --- | --- |
+| **D1** | first run on this PR |
+| **D2** | `--full` |
+| **D3** | `--effort high` |
+| **D4** | `CUM_DELTA_LINES > FULL_REFRESH_DELTA` 150 |
+| **D5** | `INCR_RUNS_SINCE_FULL ≥ FULL_REFRESH_RUNS` 3 — `≥`, so 3 of 3 fires |
+| **D6** | **no** prior `deep` pass recorded |
+| **D7** | `HIGH_STAKES_FILES` non-empty |
+| **D8** | `PROPAGATION` |
+| **D9** | `blast_radius.band ∈ {medium, high}` |
+| **D10** | any `semver_delta == major` |
+| **D11** | any changed symbol with `traffic_band: high` **and** `change ∈ {signature, removed}` |
+| **D12** | `DELTA_LINES > 100` |
+| **D13** | `NEW_FILES > 0` |
+
+`D4`–`D6` are [the deep-lens refresh](#the-deep-lens-refresh), and they are three **independent**
+triggers, not one condition with two qualifiers: a prior `deep` pass being on record satisfies
+neither `D4` nor `D5`, and its *absence* is `D6` firing on its own.
+`D12`/`D13` are the two size triggers, and the only two the exclusion above waives.
+
 | Tier | Chosen when | Runs |
 | --- | --- | --- |
-| **deep** | first run · `--full` · `--effort high` · a refresh counter fired · `HIGH_STAKES_FILES` non-empty · `PROPAGATION` · `blast_radius.band ∈ {medium, high}` · any `semver_delta == major` · any changed symbol with `traffic_band: high` **and** `change ∈ {signature, removed}` · `DELTA_LINES > 100` · `NEW_FILES > 0` | every finder over the **whole PR**; consumer-impact over **every** changed export with ≥ 1 consumer; dependency finder over every delta; verifier Tier 2 where available; optimality lens (report-only) |
+| **deep** | **ANY** of `D1`–`D13` above | every finder over the **whole PR**; consumer-impact over **every** changed export with ≥ 1 consumer; dependency finder over every delta; verifier Tier 2 where available; optimality lens (report-only) |
 | **standard** | `DELTA_RISKY_SHAPES` non-empty · `blast_radius.band == low` · any `semver_delta` **with ≥ 1 usage site** · an `overlaps[].kind == same-symbol` · `11 ≤ DELTA_LINES ≤ 100` | correctness + quality on the delta **with enclosing-function context**; consumer-impact over changed exports in the delta; dependency finder over this push's deltas; intent over the PR; standards on delta files; verifier Tier 1–2 |
 | **quick** | otherwise (the `quick` override above reaches here directly) | correctness on delta hunks with enclosing-function context; thread reconciliation; gates; nothing else |
 
 Re-running every lens over a review-answering push produces no new information and costs a full review's budget. It gets one finder.
+
+**`blast_radius.band == none` is not a `quick` condition.** `otherwise` means *no row
+above matched*, and the rows above are read top to bottom — so a delta that reaches
+nothing still routes `deep` when a refresh counter fired, and still routes `standard`
+on `11 ≤ DELTA_LINES ≤ 100`. Reaching nothing is the *default* state of most deltas;
+if it were sufficient on its own, the `standard` size band and the refresh triggers
+could never fire at all, and the two rows above would be dead text. The one place
+`band == none` decides anything by itself is the `quick` override — and that needs
+`THREAD_OVERLAP ≥ 0.8` alongside it.
 
 The `semver_delta` row is qualified by usage because an unused bump has nothing to check: a
 lockfile-only patch of a package this repo imports nowhere is a dependency delta with an empty
@@ -95,9 +134,27 @@ The inverse case is the one that justifies the whole phase:
 DELTA_LINES = 12 · blast_radius.band = high (retryRequest: 14 consumer files, 3 packages, signature)
 → deep
 
-DELTA_LINES = 340 · shapes = [docs-only] · band = none
-→ quick        (the size exclusion above applies, and 340 is outside standard's 11–100 band)
+DELTA_LINES = 40 · shapes = [] · band = none · THREAD_OVERLAP = 0.0 · no counter fired
+→ standard     (band = none is not a quick condition; 40 is inside standard's 11–100 band)
+
+DELTA_LINES = 5 · shapes = [docs-only] · band = none · INCR_RUNS_SINCE_FULL = 3 · a prior deep pass IS recorded
+→ deep         (D5 fired at 3 of 3. The recorded prior deep pass is D6's own subject,
+                not a precondition on D4/D5; and the size exclusion waives D12/D13,
+                not the other eleven)
+
+DELTA_LINES = 22 · shapes = [] · band = none · one brand-new file · no counter fired
+→ deep         (D13. A new file has no prior version to diff against and no consumers
+                yet, so nothing else in the pipeline is measuring it — which is why
+                the trigger is on the file's existence, not on its size or its reach)
+
+DELTA_LINES = 340 · shapes = [docs-only] · band = none · no counter fired · no new files
+→ quick        (the size exclusion applies, so D12 is waived, and 340 is outside
+                standard's 11–100 band)
 ```
+
+The third and the last examples are the pair worth reading together: the same
+`docs-only`/`band: none` inputs route `deep` or `quick` depending only on a counter,
+which is why the last example states `no counter fired` rather than leaving it implied.
 
 ## Announce the decision with its inputs
 
@@ -114,11 +171,11 @@ An unexplained tier is unauditable: a maintainer who thinks the routing is wrong
 
 An incremental run is promoted back to `deep` when any of these holds:
 
-| Counter | Threshold | Read from |
-| --- | --- | --- |
-| cumulative churn since the last `deep` pass | `FULL_REFRESH_DELTA` = 150 lines | PR-state record |
-| incremental runs since the last `deep` pass | `FULL_REFRESH_RUNS` = 3 | PR-state record |
-| no prior `deep` pass recorded | always | PR-state record — **including every run on the recovery rung**, which recovers a baseline but no history |
+| # | Counter | Threshold | Read from |
+| --- | --- | --- | --- |
+| `D4` | cumulative churn since the last `deep` pass | `FULL_REFRESH_DELTA` = 150 lines | PR-state record |
+| `D5` | incremental runs since the last `deep` pass | `FULL_REFRESH_RUNS` = 3 | PR-state record |
+| `D6` | no prior `deep` pass recorded | always | PR-state record — **including every run on the recovery rung**, which recovers a baseline but no history |
 
 Without this, a PR that grows by ninety lines a day never gets another holistic pass, because no single push is ever big enough to trigger one.
 
