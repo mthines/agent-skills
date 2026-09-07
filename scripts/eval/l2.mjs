@@ -305,9 +305,25 @@ if (process.env.GITHUB_STEP_SUMMARY) {
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
 }
 
+// A prompt shorter than the model's minimum cacheable prefix cannot be cached at all,
+// so the write is refused silently and every case is billed in full. That is NOT the
+// same failure as losing a discount that was available, and the first CI run proved the
+// distinction matters: three of nine suites reported MISSED purely because their rubric
+// slice is small, which sent a reader looking for a bug that does not exist. Naming the
+// likely cause costs one line and saves that hunt.
+const MIN_CACHEABLE_TOKENS = 1024;
+
 if (totalInTok || totalOutTok) {
-  console.log(`  tokens: ${totalInTok.toLocaleString()} input + ${totalOutTok.toLocaleString()} output` +
-    (totalCacheRead || totalCacheWrite ? ` · cache ${totalCacheRead.toLocaleString()} read / ${totalCacheWrite.toLocaleString()} written` : " · cache MISSED (no read, no write — the rubric is being re-billed per case)"));
+  let cacheNote;
+  if (totalCacheRead || totalCacheWrite) {
+    cacheNote = ` · cache ${totalCacheRead.toLocaleString()} read / ${totalCacheWrite.toLocaleString()} written`;
+  } else if (totalCases && totalInTok / totalCases < MIN_CACHEABLE_TOKENS) {
+    const avg = Math.round(totalInTok / totalCases);
+    cacheNote = ` · cache not applicable (~${avg.toLocaleString()} tokens/case is below the ${MIN_CACHEABLE_TOKENS}-token minimum cacheable prefix — nothing to discount, not a defect)`;
+  } else {
+    cacheNote = " · cache MISSED (no read, no write, and the prompt is long enough to cache — the rubric is being re-billed per case)";
+  }
+  console.log(`  tokens: ${totalInTok.toLocaleString()} input + ${totalOutTok.toLocaleString()} output${cacheNote}`);
 }
 
 if (GATE !== null && anyBelowGate) {
