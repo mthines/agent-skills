@@ -448,11 +448,18 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 // a suite that was never cacheable. `maxSystemChars` is the largest system block the
 // run built: if even that is under the bound, no suite in the run could cache.
 //
-// Chars/token is an estimate and runs ~10% low against the observed writes, so a
-// prefix within ~15% above the bound reads as "not applicable". That is the direction
-// to err in — a false "nothing to fix" on a borderline suite costs a missed discount,
-// while a false MISSED costs a reader a hunt for a defect that does not exist, which
-// is the failure being fixed here.
+// The comparison is deliberately STRICT (`<`), with no tolerance band, and the
+// direction of the estimate's error is why. Chars/token runs ~10% LOW against the
+// observed writes, so an estimate that already clears 1024 implies a real prefix
+// comfortably above it: such a suite genuinely could have cached, and MISSED is the
+// true report. The uncertainty is entirely on the OTHER side — an estimate of ~950 may
+// be a real ~1050, so "not applicable" is already the lenient verdict and is the one
+// that can be wrong. Widening it upward would suppress true MISSED reports, which is
+// the opposite of what this note exists to protect.
+//
+// So the residue runs one way: a prefix measured just BELOW the bound may in fact have
+// been cacheable, and we will have said "nothing to discount". That costs a missed
+// discount. A MISSED report, by contrast, is trustworthy — act on it.
 const MIN_CACHEABLE_TOKENS = 1024;
 const CHARS_PER_TOKEN = 4;
 
