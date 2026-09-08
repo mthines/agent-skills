@@ -108,6 +108,7 @@ jobs:
       suites: ${{ steps.pick.outputs.suites }}
       count: ${{ steps.pick.outputs.count }}
       detection: ${{ steps.pick.outputs.detection }}
+      memory_efficacy: ${{ steps.pick.outputs.memory_efficacy }}
       reason: ${{ steps.pick.outputs.reason }}
     steps:
       - name: Checkout (full history — the selector diffs against the PR base)
@@ -144,20 +145,25 @@ jobs:
           else
             # A dispatch naming suites explicitly. l2.mjs rejects an unknown name
             # with exit 2, so a typo fails loudly instead of running nothing.
-            # A dispatch naming suites explicitly opts OUT of the detection eval
-            # unless `bug-detection` is one of the names — it is a separate runner,
-            # so it cannot ride the `--suite` flag.
+            # A dispatch naming suites explicitly opts OUT of the separate runners
+            # unless `bug-detection` / `memory-efficacy` is one of the names — each is
+            # its own runner, so neither can ride the `--suite` flag.
             node -e '
               const raw = process.argv[1].split(",").map((s) => s.trim()).filter(Boolean);
-              const detection = raw.includes("bug-detection");
-              const names = raw.filter((n) => n !== "bug-detection");
-              console.log(JSON.stringify({ suites: names, count: names.length, detection, reason: "workflow_dispatch: " + raw.join(", ") }));
+              const EXTRA = { "bug-detection": "detection", "memory-efficacy": "memoryEfficacy" };
+              const out = { suites: [], count: 0, reason: "workflow_dispatch: " + raw.join(", ") };
+              for (const key of Object.values(EXTRA)) out[key] = false;
+              for (const n of raw) if (EXTRA[n]) out[EXTRA[n]] = true;
+              out.suites = raw.filter((n) => !EXTRA[n]);
+              out.count = out.suites.length;
+              console.log(JSON.stringify(out));
             ' "$REQUESTED" | tee selection.json
           fi
           {
             echo "suites=$(jq -c '.suites' selection.json)"
             echo "count=$(jq -r '.count' selection.json)"
             echo "detection=$(jq -r '.detection' selection.json)"
+            echo "memory_efficacy=$(jq -r '.memoryEfficacy' selection.json)"
             echo "reason=$(jq -r '.reason' selection.json)"
           } >> "$GITHUB_OUTPUT"
 
@@ -247,6 +253,57 @@ jobs:
           OTEL_SERVICE_NAME: evals
         run: node scripts/eval/l2.mjs --suite "${{ matrix.suite }}"
 
+  memory_efficacy:
+    # The memory-efficacy eval — the paired A/B runner behind the claim that reading
+    # prior lore makes an agent's next decision better. A SEPARATE runner for the same
+    # reason bug-detection is: it is not one prompt per case. Each record runs TWICE (a
+    # `without` arm and a `with` arm) and the measurement is the difference, which
+    # l2.mjs's single-choice shape cannot express.
+    #
+    # Gated on HARM, never on lift. Gating lift would reward lore that leaks the answer,
+    # which is exactly the finding this eval exists to be able to REFUTE — so the number
+    # that decides the build is the one an over-eager author cannot game by writing
+    # better lore. Lift is reported and read by a human.
+    name: memory-efficacy
+    needs: [gate, select]
+    if: needs.gate.outputs.opted_in == 'true' && needs.select.outputs.memory_efficacy == 'true'
+    runs-on: ubuntu-latest
+    # Two model calls per record across the golden set at EVAL_CONCURRENCY 4 — the same
+    # shape as the detection job, so the same budget.
+    timeout-minutes: 30
+    env:
+      HAS_API_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - name: Warn when the API key is absent
+        if: env.HAS_API_KEY != 'true'
+        run: |
+          echo "::warning title=Memory-efficacy eval skipped::No ANTHROPIC_API_KEY secret — the eval cannot run. Add the secret under Settings → Secrets and variables → Actions."
+      - name: L3 memory-efficacy eval
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EVAL_MEMORY_GATE: "1"
+          EVAL_REQUIRE_KEY: "1"
+          # EVAL_HARM_MAX is deliberately NOT set here. The runner's own 0.20 is the
+          # contract; letting the workflow pass a looser one would put the gate's value
+          # in the place least likely to be reviewed. Raising it is a code change with a
+          # rationale, per the repo's never-lower-a-floor rule.
+          #
+          # OTLP telemetry — same posture as the suite job: entirely off when the
+          # endpoint variable is unset, endpoint as a repo variable, token as a secret.
+          # This runner DOES emit (it imports telemetry.mjs and reports lift/harm as
+          # gauges), which is the difference from the detection job below.
+          OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          OTEL_EXPORTER_OTLP_HEADERS: Authorization=Bearer ${{ secrets.DASH0_AUTH_TOKEN }},Dash0-Dataset=${{ vars.DASH0_DATASET || 'default' }}
+          OTEL_SERVICE_NAME: evals
+        run: node scripts/eval/l3-memory.mjs
+
   detection:
     # The bug-detection eval — a SEPARATE runner, not a `suite` matrix entry, because
     # it is not a single-choice classification (see scripts/eval/l2-detection.mjs's
@@ -302,7 +359,7 @@ jobs:
     # or not — so branch protection can require it without a workflow that skips
     # itself leaving a required check pending forever.
     name: l2
-    needs: [gate, select, suite, detection]
+    needs: [gate, select, suite, detection, memory_efficacy]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -315,14 +372,16 @@ jobs:
           SELECT_RESULT: ${{ needs.select.result }}
           SUITE_RESULT: ${{ needs.suite.result }}
           DETECTION_RESULT: ${{ needs.detection.result }}
+          MEMORY_RESULT: ${{ needs.memory_efficacy.result }}
           COUNT: ${{ needs.select.outputs.count }}
           DETECTION_SELECTED: ${{ needs.select.outputs.detection }}
+          MEMORY_SELECTED: ${{ needs.select.outputs.memory_efficacy }}
           REASON: ${{ needs.select.outputs.reason }}
         run: |
           set -euo pipefail
           echo "gate: $GATE_RESULT (opted_in=${OPTED_IN:-?}, ${HOW:-?})"
-          echo "selection: ${REASON:-<none>} (count=${COUNT:-?}, detection=${DETECTION_SELECTED:-?})"
-          echo "select job: $SELECT_RESULT · suite jobs: $SUITE_RESULT · detection job: $DETECTION_RESULT"
+          echo "selection: ${REASON:-<none>} (count=${COUNT:-?}, detection=${DETECTION_SELECTED:-?}, memory-efficacy=${MEMORY_SELECTED:-?})"
+          echo "select job: $SELECT_RESULT · suite jobs: $SUITE_RESULT · detection job: $DETECTION_RESULT · memory-efficacy job: $MEMORY_RESULT"
 
           # A failed GATE is never green: "we could not tell whether to run" is not
           # the same state as "we were told not to", and collapsing them is how an
@@ -342,12 +401,12 @@ jobs:
             echo "✗ suite selection failed — the affected subset is unknown"
             exit 1
           fi
-          # Two independent measurement jobs roll up here, and BOTH must be read: the
-          # matrix (`suite`) and the separate detection runner. Reading only the matrix
-          # is how the detection eval could go red — recall below 0.7 — on a check that
-          # still reported green, which is the exact failure the gates exist to catch.
-          # `skipped` is a legitimate state for either one (nothing selected it), so it
-          # is a pass; anything else is not.
+          # THREE independent measurement jobs roll up here, and every one must be read:
+          # the matrix (`suite`) and the two separate runners. Reading only a subset is
+          # how a red eval reports green — the exact failure the detection job was added
+          # to close, and the reason a new runner must extend this block in the same
+          # commit that adds its job. `skipped` is a legitimate state for any of them
+          # (nothing selected it), so it is a pass; anything else is not.
           FAILED=""
           case "$SUITE_RESULT" in
             success) echo "✓ every selected suite passed" ;;
@@ -359,10 +418,15 @@ jobs:
             skipped) echo "· bug-detection not selected by this diff — nothing to run" ;;
             *)       echo "✗ the bug-detection eval failed ($DETECTION_RESULT)"; FAILED="${FAILED:+$FAILED, }bug-detection" ;;
           esac
+          case "$MEMORY_RESULT" in
+            success) echo "✓ memory-efficacy passed its harm gate" ;;
+            skipped) echo "· memory-efficacy not selected by this diff — nothing to run" ;;
+            *)       echo "✗ the memory-efficacy eval failed ($MEMORY_RESULT)"; FAILED="${FAILED:+$FAILED, }memory-efficacy" ;;
+          esac
           if [ -n "$FAILED" ]; then
             echo "✗ failing: $FAILED"
             exit 1
           fi
-          if [ "$SUITE_RESULT" = "skipped" ] && [ "$DETECTION_RESULT" = "skipped" ]; then
+          if [ "$SUITE_RESULT" = "skipped" ] && [ "$DETECTION_RESULT" = "skipped" ] && [ "$MEMORY_RESULT" = "skipped" ]; then
             echo "✓ opted in, but this diff affects no eval — nothing to run"
           fi

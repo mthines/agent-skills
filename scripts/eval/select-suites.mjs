@@ -22,20 +22,23 @@
 //
 // Rule 1 is the deliberate fail-open direction: widening costs API tokens, narrowing
 // costs coverage, and a missed suite is the failure that hides itself.
-// The detection eval rides the same derivation: its inputs are declared in
-// suites.mjs (SUITES.DETECTION) and reported as a separate boolean, because it is a
-// separate runner with its own gates rather than a matrix entry.
-import { SUITES, HARNESS_FILES, goldenPath, detectionInputs } from "./suites.mjs";
+// The extra runners (bug-detection, memory-efficacy) ride the same derivation: each
+// declares its inputs in suites.mjs and is reported as its OWN boolean, because each is
+// a separate runner with its own gates rather than a matrix entry.
+import { SUITES, HARNESS_FILES, goldenPath, detectionInputs, EXTRA_RUNNERS } from "./suites.mjs";
 
 const ALL = SUITES.map((s) => s.name);
 const DETECTION_INPUTS = detectionInputs();
+// Resolved once: `inputs` is a function on the declaration so the table can stay a
+// plain literal, but the selector wants the paths.
+const EXTRA = EXTRA_RUNNERS.map((r) => ({ key: r.key, name: r.decl.name, inputs: r.inputs() }));
 
 /**
  * @param {string[]} changed  repo-relative changed paths
- * @returns {{ suites: string[], detection: boolean, reason: string, matches: Record<string, string[]> }}
+ * @returns {{ suites: string[], detection: boolean, memoryEfficacy: boolean, reason: string, matches: Record<string, string[]> }}
  *   `suites` in SUITES order (stable, so a matrix key is reproducible);
- *   `detection` is the separate bug-detection runner's own decision — it is not a
- *   `suites` entry, so the workflow reads it as its own job condition;
+ *   `detection` / `memoryEfficacy` are the separate runners' own decisions — neither is
+ *   a `suites` entry, so the workflow reads each as its own job condition;
  *   `matches` maps each selecting path to the suites it selected.
  */
 export function selectSuites(changed) {
@@ -60,20 +63,21 @@ export function selectSuites(changed) {
   }
 
   const suites = ALL.filter((n) => picked.has(n));
-  // Detection is orthogonal to the matrix: a change to `finders.md` selects it and no
-  // suite, and a rubric change selects a suite and not it. A harness change selects
-  // both, on the same fail-open reasoning.
-  const detection = changed.some(
-    (p) => DETECTION_INPUTS.includes(p) || HARNESS_FILES.includes(p),
-  );
+  // Each extra runner is orthogonal to the matrix: a change to `finders.md` selects
+  // bug-detection and no suite, and a suite rubric selects a suite and neither runner.
+  // A harness change selects everything, on the same fail-open reasoning.
+  const extra = {};
+  for (const r of EXTRA) {
+    extra[r.key] = changed.some((p) => r.inputs.includes(p) || HARNESS_FILES.includes(p));
+  }
   const parts = [];
   if (harness) parts.push(`harness change (${harness}) → all ${ALL.length} suites`);
   else if (suites.length) parts.push(`${suites.length} of ${ALL.length} suites affected by ${Object.keys(matches).length} changed file(s)`);
-  if (detection) parts.push("+ bug-detection");
+  for (const r of EXTRA) if (extra[r.key]) parts.push(`+ ${r.name}`);
   const reason = parts.length
     ? parts.join(" ")
     : "no rubric, golden, or harness file changed → no suite affected";
-  return { suites, detection, reason, matches };
+  return { suites, ...extra, reason, matches };
 }
 
 // ── self-test ──────────────────────────────────────────────────────────────────
@@ -117,28 +121,45 @@ function selfTest() {
     const all = selectSuites([h]);
     t(`harness file ${h} selects every suite`, all.suites.length === ALL.length,
       `→ ${all.suites.length}/${ALL.length}`);
-    t(`harness file ${h} also selects bug-detection`, all.detection === true);
+    for (const r of EXTRA) {
+      t(`harness file ${h} also selects ${r.name}`, all[r.key] === true);
+    }
   }
 
-  // Detection: each declared input selects it, and — the half that matters — selects
-  // it WITHOUT dragging in the nine suites, which is the whole point of keeping it
-  // out of the matrix.
-  for (const p of DETECTION_INPUTS) {
-    const d = selectSuites([p]);
-    t(`detection input ${p} selects bug-detection`, d.detection === true);
-    t(`detection input ${p} selects no classification suite`, d.suites.length === 0,
-      `→ [${d.suites}]`);
+  // Each extra runner: every declared input selects it, and — the half that matters —
+  // selects it WITHOUT dragging in the nine suites or the OTHER runner, which is the
+  // whole point of keeping them out of the matrix. Derived from the table, so adding a
+  // runner extends this coverage instead of aging it.
+  t("the extra-runner table is non-empty", EXTRA.length > 0);
+  for (const r of EXTRA) {
+    t(`${r.name} declares at least one input`, r.inputs.length > 0);
+    for (const p of r.inputs) {
+      const d = selectSuites([p]);
+      t(`${r.name} input ${p} selects it`, d[r.key] === true);
+      t(`${r.name} input ${p} selects no classification suite`, d.suites.length === 0,
+        `→ [${d.suites}]`);
+      for (const other of EXTRA) {
+        if (other.key === r.key) continue;
+        t(`${r.name} input ${p} does not select ${other.name}`, d[other.key] === false);
+      }
+    }
   }
-  // And the inverse: a suite's own rubric must not select detection, or the "derived"
-  // claim would be cover for running it on everything.
+  // And the inverse: a suite's own rubric must not select either runner, or the
+  // "derived" claim would be cover for running them on everything.
   const rubricOnly = selectSuites([SUITES[0].rubric.file]);
   t("a suite rubric does not select bug-detection", rubricOnly.detection === false);
+  for (const r of EXTRA) {
+    t(`a suite rubric does not select ${r.name}`, rubricOnly[r.key] === false);
+  }
 
   // An unrelated path selects nothing (the narrowing half — without it a selector
   // that returned ALL for everything would pass every assertion above).
   const none = selectSuites(["README.md", "packages/vscode-agent-tasks/src/extension.ts"]);
   t("an unrelated path selects no suite", none.suites.length === 0, `→ [${none.suites}]`);
   t("an unrelated path selects no detection run", none.detection === false);
+  for (const r of EXTRA) {
+    t(`an unrelated path selects no ${r.name} run`, none[r.key] === false);
+  }
 
   // A near-miss must NOT match: matching is exact, not prefix/substring, so a
   // sibling file in a rubric's directory cannot drag its suite in.
@@ -152,6 +173,9 @@ function selfTest() {
   const empty = selectSuites([]);
   t("an empty change set selects no suite", empty.suites.length === 0, `→ [${empty.suites}]`);
   t("an empty change set selects no detection run", empty.detection === false);
+  for (const r of EXTRA) {
+    t(`an empty change set selects no ${r.name} run`, empty[r.key] === false);
+  }
 
   // The union is deduplicated: the same path twice, and two paths hitting one suite, must
   // not emit a suite name twice — the matrix key has to stay unique.
@@ -184,7 +208,12 @@ const positional = argv.filter((a) => !a.startsWith("--"));
 
 let result;
 if (argv.includes("--all")) {
-  result = { suites: [...ALL], detection: true, reason: `--all → every suite (${ALL.length}) + bug-detection`, matches: {} };
+  result = {
+    suites: [...ALL],
+    ...Object.fromEntries(EXTRA.map((r) => [r.key, true])),
+    reason: `--all → every suite (${ALL.length}) + ${EXTRA.map((r) => r.name).join(" + ")}`,
+    matches: {},
+  };
 } else {
   const changed = positional.length
     ? positional
@@ -197,13 +226,15 @@ if (asJson) {
   // gates whether the matrix job runs at all (an empty matrix is an error in GHA).
   console.log(JSON.stringify({
     suites: result.suites, count: result.suites.length,
-    detection: result.detection === true, reason: result.reason,
+    detection: result.detection === true,
+    memoryEfficacy: result.memoryEfficacy === true,
+    reason: result.reason,
   }));
 } else {
   console.log(result.reason);
   for (const [path, names] of Object.entries(result.matches)) console.log(`  ${path} → ${names.join(", ")}`);
   for (const n of result.suites) console.log(n);
-  if (result.detection) console.log("bug-detection (separate runner)");
+  for (const r of EXTRA) if (result[r.key]) console.log(`${r.name} (separate runner)`);
 }
 
 async function readStdin() {

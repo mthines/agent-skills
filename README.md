@@ -475,11 +475,17 @@ plugins/                  3 Claude Code plugins (agent-tasks-hooks, pr-relevance
 packages/                 VS Code extension (vscode-agent-tasks)
 .claude-plugin/           marketplace.json — plugin distribution manifest
 scripts/                  Local symlink sync (scripts/sync-symlinks.sh)
-scripts/eval/             Regression evals in three layers — l1.mjs (deterministic contract
+scripts/eval/             Regression evals in five layers — l1.mjs (deterministic contract
                           checks, no LLM), l2.mjs (behavioral classification suites, table in
-                          suites.mjs, per-PR subset via select-suites.mjs), and
+                          suites.mjs, per-PR subset via select-suites.mjs),
                           l2-detection.mjs (does the reviewer actually find the seeded bug —
-                          recall and false-positive rate measured together)
+                          recall and false-positive rate measured together),
+                          memory-loop-wiring.mjs (is the self-improvement loop WIRED — tags,
+                          transport hops and record keys checked end to end against replayed
+                          webhook fixtures; deterministic, so L1 runs it on every PR), and
+                          l3-memory.mjs (does the lore actually HELP — every case run twice,
+                          with and without its lore; harm on decoys is gated, lift is only
+                          ever reported, because gating lift would reward answer-leaking lore)
 ```
 
 Each skill has a `SKILL.md` manifest with YAML frontmatter (name, description, metadata) and a Markdown body with instructions. Skills with `rules/` subdirectories contain focused guidance documents that load on demand. Agents live in `agents/` because they require their own model and tool configuration.

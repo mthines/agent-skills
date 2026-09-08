@@ -47,6 +47,8 @@
 // number is the product, the span is the receipt.
 import { randomBytes } from "node:crypto";
 import { hostname } from "node:os";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
 const HEX = (bytes) => randomBytes(bytes).toString("hex");
 const nowNs = () => String(BigInt(Date.now()) * 1_000_000n);
@@ -369,7 +371,16 @@ function selfTest() {
   return { fails };
 }
 
-if (process.argv.includes("--self-test")) {
+// Gated on being the MAIN MODULE, not merely on the flag appearing in argv. An argv-only
+// test fires on IMPORT: any runner that imports this module and is itself invoked with
+// `--self-test` runs telemetry's self-test and `process.exit`s before reaching its own,
+// reporting a pass for a contract nobody asked about. It was latent while the only
+// importer (l2.mjs) had no self-test mode, and l3-memory.mjs hit it on its first run.
+// Same defect, same fix, as record-comment-relevance.mjs's entry point.
+const isMain = !!process.argv[1]
+  && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isMain && process.argv.includes("--self-test")) {
   const { fails } = selfTest();
   // The transport half of the failure policy, exercised for real against a port
   // nothing is listening on — the whole point is that this resolves, not rejects.

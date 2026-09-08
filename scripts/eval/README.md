@@ -21,6 +21,16 @@ Methodology follows the repo's own [`ai-engineering/rules/evals.md`](../../skill
 routes a 4-file task to Micro"; L2 would never have caught "the confidence
 `awk` idiom counts 0 acceptance criteria." Different failure classes.
 
+Two more runners hang off the same two poles, and each is placed by **cost**
+rather than by subject — a deterministic check belongs in the free tier that
+runs on every PR, and only a model-calling runner goes behind the opt-in:
+
+| Runner | Pole | Asks | Where it runs |
+| --- | --- | --- | --- |
+| [`l2-detection.mjs`](#the-l2-detection-baseline--the-first-three-runs) | L2 | "does the reviewer actually FIND the bug?" | its own opt-in CI job, hard-gated |
+| [`memory-loop-wiring.mjs`](#memory-loop-wiring--does-the-self-improvement-loop-actually-connect) | L1 | "is the self-improvement loop WIRED — do the tags, transport hops and record keys line up end to end?" | free tier, executed by L1 `G51` on every PR |
+| [`l3-memory.mjs`](#l3-memory--does-the-lore-actually-help) | L2 | "does the lore actually HELP — and can bad lore hurt?" | its own opt-in CI job, gated on harm only |
+
 ## L1 — `node scripts/eval/l1.mjs`
 
 Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
@@ -424,6 +434,126 @@ The current golden set is a **BOOTSTRAP SEED — NOT A REAL BASELINE**.
 See `golden/code-review-retrieval-relevance.NOTES.md` for the full caveat and ground-truth definition.
 Do not tighten the `EVAL_GATE` floor until the golden set reaches ≥ 50 real-corpus cases.
 
+## memory-loop-wiring — does the self-improvement loop actually connect?
+
+```bash
+node scripts/eval/memory-loop-wiring.mjs             # the chain checks
+node scripts/eval/memory-loop-wiring.mjs --self-test # the mutation probes
+```
+
+No model, no network, no API key, no LoreKit. It is **executed by L1 (`G51`)**, so
+it runs on every PR in the free tier — the placement is the point: gating a
+deterministic check behind the `run-evals` label would leave the loop's wiring
+unchecked on every unlabelled PR, which is nearly all of them.
+
+**The question.** This repo's LoreKit claim is a *chain*: a reviewer resolves a
+thread on GitHub → a workflow classifies the outcome → a record lands in LoreKit
+→ the next review's documented read finds it. Every link is described in prose
+across five files, and **every way the chain can break is silent**. A renamed
+tag, a scope cased differently, a workflow input the caller template stopped
+passing, an env var spelled one way in the workflow and another in the recorder
+— each leaves every write succeeding and every read returning nothing. The only
+symptom is an agent that never improves, which is indistinguishable from an
+agent with nothing left to learn.
+
+Three parts, all derived from the live files rather than restated:
+
+| Part | What it checks |
+| --- | --- |
+| **A — transport** | The four hops `github.event.<path>` → `inputs.<name>` → `<ENV_NAME>` → `process.env.<ENV_NAME>`, read out of the caller template, the reusable workflow, and the recorder. |
+| **B — record** | The real decision tables and record builder **imported** from `scripts/record-comment-relevance.mjs` (never re-implemented), driven by 12 replayed webhook fixtures in `fixtures/memory-loop/` covering all three recorder modes — then the produced record's scope / tag / key / kind / host / TTL checked against what the READ path asks for, extracted from `agents/pr-reviewer.md` Step 1.0 and `memory-buckets.md`. |
+| **C — self-test** | Mutation probes: each Part B check is fed a deliberately broken record and must go red. A check that cannot fail is not a check. |
+
+**What it does not prove**, and the runner prints this rather than leaving it to
+a reader: that GitHub delivers the webhook, that the caller's `if:` conditions
+match a real event, that LoreKit stores or returns anything (`lorekitWrite` is
+the IO boundary and is deliberately not crossed), or that the read makes the
+reviewer better — that last one is efficacy, measured by the paired runner
+below. **Wiring is necessary, never sufficient.**
+
+The **`lorekit-setup` skill is external to this repository** (it ships with the
+LoreKit CLI), so this runner can only assert agent-skills' half of the contract.
+That the setup skill scaffolds a matching config is an owed obligation on the
+LoreKit side, reported as a printed NOTE and never faked as a passing check —
+`G51e` asserts both the NOTE and the disclaimer above are present, so the
+runner cannot quietly start overclaiming.
+
+**Renaming a bucket tag now reds L1.** Verified by doing it: renaming
+`loop::reviewer-comment-relevance` in its owning document
+(`agents/shared/rules/memory-buckets.md`) took L1 from 1638/1638 to 1636/1638
+with `G51c` and `G51d` red.
+
+## L3-memory — does the lore actually help?
+
+```bash
+ANTHROPIC_API_KEY=… node scripts/eval/l3-memory.mjs
+node scripts/eval/l3-memory.mjs --self-test   # offline, no key needed
+```
+
+Every layer above measures whether a rubric routes correctly, a contract holds,
+or the reviewer finds bugs. None of them answers the question the whole
+self-improvement claim rests on: **given a lesson the loop wrote, does an agent
+that READS it decide better than one that does not?**
+
+That is unanswerable from a single-arm eval, because accuracy alone cannot
+separate "the lore helped" from "this case was easy". So every record runs
+**twice against the identical task** — once without its lore, once with — and
+what is reported is the difference. The pairing is the instrument; the absolute
+numbers are not the product.
+
+**Two populations, two different questions.** The golden set
+(`golden/memory-efficacy.jsonl`) is **68 records: 48 `helpful` / 20 `decoy`**.
+
+| Population | The lore | Metric |
+| --- | --- | --- |
+| `helpful` | should improve the answer | **lift** — reported, never gated |
+| `decoy` | should change nothing | **harm** — hard-gated at `HARM_MAX = 0.20` |
+
+The helpful half draws on lore this repo actually holds — eval-harness rules,
+`pr-reviewer` gate semantics, the drive-to-green rules, the lore-lifecycle
+rules, the sandbox baseline, the docs and PR-workflow obligations — split
+roughly evenly between `global` and `repo::` scope. The 20 decoys are five kinds
+× four: wrong-repo scope (deliberately on-topic, so it is unanswerable without
+knowing scope matters), expired, plausible-but-wrong, right-answer-to-a-
+different-decision, and over-generalised.
+
+**Gate harm, only report lift.** This asymmetry is the single most important
+design decision here. Gating on lift creates a direct incentive to write golden
+lore that leaks the answer — "the answer is Full" lifts every case to 100% and
+measures nothing but the model's ability to copy, so the eval goes green exactly
+as it stops being an eval. Gating on harm is incentive-compatible: the way to
+pass is for the agent to **ignore** bad lore, which is the actual safety
+property, and no amount of answer-leaking in the helpful half can buy it. A
+negative or zero lift is a finding to write down, not a build failure. L1
+`G52f` asserts that only harm gates, and `G52f` also asserts the **workflow
+cannot set `EVAL_HARM_MAX`** — a floor's value must not live where nobody
+reviews it.
+
+**The `inconclusive` verdict.** If the without-arm already answers nearly
+everything (`CEILING = 0.90`), there is no headroom for lore to add and a lift
+near zero says nothing. Reporting that as "memory does not help" would be a
+false negative manufactured by an easy golden set, so the runner names the
+reason and asks for **harder cases, never a lower bar**.
+
+**Decoy count is a resolution requirement, not a preference.** `G52g` asserts
+`floor(decoyN × 0.20) >= 4` — at 20 decoys the gate tolerates 4, so one flipped
+decoy is 5 points against a 20-point gate. The fix when that assertion bites is
+always **more decoys**: lowering `HARM_MAX` shrinks the tolerated count, so it
+makes the resolution worse while looking like a concession. Same argument as the
+detection eval's controls.
+
+**What it does not prove:** that the lore in the golden set is the lore the
+loops actually write (a golden-set fidelity question), that LoreKit stores or
+returns it, or that the GitHub write path fires — the last two are
+`memory-loop-wiring.mjs`'s job. Read the two together: **wiring says the chain
+is connected, this says the payload is worth carrying.**
+
+**No baseline yet.** The first paired run has to come from CI's opt-in path
+(`run-evals`, or a `workflow_dispatch`) — record lift, harm, gained/lost, and
+the **itemised** flipped decoys here when it lands. Itemising is not optional:
+the detection eval's run 9 showed two runs agreeing on a bare `10%` while a
+third of the underlying set had moved.
+
 ## CI — two requireable checks
 
 Both layers run in GitHub Actions, so each shows up as a status check you can
@@ -431,8 +561,16 @@ require via branch protection:
 
 | Workflow | Check name | Trigger | Needs a secret? | Gates? |
 | --- | --- | --- | --- | --- |
-| `.github/workflows/evals-l1.yml` | **evals · L1 (contract checks)** | every PR + push to `main` | no | **yes** — fails on any broken contract |
-| `.github/workflows/evals-l2.yml` | **evals · L2 (behavioral) / l2** | reports on every PR; **runs suites only on opt-in** — the `run-evals` label or a `workflow_dispatch` — and then only the affected ones ([details](#l2-in-ci-is-opt-in)) | `ANTHROPIC_API_KEY` | soft for the suites — `EVAL_GATE` floor (70%), per suite; **hard** for `bug-detection` (`recall ≥ 0.7`, `fp ≤ 0.2`) |
+| `.github/workflows/evals-l1.yml` | **evals · L1 (contract checks)** | every PR + push to `main` | no | **yes** — fails on any broken contract, including the `memory-loop-wiring` run it executes (`G51`) |
+| `.github/workflows/evals-l2.yml` | **evals · L2 (behavioral) / l2** | reports on every PR; **runs suites only on opt-in** — the `run-evals` label or a `workflow_dispatch` — and then only the affected ones ([details](#l2-in-ci-is-opt-in)) | `ANTHROPIC_API_KEY` | soft for the suites — `EVAL_GATE` floor (70%), per suite; **hard** for `bug-detection` (`recall ≥ 0.7`, `fp ≤ 0.2`) and for `memory-efficacy` (`harm ≤ 0.20`; lift never gates) |
+
+Still **two** requireable checks after the two extra runners: `memory-loop-wiring`
+is executed inside L1 rather than being its own job, and `memory-efficacy` is a
+job that feeds the same `l2` aggregator that `bug-detection` does. The aggregator
+is `if: always()`, so a failed dependency reaches it as a value to *read* — L1
+`G50f` derives the expected `needs:` list from the workflow's own job ids, so a
+new measurement job the aggregator never reads reds L1 rather than reporting
+green.
 
 **To enable L2:** add an `ANTHROPIC_API_KEY` repository secret (Settings →
 Secrets and variables → Actions). Accuracy + any misses are written to the PR's

@@ -218,6 +218,50 @@ export const detectionInputs = () => [
   DETECTION.golden,
 ];
 
+/**
+ * The memory-efficacy eval — `scripts/eval/l3-memory.mjs`, the paired A/B runner that
+ * asks the question no other layer here asks: does reading prior lore make an agent's
+ * next decision BETTER? Like DETECTION it is its own runner rather than a `SUITES`
+ * entry, because it is not one prompt per case: it runs each record TWICE (a `without`
+ * arm and a `with` arm) and scores the difference.
+ *
+ * It has no live rubric file. That is deliberate and is the difference between this and
+ * every other eval here: the other runners read a shipped rule and measure whether a
+ * model applies it, so their inputs include the prose. This one measures the DELIVERY
+ * MECHANISM — lore in the system prompt — so the only things that can move its number
+ * are the runner (scoring, arm construction, the gate) and the golden set (the tasks and
+ * the lore itself). Adding a rubric path here would select it on edits that cannot
+ * change a single arm.
+ */
+export const MEMORY_EFFICACY = {
+  name: "memory-efficacy",
+  runner: "scripts/eval/l3-memory.mjs",
+  golden: "scripts/eval/golden/memory-efficacy.jsonl",
+};
+
+/** Every path that should trigger a memory-efficacy run. */
+export const memoryEfficacyInputs = () => [
+  MEMORY_EFFICACY.runner,
+  MEMORY_EFFICACY.golden,
+];
+
+/**
+ * The runners that are NOT `SUITES` entries, in one table so the selector derives a
+ * boolean per runner instead of growing a hand-written branch each time one is added.
+ * `key` is the field name the selector reports and the workflow reads as a job
+ * condition; `name` is what a `workflow_dispatch` names it by.
+ *
+ * `scripts/eval/memory-loop-wiring.mjs` is deliberately NOT here. It is deterministic —
+ * no model, no key, no network — so it costs nothing to run on every PR and belongs in
+ * the free tier, where L1 `G51` executes it. Gating a free check behind an opt-in label
+ * would mean the wiring of the self-improvement loop went unchecked on every PR nobody
+ * labelled, which is precisely the silence it was written to end.
+ */
+export const EXTRA_RUNNERS = [
+  { key: "detection", decl: DETECTION, inputs: detectionInputs },
+  { key: "memoryEfficacy", decl: MEMORY_EFFICACY, inputs: memoryEfficacyInputs },
+];
+
 // DELIBERATELY NOT a harness file: scripts/eval/telemetry.mjs. It is imported by
 // l2.mjs, so the instinct is to list it — but the fail-open rationale above turns on
 // a change being able to alter a suite's ANSWER, and telemetry cannot. It observes

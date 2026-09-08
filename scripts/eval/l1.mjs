@@ -4327,6 +4327,142 @@ const isPollBlock = (block) =>
   }
 }
 
+// ── G51: the self-improvement loop is WIRED, and the runner that says so is executed here ──
+//
+// The LoreKit claim this repo makes is a chain — a resolved thread on GitHub, a workflow that
+// classifies the outcome, a record in LoreKit, and the next review's documented read finding it.
+// Every link is prose across five files, and every way the chain can break is SILENT: a renamed
+// tag, a scope cased differently, a workflow input the caller stopped passing, an env var spelled
+// two ways. Each leaves every write succeeding and every read returning nothing, with no error
+// anywhere — the loop simply stops learning, which is indistinguishable from having nothing left
+// to learn. `memory-buckets.md` used to admit this outright ("nothing in the evals pins the tag
+// strings").
+//
+// The runner is deterministic — no model, no key, no network — so it belongs in the FREE tier and
+// runs on every PR here, not behind the `run-evals` opt-in. Gating a free check on a label would
+// mean the wiring went unchecked on every PR nobody labelled, which is the silence it exists to
+// end. Both halves run: the main pass (the real chain, against the live files) and `--self-test`
+// (mutation probes proving each check can fail).
+{
+  const WIRING = join(REPO_ROOT, "scripts/eval/memory-loop-wiring.mjs");
+  const FIXTURES = join(REPO_ROOT, "scripts/eval/fixtures/memory-loop");
+  s.check("G51a the memory-loop wiring runner and its replayed webhook fixtures exist",
+    existsSync(WIRING) && existsSync(FIXTURES));
+  if (existsSync(WIRING) && existsSync(FIXTURES)) {
+    const fx = readdirSync(FIXTURES).filter((f) => f.endsWith(".json"));
+    // A fixture set that shrank to nothing would leave every Part A/B check vacuously
+    // green, so the premise is asserted rather than assumed — the same reason
+    // select-suites asserts that a rubric file IS shared before checking co-selection.
+    s.check("G51b the fixture set covers all three recorder modes", fx.length >= 3,
+      `${fx.length} fixtures`);
+
+    const main = spawnSync("node", [WIRING], { encoding: "utf8" });
+    s.check("G51c the wiring chain holds end to end (transport hops + record addressing)",
+      main.status === 0,
+      ((main.stdout || "") + (main.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 400));
+
+    const self = spawnSync("node", [WIRING, "--self-test"], { encoding: "utf8" });
+    s.check("G51d every wiring check is proven able to FAIL (mutation probes)",
+      self.status === 0,
+      ((self.stdout || "") + (self.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 400));
+
+    // The runner's honesty about its own limits is load-bearing, not decoration: a wiring
+    // eval that reads as an efficacy eval is worse than none, and `lorekit-setup` ships
+    // with the LoreKit CLI, so this repo can only assert its own half of the contract.
+    // Asserted on the printed output, not on a source comment, because the NOTE is what a
+    // reader of a green run actually sees.
+    const out = main.stdout || "";
+    s.check("G51e the run states what it does NOT prove (delivery, storage, efficacy)",
+      /does NOT prove/i.test(out) || /It does NOT prove/.test(out),
+      "a green wiring run with no scope note reads as proof of the whole loop");
+    s.check("G51e the run names lorekit-setup as external and unasserted, never faked as a check",
+      /lorekit-setup/.test(out) && /external/i.test(out) && /not asserted here|deliberately not faked/i.test(out));
+  }
+}
+
+// ── G52: the memory-efficacy eval's CI wiring, and the gate it is not allowed to buy ──
+//
+// This is the only layer here that measures whether reading prior lore makes an agent's next
+// decision BETTER — the claim the whole self-improvement loop rests on, and until it existed the
+// repo asserted it in prose alone. Two things must hold, and they pull in opposite directions.
+//
+// First the wiring, exactly as G21m holds it for the detection eval: inputs DECLARED in the suite
+// table (no `paths:` mirror), the selector deriving one boolean, the job consuming it, and the
+// aggregator reading the job's result — the last being what decides whether a red run can report
+// green (G50f now derives that for every job).
+//
+// Second, and specific to this eval: the gate is on HARM and never on lift. Gating lift would
+// reward lore that leaks its own answer, so an author could turn the build green by writing better
+// hints instead of by making the mechanism work — the failure mode that would make this eval
+// unable to REFUTE the claim it exists to test. And the harm threshold must not be settable from
+// the workflow, or lowering a floor becomes a YAML edit nobody reviews.
+{
+  const RUNNER = join(REPO_ROOT, "scripts/eval/l3-memory.mjs");
+  const GOLDEN = join(REPO_ROOT, "scripts/eval/golden/memory-efficacy.jsonl");
+  s.check("G52a the memory-efficacy runner and its golden set exist",
+    existsSync(RUNNER) && existsSync(GOLDEN));
+  if (existsSync(RUNNER) && existsSync(GOLDEN)) {
+    const src = readFileSync(RUNNER, "utf8");
+    const table = readFileSync(join(REPO_ROOT, "scripts/eval/suites.mjs"), "utf8");
+    const selector = readFileSync(join(REPO_ROOT, "scripts/eval/select-suites.mjs"), "utf8");
+    const wf = readFileSync(join(REPO_ROOT, ".github/workflows/evals-l2.yml"), "utf8");
+
+    const self = spawnSync("node", [RUNNER, "--self-test"], { encoding: "utf8" });
+    s.check("G52b the memory-efficacy self-test passes (arm identity, scoring, answer-leak guard)",
+      self.status === 0,
+      ((self.stdout || "") + (self.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 400));
+
+    s.check("G52c the runner skips cleanly with no API key",
+      spawnSync("node", [RUNNER], { encoding: "utf8", env: { ...process.env, ANTHROPIC_API_KEY: "" } }).status === 0);
+
+    // Wiring — declared, derived, consumed, read.
+    s.check("G52d the eval's inputs are declared in the suite table, next to the suites",
+      /export const MEMORY_EFFICACY = \{[\s\S]*?runner:\s*"scripts\/eval\/l3-memory\.mjs"[\s\S]*?golden:\s*"scripts\/eval\/golden\/memory-efficacy\.jsonl"/.test(table));
+    s.check("G52d the selector derives its boolean from the table rather than restating the paths",
+      /EXTRA_RUNNERS/.test(selector) && !/l3-memory\.mjs/.test(selector.replace(/^\/\/.*$/gm, "")));
+    const mePathsInYml = ["scripts/eval/golden/memory-efficacy.jsonl", "scripts/eval/l3-memory.mjs"]
+      .filter((p) => wf.includes(p) && !new RegExp(`run: node ${p.replace(/[/.]/g, "\\$&")}`).test(wf));
+    s.check("G52d evals-l2.yml carries no hand-maintained mirror of the eval's inputs",
+      mePathsInYml.length === 0, mePathsInYml.join(", "));
+
+    const job = (wf.match(/^\s{2}memory_efficacy:[\s\S]*?(?=^\s{2}detection:)/m) || [""])[0];
+    const jobIf = (job.match(/^\s{4}if:\s*(.+)$/m) || [])[1] || "";
+    s.check("G52e evals-l2.yml has a memory-efficacy job", job.length > 0);
+    s.check("G52e it runs only on an opted-in run whose diff selected it",
+      jobIf.includes("needs.gate.outputs.opted_in == 'true'")
+      && jobIf.includes("needs.select.outputs.memory_efficacy == 'true'"), `if: ${jobIf.trim()}`);
+    s.check("G52e it runs the runner, gated, and cannot pass unmeasured",
+      /node scripts\/eval\/l3-memory\.mjs/.test(job)
+      && /EVAL_MEMORY_GATE:\s*"1"/.test(job)
+      && /EVAL_REQUIRE_KEY:\s*"1"/.test(job));
+    s.check("G52e the runner FAILS a run that asked for it with no API key",
+      /EVAL_REQUIRE_KEY === "1"/.test(src) && /process\.exit\(3\)/.test(src));
+
+    // The gate, and the two ways it could be bought.
+    s.check("G52f only harm gates the build — lift is reported, never gated",
+      /EVAL_MEMORY_GATE === "1" && v\.harmPass === false/.test(src)
+      && !/EVAL_MEMORY_GATE === "1"[\s\S]{0,400}liftVerdict[\s\S]{0,80}process\.exit\(1\)/.test(src),
+      "gating lift would reward lore that leaks the answer");
+    // Comment lines are stripped first: the job's own comment SAYS the variable is
+    // deliberately unset, and a check that cannot tell the prohibition from the violation
+    // would force the rationale out of the file it governs.
+    const wfCode = wf.split("\n").filter((l) => !/^\s*#/.test(l)).join("\n");
+    s.check("G52f the workflow cannot loosen the harm threshold",
+      !/EVAL_HARM_MAX\s*:/.test(wfCode),
+      "EVAL_HARM_MAX set in the workflow puts a floor's value where nobody reviews it");
+    // Resolution: the gate has to be able to express a failure smaller than one decoy, or
+    // the number cannot distinguish a real regression from a single flipped record. Same
+    // argument, and the same executable form, as l2-detection's control-count assertion —
+    // and the fix is always MORE DECOYS, never a lower HARM_MAX, which shrinks the
+    // tolerated count and so makes the resolution worse while looking like a concession.
+    const decoys = readFileSync(GOLDEN, "utf8").trim().split("\n")
+      .map((l) => JSON.parse(l)).filter((r) => r.kind === "decoy").length;
+    s.check("G52g the harm gate is expressible at this decoy count (≥ 4 tolerated)",
+      Math.floor(decoys * 0.20) >= 4,
+      `${decoys} decoys × 0.20 = ${Math.floor(decoys * 0.20)} tolerated — add decoys, do not lower HARM_MAX`);
+  }
+}
+
 // ── G46: the inline comment surface has a renderer, and it shares ONE vocabulary with the report ──
 //
 // The report got `render-report.mjs` because runs stopped copying its template and started
@@ -6308,9 +6444,37 @@ const isPollBlock = (block) =>
     const agg = from >= 0 ? lines.slice(from).join("\n") : "";
     s.check("G50f located the l2 aggregator job in evals-l2.yml", agg.length > 0,
       `l2: at ${from}`);
+    // The `needs:` list is DERIVED from the workflow's own job ids rather than frozen as
+    // a literal, because the literal guarded the wrong thing: it went red when a job was
+    // ADDED (a nuisance the author fixes by editing the literal) and stayed green when a
+    // job was added and NOT wired in — which is the failure that matters, since the
+    // aggregator is `if: always()` and an unread job's red result reaches it as a value
+    // nobody looks at. Every measurement job must be named here, so a new runner cannot
+    // ship reporting green.
+    const jobIds = [...yml.matchAll(/^ {2}([a-z][a-z0-9_-]*):$/gm)].map((m) => m[1])
+      .filter((id) => !["pull_request", "workflow_dispatch"].includes(id));
+    const needsList = (agg.match(/^\s*needs: \[([^\]]*)\]$/m) || [, ""])[1]
+      .split(",").map((x) => x.trim()).filter(Boolean);
+    const unwired = jobIds.filter((id) => id !== "l2" && !needsList.includes(id));
     s.check("G50f the aggregator depends on the select job and reads its result",
-      /^\s*needs: \[gate, select, suite, detection\]$/m.test(agg)
+      needsList.includes("select")
       && /^\s*SELECT_RESULT: \$\{\{ needs\.select\.result \}\}$/m.test(agg));
+    s.check("G50f the aggregator depends on EVERY job in the workflow, so none can go red unread",
+      jobIds.length > 1 && unwired.length === 0,
+      unwired.length ? `not in the aggregator's needs: ${unwired.join(", ")}` : "");
+    // Depending on a job is not reading it. Each measurement job's result must reach a
+    // `case` that can set FAILED — `needs` alone only makes the value available.
+    const measurementJobs = jobIds.filter((id) => !["gate", "select", "l2"].includes(id));
+    for (const id of measurementJobs) {
+      const envLine = new RegExp(`^\\s*([A-Z_]+): \\$\\{\\{ needs\\.${id}\\.result \\}\\}$`, "m");
+      const varName = (agg.match(envLine) || [])[1];
+      const caseBlock = varName
+        ? (agg.match(new RegExp(`case "\\$${varName}" in[\\s\\S]*?esac`)) || [""])[0]
+        : "";
+      s.check(`G50f the aggregator reads the ${id} job's result and can fail on it`,
+        !!varName && /^\s*\*\)[^\n]*FAILED=/m.test(caseBlock),
+        varName ? `${varName} has no failing default branch` : `no needs.${id}.result env line`);
+    }
     s.check("G50f a selection that did not succeed fails the run, loudly",
       /if \[ "\$SELECT_RESULT" != "success" \]; then/.test(agg)
       && /affected subset is unknown/.test(agg)
@@ -6334,8 +6498,19 @@ const isPollBlock = (block) =>
     && /elif \[ "\$\{REQUESTED:-all\}" = "all" \]; then/.test(yml));
   s.check("G50g a dispatch of `all` selects every suite through the same selector",
     /^\s*node scripts\/eval\/select-suites\.mjs --json --all \| tee selection\.json$/m.test(yml));
-  s.check("G50g an explicit dispatch list can name the separate detection runner",
-    /raw\.includes\("bug-detection"\)/.test(yml));
+  // Derived from the extra-runner table, not from a remembered name: a runner that is not
+  // nameable in a dispatch cannot be re-run on demand after a red one, which is the first
+  // thing anyone does with it.
+  {
+    const { EXTRA_RUNNERS } = await import(
+      pathToFileURL(join(REPO_ROOT, "scripts/eval/suites.mjs")).href);
+    const extraNames = EXTRA_RUNNERS.map((r) => r.decl.name);
+    s.check("G50g the extra-runner table is non-empty", extraNames.length > 0);
+    for (const n of extraNames) {
+      s.check(`G50g an explicit dispatch list can name the separate ${n} runner`,
+        yml.includes(`"${n}"`), `no "${n}" in the dispatch branch`);
+    }
+  }
 
   // G50h: full history is fetched, so the changed-file diff can reach the merge base. A
   // shallow clone fails open — correct, but it pays the full price on every PR while looking
