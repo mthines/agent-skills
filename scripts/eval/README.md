@@ -944,6 +944,7 @@ Two lessons worth keeping:
 | 7 | 50 records, pre-repair | 80% (16/20) | 17% (5/30) | +20 |
 | 8 | 50 records, **post-repair** | 80% (16/20) | **10%** (3/30) | +12 |
 | 9 | 50 records, post-repair (repeat) | 80% (16/20) | **10%** (3/30) | +5 |
+| 10 | 50 records, post-repair (repeat) | **70%** (14/20) — *at the gate* | **7%** (2/30) | +18 |
 
 Three dirty controls against six tolerated is the first reading with real margin, and it
 was bought by fixing fixtures rather than by touching either rubric or the gate.
@@ -1017,6 +1018,50 @@ still the weakest class on average and still mostly *never flagged* rather than
 over-filtered, so the next piece of work is unchanged; but run 8's single-run reading of it
 was over-confident and this is what the variance costs. Per class in run 9: `logic` 2/4,
 `consumer-break` 4/4, `dep-breaking-change` 3/4, `intent-mismatch` 3/4, `standards` 4/4.
+
+### Run 10 — the seeded half is the next instrument to fix
+
+Run 10 is the third post-repair pass and the second true repeat: same fixtures, same
+rubrics, same runner. It came back **recall 70% (14/20) — exactly the gate** — with
+`fp_rate` at **7% (2/30)** and lift **+18**.
+
+It passed, with no recall margin at all, and it overturns the reading the previous two
+runs had settled:
+
+| | run 8 | run 9 | run 10 |
+| --- | --- | --- | --- |
+| recall | 80% | 80% | **70%** |
+| fp_rate | 10% | 10% | **7%** |
+| lift | +12 | +5 | +18 |
+
+**Recall moved 10 points across identical inputs.** That is two seeded records, and it is
+the same defect the control growth just fixed, on the other half of the set: at 20 seeded
+records one case is 5 recall points against a 70% gate, so the metric has seven usable
+states and a rubric edit worth less than about 10 points is indistinguishable from
+sampling. Two runs reading 80% looked like an operating point with a comfortable margin;
+the third is on the line.
+
+So the next instrument fix is **grow the seeded half**, and it now outranks the
+`intent-mismatch` work. That ordering is the same argument as before — do not tune a
+rubric against a number that cannot express the change you are making — and this time the
+runner's own comment predicted it: commit 1 recorded that after the control growth the
+seeded half was the weaker one. Run 10 is the measurement behind that prediction.
+
+Three secondary observations, all on identical fixtures:
+
+- **`consumer-break` fell 4/4 → 2/4**, both misses *never flagged*. A class can look
+  solved for two runs and swing by two cases, so per-class figures need the series as
+  much as the aggregate does.
+- **`intent-mismatch` is 1/4 again.** The eight-run series is 1/4, 2/4, 2/4, 4/4, 2/4,
+  1/4, 3/4, 1/4 — still the weakest on average, still mostly never flagged. The class is a
+  real weakness; any single run's reading of *how* weak is not.
+- **One record failed on output shape again** — `intent-revert-not-fix`, where the finder
+  replied prose instead of JSON. Counted as a miss and never as clean, which is correct.
+  Never loosen the parse to recover it.
+
+`fp_rate` continues to fall (10 → 10 → 7) and the two survivors are the two known
+borderline originals, so nothing here disturbs the precision conclusion. It is recall that
+is not yet measurable.
 
 ### The L1 baseline
 
