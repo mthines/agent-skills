@@ -689,6 +689,14 @@ the one it kept:
 core as it already stood — the numbers describe the core, not the change that permitted
 them:
 
+> **These five runs are on a 10-control denominator, and the set now has 30.** Every
+> `fp_rate` below is `dirty/10`; a current run reports `dirty/30`. The two are **not
+> comparable as numbers** — do not read a later 23% against the 30% here as an
+> improvement. What survives the change is the *shape*: a spread that four of five runs
+> put above the gate. The counts of dirty controls are quoted alongside each rate so the
+> underlying observation stays legible. See
+> [Why the controls grew to 30](#why-the-controls-grew-to-30).
+
 `claude-sonnet-4-6` · 30 records (20 seeded + 10 decoy controls) · 4-way concurrency · ~3 min:
 
 | stage | run 1 | run 2 | run 3 |
@@ -760,6 +768,300 @@ that work when someone does: **repeat runs before and after**, and three is a fl
 rather than a target — it took the third run to tell run 2's recall cliff from a trend.
 A single post-change run, inside a ±20-point recall swing, cannot tell a rubric
 improvement from noise.
+
+That prescription — repeat runs, three as a floor — is what makes the detection
+runner's cost the binding constraint on this work, and it is why the runner is now
+instrumented the way `l2.mjs` already was.
+
+### The detection runner's token line
+
+`l2-detection.mjs` prints a `tokens:` line before either exit, and its two system
+blocks carry `cache_control: ephemeral`. Both are copies of what `l2.mjs` does, for
+the same reasons, and neither can move a measured number: the model receives identical
+tokens either way, so no result in this file needs re-baselining because of them.
+
+Three things are specific to this runner:
+
+- **Both prefixes are cacheable, so a `MISSED` here is a real defect.** `l2.mjs` has
+  three suites genuinely under the 1024-token minimum, where "cache not applicable" is
+  the honest report. Here the two prefixes are whole rule files (~2.5k tokens each), so
+  the self-test asserts they clear the bound — shrinking one below it reds L1 rather
+  than silently converting a discount into "nothing to discount".
+- **The verifier prefix is the larger bill.** The finder prefix is re-sent once per
+  record; the verifier prefix once per *candidate*, and a 30-record run raises well over
+  30 candidates. That asymmetry is also why the runner's cost scales with how noisy the
+  finders are, not just with the record count.
+- **The tokens are counted inside `ask()`, not returned to the caller.** `l2.mjs`
+  threads `usage` back so each case span carries its own numbers; this runner emits no
+  telemetry and makes 1 + N calls per record, so a record that throws on its third
+  verifier call would drop the two calls already billed. Counting where the request is
+  paid for cannot undercount.
+
+### Why the controls grew to 30
+
+The golden set is now **50 records — 20 seeded, 30 controls**, up from 10 controls.
+This is a change to the *measuring instrument*, not to the core it measures, and it was
+made before touching either rubric on purpose.
+
+**At 10 controls, `fp_rate` could not express a verdict.** One control was 10 points, so
+the only readings the metric could produce were 0, 10, 20, 30, 40 — against a 20-point
+gate. There was no value between "passing" and "failing by half again", and the five
+recorded runs land exactly on that lattice: 30 · 40 · 30 · ≤20 · 40. A rubric edit that
+genuinely moved precision from, say, 27% to 21% would have shown up as `30 → 30`, or as
+`30 → 20` if one decoy happened to flip — indistinguishable from the run-to-run variance
+the same five runs demonstrate. Every conclusion drawn from that series is therefore
+about a metric with four usable states, which is why the earlier "the precision gap is
+the *reproducible* failure" reading had to be retracted once a fifth run arrived.
+
+At 30 controls a dirty control is 3.3 points and the gate tolerates 6. The self-test
+asserts this directly — `tolerated = floor(controlN × GATES.fp) >= 4` — so shrinking the
+control half reds L1 rather than quietly returning the gate to a coin flip. **The fix for
+that assertion is always more controls.** Lowering `GATES.fp` would not buy resolution;
+it shrinks the tolerated count, making the problem worse while looking like a
+concession.
+
+**Every one of the 20 new controls is a decoy, and each probes a named finder failure
+mode** — the same bar the original 10 met. A control that is merely a boring diff
+measures how hard the diff is, not whether the reviewer discriminates. Four per class
+family:
+
+| family | what the four decoys probe |
+| --- | --- |
+| `logic` | the defect removed (backoff reset made structural); code that IS the fix for a classic bug (`((i % n) + n) % n`); integer cents where a float rule does not apply; a deliberately serial `await` loop |
+| `consumer-break` | an *optional* field added; a parameter type *widened* (the safe direction); a rename with a deprecated alias in the same diff; an overload added over an unchanged implementation |
+| `dep-breaking-change` | a purely additive minor; a `0.x` **patch** (zerover promotes a minor, not a patch); a real major whose usage sites are fixed **in the same diff**; a devDependency major intersecting test files only |
+| `intent-mismatch` | a refactor honestly described; a perf claim with the benchmark in the diff; extra scope *disclosed* in the description; a revert described as a revert |
+| `standards` | raw SQL in the repository layer the rule permits; the logger *replacing* console (the fix, not the violation); a rollback in the paired `down.sql` the convention specifies; `any` in a test file the rule exempts |
+
+Two are deliberately the hardest of their family and are worth watching individually:
+`control-modulo-negative-guarded`, where the defect the finder is tempted to name is
+real in general and already handled here, and
+`control-major-bump-usage-updated-same-diff`, where a finder can correctly identify the
+break *and* correctly locate the usage and still be wrong, because the fix is in the diff
+it is reading.
+
+**Two costs, both accepted.** A full run is now 50 records rather than 30, and `--class`
+keeps all controls by design (a per-class recall figure with no false-positive rate beside
+it is the half that can be gamed), so even a single-class run pays the 30. The token line
+from the previous section is what makes that visible, and the cached prefixes are what
+make it affordable.
+
+### Run 6 — the first on the 50-record set
+
+`claude-sonnet-4-6` · 50 records (20 seeded + 30 decoy controls) · 4-way · ~5 min ·
+48,257 input + 21,303 output tokens, 323,650 cached reads (**~74% lower input cost**):
+
+| stage | recall@class | fp_rate |
+| --- | --- | --- |
+| finder only | 90% (18/20) | 33% (10/30) |
+| + verifier | 90% (18/20) | **20%** (6/30) |
+| verifier lift | **+13** (fp −13, recall −0) | |
+
+**The gate passed, on the boundary.** 6 dirty controls is exactly the tolerated count at
+a 20% gate; a seventh fails. Read that as *no margin*, not as a pass — the run-to-run
+variance in the five runs above is larger than one control.
+
+Four things this run establishes, and one it does not:
+
+- **The cache works.** 323,650 of the input tokens were cache reads. This is the measured
+  claim the token line exists to make, and it is what puts repeat runs inside reach.
+- **Run 6's `fp_rate` is NOT comparable to the 30/40/30/≤20/40 series.** Different
+  denominator *and* different records — 20 of the 30 controls are new. The comparable
+  observation is proportional: 6/30 here against 3/10, 4/10, 3/10, ≤2/10, 4/10 before.
+  Nothing says the core improved; what improved is that 20% now has 3.3-point neighbours
+  on either side instead of being one of four reachable values.
+- **The 20 new decoys are doing their job.** The finder raised candidates on 10 of 30
+  controls and the verifier killed 4 of them, which is the flag-then-filter polarity
+  behaving as `finders.md` describes. A control set that produced no candidates at all
+  would have measured nothing.
+- **`intent-mismatch` came back 4/4**, against 1/4, 2/4, 2/4 in runs 1–3, and
+  `dep-breaking-change` slipped to 3/4. One run each way; per the rule established above,
+  neither is a trend. Both seeded misses (`logic-timezone-date-boundary`,
+  `dep-behaviour-not-api`) were **never flagged**, so they are finder recall, not verifier
+  over-filtering.
+- **It does not establish the verifier's value.** +13 is its best lift yet, but the
+  standing rule is that no single detection run may be quoted for or against it, and a
+  run that happens to agree with the hypothesis is not an exception to that rule.
+
+**What run 6 changed about the next step.** The plan was to tune `finding-verifier.md`
+for precision. Run 6 says the target is real but narrow — get 6 dirty controls to 3 or 4
+without moving recall off 18/20 — and it exposed the gap that blocks doing it: the runner
+printed the seeded misses by name but the controls only as a **count**. Six decoys got
+through and the run said nothing about which six or on what claim, which is precisely the
+blind tuning the control growth exists to prevent. The runner now names them, and both
+neighbouring cases (a control the verifier *rescued*, and one the finder never flagged),
+because those are three different faults with three different fixes.
+
+### Run 7 — the diagnosis, and why the verifier was not tuned
+
+Run 7 (recall 80% (16/20), fp **17%** (5/30), lift **+20**, gate passed) was the first run
+to name its surviving controls, and the answer overturned the plan. The intended next
+step was to tune `finding-verifier.md` for precision. **It was not done, and should not
+be**, because the false positives were not verifier failures:
+
+| survivor | what the finder said | verdict on the finding |
+| --- | --- | --- |
+| `control-any-in-non-exported` | `{ ...v }` on a primitive silently produces `{}`, losing the payload | **correct** — a real defect, unrelated to the `any`-scope rule this control probes |
+| `control-lock-released-correctly` | `Future` is used and never imported | **correct** — the import was in no surface the finder was shown |
+| `control-perf-claim-with-benchmark` | module-level state, unenforced call ordering, silent `undefined` before the first `index()` | **correct on all five candidates** — the perf claim was honest, the code carrying it was not clean |
+| `control-devdependency-major-tests-only` | vitest 3 changes `mockReset()` semantics at this usage site | **correct** — the record's own premise was wrong; a broken test is broken, "it is only a devDependency" is not a defence |
+| `control-retry-backoff-reset-correct` | `BASE_MS * 2 ** attempt` precedence; `throw …("unreachable")` reachable at `max <= 0` | **one false, one attributability artifact** — the only genuine verifier miss of the five |
+
+Four and a half of five were **defective fixtures**. Tightening the verifier against them
+would have been training it to reject *true* findings — the same fix-to-pass this eval's
+gate exists to prevent, one level up, and far harder to notice because `fp_rate` would
+have gone down.
+
+The evidence that the verifier is in fact working sits in the same output: it dropped
+**6 of 11** flagged controls, and every one it rescued was a well-formed decoy —
+`control-off-by-one-that-is-correct`, `control-major-bump-unused-api`,
+`control-description-matches-larger-diff`, `control-widened-param-type`,
+`control-rename-with-deprecated-alias`, `control-overload-added`. On decoys that are
+actually clean, the flag-then-filter polarity holds.
+
+So the fix was to the fixtures. All five are repaired, each carrying a dated note saying
+what was wrong and that the finder was right; two of them (`control-any-in-non-exported`,
+`control-lock-released-correctly`) are **original** controls whose defects had been
+invisible for the whole recorded baseline, which is a second reason not to read the
+earlier `fp_rate` series as a property of the detection core.
+
+Two lessons worth keeping:
+
+- **A control asserting "this diff is clean" is a claim about the whole diff, not about
+  the one thing being probed.** Four of these five probed their intended failure mode
+  correctly and were dirty for an unrelated reason. When writing a decoy, re-read the
+  fixture as an adversary would, not as the author of the probe.
+- **`fp_rate` alone cannot distinguish an over-permissive verifier from a defective
+  control set.** Five runs of a bare number pointed at the rubric; one run of named
+  survivors pointed at the fixtures. Never tune a rubric against a rate you have not
+  itemised.
+
+### Run 8 — after the repair
+
+| run | set | recall | fp_rate | lift |
+| --- | --- | --- | --- | --- |
+| 6 | 50 records, pre-repair | 90% (18/20) | 20% (6/30) — **on the boundary** | +13 |
+| 7 | 50 records, pre-repair | 80% (16/20) | 17% (5/30) | +20 |
+| 8 | 50 records, **post-repair** | 80% (16/20) | **10%** (3/30) | +12 |
+| 9 | 50 records, post-repair (repeat) | 80% (16/20) | **10%** (3/30) | +5 |
+| 10 | 50 records, post-repair (repeat) | **70%** (14/20) — *at the gate* | **7%** (2/30) | +18 |
+
+Three dirty controls against six tolerated is the first reading with real margin, and it
+was bought by fixing fixtures rather than by touching either rubric or the gate.
+
+Run 9 is a **true repeat**: its commit changes only prose, so the fixtures, both rubrics
+and the runner are byte-identical to run 8's. Read the run-9 section below before treating
+the matching headline as a stable operating point — the number repeated and the set behind
+it did not.
+
+What changed in character is more informative than the rate. The three survivors are no
+longer defective fixtures; they are genuine borderline judgements:
+
+- `control-any-in-non-exported` — the finder argues the `any` return type *leaks* into the
+  exported `track`. That is exactly the judgement this control exists to probe, so it is a
+  **legitimate measured false positive**. Leave it; it is the eval doing its job.
+- `control-lock-released-correctly` — three claims about unbounded `future.result()` with
+  no timeout. The lock *is* released correctly (the probe passes), but the placeholder
+  pattern the fixture uses is genuinely debatable on other grounds.
+- `control-off-by-one-that-is-correct` — "changed 0-indexed to 1-indexed without migrating
+  callers". The arithmetic is right, which is what the control asserts, but **no consumer
+  surface is supplied**, so the migration question is unanswerable from what the finder is
+  shown. The verifier rescued this one in run 7 and let it through in run 8, which is what
+  sitting on a boundary looks like. This is the one remaining fixture improvement worth
+  making: give it consumers already passing 1-indexed pages.
+
+Also worth watching, on the other side of the ledger: `intent-mismatch` came in 1/4, and
+`intent-undisclosed-scope` was *found by the finder and dropped by the verifier* — the
+over-filtering direction. Recall is still 80% against a 70% gate, but `intent-mismatch`
+has now been the weak class in five of six runs (1/4, 2/4, 2/4, 4/4, 2/4, 1/4). That is
+the most consistent signal in the whole series and is the strongest candidate for the next
+piece of work — on the **finder** side, since most of its misses are never flagged at all.
+
+### Run 9 — the same number, a different three
+
+Run 9 repeats run 8 exactly: the commit between them (`062f9c5`) touches only this file and
+`CLAUDE.md`, so the golden set, `finders.md`, `finding-verifier.md` and the runner are
+identical. It came back with the identical headline — recall **80%** (16/20), fp **10%**
+(3/30) — and that agreement is the confirming repeat the standing rule asks for.
+
+The set behind the number is not the same, and that is the finding:
+
+| | run 8 | run 9 |
+| --- | --- | --- |
+| `control-any-in-non-exported` | dirty | dirty |
+| `control-lock-released-correctly` | dirty | dirty |
+| `control-off-by-one-that-is-correct` | dirty | **rescued** |
+| `control-description-matches-larger-diff` | rescued | **dirty** (2 of 2 candidates confirmed) |
+
+Two survivors are stable and two swapped places across the verifier boundary — including
+`control-description-matches-larger-diff`, cited in the run-7 write-up as evidence that the
+polarity holds on well-formed decoys. It is not well-formed: the finder observes that
+`{ ...u, email: u.email, phone: u.phone }` is identical to `u`, so the two explicit
+properties add nothing, and it is right. That makes it the sixth over-loaded fixture and the
+third **original** one, alongside the two run 7 caught. Repair it next, with
+`control-off-by-one-that-is-correct`'s missing consumer surface.
+
+Two things this repeat settles:
+
+- **Itemising was not optional.** Two runs agreeing on `10%` would, as a bare rate, have
+  read as a stable operating point. The named survivors show a third of it moving run to
+  run, and one of the moves pointed straight at a defective fixture the previous run's
+  analysis had used as evidence *for* the core.
+- **`lift` is noise at this sample size, again.** It read +12 in run 8 and **+5** in run 9
+  on identical inputs, because the finder alone came in at 30% fp instead of 20% while the
+  post-verifier result did not move. The retraction stands: no single run may be quoted for
+  or against the verifier's value.
+
+`intent-mismatch` came back **3/4**, against 1/4 in run 8 on the same fixtures — a two-case
+swing from sampling alone. The seven-run series is now 1/4, 2/4, 2/4, 4/4, 2/4, 1/4, 3/4,
+still the weakest class on average and still mostly *never flagged* rather than
+over-filtered, so the next piece of work is unchanged; but run 8's single-run reading of it
+was over-confident and this is what the variance costs. Per class in run 9: `logic` 2/4,
+`consumer-break` 4/4, `dep-breaking-change` 3/4, `intent-mismatch` 3/4, `standards` 4/4.
+
+### Run 10 — the seeded half is the next instrument to fix
+
+Run 10 is the third post-repair pass and the second true repeat: same fixtures, same
+rubrics, same runner. It came back **recall 70% (14/20) — exactly the gate** — with
+`fp_rate` at **7% (2/30)** and lift **+18**.
+
+It passed, with no recall margin at all, and it overturns the reading the previous two
+runs had settled:
+
+| | run 8 | run 9 | run 10 |
+| --- | --- | --- | --- |
+| recall | 80% | 80% | **70%** |
+| fp_rate | 10% | 10% | **7%** |
+| lift | +12 | +5 | +18 |
+
+**Recall moved 10 points across identical inputs.** That is two seeded records, and it is
+the same defect the control growth just fixed, on the other half of the set: at 20 seeded
+records one case is 5 recall points against a 70% gate, so the metric has seven usable
+states and a rubric edit worth less than about 10 points is indistinguishable from
+sampling. Two runs reading 80% looked like an operating point with a comfortable margin;
+the third is on the line.
+
+So the next instrument fix is **grow the seeded half**, and it now outranks the
+`intent-mismatch` work. That ordering is the same argument as before — do not tune a
+rubric against a number that cannot express the change you are making — and this time the
+runner's own comment predicted it: commit 1 recorded that after the control growth the
+seeded half was the weaker one. Run 10 is the measurement behind that prediction.
+
+Three secondary observations, all on identical fixtures:
+
+- **`consumer-break` fell 4/4 → 2/4**, both misses *never flagged*. A class can look
+  solved for two runs and swing by two cases, so per-class figures need the series as
+  much as the aggregate does.
+- **`intent-mismatch` is 1/4 again.** The eight-run series is 1/4, 2/4, 2/4, 4/4, 2/4,
+  1/4, 3/4, 1/4 — still the weakest on average, still mostly never flagged. The class is a
+  real weakness; any single run's reading of *how* weak is not.
+- **One record failed on output shape again** — `intent-revert-not-fix`, where the finder
+  replied prose instead of JSON. Counted as a miss and never as clean, which is correct.
+  Never loosen the parse to recover it.
+
+`fp_rate` continues to fall (10 → 10 → 7) and the two survivors are the two known
+borderline originals, so nothing here disturbs the precision conclusion. It is recall that
+is not yet measurable.
 
 ### The L1 baseline
 
