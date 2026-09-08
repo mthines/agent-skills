@@ -234,4 +234,5 @@ If a tag rename is ever undertaken anyway, it must land in one change across the
 - [`review-outcomes.md`](./review-outcomes.md) — the Bus schema, fingerprint, TTL, and consolidation.
 - [`comment-relevance-memory.md`](./comment-relevance-memory.md) — the Signal read/apply/write contract.
 - [`outcome-learning.md`](./outcome-learning.md) — how the Bus is distilled into Lessons at promotion time.
+- [`self-improvement-evidence.md`](../references/self-improvement-evidence.md) — the evidence for why this taxonomy is worth the wiring: one fully-recorded ten-run episode, the four lessons that were re-derived because nothing carried them, the one that was not, and the failure modes on the other side.
 - `lorekit-setup` skill, `rules/ci-state-records.md` (external) — the state-record contract: cardinality, the JSON envelope, TTL-as-liveness-guard, and the guards that replace the entrenchment ones.
