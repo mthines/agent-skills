@@ -1,0 +1,10 @@
+{
+  "id": "deploy-regression-dismissed",
+  "note": "A finding that was raised, dismissed, and then regressed in production. The strongest amplify evidence in the system, and the reason a suppression rule is recomputed at read time rather than latched.",
+  "mode": "deploy-regression",
+  "event_name": null,
+  "repo": "mthines/agent-skills",
+  "payload": null,
+  "replayed": { "flagged": true, "dismissed": true, "fixedBeforeMerge": false },
+  "expect": { "kind": "rule-amplify", "weight": 3 }
+}

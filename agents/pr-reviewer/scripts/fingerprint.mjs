@@ -456,4 +456,7 @@ function main() {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// `process.argv[1]` is undefined under `node -e` / `node --eval`, where `pathToFileURL`
+// throws — so an importer probing this module from an inline script crashed on load
+// rather than getting its exports. Guard the argv read, not just the comparison.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

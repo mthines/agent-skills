@@ -56,6 +56,8 @@
 
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { resolve as resolvePath } from "node:path";
 import { extractFingerprint, isFingerprintV2, parseFingerprint } from "../agents/pr-reviewer/scripts/fingerprint.mjs";
 
 /** Relevance-signal TTL. Mirrored in CLAUDE.md, comment-relevance-memory.md, the plugin
@@ -164,7 +166,7 @@ void TIER_TAG_RE;
  * comment on the PR, humans' and other bots' included, and those must never train this
  * agent's suppressor (they are still useful as hotspot signal).
  */
-function resolveFingerprint(commentBody, commentAuthor, authorType) {
+export function resolveFingerprint(commentBody, commentAuthor, authorType) {
   const got = extractFingerprint(commentBody);
   const reviewerLogin = (process.env.REVIEWER_LOGIN ?? "").trim();
   const isOurMarker = !!got && got.fp_v === 2 && got.source === "marker" && isFingerprintV2(got.fp);
@@ -429,7 +431,7 @@ function lorekitWrite({ scope, key, value, tags, kind, host, ttlMs }) {
 }
 
 /**
- * Write one relevance record.
+ * One relevance record, as a PURE value — no network, no clock beyond `now`.
  *
  * Two key spaces, on purpose. A v2 fingerprint is structural and stable, so it is filed
  * under `rule::<fp>` where the lifecycle can accumulate. A v1 fingerprint is derived
@@ -441,15 +443,24 @@ function lorekitWrite({ scope, key, value, tags, kind, host, ttlMs }) {
  * `seen_count` (which LoreKit increments server-side on the same key) and the distinct
  * PRs in `evidence[]`, so a failed read-modify-write here can never reset a lifecycle
  * — see `agents/pr-reviewer/rules/memory.md § Lifecycle is computed at read time`.
+ *
+ * Split out of `writeRelevance` so the write path's own output can be asserted against
+ * the read path's expectations without a LoreKit round-trip. That seam — the tag, scope
+ * and key this produces must be the tag, scope and key `pr-reviewer` Step 1.0 asks for —
+ * was documented in prose and tested nowhere, so renaming either side broke the loop
+ * silently: every write kept succeeding and every read kept returning nothing.
+ * `scripts/eval/memory-loop-wiring.mjs` is what now holds the two halves together.
+ *
+ * @param {{now?: number}} opts `now` is injectable so a fixture's `expires` is deterministic.
  */
-function writeRelevance({ repo, fpInfo, relevance, resolutionMethod, reason, commentId, prNumber, severity, signal }) {
+export function buildRelevanceRecord({ repo, fpInfo, relevance, resolutionMethod, reason, commentId, prNumber, severity, signal, now = Date.now() }) {
   const scope = `repo::${repo.toLowerCase()}`;
   const promotable = fpInfo.fp_v === 2;
   const key = promotable
     ? `reviewer-comment-relevance::rule::${fpInfo.fp}`
     : `reviewer-comment-relevance::${fpInfo.fp}`;
   const direction = relevance === "relevant" ? "amplify" : "suppress";
-  const record = {
+  const value = {
     v: 2,
     fingerprint: fpInfo.fp,
     fp_v: fpInfo.fp_v,
@@ -461,17 +472,21 @@ function writeRelevance({ repo, fpInfo, relevance, resolutionMethod, reason, com
     ...(severity ? { severity } : {}),
     source: fpInfo.source,
     status: "candidate",
-    evidence: [{ pr: Number(prNumber), signal: signal ?? resolutionMethod, at: new Date().toISOString(), by: fpInfo.source.login }],
+    evidence: [{ pr: Number(prNumber), signal: signal ?? resolutionMethod, at: new Date(now).toISOString(), by: fpInfo.source.login }],
     examples: [`${repo}#${prNumber}` + (commentId ? ` comment ${commentId}` : "")],
     seen_count: 1,
     origin_pr: Number(prNumber),
-    expires: new Date(Date.now() + RELEVANCE_TTL_MS).toISOString(),
+    expires: new Date(now + RELEVANCE_TTL_MS).toISOString(),
   };
-  return lorekitWrite({
-    scope, key, value: record,
+  return {
+    scope, key, value,
     tags: ["loop::reviewer-comment-relevance", `source::${resolutionMethod}`],
     kind: "signal", host: "reviewer", ttlMs: RELEVANCE_TTL_MS,
-  });
+  };
+}
+
+function writeRelevance({ repo, fpInfo, relevance, resolutionMethod, reason, commentId, prNumber, severity, signal }) {
+  return lorekitWrite(buildRelevanceRecord({ repo, fpInfo, relevance, resolutionMethod, reason, commentId, prNumber, severity, signal }));
 }
 
 /** Per-file defect counters that outlive the branch (proposal § 4.7.2). */
@@ -1014,10 +1029,19 @@ function selfTest() {
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────────
+//
+// Guarded on being the MAIN module, because this file is now imported as a library too:
+// `scripts/eval/memory-loop-wiring.mjs` drives the real decision tables and the real
+// record builder rather than re-implementing them. Unguarded, an import fell straight
+// through to the `Unknown mode` branch below and `process.exit(0)` — killing the
+// importer before its first assertion, and reporting success while doing it.
 
+const isMain = !!process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url);
 const mode = process.argv.find((a) => a.startsWith("--mode="))?.split("=")[1];
 
-if (process.argv.includes("--self-test")) {
+if (!isMain) {
+  // Imported as a library — export surface only, no side effects.
+} else if (process.argv.includes("--self-test")) {
   selfTest();
 } else if (mode === "thread-resolved") {
   modeThreadResolved().catch((err) => { log("Unexpected error:", err.message); process.exit(0); });

@@ -1601,10 +1601,19 @@ function checksInSync(plan, checks) {
     {
       // The parse is pulled out of the live source and run, so a rewrite that
       // reintroduces earliest-wins fails here rather than in a quarterly review.
-      const fnSrc = l2runner.slice(l2runner.indexOf("function parseChoice"), l2runner.indexOf("const summary = []"));
+      // The scorer moved to lib.mjs when l3-memory.mjs became a second consumer, so this
+      // slices the file that OWNS it now. Repointing rather than re-parsing l2.mjs is the
+      // same maintenance rule the eval table states: a guard reading a moved file is a red
+      // build on the next author's PR, and a guard reading a file that no longer defines the
+      // function would extract an empty slice and pass vacuously.
+      const libSrc = read("scripts/eval/lib.mjs");
+      const fnSrc = libSrc.slice(libSrc.indexOf("export function parseChoice"));
       let parseChoice = null;
-      try { parseChoice = eval(`(${fnSrc.slice(fnSrc.indexOf("function parseChoice"))})`); } catch { /* reported below */ }
+      try { parseChoice = eval(`(${fnSrc.replace("export function", "function")})`); } catch { /* reported below */ }
       s.check("G21l parseChoice is extractable and callable from the live runner", typeof parseChoice === "function");
+      s.check("G21l l2.mjs consumes the shared scorer rather than keeping a copy",
+        /import \{[^}]*parseChoice[^}]*\} from "\.\/lib\.mjs"/.test(l2runner)
+        && !/function parseChoice\s*\(/.test(l2runner));
       if (typeof parseChoice === "function") {
         const C = ["Micro", "Lite", "Full"];
         const amb = (r) => typeof r === "string" && r.startsWith("?(");

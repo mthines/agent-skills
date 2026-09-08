@@ -1,0 +1,31 @@
+{
+  "id": "thread-resolved-outdated",
+  "note": "An outdated thread's subject is gone, so the resolution says nothing about whether the finding was any good. The chain must stop here — a record written from this is noise the read path cannot distinguish from evidence.",
+  "mode": "thread-resolved",
+  "event_name": "pull_request_review_thread",
+  "repo": "mthines/agent-skills",
+  "payload": {
+    "action": "resolved",
+    "pull_request": { "number": 185, "user": { "login": "mthines" } },
+    "thread": {
+      "node_id": "PRRT_kwDOC",
+      "comments": [
+        {
+          "id": 3758471002,
+          "path": "scripts/eval/l2-detection.mjs",
+          "line": 88,
+          "created_at": "2026-09-01T08:00:00Z",
+          "body": "suggestion: 🟡 hoist the gate constants.\n\n<!-- fp:v2:quality:maintainability:GATES@scripts/eval/l2-detection.mjs -->",
+          "user": { "login": "dash0-dev[bot]", "type": "Bot" }
+        }
+      ]
+    }
+  },
+  "replayed": {
+    "replies": [],
+    "thread": { "isResolved": true, "isOutdated": true },
+    "thumbsDownBy": null,
+    "regionTouched": false
+  },
+  "expect": { "skip": "anchor-gone" }
+}

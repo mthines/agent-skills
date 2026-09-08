@@ -1,0 +1,36 @@
+{
+  "id": "thread-resolved-thumbsdown",
+  "note": "The PR author reacted 👎 and said nothing. The author's own words outrank anything inferred from the diff, so this is a suppress signal even though the region was later touched.",
+  "mode": "thread-resolved",
+  "event_name": "pull_request_review_thread",
+  "repo": "mthines/agent-skills",
+  "payload": {
+    "action": "resolved",
+    "pull_request": { "number": 184, "user": { "login": "mthines" } },
+    "thread": {
+      "node_id": "PRRT_kwDOB",
+      "comments": [
+        {
+          "id": 3758470001,
+          "path": "agents/pr-reviewer.md",
+          "line": 977,
+          "created_at": "2026-08-31T11:00:00Z",
+          "body": "nitpick: 🔵 prefer a Record over parallel maps here.\n\n<!-- fp:v2:quality:maintainability:readStep10@agents/pr-reviewer.md -->",
+          "user": { "login": "dash0-dev[bot]", "type": "Bot" }
+        }
+      ]
+    }
+  },
+  "replayed": {
+    "replies": [],
+    "thread": { "isResolved": true, "isOutdated": false },
+    "thumbsDownBy": "mthines",
+    "regionTouched": true
+  },
+  "expect": {
+    "relevance": "not-relevant",
+    "resolutionMethod": "wont-fix",
+    "promotable": true,
+    "direction": "suppress"
+  }
+}

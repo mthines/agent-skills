@@ -1,0 +1,36 @@
+{
+  "id": "thread-resolved-v1-legacy",
+  "note": "A comment carrying no marker — another bot's, or one written before the v2 grammar. It keys into the flat legacy space and is marked non-promotable, so a wobbling prose key can never arm a suppression rule.",
+  "mode": "thread-resolved",
+  "event_name": "pull_request_review_thread",
+  "repo": "mthines/agent-skills",
+  "payload": {
+    "action": "resolved",
+    "pull_request": { "number": 187, "user": { "login": "mthines" } },
+    "thread": {
+      "node_id": "PRRT_kwDOE",
+      "comments": [
+        {
+          "id": 3758473004,
+          "path": "scripts/eval/suites.mjs",
+          "line": 40,
+          "created_at": "2026-09-03T08:00:00Z",
+          "body": "suggestion: null check guaranteed upstream, drop it.",
+          "user": { "login": "coderabbitai[bot]", "type": "Bot" }
+        }
+      ]
+    }
+  },
+  "replayed": {
+    "replies": [],
+    "thread": { "isResolved": true, "isOutdated": false },
+    "thumbsDownBy": null,
+    "regionTouched": true
+  },
+  "expect": {
+    "relevance": "relevant",
+    "resolutionMethod": "fixed",
+    "promotable": false,
+    "direction": "amplify"
+  }
+}

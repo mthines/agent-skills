@@ -1,0 +1,36 @@
+{
+  "id": "thread-resolved-fixed",
+  "note": "The happy path: this agent's own finding, marker intact, resolved with a commit touching the region. Produces the promotable v2 record every downstream read depends on.",
+  "mode": "thread-resolved",
+  "event_name": "pull_request_review_thread",
+  "repo": "mthines/agent-skills",
+  "payload": {
+    "action": "resolved",
+    "pull_request": { "number": 182, "user": { "login": "mthines" } },
+    "thread": {
+      "node_id": "PRRT_kwDOA",
+      "comments": [
+        {
+          "id": 3758467267,
+          "path": "scripts/eval/l2.mjs",
+          "line": 214,
+          "created_at": "2026-08-30T09:12:00Z",
+          "body": "issue (high): 🟠 **Unguarded index read**\n\n`choices[0]` is read before the empty check.\n\n<!-- fp:v2:correctness:nil-deref:parseChoice@scripts/eval/l2.mjs -->",
+          "user": { "login": "dash0-dev[bot]", "type": "Bot" }
+        }
+      ]
+    }
+  },
+  "replayed": {
+    "replies": [{ "id": 991, "body": "Good catch, fixed in 4f2a1c9." }],
+    "thread": { "isResolved": true, "isOutdated": false },
+    "thumbsDownBy": null,
+    "regionTouched": true
+  },
+  "expect": {
+    "relevance": "relevant",
+    "resolutionMethod": "fixed",
+    "promotable": true,
+    "direction": "amplify"
+  }
+}

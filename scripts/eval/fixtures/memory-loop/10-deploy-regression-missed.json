@@ -1,0 +1,10 @@
+{
+  "id": "deploy-regression-missed",
+  "note": "A post-deploy regression on a file nothing flagged. The only direct missed-detection signal the memory layer has a source for. No caller job ships for this mode by design — the telemetry credentials live outside the workflow.",
+  "mode": "deploy-regression",
+  "event_name": null,
+  "repo": "mthines/agent-skills",
+  "payload": null,
+  "replayed": { "flagged": false, "dismissed": false, "fixedBeforeMerge": false },
+  "expect": { "kind": "hotspot-missed", "weight": 1 }
+}

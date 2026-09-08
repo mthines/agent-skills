@@ -1,0 +1,31 @@
+{
+  "id": "thread-resolved-no-thread-state",
+  "note": "Thread state could not be read. Both inference branches below it are unsound without it, so the chain refuses rather than asserting acceptance on no evidence (recorder defect 3).",
+  "mode": "thread-resolved",
+  "event_name": "pull_request_review_thread",
+  "repo": "mthines/agent-skills",
+  "payload": {
+    "action": "resolved",
+    "pull_request": { "number": 186, "user": { "login": "mthines" } },
+    "thread": {
+      "node_id": "PRRT_kwDOD",
+      "comments": [
+        {
+          "id": 3758472003,
+          "path": "scripts/eval/lib.mjs",
+          "line": 180,
+          "created_at": "2026-09-02T08:00:00Z",
+          "body": "issue: 🟠 parseChoice returns the first match.\n\n<!-- fp:v2:correctness:logic:parseChoice@scripts/eval/lib.mjs -->",
+          "user": { "login": "dash0-dev[bot]", "type": "Bot" }
+        }
+      ]
+    }
+  },
+  "replayed": {
+    "replies": [],
+    "thread": null,
+    "thumbsDownBy": null,
+    "regionTouched": true
+  },
+  "expect": { "skip": "thread-state-unavailable" }
+}

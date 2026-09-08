@@ -1,0 +1,10 @@
+{
+  "id": "deploy-regression-fix-landed",
+  "note": "The finding was fixed before merge, so this regression is not attributable to it. Writing anything here would credit or blame a finding on evidence about different code.",
+  "mode": "deploy-regression",
+  "event_name": null,
+  "repo": "mthines/agent-skills",
+  "payload": null,
+  "replayed": { "flagged": true, "dismissed": true, "fixedBeforeMerge": true },
+  "expect": { "skip": "fix-landed" }
+}

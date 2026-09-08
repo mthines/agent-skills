@@ -1,0 +1,31 @@
+{
+  "id": "pr-merged-ignored",
+  "note": "The merge sweep's one write: a thread that was open at merge, declined by nobody, on a region no commit touched. Everything weaker than this evidence must skip.",
+  "mode": "pr-merged",
+  "event_name": "pull_request",
+  "repo": "mthines/agent-skills",
+  "payload": {
+    "action": "closed",
+    "pull_request": { "number": 183, "merged": true, "user": { "login": "mthines" } }
+  },
+  "replayed": {
+    "rootComment": {
+      "id": 3758480010,
+      "path": "scripts/eval/select-suites.mjs",
+      "line": 120,
+      "created_at": "2026-08-28T10:00:00Z",
+      "body": "nitpick: 🔵 name this constant.\n\n<!-- fp:v2:quality:naming:selectSuites@scripts/eval/select-suites.mjs -->",
+      "user": { "login": "dash0-dev[bot]", "type": "Bot" }
+    },
+    "replies": [],
+    "thread": { "isResolved": false, "isOutdated": false },
+    "thumbsDownBy": null,
+    "touch": { "touched": false, "granularity": "line" }
+  },
+  "expect": {
+    "relevance": "weak-not-relevant",
+    "resolutionMethod": "ignored-at-merge",
+    "promotable": true,
+    "direction": "suppress"
+  }
+}

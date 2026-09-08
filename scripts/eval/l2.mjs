@@ -22,7 +22,7 @@
 // exit code.
 import { readFileSync, existsSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { REPO_ROOT, extractSection } from "./lib.mjs";
+import { REPO_ROOT, extractSection, parseChoice } from "./lib.mjs";
 import { SUITES } from "./suites.mjs";
 import { EvalTelemetry } from "./telemetry.mjs";
 
@@ -178,47 +178,6 @@ async function ask(system, input) {
   return { text: (body.content?.[0]?.text || "").trim(), usage: body.usage || null };
 }
 
-/**
- * Read the model's choice, and refuse to guess when the reply names more than one.
- *
- * The prior rule was "whichever choice appears earliest wins", which silently
- * converted an ENUMERATION into a confident answer: a rubric that asks the agent to
- * emit a structured block (autonomous-workflow's `MODE SELECTION:` is the live case)
- * outranks the harness's "reply with exactly one of", and its template line lists
- * every choice — `- Tier: [Micro | Lite | Full]`. Earliest-substring scored that as
- * `Micro`, the first element, which is how all five tier-routing misses landed on one
- * label and read as a model that thinks a cross-cutting refactor is a one-file typo.
- *
- * An ambiguous reply is still a miss — it is just an HONEST one, printed with the raw
- * text so the next reader can tell a wrong answer from a wrong parse.
- */
-function parseChoice(text, choices) {
-  const t = text.trim();
-  const eq = choices.find((c) => c.toLowerCase() === t.toLowerCase());
-  if (eq) return eq;
-  // A bracketed placeholder is scaffolding, not a claim: `Tier: Full [not Micro]`
-  // names one choice, and `[Micro | Lite | Full]` names none.
-  const low = t.replace(/\[[^\]]*\]/g, " ").toLowerCase();
-  const named = choices.filter((c) => low.includes(c.toLowerCase()));
-  // Prefer the LONGEST match. Two suites have nested choices — `optimal` is a
-  // substring of `suboptimal`, `promoted` of `not-promoted` — so saying the longer
-  // one necessarily "names" the shorter one too, and a bare `named.length === 1`
-  // test made every reply but the byte-exact one ambiguous: `suboptimal.` scored
-  // `?(…)`, a miss indistinguishable from a wrong answer. Dropping a choice that
-  // another matched choice contains leaves exactly the one that was said.
-  //
-  // Known and accepted residue: for a nested pair this weakens the enumeration
-  // guard, because containment is the ONLY evidence available. `optimal |
-  // suboptimal` now reads as `suboptimal` rather than ambiguous. That is the right
-  // trade — the guard's live case is a rubric's own bracketed template line, which
-  // the bracket strip above already removes, so the loss is hypothetical while the
-  // defect it fixes was systematic. Do NOT "restore" ambiguity here without
-  // re-reading G21l's nested-choice checks, which pin both halves.
-  const top = named.filter((c) =>
-    !named.some((o) => o !== c && o.toLowerCase().includes(c.toLowerCase())));
-  if (top.length === 1) return top[0];
-  return `?(${t.slice(0, 40).replace(/\s+/g, " ")})`;
-}
 
 const summary = [];
 let anyBelowGate = false;

@@ -1,0 +1,36 @@
+{
+  "id": "thread-resolved-mixed-case-repo",
+  "note": "`github.repository` preserves the owner's display casing. The read path derives its scope lowercased, so a write that did not lowercase would land in a scope no read ever asks for — every write succeeding, every read empty.",
+  "mode": "thread-resolved",
+  "event_name": "pull_request_review_thread",
+  "repo": "Dash0hq/Dash0",
+  "payload": {
+    "action": "resolved",
+    "pull_request": { "number": 18362, "user": { "login": "MThines" } },
+    "thread": {
+      "node_id": "PRRT_kwDOF",
+      "comments": [
+        {
+          "id": 3758474005,
+          "path": "components/ui/src/lib/filters.ts",
+          "line": 61,
+          "created_at": "2026-09-04T08:00:00Z",
+          "body": "issue (medium): 🟡 **Filter dimension dropped**\n\n<!-- fp:v2:consumer-impact:contract-break:filtersToBody@components/ui/src/lib/filters.ts -->",
+          "user": { "login": "dash0-dev[bot]", "type": "Bot" }
+        }
+      ]
+    }
+  },
+  "replayed": {
+    "replies": [{ "id": 1201, "body": "Addressed in 9c31de0." }],
+    "thread": { "isResolved": true, "isOutdated": false },
+    "thumbsDownBy": null,
+    "regionTouched": true
+  },
+  "expect": {
+    "relevance": "relevant",
+    "resolutionMethod": "fixed",
+    "promotable": true,
+    "direction": "amplify"
+  }
+}

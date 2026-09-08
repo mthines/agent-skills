@@ -1,0 +1,26 @@
+{
+  "id": "pr-merged-already-resolved",
+  "note": "The resolve trigger owns every resolved thread. Sweeping one again writes a second, opposite record on the same fingerprint — recorder defect 1, which was live in production.",
+  "mode": "pr-merged",
+  "event_name": "pull_request",
+  "repo": "mthines/agent-skills",
+  "payload": {
+    "action": "closed",
+    "pull_request": { "number": 184, "merged": true, "user": { "login": "mthines" } }
+  },
+  "replayed": {
+    "rootComment": {
+      "id": 3758481011,
+      "path": "scripts/eval/l1.mjs",
+      "line": 900,
+      "created_at": "2026-08-29T10:00:00Z",
+      "body": "issue: 🟠 the guard never executes.\n\n<!-- fp:v2:standards:standards:G21l@scripts/eval/l1.mjs -->",
+      "user": { "login": "dash0-dev[bot]", "type": "Bot" }
+    },
+    "replies": [],
+    "thread": { "isResolved": true, "isOutdated": false },
+    "thumbsDownBy": null,
+    "touch": { "touched": true, "granularity": "line" }
+  },
+  "expect": { "skip": "already-recorded-on-resolve" }
+}

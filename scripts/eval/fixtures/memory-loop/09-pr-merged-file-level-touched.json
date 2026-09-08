@@ -1,0 +1,26 @@
+{
+  "id": "pr-merged-file-level-touched",
+  "note": "A file-level comment has no line anchor, so the sweep can only ask whether the FILE was touched. It was, so the outcome is unknown rather than ignored — recorder defect 2, which swept undecidable evidence as a suppress signal.",
+  "mode": "pr-merged",
+  "event_name": "pull_request",
+  "repo": "mthines/agent-skills",
+  "payload": {
+    "action": "closed",
+    "pull_request": { "number": 185, "merged": true, "user": { "login": "mthines" } }
+  },
+  "replayed": {
+    "rootComment": {
+      "id": 3758482012,
+      "path": "agents/shared/rules/memory-buckets.md",
+      "line": 0,
+      "created_at": "2026-08-30T10:00:00Z",
+      "body": "suggestion: 🟡 the bucket table is missing a row.\n\n<!-- fp:v2:standards:standards:-@agents/shared/rules/memory-buckets.md -->",
+      "user": { "login": "dash0-dev[bot]", "type": "Bot" }
+    },
+    "replies": [],
+    "thread": { "isResolved": false, "isOutdated": false },
+    "thumbsDownBy": null,
+    "touch": { "touched": true, "granularity": "file" }
+  },
+  "expect": { "skip": "region-edited" }
+}
