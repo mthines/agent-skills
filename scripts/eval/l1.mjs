@@ -6362,11 +6362,9 @@ const isPollBlock = (block) =>
       ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 400));
 
     // (b) The skill validates cleanly against its OWN validator — the same "physician, heal
-    // thyself" bar this file holds every other script and rule file to. This sub-check is
-    // expected to run RED while create-skill's own markdown (the Mechanical pre-pass section,
-    // the TOCs on its long rule files) is being authored concurrently on a sibling stream of
-    // the same change — that is a real, reportable state, not a bug in this guard, and it must
-    // be reported precisely (which finding ids, on which file) rather than silently skipped.
+    // thyself" bar this file holds every other script and rule file to. A FAIL here is a real,
+    // reportable state and is never a bug in this guard, so the detail line carries the
+    // validator's own FAIL lines (which finding ids, on which file) rather than a bare red.
     const run = spawnSync(process.execPath, [VALIDATOR, CS], { encoding: "utf8" });
     s.check("G51b create-skill passes its own validator", run.status === 0,
       (run.stdout || "").split("\n").filter((l) => l.startsWith("FAIL")).join("; ").slice(0, 500));
