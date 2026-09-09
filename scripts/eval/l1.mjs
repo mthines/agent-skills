@@ -6427,10 +6427,23 @@ const isPollBlock = (block) =>
   // four sites across three files, so an arm reading only `skillMd` enforces the rule on one
   // of them and leaves the other three free to regress — reverting rules/quality-checklist.md
   // to the cwd-relative form left this file green. Walk every markdown file the skill ships.
+  // Byte-identical to the validator's own INTERPRETER constant, and deliberately duplicated
+  // rather than imported: this guard exists to hold the validator to a contract from outside
+  // it, so importing the alternation would let a change to the validator silently change the
+  // guard that is supposed to catch it. The cost of the copy is that the two can drift — a
+  // divergence this review caught (4 interpreters here against 9 there, with `deno`
+  // unreachable in both) — so they are asserted equal below rather than trusted to match.
+  const INTERPRETER = String.raw`\b(?:node|npx|python3?|bash|sh|tsx|(?:deno|bun)(?:\s+run)?)\s+`;
+  const validatorSrc = existsSync(VALIDATOR) ? readFileSync(VALIDATOR, "utf8") : "";
+  s.check("G51e the validator's INTERPRETER alternation matches this guard's copy",
+    validatorSrc.includes(`const INTERPRETER = String.raw\`${INTERPRETER}\`;`),
+    existsSync(VALIDATOR)
+      ? "validate-skill.mjs's INTERPRETER constant is absent or differs from l1.mjs's copy"
+      : "validate-skill.mjs not found");
   const cwdRelative = [];
   for (const path of walk(CS, ".md")) {
     const body = readFileSync(path, "utf8");
-    for (const hit of body.match(/(?:node|npx|bash|sh)\s+(?:[^\s"'`]*\/)?create-skill\/scripts\/[^\s"'`)]+/g) ?? []) {
+    for (const hit of body.match(new RegExp(`${INTERPRETER}(?:[^\\s"'\`]*\\/)?create-skill\\/scripts\\/[^\\s"'\`)]+`, "g")) ?? []) {
       cwdRelative.push(`${rel(path)}: ${hit}`);
     }
   }

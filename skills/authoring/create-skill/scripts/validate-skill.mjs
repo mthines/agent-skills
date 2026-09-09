@@ -42,6 +42,15 @@ const RULE_TOC_MIN = 150;   // this skill's rule: rules/*.md over 150 lines need
 const LENS_MAX = 80;        // rules/review-lens-contract.md: a lens.md file is hard-capped at 80
                              // lines (~600 tokens) so the pr-reviewer agent can afford to load three.
 
+// Interpreter prefixes that mark a command as INVOKING a script rather than merely naming
+// one — SC01 needs that distinction so a prose reference or a markdown link to a script by
+// repo-relative path stays legal. `deno` and `bun` carry an OPTIONAL `run` subcommand:
+// without it their real form (`deno run x.ts`) puts `run` in the path slot and the pattern
+// can never match, so listing them bare made both unreachable. The leading \b stops `mysh`
+// from matching via `sh`. Duplicated verbatim in l1.mjs's G51e — see the note there for why
+// that copy is deliberate rather than shareable.
+const INTERPRETER = String.raw`\b(?:node|npx|python3?|bash|sh|tsx|(?:deno|bun)(?:\s+run)?)\s+`;
+
 const MONTHS = "January|February|March|April|May|June|July|August|September|October|November|December";
 const BD05_RE = new RegExp(`\\b(before|after|as of|until)\\s+(?:(?:${MONTHS})\\s+)?20\\d\\d\\b`, "i");
 
@@ -498,7 +507,7 @@ function checkPortabilityDocs(f, ctx) {
     // by repo-relative path stays legal — the rule governs how a script is INVOKED.
     const ownScripts = dirName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\/scripts\\/";
     const invocation = new RegExp(
-      `(?:node|npx|python3?|bash|sh|deno|bun|tsx)\\s+(?:[^\\s"'\`]*\\/)?${ownScripts}[^\\s"'\`)]+`, "g");
+      `${INTERPRETER}(?:[^\\s"'\`]*\\/)?${ownScripts}[^\\s"'\`)]+`, "g");
     const cwdRelative = [...new Set(text.match(invocation) ?? [])];
     f.check("SC01", "WARN", cwdRelative.length === 0, "SKILL.md", null,
       `SKILL.md invokes this skill's own script through a filesystem-relative path instead of \${CLAUDE_SKILL_DIR}: ${cwdRelative.join(", ")} (see rules/scripts-and-assets.md § Path convention)`);
@@ -774,6 +783,19 @@ function selfTest() {
   }, (dir) => {
     t("scripts/ plus a REPO-level script invocation: SC01 does not fire",
       !hasId(validateSkill(dir), "SC01"));
+  });
+  // `deno run x.ts` is the form that made a bare `deno` alternative unreachable: `run` lands
+  // in the path slot, so nothing after it could ever match. Pins the optional subcommand.
+  withFixture((root) => {
+    const dir = writeSkill(root, "has-scripts-deno", [], [
+      "# Body", "", "Run `deno run ${CLAUDE_SKILL_DIR}/scripts/check.ts`.", "",
+      "Or `deno run pkg/has-scripts-deno/scripts/check.ts`.",
+    ]);
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    return dir;
+  }, (dir) => {
+    t("scripts/ with an own-path `deno run` invocation: SC01 fires",
+      hasId(validateSkill(dir), "SC01"));
   });
 
   // 12. FM07 profile split: a bare <placeholder> passes without --portable and fails with it;
