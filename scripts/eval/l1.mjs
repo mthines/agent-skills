@@ -6440,13 +6440,29 @@ const isPollBlock = (block) =>
     existsSync(VALIDATOR)
       ? "validate-skill.mjs's INTERPRETER constant is absent or differs from l1.mjs's copy"
       : "validate-skill.mjs not found");
+  // Keyed on the skill's OWN script FILENAMES, not on a `create-skill/` path segment. The
+  // segment form let the bare `node scripts/validate-skill.mjs` through untouched — the same
+  // partial-coverage shape as the SKILL.md-only arm it replaced, one level down. Reading the
+  // filenames off the directory also excludes a repo-level script by construction:
+  // `bash scripts/sync-symlinks.sh`, which SKILL.md legitimately documents, is not a file in
+  // this skill's scripts/ directory, so no allowlist has to be maintained by hand.
+  const ownScriptsDir = join(CS, "scripts");
+  const ownScriptNames = existsSync(ownScriptsDir)
+    ? readdirSync(ownScriptsDir).filter((n) => /\.(mjs|cjs|js|ts|py|sh)$/.test(n)).sort()
+    : [];
   const cwdRelative = [];
-  for (const path of walk(CS, ".md")) {
-    const body = readFileSync(path, "utf8");
-    for (const hit of body.match(new RegExp(`${INTERPRETER}(?:[^\\s"'\`]*\\/)?create-skill\\/scripts\\/[^\\s"'\`)]+`, "g")) ?? []) {
-      cwdRelative.push(`${rel(path)}: ${hit}`);
+  if (ownScriptNames.length) {
+    const names = ownScriptNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    const invocation = new RegExp(
+      `${INTERPRETER}(?!\\$\\{CLAUDE_SKILL_DIR\\})(?:[^\\s"'\`]*\\/)?(?:${names})`, "g");
+    for (const path of walk(CS, ".md")) {
+      const body = readFileSync(path, "utf8");
+      for (const hit of body.match(invocation) ?? []) cwdRelative.push(`${rel(path)}: ${hit}`);
     }
   }
+  s.check("G51e the skill ships at least one script for the arm above to key on",
+    ownScriptNames.length > 0,
+    existsSync(ownScriptsDir) ? "scripts/ holds no recognised script files" : "scripts/ not found");
   s.check("G51e no create-skill markdown file invokes its own script by a cwd-relative path",
     cwdRelative.length === 0,
     cwdRelative.length ? `${cwdRelative.length} cwd-relative invocation(s) — ${cwdRelative.join("; ")}` : "");
