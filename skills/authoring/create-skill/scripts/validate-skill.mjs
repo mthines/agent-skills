@@ -505,9 +505,22 @@ function checkPortabilityDocs(f, ctx) {
     //
     // An interpreter prefix is required so a prose reference or a markdown link to the script
     // by repo-relative path stays legal — the rule governs how a script is INVOKED.
-    const ownScripts = dirName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\/scripts\\/";
-    const invocation = new RegExp(
-      `${INTERPRETER}(?:[^\\s"'\`]*\\/)?${ownScripts}[^\\s"'\`)]+`, "g");
+    // Two arms, because one prefix shape cannot express both cases. The first keys on this
+    // skill's own directory name and so catches any depth of repo-relative path. The second
+    // exists because the BARE and `./`-prefixed forms have no directory segment to key on at
+    // all, and were silent here while l1.mjs's G51e caught them — two guards disagreeing
+    // about one rule. It is keyed on the skill's own script FILENAMES, which is what keeps
+    // both protected forms above legal: `sync-symlinks.sh` is not a file in create-skill's
+    // scripts/, and a `<skill_dir>/` placeholder is neither bare nor `./`-prefixed.
+    const esc = (v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const ownScriptNames = readdirSync(scriptsDir)
+      .filter((n) => statSync(join(scriptsDir, n)).isFile())
+      .map(esc);
+    const arms = [`${INTERPRETER}(?:[^\\s"'\`]*\\/)?${esc(dirName)}\\/scripts\\/[^\\s"'\`)]+`];
+    if (ownScriptNames.length) {
+      arms.push(`${INTERPRETER}(?:\\.\\/)?scripts\\/(?:${ownScriptNames.join("|")})`);
+    }
+    const invocation = new RegExp(arms.join("|"), "g");
     const cwdRelative = [...new Set(text.match(invocation) ?? [])];
     f.check("SC01", "WARN", cwdRelative.length === 0, "SKILL.md", null,
       `SKILL.md invokes this skill's own script through a filesystem-relative path instead of \${CLAUDE_SKILL_DIR}: ${cwdRelative.join(", ")} (see rules/scripts-and-assets.md § Path convention)`);
@@ -795,6 +808,21 @@ function selfTest() {
     return dir;
   }, (dir) => {
     t("scripts/ with an own-path `deno run` invocation: SC01 fires",
+      hasId(validateSkill(dir), "SC01"));
+  });
+  // The BARE and `./`-prefixed forms have no directory segment to key on, so the dirName arm
+  // is blind to them. Keyed on the script filename instead — which is also what keeps a
+  // repo-level script legal, pinned by the has-scripts-repo fixture above.
+  withFixture((root) => {
+    const dir = writeSkill(root, "has-scripts-bare", [], [
+      "# Body", "", "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.", "",
+      "Or `node scripts/check.mjs`, or `node ./scripts/check.mjs`.",
+    ]);
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    writeFileSync(join(dir, "scripts", "check.mjs"), "// fixture\n");
+    return dir;
+  }, (dir) => {
+    t("scripts/ with a bare or ./-prefixed own-script invocation: SC01 fires",
       hasId(validateSkill(dir), "SC01"));
   });
 
