@@ -93,9 +93,9 @@ runs in three passes rather than one:
 3. **Execute** — apply, only after validation passes.
 
 ```bash
-node scripts/migrate.py --plan-only   # prints the diff, changes nothing
-node scripts/migrate.py --verify      # validates the plan
-node scripts/migrate.py --apply       # executes it
+python3 ${CLAUDE_SKILL_DIR}/scripts/migrate.py --plan-only   # prints the diff, changes nothing
+python3 ${CLAUDE_SKILL_DIR}/scripts/migrate.py --verify      # validates the plan
+python3 ${CLAUDE_SKILL_DIR}/scripts/migrate.py --apply       # executes it
 ```
 
 ## Validator feedback loop
