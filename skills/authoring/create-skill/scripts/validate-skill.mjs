@@ -445,11 +445,14 @@ function checkPortabilityDocs(f, ctx) {
     f.check("PD04", "WARN", true, "SKILL.md", null, "");
   }
 
-  // SC01: scripts/ existing implies SKILL.md should reference it.
+  // SC01: scripts/ existing implies SKILL.md invokes at least one script through
+  // ${CLAUDE_SKILL_DIR} (rules/scripts-and-assets.md § Path convention). A bare
+  // `scripts/` mention is NOT accepted — a cwd-relative path is exactly the form the
+  // rule forbids, and accepting it let create-skill self-validate clean on a violation.
   const scriptsDir = join(dir, "scripts");
   if (existsSync(scriptsDir) && statSync(scriptsDir).isDirectory()) {
-    f.check("SC01", "WARN", text.includes("${CLAUDE_SKILL_DIR}") || /\bscripts\//.test(text), "SKILL.md", null,
-      "scripts/ exists but SKILL.md never mentions ${CLAUDE_SKILL_DIR} or a scripts/ path");
+    f.check("SC01", "WARN", text.includes("${CLAUDE_SKILL_DIR}"), "SKILL.md", null,
+      "scripts/ exists but SKILL.md never invokes a script through ${CLAUDE_SKILL_DIR} (a cwd-relative scripts/ path is not portable — see rules/scripts-and-assets.md § Path convention)");
   } else {
     f.check("SC01", "WARN", true, "SKILL.md", null, "");
   }
@@ -662,8 +665,24 @@ function selfTest() {
     t("missing SKILL.md: throws a usage error", threw);
   });
 
+  // 11. SC01: a scripts/ dir with only a cwd-relative mention fires; ${CLAUDE_SKILL_DIR} does not.
+  withFixture((root) => {
+    const dir = writeSkill(root, "has-scripts", [], ["# Body", "", "Run `node scripts/check.mjs`."]);
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    return dir;
+  }, (dir) => {
+    t("scripts/ with cwd-relative path only: SC01 fires", hasId(validateSkill(dir), "SC01"));
+  });
+  withFixture((root) => {
+    const dir = writeSkill(root, "has-scripts-ok", [], ["# Body", "", "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`."]);
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    return dir;
+  }, (dir) => {
+    t("scripts/ with ${CLAUDE_SKILL_DIR} path: SC01 does not fire", !hasId(validateSkill(dir), "SC01"));
+  });
+
   const ok = fails === 0;
-  console.log(ok ? "validate-skill self-test: PASS (10 assertions)" : `validate-skill self-test: FAIL (${fails} failure(s))`);
+  console.log(ok ? "validate-skill self-test: PASS (11 assertions)" : `validate-skill self-test: FAIL (${fails} failure(s))`);
   return ok;
 }
 
