@@ -466,10 +466,16 @@ function checkPortabilityDocs(f, ctx) {
   // ${CLAUDE_SKILL_DIR} (rules/scripts-and-assets.md § Path convention). A bare
   // `scripts/` mention is NOT accepted — a cwd-relative path is exactly the form the
   // rule forbids, and accepting it let create-skill self-validate clean on a violation.
+  //
+  // Scope: the check demands an INVOCATION PATH (`${CLAUDE_SKILL_DIR}/scripts/`), not a
+  // mention of the variable. A prose mention of the convention is not an invocation — it
+  // documents the rule while every actual command in the file stays cwd-relative, which is
+  // precisely the violation this check exists to catch, so a whole-file scan for the bare
+  // variable satisfied SC01 on the very state it is meant to flag.
   const scriptsDir = join(dir, "scripts");
   if (existsSync(scriptsDir) && statSync(scriptsDir).isDirectory()) {
-    f.check("SC01", "WARN", text.includes("${CLAUDE_SKILL_DIR}"), "SKILL.md", null,
-      "scripts/ exists but SKILL.md never invokes a script through ${CLAUDE_SKILL_DIR} (a cwd-relative scripts/ path is not portable — see rules/scripts-and-assets.md § Path convention)");
+    f.check("SC01", "WARN", /\$\{CLAUDE_SKILL_DIR\}\/scripts\//.test(text), "SKILL.md", null,
+      "scripts/ exists but SKILL.md never invokes a script through a ${CLAUDE_SKILL_DIR}/scripts/ path — a bare mention of the variable in prose does not count (a cwd-relative scripts/ path is not portable — see rules/scripts-and-assets.md § Path convention)");
   } else {
     f.check("SC01", "WARN", true, "SKILL.md", null, "");
   }
@@ -682,7 +688,10 @@ function selfTest() {
     t("missing SKILL.md: throws a usage error", threw);
   });
 
-  // 11. SC01: a scripts/ dir with only a cwd-relative mention fires; ${CLAUDE_SKILL_DIR} does not.
+  // 11. SC01: a scripts/ dir with only a cwd-relative mention fires; a ${CLAUDE_SKILL_DIR}/scripts/
+  //     path does not. Third fixture: a body that mentions only the BARE variable in prose, with
+  //     every real command still cwd-relative, must fire too — a documented convention is not an
+  //     invocation, and a whole-file scan for the bare variable cleared exactly that state.
   withFixture((root) => {
     const dir = writeSkill(root, "has-scripts", [], ["# Body", "", "Run `node scripts/check.mjs`."]);
     mkdirSync(join(dir, "scripts"), { recursive: true });
@@ -696,6 +705,16 @@ function selfTest() {
     return dir;
   }, (dir) => {
     t("scripts/ with ${CLAUDE_SKILL_DIR} path: SC01 does not fire", !hasId(validateSkill(dir), "SC01"));
+  });
+  withFixture((root) => {
+    const dir = writeSkill(root, "has-scripts-prose", [], [
+      "# Body", "", "Every helper here is `${CLAUDE_SKILL_DIR}`-anchored.", "",
+      "Run `node scripts/check.mjs`.",
+    ]);
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    return dir;
+  }, (dir) => {
+    t("scripts/ with a bare ${CLAUDE_SKILL_DIR} prose mention only: SC01 fires", hasId(validateSkill(dir), "SC01"));
   });
 
   // 12. FM07 profile split: a bare <placeholder> passes without --portable and fails with it;
