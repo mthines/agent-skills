@@ -221,8 +221,8 @@ memory or invent one — then confirm the remaining `(judgment)` items passed.
 On failure:
 
 ```text
-Self-check: FAIL — fix these:
-- [ ] description over 1024 chars (currently 1180)
+FAIL FM05 SKILL.md:3 — description must be non-empty and <= 1024 chars, got 1180
+Self-check: FAIL — 1 failing
 ```
 
 ### Phase 6 — Evaluation
