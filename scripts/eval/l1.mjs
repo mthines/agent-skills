@@ -6447,9 +6447,22 @@ const isPollBlock = (block) =>
   // filenames off the directory also excludes a repo-level script by construction:
   // `bash scripts/sync-symlinks.sh`, which SKILL.md legitimately documents, is not a file in
   // this skill's scripts/ directory, so no allowlist has to be maintained by hand.
+  // EVERY file in scripts/, not an extension allowlist. The allowlist was a hand-kept list
+  // with nothing asserting it complete, and adding a `.rb` script silently dropped it from
+  // the arm's coverage — a guard that quietly shrinks when the thing it guards grows. Taking
+  // the directory as-is cannot fall behind, and a non-script file landing in the list is
+  // harmless: nothing invokes a README through an interpreter.
+  //
+  // The INTERPRETER alternation above is the second such list, and it is deliberately NOT
+  // fixed the same way, because it cannot be: no enumeration of interpreters is complete, so
+  // `ruby scripts/x.sh` stays uncaught. That direction is safe — a missing interpreter is a
+  // missed violation, never a false accusation — and the repo's own skills invoke scripts
+  // with node, bash and python only. Recorded rather than papered over with an assertion
+  // that could not actually establish completeness.
   const ownScriptsDir = join(CS, "scripts");
   const ownScriptNames = existsSync(ownScriptsDir)
-    ? readdirSync(ownScriptsDir).filter((n) => /\.(mjs|cjs|js|ts|py|sh)$/.test(n)).sort()
+    ? readdirSync(ownScriptsDir, { withFileTypes: true })
+      .filter((e) => e.isFile()).map((e) => e.name).sort()
     : [];
   const cwdRelative = [];
   if (ownScriptNames.length) {
