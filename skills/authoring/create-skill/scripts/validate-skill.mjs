@@ -577,7 +577,13 @@ function writeSkill(root, name, frontmatterExtra, bodyLines, dirName = name) {
 
 function selfTest() {
   let fails = 0;
+  // Counted at runtime, never hardcoded: the banner is this self-test's only coverage
+  // signal, and a literal in it drifted twice (13 written against 22 real call sites)
+  // — a number that can disagree with the assertions it summarises reports shrinking
+  // coverage as a pass. `t()` increments on every call, pass or fail.
+  let asserts = 0;
   const t = (label, ok, detail = "") => {
+    asserts++;
     if (ok) return;
     fails++;
     console.error(`  ✗ ${label}${detail ? " — " + detail : ""}`);
@@ -763,7 +769,7 @@ function selfTest() {
   });
 
   const ok = fails === 0;
-  console.log(ok ? "validate-skill self-test: PASS (13 assertions)" : `validate-skill self-test: FAIL (${fails} failure(s))`);
+  console.log(ok ? `validate-skill self-test: PASS (${asserts} assertions)` : `validate-skill self-test: FAIL (${fails} failure(s))`);
   return ok;
 }
 
