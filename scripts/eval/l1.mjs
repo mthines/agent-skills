@@ -6335,4 +6335,70 @@ const isPollBlock = (block) =>
     /^\s*fetch-depth: 0$/m.test(yml));
 }
 
+// ── G51: create-skill's validate-skill.mjs — the mechanical pre-pass has a self-test,
+// stays runnable against real skills, and cannot go orphaned ──
+//
+// The plan that added this script split the work across two concurrently-edited agents: one
+// wrote the validator (scripts/validate-skill.mjs), the other rewrote create-skill's OWN
+// markdown to point at it (rules/quality-checklist.md's "## Mechanical pre-pass" section,
+// SKILL.md's link to the script). A script with no self-test is a script nobody can prove
+// still does what it claims after the next edit — the same argument G39b/G46b/G33b make for
+// their own scripts; a script with a self-test but no link from the skill's own docs is dead
+// weight the next author won't find; and a skill that ships a TOC rule for its own rules/*.md
+// files without obeying it on its OWN long files is the exact self-inconsistency this repo's
+// create-skill review (finding A9: 9 of its own rules/*.md over 100 lines had no TOC) caught
+// in the first place. This group closes all three gaps mechanically rather than trusting a
+// future editor to remember them by hand.
+{
+  const CS = join(REPO_ROOT, "skills/authoring/create-skill");
+  const VALIDATOR = join(CS, "scripts/validate-skill.mjs");
+  s.check("G51a validate-skill.mjs exists", existsSync(VALIDATOR));
+  if (existsSync(VALIDATOR)) {
+    // (a) The validator's own self-test. This is the one sub-check that MUST be green
+    // regardless of what state create-skill's own markdown is in — it is the script proving
+    // itself internally consistent, not proving anything about the skill it validates.
+    const st = spawnSync(process.execPath, [VALIDATOR, "--self-test"], { encoding: "utf8" });
+    s.check("G51a the validator's own self-test passes", st.status === 0,
+      ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 400));
+
+    // (b) The skill validates cleanly against its OWN validator — the same "physician, heal
+    // thyself" bar this file holds every other script and rule file to. This sub-check is
+    // expected to run RED while create-skill's own markdown (the Mechanical pre-pass section,
+    // the TOCs on its long rule files) is being authored concurrently on a sibling stream of
+    // the same change — that is a real, reportable state, not a bug in this guard, and it must
+    // be reported precisely (which finding ids, on which file) rather than silently skipped.
+    const run = spawnSync(process.execPath, [VALIDATOR, CS], { encoding: "utf8" });
+    s.check("G51b create-skill passes its own validator", run.status === 0,
+      (run.stdout || "").split("\n").filter((l) => l.startsWith("FAIL")).join("; ").slice(0, 500));
+  }
+
+  // (c) The script cannot go orphaned: SKILL.md must link it, and quality-checklist.md must
+  // name it under a "Mechanical pre-pass" heading, so a reader who opens the checklist lands
+  // on the script instead of re-deriving these checks by hand.
+  const skillMdPath = join(CS, "SKILL.md");
+  const skillMd = existsSync(skillMdPath) ? readFileSync(skillMdPath, "utf8") : "";
+  s.check("G51c SKILL.md links scripts/validate-skill.mjs",
+    /scripts\/validate-skill\.mjs/.test(skillMd),
+    existsSync(skillMdPath) ? "SKILL.md never mentions scripts/validate-skill.mjs" : "SKILL.md not found");
+  const checklistPath = join(CS, "rules/quality-checklist.md");
+  const checklist = existsSync(checklistPath) ? readFileSync(checklistPath, "utf8") : "";
+  s.check("G51c quality-checklist.md names the validator under a Mechanical pre-pass section",
+    /## Mechanical pre-pass/.test(checklist) && /validate-skill\.mjs/.test(checklist),
+    existsSync(checklistPath) ? "no ## Mechanical pre-pass section naming validate-skill.mjs" : "rules/quality-checklist.md not found");
+
+  // (d) The skill obeys its own TOC rule on its own long rule files (rules/*.md > 150 lines
+  // need a ## Contents / ## Table of contents heading — see rules/progressive-disclosure.md).
+  const rulesDir = join(CS, "rules");
+  if (existsSync(rulesDir)) {
+    for (const name of readdirSync(rulesDir).filter((f) => f.endsWith(".md")).sort()) {
+      const p = join(rulesDir, name);
+      const body = readFileSync(p, "utf8");
+      const lc = body.split("\n").length;
+      if (lc <= 150) continue;
+      s.check(`G51d rules/${name} (${lc} lines) has a ## Contents heading`,
+        /^##\s+(contents|table of contents)\s*$/im.test(body));
+    }
+  }
+}
+
 process.exit(s.report() ? 0 : 1);

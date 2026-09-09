@@ -1,0 +1,23 @@
+{
+  "skill_name": "<kebab-case-name>",
+  "evals": [
+    {
+      "id": "eval-1",
+      "prompt": "<a realistic user prompt this skill should handle>",
+      "expected_output": "<what a correct response looks like, in enough detail to grade>",
+      "files": ["<path/to/file/the/prompt/references>"],
+      "assertions": [
+        "<a specific, checkable claim about the output — e.g. 'uses guard clauses, not nested if/else'>"
+      ]
+    },
+    {
+      "id": "eval-2",
+      "prompt": "<a second realistic prompt, phrased differently from eval-1>",
+      "expected_output": "<what a correct response looks like>",
+      "files": [],
+      "assertions": [
+        "<a specific, checkable claim about the output>"
+      ]
+    }
+  ]
+}

@@ -13,9 +13,20 @@ tags:
 Skills load in **three tiers** with very different token economics. Design
 each file knowing which tier it lives in.
 
+## Contents
+
+- Tier 1 — metadata
+- Tier 2 — `SKILL.md` body
+- Tier 3 — supporting files
+- Patterns
+- One-level-deep references
+- Long reference and rule files need a TOC
+- Content lifecycle
+- Don't bury the lede
+
 | Tier | What loads                                         | When                                          | Cost                      |
 | ---- | -------------------------------------------------- | --------------------------------------------- | ------------------------- |
-| 1    | `name` + `description` of every installed skill    | Session start, always                         | Few hundred tokens total  |
+| 1    | `name` + `description` of every installed skill    | Session start, always                         | Bounded by `skillListingBudgetFraction` (~1% of the context window), shared across every installed skill |
 | 2    | The skill's `SKILL.md` body                        | When the skill is invoked / triggered         | Whatever your body weighs |
 | 3    | Files referenced from `SKILL.md` (`rules/...md`)   | When Claude actively reads them on a turn     | Loaded read-by-read       |
 
@@ -26,7 +37,10 @@ else into tier 3 where it costs nothing until needed.
 ## Tier 1 — metadata
 
 You have ~1024 chars of `description`. That's the entire trailer for your
-skill. Make every word work — see `description-writing.md`.
+skill. Make every word work — see `description-writing.md`. When the
+listing budget is tight, the least-used descriptions shrink first —
+`/skill-doctor` and `/context` show the actual cost, so check one rather
+than assuming your budget is unlimited.
 
 Keep `name` short (≤ 24 chars is comfortable, ≤ 64 is the hard limit). The
 skill listing puts `name` + `description` adjacent in Claude's view.
@@ -60,6 +74,12 @@ What does **not** belong in `SKILL.md`:
 | `references/`  | Worked examples, citations, archetypes — long-form reading    | When the agent explicitly opts in       |
 | `templates/`   | Literal text the skill emits or fills in                      | When the skill is generating output     |
 | `scripts/`     | Executable helpers (Python, Bash, Node)                       | Executed via `Bash`; not read into ctx  |
+| `evals/`       | This skill's own test prompts and trigger set                 | Read only during Phase 6 / review testing |
+
+`assets/` (binary or static non-Markdown files a skill ships) is rare —
+most skills need none. See `scripts-and-assets.md` for the full mapping,
+including how this repo's `templates/` corresponds to the wider Agent
+Skills spec's `assets/` term for emitted literal text.
 
 `templates/` may also hold agent or rule definitions that the skill's
 `install.sh` symlinks *verbatim* into `~/.claude/agents/` or `~/.claude/rules/`
@@ -124,10 +144,14 @@ silently lose information.
 If you must reference `b.md` from `a.md`, also link `b.md` from `SKILL.md`
 so the agent can load it directly when needed.
 
-## Long reference files need a TOC
+## Long reference and rule files need a TOC
 
-For any file > 100 lines, add a table of contents at the top so the agent
-sees the full scope of what is available even when previewing with
+The threshold differs by directory, because they are read differently:
+a `references/*.md` file is opted into for long-form reading and gets a
+TOC past **100 lines**; a `rules/*.md` file is meant to be read whole
+once loaded, so its TOC exists as the partial-read safety net and applies
+past **150 lines**. Either way, add a table of contents at the top so the
+agent sees the full scope of what is available even when previewing with
 `head`:
 
 ```markdown
@@ -143,6 +167,24 @@ sees the full scope of what is available even when previewing with
 ## Authentication
 ...
 ```
+
+## Content lifecycle
+
+A skill's `SKILL.md` and its linked files are **not re-read on later
+turns** once loaded — the content Claude has is the content it acts on
+for the rest of that invocation's context.
+
+- **Identical re-invocation** (the same skill triggers again later in the
+  same session with no content change) adds only a short note, not the
+  full body again.
+- **Changed content** (you edited the file since it was last loaded)
+  re-appends the full, current body on the next invocation.
+- **Compaction** re-attaches the most recent invocation of each skill,
+  capped at 5,000 tokens per skill and 25,000 tokens combined — see
+  `token-economics.md` § Lifecycle and compaction.
+
+Implication: do not assume a rule file you edited mid-session is visible
+to the agent until the skill is invoked again.
 
 ## Don't bury the lede
 

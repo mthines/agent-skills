@@ -16,6 +16,16 @@ skill and applies it as an additional review rubric.
 This contract specifies exactly what a lens file looks like, where it
 lives, and what the reviewing agent is allowed to do with it.
 
+## Contents
+
+- Hard rules
+- File shape
+- Writing a good lens
+- What the pr-reviewer does at runtime
+- Versioning
+- Opting an existing skill in
+- Anti-patterns
+
 The contract exists to keep the feature **token-cheap**:
 loading the entire `SKILL.md` of every referenced skill would burn 3–10 k
 tokens per review.

@@ -6,6 +6,7 @@ description: >
   "/<name>".
 argument-hint: '[<mode-a>|<mode-b>] [<positional>]'
 license: MIT
+# compatibility: <only for a portable target — see rules/frontmatter.md>
 metadata:
   author: <handle>
   version: '1.0.0'
@@ -58,6 +59,13 @@ Load on demand — do not preload.
 1. <Principle 1>.
 2. <Principle 2>.
 3. <Principle 3>.
+
+## Evaluation
+
+- [ ] ≥ 3 realistic test prompts written and run (baseline vs. with-skill).
+- [ ] `evals/triggers.jsonl` written, if this skill is `auto`.
+- [ ] Any deterministic check or transform this skill runs of its own
+      lives under `scripts/`, not inline in this body.
 
 ## Anti-patterns (one-liners)
 

@@ -24,6 +24,7 @@ frontmatter, the layout, and what makes the shape worth using.
 - A8 — Forked subagent skill (`context: fork`)
 - A9 — Background-knowledge skill (`user-invocable: false`)
 - A10 — Confidence-gated trace analyser
+- A11 — Portable skill (runs outside Claude Code)
 
 ---
 
@@ -97,7 +98,9 @@ description makes it clear.
 
 ## A3 — Slash command (sequential workflow)
 
-**Examples in this repo:** `create-pr`, `resolve-conflicts`, `ci-auto-fix`.
+**Examples in this repo:** `resolve-conflicts`, `pr-review`,
+`review-changes` — each a single `SKILL.md`, no `rules/`, `references/`,
+or `templates/` directory.
 
 **Shape:**
 
@@ -110,12 +113,12 @@ my-slash/
 
 ```yaml
 ---
-name: create-pr
+name: resolve-conflicts
 description: >
-  Generates a narrative PR description, pushes the branch, and watches CI.
-  Triggers on "open a PR", "create pull request", "/create-pr".
+  Analyzes and resolves merge or rebase conflicts. Triggers on
+  "resolve conflicts", "fix this merge conflict", "/resolve-conflicts".
 disable-model-invocation: true
-allowed-tools: Bash(git *) Bash(gh *) Read
+allowed-tools: Bash(git *) Read Edit
 metadata:
   workflow_type: slash-command
 ---
@@ -420,6 +423,53 @@ following the archetype keeps every analyser interchangeable.
 
 ---
 
+## A11 — Portable skill
+
+**Examples in this repo:** none current — this repo's skills all target
+Claude Code. Use this archetype when a skill must also run on the Skills
+API or via claude.ai upload / `package_skill.py`.
+
+**Shape:**
+
+```text
+my-portable-skill/
+├── SKILL.md
+├── references/
+│   └── worked-examples.md
+└── assets/
+    └── logo.png
+```
+
+`scripts/` is uncommon here (the portable runtimes may not execute
+arbitrary shell), but `references/` and `assets/` (binary/static files,
+not this repo's `templates/` sense of the word) are fully portable.
+
+**Frontmatter — the six spec fields only:**
+
+```yaml
+---
+name: my-portable-skill
+description: >
+  <Third-person verb> <what it does>. Triggers on "<phrase 1>",
+  "<phrase 2>".
+license: MIT
+compatibility: Verified on Sonnet and Opus; not tested with vision input.
+metadata:
+  author: <handle>
+  version: '1.0.0'
+allowed-tools: Read Bash(cat *)
+---
+```
+
+**What makes it portable:** no `disable-model-invocation`, no
+`user-invocable`, no `context`, no `paths`, no `hooks`, no `argument-hint`
+— any Claude Code extension field is a hard error
+(`Unexpected key(s) in SKILL.md frontmatter`) on this path. `metadata`
+values are strings, not the list-valued `metadata.tags` this repo uses
+elsewhere. Validate with
+`node skills/authoring/create-skill/scripts/validate-skill.mjs <dir> --portable`
+before shipping. See `rules/frontmatter.md` § Portability profile.
+
 ## Choosing an archetype
 
 | If you are...                                              | Use            |
@@ -434,3 +484,4 @@ following the archetype keeps every analyser interchangeable.
 | Researching without polluting the main thread              | A8 (forked)     |
 | Adding domain knowledge the model should silently apply    | A9 (background) |
 | Analysing a trace / profile / artefact and ranking fixes   | A10 (trace-analyser) |
+| Shipping outside Claude Code (Skills API, claude.ai upload) | A11 (portable) |

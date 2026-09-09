@@ -12,6 +12,14 @@ tags:
 A field guide to mistakes that make skills unreliable, expensive, or hard
 to maintain. Each entry shows the bad pattern, why it's bad, and the fix.
 
+## Contents
+
+- Discovery anti-patterns (A1–A4)
+- Structure anti-patterns (S1–S6)
+- Content anti-patterns (C1–C7)
+- Behaviour anti-patterns (B1–B6)
+- Quick triage
+
 ## Discovery anti-patterns
 
 ### A1 — Vague description
@@ -120,6 +128,42 @@ lines and concludes the file is incomplete or off-topic.
 
 **Fix:** Add a `## Contents` table at the top.
 
+### S5 — Claude-Code-only fields in a portable skill
+
+```yaml
+# Bad — for a skill meant to run on the Skills API / claude.ai upload
+name: my-skill
+description: ...
+disable-model-invocation: true
+context: fork
+```
+
+**Why bad:** the portability profile accepts exactly six fields (`name`,
+`description`, `license`, `compatibility`, `metadata`, `allowed-tools`).
+Every other field — `disable-model-invocation`, `context`, `paths`,
+`hooks`, and the rest — is a hard error there
+(`Unexpected key(s) in SKILL.md frontmatter`).
+
+**Fix:** decide the target runtime up front (`rules/frontmatter.md` §
+Portability profile) and validate with
+`node skills/authoring/create-skill/scripts/validate-skill.mjs <dir> --portable`
+before shipping a skill meant to run outside Claude Code.
+
+### S6 — `synced` as a folder name
+
+```text
+# Bad
+skills/my-category/synced/SKILL.md
+```
+
+**Why bad:** `synced` (any capitalisation) is reserved — Claude Code syncs
+the skills enabled on a claude.ai account into `~/.claude/skills/synced/`,
+so a skill folder with that name collides with the sync location and does
+not resolve the way a normal skill directory does.
+
+**Fix:** pick a domain-specific directory name, same as for the `name`
+field itself (see A3).
+
 ## Content anti-patterns
 
 ### C1 — Throat-clearing prose
@@ -203,6 +247,27 @@ where it has less context than the script.
 
 **Fix:** Handle errors explicitly inside the script with helpful messages.
 
+### C7 — `: ` in an unquoted YAML scalar
+
+```yaml
+# Bad
+description: Reviews PRs: correctness, tests, and style.
+```
+
+**Why bad:** an unquoted plain scalar containing `: ` is ambiguous YAML —
+some parsers read it as a nested mapping key rather than a colon inside
+the text, and this repo's own L1 check (`F2`) fails the frontmatter block
+outright on it.
+
+```yaml
+# Good
+description: >
+  Reviews PRs for correctness, tests, and style.
+```
+
+**Fix:** rephrase to avoid the colon, or quote the whole scalar
+(`"Reviews PRs: correctness, tests, and style."`).
+
 ## Behaviour anti-patterns
 
 ### B1 — Too many options offered
@@ -249,7 +314,7 @@ See scripts/helper.py
 
 ### B4 — Assuming installed tooling
 
-```markdown
+````markdown
 # Bad
 Use the pdf library to process the file.
 
@@ -261,18 +326,58 @@ Use:
 from pypdf import PdfReader
 reader = PdfReader("file.pdf")
 ```
+````
+
+### B5 — All-caps MUST/NEVER as the only lever
+
+```markdown
+# Bad
+You MUST NEVER skip the validation step. ALWAYS run it FIRST.
 ```
+
+**Why bad:** all-caps emphasis is a yellow flag, not a fix — it signals
+the author is compensating for an unclear rule with volume instead of
+clarity, and it does not scale (the next rule needs to shout louder).
+
+```markdown
+# Good
+Run the validator before declaring the skill done. Skipping it has
+shipped skills with a dangling link in production twice; treat "no time"
+as a reason to shrink the skill, not to skip the check.
+```
+
+**Fix:** explain the *why* so the agent has a reason to comply beyond
+volume. Reserve escalated wording (bold, a repeated warning) for a rule
+that has demonstrably been skipped before — after an observed failure,
+not pre-emptively.
+
+### B6 — Overfitting to the test prompts
+
+A skill whose instructions were tuned only against the exact prompts used
+to build it (see `evaluation.md` § Generalize, don't overfit).
+
+**Why bad:** the skill looks finished because it passes its own test
+suite, then fails the first real request phrased differently.
+
+**Fix:** validate against at least one held-out prompt that was not used
+during iteration before declaring the skill done.
 
 ## Quick triage
 
-When reviewing a skill, scan for these in order:
+When reviewing a skill, run the mechanical pre-pass first:
 
-1. Is the `description` third-person, ≤ 1024 chars, with explicit triggers?
-2. Is `SKILL.md` ≤ 500 lines?
-3. Are references one level deep from `SKILL.md`?
-4. Is every reference > 100 lines TOC-ed?
-5. Are there time-sensitive claims, mega-scope statements, or
+```bash
+node skills/authoring/create-skill/scripts/validate-skill.mjs <dir> [--portable]
+```
+
+Then scan for what the validator cannot check:
+
+1. Does the `description` state both **what** and **when**, with triggers
+   that are not just the skill's own name?
+2. Are there time-sensitive claims, mega-scope statements, or
    throat-clearing prose?
-6. Are paths forward-slash?
+3. Is each rule file self-contained — loadable in isolation?
+4. Does every actionable rule pair a good and a bad example?
+5. Are there all-caps MUST/NEVER rules that could instead explain the why?
 
-If any of those are `no`, fix that before looking at content.
+If the validator reports any FAIL, fix that before looking at content.

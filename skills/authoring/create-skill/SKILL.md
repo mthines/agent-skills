@@ -1,7 +1,7 @@
 ---
 name: create-skill
 description: >
-  Scaffold, review, upgrade, or diagnose agent skills against
+  Scaffolds, reviews, upgrades, or diagnoses agent skills against
   best-practice frontmatter, progressive disclosure, token-aware
   structure, and the agent-skills.git symlink + inventory wiring.
   Modes: `scaffold` (default — new skill), `review` (audit existing
@@ -10,14 +10,14 @@ description: >
   confidence-gated unified diff against any skill declaring a
   diagnostic surface). Triggers on "create a skill", "scaffold a skill",
   "new SKILL.md", "review this skill", "audit my skill", "upgrade this
-  skill", "split this skill", "diagnose this skill", "why did <skill>
+  skill", "split this skill", "diagnose this skill", "why did the skill
   miss this", "/create-skill".
 disable-model-invocation: true
 argument-hint: '[scaffold|review|upgrade|diagnose] [<skill-name>|<path>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.3.0'
+  version: '1.4.0'
   workflow_type: scaffolder-advisory-and-diagnoser
   tags:
     - skill-authoring
@@ -29,6 +29,8 @@ metadata:
     - best-practices
     - diagnose
     - self-improvement
+    - evaluation
+    - portability
 ---
 
 # Create Skill
@@ -39,10 +41,9 @@ already in this repo. Output is a complete skill directory plus the
 agent-skills.git symlink wiring and inventory updates.
 
 > **This `SKILL.md` is a thin index.** Detailed authoring rules live in
-> `rules/*.md` and load on demand. Worked examples live in
-> `references/*.md`. Literal scaffolding templates live in
-> `templates/*.md`. Reading them all up-front would burn tokens you do not
-> need yet — load only what the current phase asks for.
+> `rules/*.md`, worked examples in `references/*.md`, literal scaffolding
+> templates in `templates/*.md` — all load on demand. Reading them all
+> up-front would burn tokens you do not need yet.
 
 ---
 
@@ -63,7 +64,7 @@ skill name.
 
 State the detected mode and target in one line before continuing. Example:
 
-```
+```text
 Mode: scaffold
 Target: skills/<category>/<proposed-name>/
 ```
@@ -72,16 +73,17 @@ Target: skills/<category>/<proposed-name>/
 
 ## Scaffold Workflow (default)
 
-A six-phase pipeline. Each phase has a gate; do not proceed until it passes.
+A seven-phase pipeline. Each phase has a gate; do not proceed until it passes.
 
 | Phase | Name                  | Gate                                                          |
 | ----- | --------------------- | ------------------------------------------------------------- |
-| 0     | Requirements          | User confirmed name, description, modes, structure choice     |
+| 0     | Requirements          | User confirmed name, description, modes, structure choice, target runtime |
 | 1     | Structure decision    | Single-file vs multi-file decided with reasoning              |
 | 2     | Frontmatter draft     | Name + description + flags pass validation                    |
 | 3     | File generation       | All planned files written, none over budget                   |
 | 4     | Wiring & inventories  | Symlinks created (if local-dev), `CLAUDE.md` + `README.md` updated |
-| 5     | Self-check            | Every checklist item in `rules/quality-checklist.md` passes   |
+| 5     | Self-check            | Mechanical pre-pass (`scripts/validate-skill.mjs`) is PASS, and every judgment item in `rules/quality-checklist.md` passes |
+| 6     | Evaluation            | ≥ 3 eval prompts written and at least one with-skill run observed, or the user explicitly waived it |
 
 ### Phase 0 — Requirements (interview)
 
@@ -105,6 +107,12 @@ Ask the user — in **one** message, batched, so they answer once:
 8. **Scope** — is this an advisory skill (read-only), an applied skill
    (writes code), an orchestrator (calls other skills), a slash command, or
    a workflow companion?
+9. **Target runtime** — `claude-code` (default, full frontmatter) or
+   `portable` (Skills API / claude.ai upload, six spec fields only)? See
+   `rules/frontmatter.md` § Portability profile.
+10. **Verification** — does the output have objectively checkable results
+    (right shape or not, exit 0 or not)? If yes, plan `evals/` now rather
+    than after the fact — see `rules/evaluation.md`.
 
 Confirm the answers back to the user verbatim before moving on. **Do not
 guess any of these.**
@@ -128,7 +136,7 @@ generating anything — see `rules/structure-decision.md` for the full rubric.
 Output the chosen layout as a tree before writing files.
 In this repo the directory is nested one level under a category (`workflow/`, `quality/`, `delivery/`, `testing/`, `design/`, `analysis/`, or `authoring/` — see `rules/repository-conventions.md`):
 
-```
+```text
 skills/<category>/<name>/
 ├── SKILL.md
 ├── rules/...
@@ -156,15 +164,24 @@ Draft the YAML frontmatter using `rules/frontmatter.md` and
 
 Write each planned file. For each one:
 
-- **`SKILL.md`** — start from `templates/SKILL.minimal.md` (single-file) or
-  `templates/SKILL.multi-file.md` (index pattern). Keep body ≤ 500 lines.
-- **`rules/<concern>.md`** — start from `templates/rule.md`. One file per
-  concern. Keep each rule self-contained; each must be loadable in isolation.
-- **`references/<topic>.md`** — start from `templates/reference.md`. Add a
-  table of contents at the top if the file exceeds 100 lines (Claude
-  partial-reads long files; the TOC is the safety net).
+- **`SKILL.md`** — start from `templates/SKILL.minimal.md` (single-file),
+  `templates/SKILL.multi-file.md` (index pattern), or
+  `templates/SKILL.portable.md` (target runtime is `portable`). Keep body
+  ≤ 500 lines.
+- **`rules/<concern>.md`** — start from `templates/rule.md`, one file per
+  concern, loadable in isolation. TOC past 150 lines. Degrees-of-freedom
+  and checklist shapes: `rules/workflow-patterns.md`.
+- **`references/<topic>.md`** — start from `templates/reference.md`. TOC
+  past 100 lines (Claude partial-reads long files; the TOC is the safety
+  net).
 - **`templates/<artefact>.md`** — literal text the skill emits. No prose
   meta-commentary inside templates.
+- **`scripts/<name>.mjs`** — only for a deterministic check or transform
+  of the skill's own. Zero dependencies, `${CLAUDE_SKILL_DIR}`-anchored,
+  a `--self-test` mode. See `rules/scripts-and-assets.md`.
+- **`evals/evals.json`, `evals/triggers.jsonl`** — this skill's own test
+  prompts and trigger set, from `templates/evals.json` and
+  `templates/triggers.jsonl`. See `rules/evaluation.md`.
 
 After each file, verify:
 
@@ -195,35 +212,37 @@ If the user is publishing the skill via `npx skills add` only, skip steps
 
 ### Phase 5 — Self-check
 
-Run the full checklist in `rules/quality-checklist.md`. Treat any
-unchecked item as a defect — fix it before declaring the skill done.
+Run `node skills/authoring/create-skill/scripts/validate-skill.mjs <dir> [--portable]`
+first, then work through the remaining `(judgment)` items in
+`rules/quality-checklist.md`. Treat any unchecked item as a defect — fix it
+before declaring the skill done. Report inline: `Self-check: PASS (28/28)`,
+or on failure:
 
-Report the result inline as:
-
-```
-Self-check: PASS (28/28)
-```
-
-or, on failure:
-
-```
+```text
 Self-check: FAIL — fix these:
 - [ ] description over 1024 chars (currently 1180)
-- [ ] rules/architecture.md over 500 lines without TOC
 ```
+
+### Phase 6 — Evaluation
+
+Follow `rules/evaluation.md`: write and run at least 3 realistic test
+prompts, observe at least one with-skill run, and check the repo eval
+obligation table. Report `Evaluation: PASS — 3 prompts run, with-skill
+navigation observed`, or state explicitly that the user waived this phase.
 
 ---
 
 ## Review Workflow
 
 For `review` mode, do not write any files. Read the target skill (the path
-or skill name from `$ARGUMENTS`) and produce a structured report:
+or skill name from `$ARGUMENTS`) and run the mechanical pre-pass, then work
+through the judgment items:
 
-1. Load `rules/quality-checklist.md`.
+1. Run `node skills/authoring/create-skill/scripts/validate-skill.mjs <dir> [--portable]`; record every `FAIL`/`WARN` as evidence, then load `rules/quality-checklist.md` for the remaining `(judgment)` items.
 2. Read the target `SKILL.md`. If it has `rules/`, `references/`,
    `templates/`, list each file with line count.
-3. For every checklist item, mark **PASS / WARN / FAIL** with one line of
-   evidence (file path + line number where applicable).
+3. For every judgment checklist item, mark **PASS / WARN / FAIL** with one
+   line of evidence (file path + line number where applicable).
 4. End with a prioritised "Top 3 fixes" list — biggest token / clarity wins
    first.
 
@@ -257,7 +276,7 @@ and the hard rules live in [`rules/diagnose-mode.md`](./rules/diagnose-mode.md).
 
 **Invocation:**
 
-```
+```text
 /create-skill diagnose <target-skill-name> [--symptom "..."] [--scope <phase|companion>] [--apply] [--pr] [--no-write]
 ```
 
@@ -295,15 +314,17 @@ Load these on demand — do not preload them all.
 | -------- | --------------------------------------------------------------------------------------- |
 | 0        | `rules/description-writing.md`, `rules/invocation-control.md`                           |
 | 1        | `rules/structure-decision.md`, `rules/progressive-disclosure.md`                        |
-| 2        | `rules/frontmatter.md`, `rules/description-writing.md`                                  |
-| 3        | `rules/token-economics.md`, `rules/anti-patterns.md`, plus templates in `templates/`    |
+| 2        | `rules/frontmatter.md`, `rules/description-writing.md`, `rules/arguments-and-injection.md` |
+| 3        | `rules/token-economics.md`, `rules/anti-patterns.md`, `rules/arguments-and-injection.md`, `rules/scripts-and-assets.md`, `rules/workflow-patterns.md`, plus templates in `templates/` |
 | 4        | `rules/repository-conventions.md`                                                       |
 | 5        | `rules/quality-checklist.md`                                                            |
+| 6        | `rules/evaluation.md`                                                                   |
 | diagnose | `rules/diagnose-mode.md`, `rules/diagnostic-surface.md`, plus the target's `rules/diagnostic-surface.md` |
 | loop     | `rules/self-improvement-loop-pattern.md` (adding a self-improvement loop to an orchestrator skill) |
+| lens     | `rules/review-lens-contract.md` + `templates/lens.md` (making an existing skill lens-eligible for `pr-reviewer`) |
 
-Worked examples in `references/skill-archetypes.md` are optional — load only
-when the user asks "what does an X-shaped skill look like?".
+`references/skill-archetypes.md` and `references/good-vs-bad-examples.md`
+are optional — load only when the user asks for a worked shape or pair.
 
 ---
 
@@ -323,9 +344,10 @@ when the user asks "what does an X-shaped skill look like?".
    `rules/structure-decision.md`.
 5. **One skill, one job.** Resist the mega-skill. Split into companions and
    compose with `Skill()` calls.
-6. **Test the skill end-to-end before declaring done.** Run the Phase 5
-   checklist; if you can, dispatch a fresh agent to use the skill on a
-   sample task and observe.
+6. **Eval-first, not test-as-afterthought.** Identify the gap without the
+   skill, write ≥ 3 realistic test prompts, run a baseline, then the
+   minimal skill that closes the gap — iterate from there rather than
+   front-loading content. See `rules/evaluation.md`.
 
 ---
 
@@ -338,6 +360,9 @@ when the user asks "what does an X-shaped skill look like?".
 - Mega-skills doing five jobs.
 - Backslash paths.
 - Reserved words (`anthropic`, `claude`) in the `name`.
+- All-caps MUST/NEVER as the only lever, instead of explaining the why.
+- Claude-Code-only fields (`disable-model-invocation`, `context`, …) in a
+  skill targeting the portable six-field profile.
 
 ---
 
@@ -350,7 +375,11 @@ A **scaffold** run is done when:
       `rules/frontmatter.md`.
 - [ ] Symlinks resolve (local-dev) or `npx skills` install path documented.
 - [ ] Inventory rows in `CLAUDE.md` and `README.md` added.
-- [ ] Phase 5 self-check is `PASS`.
+- [ ] `node skills/authoring/create-skill/scripts/validate-skill.mjs <dir>` reports `PASS`.
+- [ ] Phase 5 self-check (mechanical + judgment) is `PASS`.
+- [ ] Phase 6 evaluation has ≥ 3 eval prompts written (or the user
+      explicitly waived evaluation).
+- [ ] Target runtime (`claude-code` or `portable`) is recorded.
 - [ ] One sentence summary delivered to the user with the install command
       they can run to start using the skill.
 
