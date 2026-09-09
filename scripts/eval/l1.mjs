@@ -6423,10 +6423,6 @@ const isPollBlock = (block) =>
     existsSync(skillMdPath)
       ? "no ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs invocation in SKILL.md"
       : "SKILL.md not found");
-  // The convention is not SKILL.md's alone. The blocking finding this guard answers named
-  // four sites across three files, so an arm reading only `skillMd` enforces the rule on one
-  // of them and leaves the other three free to regress — reverting rules/quality-checklist.md
-  // to the cwd-relative form left this file green. Walk every markdown file the skill ships.
   // Byte-identical to the validator's own INTERPRETER constant, and deliberately duplicated
   // rather than imported: this guard exists to hold the validator to a contract from outside
   // it, so importing the alternation would let a change to the validator silently change the
@@ -6440,6 +6436,11 @@ const isPollBlock = (block) =>
     existsSync(VALIDATOR)
       ? "validate-skill.mjs's INTERPRETER constant is absent or differs from l1.mjs's copy"
       : "validate-skill.mjs not found");
+  // The convention is not SKILL.md's alone: the blocking finding this guard answers named
+  // four sites across three files, so an arm reading only `skillMd` enforced the rule on one
+  // of them and left the other three free to regress. Hence the walk over every markdown
+  // file the skill ships.
+  //
   // Keyed on the skill's OWN script FILENAMES, not on a `create-skill/` path segment. The
   // segment form let the bare `node scripts/validate-skill.mjs` through untouched — the same
   // partial-coverage shape as the SKILL.md-only arm it replaced, one level down. Reading the
