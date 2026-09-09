@@ -6423,10 +6423,22 @@ const isPollBlock = (block) =>
     existsSync(skillMdPath)
       ? "no ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs invocation in SKILL.md"
       : "SKILL.md not found");
-  const cwdRelative = skillMd.match(/node\s+skills\/authoring\/create-skill\/scripts\/validate-skill\.mjs/g) ?? [];
-  s.check("G51e SKILL.md has no cwd-relative validate-skill.mjs invocation",
+  // The convention is not SKILL.md's alone. The blocking finding this guard answers named
+  // four sites across three files, so an arm reading only `skillMd` enforces the rule on one
+  // of them and leaves the other three free to regress — reverting rules/quality-checklist.md
+  // to the cwd-relative form left this file green. Walk every markdown file the skill ships.
+  const cwdRelative = [];
+  for (const rel of readdirSync(CS, { recursive: true })) {
+    const name = String(rel);
+    if (!name.endsWith(".md")) continue;
+    const body = readFileSync(join(CS, name), "utf8");
+    for (const hit of body.match(/(?:node|npx|bash|sh)\s+(?:[^\s"'`]*\/)?create-skill\/scripts\/[^\s"'`)]+/g) ?? []) {
+      cwdRelative.push(`${name}: ${hit}`);
+    }
+  }
+  s.check("G51e no create-skill markdown file invokes its own script by a cwd-relative path",
     cwdRelative.length === 0,
-    cwdRelative.length ? `${cwdRelative.length} cwd-relative invocation(s): ${cwdRelative.join("; ")}` : "");
+    cwdRelative.length ? `${cwdRelative.length} cwd-relative invocation(s) — ${cwdRelative.join("; ")}` : "");
   const validatorSrc = existsSync(VALIDATOR) ? readFileSync(VALIDATOR, "utf8") : "";
   s.check("G51e the validator's --self-test covers SC01 firing on a bare-variable prose mention",
     /\$\{CLAUDE_SKILL_DIR\}`-anchored[\s\S]{0,400}?prose mention only: SC01 fires/.test(validatorSrc),
