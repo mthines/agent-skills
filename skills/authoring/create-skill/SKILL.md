@@ -215,8 +215,10 @@ If the user is publishing the skill via `npx skills add` only, skip steps
 Run `node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir> [--portable]`
 first, then work through the remaining `(judgment)` items in
 `rules/quality-checklist.md`. Treat any unchecked item as a defect — fix it
-before declaring the skill done. Report inline: `Self-check: PASS (28/28)`,
-or on failure:
+before declaring the skill done. Report the validator's own `Self-check:` line
+verbatim — it prints its own pass/total, so never restate that count from
+memory or invent one — then confirm the remaining `(judgment)` items passed.
+On failure:
 
 ```text
 Self-check: FAIL — fix these:
