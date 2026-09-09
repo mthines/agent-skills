@@ -476,6 +476,32 @@ function checkPortabilityDocs(f, ctx) {
   if (existsSync(scriptsDir) && statSync(scriptsDir).isDirectory()) {
     f.check("SC01", "WARN", /\$\{CLAUDE_SKILL_DIR\}\/scripts\//.test(text), "SKILL.md", null,
       "scripts/ exists but SKILL.md never invokes a script through a ${CLAUDE_SKILL_DIR}/scripts/ path — a bare mention of the variable in prose does not count (a cwd-relative scripts/ path is not portable — see rules/scripts-and-assets.md § Path convention)");
+
+    // The row above proves a correct path EXISTS. It cannot prove no incorrect one does:
+    // it is a whole-file test(), so one ${CLAUDE_SKILL_DIR} invocation plus ten
+    // filesystem-relative ones satisfies it. That is the state create-skill's own SKILL.md
+    // was in — documenting the convention in prose while every command under it stayed
+    // cwd-relative — so the positive arm needs this negative one to enforce the rule rather
+    // than merely witness one instance of it.
+    //
+    // Scope: ONLY a path routing through this skill's OWN scripts/ directory, identified by
+    // the skill directory's own name. Two forms are deliberately left alone, because
+    // flagging either would be a false positive rather than a find:
+    //   - a repo-level script (`bash scripts/sync-symlinks.sh`) — not this skill's asset, so
+    //     ${CLAUDE_SKILL_DIR} would be the wrong path for it;
+    //   - a documentation placeholder (`node <skill_dir>/scripts/x.mjs`) — a stand-in for the
+    //     variable, not a cwd-relative path.
+    // Both occur in the live corpus (create-skill and playwright-trace-analyzer respectively);
+    // measured across all four skills that ship a scripts/ directory, this predicate is clean.
+    //
+    // An interpreter prefix is required so a prose reference or a markdown link to the script
+    // by repo-relative path stays legal — the rule governs how a script is INVOKED.
+    const ownScripts = basename(dir).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\/scripts\\/";
+    const invocation = new RegExp(
+      `(?:node|npx|python3?|bash|sh|deno|bun|tsx)\\s+(?:[^\\s"'\`]*\\/)?${ownScripts}[^\\s"'\`)]+`, "g");
+    const cwdRelative = [...new Set(text.match(invocation) ?? [])];
+    f.check("SC01", "WARN", cwdRelative.length === 0, "SKILL.md", null,
+      `SKILL.md invokes this skill's own script through a filesystem-relative path instead of \${CLAUDE_SKILL_DIR}: ${cwdRelative.join(", ")} (see rules/scripts-and-assets.md § Path convention)`);
   } else {
     f.check("SC01", "WARN", true, "SKILL.md", null, "");
   }
@@ -721,6 +747,33 @@ function selfTest() {
     return dir;
   }, (dir) => {
     t("scripts/ with a bare ${CLAUDE_SKILL_DIR} prose mention only: SC01 fires", hasId(validateSkill(dir), "SC01"));
+  });
+  // Fourth and fifth fixtures cover the NEGATIVE arm, which the three above cannot reach:
+  // they all vary whether a correct path is present, and the positive row answers that. The
+  // gap is a body carrying a correct path AND an incorrect one — clean under a whole-file
+  // test(), which is how create-skill's own SKILL.md passed while its commands were
+  // cwd-relative. The fifth fixture pins the false-positive boundary in the other direction.
+  withFixture((root) => {
+    const dir = writeSkill(root, "has-scripts-mixed", [], [
+      "# Body", "", "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.", "",
+      "Or run `node skills/authoring/has-scripts-mixed/scripts/check.mjs`.",
+    ]);
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    return dir;
+  }, (dir) => {
+    t("scripts/ with a correct path AND an own-path cwd-relative one: SC01 fires",
+      hasId(validateSkill(dir), "SC01"));
+  });
+  withFixture((root) => {
+    const dir = writeSkill(root, "has-scripts-repo", [], [
+      "# Body", "", "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.", "",
+      "Then run `bash scripts/sync-symlinks.sh` to wire it up.",
+    ]);
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    return dir;
+  }, (dir) => {
+    t("scripts/ plus a REPO-level script invocation: SC01 does not fire",
+      !hasId(validateSkill(dir), "SC01"));
   });
 
   // 12. FM07 profile split: a bare <placeholder> passes without --portable and fails with it;
