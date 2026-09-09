@@ -235,9 +235,16 @@ function checkFrontmatter(f, ctx, flags) {
     "SKILL.md", nameLine,
     `name must match ^[a-z0-9]+(-[a-z0-9]+)*$ and be <= ${NAME_MAX} chars, got ${JSON.stringify(name)}`);
 
-  const nameIsClean = !!name && !/anthropic|claude/i.test(name) && dirName !== "synced";
-  f.check("FM03", "FAIL", nameIsClean, "SKILL.md", nameLine,
-    `name must not contain "anthropic"/"claude" and the directory must not be "synced" (name=${JSON.stringify(name)}, dir=${JSON.stringify(dirName)})`);
+  // FM03 (two rows). `synced` is reserved by Claude Code in any capitalisation — always FAIL.
+  // The reserved words "anthropic"/"claude" are a Skills API upload requirement
+  // (docs.claude.com/en/api/skills-guide § Requirements), matched as substrings there; Claude
+  // Code itself accepts such names (this repo ships `optimize-claude-md`), so that half is
+  // FAIL only under --portable and an advisory WARN otherwise.
+  f.check("FM03", "FAIL", dirName.toLowerCase() !== "synced", "SKILL.md", nameLine,
+    `the skill directory must not be named "synced" (reserved by Claude Code), got ${JSON.stringify(dirName)}`);
+  const fm03Level = flags.portable ? "FAIL" : "WARN";
+  f.check("FM03", fm03Level, !!name && !/anthropic|claude/i.test(name), "SKILL.md", nameLine,
+    `name contains a Skills-API reserved word ("anthropic"/"claude", substring match) — rejected on upload (name=${JSON.stringify(name)})`);
 
   f.check("FM04", "FAIL", !!name && name === dirName, "SKILL.md", nameLine,
     `name (${JSON.stringify(name)}) must equal the directory basename (${JSON.stringify(dirName)})`);
@@ -725,8 +732,19 @@ function selfTest() {
     t("real XML tag without --portable: FM07 fires", hasId(validateSkill(dir, {}), "FM07"));
   });
 
+  // 13. FM03 reserved-word row: WARN without --portable (the skill still passes), FAIL with it.
+  withFixture((root) => writeSkill(root, "claude-fixture"), (dir) => {
+    const withoutFlag = validateSkill(dir, {});
+    const warnRow = withoutFlag.findings.find((x) => x.id === "FM03" && x.level === "WARN");
+    t("reserved word without --portable: FM03 is a WARN", !!warnRow, JSON.stringify(withoutFlag.findings.filter((x) => x.id === "FM03")));
+    t("reserved word without --portable: the skill still passes", withoutFlag.ok === true);
+    const withFlag = validateSkill(dir, { portable: true });
+    const failRow = withFlag.findings.find((x) => x.id === "FM03" && x.level === "FAIL");
+    t("reserved word with --portable: FM03 is a FAIL", !!failRow, JSON.stringify(withFlag.findings.filter((x) => x.id === "FM03")));
+  });
+
   const ok = fails === 0;
-  console.log(ok ? "validate-skill self-test: PASS (12 assertions)" : `validate-skill self-test: FAIL (${fails} failure(s))`);
+  console.log(ok ? "validate-skill self-test: PASS (13 assertions)" : `validate-skill self-test: FAIL (${fails} failure(s))`);
   return ok;
 }
 

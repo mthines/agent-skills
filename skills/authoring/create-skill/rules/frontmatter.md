@@ -28,7 +28,7 @@ the system prompt). Treat it like a public API.
 
 | Field                      | Required    | Constraints                                                                                                                                          |
 | -------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                     | Recommended | ≤ 64 chars, matches `^[a-z0-9]+(-[a-z0-9]+)*$` (no leading, trailing, or doubled hyphen), no XML tags (a bare `<placeholder>` is fine in Claude Code; the Skills API upload rejects any `<`/`>`, which `--portable` enforces), no reserved words (`anthropic`, `claude`). Falls back to the directory name. |
+| `name`                     | Recommended | ≤ 64 chars, matches `^[a-z0-9]+(-[a-z0-9]+)*$` (no leading, trailing, or doubled hyphen), no XML tags (a bare `<placeholder>` is fine in Claude Code; the Skills API upload rejects any `<`/`>`, which `--portable` enforces), no reserved words (`anthropic`, `claude`) when uploading to the Skills API — a substring match, so `--portable` fails on them and default mode only warns. Falls back to the directory name. |
 | `description`              | Recommended | ≤ 1024 chars, non-empty, no XML tags (a bare `<placeholder>` is fine in Claude Code; the Skills API upload rejects any `<`/`>`, which `--portable` enforces). Third-person. Front-load triggers. Falls back to the first paragraph of body if omitted.                       |
 | `when_to_use`              | Optional    | Extra trigger context. Appended to `description`; combined cap is 1,536 chars in the skill listing.                                                  |
 | `argument-hint`            | Required*   | Autocomplete hint shown in the `/` menu. **Required** unless `user-invocable: false`. Mirror the skill's actual modes / flags. Use `[…]` for optional, `<…>` for placeholders, `\|` for alternatives. Examples: `[plan\|review\|simplify]`, `<pr-url> [--publish]`, `[--mode static\|mutate] [<paths>]`. |
@@ -78,7 +78,9 @@ and keep the frontmatter to the six spec fields only.
 Before writing, run every check:
 
 - [ ] `name` matches `^[a-z0-9]+(-[a-z0-9]+)*$` and is ≤ 64 chars.
-- [ ] `name` does not contain `anthropic` or `claude`.
+- [ ] `name` does not contain `anthropic` or `claude` — the portable-target rule.
+      The Skills API rejects such a `name`; `--portable` FAILs it and default mode
+      only warns.
 - [ ] `name` matches the directory name.
 - [ ] `description` is ≤ 1024 chars.
 - [ ] `description` starts with a third-person verb (e.g. "Reviews",
@@ -164,8 +166,10 @@ metadata:
 - **Forgotten trigger phrases.** A skill the user calls by slash still
   benefits from triggers — Claude uses the description to suggest the
   command.
-- **Reserved words in `name`.** `claude-tools`, `anthropic-helper`, etc.
-  are rejected.
+- **Reserved words in `name` (portable target).** The Skills API rejects a
+  `name` containing `anthropic` or `claude` anywhere (`claude-tools`,
+  `optimize-claude-md`). Claude Code accepts them; the validator FAILs only
+  under `--portable` and warns otherwise.
 - **Mismatched name and directory.** The directory is the source of truth
   for invocation; the `name:` field should match.
 - **Missing `argument-hint`.** A user-invocable skill without one forces

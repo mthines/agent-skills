@@ -63,8 +63,9 @@ or second-person ("I", "you") confuses point-of-view and degrades discovery.
 name: claude-helper
 ```
 
-The frontmatter validator rejects `claude` and `anthropic` in the `name`.
-Use a domain-specific name instead.
+The Skills API rejects a `name` containing `claude` or `anthropic` anywhere in
+the string; the validator FAILs this under `--portable` and warns otherwise.
+Use a domain-specific name for a skill meant to be uploaded.
 
 ### A4 — Missing trigger phrases
 
