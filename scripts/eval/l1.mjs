@@ -6386,16 +6386,18 @@ const isPollBlock = (block) =>
     /## Mechanical pre-pass/.test(checklist) && /validate-skill\.mjs/.test(checklist),
     existsSync(checklistPath) ? "no ## Mechanical pre-pass section naming validate-skill.mjs" : "rules/quality-checklist.md not found");
 
-  // (d) The skill obeys its own TOC rule on its own long rule files (rules/*.md > 150 lines
-  // need a ## Contents / ## Table of contents heading — see rules/progressive-disclosure.md).
-  const rulesDir = join(CS, "rules");
-  if (existsSync(rulesDir)) {
-    for (const name of readdirSync(rulesDir).filter((f) => f.endsWith(".md")).sort()) {
-      const p = join(rulesDir, name);
-      const body = readFileSync(p, "utf8");
+  // (d) The skill obeys its own two-branch TOC rule (rules/progressive-disclosure.md § Long
+  // reference and rule files need a TOC): rules/*.md past 150 lines and references/*.md past
+  // 100 lines both need a ## Contents / ## Table of contents heading. Both branches are guarded
+  // here because the validator grades PD03 as WARN, so G51b exits 0 either way.
+  for (const [sub, min] of [["rules", 150], ["references", 100]]) {
+    const subDir = join(CS, sub);
+    if (!existsSync(subDir)) continue;
+    for (const name of readdirSync(subDir).filter((f) => f.endsWith(".md")).sort()) {
+      const body = readFileSync(join(subDir, name), "utf8");
       const lc = body.split("\n").length;
-      if (lc <= 150) continue;
-      s.check(`G51d rules/${name} (${lc} lines) has a ## Contents heading`,
+      if (lc <= min) continue;
+      s.check(`G51d ${sub}/${name} (${lc} lines, > ${min}) has a ## Contents heading`,
         /^##\s+(contents|table of contents)\s*$/im.test(body));
     }
   }
