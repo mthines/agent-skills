@@ -4,7 +4,7 @@
 //   node scripts/eval/l1.mjs
 // Exits non-zero if any check fails.
 import { execFileSync, execSync, spawnSync } from "node:child_process";
-import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync, mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -6439,12 +6439,38 @@ const isPollBlock = (block) =>
   s.check("G51e no create-skill markdown file invokes its own script by a cwd-relative path",
     cwdRelative.length === 0,
     cwdRelative.length ? `${cwdRelative.length} cwd-relative invocation(s) — ${cwdRelative.join("; ")}` : "");
-  const validatorSrc = existsSync(VALIDATOR) ? readFileSync(VALIDATOR, "utf8") : "";
-  s.check("G51e the validator's --self-test covers SC01 firing on a bare-variable prose mention",
-    /\$\{CLAUDE_SKILL_DIR\}`-anchored[\s\S]{0,400}?prose mention only: SC01 fires/.test(validatorSrc),
-    existsSync(VALIDATOR)
-      ? "no self-test fixture asserting SC01 fires on a body that only mentions the bare variable in prose"
-      : "validate-skill.mjs not found");
+  // The SC01 behaviours this group exists to pin, asserted BEHAVIOURALLY. The prior form
+  // matched the self-test fixture's PROSE across a `[\s\S]{0,400}` window — an untraceable
+  // magic number in a script whose own header rule requires every constant to name its
+  // source — and it was wrong in both directions: rewording a fixture body reds L1 while the
+  // coverage is intact, and moving the coverage elsewhere greens it while the behaviour is
+  // gone. Running the validator against fixtures instead survives any rewording and reds only
+  // when SC01 itself stops discriminating. The silent case is not padding: without it, an
+  // SC01 hardwired to fire would satisfy both firing rows.
+  const sc01Probe = (label, body, shouldFire) => {
+    const root = mkdtempSync(join(tmpdir(), "l1-sc01-"));
+    const dir = join(root, "probe-skill");
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"),
+      "---\nname: probe-skill\ndescription: Fixture skill used by L1 to probe SC01 discrimination.\n"
+      + `---\n\n# Probe\n\n${body}\n`);
+    const r = spawnSync(process.execPath, [VALIDATOR, dir, "--json"], { encoding: "utf8" });
+    rmSync(root, { recursive: true, force: true });
+    let fired = null;
+    try {
+      fired = JSON.parse(r.stdout).findings.some((x) => x.id === "SC01");
+    } catch { /* left null; reported as an unparseable result rather than as a verdict */ }
+    s.check(`G51e SC01 ${label}`, fired === shouldFire,
+      fired === null
+        ? `validator --json unparseable: ${((r.stdout || "") + (r.stderr || "")).slice(0, 200)}`
+        : `SC01 ${fired ? "fired" : "stayed silent"}, expected ${shouldFire ? "fire" : "silence"}`);
+  };
+  sc01Probe("fires on a bare-variable prose mention with every command cwd-relative",
+    "Every helper is `${CLAUDE_SKILL_DIR}`-anchored.\n\nRun `node scripts/check.mjs`.", true);
+  sc01Probe("fires when a correct path coexists with an own-path cwd-relative one",
+    "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.\n\nOr `node pkg/probe-skill/scripts/check.mjs`.", true);
+  sc01Probe("stays silent on a correct path alone",
+    "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.", false);
 }
 
 process.exit(s.report() ? 0 : 1);
