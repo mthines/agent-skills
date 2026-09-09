@@ -119,12 +119,12 @@ The cheapest skill is one with a tight `SKILL.md` and most knowledge in
 
 Quick approximations:
 
-| Metric                 | How to check                                    |
-| ---------------------- | ----------------------------------------------- |
-| `SKILL.md` line count  | `wc -l SKILL.md`                                |
-| Frontmatter + structure | `node scripts/validate-skill.mjs <dir>`        |
-| Largest rule           | `wc -l rules/*.md \| sort -n \| tail`           |
-| Longest paragraph      | Eyeball — anything > 6 lines is a smell         |
-| Actual listing token cost | `/skill-doctor` or `/context`                |
+| Metric                    | How to check                                                |
+| ------------------------- | ----------------------------------------------------------- |
+| `SKILL.md` line count     | `wc -l SKILL.md`                                            |
+| Frontmatter + structure   | `node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir>` |
+| Largest rule              | `wc -l rules/*.md \| sort -n \| tail`                       |
+| Longest paragraph         | Eyeball — anything > 6 lines is a smell                     |
+| Actual listing token cost | `/skill-doctor` or `/context`                               |
 
 If `wc -l SKILL.md` ≥ 500, you have a structural problem. Split.

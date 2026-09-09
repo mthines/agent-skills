@@ -146,7 +146,7 @@ Every other field — `disable-model-invocation`, `context`, `paths`,
 
 **Fix:** decide the target runtime up front (`rules/frontmatter.md` §
 Portability profile) and validate with
-`node skills/authoring/create-skill/scripts/validate-skill.mjs <dir> --portable`
+`node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir> --portable`
 before shipping a skill meant to run outside Claude Code.
 
 ### S6 — `synced` as a folder name
@@ -367,7 +367,7 @@ during iteration before declaring the skill done.
 When reviewing a skill, run the mechanical pre-pass first:
 
 ```bash
-node skills/authoring/create-skill/scripts/validate-skill.mjs <dir> [--portable]
+node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir> [--portable]
 ```
 
 Then scan for what the validator cannot check:

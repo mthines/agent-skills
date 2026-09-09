@@ -55,4 +55,4 @@ the action, not the rationale.>
 - [ ] <Concrete, testable check>.
 - [ ] No field outside `name`, `description`, `license`, `compatibility`,
       `metadata`, `allowed-tools` — validated with
-      `node skills/authoring/create-skill/scripts/validate-skill.mjs <dir> --portable`.
+      `/create-skill review <dir> --portable`.

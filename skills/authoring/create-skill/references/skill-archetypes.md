@@ -467,7 +467,7 @@ allowed-tools: Read Bash(cat *)
 (`Unexpected key(s) in SKILL.md frontmatter`) on this path. `metadata`
 values are strings, not the list-valued `metadata.tags` this repo uses
 elsewhere. Validate with
-`node skills/authoring/create-skill/scripts/validate-skill.mjs <dir> --portable`
+`node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir> --portable`
 before shipping. See `rules/frontmatter.md` § Portability profile.
 
 ## Choosing an archetype

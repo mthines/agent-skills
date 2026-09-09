@@ -70,7 +70,7 @@ Unexpected key(s) in SKILL.md frontmatter
 **Rule:** decide the skill's target runtime during Phase 0 —
 `claude-code` (default) or `portable` — and record the answer.
 For a `portable` target, validate with
-`node skills/authoring/create-skill/scripts/validate-skill.mjs <dir> --portable`
+`node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir> --portable`
 and keep the frontmatter to the six spec fields only.
 
 ## Validation checklist

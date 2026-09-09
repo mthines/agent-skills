@@ -38,7 +38,7 @@ validator script reports, or `(judgment)` when no script can decide it.
 Run this before working through the judgment items by hand:
 
 ```bash
-node skills/authoring/create-skill/scripts/validate-skill.mjs <dir> [--portable]
+node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir> [--portable]
 ```
 
 Every `(mechanical: <id>)` item below is answered by this script's output —

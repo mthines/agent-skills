@@ -212,7 +212,7 @@ If the user is publishing the skill via `npx skills add` only, skip steps
 
 ### Phase 5 — Self-check
 
-Run `node skills/authoring/create-skill/scripts/validate-skill.mjs <dir> [--portable]`
+Run `node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir> [--portable]`
 first, then work through the remaining `(judgment)` items in
 `rules/quality-checklist.md`. Treat any unchecked item as a defect — fix it
 before declaring the skill done. Report inline: `Self-check: PASS (28/28)`,
@@ -238,7 +238,7 @@ For `review` mode, do not write any files. Read the target skill (the path
 or skill name from `$ARGUMENTS`) and run the mechanical pre-pass, then work
 through the judgment items:
 
-1. Run `node skills/authoring/create-skill/scripts/validate-skill.mjs <dir> [--portable]`; record every `FAIL`/`WARN` as evidence, then load `rules/quality-checklist.md` for the remaining `(judgment)` items.
+1. Run `node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir> [--portable]`; record every `FAIL`/`WARN` as evidence, then load `rules/quality-checklist.md` for the remaining `(judgment)` items.
 2. Read the target `SKILL.md`. If it has `rules/`, `references/`,
    `templates/`, list each file with line count.
 3. For every judgment checklist item, mark **PASS / WARN / FAIL** with one
@@ -375,7 +375,7 @@ A **scaffold** run is done when:
       `rules/frontmatter.md`.
 - [ ] Symlinks resolve (local-dev) or `npx skills` install path documented.
 - [ ] Inventory rows in `CLAUDE.md` and `README.md` added.
-- [ ] `node skills/authoring/create-skill/scripts/validate-skill.mjs <dir>` reports `PASS`.
+- [ ] `node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir>` reports `PASS`.
 - [ ] Phase 5 self-check (mechanical + judgment) is `PASS`.
 - [ ] Phase 6 evaluation has ≥ 3 eval prompts written (or the user
       explicitly waived evaluation).
