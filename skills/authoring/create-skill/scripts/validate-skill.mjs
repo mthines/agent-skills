@@ -253,10 +253,20 @@ function checkFrontmatter(f, ctx, flags) {
   f.check("FM06", "WARN", combinedLen <= DESC_WHEN_MAX, "SKILL.md", descLine,
     `description + when_to_use combined must be <= ${DESC_WHEN_MAX} chars, got ${combinedLen}`);
 
-  const xmlTag = /<[^>]+>/;
+  // FM07: the Skills API rejects an XML tag in name/description, and the upload packager
+  // (anthropics/skills quick_validate.py) rejects ANY `<` / `>` in a description — so under
+  // --portable a bare angle bracket fails. Without the flag only a real tag fires: a closing
+  // tag, a tag carrying an attribute, or a self-closing tag. A bare `<placeholder>` — the
+  // `<…>` form rules/frontmatter.md mandates for argument-hint and CLI examples — passes.
+  const realXmlTag = /<\/[a-zA-Z][\w-]*\s*>|<[a-zA-Z][\w-]*\s+[\w:-]+\s*=|<[a-zA-Z][\w-]*\s*\/>/;
+  const anyAngle = /[<>]/;
+  const fm07Re = flags.portable ? anyAngle : realXmlTag;
+  const fm07Msg = flags.portable
+    ? "name/description must not contain < or > under --portable (the Skills API and quick_validate.py reject them)"
+    : "name/description must not contain an XML tag (a bare <placeholder> is fine; use --portable for the strict upload rule)";
   f.check("FM07", "FAIL",
-    !(name && xmlTag.test(name)) && !(description && xmlTag.test(description)),
-    "SKILL.md", descLine, "name/description must not contain an XML-style <tag>");
+    !(name && fm07Re.test(name)) && !(description && fm07Re.test(description)),
+    "SKILL.md", descLine, fm07Msg);
 
   const firstWord = description ? (description.trim().split(/\s+/)[0] || "").replace(/[^A-Za-z]/g, "") : "";
   f.check("FM08", "WARN", !description || /^[A-Z][a-z]+s$/.test(firstWord), "SKILL.md", descLine,
@@ -681,8 +691,42 @@ function selfTest() {
     t("scripts/ with ${CLAUDE_SKILL_DIR} path: SC01 does not fire", !hasId(validateSkill(dir), "SC01"));
   });
 
+  // 12. FM07 profile split: a bare <placeholder> passes without --portable and fails with it;
+  //     a real XML tag fails either way.
+  withFixture((root) => {
+    const dir = join(root, "placeholder-desc");
+    mkdirSync(dir, { recursive: true });
+    const fm = [
+      "---", "name: placeholder-desc",
+      "description: >", "  Reviews things; invoke with remember <fact> or /x <PR-URL|#n>.",
+      "disable-model-invocation: false", "argument-hint: '[none]'", "license: MIT",
+      "metadata:", "  author: test", "  version: '1.0.0'",
+      "---", "", "# Body", "",
+    ].join("\n");
+    writeFileSync(join(dir, "SKILL.md"), fm);
+    return dir;
+  }, (dir) => {
+    t("bare <placeholder> without --portable: FM07 does not fire", !hasId(validateSkill(dir, {}), "FM07"));
+    t("bare <placeholder> with --portable: FM07 fires", hasId(validateSkill(dir, { portable: true }), "FM07"));
+  });
+  withFixture((root) => {
+    const dir = join(root, "real-tag-desc");
+    mkdirSync(dir, { recursive: true });
+    const fm = [
+      "---", "name: real-tag-desc",
+      "description: >", "  Reviews <b>things</b> for testing.",
+      "disable-model-invocation: false", "argument-hint: '[none]'", "license: MIT",
+      "metadata:", "  author: test", "  version: '1.0.0'",
+      "---", "", "# Body", "",
+    ].join("\n");
+    writeFileSync(join(dir, "SKILL.md"), fm);
+    return dir;
+  }, (dir) => {
+    t("real XML tag without --portable: FM07 fires", hasId(validateSkill(dir, {}), "FM07"));
+  });
+
   const ok = fails === 0;
-  console.log(ok ? "validate-skill self-test: PASS (11 assertions)" : `validate-skill self-test: FAIL (${fails} failure(s))`);
+  console.log(ok ? "validate-skill self-test: PASS (12 assertions)" : `validate-skill self-test: FAIL (${fails} failure(s))`);
   return ok;
 }
 

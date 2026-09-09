@@ -28,8 +28,8 @@ the system prompt). Treat it like a public API.
 
 | Field                      | Required    | Constraints                                                                                                                                          |
 | -------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `name`                     | Recommended | ≤ 64 chars, matches `^[a-z0-9]+(-[a-z0-9]+)*$` (no leading, trailing, or doubled hyphen), no XML tags, no reserved words (`anthropic`, `claude`). Falls back to the directory name. |
-| `description`              | Recommended | ≤ 1024 chars, non-empty, no XML tags. Third-person. Front-load triggers. Falls back to the first paragraph of body if omitted.                       |
+| `name`                     | Recommended | ≤ 64 chars, matches `^[a-z0-9]+(-[a-z0-9]+)*$` (no leading, trailing, or doubled hyphen), no XML tags (a bare `<placeholder>` is fine in Claude Code; the Skills API upload rejects any `<`/`>`, which `--portable` enforces), no reserved words (`anthropic`, `claude`). Falls back to the directory name. |
+| `description`              | Recommended | ≤ 1024 chars, non-empty, no XML tags (a bare `<placeholder>` is fine in Claude Code; the Skills API upload rejects any `<`/`>`, which `--portable` enforces). Third-person. Front-load triggers. Falls back to the first paragraph of body if omitted.                       |
 | `when_to_use`              | Optional    | Extra trigger context. Appended to `description`; combined cap is 1,536 chars in the skill listing.                                                  |
 | `argument-hint`            | Required*   | Autocomplete hint shown in the `/` menu. **Required** unless `user-invocable: false`. Mirror the skill's actual modes / flags. Use `[…]` for optional, `<…>` for placeholders, `\|` for alternatives. Examples: `[plan\|review\|simplify]`, `<pr-url> [--publish]`, `[--mode static\|mutate] [<paths>]`. |
 | `arguments`                | Optional    | Named positional args for `$name` substitution. Space-separated string or YAML list.                                                                 |
@@ -91,7 +91,9 @@ Before writing, run every check:
       placeholders, `|` for alternatives. If the skill takes no
       arguments, emit `argument-hint: ''` explicitly rather than omitting.
 - [ ] `metadata.tags` includes 5–10 specific tags (no `tools` / `helper`).
-- [ ] No XML tags inside `description` or `name`.
+- [ ] No XML tag inside `description` or `name` — a bare `<placeholder>` is fine
+      in Claude Code, but the Skills API upload rejects any `<`/`>`, which
+      `--portable` enforces.
 
 ## Boilerplate (single-file skill)
 
