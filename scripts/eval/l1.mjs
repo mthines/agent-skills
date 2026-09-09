@@ -6399,6 +6399,40 @@ const isPollBlock = (block) =>
         /^##\s+(contents|table of contents)\s*$/im.test(body));
     }
   }
+
+  // (e) The skill obeys its own SC01 path convention (rules/scripts-and-assets.md § Path
+  // convention): a skill shipping scripts/ invokes them through ${CLAUDE_SKILL_DIR}/scripts/,
+  // never a cwd-relative path. Guarded here for the same reason as G51d one block up — the
+  // validator grades SC01 as WARN, so G51b exits 0 whether the WARN is present or not, and a
+  // WARN-graded check therefore needs its own guard or it is enforced by nothing. That gap was
+  // not hypothetical: SC01's own predicate was a whole-file scan for the bare variable, which
+  // this skill's prose satisfied while the invocations stayed cwd-relative, and G51b stayed
+  // green through it.
+  //
+  // Two halves, because passing is not the same as biting:
+  //   1. the convention holds on real repo state (an invocation path is present, and no
+  //      cwd-relative invocation of the validator survives anywhere in SKILL.md), and
+  //   2. SC01 actually fires on a violating input — asserted through the validator's own
+  //      --self-test, which carries a bare-variable-in-prose fixture. G51a executes that
+  //      self-test, so this check pins the fixture's existence and G51a proves it passes;
+  //      together they mean the guard cannot go green against a check that stopped firing.
+  //      Asserted against the self-test rather than a temp fixture built here, so the coverage
+  //      lives with the validator that owns SC01 and l1.mjs writes nothing to disk.
+  s.check("G51e SKILL.md invokes the validator through a ${CLAUDE_SKILL_DIR}/scripts/ path",
+    /\$\{CLAUDE_SKILL_DIR\}\/scripts\/validate-skill\.mjs/.test(skillMd),
+    existsSync(skillMdPath)
+      ? "no ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs invocation in SKILL.md"
+      : "SKILL.md not found");
+  const cwdRelative = skillMd.match(/node\s+skills\/authoring\/create-skill\/scripts\/validate-skill\.mjs/g) ?? [];
+  s.check("G51e SKILL.md has no cwd-relative validate-skill.mjs invocation",
+    cwdRelative.length === 0,
+    cwdRelative.length ? `${cwdRelative.length} cwd-relative invocation(s): ${cwdRelative.join("; ")}` : "");
+  const validatorSrc = existsSync(VALIDATOR) ? readFileSync(VALIDATOR, "utf8") : "";
+  s.check("G51e the validator's --self-test covers SC01 firing on a bare-variable prose mention",
+    /\$\{CLAUDE_SKILL_DIR\}`-anchored[\s\S]{0,400}?prose mention only: SC01 fires/.test(validatorSrc),
+    existsSync(VALIDATOR)
+      ? "no self-test fixture asserting SC01 fires on a body that only mentions the bare variable in prose"
+      : "validate-skill.mjs not found");
 }
 
 process.exit(s.report() ? 0 : 1);
