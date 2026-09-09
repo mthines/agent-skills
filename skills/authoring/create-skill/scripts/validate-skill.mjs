@@ -392,7 +392,7 @@ function extractLinks(text) {
 }
 
 function checkPortabilityDocs(f, ctx) {
-  const { dir, text } = ctx;
+  const { dir, text, dirName } = ctx;
   const rulesDir = join(dir, "rules");
   const refsDir = join(dir, "references");
 
@@ -496,7 +496,7 @@ function checkPortabilityDocs(f, ctx) {
     //
     // An interpreter prefix is required so a prose reference or a markdown link to the script
     // by repo-relative path stays legal — the rule governs how a script is INVOKED.
-    const ownScripts = basename(dir).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\/scripts\\/";
+    const ownScripts = dirName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\/scripts\\/";
     const invocation = new RegExp(
       `(?:node|npx|python3?|bash|sh|deno|bun|tsx)\\s+(?:[^\\s"'\`]*\\/)?${ownScripts}[^\\s"'\`)]+`, "g");
     const cwdRelative = [...new Set(text.match(invocation) ?? [])];
