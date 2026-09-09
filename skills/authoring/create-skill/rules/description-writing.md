@@ -14,6 +14,25 @@ Claude uses it to choose between potentially hundreds of skills. The
 combined `description` + `when_to_use` is truncated at **1,536 characters**
 in the skill listing — front-load the important parts.
 
+The listing itself is budgeted, not unlimited: it holds to
+`skillListingBudgetFraction`, roughly **1 % of the context window**, across
+every installed skill combined. When the budget is tight, the
+least-recently-used descriptions are shrunk first — so a skill nobody
+triggers becomes progressively harder to trigger. `/skill-doctor`,
+`/doctor`, and `/context` all surface the listing's actual token cost;
+check one of them rather than guessing.
+
+## Contents
+
+- Anatomy
+- Template
+- Worked examples
+- Voice
+- Trigger phrases — choosing them
+- Length budget
+- Counter under-triggering
+- Trigger eval set
+
 ## Anatomy
 
 A good description has three parts in this order:
@@ -25,7 +44,7 @@ A good description has three parts in this order:
 
 ## Template
 
-```
+```text
 <Third-person verb> <object/scope>. Applies <approach / methodology /
 references>. Use when <specific context or signal>. Triggers on
 "<phrase 1>", "<phrase 2>", "<phrase 3>", "/<name>".
@@ -121,3 +140,53 @@ this", "zoom out" for `holistic-analysis`), include it verbatim.
 
 If you need more than 1024 chars, you are doing too much in one skill.
 Split, do not stretch the description.
+
+`when_to_use` is for **overflow trigger context only** — extra phrasing
+that would not fit inside the 1024-char `description` — not a second draft
+of the same sentences. Keep the combined `description` + `when_to_use`
+under the 1,536-char listing cap.
+
+## Counter under-triggering
+
+An `auto` skill (model-invokable, no `disable-model-invocation`) that
+under-triggers is invisible — the fix belongs in the description, not in
+a later rule file the model never loads. Add an explicit clause naming
+the case where the skill applies **even when the user does not say the
+skill's own name or an obvious keyword**:
+
+```yaml
+description: >
+  Reviews UI diffs for accessibility and dark-pattern violations. Applies
+  even when the user only asks for a general code review of a
+  frontend change — not just when they say "accessibility" or "a11y".
+  Triggers on "check accessibility", "review this UI", "/ux".
+```
+
+For a `disable-model-invocation: true` skill, do the opposite: keep the
+description short. It is never loaded into the always-on listing, so
+there is nothing to counter-trigger — spend the budget on the slash-menu
+hint instead.
+
+## Trigger eval set
+
+Every `auto` skill needs an explicit set of test queries so a description
+change can be graded instead of eyeballed:
+
+- **8–10 should-trigger** queries in varied register (terse, verbose, a
+  different phrasing per query) that never mention the skill's own name.
+- **8–10 near-miss should-not-trigger** queries from an adjacent domain
+  that share keywords with the description but should not load this
+  skill.
+
+Store them at `skills/<category>/<name>/evals/triggers.jsonl`, one JSON
+object per line:
+
+```json
+{"query": "can you make this table's colors easier to read for low vision", "should_trigger": true}
+{"query": "make this chart's colors match our brand palette", "should_trigger": false}
+```
+
+In this repo, an enumerable trigger decision that recurs across skills
+graduates to an L2 behavioral suite once it has enough cases — the
+`aw-should-trigger` suite (gating the `aw` dispatcher's own routing) is
+the precedent. See root `CLAUDE.md` § "Keeping the evals honest".

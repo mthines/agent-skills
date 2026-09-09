@@ -96,6 +96,11 @@ and what `pip install` does. **All of those assumptions are correct.**
 
 ## Lifecycle and compaction
 
+`SKILL.md` and its linked files are **not re-read on later turns** once
+loaded: an identical re-invocation later in the same session adds only a
+short note, and only a changed file re-appends its full body — see
+`progressive-disclosure.md` § Content lifecycle.
+
 Auto-compaction re-attaches the **most recent invocation** of each skill
 after summarising older conversation, capped at 5,000 tokens per skill and
 25,000 tokens combined. Implications:
@@ -114,11 +119,12 @@ The cheapest skill is one with a tight `SKILL.md` and most knowledge in
 
 Quick approximations:
 
-| Metric                 | How to check                                    |
-| ---------------------- | ----------------------------------------------- |
-| `SKILL.md` line count  | `wc -l SKILL.md`                                |
-| `description` length   | `wc -c <(yq '.description' SKILL.md)`           |
-| Largest rule           | `wc -l rules/*.md \| sort -n \| tail`           |
-| Longest paragraph      | Eyeball — anything > 6 lines is a smell         |
+| Metric                    | How to check                                                |
+| ------------------------- | ----------------------------------------------------------- |
+| `SKILL.md` line count     | `wc -l SKILL.md`                                            |
+| Frontmatter + structure   | `node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir>` |
+| Largest rule              | `wc -l rules/*.md \| sort -n \| tail`                       |
+| Longest paragraph         | Eyeball — anything > 6 lines is a smell                     |
+| Actual listing token cost | `/skill-doctor` or `/context`                               |
 
 If `wc -l SKILL.md` ≥ 500, you have a structural problem. Split.

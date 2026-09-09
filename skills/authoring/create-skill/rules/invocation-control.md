@@ -13,6 +13,21 @@ tags:
 By default, both the user and the model can invoke any skill. Two
 frontmatter fields restrict that.
 
+## Contents
+
+- The matrix
+- When to set `disable-model-invocation: true`
+- When to set `user-invocable: false`
+- When to leave both at their defaults
+- `allowed-tools`
+- `paths` — auto-load only on relevant files
+- `model` and `effort` — per-skill overrides
+- `context: fork` and `agent`
+- `disallowed-tools`
+- Where skills load from
+- `skillOverrides`
+- Decision matrix
+
 ## The matrix
 
 | Frontmatter                       | User can `/invoke` | Model auto-loads | Description in always-loaded context |
@@ -62,6 +77,21 @@ The skill is reasonably autonomous and useful in both directions:
 
 This is the most permissive setting. The model auto-loads when relevant,
 the user can also `/invoke` it.
+
+## `disallowed-tools`
+
+```yaml
+disallowed-tools: Bash(rm *) Bash(git push *)
+```
+
+`disallowed-tools` **removes** tools from the active set while the skill
+runs — the opposite of `allowed-tools`, which only pre-approves. Use it to
+hard-block a dangerous action a skill should never take (a read-only
+advisory skill removing `Edit`/`Write`, for example).
+
+The restriction **clears on the next user message** — it does not persist
+past the turn the skill was invoked for. It also cannot remove
+`EndConversation` on its own; that tool always stays reachable.
 
 ## `allowed-tools`
 
@@ -124,6 +154,62 @@ it as actionable instructions, not as advisory background. A skill that
 just says "use these conventions" returns nothing useful from a forked
 context.
 
+`background` (default `true`) only applies alongside `context: fork`.
+Claude still waits on the forked skill instead of backgrounding it when:
+running non-interactively (`-p`), `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`
+is set, the same skill is already running, or the invocation is a
+scheduled task. In those cases the forked context also gets a narrower
+tool set and can edit files outside the normal checkpoint boundaries —
+treat `background` as an optimisation the runtime is free to override, not
+a guarantee.
+
+## `disallowed-tools`
+
+```yaml
+disallowed-tools: Bash(rm *) Bash(git push *)
+```
+
+`disallowed-tools` **removes** tools from the active set while the skill
+runs — the opposite of `allowed-tools`, which only pre-approves. Use it to
+hard-block a dangerous action a skill should never take (a read-only
+advisory skill removing `Edit`/`Write`, for example).
+
+The restriction **clears on the next user message** — it does not persist
+past the turn the skill was invoked for. It also cannot remove
+`EndConversation` on its own; that tool always stays reachable.
+
+## Where skills load from
+
+Skills resolve from several locations, in precedence order (highest wins
+on a name collision):
+
+| Location                | Path                                       | Scope                          |
+| ------------------------ | -------------------------------------------- | ------------------------------- |
+| Enterprise               | Managed enterprise policy directory          | Every user in the organization  |
+| Personal                 | `~/.claude/skills/<name>`                    | This user, every project        |
+| Project                  | `.claude/skills/<name>` in the repo          | This repo only                  |
+| Nested (monorepo)        | `.claude/skills/<name>` in a subpackage      | That subpackage's working dir   |
+| `--add-dir`              | An explicitly added directory                | The current session only        |
+| Plugin                   | Namespaced under the plugin's own name       | Wherever the plugin is enabled  |
+
+Name resolution: a more specific location shadows a less specific one that
+declares the same `name`, and a plugin-provided skill is namespaced
+(`<plugin>:<name>`) so it never collides with a same-named personal or
+project skill.
+The folder name `synced` is **reserved** for synced-skill placeholders —
+do not name a skill directory `synced`; a skill placed there will not
+resolve as expected.
+
+## `skillOverrides`
+
+A consumer-side kill switch, set outside the skill itself (repo or user
+settings), that overrides a skill's own invocation flags: `off` (skill
+unreachable), `user-invocable-only` (equivalent to forcing
+`disable-model-invocation: true`), `name-only` (visible in the `/` menu but
+the description is dropped from the always-loaded listing), or `on`
+(restores the skill's own declared flags). Document this for skills you
+expect a consuming team to want to silence.
+
 ## Decision matrix
 
 | Goal                                                | Setting                          |
@@ -133,5 +219,8 @@ context.
 | Background knowledge the model applies silently      | `user-invocable: false`          |
 | Advisory or composable skill, both can invoke        | (defaults)                       |
 | Read-only research without conversation pollution    | `context: fork`, `agent: Explore` |
+| Long forked task that should not block the session   | `context: fork`, `background: true` (default) |
 | Limit auto-load to a specific file scope             | `paths: [...]`                   |
 | Pre-approve tools so the skill runs without prompts  | `allowed-tools: ...`             |
+| Hard-block a dangerous tool for this skill's turn    | `disallowed-tools: ...`          |
+| Silence or restrict a skill from outside its own file | `skillOverrides` (consumer-side) |

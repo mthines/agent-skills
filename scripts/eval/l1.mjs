@@ -4,7 +4,7 @@
 //   node scripts/eval/l1.mjs
 // Exits non-zero if any check fails.
 import { execFileSync, execSync, spawnSync } from "node:child_process";
-import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync, mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -6333,6 +6333,185 @@ const isPollBlock = (block) =>
   // like the optimisation is working.
   s.check("G50h evals-l2.yml checks out full history for the diff",
     /^\s*fetch-depth: 0$/m.test(yml));
+}
+
+// ── G51: create-skill's validate-skill.mjs — the mechanical pre-pass has a self-test,
+// stays runnable against real skills, and cannot go orphaned ──
+//
+// The plan that added this script split the work across two concurrently-edited agents: one
+// wrote the validator (scripts/validate-skill.mjs), the other rewrote create-skill's OWN
+// markdown to point at it (rules/quality-checklist.md's "## Mechanical pre-pass" section,
+// SKILL.md's link to the script). A script with no self-test is a script nobody can prove
+// still does what it claims after the next edit — the same argument G39b/G46b/G33b make for
+// their own scripts; a script with a self-test but no link from the skill's own docs is dead
+// weight the next author won't find; and a skill that ships a TOC rule for its own rules/*.md
+// files without obeying it on its OWN long files is the exact self-inconsistency this repo's
+// create-skill review (finding A9: 9 of its own rules/*.md over 100 lines had no TOC) caught
+// in the first place. This group closes all three gaps mechanically rather than trusting a
+// future editor to remember them by hand.
+{
+  const CS = join(REPO_ROOT, "skills/authoring/create-skill");
+  const VALIDATOR = join(CS, "scripts/validate-skill.mjs");
+  s.check("G51a validate-skill.mjs exists", existsSync(VALIDATOR));
+  if (existsSync(VALIDATOR)) {
+    // (a) The validator's own self-test. This is the one sub-check that MUST be green
+    // regardless of what state create-skill's own markdown is in — it is the script proving
+    // itself internally consistent, not proving anything about the skill it validates.
+    const st = spawnSync(process.execPath, [VALIDATOR, "--self-test"], { encoding: "utf8" });
+    s.check("G51a the validator's own self-test passes", st.status === 0,
+      ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 400));
+
+    // (b) The skill validates cleanly against its OWN validator — the same "physician, heal
+    // thyself" bar this file holds every other script and rule file to. A FAIL here is a real,
+    // reportable state and is never a bug in this guard, so the detail line carries the
+    // validator's own FAIL lines (which finding ids, on which file) rather than a bare red.
+    const run = spawnSync(process.execPath, [VALIDATOR, CS], { encoding: "utf8" });
+    s.check("G51b create-skill passes its own validator", run.status === 0,
+      (run.stdout || "").split("\n").filter((l) => l.startsWith("FAIL")).join("; ").slice(0, 500));
+  }
+
+  // (c) The script cannot go orphaned: SKILL.md must link it, and quality-checklist.md must
+  // name it under a "Mechanical pre-pass" heading, so a reader who opens the checklist lands
+  // on the script instead of re-deriving these checks by hand.
+  const skillMdPath = join(CS, "SKILL.md");
+  const skillMd = existsSync(skillMdPath) ? readFileSync(skillMdPath, "utf8") : "";
+  s.check("G51c SKILL.md links scripts/validate-skill.mjs",
+    /scripts\/validate-skill\.mjs/.test(skillMd),
+    existsSync(skillMdPath) ? "SKILL.md never mentions scripts/validate-skill.mjs" : "SKILL.md not found");
+  const checklistPath = join(CS, "rules/quality-checklist.md");
+  const checklist = existsSync(checklistPath) ? readFileSync(checklistPath, "utf8") : "";
+  s.check("G51c quality-checklist.md names the validator under a Mechanical pre-pass section",
+    /## Mechanical pre-pass/.test(checklist) && /validate-skill\.mjs/.test(checklist),
+    existsSync(checklistPath) ? "no ## Mechanical pre-pass section naming validate-skill.mjs" : "rules/quality-checklist.md not found");
+
+  // (d) The skill obeys its own two-branch TOC rule (rules/progressive-disclosure.md § Long
+  // reference and rule files need a TOC): rules/*.md past 150 lines and references/*.md past
+  // 100 lines both need a ## Contents / ## Table of contents heading. Both branches are guarded
+  // here because the validator grades PD03 as WARN, so G51b exits 0 either way.
+  for (const [sub, min] of [["rules", 150], ["references", 100]]) {
+    const subDir = join(CS, sub);
+    if (!existsSync(subDir)) continue;
+    for (const name of readdirSync(subDir).filter((f) => f.endsWith(".md")).sort()) {
+      const body = readFileSync(join(subDir, name), "utf8");
+      const lc = body.split("\n").length;
+      if (lc <= min) continue;
+      s.check(`G51d ${sub}/${name} (${lc} lines, > ${min}) has a ## Contents heading`,
+        /^##\s+(contents|table of contents)\s*$/im.test(body));
+    }
+  }
+
+  // (e) The skill obeys its own SC01 path convention (rules/scripts-and-assets.md § Path
+  // convention): a skill shipping scripts/ invokes them through ${CLAUDE_SKILL_DIR}/scripts/,
+  // never a cwd-relative path. Guarded here for the same reason as G51d one block up — the
+  // validator grades SC01 as WARN, so G51b exits 0 whether the WARN is present or not, and a
+  // WARN-graded check therefore needs its own guard or it is enforced by nothing. That gap was
+  // not hypothetical: SC01's own predicate was a whole-file scan for the bare variable, which
+  // this skill's prose satisfied while the invocations stayed cwd-relative, and G51b stayed
+  // green through it.
+  //
+  // Two halves, because passing is not the same as biting:
+  //   1. the convention holds on real repo state (an invocation path is present, and no
+  //      cwd-relative invocation of the validator survives anywhere in SKILL.md), and
+  //   2. SC01 actually fires on a violating input — asserted through the validator's own
+  //      --self-test, which carries a bare-variable-in-prose fixture. G51a executes that
+  //      self-test, so this check pins the fixture's existence and G51a proves it passes;
+  //      together they mean the guard cannot go green against a check that stopped firing.
+  //      Asserted against the self-test rather than a temp fixture built here, so the coverage
+  //      lives with the validator that owns SC01 and l1.mjs writes nothing to disk.
+  s.check("G51e SKILL.md invokes the validator through a ${CLAUDE_SKILL_DIR}/scripts/ path",
+    /\$\{CLAUDE_SKILL_DIR\}\/scripts\/validate-skill\.mjs/.test(skillMd),
+    existsSync(skillMdPath)
+      ? "no ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs invocation in SKILL.md"
+      : "SKILL.md not found");
+  // Byte-identical to the validator's own INTERPRETER constant, and deliberately duplicated
+  // rather than imported: this guard exists to hold the validator to a contract from outside
+  // it, so importing the alternation would let a change to the validator silently change the
+  // guard that is supposed to catch it. The cost of the copy is that the two can drift — a
+  // divergence this review caught (4 interpreters here against 9 there, with `deno`
+  // unreachable in both) — so they are asserted equal below rather than trusted to match.
+  const INTERPRETER = String.raw`\b(?:node|npx|python3?|bash|sh|tsx|(?:deno|bun)(?:\s+run)?)\s+`;
+  const validatorSrc = existsSync(VALIDATOR) ? readFileSync(VALIDATOR, "utf8") : "";
+  s.check("G51e the validator's INTERPRETER alternation matches this guard's copy",
+    validatorSrc.includes(`const INTERPRETER = String.raw\`${INTERPRETER}\`;`),
+    existsSync(VALIDATOR)
+      ? "validate-skill.mjs's INTERPRETER constant is absent or differs from l1.mjs's copy"
+      : "validate-skill.mjs not found");
+  // The convention is not SKILL.md's alone: the blocking finding this guard answers named
+  // four sites across three files, so an arm reading only `skillMd` enforced the rule on one
+  // of them and left the other three free to regress. Hence the walk over every markdown
+  // file the skill ships.
+  //
+  // Keyed on the skill's OWN script FILENAMES, not on a `create-skill/` path segment. The
+  // segment form let the bare `node scripts/validate-skill.mjs` through untouched — the same
+  // partial-coverage shape as the SKILL.md-only arm it replaced, one level down. Reading the
+  // filenames off the directory also excludes a repo-level script by construction:
+  // `bash scripts/sync-symlinks.sh`, which SKILL.md legitimately documents, is not a file in
+  // this skill's scripts/ directory, so no allowlist has to be maintained by hand.
+  // EVERY file in scripts/, not an extension allowlist. The allowlist was a hand-kept list
+  // with nothing asserting it complete, and adding a `.rb` script silently dropped it from
+  // the arm's coverage — a guard that quietly shrinks when the thing it guards grows. Taking
+  // the directory as-is cannot fall behind, and a non-script file landing in the list is
+  // harmless: nothing invokes a README through an interpreter.
+  //
+  // The INTERPRETER alternation above is the second such list, and it is deliberately NOT
+  // fixed the same way, because it cannot be: no enumeration of interpreters is complete, so
+  // `ruby scripts/x.sh` stays uncaught. That direction is safe — a missing interpreter is a
+  // missed violation, never a false accusation — and the repo's own skills invoke scripts
+  // with node, bash and python only. Recorded rather than papered over with an assertion
+  // that could not actually establish completeness.
+  const ownScriptsDir = join(CS, "scripts");
+  const ownScriptNames = existsSync(ownScriptsDir)
+    ? readdirSync(ownScriptsDir, { withFileTypes: true })
+      .filter((e) => e.isFile()).map((e) => e.name).sort()
+    : [];
+  const cwdRelative = [];
+  if (ownScriptNames.length) {
+    const names = ownScriptNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    const invocation = new RegExp(
+      `${INTERPRETER}(?!\\$\\{CLAUDE_SKILL_DIR\\})(?:[^\\s"'\`]*\\/)?(?:${names})`, "g");
+    for (const path of walk(CS, ".md")) {
+      const body = readFileSync(path, "utf8");
+      for (const hit of body.match(invocation) ?? []) cwdRelative.push(`${rel(path)}: ${hit}`);
+    }
+  }
+  s.check("G51e the skill ships at least one script for the arm above to key on",
+    ownScriptNames.length > 0,
+    existsSync(ownScriptsDir) ? "scripts/ holds no recognised script files" : "scripts/ not found");
+  s.check("G51e no create-skill markdown file invokes its own script by a cwd-relative path",
+    cwdRelative.length === 0,
+    cwdRelative.length ? `${cwdRelative.length} cwd-relative invocation(s) — ${cwdRelative.join("; ")}` : "");
+  // The SC01 behaviours this group exists to pin, asserted BEHAVIOURALLY. The prior form
+  // matched the self-test fixture's PROSE across a `[\s\S]{0,400}` window — an untraceable
+  // magic number in a script whose own header rule requires every constant to name its
+  // source — and it was wrong in both directions: rewording a fixture body reds L1 while the
+  // coverage is intact, and moving the coverage elsewhere greens it while the behaviour is
+  // gone. Running the validator against fixtures instead survives any rewording and reds only
+  // when SC01 itself stops discriminating. The silent case is not padding: without it, an
+  // SC01 hardwired to fire would satisfy both firing rows.
+  const sc01Probe = (label, body, shouldFire) => {
+    const root = mkdtempSync(join(tmpdir(), "l1-sc01-"));
+    const dir = join(root, "probe-skill");
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    writeFileSync(join(dir, "SKILL.md"),
+      "---\nname: probe-skill\ndescription: Fixture skill used by L1 to probe SC01 discrimination.\n"
+      + `---\n\n# Probe\n\n${body}\n`);
+    const r = spawnSync(process.execPath, [VALIDATOR, dir, "--json"], { encoding: "utf8" });
+    rmSync(root, { recursive: true, force: true });
+    let fired = null;
+    try {
+      fired = JSON.parse(r.stdout).findings.some((x) => x.id === "SC01");
+    } catch { /* left null; reported as an unparseable result rather than as a verdict */ }
+    s.check(`G51e SC01 ${label}`, fired === shouldFire,
+      fired === null
+        ? `validator --json unparseable: ${((r.stdout || "") + (r.stderr || "")).slice(0, 200)}`
+        : `SC01 ${fired ? "fired" : "stayed silent"}, expected ${shouldFire ? "fire" : "silence"}`);
+  };
+  sc01Probe("fires on a bare-variable prose mention with every command cwd-relative",
+    "Every helper is `${CLAUDE_SKILL_DIR}`-anchored.\n\nRun `node scripts/check.mjs`.", true);
+  sc01Probe("fires when a correct path coexists with an own-path cwd-relative one",
+    "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.\n\nOr `node pkg/probe-skill/scripts/check.mjs`.", true);
+  sc01Probe("stays silent on a correct path alone",
+    "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.", false);
 }
 
 process.exit(s.report() ? 0 : 1);

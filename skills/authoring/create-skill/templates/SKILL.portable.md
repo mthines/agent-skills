@@ -2,18 +2,13 @@
 name: <kebab-case-name>
 description: >
   <Third-person verb> <what it does>. Use when <when to use>. Triggers on
-  "<phrase 1>", "<phrase 2>", "<phrase 3>", "/<name>".
-argument-hint: '[<mode-a>|<mode-b>] [<positional>]'
+  "<phrase 1>", "<phrase 2>", "<phrase 3>".
 license: MIT
-# compatibility: <only for a portable target — see rules/frontmatter.md>
+compatibility: <optional — runtime/model notes for consumers outside Claude Code, ≤ 500 chars>
 metadata:
   author: <handle>
   version: '1.0.0'
-  workflow_type: <advisory | applied | orchestrator | scaffolder | slash-command | companion>
-  tags:
-    - <tag-1>
-    - <tag-2>
-    - <tag-3>
+allowed-tools: <optional — space-separated tool names, if the target runtime honors this field>
 ---
 
 # <Skill Title>
@@ -30,7 +25,7 @@ the action, not the rationale.>
 ## Decision rules
 
 | Signal                              | Action                                    |
-| ----------------------------------- | ----------------------------------------- |
+| ----------------------------------- | ------------------------------------------ |
 | <Specific, testable signal>         | <What to do>                              |
 | <Specific, testable signal>         | <What to do>                              |
 
@@ -58,4 +53,6 @@ the action, not the rationale.>
 
 - [ ] <Concrete, testable check>.
 - [ ] <Concrete, testable check>.
-- [ ] <Concrete, testable check>.
+- [ ] No field outside `name`, `description`, `license`, `compatibility`,
+      `metadata`, `allowed-tools` — validated with
+      `/create-skill review <dir> --portable`.

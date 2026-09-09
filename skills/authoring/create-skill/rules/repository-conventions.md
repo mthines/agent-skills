@@ -13,9 +13,21 @@ tags:
 Conventions specific to **this** repo (`agent-skills.git`). Skip this rule
 if the user is publishing the skill to a different repo.
 
+## Contents
+
+- Where the skill lives
+- The two-tier symlink chain (local development)
+- Editing convention
+- Inventory updates
+- Plugin marketplace
+- License and metadata
+- `scripts/` and `evals/` conventions
+- CI enforcement (L1)
+- Prose rules (also in repo-root `CLAUDE.md`)
+
 ## Where the skill lives
 
-```
+```text
 skills/<category>/<name>/SKILL.md
 ```
 
@@ -30,7 +42,7 @@ Agents (specialised sub-processes with their own model + tool config) live under
 The author's machine wires this repo into the harness via two symlinks per
 skill:
 
-```
+```text
 ~/.claude/skills/<name>     →  ~/.agents/skills/<name>     →  <this repo>/skills/<category>/<name>
 ```
 
@@ -143,6 +155,30 @@ consistently:
   `ci-auto-fix`).
 - `companion` — workflow companion called by an orchestrator
   (`aw-create-plan`, `aw-create-walkthrough`).
+
+## `scripts/` and `evals/` conventions
+
+A skill that runs a deterministic check or transform of its own gets a
+`scripts/` directory: zero-dependency, `${CLAUDE_SKILL_DIR}`-anchored,
+matching the style of this repo's `scripts/eval/*.mjs` — see
+`scripts-and-assets.md`. A skill's own test prompts and trigger set live
+under `evals/` (`evals/evals.json`, `evals/triggers.jsonl`) — see
+`evaluation.md`. Neither directory is required; add them only when the
+skill actually has a script to run or a trigger set to store.
+
+## CI enforcement (L1)
+
+This repo's `node scripts/eval/l1.mjs` asserts a mechanical subset of the
+frontmatter contract on every `SKILL.md` in CI — including the plain-YAML
+`: `-in-unquoted-scalar check (`F2`) and the surrounding frontmatter
+sanity checks (`F`). A skill that fails these fails the PR, independent of
+this skill's own `scripts/validate-skill.mjs`, which checks a superset
+(FM/BD/PD/SC ids) intended to run before a PR exists.
+
+Root `CLAUDE.md` § "Keeping the evals honest" also obligates: a new
+enumerable decision needs a golden-case suite, and a mechanical contract
+needs its own L1 check proven to bite. Check this table before declaring
+a new skill (or a new decision inside one) done — see `evaluation.md`.
 
 ## Prose rules (also in repo-root `CLAUDE.md`)
 

@@ -14,6 +14,15 @@ Pick the layout **before** writing the skill. Restructuring later is
 cheap, but starting with the wrong shape leaks tokens and confuses the
 agent loading the skill.
 
+## Contents
+
+- Decision flow
+- Layouts by shape
+- Splitting an oversized SKILL.md
+- When **not** to split
+- Multi-mode skills
+- Companion skills (a separate decision)
+
 ## Decision flow
 
 Walk these in order. The first match wins.
@@ -24,8 +33,10 @@ Walk these in order. The first match wins.
 | 2 | Does the skill have **3+ orthogonal concerns** (e.g. naming + architecture + tests)?     | **Multi-file** — one rule per concern.              |
 | 3 | Are there worked examples > 100 lines you want to keep?                                  | **Multi-file** — push examples to `references/`.    |
 | 4 | Does the skill emit literal boilerplate (commit messages, plan templates, …)?            | Add `templates/` regardless of single/multi-file.   |
-| 5 | Is this a slash command for a single, sequential workflow?                               | **Single-file** — keep it tight.                    |
-| 6 | Is the body under 200 lines and the topic single-concern?                                | **Single-file** — splitting would add ceremony.     |
+| 5 | Does the skill run a deterministic check or transform it repeats often (validation, migration, linting)? | Add `scripts/` regardless of single/multi-file. |
+| 6 | Does the skill emit non-Markdown files (a font, an image, a binary fixture)?             | Add `assets/` — see `scripts-and-assets.md`.        |
+| 7 | Is this a slash command for a single, sequential workflow?                               | **Single-file** — keep it tight.                    |
+| 8 | Is the body under 200 lines and the topic single-concern?                                | **Single-file** — splitting would add ceremony.     |
 
 ## Layouts by shape
 
@@ -36,7 +47,7 @@ my-skill/
 └── SKILL.md
 ```
 
-Used by: `create-pr`, `holistic-analysis`, `confidence`. Best for sequential
+Used by: `confidence`, `resolve-conflicts`. Best for sequential
 workflows the user invokes by slash.
 
 ### B — Single-file with templates
@@ -49,8 +60,8 @@ my-skill/
     └── walkthrough.md
 ```
 
-When the skill emits structured artefacts. `aw-create-plan` and
-`aw-create-walkthrough` follow this pattern.
+When the skill emits structured artefacts. `changelog` follows this
+pattern (a single `SKILL.md` plus a `templates/changelog.md` it fills in).
 
 ### C — Multi-file with rules
 
@@ -63,8 +74,10 @@ my-skill/
     └── concern-c.md
 ```
 
-Used by: `code-quality`, `tdd`, `dx`, `ux`. Best for advisory skills with
-multiple orthogonal concerns. Each rule loads only when relevant.
+Used by: `tdd`, `verify-behavior`, `animations-native` (`rules/` only —
+no `references/` or `templates/`). Best for advisory or applied skills
+with multiple orthogonal concerns and no worked-example or emitted-artefact
+needs; each rule loads only when relevant.
 
 ### D — Full progressive disclosure
 
@@ -79,8 +92,9 @@ my-skill/
     └── ...
 ```
 
-Used by: `autonomous-workflow`, `create-skill` (this skill). Reserved for
-orchestrators and meta-skills with worked examples and emitted artefacts.
+Used by: `autonomous-workflow`, `create-skill` (this skill), `docs`.
+Reserved for orchestrators and meta-skills with worked examples and
+emitted artefacts.
 
 ### E — Skill with developer docs
 
