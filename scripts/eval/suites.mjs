@@ -173,7 +173,7 @@ export const SUITES = [
     name: "observe-run-rung-selection",
     golden: "golden/observe-run-rung-selection.jsonl",
     // 28 cases, 15 `rung-1` / 13 `rung-2` — a 53.6% majority-class baseline. Real baseline, not a
-    // bootstrap seed — see the sibling .NOTES.md. Eight of the twenty-eight are `decoy-` cases
+    // bootstrap seed — see the sibling .NOTES.md. Fourteen of the twenty-eight are `decoy-` cases
     // whose SURFACE VOCABULARY points at the wrong rung (a rung-1 claim that names a
     // separately-deployed service but asserts only on the caller's own span; a rung-2 claim that
     // never says "cross-process"), because the original fourteen were balanced AND

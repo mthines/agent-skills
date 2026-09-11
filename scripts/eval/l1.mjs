@@ -6692,7 +6692,9 @@ const isPollBlock = (block) =>
     // classifier with its polarity flipped, so `max(acc, 100 - acc)` is the real shortcut strength
     // and is what must sit below the EVAL_GATE floor.
     // break-shape: G52e — deleting the `decoy-` cases from either golden set flips this red
-    // (assertion-provenance's run tell returns to 85.0%, rung-selection's process tell to 78.6%).
+    // (assertion-provenance's run tell returns to 85.0%, rung-selection's process tell to 78.6%);
+    // typoing a tell's regex so it matches nothing flips the partition sub-check red rather than
+    // silently degrading the separability check into a second majority-baseline measurement.
     {
       const DECLARED_TELLS = {
         "observe-run-assertion-provenance": [
@@ -6721,7 +6723,21 @@ const isPollBlock = (block) =>
         for (const [re, label] of tells) {
           const other = choices.find((c) => c !== label);
           let hit = 0;
-          for (const r of rows) if ((re.test(surfaceOf(r)) ? label : other) === r.expected) hit++;
+          let matched = 0;
+          for (const r of rows) {
+            const fires = re.test(surfaceOf(r));
+            if (fires) matched++;
+            if ((fires ? label : other) === r.expected) hit++;
+          }
+          // A tell that fires on NO row, or on EVERY row, is a constant classifier: it answers
+          // `other` (or `label`) everywhere, so its accuracy is just the majority-class baseline
+          // the check above already measures, and the separability check below passes while
+          // measuring nothing. That is the exact shape a typoed regex takes — `/proces/` matching
+          // zero rows keeps this guard green on a set the real `/process/` tell could separate.
+          // Assert the tell genuinely partitions the set before reading its accuracy.
+          s.check(`G52e the ${re.source} tell partitions ${name}`,
+            matched > 0 && matched < rows.length,
+            `matches ${matched}/${rows.length} rows — a constant classifier re-measures the majority baseline`);
           const acc = (hit / rows.length) * 100;
           const strength = Math.max(acc, 100 - acc);
           s.check(`G52e ${name} is not separable by the ${re.source} tell`,

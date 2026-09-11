@@ -24,8 +24,8 @@ state maps to exactly one of them.
 
 | Observed proxy-stream state | Expected span present? | Verdict |
 | --- | --- | --- |
-| `*.failed == 0` AND `shutdown.reason == signal` AND totals > 0 | present | `confirms` — the code emitted what the claim asserted |
-| `*.failed == 0` AND `shutdown.reason == signal` AND totals > 0 | absent | `contradicts` — the code genuinely did not emit |
+| `*.failed == 0` AND `shutdown.reason == signal` AND no `error` event AND totals > 0 | present | `confirms` — the code emitted what the claim asserted |
+| `*.failed == 0` AND `shutdown.reason == signal` AND no `error` event AND totals > 0 | absent | `contradicts` — the code genuinely did not emit |
 | ANY `dash0.cli.otlp_proxy.error` event, OR `*.failed > 0`, OR `shutdown.reason == deadline` | (any) | `ambiguous` — never `contradicts`. A degraded delivery path cannot be read as proof of absence. |
 | `*.failed == 0` AND `shutdown.reason == signal` AND no `error` event AND totals == 0 | n/a (nothing flowed) | `null` — the claim is unverified; silence is not proof |
 
@@ -67,6 +67,19 @@ canonical source enforces, applied in reverse: absence of a confirming signal is
 disproof.
 The `null` row exists so that state has an honest verdict instead of silently falling through to
 whichever row happens to match loosest.
+
+Total is not the whole claim — the rows must also be **mutually exclusive**, or a state matching two
+of them has no single verdict and the reader picks whichever they read first.
+That is why all three clean-stream rows carry the *same* guard (`*.failed == 0` AND
+`shutdown.reason == signal` AND no `error` event) and differ only in what follows it: the degraded
+row is the exact negation of that guard, so exactly one row matches any stream.
+Dropping the `no error event` conjunct from the `confirms` / `contradicts` rows — leaving it on the
+`null` row alone — is the specific way this breaks: a stream carrying an `error` event while
+`*.failed` still reads `0` would match both `contradicts` and `ambiguous`, and the `contradicts`
+reading is the one the degraded-path invariant above exists to forbid.
+`dash0.cli.otlp_proxy.error` is an independent event with its own `error.kind` / `reason` / `code`
+(see [`rules/reader-adapters.md`](./reader-adapters.md)), **not** a derivative of `stats`'s
+`*.failed` counters, so that combination is reachable rather than theoretical.
 
 ## What this rule does not do
 

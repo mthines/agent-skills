@@ -81,8 +81,12 @@ stopword, add it to the declared list with its own decoys.
 
 CI run `34656896182` on the 39-case set: **39/39 (100.0%)**, every decoy included.
 That is the pair of readings the set needs to be worth running — a rubric-reading model answers
-every decoy correctly, while a rubric-free keyword responder now scores 48.7% / 61.5% / 61.5% on
-the three declared tells.
+every decoy correctly, while a rubric-free keyword responder now scores **53.8% / 61.5% / 61.5%** on
+the three declared tells (run verb / `startSpan` / static verb).
+Those are the figures `G52e` itself computes, negation strip included, so the numbers here and the
+numbers the guard gates on are the same reading — an earlier draft quoted 48.7% for the run tell,
+scored without the strip, which is not what anything enforces.
+All three sit below 50%, so each tell's polarity-flipped strength equals its accuracy.
 A decoy a rubric-reader also gets wrong would not be a decoy; it would be a mislabelled case.
 
 ## What this suite measures
