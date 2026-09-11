@@ -68,6 +68,14 @@ Deleting the decoys reds the build, so the set cannot silently re-degenerate int
 When adding cases here, pair any new label with a decoy rather than letting the surface vocabulary
 become the answer again.
 
+### Measured after the decoys landed
+
+CI run `34656896182` on the 28-case set: **28/28 (100.0%)**, every decoy included.
+That is the pair of readings the set needs to be worth running — a rubric-reading model answers
+every decoy correctly, while a rubric-free keyword responder now scores 60.7% / 64.3% / 64.3% on
+the three declared tells.
+A decoy a rubric-reader also gets wrong would not be a decoy; it would be a mislabelled case.
+
 ## What this suite measures
 
 Given a claim about what to verify, does the model — reading `rules/rungs.md` live, and nothing

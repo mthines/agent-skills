@@ -77,6 +77,14 @@ So the tells are declared, one per decision dimension, and fixed in `l1.mjs`; ru
 authoring new cases, and if it surfaces a token that is genuinely a shortcut rather than a
 stopword, add it to the declared list with its own decoys.
 
+### Measured after the decoys landed
+
+CI run `34656896182` on the 39-case set: **39/39 (100.0%)**, every decoy included.
+That is the pair of readings the set needs to be worth running — a rubric-reading model answers
+every decoy correctly, while a rubric-free keyword responder now scores 48.7% / 61.5% / 61.5% on
+the three declared tells.
+A decoy a rubric-reader also gets wrong would not be a decoy; it would be a mislabelled case.
+
 ## What this suite measures
 
 Given a claim-plus-assertion pair, does the model — reading `rules/assertion-provenance.md` live,
