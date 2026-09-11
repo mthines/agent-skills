@@ -22,21 +22,44 @@ A case is labelled `behavioral` when the assertion names an executed run (a comm
 load test) and reads what that run produced, matching one of the file's seven allowed kinds (span
 count, parent/child structure, duration, span status on the error path, downstream fan-out,
 attribute cardinality, ordering) — eight cases cover all seven kinds, with kind 4 (span status on
-the error path) covered twice under two different operations to keep the set at fourteen without
-skewing the split.
+the error path) covered twice under two different operations.
 A case is labelled `by-construction` when the assertion is answerable by reading source or the
 diff alone — a `grep` for a span-creation call, a static confirmation that `.setAttribute(...)` is
 declared, a diff search for `startSpan` — matching the file's forbidden pattern and its own
 Incorrect example verbatim in one case.
 
-## Label balance is a correctness property, not a statistic
+## Balance is necessary and not sufficient — the set must also be inseparable
 
-The set is **8 `behavioral` / 6 `by-construction` across 14 cases**, a 57.1% majority-class
+The set is **11 `behavioral` / 9 `by-construction` across 20 cases**, a 55.0% majority-class
 baseline — below the 70% `EVAL_GATE` floor, so neither an always-`behavioral` nor an
 always-`by-construction` responder passes.
-This mirrors the `code-review-retrieval-relevance` suite's own correction (from a passing 4/1 split
-to 8/6): the split is chosen so a green run means the model applied the discriminator, not that it
-picked the more common label.
+That mirrors the `code-review-retrieval-relevance` suite's own correction (from a passing 4/1 split
+to 8/6).
+
+**Balance alone was not enough, and this set is the proof.**
+At its original fourteen cases it was balanced 8/6 *and* trivially keyword-separable: every
+`by-construction` assertion carried a static-read verb (`grep`, `statically`, *read the source*,
+*without running*) and every `behavioral` one said *run*.
+A responder keying on that one verb scored 14/14 having never consulted the discriminator, so a
+green run measured nothing.
+Six **decoy** cases now break the correlation, in both directions:
+
+| Decoy direction | Surface verb | Correct label | Why |
+| --- | --- | --- | --- |
+| `decoy-byconstruction-*` (3) | *run the suite*, *execute the flow*, *start the service under the OTLP proxy* | `by-construction` | The run is a red herring — nothing about its outcome is read. The check is a source grep or a declaration inspection, so the discriminator still answers *yes, source alone settles it*. |
+| `decoy-behavioral-*` (3) | *grep*, *without running anything further* | `behavioral` | The static verb targets the **emitted** OTLP export or a recorded trace, not source. An execution artifact cannot be read out of the diff, so the discriminator answers *no*. |
+
+The sharpest of the six opens with *"without running anything further"* — near-verbatim the phrase
+another case uses to signal `by-construction` — and is nonetheless `behavioral`, because the trace
+it reads is something a run produced.
+
+L1 `G52e` asserts **both** directions mechanically (≥ 2 `by-construction` cases wearing a run verb,
+≥ 2 `behavioral` cases wearing a static-read verb), evaluated against the **assertion clause only**
+and with negated run verbs stripped before the run-verb test — *without running* is a static tell,
+not a run.
+Deleting the decoys reds the build, so the set cannot silently re-degenerate into a keyword lookup.
+When adding cases here, pair any new label with a decoy rather than letting the surface verb become
+the answer again.
 
 ## What this suite measures
 

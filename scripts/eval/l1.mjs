@@ -6599,9 +6599,13 @@ const isPollBlock = (block) =>
   if (existsSync(LADDER) && existsSync(VR)) {
     const ladderBody = readFileSync(LADDER, "utf8");
     const vrBody = readFileSync(VR, "utf8");
+    // Slice the section positionally rather than matching `## Tier 3[\s\S]*observe-run`, which
+    // matches ANYWHERE after the heading — the mention could sit in the file's last section and
+    // the check would still pass, so the guard's name overclaimed its scope. Same idiom as G49.
+    const tier3 = ladderBody.split(/^## /m).find((x) => x.startsWith("Tier 3")) || "";
     s.check("G52d ladder.md's Tier 3 section names observe-run as a third approach",
-      /## Tier 3[\s\S]*observe-run/.test(ladderBody),
-      "no observe-run mention found under Tier 3");
+      tier3.includes("observe-run"),
+      "no observe-run mention inside the Tier 3 section");
     s.check("G52d verification-receipt.md names observe-run",
       vrBody.includes("observe-run"), "no observe-run mention found");
     s.check("G52d verification-receipt.md still cites Step 2.6b",
@@ -6652,6 +6656,35 @@ const isPollBlock = (block) =>
           ? "no EVAL_GATE literal found in .github/workflows/evals-l2.yml"
           : `majority-class baseline ${baseline.toFixed(1)}% >= gate ${gate}% (n=${labels.length}, ${split})`);
     }
+
+    // A balanced set can still be separable without the rubric: the assertion-provenance set was
+    // once 8/6 AND keyword-separable — every `by-construction` case carried a static-read verb
+    // (grep / statically / read the source) and every `behavioral` one said "run", so a responder
+    // keying on the verb alone scored 14/14 having never consulted the discriminator. Balance does
+    // not imply the set measures the rubric; assert the surface verb is NOT the label. Each label
+    // must carry at least two cases wearing the OTHER label's tell.
+    // break-shape: G52e — deleting the `decoy-` cases from the golden set flips this red.
+    {
+      const RUN_TELL = /\b(run|runs|running|execute|executing|load test|start the service|boot)\b/i;
+      const STATIC_TELL = /\b(grep|statically|without running|search the (?:diff|repository)|read the PR diff|open the source)\b/i;
+      const apGolden = join(REPO_ROOT, "scripts/eval/golden/observe-run-assertion-provenance.jsonl");
+      if (existsSync(apGolden)) {
+        const rows = readFileSync(apGolden, "utf8").split("\n").filter(Boolean)
+          .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+        // The assertion clause is what the decoy inverts; the claim clause is not the tell.
+        const assertionOf = (r) => (String(r.input).split(/Assertion:/i)[1] ?? "");
+        // "without running anything" / "without executing the code" is a STATIC tell, not a run
+        // verb. It must stay visible to STATIC_TELL and be stripped before RUN_TELL — counting it
+        // as a run verb let the run-verb half pass on two cases that execute nothing at all.
+        const runSurface = (r) => assertionOf(r).replace(/without\s+(?:running|executing)\b[^,.]*/gi, "");
+        const bcWithRunVerb = rows.filter((r) => r.expected === "by-construction" && RUN_TELL.test(runSurface(r))).length;
+        const behWithStaticVerb = rows.filter((r) => r.expected === "behavioral" && STATIC_TELL.test(assertionOf(r))).length;
+        s.check("G52e assertion-provenance is not separable by the run-verb tell alone",
+          bcWithRunVerb >= 2, `${bcWithRunVerb} by-construction case(s) carry a run verb (need >= 2)`);
+        s.check("G52e assertion-provenance is not separable by the static-verb tell alone",
+          behWithStaticVerb >= 2, `${behWithStaticVerb} behavioral case(s) carry a static-read verb (need >= 2)`);
+      }
+    }
   }
 
   // (f) the measurable setup interview question and the profile-template field move together —
@@ -6684,9 +6717,14 @@ const isPollBlock = (block) =>
     const body = readFileSync(READER_ADAPTERS, "utf8");
     s.check("G52g carries the 'selects the implementation, it never gates the rung' invariant",
       body.includes("selects the implementation, it never gates the rung"));
-    const nonDash0 = (body.match(/otel-desktop-viewer|file exporter|in-memory exporter|stdout exporter|jaeger|otel-tui|collector/gi) || []);
-    s.check("G52g names at least three non-Dash0 readers", nonDash0.length >= 3,
-      `${nonDash0.length} mentions found`);
+    // Deduplicate before counting: the raw match array counts MENTIONS, so one reader named
+    // three times satisfied `>= 3` and the documented break-shape (trimming the list to a
+    // single reader) did not fire. The guard is about distinct readers, so count distinct.
+    const nonDash0 = new Set(
+      (body.match(/otel-desktop-viewer|file exporter|in-memory exporter|stdout exporter|jaeger|otel-tui|collector/gi) || [])
+        .map((m) => m.toLowerCase()));
+    s.check("G52g names at least three non-Dash0 readers", nonDash0.size >= 3,
+      `${nonDash0.size} distinct reader(s) found`);
     s.check("G52g states a missing Dash0 CLI costs rung 1 nothing",
       /costs rung 1 nothing|rung 1 costs nothing/i.test(body));
   }

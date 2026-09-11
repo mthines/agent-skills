@@ -183,8 +183,12 @@ export const SUITES = [
   {
     name: "observe-run-assertion-provenance",
     golden: "golden/observe-run-assertion-provenance.jsonl",
-    // 14 cases, 8 `behavioral` / 6 `by-construction` — a 57.1% majority-class baseline. Real
-    // baseline, not a bootstrap seed — see the sibling .NOTES.md.
+    // 20 cases, 11 `behavioral` / 9 `by-construction` — a 55.0% majority-class baseline. Real
+    // baseline, not a bootstrap seed — see the sibling .NOTES.md. Six of the twenty are `decoy-`
+    // cases whose SURFACE VERB points at the wrong label (a by-construction check fronted by
+    // "run the suite, then grep the source"; a behavioral one fronted by "grep the exported
+    // OTLP"), because the original fourteen were balanced AND keyword-separable — L1 G52e now
+    // asserts both directions, so deleting the decoys reds the build.
     rubric: { file: "skills/quality/observe-run/rules/assertion-provenance.md", section: null }, // whole file
     instruction: "You are the observe-run skill's assertion-provenance check. Using ONLY the discriminator rule below, classify the claim-plus-assertion pair as 'behavioral' (verifiable only by observing a run) or 'by-construction' (satisfiable by reading source alone).",
     inputKey: "input", inputLabel: "Claim + assertion",
