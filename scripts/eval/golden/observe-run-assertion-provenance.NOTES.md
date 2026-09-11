@@ -30,7 +30,7 @@ Incorrect example verbatim in one case.
 
 ## Balance is necessary and not sufficient — the set must also be inseparable
 
-The set is **11 `behavioral` / 9 `by-construction` across 20 cases**, a 55.0% majority-class
+The set is **21 `behavioral` / 18 `by-construction` across 39 cases**, a 53.8% majority-class
 baseline — below the 70% `EVAL_GATE` floor, so neither an always-`behavioral` nor an
 always-`by-construction` responder passes.
 That mirrors the `code-review-retrieval-relevance` suite's own correction (from a passing 4/1 split
@@ -40,26 +40,42 @@ to 8/6).
 At its original fourteen cases it was balanced 8/6 *and* trivially keyword-separable: every
 `by-construction` assertion carried a static-read verb (`grep`, `statically`, *read the source*,
 *without running*) and every `behavioral` one said *run*.
-A responder keying on that one verb scored 14/14 having never consulted the discriminator, so a
-green run measured nothing.
-Six **decoy** cases now break the correlation, in both directions:
+A responder keying on that one verb scored a perfect **14/14** having never consulted the
+discriminator, so a green run measured nothing.
+Twenty-five **decoy** cases now break three separate correlations, in both directions:
 
-| Decoy direction | Surface verb | Correct label | Why |
+| Decoy direction | Surface tell it wears | Correct label | Why |
 | --- | --- | --- | --- |
-| `decoy-byconstruction-*` (3) | *run the suite*, *execute the flow*, *start the service under the OTLP proxy* | `by-construction` | The run is a red herring — nothing about its outcome is read. The check is a source grep or a declaration inspection, so the discriminator still answers *yes, source alone settles it*. |
-| `decoy-behavioral-*` (3) | *grep*, *without running anything further* | `behavioral` | The static verb targets the **emitted** OTLP export or a recorded trace, not source. An execution artifact cannot be read out of the diff, so the discriminator answers *no*. |
+| `decoy-byconstruction-*` with a run verb | *run the suite*, *execute the flow*, *start the service under the OTLP proxy* | `by-construction` | The run is a red herring — nothing about its outcome is read. The check is a source grep, a declaration inspection, or a diff read, so the discriminator still answers *yes, source alone settles it*. |
+| `decoy-behavioral-*` with a static-read verb | *grep*, *statically scan*, *without running anything further* | `behavioral` | The static verb targets the **emitted** export or a recorded trace, not source. An execution artifact cannot be read out of the diff, so the discriminator answers *no*. |
+| `decoy-behavioral-*` naming `startSpan` | the `startSpan` literal, which the rule uses only in its *Incorrect* example | `behavioral` | How many times a call **fired**, or whether context propagated when it did, is a runtime fact. The API's spelling is incidental; the discriminator is about what settles the claim. |
+| `decoy-byconstruction-*` naming no `startSpan` and no static verb | none of the three | `by-construction` | An import plus a wrapper, or an attribute key passed at a span-builder call, is a source fact however it is phrased — the forbidden pattern does not depend on the API's spelling. |
 
-The sharpest of the six opens with *"without running anything further"* — near-verbatim the phrase
+The sharpest decoy opens with *"without running anything further"* — near-verbatim the phrase
 another case uses to signal `by-construction` — and is nonetheless `behavioral`, because the trace
 it reads is something a run produced.
 
-L1 `G52e` asserts **both** directions mechanically (≥ 2 `by-construction` cases wearing a run verb,
-≥ 2 `behavioral` cases wearing a static-read verb), evaluated against the **assertion clause only**
-and with negated run verbs stripped before the run-verb test — *without running* is a static tell,
-not a run.
+L1 `G52e` scores three declared tells per suite, **in both polarities** (a keyword that is wrong
+80% of the time is an 80%-accurate classifier with its polarity flipped), and requires each to sit
+below the `EVAL_GATE` floor read out of `evals-l2.yml` rather than re-encoded.
+Negated run verbs are stripped before any tell is matched — *without running* is a static tell, not
+a run, and counting it as one let an earlier version of this guard pass on two cases that execute
+nothing at all.
 Deleting the decoys reds the build, so the set cannot silently re-degenerate into a keyword lookup.
 When adding cases here, pair any new label with a decoy rather than letting the surface verb become
 the answer again.
+
+### Why the guard scores *declared* tells and not the best of every token
+
+An unrestricted scan for the single best keyword classifier is an authoring aid, never a gate.
+At n≈30 it searches several hundred tokens and finds stopwords by chance: `and`, `one`, and `with`
+all land near 70% on these sets, and `confirm` scores ~76% while pointing at **opposite** labels in
+the two suites — which is the proof it is sampling noise rather than a shortcut anything could
+learn.
+A guard chasing that maximum would chase chance forever and could never be satisfied.
+So the tells are declared, one per decision dimension, and fixed in `l1.mjs`; run the scan when
+authoring new cases, and if it surfaces a token that is genuinely a shortcut rather than a
+stopword, add it to the declared list with its own decoys.
 
 ## What this suite measures
 

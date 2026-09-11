@@ -6581,7 +6581,23 @@ const isPollBlock = (block) =>
       }
     }
     const rmBody = readFileSync(RM, "utf8");
-    const verdictCellTokens = [...rmBody.matchAll(/\|\s*`([a-z]+)`\s*(?:—|-)/g)].map((m) => m[1]);
+    // Read the LAST cell of every row in the mapping table and take its leading backticked token.
+    // The prior regex required an em-dash or hyphen gloss after the token, so a fifth verdict
+    // added as a bare `| \`unproven\` |` cell — the likeliest shape a new row takes — was invisible
+    // to the check that exists to catch it.
+    const rmLines = rmBody.split("\n");
+    const headerIdx = rmLines.findIndex((l) => /^\|\s*Observed proxy-stream state\s*\|/.test(l));
+    const verdictCellTokens = [];
+    for (const l of headerIdx < 0 ? [] : rmLines.slice(headerIdx + 2)) {
+      if (!l.startsWith("|")) break;
+      const cells = l.split("|").slice(1, -1).map((c) => c.trim());
+      const token = (cells[cells.length - 1] ?? "").match(/^`([a-z]+)`/);
+      if (token) verdictCellTokens.push(token[1]);
+    }
+    // Without this, renaming the table's header would silently yield zero parsed tokens and the
+    // fifth-token check below would pass vacuously — the same failure mode one level up.
+    s.check("G52c the mapping table's Verdict column parses", verdictCellTokens.length >= TOKENS.length,
+      `${verdictCellTokens.length} verdict cell(s) parsed, expected >= ${TOKENS.length}`);
     const fifth = verdictCellTokens.filter((t) => !TOKENS.includes(t));
     s.check("G52c observe-run introduces no fifth verdict token", fifth.length === 0,
       fifth.length ? `unexpected token(s): ${fifth.join(", ")}` : "");
@@ -6657,32 +6673,63 @@ const isPollBlock = (block) =>
           : `majority-class baseline ${baseline.toFixed(1)}% >= gate ${gate}% (n=${labels.length}, ${split})`);
     }
 
-    // A balanced set can still be separable without the rubric: the assertion-provenance set was
-    // once 8/6 AND keyword-separable — every `by-construction` case carried a static-read verb
-    // (grep / statically / read the source) and every `behavioral` one said "run", so a responder
-    // keying on the verb alone scored 14/14 having never consulted the discriminator. Balance does
-    // not imply the set measures the rubric; assert the surface verb is NOT the label. Each label
-    // must carry at least two cases wearing the OTHER label's tell.
-    // break-shape: G52e — deleting the `decoy-` cases from the golden set flips this red.
+    // A balanced set can still be separable without the rubric, and BOTH of these sets were: the
+    // assertion-provenance set was 8/6 while every `by-construction` case carried a static-read
+    // verb and every `behavioral` one said "run" (85.0% for one keyword), and rung-selection was
+    // 78.6% off the word "process". A responder keying on the verb scored at or above the gate
+    // having never consulted the rubric, so a green run measured nothing. Balance is necessary and
+    // not sufficient — assert the surface vocabulary is NOT the label.
+    //
+    // Guard DECLARED tells, never the best of every token. At n≈30 an unrestricted best-token scan
+    // over ~400 tokens finds stopwords by chance: `and`, `one`, and `with` all land near 70%, and
+    // `confirm` scores ~76% pointing at OPPOSITE labels in the two suites — which is the proof it
+    // is sampling noise rather than a learnable shortcut. A guard chasing that maximum would chase
+    // chance forever and could never be satisfied. The tells below are instead the vocabularies a
+    // rubric-free responder could plausibly key on, one per decision dimension, declared here and
+    // fixed. The unrestricted scan stays an authoring aid, not a gate.
+    //
+    // Each tell is scored BOTH ways: a keyword that is wrong 80% of the time is an 80%-accurate
+    // classifier with its polarity flipped, so `max(acc, 100 - acc)` is the real shortcut strength
+    // and is what must sit below the EVAL_GATE floor.
+    // break-shape: G52e — deleting the `decoy-` cases from either golden set flips this red
+    // (assertion-provenance's run tell returns to 85.0%, rung-selection's process tell to 78.6%).
     {
-      const RUN_TELL = /\b(run|runs|running|execute|executing|load test|start the service|boot)\b/i;
-      const STATIC_TELL = /\b(grep|statically|without running|search the (?:diff|repository)|read the PR diff|open the source)\b/i;
-      const apGolden = join(REPO_ROOT, "scripts/eval/golden/observe-run-assertion-provenance.jsonl");
-      if (existsSync(apGolden)) {
-        const rows = readFileSync(apGolden, "utf8").split("\n").filter(Boolean)
+      const DECLARED_TELLS = {
+        "observe-run-assertion-provenance": [
+          [/\brun\b|\brunning\b|\bexecut/i, "behavioral"],
+          [/startspan/i, "by-construction"],
+          [/\bgrep\b|\bstatic|\bsource\b/i, "by-construction"],
+        ],
+        "observe-run-rung-selection": [
+          [/process/i, "rung-1"],
+          [/baseline|cross-process|separately-deployed/i, "rung-2"],
+          [/offline|in-memory/i, "rung-1"],
+        ],
+      };
+      // "without running anything" / "without executing the code" is a STATIC tell, not a run
+      // verb. Counting it as one let an earlier version of this guard pass on two cases that
+      // execute nothing at all, so the negated form is stripped before any tell is matched.
+      const surfaceOf = (r) => String(r.input).replace(/without\s+(?:running|executing)\b[^,.]*/gi, "");
+
+      for (const [name, tells] of Object.entries(DECLARED_TELLS)) {
+        const goldenFile = join(REPO_ROOT, `scripts/eval/golden/${name}.jsonl`);
+        if (!existsSync(goldenFile)) continue;
+        const rows = readFileSync(goldenFile, "utf8").split("\n").filter(Boolean)
           .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-        // The assertion clause is what the decoy inverts; the claim clause is not the tell.
-        const assertionOf = (r) => (String(r.input).split(/Assertion:/i)[1] ?? "");
-        // "without running anything" / "without executing the code" is a STATIC tell, not a run
-        // verb. It must stay visible to STATIC_TELL and be stripped before RUN_TELL — counting it
-        // as a run verb let the run-verb half pass on two cases that execute nothing at all.
-        const runSurface = (r) => assertionOf(r).replace(/without\s+(?:running|executing)\b[^,.]*/gi, "");
-        const bcWithRunVerb = rows.filter((r) => r.expected === "by-construction" && RUN_TELL.test(runSurface(r))).length;
-        const behWithStaticVerb = rows.filter((r) => r.expected === "behavioral" && STATIC_TELL.test(assertionOf(r))).length;
-        s.check("G52e assertion-provenance is not separable by the run-verb tell alone",
-          bcWithRunVerb >= 2, `${bcWithRunVerb} by-construction case(s) carry a run verb (need >= 2)`);
-        s.check("G52e assertion-provenance is not separable by the static-verb tell alone",
-          behWithStaticVerb >= 2, `${behWithStaticVerb} behavioral case(s) carry a static-read verb (need >= 2)`);
+        const choices = [...new Set(rows.map((r) => r.expected))].sort();
+        if (rows.length === 0 || choices.length !== 2) continue;
+        for (const [re, label] of tells) {
+          const other = choices.find((c) => c !== label);
+          let hit = 0;
+          for (const r of rows) if ((re.test(surfaceOf(r)) ? label : other) === r.expected) hit++;
+          const acc = (hit / rows.length) * 100;
+          const strength = Math.max(acc, 100 - acc);
+          s.check(`G52e ${name} is not separable by the ${re.source} tell`,
+            gate !== null && strength < gate,
+            gate === null
+              ? "no EVAL_GATE literal found in .github/workflows/evals-l2.yml"
+              : `keyword-only accuracy ${acc.toFixed(1)}% (strength ${strength.toFixed(1)}%) >= gate ${gate}% over n=${rows.length}`);
+        }
       }
     }
   }
