@@ -6514,4 +6514,182 @@ const isPollBlock = (block) =>
     "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.", false);
 }
 
+// ── G52: observe-run — the receipt grammar, the rung/provenance rule files, the wiring
+// into measurable / verify-behavior, and the eval + inventory surfaces ──
+//
+// observe-run is a new skill whose whole value rests on its receipt vocabulary matching the
+// canonical one it borrows (verify-behavior/rules/receipt.md) rather than drifting into a
+// private grading scheme — the same three-surface-drift shape that has bitten this repo before
+// (aw-lessons::extracted-skill-adapter-must-reconcile-output-contract-with-canonical-and-own-examples).
+// Sub-checks a-c lock the receipt grammar FIRST, before any consumer is wired to it, per plan.md
+// D14. Sub-checks d-g land as their respective integrations are built (verify-behavior Tier 3,
+// measurable's setup interview + implement step, and the two new L2 suites).
+{
+  const OR = join(REPO_ROOT, "skills/quality/observe-run");
+  const RM = join(OR, "rules/receipt-mapping.md");
+  const VB_RECEIPT = join(REPO_ROOT, "skills/quality/verify-behavior/rules/receipt.md");
+  const VR = join(REPO_ROOT, "agents/shared/rules/verification-receipt.md");
+  const TOKENS = ["confirms", "contradicts", "ambiguous", "null"];
+
+  // (a) receipt-mapping.md names all four canonical tokens and cites the canonical file by path.
+  // break-shape: G52a — deleting a backticked token (e.g. `contradicts`) or the path citation
+  // from receipt-mapping.md flips the matching sub-check red; restoring it goes green.
+  s.check("G52a receipt-mapping.md exists", existsSync(RM));
+  if (existsSync(RM)) {
+    const body = readFileSync(RM, "utf8");
+    for (const t of TOKENS) {
+      s.check(`G52a receipt-mapping.md names verdict token "${t}"`, body.includes(`\`${t}\``),
+        `missing backticked \`${t}\``);
+    }
+    s.check("G52a receipt-mapping.md cites the canonical receipt.md by path",
+      body.includes("skills/quality/verify-behavior/rules/receipt.md"),
+      "no path citation found");
+
+    // (b) the verdict table is TOTAL: the contradicts row is conjoined on failed, signal, and a
+    // positive total; the ambiguous row carries the literal never-contradicts clause; the null
+    // row is present. break-shape: G52b — deleting "totals > 0" from the contradicts row, or the
+    // literal "never `contradicts`" from the ambiguous row, flips the matching check red; restoring
+    // either goes green. Proven by hand at authoring time; see plan.md Progress Log.
+    const lines = body.split("\n");
+    const contradictsRow = lines.find((l) => /^\|.*\bcontradicts\b/.test(l));
+    s.check("G52b the contradicts row is conjoined on failed, signal, and a positive total",
+      !!contradictsRow && /failed == 0/.test(contradictsRow) && /signal/.test(contradictsRow) && /totals > 0/.test(contradictsRow),
+      contradictsRow || "no contradicts row found");
+    const ambiguousRow = lines.find((l) => /^\|.*\bambiguous\b/.test(l));
+    s.check("G52b the ambiguous row carries the literal never-contradicts clause",
+      !!ambiguousRow && /never `contradicts`/.test(ambiguousRow),
+      ambiguousRow || "no ambiguous row found");
+    const nullRow = lines.find((l) => /^\|.*\bnull\b/.test(l));
+    s.check("G52b the null row is present", !!nullRow, nullRow || "no null row found");
+  }
+
+  // (c) three-surface reconciliation: the four tokens appear in all three real files, and
+  // observe-run introduces no fifth token in the mapping table's Verdict column.
+  // break-shape: G52c — adding a `| \`unproven\` — ...` row to receipt-mapping.md's table flips
+  // this red; removing the row goes green.
+  s.check("G52c verify-behavior/rules/receipt.md exists", existsSync(VB_RECEIPT));
+  s.check("G52c agents/shared/rules/verification-receipt.md exists", existsSync(VR));
+  if (existsSync(VB_RECEIPT) && existsSync(VR) && existsSync(RM)) {
+    for (const [label, file] of [
+      ["verify-behavior/rules/receipt.md", VB_RECEIPT],
+      ["verification-receipt.md", VR],
+      ["observe-run/rules/receipt-mapping.md", RM],
+    ]) {
+      const body = readFileSync(file, "utf8");
+      for (const t of TOKENS) {
+        s.check(`G52c ${label} names "${t}"`, body.includes(t), `"${t}" not found in ${label}`);
+      }
+    }
+    const rmBody = readFileSync(RM, "utf8");
+    const verdictCellTokens = [...rmBody.matchAll(/\|\s*`([a-z]+)`\s*(?:—|-)/g)].map((m) => m[1]);
+    const fifth = verdictCellTokens.filter((t) => !TOKENS.includes(t));
+    s.check("G52c observe-run introduces no fifth verdict token", fifth.length === 0,
+      fifth.length ? `unexpected token(s): ${fifth.join(", ")}` : "");
+  }
+
+  // (d) verify-behavior integration: ladder.md's Tier 3 table names observe-run as a third
+  // approach, and verification-receipt.md names observe-run while retaining its existing 2.6b
+  // ordering reference and null-drop invariant intact — a future edit that swaps in observe-run
+  // language must not silently drop either anchor.
+  // break-shape: G52d — deleting "observe-run" from ladder.md's Tier 3 table, or from
+  // verification-receipt.md, or deleting the "2.6b" or "null" references from
+  // verification-receipt.md, flips the corresponding check red; restoring goes green.
+  const LADDER = join(REPO_ROOT, "skills/quality/verify-behavior/rules/ladder.md");
+  s.check("G52d ladder.md exists", existsSync(LADDER));
+  if (existsSync(LADDER) && existsSync(VR)) {
+    const ladderBody = readFileSync(LADDER, "utf8");
+    const vrBody = readFileSync(VR, "utf8");
+    s.check("G52d ladder.md's Tier 3 section names observe-run as a third approach",
+      /## Tier 3[\s\S]*observe-run/.test(ladderBody),
+      "no observe-run mention found under Tier 3");
+    s.check("G52d verification-receipt.md names observe-run",
+      vrBody.includes("observe-run"), "no observe-run mention found");
+    s.check("G52d verification-receipt.md still cites Step 2.6b",
+      vrBody.includes("2.6b"), "2.6b reference missing");
+    s.check("G52d verification-receipt.md still states the null-drop invariant",
+      /null-drop invariant/i.test(vrBody), "null-drop invariant reference missing");
+  }
+
+  // (e) both new L2 suites exist, resolve, and their golden sets are correctly shaped: valid
+  // JSONL, at least 10 cases, both choices exercised, and a majority-class baseline strictly
+  // below the EVAL_GATE floor grepped out of evals-l2.yml — never re-encoded here, same
+  // discipline as G21n. break-shape: G52e — collapsing either golden set to a single label, or
+  // truncating it below 10 cases, flips the corresponding sub-check red; restoring goes green.
+  {
+    const suitesBody = readFileSync(join(REPO_ROOT, "scripts/eval/suites.mjs"), "utf8");
+    const l2ymlPath = join(REPO_ROOT, ".github/workflows/evals-l2.yml");
+    const l2ymlBody = existsSync(l2ymlPath) ? readFileSync(l2ymlPath, "utf8") : "";
+    const gateLiteral = (l2ymlBody.match(/EVAL_GATE:\s*"?(\d+)"?/) || [])[1];
+    const gate = gateLiteral === undefined ? null : Number(gateLiteral);
+
+    for (const name of ["observe-run-rung-selection", "observe-run-assertion-provenance"]) {
+      s.check(`G52e suites.mjs declares SUITES entry "${name}"`, suitesBody.includes(`name: "${name}"`));
+      const goldenFile = join(REPO_ROOT, `scripts/eval/golden/${name}.jsonl`);
+      s.check(`G52e ${name}.jsonl exists`, existsSync(goldenFile));
+      if (!existsSync(goldenFile)) continue;
+      const lines = readFileSync(goldenFile, "utf8").split("\n").filter(Boolean);
+      let allParse = lines.length >= 1;
+      const labels = [];
+      for (const ln of lines) {
+        try {
+          const obj = JSON.parse(ln);
+          labels.push(obj.expected);
+        } catch {
+          allParse = false;
+        }
+      }
+      s.check(`G52e ${name}.jsonl parses line-by-line as valid JSON`, allParse);
+      s.check(`G52e ${name}.jsonl has at least 10 cases`, lines.length >= 10, `${lines.length} cases`);
+      const tally = new Map();
+      for (const v of labels) tally.set(v, (tally.get(v) ?? 0) + 1);
+      s.check(`G52e ${name}.jsonl exercises both choices`, tally.size >= 2, `${tally.size} distinct choice(s)`);
+      const majority = labels.length ? Math.max(...tally.values()) : 0;
+      const baseline = labels.length ? (majority / labels.length) * 100 : 100;
+      const split = [...tally.entries()].map(([k, v]) => `${k}=${v}`).sort().join(" ");
+      s.check(`G52e ${name}.jsonl majority-class baseline is below the EVAL_GATE floor`,
+        gate !== null && baseline < gate,
+        gate === null
+          ? "no EVAL_GATE literal found in .github/workflows/evals-l2.yml"
+          : `majority-class baseline ${baseline.toFixed(1)}% >= gate ${gate}% (n=${labels.length}, ${split})`);
+    }
+  }
+
+  // (f) the measurable setup interview question and the profile-template field move together —
+  // neither exists without the other, so a future edit cannot drop one half silently.
+  // break-shape: G52f — deleting the "Dev Run Target" heading from the template (or the
+  // dev-run-target interview question from setup-profile.md) flips this red.
+  const SETUP_PROFILE = join(REPO_ROOT, "skills/quality/measurable/rules/setup-profile.md");
+  const PROFILE_TEMPLATE = join(REPO_ROOT, "skills/quality/measurable/templates/observability-profile.template.md");
+  {
+    const setupBody = existsSync(SETUP_PROFILE) ? readFileSync(SETUP_PROFILE, "utf8") : "";
+    const templateBody = existsSync(PROFILE_TEMPLATE) ? readFileSync(PROFILE_TEMPLATE, "utf8") : "";
+    const hasQuestion = /dev run target|dev-run target|local dev target/i.test(setupBody);
+    const hasField = /dev run target/i.test(templateBody);
+    s.check("G52f measurable setup-profile.md carries the dev-run-target interview question",
+      hasQuestion, existsSync(SETUP_PROFILE) ? "no dev-run-target question found" : "setup-profile.md not found");
+    s.check("G52f observability-profile.template.md carries the matching Dev Run Target field",
+      hasField, existsSync(PROFILE_TEMPLATE) ? "no Dev Run Target field found" : "template not found");
+    s.check("G52f the question and the field move TOGETHER (neither exists alone)",
+      hasQuestion === hasField,
+      `question=${hasQuestion} field=${hasField}`);
+  }
+
+  // (g) reader-adapters.md names at least three non-Dash0 readers and carries the
+  // "selects the implementation, it never gates the rung" invariant.
+  // break-shape: G52g — deleting the invariant sentence, or trimming the non-Dash0 reader list
+  // below three, flips the corresponding check red.
+  const READER_ADAPTERS = join(REPO_ROOT, "skills/quality/observe-run/rules/reader-adapters.md");
+  s.check("G52g reader-adapters.md exists", existsSync(READER_ADAPTERS));
+  if (existsSync(READER_ADAPTERS)) {
+    const body = readFileSync(READER_ADAPTERS, "utf8");
+    s.check("G52g carries the 'selects the implementation, it never gates the rung' invariant",
+      body.includes("selects the implementation, it never gates the rung"));
+    const nonDash0 = (body.match(/otel-desktop-viewer|file exporter|in-memory exporter|stdout exporter|jaeger|otel-tui|collector/gi) || []);
+    s.check("G52g names at least three non-Dash0 readers", nonDash0.length >= 3,
+      `${nonDash0.length} mentions found`);
+    s.check("G52g states a missing Dash0 CLI costs rung 1 nothing",
+      /costs rung 1 nothing|rung 1 costs nothing/i.test(body));
+  }
+}
+
 process.exit(s.report() ? 0 : 1);

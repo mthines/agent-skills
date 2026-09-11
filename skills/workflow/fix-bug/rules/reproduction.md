@@ -61,6 +61,39 @@ than an E2E that captures it.
 
 ---
 
+## Telemetry-sourced repro fidelity
+
+Runs at the **front** of this phase, before layer routing produces a repro artefact, and only
+when the Evidence Record's input class is telemetry-sourced (a Dash0 span, log, or trace URL —
+see [`evidence-resolution.md`](./evidence-resolution.md)). A repro that merely fails is not
+enough for this input class: the bug report came from a production span, so the repro should be
+checked against the shape of that same span before it is trusted as the `FAIL_TO_PASS` contract.
+
+1. Run the repro command locally through `Skill("observe-run")`, expressing the expectation as
+   "the span this command emits matches the shape of the originating production span" —
+   `observe-run` returns a receipt (`confirms` / `contradicts` / `ambiguous` / `null`) in the
+   same shape [`verify-behavior/rules/receipt.md`](../../../quality/verify-behavior/rules/receipt.md)
+   already defines.
+2. Compare the local run's span against the Evidence Record's originating span on the properties
+   `observe-run`'s own provenance rule already scopes assertions to — parent/child structure,
+   status on the error path, attribute presence — never a byte-for-byte diff, since resource
+   attributes (host, deploy ID, trace ID) will legitimately differ between production and a local
+   run.
+3. Record the fidelity result in the Evidence Record: `confirms` means the local repro is a
+   faithful stand-in for the production shape; `contradicts` means the repro is reproducing a
+   *different* failure than the one telemetry reported, and the bug should be re-scoped before
+   Phase 3 rather than fixed against the wrong contract; `ambiguous` or `null` means the fidelity
+   check was inconclusive and the repro proceeds on its own merits (layer routing below still
+   governs validity).
+
+This step is **advisory to repro validity, not a gate**: it skips silently when `observe-run` (or
+its Observability Profile dev target) is unavailable, or when the input class is not
+telemetry-sourced, and the four [validity criteria](#what-counts-as-a-valid-repro) below remain
+the only mechanical gate Phase 5 checks. It never touches Phase 8 — Phase 8's post-deploy polling
+of the *production* signal is a separate, later concern from this pre-fix local fidelity check.
+
+---
+
 ## Unit + component layer (delegate to /tdd)
 
 For rows 1–4 in the routing table:

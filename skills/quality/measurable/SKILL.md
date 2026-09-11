@@ -133,6 +133,18 @@ instrumentation written.
 5. Report what was added as a short "Observability" summary (one line per
    signal, with file:line) — `autonomous-workflow` Phase 6 folds this into
    the PR walkthrough.
+6. **Prove it.** Step 5's summary is a static `file:line` claim; this step turns it into an
+   executed one:
+   ```text
+   Skill("observe-run")
+     command:      <the command that exercises the new/changed operation>
+     expectations: "the new span exists under its expected parent"
+                   "none of its attributes are `undefined`"
+   ```
+   This is the parent-span check plus the non-`undefined`-attribute check — both behavioral, both
+   graded against an actual run, never against the diff read back. Advisory and skips silently when
+   `observe-run` (or its Observability Profile dev target) is unavailable, consistent with Core
+   Principle 6 above — this step never blocks `implement` mode on the companion's absence.
 
 ### Audit mode
 

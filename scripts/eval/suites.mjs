@@ -169,6 +169,27 @@ export const SUITES = [
     inputKey: "input", inputLabel: "Candidate + diff",
     choices: ["surface", "skip"],
   },
+  {
+    name: "observe-run-rung-selection",
+    golden: "golden/observe-run-rung-selection.jsonl",
+    // 14 cases, 8 `rung-1` / 6 `rung-2` — a 57.1% majority-class baseline, the same shape the
+    // code-review-retrieval-relevance suite converged on. Real baseline, not a bootstrap seed —
+    // see the sibling .NOTES.md.
+    rubric: { file: "skills/quality/observe-run/rules/rungs.md", section: null }, // whole file
+    instruction: "You are the observe-run skill choosing a rung for a claim. Using ONLY the rung rules below, pick the cheapest rung that can decide the claim — never escalate to rung 2 when rung 1 can already decide it.",
+    inputKey: "input", inputLabel: "Claim",
+    choices: ["rung-1", "rung-2"],
+  },
+  {
+    name: "observe-run-assertion-provenance",
+    golden: "golden/observe-run-assertion-provenance.jsonl",
+    // 14 cases, 8 `behavioral` / 6 `by-construction` — a 57.1% majority-class baseline. Real
+    // baseline, not a bootstrap seed — see the sibling .NOTES.md.
+    rubric: { file: "skills/quality/observe-run/rules/assertion-provenance.md", section: null }, // whole file
+    instruction: "You are the observe-run skill's assertion-provenance check. Using ONLY the discriminator rule below, classify the claim-plus-assertion pair as 'behavioral' (verifiable only by observing a run) or 'by-construction' (satisfiable by reading source alone).",
+    inputKey: "input", inputLabel: "Claim + assertion",
+    choices: ["behavioral", "by-construction"],
+  },
 ];
 
 /** Repo-relative path of a suite's golden file (the `golden` field is relative to scripts/eval/). */
