@@ -7223,9 +7223,27 @@ const isPollBlock = (block) =>
   // a tree that prescribes the counter freely. No syntax error, no red check. That is this file's
   // own recurring defect arriving through the refactor written to close the previous instance of
   // it, so the list gets the same non-degeneracy floor `rungNums` has above, for the same reason.
-  s.check("G52k the rejection-marker list is non-empty", MARKERS.length > 0,
-    "an empty MARKERS compiles to `/(?:)/`, which matches everything — both G52k checks below would vacuously pass while the whitelist admits every block");
+  // Assert the COMPILED PATTERN, never the array's arity. The first attempt at this floor was
+  // `MARKERS.length > 0` — an empty-ARRAY check for an empty-STRING hazard, and the gap is not
+  // narrow: `[""]` has length 1, and seven real markers plus `""` has length 8, so the floor passes
+  // while `join("|")` leaves an empty alternative and `REJECTS` is `/(?:)/` again. Probed: with
+  // that eighth entry and a prescriptive `spans.total` block in the file, L1 was GREEN 1766/1766.
+  // The companion load-bearing check cannot catch it either, since `b.includes("")` is always true.
+  // The precedent cited for the arity floor is where it went wrong: `rungNums.length >= 2` is
+  // sufficient because its elements are `(\d+)` captures that CANNOT be empty. These are free-form
+  // strings, so length is a proxy for the property rather than the property. `REJECTS.test("")` IS
+  // the property — a pattern matching the empty string matches every block by construction — so it
+  // is asserted on the built regex, after it exists.
   const REJECTS = new RegExp(MARKERS.map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
+  s.check("G52k the compiled rejection pattern is not vacuous", !REJECTS.test(""),
+    "`REJECTS` matches the empty string, so it matches every block — an empty or blank entry in MARKERS leaves an empty alternative in the alternation, and both G52k checks below pass on a tree that prescribes the counter freely");
+  // A second, weaker conjunct, and weaker ON PURPOSE rather than by oversight: the check above
+  // catches vacuity exactly, but a one- or two-character marker is near-vacuous without literally
+  // matching `""`. A length floor is a proxy — an eight-character phrase can still be ordinary
+  // English — and it is kept only because it costs nothing and closes the degenerate-but-nonempty
+  // band. The real limit on generic markers stays the one documented below: it is not mechanical.
+  s.check("G52k no rejection marker is degenerately short", MARKERS.every((m) => m.trim().length >= 8),
+    `marker(s) under 8 non-blank characters: ${MARKERS.filter((m) => m.trim().length < 8).map((m) => JSON.stringify(m)).join(", ")} — a marker this short cannot name the counter's disqualifying property, so it admits blocks on an accident of wording`);
   for (const [label, path] of [["receipt-mapping.md", RECEIPT], ["run-identity.md", RUN_IDENTITY]]) {
     if (!existsSync(path)) continue;
     // Normalise emphasis and semantic line breaks before matching. This repo's prose rule is one
@@ -7255,6 +7273,10 @@ const isPollBlock = (block) =>
   // rejected: it would red on `never the proxy's` and `delivery receipt, not a census`, the two
   // most specific phrases in the list, because they share their block with a third. Minimality is
   // not the property wanted here; specificity is, and specificity is not mechanically checkable.
+  // One amendment, so this paragraph does not overclaim in the other direction: the length floor
+  // added above WOULD now red on `used to` — it is seven characters. That is incidental, and for
+  // the wrong reason: it catches the marker for being SHORT, not for being generic, and a generic
+  // phrase of eight characters or more still passes both checks. The claim above stands as stated.
   {
     const flat = (b) => b.replace(/\*\*/g, "").replace(/\s+/g, " ");
     const counterBlocks = [RECEIPT, RUN_IDENTITY]
