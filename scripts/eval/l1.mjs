@@ -6996,15 +6996,19 @@ const isPollBlock = (block) =>
       /not free at rung 2/.test(body) && /every forwarded batch/.test(body),
       "rung 2's `--resource-attribute` upserts onto every forwarded batch, so a stated per-signal scope with no alternative mechanism is unsatisfiable there");
     // The unsatisfiable case must RESOLVE to a rung change, never to a degraded rung 2. The first
-    // version said "omit `dev.run.id` at rung 2 and scope by time window", which created a rung-2
-    // state the rest of the pipeline cannot serve: `totals` is a proxy counter scoped by the
-    // proxy's LIFETIME and keeps counting, while the observed set is scoped by `dev.run.id` and
-    // empties — so `CLEAN` AND `totals > 0` AND "not in the observed set" grades an emitted span
-    // `contradicts`. A silent wrong verdict, reached without the collection ever degrading, so the
-    // `NOT CLEAN ⇒ ambiguous` rule never fires. Assert the resolution, not merely that one exists.
+    // version said "omit `dev.run.id` at rung 2 and scope by time window", which creates a rung-2
+    // state the rest of the pipeline cannot serve: the filter matches nothing, so the observed set
+    // is empty and `totals` — its own size — is 0, which is the `null` row on EVERY claim. Rung 2
+    // decides nothing, forever. Assert the resolution, not merely that one exists.
+    // This rationale claimed "grades an emitted span `contradicts`" until round 13, and that was
+    // true of the PRE-round-11 realization, where `totals` was the proxy's counter and kept counting
+    // while the observed set emptied. Round 11 closed that route and left the argument for it
+    // standing here — in a guard's own comment and failure message, one layer below the four prose
+    // surfaces that round 13 found. A guard defended by a hazard that no longer exists reads as
+    // corroboration for the stale claim rather than as a contradiction of it.
     s.check("G52h the unsatisfiable-at-rung-2 case resolves to a rung change, not a degraded rung 2",
       /Rung 2 is unavailable for this run/.test(body) && !/Omit `dev\.run\.id` at rung 2/.test(body),
-      "without `dev.run.id` the observed set is unobtainable while `totals` keeps counting, which grades an emitted span `contradicts` — the fallback is rung 1, never a rung 2 with a widened filter");
+      "without `dev.run.id` the filter matches nothing, so the observed set is empty and `totals` is 0 — every claim grades `null` and rung 2 decides nothing; the fallback is rung 1, never a rung 2 with a widened filter");
     s.check("G52h rung 2 is stated to REQUIRE `dev.run.id`, so its readers may assume it",
       /no rung-2 path without it/.test(body),
       "six readers filter on `dev.run.id` unconditionally; either they all learn a new state or rung 2 requires the attribute — the second is what makes them correct");
@@ -7061,29 +7065,101 @@ const isPollBlock = (block) =>
     s.check("G52i the `totals` realization row exists and has a cell per rung",
       totalsCells.length >= 3,
       `${totalsCells.length} cell(s) in the \`totals\` row — the per-rung realization is what the requirement below is about`);
-    // POSITIVE form. A denylist of two literals (`spans.total`, `final_total`) is a guard narrower
-    // than its own name: rewording the rung-2 cell to "the proxy's own count of forwarded span
-    // records over the run" restores exactly the semantics round 11 removed and left L1 green at
-    // 1753/1753. The requirement is stateable directly — the cell must say what it IS — so assert
-    // that, and keep the denylist only as a second conjunct for the two spellings that name the
-    // rejected counter outright.
-    s.check("G52i every `totals` realization is the observed set's own size, never a wider counter",
-      totalsCells.slice(1).every((c) => /observed set|span list|exported file/.test(c))
-        && totalsCells.slice(1).every((c) => !/\bspans\.total\b|final_total|forwarded/.test(c)),
+    // POSITIVE, and PER RUNG. Two earlier shapes both failed on the same axis. A denylist of two
+    // literals (`spans.total`, `final_total`) was narrower than its own name — "the proxy's own
+    // count of forwarded span records over the run" evaded it. Replacing it with a whitelist of
+    // nouns (`observed set|span list|exported file`) applied uniformly to every rung cell was
+    // narrower still in a subtler way: NAMING the set and BEING the set are different claims, so
+    // "the proxy's own running count, reported as the size of the observed set" satisfied it while
+    // reinstating the counter, green at 1753/1753.
+    // The fix is to assert, per rung, the ARTIFACT that IS the observed set on that rung — rung 1's
+    // own export, and at rung 2 the `dash0 spans query` whose attribute filter is what DEFINES the
+    // set (`receipt-mapping.md`'s own words). A cell describing a proxy counter has no reason to
+    // carry that filter expression. The denylist survives as a second conjunct for the spellings
+    // that name the rejected counter outright.
+    // Residual, stated rather than papered over: prose can still evade this ("...as what the query
+    // would return"). `receipt-mapping.md` says so itself — whether a filled cell says the right
+    // thing is a reviewer's judgement — and the bar here is that the two probes that HAVE gotten
+    // through now red, not that no sentence ever can.
+    s.check("G52i the rung-1 `totals` cell is the run's own exported span records",
+      /span list|exported file/.test(totalsCells[1] ?? ""),
+      "rung 1's `totals` is the size of the span list the process under test exported for this run — a cell not naming that artifact is describing something else");
+    s.check("G52i the rung-2 `totals` cell is the count of the query that DEFINES the observed set",
+      /dash0 spans query/.test(totalsCells[2] ?? "") && /dev\.run\.id is/.test(totalsCells[2] ?? ""),
+      "rung 2's observed set is defined by the attribute-filtered query, so `totals` is that query's count — a cell naming the set without naming the query can be a wider counter merely described as the set's size");
+    s.check("G52i no `totals` realization names the rejected proxy counter",
+      totalsCells.slice(1).every((c) => !/\bspans\.total\b|final_total|forwarded/.test(c)),
       "a rung realizing `totals` as the proxy's own counter counts every process pointed at the ports, so a foreign span inflates it without entering the observed set and the run grades `contradicts` on spans it never emitted");
     s.check("G52i the requirement the `totals` row realizes is stated",
       /size of the observed set/.test(body) && /delivery receipt, not a census/.test(body),
       "absence from a set is disproof only when the set is the one the count attested to");
+    // Scope to the WAIT paragraph, and assert what round 12 actually changed. The prior check read
+    // `/re-query until the observed set stops growing/` over the whole file — a sentence the
+    // ROUND-11 text also contained, immediately before "taking `final_total.spans` as the number to
+    // wait for". So the check was green on the defect it was added for, and restoring that target
+    // kept L1 at 1753/1753. The discriminating claims are that the set's own size is the ONLY
+    // quantity watched, and the named rejection of the counter as a target.
+    const waitStart = body.indexOf("`null` is the floor, not the goal");
+    const waitEnd = body.indexOf("Never extend the wait");
+    const wait = waitStart >= 0 && waitEnd > waitStart ? body.slice(waitStart, waitEnd) : "";
     s.check("G52i the rung-2 read waits for ingest before grading an absence",
-      /re-query until the observed set stops growing/.test(body),
+      /re-query until the observed set stops growing/.test(wait),
       "rung 2's cost is ingest latency, so a query issued at shutdown can return empty on a perfect delivery — an unfinished read is `null`, never `contradicts`");
-    s.check("G52i receipt-mapping.md distinguishes the two `totals` scoping mechanisms",
-      /proxy's own lifetime/.test(body) && /different mechanisms/.test(body),
-      "rung 2's `totals` is a proxy counter with no resource-attribute dimension — claiming `dev.run.id` scopes it is false, and hid a reachable mis-grade");
+    s.check("G52i the ingest wait watches the observed set's own size, never a proxy counter",
+      /the set's own size is the only quantity to watch/.test(wait)
+        && /Do not wait for `final_total\.spans`/.test(wait),
+      "waiting on a delivery receipt that counts every process pointed at the ports means the target is never met under a second process, the deadline always fires, and every such run grades `ambiguous` where `run-identity.md` says `null`");
+    // Round 13 RETIRED the check that used to sit here — `/proxy's own lifetime/ && /different
+    // mechanisms/`, which asserted that `totals` is scoped differently per rung. That was the
+    // pre-round-11 realization: round 11 made `totals` the observed set's own size on every rung,
+    // so `dev.run.id` scopes it on both and there is no asymmetry left to state. The check outlived
+    // the claim and then REQUIRED it, so correcting the prose turned L1 red — a guard holding a
+    // file to a contract the file's own definition had already replaced.
+    // What is worth guarding is the replacement plus the reason the proxy counters are disqualified.
+    s.check("G52i `totals` is scoped by `dev.run.id` on both rungs, and the proxy counters serve `CLEAN` alone",
+      /scoped by `dev\.run\.id` on both rungs/.test(body) && /cannot serve as `totals`/.test(body),
+      "the proxy's counters are scoped by the proxy's LIFETIME, and a lifetime is not a run — they answer whether delivery was healthy and are indifferent to whose spans were delivered");
     s.check("G52i the two rung-2 population preconditions are stated where the rule lives",
       existsSync(RUN_IDENTITY) && /proxy is exclusive to this run/i.test(readFileSync(RUN_IDENTITY, "utf8"))
         && /participating in the claim carries `dev\.run\.id`/.test(readFileSync(RUN_IDENTITY, "utf8")),
       "an OTel SDK at default endpoint config already reaches the proxy, so exclusivity and per-process stamping are what make the two populations coincide — neither follows from the attribute merely being present");
+  }
+
+  // (k) The defect round 13 found was NOT one stale sentence — it was ONE definition with FIVE
+  // surfaces, of which L1 guarded exactly one, and guarded it at the stale value. Round 11 made
+  // `totals` the observed set's own size; the realization row and one paragraph were updated, and
+  // the asymmetry paragraph, the spans-counting imperative, both worked examples, `run-identity`'s
+  // input table, and `G52h`'s own rationale all kept describing the proxy counter for two rounds.
+  // Guarding the five individually would be five greps that go stale the same way, so guard the
+  // CLASS: in these two files every mention of a proxy counter must sit in a block that REJECTS or
+  // HISTORICISES it. That is true of all seven mentions today, and it is the property each of the
+  // five violations broke.
+  // A fenced block is a violation outright, whatever it contains: a worked example is copied far
+  // more often than the prose above it is read, and a `text` fence has nowhere to put a rejection.
+  // That is the surface that carried `spans.total=3` through the whole round-11..12 window.
+  // break-shape: G52k — restoring `spans.total` to the Correct example, the rung-2 "read
+  // `spans.total` alone" imperative, or `run-identity`'s proxy-counter row flips it red.
+  // Residual, stated rather than papered over: a block could type a rejection marker and then
+  // prescribe the counter anyway. That is a self-contradicting paragraph — visible to a reader in a
+  // way that silent agreement with a retired definition was not — and `receipt-mapping.md` already
+  // says whether a filled cell means the right thing is a reviewer's judgement.
+  const COUNTER = /`?\bspans\.total\b`?|`?\bfinal_total(\.spans)?\b`?/;
+  const REJECTS = /never the proxy's|delivery receipt, not a census|every process pointed at its ports|Do not wait for|deliberately absent|earlier draft|used to|route is closed|cannot serve/;
+  for (const [label, path] of [["receipt-mapping.md", RECEIPT], ["run-identity.md", RUN_IDENTITY]]) {
+    if (!existsSync(path)) continue;
+    // Normalise emphasis and semantic line breaks before matching. This repo's prose rule is one
+    // sentence per line, so a marker phrase is routinely split across a newline and wrapped in
+    // `**`; matching the raw block would have meant shortening the markers until they fit inside
+    // one line fragment, which is how a marker list stops meaning anything.
+    const flat = (b) => b.replace(/\*\*/g, "").replace(/\s+/g, " ");
+    const blocks = readFileSync(path, "utf8").split(/\n\s*\n/);
+    const offenders = blocks
+      .filter((b) => COUNTER.test(flat(b)))
+      .filter((b) => b.trimStart().startsWith("```") || !REJECTS.test(flat(b)))
+      .map((b) => b.trim().split("\n")[0].slice(0, 70));
+    s.check(`G52k ${label} names a proxy counter only to reject or historicise it`,
+      offenders.length === 0,
+      `${offenders.length} block(s) mention \`spans.total\`/\`final_total\` prescriptively: ${offenders.join(" | ")} — round 11 made \`totals\` the observed set's own size, so a surface still sourcing it from the proxy counter regrades an emitted span`);
   }
 
   // (j) The inventory line in CLAUDE.md names the guard family by RANGE, and a range is a

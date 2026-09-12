@@ -130,18 +130,33 @@ resource-attribute dimension, so it is a **delivery receipt, not a census**: it 
 and nothing else. Realizing `totals` from it made the two verdict columns range over different
 populations — see the requirement stated under the verdict table.
 
-Both rungs scope `totals` to **this run**, so a leftover span from a previous run is never counted
-as this one's evidence — but **by different mechanisms**, and collapsing them into one sentence is
-how a reachable mis-grade hid here. Rung 1's span list belongs to the process under test and is
-scoped by `dev.run.id` on its resource. Rung 2's `totals` is a **proxy counter** carrying no
-resource-attribute dimension at all; it is scoped by the **proxy's own lifetime**, which begins at
-zero for this run.
+**`totals` is scoped by `dev.run.id` on both rungs, because on both rungs it is the observed set's
+own size** — rung 1 counts the span records the process under test exported carrying that attribute
+on their resource, rung 2 counts what the attribute-filtered `dash0 spans query` returns. There is
+no per-rung asymmetry in what scopes `totals`, and a leftover span from a previous run is therefore
+never counted as this one's evidence on either.
 
-The observed set, by contrast, is scoped by `dev.run.id` on **both** rungs — at rung 2 the
-attribute-filtered `dash0 spans query` is what *defines* it. That asymmetry is why
-[`rules/run-identity.md`](./run-identity.md) makes `dev.run.id` a **requirement** of rung 2 rather
-than a best-effort stamp: drop it and `totals` keeps counting while the observed set empties, so an
-emitted span grades `contradicts`. Rung 2 is not selectable without it.
+The **proxy's** counters are the ones scoped by the proxy's own lifetime, and that is exactly why
+they cannot serve as `totals`: a lifetime is not a run. They are read only by `CLEAN`, which asks
+whether delivery was healthy and is indifferent to whose spans were delivered.
+
+An earlier draft of this section said instead that the two rungs scope `totals` "by different
+mechanisms" and named rung 2's as the proxy's lifetime — the pre-round-11 realization, left standing
+here for a round after the row above stopped agreeing with it, and asserted by an L1 check that had
+to be retired with it. It is recorded rather than silently deleted because the shape recurs: a
+definition changes in one place and its *rationale* keeps arguing for the old one, which reads as
+corroboration rather than as contradiction.
+
+`dev.run.id` remains a **requirement** of rung 2 ([`rules/run-identity.md`](./run-identity.md)), but
+the reason is now the weaker and more honest one. Drop it and the filter matches nothing, so the
+observed set is empty, so `totals` is `0` — `CLEAN AND totals == 0`, the `null` row. Nothing
+mis-grades; rung 2 simply decides nothing, on every claim, forever, and a rung that can never leave
+`null` is not selectable. The route to a *wrong* verdict here closed when `totals` became the set's
+own size, and saying so is part of the fix: the danger this paragraph used to describe is gone, and
+overstating a live hazard to defend a rule is how the next author learns to discount the file.
+
+Widening to a time window is still forbidden, and that hazard is unchanged — it re-admits a
+concurrent run's spans and grades this run on another's evidence.
 
 **`totals` counts spans, on both rungs, because every assertion this skill grades is a span claim.**
 All seven allowed behavioral assertion kinds
@@ -150,9 +165,12 @@ parent/child structure, duration, status, downstream fan-out, attribute cardinal
 `totals` is the count of the evidence the verdict is actually about. Summing the `logs` and
 `metrics` counters in as well makes `totals > 0` satisfiable by a run that emitted no spans at all:
 that run skips the `null` row it belongs on, matches `CLEAN AND totals > 0` with the expected span
-absent, and grades `contradicts` — a confident disproof produced by counting log records. On rung 2
-read `spans.total` (or `final_total.spans`) alone; on rung 1 count span records alone, not every
-record the exporter holds.
+absent, and grades `contradicts` — a confident disproof produced by counting log records. On rung 1
+count span records alone, not every record the exporter holds. On rung 2 there is no choice to make:
+`dash0 spans query` returns spans by construction, so the spans-only property comes free with the
+realization. (An earlier draft directed rung 2 to *"read `spans.total` (or `final_total.spans`)
+alone"* — a correct instruction for the pre-round-11 realization and an instruction to reinstate the
+rejected counter under this one.)
 
 `NOT CLEAN` is reached, on rung 1, by any of — **illustrative, never the definition**: the process
 killed before flush; a non-zero dropped-span count; a flush that timed out; or an export file that
@@ -241,16 +259,21 @@ clean signal-driven shutdown.
 ### Correct
 
 ```text
-proxy state: spans.total=3, spans.failed=0, shutdown.reason=signal, no error event
-expected span (name="checkout.charge", parent="checkout.handler") found in the forwarded set
+proxy state: spans.failed=0, shutdown.reason=signal, no error event        → CLEAN
+dash0 spans query --filter "dev.run.id is <run-id>"  → 3 spans             → totals=3
+expected span (name="checkout.charge", parent="checkout.handler") in the observed set
 → verdict: confirms
 ```
+
+The proxy's `spans.total` is deliberately absent from that example. It is not one of `CLEAN`'s three
+conjuncts and it is not `totals`, so on this rung it decides nothing — and a worked example is copied
+far more often than the prose above it is read.
 
 ### Incorrect
 
 ```text
-proxy state: shutdown.reason=deadline (drain timed out), exit code 0
-expected span not found in the forwarded set
+proxy state: shutdown.reason=deadline (drain timed out), exit code 0       → NOT CLEAN
+expected span not in the observed set
 → verdict: contradicts   ✗ WRONG — a deadline-hit shutdown means delivery was incomplete;
                              the absence is unverified, not disproved. Correct verdict: ambiguous.
 ```

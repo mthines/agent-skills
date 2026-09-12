@@ -76,23 +76,30 @@ which reads like an acceptable degradation and is not: it creates a rung-2 state
 pipeline **cannot serve**, and the failure is the worst kind — a silent wrong verdict rather than a
 missing one.
 
-The mechanism is worth stating once, because the asymmetry that produces it is not obvious. At rung
-2 the two inputs to a verdict come from different places and are scoped differently:
+The mechanism is worth stating once. At rung 2 the two inputs to a verdict come from **one** place
+and are scoped by **one** thing:
 
 | Input | Source at rung 2 | Scoped by |
 | --- | --- | --- |
-| `totals` | `spans.total` on the proxy's `dash0.cli.otlp_proxy.stats` event | the **proxy's own lifetime** — it is started for this run and its counters begin at zero. The event carries **no** resource-attribute dimension, so `dev.run.id` cannot scope it and does not need to |
-| the observed set | `dash0 spans query --filter "dev.run.id is <run-id>"` | `dev.run.id`, and **nothing else** — that filter is how the set is *defined* ([`receipt-mapping.md`](./receipt-mapping.md)) |
+| `totals` | the size of the observed set — the same `dash0 spans query` below, counted | `dev.run.id` ([`receipt-mapping.md`](./receipt-mapping.md) makes `totals` the observed set's own size on every rung) |
+| the observed set | `dash0 spans query --filter "dev.run.id is <run-id>"` | `dev.run.id`, and **nothing else** — that filter is how the set is *defined* |
 
-Drop `dev.run.id` and only the second one breaks. `totals` still counts every span the app emitted,
-while the observed set matches **nothing** — so `CLEAN` AND `totals > 0` with the span "not in the
-observed set" selects **`contradicts`**, on spans the app demonstrably emitted. That is the exact
-inversion the `NOT CLEAN ⇒ ambiguous, never contradicts` rule exists to prevent, arriving by a path
-that rule does not cover: the collection was never degraded, only unreadable.
+Drop `dev.run.id` and **both** break together, which is the safe direction: the filter matches
+nothing, the observed set is empty, and `totals` is `0`. That is `CLEAN AND totals == 0` — the
+`null` row. Every claim on such a run returns `null`, so nothing is mis-graded and nothing is
+decided either, and a rung that can never leave `null` is not a rung this skill can select.
 
-Widening to a time window does not rescue it. The observed set is defined by the attribute filter,
-and a window re-admits a concurrent run's spans — the *other* failure
-[`receipt-mapping.md`](./receipt-mapping.md) names, grading this run on another run's evidence.
+**This paragraph used to claim a mis-grade instead, and it was true when written.** Before `totals`
+became the observed set's own size, rung 2 realized it from the proxy's `spans.total`, which kept
+counting while the observed set emptied — so an emitted span graded **`contradicts`**. That route is
+closed, and the requirement now rests on the weaker "decides nothing" argument alone. Stating that
+plainly costs the rule some of its force and is still correct: a hazard kept in the prose after its
+mechanism is gone is a hazard the next reader will eventually check and stop believing.
+
+Widening to a time window does not rescue it, and that hazard *is* still live. The observed set is
+defined by the attribute filter, and a window re-admits a concurrent run's spans — the *other*
+failure [`receipt-mapping.md`](./receipt-mapping.md) names, grading this run on another run's
+evidence.
 
 **So a rung-2 run requires `dev.run.id`. There is no rung-2 path without it**, and every reader may
 therefore treat the attribute as present whenever rung 2 was selected — which is what keeps
