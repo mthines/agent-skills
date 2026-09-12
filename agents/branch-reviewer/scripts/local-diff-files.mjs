@@ -177,8 +177,14 @@ function untrackedFiles(workdir) {
 
 export function collect(opts) {
   const workdir = opts.workdir || process.cwd();
-  if (!existsSync(join(workdir, ".git")) && !existsSync(workdir)) {
+  // Two separate preconditions, not one. Written as a single `&&` the first conjunct was dead:
+  // a missing workdir has no `.git` either, so the test reduced to "workdir does not exist" and
+  // an existing non-repo directory sailed through to fail later with a raw git error.
+  if (!existsSync(workdir)) {
     throw new InputError(`workdir does not exist: ${workdir}`);
+  }
+  if (!existsSync(join(workdir, ".git"))) {
+    throw new InputError(`workdir is not a git repository: ${workdir}`);
   }
   const base = resolveBase(workdir, opts.base, opts.mergeBase, opts.head);
   const range = rangeArgs({ base, head: opts.head, staged: opts.staged });
@@ -188,9 +194,15 @@ export function collect(opts) {
 
   const files = numstat.map((row) => {
     const meta = raw.get(row.filename) || { status: "modified", sha: null };
+    // A rename needs BOTH paths in the pathspec. Limiting to the new path alone defeats git's
+    // rename detection for this invocation, so the patch comes back as a whole-new-file add
+    // (`@@ -0,0 +1,N @@`) while `additions`/`deletions` still carry the real rename delta from
+    // `--numstat`, which DID see the pair. The record then contradicts itself, and a finder
+    // reads every line of a moved file as new code.
+    const pathspec = row.previous_filename ? [row.previous_filename, row.filename] : [row.filename];
     const patch = row.binary
       ? ""
-      : git(workdir, ["diff", ...range, "--", row.filename], { allowFail: true });
+      : git(workdir, ["diff", ...range, "--", ...pathspec], { allowFail: true });
     return {
       filename: row.filename,
       patch: stripDiffHeader(patch),
@@ -202,7 +214,11 @@ export function collect(opts) {
     };
   });
 
-  if (opts.includeUntracked && !opts.staged) {
+  // Untracked files exist only in the working tree, so they are coherent ONLY when the working
+  // tree is what is being compared. `--staged` was already excluded; an explicit `--head <ref>`
+  // is the same incoherence — it would splice working-tree files into a commit-to-commit range
+  // and report them as part of a diff neither endpoint contains.
+  if (opts.includeUntracked && !opts.staged && !opts.head) {
     const known = new Set(files.map((f) => f.filename));
     for (const path of untrackedFiles(workdir)) {
       if (known.has(path)) continue;
@@ -256,6 +272,16 @@ function parseArgv(argv) {
       "usage: local-diff-files.mjs --base <ref> [--head <ref>] [--workdir <dir>] " +
         "[--merge-base] [--staged] [--include-untracked] | --self-test",
     );
+  }
+  // Untracked files live only in the working tree, so asking for them while pinning head to a
+  // ref is a contradiction, not a preference. Reject it here rather than dropping the flag in
+  // `collect`: a silently-ignored flag returns a smaller file list that looks like a clean
+  // answer, which is how the caller never learns the review skipped its new files.
+  if (flags.includeUntracked && flags.head) {
+    throw new InputError("--include-untracked requires the working tree as head; remove --head");
+  }
+  if (flags.includeUntracked && flags.staged) {
+    throw new InputError("--include-untracked and --staged are mutually exclusive");
   }
   if (flags.staged && flags.head) {
     throw new InputError("--staged and --head are mutually exclusive");
@@ -412,6 +438,49 @@ function selfTest() {
     bothThrew = true;
   }
   ok("--staged with --head throws", bothThrew);
+
+  const throws = (argv) => {
+    try { parseArgv(argv); return false; } catch { return true; }
+  };
+  ok("--include-untracked with --head throws",
+    throws(["--base", "x", "--include-untracked", "--head", "y"]));
+  ok("--include-untracked with --staged throws",
+    throws(["--base", "x", "--include-untracked", "--staged"]));
+
+  // A rename must produce a patch that agrees with its own counts. Limiting the pathspec to the
+  // new path alone yields `@@ -0,0 +1,N @@` — every line of a moved file read as new code —
+  // while `additions`/`deletions` still report the real delta.
+  {
+    const dir = mkdtempSync(join(tmpdir(), "ldf-rename-"));
+    const g = (...a) => spawnSync("git", ["-C", dir, ...a], { encoding: "utf8" });
+    g("init", "-q", "-b", "main");
+    g("config", "user.email", "t@example.invalid");
+    g("config", "user.name", "t");
+    writeFileSync(join(dir, "old.ts"), "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n");
+    g("add", "-A");
+    g("commit", "-qm", "base");
+    g("mv", "old.ts", "new.ts");
+    writeFileSync(join(dir, "new.ts"), "export const a = 1;\nexport const b = 2;\nexport const z = 9;\n");
+    const [rec] = collect({ workdir: dir, base: "HEAD" });
+    ok("rename is detected as such", rec && rec.status === "renamed" && rec.previous_filename === "old.ts");
+    ok("rename patch is not a whole-file add", rec && !rec.patch.startsWith("@@ -0,0"));
+    ok("rename patch agrees with its own counts",
+      rec && rec.additions === 1 && rec.deletions === 1,
+      rec ? `+${rec.additions}/-${rec.deletions}` : "no record");
+    rmSync(dir, { recursive: true, force: true });
+  }
+
+  ok("a non-repo directory is rejected distinctly from a missing one", (() => {
+    const dir = mkdtempSync(join(tmpdir(), "ldf-norepo-"));
+    try {
+      collect({ workdir: dir, base: "HEAD" });
+      return false;
+    } catch (e) {
+      return /not a git repository/.test(e.message);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  })());
 
   if (fail.length) {
     console.error(`local-diff-files self-test: FAIL (${fail.length} of ${pass + fail.length})`);

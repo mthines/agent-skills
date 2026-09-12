@@ -133,7 +133,12 @@ while ITERATION < CAP:
     # A — review. Always first, so a pass validates the previous iteration's fixes
     #     before anything else touches the tree.
     <dispatch>(subagent_type="branch-reviewer",
-               prompt="--base $BASE --out $BUS --since $LAST_SHA <flags>")
+               prompt="--base $BASE --out $BUS <flags>")
+    # The FULL range every iteration, never narrowed to "since the last pass".
+    # That is what lets this pass validate the previous one's fixes, and the bus —
+    # keyed by fingerprint, not by line — is what keeps the re-review from
+    # re-reporting what it already saw. A narrowed range would do the opposite:
+    # hide a regression the last iteration's fix introduced outside the new delta.
     NEW = findings raised this pass that are not already in the bus
 
     if REPORT_ONLY:

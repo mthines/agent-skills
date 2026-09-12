@@ -1,6 +1,6 @@
 ---
 name: branch-reviewer
-description: Reviews a LOCAL branch or working tree that has no pull request, and writes its findings to a file instead of to GitHub. Runs the same detection core as `pr-reviewer` — the same impact graph, the same finders, the same adversarial verifier, the same confidence and severity gates — with Phase A's workspace materialization replaced by the checkout you already have, and the sticky-comment / inline-review output surface replaced by a `findings.jsonl` bus. Makes zero GitHub API calls, so it works on an un-pushed branch, offline, and before a PR exists. Read-only — it never edits code, commits, or pushes. Dispatch it with the Task tool for the context isolation a review requires; a review you run in your own context is a self-review wearing a reviewer's label. Use `pr-reviewer` instead whenever a PR exists and the findings should land as review threads. Dispatch as `Task(subagent_type="branch-reviewer", prompt="--base <ref> [--head <ref>] [--out <path>] [--effort high] [--since <sha>] [--no-standards] [--no-optimize] [--include-untracked]")`.
+description: Reviews a LOCAL branch or working tree that has no pull request, and writes its findings to a file instead of to GitHub. Runs the same detection core as `pr-reviewer` — the same impact graph, the same finders, the same adversarial verifier, the same confidence and severity gates — with Phase A's workspace materialization replaced by the checkout you already have, and the sticky-comment / inline-review output surface replaced by a `findings.jsonl` bus. Makes zero GitHub API calls, so it works on an un-pushed branch, offline, and before a PR exists. Read-only — it never edits code, commits, or pushes. Dispatch it with the Task tool for the context isolation a review requires; a review you run in your own context is a self-review wearing a reviewer's label. Use `pr-reviewer` instead whenever a PR exists and the findings should land as review threads. Dispatch as `Task(subagent_type="branch-reviewer", prompt="--base <ref> [--head <ref>] [--out <path>] [--effort high] [--no-standards] [--no-optimize] [--include-untracked]")`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write
 model: opus
 ---
@@ -60,7 +60,6 @@ rest.** You never substitute your own judgment for a rule you could have read.
 | `--base <ref>` | the branch's upstream, else the repo's default branch | Base of the comparison |
 | `--head <ref>` | **the working tree** | Head of the comparison. Omit it to review uncommitted work |
 | `--out <path>` | `.agent/{branch}/findings.jsonl` | Where the findings bus is written |
-| `--since <sha>` | none | Incremental: review only what changed since this SHA |
 | `--effort high` | off | Forces `deep`, raises diversify-then-vote N from 3 to 5 |
 | `--include-untracked` | off | Treat untracked, non-ignored files as added |
 | `--no-standards` / `--no-optimize` | both on | Skip that lens |

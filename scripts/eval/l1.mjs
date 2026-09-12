@@ -6551,19 +6551,42 @@ const isPollBlock = (block) =>
     s.check("G52b the local-diff adapter's self-test passes", st.status === 0,
       ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 400));
 
-    // (c) The integration claim, end to end against THIS repo's real history, with the real
-    // graph builder. Asserting the adapter's JSON shape in isolation would be asserting a
-    // schema this file invented; running the actual consumer asserts the thing the agent does.
+    // (c) The integration claim, end to end, with the real graph builder. Asserting the
+    // adapter's JSON shape in isolation would be asserting a schema this file invented;
+    // running the actual consumer asserts the thing the agent does.
+    //
+    // The fixture is a purpose-built two-file repo, NOT this repo's own `HEAD~1..HEAD`.
+    // `evals-l1.yml` checks out at `actions/checkout`'s default `fetch-depth: 1`, where
+    // `HEAD~1` does not resolve at all: the adapter exits 2, both checks below fail, and the
+    // guard reds every PR in CI while passing for whoever wrote it on a full local clone.
+    // A guard may not depend on history the workflow running it does not fetch. The fixture
+    // also exercises the WORKING TREE as head, which is the agent's documented default and
+    // the case `HEAD~1..HEAD` never covered.
     if (existsSync(GRAPH)) {
       const tmp = mkdtempSync(join(tmpdir(), "g52-"));
       try {
         const filesPath = join(tmp, "files.json");
+        const fixture = join(tmp, "repo");
+        mkdirSync(join(fixture, "src"), { recursive: true });
+        const git = (...a) => spawnSync("git", ["-C", fixture, ...a], { encoding: "utf8" });
+        writeFileSync(join(fixture, "src/parse.ts"),
+          "export function parseThing(raw: string): number {\n  return Number(raw);\n}\n");
+        writeFileSync(join(fixture, "src/use.ts"),
+          "import { parseThing } from './parse';\nexport const run = (s: string) => parseThing(s) + 1;\n");
+        git("init", "-q", "-b", "main");
+        git("config", "user.email", "l1@example.invalid");
+        git("config", "user.name", "l1");
+        git("add", "-A");
+        git("commit", "-qm", "fixture base");
+        // The change under review: a signature break its consumer does not follow.
+        writeFileSync(join(fixture, "src/parse.ts"),
+          "export function parseThing(raw: string, radix: number): number {\n  return parseInt(raw, radix);\n}\n");
         const adapt = spawnSync(process.execPath,
-          [ADAPTER, "--base", "HEAD~1", "--head", "HEAD", "--workdir", REPO_ROOT],
+          [ADAPTER, "--base", "HEAD", "--workdir", fixture],
           { encoding: "utf8", maxBuffer: 128 * 1024 * 1024 });
         let files = [];
         try { files = JSON.parse(adapt.stdout || "[]"); } catch { /* reported below as unparseable */ }
-        s.check("G52c the adapter emits a parseable, non-empty file list for HEAD~1..HEAD",
+        s.check("G52c the adapter emits a parseable, non-empty file list for base..working-tree",
           adapt.status === 0 && Array.isArray(files) && files.length > 0,
           `exit ${adapt.status}, ${Array.isArray(files) ? files.length : "unparseable"} files`);
 
@@ -6578,7 +6601,7 @@ const isPollBlock = (block) =>
         if (Array.isArray(files) && files.length > 0) {
           writeFileSync(filesPath, JSON.stringify(files));
           const g = spawnSync(process.execPath,
-            [GRAPH, filesPath, "--workdir", REPO_ROOT, "--base-ref", "HEAD~1"],
+            [GRAPH, filesPath, "--workdir", fixture, "--base-ref", "HEAD"],
             { encoding: "utf8", maxBuffer: 128 * 1024 * 1024 });
           let graph = null;
           try { graph = JSON.parse(g.stdout || "null"); } catch { /* reported below */ }
@@ -6613,13 +6636,30 @@ const isPollBlock = (block) =>
     const body = readFileSync(path, "utf8");
     // Strip the lines that deliberately FORBID these calls, so the prohibition itself is not
     // read as a violation. A rule may name what it bans.
-    const live = body.split("\n")
-      .filter((l) => !/\b(never|no|zero|not|forbid|without|instead of|rather than)\b/i.test(l))
-      .join("\n");
-    s.check(`G52d ${label} issues no gh command`, !GH_CMD.test(live),
-      (live.match(GH_CMD) || [""])[0]);
-    s.check(`G52d ${label} calls no mcp__github__ tool`, !MCP_GH.test(live),
-      (live.match(MCP_GH) || [""])[0]);
+    //
+    // A prohibition is recognised by the negation GOVERNING the command in the same CLAUSE —
+    // not by the negation appearing somewhere on the line. The line-level test this replaces
+    // stripped every line containing `no` / `not` / `without` / `rather than`, which was 52 of
+    // this agent's 232 lines, and the stripped set is precisely the prose most likely to be
+    // ABOUT the prohibition. A probe of `There is no PR here, so run \`gh pr view\`` passed
+    // G52d untouched and went red only through G24 — the same borrowed-guard result the comment
+    // above describes, surviving one layer down. Clause-scoping is what distinguishes the two:
+    // in `No \`gh\`, no \`mcp__github__*\`` the negation abuts the token, while in the probe a
+    // comma separates the `no` (which governs "PR") from the command.
+    const NEGATION = /\b(never|no|not|zero|none|forbid(s|den)?|without|instead of|rather than)\b/i;
+    const governed = (line, index) => {
+      const before = line.slice(0, index);
+      const clause = before.slice(before.search(/[.;,:—][^.;,:—]*$/) + 1);
+      return NEGATION.test(clause);
+    };
+    const offenders = (re) => body.split("\n").flatMap((line) => {
+      const m = line.match(re);
+      return m && !governed(line, m.index) ? [line.trim().slice(0, 120)] : [];
+    });
+    const ghHits = offenders(GH_CMD);
+    const mcpHits = offenders(MCP_GH);
+    s.check(`G52d ${label} issues no gh command`, ghHits.length === 0, ghHits[0] || "");
+    s.check(`G52d ${label} calls no mcp__github__ tool`, mcpHits.length === 0, mcpHits[0] || "");
   }
 
   // The agent's tool grant is the mechanical half of the same promise: prose can say "zero
