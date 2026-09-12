@@ -949,8 +949,8 @@ they must be exercised live (markdown can't prove them). Run this after editing
    back to telling you to run the two agents yourself.
 4. **Universal loop + two-scope writes (the R2 risk):** run two checks against
    LoreKit (`memory.search { q, scopes: ["repo::{owner}/*", "global"], tags: ["loop::aw-lessons"] }` to inspect).
-   - **Universal lesson:** after a run where the lesson is generic (e.g. trigger-context like `*.tsx` or `monorepo refactor`), confirm the lesson was written to the **`global`** scope (tag `loop::aw-lessons`) and NOT to `repo::{owner}/{repo}`. If it landed in the repo scope, the classifier mis-routed a universal lesson.
-   - **Project-bound lesson:** run a task that produces a repo-bound lesson (trigger-context referencing a repo path) and confirm the lesson lands in the **`repo::{owner}/{repo}`** scope — NOT in `global`. If it landed in `global`, the classifier is broken.
+   - **Universal lesson:** after a run where the lesson is generic (e.g. an **Applies when** line like `*.tsx` or `monorepo refactor`), confirm the lesson was written to the **`global`** scope (tag `loop::aw-lessons`) and NOT to `repo::{owner}/{repo}`. If it landed in the repo scope, the classifier mis-routed a universal lesson.
+   - **Project-bound lesson:** run a task that produces a repo-bound lesson (an **Applies when** line referencing a repo path) and confirm the lesson lands in the **`repo::{owner}/{repo}`** scope — NOT in `global`. If it landed in `global`, the classifier is broken.
    - **Storage delegation:** confirm the workflow never creates directories or commits lesson files in the cwd repo — where a `repo::` lesson physically lives is LoreKit's control model (`remote` / local `.lorekit/`), not the loop's. The loop must only call `memory.write` with a scope.
 5. **Opt-in boundary:** in an interactive session, make a casual single-file edit
    **without** a trigger phrase or `/aw`. Expect: `aw` does **not** engage.

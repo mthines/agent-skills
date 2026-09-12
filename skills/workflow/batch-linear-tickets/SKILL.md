@@ -410,7 +410,8 @@ recurring `seen_count >= 3` becomes promotion-eligible — see
   (universal patterns) or the `repo::{owner}/{repo}` scope (workspace-specific
   label conventions). Advisory; a silent no-op if LoreKit's `memory.*` tools
   are not connected.
-- **Slow tier:** a lesson recurring `seen_count >= 3` (or tagged `structural`)
+- **Slow tier:** a lesson at the store's own `seen_count >= 3` (or carrying the
+  `status::structural` tag)
   is promoted via `/create-skill diagnose batch-linear-tickets`, which reads the
   [diagnostic surface](./rules/diagnostic-surface.md) and `batch-lessons`
   history and emits a confidence-gated diff (commonly into

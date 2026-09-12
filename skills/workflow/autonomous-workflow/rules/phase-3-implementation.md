@@ -61,7 +61,7 @@ memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-lessons"], limit: 
 memory.list { scope: "global",               tags: ["loop::aw-lessons"], limit: 50 }
 ```
 
-Union both results. Match each lesson's `trigger-context` against the files /
+Union both results. Match each lesson's **Applies when** line against the files /
 area you are about to touch; treat matches as constraints (same advisory rule
 as the planner's read). `repo::` lessons win on conflict with `global`.
 Full contract: [`self-improvement-loop.md`](./self-improvement-loop.md#fast-tier--read-lessons).

@@ -154,7 +154,7 @@ Be honest — a skill with no artifact trail is harder to diagnose, and the repo
 ### 8. Lessons scope (optional)
 
 If the skill has a fast-tier self-improvement loop (a LoreKit lesson bucket it reads/writes across runs via the `memory.*` tools), declare the bucket and scopes here.
-Step 2 of the diagnose procedure loads it as **evidence** — promotion-eligible lessons (`seen_count >= 3` or `status: structural`) are the strongest signal that a failure recurs, and they often already name the phase and fix.
+Step 2 of the diagnose procedure loads it as **evidence** — promotion-eligible lessons (the store's own `seen_count >= 3`, or the `status::structural` tag) are the strongest signal that a failure recurs, and they often already name the phase and fix.
 
 ```markdown
 ## Lessons scope

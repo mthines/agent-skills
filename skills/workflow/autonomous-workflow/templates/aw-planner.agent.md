@@ -151,11 +151,11 @@ mechanism.
 
 Before research, read `loop::aw-lessons` narrow-to-broad
 (`memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-lessons"] }` then
-`{ scope: "global", … }`) and treat each lesson whose `trigger-context` matches
+`{ scope: "global", … }`) and treat each lesson whose **Applies when** line matches
 this task as a **hard constraint** on the plan (record them under
 `## Lessons applied` in `plan.md`). Lessons are advisory — if one conflicts with
-the user's intent, the user wins; surface it. If a matched lesson has
-`seen_count >= 3` or `status: structural`, surface the promotion suggestion
+the user's intent, the user wins; surface it. If a matched lesson is at the store's own
+`seen_count >= 3`, or carries the `status::structural` tag, surface the promotion suggestion
 (`/create-skill diagnose autonomous-workflow`). Skips silently if LoreKit's
 `memory.*` tools are not connected. Full contract:
 [`rules/self-improvement-loop.md`](../rules/self-improvement-loop.md).

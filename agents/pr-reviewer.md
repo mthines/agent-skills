@@ -1743,14 +1743,14 @@ not invoke it anywhere else.
 
 ### 1.2e Apply `reviewer-lessons`
 
-Match each loaded lesson's `trigger-context` (the shared lesson-scope schema — file globs, task type, integration/tech names) against this run's changed paths, synthesized intent, and detected integrations.
+Match each loaded lesson's **Applies when** line (the shared lesson-scope schema — file globs, task type, integration/tech names) against this run's changed paths, synthesized intent, and detected integrations.
 
 Match against **bodies**, never previews. Which bodies you have depends on `SUMMARY_VIEW`:
 - `SUMMARY_VIEW` **true** — the bodies fetched at Step 1.2d. An entry left unread by the shortlist
   or the read budget is not a match and must not be guessed at from its preview.
 - `SUMMARY_VIEW` **false** — Step 1.0 already returned every body and Step 1.2d was skipped, so
   match against the full loaded pool. Nothing is excluded.
-A matched lesson's *What to do next time* is a **consideration, not a command**: it biases rubric emphasis (Step 2), finder focus (Phase D), and scoring calibration (Step 2.7) — it may never silently disable a gate, skip a step, or move a threshold.
+A matched lesson's *Do this instead* line is a **consideration, not a command**: it biases rubric emphasis (Step 2), finder focus (Phase D), and scoring calibration (Step 2.7) — it may never silently disable a gate, skip a step, or move a threshold.
 On a `repo::` vs. `global` collision the `repo::` lesson wins; on any conflict with the PR author's stated intent or a review-config constraint, that constraint wins and the conflict is surfaced.
 The pool matched here already includes the diff-keyed `memory.search` hits from Step 1.2c and the bodies resolved at Step 1.2d.
 `reviewer-comment-relevance` memories are applied separately at Step 2.7b, per `comment-relevance-memory.md § Read`.

@@ -395,8 +395,8 @@ the workflow **reads** accumulated `loop::aw-lessons` lessons before planning
   LoreKit's own control model (`lorekit doctor`). There is no filesystem opt-in
   ceremony: the workflow just picks the scope; LoreKit decides storage.
 
-The workflow classifies each candidate lesson at write time: a `trigger-context`
-that references a repo path / repo-specific package / domain term → project-bound
+The workflow classifies each candidate lesson at write time: an **Applies when**
+line that references a repo path / repo-specific package / domain term → project-bound
 (`repo::`); a glob, framework name, or task type with no repo binding → universal
 (`global`). When ambiguous, default to universal (`global`).
 
@@ -405,8 +405,8 @@ Lessons carry the LoreKit tag `loop::aw-lessons` and a key in the
 loops' on the same scopes. Lessons are **advisory** — they bias the plan
 (applied like Acceptance Criteria), never silently change a gate. The fast tier
 is fully optional: disconnect LoreKit and it degrades to nothing. Lessons expire
-(default 90 days, in the lesson body) and the read step ignores expired ones, so
-a wrong lesson decays instead of entrenching — LoreKit owns storage and dedups
+(`ttl_days: 90` on every write, re-passed on a recurrence) and the store stops
+returning an expired one, so a wrong lesson decays instead of entrenching — LoreKit owns storage and dedups
 on write, so there is no INDEX to consolidate.
 
 ### Slow tier — retrospective diagnosis

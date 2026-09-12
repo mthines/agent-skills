@@ -130,39 +130,64 @@ overwrites in place — that is what makes recurrence (below) countable.
 
 A lesson is a LoreKit entry tagged `loop::aw-lessons`. It is **procedural**
 memory — "how to do better next time" — not a fact about the user. The entry's
-`value` is markdown; the metadata that a filesystem store would keep in
-frontmatter lives in a `meta:` comment at the top of the value so the four
-mandatory fields stay human-readable:
+`value` is **markdown a human reads**, in the dashboard, in a SessionStart
+injection, in another agent's context — and nothing else:
 
 ```markdown
-<!-- meta: phase=<0-7> seen_count=1 confidence=<high|medium|low> status=active expires=<ISO 8601> trigger-context="<concrete signal — file glob, task type, tech>" source=system -->
+# <one-line takeaway — what to do, not what the lesson is about>
 
-# <one-line lesson title>
+**Applies when:** <concrete signal — file glob, task type, tool name, error shape>
 
-**What failed:** <concrete observable from the run>
+**What happened:** <the concrete observable from the run>
 **Why:** <root cause, if known; "unknown" is allowed>
-**What to do next time:** <prescriptive, actionable, testable instruction>
-**Promotion target:** <skill rule/phase this would harden if promoted, or "none">
+**Do this instead:** <prescriptive, actionable, testable instruction>
+**Promotion target:** <the skill rule/phase this would harden if promoted, or "none">
 ```
 
 Written with:
 
 ```text
 memory.write {
-  scope: <global | repo::{owner}/{repo}>,
-  key:   "aw-lessons::<kebab-slug>",
-  value: "<the markdown above>",
-  tags:  ["loop::aw-lessons", "source::<trigger>"],
-  source_agent: "aw",
-  trigger: "<stuck-loop | end-of-run | …>"
+  scope:    <global | repo::{owner}/{repo}>,
+  key:      "aw-lessons::<kebab-slug>",
+  value:    "<the markdown above — no hidden blocks>",
+  tags:     ["loop::aw-lessons", "source::<trigger>"],   # + "status::structural" when it is
+  trigger:  "<stuck-loop | end-of-run | command-failure | gotcha | near-miss | assumption-wrong | paid-off>",
+  ttl_days: 90,
+  source_agent: "aw"
 }
 ```
 
-The four bold fields are mandatory, and so are the five `meta` fields the loop
-reads mechanically (`phase`, `seen_count`, `status`, `expires`,
-`trigger-context`). `trigger-context` must be **concrete** (globs, task types,
-tech names) — never "when it feels relevant" — so the read step in Phase 1 can
-match it mechanically against the current task.
+`Applies when` must be **concrete** (globs, task types, tech names, error
+shapes) — never "when it feels relevant" — so the read step in Phase 1 can match
+it mechanically against the current task. It is a visible line, not hidden
+metadata: the reader deciding whether a lesson is theirs needs it first, which
+is why it sits directly under the title.
+
+### Never put machine metadata in the body
+
+**A lesson body carries no hidden or machine-only payload — no HTML comment, no
+front-matter block, no JSON blob, no `key=value` header.** Every byte of `value`
+must render as prose a person can read. Each fact has a first-class home on the
+write instead:
+
+| Fact | Where it belongs | Why not the body |
+| ---- | ---------------- | ---------------- |
+| **Recurrence count** | `seen_count`, a store column | The store increments it on every overwrite. A count written into prose is a snapshot nothing ever updates |
+| **Expiry** | `ttl_days: 90` on the write | Expiry is enforced against the column by the purge and the read filters. A date in prose expires nothing |
+| **Status** (`structural`, `promoted`) | a `status::<value>` tag | Tags are filterable — `memory.list { tags: ["status::structural"] }` finds them. Prose is not queryable |
+| **Owning host / bucket kind** | the `host` and `kind` write fields | Both are inferred from the `loop::aw-lessons` tag when omitted |
+| **Provenance** (repo, branch, commit, PR) | `origin_repo` / `origin_branch` / `origin_commit` / `origin_pr` | First-class, and the dashboard renders them as links |
+| **Trigger** | the `trigger` write field | Already a facet; restating it in prose adds a line and no information |
+
+The host **phase** is carried by the `Promotion target` line (which names the
+rule or phase) and, where it is a matching signal, by `Applies when` — it is not
+a separate field.
+
+An HTML comment is the worst of both worlds: markdown renders it to *nothing*,
+so a human sees a lesson that starts mid-thought, while the fields inside it
+silently disagree with the store's own columns. The schema authority is
+[`persistent-memory/rules/write-pipeline.md#lesson-scope-entries`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
 
 ---
 
@@ -193,12 +218,13 @@ Derive `{owner}/{repo}` from the `origin` remote, lowercased (strip a trailing
 
 After the lessons load (union the matches):
 
-1. Match each lesson's `trigger-context` against the current task (file globs,
-   task type, tech). Consider the full entry only for matches — do not apply
-   every entry. Scope-of-origin is not a match criterion; both scopes fire the
-   same way. **Skip any lesson whose `expires` is in the past** — treat it as
-   stale (see the entrenchment guards).
-2. Treat each **matching** lesson's *"What to do next time"* as a
+1. Match each lesson's **Applies when** line against the current task (file
+   globs, task type, tech). Consider the full entry only for matches — do not
+   apply every entry. Scope-of-origin is not a match criterion; both scopes fire
+   the same way. Expired lessons do not come back — the store's own TTL drops
+   them, so the read never has to filter on a date in the prose (see the
+   entrenchment guards).
+2. Treat each **matching** lesson's *"Do this instead"* as a
    **consideration** on the plan / implementation — apply it unless it
    conflicts with the user's stated intent or task-specific constraints.
    Record applied lessons in `plan.md` under a `## Lessons applied` note (Full
@@ -212,8 +238,8 @@ After the lessons load (union the matches):
 
 There is no local INDEX to maintain: LoreKit manages its own storage
 server-side and deduplicates on write, so the loop does not run a
-consolidation pass. Stale beliefs decay through `expires` (guard #3), not a
-line-count sweep.
+consolidation pass. Stale beliefs decay through the store's TTL (guard #3), not
+a line-count sweep.
 
 Log:
 
@@ -303,7 +329,7 @@ and recurrence + expiry filter noise downstream:
 | **Phase 7 end-of-run** | CI green, or user-approved stop, or a post-merge bug surfaces in the same session | Any durable lesson from the run — a missed trigger, a plan gap, a recurring fix pattern |
 
 **Scope classification (load-bearing).** Before writing, classify each candidate
-as **project-bound** or **universal** by looking at its `trigger-context`:
+as **project-bound** or **universal** by looking at its **Applies when** line:
 
 | Verdict | Signal | Scope |
 | ------- | ------ | ----- |
@@ -312,7 +338,7 @@ as **project-bound** or **universal** by looking at its `trigger-context`:
 
 When ambiguous, default to **universal** (`global`) — it errs toward broader
 reach; a misclassified universal lesson harms nothing in other repos because its
-`trigger-context` still has to match. A misclassified project-bound lesson
+**Applies when** line still has to match. A misclassified project-bound lesson
 written to `global` only adds a row that never matches elsewhere.
 
 Then dispatch by verdict. **Deduplicate first** so a recurrence UPDATES in place
@@ -323,10 +349,10 @@ instead of piling up:
 memory.search { q: "<key words of the lesson>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
 # 2a. Universal lesson — always lands in global.
-memory.write { scope: "global", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::<trigger>"], source_agent: "aw", trigger: "<trigger>" }
+memory.write { scope: "global", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::<trigger>"], source_agent: "aw", trigger: "<trigger>", ttl_days: 90 }
 
 # 2b. Project-bound lesson — lands in this repo's scope.
-memory.write { scope: "repo::{owner}/{repo}", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::<trigger>"], source_agent: "aw", trigger: "<trigger>" }
+memory.write { scope: "repo::{owner}/{repo}", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::<trigger>"], source_agent: "aw", trigger: "<trigger>", ttl_days: 90 }
 ```
 
 - **No filesystem opt-in ceremony.** With LoreKit the loop just picks the
@@ -341,15 +367,15 @@ memory.write { scope: "repo::{owner}/{repo}", key: "aw-lessons::<slug>", value: 
   is **stricter** for `repo::` writes — a repo scope is team-visible.
 - **Dedup resolves each candidate as ADD / UPDATE.** Found the same situation
   under a key → reuse that **exact scope + key** and `memory.write` an updated
-  body (same scope + key overwrites in place). A lesson that recurs resolves to
-  **UPDATE**, which **bumps `seen_count`** and refreshes `expires` — it does not
-  create a duplicate. This is what makes recurrence countable.
+  body (same scope + key overwrites in place) — it does not create a duplicate.
+  **A recurrence resolves to an UPDATE: the store increments `seen_count` by 1
+  for you, and re-passing `ttl_days` refreshes the expiry.** That is what makes
+  recurrence countable and drives promotion. Never hand-write a count into the
+  body to track this; the column is the only copy that stays true.
 - **Applied-lesson UPDATE contract.** If a lesson read at the start of the run
   was applied and the failure it targets did not recur, write an UPDATE for
-  that lesson — successful application counts as recurrence evidence. An UPDATE
-  to an entry that carries a `seen_count` field MUST increment `seen_count` by 1
-  and refresh `expires`. This is how a *working* lesson still reaches the
-  `seen_count >= 3` promotion gate.
+  that lesson — successful application counts as recurrence evidence. This is
+  how a *working* lesson still reaches the `seen_count >= 3` promotion gate.
 - **Retrospective prompt (Phase 7 / dispatcher exit-write).** Before writing,
   ask: was there friction, a surprise, a guess that paid off, a near-miss, or a
   companion that should have fired? Phrase each capture as an **observation**
@@ -381,9 +407,10 @@ proven itself. Promotion is **suggested**, never automatic.
 After a `write` (Phase 4 or Phase 7), or after a `read` in Phase 1, check the
 matched / written lessons. A lesson is **promotion-eligible** when **either**:
 
-- `seen_count >= 3` — the same failure recurred across at least three runs, or
-- the lesson's author tagged it `status: structural` because it reflects a
-  design gap, not a one-off.
+- `seen_count >= 3` — the same failure recurred across at least three runs (read
+  the store's column, never a number written into the body), or
+- the lesson carries the `status::structural` tag because it reflects a design
+  gap, not a one-off.
 
 ### What promotion does
 
@@ -413,10 +440,11 @@ repo-rule edit, gated by the same confidence + user-approval contract.
 
 ### After a successful promotion
 
-Set the source lesson's `status: promoted` (via a `memory.write` UPDATE to the
-same scope + key) so it stops re-suggesting, and record the commit / PR that
-hardened the skill in the lesson body. The lesson stays as an audit trail of
-*why* the rule exists.
+Add the `status::promoted` tag to the source lesson (via a `memory.write` UPDATE
+to the same scope + key) so it stops re-suggesting, and record the commit / PR
+that hardened the skill in the write's `origin_commit` / `origin_pr` fields —
+not in the prose, where the dashboard cannot render them as links. The lesson
+stays as an audit trail of *why* the rule exists.
 
 ---
 
@@ -432,13 +460,13 @@ the false belief. These guards are non-negotiable:
    cap. The **only** path from a lesson to changed workflow behavior is through
    the confidence-gated, user-approved `diagnose` apply.
 2. **Recurrence gates promotion, not a single run.** `seen_count >= 3` (or an
-   explicit `structural` tag) is required before promotion is even suggested.
-   One bad run cannot rewrite the skill.
-3. **Every lesson expires.** Default `expires` is 90 days from last sighting,
-   carried in the lesson body and refreshed on each re-sighting (UPDATE). The
-   read step **ignores expired lessons**, so stale beliefs decay instead of
-   entrenching. A re-sighting refreshes `expires`; a belief no run re-confirms
-   simply ages out of consideration.
+   explicit `status::structural` tag) is required before promotion is even
+   suggested. One bad run cannot rewrite the skill.
+3. **Every lesson expires.** `ttl_days: 90` on the write, refreshed on each
+   recurrence, so stale beliefs decay instead of entrenching. The **store**
+   enforces this — expired lessons never come back from a read — and an expiry
+   stated only in prose is decoration. A belief no run re-confirms simply ages
+   out of consideration.
 4. **Contradiction is flagged, not overwritten.** A new lesson that contradicts
    an existing one is surfaced for review (the dedup search finds the prior
    entry) rather than silently winning.

@@ -69,31 +69,35 @@ memory.write {
   value: "<lesson body — see schema below>",
   tags:  ["loop::preview-spec-lessons", "source::run"],
   source_agent: "preview-spec",
-  trigger: "spec-navigation-friction"
+  trigger: "spec-navigation-friction",
+  ttl_days: 90
 }
 ```
 
 Classify the scope: a quirk true of any app (dismiss a cookie banner before asserting) → `global`; a quirk of this app (`/dashboards` needs `?view=grid`) → `repo::{owner}/{repo}`.
-A repeat of an existing lesson is an UPDATE to the same `scope` + `key`, which increments `seen_count` and refreshes `expires` — that is how a recurring quirk reaches the `seen_count >= 3` promotion gate.
+A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry.
+Never hand-write a count into the body.
+That is how a recurring quirk reaches the store's own `seen_count >= 3` promotion gate.
 
 ## Lesson body schema
 
-The five mandatory fields travel in a `meta:` comment, mirroring `aw-tester-lessons`:
+The body is **markdown and nothing else** — never a `<!-- meta: … -->` block, and never a hand-written count or expiry date.
+Every store-backed fact has its own first-class `memory.write` field: the store owns `seen_count`, `ttl_days` sets the expiry, and `status::<value>` / `source::<trigger>` are tags; the concrete matching signal travels as a visible **Applies when:** line directly under the title.
 
 ```markdown
-<!-- meta: phase=author seen_count=1 status=active expires=<ISO 8601 — created + 90 days> trigger-context="<concrete signal: route glob, component, aw-target 'preview'>" source=system -->
-
 # <one-line lesson title>
 
-**What failed:** <the spec step that failed, and the observable>
+**Applies when:** <concrete signal: route glob, component name, the `preview` target>
+
+**What happened:** <the spec step that failed, and the observable>
 **Why:** <the navigation / precondition cause, or "unknown">
-**What to write next time:** <prescriptive, testable authoring instruction>
+**Do this instead:** <prescriptive, testable authoring instruction>
 **Promotion target:** <where this would harden preview-spec authoring, or "none">
 ```
 
-Omitting any of the five `meta:` fields makes the write a defect — do not persist it.
-`trigger-context` must be a concrete matching signal (a route glob, a component name, the `preview` target), never a subjective condition.
+Schema authority: [`write-pipeline.md#lesson-scope-entries`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
+The **Applies when** line must be a concrete matching signal (a route glob, a component name, the `preview` target), never a subjective condition — a lesson without one cannot be matched mechanically, so do not persist it.
 
 ## Entrenchment guards
 
-The same five guards that govern `aw-tester-lessons` apply here: lessons are advisory (they never change the verdict or the grammar); recurrence gates promotion (`seen_count >= 3` or `status: structural`); every lesson expires (default 90 days); a contradicting lesson is surfaced, not overwritten; the privacy pre-flight is never bypassed — never store credentials, tokens, preview-auth secrets, customer names, or product data.
+The same five guards that govern `aw-tester-lessons` apply here: lessons are advisory (they never change the verdict or the grammar); recurrence (the store's own `seen_count >= 3`, or the `status::structural` tag) gates promotion; every lesson expires (`ttl_days: 90` on every write, re-passed on a recurrence); a contradicting lesson is surfaced, not overwritten; the privacy pre-flight is never bypassed — never store credentials, tokens, preview-auth secrets, customer names, or product data.
