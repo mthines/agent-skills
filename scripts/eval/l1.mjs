@@ -7081,12 +7081,41 @@ const isPollBlock = (block) =>
     // would return"). `receipt-mapping.md` says so itself — whether a filled cell says the right
     // thing is a reviewer's judgement — and the bar here is that the two probes that HAVE gotten
     // through now red, not that no sentence ever can.
-    s.check("G52i the rung-1 `totals` cell is the run's own exported span records",
-      /span list|exported file/.test(totalsCells[1] ?? ""),
-      "rung 1's `totals` is the size of the span list the process under test exported for this run — a cell not naming that artifact is describing something else");
-    s.check("G52i the rung-2 `totals` cell is the count of the query that DEFINES the observed set",
-      /dash0 spans query/.test(totalsCells[2] ?? "") && /dev\.run\.id is/.test(totalsCells[2] ?? ""),
-      "rung 2's observed set is defined by the attribute-filtered query, so `totals` is that query's count — a cell naming the set without naming the query can be a wider counter merely described as the set's size");
+    // ADDITION-PROOF, the way `G52b` already is. The first version of these indexed
+    // `totalsCells[1]` and `totalsCells[2]` BY HAND, so a rung 3 added to `rungs.md` and given a
+    // column here carried any `totals` cell past them in silence — probed: a rung-3 cell reading
+    // "the number of records the collector reported for this run" (a wider counter, exactly the
+    // round-11 defect) tripped no `G52i` check at all. That is round 8's sub-shape — a hand-typed
+    // list blind to ADDITIONS — recurring inside the round-13 fix written for the same family, one
+    // round later, which is why it is worth saying plainly: every probe I ran on those two checks
+    // was a MODIFICATION probe, and a modification probe cannot see a missing row.
+    // `G52b` has derived its rung set from `rungs.md`'s `## Rung N` headings since round 6. Do the
+    // same: require a rule PER RUNG (so a new rung reds loudly rather than going unchecked), and
+    // resolve each rung's COLUMN from the header instead of assuming its position.
+    const TOTALS_ARTIFACT = {
+      "1": { re: /span list|exported file/, what: "the run's own exported span records" },
+      "2": { re: /dash0 spans query[\s\S]*dev\.run\.id is/, what: "the count of the `dash0 spans query` whose `dev.run.id` filter DEFINES the observed set" },
+    };
+    const rungNums = existsSync(RUNGS_MD)
+      ? [...new Set((readFileSync(RUNGS_MD, "utf8").match(/^## Rung (\d+)/gm) || []).map((h) => h.match(/(\d+)/)[1]))]
+      : [];
+    s.check("G52i the rung set is derivable for the `totals` artifact checks", rungNums.length >= 2,
+      `${rungNums.length} rung heading(s) in rungs.md — with none derived, the per-rung checks below would vacuously pass`);
+    const realSection = body.match(/### What `CLEAN` and `totals` are, per rung[\s\S]*?(?=\n## )/);
+    const realHeaderCells = ((realSection?.[0].split("\n") ?? []).find((l) => /^\|.*\bRung\b/.test(l)) ?? "")
+      .split("|").slice(1, -1).map((c) => c.trim());
+    for (const n of rungNums) {
+      const rule = TOTALS_ARTIFACT[n];
+      s.check(`G52i rung ${n} has a \`totals\` artifact rule`, !!rule,
+        `rung ${n} is selectable but nothing says what its \`totals\` must BE — it would be held only by the counter denylist below, which any fresh wording walks around`);
+      if (!rule) continue;
+      const col = realHeaderCells.findIndex((c) => new RegExp(`^Rung ${n}\\b`).test(c));
+      s.check(`G52i rung ${n}'s \`totals\` cell is ${rule.what}`,
+        col >= 0 && rule.re.test(totalsCells[col] ?? ""),
+        col < 0
+          ? `no \`Rung ${n}\` column in the realization header, so its \`totals\` cell cannot be located`
+          : `rung ${n}'s \`totals\` cell does not name the artifact that IS the observed set on that rung — naming the set and being the set are different claims`);
+    }
     s.check("G52i no `totals` realization names the rejected proxy counter",
       totalsCells.slice(1).every((c) => !/\bspans\.total\b|final_total|forwarded/.test(c)),
       "a rung realizing `totals` as the proxy's own counter counts every process pointed at the ports, so a foreign span inflates it without entering the observed set and the run grades `contradicts` on spans it never emitted");
