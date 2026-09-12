@@ -76,7 +76,11 @@ every decoy correctly, while a rubric-free keyword responder now scores **60.7% 
 the three declared tells (`process` / rung-2 vocabulary / `offline`-`in-memory`).
 Those are the figures `G52e` itself computes, so the numbers here and the numbers the guard gates on
 are the same reading.
-All three sit below 50% on the flipped polarity, so each tell's strength equals its accuracy.
+All three sit **above** 50%, so `max(acc, 100 - acc)` selects the accuracy itself: the strength the
+guard gates on is 60.7 / 64.3 / 64.3, not the flipped complement.
+Deleting the `decoy-` cases returns `process` to 78.6% and the rung-2 vocabulary to 85.7%.
+The third tell, `offline` / `in-memory`, sits at 57.1% even without the decoys — it was never the
+shortcut here, and it is declared so that stays measured rather than assumed.
 A decoy a rubric-reader also gets wrong would not be a decoy; it would be a mislabelled case.
 
 ## What this suite measures

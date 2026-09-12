@@ -86,7 +86,10 @@ the three declared tells (run verb / `startSpan` / static verb).
 Those are the figures `G52e` itself computes, negation strip included, so the numbers here and the
 numbers the guard gates on are the same reading — an earlier draft quoted 48.7% for the run tell,
 scored without the strip, which is not what anything enforces.
-All three sit below 50%, so each tell's polarity-flipped strength equals its accuracy.
+All three sit **above** 50%, so `max(acc, 100 - acc)` selects the accuracy itself: the strength the
+guard gates on is 53.8 / 61.5 / 61.5, not the flipped complement.
+Deleting the `decoy-` cases returns the run tell to **100.0%** — a rubric-free responder scored a
+perfect 14/14 on the set as originally shipped.
 A decoy a rubric-reader also gets wrong would not be a decoy; it would be a mislabelled case.
 
 ## What this suite measures

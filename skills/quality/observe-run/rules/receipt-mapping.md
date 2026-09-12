@@ -22,12 +22,32 @@ state maps to exactly one of them.
 
 ## The verdict table (total)
 
+The three clean-stream rows share one guard.
+Write it **once**, here, and let the rows reference it by name — an enumeration repeated per row is
+a list to keep in sync, and twice now a conjunct escaped one copy of it:
+
+> **`CLEAN`** ≡ a `dash0.cli.otlp_proxy.shutdown` event **was observed**
+> AND its `reason == signal`
+> AND `*.failed == 0`
+> AND no `dash0.cli.otlp_proxy.error` event appeared.
+
+`NOT CLEAN` is the negation of that definition, not of any list below it.
+
 | Observed proxy-stream state | Expected span present? | Verdict |
 | --- | --- | --- |
-| `*.failed == 0` AND `shutdown.reason == signal` AND no `error` event AND totals > 0 | present | `confirms` — the code emitted what the claim asserted |
-| `*.failed == 0` AND `shutdown.reason == signal` AND no `error` event AND totals > 0 | absent | `contradicts` — the code genuinely did not emit |
-| ANY `dash0.cli.otlp_proxy.error` event, OR `*.failed > 0`, OR `shutdown.reason == deadline` | (any) | `ambiguous` — never `contradicts`. A degraded delivery path cannot be read as proof of absence. |
-| `*.failed == 0` AND `shutdown.reason == signal` AND no `error` event AND totals == 0 | n/a (nothing flowed) | `null` — the claim is unverified; silence is not proof |
+| `CLEAN` AND totals > 0 | present | `confirms` — the code emitted what the claim asserted |
+| `CLEAN` AND totals > 0 | absent | `contradicts` — the code genuinely did not emit |
+| `NOT CLEAN` | (any) | `ambiguous` — never `contradicts`. A degraded delivery path cannot be read as proof of absence. |
+| `CLEAN` AND totals == 0 | n/a (nothing flowed) | `null` — the claim is unverified; silence is not proof |
+
+`NOT CLEAN` is reached by any of — **illustrative, never the definition**: an
+`dash0.cli.otlp_proxy.error` event; `*.failed > 0`; `shutdown.reason == deadline`; or **no
+`shutdown` event at stream end at all**, which is the proxy `SIGKILL`ed, crashed, or the reader
+losing the stream.
+That last one is why `CLEAN` opens on the event being *observed* rather than on its `reason`:
+`reader-adapters.md` documents the event's value domain (`signal` or `deadline`) but never promises
+the event is emitted, so a killed proxy satisfies no `reason` test and a row keyed on `reason`
+alone leaves that stream with no verdict.
 
 `totals` is the sum of `dash0.cli.otlp_proxy.stats`'s `<signal>.total` attributes (`logs.total` +
 `spans.total` + `metrics.total`) accumulated across the run's `dash0.cli.otlp_proxy.stats` events,
@@ -70,16 +90,28 @@ whichever row happens to match loosest.
 
 Total is not the whole claim — the rows must also be **mutually exclusive**, or a state matching two
 of them has no single verdict and the reader picks whichever they read first.
-That is why all three clean-stream rows carry the *same* guard (`*.failed == 0` AND
-`shutdown.reason == signal` AND no `error` event) and differ only in what follows it: the degraded
-row is the exact negation of that guard, so exactly one row matches any stream.
-Dropping the `no error event` conjunct from the `confirms` / `contradicts` rows — leaving it on the
-`null` row alone — is the specific way this breaks: a stream carrying an `error` event while
-`*.failed` still reads `0` would match both `contradicts` and `ambiguous`, and the `contradicts`
-reading is the one the degraded-path invariant above exists to forbid.
-`dash0.cli.otlp_proxy.error` is an independent event with its own `error.kind` / `reason` / `code`
-(see [`rules/reader-adapters.md`](./reader-adapters.md)), **not** a derivative of `stats`'s
-`*.failed` counters, so that combination is reachable rather than theoretical.
+Both halves hold for one structural reason: `CLEAN` is defined once, the three clean rows partition
+it (`totals == 0`; `totals > 0` with the span present; `totals > 0` with it absent), and the
+`ambiguous` row is `NOT CLEAN` — so every stream matches exactly one row **by construction**, with
+no list to keep in sync.
+
+That shape is the fix for a defect this table shipped twice, each time the same way and each time
+in the opposite direction:
+
+| Escaped conjunct | Symptom | Direction |
+| --- | --- | --- |
+| `no error event`, present on the `null` row only | an `error` event with `*.failed == 0` matched both `contradicts` and `ambiguous` | **over**-match — two rows, and the forbidden one wins on a first read |
+| `a shutdown event exists`, implied by every row and guaranteed by none | a `SIGKILL`ed proxy satisfied neither `reason == signal` nor `reason == deadline` | **under**-match — no row at all, so the table was not total |
+
+Both were reachable rather than theoretical: `dash0.cli.otlp_proxy.error` is an independent event
+with its own `error.kind` / `reason` / `code`, **not** a derivative of `stats`'s `*.failed`
+counters, and the `shutdown` event's documented value domain is a promise about its `reason` when
+it is emitted, never a promise that it is
+(see [`rules/reader-adapters.md`](./reader-adapters.md)).
+
+So when editing this table, re-derive totality and exclusivity against the **whole** of `CLEAN`,
+not against the prose that happens to argue for it: the conjunct that escapes is the one no
+argument on this page currently mentions.
 
 ## What this rule does not do
 

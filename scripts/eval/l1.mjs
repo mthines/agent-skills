@@ -6545,22 +6545,49 @@ const isPollBlock = (block) =>
       body.includes("skills/quality/verify-behavior/rules/receipt.md"),
       "no path citation found");
 
-    // (b) the verdict table is TOTAL: the contradicts row is conjoined on failed, signal, and a
-    // positive total; the ambiguous row carries the literal never-contradicts clause; the null
-    // row is present. break-shape: G52b — deleting "totals > 0" from the contradicts row, or the
-    // literal "never `contradicts`" from the ambiguous row, flips the matching check red; restoring
-    // either goes green. Proven by hand at authoring time; see plan.md Progress Log.
+    // (b) the verdict table is TOTAL **and** MUTUALLY EXCLUSIVE, and it is so by construction: one
+    // named `CLEAN` guard, three rows partitioning it, and one `NOT CLEAN` row. This guard used to
+    // assert three literal conjuncts on the contradicts row, which is the same per-row enumeration
+    // the table itself used to carry — and an enumeration cannot say what it is MISSING. Two
+    // conjuncts escaped it in successive reviews: `no error event` (present on the null row only,
+    // so an error event with `*.failed == 0` matched both contradicts and ambiguous) and
+    // `a shutdown event exists` (implied by every row, guaranteed by none, so a SIGKILLed proxy
+    // matched no row at all). So assert the SHAPE instead: the definition is stated once and
+    // carries all four conjuncts, and every row references it rather than restating it.
+    // break-shape: G52b — deleting the "was observed" conjunct from the CLEAN definition, or
+    // rewriting any row's state cell back to an inline enumeration, flips the matching check red.
     const lines = body.split("\n");
-    const contradictsRow = lines.find((l) => /^\|.*\bcontradicts\b/.test(l));
-    s.check("G52b the contradicts row is conjoined on failed, signal, and a positive total",
-      !!contradictsRow && /failed == 0/.test(contradictsRow) && /signal/.test(contradictsRow) && /totals > 0/.test(contradictsRow),
-      contradictsRow || "no contradicts row found");
-    const ambiguousRow = lines.find((l) => /^\|.*\bambiguous\b/.test(l));
-    s.check("G52b the ambiguous row carries the literal never-contradicts clause",
-      !!ambiguousRow && /never `contradicts`/.test(ambiguousRow),
+    // The `CLEAN` definition, wherever it sits — matched on the token, not on a heading or a line
+    // number, so re-wording the prose around it cannot orphan this check.
+    const cleanDef = body.match(/\*\*`CLEAN`\*\*[\s\S]{0,400}?(?=\n\n)/);
+    s.check("G52b the CLEAN guard is defined once, by name", !!cleanDef,
+      "no `**`CLEAN`**` definition found in receipt-mapping.md");
+    if (cleanDef) {
+      // All four conjuncts live at that single definition — including the shutdown-event-EXISTS
+      // one, which no `reason` test can express and whose absence is what made the table non-total.
+      for (const [label, re] of [
+        ["the shutdown event was observed at all", /shutdown[\s\S]{0,80}was observed/],
+        ["reason == signal", /reason == signal/],
+        ["*.failed == 0", /failed == 0/],
+        ["no error event", /no `dash0\.cli\.otlp_proxy\.error` event/],
+      ]) {
+        s.check(`G52b the CLEAN definition conjoins ${label}`, re.test(cleanDef[0]),
+          `not found in the CLEAN definition`);
+      }
+    }
+    const tableRow = (token) => lines.find((l) => l.startsWith("|") && new RegExp(`\\b${token}\\b`).test(l));
+    // Each clean row REFERENCES the guard instead of restating it — a row that re-inlines the
+    // conjuncts is a second copy to keep in sync, which is the defect this shape removes.
+    for (const [token, extra] of [["confirms", /totals > 0/], ["contradicts", /totals > 0/], ["null", /totals == 0/]]) {
+      const row = tableRow(token);
+      s.check(`G52b the ${token} row references CLEAN and its own totals condition`,
+        !!row && /`CLEAN`/.test(row) && extra.test(row) && !/failed == 0/.test(row),
+        row || `no ${token} row found`);
+    }
+    const ambiguousRow = tableRow("ambiguous");
+    s.check("G52b the ambiguous row is the negation of CLEAN and carries the never-contradicts clause",
+      !!ambiguousRow && /`NOT CLEAN`/.test(ambiguousRow) && /never `contradicts`/.test(ambiguousRow),
       ambiguousRow || "no ambiguous row found");
-    const nullRow = lines.find((l) => /^\|.*\bnull\b/.test(l));
-    s.check("G52b the null row is present", !!nullRow, nullRow || "no null row found");
   }
 
   // (c) three-surface reconciliation: the four tokens appear in all three real files, and
@@ -6691,8 +6718,13 @@ const isPollBlock = (block) =>
     // Each tell is scored BOTH ways: a keyword that is wrong 80% of the time is an 80%-accurate
     // classifier with its polarity flipped, so `max(acc, 100 - acc)` is the real shortcut strength
     // and is what must sit below the EVAL_GATE floor.
-    // break-shape: G52e — deleting the `decoy-` cases from either golden set flips this red
-    // (assertion-provenance's run tell returns to 85.0%, rung-selection's process tell to 78.6%);
+    // break-shape: G52e — deleting the `decoy-` cases from either golden set flips 5 of these 6
+    // separability checks red. Measured on the decoy-free sets: assertion-provenance's run tell
+    // returns to **100.0%** (a rubric-free responder answering on one verb scored a perfect 14/14
+    // on the set as originally shipped — worse than the 85% first reported), `startSpan` to 85.7%,
+    // its static verb to 78.6%; rung-selection's `process` tell to 78.6% and its rung-2 vocabulary
+    // to 85.7%. The sixth, rung-selection's `offline|in-memory`, lands at 57.1% and stays green —
+    // it was never the shortcut, and saying "all six" here would overstate what the deletion shows.
     // typoing a tell's regex so it matches nothing flips the partition sub-check red rather than
     // silently degrading the separability check into a second majority-baseline measurement.
     {
