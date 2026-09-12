@@ -61,7 +61,7 @@ reachable verdict but `ambiguous`.
 | Condition | Rung 1 — in-memory / file exporter | Rung 2 — `dash0 -X otlp proxy` |
 | --- | --- | --- |
 | collection terminated normally | the process under test exited on its own **and** the SDK's `forceFlush()` / `shutdown()` returned before the span list was read | a `dash0.cli.otlp_proxy.shutdown` event **was observed** AND its `reason == signal` |
-| nothing dropped or failed | the span processor reports **zero dropped spans** (a `BatchSpanProcessor` drops on a full queue and reports the count) and the file export is complete and parseable | `*.failed == 0`, accumulated over `logs.failed` / `spans.failed` / `metrics.failed` |
+| nothing dropped or failed | the span processor reports **zero dropped spans** (a `BatchSpanProcessor` drops on a full queue and reports the count) and the file export is complete and parseable | **both legs**: `*.failed == 0` accumulated over `logs.failed` / `spans.failed` / `metrics.failed` (proxy → Dash0) **and** the SDK's exporter reporting no failed export and no dropped spans (app → proxy) |
 | no delivery error reported | the exporter's `export()` returned no failure result | no `dash0.cli.otlp_proxy.error` event appeared |
 | `totals` | the number of records in the in-memory span list / exported file, scoped to this run | the sum of `<signal>.total` across the run's `dash0.cli.otlp_proxy.stats` events |
 
@@ -75,6 +75,18 @@ counted as this one's evidence.
 losing the stream.
 On rung 1 the counterpart cases are: the process killed before flush; a non-zero dropped-span
 count; a flush that timed out; or an export file that is truncated or will not parse.
+
+**Rung 2 has two delivery legs, and `*.failed` only sees the second one.**
+`*.failed` is the proxy's own count of what it failed to forward to Dash0 — it cannot see what
+never reached the proxy. The proxy is async-forward with a **128-deep per-signal queue that returns
+503 / `UNAVAILABLE` when saturated** ([`rules/reader-adapters.md`](./reader-adapters.md)), so an SDK
+that exhausts its retry budget against that 503 drops spans the proxy never received and never
+counted. `*.failed` stays `0`, the run grades `CLEAN`, and an absent span then reads `contradicts`
+— a confident disproof of data the app in fact emitted, which is the one verdict the degraded-path
+invariant exists to prevent.
+So rung 2's realization conjoins **both** legs: the proxy's `*.failed` for proxy → Dash0, and the
+SDK exporter's own failure and dropped-span reporting for app → proxy — the same signal rung 1
+reads, because on that leg rung 2 is in exactly rung 1's position.
 
 That last rung-2 case is why the realization opens on the event being *observed* rather than on its
 `reason`: `reader-adapters.md` documents the event's value domain (`signal` or `deadline`) but never

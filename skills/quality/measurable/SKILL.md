@@ -139,10 +139,14 @@ instrumentation written.
    Skill("observe-run")
      command:      <the command that exercises the new/changed operation>
      expectations: "the new span exists under its expected parent"
-                   "none of its attributes are `undefined`"
+                   "the new attribute's distinct-value set stays bounded across the run"
    ```
-   This is the parent-span check plus the non-`undefined`-attribute check — both behavioral, both
-   graded against an actual run, never against the diff read back. Advisory and skips silently when
+   These are kind 2 (parent/child structure) and kind 6 (attribute cardinality) from
+   [`observe-run`'s closed list of seven allowed kinds](../observe-run/rules/assertion-provenance.md) —
+   both behavioral, both graded against an actual run, never against the diff read back.
+   Phrase every expectation as one of those seven: the list is closed, and an expectation outside it
+   is refused rather than graded. Cardinality is also the check `measurable` most needs here, since
+   a new unbounded attribute is exactly what makes a signal unsafe as a metric dimension. Advisory and skips silently when
    `observe-run` (or its Observability Profile dev target) is unavailable, consistent with Core
    Principle 6 above — this step never blocks `implement` mode on the companion's absence.
 

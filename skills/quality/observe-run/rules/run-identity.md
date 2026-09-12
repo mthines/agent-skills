@@ -36,14 +36,20 @@ That discrimination is layer 2's job.
 
 ## Layer 2 — resource attributes (fine run identity)
 
-Stamp these three resource attributes on every span, log, and metric a run produces (via
-`--resource-attribute` at rung 2, or the SDK's resource configuration at rung 1):
+Stamp these three resource attributes on a run's telemetry (via `--resource-attribute` at rung 2, or
+the SDK's resource configuration at rung 1).
+**The signals each one goes on differ**, and the difference is load-bearing rather than an
+oversight — see [the cardinality caution](#the-cardinality-caution) below:
 
-| Attribute | Source | Purpose |
-| --- | --- | --- |
-| `deployment.environment.name` | Real OTel semantic-convention key | Distinguishes dev/local from staging/prod at the resource level |
-| `vcs.ref.head.name` | Real OTel semantic-convention key | Ties a run's telemetry to the branch that produced it |
-| `dev.run.id` | **Deliberately custom** | Discriminates one invocation from the next — see below |
+| Attribute | Stamp on | Source | Purpose |
+| --- | --- | --- | --- |
+| `deployment.environment.name` | spans, logs, **and** metrics | Real OTel semantic-convention key | Distinguishes dev/local from staging/prod at the resource level |
+| `vcs.ref.head.name` | spans, logs, **and** metrics | Real OTel semantic-convention key | Ties a run's telemetry to the branch that produced it |
+| `dev.run.id` | spans and logs **only — never metrics** | **Deliberately custom** | Discriminates one invocation from the next — see below |
+
+The first two are bounded (a handful of environments, a bounded set of live branches), so they cost
+a metric nothing. `dev.run.id` is unbounded by construction and must never reach a metric
+dimension.
 
 ### `dev.run.id` is deliberately custom
 

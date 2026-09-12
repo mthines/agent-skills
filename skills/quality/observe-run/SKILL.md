@@ -151,9 +151,16 @@ installed.
 
 ## Integration: `fix-bug`
 
-For a telemetry-sourced bug, `fix-bug`'s Phase 2.5 reproduction step compares the local repro's
-trace shape against the originating production span — a repro-fidelity check this skill's rung 2
-read makes possible.
+For a telemetry-sourced bug, `fix-bug`'s Phase 2.5 reproduction step checks repro fidelity, and the
+division of labour is the important half: **`fix-bug` reads the originating production span's shape
+out of its own Evidence Record and passes it in as literal expectations; this skill then grades the
+local run against them.**
+
+`observe-run` never fetches the production span and cannot. Both rungs read only the telemetry the
+run they just executed emitted, scoped to that run's `dev.run.id` in the dev dataset
+([`rules/run-identity.md`](./rules/run-identity.md)) — so an expectation phrased as "matches the
+production span" asks this skill to assert on data its reader is structurally unable to see, and it
+would return `null` every time.
 
 ---
 

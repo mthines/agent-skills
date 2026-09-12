@@ -37,6 +37,15 @@ a run — never by reading the diff back.
    (or, inversely, is confirmed unbounded and therefore unsafe as a metric dimension).
 7. **Ordering** — span A's start (or end) precedes span B's, across the run.
 
+**This list is closed.** An expectation that maps to none of the seven is refused, and being
+plausibly behavioral is not enough — a caller phrasing one is either restating a kind in different
+words (rephrase it to the kind) or has found a genuinely new one, in which case it is added *here*,
+numbered, before any caller relies on it. Closure is what makes the list checkable at all: an
+open-ended "anything observable at runtime" readmits the by-construction assertions this rule
+exists to refuse, since almost any source fact is *also* true at runtime. Adding a kind changes the
+rubric the `observe-run-assertion-provenance` L2 suite reads, so it ships with that suite re-run
+and golden cases for the new kind, per this repo's eval rules.
+
 ### Correct
 
 ```text

@@ -6592,15 +6592,28 @@ const isPollBlock = (block) =>
       const realization = body.match(/### What `CLEAN` and `totals` are, per rung[\s\S]*?(?=\n## )/);
       s.check("G52b receipt-mapping.md carries a per-rung realization of CLEAN", !!realization,
         "no `### What `CLEAN` and `totals` are, per rung` section found");
+      // Parse the realization TABLE's header row into cells — never substring-test the section.
+      // The section carries prose that names the rungs, so `/Rung 1/` over the whole slice was
+      // satisfied by a sentence: deleting the entire rung-1 COLUMN while the prose still said
+      // "Rung 1" left this green, asserting a coverage claim its own failure message spells out
+      // and does not check. Structured parse, same idiom as G52c's Verdict column one screen up.
+      const realHeader = (realization?.[0].split("\n") ?? []).find((l) => /^\|.*\bRung\b/.test(l));
+      const realCols = (realHeader ?? "").split("|").slice(1, -1).map((c) => c.trim());
+      s.check("G52b the realization table's header row parses",
+        realCols.length >= 1 + rungNums.length,
+        `${realCols.length} header cell(s) parsed, expected >= ${1 + rungNums.length}`);
       for (const n of rungNums) {
-        s.check(`G52b the realization covers rung ${n}`,
-          !!realization && new RegExp(`Rung ${n}`).test(realization[0]),
-          `rung ${n} is selectable but has no realization — its only reachable verdict is ambiguous`);
+        s.check(`G52b the realization has a column for rung ${n}`,
+          realCols.some((c) => new RegExp(`^Rung ${n}\\b`).test(c)),
+          `rung ${n} is selectable but has no column in the realization table — its only reachable verdict is ambiguous`);
       }
-      // `totals` is half the table's vocabulary and is as rung-specific as the guard was.
-      s.check("G52b the realization defines totals for each rung",
-        !!realization && /\|\s*`totals`\s*\|/.test(realization[0]),
-        "no `totals` row in the per-rung realization");
+      // `totals` is half the table's vocabulary and is as rung-specific as the guard was. Read it
+      // as a ROW whose every rung cell is filled, not as a token present somewhere in the section.
+      const totalsRow = (realization?.[0].split("\n") ?? []).find((l) => /^\|\s*`totals`\s*\|/.test(l));
+      const totalsCells = (totalsRow ?? "").split("|").slice(1, -1).map((c) => c.trim());
+      s.check("G52b the realization defines totals for every rung",
+        !!totalsRow && totalsCells.length === realCols.length && totalsCells.slice(1).every((c) => c.length > 0),
+        totalsRow ? `totals row has ${totalsCells.length} cells against ${realCols.length} columns` : "no `totals` row in the per-rung realization");
     }
     const tableRow = (token) => lines.find((l) => l.startsWith("|") && new RegExp(`\\b${token}\\b`).test(l));
     // Each clean row REFERENCES the guard instead of restating it — a row that re-inlines the
