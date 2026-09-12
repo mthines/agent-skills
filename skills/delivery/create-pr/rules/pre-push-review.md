@@ -10,32 +10,46 @@ Zero GitHub calls, no PR required.
 
 ## When it runs
 
-Run this step when either holds:
-
-- `--pre-review` is in `$ARGUMENTS`; or
-- `--split` is in `$ARGUMENTS` (default-on there).
+This step runs **by default**, in both default and split mode.
 
 Skip it when any of these hold, and record which:
 
 - `--no-pre-review` or `--no-quality` is in `$ARGUMENTS`.
-- Neither trigger above fired — the plain default-mode run.
 - `--no-review` is in `$ARGUMENTS`.
   That flag means "no reviewer pass", and this step is a reviewer pass.
 - The branch diff is non-code only (docs, generated artefacts, lockfiles, asset binaries) — the same exclusion Step 6.5 applies.
 
-## Why it is opt-in in default mode
+## Why it is on by default
 
-Step 6.5 already reviews the same diff with the same detection core once the draft PR exists, so
-running both is two full review passes for one change.
-Whether the pre-push pass pays for itself — fewer post-draft iterations, fewer force-pushes, less PR
-noise — is a claim about cost this repo has not measured, and shipping it default-on would bill
-every PR for an unproven trade.
+**It does not double the review bill.**
+That was the reasoning this step shipped opt-in on, and it was wrong: it priced this step in
+isolation instead of pricing the two loops *composed*.
+Step 6.5's `review-loop` is a convergence loop, not a fixed cost — it exits at iteration 1 when the
+first pass finds nothing.
+So a branch converged here does not pay for Step 6.5 twice; it pays for **one** reviewer pass here
+per iteration plus **one** ratifying pass there, against the N iterations Step 6.5 would otherwise
+have run alone.
+The composed cost is roughly `N + 1` reviewer passes either way.
 
-In split mode there is no such duplication: Step 6.5 is post-draft and split mode never reaches it,
-so nothing reviews the whole branch otherwise.
+What moving those iterations before the push *does* change is the two costs that are not reviewer
+passes:
+
+- **CI cycles.** Every Step 6.5 iteration that finds something pushes, and every push spends a CI run. Converging locally spends none.
+- **PR history.** A PR that opens clean is reviewed once by a human; one that opens with six findings and accretes six fix commits asks them to re-read it.
+
+Split mode depends on the step more heavily still: Step 6.5 is post-draft and split mode never
+reaches it, so nothing reviews the whole branch otherwise.
 That slot previously ran `Skill("polish", "simplify")` — mechanical refactors and **no review at
 all**, because no reviewer could run without a PR.
 That is now the *fallback*, taken only on `--no-pre-review` or an absent-dispatch skip.
+
+Both arguments above are reasoning, not measurement.
+What is measured is the shape of the cost: a `branch-reviewer` run over this repo's own
+`review-branch` branch made **zero** GitHub calls and still cost ~198k tokens across 45 tool calls,
+of which posting would have been two or three.
+Review passes dominate; the comment round trip does not.
+So do not defend or attack this default on comment-posting grounds — the levers are CI cycles and
+the number of reviewer passes.
 
 ## How to invoke it
 
@@ -45,7 +59,7 @@ leaves it nothing to review with — its own caller contract, the same one `revi
 
 | Mode | Invoke | Cap rationale |
 | --- | --- | --- |
-| default (`--pre-review`) | `Skill("review-branch", "--cap 3")` | Step 6.5's `review-loop` still runs after the push with its own cap of 5. This pass exists to make that one cheap, not to replace it. |
+| default | `Skill("review-branch", "--cap 3")` | Step 6.5's `review-loop` still runs after the push with its own cap of 5. This pass exists to make that one cheap, not to replace it. |
 | split (`--split`) | `Skill("review-branch", "")` | Nothing reviews the whole branch after this. Take the full default cap of 5. |
 
 Pass `--no-simplify` through if the user passed it to `create-pr`, and `--effort high` if they passed
@@ -73,7 +87,6 @@ Write down exactly one value as you leave this step:
 | Ran, findings the loop could not honestly resolve | `flagged (<G> findings — listed below)` |
 | Ran, hit the cap with findings open | `cap-reached (<O> open)` |
 | Ran, local fast checks red at exit | `checks-red (<failing checks>)` |
-| Not triggered (plain default-mode run) | `not run (default mode — pass --pre-review)` |
 | Skipped: `--no-pre-review` / `--no-quality` / `--no-review` | `skipped (<the flag>)` |
 | Skipped: non-code diff | `skipped (non-code diff)` |
 | Dispatch unavailable | `NOT REVIEWED (sub-agent dispatch unavailable)` + which fallback ran |

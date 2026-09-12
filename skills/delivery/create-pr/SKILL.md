@@ -9,18 +9,18 @@ description: >
   or --no-quality (skip the loop). A post-push external-bot feedback loop
   runs by default (--no-feedback to skip). On a UI diff, injects a preview
   verification spec by default (--no-preview-spec to skip). Before the push,
-  --pre-review converges the branch with review-branch, which needs no PR;
-  split mode runs it by default in place of its review-less pre-split
-  simplify. With --split, breaks the branch diff into 2–4 focused,
+  converges the branch by default with review-branch, which needs no PR, so
+  the draft opens already review-clean (--no-pre-review to skip). With
+  --split, breaks the branch diff into 2–4 focused,
   dependency-ordered draft PRs after user approval. Escalates
   judgment-required CI failures via /confidence rather than guessing. Invoke
   with /create-pr or /create-pr --split.
 disable-model-invocation: false
-argument-hint: '[--split] [--quick] [--pre-review] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-preview-spec]'
+argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-preview-spec]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.4.0'
+  version: '3.5.0'
   workflow_type: command
 ---
 
@@ -45,17 +45,16 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft qual
 | `no-quality`   | `--no-quality` anywhere in arguments               | Skip Step 6.5 entirely **and** the Step 6.7 external-bot feedback loop. Wins over every other quality flag.                                                                  |
 | `no-feedback`  | `--no-feedback` anywhere in arguments              | Skip the **default-on** external-bot feedback loop (Step 6.7). Composes with everything. Does not skip the review-loop step.                                                |
 | `no-preview-spec` | `--no-preview-spec` anywhere in arguments        | Skip the **default-on** UI verification spec authoring (Step 6.4). Composes with everything.                                                                                |
-| `pre-review`   | `--pre-review` anywhere in arguments               | Run Step 5.5 — `Skill("review-branch", …)` **before** the push, so the PR opens already converged. **Opt-in in default mode** (Step 6.5 already reviews there), **on by default in split mode** (Step 6.5 cannot run there at all). |
-| `no-pre-review` | `--no-pre-review` anywhere in arguments            | Skip Step 5.5 even in split mode. Split mode then falls back to the review-less `Skill("polish", "simplify")` pre-split pass.                                               |
+| `no-pre-review` | `--no-pre-review` anywhere in arguments            | Skip the **default-on** Step 5.5 — `Skill("review-branch", …)` **before** the push, which opens the draft already converged. Split mode then falls back to the review-less `Skill("polish", "simplify")` pre-split pass.        |
 
-> **Legacy positive flags.** `--review` and `--simplify` are still accepted as explicit single-pass scoping: `--review` alone ≡ `--no-simplify` (pr-reviewer only), `--simplify` alone ≡ `--no-review` (simplify only), and `--review --simplify` ≡ the default (full loop). Prefer the `--no-*` form — with the full loop now the default, the negative flags read more clearly.
+> **Legacy positive flags.** `--review` and `--simplify` are still accepted as explicit single-pass scoping: `--review` alone ≡ `--no-simplify` (pr-reviewer only), `--simplify` alone ≡ `--no-review` (simplify only), and `--review --simplify` ≡ the default (full loop). `--pre-review` is likewise still accepted and is now a **no-op affirmation** of the default. Prefer the `--no-*` form — with the full loop now the default, the negative flags read more clearly.
 
 **The external-bot feedback loop (Step 6.7) is ON by default.** After the review-loop converges, a background subagent runs `/implement-suggestion <pr> --watch`, which waits for the repo's **external** review bots (CodeRabbit, human reviewers, …) and applies their actionable feedback. It is scoped to comments posted **after** the review-loop's last push, so it does not re-apply the loop's own findings. Pass `--no-feedback` to skip it.
 
 In split mode, skip the contract's length self-check "PR too big" trim — the split *is* the response to that signal.
 Each resulting sub-PR must still pass it on its own.
 
-Step 6.5 cannot serve split mode: it is post-draft and its `review-loop` needs an open PR, which does not exist before S1. That gap is what [`review-branch`](../../quality/review-branch/SKILL.md) exists to close, so with `--split` **Step 5.5 is on by default** and runs on the full branch before computing the split — it needs no PR, so each sub-PR inherits reviewed-and-converged code rather than merely simplified code. Each sub-PR then gets the per-PR quality pass defined in [`rules/split-mode.md`](./rules/split-mode.md).
+Split mode depends on Step 5.5 more than default mode does: Step 6.5 is post-draft and its `review-loop` needs an open PR, which does not exist before S1, so nothing else reviews the whole branch there. Step 5.5 runs on the full branch before computing the split, and each sub-PR inherits reviewed-and-converged code rather than merely simplified code. Each sub-PR then gets the per-PR quality pass defined in [`rules/split-mode.md`](./rules/split-mode.md).
 
 Until now that pre-split slot ran `Skill("polish", "simplify")` — mechanical refactors and **no review at all**, because no reviewer could run without a PR. That is now the *fallback*, taken only when Step 5.5 reports a skip (no sub-agent dispatch) or `--no-pre-review` was passed. Say which one ran; a split whose sub-PRs were never reviewed must not be reported as one whose sub-PRs were.
 
@@ -86,19 +85,18 @@ The branch is still local here, so there is no PR and no review thread — which
 which runs the same detection core as `pr-reviewer` and carries findings in
 `.agent/{branch}/findings.jsonl` instead of GitHub threads. Zero GitHub calls, no PR required.
 
-**Run it** when `--pre-review` is in `$ARGUMENTS`, or when `--split` is (default-on there).
-**Skip it** on `--no-pre-review`, `--no-quality`, `--no-review`, a non-code diff, or a plain
-default-mode run with no `--pre-review`.
+**It runs by default**, in both default and split mode.
+**Skip it** on `--no-pre-review`, `--no-quality`, `--no-review`, or a non-code diff.
 
 | Mode | Invoke |
 | --- | --- |
-| default (`--pre-review`) | `Skill("review-branch", "--cap 3")` |
+| default | `Skill("review-branch", "--cap 3")` |
 | split (`--split`) | `Skill("review-branch", "")` |
 
 **Full procedure lives in [`rules/pre-push-review.md`](./rules/pre-push-review.md).** Load it when
-entering this step; it covers the skip conditions, why the step is opt-in in default mode and
-default-on under `--split`, the cap rationale, what to do with each return, and the outcome value to
-record for Step 10. Three rules from it are load-bearing enough to restate here:
+entering this step; it covers the skip conditions, why the step is on by default and why the caps
+differ, what to do with each return, and the outcome value to record for Step 10. Three rules from
+it are load-bearing enough to restate here:
 
 - **Surface every `flagged` finding to the user before pushing.** Pushing past them silently converts the safety valve into a green-wash.
 - **Absent sub-agent dispatch is `NOT REVIEWED`, never a skip.** In split mode, fall back to `Skill("polish", "simplify")` and say which one ran — it is the difference between sub-PRs that were reviewed and sub-PRs that were only simplified.
@@ -377,7 +375,7 @@ Short summary:
 PR: <pr-url>
 Title: <imperative title>
 
-Pre-push review (Step 5.5, review-branch): <converged (<N> iterations, <A> applied, <D> declined) | flagged (<G> findings) | cap-reached (<O> open) | checks-red (<checks>) | not run (default mode — pass --pre-review) | skipped (<flag>) | skipped (non-code diff) | NOT REVIEWED (sub-agent dispatch unavailable; fallback: <polish simplify | none>)>
+Pre-push review (Step 5.5, review-branch): <converged (<N> iterations, <A> applied, <D> declined) | flagged (<G> findings) | cap-reached (<O> open) | checks-red (<checks>) | skipped (<flag>) | skipped (non-code diff) | NOT REVIEWED (sub-agent dispatch unavailable; fallback: <polish simplify | none>)>
 
 Preview spec (Step 6.4): <authored (<N> specs) | not authored (no UI files in diff) | skipped (--no-preview-spec) | skipped (--no-quality) | skipped (preview-spec not available) | failed (<reason>)>
 
@@ -410,8 +408,8 @@ Step 6.4 has four skip conditions (`--no-preview-spec`, `--no-quality`, a non-UI
 That is the same self-concealing shape as failure modes `F6`/`F7` in [`diagnostic-surface.md`](../../workflow/autonomous-workflow/rules/diagnostic-surface.md): a degraded path that reports as a legitimate outcome is never fixed, because nobody learns it happened.
 State which of the six outcomes applied, and never omit the line on the grounds that the diff was not a UI change — `not authored (no UI files in diff)` is the informative answer there, not silence.
 
-**The `Pre-push review` line is mandatory on every run too**, including the plain default-mode run where the step does not fire.
-`not run (default mode — pass --pre-review)` tells the reader the pass exists and was not taken; omitting the line tells them nothing and reads identically to a run that took it.
+**The `Pre-push review` line is mandatory on every run too**, including every run where the step was skipped.
+A named skip tells the reader the pass exists and why it did not run; omitting the line tells them nothing and reads identically to a run that took it.
 And when the value is `flagged`, list every flagged finding underneath — they are the reason a human is still needed, and the Step 5.5 surfacing happened before the push, several steps and one CI watch ago.
 
 ## Split Mode (`--split`)
