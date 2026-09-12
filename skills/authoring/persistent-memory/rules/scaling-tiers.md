@@ -289,16 +289,25 @@ memory.write {
 
 ### Lesson schema
 
-The five mandatory lesson fields (`phase`, `trigger-context`, `seen_count`,
-`status`, `expires`) — see [Lesson-scope entries](./write-pipeline.md#lesson-scope-entries) —
-are unchanged; they now travel inside the LoreKit `value` (markdown) as a
-`meta:` comment rather than markdown frontmatter. The recurrence contract is the
-same: an UPDATE to an entry that carries a `seen_count` field MUST increment
-`seen_count` by 1 and refresh `expires`, so a recurring lesson reaches the
+On LoreKit the `value` is **markdown and nothing else** — see
+[Lesson-scope entries](./write-pipeline.md#lesson-scope-entries) for the body
+shape and the writing rules. What a filesystem store keeps in frontmatter, a
+LoreKit lesson keeps in the store's **own first-class fields**: `seen_count` is a
+column, expiry is `ttl_days` on the write, status is a `status::<value>` tag,
+and `host` / `kind` / `trigger` / `origin_*` are write fields. None of them is
+restated in the body — an HTML comment or a `key=value` header inside `value`
+renders to nothing for a human and silently disagrees with the columns it
+duplicates. The matching signal that used to be a `trigger-context` field is now
+a **visible `Applies when:` line** directly under the title, which is what the
+read step matches on.
+
+The recurrence contract is the same, but the store executes it: a recurrence
+resolves to an UPDATE: the store increments `seen_count` by 1 for you, and
+re-passing `ttl_days` refreshes the expiry — so a recurring lesson reaches the
 `seen_count >= 3` promotion gate. LoreKit deduplicates on write and owns its own
 storage, so there is **no `INDEX.md`, no 200-line cap, and no `consolidate`
-pass** — expiry (the `expires` field, ignored on read once past) is the decay
-mechanism.
+pass** — TTL expiry is the decay mechanism, enforced against the column by the
+purge and the read filters.
 
 ### Migration note
 
@@ -306,8 +315,10 @@ The loops previously stored lessons as markdown under `~/.agent-memory/<scope>/`
 (home) and `<repo>/memory/<scope>/` (project-shared). Those directories are no
 longer written by the loops. A team wanting to carry forward existing lessons
 can export each `entries/*.md` to a `memory.write` call under the mapped scope
-(`home` → `global`, `project-shared` → `repo::{owner}/{repo}`), preserving the
-`meta:` fields inside the LoreKit `value`.
+(`home` → `global`, `project-shared` → `repo::{owner}/{repo}`), mapping each
+frontmatter field to its first-class LoreKit home (`seen_count` → the column,
+`expires` → `ttl_days`, `status` → a `status::<value>` tag, `trigger-context` →
+the body's `Applies when:` line) rather than carrying the block into `value`.
 
 ## Tier-agnostic principles
 

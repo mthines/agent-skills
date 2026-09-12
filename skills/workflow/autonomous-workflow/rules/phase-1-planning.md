@@ -88,20 +88,21 @@ memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-lessons"], limit: 
 memory.list { scope: "global",               tags: ["loop::aw-lessons"], limit: 50 }
 ```
 
-1. Union the results. Match each lesson's `trigger-context` against the
+1. Union the results. Match each lesson's **Applies when** line against the
    current task (file globs, task type, tech); consider full entries only for
-   matches. Skip lessons whose `expires` is past. Scope-of-origin is not a
-   match criterion; if a `repo::` and a `global` lesson conflict, `repo::` wins
-   (closer scope) — log the conflict.
-2. Treat each matching lesson's *"What to do next time"* as a **consideration**
+   matches. Expired lessons do not come back — the store's TTL drops them.
+   Scope-of-origin is not a match criterion; if a `repo::` and a `global` lesson
+   conflict, `repo::` wins (closer scope) — log the conflict.
+2. Treat each matching lesson's *"Do this instead"* as a **consideration**
    on the plan — apply it unless it conflicts with the user's stated intent or
    task-specific constraints. Record applied lessons in `plan.md` under
    `## Lessons applied`.
 3. Lessons are **advisory**: they bias the plan, never silently change a gate,
    skip a phase, or override the user's intent. If a lesson conflicts with the
    user's intent, the user wins — surface the conflict.
-4. **Promotion check:** if any matched lesson has `seen_count >= 3` or
-   `status: structural`, surface the one-line promotion suggestion from
+4. **Promotion check:** if any matched lesson has `seen_count >= 3` (the store's
+   column) or carries the `status::structural` tag, surface the one-line
+   promotion suggestion from
    [`self-improvement-loop.md#lesson-promotion`](./self-improvement-loop.md#lesson-promotion).
 
 Log:

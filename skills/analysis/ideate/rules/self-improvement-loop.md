@@ -47,14 +47,14 @@ memory.list { scope: "global",               tags: ["loop::ideate-lessons"], lim
 memory.search { q: "<keywords>", scopes: ["repo::{owner}/*", "global"], limit: 10 }
 ```
 
-Union the matches; skip any lesson whose `expires` is in the past.
+Union the matches; the store drops expired lessons for you (`ttl_days`), so there is no client-side expiry filter to run.
 Apply matches as advisory constraints on triage, operator rotation, judging, and stopping — never as generation input.
 `repo::` wins over `global` on conflict.
-No consolidation pass — LoreKit owns storage and dedups on write; stale beliefs decay via `expires`.
+No consolidation pass — LoreKit owns storage and dedups on write; stale beliefs decay via the store's own `ttl_days` expiry.
 
 ## Write points
 
-Classify each candidate universal vs project-bound by its `trigger-context`, dedup with `memory.search`, then `memory.write` with the scope pinned **explicitly** (universal → `global`; project-bound → `repo::{owner}/{repo}`) and the tag `loop::ideate-lessons`.
+Classify each candidate universal vs project-bound by its **Applies when** line, dedup with `memory.search`, then `memory.write` with the scope pinned **explicitly** (universal → `global`; project-bound → `repo::{owner}/{repo}`), the tag `loop::ideate-lessons`, and `ttl_days: 90`.
 The privacy pre-flight still runs on every write (stricter for `repo::` since it is team-visible); autonomous writes skip only the consent preview, never the privacy pre-flight.
 
 | When                                                                 | Candidate lesson                                                             |
@@ -65,23 +65,26 @@ The privacy pre-flight still runs on every write (stricter for `repo::` since it
 
 The user's verdict is the loop's ground truth — a run without a verdict writes process lessons only, never calibration lessons.
 
-Lesson body carries the four mandatory fields (*What failed / Why / What to do next time / Promotion target*) plus `seen_count`, `status`, `expires` (default 90 days), and a concrete `trigger-context`, all inside the LoreKit `value`.
-A lesson that recurs resolves to UPDATE (same scope + key overwrites in place). An UPDATE to an entry that carries a `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`.
+The lesson body is **markdown and nothing else** — never a `<!-- meta: … -->` block, and never a hand-written count or expiry date.
+Every store-backed fact has its own first-class `memory.write` field: the store owns `seen_count`, `ttl_days` sets the expiry, and `status::<value>` / `source::<trigger>` are tags; the concrete matching signal travels as a visible **Applies when:** line directly under the title.
+Full body shape: [`write-pipeline.md#lesson-scope-entries`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
+A lesson that recurs resolves to UPDATE (same scope + key overwrites in place).
+A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry.
 
 ## Promotion
 
-When a lesson reaches `seen_count >= 3` (or is tagged `status: structural`), suggest — never auto-run:
+When a lesson reaches the store's own `seen_count >= 3` (or carries the `status::structural` tag), suggest — never auto-run:
 
 - `global` lesson → `/create-skill diagnose ideate` (reads [`diagnostic-surface.md`](./diagnostic-surface.md)).
 - `repo::{owner}/{repo}` lesson → `Skill("docs", "update --add-rule …")` into the repo's own rules.
 
-After a successful promotion, `memory.write` an UPDATE to the same scope + key setting `status: promoted`.
+After a successful promotion, `memory.write` an UPDATE to the same scope + key adding the `status::promoted` tag.
 
 ## Entrenchment guards
 
 1. Lessons are advisory — the only path to a behavior change is the confidence-gated, user-approved `diagnose` apply.
 2. Recurrence (`seen_count >= 3`), not one run, gates promotion.
-3. Every lesson expires (default 90 days); the read step ignores expired lessons so stale beliefs decay.
+3. Every lesson expires — pass `ttl_days: 90` on every write; a recurrence re-passes it, which refreshes the expiry from the last sighting, and the store stops returning an expired lesson so stale beliefs decay.
 4. Contradictions are flagged, not overwritten.
 5. The privacy pre-flight is never bypassed by autonomous writes.
 6. A lesson never relaxes a hard invariant in [`diagnostic-surface.md`](./diagnostic-surface.md) — including this file's content invariant.

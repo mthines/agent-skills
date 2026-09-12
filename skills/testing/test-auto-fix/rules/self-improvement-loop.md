@@ -90,18 +90,25 @@ maps its two tiers onto scope:
     `origin` remote, lowercased (strip a trailing `.git`). No git remote → use
     `global` only.
 
-- **trigger-context key:** `<stack> : <failure-pattern> : <verdict-sub-class>`
+- **Applies-when key:** `<stack> : <failure-pattern> : <verdict-sub-class>`
   where `stack` comes from the surface file, `failure-pattern` is the normalized
   first ~3 lines of the error (via the surface's `failure-parser`), and
   `verdict-sub-class` is the fix sub-type from [`verdicts.md`](./verdicts.md)
   (snapshot-drift, selector-drift, type-drift, timing, import-drift,
   mock-stub-mismatch).
 
-Lesson record schema is the shared one (procedural memory; the four mandatory
-fields *What failed / Why / What to do next time / Promotion target*, plus the
-`meta:` comment carrying `phase`, `seen_count`, `status`, `expires`,
-`trigger-context`). Set `phase:` to `2` (verdict), `3.5` (confidence
-calibration), or `6` (regression).
+Lesson record schema is the shared one, and the body is **markdown and nothing
+else** — never a `<!-- meta: … -->` block, and never a hand-written count or
+expiry date.
+Every store-backed fact has its own first-class `memory.write` field: the store
+owns `seen_count`, `ttl_days` sets the expiry, `status::<value>` and
+`source::<trigger>` are tags, and the phase a lesson applies to (`2` for a
+verdict lesson, `3.5` for a confidence calibration, `6` for a regression) is
+carried by its **Promotion target** line.
+The matching key above travels as a visible **Applies when:** line directly under
+the title.
+Full body shape:
+[`write-pipeline.md#lesson-scope-entries`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
 
 ---
 
@@ -127,10 +134,11 @@ memory.list { scope: "global", tags: ["loop::test-auto-fix-lessons"], limit: 50 
 memory.search { q: "<stack> <failure-pattern keywords>", scopes: ["repo::{owner}/*", "global"], limit: 10 }
 ```
 
-1. Union the matches. Match each lesson's `<stack>:<failure-pattern>` against
-   the parsed failures. Load full entries only for matches. `repo::` wins over
-   `global` on key collision (closer scope). **Skip any lesson whose `expires`
-   is in the past** — treat it as stale.
+1. Union the matches. Match each lesson's **Applies when** line
+   (`<stack>:<failure-pattern>`) against the parsed failures. Load full entries
+   only for matches. `repo::` wins over `global` on key collision (closer scope).
+   **The store drops expired lessons for you** (`ttl_days`) — there is no
+   client-side expiry filter to run.
 2. Apply matches as **inputs**: a verdict lesson biases the Phase 2 classification
    for that failure shape; a fix-sub-class lesson biases the Phase 3 draft toward
    the strategy that worked before; a calibration lesson is a hint to Phase 3.5's
@@ -146,7 +154,7 @@ memory.search { q: "<stack> <failure-pattern keywords>", scopes: ["repo::{owner}
 
 There is no local INDEX to maintain: LoreKit owns storage server-side and
 deduplicates on write, so the loop does not run a consolidation pass. Stale
-beliefs decay through `expires`, not a line-count sweep.
+beliefs decay through the store's own `ttl_days` expiry, not a line-count sweep.
 
 Log:
 
@@ -202,11 +210,15 @@ a concrete path only this repo has). When ambiguous, default to **universal**
 memory.search { q: "<stack> <failure-pattern> <verdict-sub-class>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
 # 2a. Universal candidate — always lands in global.
-memory.write { scope: "global", key: "test-auto-fix-lessons::<slug>", value: "<body>", tags: ["loop::test-auto-fix-lessons", "source::<trigger>"], source_agent: "test-auto-fix", trigger: "<trigger>" }
+memory.write { scope: "global", key: "test-auto-fix-lessons::<slug>", value: "<body>", tags: ["loop::test-auto-fix-lessons", "source::<trigger>"], source_agent: "test-auto-fix", trigger: "<trigger>", ttl_days: 90 }
 
 # 2b. Project-bound candidate — lands in this repo's scope (most value lives here).
-memory.write { scope: "repo::{owner}/{repo}", key: "test-auto-fix-lessons::<slug>", value: "<body>", tags: ["loop::test-auto-fix-lessons", "source::<trigger>"], source_agent: "test-auto-fix", trigger: "<trigger>" }
+memory.write { scope: "repo::{owner}/{repo}", key: "test-auto-fix-lessons::<slug>", value: "<body>", tags: ["loop::test-auto-fix-lessons", "source::<trigger>"], source_agent: "test-auto-fix", trigger: "<trigger>", ttl_days: 90 }
 ```
+
+`<body>` is markdown and nothing else — the canonical six-part shape in
+[`write-pipeline.md#lesson-scope-entries`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
+Never embed a `<!-- meta: … -->` block, a `seen_count`, or an expiry date in it.
 
 - **No filesystem opt-in ceremony.** The loop just picks the scope; LoreKit's
   mode decides whether a `repo::` lesson is private, dashboard-synced, or
@@ -218,8 +230,9 @@ memory.write { scope: "repo::{owner}/{repo}", key: "test-auto-fix-lessons::<slug
   writes since a repo scope is team-visible.
 - **Dedup resolves each candidate as ADD / UPDATE.** Found the same situation
   under a key → reuse that **exact scope + key** and `memory.write` an updated
-  body (same scope + key overwrites in place). An UPDATE to an entry that carries
-  a `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`.
+  body (same scope + key overwrites in place).
+  A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry.
+  Never hand-write a count into the body.
   This is what makes recurrence countable and is how a *working* lesson still
   reaches the `seen_count >= 3` promotion gate.
 - **Never** write a lesson that encodes a test-weakening action (delete a test,
@@ -291,8 +304,8 @@ run verified no durable structural fact.
 
 **Anchor:** `lesson-promotion`
 
-A lesson reaching `seen_count >= 3` (or tagged `status: structural`) is
-promotion-eligible. Surface the scope-appropriate suggestion — never act silently:
+A lesson reaching the store's own `seen_count >= 3` (or carrying the
+`status::structural` tag) is promotion-eligible. Surface the scope-appropriate suggestion — never act silently:
 
 - `global` (universal) → `/create-skill diagnose test-auto-fix --symptom "<title>"`
 - `repo::{owner}/{repo}` (project-bound) → `Skill("docs", "update --add-rule '<title>' --source lorekit:repo::{owner}/{repo}/test-auto-fix-lessons::<slug>")`
@@ -302,8 +315,8 @@ promotion-eligible. Surface the scope-appropriate suggestion — never act silen
 verdicts, anti-patterns) as its fallback surface plus the
 `loop::test-auto-fix-lessons` lessons as evidence, and emits one
 confidence-gated diff — applied only at `confidence(analysis) ≥ 90 %` with
-explicit user confirmation. On success, `memory.write` an UPDATE setting the
-lesson `status: promoted`. A recurring **universal** lesson may instead be
+explicit user confirmation. On success, `memory.write` an UPDATE adding the
+`status::promoted` tag. A recurring **universal** lesson may instead be
 better promoted into the surface template or the verdict rubric — diagnose will
 propose the best target.
 
@@ -317,9 +330,11 @@ Identical to the canonical loop — the dominant risk is self-reinforcing error:
    changed verdict rule or default fix strategy is a confidence-gated,
    user-approved `diagnose` apply.
 2. **Recurrence (`seen_count >= 3`), not one run, gates promotion.**
-3. **Every lesson expires** (default 90 days). The read step ignores expired
-   lessons, so stale beliefs decay instead of entrenching — LoreKit owns storage
-   and dedups on write, so there is no consolidation pass.
+3. **Every lesson expires** — pass `ttl_days: 90` on every write; a recurrence
+   re-passes it, which refreshes the expiry from the last sighting. The store
+   stops returning an expired lesson, so stale beliefs decay instead of
+   entrenching — LoreKit owns storage and dedups on write, so there is no
+   consolidation pass.
 4. **Contradictions are flagged, not silently overwritten** (the dedup search
    finds the prior entry).
 5. **Privacy pre-flight is never bypassed** — secrets / PII are dropped, not

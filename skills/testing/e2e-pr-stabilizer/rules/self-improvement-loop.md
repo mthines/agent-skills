@@ -84,18 +84,25 @@ maps its two tiers onto scope:
   is private, dashboard-synced, or committed — the loop only selects the scope,
   never manages storage.
 
-- **trigger-context keys:**
+- **Applies-when keys:**
   - Universal lessons key on **pattern** only (`P1`…`P6`) — the race shape is
     app-agnostic.
   - Project-bound lessons key on **`<repo>:<test.file>:<pattern>:<locator-strategy>`**
     (e.g. `dash0/console:tests/e2e/orgs.spec.ts:P1:getByTestId`) — locator
     robustness and flake clustering are file- and app-specific.
 
-Lesson record schema is the shared one (procedural memory; the four mandatory
-fields *What failed / Why / What to do next time / Promotion target*, plus the
-`meta:` comment carrying `phase`, `seen_count`, `status`, `expires`,
-`trigger-context`). Set `phase:` to `4` (classification) or `5` (locator
-strategy).
+Lesson record schema is the shared one, and the body is **markdown and nothing
+else** — never a `<!-- meta: … -->` block, and never a hand-written count or
+expiry date.
+Every store-backed fact has its own first-class `memory.write` field: the store
+owns `seen_count`, `ttl_days` sets the expiry, `status::<value>` and
+`source::<trigger>` are tags, and the phase a lesson applies to (`4` for
+classification, `5` for locator strategy) is carried by its **Promotion target**
+line.
+The matching key above travels as a visible **Applies when:** line directly under
+the title.
+Full body shape:
+[`write-pipeline.md#lesson-scope-entries`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
 
 ---
 
@@ -124,8 +131,9 @@ memory.search { q: "<P1..P6> <test.file>", scopes: ["repo::{owner}/*", "global"]
 
 1. Union the matches. Match universal lessons on the candidate pattern shape;
    match project-bound lessons on `<repo>:<file>`. Load full entries only for
-   matches. `repo::` wins over `global` on key collision (closer scope). **Skip
-   any lesson whose `expires` is in the past** — treat it as stale.
+   matches. `repo::` wins over `global` on key collision (closer scope). **The
+   store drops expired lessons for you** (`ttl_days`) — there is no client-side
+   expiry filter to run.
 2. Apply matches as **inputs**: a pattern lesson biases which of P1–P6 the
    evidence most likely fits (it never overrides contradicting trace evidence);
    a locator lesson biases the Phase 5 selector-family choice toward the one
@@ -140,7 +148,7 @@ memory.search { q: "<P1..P6> <test.file>", scopes: ["repo::{owner}/*", "global"]
 
 There is no local INDEX to maintain: LoreKit owns storage server-side and
 deduplicates on write, so the loop does not run a consolidation pass. Stale
-beliefs decay through `expires`, not a line-count sweep.
+beliefs decay through the store's own `ttl_days` expiry, not a line-count sweep.
 
 Log:
 
@@ -179,11 +187,15 @@ recurrence UPDATES in place:
 memory.search { q: "<pattern> <locator-strategy> <test.file>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
 # 2a. Universal candidate — always lands in global.
-memory.write { scope: "global", key: "e2e-pr-stabilizer-lessons::<slug>", value: "<body>", tags: ["loop::e2e-pr-stabilizer-lessons", "source::<trigger>"], source_agent: "e2e-pr-stabilizer", trigger: "<trigger>" }
+memory.write { scope: "global", key: "e2e-pr-stabilizer-lessons::<slug>", value: "<body>", tags: ["loop::e2e-pr-stabilizer-lessons", "source::<trigger>"], source_agent: "e2e-pr-stabilizer", trigger: "<trigger>", ttl_days: 90 }
 
 # 2b. Project-bound candidate — lands in this repo's scope.
-memory.write { scope: "repo::{owner}/{repo}", key: "e2e-pr-stabilizer-lessons::<slug>", value: "<body>", tags: ["loop::e2e-pr-stabilizer-lessons", "source::<trigger>"], source_agent: "e2e-pr-stabilizer", trigger: "<trigger>" }
+memory.write { scope: "repo::{owner}/{repo}", key: "e2e-pr-stabilizer-lessons::<slug>", value: "<body>", tags: ["loop::e2e-pr-stabilizer-lessons", "source::<trigger>"], source_agent: "e2e-pr-stabilizer", trigger: "<trigger>", ttl_days: 90 }
 ```
+
+`<body>` is markdown and nothing else — the canonical six-part shape in
+[`write-pipeline.md#lesson-scope-entries`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
+Never embed a `<!-- meta: … -->` block, a `seen_count`, or an expiry date in it.
 
 - **No filesystem opt-in ceremony.** The loop just picks the scope; LoreKit's
   mode decides whether a `repo::` lesson is private, dashboard-synced, or
@@ -194,11 +206,11 @@ memory.write { scope: "repo::{owner}/{repo}", key: "e2e-pr-stabilizer-lessons::<
   PII rather than writing it. The bar is **stricter** for `repo::` writes since a
   repo scope is team-visible.
 - **Applied-lesson UPDATE contract.** If a lesson read at Phase 4 was applied and
-  Phase 7 ratified `fixed`, write an UPDATE for it. An UPDATE to an entry that
-  carries a `seen_count` field MUST increment `seen_count` by 1 and refresh
-  `expires`. This is how a *working* lesson reaches the `seen_count >= 3`
-  promotion gate. Same `scope` + `key` overwrites in place, so a recurrence
-  updates rather than duplicating.
+  Phase 7 ratified `fixed`, write an UPDATE for it.
+  A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry.
+  Never hand-write a count into the body. This is how a *working* lesson reaches
+  the `seen_count >= 3` promotion gate. Same `scope` + `key` overwrites in place,
+  so a recurrence updates rather than duplicating.
 
 Log (include the resolved scope and the ratification verdict):
 
@@ -266,8 +278,9 @@ test, not a plan of files it chose).
 
 **Anchor:** `lesson-promotion`
 
-A lesson reaching `seen_count >= 3` (or tagged `status: structural`) is
-promotion-eligible. Surface a one-line suggestion — never act silently:
+A lesson reaching the store's own `seen_count >= 3` (or carrying the
+`status::structural` tag) is promotion-eligible. Surface a one-line suggestion —
+never act silently:
 
 | Lesson scope | Promotion target | One-liner |
 | ------------ | ---------------- | --------- |
@@ -279,8 +292,8 @@ promotion-eligible. Surface a one-line suggestion — never act silently:
 (phases, core principles, guard-rails) as its fallback surface plus the
 `loop::e2e-pr-stabilizer-lessons` lessons as evidence, and emits one
 confidence-gated diff — applied only at `confidence(analysis) ≥ 90 %` with
-explicit user confirmation. On success, `memory.write` an UPDATE setting the
-lesson `status: promoted`.
+explicit user confirmation. On success, `memory.write` an UPDATE adding the
+`status::promoted` tag.
 
 ---
 
@@ -292,9 +305,11 @@ Identical to the canonical loop — the dominant risk is self-reinforcing error:
    changed pattern rule or default locator strategy is a confidence-gated,
    user-approved `diagnose` apply.
 2. **Recurrence (`seen_count >= 3`), not one run, gates promotion.**
-3. **Every lesson expires** (default 90 days). The read step ignores expired
-   lessons, so stale beliefs decay instead of entrenching — LoreKit owns storage
-   and dedups on write, so there is no consolidation pass.
+3. **Every lesson expires** — pass `ttl_days: 90` on every write; a recurrence
+   re-passes it, which refreshes the expiry from the last sighting. The store
+   stops returning an expired lesson, so stale beliefs decay instead of
+   entrenching — LoreKit owns storage and dedups on write, so there is no
+   consolidation pass.
 4. **Contradictions are flagged, not silently overwritten** (the dedup search
    finds the prior entry).
 5. **Privacy pre-flight is never bypassed** — secrets / PII are dropped, not

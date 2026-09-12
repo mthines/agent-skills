@@ -45,20 +45,22 @@ Phase 4 escalates (a UX bug surfaced late). The executor writes a lesson:
 
 ```
 # Universal candidate → global.
-memory.write { scope: "global", key: "aw-lessons::ux-trigger-missed-nested-tsx", value: "<body below>", tags: ["loop::aw-lessons", "source::stuck-loop"], source_agent: "aw", trigger: "stuck-loop" }
+memory.write { scope: "global", key: "aw-lessons::ux-trigger-missed-nested-tsx", value: "<body below>", tags: ["loop::aw-lessons", "source::stuck-loop"], source_agent: "aw", trigger: "stuck-loop", ttl_days: 90 }
 ```
 
-Resolves to **ADD** (no existing `global` entry under that key). The `value`:
+Resolves to **ADD** (no existing `global` entry under that key). The `value` is
+markdown and nothing else — the count, the expiry, and the trigger all travel as
+first-class `memory.write` fields, never as a hidden block inside the body:
 
 ```markdown
-<!-- meta: phase=3 seen_count=1 confidence=medium status=active expires=2026-09-05T00:00:00Z trigger-context="RN / nested *.tsx under components/ or screens/" source=system -->
+# Run `ux` for any *.tsx at any depth, not just flat globs
 
-# ux companion skipped for nested .tsx screens
+**Applies when:** RN / nested `*.tsx` under `components/` or `screens/`
 
-**What failed:** The Phase 3 `ux` trigger didn't fire on `src/screens/.../X.tsx`;
+**What happened:** The Phase 3 `ux` trigger didn't fire on `src/screens/.../X.tsx`;
 an a11y regression shipped.
 **Why:** trigger path-check matched flat globs only; nested RN screens slipped.
-**What to do next time:** when the diff touches any `*.tsx`/`*.jsx` at any depth, run `ux`.
+**Do this instead:** when the diff touches any `*.tsx`/`*.jsx` at any depth, run `ux`.
 **Promotion target:** phase-3-implementation.md#ux-trigger (widen the glob)
 ```
 
@@ -69,7 +71,7 @@ Log: `Phase 4: lorekit(memory.write global aw-lessons::ux-trigger-missed-nested-
 ## Run 2 — recurrence (UPDATE)
 
 A different RN feature, weeks later. At **Phase 1** the planner reads
-`loop::aw-lessons` (`global` scope); the lesson's `trigger-context` ("nested
+`loop::aw-lessons` (`global` scope); the lesson's **Applies when** line ("nested
 `*.tsx`") matches the task, so it is applied as a plan constraint ("run `ux` for
 the nested screens").
 The agent runs `ux` this time — good, the fast tier already helped.
@@ -78,19 +80,22 @@ This write is mandated by the applied-lesson UPDATE contract
 ([`self-improvement-loop.md`](../rules/self-improvement-loop.md#fast-tier--write-lessons)):
 if a lesson read at the start of the run was applied and the failure it
 targets did not recur, write an UPDATE for that lesson — successful
-application counts as recurrence evidence, and the UPDATE MUST increment
-`seen_count` by 1 and refresh `expires`. The same root cause (the narrow
+application counts as recurrence evidence.
+A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry.
+The same root cause (the narrow
 trigger) is still in the skill, so at end-of-run the executor records the
 recurrence:
 
 ```
 # Dedup finds the existing entry; same scope + key → UPDATE in place.
 memory.search { q: "ux trigger nested tsx", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
-memory.write { scope: "global", key: "aw-lessons::ux-trigger-missed-nested-tsx", value: "<updated body>", tags: ["loop::aw-lessons", "source::end-of-run"], source_agent: "aw", trigger: "end-of-run" }
+memory.write { scope: "global", key: "aw-lessons::ux-trigger-missed-nested-tsx", value: "<updated body>", tags: ["loop::aw-lessons", "source::end-of-run"], source_agent: "aw", trigger: "end-of-run", ttl_days: 90 }
 ```
 
 The candidate matches the existing entry (same scope + key) → resolves to
-**UPDATE**, not a duplicate: `seen_count → 2`, `expires` refreshed.
+**UPDATE**, not a duplicate: the store takes `seen_count` to 2 and the re-passed
+`ttl_days` refreshes the expiry.
+Neither number is written by hand into the body.
 
 Log: `Phase 7: lorekit(memory.write global aw-lessons::ux-trigger-missed-nested-tsx) — UPDATE, seen_count=2`.
 
@@ -103,7 +108,7 @@ end-of-run UPDATE bumps `seen_count → 3`. The read/write step now sees
 `seen_count >= 3` and surfaces the **promotion suggestion** (it does not act):
 
 ```
-Lesson "ux companion skipped for nested .tsx screens" has recurred 3 times
+Lesson "Run `ux` for any *.tsx at any depth, not just flat globs" has recurred 3 times
 (phase 3). Promote it to a permanent guard?  Run:
 /create-skill diagnose autonomous-workflow --symptom "ux trigger misses nested .tsx"
 ```

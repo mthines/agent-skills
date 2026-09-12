@@ -85,7 +85,7 @@ memory.list { scope: "global",               tags: ["loop::aw-tester-lessons"], 
 
 If LoreKit's `memory.*` tools are not connected, skip and log one line:
 `aw-tester-lessons: memory.* not connected, continuing`. Match each lesson's
-`trigger-context` against the aw-target name and flow patterns; apply matches as
+**Applies when** line against the aw-target name and flow patterns; apply matches as
 locator-healing heuristics for this run.
 
 ### 4. Parse inputs and load the spec + target

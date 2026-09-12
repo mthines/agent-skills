@@ -202,7 +202,7 @@ memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::implement-suggestion-
 memory.list { scope: "global", tags: ["loop::implement-suggestion-lessons"], limit: 50 }
 ```
 
-Match each lesson's `trigger-context` (reviewer source + topic) against the
+Match each lesson's **Applies when** line (reviewer source + topic) against the
 ledger. Matches are **advisory inputs** to Phase 3 tagging and the Phase 4 gates
 — they never relax the two-gate requirement or a hard rule.
 
@@ -362,7 +362,7 @@ Full contract, tier classification, and the applied-lesson UPDATE rule in
 # Classify scope (universal → global; project-bound → repo::{owner}/{repo}), dedup, then write.
 # Silent no-op if memory.* not connected.
 memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
-memory.write { scope: "<global | repo::{owner}/{repo}>", key: "implement-suggestion-lessons::<slug>", value: "<body>", tags: ["loop::implement-suggestion-lessons", "source::<trigger>"], source_agent: "implement-suggestion", trigger: "<end-of-run | watch-reflag | user-override>" }
+memory.write { scope: "<global | repo::{owner}/{repo}>", key: "implement-suggestion-lessons::<slug>", value: "<body>", tags: ["loop::implement-suggestion-lessons", "source::<trigger>"], source_agent: "implement-suggestion", trigger: "<end-of-run | watch-reflag | user-override>", ttl_days: 90 }
 ```
 
 A lesson reaching `seen_count >= 3` is promotion-eligible — surface the

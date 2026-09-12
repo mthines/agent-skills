@@ -64,8 +64,9 @@ entrenched-bias loop is harder.
 | **Fast (episodic)** | LoreKit `memory.*` tools (via `lorekit-memory`), read at the start of work, written at failure/end points | LoreKit (managed) | **No** — advisory input only | none (privacy pre-flight only) |
 | **Slow (procedural)** | `/create-skill diagnose <skill>` | the skill's own source | **Yes** — a rule / gate / trigger | `confidence(analysis) ≥ 90 %` + user approval |
 
-The tiers connect via a **recurrence gate**: a lesson reaching `seen_count >= 3`
-(or tagged `status: structural`) becomes promotion-eligible, and the skill
+The tiers connect via a **recurrence gate**: a lesson reaching the store's own
+`seen_count >= 3` (or carrying the `status::structural` tag) becomes
+promotion-eligible, and the skill
 suggests running `diagnose` — which reads the lessons scope as evidence (see the
 `Lessons scope` section in [`diagnostic-surface.md`](./diagnostic-surface.md)).
 
@@ -95,10 +96,15 @@ Reflexion / SSGM self-reinforcing-error guards.
     project-bound → `repo::{owner}/{repo}`) and pins the `scope` **explicitly**
     in every `memory.write` — readable on the call site.
 - **Lesson type:** `procedural` ("what to do better next time"), not a fact.
-  Four mandatory body fields: *What failed / Why / What to do next time /
-  Promotion target*. Plus the `meta:` fields `seen_count`, `status`, `expires`,
-  `phase`, `trigger-context` (concrete: globs, task types, classes — so reads
-  match mechanically) carried inside the LoreKit `value`.
+  The body is **markdown and nothing else** — never a `<!-- meta: … -->` block,
+  and never a hand-written count or expiry date. Body fields: a title, an
+  **Applies when** line (concrete: globs, task types, classes — so reads match
+  mechanically), then *What happened / Why / Do this instead / Promotion target*.
+  Every store-backed fact has its own first-class `memory.write` field: the store
+  owns `seen_count`, `ttl_days` sets the expiry, `status::<value>` and
+  `source::<trigger>` are tags, and the phase a lesson applies to is carried by
+  its **Promotion target** line. Schema authority:
+  [`write-pipeline.md#lesson-scope-entries`](../../persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
 - **Autonomous writes skip consent** (the loop can't pause) — but the privacy
   pre-flight still runs; never store secrets/PII.
 
@@ -116,7 +122,9 @@ For a skill named `<skill>` in category `<cat>`:
 - [ ] Read invocation at the **start of work** — narrow-to-broad `memory.list`
       (`repo::{owner}/{repo}` then `global`, filtered by tag
       `loop::<skill>-lessons`; optional `memory.search` when the task names a
-      subsystem). Apply matches as advisory constraints; skip expired lessons.
+      subsystem). Apply matches as advisory constraints; the store drops
+      expired lessons for you (`ttl_days`), so there is no client-side expiry
+      filter to run.
       No consolidation pass — LoreKit owns storage and dedups on write.
 - [ ] Write invocation(s) at the **failure / end-of-run points** the skill
       already detects (escalation, verifier-red, end-of-run) — no new
@@ -146,8 +154,10 @@ Copy these into every loop — the dominant risk is **self-reinforcing error**
    a lesson to a behavior change is the confidence-gated, user-approved
    `diagnose` apply.
 2. **Recurrence (`seen_count >= 3`), not one run, gates promotion.**
-3. **Every lesson expires** (default 90 days, in the `meta:` block); the read
-   step ignores expired lessons so stale beliefs decay.
+3. **Every lesson expires** — pass `ttl_days: 90` on every write; a recurrence
+   re-passes it, which refreshes the expiry from the last sighting. The store
+   stops returning an expired lesson, so stale beliefs decay instead of
+   entrenching and there is no client-side expiry filter to run.
 4. **Contradictions are flagged, not silently overwritten.**
 5. **Privacy pre-flight is never bypassed** by autonomous writes.
 

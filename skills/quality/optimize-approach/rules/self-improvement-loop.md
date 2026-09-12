@@ -46,8 +46,8 @@ Lessons here are **procedural** and about *this skill's own judgment*, never abo
 - The apply-safety judgment (a rewrite marked `apply_safe` that had to be reverted).
 - The plan-time judgment (a plan-mode proposal that duplicated the Existing Code Survey / `critical`, or a re-plan the planner rejected).
 
-`trigger-context` must be concrete (file globs, stack, axis, caller) so the O0 read matches mechanically.
-Record the `caller` in every lesson's `trigger-context` (`reviewer` / `pr-reviewer` / `polish` / `aw-planner`) so a plan-mode lesson does not wrongly bias a diff-mode run and vice versa.
+The **Applies when** line must be concrete (file globs, stack, axis, caller) so the O0 read matches mechanically.
+Record the `caller` in every lesson's **Applies when** line (`reviewer` / `pr-reviewer` / `polish` / `aw-planner`) so a plan-mode lesson does not wrongly bias a diff-mode run and vice versa.
 
 ## Fast tier — read (Phase O0)
 
@@ -60,11 +60,11 @@ memory.list { scope: "global",               tags: ["loop::optimize-approach-les
 memory.search { q: "<keywords>", scopes: ["repo::{owner}/*", "global"], limit: 10 }
 ```
 
-Union the matches; skip any lesson whose `expires` is in the past.
-Match each lesson's `trigger-context` against the current run (caller, stack, changed-file globs, candidate axis).
+Union the matches; the store drops expired lessons for you (`ttl_days`), so there is no client-side expiry filter to run.
+Match each lesson's **Applies when** line against the current run (caller, stack, changed-file globs, candidate axis).
 Apply matches as **advisory** considerations on the O2 judgment and the O5 apply-safety call — never as a hard override of the rubric.
 `repo::` wins over `global` on conflict; log the conflict.
-No consolidation pass — LoreKit owns storage and dedups on write; stale beliefs decay via `expires`.
+No consolidation pass — LoreKit owns storage and dedups on write; stale beliefs decay via the store's own `ttl_days` expiry.
 
 ## Cross-bucket read — codebase-knowledge (plan seam)
 
@@ -93,26 +93,32 @@ Never wholesale-read another host's `loop::<host>-lessons`.
 ## Fast tier — write (Phase O5)
 
 Write at the end of every run — including quiet early-exit runs, since a clean run is recurrence evidence for any lesson applied at O0.
-Classify each candidate **universal** vs **project-bound** by its `trigger-context` (canonical contract's classification table), dedup, then dispatch by scope:
+Classify each candidate **universal** vs **project-bound** by its **Applies when** line (canonical contract's classification table), dedup, then dispatch by scope:
 
 ```text
 # 1. Dedup across the scopes that could hold it.
 memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
 # 2a. Universal lesson — always lands in global.
-memory.write { scope: "global", key: "optimize-approach-lessons::<slug>", value: "<body>", tags: ["loop::optimize-approach-lessons", "source::<trigger>"], source_agent: "optimize-approach", trigger: "<trigger>" }
+memory.write { scope: "global", key: "optimize-approach-lessons::<slug>", value: "<body>", tags: ["loop::optimize-approach-lessons", "source::<trigger>"], source_agent: "optimize-approach", trigger: "<trigger>", ttl_days: 90 }
 
 # 2b. Project-bound lesson — lands in this repo's scope.
-memory.write { scope: "repo::{owner}/{repo}", key: "optimize-approach-lessons::<slug>", value: "<body>", tags: ["loop::optimize-approach-lessons", "source::<trigger>"], source_agent: "optimize-approach", trigger: "<trigger>" }
+memory.write { scope: "repo::{owner}/{repo}", key: "optimize-approach-lessons::<slug>", value: "<body>", tags: ["loop::optimize-approach-lessons", "source::<trigger>"], source_agent: "optimize-approach", trigger: "<trigger>", ttl_days: 90 }
 ```
+
+`<body>` is **markdown and nothing else** — never a `<!-- meta: … -->` block, and never a hand-written count or expiry date.
+Every store-backed fact has its own first-class `memory.write` field: the store owns `seen_count`, `ttl_days` sets the expiry, and `status::<value>` / `source::<trigger>` are tags; the concrete matching signal travels as a visible **Applies when:** line directly under the title.
+Full body shape: [`write-pipeline.md#lesson-scope-entries`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
 
 Write nothing when the retrospective surfaces nothing **and** no lesson was applied — empty lessons are noise.
 There is no filesystem opt-in ceremony; the loop just picks the scope. The privacy pre-flight still runs (lessons are about this skill's mechanics, never product data) and is **stricter** for `repo::` writes since a repo scope is team-visible.
-A lesson that recurs resolves to UPDATE (same scope + key overwrites in place). An UPDATE to an entry that carries a `seen_count` field MUST increment `seen_count` by 1 and refresh `expires` — this is what makes recurrence countable.
+A lesson that recurs resolves to UPDATE (same scope + key overwrites in place).
+A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry.
+Never hand-write a count into the body.
 
 ## Promotion — slow tier
 
-After an O5 write (or an O0 read), a lesson is promotion-eligible at `seen_count >= 3` or when tagged `status: structural`.
+After an O5 write (or an O0 read), a lesson is promotion-eligible at the store's own `seen_count >= 3` or when it carries the `status::structural` tag.
 Surface a one-line suggestion — never act silently. Target depends on scope:
 
 | Lesson scope | Promotion target | One-liner |
@@ -120,11 +126,11 @@ Surface a one-line suggestion — never act silently. Target depends on scope:
 | `global` (universal) | this skill's source | `Lesson "<title>" recurred N times. Promote to a permanent guard? Run:  /create-skill diagnose optimize-approach --symptom "<title>"` |
 | `repo::{owner}/{repo}` (project-bound) | the repo's own rules | `Lesson "<title>" recurred N times in this repo. Promote to a repo rule? Run:  Skill("docs", "update --add-rule '<title>' --source lorekit:repo::{owner}/{repo}/optimize-approach-lessons::<slug>")` |
 
-After a successful promotion, `memory.write` an UPDATE to the same scope + key setting `status: promoted` so it stops re-suggesting.
+After a successful promotion, `memory.write` an UPDATE to the same scope + key adding the `status::promoted` tag so it stops re-suggesting.
 When the user runs the global-scope promotion, Diagnose Mode reads `optimize-approach-lessons` as evidence (see the `## Lessons scope` section in [`diagnostic-surface.md`](./diagnostic-surface.md)).
 
 ## Entrenchment guards
 
 The five load-bearing guards from the canonical contract apply verbatim and are non-negotiable:
-lessons are advisory (never auto-applied to behavior), recurrence (`seen_count >= 3`) gates promotion, every lesson expires, contradictions are flagged not overwritten, and the privacy pre-flight is never bypassed.
+lessons are advisory (never auto-applied to behavior), recurrence (`seen_count >= 3`) gates promotion, every lesson expires (`ttl_days: 90` on every write, re-passed on a recurrence), contradictions are flagged not overwritten, and the privacy pre-flight is never bypassed.
 A lesson may never relax one of this skill's hard invariants — in particular the [`apply-mode.md`](./apply-mode.md) confidence gate, the forbidden-targets list, or the never-block-the-verdict rule.

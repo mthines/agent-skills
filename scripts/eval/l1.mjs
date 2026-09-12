@@ -457,8 +457,10 @@ function checksInSync(plan, checks) {
   // G1: the seen_count UPDATE contract sentence is shared verbatim by all three owners
   // (persistent-memory write pipeline + both autonomous-workflow loop surfaces).
   // Without it, applied lessons never reach the seen_count >= 3 promotion gate.
+  // The wording is LoreKit's own: the STORE owns both halves, so a loop must not
+  // hand-write a count or an expiry date into the lesson body to track them.
   const CONTRACT =
-    "An UPDATE to an entry that carries a `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`.";
+    "A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry.";
   for (const p of [
     "skills/authoring/persistent-memory/rules/write-pipeline.md",
     "skills/workflow/autonomous-workflow/rules/self-improvement-loop.md",
@@ -4167,10 +4169,22 @@ const isPollBlock = (block) =>
     /Never restate what LoreKit already stores as a first-class property/.test(memory)
     && /source_agent/.test(memory) && /`window_days: 90` in the value/.test(memory),
     "memory.md must name the columns a value may not duplicate, window_days included");
+  // The carve-out's reason used to read "LoreKit marks an expired record rather than dropping it",
+  // which is false: `lorekit_memory_list` and the search handler both filter
+  // `expires_at is null or expires_at > now()`. The real mechanism is narrower and survives the
+  // correction — a row written with no `ttl_days` has no `expires_at` to filter on, and the GitHub
+  // Actions recorder is exactly that write path. Assert the true reason, and that the divergence is
+  // named rather than presented as a design, so closing it stays on the record.
   s.check("G38e memory.md keeps in-value expires as the stated exception",
     /deliberate exception is the in-value \*\*`expires`\*\*/.test(memory)
-    && /by \*marking\* it, not by dropping it/.test(memory),
-    "the expires carve-out must give its mechanical reason: LoreKit marks rather than drops");
+    && /drops an expired row server-side, but only when the write set one/.test(memory)
+    && /expires_at is null or expires_at > now\(\)/.test(memory)
+    && /passes no `ttl_days`/.test(memory),
+    "the expires carve-out must give its real mechanical reason: a row written without ttl_days has no expires_at to filter on");
+  s.check("G38e memory.md names the two-write-path expiry divergence",
+    /divergence worth closing/i.test(memory)
+    && /Until the recorder passes `ttl_days`/.test(memory),
+    "the carve-out must mark the recorder's missing ttl_days as a divergence to close, not a design");
   s.check("G38e memory.md bans storing what the read side derives",
     /Never store what the read side derives/.test(memory)
     && /facts and not advice|facts, not advice/i.test(memory),

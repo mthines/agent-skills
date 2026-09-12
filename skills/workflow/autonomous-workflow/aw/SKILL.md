@@ -86,7 +86,7 @@ load-bearing:
 
    `global` carries universal lessons that follow the user across every repo.
    `repo::{owner}/{repo}` carries lessons specific to the cwd repo. Union both
-   results. Match each lesson's `trigger-context` against the task. Matches
+   results. Match each lesson's **Applies when** line against the task. Matches
    inform **both** the tier decision below **and** the approach. A lesson may
    bias routing (e.g. "auth-touching changes always end up Full") — so even the
    routing is self-improving. On contradiction between scopes, `repo::` wins
@@ -270,17 +270,27 @@ rather than reasoning from the summary below.
   memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
   memory.write  { scope: "global" | "repo::{owner}/{repo}", key: "aw-lessons::<slug>",
                   value: "<body>", tags: ["loop::aw-lessons", "source::<trigger>"],
-                  source_agent: "aw", trigger: "<trigger>" }
+                  source_agent: "aw", trigger: "<trigger>", ttl_days: 90 }
   ```
+
+  `<body>` is **markdown only** — a `#` takeaway title, a visible
+  `**Applies when:**` line, then `**What happened:** / **Why:** / **Do this
+  instead:** / **Promotion target:**`. Never a hidden `<!-- meta: … -->` header,
+  front-matter block, or JSON blob: every store-backed fact (`seen_count`,
+  expiry, status, host, provenance, trigger) has its own first-class write field,
+  and a copy in the prose only rots. Full shape:
+  [`rules/self-improvement-loop.md#the-lesson-record`](../rules/self-improvement-loop.md#the-lesson-record).
 
   Phrase each capture as an **observation** ("last run hit X"), never a rule
   ("always do Y"). A lesson you applied at intake whose failure did not recur
-  gets an UPDATE that bumps `seen_count` by 1 and refreshes `expires` —
-  successful application counts as recurrence evidence. Write nothing only when
-  the retrospective surfaces nothing **and** no lesson was applied. For **Full**,
-  the planner/executor already write at their phase points; your exit write is
-  the catch-all so Micro/Lite also contribute.
-- **Promotion** — at `seen_count >= 3` (or `status: structural`), surface the
+  gets an UPDATE — the store increments `seen_count` by 1 for you, and re-passing
+  `ttl_days` refreshes the expiry — because successful application counts as
+  recurrence evidence. Write nothing only when the retrospective surfaces nothing
+  **and** no lesson was applied. For **Full**, the planner/executor already write
+  at their phase points; your exit write is the catch-all so Micro/Lite also
+  contribute.
+- **Promotion** — at `seen_count >= 3` (the store's column) or a
+  `status::structural` tag, surface the
   scope-appropriate suggestion and **do not act**: `global` →
   `/create-skill diagnose autonomous-workflow --symptom "<title>"`; `repo::` →
   `Skill("docs", "update --add-rule \"<title>\" --source lorekit:repo::{owner}/{repo}/aw-lessons::<slug>")`.

@@ -161,7 +161,8 @@ For each approved candidate:
 
 1. Read the target entry file.
 2. Update its body. Set `updated:` in the frontmatter to now.
-3. An UPDATE to an entry that carries a `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`.
+3. A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry.
+   On a filesystem-backed store there is no store to do it, so this step does it by hand — bump `seen_count` and refresh `expires` in the frontmatter.
 4. If the new content materially supersedes the old, append a brief
    `## History` block to the entry body with the prior wording and a
    timestamp. Never silently overwrite history.
@@ -198,20 +199,62 @@ INDEX is now 207 lines — `/persistent-memory consolidate parenting` is overdue
 ## Lesson-scope entries
 
 A **lesson scope** is the bucket consumed by a host skill's self-improvement loop (for example `aw-lessons`, `aw-tester-lessons`, `fix-bug-lessons`, `batch-lessons`, `reviewer-lessons`, `implement-suggestion-lessons`, `ci-auto-fix-lessons`, `e2e-pr-stabilizer-lessons`, `optimize-approach-lessons`, `ideate-lessons`, and `test-auto-fix-lessons`).
-The loops now persist these on **LoreKit** (tag `loop::<skill>-lessons`, key `<skill>-lessons::<slug>`, scopes `global` / `repo::{owner}/{repo}` — see [`scaling-tiers.md`](./scaling-tiers.md#lorekit--the-self-improvement-loop-backend)), where the five mandatory fields below travel inside the entry's `value` as a `meta:` comment. This section remains the authoritative definition of that shared schema — the persistent-memory markdown template at [`../templates/lesson-entry.md`](../templates/lesson-entry.md) mirrors it for filesystem-backed use.
-Five fields are **mandatory** on every lesson-scope entry:
+The loops persist these on **LoreKit** (tag `loop::<skill>-lessons`, key `<skill>-lessons::<slug>`, scopes `global` / `repo::{owner}/{repo}` — see [`scaling-tiers.md`](./scaling-tiers.md#lorekit--the-self-improvement-loop-backend)).
+This section remains the authoritative definition of that shared schema — the persistent-memory markdown template at [`../templates/lesson-entry.md`](../templates/lesson-entry.md) mirrors it for filesystem-backed use.
 
-| Field             | Purpose                                                                                              |
-| ----------------- | ----------------------------------------------------------------------------------------------------- |
-| `phase`           | The host-skill phase the lesson applies to.                                                            |
-| `trigger-context` | A concrete matching signal (file glob, task type, tech) — never a subjective condition.                |
-| `seen_count`      | Recurrence counter; starts at 1 on ADD, incremented by every UPDATE (the promotion-gate signal).      |
-| `status`          | `active` \| `promoted` \| `retired` \| `structural`.                                                  |
-| `expires`         | ISO 8601 expiry; default created + 90 days, refreshed on each re-sighting.                             |
+### The body is markdown, and only markdown
+
+A lesson's `value` is prose a person reads — in a dashboard, in a SessionStart injection, in another agent's context.
+Write it to this shape:
+
+```markdown
+# <one-line takeaway — what to do, not what the lesson is about>
+
+**Applies when:** <concrete signal — file glob, task type, tool name, error shape>
+
+**What happened:** <the concrete observable from the run>
+**Why:** <root cause, if known; "unknown" is allowed>
+**Do this instead:** <prescriptive, actionable, testable instruction>
+**Promotion target:** <the host rule/step this would harden if promoted, or "none">
+```
+
+`Applies when` must be **concrete** (globs, task types, tool names, error shapes) — never "when it feels relevant" — so the read step can match it against the current run.
+It is a visible line, not hidden metadata: the reader deciding whether a lesson is theirs needs it first, which is why it sits directly under the title.
+
+**A lesson body carries no hidden or machine-only payload — no HTML comment, no front-matter block, no JSON blob, no `key=value` header.**
+Every byte of `value` must render as prose a person can read.
+An HTML comment is the worst of both worlds: markdown renders it to *nothing*, so a human sees a lesson that starts mid-thought, while the fields inside it silently disagree with the store's own columns.
+
+### Every store-backed fact has its own field
+
+| Fact | Where it belongs | Why not the body |
+| ---- | ---------------- | ---------------- |
+| **Recurrence count** | `seen_count`, a store column | `memory_write` sets `seen_count = memories.seen_count + 1` on every overwrite. A count written into prose is a snapshot the writer guessed at and nothing ever updates. |
+| **Expiry** | `ttl_days` on the write (`clear_ttl` to make permanent) | Expiry is enforced against the column by the purge and the read filters. A date in prose expires nothing. |
+| **Status** (`structural`, `promoted`) | a `status::<value>` tag | Tags are first-class and filterable — `memory.list { tags: ["status::structural"] }` finds them. Prose is not queryable. |
+| **Owning host / bucket kind** | the `host` and `kind` write fields | Both are first-class, inferred from the `loop::<host>-lessons` tag when omitted. |
+| **Provenance** (repo, branch, commit, PR) | `origin_repo` / `origin_branch` / `origin_commit` / `origin_pr` | First-class, and the dashboard renders them as links. |
+| **Trigger** (`stuck-loop`, `command-failure`, …) | the `trigger` write field | Already a facet; restating it in prose adds a line and no information. |
+
+The host **phase** a lesson applies to is not a separate field: it is carried by the `Promotion target` line (which names the host rule or step) and, where it is a matching signal, by `Applies when`.
+
+### Writing rules
+
+- **One lesson per record.** Two takeaways are two keys.
+- **Lead with the takeaway.** The `#` title is the instruction, not the topic.
+- **Bold label, then one short paragraph.** No nesting past one list level, no sub-headings.
+- **Fence every command or snippet**, with a language tag.
+- **Budget ~1,500 characters.** A lesson longer than a screen is a document.
+- **No run residue** — no transcript excerpts, reasoning traces, session or correlation IDs, timestamps, or "in this run I…" framing.
+- **No secrets or PII**, per the privacy pre-flight.
 
 This schema is the contract shared with the host-skill loops — see
 [`autonomous-workflow/rules/self-improvement-loop.md`](../../../workflow/autonomous-workflow/rules/self-improvement-loop.md).
-A write to a lesson scope that omits any of the five fields is a defect; do not persist it.
+A write that puts a store-backed fact in the body, or omits the `Applies when` line the read step matches on, is a defect; do not persist it.
+
+The rule above governs **lesson** bodies.
+A CI **state record** is a different shape on purpose — its whole `value` is a JSON object, authoritative and parsed rather than read.
+See [`../../../../agents/shared/rules/memory-buckets.md`](../../../../agents/shared/rules/memory-buckets.md).
 
 ## Concurrent writers
 

@@ -64,7 +64,7 @@ If LoreKit's `memory.*` tools are not connected, skip silently and log one line:
 aw-tester-lessons: memory.* not connected, continuing
 ```
 
-After the lessons load, match each lesson's `trigger-context` against the
+After the lessons load, match each lesson's **Applies when** line against the
 aw-target name and spec flow patterns. Consider full entries only for matches.
 Apply matching lessons as fast-tier heuristics for this run — particularly
 locator-healing transformations. A lesson that recurs (`seen_count >= 3`)
@@ -375,19 +375,21 @@ After delivering the verdict, write lessons for any of the following:
 ```
 # Dedup first, then write to the classified scope (universal → global; repo-bound → repo::).
 memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
-memory.write { scope: "<global | repo::{owner}/{repo}>", key: "aw-tester-lessons::<slug>", value: "<body>", tags: ["loop::aw-tester-lessons", "source::<trigger>"], source_agent: "aw-tester", trigger: "<trigger>" }
+memory.write { scope: "<global | repo::{owner}/{repo}>", key: "aw-tester-lessons::<slug>", value: "<body>", tags: ["loop::aw-tester-lessons", "source::<trigger>"], source_agent: "aw-tester", trigger: "<trigger>", ttl_days: 90 }
 ```
 
-Lesson body (mirrors `aw-lessons` exactly — LoreKit `value` markdown with a `meta:` comment):
+Lesson body (mirrors `aw-lessons` exactly — **markdown and nothing else**; never a
+`<!-- meta: … -->` block, and never a hand-written count or expiry date, because every
+store-backed fact has its own first-class `memory.write` field):
 
 ```markdown
-<!-- meta: phase=4 seen_count=1 confidence=<high|medium|low> status=active expires=<ISO 8601 — created + 90 days> trigger-context="<concrete signal: locator pattern, aw-target name, component type>" source=system -->
+# <one-line takeaway — what to do, not what the lesson is about>
 
-# <one-line lesson title>
+**Applies when:** <concrete signal: locator pattern, aw-target name, component type>
 
-**What failed:** <concrete observable>
+**What happened:** <concrete observable>
 **Why:** <root cause or "unknown">
-**What to do next time:** <prescriptive, testable instruction>
+**Do this instead:** <prescriptive, testable instruction>
 **Promotion target:** <where in aw-tester this would harden, or "none">
 ```
 
@@ -397,7 +399,8 @@ Do NOT write a lesson when:
 - LoreKit's `memory.*` tools are not connected.
 
 **Promotion check:** after writing, check if any lesson (written or matched at
-startup) has `seen_count >= 3` or `status: structural`. If so, surface:
+startup) has the store's own `seen_count >= 3` or carries the `status::structural`
+tag. If so, surface:
 ```
 Lesson "<title>" has recurred N times. Promote it to a permanent guard?
 Run: /create-skill diagnose autonomous-workflow --symptom "<lesson title>"
@@ -411,9 +414,10 @@ These are identical to the `aw-lessons` guards — mandatory:
 
 1. Lessons are **advisory**. A lesson biases the locator-healing heuristics;
    it can never silently skip a spec or change the verdict schema.
-2. Recurrence gates promotion. `seen_count >= 3` or `status: structural`
-   before a lesson is suggested for promotion.
-3. Every lesson expires. Default 90 days from last sighting.
+2. Recurrence gates promotion. The store's `seen_count >= 3`, or the
+   `status::structural` tag, before a lesson is suggested for promotion.
+3. Every lesson expires. Pass `ttl_days: 90` on every write; a recurrence
+   re-passes it, which refreshes the expiry from the last sighting.
 4. Contradicting lessons are surfaced for review, not silently overwritten.
 5. Privacy pre-flight is never bypassed. Never store credentials, tokens,
    customer names, or product data in lessons.
