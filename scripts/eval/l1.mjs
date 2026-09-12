@@ -6995,9 +6995,54 @@ const isPollBlock = (block) =>
     s.check("G52h the never-metrics scope names a rung-2 mechanism that can honour it",
       /not free at rung 2/.test(body) && /every forwarded batch/.test(body),
       "rung 2's `--resource-attribute` upserts onto every forwarded batch, so a stated per-signal scope with no alternative mechanism is unsatisfiable there");
-    s.check("G52h the unsatisfiable-at-rung-2 case names its degradation rather than taking it quietly",
-      /Omit `dev\.run\.id` at rung 2/.test(body),
-      "a run that cannot stamp `dev.run.id` must be told what it loses, not silently left undiscriminable");
+    // The unsatisfiable case must RESOLVE to a rung change, never to a degraded rung 2. The first
+    // version said "omit `dev.run.id` at rung 2 and scope by time window", which created a rung-2
+    // state the rest of the pipeline cannot serve: `totals` is a proxy counter scoped by the
+    // proxy's LIFETIME and keeps counting, while the observed set is scoped by `dev.run.id` and
+    // empties — so `CLEAN` AND `totals > 0` AND "not in the observed set" grades an emitted span
+    // `contradicts`. A silent wrong verdict, reached without the collection ever degrading, so the
+    // `NOT CLEAN ⇒ ambiguous` rule never fires. Assert the resolution, not merely that one exists.
+    s.check("G52h the unsatisfiable-at-rung-2 case resolves to a rung change, not a degraded rung 2",
+      /Rung 2 is unavailable for this run/.test(body) && !/Omit `dev\.run\.id` at rung 2/.test(body),
+      "without `dev.run.id` the observed set is unobtainable while `totals` keeps counting, which grades an emitted span `contradicts` — the fallback is rung 1, never a rung 2 with a widened filter");
+    s.check("G52h rung 2 is stated to REQUIRE `dev.run.id`, so its readers may assume it",
+      /no rung-2 path without it/.test(body),
+      "six readers filter on `dev.run.id` unconditionally; either they all learn a new state or rung 2 requires the attribute — the second is what makes them correct");
+  }
+
+  // (i) The CONSUMER side of the same contract. `G52h` asserts the rule; nothing asserted its
+  // readers agree, which is the direction the round-9 sweep escaped in — a fix landing on the
+  // authority and not its restatements, for the fifth time in this skill. Each check below reads a
+  // DIFFERENT file, so a future edit that re-introduces an optional `dev.run.id` reds here on
+  // whichever reader it contradicts rather than on the rule it edited.
+  // break-shape: G52i — making `rungs.md`'s rung-2 query filter conditional, or dropping
+  // `dev.run.id` from the Definition of Done, flips the corresponding check red.
+  const OBSERVE_SKILL = join(REPO_ROOT, "skills/quality/observe-run/SKILL.md");
+  const RUNGS_MD = join(REPO_ROOT, "skills/quality/observe-run/rules/rungs.md");
+  const RECEIPT = join(REPO_ROOT, "skills/quality/observe-run/rules/receipt-mapping.md");
+  for (const [label, path] of [["SKILL.md", OBSERVE_SKILL], ["rungs.md", RUNGS_MD], ["receipt-mapping.md", RECEIPT]]) {
+    s.check(`G52i ${label} is present for the run-identity consumer checks`, existsSync(path),
+      `${path} not found — a consumer of the \`dev.run.id\` contract would go unchecked`);
+  }
+  if (existsSync(RUNGS_MD)) {
+    const body = readFileSync(RUNGS_MD, "utf8");
+    s.check("G52i rungs.md's rung-2 query filters on `dev.run.id` unconditionally",
+      /--filter "dev\.run\.id is <run-id>"/.test(body),
+      "the rung-2 worked example is the one a run copies; a conditional filter here is a second implementation of the rule");
+  }
+  if (existsSync(OBSERVE_SKILL)) {
+    const body = readFileSync(OBSERVE_SKILL, "utf8");
+    s.check("G52i the Definition of Done still demands `dev.run.id`",
+      /dev\.run\.id/.test(body.slice(body.indexOf("## Definition of Done"))),
+      "a DoD box a conforming rung-2 run cannot tick is a contract nothing can satisfy");
+  }
+  if (existsSync(RECEIPT)) {
+    const body = readFileSync(RECEIPT, "utf8");
+    // The two scopings are DIFFERENT and the file must say so. Asserting they are both "this run"
+    // is what let a false claim about rung 2 sit one line under the row that contradicted it.
+    s.check("G52i receipt-mapping.md distinguishes the two `totals` scoping mechanisms",
+      /proxy's own lifetime/.test(body) && /different mechanisms/.test(body),
+      "rung 2's `totals` is a proxy counter with no resource-attribute dimension — claiming `dev.run.id` scopes it is false, and hid a reachable mis-grade");
   }
 }
 

@@ -102,9 +102,18 @@ cell to its left, and check that it contains every conjunct not in the table abo
 | no delivery error reported | the exporter's `export()` returned no failure result | **both legs**: rung 1's condition on the app (its `export()` returned no failure result) **and** no `dash0.cli.otlp_proxy.error` event appeared |
 | `totals` | the number of **span** records in the in-memory span list / exported file, scoped to this run | the sum of `spans.total` across the run's `dash0.cli.otlp_proxy.stats` events (equivalently `final_total.spans` on the `shutdown` event) — **spans only**, never the `logs` or `metrics` counters |
 
-Both rungs scope `totals` to **this run's** `dev.run.id` resource attribute (see
-[`rules/run-identity.md`](./run-identity.md)), so a leftover span from a previous run is never
-counted as this one's evidence.
+Both rungs scope `totals` to **this run**, so a leftover span from a previous run is never counted
+as this one's evidence — but **by different mechanisms**, and collapsing them into one sentence is
+how a reachable mis-grade hid here. Rung 1's span list belongs to the process under test and is
+scoped by `dev.run.id` on its resource. Rung 2's `totals` is a **proxy counter** carrying no
+resource-attribute dimension at all; it is scoped by the **proxy's own lifetime**, which begins at
+zero for this run.
+
+The observed set, by contrast, is scoped by `dev.run.id` on **both** rungs — at rung 2 the
+attribute-filtered `dash0 spans query` is what *defines* it. That asymmetry is why
+[`rules/run-identity.md`](./run-identity.md) makes `dev.run.id` a **requirement** of rung 2 rather
+than a best-effort stamp: drop it and `totals` keeps counting while the observed set empties, so an
+emitted span grades `contradicts`. Rung 2 is not selectable without it.
 
 **`totals` counts spans, on both rungs, because every assertion this skill grades is a span claim.**
 All seven allowed behavioral assertion kinds

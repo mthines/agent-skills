@@ -68,12 +68,36 @@ carrying those. For `dev.run.id`, pick the first row that applies:
 | --- | --- |
 | The process under test emits **no** metrics over OTLP during the run | `--resource-attribute dev.run.id=<run-id>` is safe — there is no metric for it to land on. Confirm from the `stats` event's `metrics.total == 0` rather than assuming |
 | It emits metrics **and** its SDK resource is configurable per provider | Stamp `dev.run.id` **SDK-side on the tracer and logger providers only**, leaving the meter provider's resource without it; pass the proxy only the two bounded keys |
-| It emits metrics and its resource is not separable | **Omit `dev.run.id` at rung 2** and scope the query by time window plus the two bounded keys |
+| It emits metrics and its resource is not separable | **Rung 2 is unavailable for this run — fall back to rung 1**, where the SDK owns the resource and the constraint is satisfiable by construction |
 
-The third row is a real degradation and is named as one rather than taken quietly: without
-`dev.run.id`, two runs of the same command on the same branch against a shared dev dataset are not
-discriminable — which is precisely what layer 2 exists to prevent. Prefer rung 1 for that run, where
-the SDK owns the resource and the constraint is satisfiable by construction.
+**Row 3 is a rung change, not a degraded rung 2, and the difference is load-bearing.** The first
+draft of this table said *"omit `dev.run.id` at rung 2 and scope the query by time window instead"*,
+which reads like an acceptable degradation and is not: it creates a rung-2 state the rest of the
+pipeline **cannot serve**, and the failure is the worst kind — a silent wrong verdict rather than a
+missing one.
+
+The mechanism is worth stating once, because the asymmetry that produces it is not obvious. At rung
+2 the two inputs to a verdict come from different places and are scoped differently:
+
+| Input | Source at rung 2 | Scoped by |
+| --- | --- | --- |
+| `totals` | `spans.total` on the proxy's `dash0.cli.otlp_proxy.stats` event | the **proxy's own lifetime** — it is started for this run and its counters begin at zero. The event carries **no** resource-attribute dimension, so `dev.run.id` cannot scope it and does not need to |
+| the observed set | `dash0 spans query --filter "dev.run.id is <run-id>"` | `dev.run.id`, and **nothing else** — that filter is how the set is *defined* ([`receipt-mapping.md`](./receipt-mapping.md)) |
+
+Drop `dev.run.id` and only the second one breaks. `totals` still counts every span the app emitted,
+while the observed set matches **nothing** — so `CLEAN` AND `totals > 0` with the span "not in the
+observed set" selects **`contradicts`**, on spans the app demonstrably emitted. That is the exact
+inversion the `NOT CLEAN ⇒ ambiguous, never contradicts` rule exists to prevent, arriving by a path
+that rule does not cover: the collection was never degraded, only unreadable.
+
+Widening to a time window does not rescue it. The observed set is defined by the attribute filter,
+and a window re-admits a concurrent run's spans — the *other* failure
+[`receipt-mapping.md`](./receipt-mapping.md) names, grading this run on another run's evidence.
+
+**So a rung-2 run requires `dev.run.id`. There is no rung-2 path without it**, and every reader may
+therefore treat the attribute as present whenever rung 2 was selected — which is what keeps
+`rungs.md`'s unconditional filter and `SKILL.md`'s Definition-of-Done box true rather than
+aspirational.
 
 Rung 2's **zero app config change** property (see [`rungs.md`](./rungs.md)) is about the *exporter
 endpoint*: an OTel SDK at default endpoint configuration already points at the proxy's ports. It was

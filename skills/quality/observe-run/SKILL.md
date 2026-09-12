@@ -197,6 +197,9 @@ would return `null` every time.
 - [ ] Every expectation passed the assertion-provenance discriminator; any by-construction claim
       was refused, not graded.
 - [ ] The cheapest rung that could decide the claim was used.
-- [ ] Run identity (dataset + the three resource attributes) was stamped.
+- [ ] Run identity (dataset + the three resource attributes) was stamped, each on the signals
+      `rules/run-identity.md` scopes it to — `dev.run.id` on spans and logs only, never metrics.
+      At rung 2 that attribute is a **requirement**, not a best effort: a run that cannot stamp it
+      falls back to rung 1 rather than proceeding without it.
 - [ ] The receipt's verdict is one of the four canonical tokens, mapped per
       `rules/receipt-mapping.md`.
