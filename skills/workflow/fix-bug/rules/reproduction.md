@@ -70,7 +70,13 @@ enough for this input class: the bug report came from a production span, so the 
 checked against the shape of that same span before it is trusted as the `FAIL_TO_PASS` contract.
 
 1. Read the **shape** of the originating span out of the Evidence Record — parent/child structure,
-   status on the error path, attribute presence. This half is fix-bug's own, and it is why the
+   status on the error path, and the span count per unit of work. **Never attribute *presence*:**
+   that is an existence claim, the canonical by-construction shape
+   [`assertion-provenance.md`](../../../quality/observe-run/rules/assertion-provenance.md) refuses,
+   and it is not kind 6 — kind 6 is attribute **cardinality**, which is a property of a run and not
+   of a source file. An expectation phrased as presence is refused rather than graded, so phrasing
+   one here would hand `observe-run` a request its own closed list forbids it to answer. This half
+   is fix-bug's own, and it is why the
    comparison lives here: `observe-run` reads only the telemetry **the run it just executed**
    emitted, scoped to that run's `dev.run.id` in the dev dataset
    ([`observe-run/rules/run-identity.md`](../../../quality/observe-run/rules/run-identity.md)), so

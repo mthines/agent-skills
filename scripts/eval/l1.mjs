@@ -7032,17 +7032,68 @@ const isPollBlock = (block) =>
   }
   if (existsSync(OBSERVE_SKILL)) {
     const body = readFileSync(OBSERVE_SKILL, "utf8");
+    // Scope to the DoD section, then test for the REQUIREMENT, not for the token. A whole-section
+    // `/dev\.run\.id/` was the `/Rung 1/.test(section)` shape round 6 repaired on `G52b`: bullet 4
+    // already carried the token BEFORE round 10 added the rung-2 requirement, so deleting exactly
+    // the two-sentence requirement clause left L1 green at 1747/1747 while the contract it guards
+    // was gone. Conjoin the requirement's own wording, which nothing else in the section supplies.
+    const dod = body.slice(body.indexOf("## Definition of Done"));
     s.check("G52i the Definition of Done still demands `dev.run.id`",
-      /dev\.run\.id/.test(body.slice(body.indexOf("## Definition of Done"))),
-      "a DoD box a conforming rung-2 run cannot tick is a contract nothing can satisfy");
+      /dev\.run\.id/.test(dod) && /falls back to rung 1/.test(dod),
+      "a DoD box a conforming rung-2 run cannot tick is a contract nothing can satisfy — and the token alone does not state the rung-2 requirement");
   }
   if (existsSync(RECEIPT)) {
     const body = readFileSync(RECEIPT, "utf8");
     // The two scopings are DIFFERENT and the file must say so. Asserting they are both "this run"
     // is what let a false claim about rung 2 sit one line under the row that contradicted it.
+    // The `totals` claim must be a REQUIREMENT on the realization, not a description of whichever
+    // counter a rung happens to have. Round 11: rung 2 realized it as the proxy's `spans.total`,
+    // which counts every process pointed at the ports, while the observed set is attribute-
+    // filtered — so the two columns disagreed on MEMBERSHIP and a foreign span graded the run
+    // `contradicts`. The fix is that `totals` IS the observed set's size on every rung.
+    // Test the REALIZATION ROW, not the prose that states the requirement. Scoping this to the
+    // whole file left the reviewer's own revert — restoring the proxy counter as the rung-2
+    // `totals` — GREEN at 1751/1751, because the requirement paragraph one screen up still said
+    // the right thing. That is the defect one layer out: a guard satisfied by the claim rather
+    // than by the thing the claim is about. Same scoping lesson as G52b's body-row parse.
+    const totalsRow = body.split("\n").find((l) => /^\|\s*`totals`\s*\|/.test(l));
+    const totalsCells = (totalsRow ?? "").split("|").slice(1, -1).map((c) => c.trim());
+    s.check("G52i the `totals` realization row exists and has a cell per rung",
+      totalsCells.length >= 3,
+      `${totalsCells.length} cell(s) in the \`totals\` row — the per-rung realization is what the requirement below is about`);
+    s.check("G52i every `totals` realization is the observed set's own size, never a wider counter",
+      totalsCells.slice(1).every((c) => !/\bspans\.total\b|final_total/.test(c)),
+      "a rung realizing `totals` as the proxy's own counter counts every process pointed at the ports, so a foreign span inflates it without entering the observed set and the run grades `contradicts` on spans it never emitted");
+    s.check("G52i the requirement the `totals` row realizes is stated",
+      /size of the observed set/.test(body) && /delivery receipt, not a census/.test(body),
+      "absence from a set is disproof only when the set is the one the count attested to");
+    s.check("G52i the rung-2 read waits for ingest before grading an absence",
+      /re-query until the observed set stops growing/.test(body),
+      "rung 2's cost is ingest latency, so a query issued at shutdown can return empty on a perfect delivery — an unfinished read is `null`, never `contradicts`");
     s.check("G52i receipt-mapping.md distinguishes the two `totals` scoping mechanisms",
       /proxy's own lifetime/.test(body) && /different mechanisms/.test(body),
       "rung 2's `totals` is a proxy counter with no resource-attribute dimension — claiming `dev.run.id` scopes it is false, and hid a reachable mis-grade");
+    s.check("G52i the two rung-2 population preconditions are stated where the rule lives",
+      existsSync(RUN_IDENTITY) && /proxy is exclusive to this run/i.test(readFileSync(RUN_IDENTITY, "utf8"))
+        && /participating in the claim carries `dev\.run\.id`/.test(readFileSync(RUN_IDENTITY, "utf8")),
+      "an OTel SDK at default endpoint config already reaches the proxy, so exclusivity and per-process stamping are what make the two populations coincide — neither follows from the attribute merely being present");
+  }
+
+  // (j) The inventory line in CLAUDE.md names the guard family by RANGE, and a range is a
+  // hand-typed encoding of a set — the round-8 lesson, one layer out. `G52h` and `G52i` were both
+  // added while the line still read `G52a`–`G52g`, so the range is DERIVED from the guards this
+  // file actually defines rather than compared against a literal.
+  // break-shape: G52j — adding a `G52k` check without widening the inventory range, or narrowing
+  // the range by hand, flips it red.
+  const selfSrc = readFileSync(new URL(import.meta.url), "utf8");
+  const g52Letters = [...new Set((selfSrc.match(/"G52([a-z])\b/g) || []).map((m) => m.slice(4)))].sort();
+  const highest = g52Letters[g52Letters.length - 1];
+  const CLAUDE_MD = join(REPO_ROOT, "CLAUDE.md");
+  if (existsSync(CLAUDE_MD) && highest) {
+    const claude = readFileSync(CLAUDE_MD, "utf8");
+    s.check(`G52j the CLAUDE.md inventory range covers every G52 guard defined (through G52${highest})`,
+      new RegExp("Guarded by L1 `G52a`–`G52" + highest + "`").test(claude),
+      `l1.mjs defines G52a–G52${highest}; the inventory line names a different range — it is the one claim about this family that nothing else reads`);
   }
 }
 

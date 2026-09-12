@@ -99,6 +99,25 @@ therefore treat the attribute as present whenever rung 2 was selected — which 
 `rungs.md`'s unconditional filter and `SKILL.md`'s Definition-of-Done box true rather than
 aspirational.
 
+### Two preconditions make the rung-2 populations coincide
+
+`receipt-mapping.md` requires `totals` and the observed set to range over **one population**.
+Presence of the attribute is not enough for that — *who* carries it decides it, and rung 2's own
+selling point works against both halves: an OTel SDK at default endpoint configuration already
+points at the proxy's ports, so **any** process on the machine can reach it without being
+configured to.
+
+| Precondition | Why | If it does not hold |
+| --- | --- | --- |
+| **The proxy is exclusive to this run** — started for it, torn down with it, and nothing else pointed at its ports | Otherwise a concurrent dev process's spans reach the proxy and are counted by it, while carrying no `dev.run.id` and so never entering the observed set | Use a non-default port for this run's proxy; if that is not possible, rung 2 is unavailable — fall back to rung 1 |
+| **Every process participating in the claim carries `dev.run.id`** — not only the one whose command was run | A fan-out claim (kind 5) is *about* a second process's spans. Absent the attribute, the downstream span is invisible to the query and the claim grades `contradicts` on a span that was emitted | Row 1's `--resource-attribute` satisfies this for free (the proxy stamps every batch it forwards, whatever emitted it). Row 2 does **not** — it stamps only the SDK you configured |
+
+That second row is the constraint on row 2 of the mechanism table above, and it is load-bearing
+enough to state as a rule: **row 2 serves single-process claims only.** A multi-process claim under
+row 2 must configure each participating SDK; if it cannot, the run reports `null` rather than
+grading a span it could not see. The combination row 2 **and** a fan-out claim is the one shape here
+that looks supported and is not, which is why it is named rather than left to follow.
+
 Rung 2's **zero app config change** property (see [`rungs.md`](./rungs.md)) is about the *exporter
 endpoint*: an OTel SDK at default endpoint configuration already points at the proxy's ports. It was
 never a claim that no resource can be set app-side, and row 2 above is the one place rung 2 asks for

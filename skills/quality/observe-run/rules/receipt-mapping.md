@@ -66,6 +66,28 @@ run's `dev.run.id` is *not* in the observed set: reading it as present grades th
 run's evidence, which is the failure the run-scoping in
 [`rules/run-identity.md`](./run-identity.md) exists to prevent.
 
+**"The same set `totals` counts" is a requirement on `totals`, not a description of it.** The two
+columns must range over **one population**, and that is the only reason the `contradicts` row is
+sound: absence from a set is disproof only when the set is the one the count attested to. So
+whatever `totals` is realized as per rung, it is **the size of the observed set** — and any counter
+that ranges wider is a delivery receipt, not a census, and cannot serve here.
+
+This is not a hypothetical distinction at rung 2, where the proxy's `spans.total` counts **every
+process pointed at its ports** while the observed set is filtered to those carrying this run's
+`dev.run.id`. Reading the receipt as the census made the two columns disagree on *membership*
+rather than merely on identity, and the failure is again a silent wrong verdict: a downstream
+service, a sidecar, or a concurrent dev process inflates `totals` without entering the observed set,
+so `CLEAN` AND `totals > 0` AND *not in the observed set* grades **`contradicts`** on spans the app
+never emitted — where the run belongs on the `null` row. `NOT CLEAN ⇒ ambiguous` does not catch it:
+collection was never degraded, only **mis-attributed**.
+
+The sharpest case is not a corner. Allowed assertion **kind 5 is downstream fan-out**, and
+[`rungs.md`](./rungs.md)'s default-rung rule names cross-process fan-out as rung 2's *first reason
+to exist* — so the run where a second process certainly emits spans is the one this rung is for.
+[`run-identity.md`](./run-identity.md) therefore states the two preconditions that make the
+populations coincide: the proxy is **exclusive to this run**, and **every process participating in
+the claim carries `dev.run.id`**.
+
 ### What `CLEAN` and `totals` are, per rung
 
 Each rung realizes the same three conditions against the signals its own reader actually has.
@@ -100,7 +122,13 @@ cell to its left, and check that it contains every conjunct not in the table abo
 | collection terminated normally | the process under test exited on its own **and** the SDK's `forceFlush()` / `shutdown()` returned before the span list was read | **both processes**: rung 1's condition on the app (it exited on its own **and** its `forceFlush()` / `shutdown()` returned) **and** a `dash0.cli.otlp_proxy.shutdown` event **was observed** with `reason == signal` |
 | nothing dropped or failed | the span processor reports **zero dropped spans** (a `BatchSpanProcessor` drops on a full queue and reports the count) and the file export is complete and parseable | **both legs**: rung 1's condition on the app — the SDK's exporter reporting no failed export and zero dropped spans (app → proxy) — **and** `*.failed == 0` accumulated over `logs.failed` / `spans.failed` / `metrics.failed` (proxy → Dash0) |
 | no delivery error reported | the exporter's `export()` returned no failure result | **both legs**: rung 1's condition on the app (its `export()` returned no failure result) **and** no `dash0.cli.otlp_proxy.error` event appeared |
-| `totals` | the number of **span** records in the in-memory span list / exported file, scoped to this run | the sum of `spans.total` across the run's `dash0.cli.otlp_proxy.stats` events (equivalently `final_total.spans` on the `shutdown` event) — **spans only**, never the `logs` or `metrics` counters |
+| `totals` | the number of **span** records in the in-memory span list / exported file, scoped to this run | the number of **span** records returned by the run's own `dash0 spans query --filter "dev.run.id is <run-id>"` — i.e. the size of the observed set |
+
+**Rung 2's `totals` is the query's count, never the proxy's.** The proxy's `spans.total` (and
+`final_total.spans` on `shutdown`) counts every process pointed at its ports and carries no
+resource-attribute dimension, so it is a **delivery receipt, not a census**: it serves `CLEAN` above
+and nothing else. Realizing `totals` from it made the two verdict columns range over different
+populations — see the requirement stated under the verdict table.
 
 Both rungs scope `totals` to **this run**, so a leftover span from a previous run is never counted
 as this one's evidence — but **by different mechanisms**, and collapsing them into one sentence is
@@ -172,6 +200,22 @@ row is filled for every rung, that each conjunct has a row, and that the conjunc
 from the definition rather than hand-typed. Whether a filled cell says the right thing is a
 reviewer's judgement, and the two cheap tests are stated above: read each rung-2 cell against the
 rung-1 cell to its left, and ask what one guards that the other does not.
+
+**Reading the observed set is not instantaneous at rung 2, and an unfinished read is not an absence.**
+[`rungs.md`](./rungs.md) names rung 2's cost as *ingest latency — the query has to wait for the batch
+to land in Dash0* — so a `dash0 spans query` issued the moment the proxy reports `shutdown` can
+return an empty set while delivery was perfect. Graded straight through, that is `CLEAN` AND
+`totals == 0`, which is the `null` row: unverified, never `contradicts`. That is the correct floor,
+and it is why `totals` is defined above as the observed set's own size rather than the proxy counter
+— with the counter as `totals`, the same run read `totals > 0` with the span absent and graded
+`contradicts` on a read that had simply not finished.
+
+`null` is the floor, not the goal. Before grading, **re-query until the observed set stops growing
+or a bounded deadline passes**, taking the proxy's `final_total.spans` as the number to wait for
+(that is what the receipt is *for*). Report a deadline reached with the set still short of it as
+`ambiguous` — the read was truncated, which is a degraded reader, not evidence of absence. Never
+extend the wait by widening the filter to a time window: that re-admits a concurrent run's spans,
+the failure named above.
 
 The no-`shutdown`-event case is why the realization opens on the event being *observed* rather than
 on its `reason`: `reader-adapters.md` documents the event's value domain (`signal` or `deadline`)
