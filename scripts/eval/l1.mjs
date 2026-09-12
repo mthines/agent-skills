@@ -7104,6 +7104,17 @@ const isPollBlock = (block) =>
     const realSection = body.match(/### What `CLEAN` and `totals` are, per rung[\s\S]*?(?=\n## )/);
     const realHeaderCells = ((realSection?.[0].split("\n") ?? []).find((l) => /^\|.*\bRung\b/.test(l)) ?? "")
       .split("|").slice(1, -1).map((c) => c.trim());
+    // The artifact is only HALF the definition, and round 14 guarded only that half. `totals` is
+    // "the number of **span** records in <artifact>", and the record TYPE is load-bearing
+    // independently of the container: on rung 1 a file exporter's NDJSON holds logs too, so summing
+    // every record makes `totals > 0` satisfiable by a run that emitted no spans — it skips the
+    // `null` row it belongs on, matches `CLEAN AND totals > 0` with the expected span absent, and
+    // grades `contradicts`. A confident disproof produced by counting log records.
+    // Probed before fixing: dropping `**span**` from the rung-1 cell left L1 GREEN at 1761/1761,
+    // because `/span list|exported file/` matches the CONTAINER's name and never the record type.
+    // So the type gets its own conjunct per rung rather than being folded into the artifact regex —
+    // a cell can lose one and keep the other, and the failure messages say which.
+    const SPAN_RECORD = /\*\*span\*\* records|\bspan records\b/;
     for (const n of rungNums) {
       const rule = TOTALS_ARTIFACT[n];
       s.check(`G52i rung ${n} has a \`totals\` artifact rule`, !!rule,
@@ -7115,7 +7126,20 @@ const isPollBlock = (block) =>
         col < 0
           ? `no \`Rung ${n}\` column in the realization header, so its \`totals\` cell cannot be located`
           : `rung ${n}'s \`totals\` cell does not name the artifact that IS the observed set on that rung — naming the set and being the set are different claims`);
+      s.check(`G52i rung ${n}'s \`totals\` counts SPAN records, not every record in the artifact`,
+        col >= 0 && SPAN_RECORD.test(totalsCells[col] ?? ""),
+        `rung ${n}'s \`totals\` cell names its artifact without naming the record type — every assertion this skill grades is a span claim, so counting logs or metrics in makes \`totals > 0\` reachable by a run that emitted no spans, which grades \`contradicts\` instead of \`null\``);
     }
+    // …and the rationale that makes the conjunct above non-arbitrary. Deleting the whole paragraph
+    // also left L1 green at 1761/1761 — the operative cells and their reason were BOTH unguarded,
+    // which is the round-13 shape (one definition, several surfaces, L1 on none of them). Assert
+    // the MECHANISM, not just the rule: a reader who has the rule without the failure it prevents
+    // is the reader who relaxes it.
+    s.check("G52i the spans-only rule for `totals` is stated with the failure it prevents",
+      /`totals` counts spans, on both rungs/.test(body)
+        && /count span records alone, not every record/.test(body)
+        && /confident disproof produced by counting log records/.test(body),
+      "without the mechanism the rule reads as pedantry: summing the `logs` / `metrics` counters in makes `totals > 0` satisfiable by a run that emitted no spans, so it skips the `null` row and grades `contradicts` on an absence it never measured");
     s.check("G52i no `totals` realization names the rejected proxy counter",
       totalsCells.slice(1).every((c) => !/\bspans\.total\b|final_total|forwarded/.test(c)),
       "a rung realizing `totals` as the proxy's own counter counts every process pointed at the ports, so a foreign span inflates it without entering the observed set and the run grades `contradicts` on spans it never emitted");
@@ -7172,8 +7196,18 @@ const isPollBlock = (block) =>
   // prescribe the counter anyway. That is a self-contradicting paragraph — visible to a reader in a
   // way that silent agreement with a retired definition was not — and `receipt-mapping.md` already
   // says whether a filled cell means the right thing is a reviewer's judgement.
+  // The marker list is a WHITELIST over blocks that mention the counter, so every entry widens what
+  // passes and a marker made of ordinary English widens it by an unknown amount. Two were exactly
+  // that — `used to` and `cannot serve` — and neither was even paying for itself: `cannot serve`
+  // was load-bearing for NO block (it is a `G52i` body marker that drifted into this list), and
+  // `used to` was redundant with `route is closed` in the single block carrying both. Every
+  // remaining marker either names the counter's disqualifying property or marks a historicisation,
+  // and each is load-bearing for at least one block — asserted below, because a dead marker is pure
+  // attack surface that nothing else would ever notice.
   const COUNTER = /`?\bspans\.total\b`?|`?\bfinal_total(\.spans)?\b`?/;
-  const REJECTS = /never the proxy's|delivery receipt, not a census|every process pointed at its ports|Do not wait for|deliberately absent|earlier draft|used to|route is closed|cannot serve/;
+  const MARKERS = ["never the proxy's", "delivery receipt, not a census", "every process pointed at its ports",
+    "Do not wait for", "deliberately absent", "earlier draft", "route is closed"];
+  const REJECTS = new RegExp(MARKERS.map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
   for (const [label, path] of [["receipt-mapping.md", RECEIPT], ["run-identity.md", RUN_IDENTITY]]) {
     if (!existsSync(path)) continue;
     // Normalise emphasis and semantic line breaks before matching. This repo's prose rule is one
@@ -7189,6 +7223,31 @@ const isPollBlock = (block) =>
     s.check(`G52k ${label} names a proxy counter only to reject or historicise it`,
       offenders.length === 0,
       `${offenders.length} block(s) mention \`spans.total\`/\`final_total\` prescriptively: ${offenders.join(" | ")} — round 11 made \`totals\` the observed set's own size, so a surface still sourcing it from the proxy counter regrades an emitted span`);
+  }
+  // Every marker must be load-bearing. A marker matching no block is a widening of the whitelist
+  // that buys nothing and that no other check would ever surface — `cannot serve` sat there exactly
+  // that way, and it is how a list of specific phrases silently becomes a list of English ones: the
+  // cheap fix for any future red here is to append a broader phrase, and this is what makes that
+  // move visible. Adding a marker means adding the block it covers, in the same change.
+  // What this does NOT catch, said plainly rather than left to look covered: a marker that is
+  // ordinary English AND happens to match a block. `used to` was one — it matched `run-identity`'s
+  // historicisation paragraph, so this check stayed green on it, and removing it was a JUDGEMENT
+  // (redundant there with `route is closed`, which covers the same block). The obvious mechanical
+  // strengthening — require each marker to be the UNIQUE cover of some block — is wrong and was
+  // rejected: it would red on `never the proxy's` and `delivery receipt, not a census`, the two
+  // most specific phrases in the list, because they share their block with a third. Minimality is
+  // not the property wanted here; specificity is, and specificity is not mechanically checkable.
+  {
+    const flat = (b) => b.replace(/\*\*/g, "").replace(/\s+/g, " ");
+    const counterBlocks = [RECEIPT, RUN_IDENTITY]
+      .filter((p) => existsSync(p))
+      .flatMap((p) => readFileSync(p, "utf8").split(/\n\s*\n/))
+      .map(flat)
+      .filter((b) => COUNTER.test(b));
+    const dead = MARKERS.filter((m) => !counterBlocks.some((b) => b.includes(m)));
+    s.check("G52k every rejection marker is load-bearing for at least one block",
+      dead.length === 0,
+      `${dead.length} marker(s) match no counter-mentioning block: ${dead.join(" | ")} — an unused marker only widens what passes, so it is attack surface with no coverage behind it`);
   }
 
   // (j) The inventory line in CLAUDE.md names the guard family by RANGE, and a range is a
