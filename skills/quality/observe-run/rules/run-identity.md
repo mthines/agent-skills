@@ -51,6 +51,35 @@ The first two are bounded (a handful of environments, a bounded set of live bran
 a metric nothing. `dev.run.id` is unbounded by construction and must never reach a metric
 dimension.
 
+### The `Stamp on` column is not free at rung 2 — pick the mechanism that can honour it
+
+Stating a per-signal constraint does not make it satisfiable, and at rung 2 the obvious mechanism
+**cannot** satisfy it. `--resource-attribute` upserts onto **every forwarded batch**
+([`reader-adapters.md § Decoration flags`](./reader-adapters.md#decoration-flags)) and the proxy
+forwards metrics as well as spans and logs (its `stats` event counts `metrics.rate` / `metrics.total`
+/ `metrics.failed`). There is no per-signal scoping flag. So passing `dev.run.id` to the proxy
+performs the exact anti-pattern the row above forbids, on every run where the process under test
+emits a metric.
+
+The two bounded keys are unaffected — they are *supposed* to reach metrics — so the flag keeps
+carrying those. For `dev.run.id`, pick the first row that applies:
+
+| Situation | Mechanism |
+| --- | --- |
+| The process under test emits **no** metrics over OTLP during the run | `--resource-attribute dev.run.id=<run-id>` is safe — there is no metric for it to land on. Confirm from the `stats` event's `metrics.total == 0` rather than assuming |
+| It emits metrics **and** its SDK resource is configurable per provider | Stamp `dev.run.id` **SDK-side on the tracer and logger providers only**, leaving the meter provider's resource without it; pass the proxy only the two bounded keys |
+| It emits metrics and its resource is not separable | **Omit `dev.run.id` at rung 2** and scope the query by time window plus the two bounded keys |
+
+The third row is a real degradation and is named as one rather than taken quietly: without
+`dev.run.id`, two runs of the same command on the same branch against a shared dev dataset are not
+discriminable — which is precisely what layer 2 exists to prevent. Prefer rung 1 for that run, where
+the SDK owns the resource and the constraint is satisfiable by construction.
+
+Rung 2's **zero app config change** property (see [`rungs.md`](./rungs.md)) is about the *exporter
+endpoint*: an OTel SDK at default endpoint configuration already points at the proxy's ports. It was
+never a claim that no resource can be set app-side, and row 2 above is the one place rung 2 asks for
+a line of app configuration.
+
 ### `dev.run.id` is deliberately custom
 
 `otel-semantic-conventions` mandates searching the attribute registry before inventing a key.

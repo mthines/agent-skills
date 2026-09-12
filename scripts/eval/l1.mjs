@@ -6577,9 +6577,35 @@ const isPollBlock = (block) =>
       // 1729/1729 — exactly the drift the comment over `CLEAN_CONJUNCTS` advertises it prevents.
       // Every prior probe on this file DELETED a token; this one ADDS to the artifact, which is the
       // direction a fixed list is blind in by construction. So the count is DERIVED from the
-      // definition sentence and asserted against the list's length: the definition is `X AND Y AND
-      // Z`, so conjuncts = AND-count + 1, and a new clause reds here until its row is added.
-      const expectedConjuncts = (cleanDef[0].match(/\bAND\b/g) || []).length + 1;
+      // definition rather than re-encoded here.
+      //
+      // Derive from the definition's STRUCTURE, never from a joiner's spelling. Counting `\bAND\b`
+      // over the slice was wrong in BOTH directions at once: a fourth conjunct joined with a
+      // lowercase `and` left L1 green at 1732/1732 (failing OPEN on the growth case this check
+      // exists for), while an `AND` used mid-line for emphasis inside a correct three-conjunct
+      // definition red it at 1731/1732 (failing CLOSED on a correct table — the exact property this
+      // file uses one screen away to reject a proposed containment guard). A spelling-bound
+      // derivation inherits the class it was prescribed to remove.
+      //
+      // So: assert the SHAPE the artifact now states as load-bearing, then count lines under it.
+      // Line count is immune to how a joiner is spelled and to an emphasis token inside a line; the
+      // shape assertions are what make line count FAITHFUL, by rejecting the two ways a conjunct
+      // could be added without adding a line. Each failure names the rule it broke, so a red here
+      // is a repair instruction rather than an invitation to game the token.
+      // The slice STARTS at the bold token, so line 1 carries no `>` prefix even though the
+      // definition is a blockquote — filtering on `>` silently dropped it and under-counted by one.
+      const defLines = cleanDef[0].split("\n").filter((l) => l.trim().length > 0);
+      const contLines = defLines.slice(1);
+      s.check("G52b the CLEAN definition is a blockquote with one conjunct per line",
+        defLines.length >= 2 && contLines.every((l) => l.trim().startsWith(">")),
+        `${defLines.length} definition line(s) — the definition must be a blockquote, one conjunct per line`);
+      s.check("G52b every CLEAN conjunct line after the first opens with the joiner `AND`",
+        contLines.every((l) => /^>\s*AND\b/.test(l.trim())),
+        `${contLines.filter((l) => !/^>\s*AND\b/.test(l.trim())).length} continuation line(s) do not open with \`AND\` — a conjunct joined any other way is invisible to the count derived below`);
+      s.check("G52b the CLEAN definition uses the token `AND` only as a line-opening joiner",
+        (cleanDef[0].match(/\bAND\b/g) || []).length === contLines.length,
+        `${(cleanDef[0].match(/\bAND\b/g) || []).length} \`AND\` token(s) against ${contLines.length} continuation line(s) — a line-internal \`AND\` is indistinguishable from a second conjunct crammed onto that line; use a comma or a new line`);
+      const expectedConjuncts = defLines.length;
       s.check("G52b CLEAN_CONJUNCTS covers every conjunct the definition states",
         CLEAN_CONJUNCTS.length === expectedConjuncts,
         `the definition states ${expectedConjuncts} conjunct(s); the guard's list holds ${CLEAN_CONJUNCTS.length} — add the new conjunct to CLEAN_CONJUNCTS and give it a realization row`);
@@ -6939,6 +6965,39 @@ const isPollBlock = (block) =>
       `${nonDash0.size} distinct reader(s) found`);
     s.check("G52g states a missing Dash0 CLI costs rung 1 nothing",
       /costs rung 1 nothing|rung 1 costs nothing/i.test(body));
+    // The flag's own page must not list `dev.run.id` among the keys it stamps. It did, and that
+    // was the restatement half of the defect below: the flag upserts onto EVERY forwarded batch,
+    // metrics included, so naming `dev.run.id` here contradicts run-identity.md's per-signal
+    // scope one file away. Scoped to the decoration-flags line, not the whole file, because the
+    // page legitimately DISCUSSES the attribute in saying why it is excluded.
+    const decoFlag = body.match(/`--resource-attribute key=value`[\s\S]*?(?=\n\n)/);
+    s.check("G52g the decoration-flags line does not claim to stamp `dev.run.id`",
+      !!decoFlag && !/dev\.run\.id/.test(decoFlag[0]),
+      "`--resource-attribute` is batch-level with no per-signal scoping, so it cannot carry an attribute run-identity.md scopes to spans and logs only");
+  }
+
+  // (h) run-identity.md — the only observe-run rule file with no guard, and the one that states a
+  // per-signal constraint. Stating a constraint is not the same as it being SATISFIABLE: the
+  // `Stamp on` column says `dev.run.id` never reaches metrics, while the mechanism it named for
+  // rung 2 (`--resource-attribute`) upserts onto every forwarded batch and the proxy forwards
+  // metrics. So the guard asserts the pair — the constraint AND a stated rung-2 mechanism that can
+  // honour it — since either alone is what the defect looked like.
+  // break-shape: G52h — deleting the never-metrics scope, or deleting the rung-2 mechanism
+  // section that makes it satisfiable, flips the corresponding check red.
+  const RUN_IDENTITY = join(REPO_ROOT, "skills/quality/observe-run/rules/run-identity.md");
+  s.check("G52h run-identity.md is present", existsSync(RUN_IDENTITY),
+    `${RUN_IDENTITY} not found — the run-identity constraints would go unchecked`);
+  if (existsSync(RUN_IDENTITY)) {
+    const body = readFileSync(RUN_IDENTITY, "utf8");
+    s.check("G52h `dev.run.id` is scoped away from metrics",
+      /`dev\.run\.id`[\s\S]{0,200}?never metrics/.test(body) || /never reach a metric dimension/.test(body),
+      "the never-metrics scope on `dev.run.id` is the constraint every other rule here depends on");
+    s.check("G52h the never-metrics scope names a rung-2 mechanism that can honour it",
+      /not free at rung 2/.test(body) && /every forwarded batch/.test(body),
+      "rung 2's `--resource-attribute` upserts onto every forwarded batch, so a stated per-signal scope with no alternative mechanism is unsatisfiable there");
+    s.check("G52h the unsatisfiable-at-rung-2 case names its degradation rather than taking it quietly",
+      /Omit `dev\.run\.id` at rung 2/.test(body),
+      "a run that cannot stamp `dev.run.id` must be told what it loses, not silently left undiscriminable");
   }
 }
 

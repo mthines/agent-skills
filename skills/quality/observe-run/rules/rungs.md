@@ -68,10 +68,12 @@ Full reader mechanics: [`rules/reader-adapters.md`](./reader-adapters.md).
 ### Correct
 
 ```text
-Start `dash0 -X otlp proxy --agent-mode --resource-attribute dev.run.id=<run-id>`, run the
-command under test, read the `dash0.cli.otlp_proxy.forwarded` / `.stats` / `.error` /
-`.shutdown` events for delivery health, then `dash0 spans query --filter "dev.run.id is <run-id>"`
-for span content.
+Start `dash0 -X otlp proxy --agent-mode`, stamping `dev.run.id=<run-id>` by the mechanism
+`rules/run-identity.md § The `Stamp on` column is not free at rung 2` selects for this process
+(the `--resource-attribute` flag only when the run emits no metrics — it upserts onto every
+forwarded batch, metrics included). Run the command under test, read the
+`dash0.cli.otlp_proxy.forwarded` / `.stats` / `.error` / `.shutdown` events for delivery health,
+then `dash0 spans query --filter "dev.run.id is <run-id>"` for span content.
 ```
 
 ### Incorrect

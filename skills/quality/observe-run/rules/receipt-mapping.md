@@ -45,6 +45,14 @@ never satisfy, and since `NOT CLEAN` matches unconditionally, the other rung wou
 `NOT CLEAN` is the negation of that definition, not of any list below it, and not of either rung's
 realization of it.
 
+**That blockquote's shape is load-bearing, not formatting.** L1 derives the conjunct count from it,
+so the definition is written to exactly three rules: **one conjunct per line**, every line after the
+first **opens with the joiner `AND`**, and the token `AND` appears **nowhere else** inside the
+blockquote. Adding a conjunct therefore means adding a line, which is what makes the count derivable
+at all. The third rule is the one that looks arbitrary and is not: a line-internal `AND` is
+syntactically indistinguishable from a second conjunct crammed onto an existing line, so permitting
+it for emphasis would re-open the growth hole the derivation closes. Use a comma, or a new line.
+
 | Observed collection state | Expected span, **in this run's observed set** | Verdict |
 | --- | --- | --- |
 | `CLEAN` AND totals > 0 | in the observed set | `confirms` — the code emitted what the claim asserted |

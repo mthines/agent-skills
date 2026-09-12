@@ -56,8 +56,14 @@ exporter-config change, because an OTel SDK at default endpoint configuration al
 ### Decoration flags
 
 `--resource-attribute key=value` (repeatable) upserts a resource attribute onto every forwarded
-batch — this is the flag `rules/run-identity.md` uses to stamp `dev.run.id`,
-`deployment.environment.name`, and `vcs.ref.head.name`.
+batch — this is the flag `rules/run-identity.md` uses to stamp `deployment.environment.name` and
+`vcs.ref.head.name`.
+
+**"Every forwarded batch" includes metrics, and there is no per-signal scoping flag.** That is why
+`dev.run.id` is *not* in the list above: `run-identity.md` scopes it to spans and logs only, and
+this flag cannot express that scope. It selects a different mechanism per process — see
+[`run-identity.md § The `Stamp on` column is not free at rung 2`](./run-identity.md). Do not add
+`dev.run.id` to a `--resource-attribute` here on the strength of the two keys that are listed.
 
 ### `--agent-mode`
 

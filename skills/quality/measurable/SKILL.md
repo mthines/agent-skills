@@ -141,7 +141,8 @@ instrumentation written.
      expectations: "the run emits one span per invocation of <operation>, each a child of <parent span>"
                    "the new attribute's distinct-value set stays bounded across the run"
    ```
-   These are kind 2 (parent/child structure) and kind 6 (attribute cardinality) from
+   These are kinds 1 + 2 (span count, then parent/child structure) and kind 6 (attribute
+   cardinality) from
    [`observe-run`'s closed list of seven allowed kinds](../observe-run/rules/assertion-provenance.md) —
    both behavioral, both graded against an actual run, never against the diff read back.
    Note the phrasing of the first one: *"a span named X exists"* is answerable by reading the source
