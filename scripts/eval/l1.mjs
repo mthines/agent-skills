@@ -7126,9 +7126,19 @@ const isPollBlock = (block) =>
         col < 0
           ? `no \`Rung ${n}\` column in the realization header, so its \`totals\` cell cannot be located`
           : `rung ${n}'s \`totals\` cell does not name the artifact that IS the observed set on that rung — naming the set and being the set are different claims`);
+      // The failure message is PER RUNG because the hazard is not the same on both, and one message
+      // serving both overstated it on rung 2: `receipt-mapping.md` says `dash0 spans query` returns
+      // spans by construction, so a mis-worded rung-2 cell cannot actually admit a log record. What
+      // it breaks there is the cell agreeing with the definition it realizes — still worth a red,
+      // and worth saying honestly, since that same file's rule is that overstating a live hazard to
+      // defend a rule is how the next author learns to discount the file.
+      const TYPE_WHY = {
+        "1": "counting logs or metrics in makes `totals > 0` reachable by a run that emitted no spans, which grades `contradicts` instead of `null`",
+        "2": "`dash0 spans query` returns spans by construction, so this cannot admit a log record — what it breaks is the cell stating the definition it realizes, leaving the spans-only rule true on one rung's wording only",
+      };
       s.check(`G52i rung ${n}'s \`totals\` counts SPAN records, not every record in the artifact`,
         col >= 0 && SPAN_RECORD.test(totalsCells[col] ?? ""),
-        `rung ${n}'s \`totals\` cell names its artifact without naming the record type — every assertion this skill grades is a span claim, so counting logs or metrics in makes \`totals > 0\` reachable by a run that emitted no spans, which grades \`contradicts\` instead of \`null\``);
+        `rung ${n}'s \`totals\` cell names its artifact without naming the record type — ${TYPE_WHY[n] ?? "every assertion this skill grades is a span claim, so a cell that does not say so leaves the record type to the reader"}`);
     }
     // …and the rationale that makes the conjunct above non-arbitrary. Deleting the whole paragraph
     // also left L1 green at 1761/1761 — the operative cells and their reason were BOTH unguarded,
@@ -7207,6 +7217,14 @@ const isPollBlock = (block) =>
   const COUNTER = /`?\bspans\.total\b`?|`?\bfinal_total(\.spans)?\b`?/;
   const MARKERS = ["never the proxy's", "delivery receipt, not a census", "every process pointed at its ports",
     "Do not wait for", "deliberately absent", "earlier draft", "route is closed"];
+  // Deriving the pattern from the list bought addition-proofing and brought a DEGENERATE INPUT with
+  // it: `new RegExp([].join("|"))` is `/(?:)/`, which matches every block — so an empty `MARKERS`
+  // makes `offenders` permanently empty AND `dead` permanently empty, and BOTH G52k checks pass on
+  // a tree that prescribes the counter freely. No syntax error, no red check. That is this file's
+  // own recurring defect arriving through the refactor written to close the previous instance of
+  // it, so the list gets the same non-degeneracy floor `rungNums` has above, for the same reason.
+  s.check("G52k the rejection-marker list is non-empty", MARKERS.length > 0,
+    "an empty MARKERS compiles to `/(?:)/`, which matches everything — both G52k checks below would vacuously pass while the whitelist admits every block");
   const REJECTS = new RegExp(MARKERS.map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
   for (const [label, path] of [["receipt-mapping.md", RECEIPT], ["run-identity.md", RUN_IDENTITY]]) {
     if (!existsSync(path)) continue;
