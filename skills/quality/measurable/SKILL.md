@@ -133,6 +133,27 @@ instrumentation written.
 5. Report what was added as a short "Observability" summary (one line per
    signal, with file:line) — `autonomous-workflow` Phase 6 folds this into
    the PR walkthrough.
+6. **Prove it.** Step 5's summary is a static `file:line` claim; this step turns it into an
+   executed one:
+   ```text
+   Skill("observe-run")
+     command:      <the command that exercises the new/changed operation>
+     expectations: "the run emits one span per invocation of <operation>, each a child of <parent span>"
+                   "the new attribute's distinct-value set stays bounded across the run"
+   ```
+   These are kinds 1 + 2 (span count, then parent/child structure) and kind 6 (attribute
+   cardinality) from
+   [`observe-run`'s closed list of seven allowed kinds](../observe-run/rules/assertion-provenance.md) —
+   both behavioral, both graded against an actual run, never against the diff read back.
+   Note the phrasing of the first one: *"a span named X exists"* is answerable by reading the source
+   that was just written, so it is refused by the provenance rule as by-construction. The
+   expectation has to name something only the run can settle — here the **count per invocation** and
+   the **parent it actually attached to**, which a `startSpan` call site alone does not determine.
+   Phrase every expectation as one of those seven: the list is closed, and an expectation outside it
+   is refused rather than graded. Cardinality is also the check `measurable` most needs here, since
+   a new unbounded attribute is exactly what makes a signal unsafe as a metric dimension. Advisory and skips silently when
+   `observe-run` (or its Observability Profile dev target) is unavailable, consistent with Core
+   Principle 6 above — this step never blocks `implement` mode on the companion's absence.
 
 ### Audit mode
 

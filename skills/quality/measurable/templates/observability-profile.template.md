@@ -28,6 +28,16 @@ whole tree.
 - Existing check rules: <name/link, or "none yet">
 - Status: <"covered" | "propose-via-dash0-chat pending">
 
+## Dev Run Target
+
+> Gates `Skill("observe-run")` — see
+> [`skills/quality/observe-run/SKILL.md`](../../observe-run/SKILL.md). No target here means
+> `observe-run` self-skips genuinely (no tokens spent, no report line).
+
+- Command: <the one command that runs code and emits telemetry locally, or "none yet">
+- Dataset: <the dev/local dataset it should target — recommend creating a dedicated one, never
+  assume one already exists>
+
 ## Notes
 
 - <any stack quirks, migration-in-progress state, or deliberate exceptions

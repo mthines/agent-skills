@@ -37,6 +37,9 @@ A receipt is evidence, not a verdict on intent.
 | `ambiguous` | The pattern is present but in a different code path, or the tool signal is inconclusive on the exact assertion | Finding is **downgraded** (a caller in `pr-reviewer`'s pipeline downgrades to `question:`) with the receipt attached |
 | `null` | The proof tool produced no output / an empty result, and the claim asserted presence of something | Finding is **DROPPED** as unverified |
 
+These four tokens are canonical and exhaustive for this file.
+The pr-reviewer adapter at [`agents/shared/rules/verification-receipt.md`](../../../../agents/shared/rules/verification-receipt.md) additionally names a fifth, adapter-level verdict, `unobtainable` — distinct from `null` — for a claim the ladder could never attempt (an unreachable upstream changelog, an unresolved type-checker); that verdict belongs to the adapter, not to this canonical table, and no consumer of this file should introduce a sixth.
+
 ## The null-is-never-confirmation invariant
 
 **A null or empty proof result is never read as confirmation of the claim it was meant to verify.**

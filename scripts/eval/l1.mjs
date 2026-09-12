@@ -6514,4 +6514,813 @@ const isPollBlock = (block) =>
     "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.", false);
 }
 
+// ── G52: observe-run — the receipt grammar, the rung/provenance rule files, the wiring
+// into measurable / verify-behavior, and the eval + inventory surfaces ──
+//
+// observe-run is a new skill whose whole value rests on its receipt vocabulary matching the
+// canonical one it borrows (verify-behavior/rules/receipt.md) rather than drifting into a
+// private grading scheme — the same three-surface-drift shape that has bitten this repo before
+// (aw-lessons::extracted-skill-adapter-must-reconcile-output-contract-with-canonical-and-own-examples).
+// Sub-checks a-c lock the receipt grammar FIRST, before any consumer is wired to it, per plan.md
+// D14. Sub-checks d-g land as their respective integrations are built (verify-behavior Tier 3,
+// measurable's setup interview + implement step, and the two new L2 suites).
+{
+  const OR = join(REPO_ROOT, "skills/quality/observe-run");
+  const RM = join(OR, "rules/receipt-mapping.md");
+  const VB_RECEIPT = join(REPO_ROOT, "skills/quality/verify-behavior/rules/receipt.md");
+  const VR = join(REPO_ROOT, "agents/shared/rules/verification-receipt.md");
+  const TOKENS = ["confirms", "contradicts", "ambiguous", "null"];
+
+  // (a) receipt-mapping.md names all four canonical tokens and cites the canonical file by path.
+  // break-shape: G52a — deleting a backticked token (e.g. `contradicts`) or the path citation
+  // from receipt-mapping.md flips the matching sub-check red; restoring it goes green.
+  s.check("G52a receipt-mapping.md exists", existsSync(RM));
+  if (existsSync(RM)) {
+    const body = readFileSync(RM, "utf8");
+    for (const t of TOKENS) {
+      s.check(`G52a receipt-mapping.md names verdict token "${t}"`, body.includes(`\`${t}\``),
+        `missing backticked \`${t}\``);
+    }
+    s.check("G52a receipt-mapping.md cites the canonical receipt.md by path",
+      body.includes("skills/quality/verify-behavior/rules/receipt.md"),
+      "no path citation found");
+
+    // (b) the verdict table is TOTAL **and** MUTUALLY EXCLUSIVE, and it is so by construction: one
+    // named `CLEAN` guard, three rows partitioning it, and one `NOT CLEAN` row. This guard used to
+    // assert three literal conjuncts on the contradicts row, which is the same per-row enumeration
+    // the table itself used to carry — and an enumeration cannot say what it is MISSING. Two
+    // conjuncts escaped it in successive reviews: `no error event` (present on the null row only,
+    // so an error event with `*.failed == 0` matched both contradicts and ambiguous) and
+    // `a shutdown event exists` (implied by every row, guaranteed by none, so a SIGKILLed proxy
+    // matched no row at all). So assert the SHAPE instead: the definition is stated once and
+    // carries all four conjuncts, and every row references it rather than restating it.
+    // break-shape: G52b — deleting the "was observed" conjunct from the CLEAN definition, or
+    // rewriting any row's state cell back to an inline enumeration, flips the matching check red.
+    const lines = body.split("\n");
+    // The conjuncts of `CLEAN`, declared once and read twice: once against the DEFINITION (does the
+    // guard still conjoin all three) and once against the per-rung REALIZATION (does each conjunct
+    // have a row, filled for every rung). One list, so a conjunct added to the definition without a
+    // realization row reds here instead of shipping as a condition one rung cannot evaluate.
+    const CLEAN_CONJUNCTS = [
+      ["collection terminating normally", /terminate normally/, /^\|\s*collection terminated normally\s*\|/],
+      ["nothing dropped or failed", /nothing was dropped or failed/, /^\|\s*nothing dropped or failed\s*\|/],
+      ["no delivery error reported", /no delivery error\*\* was reported/, /^\|\s*no delivery error reported\s*\|/],
+    ];
+    // The `CLEAN` definition, wherever it sits — matched on the token, not on a heading or a line
+    // number, so re-wording the prose around it cannot orphan this check.
+    const cleanDef = body.match(/\*\*`CLEAN`\*\*[\s\S]{0,400}?(?=\n\n)/);
+    s.check("G52b the CLEAN guard is defined once, by name", !!cleanDef,
+      "no `**`CLEAN`**` definition found in receipt-mapping.md");
+    if (cleanDef) {
+      // The list above is HAND-TYPED, so on its own it can only ever check the conjuncts already in
+      // it: adding a fourth `AND` clause to the definition with no realization row left L1 green at
+      // 1729/1729 — exactly the drift the comment over `CLEAN_CONJUNCTS` advertises it prevents.
+      // Every prior probe on this file DELETED a token; this one ADDS to the artifact, which is the
+      // direction a fixed list is blind in by construction. So the count is DERIVED from the
+      // definition rather than re-encoded here.
+      //
+      // Derive from the definition's STRUCTURE, never from a joiner's spelling. Counting `\bAND\b`
+      // over the slice was wrong in BOTH directions at once: a fourth conjunct joined with a
+      // lowercase `and` left L1 green at 1732/1732 (failing OPEN on the growth case this check
+      // exists for), while an `AND` used mid-line for emphasis inside a correct three-conjunct
+      // definition red it at 1731/1732 (failing CLOSED on a correct table — the exact property this
+      // file uses one screen away to reject a proposed containment guard). A spelling-bound
+      // derivation inherits the class it was prescribed to remove.
+      //
+      // So: assert the SHAPE the artifact now states as load-bearing, then count lines under it.
+      // Line count is immune to how a joiner is spelled and to an emphasis token inside a line; the
+      // shape assertions are what make line count FAITHFUL, by rejecting the two ways a conjunct
+      // could be added without adding a line. Each failure names the rule it broke, so a red here
+      // is a repair instruction rather than an invitation to game the token.
+      // The slice STARTS at the bold token, so line 1 carries no `>` prefix even though the
+      // definition is a blockquote — filtering on `>` silently dropped it and under-counted by one.
+      const defLines = cleanDef[0].split("\n").filter((l) => l.trim().length > 0);
+      const contLines = defLines.slice(1);
+      s.check("G52b the CLEAN definition is a blockquote with one conjunct per line",
+        defLines.length >= 2 && contLines.every((l) => l.trim().startsWith(">")),
+        `${defLines.length} definition line(s) — the definition must be a blockquote, one conjunct per line`);
+      s.check("G52b every CLEAN conjunct line after the first opens with the joiner `AND`",
+        contLines.every((l) => /^>\s*AND\b/.test(l.trim())),
+        `${contLines.filter((l) => !/^>\s*AND\b/.test(l.trim())).length} continuation line(s) do not open with \`AND\` — a conjunct joined any other way is invisible to the count derived below`);
+      s.check("G52b the CLEAN definition uses the token `AND` only as a line-opening joiner",
+        (cleanDef[0].match(/\bAND\b/g) || []).length === contLines.length,
+        `${(cleanDef[0].match(/\bAND\b/g) || []).length} \`AND\` token(s) against ${contLines.length} continuation line(s) — a line-internal \`AND\` is indistinguishable from a second conjunct crammed onto that line; use a comma or a new line`);
+      const expectedConjuncts = defLines.length;
+      s.check("G52b CLEAN_CONJUNCTS covers every conjunct the definition states",
+        CLEAN_CONJUNCTS.length === expectedConjuncts,
+        `the definition states ${expectedConjuncts} conjunct(s); the guard's list holds ${CLEAN_CONJUNCTS.length} — add the new conjunct to CLEAN_CONJUNCTS and give it a realization row`);
+      // The definition is READER-NEUTRAL. Written in one rung's vocabulary it is not a stricter
+      // guard — it is a guard the other rung can never satisfy, and since `NOT CLEAN` matches
+      // unconditionally, that rung then grades `ambiguous` on every run it performs. Rung 1 is the
+      // DEFAULT rung, so the version of this definition written purely in `dash0.cli.otlp_proxy.*`
+      // vocabulary silently disabled the common path while L1 stayed green.
+      for (const [label, re] of CLEAN_CONJUNCTS) {
+        s.check(`G52b the CLEAN definition conjoins ${label}`, re.test(cleanDef[0]),
+          `not found in the CLEAN definition`);
+      }
+      s.check("G52b the CLEAN definition names no rung-specific reader vocabulary",
+        !/dash0\.cli\.otlp_proxy|in-memory|BatchSpanProcessor/.test(cleanDef[0]),
+        "the guard is written in one rung's vocabulary, which the other rung can never satisfy");
+    }
+    // Every rung the skill can select has a realization of each condition — a rung with no column
+    // here is a rung whose only reachable verdict is `ambiguous`. Read the rung count from
+    // rungs.md rather than hardcoding 2, so adding a rung 3 there without a column reds this.
+    const RUNGS = join(REPO_ROOT, "skills/quality/observe-run/rules/rungs.md");
+    // Existence is ASSERTED, not assumed. The whole rung-coverage and cell-coverage block below
+    // sits behind this one path, so a bare `if (existsSync(...))` deleted five checks in silence
+    // when the file was renamed — the total fell and not one `G52b` failure was reported. Same
+    // shape, and the same fix, as the `G52e` golden-file assertion one screen down; that one was
+    // corrected first and its twin here was left behind.
+    const rungsPresent = existsSync(RUNGS);
+    s.check("G52b rungs.md is present for the rung-coverage checks", rungsPresent,
+      `${RUNGS} not found — the per-rung realization coverage would go unchecked`);
+    if (rungsPresent) {
+      const rungNums = [...new Set((readFileSync(RUNGS, "utf8").match(/^## Rung (\d+)/gm) || [])
+        .map((h) => h.match(/(\d+)/)[1]))];
+      s.check("G52b rungs.md defines at least two rungs", rungNums.length >= 2,
+        `${rungNums.length} rung heading(s) found`);
+      const realization = body.match(/### What `CLEAN` and `totals` are, per rung[\s\S]*?(?=\n## )/);
+      s.check("G52b receipt-mapping.md carries a per-rung realization of CLEAN", !!realization,
+        "no `### What `CLEAN` and `totals` are, per rung` section found");
+      // Parse the realization TABLE's header row into cells — never substring-test the section.
+      // The section carries prose that names the rungs, so `/Rung 1/` over the whole slice was
+      // satisfied by a sentence: deleting the entire rung-1 COLUMN while the prose still said
+      // "Rung 1" left this green, asserting a coverage claim its own failure message spells out
+      // and does not check. Structured parse, same idiom as G52c's Verdict column one screen up.
+      const realHeader = (realization?.[0].split("\n") ?? []).find((l) => /^\|.*\bRung\b/.test(l));
+      const realCols = (realHeader ?? "").split("|").slice(1, -1).map((c) => c.trim());
+      s.check("G52b the realization table's header row parses",
+        realCols.length >= 1 + rungNums.length,
+        `${realCols.length} header cell(s) parsed, expected >= ${1 + rungNums.length}`);
+      // Every header cell is LABELLED. An unlabelled column is not a cosmetic defect here: it is
+      // the column the filled-cell check below reports its empties under, so an empty header made
+      // an entire empty column unreportable. Caught at the header, where the defect actually is.
+      s.check("G52b every realization column carries a header label",
+        realCols.every((c) => c.length > 0),
+        `${realCols.filter((c) => !c.length).length} unlabelled column(s) in the realization header`);
+      for (const n of rungNums) {
+        s.check(`G52b the realization has a column for rung ${n}`,
+          realCols.some((c) => new RegExp(`^Rung ${n}\\b`).test(c)),
+          `rung ${n} is selectable but has no column in the realization table — its only reachable verdict is ambiguous`);
+      }
+      // The coverage claim is about the table's CONTENT, and a header check proves only that the
+      // column is LABELLED. Scoped to the single `totals` row, this check left three of four
+      // rung-1 cells blankable at 1717/1717 — so it is generalised over EVERY body row rather than
+      // given a second special case, and a row added later is covered on arrival instead of when
+      // someone remembers to extend a list.
+      // Scope to the realization TABLE, not to every pipe line in the section. The section is
+      // prose plus tables, and a second table added below the realization (the reader-local
+      // exclusions) had its own header and rows swept in here — three false failures naming a
+      // 2-column table against the realization's 3 columns. A table is the CONTIGUOUS run of
+      // pipe lines starting at its header, so take exactly that and stop at the first line that
+      // is not one.
+      const realLines = realization?.[0].split("\n") ?? [];
+      const realStart = realLines.indexOf(realHeader);
+      const realTable = [];
+      for (let i = realStart; i >= 0 && i < realLines.length && realLines[i].startsWith("|"); i++) realTable.push(realLines[i]);
+      const bodyRows = realTable.filter((l) => l !== realHeader && !/^\|[\s:|-]+\|$/.test(l));
+      s.check("G52b the realization has a body row per CLEAN conjunct plus totals",
+        bodyRows.length >= CLEAN_CONJUNCTS.length + 1,
+        `${bodyRows.length} body row(s) for ${CLEAN_CONJUNCTS.length} conjunct(s) + totals`);
+      for (const row of bodyRows) {
+        const cells = row.split("|").slice(1, -1).map((c) => c.trim());
+        // Partition BEFORE naming the column, never `.map(...).filter(Boolean)` over names: an
+        // empty header cell is `""`, which `??` does not replace and `filter(Boolean)` then
+        // discards — so the one case that most needs reporting (an empty cell under an unlabelled
+        // column) was silently dropped by the very line computing its label.
+        const empties = cells.slice(1)
+          .map((c, i) => ({ col: realCols[i + 1] || `column ${i + 2}`, empty: c.length === 0 }))
+          .filter((e) => e.empty)
+          .map((e) => e.col);
+        s.check(`G52b the realization row "${cells[0] || "(unlabelled)"}" is filled for every rung`,
+          cells.length === realCols.length && empties.length === 0,
+          `${cells.length} cell(s) against ${realCols.length} column(s)${empties.length ? `; empty under: ${empties.join(", ")}` : ""}`);
+      }
+      // Each conjunct is present BY NAME, so renaming one out of the table reds here rather than
+      // quietly reducing a row count the check above would still accept.
+      for (const [label, , rowRe] of CLEAN_CONJUNCTS) {
+        s.check(`G52b the realization carries a row for "${label}"`,
+          bodyRows.some((l) => rowRe.test(l)),
+          `no row matching ${rowRe} in the per-rung realization`);
+      }
+      s.check("G52b the realization carries a totals row",
+        bodyRows.some((l) => /^\|\s*`totals`\s*\|/.test(l)),
+        "no `totals` row in the per-rung realization");
+    }
+    const tableRow = (token) => lines.find((l) => l.startsWith("|") && new RegExp(`\\b${token}\\b`).test(l));
+    // Each clean row REFERENCES the guard instead of restating it — a row that re-inlines the
+    // conjuncts is a second copy to keep in sync, which is the defect this shape removes.
+    for (const [token, extra] of [["confirms", /totals > 0/], ["contradicts", /totals > 0/], ["null", /totals == 0/]]) {
+      const row = tableRow(token);
+      s.check(`G52b the ${token} row references CLEAN and its own totals condition`,
+        !!row && /`CLEAN`/.test(row) && extra.test(row) && !/failed == 0/.test(row),
+        row || `no ${token} row found`);
+    }
+    const ambiguousRow = tableRow("ambiguous");
+    s.check("G52b the ambiguous row is the negation of CLEAN and carries the never-contradicts clause",
+      !!ambiguousRow && /`NOT CLEAN`/.test(ambiguousRow) && /never `contradicts`/.test(ambiguousRow),
+      ambiguousRow || "no ambiguous row found");
+  }
+
+  // (c) three-surface reconciliation: the four tokens appear in all three real files, and
+  // observe-run introduces no fifth token in the mapping table's Verdict column.
+  // break-shape: G52c — adding a `| \`unproven\` — ...` row to receipt-mapping.md's table flips
+  // this red; removing the row goes green.
+  s.check("G52c verify-behavior/rules/receipt.md exists", existsSync(VB_RECEIPT));
+  s.check("G52c agents/shared/rules/verification-receipt.md exists", existsSync(VR));
+  if (existsSync(VB_RECEIPT) && existsSync(VR) && existsSync(RM)) {
+    for (const [label, file] of [
+      ["verify-behavior/rules/receipt.md", VB_RECEIPT],
+      ["verification-receipt.md", VR],
+      ["observe-run/rules/receipt-mapping.md", RM],
+    ]) {
+      const body = readFileSync(file, "utf8");
+      for (const t of TOKENS) {
+        s.check(`G52c ${label} names "${t}"`, body.includes(t), `"${t}" not found in ${label}`);
+      }
+    }
+    const rmBody = readFileSync(RM, "utf8");
+    // Read the LAST cell of every row in the mapping table and take its leading backticked token.
+    // The prior regex required an em-dash or hyphen gloss after the token, so a fifth verdict
+    // added as a bare `| \`unproven\` |` cell — the likeliest shape a new row takes — was invisible
+    // to the check that exists to catch it.
+    const rmLines = rmBody.split("\n");
+    const headerIdx = rmLines.findIndex((l) => /^\|\s*Observed collection state\s*\|/.test(l));
+    const verdictCellTokens = [];
+    for (const l of headerIdx < 0 ? [] : rmLines.slice(headerIdx + 2)) {
+      if (!l.startsWith("|")) break;
+      const cells = l.split("|").slice(1, -1).map((c) => c.trim());
+      const token = (cells[cells.length - 1] ?? "").match(/^`([a-z]+)`/);
+      if (token) verdictCellTokens.push(token[1]);
+    }
+    // Without this, renaming the table's header would silently yield zero parsed tokens and the
+    // fifth-token check below would pass vacuously — the same failure mode one level up.
+    s.check("G52c the mapping table's Verdict column parses", verdictCellTokens.length >= TOKENS.length,
+      `${verdictCellTokens.length} verdict cell(s) parsed, expected >= ${TOKENS.length}`);
+    const fifth = verdictCellTokens.filter((t) => !TOKENS.includes(t));
+    s.check("G52c observe-run introduces no fifth verdict token", fifth.length === 0,
+      fifth.length ? `unexpected token(s): ${fifth.join(", ")}` : "");
+  }
+
+  // (d) verify-behavior integration: ladder.md's Tier 3 table names observe-run as a third
+  // approach, and verification-receipt.md names observe-run while retaining its existing 2.6b
+  // ordering reference and null-drop invariant intact — a future edit that swaps in observe-run
+  // language must not silently drop either anchor.
+  // break-shape: G52d — deleting "observe-run" from ladder.md's Tier 3 table, or from
+  // verification-receipt.md, or deleting the "2.6b" or "null" references from
+  // verification-receipt.md, flips the corresponding check red; restoring goes green.
+  const LADDER = join(REPO_ROOT, "skills/quality/verify-behavior/rules/ladder.md");
+  s.check("G52d ladder.md exists", existsSync(LADDER));
+  if (existsSync(LADDER) && existsSync(VR)) {
+    const ladderBody = readFileSync(LADDER, "utf8");
+    const vrBody = readFileSync(VR, "utf8");
+    // Slice the section positionally rather than matching `## Tier 3[\s\S]*observe-run`, which
+    // matches ANYWHERE after the heading — the mention could sit in the file's last section and
+    // the check would still pass, so the guard's name overclaimed its scope. Same idiom as G49.
+    const tier3 = ladderBody.split(/^## /m).find((x) => x.startsWith("Tier 3")) || "";
+    s.check("G52d ladder.md's Tier 3 section names observe-run as a third approach",
+      tier3.includes("observe-run"),
+      "no observe-run mention inside the Tier 3 section");
+    s.check("G52d verification-receipt.md names observe-run",
+      vrBody.includes("observe-run"), "no observe-run mention found");
+    s.check("G52d verification-receipt.md still cites Step 2.6b",
+      vrBody.includes("2.6b"), "2.6b reference missing");
+    s.check("G52d verification-receipt.md still states the null-drop invariant",
+      /null-drop invariant/i.test(vrBody), "null-drop invariant reference missing");
+  }
+
+  // (e) both new L2 suites exist, resolve, and their golden sets are correctly shaped: valid
+  // JSONL, at least 10 cases, both choices exercised, and a majority-class baseline strictly
+  // below the EVAL_GATE floor grepped out of evals-l2.yml — never re-encoded here, same
+  // discipline as G21n. break-shape: G52e — collapsing either golden set to a single label, or
+  // truncating it below 10 cases, flips the corresponding sub-check red; restoring goes green.
+  {
+    const suitesBody = readFileSync(join(REPO_ROOT, "scripts/eval/suites.mjs"), "utf8");
+    const l2ymlPath = join(REPO_ROOT, ".github/workflows/evals-l2.yml");
+    const l2ymlBody = existsSync(l2ymlPath) ? readFileSync(l2ymlPath, "utf8") : "";
+    const gateLiteral = (l2ymlBody.match(/EVAL_GATE:\s*"?(\d+)"?/) || [])[1];
+    const gate = gateLiteral === undefined ? null : Number(gateLiteral);
+
+    for (const name of ["observe-run-rung-selection", "observe-run-assertion-provenance"]) {
+      s.check(`G52e suites.mjs declares SUITES entry "${name}"`, suitesBody.includes(`name: "${name}"`));
+      const goldenFile = join(REPO_ROOT, `scripts/eval/golden/${name}.jsonl`);
+      s.check(`G52e ${name}.jsonl exists`, existsSync(goldenFile));
+      if (!existsSync(goldenFile)) continue;
+      const lines = readFileSync(goldenFile, "utf8").split("\n").filter(Boolean);
+      let allParse = lines.length >= 1;
+      const labels = [];
+      for (const ln of lines) {
+        try {
+          const obj = JSON.parse(ln);
+          labels.push(obj.expected);
+        } catch {
+          allParse = false;
+        }
+      }
+      s.check(`G52e ${name}.jsonl parses line-by-line as valid JSON`, allParse);
+      s.check(`G52e ${name}.jsonl has at least 10 cases`, lines.length >= 10, `${lines.length} cases`);
+      const tally = new Map();
+      for (const v of labels) tally.set(v, (tally.get(v) ?? 0) + 1);
+      s.check(`G52e ${name}.jsonl exercises both choices`, tally.size >= 2, `${tally.size} distinct choice(s)`);
+      const majority = labels.length ? Math.max(...tally.values()) : 0;
+      const baseline = labels.length ? (majority / labels.length) * 100 : 100;
+      const split = [...tally.entries()].map(([k, v]) => `${k}=${v}`).sort().join(" ");
+      s.check(`G52e ${name}.jsonl majority-class baseline is below the EVAL_GATE floor`,
+        gate !== null && baseline < gate,
+        gate === null
+          ? "no EVAL_GATE literal found in .github/workflows/evals-l2.yml"
+          : `majority-class baseline ${baseline.toFixed(1)}% >= gate ${gate}% (n=${labels.length}, ${split})`);
+    }
+
+    // A balanced set can still be separable without the rubric, and BOTH of these sets were: the
+    // assertion-provenance set was 8/6 while every `by-construction` case carried a static-read
+    // verb and every `behavioral` one said "run" (85.0% for one keyword), and rung-selection was
+    // 78.6% off the word "process". A responder keying on the verb scored at or above the gate
+    // having never consulted the rubric, so a green run measured nothing. Balance is necessary and
+    // not sufficient — assert the surface vocabulary is NOT the label.
+    //
+    // Guard DECLARED tells, never the best of every token. At n≈30 an unrestricted best-token scan
+    // over ~400 tokens finds stopwords by chance: `and`, `one`, and `with` all land near 70%, and
+    // `confirm` scores ~76% pointing at OPPOSITE labels in the two suites — which is the proof it
+    // is sampling noise rather than a learnable shortcut. A guard chasing that maximum would chase
+    // chance forever and could never be satisfied. The tells below are instead the vocabularies a
+    // rubric-free responder could plausibly key on, one per decision dimension, declared here and
+    // fixed. The unrestricted scan stays an authoring aid, not a gate.
+    //
+    // Each tell is scored BOTH ways: a keyword that is wrong 80% of the time is an 80%-accurate
+    // classifier with its polarity flipped, so `max(acc, 100 - acc)` is the real shortcut strength
+    // and is what must sit below the EVAL_GATE floor.
+    // break-shape: G52e — deleting the `decoy-` cases from either golden set flips 5 of these 6
+    // separability checks red. Measured on the decoy-free sets: assertion-provenance's run tell
+    // returns to **100.0%** (a rubric-free responder answering on one verb scored a perfect 14/14
+    // on the set as originally shipped — worse than the 85% first reported), `startSpan` to 85.7%,
+    // its static verb to 78.6%; rung-selection's `process` tell to 78.6% and its rung-2 vocabulary
+    // to 85.7%. The sixth, rung-selection's `offline|in-memory`, lands at 57.1% and stays green —
+    // it was never the shortcut, and saying "all six" here would overstate what the deletion shows.
+    // typoing a tell's regex so it matches nothing flips the partition sub-check red rather than
+    // silently degrading the separability check into a second majority-baseline measurement.
+    {
+      const DECLARED_TELLS = {
+        "observe-run-assertion-provenance": [
+          [/\brun\b|\brunning\b|\bexecut/i, "behavioral"],
+          [/startspan/i, "by-construction"],
+          [/\bgrep\b|\bstatic|\bsource\b/i, "by-construction"],
+        ],
+        "observe-run-rung-selection": [
+          [/process/i, "rung-1"],
+          [/baseline|cross-process|separately-deployed/i, "rung-2"],
+          [/offline|in-memory/i, "rung-1"],
+        ],
+      };
+      // "without running anything" / "without executing the code" is a STATIC tell, not a run
+      // verb. Counting it as one let an earlier version of this guard pass on two cases that
+      // execute nothing at all, so the negated form is stripped before any tell is matched.
+      const surfaceOf = (r) => String(r.input).replace(/without\s+(?:running|executing)\b[^,.]*/gi, "");
+
+      for (const [name, tells] of Object.entries(DECLARED_TELLS)) {
+        const goldenFile = join(REPO_ROOT, `scripts/eval/golden/${name}.jsonl`);
+        const present = existsSync(goldenFile);
+        s.check(`G52e ${name}.jsonl is present for the declared-tell scan`, present,
+          `${goldenFile} not found — its ${tells.length} declared tell(s) would go unmeasured`);
+        if (!present) continue;
+        const rows = readFileSync(goldenFile, "utf8").split("\n").filter(Boolean)
+          .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+        const choices = [...new Set(rows.map((r) => r.expected))].sort();
+        // The label/other scan below is binary by construction. A SILENT skip here is the same
+        // vacuous shape the scan itself guards against one level up: growing either set to a third
+        // choice — or emptying it — would delete all three of that suite's separability checks
+        // while L1 stayed green, on a total nobody reads case-by-case. Assert the precondition so
+        // the third choice reds here and the author extends the scan instead of losing it.
+        const scannable = rows.length > 0 && choices.length === 2;
+        s.check(`G52e ${name} is a non-empty two-choice set the declared tells can score`, scannable,
+          `${rows.length} row(s) over ${choices.length} choice(s) [${choices.join(", ")}] — the declared-tell scan is binary; extend it before adding a third choice`);
+        if (!scannable) continue;
+        for (const [re, label] of tells) {
+          const other = choices.find((c) => c !== label);
+          let hit = 0;
+          let matched = 0;
+          for (const r of rows) {
+            const fires = re.test(surfaceOf(r));
+            if (fires) matched++;
+            if ((fires ? label : other) === r.expected) hit++;
+          }
+          // A tell that fires on NO row, or on EVERY row, is a constant classifier: it answers
+          // `other` (or `label`) everywhere, so its accuracy is just the majority-class baseline
+          // the check above already measures, and the separability check below passes while
+          // measuring nothing. That is the exact shape a typoed regex takes — `/proces/` matching
+          // zero rows keeps this guard green on a set the real `/process/` tell could separate.
+          // Assert the tell genuinely partitions the set before reading its accuracy.
+          s.check(`G52e the ${re.source} tell partitions ${name}`,
+            matched > 0 && matched < rows.length,
+            `matches ${matched}/${rows.length} rows — a constant classifier re-measures the majority baseline`);
+          const acc = (hit / rows.length) * 100;
+          const strength = Math.max(acc, 100 - acc);
+          s.check(`G52e ${name} is not separable by the ${re.source} tell`,
+            gate !== null && strength < gate,
+            gate === null
+              ? "no EVAL_GATE literal found in .github/workflows/evals-l2.yml"
+              : `keyword-only accuracy ${acc.toFixed(1)}% (strength ${strength.toFixed(1)}%) >= gate ${gate}% over n=${rows.length}`);
+        }
+      }
+    }
+  }
+
+  // (f) the measurable setup interview question and the profile-template field move together —
+  // neither exists without the other, so a future edit cannot drop one half silently.
+  // break-shape: G52f — deleting the "Dev Run Target" heading from the template (or the
+  // dev-run-target interview question from setup-profile.md) flips this red.
+  const SETUP_PROFILE = join(REPO_ROOT, "skills/quality/measurable/rules/setup-profile.md");
+  const PROFILE_TEMPLATE = join(REPO_ROOT, "skills/quality/measurable/templates/observability-profile.template.md");
+  {
+    const setupBody = existsSync(SETUP_PROFILE) ? readFileSync(SETUP_PROFILE, "utf8") : "";
+    const templateBody = existsSync(PROFILE_TEMPLATE) ? readFileSync(PROFILE_TEMPLATE, "utf8") : "";
+    const hasQuestion = /dev run target|dev-run target|local dev target/i.test(setupBody);
+    const hasField = /dev run target/i.test(templateBody);
+    s.check("G52f measurable setup-profile.md carries the dev-run-target interview question",
+      hasQuestion, existsSync(SETUP_PROFILE) ? "no dev-run-target question found" : "setup-profile.md not found");
+    s.check("G52f observability-profile.template.md carries the matching Dev Run Target field",
+      hasField, existsSync(PROFILE_TEMPLATE) ? "no Dev Run Target field found" : "template not found");
+    s.check("G52f the question and the field move TOGETHER (neither exists alone)",
+      hasQuestion === hasField,
+      `question=${hasQuestion} field=${hasField}`);
+  }
+
+  // (g) reader-adapters.md names at least three non-Dash0 readers and carries the
+  // "selects the implementation, it never gates the rung" invariant.
+  // break-shape: G52g — deleting the invariant sentence, or trimming the non-Dash0 reader list
+  // below three, flips the corresponding check red.
+  const READER_ADAPTERS = join(REPO_ROOT, "skills/quality/observe-run/rules/reader-adapters.md");
+  s.check("G52g reader-adapters.md exists", existsSync(READER_ADAPTERS));
+  if (existsSync(READER_ADAPTERS)) {
+    const body = readFileSync(READER_ADAPTERS, "utf8");
+    s.check("G52g carries the 'selects the implementation, it never gates the rung' invariant",
+      body.includes("selects the implementation, it never gates the rung"));
+    // Deduplicate before counting: the raw match array counts MENTIONS, so one reader named
+    // three times satisfied `>= 3` and the documented break-shape (trimming the list to a
+    // single reader) did not fire. The guard is about distinct readers, so count distinct.
+    const nonDash0 = new Set(
+      (body.match(/otel-desktop-viewer|file exporter|in-memory exporter|stdout exporter|jaeger|otel-tui|collector/gi) || [])
+        .map((m) => m.toLowerCase()));
+    s.check("G52g names at least three non-Dash0 readers", nonDash0.size >= 3,
+      `${nonDash0.size} distinct reader(s) found`);
+    s.check("G52g states a missing Dash0 CLI costs rung 1 nothing",
+      /costs rung 1 nothing|rung 1 costs nothing/i.test(body));
+    // The flag's own page must not list `dev.run.id` among the keys it stamps. It did, and that
+    // was the restatement half of the defect below: the flag upserts onto EVERY forwarded batch,
+    // metrics included, so naming `dev.run.id` here contradicts run-identity.md's per-signal
+    // scope one file away. Scoped to the decoration-flags line, not the whole file, because the
+    // page legitimately DISCUSSES the attribute in saying why it is excluded.
+    const decoFlag = body.match(/`--resource-attribute key=value`[\s\S]*?(?=\n\n)/);
+    s.check("G52g the decoration-flags line does not claim to stamp `dev.run.id`",
+      !!decoFlag && !/dev\.run\.id/.test(decoFlag[0]),
+      "`--resource-attribute` is batch-level with no per-signal scoping, so it cannot carry an attribute run-identity.md scopes to spans and logs only");
+  }
+
+  // (h) run-identity.md — the only observe-run rule file with no guard, and the one that states a
+  // per-signal constraint. Stating a constraint is not the same as it being SATISFIABLE: the
+  // `Stamp on` column says `dev.run.id` never reaches metrics, while the mechanism it named for
+  // rung 2 (`--resource-attribute`) upserts onto every forwarded batch and the proxy forwards
+  // metrics. So the guard asserts the pair — the constraint AND a stated rung-2 mechanism that can
+  // honour it — since either alone is what the defect looked like.
+  // break-shape: G52h — deleting the never-metrics scope, or deleting the rung-2 mechanism
+  // section that makes it satisfiable, flips the corresponding check red.
+  const RUN_IDENTITY = join(REPO_ROOT, "skills/quality/observe-run/rules/run-identity.md");
+  s.check("G52h run-identity.md is present", existsSync(RUN_IDENTITY),
+    `${RUN_IDENTITY} not found — the run-identity constraints would go unchecked`);
+  if (existsSync(RUN_IDENTITY)) {
+    const body = readFileSync(RUN_IDENTITY, "utf8");
+    s.check("G52h `dev.run.id` is scoped away from metrics",
+      /`dev\.run\.id`[\s\S]{0,200}?never metrics/.test(body) || /never reach a metric dimension/.test(body),
+      "the never-metrics scope on `dev.run.id` is the constraint every other rule here depends on");
+    s.check("G52h the never-metrics scope names a rung-2 mechanism that can honour it",
+      /not free at rung 2/.test(body) && /every forwarded batch/.test(body),
+      "rung 2's `--resource-attribute` upserts onto every forwarded batch, so a stated per-signal scope with no alternative mechanism is unsatisfiable there");
+    // The unsatisfiable case must RESOLVE to a rung change, never to a degraded rung 2. The first
+    // version said "omit `dev.run.id` at rung 2 and scope by time window", which creates a rung-2
+    // state the rest of the pipeline cannot serve: the filter matches nothing, so the observed set
+    // is empty and `totals` — its own size — is 0, which is the `null` row on EVERY claim. Rung 2
+    // decides nothing, forever. Assert the resolution, not merely that one exists.
+    // This rationale claimed "grades an emitted span `contradicts`" until round 13, and that was
+    // true of the PRE-round-11 realization, where `totals` was the proxy's counter and kept counting
+    // while the observed set emptied. Round 11 closed that route and left the argument for it
+    // standing here — in a guard's own comment and failure message, one layer below the four prose
+    // surfaces that round 13 found. A guard defended by a hazard that no longer exists reads as
+    // corroboration for the stale claim rather than as a contradiction of it.
+    s.check("G52h the unsatisfiable-at-rung-2 case resolves to a rung change, not a degraded rung 2",
+      /Rung 2 is unavailable for this run/.test(body) && !/Omit `dev\.run\.id` at rung 2/.test(body),
+      "without `dev.run.id` the filter matches nothing, so the observed set is empty and `totals` is 0 — every claim grades `null` and rung 2 decides nothing; the fallback is rung 1, never a rung 2 with a widened filter");
+    s.check("G52h rung 2 is stated to REQUIRE `dev.run.id`, so its readers may assume it",
+      /no rung-2 path without it/.test(body),
+      "six readers filter on `dev.run.id` unconditionally; either they all learn a new state or rung 2 requires the attribute — the second is what makes them correct");
+  }
+
+  // (i) The CONSUMER side of the same contract. `G52h` asserts the rule; nothing asserted its
+  // readers agree, which is the direction the round-9 sweep escaped in — a fix landing on the
+  // authority and not its restatements, for the fifth time in this skill. Each check below reads a
+  // DIFFERENT file, so a future edit that re-introduces an optional `dev.run.id` reds here on
+  // whichever reader it contradicts rather than on the rule it edited.
+  // break-shape: G52i — making `rungs.md`'s rung-2 query filter conditional, or dropping
+  // `dev.run.id` from the Definition of Done, flips the corresponding check red.
+  const OBSERVE_SKILL = join(REPO_ROOT, "skills/quality/observe-run/SKILL.md");
+  const RUNGS_MD = join(REPO_ROOT, "skills/quality/observe-run/rules/rungs.md");
+  const RECEIPT = join(REPO_ROOT, "skills/quality/observe-run/rules/receipt-mapping.md");
+  for (const [label, path] of [["SKILL.md", OBSERVE_SKILL], ["rungs.md", RUNGS_MD], ["receipt-mapping.md", RECEIPT]]) {
+    s.check(`G52i ${label} is present for the run-identity consumer checks`, existsSync(path),
+      `${path} not found — a consumer of the \`dev.run.id\` contract would go unchecked`);
+  }
+  if (existsSync(RUNGS_MD)) {
+    const body = readFileSync(RUNGS_MD, "utf8");
+    s.check("G52i rungs.md's rung-2 query filters on `dev.run.id` unconditionally",
+      /--filter "dev\.run\.id is <run-id>"/.test(body),
+      "the rung-2 worked example is the one a run copies; a conditional filter here is a second implementation of the rule");
+  }
+  if (existsSync(OBSERVE_SKILL)) {
+    const body = readFileSync(OBSERVE_SKILL, "utf8");
+    // Scope to the DoD section, then test for the REQUIREMENT, not for the token. A whole-section
+    // `/dev\.run\.id/` was the `/Rung 1/.test(section)` shape round 6 repaired on `G52b`: bullet 4
+    // already carried the token BEFORE round 10 added the rung-2 requirement, so deleting exactly
+    // the two-sentence requirement clause left L1 green at 1747/1747 while the contract it guards
+    // was gone. Conjoin the requirement's own wording, which nothing else in the section supplies.
+    const dod = body.slice(body.indexOf("## Definition of Done"));
+    s.check("G52i the Definition of Done still demands `dev.run.id`",
+      /dev\.run\.id/.test(dod) && /falls back to rung 1/.test(dod),
+      "a DoD box a conforming rung-2 run cannot tick is a contract nothing can satisfy — and the token alone does not state the rung-2 requirement");
+  }
+  if (existsSync(RECEIPT)) {
+    const body = readFileSync(RECEIPT, "utf8");
+    // The two scopings are DIFFERENT and the file must say so. Asserting they are both "this run"
+    // is what let a false claim about rung 2 sit one line under the row that contradicted it.
+    // The `totals` claim must be a REQUIREMENT on the realization, not a description of whichever
+    // counter a rung happens to have. Round 11: rung 2 realized it as the proxy's `spans.total`,
+    // which counts every process pointed at the ports, while the observed set is attribute-
+    // filtered — so the two columns disagreed on MEMBERSHIP and a foreign span graded the run
+    // `contradicts`. The fix is that `totals` IS the observed set's size on every rung.
+    // Test the REALIZATION ROW, not the prose that states the requirement. Scoping this to the
+    // whole file left the reviewer's own revert — restoring the proxy counter as the rung-2
+    // `totals` — GREEN at 1751/1751, because the requirement paragraph one screen up still said
+    // the right thing. That is the defect one layer out: a guard satisfied by the claim rather
+    // than by the thing the claim is about. Same scoping lesson as G52b's body-row parse.
+    const totalsRow = body.split("\n").find((l) => /^\|\s*`totals`\s*\|/.test(l));
+    const totalsCells = (totalsRow ?? "").split("|").slice(1, -1).map((c) => c.trim());
+    s.check("G52i the `totals` realization row exists and has a cell per rung",
+      totalsCells.length >= 3,
+      `${totalsCells.length} cell(s) in the \`totals\` row — the per-rung realization is what the requirement below is about`);
+    // POSITIVE, and PER RUNG. Two earlier shapes both failed on the same axis. A denylist of two
+    // literals (`spans.total`, `final_total`) was narrower than its own name — "the proxy's own
+    // count of forwarded span records over the run" evaded it. Replacing it with a whitelist of
+    // nouns (`observed set|span list|exported file`) applied uniformly to every rung cell was
+    // narrower still in a subtler way: NAMING the set and BEING the set are different claims, so
+    // "the proxy's own running count, reported as the size of the observed set" satisfied it while
+    // reinstating the counter, green at 1753/1753.
+    // The fix is to assert, per rung, the ARTIFACT that IS the observed set on that rung — rung 1's
+    // own export, and at rung 2 the `dash0 spans query` whose attribute filter is what DEFINES the
+    // set (`receipt-mapping.md`'s own words). A cell describing a proxy counter has no reason to
+    // carry that filter expression. The denylist survives as a second conjunct for the spellings
+    // that name the rejected counter outright.
+    // Residual, stated rather than papered over: prose can still evade this ("...as what the query
+    // would return"). `receipt-mapping.md` says so itself — whether a filled cell says the right
+    // thing is a reviewer's judgement — and the bar here is that the two probes that HAVE gotten
+    // through now red, not that no sentence ever can.
+    // ADDITION-PROOF, the way `G52b` already is. The first version of these indexed
+    // `totalsCells[1]` and `totalsCells[2]` BY HAND, so a rung 3 added to `rungs.md` and given a
+    // column here carried any `totals` cell past them in silence — probed: a rung-3 cell reading
+    // "the number of records the collector reported for this run" (a wider counter, exactly the
+    // round-11 defect) tripped no `G52i` check at all. That is round 8's sub-shape — a hand-typed
+    // list blind to ADDITIONS — recurring inside the round-13 fix written for the same family, one
+    // round later, which is why it is worth saying plainly: every probe I ran on those two checks
+    // was a MODIFICATION probe, and a modification probe cannot see a missing row.
+    // `G52b` has derived its rung set from `rungs.md`'s `## Rung N` headings since round 6. Do the
+    // same: require a rule PER RUNG (so a new rung reds loudly rather than going unchecked), and
+    // resolve each rung's COLUMN from the header instead of assuming its position.
+    const TOTALS_ARTIFACT = {
+      "1": { re: /span list|exported file/, what: "the run's own exported span records" },
+      "2": { re: /dash0 spans query[\s\S]*dev\.run\.id is/, what: "the count of the `dash0 spans query` whose `dev.run.id` filter DEFINES the observed set" },
+    };
+    const rungNums = existsSync(RUNGS_MD)
+      ? [...new Set((readFileSync(RUNGS_MD, "utf8").match(/^## Rung (\d+)/gm) || []).map((h) => h.match(/(\d+)/)[1]))]
+      : [];
+    s.check("G52i the rung set is derivable for the `totals` artifact checks", rungNums.length >= 2,
+      `${rungNums.length} rung heading(s) in rungs.md — with none derived, the per-rung checks below would vacuously pass`);
+    const realSection = body.match(/### What `CLEAN` and `totals` are, per rung[\s\S]*?(?=\n## )/);
+    const realHeaderCells = ((realSection?.[0].split("\n") ?? []).find((l) => /^\|.*\bRung\b/.test(l)) ?? "")
+      .split("|").slice(1, -1).map((c) => c.trim());
+    // The artifact is only HALF the definition, and round 14 guarded only that half. `totals` is
+    // "the number of **span** records in <artifact>", and the record TYPE is load-bearing
+    // independently of the container: on rung 1 a file exporter's NDJSON holds logs too, so summing
+    // every record makes `totals > 0` satisfiable by a run that emitted no spans — it skips the
+    // `null` row it belongs on, matches `CLEAN AND totals > 0` with the expected span absent, and
+    // grades `contradicts`. A confident disproof produced by counting log records.
+    // Probed before fixing: dropping `**span**` from the rung-1 cell left L1 GREEN at 1761/1761,
+    // because `/span list|exported file/` matches the CONTAINER's name and never the record type.
+    // So the type gets its own conjunct per rung rather than being folded into the artifact regex —
+    // a cell can lose one and keep the other, and the failure messages say which.
+    const SPAN_RECORD = /\*\*span\*\* records|\bspan records\b/;
+    for (const n of rungNums) {
+      const rule = TOTALS_ARTIFACT[n];
+      s.check(`G52i rung ${n} has a \`totals\` artifact rule`, !!rule,
+        `rung ${n} is selectable but nothing says what its \`totals\` must BE — it would be held only by the counter denylist below, which any fresh wording walks around`);
+      if (!rule) continue;
+      const col = realHeaderCells.findIndex((c) => new RegExp(`^Rung ${n}\\b`).test(c));
+      s.check(`G52i rung ${n}'s \`totals\` cell is ${rule.what}`,
+        col >= 0 && rule.re.test(totalsCells[col] ?? ""),
+        col < 0
+          ? `no \`Rung ${n}\` column in the realization header, so its \`totals\` cell cannot be located`
+          : `rung ${n}'s \`totals\` cell does not name the artifact that IS the observed set on that rung — naming the set and being the set are different claims`);
+      // The failure message is PER RUNG because the hazard is not the same on both, and one message
+      // serving both overstated it on rung 2: `receipt-mapping.md` says `dash0 spans query` returns
+      // spans by construction, so a mis-worded rung-2 cell cannot actually admit a log record. What
+      // it breaks there is the cell agreeing with the definition it realizes — still worth a red,
+      // and worth saying honestly, since that same file's rule is that overstating a live hazard to
+      // defend a rule is how the next author learns to discount the file.
+      const TYPE_WHY = {
+        "1": "counting logs or metrics in makes `totals > 0` reachable by a run that emitted no spans, which grades `contradicts` instead of `null`",
+        "2": "`dash0 spans query` returns spans by construction, so this cannot admit a log record — what it breaks is the cell stating the definition it realizes, leaving the spans-only rule true on one rung's wording only",
+      };
+      s.check(`G52i rung ${n}'s \`totals\` counts SPAN records, not every record in the artifact`,
+        col >= 0 && SPAN_RECORD.test(totalsCells[col] ?? ""),
+        `rung ${n}'s \`totals\` cell names its artifact without naming the record type — ${TYPE_WHY[n] ?? "every assertion this skill grades is a span claim, so a cell that does not say so leaves the record type to the reader"}`);
+    }
+    // …and the rationale that makes the conjunct above non-arbitrary. Deleting the whole paragraph
+    // also left L1 green at 1761/1761 — the operative cells and their reason were BOTH unguarded,
+    // which is the round-13 shape (one definition, several surfaces, L1 on none of them). Assert
+    // the MECHANISM, not just the rule: a reader who has the rule without the failure it prevents
+    // is the reader who relaxes it.
+    s.check("G52i the spans-only rule for `totals` is stated with the failure it prevents",
+      /`totals` counts spans, on both rungs/.test(body)
+        && /count span records alone, not every record/.test(body)
+        && /confident disproof produced by counting log records/.test(body),
+      "without the mechanism the rule reads as pedantry: summing the `logs` / `metrics` counters in makes `totals > 0` satisfiable by a run that emitted no spans, so it skips the `null` row and grades `contradicts` on an absence it never measured");
+    s.check("G52i no `totals` realization names the rejected proxy counter",
+      totalsCells.slice(1).every((c) => !/\bspans\.total\b|final_total|forwarded/.test(c)),
+      "a rung realizing `totals` as the proxy's own counter counts every process pointed at the ports, so a foreign span inflates it without entering the observed set and the run grades `contradicts` on spans it never emitted");
+    s.check("G52i the requirement the `totals` row realizes is stated",
+      /size of the observed set/.test(body) && /delivery receipt, not a census/.test(body),
+      "absence from a set is disproof only when the set is the one the count attested to");
+    // Scope to the WAIT paragraph, and assert what round 12 actually changed. The prior check read
+    // `/re-query until the observed set stops growing/` over the whole file — a sentence the
+    // ROUND-11 text also contained, immediately before "taking `final_total.spans` as the number to
+    // wait for". So the check was green on the defect it was added for, and restoring that target
+    // kept L1 at 1753/1753. The discriminating claims are that the set's own size is the ONLY
+    // quantity watched, and the named rejection of the counter as a target.
+    const waitStart = body.indexOf("`null` is the floor, not the goal");
+    const waitEnd = body.indexOf("Never extend the wait");
+    const wait = waitStart >= 0 && waitEnd > waitStart ? body.slice(waitStart, waitEnd) : "";
+    s.check("G52i the rung-2 read waits for ingest before grading an absence",
+      /re-query until the observed set stops growing/.test(wait),
+      "rung 2's cost is ingest latency, so a query issued at shutdown can return empty on a perfect delivery — an unfinished read is `null`, never `contradicts`");
+    s.check("G52i the ingest wait watches the observed set's own size, never a proxy counter",
+      /the set's own size is the only quantity to watch/.test(wait)
+        && /Do not wait for `final_total\.spans`/.test(wait),
+      "waiting on a delivery receipt that counts every process pointed at the ports means the target is never met under a second process, the deadline always fires, and every such run grades `ambiguous` where `run-identity.md` says `null`");
+    // Round 13 RETIRED the check that used to sit here — `/proxy's own lifetime/ && /different
+    // mechanisms/`, which asserted that `totals` is scoped differently per rung. That was the
+    // pre-round-11 realization: round 11 made `totals` the observed set's own size on every rung,
+    // so `dev.run.id` scopes it on both and there is no asymmetry left to state. The check outlived
+    // the claim and then REQUIRED it, so correcting the prose turned L1 red — a guard holding a
+    // file to a contract the file's own definition had already replaced.
+    // What is worth guarding is the replacement plus the reason the proxy counters are disqualified.
+    s.check("G52i `totals` is scoped by `dev.run.id` on both rungs, and the proxy counters serve `CLEAN` alone",
+      /scoped by `dev\.run\.id` on both rungs/.test(body) && /cannot serve as `totals`/.test(body),
+      "the proxy's counters are scoped by the proxy's LIFETIME, and a lifetime is not a run — they answer whether delivery was healthy and are indifferent to whose spans were delivered");
+    s.check("G52i the two rung-2 population preconditions are stated where the rule lives",
+      existsSync(RUN_IDENTITY) && /proxy is exclusive to this run/i.test(readFileSync(RUN_IDENTITY, "utf8"))
+        && /participating in the claim carries `dev\.run\.id`/.test(readFileSync(RUN_IDENTITY, "utf8")),
+      "an OTel SDK at default endpoint config already reaches the proxy, so exclusivity and per-process stamping are what make the two populations coincide — neither follows from the attribute merely being present");
+  }
+
+  // (k) The defect round 13 found was NOT one stale sentence — it was ONE definition with FIVE
+  // surfaces, of which L1 guarded exactly one, and guarded it at the stale value. Round 11 made
+  // `totals` the observed set's own size; the realization row and one paragraph were updated, and
+  // the asymmetry paragraph, the spans-counting imperative, both worked examples, `run-identity`'s
+  // input table, and `G52h`'s own rationale all kept describing the proxy counter for two rounds.
+  // Guarding the five individually would be five greps that go stale the same way, so guard the
+  // CLASS: in these two files every mention of a proxy counter must sit in a block that REJECTS or
+  // HISTORICISES it. That is true of all seven mentions today, and it is the property each of the
+  // five violations broke.
+  // A fenced block is a violation outright, whatever it contains: a worked example is copied far
+  // more often than the prose above it is read, and a `text` fence has nowhere to put a rejection.
+  // That is the surface that carried `spans.total=3` through the whole round-11..12 window.
+  // break-shape: G52k — restoring `spans.total` to the Correct example, the rung-2 "read
+  // `spans.total` alone" imperative, or `run-identity`'s proxy-counter row flips it red.
+  // Residual, stated rather than papered over: a block could type a rejection marker and then
+  // prescribe the counter anyway. That is a self-contradicting paragraph — visible to a reader in a
+  // way that silent agreement with a retired definition was not — and `receipt-mapping.md` already
+  // says whether a filled cell means the right thing is a reviewer's judgement.
+  // The marker list is a WHITELIST over blocks that mention the counter, so every entry widens what
+  // passes and a marker made of ordinary English widens it by an unknown amount. Two were exactly
+  // that — `used to` and `cannot serve` — and neither was even paying for itself: `cannot serve`
+  // was load-bearing for NO block (it is a `G52i` body marker that drifted into this list), and
+  // `used to` was redundant with `route is closed` in the single block carrying both. Every
+  // remaining marker either names the counter's disqualifying property or marks a historicisation,
+  // and each is load-bearing for at least one block — asserted below, because a dead marker is pure
+  // attack surface that nothing else would ever notice.
+  const COUNTER = /`?\bspans\.total\b`?|`?\bfinal_total(\.spans)?\b`?/;
+  const MARKERS = ["never the proxy's", "delivery receipt, not a census", "every process pointed at its ports",
+    "Do not wait for", "deliberately absent", "earlier draft", "route is closed"];
+  // Deriving the pattern from the list bought addition-proofing and brought a DEGENERATE INPUT with
+  // it: `new RegExp([].join("|"))` is `/(?:)/`, which matches every block — so an empty `MARKERS`
+  // makes `offenders` permanently empty AND `dead` permanently empty, and BOTH G52k checks pass on
+  // a tree that prescribes the counter freely. No syntax error, no red check. That is this file's
+  // own recurring defect arriving through the refactor written to close the previous instance of
+  // it, so the list gets the same non-degeneracy floor `rungNums` has above, for the same reason.
+  // Assert the COMPILED PATTERN, never the array's arity. The first attempt at this floor was
+  // `MARKERS.length > 0` — an empty-ARRAY check for an empty-STRING hazard, and the gap is not
+  // narrow: `[""]` has length 1, and seven real markers plus `""` has length 8, so the floor passes
+  // while `join("|")` leaves an empty alternative and `REJECTS` is `/(?:)/` again. Probed: with
+  // that eighth entry and a prescriptive `spans.total` block in the file, L1 was GREEN 1766/1766.
+  // The companion load-bearing check cannot catch it either, since `b.includes("")` is always true.
+  // The precedent cited for the arity floor is where it went wrong: `rungNums.length >= 2` is
+  // sufficient because its elements are `(\d+)` captures that CANNOT be empty. These are free-form
+  // strings, so length is a proxy for the property rather than the property. `REJECTS.test("")` IS
+  // the property — a pattern matching the empty string matches every block by construction — so it
+  // is asserted on the built regex, after it exists.
+  const REJECTS = new RegExp(MARKERS.map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
+  s.check("G52k the compiled rejection pattern is not vacuous", !REJECTS.test(""),
+    "`REJECTS` matches the empty string, so it matches every block — an EMPTY entry in MARKERS leaves an empty alternative in the alternation, and both G52k checks below pass on a tree that prescribes the counter freely. A whitespace-only entry is NOT this check: it compiles to `/ /`, which does not match `\"\"` — the length floor below is what catches that one");
+  // A second, weaker conjunct, and weaker ON PURPOSE rather than by oversight: the check above
+  // catches vacuity exactly, but a one- or two-character marker is near-vacuous without literally
+  // matching `""`. A length floor is a proxy — an eight-character phrase can still be ordinary
+  // English — and it is kept only because it costs nothing and closes the degenerate-but-nonempty
+  // band. The real limit on generic markers stays the one documented below: it is not mechanical.
+  // The BLANK entry is this check's alone, not the vacuity check's: `[" "].join("|")` is `" "`, so
+  // `REJECTS` is `/ /` and `REJECTS.test("")` is FALSE. The two checks cover the degenerate band
+  // JOINTLY, and each message now names the subset IT fires on rather than the union — the earlier
+  // wording sent a reader debugging a blank marker to the check that stays green on it, and the
+  // probe that would have shown this was run and its output read past.
+  s.check("G52k no rejection marker is degenerately short", MARKERS.every((m) => m.trim().length >= 8),
+    `marker(s) under 8 non-blank characters: ${MARKERS.filter((m) => m.trim().length < 8).map((m) => JSON.stringify(m)).join(", ")} — a marker this short cannot name the counter's disqualifying property, so it admits blocks on an accident of wording`);
+  for (const [label, path] of [["receipt-mapping.md", RECEIPT], ["run-identity.md", RUN_IDENTITY]]) {
+    if (!existsSync(path)) continue;
+    // Normalise emphasis and semantic line breaks before matching. This repo's prose rule is one
+    // sentence per line, so a marker phrase is routinely split across a newline and wrapped in
+    // `**`; matching the raw block would have meant shortening the markers until they fit inside
+    // one line fragment, which is how a marker list stops meaning anything.
+    const flat = (b) => b.replace(/\*\*/g, "").replace(/\s+/g, " ");
+    const blocks = readFileSync(path, "utf8").split(/\n\s*\n/);
+    const offenders = blocks
+      .filter((b) => COUNTER.test(flat(b)))
+      .filter((b) => b.trimStart().startsWith("```") || !REJECTS.test(flat(b)))
+      .map((b) => b.trim().split("\n")[0].slice(0, 70));
+    s.check(`G52k ${label} names a proxy counter only to reject or historicise it`,
+      offenders.length === 0,
+      `${offenders.length} block(s) mention \`spans.total\`/\`final_total\` prescriptively: ${offenders.join(" | ")} — round 11 made \`totals\` the observed set's own size, so a surface still sourcing it from the proxy counter regrades an emitted span`);
+  }
+  // Every marker must be load-bearing. A marker matching no block is a widening of the whitelist
+  // that buys nothing and that no other check would ever surface — `cannot serve` sat there exactly
+  // that way, and it is how a list of specific phrases silently becomes a list of English ones: the
+  // cheap fix for any future red here is to append a broader phrase, and this is what makes that
+  // move visible. Adding a marker means adding the block it covers, in the same change.
+  // What this does NOT catch, said plainly rather than left to look covered: a marker that is
+  // ordinary English AND happens to match a block. `used to` was one — it matched `run-identity`'s
+  // historicisation paragraph, so this check stayed green on it, and removing it was a JUDGEMENT
+  // (redundant there with `route is closed`, which covers the same block). The obvious mechanical
+  // strengthening — require each marker to be the UNIQUE cover of some block — is wrong and was
+  // rejected: it would red on `never the proxy's` and `delivery receipt, not a census`, the two
+  // most specific phrases in the list, because they share their block with a third. Minimality is
+  // not the property wanted here; specificity is, and specificity is not mechanically checkable.
+  // One amendment, so this paragraph does not overclaim in the other direction: the length floor
+  // added above WOULD now red on `used to` — it is seven characters. That is incidental, and for
+  // the wrong reason: it catches the marker for being SHORT, not for being generic, and a generic
+  // phrase of eight characters or more still passes both checks. The claim above stands as stated.
+  {
+    const flat = (b) => b.replace(/\*\*/g, "").replace(/\s+/g, " ");
+    const counterBlocks = [RECEIPT, RUN_IDENTITY]
+      .filter((p) => existsSync(p))
+      .flatMap((p) => readFileSync(p, "utf8").split(/\n\s*\n/))
+      .map(flat)
+      .filter((b) => COUNTER.test(b));
+    const dead = MARKERS.filter((m) => !counterBlocks.some((b) => b.includes(m)));
+    s.check("G52k every rejection marker is load-bearing for at least one block",
+      dead.length === 0,
+      `${dead.length} marker(s) match no counter-mentioning block: ${dead.join(" | ")} — an unused marker only widens what passes, so it is attack surface with no coverage behind it`);
+  }
+
+  // (j) The inventory line in CLAUDE.md names the guard family by RANGE, and a range is a
+  // hand-typed encoding of a set — the round-8 lesson, one layer out. `G52h` and `G52i` were both
+  // added while the line still read `G52a`–`G52g`, so the range is DERIVED from the guards this
+  // file actually defines rather than compared against a literal.
+  // break-shape: G52j — adding a `G52k` check without widening the inventory range, or narrowing
+  // the range by hand, flips it red.
+  // Anchor on the CHECK LABEL, in either quoting style, and never on a bare mention. Two ways to
+  // get this wrong, and the first version had one of them: `/"G52([a-z])\b/` requires a DOUBLE
+  // QUOTE, so `G52e`'s checks and this guard's own check — both template literals — were invisible,
+  // the derivation returned a-d,f-i, and the guard shipped with its inventory range ALREADY STALE
+  // at 1753/1753, its own advertised break-shape inert. That is round 9's `\bAND\b` finding
+  // recurring: a derivation bound to one spelling of the thing it counts.
+  // The other way is over-matching: `/[`"]G52([a-z])\b/` also picks up backticked mentions in
+  // prose — the `G52k` in the break-shape comment above would make `highest` a guard that does not
+  // exist. So require the `s.check(` that makes it a check.
+  const selfSrc = readFileSync(new URL(import.meta.url), "utf8");
+  const g52Letters = [...new Set((selfSrc.match(/s\.check\(\s*["`]G52([a-z])\b/g) || [])
+    .map((m) => m[m.length - 1]))].sort();
+  const highest = g52Letters[g52Letters.length - 1];
+  const CLAUDE_MD = join(REPO_ROOT, "CLAUDE.md");
+  if (existsSync(CLAUDE_MD) && highest) {
+    const claude = readFileSync(CLAUDE_MD, "utf8");
+    s.check(`G52j the CLAUDE.md inventory range covers every G52 guard defined (through G52${highest})`,
+      new RegExp("Guarded by L1 `G52a`–`G52" + highest + "`").test(claude),
+      `l1.mjs defines G52a–G52${highest}; the inventory line names a different range — it is the one claim about this family that nothing else reads`);
+  }
+}
+
 process.exit(s.report() ? 0 : 1);

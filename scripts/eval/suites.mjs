@@ -169,6 +169,37 @@ export const SUITES = [
     inputKey: "input", inputLabel: "Candidate + diff",
     choices: ["surface", "skip"],
   },
+  {
+    name: "observe-run-rung-selection",
+    golden: "golden/observe-run-rung-selection.jsonl",
+    // 28 cases, 15 `rung-1` / 13 `rung-2` — a 53.6% majority-class baseline. Real baseline, not a
+    // bootstrap seed — see the sibling .NOTES.md. Fourteen of the twenty-eight are `decoy-` cases
+    // whose SURFACE VOCABULARY points at the wrong rung (a rung-1 claim that names a
+    // separately-deployed service but asserts only on the caller's own span; a rung-2 claim that
+    // never says "cross-process"), because the original fourteen were balanced AND
+    // keyword-separable — 78.6% off the word "process" alone. L1 G52e scores three declared tells
+    // per suite in both polarities against the EVAL_GATE floor, so deleting the decoys reds L1.
+    rubric: { file: "skills/quality/observe-run/rules/rungs.md", section: null }, // whole file
+    instruction: "You are the observe-run skill choosing a rung for a claim. Using ONLY the rung rules below, pick the cheapest rung that can decide the claim — never escalate to rung 2 when rung 1 can already decide it.",
+    inputKey: "input", inputLabel: "Claim",
+    choices: ["rung-1", "rung-2"],
+  },
+  {
+    name: "observe-run-assertion-provenance",
+    golden: "golden/observe-run-assertion-provenance.jsonl",
+    // 39 cases, 21 `behavioral` / 18 `by-construction` — a 53.8% majority-class baseline. Real
+    // baseline, not a bootstrap seed — see the sibling .NOTES.md. Twenty-five of the thirty-nine are
+    // `decoy-` cases whose SURFACE VERB points at the wrong label (a by-construction check fronted
+    // by "run the suite, then grep the source"; a behavioral one fronted by "grep the exported
+    // OTLP"; a behavioral one that names `startSpan`), because the original fourteen were balanced
+    // AND keyword-separable — a responder keying on the run verb alone scored a perfect 14/14.
+    // L1 G52e scores three declared tells per suite in both polarities against the EVAL_GATE
+    // floor, so deleting the decoys reds L1.
+    rubric: { file: "skills/quality/observe-run/rules/assertion-provenance.md", section: null }, // whole file
+    instruction: "You are the observe-run skill's assertion-provenance check. Using ONLY the discriminator rule below, classify the claim-plus-assertion pair as 'behavioral' (verifiable only by observing a run) or 'by-construction' (satisfiable by reading source alone).",
+    inputKey: "input", inputLabel: "Claim + assertion",
+    choices: ["behavioral", "by-construction"],
+  },
 ];
 
 /** Repo-relative path of a suite's golden file (the `golden` field is relative to scripts/eval/). */
