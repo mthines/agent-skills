@@ -89,6 +89,8 @@ If you can't answer these from the diff alone, ask the user — don't pad the de
 
 **Branch B — No PR template:** Use the lean default below. Do not invent extra sections.
 
+One worked example of each branch — plus a bug fix and a **bad** verbose one to recognise — lives in [`description-examples.md`](./description-examples.md).
+
 ### Lean default (when no template exists)
 
 ```markdown

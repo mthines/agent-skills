@@ -265,6 +265,6 @@ run that buries them has converted the safety valve back into a green-wash.
 | [`branch-reviewer`](../../../agents/branch-reviewer.md) | Sub-step A — the PR-less reviewer, dispatched per iteration. Composes the detection core by reference. |
 | [`review-loop`](../review-loop/SKILL.md) | **Sibling, never nested.** Same loop shape over a different bus. This one runs pre-PR; that one runs once a PR exists. |
 | [`polish`](../polish/SKILL.md) | Sub-step C (`simplify` only). `polish`'s own review pass needs a PR; this loop is what makes a pre-PR review possible at all. |
-| [`create-pr`](../../delivery/create-pr/SKILL.md) | Natural successor — converge here, then open the PR with far less left for the post-draft loop to find. |
+| [`create-pr`](../../delivery/create-pr/SKILL.md) | **Caller**, at its pre-push Step 5.5 — opt-in via `--pre-review` in default mode, default-on under `--split`, where its post-draft `review-loop` cannot run at all and the slot otherwise gets `polish simplify` with no review. Converge here, then open the PR with less left for the post-draft loop to find. |
 | [`pr-review`](../pr-review/SKILL.md) | The one-shot read-only counterpart, for a PR. `--report` is this skill's equivalent for a branch. |
 | [`findings-bus.md`](./rules/findings-bus.md) | Owns the record, the lifecycle, and the convergence predicate. Read it; never restate it. |

@@ -8,16 +8,19 @@ description: >
   down with --no-review, --no-simplify, --quick (light mechanical pass only),
   or --no-quality (skip the loop). A post-push external-bot feedback loop
   runs by default (--no-feedback to skip). On a UI diff, injects a preview
-  verification spec by default (--no-preview-spec to skip). With --split,
-  breaks the branch diff into 2–4 focused, dependency-ordered draft PRs after
-  user approval. Escalates judgment-required CI failures via /confidence
-  rather than guessing. Invoke with /create-pr or /create-pr --split.
+  verification spec by default (--no-preview-spec to skip). Before the push,
+  --pre-review converges the branch with review-branch, which needs no PR;
+  split mode runs it by default in place of its review-less pre-split
+  simplify. With --split, breaks the branch diff into 2–4 focused,
+  dependency-ordered draft PRs after user approval. Escalates
+  judgment-required CI failures via /confidence rather than guessing. Invoke
+  with /create-pr or /create-pr --split.
 disable-model-invocation: false
-argument-hint: '[--split] [--quick] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-preview-spec]'
+argument-hint: '[--split] [--quick] [--pre-review] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-preview-spec]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.3.0'
+  version: '3.4.0'
   workflow_type: command
 ---
 
@@ -42,6 +45,8 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft qual
 | `no-quality`   | `--no-quality` anywhere in arguments               | Skip Step 6.5 entirely **and** the Step 6.7 external-bot feedback loop. Wins over every other quality flag.                                                                  |
 | `no-feedback`  | `--no-feedback` anywhere in arguments              | Skip the **default-on** external-bot feedback loop (Step 6.7). Composes with everything. Does not skip the review-loop step.                                                |
 | `no-preview-spec` | `--no-preview-spec` anywhere in arguments        | Skip the **default-on** UI verification spec authoring (Step 6.4). Composes with everything.                                                                                |
+| `pre-review`   | `--pre-review` anywhere in arguments               | Run Step 5.5 — `Skill("review-branch", …)` **before** the push, so the PR opens already converged. **Opt-in in default mode** (Step 6.5 already reviews there), **on by default in split mode** (Step 6.5 cannot run there at all). |
+| `no-pre-review` | `--no-pre-review` anywhere in arguments            | Skip Step 5.5 even in split mode. Split mode then falls back to the review-less `Skill("polish", "simplify")` pre-split pass.                                               |
 
 > **Legacy positive flags.** `--review` and `--simplify` are still accepted as explicit single-pass scoping: `--review` alone ≡ `--no-simplify` (pr-reviewer only), `--simplify` alone ≡ `--no-review` (simplify only), and `--review --simplify` ≡ the default (full loop). Prefer the `--no-*` form — with the full loop now the default, the negative flags read more clearly.
 
@@ -50,7 +55,9 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft qual
 In split mode, skip the contract's length self-check "PR too big" trim — the split *is* the response to that signal.
 Each resulting sub-PR must still pass it on its own.
 
-Step 6.5 cannot serve split mode: it is post-draft and its `review-loop` needs an open PR, which does not exist before S1. So with `--split`, run `Skill("polish", "simplify")` **once on the full branch** before computing the split (before S1) — it is branch-scoped and needs no PR — so each sub-PR inherits the cleaned-up code. Each sub-PR then gets the per-PR quality pass defined in [`rules/split-mode.md`](./rules/split-mode.md).
+Step 6.5 cannot serve split mode: it is post-draft and its `review-loop` needs an open PR, which does not exist before S1. That gap is what [`review-branch`](../../quality/review-branch/SKILL.md) exists to close, so with `--split` **Step 5.5 is on by default** and runs on the full branch before computing the split — it needs no PR, so each sub-PR inherits reviewed-and-converged code rather than merely simplified code. Each sub-PR then gets the per-PR quality pass defined in [`rules/split-mode.md`](./rules/split-mode.md).
+
+Until now that pre-split slot ran `Skill("polish", "simplify")` — mechanical refactors and **no review at all**, because no reviewer could run without a PR. That is now the *fallback*, taken only when Step 5.5 reports a skip (no sub-agent dispatch) or `--no-pre-review` was passed. Say which one ran; a split whose sub-PRs were never reviewed must not be reported as one whose sub-PRs were.
 
 ## Step 0: Resolve your GitHub access path
 
@@ -70,7 +77,32 @@ Follow that contract to produce the title and body. Two `create-pr`-specific not
 - The contract's Step 5 length self-check is the same "PR too big → `/create-pr --split`" signal referenced in the Modes section; in split mode you skip it (the split *is* the response).
 - If you can't infer the *why* / *what* from the diff, ask the user — never pad with guesses.
 
-Then continue to Step 6 to push and open the draft PR.
+Then continue to Step 5.5, and from there to Step 6 to push and open the draft PR.
+
+## Step 5.5: Pre-push branch convergence (delegated to `review-branch`)
+
+The branch is still local here, so there is no PR and no review thread — which is exactly the gap
+[`review-branch`](../../quality/review-branch/SKILL.md) fills. It dispatches `branch-reviewer`,
+which runs the same detection core as `pr-reviewer` and carries findings in
+`.agent/{branch}/findings.jsonl` instead of GitHub threads. Zero GitHub calls, no PR required.
+
+**Run it** when `--pre-review` is in `$ARGUMENTS`, or when `--split` is (default-on there).
+**Skip it** on `--no-pre-review`, `--no-quality`, `--no-review`, a non-code diff, or a plain
+default-mode run with no `--pre-review`.
+
+| Mode | Invoke |
+| --- | --- |
+| default (`--pre-review`) | `Skill("review-branch", "--cap 3")` |
+| split (`--split`) | `Skill("review-branch", "")` |
+
+**Full procedure lives in [`rules/pre-push-review.md`](./rules/pre-push-review.md).** Load it when
+entering this step; it covers the skip conditions, why the step is opt-in in default mode and
+default-on under `--split`, the cap rationale, what to do with each return, and the outcome value to
+record for Step 10. Three rules from it are load-bearing enough to restate here:
+
+- **Surface every `flagged` finding to the user before pushing.** Pushing past them silently converts the safety valve into a green-wash.
+- **Absent sub-agent dispatch is `NOT REVIEWED`, never a skip.** In split mode, fall back to `Skill("polish", "simplify")` and say which one ran — it is the difference between sub-PRs that were reviewed and sub-PRs that were only simplified.
+- **Record the outcome now**, before continuing. Step 10's slot for it is mandatory on every run.
 
 ## Step 6: Push and Create Draft PR
 
@@ -345,6 +377,8 @@ Short summary:
 PR: <pr-url>
 Title: <imperative title>
 
+Pre-push review (Step 5.5, review-branch): <converged (<N> iterations, <A> applied, <D> declined) | flagged (<G> findings) | cap-reached (<O> open) | checks-red (<checks>) | not run (default mode — pass --pre-review) | skipped (<flag>) | skipped (non-code diff) | NOT REVIEWED (sub-agent dispatch unavailable; fallback: <polish simplify | none>)>
+
 Preview spec (Step 6.4): <authored (<N> specs) | not authored (no UI files in diff) | skipped (--no-preview-spec) | skipped (--no-quality) | skipped (preview-spec not available) | failed (<reason>)>
 
 Review loop (review-loop / pr-reviewer):
@@ -375,6 +409,10 @@ Because both paths push to the same branch, surface the final head SHA so the us
 Step 6.4 has four skip conditions (`--no-preview-spec`, `--no-quality`, a non-UI diff, `preview-spec` not installed) and one failure mode, and every one of them previously reported as a clean, successful PR — the report had no slot for the spec at all, so an absent block was indistinguishable from a diff that needed none.
 That is the same self-concealing shape as failure modes `F6`/`F7` in [`diagnostic-surface.md`](../../workflow/autonomous-workflow/rules/diagnostic-surface.md): a degraded path that reports as a legitimate outcome is never fixed, because nobody learns it happened.
 State which of the six outcomes applied, and never omit the line on the grounds that the diff was not a UI change — `not authored (no UI files in diff)` is the informative answer there, not silence.
+
+**The `Pre-push review` line is mandatory on every run too**, including the plain default-mode run where the step does not fire.
+`not run (default mode — pass --pre-review)` tells the reader the pass exists and was not taken; omitting the line tells them nothing and reads identically to a run that took it.
+And when the value is `flagged`, list every flagged finding underneath — they are the reason a human is still needed, and the Step 5.5 surfacing happened before the push, several steps and one CI watch ago.
 
 ## Split Mode (`--split`)
 
@@ -422,90 +460,9 @@ Quick reference for the shape of the workflow:
 
 ## Examples
 
-### Good — feature (lean, narrative, fits the 25-line budget)
-
-```markdown
-## Why
-
-`gw add` silently auto-cleaned stale worktrees, making the CLI feel frozen on slow filesystems. Users couldn't tell whether it had hung or was working.
-
-## What changed
-
-- Replace background auto-clean with an interactive prompt before deletion
-- Surface the same prompt from `gw list` when stale worktrees exist
-- Update help text and README to describe the new flow
-
-## How to verify
-
-- `gw add foo` with stale worktrees: prompt appears; Y/N both behave correctly
-```
-
-### Good — feature with template (PR template repos)
-
-```markdown
-## Summary
-
-Agent0 emits the same logical dashboard several times as it iterates. Today each emission is its own card with its own "Create" button — picking the right one is guesswork. This PR collapses that into one floating card always reflecting the latest version, with revision history folded into the create dialog so users can flip between revisions and see the rendered dashboard before deploying.
-
-### Overview
-
-| Desc.        | Value                                |
-| ------------ | ------------------------------------ |
-| Preview link | https://example/preview              |
-| Feature flag | `USE_AGENT0_SDK`                     |
-
-## What changed
-
-- Floating ArtifactsList above the prompt input — one card per logical artifact
-- Cross-chain dedup at the data layer so floating list + dialog tabs share one revisions array
-- Revision tabs inside the create dialog with a `Show source` toggle for the YAML diff
-- Removed the standalone revision sidebar (~600 LOC deleted)
-
-## How to verify
-
-- Generate a dashboard in the preview, ask the agent to refine it, confirm the card shows one entry with `v{N}` + `Create dashboard`
-```
-
-### Good — bug fix
-
-```markdown
-## Why
-
-Auth refresh was firing on every request after a 401, causing a token-refresh storm
-when the backend was briefly unreachable.
-
-## What changed
-
-- Debounce refresh to one in-flight request per session
-- Return the same promise to all callers waiting on the refresh
-```
-
-### Bad — verbose, file-by-file
-
-```markdown
-## Summary
-
-This PR adds a new feature to the auth module and also updates several other files
-in the codebase to support this new functionality.
-
-## Changes
-
-- Modified `src/auth/refresh.ts` to add a new `debouncedRefresh` function
-- Modified `src/auth/index.ts` to export the new function
-- Modified `src/auth/types.ts` to add a new type
-- Updated `tests/auth.test.ts` to add tests
-- Updated `tests/refresh.test.ts` to add tests
-- Updated `README.md` with new docs
-- Updated `CHANGELOG.md`
-- Various other small improvements and refactors
-
-## Type
-- [x] feat
-- [ ] fix
-- [ ] docs ...
-```
-
-(Why it's bad: the summary is empty calories, the change list is the file list, and the type checklist adds zero signal.)
+Four worked descriptions — a lean feature, a feature in a repo with a PR template, a bug fix, and
+a **bad** verbose file-by-file one to recognise and avoid — live with the contract they exemplify:
+**[`rules/description-examples.md`](./rules/description-examples.md)**.
 
 ## Tips
 
