@@ -66,12 +66,26 @@ reachable verdict but `ambiguous`.
 
 **Rung 2 is rung 1's realization plus what the proxy adds — never the proxy's signals alone.**
 Rung 2 runs **two processes**: the app under test, exporting exactly as it does on rung 1, and the
-proxy in front of it. Every rung-1 condition therefore still applies to the app process on rung 2,
-and the proxy's own signals are an *additional* conjunct covering the leg rung 1 does not have. A
-rung-2 cell naming only `dash0.cli.otlp_proxy.*` state is the defect this line exists to prevent:
-it grades the proxy's health and calls the result the run's, so an app that never flushed reads
-`CLEAN` and its missing span reads `contradicts`. Read each rung-2 cell against the rung-1 cell to
-its left, and check that it contains it.
+proxy in front of it. Every rung-1 condition **that is a property of the app process** therefore
+still applies on rung 2, and the proxy's own signals are an *additional* conjunct covering the leg
+rung 1 does not have. A rung-2 cell naming only `dash0.cli.otlp_proxy.*` state is the defect this
+line exists to prevent: it grades the proxy's health and calls the result the run's, so an app that
+never flushed reads `CLEAN` and its missing span reads `contradicts`.
+
+The qualifier is load-bearing, because the universal without it is **false on this table's own
+rows** — and a containment test that reports two false positives is one whose next real miss gets
+waved through as a third known exception. Exactly two rung-1 conjuncts are properties of rung 1's
+**reader** rather than of the app, and neither has or needs a rung-2 counterpart:
+
+| Reader-local rung-1 conjunct | Why rung 2 does not carry it |
+| --- | --- |
+| `the file export is complete and parseable` (row 2) | rung 2 has no export file — the proxy stream replaces it, and its completeness is what `shutdown` + `*.failed` already report |
+| `before the span list was read` (row 1) | qualifies *when* rung 1's in-memory list is safe to read; rung 2 reads a stream, so the clause has no referent |
+
+Everything else **is** an app-process property and must appear on both rungs — including the span
+processor's dropped-span count, which is the app's `BatchSpanProcessor` on *either* rung and is
+exactly the app → proxy leg rung 2's row 2 conjoins. So: read each rung-2 cell against the rung-1
+cell to its left, and check that it contains every conjunct not in the table above.
 
 | Condition | Rung 1 — in-memory / file exporter | Rung 2 — `dash0 -X otlp proxy` |
 | --- | --- | --- |
@@ -119,14 +133,28 @@ the containment rule above; the rule generalises it, because the same asymmetry 
 defect on the `collection terminated normally` row, where a cell reading only
 `shutdown.reason == signal` graded the proxy's exit and said nothing about whether the app flushed.
 
-**The containment rule is prose on purpose — do not add an L1 guard for it.** Any mechanical test
-for "this rung-2 cell contains rung 1's condition" reduces to searching the cell for a token such as
-`rung 1`, which is satisfied by typing that token — the vacuous-substring shape this file's guards
-have been corrected for five times. L1 owns *mechanical* contracts here (root `CLAUDE.md`): that
-every rung has a column, that every body row is filled for every rung, that each conjunct has a row.
-Whether a filled cell says the right thing is a reviewer's judgement, and the two cheap tests are
-stated above: read each rung-2 cell against the rung-1 cell to its left, and ask what one guards
-that the other does not.
+**The containment rule is prose on purpose — do not add an L1 guard for it.** The reason is **scope,
+not weakness**: the strongest faithful candidate was constructed and rejected on a *false positive*,
+not on vacuity. That candidate — require every backticked identifier in a rung-1 cell to reappear in
+the rung-2 cell beside it — **reds on row 2 today**, because rung 1's `BatchSpanProcessor` names the
+mechanism while rung 2's app-leg conjunct names its *effect* ("zero dropped spans"), so the condition
+is carried while the literal token is not. A guard that reds on a correct table teaches the next
+author to satisfy it by typing the token, which is worse than no guard.
+
+Note what this reason is **not**, because the obvious phrasing does not survive contact with the
+guards kept in the same file. "Satisfied by typing a token" cannot be the criterion: the filled-cell
+check one section up is satisfied by **any non-whitespace character**, and it is kept. A weak test is
+not a disqualified test. What disqualifies a guard here is being **wider than its claim** — the
+round-5 `/Rung 1/.test(section)` shape, where a token anywhere in the whole section satisfied a claim
+about one cell. A cell-scoped check is bounded: it can be weak without being able to mislead. So the
+bar for adding a cheap guard to this file stays low, and this particular guard fails a different
+test.
+
+L1 owns *mechanical* contracts here (root `CLAUDE.md`): that every rung has a column, that every body
+row is filled for every rung, that each conjunct has a row, and that the conjunct count is derived
+from the definition rather than hand-typed. Whether a filled cell says the right thing is a
+reviewer's judgement, and the two cheap tests are stated above: read each rung-2 cell against the
+rung-1 cell to its left, and ask what one guards that the other does not.
 
 The no-`shutdown`-event case is why the realization opens on the event being *observed* rather than
 on its `reason`: `reader-adapters.md` documents the event's value domain (`signal` or `deadline`)

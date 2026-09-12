@@ -6572,6 +6572,17 @@ const isPollBlock = (block) =>
     s.check("G52b the CLEAN guard is defined once, by name", !!cleanDef,
       "no `**`CLEAN`**` definition found in receipt-mapping.md");
     if (cleanDef) {
+      // The list above is HAND-TYPED, so on its own it can only ever check the conjuncts already in
+      // it: adding a fourth `AND` clause to the definition with no realization row left L1 green at
+      // 1729/1729 — exactly the drift the comment over `CLEAN_CONJUNCTS` advertises it prevents.
+      // Every prior probe on this file DELETED a token; this one ADDS to the artifact, which is the
+      // direction a fixed list is blind in by construction. So the count is DERIVED from the
+      // definition sentence and asserted against the list's length: the definition is `X AND Y AND
+      // Z`, so conjuncts = AND-count + 1, and a new clause reds here until its row is added.
+      const expectedConjuncts = (cleanDef[0].match(/\bAND\b/g) || []).length + 1;
+      s.check("G52b CLEAN_CONJUNCTS covers every conjunct the definition states",
+        CLEAN_CONJUNCTS.length === expectedConjuncts,
+        `the definition states ${expectedConjuncts} conjunct(s); the guard's list holds ${CLEAN_CONJUNCTS.length} — add the new conjunct to CLEAN_CONJUNCTS and give it a realization row`);
       // The definition is READER-NEUTRAL. Written in one rung's vocabulary it is not a stricter
       // guard — it is a guard the other rung can never satisfy, and since `NOT CLEAN` matches
       // unconditionally, that rung then grades `ambiguous` on every run it performs. Rung 1 is the
@@ -6589,7 +6600,15 @@ const isPollBlock = (block) =>
     // here is a rung whose only reachable verdict is `ambiguous`. Read the rung count from
     // rungs.md rather than hardcoding 2, so adding a rung 3 there without a column reds this.
     const RUNGS = join(REPO_ROOT, "skills/quality/observe-run/rules/rungs.md");
-    if (existsSync(RUNGS)) {
+    // Existence is ASSERTED, not assumed. The whole rung-coverage and cell-coverage block below
+    // sits behind this one path, so a bare `if (existsSync(...))` deleted five checks in silence
+    // when the file was renamed — the total fell and not one `G52b` failure was reported. Same
+    // shape, and the same fix, as the `G52e` golden-file assertion one screen down; that one was
+    // corrected first and its twin here was left behind.
+    const rungsPresent = existsSync(RUNGS);
+    s.check("G52b rungs.md is present for the rung-coverage checks", rungsPresent,
+      `${RUNGS} not found — the per-rung realization coverage would go unchecked`);
+    if (rungsPresent) {
       const rungNums = [...new Set((readFileSync(RUNGS, "utf8").match(/^## Rung (\d+)/gm) || [])
         .map((h) => h.match(/(\d+)/)[1]))];
       s.check("G52b rungs.md defines at least two rungs", rungNums.length >= 2,
@@ -6607,6 +6626,12 @@ const isPollBlock = (block) =>
       s.check("G52b the realization table's header row parses",
         realCols.length >= 1 + rungNums.length,
         `${realCols.length} header cell(s) parsed, expected >= ${1 + rungNums.length}`);
+      // Every header cell is LABELLED. An unlabelled column is not a cosmetic defect here: it is
+      // the column the filled-cell check below reports its empties under, so an empty header made
+      // an entire empty column unreportable. Caught at the header, where the defect actually is.
+      s.check("G52b every realization column carries a header label",
+        realCols.every((c) => c.length > 0),
+        `${realCols.filter((c) => !c.length).length} unlabelled column(s) in the realization header`);
       for (const n of rungNums) {
         s.check(`G52b the realization has a column for rung ${n}`,
           realCols.some((c) => new RegExp(`^Rung ${n}\\b`).test(c)),
@@ -6617,14 +6642,30 @@ const isPollBlock = (block) =>
       // rung-1 cells blankable at 1717/1717 — so it is generalised over EVERY body row rather than
       // given a second special case, and a row added later is covered on arrival instead of when
       // someone remembers to extend a list.
+      // Scope to the realization TABLE, not to every pipe line in the section. The section is
+      // prose plus tables, and a second table added below the realization (the reader-local
+      // exclusions) had its own header and rows swept in here — three false failures naming a
+      // 2-column table against the realization's 3 columns. A table is the CONTIGUOUS run of
+      // pipe lines starting at its header, so take exactly that and stop at the first line that
+      // is not one.
       const realLines = realization?.[0].split("\n") ?? [];
-      const bodyRows = realLines.filter((l) => l.startsWith("|") && l !== realHeader && !/^\|[\s:|-]+\|$/.test(l));
+      const realStart = realLines.indexOf(realHeader);
+      const realTable = [];
+      for (let i = realStart; i >= 0 && i < realLines.length && realLines[i].startsWith("|"); i++) realTable.push(realLines[i]);
+      const bodyRows = realTable.filter((l) => l !== realHeader && !/^\|[\s:|-]+\|$/.test(l));
       s.check("G52b the realization has a body row per CLEAN conjunct plus totals",
         bodyRows.length >= CLEAN_CONJUNCTS.length + 1,
         `${bodyRows.length} body row(s) for ${CLEAN_CONJUNCTS.length} conjunct(s) + totals`);
       for (const row of bodyRows) {
         const cells = row.split("|").slice(1, -1).map((c) => c.trim());
-        const empties = cells.slice(1).map((c, i) => (c ? null : realCols[i + 1] ?? `column ${i + 2}`)).filter(Boolean);
+        // Partition BEFORE naming the column, never `.map(...).filter(Boolean)` over names: an
+        // empty header cell is `""`, which `??` does not replace and `filter(Boolean)` then
+        // discards — so the one case that most needs reporting (an empty cell under an unlabelled
+        // column) was silently dropped by the very line computing its label.
+        const empties = cells.slice(1)
+          .map((c, i) => ({ col: realCols[i + 1] || `column ${i + 2}`, empty: c.length === 0 }))
+          .filter((e) => e.empty)
+          .map((e) => e.col);
         s.check(`G52b the realization row "${cells[0] || "(unlabelled)"}" is filled for every rung`,
           cells.length === realCols.length && empties.length === 0,
           `${cells.length} cell(s) against ${realCols.length} column(s)${empties.length ? `; empty under: ${empties.join(", ")}` : ""}`);
