@@ -7061,8 +7061,15 @@ const isPollBlock = (block) =>
     s.check("G52i the `totals` realization row exists and has a cell per rung",
       totalsCells.length >= 3,
       `${totalsCells.length} cell(s) in the \`totals\` row — the per-rung realization is what the requirement below is about`);
+    // POSITIVE form. A denylist of two literals (`spans.total`, `final_total`) is a guard narrower
+    // than its own name: rewording the rung-2 cell to "the proxy's own count of forwarded span
+    // records over the run" restores exactly the semantics round 11 removed and left L1 green at
+    // 1753/1753. The requirement is stateable directly — the cell must say what it IS — so assert
+    // that, and keep the denylist only as a second conjunct for the two spellings that name the
+    // rejected counter outright.
     s.check("G52i every `totals` realization is the observed set's own size, never a wider counter",
-      totalsCells.slice(1).every((c) => !/\bspans\.total\b|final_total/.test(c)),
+      totalsCells.slice(1).every((c) => /observed set|span list|exported file/.test(c))
+        && totalsCells.slice(1).every((c) => !/\bspans\.total\b|final_total|forwarded/.test(c)),
       "a rung realizing `totals` as the proxy's own counter counts every process pointed at the ports, so a foreign span inflates it without entering the observed set and the run grades `contradicts` on spans it never emitted");
     s.check("G52i the requirement the `totals` row realizes is stated",
       /size of the observed set/.test(body) && /delivery receipt, not a census/.test(body),
@@ -7085,8 +7092,18 @@ const isPollBlock = (block) =>
   // file actually defines rather than compared against a literal.
   // break-shape: G52j — adding a `G52k` check without widening the inventory range, or narrowing
   // the range by hand, flips it red.
+  // Anchor on the CHECK LABEL, in either quoting style, and never on a bare mention. Two ways to
+  // get this wrong, and the first version had one of them: `/"G52([a-z])\b/` requires a DOUBLE
+  // QUOTE, so `G52e`'s checks and this guard's own check — both template literals — were invisible,
+  // the derivation returned a-d,f-i, and the guard shipped with its inventory range ALREADY STALE
+  // at 1753/1753, its own advertised break-shape inert. That is round 9's `\bAND\b` finding
+  // recurring: a derivation bound to one spelling of the thing it counts.
+  // The other way is over-matching: `/[`"]G52([a-z])\b/` also picks up backticked mentions in
+  // prose — the `G52k` in the break-shape comment above would make `highest` a guard that does not
+  // exist. So require the `s.check(` that makes it a check.
   const selfSrc = readFileSync(new URL(import.meta.url), "utf8");
-  const g52Letters = [...new Set((selfSrc.match(/"G52([a-z])\b/g) || []).map((m) => m.slice(4)))].sort();
+  const g52Letters = [...new Set((selfSrc.match(/s\.check\(\s*["`]G52([a-z])\b/g) || [])
+    .map((m) => m[m.length - 1]))].sort();
   const highest = g52Letters[g52Letters.length - 1];
   const CLAUDE_MD = join(REPO_ROOT, "CLAUDE.md");
   if (existsSync(CLAUDE_MD) && highest) {

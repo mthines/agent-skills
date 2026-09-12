@@ -211,11 +211,22 @@ and it is why `totals` is defined above as the observed set's own size rather th
 `contradicts` on a read that had simply not finished.
 
 `null` is the floor, not the goal. Before grading, **re-query until the observed set stops growing
-or a bounded deadline passes**, taking the proxy's `final_total.spans` as the number to wait for
-(that is what the receipt is *for*). Report a deadline reached with the set still short of it as
-`ambiguous` — the read was truncated, which is a degraded reader, not evidence of absence. Never
-extend the wait by widening the filter to a time window: that re-admits a concurrent run's spans,
-the failure named above.
+or a bounded deadline passes** — the set's own size is the only quantity to watch. Report a deadline
+reached **with the set still growing** as `ambiguous`: the read was truncated, which is a degraded
+reader, not evidence of absence. A set that has gone quiet is a finished read, whatever its size, so
+grade it.
+
+**Do not wait for `final_total.spans` to be reached.** The first draft of this paragraph did, and it
+contradicts the rejection two sections up in this same file: that counter is a delivery receipt
+counting every process pointed at the ports, not a census of this run. Under mechanism row 2 a
+second process of the same run inflates it **permanently** beyond the observed set, so the target is
+never met, the deadline always fires, and every such run grades `ambiguous` — where
+[`run-identity.md`](./run-identity.md) says `null`. One state, two verdicts, from two paragraphs
+written days apart. The receipt tells you delivery was clean; it cannot tell you how many of those
+spans were yours.
+
+Never extend the wait by widening the filter to a time window either: that re-admits a concurrent
+run's spans, the failure named above.
 
 The no-`shutdown`-event case is why the realization opens on the event being *observed* rather than
 on its `reason`: `reader-adapters.md` documents the event's value domain (`signal` or `deadline`)

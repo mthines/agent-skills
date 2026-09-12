@@ -109,8 +109,25 @@ configured to.
 
 | Precondition | Why | If it does not hold |
 | --- | --- | --- |
-| **The proxy is exclusive to this run** — started for it, torn down with it, and nothing else pointed at its ports | Otherwise a concurrent dev process's spans reach the proxy and are counted by it, while carrying no `dev.run.id` and so never entering the observed set | Use a non-default port for this run's proxy; if that is not possible, rung 2 is unavailable — fall back to rung 1 |
+| **The proxy is exclusive to this run** — started for it, torn down with it, and nothing else pointed at its ports | A foreign process's spans reach the proxy, and **what happens next depends on the mechanism — in opposite directions**, so neither alone is the reason. See below | Use a non-default port for this run's proxy; if that is not possible, rung 2 is unavailable — fall back to rung 1 |
 | **Every process participating in the claim carries `dev.run.id`** — not only the one whose command was run | A fan-out claim (kind 5) is *about* a second process's spans. Absent the attribute, the downstream span is invisible to the query and the claim grades `contradicts` on a span that was emitted | Row 1's `--resource-attribute` satisfies this for free (the proxy stamps every batch it forwards, whatever emitted it). Row 2 does **not** — it stamps only the SDK you configured |
+
+**Exclusivity fails in opposite directions under the two mechanisms, and the default one is the
+dangerous half.** Naming only one direction here is itself a defect — the first draft of this row
+gave the row-2 direction as though it were the rule, and under the *default* mechanism the opposite
+is true:
+
+| Under… | A foreign process's span | Verdict failure |
+| --- | --- | --- |
+| **row 1** (`--resource-attribute`, the default) | is **stamped by the proxy** — the flag upserts onto every forwarded batch *whatever emitted it* ([`reader-adapters.md`](./reader-adapters.md)) — so it is **laundered into** the observed set | a false **`confirms`**: an expectation satisfied by data this run never emitted |
+| **row 2** (SDK-side) | carries no `dev.run.id`, so it never enters the observed set | with `totals` now equal to the observed set's size, it is simply absent — the failure is row 2's own, covered by the precondition below |
+
+The row-1 direction is **strictly worse than anything rounds 10–11 fixed**, and it is worth saying
+why in one line: a false `contradicts` is a wrong answer, a false `confirms` is a wrong answer that
+looks like proof. Nothing downstream catches it either — `totals` is the observed set's size, so the
+laundered spans move **both** verdict columns together, and the run reads internally consistent.
+Exclusivity is the *only* thing standing between row 1 and that outcome, which is why it is a
+precondition rather than a recommendation.
 
 That second row is the constraint on row 2 of the mechanism table above, and it is load-bearing
 enough to state as a rule: **row 2 serves single-process claims only.** A multi-process claim under
