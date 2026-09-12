@@ -6514,4 +6514,183 @@ const isPollBlock = (block) =>
     "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.", false);
 }
 
+// ── G52: review-branch / branch-reviewer — the PR-less review path ──
+//
+// This path makes exactly two load-bearing claims, and both are the kind that rot silently
+// because a degraded version still looks like a working review.
+//
+//   1. "Zero GitHub calls." It is the entire reason the skill exists. One `gh pr view` added
+//      later by a well-meaning editor turns it into review-loop with a misleading name, and
+//      nothing else in the repo would notice — the run still reviews, still converges, still
+//      reports. Guarded as an absence, positionally, over both files.
+//   2. "Same findings as pr-reviewer, by reference." The detection core is reused, never
+//      copied — the SAME bytes the bug-detection L2 eval reads as its live rubric. A copy
+//      here forks the core into two homes and the eval measures one while the agent runs the
+//      other, which is this repo's own mock-that-reimplements-the-thing-under-test failure at
+//      the worst possible place. Guarded in both directions: the links must be present, and
+//      the candidate-record schema must NOT be restated.
+//
+// The adapter gets the same treatment every other script here does (G39b/G46b/G33b/G51a): its
+// self-test is EXECUTED, plus one integration check, because the self-test proves the parser
+// internally consistent while the thing that actually matters is that its output still drives
+// the unmodified graph builder. Those are different claims and the second is the fragile one —
+// build-impact-graph.mjs is fail-closed on bad input, so a shape drift shows up as an empty
+// graph and a review that finds nothing, which reads exactly like a clean branch.
+{
+  const RB = join(REPO_ROOT, "skills/quality/review-branch");
+  const AGENT = join(REPO_ROOT, "agents/branch-reviewer.md");
+  const ADAPTER = join(REPO_ROOT, "agents/branch-reviewer/scripts/local-diff-files.mjs");
+  const GRAPH = join(REPO_ROOT, "agents/pr-reviewer/scripts/build-impact-graph.mjs");
+
+  s.check("G52a the branch-reviewer agent exists", existsSync(AGENT));
+  s.check("G52a the local-diff adapter exists", existsSync(ADAPTER));
+  s.check("G52a the review-branch skill exists", existsSync(join(RB, "SKILL.md")));
+
+  if (existsSync(ADAPTER)) {
+    const st = spawnSync(process.execPath, [ADAPTER, "--self-test"], { encoding: "utf8" });
+    s.check("G52b the local-diff adapter's self-test passes", st.status === 0,
+      ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 400));
+
+    // (c) The integration claim, end to end, with the real graph builder. Asserting the
+    // adapter's JSON shape in isolation would be asserting a schema this file invented;
+    // running the actual consumer asserts the thing the agent does.
+    //
+    // The fixture is a purpose-built two-file repo, NOT this repo's own `HEAD~1..HEAD`.
+    // `evals-l1.yml` checks out at `actions/checkout`'s default `fetch-depth: 1`, where
+    // `HEAD~1` does not resolve at all: the adapter exits 2, both checks below fail, and the
+    // guard reds every PR in CI while passing for whoever wrote it on a full local clone.
+    // A guard may not depend on history the workflow running it does not fetch. The fixture
+    // also exercises the WORKING TREE as head, which is the agent's documented default and
+    // the case `HEAD~1..HEAD` never covered.
+    if (existsSync(GRAPH)) {
+      const tmp = mkdtempSync(join(tmpdir(), "g52-"));
+      try {
+        const filesPath = join(tmp, "files.json");
+        const fixture = join(tmp, "repo");
+        mkdirSync(join(fixture, "src"), { recursive: true });
+        const git = (...a) => spawnSync("git", ["-C", fixture, ...a], { encoding: "utf8" });
+        writeFileSync(join(fixture, "src/parse.ts"),
+          "export function parseThing(raw: string): number {\n  return Number(raw);\n}\n");
+        writeFileSync(join(fixture, "src/use.ts"),
+          "import { parseThing } from './parse';\nexport const run = (s: string) => parseThing(s) + 1;\n");
+        git("init", "-q", "-b", "main");
+        git("config", "user.email", "l1@example.invalid");
+        git("config", "user.name", "l1");
+        git("add", "-A");
+        git("commit", "-qm", "fixture base");
+        // The change under review: a signature break its consumer does not follow.
+        writeFileSync(join(fixture, "src/parse.ts"),
+          "export function parseThing(raw: string, radix: number): number {\n  return parseInt(raw, radix);\n}\n");
+        const adapt = spawnSync(process.execPath,
+          [ADAPTER, "--base", "HEAD", "--workdir", fixture],
+          { encoding: "utf8", maxBuffer: 128 * 1024 * 1024 });
+        let files = [];
+        try { files = JSON.parse(adapt.stdout || "[]"); } catch { /* reported below as unparseable */ }
+        s.check("G52c the adapter emits a parseable, non-empty file list for base..working-tree",
+          adapt.status === 0 && Array.isArray(files) && files.length > 0,
+          `exit ${adapt.status}, ${Array.isArray(files) ? files.length : "unparseable"} files`);
+
+        // Every record carries the six keys build-impact-graph.mjs reads off a GitHub file entry.
+        const REQUIRED = ["filename", "patch", "status", "additions", "deletions", "sha"];
+        s.check("G52c every emitted record carries the graph builder's six keys",
+          Array.isArray(files) && files.length > 0 && files.every((f) => REQUIRED.every((k) => k in f)),
+          Array.isArray(files) && files.length
+            ? `missing: ${REQUIRED.filter((k) => !(k in files[0])).join(", ") || "none on first record"}`
+            : "no records to check");
+
+        if (Array.isArray(files) && files.length > 0) {
+          writeFileSync(filesPath, JSON.stringify(files));
+          const g = spawnSync(process.execPath,
+            [GRAPH, filesPath, "--workdir", fixture, "--base-ref", "HEAD"],
+            { encoding: "utf8", maxBuffer: 128 * 1024 * 1024 });
+          let graph = null;
+          try { graph = JSON.parse(g.stdout || "null"); } catch { /* reported below */ }
+          s.check("G52c the adapter's output drives the UNMODIFIED impact-graph builder",
+            g.status === 0 && graph && typeof graph === "object" && "symbols" in graph,
+            `exit ${g.status}: ${(g.stderr || "").slice(0, 200) || "no symbols key in stdout"}`);
+        }
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    }
+  }
+
+  // (d) The zero-GitHub promise, as an absence over all three files.
+  //
+  // `gh` is matched as a COMMAND — the bare word followed by a real subcommand — never as a
+  // substring, or every mention of "GitHub" would red this guard, and a guard that reds on its
+  // own documentation gets deleted rather than fixed.
+  //
+  // The lookbehind is `[\w-]` and NOT an allow-list of shell prefixes. The first version of this
+  // guard allowed only start-of-line, a pipe, an `&`, a `;`, or `$(` — and a probe that appended
+  // a literal "Run `gh pr view` …" to the agent sailed straight past it, because this repo writes
+  // every command inside backticks. It went red only because G24 (the tool-grant guard) happened
+  // to catch the same line, which is worse than a plain miss: G24 goes green the moment someone
+  // ADDS the GitHub grant, so the zero-GitHub promise would then have had no guard at all while
+  // L1 stayed green. Enumerate what `gh` may not be preceded by, never where it may appear.
+  const GH_CMD = /(?<![\w-])gh\s+(?:api|pr|repo|issue|auth|release|run|workflow|search|browse)\b/m;
+  const MCP_GH = /mcp__github__/;
+  for (const [label, path] of [["branch-reviewer.md", AGENT], ["review-branch/SKILL.md", join(RB, "SKILL.md")],
+                               ["review-branch/rules/findings-bus.md", join(RB, "rules/findings-bus.md")]]) {
+    if (!existsSync(path)) continue;
+    const body = readFileSync(path, "utf8");
+    // Strip the lines that deliberately FORBID these calls, so the prohibition itself is not
+    // read as a violation. A rule may name what it bans.
+    //
+    // A prohibition is recognised by the negation GOVERNING the command in the same CLAUSE —
+    // not by the negation appearing somewhere on the line. The line-level test this replaces
+    // stripped every line containing `no` / `not` / `without` / `rather than`, which was 52 of
+    // this agent's 232 lines, and the stripped set is precisely the prose most likely to be
+    // ABOUT the prohibition. A probe of `There is no PR here, so run \`gh pr view\`` passed
+    // G52d untouched and went red only through G24 — the same borrowed-guard result the comment
+    // above describes, surviving one layer down. Clause-scoping is what distinguishes the two:
+    // in `No \`gh\`, no \`mcp__github__*\`` the negation abuts the token, while in the probe a
+    // comma separates the `no` (which governs "PR") from the command.
+    const NEGATION = /\b(never|no|not|zero|none|forbid(s|den)?|without|instead of|rather than)\b/i;
+    const governed = (line, index) => {
+      const before = line.slice(0, index);
+      const clause = before.slice(before.search(/[.;,:—][^.;,:—]*$/) + 1);
+      return NEGATION.test(clause);
+    };
+    const offenders = (re) => body.split("\n").flatMap((line) => {
+      const m = line.match(re);
+      return m && !governed(line, m.index) ? [line.trim().slice(0, 120)] : [];
+    });
+    const ghHits = offenders(GH_CMD);
+    const mcpHits = offenders(MCP_GH);
+    s.check(`G52d ${label} issues no gh command`, ghHits.length === 0, ghHits[0] || "");
+    s.check(`G52d ${label} calls no mcp__github__ tool`, mcpHits.length === 0, mcpHits[0] || "");
+  }
+
+  // The agent's tool grant is the mechanical half of the same promise: prose can say "zero
+  // GitHub calls" while the frontmatter hands it the tools to make them.
+  if (existsSync(AGENT)) {
+    const fm = frontmatter(AGENT) || {};
+    const tools = String(fm.tools || "");
+    s.check("G52d the branch-reviewer tool grant contains no GitHub tool",
+      !/mcp__github__/.test(tools), tools.slice(0, 200));
+
+    // (e) Reuse by reference, both directions. The links must be present...
+    const body = readFileSync(AGENT, "utf8");
+    for (const ref of ["finders.md", "finding-verifier.md", "impact-graph.md", "depth-routing.md",
+                       "workspace.md", "comment-shape.md", "per-comment-confidence.md"]) {
+      s.check(`G52e branch-reviewer.md links ${ref}`, body.includes(ref));
+    }
+    // ...and the candidate-record schema must NOT be restated. `severity_hint` and `verify_by`
+    // are finders.md's own field names and appear nowhere else in the repo's agent prose, so
+    // their presence here is the signature of a pasted copy rather than a link.
+    s.check("G52e branch-reviewer.md does not restate the candidate-record schema",
+      !/severity_hint\s*:/.test(body) && !/verify_by\s*:/.test(body),
+      "found finders.md's own field names — the detection core was copied, not referenced");
+  }
+
+  // (f) The skill passes the repo's own skill validator, same bar as G51b.
+  const VALIDATOR = join(REPO_ROOT, "skills/authoring/create-skill/scripts/validate-skill.mjs");
+  if (existsSync(VALIDATOR) && existsSync(join(RB, "SKILL.md"))) {
+    const run = spawnSync(process.execPath, [VALIDATOR, RB], { encoding: "utf8" });
+    s.check("G52f review-branch passes the repo's skill validator", run.status === 0,
+      (run.stdout || "").split("\n").filter((l) => l.startsWith("FAIL")).join("; ").slice(0, 500));
+  }
+}
+
 process.exit(s.report() ? 0 : 1);

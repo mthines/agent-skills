@@ -27,6 +27,31 @@
 // a filter the labels never accounted for.
 export const SUITES = [
   {
+    name: "finding-disposition",
+    golden: "golden/finding-disposition.jsonl",
+    // Two sibling sections, deliberately, and NOT their parent file. `## The lifecycle`
+    // defines the five states but not the bar for choosing between the two that both mean
+    // "no code change landed" — and that bar is the entire safety valve. `declined` requires
+    // a rationale the loop believes; a real finding it cannot fix and cannot honestly decline
+    // is `flagged`. The valve section is where that is stated, so a rubric with only the
+    // lifecycle table makes half these labels underivable and the suite would be grading
+    // a coin flip on its hardest cases.
+    //
+    // Excluded on purpose: `## The convergence predicate`, which answers when the LOOP stops
+    // rather than what state ONE finding lands in. It would invite "does this block
+    // convergence" reasoning into a question about disposition, which is how a `flagged`
+    // case starts looking like a `declined` one (neither is `open`, so neither blocks).
+    rubric: {
+      file: "skills/quality/review-branch/rules/findings-bus.md",
+      sections: ["## The lifecycle", "## The no-green-wash valve"],
+    },
+    instruction:
+      "You are the review-branch loop deciding the disposition of ONE finding after acting on it. " +
+      "Using ONLY the rules below, pick the single state the loop appends for it.",
+    inputKey: "input", inputLabel: "Finding and what the loop did",
+    choices: ["applied", "declined", "flagged"],
+  },
+  {
     name: "tier-routing",
     golden: "golden/tier-routing.jsonl",
     // The dispatcher (skills/workflow/autonomous-workflow/aw/SKILL.md) deliberately
