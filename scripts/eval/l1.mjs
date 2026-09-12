@@ -6563,17 +6563,44 @@ const isPollBlock = (block) =>
     s.check("G52b the CLEAN guard is defined once, by name", !!cleanDef,
       "no `**`CLEAN`**` definition found in receipt-mapping.md");
     if (cleanDef) {
-      // All four conjuncts live at that single definition — including the shutdown-event-EXISTS
-      // one, which no `reason` test can express and whose absence is what made the table non-total.
+      // The definition is READER-NEUTRAL. Written in one rung's vocabulary it is not a stricter
+      // guard — it is a guard the other rung can never satisfy, and since `NOT CLEAN` matches
+      // unconditionally, that rung then grades `ambiguous` on every run it performs. Rung 1 is the
+      // DEFAULT rung, so the version of this definition written purely in `dash0.cli.otlp_proxy.*`
+      // vocabulary silently disabled the common path while L1 stayed green.
       for (const [label, re] of [
-        ["the shutdown event was observed at all", /shutdown[\s\S]{0,80}was observed/],
-        ["reason == signal", /reason == signal/],
-        ["*.failed == 0", /failed == 0/],
-        ["no error event", /no `dash0\.cli\.otlp_proxy\.error` event/],
+        ["collection terminating normally", /terminate normally/],
+        ["nothing dropped or failed", /nothing was dropped or failed/],
+        ["no delivery error reported", /no delivery error\*\* was reported/],
       ]) {
         s.check(`G52b the CLEAN definition conjoins ${label}`, re.test(cleanDef[0]),
           `not found in the CLEAN definition`);
       }
+      s.check("G52b the CLEAN definition names no rung-specific reader vocabulary",
+        !/dash0\.cli\.otlp_proxy|in-memory|BatchSpanProcessor/.test(cleanDef[0]),
+        "the guard is written in one rung's vocabulary, which the other rung can never satisfy");
+    }
+    // Every rung the skill can select has a realization of each condition — a rung with no column
+    // here is a rung whose only reachable verdict is `ambiguous`. Read the rung count from
+    // rungs.md rather than hardcoding 2, so adding a rung 3 there without a column reds this.
+    const RUNGS = join(REPO_ROOT, "skills/quality/observe-run/rules/rungs.md");
+    if (existsSync(RUNGS)) {
+      const rungNums = [...new Set((readFileSync(RUNGS, "utf8").match(/^## Rung (\d+)/gm) || [])
+        .map((h) => h.match(/(\d+)/)[1]))];
+      s.check("G52b rungs.md defines at least two rungs", rungNums.length >= 2,
+        `${rungNums.length} rung heading(s) found`);
+      const realization = body.match(/### What `CLEAN` and `totals` are, per rung[\s\S]*?(?=\n## )/);
+      s.check("G52b receipt-mapping.md carries a per-rung realization of CLEAN", !!realization,
+        "no `### What `CLEAN` and `totals` are, per rung` section found");
+      for (const n of rungNums) {
+        s.check(`G52b the realization covers rung ${n}`,
+          !!realization && new RegExp(`Rung ${n}`).test(realization[0]),
+          `rung ${n} is selectable but has no realization — its only reachable verdict is ambiguous`);
+      }
+      // `totals` is half the table's vocabulary and is as rung-specific as the guard was.
+      s.check("G52b the realization defines totals for each rung",
+        !!realization && /\|\s*`totals`\s*\|/.test(realization[0]),
+        "no `totals` row in the per-rung realization");
     }
     const tableRow = (token) => lines.find((l) => l.startsWith("|") && new RegExp(`\\b${token}\\b`).test(l));
     // Each clean row REFERENCES the guard instead of restating it — a row that re-inlines the
@@ -6613,7 +6640,7 @@ const isPollBlock = (block) =>
     // added as a bare `| \`unproven\` |` cell — the likeliest shape a new row takes — was invisible
     // to the check that exists to catch it.
     const rmLines = rmBody.split("\n");
-    const headerIdx = rmLines.findIndex((l) => /^\|\s*Observed proxy-stream state\s*\|/.test(l));
+    const headerIdx = rmLines.findIndex((l) => /^\|\s*Observed collection state\s*\|/.test(l));
     const verdictCellTokens = [];
     for (const l of headerIdx < 0 ? [] : rmLines.slice(headerIdx + 2)) {
       if (!l.startsWith("|")) break;

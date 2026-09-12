@@ -69,16 +69,22 @@ see [`evidence-resolution.md`](./evidence-resolution.md)). A repro that merely f
 enough for this input class: the bug report came from a production span, so the repro should be
 checked against the shape of that same span before it is trusted as the `FAIL_TO_PASS` contract.
 
-1. Run the repro command locally through `Skill("observe-run")`, expressing the expectation as
-   "the span this command emits matches the shape of the originating production span" —
-   `observe-run` returns a receipt (`confirms` / `contradicts` / `ambiguous` / `null`) in the
-   same shape [`verify-behavior/rules/receipt.md`](../../../quality/verify-behavior/rules/receipt.md)
-   already defines.
-2. Compare the local run's span against the Evidence Record's originating span on the properties
-   `observe-run`'s own provenance rule already scopes assertions to — parent/child structure,
-   status on the error path, attribute presence — never a byte-for-byte diff, since resource
-   attributes (host, deploy ID, trace ID) will legitimately differ between production and a local
-   run.
+1. Read the **shape** of the originating span out of the Evidence Record — parent/child structure,
+   status on the error path, attribute presence. This half is fix-bug's own, and it is why the
+   comparison lives here: `observe-run` reads only the telemetry **the run it just executed**
+   emitted, scoped to that run's `dev.run.id` in the dev dataset
+   ([`observe-run/rules/run-identity.md`](../../../quality/observe-run/rules/run-identity.md)), so
+   it can never fetch the production span. Asking it for "matches the production span" would ask it
+   to assert on data its reader is structurally unable to see, and it would answer `null` every
+   time.
+2. Run the repro command locally through `Skill("observe-run")`, expressing the expectation as a
+   claim about the **local** run alone, with the shape from step 1 written out as literal values —
+   e.g. *"the run emits a span whose parent is `checkout.handler` and whose status is `ERROR`"*.
+   `observe-run` returns a receipt (`confirms` / `contradicts` / `ambiguous` / `null`) in the same
+   shape [`verify-behavior/rules/receipt.md`](../../../quality/verify-behavior/rules/receipt.md)
+   already defines, and its own provenance rule keeps the assertion behavioral.
+   Never a byte-for-byte match: resource attributes (host, deploy ID, trace ID) legitimately differ
+   between production and a local run, so only the shape properties from step 1 are asserted.
 3. Record the fidelity result in the Evidence Record: `confirms` means the local repro is a
    faithful stand-in for the production shape; `contradicts` means the repro is reproducing a
    *different* failure than the one telemetry reported, and the bug should be re-scoped before

@@ -1,5 +1,5 @@
 ---
-title: observe-run — the proxy-stream-state to verdict mapping
+title: observe-run — the collection-state to verdict mapping
 impact: HIGH
 tags:
   - observe-run
@@ -7,53 +7,80 @@ tags:
   - verdict
 ---
 
-# The proxy-stream-state to verdict mapping
+# The collection-state to verdict mapping
 
-This file owns exactly one decision: given the observed state of a rung-2 proxy stream (or the
-in-memory rung-1 span list) at the end of a run, which of the four canonical tokens
+This file owns exactly one decision: given what the reader observed at the end of a run — a rung-1
+in-memory / file span list **or** a rung-2 proxy stream — which of the four canonical tokens
 `observe-run` emits.
+
+**Both rungs, equally.** Rung 1 is the *default* rung
+([`rules/rungs.md`](./rungs.md)), so a mapping expressed only in rung-2 vocabulary would leave the
+common path ungraded — and silently, because the degraded row matches unconditionally and would
+answer `ambiguous` every time. The guard below is therefore reader-neutral, with one realization
+row per rung.
 
 It introduces no additional grading vocabulary of its own.
 The canonical contract lives at
 [`skills/quality/verify-behavior/rules/receipt.md`](../../verify-behavior/rules/receipt.md), and
 this skill reuses its four tokens verbatim: `confirms`, `contradicts`, `ambiguous`, `null`.
-`observe-run` adds none beyond those four, and this table is total — every reachable proxy-stream
-state maps to exactly one of them.
+`observe-run` adds none beyond those four, and this table is total — every reachable collection
+state, **on either rung**, maps to exactly one of them.
 
 ## The verdict table (total)
 
-The three clean-stream rows share one guard.
+The three clean-collection rows share one guard.
 Write it **once**, here, and let the rows reference it by name — an enumeration repeated per row is
-a list to keep in sync, and twice now a conjunct escaped one copy of it:
+a list to keep in sync, and twice now a conjunct escaped one copy of it.
 
-> **`CLEAN`** ≡ a `dash0.cli.otlp_proxy.shutdown` event **was observed**
-> AND its `reason == signal`
-> AND `*.failed == 0`
-> AND no `dash0.cli.otlp_proxy.error` event appeared.
+The guard is stated in **reader-neutral** terms, because this file grades **both** rungs and rung 1
+is the default one.
+A guard written in one rung's vocabulary is not a stricter guard; it is a guard the other rung can
+never satisfy, and since `NOT CLEAN` matches unconditionally, the other rung would then grade
+`ambiguous` on every run it ever performed:
 
-`NOT CLEAN` is the negation of that definition, not of any list below it.
+> **`CLEAN`** ≡ the reader observed the run's collection **terminate normally**
+> AND **nothing was dropped or failed** on the way to the reader
+> AND **no delivery error** was reported by the reader.
 
-| Observed proxy-stream state | Expected span present? | Verdict |
+`NOT CLEAN` is the negation of that definition, not of any list below it, and not of either rung's
+realization of it.
+
+| Observed collection state | Expected span present? | Verdict |
 | --- | --- | --- |
 | `CLEAN` AND totals > 0 | present | `confirms` — the code emitted what the claim asserted |
 | `CLEAN` AND totals > 0 | absent | `contradicts` — the code genuinely did not emit |
 | `NOT CLEAN` | (any) | `ambiguous` — never `contradicts`. A degraded delivery path cannot be read as proof of absence. |
 | `CLEAN` AND totals == 0 | n/a (nothing flowed) | `null` — the claim is unverified; silence is not proof |
 
-`NOT CLEAN` is reached by any of — **illustrative, never the definition**: an
+### What `CLEAN` and `totals` are, per rung
+
+Each rung realizes the same three conditions against the signals its own reader actually has.
+**Every rung the skill can select must appear here**; a rung with no row is a rung with no
+reachable verdict but `ambiguous`.
+
+| Condition | Rung 1 — in-memory / file exporter | Rung 2 — `dash0 -X otlp proxy` |
+| --- | --- | --- |
+| collection terminated normally | the process under test exited on its own **and** the SDK's `forceFlush()` / `shutdown()` returned before the span list was read | a `dash0.cli.otlp_proxy.shutdown` event **was observed** AND its `reason == signal` |
+| nothing dropped or failed | the span processor reports **zero dropped spans** (a `BatchSpanProcessor` drops on a full queue and reports the count) and the file export is complete and parseable | `*.failed == 0`, accumulated over `logs.failed` / `spans.failed` / `metrics.failed` |
+| no delivery error reported | the exporter's `export()` returned no failure result | no `dash0.cli.otlp_proxy.error` event appeared |
+| `totals` | the number of records in the in-memory span list / exported file, scoped to this run | the sum of `<signal>.total` across the run's `dash0.cli.otlp_proxy.stats` events |
+
+Both rungs scope `totals` to **this run's** `dev.run.id` resource attribute (see
+[`rules/run-identity.md`](./run-identity.md)), so a leftover span from a previous run is never
+counted as this one's evidence.
+
+`NOT CLEAN` is reached, on rung 2, by any of — **illustrative, never the definition**: an
 `dash0.cli.otlp_proxy.error` event; `*.failed > 0`; `shutdown.reason == deadline`; or **no
 `shutdown` event at stream end at all**, which is the proxy `SIGKILL`ed, crashed, or the reader
 losing the stream.
-That last one is why `CLEAN` opens on the event being *observed* rather than on its `reason`:
-`reader-adapters.md` documents the event's value domain (`signal` or `deadline`) but never promises
-the event is emitted, so a killed proxy satisfies no `reason` test and a row keyed on `reason`
-alone leaves that stream with no verdict.
+On rung 1 the counterpart cases are: the process killed before flush; a non-zero dropped-span
+count; a flush that timed out; or an export file that is truncated or will not parse.
 
-`totals` is the sum of `dash0.cli.otlp_proxy.stats`'s `<signal>.total` attributes (`logs.total` +
-`spans.total` + `metrics.total`) accumulated across the run's `dash0.cli.otlp_proxy.stats` events,
-scoped to this run's `dev.run.id` resource attribute (see
-[`rules/run-identity.md`](./run-identity.md)).
-`*.failed` is the same accumulation over `logs.failed` / `spans.failed` / `metrics.failed`.
+That last rung-2 case is why the realization opens on the event being *observed* rather than on its
+`reason`: `reader-adapters.md` documents the event's value domain (`signal` or `deadline`) but never
+promises the event is emitted, so a killed proxy satisfies no `reason` test and a row keyed on
+`reason` alone leaves that stream with no verdict.
+
 `shutdown.reason` is read from the `dash0.cli.otlp_proxy.shutdown` event's `reason` attribute
 (`signal` or `deadline`) — **never** from the process exit code, which is zero in both cases; a
 drain that hits its 5-second deadline still exits zero, and only `reason` distinguishes it from a
