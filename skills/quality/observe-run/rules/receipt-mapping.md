@@ -45,12 +45,18 @@ never satisfy, and since `NOT CLEAN` matches unconditionally, the other rung wou
 `NOT CLEAN` is the negation of that definition, not of any list below it, and not of either rung's
 realization of it.
 
-| Observed collection state | Expected span present? | Verdict |
+| Observed collection state | Expected span, **in this run's observed set** | Verdict |
 | --- | --- | --- |
-| `CLEAN` AND totals > 0 | present | `confirms` — the code emitted what the claim asserted |
-| `CLEAN` AND totals > 0 | absent | `contradicts` — the code genuinely did not emit |
+| `CLEAN` AND totals > 0 | in the observed set | `confirms` — the code emitted what the claim asserted |
+| `CLEAN` AND totals > 0 | not in the observed set | `contradicts` — the code genuinely did not emit |
 | `NOT CLEAN` | (any) | `ambiguous` — never `contradicts`. A degraded delivery path cannot be read as proof of absence. |
 | `CLEAN` AND totals == 0 | n/a (nothing flowed) | `null` — the claim is unverified; silence is not proof |
+
+The second column is a **predicate over this run's own observed spans** — the same set `totals`
+counts — and never over the backend at large. A span that exists in the dataset but carries another
+run's `dev.run.id` is *not* in the observed set: reading it as present grades this run on a previous
+run's evidence, which is the failure the run-scoping in
+[`rules/run-identity.md`](./run-identity.md) exists to prevent.
 
 ### What `CLEAN` and `totals` are, per rung
 
@@ -58,23 +64,45 @@ Each rung realizes the same three conditions against the signals its own reader 
 **Every rung the skill can select must appear here**; a rung with no row is a rung with no
 reachable verdict but `ambiguous`.
 
+**Rung 2 is rung 1's realization plus what the proxy adds — never the proxy's signals alone.**
+Rung 2 runs **two processes**: the app under test, exporting exactly as it does on rung 1, and the
+proxy in front of it. Every rung-1 condition therefore still applies to the app process on rung 2,
+and the proxy's own signals are an *additional* conjunct covering the leg rung 1 does not have. A
+rung-2 cell naming only `dash0.cli.otlp_proxy.*` state is the defect this line exists to prevent:
+it grades the proxy's health and calls the result the run's, so an app that never flushed reads
+`CLEAN` and its missing span reads `contradicts`. Read each rung-2 cell against the rung-1 cell to
+its left, and check that it contains it.
+
 | Condition | Rung 1 — in-memory / file exporter | Rung 2 — `dash0 -X otlp proxy` |
 | --- | --- | --- |
-| collection terminated normally | the process under test exited on its own **and** the SDK's `forceFlush()` / `shutdown()` returned before the span list was read | a `dash0.cli.otlp_proxy.shutdown` event **was observed** AND its `reason == signal` |
-| nothing dropped or failed | the span processor reports **zero dropped spans** (a `BatchSpanProcessor` drops on a full queue and reports the count) and the file export is complete and parseable | **both legs**: `*.failed == 0` accumulated over `logs.failed` / `spans.failed` / `metrics.failed` (proxy → Dash0) **and** the SDK's exporter reporting no failed export and no dropped spans (app → proxy) |
-| no delivery error reported | the exporter's `export()` returned no failure result | no `dash0.cli.otlp_proxy.error` event appeared |
-| `totals` | the number of records in the in-memory span list / exported file, scoped to this run | the sum of `<signal>.total` across the run's `dash0.cli.otlp_proxy.stats` events |
+| collection terminated normally | the process under test exited on its own **and** the SDK's `forceFlush()` / `shutdown()` returned before the span list was read | **both processes**: rung 1's condition on the app (it exited on its own **and** its `forceFlush()` / `shutdown()` returned) **and** a `dash0.cli.otlp_proxy.shutdown` event **was observed** with `reason == signal` |
+| nothing dropped or failed | the span processor reports **zero dropped spans** (a `BatchSpanProcessor` drops on a full queue and reports the count) and the file export is complete and parseable | **both legs**: rung 1's condition on the app — the SDK's exporter reporting no failed export and zero dropped spans (app → proxy) — **and** `*.failed == 0` accumulated over `logs.failed` / `spans.failed` / `metrics.failed` (proxy → Dash0) |
+| no delivery error reported | the exporter's `export()` returned no failure result | **both legs**: rung 1's condition on the app (its `export()` returned no failure result) **and** no `dash0.cli.otlp_proxy.error` event appeared |
+| `totals` | the number of **span** records in the in-memory span list / exported file, scoped to this run | the sum of `spans.total` across the run's `dash0.cli.otlp_proxy.stats` events (equivalently `final_total.spans` on the `shutdown` event) — **spans only**, never the `logs` or `metrics` counters |
 
 Both rungs scope `totals` to **this run's** `dev.run.id` resource attribute (see
 [`rules/run-identity.md`](./run-identity.md)), so a leftover span from a previous run is never
 counted as this one's evidence.
 
-`NOT CLEAN` is reached, on rung 2, by any of — **illustrative, never the definition**: an
-`dash0.cli.otlp_proxy.error` event; `*.failed > 0`; `shutdown.reason == deadline`; or **no
+**`totals` counts spans, on both rungs, because every assertion this skill grades is a span claim.**
+All seven allowed behavioral assertion kinds
+([`rules/assertion-provenance.md`](./assertion-provenance.md)) are statements about spans — count,
+parent/child structure, duration, status, downstream fan-out, attribute cardinality, ordering — so
+`totals` is the count of the evidence the verdict is actually about. Summing the `logs` and
+`metrics` counters in as well makes `totals > 0` satisfiable by a run that emitted no spans at all:
+that run skips the `null` row it belongs on, matches `CLEAN AND totals > 0` with the expected span
+absent, and grades `contradicts` — a confident disproof produced by counting log records. On rung 2
+read `spans.total` (or `final_total.spans`) alone; on rung 1 count span records alone, not every
+record the exporter holds.
+
+`NOT CLEAN` is reached, on rung 1, by any of — **illustrative, never the definition**: the process
+killed before flush; a non-zero dropped-span count; a flush that timed out; or an export file that
+is truncated or will not parse.
+Rung 2 reaches `NOT CLEAN` through **every one of those** — its realization contains rung 1's, so
+an app that never flushed is `NOT CLEAN` on rung 2 exactly as it is on rung 1 — **plus** the proxy's
+own: a `dash0.cli.otlp_proxy.error` event; `*.failed > 0`; `shutdown.reason == deadline`; or **no
 `shutdown` event at stream end at all**, which is the proxy `SIGKILL`ed, crashed, or the reader
 losing the stream.
-On rung 1 the counterpart cases are: the process killed before flush; a non-zero dropped-span
-count; a flush that timed out; or an export file that is truncated or will not parse.
 
 **Rung 2 has two delivery legs, and `*.failed` only sees the second one.**
 `*.failed` is the proxy's own count of what it failed to forward to Dash0 — it cannot see what
@@ -86,12 +114,24 @@ counted. `*.failed` stays `0`, the run grades `CLEAN`, and an absent span then r
 invariant exists to prevent.
 So rung 2's realization conjoins **both** legs: the proxy's `*.failed` for proxy → Dash0, and the
 SDK exporter's own failure and dropped-span reporting for app → proxy — the same signal rung 1
-reads, because on that leg rung 2 is in exactly rung 1's position.
+reads, because on that leg rung 2 is in exactly rung 1's position. That is the one-row instance of
+the containment rule above; the rule generalises it, because the same asymmetry produced the same
+defect on the `collection terminated normally` row, where a cell reading only
+`shutdown.reason == signal` graded the proxy's exit and said nothing about whether the app flushed.
 
-That last rung-2 case is why the realization opens on the event being *observed* rather than on its
-`reason`: `reader-adapters.md` documents the event's value domain (`signal` or `deadline`) but never
-promises the event is emitted, so a killed proxy satisfies no `reason` test and a row keyed on
-`reason` alone leaves that stream with no verdict.
+**The containment rule is prose on purpose — do not add an L1 guard for it.** Any mechanical test
+for "this rung-2 cell contains rung 1's condition" reduces to searching the cell for a token such as
+`rung 1`, which is satisfied by typing that token — the vacuous-substring shape this file's guards
+have been corrected for five times. L1 owns *mechanical* contracts here (root `CLAUDE.md`): that
+every rung has a column, that every body row is filled for every rung, that each conjunct has a row.
+Whether a filled cell says the right thing is a reviewer's judgement, and the two cheap tests are
+stated above: read each rung-2 cell against the rung-1 cell to its left, and ask what one guards
+that the other does not.
+
+The no-`shutdown`-event case is why the realization opens on the event being *observed* rather than
+on its `reason`: `reader-adapters.md` documents the event's value domain (`signal` or `deadline`)
+but never promises the event is emitted, so a killed proxy satisfies no `reason` test and a row
+keyed on `reason` alone leaves that stream with no verdict.
 
 `shutdown.reason` is read from the `dash0.cli.otlp_proxy.shutdown` event's `reason` attribute
 (`signal` or `deadline`) — **never** from the process exit code, which is zero in both cases; a

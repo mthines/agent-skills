@@ -6557,6 +6557,15 @@ const isPollBlock = (block) =>
     // break-shape: G52b — deleting the "was observed" conjunct from the CLEAN definition, or
     // rewriting any row's state cell back to an inline enumeration, flips the matching check red.
     const lines = body.split("\n");
+    // The conjuncts of `CLEAN`, declared once and read twice: once against the DEFINITION (does the
+    // guard still conjoin all three) and once against the per-rung REALIZATION (does each conjunct
+    // have a row, filled for every rung). One list, so a conjunct added to the definition without a
+    // realization row reds here instead of shipping as a condition one rung cannot evaluate.
+    const CLEAN_CONJUNCTS = [
+      ["collection terminating normally", /terminate normally/, /^\|\s*collection terminated normally\s*\|/],
+      ["nothing dropped or failed", /nothing was dropped or failed/, /^\|\s*nothing dropped or failed\s*\|/],
+      ["no delivery error reported", /no delivery error\*\* was reported/, /^\|\s*no delivery error reported\s*\|/],
+    ];
     // The `CLEAN` definition, wherever it sits — matched on the token, not on a heading or a line
     // number, so re-wording the prose around it cannot orphan this check.
     const cleanDef = body.match(/\*\*`CLEAN`\*\*[\s\S]{0,400}?(?=\n\n)/);
@@ -6568,11 +6577,7 @@ const isPollBlock = (block) =>
       // unconditionally, that rung then grades `ambiguous` on every run it performs. Rung 1 is the
       // DEFAULT rung, so the version of this definition written purely in `dash0.cli.otlp_proxy.*`
       // vocabulary silently disabled the common path while L1 stayed green.
-      for (const [label, re] of [
-        ["collection terminating normally", /terminate normally/],
-        ["nothing dropped or failed", /nothing was dropped or failed/],
-        ["no delivery error reported", /no delivery error\*\* was reported/],
-      ]) {
+      for (const [label, re] of CLEAN_CONJUNCTS) {
         s.check(`G52b the CLEAN definition conjoins ${label}`, re.test(cleanDef[0]),
           `not found in the CLEAN definition`);
       }
@@ -6607,13 +6612,33 @@ const isPollBlock = (block) =>
           realCols.some((c) => new RegExp(`^Rung ${n}\\b`).test(c)),
           `rung ${n} is selectable but has no column in the realization table — its only reachable verdict is ambiguous`);
       }
-      // `totals` is half the table's vocabulary and is as rung-specific as the guard was. Read it
-      // as a ROW whose every rung cell is filled, not as a token present somewhere in the section.
-      const totalsRow = (realization?.[0].split("\n") ?? []).find((l) => /^\|\s*`totals`\s*\|/.test(l));
-      const totalsCells = (totalsRow ?? "").split("|").slice(1, -1).map((c) => c.trim());
-      s.check("G52b the realization defines totals for every rung",
-        !!totalsRow && totalsCells.length === realCols.length && totalsCells.slice(1).every((c) => c.length > 0),
-        totalsRow ? `totals row has ${totalsCells.length} cells against ${realCols.length} columns` : "no `totals` row in the per-rung realization");
+      // The coverage claim is about the table's CONTENT, and a header check proves only that the
+      // column is LABELLED. Scoped to the single `totals` row, this check left three of four
+      // rung-1 cells blankable at 1717/1717 — so it is generalised over EVERY body row rather than
+      // given a second special case, and a row added later is covered on arrival instead of when
+      // someone remembers to extend a list.
+      const realLines = realization?.[0].split("\n") ?? [];
+      const bodyRows = realLines.filter((l) => l.startsWith("|") && l !== realHeader && !/^\|[\s:|-]+\|$/.test(l));
+      s.check("G52b the realization has a body row per CLEAN conjunct plus totals",
+        bodyRows.length >= CLEAN_CONJUNCTS.length + 1,
+        `${bodyRows.length} body row(s) for ${CLEAN_CONJUNCTS.length} conjunct(s) + totals`);
+      for (const row of bodyRows) {
+        const cells = row.split("|").slice(1, -1).map((c) => c.trim());
+        const empties = cells.slice(1).map((c, i) => (c ? null : realCols[i + 1] ?? `column ${i + 2}`)).filter(Boolean);
+        s.check(`G52b the realization row "${cells[0] || "(unlabelled)"}" is filled for every rung`,
+          cells.length === realCols.length && empties.length === 0,
+          `${cells.length} cell(s) against ${realCols.length} column(s)${empties.length ? `; empty under: ${empties.join(", ")}` : ""}`);
+      }
+      // Each conjunct is present BY NAME, so renaming one out of the table reds here rather than
+      // quietly reducing a row count the check above would still accept.
+      for (const [label, , rowRe] of CLEAN_CONJUNCTS) {
+        s.check(`G52b the realization carries a row for "${label}"`,
+          bodyRows.some((l) => rowRe.test(l)),
+          `no row matching ${rowRe} in the per-rung realization`);
+      }
+      s.check("G52b the realization carries a totals row",
+        bodyRows.some((l) => /^\|\s*`totals`\s*\|/.test(l)),
+        "no `totals` row in the per-rung realization");
     }
     const tableRow = (token) => lines.find((l) => l.startsWith("|") && new RegExp(`\\b${token}\\b`).test(l));
     // Each clean row REFERENCES the guard instead of restating it — a row that re-inlines the
@@ -6787,11 +6812,22 @@ const isPollBlock = (block) =>
 
       for (const [name, tells] of Object.entries(DECLARED_TELLS)) {
         const goldenFile = join(REPO_ROOT, `scripts/eval/golden/${name}.jsonl`);
-        if (!existsSync(goldenFile)) continue;
+        const present = existsSync(goldenFile);
+        s.check(`G52e ${name}.jsonl is present for the declared-tell scan`, present,
+          `${goldenFile} not found — its ${tells.length} declared tell(s) would go unmeasured`);
+        if (!present) continue;
         const rows = readFileSync(goldenFile, "utf8").split("\n").filter(Boolean)
           .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
         const choices = [...new Set(rows.map((r) => r.expected))].sort();
-        if (rows.length === 0 || choices.length !== 2) continue;
+        // The label/other scan below is binary by construction. A SILENT skip here is the same
+        // vacuous shape the scan itself guards against one level up: growing either set to a third
+        // choice — or emptying it — would delete all three of that suite's separability checks
+        // while L1 stayed green, on a total nobody reads case-by-case. Assert the precondition so
+        // the third choice reds here and the author extends the scan instead of losing it.
+        const scannable = rows.length > 0 && choices.length === 2;
+        s.check(`G52e ${name} is a non-empty two-choice set the declared tells can score`, scannable,
+          `${rows.length} row(s) over ${choices.length} choice(s) [${choices.join(", ")}] — the declared-tell scan is binary; extend it before adding a third choice`);
+        if (!scannable) continue;
         for (const [re, label] of tells) {
           const other = choices.find((c) => c !== label);
           let hit = 0;

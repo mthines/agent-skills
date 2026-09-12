@@ -376,9 +376,13 @@ is the input to Phase 3 and the seed for the bug-notes ledger.
 ### Phase 2.5 — Reproduction lock
 
 Construct a deterministic failing reproduction following [`rules/reproduction.md`](./rules/reproduction.md).
-For a telemetry-sourced input, the rule's front-of-phase step runs a repro-fidelity check first —
-`Skill("observe-run")` compares the local repro's trace shape against the originating production
-span before layer routing produces the repro artefact; advisory only, and it never touches Phase 8.
+For a telemetry-sourced input, the rule's front-of-phase step runs a repro-fidelity check first,
+before layer routing produces the repro artefact. The division of labour is the point: **this**
+skill reads the originating production span's shape out of its own Evidence Record and passes it in
+as literal expectations, and `Skill("observe-run")` grades the local run against them — it reads
+only the telemetry the run it just executed emitted, scoped to that run's `dev.run.id`, so it can
+never fetch the production span and an expectation phrased as "matches production" would answer
+`null` every time. Advisory only, and it never touches Phase 8.
 The rule's layer-routing table then picks the lowest test layer that can capture the bug, and
 delegates:
 
