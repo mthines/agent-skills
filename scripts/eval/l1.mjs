@@ -7236,12 +7236,17 @@ const isPollBlock = (block) =>
   // is asserted on the built regex, after it exists.
   const REJECTS = new RegExp(MARKERS.map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
   s.check("G52k the compiled rejection pattern is not vacuous", !REJECTS.test(""),
-    "`REJECTS` matches the empty string, so it matches every block — an empty or blank entry in MARKERS leaves an empty alternative in the alternation, and both G52k checks below pass on a tree that prescribes the counter freely");
+    "`REJECTS` matches the empty string, so it matches every block — an EMPTY entry in MARKERS leaves an empty alternative in the alternation, and both G52k checks below pass on a tree that prescribes the counter freely. A whitespace-only entry is NOT this check: it compiles to `/ /`, which does not match `\"\"` — the length floor below is what catches that one");
   // A second, weaker conjunct, and weaker ON PURPOSE rather than by oversight: the check above
   // catches vacuity exactly, but a one- or two-character marker is near-vacuous without literally
   // matching `""`. A length floor is a proxy — an eight-character phrase can still be ordinary
   // English — and it is kept only because it costs nothing and closes the degenerate-but-nonempty
   // band. The real limit on generic markers stays the one documented below: it is not mechanical.
+  // The BLANK entry is this check's alone, not the vacuity check's: `[" "].join("|")` is `" "`, so
+  // `REJECTS` is `/ /` and `REJECTS.test("")` is FALSE. The two checks cover the degenerate band
+  // JOINTLY, and each message now names the subset IT fires on rather than the union — the earlier
+  // wording sent a reader debugging a blank marker to the check that stays green on it, and the
+  // probe that would have shown this was run and its output read past.
   s.check("G52k no rejection marker is degenerately short", MARKERS.every((m) => m.trim().length >= 8),
     `marker(s) under 8 non-blank characters: ${MARKERS.filter((m) => m.trim().length < 8).map((m) => JSON.stringify(m)).join(", ")} — a marker this short cannot name the counter's disqualifying property, so it admits blocks on an accident of wording`);
   for (const [label, path] of [["receipt-mapping.md", RECEIPT], ["run-identity.md", RUN_IDENTITY]]) {
