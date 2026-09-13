@@ -167,16 +167,17 @@ for the full contract.
 `loop::reviewer-lessons`, `loop::implement-suggestion-lessons`,
 `loop::ci-auto-fix-lessons`, `loop::e2e-pr-stabilizer-lessons`,
 `loop::test-auto-fix-lessons`, `loop::optimize-approach-lessons`,
-`loop::ideate-lessons`) carry an extended entry schema with five mandatory
-fields (`phase`, `trigger-context`, `seen_count`, `status`, `expires`), defined
-on this skill's side in [`write-pipeline.md`](./write-pipeline.md#lesson-scope-entries)
-and templated at [`../templates/lesson-entry.md`](../templates/lesson-entry.md).
-On LoreKit these fields travel inside the entry's `value` (markdown) as a
-`meta:` comment rather than markdown frontmatter, but the fields and their
-semantics are identical. The host-skill loops depend on exactly these fields
-(recurrence counting, promotion gating, expiry pruning), so any change to the
-lesson schema MUST update both the write pipeline's lesson-entry rules and the
-host skill's loop rules in the same PR — the two surfaces must never drift.
+`loop::ideate-lessons`) carry an extended entry schema, defined on this skill's
+side in [`write-pipeline.md`](./write-pipeline.md#lesson-scope-entries) and
+templated at [`../templates/lesson-entry.md`](../templates/lesson-entry.md).
+On LoreKit the entry's `value` is **markdown only** — a visible `Applies when:`
+line plus the four bold labels — and every store-backed fact lives in its own
+first-class field (`seen_count` column, `ttl_days`, a `status::<value>` tag,
+`host` / `kind` / `trigger` / `origin_*`), never in a `meta:` comment or any
+other hidden block inside `value`. The host-skill loops depend on exactly those
+fields (recurrence counting, promotion gating, expiry pruning), so any change to
+the lesson schema MUST update both the write pipeline's lesson-entry rules and
+the host skill's loop rules in the same PR — the two surfaces must never drift.
 
 ## When NOT to integrate
 

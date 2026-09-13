@@ -58,9 +58,9 @@ loop is deliberately more conservative:
    (`seen_count >= 5`)**.
 2. **Fuzzy regression signatures that churn.** The "new vs cosmetic failure"
    call in [`regression-detection.md`](./regression-detection.md) keys on error
-   text that drifts with every ecosystem update. → **Regression lessons are
-   tagged `status: volatile` and expire in 30 days** (not the default 90) so
-   stale signatures decay fast.
+   text that drifts with every ecosystem update. → **Regression lessons carry the
+   `status::volatile` tag and `ttl_days: 30`** (not the default 90) so stale
+   signatures decay fast.
 
 ---
 
@@ -83,7 +83,7 @@ LoreKit's partition axis is **scope** — `global` or `repo::{owner}/{repo}`
     dashboard-synced, or committed — the loop only selects the scope. There is
     **no filesystem opt-in ceremony**.
   - `branch::{owner}/{repo}::{branch}` is reserved and **not used** by this loop.
-- **trigger-context key:** `<verdict> : <workflow-name> : <failing-step> : <error-signature>`
+- **Applies-when key:** `<verdict> : <workflow-name> : <failing-step> : <error-signature>`
   for verdict lessons; `<regression-shape> : <error-signature-delta>` for
   regression lessons. The `error-signature` is the first ~3 normalized lines of
   the failure (same normalization the regression rule uses).
@@ -91,12 +91,15 @@ LoreKit's partition axis is **scope** — `global` or `repo::{owner}/{repo}`
 Derive `{owner}/{repo}` from the `origin` remote, lowercased (strip a trailing
 `.git`). No git remote → use `global` only.
 
-Lesson record schema is the shared one. The metadata a filesystem store would
-keep in frontmatter travels inside the `value` markdown as a top
-`<!-- meta: phase=.. seen_count=.. confidence=.. status=.. expires=..
-trigger-context=".." -->` comment. Set `phase:` to `3` (verdict) or `8`
-(regression). Regression lessons additionally set `status: volatile` and
-`expires: <created + 30 days>`.
+Lesson record schema is the shared one, and the body is **markdown and nothing
+else** — never a `<!-- meta: … -->` block, and never a hand-written count or
+expiry date. Every store-backed fact has its own first-class `memory.write`
+field: the store owns `seen_count`, `ttl_days` sets the expiry, `status::<value>`
+and `source::<trigger>` are tags, and the phase a lesson applies to (`3` for a
+verdict lesson, `8` for a regression one) is carried by its **Promotion target**
+line. The matching key above travels as a visible **Applies when:** line directly
+under the title. Verdict lessons write `ttl_days: 90`; regression lessons write
+`ttl_days: 30` and carry the `status::volatile` tag.
 
 Note: ci-auto-fix is dispatched by `/create-pr` and `autonomous-workflow`
 Phase 7 as **its own** subagent (not `aw-executor`), so it does **not** inherit
@@ -123,8 +126,10 @@ memory.search { q: "<workflow-name + failing-step + error-signature keywords>", 
 
 1. Union the matches. Match verdict lessons on
    `<workflow-name>:<failing-step>:<error-signature>`; match regression lessons
-   on `<error-signature-delta>`. Load full entries only for matches. **Skip any
-   lesson whose `expires` is in the past.** `repo::` wins on conflict.
+   on `<error-signature-delta>`, reading each lesson's **Applies when** line.
+   Load full entries only for matches. The store drops expired lessons for you
+   (`ttl_days`), so an expired one never reaches this read. `repo::` wins on
+   conflict.
 2. Apply matches as **inputs**: a verdict lesson biases which verdict the
    evidence most likely fits; a regression lesson biases the Phase 8
    cosmetic-vs-new call. Neither overrides the log evidence in front of you.
@@ -137,7 +142,8 @@ memory.search { q: "<workflow-name + failing-step + error-signature keywords>", 
    under a `Lessons applied` note, marking the source scope in parentheses.
 
 LoreKit owns storage server-side and dedups on write — no consolidation pass.
-Stale beliefs decay through `expires`, not a line-count sweep.
+Stale beliefs decay through the store's own `ttl_days` expiry, not a line-count
+sweep.
 
 Log:
 
@@ -181,7 +187,7 @@ matches. Never wholesale-read another host's `loop::<host>-lessons`.
 
 | Write point | When | Lesson captures |
 | ----------- | ---- | --------------- |
-| **Phase 8 — regression reverted** | A new failure appeared and the last commit was reverted | The strongest negative signal: the verdict or fix was wrong. Capture the mis-verdict (what it was classified vs what the revert implies) and, if the "new failure" was actually cosmetic, a **regression lesson** (`status: volatile`, 30-day expiry) |
+| **Phase 8 — regression reverted** | A new failure appeared and the last commit was reverted | The strongest negative signal: the verdict or fix was wrong. Capture the mis-verdict (what it was classified vs what the revert implies) and, if the "new failure" was actually cosmetic, a **regression lesson** (the `status::volatile` tag, `ttl_days: 30`) |
 | **Phase 9 — CI green** | The fix landed and all checks passed | An UPDATE to any verdict lesson read at Phase 3 that led here — a working verdict classification, accruing `seen_count` toward the raised bar |
 | **Phase 9 — escalated / max-iterations** | `flaky`/`unsure` escalation, or the 4-iteration cap hit | A pattern this skill could not resolve — captured so the next run on the same signature escalates faster |
 
@@ -193,11 +199,17 @@ default):
 memory.search { q: "<key words of the lesson>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
 # 2a. Regression-shape lesson that generalizes → global (volatile, 30-day expiry).
-memory.write { scope: "global", key: "ci-auto-fix-lessons::<slug>", value: "<body>", tags: ["loop::ci-auto-fix-lessons", "source::regression"], source_agent: "ci-auto-fix", trigger: "regression-reverted" }
+memory.write { scope: "global", key: "ci-auto-fix-lessons::<slug>", value: "<body>", tags: ["loop::ci-auto-fix-lessons", "source::regression", "status::volatile"], source_agent: "ci-auto-fix", trigger: "regression-reverted", ttl_days: 30 }
 
 # 2b. Verdict lesson, or any repo-specific failure shape → this repo's scope.
-memory.write { scope: "repo::{owner}/{repo}", key: "ci-auto-fix-lessons::<slug>", value: "<body>", tags: ["loop::ci-auto-fix-lessons", "source::verdict"], source_agent: "ci-auto-fix", trigger: "ci-green | escalated" }
+memory.write { scope: "repo::{owner}/{repo}", key: "ci-auto-fix-lessons::<slug>", value: "<body>", tags: ["loop::ci-auto-fix-lessons", "source::verdict"], source_agent: "ci-auto-fix", trigger: "ci-green | escalated", ttl_days: 90 }
 ```
+
+`<body>` is **markdown and nothing else** — the shared lesson body shape
+(title, `**Applies when:**`, `**What happened:**`, `**Why:**`,
+`**Do this instead:**`, `**Promotion target:**`) defined by
+[`persistent-memory/rules/write-pipeline.md`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
+No `<!-- meta: … -->` block, no hand-written count, no hand-written expiry date.
 
 - **No filesystem opt-in ceremony.** The loop just picks the scope; LoreKit's
   mode decides whether a `repo::` lesson is private, synced, or committed. Verdict
@@ -206,9 +218,8 @@ memory.write { scope: "repo::{owner}/{repo}", key: "ci-auto-fix-lessons::<slug>"
 - **Privacy pre-flight is NOT optional** (a CI-diagnosis lesson never needs
   secrets; the bar is stricter for `repo::` writes since a repo scope is
   team-visible).
-- **Applied-lesson UPDATE contract.** An UPDATE to an entry that carries a
-  `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`.
-  Same scope + key overwrites in place.
+- **Applied-lesson UPDATE contract.** A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry.
+  Same scope + key overwrites in place. Never hand-write a count into the body.
 - **Never** write a lesson that encodes a check-weakening action (skip, disable,
   `continue-on-error`, `--no-verify`) — those are hard-refused in
   [`anti-patterns.md`](./anti-patterns.md) and a lesson can never smuggle one in.
@@ -217,7 +228,7 @@ Log (include scope + verdict + CI outcome):
 
 ```markdown
 - [TIMESTAMP] Phase 9: lorekit(memory.write repo::{owner}/{repo} ci-auto-fix-lessons::<slug>) — 1 verdict lesson (UPDATE, seen_count→5) — CI green
-- [TIMESTAMP] Phase 8: lorekit(memory.write global ci-auto-fix-lessons::<slug>) — 1 regression lesson (ADD, volatile, expires+30d) — reverted
+- [TIMESTAMP] Phase 8: lorekit(memory.write global ci-auto-fix-lessons::<slug>) — 1 regression lesson (ADD, status::volatile, ttl_days=30) — reverted
 ```
 
 ---
@@ -231,8 +242,8 @@ observability and churn risks above:
 
 | Lesson kind | Promotion-eligible at | Rationale |
 | ----------- | --------------------- | --------- |
-| **Verdict** (`phase: 3`) | `seen_count >= 5` (or `status: structural`) | Log-only inference is noisy; require more confirmations |
-| **Regression** (`phase: 8`, volatile) | `seen_count >= 3` | Standard bar, but the 30-day expiry means it must recur *often* to survive to promotion |
+| **Verdict** (Phase 3) | `seen_count >= 5` (or the `status::structural` tag) | Log-only inference is noisy; require more confirmations |
+| **Regression** (Phase 8, `status::volatile`) | `seen_count >= 3` | Standard bar, but the 30-day expiry means it must recur *often* to survive to promotion |
 
 Surface the scope-appropriate suggestion — never act silently:
 
@@ -244,7 +255,7 @@ Surface the scope-appropriate suggestion — never act silently:
 verdicts, anti-patterns) as its fallback surface plus the
 `loop::ci-auto-fix-lessons` lessons as evidence, and emits one confidence-gated
 diff — applied only at `confidence(analysis) ≥ 90 %` with explicit user
-confirmation. On success, set the lesson `status: promoted` via a `memory.write`
+confirmation. On success, add the `status::promoted` tag via a `memory.write`
 UPDATE to the same scope + key.
 
 ---
@@ -252,7 +263,7 @@ UPDATE to the same scope + key.
 ## Entrenchment guards (ci-auto-fix additions)
 
 The five canonical guards apply unchanged (advisory-only; recurrence-gated
-promotion; every lesson expires and the read step ignores expired ones — LoreKit
+promotion; every lesson expires through the store's own `ttl_days` — LoreKit
 dedups on write, no consolidation pass; contradictions flagged; privacy
 pre-flight never bypassed). Two ci-auto-fix-specific additions:
 

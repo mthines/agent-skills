@@ -715,11 +715,14 @@ universal → `global`; project-bound → `repo::{owner}/{repo}`.
 memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
 # Universal candidate → global.
-memory.write { scope: "global", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::end-of-run"], source_agent: "aw", trigger: "end-of-run" }
+memory.write { scope: "global", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::end-of-run"], source_agent: "aw", trigger: "end-of-run", ttl_days: 90 }
 
 # Project-bound candidate → this repo's scope.
-memory.write { scope: "repo::{owner}/{repo}", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::end-of-run"], source_agent: "aw", trigger: "end-of-run" }
+memory.write { scope: "repo::{owner}/{repo}", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::end-of-run"], source_agent: "aw", trigger: "end-of-run", ttl_days: 90 }
 ```
+
+`<body>` is markdown only — the shape and the no-hidden-blocks rule are in
+[`self-improvement-loop.md#the-lesson-record`](./self-improvement-loop.md#the-lesson-record).
 
 Good end-of-run lessons: a companion trigger that should have fired but didn't,
 a plan gap that surfaced only during execution, a recurring fix pattern worth
@@ -727,7 +730,7 @@ encoding.
 
 **Applied-lesson UPDATE contract.**
 If a lesson read at the start of the run was applied and the failure it targets did not recur, write an UPDATE for that lesson — successful application counts as recurrence evidence.
-An UPDATE to an entry that carries a `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`.
+A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry.
 Without this write, a lesson that works never accumulates the recurrence evidence the `seen_count >= 3` promotion gate requires.
 
 **Retrospective prompt.**
@@ -737,9 +740,9 @@ Write nothing only when the retrospective surfaces nothing **and** no lesson was
 
 - Autonomous writes skip consent, **not** the privacy pre-flight (never store
   secrets / PII). Lessons are workflow mechanics, never product data.
-- Recurring lessons UPDATE (same scope + key) and bump `seen_count`. When a
-  written or matched lesson reaches `seen_count >= 3` (or is tagged
-  `structural`), surface the **scope-appropriate** promotion suggestion:
+- Recurring lessons UPDATE (same scope + key) and the store bumps `seen_count`.
+  When a written or matched lesson reaches `seen_count >= 3` (or carries the
+  `status::structural` tag), surface the **scope-appropriate** promotion suggestion:
   `global` lessons promote to skill source via
   `/create-skill diagnose autonomous-workflow`; `repo::` lessons promote to
   repo rules via `Skill("docs", "update --add-rule …")`.

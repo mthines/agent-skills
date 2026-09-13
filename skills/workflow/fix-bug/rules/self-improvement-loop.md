@@ -74,16 +74,19 @@ tier is a silent no-op (log one line, continue).
     decides whether these are private, dashboard-synced, or committed — the
     loop only selects the scope.
 - Lessons are keyed by **`bugClass`** and **input shape** (the Phase 0
-  classification) in their `trigger-context`, so the Phase 0.5 read can match
+  classification) on their **Applies when** line, so the Phase 0.5 read can match
   them mechanically against the current bug. Scope is determined at write time
   by whether the `bugClass` or input shape is repo-specific.
 
 Lesson record schema is identical to the shared one (procedural memory; the four
-mandatory fields *What failed / Why / What to do next time / Promotion target*).
-The metadata a filesystem store would keep in frontmatter travels inside the
-`value` markdown as a top `<!-- meta: phase=.. seen_count=.. status=..
-expires=.. trigger-context=".." -->` comment; the `phase` field names the
-fix-bug phase (`0`, `0.5`, `2.5`, `3`, `5`, `8`). The schema authority is
+mandatory body fields *What happened / Why / Do this instead / Promotion
+target*). The body is **markdown and nothing else** — never a
+`<!-- meta: … -->` block, and never a hand-written count or expiry date, because
+every store-backed fact has its own first-class `memory.write` field: the store
+owns `seen_count`, `ttl_days` sets the expiry, and `status::<value>` /
+`source::<trigger>` are tags. The fix-bug phase a lesson applies to (`0`, `0.5`,
+`2.5`, `3`, `5`, `8`) is carried by its **Promotion target** line. The schema
+authority is
 [`persistent-memory/rules/write-pipeline.md`](../../../authoring/persistent-memory/rules/write-pipeline.md).
 
 ---
@@ -110,9 +113,10 @@ memory.list { scope: "global", tags: ["loop::fix-bug-lessons"], limit: 50 }
 memory.search { q: "<bugClass or error keywords>", scopes: ["repo::{owner}/*", "global"], limit: 10 }
 ```
 
-1. Merge the matches. Match each lesson's `trigger-context` against the current
-   `bugClass` + input shape. Consider the full entry only for matches.
-   **Skip any lesson whose `expires` is in the past.** A `repo::` lesson wins
+1. Merge the matches. Match each lesson's **Applies when** line against the
+   current `bugClass` + input shape. Consider the full entry only for matches.
+   The store drops expired lessons for you (`ttl_days`), so an expired one never
+   reaches this read. A `repo::` lesson wins
    on conflict with a `global` lesson (closer scope) — log the conflict.
 2. Apply matches as **inputs** to the decision they target: a triage lesson
    biases the `simple`/`complex` call (it never overrides the conservative
@@ -125,8 +129,8 @@ memory.search { q: "<bugClass or error keywords>", scopes: ["repo::{owner}/*", "
 4. Record applied lessons in the bug-notes ledger under `Lessons applied`.
 
 There is no local INDEX to maintain and no consolidation pass: LoreKit owns
-storage server-side and dedups on write. Stale beliefs decay through `expires`
-(the read step ignores expired lessons), not a line-count sweep.
+storage server-side and dedups on write. Stale beliefs decay through the store's
+own `ttl_days` expiry, not a line-count sweep.
 
 Log to the ledger:
 
@@ -187,7 +191,7 @@ have under-performed — these are the high-signal moments:
 **universal** (a `bugClass` any project could hit) or **project-bound** (the
 bugClass cites a repo-specific symbol, file path, or domain term). When
 ambiguous, default to **universal** (`global`) — a misclassified universal
-lesson harms nothing elsewhere because its `trigger-context` still has to match.
+lesson harms nothing elsewhere because its **Applies when** line still has to match.
 
 Then **deduplicate first** so a recurrence UPDATES in place instead of piling
 up, and dispatch by verdict:
@@ -197,10 +201,10 @@ up, and dispatch by verdict:
 memory.search { q: "<key words of the lesson>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
 # 2a. Universal candidate — lands in global.
-memory.write { scope: "global", key: "fix-bug-lessons::<slug>", value: "<body>", tags: ["loop::fix-bug-lessons", "source::<trigger>"], source_agent: "fix-bug", trigger: "<trigger>" }
+memory.write { scope: "global", key: "fix-bug-lessons::<slug>", value: "<body>", tags: ["loop::fix-bug-lessons", "source::<trigger>"], source_agent: "fix-bug", trigger: "<trigger>", ttl_days: 90 }
 
 # 2b. Project-bound candidate — lands in this repo's scope.
-memory.write { scope: "repo::{owner}/{repo}", key: "fix-bug-lessons::<slug>", value: "<body>", tags: ["loop::fix-bug-lessons", "source::<trigger>"], source_agent: "fix-bug", trigger: "<trigger>" }
+memory.write { scope: "repo::{owner}/{repo}", key: "fix-bug-lessons::<slug>", value: "<body>", tags: ["loop::fix-bug-lessons", "source::<trigger>"], source_agent: "fix-bug", trigger: "<trigger>", ttl_days: 90 }
 ```
 
 - **No filesystem opt-in ceremony.** The loop just picks the scope; LoreKit's
@@ -211,9 +215,9 @@ memory.write { scope: "repo::{owner}/{repo}", key: "fix-bug-lessons::<slug>", va
   `repo::` writes since the content is team-visible.
 - **Dedup resolves each candidate as ADD / UPDATE.** A recurring lesson reuses
   the same **scope + key** and resolves to **UPDATE**, which bumps `seen_count`.
-  An UPDATE to an entry that carries a `seen_count` field MUST increment
-  `seen_count` by 1 and refresh `expires`. This is what makes recurrence
-  countable and how a lesson reaches the `seen_count >= 3` promotion gate.
+  A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry. This is what makes
+  recurrence countable and how a lesson reaches the `seen_count >= 3` promotion
+  gate. Never hand-write a count into the body.
 - At `seen_count >= 3`, surface the **scope-appropriate** promotion suggestion:
   `global` → `/create-skill diagnose fix-bug`; `repo::` → repo rules.
 
@@ -231,7 +235,7 @@ Log to the ledger's `Phase log`:
 
 **Anchor:** `lesson-promotion`
 
-A lesson reaching `seen_count >= 3` (or tagged `status: structural`) is
+A lesson reaching the store's `seen_count >= 3` (or tagged `status::structural`) is
 promotion-eligible. Surface — never act silently. The target **depends on the
 lesson's scope**:
 
@@ -249,7 +253,7 @@ Diagnose Mode reads the `loop::fix-bug-lessons` lessons as evidence, walks
 fix-bug's [diagnostic surface](./diagnostic-surface.md), and emits one
 confidence-gated diff against fix-bug's source — applied only at
 `confidence(analysis) ≥ 90 %` with explicit user confirmation. On success, set
-the lesson `status: promoted` (via a `memory.write` UPDATE to the same scope +
+the `status::promoted` tag (via a `memory.write` UPDATE to the same scope +
 key). The `repo::` promotion path uses the `docs` skill under the same
 confidence + user-approval contract.
 
@@ -263,7 +267,7 @@ Identical to the canonical loop — the dominant risk is self-reinforcing error:
    a lesson to a changed fix-bug gate / threshold / invariant is a
    confidence-gated, user-approved `diagnose` apply.
 2. **Recurrence (`seen_count >= 3`), not one run, gates promotion.**
-3. **Every lesson expires** (default 90 days); the read step ignores expired
+3. **Every lesson expires** (`ttl_days: 90`); the store drops expired
    lessons, so stale beliefs decay instead of entrenching.
 4. **Contradictions are flagged, not silently overwritten** (the dedup search
    finds the prior entry).

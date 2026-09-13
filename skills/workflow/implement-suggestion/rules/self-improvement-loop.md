@@ -85,17 +85,20 @@ Derive `{owner}/{repo}` from the `origin` remote, lowercased (strip a trailing
 `.git`). No git remote → use `global` only.
 
 Lessons are keyed by **reviewer source** (bot handle such as `claude[bot]` /
-`coderabbitai[bot]`, or `human`) plus **comment topic / type** in their
-`trigger-context`, so the Phase 3 read can match them mechanically against the
-comments in the current ledger. Scope is determined at write time by whether the
-topic cites a repo-specific symbol, path, or domain term.
+`coderabbitai[bot]`, or `human`) plus **comment topic / type** on their
+**Applies when** line, so the Phase 3 read can match them mechanically against
+the comments in the current ledger. Scope is determined at write time by whether
+the topic cites a repo-specific symbol, path, or domain term.
 
 Lesson record schema is identical to the shared one (procedural memory; the four
-mandatory fields *What failed / Why / What to do next time / Promotion target*).
-The metadata a filesystem store would keep in frontmatter travels inside the
-`value` markdown as a top `<!-- meta: phase=.. seen_count=.. confidence=..
-status=.. expires=.. trigger-context=".." -->` comment. Set the `phase:` field
-to the implement-suggestion phase the lesson applies to (`3`, `4`, or `6`).
+mandatory body fields *What happened / Why / Do this instead / Promotion
+target*). The body is **markdown and nothing else** — never a
+`<!-- meta: … -->` block, and never a hand-written count or expiry date, because
+every store-backed fact has its own first-class `memory.write` field: the store
+owns `seen_count`, `ttl_days` sets the expiry, and `status::<value>` /
+`source::<trigger>` are tags. The implement-suggestion phase a lesson applies to
+(`3`, `4`, or `6`) is carried by its **Promotion target** line. Schema authority:
+[`persistent-memory/rules/write-pipeline.md`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
 
 ---
 
@@ -121,10 +124,11 @@ memory.list { scope: "global", tags: ["loop::implement-suggestion-lessons"], lim
 memory.search { q: "<reviewer source + topic keywords>", scopes: ["repo::{owner}/*", "global"], limit: 10 }
 ```
 
-1. Union the matches. Match each lesson's `trigger-context` against the reviewer
+1. Union the matches. Match each lesson's **Applies when** line against the reviewer
    source + topic of each comment in the ledger. Load full entries only for
-   matches. **Skip any lesson whose `expires` is in the past** — treat it as
-   stale. `repo::` wins on conflict with `global` (closer scope).
+   matches. The store drops expired lessons for you (`ttl_days`), so an expired
+   one never reaches this read. `repo::` wins on conflict with `global` (closer
+   scope).
 2. Apply matches as **inputs** to the decision they target: a classification
    lesson biases the Phase 3 tag for that comment; a calibration lesson is
    passed to Phase 4 as a "previously this suggestion class was over-/under-scored"
@@ -139,7 +143,8 @@ memory.search { q: "<reviewer source + topic keywords>", scopes: ["repo::{owner}
    marking the source scope in parentheses (e.g. `(repo)`).
 
 LoreKit owns storage server-side and deduplicates on write, so the loop does not
-run a consolidation pass. Stale beliefs decay through `expires`, not a
+run a consolidation pass. Stale beliefs decay through the store's own
+`ttl_days` expiry, not a
 line-count sweep.
 
 Log:
@@ -207,10 +212,10 @@ first** so a recurrence UPDATES in place instead of piling up:
 memory.search { q: "<key words of the lesson>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
 # 2a. Universal candidate — always lands in global.
-memory.write { scope: "global", key: "implement-suggestion-lessons::<slug>", value: "<body>", tags: ["loop::implement-suggestion-lessons", "source::<trigger>"], source_agent: "implement-suggestion", trigger: "<end-of-run | watch-reflag | user-override>" }
+memory.write { scope: "global", key: "implement-suggestion-lessons::<slug>", value: "<body>", tags: ["loop::implement-suggestion-lessons", "source::<trigger>"], source_agent: "implement-suggestion", trigger: "<end-of-run | watch-reflag | user-override>", ttl_days: 90 }
 
 # 2b. Project-bound candidate — lands in this repo's scope.
-memory.write { scope: "repo::{owner}/{repo}", key: "implement-suggestion-lessons::<slug>", value: "<body>", tags: ["loop::implement-suggestion-lessons", "source::<trigger>"], source_agent: "implement-suggestion", trigger: "<end-of-run | watch-reflag | user-override>" }
+memory.write { scope: "repo::{owner}/{repo}", key: "implement-suggestion-lessons::<slug>", value: "<body>", tags: ["loop::implement-suggestion-lessons", "source::<trigger>"], source_agent: "implement-suggestion", trigger: "<end-of-run | watch-reflag | user-override>", ttl_days: 90 }
 ```
 
 - **No filesystem opt-in ceremony.** The loop just picks the scope; LoreKit's
@@ -223,8 +228,9 @@ memory.write { scope: "repo::{owner}/{repo}", key: "implement-suggestion-lessons
 - **Applied-lesson UPDATE contract.** If a lesson read at Phase 3 was applied and
   the miss it targets did not recur, write an UPDATE for it — successful
   application counts as recurrence evidence. An UPDATE to an entry that carries a
-  `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`. This
+  `seen_count` resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry. This
   is how a *working* lesson still reaches the `seen_count >= 3` promotion gate.
+  Never hand-write a count into the body.
 - Recurring lessons resolve to **UPDATE** (same scope + key overwrites in place),
   bumping `seen_count`. At `seen_count >= 3`, surface the **scope-appropriate**
   promotion suggestion (see below).
@@ -243,7 +249,7 @@ Log (include the resolved scope in every line):
 
 **Anchor:** `lesson-promotion`
 
-A lesson reaching `seen_count >= 3` (or tagged `status: structural`) is
+A lesson reaching the store's `seen_count >= 3` (or tagged `status::structural`) is
 promotion-eligible. Surface a one-line suggestion — never act silently. The
 target depends on the lesson's scope:
 
@@ -258,7 +264,7 @@ its fallback surface (phases, gates, hard rules) plus the
 `loop::implement-suggestion-lessons` lessons as evidence, and emits one
 confidence-gated diff against this skill's source — applied only at
 `confidence(analysis) ≥ 90 %` with explicit user confirmation. On success, set
-the lesson `status: promoted` via a `memory.write` UPDATE to the same
+the `status::promoted` tag via a `memory.write` UPDATE to the same
 scope + key.
 
 ---
@@ -271,8 +277,8 @@ Identical to the canonical loop — the dominant risk is self-reinforcing error:
    lesson to a changed classification rule, gate threshold, or lane trigger is a
    confidence-gated, user-approved `diagnose` apply.
 2. **Recurrence (`seen_count >= 3`), not one run, gates promotion.**
-3. **Every lesson expires** (default 90 days, refreshed on each re-sighting); the
-   read step ignores expired lessons, so stale beliefs decay. LoreKit owns
+3. **Every lesson expires** (`ttl_days: 90`, refreshed on each re-sighting); the
+   store stops returning an expired lesson, so stale beliefs decay. LoreKit owns
    storage and dedups on write — no consolidation pass.
 4. **Contradictions are flagged, not silently overwritten** (the dedup search
    surfaces the prior entry).

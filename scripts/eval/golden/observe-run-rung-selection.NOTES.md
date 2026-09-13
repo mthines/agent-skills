@@ -61,7 +61,7 @@ asserting only on a span the process under test emits itself, and a case may nee
 spans without ever saying "baseline".
 That is the discrimination the suite exists to measure, and it is unreachable by keyword.
 
-L1 `G52e` scores three declared tells per suite, **in both polarities** (a keyword that is wrong
+L1 `G53e` scores three declared tells per suite, **in both polarities** (a keyword that is wrong
 80% of the time is an 80%-accurate classifier with its polarity flipped), and requires each to sit
 below the `EVAL_GATE` floor read out of `evals-l2.yml`.
 Deleting the decoys reds the build, so the set cannot silently re-degenerate into a keyword lookup.
@@ -74,7 +74,7 @@ CI run `34656896182` on the 28-case set: **28/28 (100.0%)**, every decoy include
 That is the pair of readings the set needs to be worth running — a rubric-reading model answers
 every decoy correctly, while a rubric-free keyword responder now scores **60.7% / 64.3% / 64.3%** on
 the three declared tells (`process` / rung-2 vocabulary / `offline`-`in-memory`).
-Those are the figures `G52e` itself computes, so the numbers here and the numbers the guard gates on
+Those are the figures `G53e` itself computes, so the numbers here and the numbers the guard gates on
 are the same reading.
 All three sit **above** 50%, so `max(acc, 100 - acc)` selects the accuracy itself: the strength the
 guard gates on is 60.7 / 64.3 / 64.3, not the flipped complement.

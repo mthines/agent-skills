@@ -331,16 +331,17 @@ When promoting:
 
 **Lesson record shape.**
 Every `reviewer-lessons` write conforms to the shared lesson-scope schema owned by [`write-pipeline.md § Lesson-scope entries`](../../../skills/authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries), via the [`lesson-entry.md`](../../../skills/authoring/persistent-memory/templates/lesson-entry.md) template.
-The `value` MUST carry `trigger-context` (a concrete matching signal — a file glob, task type, or integration/tech name, never a subjective condition), `expires` (ISO 8601, default now + 90 days, refreshed on each re-sighting), `seen_count`, and `status`.
-`trigger-context` is what lets the `pr-reviewer` read step match a lesson mechanically against a run (`pr-reviewer.md` Step 0.7 / Step 1.0); `expires` is entrenchment guard #3 — without it a stale lesson never decays.
-A write missing either field is malformed.
+The `value` is **markdown and nothing else** — never a `<!-- meta: … -->` block, and never a hand-written count or expiry date.
+It MUST carry a visible **Applies when:** line directly under the title, holding a concrete matching signal — a file glob, task type, or integration/tech name, never a subjective condition.
+That line is what lets the `pr-reviewer` read step match a lesson mechanically against a run (`pr-reviewer.md` Step 0.7 / Step 1.0), and a write without one is malformed.
+Every store-backed fact travels as its own first-class `memory.write` field instead: the store owns `seen_count`, `ttl_days: 90` sets the expiry (entrenchment guard #3 — without it a stale lesson never decays), and `status::<value>` / `source::<trigger>` are tags.
 
 ### From `applied` verdicts (positive lesson)
 
 Write to `reviewer-lessons` via LoreKit:
 
 ```
-memory.write { scope: "global", key: "reviewer-lessons::<slug>", value: "<body>", tags: ["loop::reviewer-lessons", "source::outcome-applied"] }
+memory.write { scope: "global", key: "reviewer-lessons::<slug>", value: "<body>", tags: ["loop::reviewer-lessons", "source::outcome-applied"], ttl_days: 90 }
 ```
 
 Lesson body: "Pattern [fingerprint class] reliably gets resolved — [short description]. Reinforce detection."
@@ -348,7 +349,7 @@ Lesson body: "Pattern [fingerprint class] reliably gets resolved — [short desc
 ### From `rejected-at-validation` or `reverted-after-ci` verdicts (noise/negative lesson)
 
 ```
-memory.write { scope: "<global | repo::{owner}/{repo}>", key: "reviewer-lessons::<slug>", value: "<body>", tags: ["loop::reviewer-lessons", "source::outcome-rejected"] }
+memory.write { scope: "<global | repo::{owner}/{repo}>", key: "reviewer-lessons::<slug>", value: "<body>", tags: ["loop::reviewer-lessons", "source::outcome-rejected"], ttl_days: 90 }
 ```
 
 Lesson body: "Pattern [fingerprint class] was rejected/reverted [N] times — over-flagging pattern: [short description]. Add to `filters:` in `.github/review.yaml` or lower confidence threshold."

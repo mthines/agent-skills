@@ -584,23 +584,25 @@ Universal lessons land in `global`; project-bound lessons land in
 memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
 # Universal candidate → global.
-memory.write { scope: "global", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::stuck-loop"], source_agent: "aw", trigger: "stuck-loop" }
+memory.write { scope: "global", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::stuck-loop"], source_agent: "aw", trigger: "stuck-loop", ttl_days: 90 }
 
 # Project-bound candidate → this repo's scope.
-memory.write { scope: "repo::{owner}/{repo}", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::stuck-loop"], source_agent: "aw", trigger: "stuck-loop" }
+memory.write { scope: "repo::{owner}/{repo}", key: "aw-lessons::<slug>", value: "<body>", tags: ["loop::aw-lessons", "source::stuck-loop"], source_agent: "aw", trigger: "stuck-loop", ttl_days: 90 }
 ```
 
 Capture: the failing area, every hypothesis tried, what finally worked (or that
-it didn't), and the **earliest phase** that should have caught it. The lesson is
-**procedural** — phrase *"What to do next time"* as a prescriptive, testable
-instruction (see the schema in the loop file).
+it didn't), and the **earliest phase** that should have caught it (that phase is
+the lesson's `Promotion target`). The lesson is **procedural** — phrase
+*"Do this instead"* as a prescriptive, testable instruction, and keep `<body>`
+to markdown alone: every store-backed fact goes in its own write field, never in
+a hidden block (see the schema in the loop file).
 
 - Autonomous writes skip the consent preview (the loop cannot pause per write);
   the **privacy pre-flight still runs** — never store secrets / PII. The privacy
   bar is stricter for `repo::` writes (a repo scope is team-visible). The loop
   only picks the scope; LoreKit decides where a `repo::` lesson physically lives.
-- A recurring lesson resolves to **UPDATE** (same scope + key) and bumps
-  `seen_count` — it does not duplicate. When `seen_count >= 3`, surface the
+- A recurring lesson resolves to **UPDATE** (same scope + key) and the store
+  bumps `seen_count` — it does not duplicate. When `seen_count >= 3`, surface the
   scope-appropriate promotion suggestion from
   [`self-improvement-loop.md#lesson-promotion`](./self-improvement-loop.md#lesson-promotion)
   (skill source for `global`; repo rules for `repo::`).

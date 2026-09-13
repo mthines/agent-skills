@@ -457,8 +457,10 @@ function checksInSync(plan, checks) {
   // G1: the seen_count UPDATE contract sentence is shared verbatim by all three owners
   // (persistent-memory write pipeline + both autonomous-workflow loop surfaces).
   // Without it, applied lessons never reach the seen_count >= 3 promotion gate.
+  // The wording is LoreKit's own: the STORE owns both halves, so a loop must not
+  // hand-write a count or an expiry date into the lesson body to track them.
   const CONTRACT =
-    "An UPDATE to an entry that carries a `seen_count` field MUST increment `seen_count` by 1 and refresh `expires`.";
+    "A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry.";
   for (const p of [
     "skills/authoring/persistent-memory/rules/write-pipeline.md",
     "skills/workflow/autonomous-workflow/rules/self-improvement-loop.md",
@@ -4167,10 +4169,22 @@ const isPollBlock = (block) =>
     /Never restate what LoreKit already stores as a first-class property/.test(memory)
     && /source_agent/.test(memory) && /`window_days: 90` in the value/.test(memory),
     "memory.md must name the columns a value may not duplicate, window_days included");
+  // The carve-out's reason used to read "LoreKit marks an expired record rather than dropping it",
+  // which is false: `lorekit_memory_list` and the search handler both filter
+  // `expires_at is null or expires_at > now()`. The real mechanism is narrower and survives the
+  // correction — a row written with no `ttl_days` has no `expires_at` to filter on, and the GitHub
+  // Actions recorder is exactly that write path. Assert the true reason, and that the divergence is
+  // named rather than presented as a design, so closing it stays on the record.
   s.check("G38e memory.md keeps in-value expires as the stated exception",
     /deliberate exception is the in-value \*\*`expires`\*\*/.test(memory)
-    && /by \*marking\* it, not by dropping it/.test(memory),
-    "the expires carve-out must give its mechanical reason: LoreKit marks rather than drops");
+    && /drops an expired row server-side, but only when the write set one/.test(memory)
+    && /expires_at is null or expires_at > now\(\)/.test(memory)
+    && /passes no `ttl_days`/.test(memory),
+    "the expires carve-out must give its real mechanical reason: a row written without ttl_days has no expires_at to filter on");
+  s.check("G38e memory.md names the two-write-path expiry divergence",
+    /divergence worth closing/i.test(memory)
+    && /Until the recorder passes `ttl_days`/.test(memory),
+    "the carve-out must mark the recorder's missing ttl_days as a divergence to close, not a design");
   s.check("G38e memory.md bans storing what the read side derives",
     /Never store what the read side derives/.test(memory)
     && /facts and not advice|facts, not advice/i.test(memory),
@@ -6514,7 +6528,186 @@ const isPollBlock = (block) =>
     "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.", false);
 }
 
-// ── G52: observe-run — the receipt grammar, the rung/provenance rule files, the wiring
+// ── G52: review-branch / branch-reviewer — the PR-less review path ──
+//
+// This path makes exactly two load-bearing claims, and both are the kind that rot silently
+// because a degraded version still looks like a working review.
+//
+//   1. "Zero GitHub calls." It is the entire reason the skill exists. One `gh pr view` added
+//      later by a well-meaning editor turns it into review-loop with a misleading name, and
+//      nothing else in the repo would notice — the run still reviews, still converges, still
+//      reports. Guarded as an absence, positionally, over both files.
+//   2. "Same findings as pr-reviewer, by reference." The detection core is reused, never
+//      copied — the SAME bytes the bug-detection L2 eval reads as its live rubric. A copy
+//      here forks the core into two homes and the eval measures one while the agent runs the
+//      other, which is this repo's own mock-that-reimplements-the-thing-under-test failure at
+//      the worst possible place. Guarded in both directions: the links must be present, and
+//      the candidate-record schema must NOT be restated.
+//
+// The adapter gets the same treatment every other script here does (G39b/G46b/G33b/G51a): its
+// self-test is EXECUTED, plus one integration check, because the self-test proves the parser
+// internally consistent while the thing that actually matters is that its output still drives
+// the unmodified graph builder. Those are different claims and the second is the fragile one —
+// build-impact-graph.mjs is fail-closed on bad input, so a shape drift shows up as an empty
+// graph and a review that finds nothing, which reads exactly like a clean branch.
+{
+  const RB = join(REPO_ROOT, "skills/quality/review-branch");
+  const AGENT = join(REPO_ROOT, "agents/branch-reviewer.md");
+  const ADAPTER = join(REPO_ROOT, "agents/branch-reviewer/scripts/local-diff-files.mjs");
+  const GRAPH = join(REPO_ROOT, "agents/pr-reviewer/scripts/build-impact-graph.mjs");
+
+  s.check("G52a the branch-reviewer agent exists", existsSync(AGENT));
+  s.check("G52a the local-diff adapter exists", existsSync(ADAPTER));
+  s.check("G52a the review-branch skill exists", existsSync(join(RB, "SKILL.md")));
+
+  if (existsSync(ADAPTER)) {
+    const st = spawnSync(process.execPath, [ADAPTER, "--self-test"], { encoding: "utf8" });
+    s.check("G52b the local-diff adapter's self-test passes", st.status === 0,
+      ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 400));
+
+    // (c) The integration claim, end to end, with the real graph builder. Asserting the
+    // adapter's JSON shape in isolation would be asserting a schema this file invented;
+    // running the actual consumer asserts the thing the agent does.
+    //
+    // The fixture is a purpose-built two-file repo, NOT this repo's own `HEAD~1..HEAD`.
+    // `evals-l1.yml` checks out at `actions/checkout`'s default `fetch-depth: 1`, where
+    // `HEAD~1` does not resolve at all: the adapter exits 2, both checks below fail, and the
+    // guard reds every PR in CI while passing for whoever wrote it on a full local clone.
+    // A guard may not depend on history the workflow running it does not fetch. The fixture
+    // also exercises the WORKING TREE as head, which is the agent's documented default and
+    // the case `HEAD~1..HEAD` never covered.
+    if (existsSync(GRAPH)) {
+      const tmp = mkdtempSync(join(tmpdir(), "g52-"));
+      try {
+        const filesPath = join(tmp, "files.json");
+        const fixture = join(tmp, "repo");
+        mkdirSync(join(fixture, "src"), { recursive: true });
+        const git = (...a) => spawnSync("git", ["-C", fixture, ...a], { encoding: "utf8" });
+        writeFileSync(join(fixture, "src/parse.ts"),
+          "export function parseThing(raw: string): number {\n  return Number(raw);\n}\n");
+        writeFileSync(join(fixture, "src/use.ts"),
+          "import { parseThing } from './parse';\nexport const run = (s: string) => parseThing(s) + 1;\n");
+        git("init", "-q", "-b", "main");
+        git("config", "user.email", "l1@example.invalid");
+        git("config", "user.name", "l1");
+        git("add", "-A");
+        git("commit", "-qm", "fixture base");
+        // The change under review: a signature break its consumer does not follow.
+        writeFileSync(join(fixture, "src/parse.ts"),
+          "export function parseThing(raw: string, radix: number): number {\n  return parseInt(raw, radix);\n}\n");
+        const adapt = spawnSync(process.execPath,
+          [ADAPTER, "--base", "HEAD", "--workdir", fixture],
+          { encoding: "utf8", maxBuffer: 128 * 1024 * 1024 });
+        let files = [];
+        try { files = JSON.parse(adapt.stdout || "[]"); } catch { /* reported below as unparseable */ }
+        s.check("G52c the adapter emits a parseable, non-empty file list for base..working-tree",
+          adapt.status === 0 && Array.isArray(files) && files.length > 0,
+          `exit ${adapt.status}, ${Array.isArray(files) ? files.length : "unparseable"} files`);
+
+        // Every record carries the six keys build-impact-graph.mjs reads off a GitHub file entry.
+        const REQUIRED = ["filename", "patch", "status", "additions", "deletions", "sha"];
+        s.check("G52c every emitted record carries the graph builder's six keys",
+          Array.isArray(files) && files.length > 0 && files.every((f) => REQUIRED.every((k) => k in f)),
+          Array.isArray(files) && files.length
+            ? `missing: ${REQUIRED.filter((k) => !(k in files[0])).join(", ") || "none on first record"}`
+            : "no records to check");
+
+        if (Array.isArray(files) && files.length > 0) {
+          writeFileSync(filesPath, JSON.stringify(files));
+          const g = spawnSync(process.execPath,
+            [GRAPH, filesPath, "--workdir", fixture, "--base-ref", "HEAD"],
+            { encoding: "utf8", maxBuffer: 128 * 1024 * 1024 });
+          let graph = null;
+          try { graph = JSON.parse(g.stdout || "null"); } catch { /* reported below */ }
+          s.check("G52c the adapter's output drives the UNMODIFIED impact-graph builder",
+            g.status === 0 && graph && typeof graph === "object" && "symbols" in graph,
+            `exit ${g.status}: ${(g.stderr || "").slice(0, 200) || "no symbols key in stdout"}`);
+        }
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    }
+  }
+
+  // (d) The zero-GitHub promise, as an absence over all three files.
+  //
+  // `gh` is matched as a COMMAND — the bare word followed by a real subcommand — never as a
+  // substring, or every mention of "GitHub" would red this guard, and a guard that reds on its
+  // own documentation gets deleted rather than fixed.
+  //
+  // The lookbehind is `[\w-]` and NOT an allow-list of shell prefixes. The first version of this
+  // guard allowed only start-of-line, a pipe, an `&`, a `;`, or `$(` — and a probe that appended
+  // a literal "Run `gh pr view` …" to the agent sailed straight past it, because this repo writes
+  // every command inside backticks. It went red only because G24 (the tool-grant guard) happened
+  // to catch the same line, which is worse than a plain miss: G24 goes green the moment someone
+  // ADDS the GitHub grant, so the zero-GitHub promise would then have had no guard at all while
+  // L1 stayed green. Enumerate what `gh` may not be preceded by, never where it may appear.
+  const GH_CMD = /(?<![\w-])gh\s+(?:api|pr|repo|issue|auth|release|run|workflow|search|browse)\b/m;
+  const MCP_GH = /mcp__github__/;
+  for (const [label, path] of [["branch-reviewer.md", AGENT], ["review-branch/SKILL.md", join(RB, "SKILL.md")],
+                               ["review-branch/rules/findings-bus.md", join(RB, "rules/findings-bus.md")]]) {
+    if (!existsSync(path)) continue;
+    const body = readFileSync(path, "utf8");
+    // Strip the lines that deliberately FORBID these calls, so the prohibition itself is not
+    // read as a violation. A rule may name what it bans.
+    //
+    // A prohibition is recognised by the negation GOVERNING the command in the same CLAUSE —
+    // not by the negation appearing somewhere on the line. The line-level test this replaces
+    // stripped every line containing `no` / `not` / `without` / `rather than`, which was 52 of
+    // this agent's 232 lines, and the stripped set is precisely the prose most likely to be
+    // ABOUT the prohibition. A probe of `There is no PR here, so run \`gh pr view\`` passed
+    // G52d untouched and went red only through G24 — the same borrowed-guard result the comment
+    // above describes, surviving one layer down. Clause-scoping is what distinguishes the two:
+    // in `No \`gh\`, no \`mcp__github__*\`` the negation abuts the token, while in the probe a
+    // comma separates the `no` (which governs "PR") from the command.
+    const NEGATION = /\b(never|no|not|zero|none|forbid(s|den)?|without|instead of|rather than)\b/i;
+    const governed = (line, index) => {
+      const before = line.slice(0, index);
+      const clause = before.slice(before.search(/[.;,:—][^.;,:—]*$/) + 1);
+      return NEGATION.test(clause);
+    };
+    const offenders = (re) => body.split("\n").flatMap((line) => {
+      const m = line.match(re);
+      return m && !governed(line, m.index) ? [line.trim().slice(0, 120)] : [];
+    });
+    const ghHits = offenders(GH_CMD);
+    const mcpHits = offenders(MCP_GH);
+    s.check(`G52d ${label} issues no gh command`, ghHits.length === 0, ghHits[0] || "");
+    s.check(`G52d ${label} calls no mcp__github__ tool`, mcpHits.length === 0, mcpHits[0] || "");
+  }
+
+  // The agent's tool grant is the mechanical half of the same promise: prose can say "zero
+  // GitHub calls" while the frontmatter hands it the tools to make them.
+  if (existsSync(AGENT)) {
+    const fm = frontmatter(AGENT) || {};
+    const tools = String(fm.tools || "");
+    s.check("G52d the branch-reviewer tool grant contains no GitHub tool",
+      !/mcp__github__/.test(tools), tools.slice(0, 200));
+
+    // (e) Reuse by reference, both directions. The links must be present...
+    const body = readFileSync(AGENT, "utf8");
+    for (const ref of ["finders.md", "finding-verifier.md", "impact-graph.md", "depth-routing.md",
+                       "workspace.md", "comment-shape.md", "per-comment-confidence.md"]) {
+      s.check(`G52e branch-reviewer.md links ${ref}`, body.includes(ref));
+    }
+    // ...and the candidate-record schema must NOT be restated. `severity_hint` and `verify_by`
+    // are finders.md's own field names and appear nowhere else in the repo's agent prose, so
+    // their presence here is the signature of a pasted copy rather than a link.
+    s.check("G52e branch-reviewer.md does not restate the candidate-record schema",
+      !/severity_hint\s*:/.test(body) && !/verify_by\s*:/.test(body),
+      "found finders.md's own field names — the detection core was copied, not referenced");
+  }
+
+  // (f) The skill passes the repo's own skill validator, same bar as G51b.
+  const VALIDATOR = join(REPO_ROOT, "skills/authoring/create-skill/scripts/validate-skill.mjs");
+  if (existsSync(VALIDATOR) && existsSync(join(RB, "SKILL.md"))) {
+    const run = spawnSync(process.execPath, [VALIDATOR, RB], { encoding: "utf8" });
+    s.check("G52f review-branch passes the repo's skill validator", run.status === 0,
+      (run.stdout || "").split("\n").filter((l) => l.startsWith("FAIL")).join("; ").slice(0, 500));
+  }
+}
+
+// ── G53: observe-run — the receipt grammar, the rung/provenance rule files, the wiring
 // into measurable / verify-behavior, and the eval + inventory surfaces ──
 //
 // observe-run is a new skill whose whole value rests on its receipt vocabulary matching the
@@ -6532,16 +6725,16 @@ const isPollBlock = (block) =>
   const TOKENS = ["confirms", "contradicts", "ambiguous", "null"];
 
   // (a) receipt-mapping.md names all four canonical tokens and cites the canonical file by path.
-  // break-shape: G52a — deleting a backticked token (e.g. `contradicts`) or the path citation
+  // break-shape: G53a — deleting a backticked token (e.g. `contradicts`) or the path citation
   // from receipt-mapping.md flips the matching sub-check red; restoring it goes green.
-  s.check("G52a receipt-mapping.md exists", existsSync(RM));
+  s.check("G53a receipt-mapping.md exists", existsSync(RM));
   if (existsSync(RM)) {
     const body = readFileSync(RM, "utf8");
     for (const t of TOKENS) {
-      s.check(`G52a receipt-mapping.md names verdict token "${t}"`, body.includes(`\`${t}\``),
+      s.check(`G53a receipt-mapping.md names verdict token "${t}"`, body.includes(`\`${t}\``),
         `missing backticked \`${t}\``);
     }
-    s.check("G52a receipt-mapping.md cites the canonical receipt.md by path",
+    s.check("G53a receipt-mapping.md cites the canonical receipt.md by path",
       body.includes("skills/quality/verify-behavior/rules/receipt.md"),
       "no path citation found");
 
@@ -6554,7 +6747,7 @@ const isPollBlock = (block) =>
     // `a shutdown event exists` (implied by every row, guaranteed by none, so a SIGKILLed proxy
     // matched no row at all). So assert the SHAPE instead: the definition is stated once and
     // carries all four conjuncts, and every row references it rather than restating it.
-    // break-shape: G52b — deleting the "was observed" conjunct from the CLEAN definition, or
+    // break-shape: G53b — deleting the "was observed" conjunct from the CLEAN definition, or
     // rewriting any row's state cell back to an inline enumeration, flips the matching check red.
     const lines = body.split("\n");
     // The conjuncts of `CLEAN`, declared once and read twice: once against the DEFINITION (does the
@@ -6569,7 +6762,7 @@ const isPollBlock = (block) =>
     // The `CLEAN` definition, wherever it sits — matched on the token, not on a heading or a line
     // number, so re-wording the prose around it cannot orphan this check.
     const cleanDef = body.match(/\*\*`CLEAN`\*\*[\s\S]{0,400}?(?=\n\n)/);
-    s.check("G52b the CLEAN guard is defined once, by name", !!cleanDef,
+    s.check("G53b the CLEAN guard is defined once, by name", !!cleanDef,
       "no `**`CLEAN`**` definition found in receipt-mapping.md");
     if (cleanDef) {
       // The list above is HAND-TYPED, so on its own it can only ever check the conjuncts already in
@@ -6596,17 +6789,17 @@ const isPollBlock = (block) =>
       // definition is a blockquote — filtering on `>` silently dropped it and under-counted by one.
       const defLines = cleanDef[0].split("\n").filter((l) => l.trim().length > 0);
       const contLines = defLines.slice(1);
-      s.check("G52b the CLEAN definition is a blockquote with one conjunct per line",
+      s.check("G53b the CLEAN definition is a blockquote with one conjunct per line",
         defLines.length >= 2 && contLines.every((l) => l.trim().startsWith(">")),
         `${defLines.length} definition line(s) — the definition must be a blockquote, one conjunct per line`);
-      s.check("G52b every CLEAN conjunct line after the first opens with the joiner `AND`",
+      s.check("G53b every CLEAN conjunct line after the first opens with the joiner `AND`",
         contLines.every((l) => /^>\s*AND\b/.test(l.trim())),
         `${contLines.filter((l) => !/^>\s*AND\b/.test(l.trim())).length} continuation line(s) do not open with \`AND\` — a conjunct joined any other way is invisible to the count derived below`);
-      s.check("G52b the CLEAN definition uses the token `AND` only as a line-opening joiner",
+      s.check("G53b the CLEAN definition uses the token `AND` only as a line-opening joiner",
         (cleanDef[0].match(/\bAND\b/g) || []).length === contLines.length,
         `${(cleanDef[0].match(/\bAND\b/g) || []).length} \`AND\` token(s) against ${contLines.length} continuation line(s) — a line-internal \`AND\` is indistinguishable from a second conjunct crammed onto that line; use a comma or a new line`);
       const expectedConjuncts = defLines.length;
-      s.check("G52b CLEAN_CONJUNCTS covers every conjunct the definition states",
+      s.check("G53b CLEAN_CONJUNCTS covers every conjunct the definition states",
         CLEAN_CONJUNCTS.length === expectedConjuncts,
         `the definition states ${expectedConjuncts} conjunct(s); the guard's list holds ${CLEAN_CONJUNCTS.length} — add the new conjunct to CLEAN_CONJUNCTS and give it a realization row`);
       // The definition is READER-NEUTRAL. Written in one rung's vocabulary it is not a stricter
@@ -6615,10 +6808,10 @@ const isPollBlock = (block) =>
       // DEFAULT rung, so the version of this definition written purely in `dash0.cli.otlp_proxy.*`
       // vocabulary silently disabled the common path while L1 stayed green.
       for (const [label, re] of CLEAN_CONJUNCTS) {
-        s.check(`G52b the CLEAN definition conjoins ${label}`, re.test(cleanDef[0]),
+        s.check(`G53b the CLEAN definition conjoins ${label}`, re.test(cleanDef[0]),
           `not found in the CLEAN definition`);
       }
-      s.check("G52b the CLEAN definition names no rung-specific reader vocabulary",
+      s.check("G53b the CLEAN definition names no rung-specific reader vocabulary",
         !/dash0\.cli\.otlp_proxy|in-memory|BatchSpanProcessor/.test(cleanDef[0]),
         "the guard is written in one rung's vocabulary, which the other rung can never satisfy");
     }
@@ -6628,38 +6821,38 @@ const isPollBlock = (block) =>
     const RUNGS = join(REPO_ROOT, "skills/quality/observe-run/rules/rungs.md");
     // Existence is ASSERTED, not assumed. The whole rung-coverage and cell-coverage block below
     // sits behind this one path, so a bare `if (existsSync(...))` deleted five checks in silence
-    // when the file was renamed — the total fell and not one `G52b` failure was reported. Same
-    // shape, and the same fix, as the `G52e` golden-file assertion one screen down; that one was
+    // when the file was renamed — the total fell and not one `G53b` failure was reported. Same
+    // shape, and the same fix, as the `G53e` golden-file assertion one screen down; that one was
     // corrected first and its twin here was left behind.
     const rungsPresent = existsSync(RUNGS);
-    s.check("G52b rungs.md is present for the rung-coverage checks", rungsPresent,
+    s.check("G53b rungs.md is present for the rung-coverage checks", rungsPresent,
       `${RUNGS} not found — the per-rung realization coverage would go unchecked`);
     if (rungsPresent) {
       const rungNums = [...new Set((readFileSync(RUNGS, "utf8").match(/^## Rung (\d+)/gm) || [])
         .map((h) => h.match(/(\d+)/)[1]))];
-      s.check("G52b rungs.md defines at least two rungs", rungNums.length >= 2,
+      s.check("G53b rungs.md defines at least two rungs", rungNums.length >= 2,
         `${rungNums.length} rung heading(s) found`);
       const realization = body.match(/### What `CLEAN` and `totals` are, per rung[\s\S]*?(?=\n## )/);
-      s.check("G52b receipt-mapping.md carries a per-rung realization of CLEAN", !!realization,
+      s.check("G53b receipt-mapping.md carries a per-rung realization of CLEAN", !!realization,
         "no `### What `CLEAN` and `totals` are, per rung` section found");
       // Parse the realization TABLE's header row into cells — never substring-test the section.
       // The section carries prose that names the rungs, so `/Rung 1/` over the whole slice was
       // satisfied by a sentence: deleting the entire rung-1 COLUMN while the prose still said
       // "Rung 1" left this green, asserting a coverage claim its own failure message spells out
-      // and does not check. Structured parse, same idiom as G52c's Verdict column one screen up.
+      // and does not check. Structured parse, same idiom as G53c's Verdict column one screen up.
       const realHeader = (realization?.[0].split("\n") ?? []).find((l) => /^\|.*\bRung\b/.test(l));
       const realCols = (realHeader ?? "").split("|").slice(1, -1).map((c) => c.trim());
-      s.check("G52b the realization table's header row parses",
+      s.check("G53b the realization table's header row parses",
         realCols.length >= 1 + rungNums.length,
         `${realCols.length} header cell(s) parsed, expected >= ${1 + rungNums.length}`);
       // Every header cell is LABELLED. An unlabelled column is not a cosmetic defect here: it is
       // the column the filled-cell check below reports its empties under, so an empty header made
       // an entire empty column unreportable. Caught at the header, where the defect actually is.
-      s.check("G52b every realization column carries a header label",
+      s.check("G53b every realization column carries a header label",
         realCols.every((c) => c.length > 0),
         `${realCols.filter((c) => !c.length).length} unlabelled column(s) in the realization header`);
       for (const n of rungNums) {
-        s.check(`G52b the realization has a column for rung ${n}`,
+        s.check(`G53b the realization has a column for rung ${n}`,
           realCols.some((c) => new RegExp(`^Rung ${n}\\b`).test(c)),
           `rung ${n} is selectable but has no column in the realization table — its only reachable verdict is ambiguous`);
       }
@@ -6679,7 +6872,7 @@ const isPollBlock = (block) =>
       const realTable = [];
       for (let i = realStart; i >= 0 && i < realLines.length && realLines[i].startsWith("|"); i++) realTable.push(realLines[i]);
       const bodyRows = realTable.filter((l) => l !== realHeader && !/^\|[\s:|-]+\|$/.test(l));
-      s.check("G52b the realization has a body row per CLEAN conjunct plus totals",
+      s.check("G53b the realization has a body row per CLEAN conjunct plus totals",
         bodyRows.length >= CLEAN_CONJUNCTS.length + 1,
         `${bodyRows.length} body row(s) for ${CLEAN_CONJUNCTS.length} conjunct(s) + totals`);
       for (const row of bodyRows) {
@@ -6692,18 +6885,18 @@ const isPollBlock = (block) =>
           .map((c, i) => ({ col: realCols[i + 1] || `column ${i + 2}`, empty: c.length === 0 }))
           .filter((e) => e.empty)
           .map((e) => e.col);
-        s.check(`G52b the realization row "${cells[0] || "(unlabelled)"}" is filled for every rung`,
+        s.check(`G53b the realization row "${cells[0] || "(unlabelled)"}" is filled for every rung`,
           cells.length === realCols.length && empties.length === 0,
           `${cells.length} cell(s) against ${realCols.length} column(s)${empties.length ? `; empty under: ${empties.join(", ")}` : ""}`);
       }
       // Each conjunct is present BY NAME, so renaming one out of the table reds here rather than
       // quietly reducing a row count the check above would still accept.
       for (const [label, , rowRe] of CLEAN_CONJUNCTS) {
-        s.check(`G52b the realization carries a row for "${label}"`,
+        s.check(`G53b the realization carries a row for "${label}"`,
           bodyRows.some((l) => rowRe.test(l)),
           `no row matching ${rowRe} in the per-rung realization`);
       }
-      s.check("G52b the realization carries a totals row",
+      s.check("G53b the realization carries a totals row",
         bodyRows.some((l) => /^\|\s*`totals`\s*\|/.test(l)),
         "no `totals` row in the per-rung realization");
     }
@@ -6712,22 +6905,22 @@ const isPollBlock = (block) =>
     // conjuncts is a second copy to keep in sync, which is the defect this shape removes.
     for (const [token, extra] of [["confirms", /totals > 0/], ["contradicts", /totals > 0/], ["null", /totals == 0/]]) {
       const row = tableRow(token);
-      s.check(`G52b the ${token} row references CLEAN and its own totals condition`,
+      s.check(`G53b the ${token} row references CLEAN and its own totals condition`,
         !!row && /`CLEAN`/.test(row) && extra.test(row) && !/failed == 0/.test(row),
         row || `no ${token} row found`);
     }
     const ambiguousRow = tableRow("ambiguous");
-    s.check("G52b the ambiguous row is the negation of CLEAN and carries the never-contradicts clause",
+    s.check("G53b the ambiguous row is the negation of CLEAN and carries the never-contradicts clause",
       !!ambiguousRow && /`NOT CLEAN`/.test(ambiguousRow) && /never `contradicts`/.test(ambiguousRow),
       ambiguousRow || "no ambiguous row found");
   }
 
   // (c) three-surface reconciliation: the four tokens appear in all three real files, and
   // observe-run introduces no fifth token in the mapping table's Verdict column.
-  // break-shape: G52c — adding a `| \`unproven\` — ...` row to receipt-mapping.md's table flips
+  // break-shape: G53c — adding a `| \`unproven\` — ...` row to receipt-mapping.md's table flips
   // this red; removing the row goes green.
-  s.check("G52c verify-behavior/rules/receipt.md exists", existsSync(VB_RECEIPT));
-  s.check("G52c agents/shared/rules/verification-receipt.md exists", existsSync(VR));
+  s.check("G53c verify-behavior/rules/receipt.md exists", existsSync(VB_RECEIPT));
+  s.check("G53c agents/shared/rules/verification-receipt.md exists", existsSync(VR));
   if (existsSync(VB_RECEIPT) && existsSync(VR) && existsSync(RM)) {
     for (const [label, file] of [
       ["verify-behavior/rules/receipt.md", VB_RECEIPT],
@@ -6736,7 +6929,7 @@ const isPollBlock = (block) =>
     ]) {
       const body = readFileSync(file, "utf8");
       for (const t of TOKENS) {
-        s.check(`G52c ${label} names "${t}"`, body.includes(t), `"${t}" not found in ${label}`);
+        s.check(`G53c ${label} names "${t}"`, body.includes(t), `"${t}" not found in ${label}`);
       }
     }
     const rmBody = readFileSync(RM, "utf8");
@@ -6755,10 +6948,10 @@ const isPollBlock = (block) =>
     }
     // Without this, renaming the table's header would silently yield zero parsed tokens and the
     // fifth-token check below would pass vacuously — the same failure mode one level up.
-    s.check("G52c the mapping table's Verdict column parses", verdictCellTokens.length >= TOKENS.length,
+    s.check("G53c the mapping table's Verdict column parses", verdictCellTokens.length >= TOKENS.length,
       `${verdictCellTokens.length} verdict cell(s) parsed, expected >= ${TOKENS.length}`);
     const fifth = verdictCellTokens.filter((t) => !TOKENS.includes(t));
-    s.check("G52c observe-run introduces no fifth verdict token", fifth.length === 0,
+    s.check("G53c observe-run introduces no fifth verdict token", fifth.length === 0,
       fifth.length ? `unexpected token(s): ${fifth.join(", ")}` : "");
   }
 
@@ -6766,11 +6959,11 @@ const isPollBlock = (block) =>
   // approach, and verification-receipt.md names observe-run while retaining its existing 2.6b
   // ordering reference and null-drop invariant intact — a future edit that swaps in observe-run
   // language must not silently drop either anchor.
-  // break-shape: G52d — deleting "observe-run" from ladder.md's Tier 3 table, or from
+  // break-shape: G53d — deleting "observe-run" from ladder.md's Tier 3 table, or from
   // verification-receipt.md, or deleting the "2.6b" or "null" references from
   // verification-receipt.md, flips the corresponding check red; restoring goes green.
   const LADDER = join(REPO_ROOT, "skills/quality/verify-behavior/rules/ladder.md");
-  s.check("G52d ladder.md exists", existsSync(LADDER));
+  s.check("G53d ladder.md exists", existsSync(LADDER));
   if (existsSync(LADDER) && existsSync(VR)) {
     const ladderBody = readFileSync(LADDER, "utf8");
     const vrBody = readFileSync(VR, "utf8");
@@ -6778,21 +6971,21 @@ const isPollBlock = (block) =>
     // matches ANYWHERE after the heading — the mention could sit in the file's last section and
     // the check would still pass, so the guard's name overclaimed its scope. Same idiom as G49.
     const tier3 = ladderBody.split(/^## /m).find((x) => x.startsWith("Tier 3")) || "";
-    s.check("G52d ladder.md's Tier 3 section names observe-run as a third approach",
+    s.check("G53d ladder.md's Tier 3 section names observe-run as a third approach",
       tier3.includes("observe-run"),
       "no observe-run mention inside the Tier 3 section");
-    s.check("G52d verification-receipt.md names observe-run",
+    s.check("G53d verification-receipt.md names observe-run",
       vrBody.includes("observe-run"), "no observe-run mention found");
-    s.check("G52d verification-receipt.md still cites Step 2.6b",
+    s.check("G53d verification-receipt.md still cites Step 2.6b",
       vrBody.includes("2.6b"), "2.6b reference missing");
-    s.check("G52d verification-receipt.md still states the null-drop invariant",
+    s.check("G53d verification-receipt.md still states the null-drop invariant",
       /null-drop invariant/i.test(vrBody), "null-drop invariant reference missing");
   }
 
   // (e) both new L2 suites exist, resolve, and their golden sets are correctly shaped: valid
   // JSONL, at least 10 cases, both choices exercised, and a majority-class baseline strictly
   // below the EVAL_GATE floor grepped out of evals-l2.yml — never re-encoded here, same
-  // discipline as G21n. break-shape: G52e — collapsing either golden set to a single label, or
+  // discipline as G21n. break-shape: G53e — collapsing either golden set to a single label, or
   // truncating it below 10 cases, flips the corresponding sub-check red; restoring goes green.
   {
     const suitesBody = readFileSync(join(REPO_ROOT, "scripts/eval/suites.mjs"), "utf8");
@@ -6802,9 +6995,9 @@ const isPollBlock = (block) =>
     const gate = gateLiteral === undefined ? null : Number(gateLiteral);
 
     for (const name of ["observe-run-rung-selection", "observe-run-assertion-provenance"]) {
-      s.check(`G52e suites.mjs declares SUITES entry "${name}"`, suitesBody.includes(`name: "${name}"`));
+      s.check(`G53e suites.mjs declares SUITES entry "${name}"`, suitesBody.includes(`name: "${name}"`));
       const goldenFile = join(REPO_ROOT, `scripts/eval/golden/${name}.jsonl`);
-      s.check(`G52e ${name}.jsonl exists`, existsSync(goldenFile));
+      s.check(`G53e ${name}.jsonl exists`, existsSync(goldenFile));
       if (!existsSync(goldenFile)) continue;
       const lines = readFileSync(goldenFile, "utf8").split("\n").filter(Boolean);
       let allParse = lines.length >= 1;
@@ -6817,15 +7010,15 @@ const isPollBlock = (block) =>
           allParse = false;
         }
       }
-      s.check(`G52e ${name}.jsonl parses line-by-line as valid JSON`, allParse);
-      s.check(`G52e ${name}.jsonl has at least 10 cases`, lines.length >= 10, `${lines.length} cases`);
+      s.check(`G53e ${name}.jsonl parses line-by-line as valid JSON`, allParse);
+      s.check(`G53e ${name}.jsonl has at least 10 cases`, lines.length >= 10, `${lines.length} cases`);
       const tally = new Map();
       for (const v of labels) tally.set(v, (tally.get(v) ?? 0) + 1);
-      s.check(`G52e ${name}.jsonl exercises both choices`, tally.size >= 2, `${tally.size} distinct choice(s)`);
+      s.check(`G53e ${name}.jsonl exercises both choices`, tally.size >= 2, `${tally.size} distinct choice(s)`);
       const majority = labels.length ? Math.max(...tally.values()) : 0;
       const baseline = labels.length ? (majority / labels.length) * 100 : 100;
       const split = [...tally.entries()].map(([k, v]) => `${k}=${v}`).sort().join(" ");
-      s.check(`G52e ${name}.jsonl majority-class baseline is below the EVAL_GATE floor`,
+      s.check(`G53e ${name}.jsonl majority-class baseline is below the EVAL_GATE floor`,
         gate !== null && baseline < gate,
         gate === null
           ? "no EVAL_GATE literal found in .github/workflows/evals-l2.yml"
@@ -6850,7 +7043,7 @@ const isPollBlock = (block) =>
     // Each tell is scored BOTH ways: a keyword that is wrong 80% of the time is an 80%-accurate
     // classifier with its polarity flipped, so `max(acc, 100 - acc)` is the real shortcut strength
     // and is what must sit below the EVAL_GATE floor.
-    // break-shape: G52e — deleting the `decoy-` cases from either golden set flips 5 of these 6
+    // break-shape: G53e — deleting the `decoy-` cases from either golden set flips 5 of these 6
     // separability checks red. Measured on the decoy-free sets: assertion-provenance's run tell
     // returns to **100.0%** (a rubric-free responder answering on one verb scored a perfect 14/14
     // on the set as originally shipped — worse than the 85% first reported), `startSpan` to 85.7%,
@@ -6880,7 +7073,7 @@ const isPollBlock = (block) =>
       for (const [name, tells] of Object.entries(DECLARED_TELLS)) {
         const goldenFile = join(REPO_ROOT, `scripts/eval/golden/${name}.jsonl`);
         const present = existsSync(goldenFile);
-        s.check(`G52e ${name}.jsonl is present for the declared-tell scan`, present,
+        s.check(`G53e ${name}.jsonl is present for the declared-tell scan`, present,
           `${goldenFile} not found — its ${tells.length} declared tell(s) would go unmeasured`);
         if (!present) continue;
         const rows = readFileSync(goldenFile, "utf8").split("\n").filter(Boolean)
@@ -6892,7 +7085,7 @@ const isPollBlock = (block) =>
         // while L1 stayed green, on a total nobody reads case-by-case. Assert the precondition so
         // the third choice reds here and the author extends the scan instead of losing it.
         const scannable = rows.length > 0 && choices.length === 2;
-        s.check(`G52e ${name} is a non-empty two-choice set the declared tells can score`, scannable,
+        s.check(`G53e ${name} is a non-empty two-choice set the declared tells can score`, scannable,
           `${rows.length} row(s) over ${choices.length} choice(s) [${choices.join(", ")}] — the declared-tell scan is binary; extend it before adding a third choice`);
         if (!scannable) continue;
         for (const [re, label] of tells) {
@@ -6910,12 +7103,12 @@ const isPollBlock = (block) =>
           // measuring nothing. That is the exact shape a typoed regex takes — `/proces/` matching
           // zero rows keeps this guard green on a set the real `/process/` tell could separate.
           // Assert the tell genuinely partitions the set before reading its accuracy.
-          s.check(`G52e the ${re.source} tell partitions ${name}`,
+          s.check(`G53e the ${re.source} tell partitions ${name}`,
             matched > 0 && matched < rows.length,
             `matches ${matched}/${rows.length} rows — a constant classifier re-measures the majority baseline`);
           const acc = (hit / rows.length) * 100;
           const strength = Math.max(acc, 100 - acc);
-          s.check(`G52e ${name} is not separable by the ${re.source} tell`,
+          s.check(`G53e ${name} is not separable by the ${re.source} tell`,
             gate !== null && strength < gate,
             gate === null
               ? "no EVAL_GATE literal found in .github/workflows/evals-l2.yml"
@@ -6927,7 +7120,7 @@ const isPollBlock = (block) =>
 
   // (f) the measurable setup interview question and the profile-template field move together —
   // neither exists without the other, so a future edit cannot drop one half silently.
-  // break-shape: G52f — deleting the "Dev Run Target" heading from the template (or the
+  // break-shape: G53f — deleting the "Dev Run Target" heading from the template (or the
   // dev-run-target interview question from setup-profile.md) flips this red.
   const SETUP_PROFILE = join(REPO_ROOT, "skills/quality/measurable/rules/setup-profile.md");
   const PROFILE_TEMPLATE = join(REPO_ROOT, "skills/quality/measurable/templates/observability-profile.template.md");
@@ -6936,24 +7129,24 @@ const isPollBlock = (block) =>
     const templateBody = existsSync(PROFILE_TEMPLATE) ? readFileSync(PROFILE_TEMPLATE, "utf8") : "";
     const hasQuestion = /dev run target|dev-run target|local dev target/i.test(setupBody);
     const hasField = /dev run target/i.test(templateBody);
-    s.check("G52f measurable setup-profile.md carries the dev-run-target interview question",
+    s.check("G53f measurable setup-profile.md carries the dev-run-target interview question",
       hasQuestion, existsSync(SETUP_PROFILE) ? "no dev-run-target question found" : "setup-profile.md not found");
-    s.check("G52f observability-profile.template.md carries the matching Dev Run Target field",
+    s.check("G53f observability-profile.template.md carries the matching Dev Run Target field",
       hasField, existsSync(PROFILE_TEMPLATE) ? "no Dev Run Target field found" : "template not found");
-    s.check("G52f the question and the field move TOGETHER (neither exists alone)",
+    s.check("G53f the question and the field move TOGETHER (neither exists alone)",
       hasQuestion === hasField,
       `question=${hasQuestion} field=${hasField}`);
   }
 
   // (g) reader-adapters.md names at least three non-Dash0 readers and carries the
   // "selects the implementation, it never gates the rung" invariant.
-  // break-shape: G52g — deleting the invariant sentence, or trimming the non-Dash0 reader list
+  // break-shape: G53g — deleting the invariant sentence, or trimming the non-Dash0 reader list
   // below three, flips the corresponding check red.
   const READER_ADAPTERS = join(REPO_ROOT, "skills/quality/observe-run/rules/reader-adapters.md");
-  s.check("G52g reader-adapters.md exists", existsSync(READER_ADAPTERS));
+  s.check("G53g reader-adapters.md exists", existsSync(READER_ADAPTERS));
   if (existsSync(READER_ADAPTERS)) {
     const body = readFileSync(READER_ADAPTERS, "utf8");
-    s.check("G52g carries the 'selects the implementation, it never gates the rung' invariant",
+    s.check("G53g carries the 'selects the implementation, it never gates the rung' invariant",
       body.includes("selects the implementation, it never gates the rung"));
     // Deduplicate before counting: the raw match array counts MENTIONS, so one reader named
     // three times satisfied `>= 3` and the documented break-shape (trimming the list to a
@@ -6961,9 +7154,9 @@ const isPollBlock = (block) =>
     const nonDash0 = new Set(
       (body.match(/otel-desktop-viewer|file exporter|in-memory exporter|stdout exporter|jaeger|otel-tui|collector/gi) || [])
         .map((m) => m.toLowerCase()));
-    s.check("G52g names at least three non-Dash0 readers", nonDash0.size >= 3,
+    s.check("G53g names at least three non-Dash0 readers", nonDash0.size >= 3,
       `${nonDash0.size} distinct reader(s) found`);
-    s.check("G52g states a missing Dash0 CLI costs rung 1 nothing",
+    s.check("G53g states a missing Dash0 CLI costs rung 1 nothing",
       /costs rung 1 nothing|rung 1 costs nothing/i.test(body));
     // The flag's own page must not list `dev.run.id` among the keys it stamps. It did, and that
     // was the restatement half of the defect below: the flag upserts onto EVERY forwarded batch,
@@ -6971,7 +7164,7 @@ const isPollBlock = (block) =>
     // scope one file away. Scoped to the decoration-flags line, not the whole file, because the
     // page legitimately DISCUSSES the attribute in saying why it is excluded.
     const decoFlag = body.match(/`--resource-attribute key=value`[\s\S]*?(?=\n\n)/);
-    s.check("G52g the decoration-flags line does not claim to stamp `dev.run.id`",
+    s.check("G53g the decoration-flags line does not claim to stamp `dev.run.id`",
       !!decoFlag && !/dev\.run\.id/.test(decoFlag[0]),
       "`--resource-attribute` is batch-level with no per-signal scoping, so it cannot carry an attribute run-identity.md scopes to spans and logs only");
   }
@@ -6982,17 +7175,17 @@ const isPollBlock = (block) =>
   // rung 2 (`--resource-attribute`) upserts onto every forwarded batch and the proxy forwards
   // metrics. So the guard asserts the pair — the constraint AND a stated rung-2 mechanism that can
   // honour it — since either alone is what the defect looked like.
-  // break-shape: G52h — deleting the never-metrics scope, or deleting the rung-2 mechanism
+  // break-shape: G53h — deleting the never-metrics scope, or deleting the rung-2 mechanism
   // section that makes it satisfiable, flips the corresponding check red.
   const RUN_IDENTITY = join(REPO_ROOT, "skills/quality/observe-run/rules/run-identity.md");
-  s.check("G52h run-identity.md is present", existsSync(RUN_IDENTITY),
+  s.check("G53h run-identity.md is present", existsSync(RUN_IDENTITY),
     `${RUN_IDENTITY} not found — the run-identity constraints would go unchecked`);
   if (existsSync(RUN_IDENTITY)) {
     const body = readFileSync(RUN_IDENTITY, "utf8");
-    s.check("G52h `dev.run.id` is scoped away from metrics",
+    s.check("G53h `dev.run.id` is scoped away from metrics",
       /`dev\.run\.id`[\s\S]{0,200}?never metrics/.test(body) || /never reach a metric dimension/.test(body),
       "the never-metrics scope on `dev.run.id` is the constraint every other rule here depends on");
-    s.check("G52h the never-metrics scope names a rung-2 mechanism that can honour it",
+    s.check("G53h the never-metrics scope names a rung-2 mechanism that can honour it",
       /not free at rung 2/.test(body) && /every forwarded batch/.test(body),
       "rung 2's `--resource-attribute` upserts onto every forwarded batch, so a stated per-signal scope with no alternative mechanism is unsatisfiable there");
     // The unsatisfiable case must RESOLVE to a rung change, never to a degraded rung 2. The first
@@ -7006,43 +7199,43 @@ const isPollBlock = (block) =>
     // standing here — in a guard's own comment and failure message, one layer below the four prose
     // surfaces that round 13 found. A guard defended by a hazard that no longer exists reads as
     // corroboration for the stale claim rather than as a contradiction of it.
-    s.check("G52h the unsatisfiable-at-rung-2 case resolves to a rung change, not a degraded rung 2",
+    s.check("G53h the unsatisfiable-at-rung-2 case resolves to a rung change, not a degraded rung 2",
       /Rung 2 is unavailable for this run/.test(body) && !/Omit `dev\.run\.id` at rung 2/.test(body),
       "without `dev.run.id` the filter matches nothing, so the observed set is empty and `totals` is 0 — every claim grades `null` and rung 2 decides nothing; the fallback is rung 1, never a rung 2 with a widened filter");
-    s.check("G52h rung 2 is stated to REQUIRE `dev.run.id`, so its readers may assume it",
+    s.check("G53h rung 2 is stated to REQUIRE `dev.run.id`, so its readers may assume it",
       /no rung-2 path without it/.test(body),
       "six readers filter on `dev.run.id` unconditionally; either they all learn a new state or rung 2 requires the attribute — the second is what makes them correct");
   }
 
-  // (i) The CONSUMER side of the same contract. `G52h` asserts the rule; nothing asserted its
+  // (i) The CONSUMER side of the same contract. `G53h` asserts the rule; nothing asserted its
   // readers agree, which is the direction the round-9 sweep escaped in — a fix landing on the
   // authority and not its restatements, for the fifth time in this skill. Each check below reads a
   // DIFFERENT file, so a future edit that re-introduces an optional `dev.run.id` reds here on
   // whichever reader it contradicts rather than on the rule it edited.
-  // break-shape: G52i — making `rungs.md`'s rung-2 query filter conditional, or dropping
+  // break-shape: G53i — making `rungs.md`'s rung-2 query filter conditional, or dropping
   // `dev.run.id` from the Definition of Done, flips the corresponding check red.
   const OBSERVE_SKILL = join(REPO_ROOT, "skills/quality/observe-run/SKILL.md");
   const RUNGS_MD = join(REPO_ROOT, "skills/quality/observe-run/rules/rungs.md");
   const RECEIPT = join(REPO_ROOT, "skills/quality/observe-run/rules/receipt-mapping.md");
   for (const [label, path] of [["SKILL.md", OBSERVE_SKILL], ["rungs.md", RUNGS_MD], ["receipt-mapping.md", RECEIPT]]) {
-    s.check(`G52i ${label} is present for the run-identity consumer checks`, existsSync(path),
+    s.check(`G53i ${label} is present for the run-identity consumer checks`, existsSync(path),
       `${path} not found — a consumer of the \`dev.run.id\` contract would go unchecked`);
   }
   if (existsSync(RUNGS_MD)) {
     const body = readFileSync(RUNGS_MD, "utf8");
-    s.check("G52i rungs.md's rung-2 query filters on `dev.run.id` unconditionally",
+    s.check("G53i rungs.md's rung-2 query filters on `dev.run.id` unconditionally",
       /--filter "dev\.run\.id is <run-id>"/.test(body),
       "the rung-2 worked example is the one a run copies; a conditional filter here is a second implementation of the rule");
   }
   if (existsSync(OBSERVE_SKILL)) {
     const body = readFileSync(OBSERVE_SKILL, "utf8");
     // Scope to the DoD section, then test for the REQUIREMENT, not for the token. A whole-section
-    // `/dev\.run\.id/` was the `/Rung 1/.test(section)` shape round 6 repaired on `G52b`: bullet 4
+    // `/dev\.run\.id/` was the `/Rung 1/.test(section)` shape round 6 repaired on `G53b`: bullet 4
     // already carried the token BEFORE round 10 added the rung-2 requirement, so deleting exactly
     // the two-sentence requirement clause left L1 green at 1747/1747 while the contract it guards
     // was gone. Conjoin the requirement's own wording, which nothing else in the section supplies.
     const dod = body.slice(body.indexOf("## Definition of Done"));
-    s.check("G52i the Definition of Done still demands `dev.run.id`",
+    s.check("G53i the Definition of Done still demands `dev.run.id`",
       /dev\.run\.id/.test(dod) && /falls back to rung 1/.test(dod),
       "a DoD box a conforming rung-2 run cannot tick is a contract nothing can satisfy — and the token alone does not state the rung-2 requirement");
   }
@@ -7059,10 +7252,10 @@ const isPollBlock = (block) =>
     // whole file left the reviewer's own revert — restoring the proxy counter as the rung-2
     // `totals` — GREEN at 1751/1751, because the requirement paragraph one screen up still said
     // the right thing. That is the defect one layer out: a guard satisfied by the claim rather
-    // than by the thing the claim is about. Same scoping lesson as G52b's body-row parse.
+    // than by the thing the claim is about. Same scoping lesson as G53b's body-row parse.
     const totalsRow = body.split("\n").find((l) => /^\|\s*`totals`\s*\|/.test(l));
     const totalsCells = (totalsRow ?? "").split("|").slice(1, -1).map((c) => c.trim());
-    s.check("G52i the `totals` realization row exists and has a cell per rung",
+    s.check("G53i the `totals` realization row exists and has a cell per rung",
       totalsCells.length >= 3,
       `${totalsCells.length} cell(s) in the \`totals\` row — the per-rung realization is what the requirement below is about`);
     // POSITIVE, and PER RUNG. Two earlier shapes both failed on the same axis. A denylist of two
@@ -7081,15 +7274,15 @@ const isPollBlock = (block) =>
     // would return"). `receipt-mapping.md` says so itself — whether a filled cell says the right
     // thing is a reviewer's judgement — and the bar here is that the two probes that HAVE gotten
     // through now red, not that no sentence ever can.
-    // ADDITION-PROOF, the way `G52b` already is. The first version of these indexed
+    // ADDITION-PROOF, the way `G53b` already is. The first version of these indexed
     // `totalsCells[1]` and `totalsCells[2]` BY HAND, so a rung 3 added to `rungs.md` and given a
     // column here carried any `totals` cell past them in silence — probed: a rung-3 cell reading
     // "the number of records the collector reported for this run" (a wider counter, exactly the
-    // round-11 defect) tripped no `G52i` check at all. That is round 8's sub-shape — a hand-typed
+    // round-11 defect) tripped no `G53i` check at all. That is round 8's sub-shape — a hand-typed
     // list blind to ADDITIONS — recurring inside the round-13 fix written for the same family, one
     // round later, which is why it is worth saying plainly: every probe I ran on those two checks
     // was a MODIFICATION probe, and a modification probe cannot see a missing row.
-    // `G52b` has derived its rung set from `rungs.md`'s `## Rung N` headings since round 6. Do the
+    // `G53b` has derived its rung set from `rungs.md`'s `## Rung N` headings since round 6. Do the
     // same: require a rule PER RUNG (so a new rung reds loudly rather than going unchecked), and
     // resolve each rung's COLUMN from the header instead of assuming its position.
     const TOTALS_ARTIFACT = {
@@ -7099,7 +7292,7 @@ const isPollBlock = (block) =>
     const rungNums = existsSync(RUNGS_MD)
       ? [...new Set((readFileSync(RUNGS_MD, "utf8").match(/^## Rung (\d+)/gm) || []).map((h) => h.match(/(\d+)/)[1]))]
       : [];
-    s.check("G52i the rung set is derivable for the `totals` artifact checks", rungNums.length >= 2,
+    s.check("G53i the rung set is derivable for the `totals` artifact checks", rungNums.length >= 2,
       `${rungNums.length} rung heading(s) in rungs.md — with none derived, the per-rung checks below would vacuously pass`);
     const realSection = body.match(/### What `CLEAN` and `totals` are, per rung[\s\S]*?(?=\n## )/);
     const realHeaderCells = ((realSection?.[0].split("\n") ?? []).find((l) => /^\|.*\bRung\b/.test(l)) ?? "")
@@ -7117,11 +7310,11 @@ const isPollBlock = (block) =>
     const SPAN_RECORD = /\*\*span\*\* records|\bspan records\b/;
     for (const n of rungNums) {
       const rule = TOTALS_ARTIFACT[n];
-      s.check(`G52i rung ${n} has a \`totals\` artifact rule`, !!rule,
+      s.check(`G53i rung ${n} has a \`totals\` artifact rule`, !!rule,
         `rung ${n} is selectable but nothing says what its \`totals\` must BE — it would be held only by the counter denylist below, which any fresh wording walks around`);
       if (!rule) continue;
       const col = realHeaderCells.findIndex((c) => new RegExp(`^Rung ${n}\\b`).test(c));
-      s.check(`G52i rung ${n}'s \`totals\` cell is ${rule.what}`,
+      s.check(`G53i rung ${n}'s \`totals\` cell is ${rule.what}`,
         col >= 0 && rule.re.test(totalsCells[col] ?? ""),
         col < 0
           ? `no \`Rung ${n}\` column in the realization header, so its \`totals\` cell cannot be located`
@@ -7136,7 +7329,7 @@ const isPollBlock = (block) =>
         "1": "counting logs or metrics in makes `totals > 0` reachable by a run that emitted no spans, which grades `contradicts` instead of `null`",
         "2": "`dash0 spans query` returns spans by construction, so this cannot admit a log record — what it breaks is the cell stating the definition it realizes, leaving the spans-only rule true on one rung's wording only",
       };
-      s.check(`G52i rung ${n}'s \`totals\` counts SPAN records, not every record in the artifact`,
+      s.check(`G53i rung ${n}'s \`totals\` counts SPAN records, not every record in the artifact`,
         col >= 0 && SPAN_RECORD.test(totalsCells[col] ?? ""),
         `rung ${n}'s \`totals\` cell names its artifact without naming the record type — ${TYPE_WHY[n] ?? "every assertion this skill grades is a span claim, so a cell that does not say so leaves the record type to the reader"}`);
     }
@@ -7145,15 +7338,15 @@ const isPollBlock = (block) =>
     // which is the round-13 shape (one definition, several surfaces, L1 on none of them). Assert
     // the MECHANISM, not just the rule: a reader who has the rule without the failure it prevents
     // is the reader who relaxes it.
-    s.check("G52i the spans-only rule for `totals` is stated with the failure it prevents",
+    s.check("G53i the spans-only rule for `totals` is stated with the failure it prevents",
       /`totals` counts spans, on both rungs/.test(body)
         && /count span records alone, not every record/.test(body)
         && /confident disproof produced by counting log records/.test(body),
       "without the mechanism the rule reads as pedantry: summing the `logs` / `metrics` counters in makes `totals > 0` satisfiable by a run that emitted no spans, so it skips the `null` row and grades `contradicts` on an absence it never measured");
-    s.check("G52i no `totals` realization names the rejected proxy counter",
+    s.check("G53i no `totals` realization names the rejected proxy counter",
       totalsCells.slice(1).every((c) => !/\bspans\.total\b|final_total|forwarded/.test(c)),
       "a rung realizing `totals` as the proxy's own counter counts every process pointed at the ports, so a foreign span inflates it without entering the observed set and the run grades `contradicts` on spans it never emitted");
-    s.check("G52i the requirement the `totals` row realizes is stated",
+    s.check("G53i the requirement the `totals` row realizes is stated",
       /size of the observed set/.test(body) && /delivery receipt, not a census/.test(body),
       "absence from a set is disproof only when the set is the one the count attested to");
     // Scope to the WAIT paragraph, and assert what round 12 actually changed. The prior check read
@@ -7165,10 +7358,10 @@ const isPollBlock = (block) =>
     const waitStart = body.indexOf("`null` is the floor, not the goal");
     const waitEnd = body.indexOf("Never extend the wait");
     const wait = waitStart >= 0 && waitEnd > waitStart ? body.slice(waitStart, waitEnd) : "";
-    s.check("G52i the rung-2 read waits for ingest before grading an absence",
+    s.check("G53i the rung-2 read waits for ingest before grading an absence",
       /re-query until the observed set stops growing/.test(wait),
       "rung 2's cost is ingest latency, so a query issued at shutdown can return empty on a perfect delivery — an unfinished read is `null`, never `contradicts`");
-    s.check("G52i the ingest wait watches the observed set's own size, never a proxy counter",
+    s.check("G53i the ingest wait watches the observed set's own size, never a proxy counter",
       /the set's own size is the only quantity to watch/.test(wait)
         && /Do not wait for `final_total\.spans`/.test(wait),
       "waiting on a delivery receipt that counts every process pointed at the ports means the target is never met under a second process, the deadline always fires, and every such run grades `ambiguous` where `run-identity.md` says `null`");
@@ -7179,10 +7372,10 @@ const isPollBlock = (block) =>
     // the claim and then REQUIRED it, so correcting the prose turned L1 red — a guard holding a
     // file to a contract the file's own definition had already replaced.
     // What is worth guarding is the replacement plus the reason the proxy counters are disqualified.
-    s.check("G52i `totals` is scoped by `dev.run.id` on both rungs, and the proxy counters serve `CLEAN` alone",
+    s.check("G53i `totals` is scoped by `dev.run.id` on both rungs, and the proxy counters serve `CLEAN` alone",
       /scoped by `dev\.run\.id` on both rungs/.test(body) && /cannot serve as `totals`/.test(body),
       "the proxy's counters are scoped by the proxy's LIFETIME, and a lifetime is not a run — they answer whether delivery was healthy and are indifferent to whose spans were delivered");
-    s.check("G52i the two rung-2 population preconditions are stated where the rule lives",
+    s.check("G53i the two rung-2 population preconditions are stated where the rule lives",
       existsSync(RUN_IDENTITY) && /proxy is exclusive to this run/i.test(readFileSync(RUN_IDENTITY, "utf8"))
         && /participating in the claim carries `dev\.run\.id`/.test(readFileSync(RUN_IDENTITY, "utf8")),
       "an OTel SDK at default endpoint config already reaches the proxy, so exclusivity and per-process stamping are what make the two populations coincide — neither follows from the attribute merely being present");
@@ -7192,7 +7385,7 @@ const isPollBlock = (block) =>
   // surfaces, of which L1 guarded exactly one, and guarded it at the stale value. Round 11 made
   // `totals` the observed set's own size; the realization row and one paragraph were updated, and
   // the asymmetry paragraph, the spans-counting imperative, both worked examples, `run-identity`'s
-  // input table, and `G52h`'s own rationale all kept describing the proxy counter for two rounds.
+  // input table, and `G53h`'s own rationale all kept describing the proxy counter for two rounds.
   // Guarding the five individually would be five greps that go stale the same way, so guard the
   // CLASS: in these two files every mention of a proxy counter must sit in a block that REJECTS or
   // HISTORICISES it. That is true of all seven mentions today, and it is the property each of the
@@ -7200,7 +7393,7 @@ const isPollBlock = (block) =>
   // A fenced block is a violation outright, whatever it contains: a worked example is copied far
   // more often than the prose above it is read, and a `text` fence has nowhere to put a rejection.
   // That is the surface that carried `spans.total=3` through the whole round-11..12 window.
-  // break-shape: G52k — restoring `spans.total` to the Correct example, the rung-2 "read
+  // break-shape: G53k — restoring `spans.total` to the Correct example, the rung-2 "read
   // `spans.total` alone" imperative, or `run-identity`'s proxy-counter row flips it red.
   // Residual, stated rather than papered over: a block could type a rejection marker and then
   // prescribe the counter anyway. That is a self-contradicting paragraph — visible to a reader in a
@@ -7209,7 +7402,7 @@ const isPollBlock = (block) =>
   // The marker list is a WHITELIST over blocks that mention the counter, so every entry widens what
   // passes and a marker made of ordinary English widens it by an unknown amount. Two were exactly
   // that — `used to` and `cannot serve` — and neither was even paying for itself: `cannot serve`
-  // was load-bearing for NO block (it is a `G52i` body marker that drifted into this list), and
+  // was load-bearing for NO block (it is a `G53i` body marker that drifted into this list), and
   // `used to` was redundant with `route is closed` in the single block carrying both. Every
   // remaining marker either names the counter's disqualifying property or marks a historicisation,
   // and each is load-bearing for at least one block — asserted below, because a dead marker is pure
@@ -7219,7 +7412,7 @@ const isPollBlock = (block) =>
     "Do not wait for", "deliberately absent", "earlier draft", "route is closed"];
   // Deriving the pattern from the list bought addition-proofing and brought a DEGENERATE INPUT with
   // it: `new RegExp([].join("|"))` is `/(?:)/`, which matches every block — so an empty `MARKERS`
-  // makes `offenders` permanently empty AND `dead` permanently empty, and BOTH G52k checks pass on
+  // makes `offenders` permanently empty AND `dead` permanently empty, and BOTH G53k checks pass on
   // a tree that prescribes the counter freely. No syntax error, no red check. That is this file's
   // own recurring defect arriving through the refactor written to close the previous instance of
   // it, so the list gets the same non-degeneracy floor `rungNums` has above, for the same reason.
@@ -7235,8 +7428,8 @@ const isPollBlock = (block) =>
   // the property — a pattern matching the empty string matches every block by construction — so it
   // is asserted on the built regex, after it exists.
   const REJECTS = new RegExp(MARKERS.map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
-  s.check("G52k the compiled rejection pattern is not vacuous", !REJECTS.test(""),
-    "`REJECTS` matches the empty string, so it matches every block — an EMPTY entry in MARKERS leaves an empty alternative in the alternation, and both G52k checks below pass on a tree that prescribes the counter freely. A whitespace-only entry is NOT this check: it compiles to `/ /`, which does not match `\"\"` — the length floor below is what catches that one");
+  s.check("G53k the compiled rejection pattern is not vacuous", !REJECTS.test(""),
+    "`REJECTS` matches the empty string, so it matches every block — an EMPTY entry in MARKERS leaves an empty alternative in the alternation, and both G53k checks below pass on a tree that prescribes the counter freely. A whitespace-only entry is NOT this check: it compiles to `/ /`, which does not match `\"\"` — the length floor below is what catches that one");
   // A second, weaker conjunct, and weaker ON PURPOSE rather than by oversight: the check above
   // catches vacuity exactly, but a one- or two-character marker is near-vacuous without literally
   // matching `""`. A length floor is a proxy — an eight-character phrase can still be ordinary
@@ -7247,7 +7440,7 @@ const isPollBlock = (block) =>
   // JOINTLY, and each message now names the subset IT fires on rather than the union — the earlier
   // wording sent a reader debugging a blank marker to the check that stays green on it, and the
   // probe that would have shown this was run and its output read past.
-  s.check("G52k no rejection marker is degenerately short", MARKERS.every((m) => m.trim().length >= 8),
+  s.check("G53k no rejection marker is degenerately short", MARKERS.every((m) => m.trim().length >= 8),
     `marker(s) under 8 non-blank characters: ${MARKERS.filter((m) => m.trim().length < 8).map((m) => JSON.stringify(m)).join(", ")} — a marker this short cannot name the counter's disqualifying property, so it admits blocks on an accident of wording`);
   for (const [label, path] of [["receipt-mapping.md", RECEIPT], ["run-identity.md", RUN_IDENTITY]]) {
     if (!existsSync(path)) continue;
@@ -7261,7 +7454,7 @@ const isPollBlock = (block) =>
       .filter((b) => COUNTER.test(flat(b)))
       .filter((b) => b.trimStart().startsWith("```") || !REJECTS.test(flat(b)))
       .map((b) => b.trim().split("\n")[0].slice(0, 70));
-    s.check(`G52k ${label} names a proxy counter only to reject or historicise it`,
+    s.check(`G53k ${label} names a proxy counter only to reject or historicise it`,
       offenders.length === 0,
       `${offenders.length} block(s) mention \`spans.total\`/\`final_total\` prescriptively: ${offenders.join(" | ")} — round 11 made \`totals\` the observed set's own size, so a surface still sourcing it from the proxy counter regrades an emitted span`);
   }
@@ -7290,36 +7483,36 @@ const isPollBlock = (block) =>
       .map(flat)
       .filter((b) => COUNTER.test(b));
     const dead = MARKERS.filter((m) => !counterBlocks.some((b) => b.includes(m)));
-    s.check("G52k every rejection marker is load-bearing for at least one block",
+    s.check("G53k every rejection marker is load-bearing for at least one block",
       dead.length === 0,
       `${dead.length} marker(s) match no counter-mentioning block: ${dead.join(" | ")} — an unused marker only widens what passes, so it is attack surface with no coverage behind it`);
   }
 
   // (j) The inventory line in CLAUDE.md names the guard family by RANGE, and a range is a
-  // hand-typed encoding of a set — the round-8 lesson, one layer out. `G52h` and `G52i` were both
-  // added while the line still read `G52a`–`G52g`, so the range is DERIVED from the guards this
+  // hand-typed encoding of a set — the round-8 lesson, one layer out. `G53h` and `G53i` were both
+  // added while the line still read `G53a`–`G53g`, so the range is DERIVED from the guards this
   // file actually defines rather than compared against a literal.
-  // break-shape: G52j — adding a `G52k` check without widening the inventory range, or narrowing
+  // break-shape: G53j — adding a `G53k` check without widening the inventory range, or narrowing
   // the range by hand, flips it red.
   // Anchor on the CHECK LABEL, in either quoting style, and never on a bare mention. Two ways to
-  // get this wrong, and the first version had one of them: `/"G52([a-z])\b/` requires a DOUBLE
-  // QUOTE, so `G52e`'s checks and this guard's own check — both template literals — were invisible,
+  // get this wrong, and the first version had one of them: `/"G53([a-z])\b/` requires a DOUBLE
+  // QUOTE, so `G53e`'s checks and this guard's own check — both template literals — were invisible,
   // the derivation returned a-d,f-i, and the guard shipped with its inventory range ALREADY STALE
   // at 1753/1753, its own advertised break-shape inert. That is round 9's `\bAND\b` finding
   // recurring: a derivation bound to one spelling of the thing it counts.
-  // The other way is over-matching: `/[`"]G52([a-z])\b/` also picks up backticked mentions in
-  // prose — the `G52k` in the break-shape comment above would make `highest` a guard that does not
+  // The other way is over-matching: `/[`"]G53([a-z])\b/` also picks up backticked mentions in
+  // prose — the `G53k` in the break-shape comment above would make `highest` a guard that does not
   // exist. So require the `s.check(` that makes it a check.
   const selfSrc = readFileSync(new URL(import.meta.url), "utf8");
-  const g52Letters = [...new Set((selfSrc.match(/s\.check\(\s*["`]G52([a-z])\b/g) || [])
+  const g52Letters = [...new Set((selfSrc.match(/s\.check\(\s*["`]G53([a-z])\b/g) || [])
     .map((m) => m[m.length - 1]))].sort();
   const highest = g52Letters[g52Letters.length - 1];
   const CLAUDE_MD = join(REPO_ROOT, "CLAUDE.md");
   if (existsSync(CLAUDE_MD) && highest) {
     const claude = readFileSync(CLAUDE_MD, "utf8");
-    s.check(`G52j the CLAUDE.md inventory range covers every G52 guard defined (through G52${highest})`,
-      new RegExp("Guarded by L1 `G52a`–`G52" + highest + "`").test(claude),
-      `l1.mjs defines G52a–G52${highest}; the inventory line names a different range — it is the one claim about this family that nothing else reads`);
+    s.check(`G53j the CLAUDE.md inventory range covers every G53 guard defined (through G53${highest})`,
+      new RegExp("Guarded by L1 `G53a`–`G53" + highest + "`").test(claude),
+      `l1.mjs defines G53a–G53${highest}; the inventory line names a different range — it is the one claim about this family that nothing else reads`);
   }
 }
 

@@ -73,18 +73,20 @@ tier is a silent no-op (log one line, continue).
     label sets and correlation patterns — almost always project-bound since
     label conventions are per-workspace. Derive `{owner}/{repo}` from the
     `origin` remote, lowercased (strip a trailing `.git`).
-- `trigger-context` is keyed by **ticket label set** / **ticket-type** /
+- The **Applies when** line is keyed by **ticket label set** / **ticket-type** /
   **affected-area** so the Phase 1 read can match mechanically. Since label
   sets are usually project-specific, expect most `batch-lessons` to land in the
   `repo::{owner}/{repo}` scope.
 
-Lesson schema is the shared procedural-memory shape (four mandatory fields:
-*What failed / Why / What to do next time / Promotion target*). The metadata a
-filesystem store would keep in frontmatter travels inside the `value` markdown
-as a top `<!-- meta: phase=.. seen_count=.. status=.. expires=..
-trigger-context=".." -->` comment; the `phase` field names the batch phase
-(`1a`, `1d`, `2`). Schema authority:
-[`persistent-memory/rules/write-pipeline.md`](../../../authoring/persistent-memory/rules/write-pipeline.md).
+Lesson schema is the shared procedural-memory shape, and the body is **markdown
+and nothing else** — never a `<!-- meta: … -->` block, and never a hand-written
+count or expiry date.
+Every store-backed fact has its own first-class `memory.write` field: the store
+owns `seen_count`, `ttl_days` sets the expiry, `status::<value>` and
+`source::<trigger>` are tags, and the batch phase a lesson applies to (`1a`,
+`1d`, `2`) is carried by its **Promotion target** line.
+Schema authority:
+[`write-pipeline.md#lesson-scope-entries`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
 
 ---
 
@@ -107,11 +109,13 @@ Merge the matches. Apply matches as **advisory inputs**: a classification
 lesson biases the `bug`/`feature` call for tickets with the matching label
 set; a correlation lesson primes Phase 2 to look for a known recurring
 conflict pattern. Lessons never override an explicit `--type` flag or
-auto-approve a `Needs Info` ticket. **Skip lessons whose `expires` has passed.**
+auto-approve a `Needs Info` ticket. **The store drops expired lessons for you**
+(`ttl_days`) — there is no client-side expiry filter to run.
 A `repo::` lesson wins on conflict with a `global` lesson (closer scope).
 
 There is no local INDEX to maintain and no consolidation pass — LoreKit owns
-storage and dedups on write; stale beliefs decay through `expires`.
+storage and dedups on write; stale beliefs decay through the store's own
+`ttl_days` expiry.
 
 ---
 
@@ -138,21 +142,25 @@ specific label conventions or repo-specific correlation patterns →
 memory.search { q: "<key words of the lesson>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 
 # 2a. Universal candidate — lands in global.
-memory.write { scope: "global", key: "batch-lessons::<slug>", value: "<body>", tags: ["loop::batch-lessons", "source::phase-5"], source_agent: "batch-linear-tickets", trigger: "phase-5" }
+memory.write { scope: "global", key: "batch-lessons::<slug>", value: "<body>", tags: ["loop::batch-lessons", "source::phase-5"], source_agent: "batch-linear-tickets", trigger: "phase-5", ttl_days: 90 }
 
 # 2b. Project-bound candidate — lands in this repo's scope.
-memory.write { scope: "repo::{owner}/{repo}", key: "batch-lessons::<slug>", value: "<body>", tags: ["loop::batch-lessons", "source::phase-5"], source_agent: "batch-linear-tickets", trigger: "phase-5" }
+memory.write { scope: "repo::{owner}/{repo}", key: "batch-lessons::<slug>", value: "<body>", tags: ["loop::batch-lessons", "source::phase-5"], source_agent: "batch-linear-tickets", trigger: "phase-5", ttl_days: 90 }
 ```
+
+`<body>` is markdown and nothing else — the canonical six-part shape in
+[`write-pipeline.md#lesson-scope-entries`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
+Never embed a `<!-- meta: … -->` block, a `seen_count`, or an expiry date in it.
 
 - **No filesystem opt-in ceremony.** The loop just picks the scope; LoreKit's
   mode decides whether a `repo::` lesson is private, dashboard-synced, or
   committed. The loop never creates directories or commits lesson files.
 - The write skips consent, not the privacy pre-flight (stricter for `repo::`
   writes — content is team-visible).
-- A recurring lesson resolves to **UPDATE** and bumps `seen_count`. An UPDATE to
-  an entry that carries a `seen_count` field MUST increment `seen_count` by 1
-  and refresh `expires`. At `seen_count >= 3`, surface the scope-appropriate
-  promotion suggestion (`global` → skill source; `repo::` → repo rules).
+- A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry.
+  Never hand-write a count into the body. At `seen_count >= 3`, surface the
+  scope-appropriate promotion suggestion (`global` → skill source; `repo::` →
+  repo rules).
 
 ---
 
@@ -160,7 +168,8 @@ memory.write { scope: "repo::{owner}/{repo}", key: "batch-lessons::<slug>", valu
 
 **Anchor:** `lesson-promotion`
 
-A lesson reaching `seen_count >= 3` (or tagged `structural`) is promotion-eligible:
+A lesson reaching the store's own `seen_count >= 3` (or carrying the
+`status::structural` tag) is promotion-eligible:
 
 ```text
 # global (universal) lesson:
@@ -180,8 +189,8 @@ confidence-gated diff against this skill's source (commonly into
 at `confidence(analysis) ≥ 90 %` with explicit user confirmation. Workspace
 label-convention lessons may instead belong in the project's own
 classification-override config (see SKILL.md § Customization) or the repo's own
-rules via the `docs` skill — the diagnosis says which. On success, set the
-lesson `status: promoted` (via a `memory.write` UPDATE to the same scope + key).
+rules via the `docs` skill — the diagnosis says which. On success, add the
+`status::promoted` tag (via a `memory.write` UPDATE to the same scope + key).
 
 ---
 
@@ -192,8 +201,10 @@ Identical to the canonical loop:
 1. **Lessons are advisory, never auto-applied to behavior.** The only path to a
    behavior change is a confidence-gated, user-approved `diagnose` apply.
 2. **Recurrence (`seen_count >= 3`), not one batch, gates promotion.**
-3. **Every lesson expires** (default 90 days); the read step ignores expired
-   lessons, so stale beliefs decay instead of entrenching.
+3. **Every lesson expires** — pass `ttl_days: 90` on every write; a recurrence
+   re-passes it, which refreshes the expiry from the last sighting. The store
+   stops returning an expired lesson, so stale beliefs decay instead of
+   entrenching.
 4. **Contradictions are flagged, not silently overwritten** (the dedup search
    finds the prior entry).
 5. **Privacy pre-flight is never bypassed** by an autonomous write.

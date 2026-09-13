@@ -111,7 +111,7 @@ This skill produces no durable per-run ledger of its own (unlike `fix-bug`'s bug
 - Scopes: `global` (universal patterns) + `repo::{owner}/{repo}` (workspace-specific label conventions — the common case)
 - Read for evidence with: `memory.list { scope: "global", tags: ["loop::batch-lessons"], limit: 50 }` (and the `repo::{owner}/{repo}` scope for project-bound lessons)
 
-Diagnose Step 2 loads promotion-eligible lessons (`seen_count >= 3` or `status: structural`) as evidence — keyed by label set / ticket-type / affected-area. See [`self-improvement-loop.md`](./self-improvement-loop.md).
+Diagnose Step 2 loads promotion-eligible lessons (the store's own `seen_count >= 3`, or the `status::structural` tag) as evidence — keyed by label set / ticket-type / affected-area. See [`self-improvement-loop.md`](./self-improvement-loop.md).
 
 ---
 

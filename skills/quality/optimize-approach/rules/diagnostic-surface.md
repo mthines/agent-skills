@@ -53,7 +53,7 @@ The skill body is `SKILL.md`; rules live under `rules/`; the shared wiring rule 
 
 | Phase | Existing guards | Typical gaps |
 | --- | --- | --- |
-| O0 | Narrow-to-broad fan-out (`repo::` then `global`); `trigger-context` match; `expires` skip | Lesson applied as hard override instead of advisory |
+| O0 | Narrow-to-broad fan-out (`repo::` then `global`); **Applies when** match; store-owned `ttl_days` expiry | Lesson applied as hard override instead of advisory |
 | O1 | Intent from caller or PR/branch; per-approach-unit split | Multi-file diff collapsed to one unit; per-unit judgment lost |
 | O2 | 4 axes; 4 anti-overlap guards; 3-part materiality bar | Mechanical-tidy candidate escalated (guard 1 not run); lateral rewrite escalated |
 | O3 | All-optimal → empty | Manufactured proposal on an optimal change |
@@ -100,7 +100,7 @@ The taxonomy is **append-only**. New classes are added after confidence-gated, u
 ## Lessons scope
 
 `optimize-approach-lessons` — the fast-tier self-improvement scope declared in [self-improvement-loop.md](./self-improvement-loop.md) (LoreKit tag `loop::optimize-approach-lessons`).
-Diagnose Mode reads this bucket (both `global` and `repo::{owner}/{repo}` scopes) as **evidence** at Step 2: the `seen_count` history and prior `trigger-context` values make a diagnosis far more accurate than a single-session reflection.
+Diagnose Mode reads this bucket (both `global` and `repo::{owner}/{repo}` scopes) as **evidence** at Step 2: the store's `seen_count` history and the prior **Applies when** lines make a diagnosis far more accurate than a single-session reflection.
 Read points: O0. Write points: O5. Promotion target for `global` lessons: this skill's source, via this diagnose entry point.
 
 ---

@@ -230,7 +230,7 @@ If a tag rename is ever undertaken anyway, it must land in one change across the
 
 ## See also
 
-- [`write-pipeline.md § Lesson-scope entries`](../../../skills/authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries) — the shared record schema (`trigger-context`, `seen_count`, `status`, `expires`).
+- [`write-pipeline.md § Lesson-scope entries`](../../../skills/authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries) — the shared record schema (a markdown body led by an **Applies when** line, with `seen_count`, `ttl_days`, and the `status::<value>` / `source::<trigger>` tags carried as first-class `memory.write` fields rather than in the body).
 - [`review-outcomes.md`](./review-outcomes.md) — the Bus schema, fingerprint, TTL, and consolidation.
 - [`comment-relevance-memory.md`](./comment-relevance-memory.md) — the Signal read/apply/write contract.
 - [`outcome-learning.md`](./outcome-learning.md) — how the Bus is distilled into Lessons at promotion time.

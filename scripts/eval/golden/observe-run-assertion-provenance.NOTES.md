@@ -55,7 +55,7 @@ The sharpest decoy opens with *"without running anything further"* — near-verb
 another case uses to signal `by-construction` — and is nonetheless `behavioral`, because the trace
 it reads is something a run produced.
 
-L1 `G52e` scores three declared tells per suite, **in both polarities** (a keyword that is wrong
+L1 `G53e` scores three declared tells per suite, **in both polarities** (a keyword that is wrong
 80% of the time is an 80%-accurate classifier with its polarity flipped), and requires each to sit
 below the `EVAL_GATE` floor read out of `evals-l2.yml` rather than re-encoded.
 Negated run verbs are stripped before any tell is matched — *without running* is a static tell, not
@@ -83,7 +83,7 @@ CI run `34656896182` on the 39-case set: **39/39 (100.0%)**, every decoy include
 That is the pair of readings the set needs to be worth running — a rubric-reading model answers
 every decoy correctly, while a rubric-free keyword responder now scores **53.8% / 61.5% / 61.5%** on
 the three declared tells (run verb / `startSpan` / static verb).
-Those are the figures `G52e` itself computes, negation strip included, so the numbers here and the
+Those are the figures `G53e` itself computes, negation strip included, so the numbers here and the
 numbers the guard gates on are the same reading — an earlier draft quoted 48.7% for the run tell,
 scored without the strip, which is not what anything enforces.
 All three sit **above** 50%, so `max(acc, 100 - acc)` selects the accuracy itself: the strength the
