@@ -7488,6 +7488,52 @@ const isPollBlock = (block) =>
       `${dead.length} marker(s) match no counter-mentioning block: ${dead.join(" | ")} — an unused marker only widens what passes, so it is attack surface with no coverage behind it`);
   }
 
+  // (l) A guard ID quoted in ANOTHER file is a cross-file reference to a check this file owns, and
+  // nothing read it: this branch's guards were renumbered `G52*` -> `G53*` on the merge with main
+  // (which had claimed `G52a`–`G52f` for `review-branch`), a sweep ran over `*.md` only, and the two
+  // `L1 G52e` citations in `suites.mjs` survived — still resolving, but to MAIN's `G52e`, an
+  // unrelated `branch-reviewer` check. That is this PR's own defect class one more time: the
+  // reference stayed well-formed, so every existing check stayed green.
+  //
+  // The scoping is the load-bearing half. A guard asserting only "the ID is defined somewhere in
+  // l1.mjs" would have passed on `G52e` — main defines one — so it would have been an assertion
+  // that passes because of what it does not look at. This derives the OWNER of the
+  // keyword-separability scan from the `s.check` label that performs it, and requires the citing
+  // comment to name that owner.
+  // break-shape: G53l — revert either `suites.mjs` citation to `G52e` (or renumber this family
+  // again without sweeping `.mjs`) and it flips red.
+  {
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    // Own label deliberately avoids the phrase below, so this guard cannot derive itself as owner.
+    const owners = [...new Set((src.match(/s\.check\(\s*["`]G\d+[a-z](?=[^"`]*declared tells?)/g) || [])
+      .map((m) => m.slice(m.search(/G\d/))))];
+    const SUITES = join(REPO_ROOT, "scripts/eval/suites.mjs");
+    if (existsSync(SUITES) && owners.length === 1) {
+      const owner = owners[0];
+      // Group contiguous `//` lines into blocks, so a citation and its subject still meet after a
+      // re-wrap. A line-at-a-time scan would go quiet the moment someone reflowed the comment.
+      const blocks = [];
+      let run = [];
+      for (const line of readFileSync(SUITES, "utf8").split("\n")) {
+        if (line.trim().startsWith("//")) run.push(line.trim());
+        else { if (run.length) blocks.push(run); run = []; }
+      }
+      if (run.length) blocks.push(run);
+      const wrong = blocks
+        .map((b) => b.join(" "))
+        .filter((b) => /declared tells?/.test(b))
+        .flatMap((b) => (b.match(/\bG\d+[a-z]\b/g) || []))
+        .filter((id) => id !== owner);
+      s.check(`G53l suites.mjs cites the guard that owns the keyword-separability scan (${owner})`,
+        wrong.length === 0,
+        `suites.mjs cites ${[...new Set(wrong)].join(", ")} for the keyword-separability scan, which ${owner} owns — a stale ID that still resolves points the next reader at the wrong check`);
+    } else if (existsSync(SUITES)) {
+      s.check("G53l the keyword-separability scan has exactly one owning check to cite",
+        false,
+        `derived ${owners.length} owner(s) (${owners.join(", ") || "none"}) from l1.mjs's own s.check labels — with none, the cross-file citation guard silently measures nothing; with several, it cannot say which is correct`);
+    }
+  }
+
   // (j) The inventory line in CLAUDE.md names the guard family by RANGE, and a range is a
   // hand-typed encoding of a set — the round-8 lesson, one layer out. `G53h` and `G53i` were both
   // added while the line still read `G53a`–`G53g`, so the range is DERIVED from the guards this

@@ -202,7 +202,7 @@ export const SUITES = [
     // whose SURFACE VOCABULARY points at the wrong rung (a rung-1 claim that names a
     // separately-deployed service but asserts only on the caller's own span; a rung-2 claim that
     // never says "cross-process"), because the original fourteen were balanced AND
-    // keyword-separable — 78.6% off the word "process" alone. L1 G52e scores three declared tells
+    // keyword-separable — 78.6% off the word "process" alone. L1 G53e scores three declared tells
     // per suite in both polarities against the EVAL_GATE floor, so deleting the decoys reds L1.
     rubric: { file: "skills/quality/observe-run/rules/rungs.md", section: null }, // whole file
     instruction: "You are the observe-run skill choosing a rung for a claim. Using ONLY the rung rules below, pick the cheapest rung that can decide the claim — never escalate to rung 2 when rung 1 can already decide it.",
@@ -218,7 +218,7 @@ export const SUITES = [
     // by "run the suite, then grep the source"; a behavioral one fronted by "grep the exported
     // OTLP"; a behavioral one that names `startSpan`), because the original fourteen were balanced
     // AND keyword-separable — a responder keying on the run verb alone scored a perfect 14/14.
-    // L1 G52e scores three declared tells per suite in both polarities against the EVAL_GATE
+    // L1 G53e scores three declared tells per suite in both polarities against the EVAL_GATE
     // floor, so deleting the decoys reds L1.
     rubric: { file: "skills/quality/observe-run/rules/assertion-provenance.md", section: null }, // whole file
     instruction: "You are the observe-run skill's assertion-provenance check. Using ONLY the discriminator rule below, classify the claim-plus-assertion pair as 'behavioral' (verifiable only by observing a run) or 'by-construction' (satisfiable by reading source alone).",
