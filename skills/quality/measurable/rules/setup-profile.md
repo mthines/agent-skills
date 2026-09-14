@@ -53,6 +53,14 @@ Ask these in **one** message so the user answers once:
    Record names/links if so; if not, note that `regression-signals.md`'s
    "propose via Dash0 chat" path is the current state and should stay
    flagged until one exists.
+6. **Dev run target** — does the project have a way to run one command and
+   emit telemetry locally (a dev-server start command, a scriptable
+   integration test, a seeded local environment)? If yes, record the command
+   and the dataset it should target (recommend a dedicated dev dataset —
+   never assume one already exists). If no dev-loop telemetry path exists
+   yet, record that explicitly so `Skill("observe-run")` self-skips instead
+   of guessing at a target. This is the field `observe-run` gates on before
+   doing any work.
 
 Confirm the answers back to the user verbatim before writing.
 **Do not guess any of these** — a wrong package map silently misroutes

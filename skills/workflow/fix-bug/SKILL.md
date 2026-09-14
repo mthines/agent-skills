@@ -148,6 +148,7 @@ Flags are mutually exclusive. They are detected in Phase 0 step 0a and stripped 
 | `gw` CLI | Worktree management (planner) | Recommended |
 | `lorekit-memory` skill (LoreKit `memory.*` tools) | `fix-bug-lessons` self-improvement loop (read Phase 0.5, write Phase 5/7/8) | Optional — loop is a silent no-op if `memory.*` is not connected |
 | `video-analyser` skill | Resolve video / screen-recording inputs — a direct video input (Phase 0 row 3) or a video attachment flagged on a Linear ticket (Phase 1 Linear route) | If video input or a Linear ticket carries a video |
+| `observe-run` skill | Phase 2.5 repro-fidelity check — grades the local repro's trace shape against expectations this skill materialises from the Evidence Record's originating span (`observe-run` reads only the run it executes, never production), for a telemetry-sourced input only | Optional — advisory, silent no-op if unavailable or input is not telemetry-sourced |
 | `preview-spec` skill | Phase 6 PR-body UI verification spec for UI / visual bugs — inherited via `aw-executor` → `create-pr` Step 6.4; seeds from the Phase 2.5 repro artifact when present | Optional — inherited transitively; silent no-op if not installed |
 | Dash0 MCP server (`mcp__dash0__*` or equivalent) | Resolve span / log / web event URLs; Phase 8 polling | If Dash0 input |
 | Linear MCP (`mcp__claude_ai_Linear__*`) | Linear-ticket input route via `linear-ticket-investigator` | If Linear input |
@@ -375,7 +376,14 @@ is the input to Phase 3 and the seed for the bug-notes ledger.
 ### Phase 2.5 — Reproduction lock
 
 Construct a deterministic failing reproduction following [`rules/reproduction.md`](./rules/reproduction.md).
-The rule's layer-routing table picks the lowest test layer that can capture the bug, then
+For a telemetry-sourced input, the rule's front-of-phase step runs a repro-fidelity check first,
+before layer routing produces the repro artefact. The division of labour is the point: **this**
+skill reads the originating production span's shape out of its own Evidence Record and passes it in
+as literal expectations, and `Skill("observe-run")` grades the local run against them — it reads
+only the telemetry the run it just executed emitted, scoped to that run's `dev.run.id`, so it can
+never fetch the production span and an expectation phrased as "matches production" would answer
+`null` every time. Advisory only, and it never touches Phase 8.
+The rule's layer-routing table then picks the lowest test layer that can capture the bug, and
 delegates:
 
 - Unit / component / hook / integration → `Skill("tdd", ...)`
