@@ -24,16 +24,21 @@ description: >
   sub-agent dispatch tool (spelled Task in some harnesses and Agent in others) —
   never dispatch it into a sub-agent, which cannot delegate further and can only
   skip at iteration 0.
+  With --merge the loop merges the PR (squash) on the first agent approval: it
+  runs to clean convergence — every non-blocking comment fixed or answered — and,
+  if the final review verdict is an approval (pr-reviewer PASS, or an APPROVED
+  GitHub review under --external-review) and CI is green, undrafts and merges;
+  it never merges on a non-clean convergence, a non-PASS verdict, or pending/red CI.
   Callers: autonomous-workflow Phase 6/7, create-pr (post-draft), and standalone
   via /review-changes. Invoke with /review-loop <PR-URL|#n> [--cap N]
   [--critical] [--external-review] [--interval S] [--no-ci] [--no-feedback]
-  [--no-refresh] [--no-preview-run].
+  [--no-refresh] [--no-preview-run] [--merge].
 disable-model-invocation: false
-argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--external-review] [--interval S] [--no-ci] [--no-feedback] [--no-refresh] [--no-preview-run]'
+argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--external-review] [--interval S] [--no-ci] [--no-feedback] [--no-refresh] [--no-preview-run] [--merge]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.7.0'
+  version: '1.8.0'
   workflow_type: command
   tags:
     - review
@@ -45,6 +50,7 @@ metadata:
     - orchestrator
     - ci
     - external-review
+    - merge
 ---
 
 # review-loop — Bounded Review-Apply-Resolve Convergence
@@ -210,6 +216,7 @@ Everything else is a flag.
 | `--interval S` | Poll interval in seconds for `--external-review`, default `300`, **clamped to `540`**. Ignored without `--external-review`. |
 | `--no-ci` | Skip sub-step D (the CI pass). Callers that own their own CI phase pass this — `create-pr` (Steps 7–9) and `autonomous-workflow` (Phase 7) both do. |
 | `--no-preview-run` | Skip [Step 1.6](#step-16-preview-spec-run-report-only-once-on-exit), the report-only preview-spec run at exit. `autonomous-workflow` passes this because its Phase 7 spec rehearsal already runs the same specs against the preview; `create-pr` does **not**, so a hand-driven UI PR gets its authored spec verified here. |
+| `--merge` | Merge the PR (squash) on the first agent approval. After the loop, [Step 2.5](#step-25-merge-under---merge-on-approval) merges **only** when the run reached clean convergence (`all-threads-resolved` — every non-blocking comment fixed or answered), the final review is an approval (pr-reviewer `PASS`, or a GitHub `reviewDecision == APPROVED` under `--external-review`), and CI is green. It undrafts first (the one case that overrides *never undraft*). It never merges on a non-clean convergence, a non-PASS verdict, or pending/red CI — it reports why and stops. |
 
 **Incompatible combinations**, refused or downgraded at Step 0:
 
@@ -217,6 +224,7 @@ Everything else is a flag.
 | --- | --- |
 | `--external-review` + `--no-feedback` | **Refuse.** `--no-feedback` means "run `pr-reviewer` once and report"; with no `pr-reviewer` there is nothing to report. Print `--no-feedback needs pr-reviewer; drop --external-review or drop --no-feedback.` and exit. |
 | `--external-review` + `--critical` | **Warn and ignore.** `--critical` only ever fed `pr-reviewer`. Print one line noting it was ignored, then continue — callers pass it by habit and it must not abort the run. |
+| `--merge` + `--no-feedback` | **Refuse.** `--no-feedback` applies nothing and never converges, so "fix the non-blocking comments before merging" is impossible and there is no approval to merge on. Print `--merge needs the apply loop; drop --no-feedback.` and exit. |
 
 ## Procedure
 
@@ -326,6 +334,12 @@ if [[ " $ARGUMENTS " == *" --no-preview-run "* ]]; then
   NO_PREVIEW_RUN=1
 fi
 
+# --merge: merge the PR (squash) on the first agent approval — see Step 2.5.
+MERGE=0
+if [[ " $ARGUMENTS " == *" --merge "* ]]; then
+  MERGE=1
+fi
+
 CAP=${cap_flag:-5}
 ITERATION=0
 
@@ -340,6 +354,13 @@ fi
 # reviewer to report, and --external-review removes the only one this loop owns.
 if [ "$EXTERNAL_REVIEW" -eq 1 ] && [ "$NO_FEEDBACK" -eq 1 ]; then
   echo "--no-feedback needs pr-reviewer; drop --external-review or drop --no-feedback."
+  exit 1
+fi
+
+# Refuse --merge with report-only: --no-feedback applies nothing and never
+# converges, so there is no approval to merge on and no fixing-before-merge.
+if [ "$MERGE" -eq 1 ] && [ "$NO_FEEDBACK" -eq 1 ]; then
+  echo "--merge needs the apply loop; drop --no-feedback."
   exit 1
 fi
 
@@ -388,6 +409,7 @@ anything.
 APPLIED_TOTAL = 0
 CI_HANDOFFS   = 0
 CI_STATE      = "unread"     # no check state observed yet this run
+FINAL_VERDICT = "n/a"       # last pr-reviewer verdict seen; stays n/a under --external-review
 STOP_REASON   = "cap-reached"  # the default is only correct if the WHILE CONDITION
                                # ends the loop; every break below overwrites it.
                                # ITERATION == CAP is NOT the cap test — a run that
@@ -413,7 +435,8 @@ while ITERATION < CAP:
         # another spelling; Step 0 resolved which one. pr-reviewer is an AGENT,
         # so never Skill("pr-reviewer").
         # On a re-review it resolves its own addressed threads (thread-resolution.md).
-        NEW_FINDINGS = (pr-reviewer reported new actionable findings)
+        NEW_FINDINGS  = (pr-reviewer reported new actionable findings)
+        FINAL_VERDICT = review.verdict   # PASS | WARN | FAIL — the --merge approval gate reads this
     else:
         POLL_RESULT = shared review-activity poll, bounded by INTERVAL   # new | quiet | error
         if POLL_RESULT == "error":
@@ -699,6 +722,52 @@ Then, **best-effort**, note the linked Linear ticket (skip silently if any part 
 - If a ticket id is found **and** the Linear MCP tools are connected, post a short comment on the ticket linking the PR and stating that review converged (e.g. `Review loop converged — PR <url> ready for review.`).
 - Any failure here (no ticket, no MCP, API error) is logged and never fails the loop.
 
+### Step 2.5: Merge (under `--merge`, on approval)
+
+Run this step **only when `MERGE == 1`**. Skip it silently otherwise.
+
+This is the one step that overrides *never undraft*: to merge, a draft must first
+be marked ready. The override is deliberate and scoped to `--merge` — a caller
+that did not pass the flag never reaches this step.
+
+Merge on the **first agent approval**, meaning: the loop already ran to clean
+convergence (every non-blocking comment fixed or answered — that is the "fixing
+them before merging" half), and the review that ended the loop was an approval.
+Merge if and **only if all** of the following hold — any single failure means
+*do not merge*, record the reason, and stop with the PR left review-ready:
+
+| Gate | Merge requires | Read from |
+| --- | --- | --- |
+| **Clean convergence** | `STOP_REASON == "all-threads-resolved"` | the loop's exit. `no-progress` (human-judgment flags remain), `cap-reached`, `ci-red`, `ci-error`, and `poll error` are all **not** merge-eligible |
+| **Zero open threads** | `unresolved_thread_count() == 0` | re-read now, do not trust the loop's last value — implied by clean convergence, but confirm, because merging is irreversible |
+| **Approval** | pr-reviewer mode: `FINAL_VERDICT == "PASS"`. `--external-review` mode: `gh pr view "$PR_NUMBER" --repo "$RESOLVED_REPO" --json reviewDecision -q .reviewDecision` is `APPROVED` | the last review pass / GitHub |
+| **CI green** | CI is actually **green**, or the repo genuinely has no CI. Pending is **not** green — the loop never waits for CI, so a converged-but-pending run stops here without merging | a fresh stateless `gh pr checks "$PR_NUMBER" --repo "$RESOLVED_REPO"` read (**run this even under `--no-ci`** — `--no-ci` only skips the in-loop `ci-auto-fix` delegation; a merge still confirms green first) |
+
+A non-`PASS` final verdict (`WARN` or `FAIL`) is **not** an approval: report
+`not merged (verdict <V> — not a clean approval)` and stop. The preview-spec
+verdict from [Step 1.6](#step-16-preview-spec-run-report-only-once-on-exit) is
+**report-only and never gates the merge** (matching its treatment everywhere
+else); surface a `red` preview verdict in the report so the human sees it, but do
+not let it block or force the merge.
+
+When every gate passes:
+
+```bash
+# Undraft first if the PR is a draft — the scoped override of "never undraft".
+if [ "$(gh pr view "$PR_NUMBER" --repo "$RESOLVED_REPO" --json isDraft -q .isDraft)" = "true" ]; then
+  gh pr ready "$PR_NUMBER" --repo "$RESOLVED_REPO"
+fi
+
+# Squash-merge (the method decided for --merge; gh requires an explicit method).
+gh pr merge "$PR_NUMBER" --repo "$RESOLVED_REPO" --squash
+```
+
+If `gh pr merge` fails (branch protection needs a review approval the bot cannot
+give, a required check the loop read as green flipped, a merge conflict), do
+**not** retry with `--admin` or force anything: record `merge failed (<verbatim
+gh error>)` and stop. The PR is already converged and review-ready; a human
+completes the merge.
+
 ### Step 3: Report
 
 After the loop exits (converged, no-progress, or at cap), emit a compact summary:
@@ -736,7 +805,11 @@ Preview spec: <green (<N> specs on <url>) | red (<N> failing on <url>) — revie
 PR description: <refreshed | unchanged (no code applied) | skipped (--no-refresh)>
 Linear note: <posted <ticket> | no ticket linked | Linear MCP unavailable | skipped>
 
-Final pr-reviewer verdict: <PASS | FAIL | n/a (external review)>
+Merge: <merged (squash) | not merged (verdict <V> — not a clean approval) | not merged (converged, awaiting CI) | not merged (<STOP_REASON>) | merge failed (<verbatim gh error>) | not requested (no --merge)>
+# Only ever "merged" when Step 2.5's four gates all passed. Any other outcome
+# names why, and the PR is left converged and review-ready for a human.
+
+Final pr-reviewer verdict: <PASS | WARN | FAIL | n/a (external review)>
 Head commit: <sha>
 ```
 
@@ -757,7 +830,8 @@ threads over a red build is not a review-ready PR.
 - **A skip is never reported as convergence, and never as report-only.** Zero open threads plus green CI is not convergence when no review pass produced a verdict; say plainly that the loop did not run and the PR was not reviewed.
 - **Convergence never green-washes.** The loop resolves a thread only via a fix or an honest reply. A live finding the agent cannot fix or honestly decline stays open and is surfaced — the loop never resolves it to terminate. This is `implement-suggestion --resolve-all`'s safety valve, inherited here.
 - **Never write to GitHub directly, except the Step 2 description refresh.** `pr-reviewer` posts the `COMMENT` review and `implement-suggestion` resolves threads; this skill orchestrates. The one direct write it owns is the final `gh pr edit --body` refresh.
-- **Never undraft the PR.** This skill converges; the user makes the final undraft decision.
+- **Never undraft the PR — except under `--merge`.** By default this skill converges and the user makes the final undraft decision. `--merge` is the one scoped override: Step 2.5 undrafts (`gh pr ready`) as the mandatory first move of a merge, and only when every merge gate has already passed.
+- **`--merge` merges only on a clean approval, never green-washes a merge.** Step 2.5 merges **iff** `STOP_REASON == "all-threads-resolved"`, zero open threads, the final verdict is an approval (`PASS`, or GitHub `APPROVED` under `--external-review`), **and** CI is actually green. A non-`PASS` verdict, any open thread, a non-clean stop reason, or pending/red CI leaves the PR unmerged and review-ready with the reason reported. It merges by squash and never with `--admin` or `--force`; a failed `gh pr merge` is reported verbatim, never retried around.
 - **One `implement-suggestion` per iteration, no `--watch`.** The loop drives re-review; `--watch` waits for external bots and would conflict.
 - **Cap is a hard limit.** If threads are still open at the cap, surface them and stop. Do not extend the cap silently.
 - **Convergence requires CI settled, not just threads resolved.** Unless `--no-ci` is set, a red check blocks the clean-convergence exit. Reporting zero open threads over a red build is the CI-shaped version of green-washing.
