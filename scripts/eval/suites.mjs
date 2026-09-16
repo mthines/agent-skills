@@ -27,6 +27,14 @@
 // a filter the labels never accounted for.
 export const SUITES = [
   {
+    name: "ci-fix-path",
+    golden: "golden/ci-fix-path.jsonl",
+    rubric: { file: "skills/delivery/ci-auto-fix/SKILL.md", section: "## Phase 3 — Classify and choose a path" },
+    instruction: "You are ci-auto-fix choosing the investigation path for a proposed code or configuration correction. Using ONLY the path criteria below, choose mechanical or diagnostic based on the supplied evidence. These cases do not request a no-code infrastructure rerun.",
+    inputKey: "input", inputLabel: "Failure evidence and proposed correction",
+    choices: ["mechanical", "diagnostic"],
+  },
+  {
     name: "finding-disposition",
     golden: "golden/finding-disposition.jsonl",
     // Two sibling sections, deliberately, and NOT their parent file. `## The lifecycle`

@@ -3037,7 +3037,8 @@ const isPollBlock = (block) =>
 // `references/` is excluded — it quotes the unbounded forms as examples of the bug.
 {
   const PROXIMITY = 6;
-  const EXPECTED_SITES = 9; // pinned, not a floor — adding or deleting a site must trip this.
+  const EXPECTED_SITES = 7; // ci-auto-fix now specifies bounded monitoring without shell snippets.
+  // Pinned, not a floor — adding or deleting an executable example must trip this.
   const files = [
     ...walk(join(REPO_ROOT, "skills")),
     ...walk(join(REPO_ROOT, "agents")),
@@ -3155,7 +3156,7 @@ const isPollBlock = (block) =>
       );
     }
   }
-  s.check("G23 guards exactly 3 polling blocks", guarded === 3, `found ${guarded}`);
+  s.check("G23 guards exactly 2 polling blocks", guarded === 2, `found ${guarded}`);
 }
 
 // ── Check G24: any agent that does GitHub work can actually reach GitHub ──
