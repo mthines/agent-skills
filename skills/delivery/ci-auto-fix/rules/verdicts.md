@@ -1,79 +1,45 @@
 ---
 title: Failure Verdicts
 impact: HIGH
-tags:
-  - ci
-  - classification
-  - guardrails
+tags: [ci, diagnosis]
 ---
 
-# Failure Verdicts
+# Failure verdicts
 
-Every failure gets exactly one verdict before any fix is drafted.
-The verdict binds behavior — `flaky` and `unsure` escalate; the four `*-bug` verdicts continue to the confidence gate.
+Assign one verdict per root-cause group, based on evidence rather than error wording.
+A registry error may be a bad constraint or an outage; distinguish them before fixing.
 
-Do not skip this step.
-Do not leave the verdict implicit.
-Record it in the plan artifact (see [`../templates/plan-artifact.md`](../templates/plan-artifact.md)).
+| Verdict           | Evidence to seek                                                                        | Action                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `code-bug`        | Failing command plus relevant source/test behavior                                      | Mechanical path only if all entry criteria hold; otherwise diagnose         |
+| `workflow-bug`    | Wrong job wiring, action inputs/version, permissions, or secret reference               | Inspect affected dependencies and shared callers; validate the workflow     |
+| `dep-bug`         | Demonstrated version/lockfile conflict or missing dependency                            | Reproduce with the CI package-manager/runtime versions; verify installation |
+| `env-bug`         | Runner/toolchain/service mismatch                                                       | Compare declared and actual environments; validate affected consumers       |
+| `transient-infra` | Evidence of an external interruption, such as runner loss or a temporary service outage | One bounded failed-job rerun under the conditions below                     |
+| `flaky`           | Intermittent application/test behavior without an established cause                     | Diagnose the instability; do not rerun until lucky                          |
+| `unsure`          | Multiple plausible causes                                                               | Gather discriminating evidence; escalate if no useful next check remains    |
 
-## Decision table
+For `code-bug`, read source before proposing edits. A type assertion, snapshot
+update, or changed expected result needs behavioral justification. Use a relevant
+test-debugging skill only when its specialized workflow is needed.
 
-| Verdict | What it means | Action |
-| --- | --- | --- |
-| `code-bug` | Lint, type check, test failure, build error in the project's own code | Continue to the confidence gate ([`confidence-gate.md`](./confidence-gate.md)) |
-| `workflow-bug` | Bad YAML, wrong action version, missing/misnamed secret, broken `needs:` graph | Continue to the confidence gate |
-| `dep-bug` | Lockfile mismatch, missing package, version conflict, registry resolution failure | Continue to the confidence gate |
-| `env-bug` | Wrong Node/Python/Deno version, missing system dependency, runner image regression | Continue to the confidence gate |
-| `flaky` | Network timeout, rate limit, resource exhaustion, intermittent test with no code change | **Escalate.** Do not auto-retry — that masks the underlying instability. Report to the user with the log excerpt and stop. |
-| `unsure` | Diagnostic confidence < 80%, or the failure could plausibly be in more than one bucket | **Escalate.** Surface what you saw and what you couldn't decide between. Stop. |
+For `workflow-bug`, follow reusable workflows/composite actions and their callers
+when shared behavior changes. Verify secret names and permission requirements;
+do not invent credentials or broaden permissions speculatively. Action/dependency
+version changes need evidence of the specific incompatibility and a supported pin.
 
-## Per-verdict notes
+For `env-bug`, respect the project's declared runtime versions. Validate a proposed
+runner/runtime change against all affected jobs; do not silently change project policy.
 
-### `code-bug`
+## Bounded infrastructure rerun
 
-Read the relevant source files before proposing a fix.
-Never propose a code change from the log alone.
+A timeout or HTTP error alone does not establish a transient external cause.
+Corroborate with runner/service diagnostics or comparable attempts, and rule out a
+deterministic configuration failure. Record the evidence and rerun the failed jobs
+once on the same revision. Count a caller's rerun of those jobs toward this limit;
+if prior rerun history is unknown, inspect it before triggering another.
 
-Sub-classify the failure shape before fixing:
-
-- Formatter / linter auto-fix available (`pnpm lint --fix`, `ruff --fix`, `gofmt`) → apply and re-run.
-- Trivial type error (missing import, wrong generic argument, obvious null check) → fix in place.
-- Real test failure → classify whether the test or the production code is wrong; defer to a dedicated test-healing skill (e.g. `/test-healer`) when the local repo has it installed.
-
-A failure forwarded from `/create-pr`'s triage as `lint-format` or `trivial-type` is not a test failure and must not be routed to `/test-healer`.
-
-### `workflow-bug`
-
-Read every workflow file in `.github/workflows/` before editing one.
-Job dependencies (`needs:`), composite actions, and reusable workflows mean a one-file change can break a sibling job — see Phase 2 in [`../SKILL.md`](../SKILL.md).
-
-Common shapes:
-
-- Runner permission / OIDC failures (`Error: Resource not accessible by integration`, `id-token: write` missing) → add or correct the `permissions:` block at the job or workflow level. This is a structural fix, not a logic edit.
-- Wrong action version → bump to a pinned tag (never `@main`) and link the upstream changelog entry justifying the bump.
-- Missing or misnamed secret → surface to the user before editing; secret names are case-sensitive and adding a guess wastes a runner.
-
-### `dep-bug`
-
-Reproduce the resolution failure locally.
-A lockfile fix that works in CI but not locally usually means the runner is using a different Node/pnpm/Deno version (re-classify as `env-bug`).
-
-### `env-bug`
-
-Pin versions in the workflow, not in the project's runtime config, unless the project intentionally pins a version (e.g. `.nvmrc`, `.tool-versions`).
-Bumping the runner image (`ubuntu-latest` → `ubuntu-24.04`) is a workflow edit, not a project edit.
-
-### `flaky`
-
-Escalate.
-Do not auto-retry, do not add `continue-on-error: true`, do not add `retry-on-failure` to mask the issue.
-The user owns the call to either rerun the workflow manually, mark the test as known-flaky in their tracking system, or invest in a fix.
-
-### `unsure`
-
-Escalate with three things:
-1. The log excerpt that prevented classification.
-2. The two (or more) verdicts that fit.
-3. The disambiguating evidence you would need to decide.
-
-Asking once is cheaper than a wrong fix that burns a CI run.
+Keep the original failure and new attempt in the report. The rerun uses the same
+CI wait budget and does not reset fix-cycle limits. If it fails again, diagnose or
+escalate; do not change code just to provoke another run. This exception never
+applies to unexplained test assertions, races, or reproducible resource exhaustion.

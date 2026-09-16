@@ -1,73 +1,43 @@
 ---
 title: Regression Detection
 impact: HIGH
-tags:
-  - ci
-  - regression
-  - revert
-  - iteration
+tags: [ci, regression, revert]
 ---
 
-# Regression Detection
+# Regression detection
 
-After every push, the new CI run is compared against the previous failure set.
-The outcome determines whether the loop continues, restarts, or reverts.
+Compare the new result with the recorded baseline, retaining workflow, job, matrix,
+step, command, and normalized error signature. Ignore timestamps, paths containing
+run IDs, and shifted line numbers. Signature differences identify investigation
+candidates; they do not establish causality.
 
-Stacking fixes onto a regression is how a 4-iteration loop ships net-negative code.
-This rule is non-optional.
+| Result                | Next action                                                                                                                                         |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Same failure          | Revisit the hypothesis with new evidence; do not repeat the same fix                                                                                |
+| Strict subset         | Preserve the working fix and diagnose remaining root causes                                                                                         |
+| Newly exposed failure | If the step/job was previously blocked or never reached, diagnose it without automatically reverting                                                |
+| Unrelated failure     | Establish independence through baseline/history, changed files, or environment evidence; preserve the fix and report/diagnose the remaining failure |
+| Introduced regression | If a causal link to the fix is supported, revert the responsible recorded fix commit before replanning                                              |
+| Unclear relationship  | Inspect dependencies/diff or reproduce against the parent and fix revisions; stop if causality cannot be resolved                                   |
 
-## When to run
+A passing baseline for the same check plus a reproducible failure caused by the
+changed behavior is strong regression evidence. A baseline install failure followed
+by the first test execution is not. Changed environments or concurrent commits must
+be accounted for before attributing the failure to this fix.
 
-In Phase 8 of [`../SKILL.md`](../SKILL.md), after the new CI run completes and its failed-job logs have been fetched.
+## Reverting
 
-## Decision table
+Fetch and reconcile the remote branch first. Verify that the recorded fix SHA is
+an ancestor of the target branch and is the commit responsible for the regression.
+Use `git revert <fix-sha> --no-edit`, never `git revert HEAD` by assumption. Preserve
+other workers' commits; if rebasing or reverting conflicts, abort that operation
+and report. Never force-push. A rejected push permits one resync/retry as in Phase 6.
 
-| Outcome | What it means | Action |
-| --- | --- | --- |
-| Same failure(s) as the previous run | The fix did not address the root cause | Go back to verdict classification ([`verdicts.md`](./verdicts.md)). Do not just repeat the same fix shape. |
-| Strict subset of the previous failures | Partial progress — the fix worked for what it touched | Continue with the remaining failures (back to verdict classification for the new top failure). |
-| New failure(s) that did NOT exist before this push | The fix introduced a regression | **Revert the last commit.** Record the attempt in the plan artifact. Re-plan or escalate. |
+Record the reverted SHA, revert commit, evidence, and resulting baseline. A revert
+creates a new commit; its SHA will not equal the original parent. Verify the affected
+behavior after reverting and monitor the resulting revision within the remaining
+CI budget. Report any unverified rollback explicitly rather than claiming recovery.
 
-## How to revert a regression
-
-```bash
-git revert HEAD --no-edit
-git push origin "<branch>"
-```
-
-Then sync to the authoritative remote state before re-planning — a concurrent worker (`/implement-suggestion`, parallel `ci-auto-fix`) may have pushed between the revert and the next iteration:
-
-```bash
-git pull --rebase origin "<branch>"
-git log -1 --format='Baseline after revert: %H'
-```
-
-Record the printed baseline SHA in the plan artifact's `## Iteration <N> — reverted` section so the user can verify the post-revert HEAD matches the expected pre-fix baseline.
-If the rebase conflicts, stop and report — do not auto-resolve and do not re-plan on an unknown HEAD.
-
-Then:
-
-1. Append a `## Iteration <N> — reverted` section to the plan artifact (see [`../templates/plan-artifact.md`](../templates/plan-artifact.md)), including the baseline SHA.
-2. Re-classify from the original failure set in [`verdicts.md`](./verdicts.md).
-3. If the second attempt also regresses, escalate — do not try a third.
-
-## Why `git revert`, not `git reset`
-
-`git reset --hard HEAD~1 && git push --force` rewrites shared history.
-Other clones, PR review comments, and CI artifacts pinned to the reverted SHA all break.
-`git revert` creates a new commit that undoes the prior one — non-destructive, traceable, and CI-safe.
-
-## Iteration cap
-
-Maximum 4 iterations.
-If still failing after 4 attempts (including any reverts), escalate with the structured exit summary from Phase 9.
-
-## Definition of "new failure"
-
-A failure is "new" if:
-
-- The failing **job/step** name is different from anything in the previous failure set, OR
-- The failing job/step is the same but the **error signature** (exit code + first ~3 lines of error) is materially different.
-
-Cosmetic differences (line numbers shifting by ±5, timestamps, run IDs) do not count as new.
-When in doubt, treat it as new — false positives revert one extra commit, false negatives compound regressions.
+Replan using the actual remaining failures, including any newly exposed ones.
+Stop after two introduced regressions or four fix-push cycles. Revert pushes do
+not grant additional fix cycles or wait budget.

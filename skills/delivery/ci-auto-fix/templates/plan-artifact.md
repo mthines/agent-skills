@@ -1,26 +1,19 @@
-# ci-auto-fix run — <branch> — iteration <N>
+# CI diagnosis — <branch>
 
-## Failure
+Use only for the diagnostic path; keep at `.agent/{branch}/ci-auto-fix-plan.md`.
+Update existing evidence rather than repeating the whole plan each iteration.
 
-- Workflow / job / step: <names>
-- Run URL: <https://github.com/owner/repo/actions/runs/...>
-- Verdict: <code-bug | workflow-bug | dep-bug | env-bug>
-- Root cause (one sentence): <…>
-- Files touched by the proposed fix: <list>
+- Target: <repo / PR / branch / baseline SHA / run IDs and attempts>
+- Failure groups: <workflow / job / matrix / step / signature; blocked jobs>
+- Verdict and cause: <one per group; supporting and conflicting evidence>
+- Proposed fix and scope: <files, affected consumers, preserved invariants>
+- Verification: <local command/results, CI scope, local reproduction gaps>
+- Lessons applied: <only if relevant memory was available>
 
-## Proposed fix
+## Attempt <N>
 
-<diff sketch or one-paragraph description>
-
-## Confidence
-
-- Score: <0–100>
-- Risk tag: <workflow-touch | prod-code-touch | lockfile-touch>
-- Action: <auto-apply | ask-once | escalate>
-- Escalation reason: <one sentence — fill in only when Action is `escalate`>
-
-## Iteration <N> — <result>
-
-- Outcome: <green | same-failure | subset | regression-reverted>
-- New run URL: <…>
-- Notes: <…>
+- Fix SHA / parent / pushed SHA: <exact commits, refreshed after rebase>
+- Checks/results: <local and CI links, run attempts, remaining failures>
+- Interpretation: <same / subset / exposed / unrelated / regression / unclear>
+- Counters: <fix-push cycles / 4; infrastructure rerun used; completion windows / 6; registration attempts / 3 for this revision>
+- Next action: <evidence needed, or reverted SHA and verified rollback outcome>

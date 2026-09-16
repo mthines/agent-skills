@@ -33,7 +33,7 @@ tier is a silent no-op (log one line, continue).
 - [Why the extra guardrails](#why-the-extra-guardrails)
 - [Scope](#scope)
 - [Read lessons (Phase 3)](#read-lessons-phase-3)
-- [Cross-bucket read — codebase-knowledge (Phase 3.5, plan-artifact seam)](#cross-bucket-read--codebase-knowledge-phase-35-plan-artifact-seam)
+- [Cross-bucket read — codebase-knowledge (Phase 3, evidence-note seam)](#cross-bucket-read--codebase-knowledge-phase-3-evidence-note-seam)
 - [Write lessons (Phase 8 / 9)](#write-lessons-phase-8--9)
 - [Lesson promotion (raised bars)](#lesson-promotion-raised-bars)
 - [Entrenchment guards (ci-auto-fix additions)](#entrenchment-guards-ci-auto-fix-additions)
@@ -45,11 +45,11 @@ tier is a silent no-op (log one line, continue).
 ci-auto-fix is a good memory host — it makes two recurring classification calls
 (the Phase 3 **verdict** and the Phase 8 **regression** decision) with a
 deterministic feedback signal (post-push CI goes green or does not). But it has
-two properties that make naïve lessons *riskier* here than in fix-bug, so the
+two properties that make naïve lessons _riskier_ here than in fix-bug, so the
 loop is deliberately more conservative:
 
-1. **Weak per-run observability of the verdict.** The verdict is inferred from CI
-   logs alone — there is no repro to test a hypothesis against. A universal
+1. **Weak per-run observability of the verdict.** CI-only failures may lack a local
+   reproduction; keep that limitation explicit in the evidence. A universal
    lesson like "this error signature is always `dep-bug`" can be wrong a large
    fraction of the time yet still accrue `seen_count`, and each wrong run burns a
    real CI cycle. → **Verdict lessons are biased to the `repo::{owner}/{repo}`
@@ -75,7 +75,7 @@ LoreKit's partition axis is **scope** — `global` or `repo::{owner}/{repo}`
   `ci-auto-fix-lessons::dep-bug-lockfile-drift`).
 - **Scopes (two, used together):**
   - **`global`** — universal, cross-repo. Default for **universal**
-    *regression-shape* lessons (a cosmetic-vs-new pattern that holds across
+    _regression-shape_ lessons (a cosmetic-vs-new pattern that holds across
     repos). **Not** the default for verdict lessons — see guardrail 1.
   - **`repo::{owner}/{repo}`** — this repository's lessons. Default for
     **verdict** lessons and any repo-specific failure shape. LoreKit's mode
@@ -112,17 +112,16 @@ decisions.
 
 **Anchor:** `lessons-read`
 
-At the **start of Phase 3 (Classify the failure)** — after the logs are
+When memory is connected, during **Phase 3 (Classify the failure)** — after the logs are
 summarized (Phase 1) and the workflows are understood (Phase 2) but before the
 verdict is chosen — load lessons narrow-to-broad:
 
 ```text
-# Silent no-op if memory.* not connected.
-memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::ci-auto-fix-lessons"], limit: 50 }
-memory.list { scope: "global", tags: ["loop::ci-auto-fix-lessons"], limit: 50 }
-# Optional — when the failing workflow / step / signature is known:
-memory.search { q: "<workflow-name + failing-step + error-signature keywords>", scopes: ["repo::{owner}/*", "global"], limit: 10 }
+memory.search { q: "<workflow-name + failing-step + error-signature keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 5 }
 ```
+
+Do not list entire lesson buckets. Read only relevant matches; reuse them while
+signature and scope remain unchanged.
 
 1. Union the matches. Match verdict lessons on
    `<workflow-name>:<failing-step>:<error-signature>`; match regression lessons
@@ -133,13 +132,12 @@ memory.search { q: "<workflow-name + failing-step + error-signature keywords>", 
 2. Apply matches as **inputs**: a verdict lesson biases which verdict the
    evidence most likely fits; a regression lesson biases the Phase 8
    cosmetic-vs-new call. Neither overrides the log evidence in front of you.
-3. Lessons are **advisory** — they never relax the confidence gate
-   ([`confidence-gate.md`](./confidence-gate.md)), never shrink the Phase 8
-   revert-on-new-failure rule, and **never** vote for a soft-refusal action
-   (runner-image bump, dependency major-version change) without that action
-   re-passing its own gate. See guardrail below.
+3. Lessons are **advisory** — they never relax the evidence gate
+   ([`confidence-gate.md`](./confidence-gate.md)), never bypass the Phase 8
+   causal regression rule, and **never** vote for a broader-scope action
+   (runner-image bump, dependency major-version change) outside this run's authorization and evidence gate. See guardrail below.
 4. Record applied lessons in the plan artifact (`.agent/{branch}/ci-auto-fix-plan.md`)
-   under a `Lessons applied` note, marking the source scope in parentheses.
+   or mechanical-path evidence note under `Lessons applied`, marking the source scope in parentheses.
 
 LoreKit owns storage server-side and dedups on write — no consolidation pass.
 Stale beliefs decay through the store's own `ttl_days` expiry, not a line-count
@@ -148,29 +146,28 @@ sweep.
 Log:
 
 ```markdown
-- [TIMESTAMP] Phase 3: lorekit(memory.list repo::{owner}/{repo} loop::ci-auto-fix-lessons) — N verdict lessons matched, applied
-- [TIMESTAMP] Phase 3: lorekit(memory.list global loop::ci-auto-fix-lessons) — M regression lessons matched
-- [TIMESTAMP] Phase 3: lorekit — memory.* not connected, continuing
+- [TIMESTAMP] Phase 3: lorekit(memory.search current signature) — N verdict lessons matched, applied
+- [TIMESTAMP] Phase 3: lorekit — memory.\* not connected, continuing
 ```
 
 ---
 
-## Cross-bucket read — codebase-knowledge (Phase 3.5, plan-artifact seam)
+## Cross-bucket read — codebase-knowledge (Phase 3, evidence-note seam)
 
 The read above is this loop's **own** bucket. There is one cross-bucket read worth
 making: the shared `codebase-knowledge` signal — the cross-branch, cross-author
 record of what prior reviews learned about this repo's symbols and files
 (`knowledge::<symbol>@<path>` facts, `hotspot::<path>` counters). `ci-auto-fix`
 runs Phase 7 as **its own** subagent, **not** `aw-executor`, so it does not inherit
-`aw`'s knowledge-read — it must issue this itself. Do it at **Phase 3.5**, once the
-plan artifact names the failing files the fix will edit:
+`aw`'s knowledge-read — it must issue this itself. Do it at **Phase 3**, once the
+evidence note names the failing files the fix will edit:
 
 ```text
-memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }
-# Keep only hotspot::<path> / knowledge::<symbol>@<path> whose <path> the fix will
-# edit. Fold into the plan artifact: a known regression hotspot on the failing file
-# → plan a tighter fix + a regression check; a recorded invariant → preserve it.
+memory.search { q: "<touched paths / symbols> codebase-knowledge", scopes: ["repo::{owner}/{repo}"], limit: 5 }
 ```
+
+Use the named files in the evidence note when the mechanical path needs no plan.
+Filter results to matching paths and preserve any recorded invariants.
 
 The read is **read-only, structural, bounded to the plan, advisory, and raises care
 without suppressing** — it can never relax the Phase 3 verdict gate or shrink the
@@ -185,11 +182,11 @@ matches. Never wholesale-read another host's `loop::<host>-lessons`.
 
 **Anchor:** `lessons-write`
 
-| Write point | When | Lesson captures |
-| ----------- | ---- | --------------- |
-| **Phase 8 — regression reverted** | A new failure appeared and the last commit was reverted | The strongest negative signal: the verdict or fix was wrong. Capture the mis-verdict (what it was classified vs what the revert implies) and, if the "new failure" was actually cosmetic, a **regression lesson** (the `status::volatile` tag, `ttl_days: 30`) |
-| **Phase 9 — CI green** | The fix landed and all checks passed | An UPDATE to any verdict lesson read at Phase 3 that led here — a working verdict classification, accruing `seen_count` toward the raised bar |
-| **Phase 9 — escalated / max-iterations** | `flaky`/`unsure` escalation, or the 4-iteration cap hit | A pattern this skill could not resolve — captured so the next run on the same signature escalates faster |
+| Write point                              | When                                                                            | Lesson captures                                                                                                                                                         |
+| ---------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Phase 8 — regression reverted**        | A causal regression was established and the responsible fix commit was reverted | Record the causal evidence and rollback verification. A revert alone does not prove the verdict was wrong. Regression lessons use `status::volatile` and `ttl_days: 30` |
+| **Phase 9 — CI green**                   | The fix landed and all checks passed                                            | An UPDATE to any verdict lesson read at Phase 3 that led here — a working verdict classification, accruing `seen_count` toward the raised bar                           |
+| **Phase 9 — escalated / max-iterations** | `flaky`/`unsure` escalation, or the 4-iteration cap hit                         | Record unresolved evidence and useful next diagnostics; do not teach automatic escalation from a prior unsuccessful attempt                                             |
 
 Classify + **dedup first**, then dispatch (note the **verdict → `repo::`**
 default):
@@ -240,10 +237,10 @@ Log (include scope + verdict + CI outcome):
 Promotion bars are **higher than the default `seen_count >= 3`** because of the
 observability and churn risks above:
 
-| Lesson kind | Promotion-eligible at | Rationale |
-| ----------- | --------------------- | --------- |
-| **Verdict** (Phase 3) | `seen_count >= 5` (or the `status::structural` tag) | Log-only inference is noisy; require more confirmations |
-| **Regression** (Phase 8, `status::volatile`) | `seen_count >= 3` | Standard bar, but the 30-day expiry means it must recur *often* to survive to promotion |
+| Lesson kind                                  | Promotion-eligible at                               | Rationale                                                                               |
+| -------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **Verdict** (Phase 3)                        | `seen_count >= 5` (or the `status::structural` tag) | CI-only evidence can be incomplete; require more confirmations                          |
+| **Regression** (Phase 8, `status::volatile`) | `seen_count >= 3`                                   | Standard bar, but the 30-day expiry means it must recur _often_ to survive to promotion |
 
 Surface the scope-appropriate suggestion — never act silently:
 
@@ -267,11 +264,9 @@ promotion; every lesson expires through the store's own `ttl_days` — LoreKit
 dedups on write, no consolidation pass; contradictions flagged; privacy
 pre-flight never bypassed). Two ci-auto-fix-specific additions:
 
-6. **A lesson can never authorize a check-weakening or soft-refusal action.**
-   Runner-image bumps, dependency major bumps, and anything on the
-   [`anti-patterns.md`](./anti-patterns.md) refusal list still require their own
-   confidence gate (and, for soft-refusals, explicit user approval) on **this**
-   run — a lesson only ever biases the *verdict*, never pre-authorizes the *fix*.
+6. **A lesson can never authorize a check-weakening or broader-scope action.**
+   Runner-image bumps, dependency major bumps, and other broader-scope changes still require the
+   [evidence gate](./confidence-gate.md) and authorization check on **this** run — a lesson only ever biases the _verdict_, never pre-authorizes the _fix_.
 7. **Verdict lessons default to `repo::{owner}/{repo}`; regression lessons are
    volatile.** This is not a stylistic choice — it is the mitigation for the two
    failure modes in [Why the extra guardrails](#why-the-extra-guardrails). Do not
