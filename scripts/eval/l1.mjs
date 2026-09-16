@@ -7578,22 +7578,31 @@ const isPollBlock = (block) =>
   const REGRESSION_SIGNALS = join(MSK, "rules/regression-signals.md");
   const SETUP_PROFILE_MD = join(MSK, "rules/setup-profile.md");
   const PROFILE_TEMPLATE_MD = join(MSK, "templates/observability-profile.template.md");
-  // Local, NON-THROWING section slice. `sliceBetween` throws when the end anchor is absent,
-  // which is the normal case for a file's LAST section (regression-signals.md's classification
-  // is one), and a guard that crashes the runner reports nothing at all about the other 1799
-  // checks. Returns "" on a miss so each sub-check fails with its own message instead.
-  const sectionOf = (text, heading) => {
-    const m = new RegExp(`^${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*$`, "m").exec(text);
-    if (!m) return "";
-    const rest = text.slice(m.index + m[0].length);
-    const next = /^##\s/m.exec(rest);
-    return next ? rest.slice(0, next.index) : rest;
+  // Non-throwing wrapper around the SHARED extractSection, not a local re-implementation.
+  // The first version of this was a five-line regex slice, justified against `sliceBetween`
+  // — the wrong shared function. `sliceBetween` throws when the end anchor is absent (the
+  // normal case for a file's LAST section), but `extractSection` needs no end anchor at all,
+  // and it is heading-LEVEL-aware and fence-aware where the local slice was neither. Probed:
+  // a `## ` line inside a ```yaml fence truncated the mapping section from 2055 to 427 chars
+  // and BOTH G54c checks passed with every table row invisible; an H1 demotion made the slice
+  // over-run into the next section and report a verdict that was not in the table at all.
+  // The only property worth keeping from the local version is not throwing, so that is all
+  // this adds. It takes a repo-RELATIVE path, because that is extractSection's own contract.
+  const sectionOf = (relPath, heading) => {
+    try { return extractSection(relPath, heading); } catch { return ""; }
   };
+  const REL = "skills/quality/measurable";
 
   // (a) The file exists. Every check below is conditional on it, so without this one a deleted
   // rule file would take the whole family quiet — the vacuous-pass shape G53i calls out.
   // break-shape: G54a — delete rules/weaver-schema.md and this flips red.
   s.check("G54a measurable/rules/weaver-schema.md exists", existsSync(WEAVER));
+  // BOTH halves of the gating conjunction below get an assertion, not just the rule file.
+  // Probed: retargeting MEASURABLE_SKILL to a name that does not exist drops 22 checks and
+  // the suite reports 1805/1805 GREEN — the same vacuous-quiet shape this family opens by
+  // warning about, left open on the conjunct nobody asserted.
+  s.check("G54a measurable/SKILL.md exists", existsSync(MEASURABLE_SKILL),
+    "22 checks below are gated on it, so its absence takes the whole family quiet");
 
   if (existsSync(WEAVER) && existsSync(MEASURABLE_SKILL)) {
     const weaver = readFileSync(WEAVER, "utf8");
@@ -7605,7 +7614,7 @@ const isPollBlock = (block) =>
     // rather than grepping the whole SKILL.md: a mention in the prose is not a route, and the
     // first version of this check (a bare `skill.includes(...)`) passed on exactly that.
     const readingRows = Object.fromEntries(
-      sectionOf(skill, "## Required Reading by Mode")
+      sectionOf(`${REL}/SKILL.md`, "## Required Reading by Mode")
         .split("\n")
         .filter((l) => /^\|\s*`\w+`\s*\|/.test(l))
         .map((l) => [l.split("|")[1].trim().replace(/`/g, ""), l]));
@@ -7617,21 +7626,46 @@ const isPollBlock = (block) =>
         /rules\/weaver-schema\.md/.test(readingRows[mode] ?? ""),
         `the \`${mode}\` mode never loads the file, so its contract is unreachable from a run`);
     }
+    // `implement` routes INDIRECTLY — its cell says "Same as `guide`, plus …" — so the two rows
+    // above do not cover it, and rewriting that cell as an explicit list that omits the file
+    // would unroute the mode with nothing to say about it. Assert the inheritance itself.
+    s.check("G54b the `implement` row inherits the `guide` reading list",
+      /Same as `guide`/.test(readingRows.implement ?? ""),
+      "implement routes to weaver-schema.md only through that inheritance, so an explicit list here could silently drop it");
+    // audit-checklist.md is what weaver-schema.md's mapping section names as the owner of the
+    // three verdicts, so the row that carries Weaver into `audit` mode has to exist there.
+    // Without this, AUDIT_CHECKLIST was declared and never read.
+    const auditBody = existsSync(AUDIT_CHECKLIST) ? readFileSync(AUDIT_CHECKLIST, "utf8") : "";
+    s.check("G54b audit-checklist.md carries the registry-conformance row",
+      /weaver-schema\.md/.test(auditBody) && /never introduces a fourth/i.test(auditBody),
+      "audit mode is where a registry finding is graded, so the checklist must route to the rule and restate the three-verdict bound");
 
     // (c) BOUNDED VOCABULARY. audit mode grades three verdicts and the pr-reviewer lens maps
     // exactly those three, so a fourth introduced here reaches no surface. Derive the permitted
     // set from regression-signals.md's own `Audit-mode classification` bullets — a literal list
     // here would just be a second place to update, which is the drift this guards against.
     const allowed = new Set(
-      [...(existsSync(REGRESSION_SIGNALS)
-        ? sectionOf(readFileSync(REGRESSION_SIGNALS, "utf8"), "## Audit-mode classification")
-        : "").matchAll(/^-\s+\*\*`([a-z]+)`\*\*/gm)].map((m) => m[1]));
+      [...sectionOf(`${REL}/rules/regression-signals.md`, "## Audit-mode classification")
+        .matchAll(/^-\s+\*\*`([a-z]+)`\*\*/gm)].map((m) => m[1]));
     s.check("G54c the verdict set is derivable from regression-signals.md", allowed.size === 3,
       `derived ${allowed.size} verdict(s) (${[...allowed].join(", ") || "none"}) — the subset check below is vacuous unless the owner defines them`);
     // Read the verdicts weaver-schema CLAIMS, from the mapping table that owns the claim.
-    const mapSection = sectionOf(weaver, "## Audit-mode mapping");
-    const claimed = new Set([...mapSection.matchAll(/`([a-z]+)`\s*(?:—|$)/gm)].map((m) => m[1])
-      .filter((v) => /^(missing|unlinked|pass|deferred|advisory|violation|blocking|conformance)$/.test(v)));
+    const mapSection = sectionOf(`${REL}/rules/weaver-schema.md`, "## Audit-mode mapping — three verdicts, never a fourth");
+    // Take the table's OWN verdict column and subtract `allowed`. The first version filtered
+    // `claimed` through an eight-word literal, so a fourth verdict could only be caught if the
+    // author had guessed its spelling in advance — the very re-encoding the `allowed` side is
+    // derived to avoid. Probed: a `waived` row rendered in the table's exact shape left
+    // `claimed` unchanged and the suite at 1827/1827.
+    // Scoped to the SECOND cell so the observation column's `renamed` / `obsoleted` / `removed`
+    // (which are `weaver registry diff` change types, not audit verdicts) are out of scope, and
+    // verdict-SHAPED so the prose cell's `id` and `path:line` are too.
+    const VERDICT_SHAPED = /^[a-z][a-z-]{2,}$/;
+    const claimed = new Set(
+      mapSection.split("\n")
+        .filter((l) => /^\|/.test(l) && !/^\|\s*-{2,}/.test(l))
+        .map((l) => l.split("|")[2] ?? "")
+        .flatMap((cell) => [...cell.matchAll(/`([^`]+)`/g)].map((m) => m[1]))
+        .filter((v) => VERDICT_SHAPED.test(v)));
     const fourth = [...claimed].filter((v) => !allowed.has(v));
     s.check("G54c weaver-schema.md's audit mapping introduces no fourth verdict",
       allowed.size === 3 && fourth.length === 0,
@@ -7649,9 +7683,15 @@ const isPollBlock = (block) =>
     // would also red the two places that correctly warn about it.
     for (const f of walk(MSK)) {
       const lines = readFileSync(f, "utf8").split("\n");
+      // The marker has to be ABOUT the command. `!/deprecat/i` only asked whether the word
+      // appeared somewhere on the same physical line, which passes
+      // "Use `weaver registry search` to find deprecated attributes" — a recommendation of the
+      // deprecated command in which `deprecated` modifies something else entirely.
+      const MARKS_IT_DEPRECATED =
+        /`weaver registry search` is \*\*deprecated\*\*|(?:do not|never) recommend it|deprecated and not V2/i;
       const bad = lines
         .map((l, i) => ({ l, n: i + 1 }))
-        .filter(({ l }) => /weaver registry search/.test(l) && !/deprecat/i.test(l));
+        .filter(({ l }) => /weaver registry search/.test(l) && !MARKS_IT_DEPRECATED.test(l));
       s.check(`G54d ${rel(f)} never recommends the deprecated \`weaver registry search\``,
         bad.length === 0,
         bad.map(({ n }) => `line ${n}`).join(", ") + " names it without marking it deprecated");
@@ -7674,7 +7714,14 @@ const isPollBlock = (block) =>
     // upstream action's own docs say to start permissive. Assert the CI EXAMPLE, because the
     // example is what gets copied; prose advising `none` above a snippet that says `violation`
     // teaches the snippet.
-    const ciExample = (weaver.match(/```yaml[\s\S]*?weaver-live-check-stop[\s\S]*?```/) ?? [""])[0];
+    // Anchored to the fence that CONTAINS the stop action, and forbidden from crossing a fence
+    // delimiter on the way. The first version was `/```yaml[\s\S]*?weaver-live-check-stop…/`,
+    // which is leftmost-matched: it anchored on the manifest.yaml snippet ~130 lines earlier and
+    // captured a 6955-char slab spanning 14 fences. Probed: deleting the ENTIRE CI example left
+    // both checks green, satisfied by the prose sentence that advises `fail-on: none` — which is
+    // the exact substitution the comment above says it exists to prevent.
+    const ciExample =
+      (weaver.match(/```yaml\n(?:(?!```)[\s\S])*?weaver-live-check-stop(?:(?!```)[\s\S])*?```/) ?? [""])[0];
     s.check("G54f the CI example exists and sets `fail-on`", /fail-on:/.test(ciExample),
       "no live-check-stop example with a `fail-on` — the one setting that decides whether adoption survives contact with a real repo");
     s.check("G54f the CI example starts at `fail-on: none`, not at a failing level",
@@ -7686,12 +7733,14 @@ const isPollBlock = (block) =>
     // instrumentation, then reports their agreement as evidence, has proved nothing. The
     // upstream half IS evidence; the same-diff half is not. Require both rows and the citation
     // of the rule that owns the principle, so the claim stays attributable rather than reinvented.
-    const provenance = sectionOf(weaver, "## What a green Weaver run proves");
+    const provenance = sectionOf(`${REL}/rules/weaver-schema.md`, "## What a green Weaver run proves, and what it does not");
     s.check("G54g weaver-schema.md splits Weaver's findings by provenance",
       /upstream/i.test(provenance) && /this same change|same diff|same change/i.test(provenance),
       "the provenance section does not distinguish findings from the upstream registry (evidence) from findings against a registry this same change authored (by-construction)");
+    // Scoped to `provenance`, not to the whole file: the citation is a property of THIS
+    // section, and testing the file left the check green after the section was renamed away.
     s.check("G54g it cites observe-run's assertion-provenance rule as the principle's owner",
-      /observe-run\/rules\/assertion-provenance\.md/.test(weaver),
+      /observe-run\/rules\/assertion-provenance\.md/.test(provenance),
       "the by-construction principle is restated without citing the file that owns it, which is how two copies drift");
     s.check("G54g it states that neither Weaver nor observe-run covers the other",
       /[Nn]either answers the other|never report one as though it covered the other/.test(weaver),
@@ -7728,8 +7777,14 @@ const isPollBlock = (block) =>
   // comment, so the break-shape below is the only way to move it.
   // break-shape: G54i — add a `G54j` check without widening the inventory range, or narrow the
   // range by hand, and it flips red.
-  const g54Src = readFileSync(new URL(import.meta.url), "utf8");
-  const g54Letters = [...new Set((g54Src.match(/s\.check\(\s*["`]G54([a-z])\b/g) || [])
+  // Three quote styles, not two: this file already carries a single-quoted label (`G28b`), so
+  // a single-quoted `G54j` would have left the derived highest at `i` and the inventory range
+  // stale — the one failure this guard exists to catch. Comment lines are stripped first, or a
+  // commented-out `s.check("G54z …` counts as a defined guard and reds the build on a range
+  // that does not exist.
+  const g54Src = readFileSync(new URL(import.meta.url), "utf8")
+    .split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
+  const g54Letters = [...new Set((g54Src.match(/s\.check\(\s*["'`]G54([a-z])\b/g) || [])
     .map((m) => m[m.length - 1]))].sort();
   const g54Highest = g54Letters[g54Letters.length - 1];
   const CLAUDE_MD_G54 = join(REPO_ROOT, "CLAUDE.md");
