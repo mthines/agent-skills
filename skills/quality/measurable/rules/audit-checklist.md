@@ -35,6 +35,16 @@ Walk every changed path in the diff (or the given target) against:
 - [ ] **Cardinality sanity.** No new metric label or span attribute carries
       unbounded values (raw user id, full URL, free-text) that would break
       the metric backend.
+- [ ] **Registry conformance** — *only when the Observability Profile names a
+      Weaver registry*. Every signal name the diff adds is defined in the
+      registry, and no name it renames, deprecates, or removes leaves a
+      consumer unaccounted for —
+      [`weaver-schema.md`](./weaver-schema.md). Grade the result with the
+      same three verdicts; Weaver never introduces a fourth.
+
+The registry row is skipped entirely, with no finding and no note, when no
+profile exists or the profile records no registry. "This repo should adopt
+Weaver" is not an audit finding about this diff.
 
 ## Output format
 
@@ -44,10 +54,15 @@ Walk every changed path in the diff (or the given target) against:
 **Missing (blocking only under `--strict`):**
 - `src/api/checkout.ts:42` — new `POST /checkout` handler has no span, no
   error log on the `PaymentDeclined` branch.
+- `model/checkout.yaml:7` — `weaver registry diff` reports
+  `acme.checkout.latency` → `acme.checkout.duration` as `renamed`; the
+  `checkout-latency` check rule still queries the old name.
 
 **Unlinked (advisory):**
 - `src/components/UpsellBanner.tsx:18` — `upsell_shown` event added, but no
   dashboard/funnel currently reads it.
+- `model/checkout.yaml:11` — `acme.checkout.duration` is in the registry and
+  emitted, but nothing queries it yet.
 
 **Pass:**
 - `src/api/orders.ts` — span, RED metric, error log, and existing
