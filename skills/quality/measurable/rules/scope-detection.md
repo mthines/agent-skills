@@ -19,6 +19,12 @@ If it exists, read the **Package Map** table in it first. It maps path
 globs to `kind` (`web`, `mobile`, `api`, `worker`, `infra`, `shared-lib`) and
 to the stack already in use for that kind — use that instead of guessing.
 
+Read its **Telemetry Schema** section in the same pass. It records whether
+the repo has a Weaver registry, where it lives, and whether CI already gates
+on it — the input
+[`weaver-schema.md`](./weaver-schema.md) Step 1 branches on. Absent that
+section, treat the repo as having no registry rather than searching for one.
+
 If no profile exists, fall through to Step 2 and suggest running
 `Skill("measurable", "setup")` once at the end of the current
 operation (do not block on it).
@@ -50,3 +56,9 @@ independently rather than picking one label for the whole diff.
 Every classification, once it emits at least one signal, still needs a
 named regression detector — that check is shared across all of them and
 lives in [`regression-signals.md`](./regression-signals.md).
+
+A second check is shared across `web`, `mobile`, `api`, and `worker`, and
+applies only when the change adds or renames a signal *name*: does the name
+conform to the repo's telemetry schema, and does renaming it break a
+consumer? That one lives in [`weaver-schema.md`](./weaver-schema.md) and is
+advisory in every mode.

@@ -53,7 +53,16 @@ Ask these in **one** message so the user answers once:
    Record names/links if so; if not, note that `regression-signals.md`'s
    "propose via Dash0 chat" path is the current state and should stay
    flagged until one exists.
-6. **Dev run target** — does the project have a way to run one command and
+6. **Telemetry schema** — does the project define its signals in an
+   OpenTelemetry Weaver registry (a directory with a `manifest.yaml`), and if
+   so: where does it live, which upstream semconv version does it depend on,
+   which Weaver version is pinned, and does CI already run
+   `weaver registry check` or `weaver registry live-check`? Record `none` when
+   there is no registry — that is a real answer and it is what makes
+   [`weaver-schema.md`](./weaver-schema.md) Step 1 take its advisory branch
+   instead of searching the tree on every run. Do not propose adopting Weaver
+   during the interview; record the state and move on.
+7. **Dev run target** — does the project have a way to run one command and
    emit telemetry locally (a dev-server start command, a scriptable
    integration test, a seeded local environment)? If yes, record the command
    and the dataset it should target (recommend a dedicated dev dataset —
@@ -84,6 +93,8 @@ Re-run whenever:
 - The telemetry or RUM stack changes for any package.
 - A new repo-level instrumentation skill is installed that should be
   deferred to.
+- A Weaver registry is adopted, moved, or retired, or its pinned Weaver or
+  upstream semconv version changes.
 
 `persistent-memory`'s `write` pipeline already resolves ADD/UPDATE/DELETE
 per entry — trust it rather than hand-diffing the profile.

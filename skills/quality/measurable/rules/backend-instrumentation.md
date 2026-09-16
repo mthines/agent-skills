@@ -24,6 +24,24 @@ job entry point:
 | **RED metric** | If the operation is on a request/response hot path: a request counter, an error counter (or an `error` boolean/status-code label on the request counter), and a duration histogram. Reuse an existing RED metric for the service if one already covers this route pattern — do not create a near-duplicate. |
 | **Structured log** | At the point of failure, one log line with severity `error` (or `warn` for a recoverable/degraded case) carrying enough context to triage without reproducing: the operation name, a correlation id (trace id, request id), and the specific failure reason — not just "request failed." |
 
+## Naming: look it up, do not recall it
+
+"Never invent a custom attribute name that duplicates a registry one" is only
+enforceable if the registry is something you can query. Two ways, cheapest
+first:
+
+1. `weaver registry mcp` serves the OTel semantic conventions (or the repo's
+   own registry) to an LLM over stdio, so "is there already an attribute for
+   this?" is a lookup rather than a recollection.
+2. `weaver registry live-check` run against a real execution reports every
+   emitted name that the registry does not define, under
+   `seen_non_registry_attributes`.
+
+Both are advisory and both are covered by
+[`weaver-schema.md`](./weaver-schema.md). When neither is available, say so
+in one line and fall back to the published conventions — never to memory
+stated as fact.
+
 ## Anti-patterns specific to backend instrumentation
 
 - Wrapping a handler in a span but never setting `Error` status on failure —
@@ -54,3 +72,13 @@ Before declaring backend instrumentation done, confirm — don't assume:
 3. If a new metric was added, confirm it increments during that same test —
    a metric that's never actually recorded is worse than no metric, because
    it reads as coverage in a dashboard query that returns nothing.
+4. When the repo has a Weaver registry, or when it has none and you want the
+   check anyway, point that same run at `weaver registry live-check` and read
+   the findings — [`weaver-schema.md`](./weaver-schema.md). It grades the
+   emitted telemetry against the schema (names, types, requirement levels,
+   stability), which is the one part of step 1 above that a console exporter
+   leaves to the reader's eye.
+
+Steps 1–3 confirm the signal *fires*; step 4 confirms it is the signal it
+claims to be. Neither subsumes the other, and step 4 is advisory — a missing
+`weaver` binary costs the first three nothing.

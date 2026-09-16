@@ -6,26 +6,33 @@ description: >
   user-facing web changes (delegates to rum-tracking), OpenTelemetry
   traces/metrics/structured logs for new or changed API endpoints, and
   explicit error/warning signal paths so failures surface instead of
-  going silent. Modes: guide (default), implement, audit, setup.
+  going silent. Knows OpenTelemetry Weaver: validating a signal against
+  a semantic-convention registry, and treating a renamed metric or
+  attribute as the breaking change it is. Modes: guide (default),
+  implement, audit, setup.
   `setup` runs a first-time interview that records the project's
-  telemetry stack, per-package instrumentation approach for monorepos,
-  and regression-detection expectations as a committed Observability
-  Profile. Triggers on "is this measurable", "add telemetry",
+  telemetry stack, telemetry schema (Weaver registry), per-package
+  instrumentation approach for monorepos, and regression-detection
+  expectations as a committed Observability Profile. Triggers on
+  "is this measurable", "add telemetry",
   "instrument this endpoint", "check observability coverage",
   "add RUM and API telemetry", "will we know if this regresses",
+  "does this break the telemetry contract", "check semantic conventions",
   "set up observability profile", "/measurable".
 disable-model-invocation: false
 argument-hint: '[guide|implement|audit|setup] [<target>] [--strict]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: gate-and-applied
   tags:
     - observability
     - telemetry
     - instrumentation
     - opentelemetry
+    - weaver
+    - semantic-conventions
     - rum
     - regression-detection
     - monorepo
@@ -55,6 +62,11 @@ every time.
 > the built-in fallback. Persistence for the Observability Profile is
 > [`persistent-memory`](../../authoring/persistent-memory/SKILL.md)'s
 > `project-shared` tier — this skill never invents its own storage layer.
+> [OpenTelemetry Weaver](https://github.com/open-telemetry/weaver) is an
+> external CLI rather than a skill, so
+> [`rules/weaver-schema.md`](./rules/weaver-schema.md) owns it end to end and
+> is advisory in every mode — a repo that has not adopted Weaver loses one
+> line of output, never a finding.
 
 ---
 
@@ -97,7 +109,11 @@ The user is deciding *whether* and *what* telemetry a change needs.
    broke — per [`rules/regression-signals.md`](./rules/regression-signals.md).
    "We added a log line" is not a regression signal; "P99 latency on
    `POST /checkout` is now tracked and alerts at 2× baseline" is.
-5. Do not prescribe code yet — that's `implement` mode. Guide mode ends with
+5. If the change introduces or renames a signal name, run Step 1 of
+   [`rules/weaver-schema.md`](./rules/weaver-schema.md). A rename is a
+   breaking change whose symptom is a query that quietly returns nothing, so
+   it is the one regression the previous step cannot see.
+6. Do not prescribe code yet — that's `implement` mode. Guide mode ends with
    a short, concrete list: signals to add, and why each one is the one that
    would catch a regression.
 
@@ -122,6 +138,11 @@ instrumentation written.
    and a structured log at the point of failure. Prefer delegating to
    `Skill("otel-instrumentation")` / `Skill("otel-semantic-conventions")`
    when installed; the rule file is the fallback when they are not.
+   When the Observability Profile names a Weaver registry, add the new
+   signal to it in the **same** diff and re-run `weaver registry check` —
+   [`rules/weaver-schema.md`](./rules/weaver-schema.md). Instrumentation
+   emitting a name the registry does not define is the schema drift the
+   registry exists to prevent, and it lands silently.
 4. Either path → apply
    [`rules/regression-signals.md`](./rules/regression-signals.md) so errors
    and warnings are never silent: span status set on failure, a log at
@@ -175,6 +196,11 @@ checked for coverage gaps, without writing anything.
    registry — a brand-new coverage heuristic earns a hard gate only once a
    team has opted in, not on day one.
 5. Never auto-edit in `audit` mode — that is what `implement` mode is for.
+6. When the Observability Profile names a Weaver registry, walk the
+   registry-conformance row of
+   [`rules/audit-checklist.md`](./rules/audit-checklist.md) too, and fold its
+   output into the same three verdicts. Weaver never adds a fourth verdict —
+   the `pr-reviewer` lens maps exactly three, so a fourth reaches no surface.
 
 **Callers of `audit` mode.** `autonomous-workflow` Phase 4 (its Observability Gate) and the
 `pr-reviewer` agent's measurability lens (Step 2.4e, via
@@ -205,9 +231,9 @@ Load on demand — do not preload.
 
 | Mode        | Files                                                                                                                                                                                                            |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `guide`     | [`rules/scope-detection.md`](./rules/scope-detection.md), [`rules/frontend-rum.md`](./rules/frontend-rum.md), [`rules/backend-instrumentation.md`](./rules/backend-instrumentation.md), [`rules/regression-signals.md`](./rules/regression-signals.md) |
+| `guide`     | [`rules/scope-detection.md`](./rules/scope-detection.md), [`rules/frontend-rum.md`](./rules/frontend-rum.md), [`rules/backend-instrumentation.md`](./rules/backend-instrumentation.md), [`rules/regression-signals.md`](./rules/regression-signals.md), and [`rules/weaver-schema.md`](./rules/weaver-schema.md) when the change adds or renames a signal name |
 | `implement` | Same as `guide`, plus the delegated skill's own required reading (`rum-tracking`, `otel-instrumentation` when installed)                                                                                       |
-| `audit`     | [`rules/audit-checklist.md`](./rules/audit-checklist.md), [`rules/scope-detection.md`](./rules/scope-detection.md)                                                                                             |
+| `audit`     | [`rules/audit-checklist.md`](./rules/audit-checklist.md), [`rules/scope-detection.md`](./rules/scope-detection.md), and [`rules/weaver-schema.md`](./rules/weaver-schema.md) when the Observability Profile names a registry |
 | `setup`     | [`rules/setup-profile.md`](./rules/setup-profile.md), [`templates/observability-profile.template.md`](./templates/observability-profile.template.md)                                                          |
 
 ---
@@ -233,8 +259,16 @@ Load on demand — do not preload.
    dashboards, alerts, or SLOs directly — those are proposed through Dash0
    chat (the `dash0` agent) so a human reviews and creates them there.
 6. **Companions skip silently.** `rum-tracking`, `otel-instrumentation`,
-   `otel-semantic-conventions`, and `persistent-memory` are all optional —
-   degrade to the built-in rule files and say so in one line, never block.
+   `otel-semantic-conventions`, `persistent-memory`, and the `weaver` CLI are
+   all optional — degrade to the built-in rule files and say so in one line,
+   never block.
+7. **The signal's name is part of its contract.** A renamed metric or
+   attribute breaks every dashboard and check rule reading the old name, and
+   it breaks them *quietly* — no error, no failing test, just a panel that
+   stopped having data. Principle 1 asks whether something watches the
+   signal; this one asks whether it is still watching the same signal, and
+   [`rules/weaver-schema.md`](./rules/weaver-schema.md) is how it is
+   answered mechanically rather than by memory.
 
 ## Anti-patterns (one-liners)
 
@@ -251,3 +285,11 @@ Load on demand — do not preload.
 - Treating `audit` mode findings as blocking by default — they're advisory
   unless the caller explicitly passed `--strict`, and even then `unlinked`
   findings never block.
+- Shipping a renamed metric or attribute as a non-breaking change because no
+  test failed — no test can fail, the consumers are dashboards and check
+  rules.
+- Citing a green `weaver registry check` as evidence a change is
+  instrumented — it validates the schema, and a registry full of signals no
+  code emits passes it.
+- Bundling the adoption of a Weaver registry into an unrelated feature diff
+  instead of proposing it as its own change.

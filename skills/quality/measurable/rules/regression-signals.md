@@ -39,6 +39,29 @@ logged at `error` severity will desensitize whoever watches the error-rate
 metric to real regressions. Reserve `error` severity and `Error` span status
 for genuinely unexpected failures.
 
+## The signal's own contract is a regression surface
+
+The three questions above are about the *code* regressing. A signal can also
+regress on its own account, and this one answers to none of them: rename a
+metric or an attribute and every dashboard panel, check rule, and saved query
+reading the old name goes quiet rather than red. A signal still exists, and
+something still watches a name — the name nothing emits any more.
+
+Whenever a change renames, deprecates, or removes a signal name, answer a
+fourth question before the change ships:
+
+> **What reads the old name, and what happens to it?**
+
+`weaver registry diff` answers the first half mechanically when the repo has
+a telemetry schema — see
+[`weaver-schema.md`](./weaver-schema.md). The second half is the migration,
+and it is the answer that makes the finding actionable: update the consumers,
+or keep the old name emitting alongside the new one for a release.
+
+This stays inside the existing grading. An unanswered fourth question is a
+`missing` finding, not a new category — see
+[Audit-mode classification](#audit-mode-classification) below.
+
 ## Proposing new dashboards/alerts (hands-off boundary)
 
 When Steps 1–3 above surface a gap — a signal exists but nothing watches
@@ -59,8 +82,9 @@ When running as part of `audit` mode or the `autonomous-workflow` Phase 4
 gate, grade each signal:
 
 - **`missing`** — a changed path in a `web`/`mobile`/`api`/`worker`
-  classification with no signal at all. Advisory by default; blocks the
-  gate only when the caller passed `--strict`.
+  classification with no signal at all, **or** a renamed/deprecated/removed
+  signal name whose consumers are unaccounted for. Advisory by default;
+  blocks the gate only when the caller passed `--strict`.
 - **`unlinked`** — a signal exists but Question 3 above has no answer (no
   dashboard, no alert, no explicit propose-a-check note). Always
   advisory — surfaced in the report, never blocks, even under `--strict`.
