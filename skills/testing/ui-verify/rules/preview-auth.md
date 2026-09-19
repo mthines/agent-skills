@@ -107,7 +107,7 @@ A `storageState` file existing does **not** prove the session is valid — it ex
 
 It is the one positive signal, used at three points:
 
-1. **`/aw-setup`** runs the login once and waits for `authed_check` to confirm the flow actually authenticates before recording the profile (`confirmed_at_setup: true`).
+1. **`/aw-setup`** (or its front door `/ui-verify setup`, which delegates to `aw-setup --target preview`) runs the login once and waits for `authed_check` to confirm the flow actually authenticates before recording the profile (`confirmed_at_setup: true`).
 2. **`refresh-auth.mjs`** waits for it after submitting credentials — a stronger post-login signal than a URL change.
 3. **`aw-tester`** checks it before running authed specs; absent → the session is stale → run `refresh.command` and retry once, rather than trusting the file's mere existence.
 
