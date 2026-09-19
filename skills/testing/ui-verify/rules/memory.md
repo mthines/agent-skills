@@ -1,8 +1,8 @@
 ---
-title: The two-way memory loop — preview-spec-lessons + aw-tester-lessons
+title: The two-way memory loop — ui-verify-lessons + aw-tester-lessons
 impact: HIGH
 tags:
-  - preview-spec
+  - ui-verify
   - lorekit
   - lessons
   - self-improvement
@@ -19,33 +19,33 @@ The bucket taxonomy, the shared record schema, and the read/write shapes are own
 
 | Bucket | Holds | Written by | Read by |
 | --- | --- | --- | --- |
-| **`preview-spec-lessons`** (new, `loop::preview-spec-lessons`) | Spec-quality and navigation knowledge — a required precondition, a route quirk, a preview-auth step. | the runner (this skill, `run`) | the author (this skill, `author`) |
+| **`ui-verify-lessons`** (new, `loop::ui-verify-lessons`) | Spec-quality and navigation knowledge — a required precondition, a route quirk, a preview-auth step. | the runner (this skill, `run`) | the author (this skill, `author`) |
 | **`aw-tester-lessons`** (existing, `loop::aw-tester-lessons`) | Locator-healing and verification friction. | `aw-tester` | `aw-tester` at run start, **and the author at author time** (cross-bucket read) |
 
 The cross-bucket read is the second half of the loop: locator friction `aw-tester` discovered informs which locators the author picks.
-If `memory.*` is not connected, skip every step here silently and log one line: `preview-spec: memory.* not connected, continuing`.
+If `memory.*` is not connected, skip every step here silently and log one line: `ui-verify: memory.* not connected, continuing`.
 
 ## Read at author time
 
 Before writing a spec (`author` Step 1), read both buckets narrow-to-broad — `repo::` first, then `global`:
 
 ```text
-memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::preview-spec-lessons"], limit: 50 }
-memory.list { scope: "global",               tags: ["loop::preview-spec-lessons"], limit: 50 }
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::ui-verify-lessons"], limit: 50 }
+memory.list { scope: "global",               tags: ["loop::ui-verify-lessons"], limit: 50 }
 memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-tester-lessons"],    limit: 50 }
 memory.list { scope: "global",               tags: ["loop::aw-tester-lessons"],    limit: 50 }
 ```
 
 Apply matched lessons as authoring constraints:
 
-- A `preview-spec-lessons` navigation lesson → write its step into the spec's `preconditions:` or `flow:` (e.g. dismiss the cookie banner first, add `?tab=settings` to the `url:`).
+- A `ui-verify-lessons` navigation lesson → write its step into the spec's `preconditions:` or `flow:` (e.g. dismiss the cookie banner first, add `?tab=settings` to the `url:`).
 - An `aw-tester-lessons` locator lesson → prefer the locator form that healed reliably; avoid the one that drifted.
 
 Lessons are **advisory**. They shape the spec; they never make you skip authoring a spec or invent a step you cannot justify from the diff.
 
 ## Write at run time
 
-After the runner reports its verdict (`run` Step 6), write a `preview-spec-lessons` entry **only** when a spec failed for a reason a better spec would have avoided:
+After the runner reports its verdict (`run` Step 6), write a `ui-verify-lessons` entry **only** when a spec failed for a reason a better spec would have avoided:
 
 - A missing precondition every page needs (cookie banner, feature-flag cookie, org selector).
 - A route that needs a query param or path segment to render the changed component.
@@ -65,10 +65,10 @@ Dedup, then write:
 memory.search { q: "<lesson keywords>", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
 memory.write {
   scope: "<global | repo::{owner}/{repo}>",
-  key:   "preview-spec-lessons::<kebab-slug>",
+  key:   "ui-verify-lessons::<kebab-slug>",
   value: "<lesson body — see schema below>",
-  tags:  ["loop::preview-spec-lessons", "source::run"],
-  source_agent: "preview-spec",
+  tags:  ["loop::ui-verify-lessons", "source::run"],
+  source_agent: "ui-verify",
   trigger: "spec-navigation-friction",
   ttl_days: 90
 }
@@ -92,11 +92,45 @@ Every store-backed fact has its own first-class `memory.write` field: the store 
 **What happened:** <the spec step that failed, and the observable>
 **Why:** <the navigation / precondition cause, or "unknown">
 **Do this instead:** <prescriptive, testable authoring instruction>
-**Promotion target:** <where this would harden preview-spec authoring, or "none">
+**Promotion target:** <where this would harden ui-verify authoring, or "none">
 ```
 
 Schema authority: [`write-pipeline.md#lesson-scope-entries`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
 The **Applies when** line must be a concrete matching signal (a route glob, a component name, the `preview` target), never a subjective condition — a lesson without one cannot be matched mechanically, so do not persist it.
+
+## The UI surface record
+
+This is the "learns what counts as UI, per repo" half of the loop. It is a **config record, not a friction lesson** — it carries a JSON body the `is-ui-diff` gate consumes, so it is the one record under this tag that is not markdown-only.
+
+| Field | Value |
+| --- | --- |
+| Scope | `repo::{owner}/{repo}` — a UI surface is repo-specific by definition. |
+| Key | `ui-verify-lessons::ui-surface` (exactly one per repo). |
+| Tag | `loop::ui-verify-lessons` (so it is discoverable alongside the friction lessons) plus `kind::config`. |
+| Written by | `/aw-setup` at setup time, and refined when the gate misclassifies (below). |
+| Read by | `author` Step 0 — forwarded to the gate as `--surface-json`. |
+
+The body is the surface JSON the gate accepts (every field optional):
+
+```json
+{
+  "mode": "extend",
+  "extensions": [".ts"],
+  "dirExtensions": [],
+  "dirs": ["src/web", "packages/ui/src"],
+  "globs": [],
+  "exclude": ["packages/api/**"]
+}
+```
+
+`mode: "extend"` (default) merges with the gate's broad defaults; `mode: "replace"` pins the surface exactly (use for a repo whose layout the defaults get wrong). See the gate's own header for each field's meaning.
+
+**The refine loop — this is how it learns.** The gate is deterministic, so a wrong answer is always a surface gap, never a coin toss:
+
+- A **UI change classified `no`** (a spec that should have been authored was not) → widen the surface: add the missing `dirs` entry or promote the extension (e.g. a frontend-only repo adds `.ts` to `extensions`). Then re-run `author`.
+- A **non-UI change classified `yes`** (a backend-only PR got a spec) → narrow it: add the path to `exclude`, or switch to `mode: "replace"` with the real UI dirs.
+
+Write the correction back to this record (`memory.write` same scope + key updates it in place). The next PR in the repo — anyone's — decides correctly from the start. Never store a path that reveals a secret; a directory layout is not sensitive, a token embedded in one would be.
 
 ## Entrenchment guards
 

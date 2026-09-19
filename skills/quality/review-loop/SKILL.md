@@ -13,7 +13,7 @@ description: >
   check state and delegates a red mechanical failure to ci-auto-fix, so
   convergence means zero open threads AND CI not red (--no-ci opts out; create-pr
   and autonomous-workflow pass it because they own their own CI phase). On a UI PR
-  it also runs the committed preview-spec block against the live preview deployment
+  it also runs the committed ui-verify block against the live preview deployment
   once at exit (report-only, never blocks convergence; --no-preview-run opts out —
   autonomous-workflow passes it because its Phase 7 already rehearses the same
   specs). With --external-review the reviewer is out-of-process: sub-step A waits on the
@@ -215,7 +215,7 @@ Everything else is a flag.
 | `--external-review` | Replace sub-step A: wait for an **out-of-process** reviewer instead of dispatching `pr-reviewer`. See [Sub-step A — external-review mode](#sub-step-a--external-review-mode). |
 | `--interval S` | Poll interval in seconds for `--external-review`, default `300`, **clamped to `540`**. Ignored without `--external-review`. |
 | `--no-ci` | Skip sub-step D (the CI pass). Callers that own their own CI phase pass this — `create-pr` (Steps 7–9) and `autonomous-workflow` (Phase 7) both do. |
-| `--no-preview-run` | Skip [Step 1.6](#step-16-preview-spec-run-report-only-once-on-exit), the report-only preview-spec run at exit. `autonomous-workflow` passes this because its Phase 7 spec rehearsal already runs the same specs against the preview; `create-pr` does **not**, so a hand-driven UI PR gets its authored spec verified here. |
+| `--no-preview-run` | Skip [Step 1.6](#step-16-ui-verify-run-report-only-once-on-exit), the report-only ui-verify run at exit. `autonomous-workflow` passes this because its Phase 7 spec rehearsal already runs the same specs against the preview; `create-pr` does **not**, so a hand-driven UI PR gets its authored spec verified here. |
 | `--merge` | Merge the PR (squash) on the first agent approval. After the loop, [Step 2.5](#step-25-merge-under---merge-on-approval) merges **only** when the run reached clean convergence (`all-threads-resolved` — every non-blocking comment fixed or answered), the final review is an approval (pr-reviewer `PASS`, or a GitHub `reviewDecision == APPROVED` under `--external-review`), and CI is green. It undrafts first (the one case that overrides *never undraft*). It never merges on a non-clean convergence, a non-PASS verdict, or pending/red CI — it reports why and stops. |
 
 **Incompatible combinations**, refused or downgraded at Step 0:
@@ -327,7 +327,7 @@ if [[ " $ARGUMENTS " == *" --no-ci "* ]]; then
   NO_CI=1
 fi
 
-# --no-preview-run: skip Step 1.6, the report-only preview-spec run at exit.
+# --no-preview-run: skip Step 1.6, the report-only ui-verify run at exit.
 # autonomous-workflow passes this (its Phase 7 rehearses the same specs).
 NO_PREVIEW_RUN=0
 if [[ " $ARGUMENTS " == *" --no-preview-run "* ]]; then
@@ -634,10 +634,10 @@ The `simplify` mode applies Class M mechanical refactors and dispatches no pr-re
 All other `polish` modes trigger an internal agent pass, which would create a dispatch cycle.
 This is the anti-circularity guarantee.
 
-### Step 1.6: Preview-spec run (report-only, once, on exit)
+### Step 1.6: UI-verify run (report-only, once, on exit)
 
 After the loop exits — however it exited (converged, no-progress, or cap) — run the
-PR's embedded preview-spec **once** against the live preview deployment. This is the
+PR's embedded ui-verify **once** against the live preview deployment. This is the
 run half of the `author` step `create-pr` performs at its Step 6.4: the spec was
 written into the PR body; here it is executed.
 
@@ -651,24 +651,24 @@ Skip this step entirely when **any** of:
 Otherwise dispatch it **once**, regardless of iteration count:
 
 ```text
-Skill("preview-spec", "run <PR-URL>")
+Skill("ui-verify", "run <PR-URL>")
 ```
 
-`preview-spec run` owns the whole procedure: it reads the committed
-`<!-- preview-spec:v1 -->` block (the **only** source — never the gitignored
+`ui-verify run` owns the whole procedure: it reads the committed
+`<!-- ui-verify:v1 -->` block (the **only** source — never the gitignored
 `.agent/{branch}/specs.md`, so it works on this or any checkout), resolves the
 preview URL via the GitHub deployments API, dispatches `aw-tester --all`, and
 returns a verdict. This loop only records the outcome.
 
 **Deliberately invoked with no `--url`.** The deployments API has no
-`mcp__github__*` equivalent, so on the `mcp` access path `preview-spec run`
+`mcp__github__*` equivalent, so on the `mcp` access path `ui-verify run`
 cannot resolve a URL and returns `inconclusive: no access path for deployment
 lookup (pass --url)` — the row below records it with an actionable note. This
-loop does **not** resolve the URL itself: that is `preview-spec`'s own concern
-([`preview-url-resolution.md`](../../testing/preview-spec/rules/preview-url-resolution.md)),
+loop does **not** resolve the URL itself: that is `ui-verify`'s own concern
+([`preview-url-resolution.md`](../../testing/ui-verify/rules/preview-url-resolution.md)),
 and a second implementation here would be the drift surface this repo argues
 against. A caller that already holds a preview URL should run
-`/preview-spec run <PR-URL> --url <preview-url>` directly instead.
+`/ui-verify run <PR-URL> --url <preview-url>` directly instead.
 
 **Report-only — this step never gates.** The verdict does **not** block convergence,
 does **not** reopen the loop, and does **not** undraft the PR — matching
@@ -678,17 +678,17 @@ this step runs; the preview verdict is surfaced for the human undrafting the PR.
 
 Map its outcome into the report:
 
-| `preview-spec run` outcome | This loop records |
+| `ui-verify run` outcome | This loop records |
 | --- | --- |
-| `no spec` (no block — not a UI PR, or `author` never ran) | `not run (no preview-spec block)` — log and continue |
-| `inconclusive: preview not deployed` | `inconclusive (preview not deployed at exit)` — note `re-run /preview-spec run <PR-URL> once the preview is up`. Never a red |
-| `inconclusive: no access path for deployment lookup (pass --url)` | `inconclusive (no deployment lookup on this access path)` — note `re-run /preview-spec run <PR-URL> --url <preview-url>`. Never a red, and never recorded as `preview not deployed`: no lookup ran, so waiting for the build fixes nothing and only an explicit URL changes the outcome |
+| `no spec` (no block — not a UI PR, or `author` never ran) | `not run (no ui-verify block)` — log and continue |
+| `inconclusive: preview not deployed` | `inconclusive (preview not deployed at exit)` — note `re-run /ui-verify run <PR-URL> once the preview is up`. Never a red |
+| `inconclusive: no access path for deployment lookup (pass --url)` | `inconclusive (no deployment lookup on this access path)` — note `re-run /ui-verify run <PR-URL> --url <preview-url>`. Never a red, and never recorded as `preview not deployed`: no lookup ran, so waiting for the build fixes nothing and only an explicit URL changes the outcome |
 | any other `inconclusive: <reason>` (`preview building`, `no preview environment`, `preview deploy failed`, `preview URL not published`) | `inconclusive (<reason> at exit)` — log the reason verbatim and continue. Never a red |
-| `empty spec` (markers present, body empty) | `not run (empty preview-spec block)` — log and continue. Distinct from `no spec` on purpose: `author` **did** run and embedded nothing, which is a spec-authoring bug worth naming, not a PR that needed no spec |
+| `empty spec` (markers present, body empty) | `not run (empty ui-verify block)` — log and continue. Distinct from `no spec` on purpose: `author` **did** run and embedded nothing, which is a spec-authoring bug worth naming, not a PR that needed no spec |
 | `NOT RUN (<reason>)` (`chrome unavailable, user declined Playwright`, `sub-agent dispatch unavailable`, `no Chrome extension and no sub-agent dispatch available`) | `not run (<reason>)` — log the reason verbatim and continue. Never a red: no driver executed, so there is no verdict to be red about |
 | `green` | `green (<N> specs on <preview-url>)` |
 | `red` | `red (<N> failing on <preview-url>) — review before undrafting`. Report-only; does not reopen the loop |
-| `preview-spec` not installed / `Skill()` refused | `skipped (preview-spec not available)` — log one line and continue; it is a non-load-bearing companion |
+| `ui-verify` not installed / `Skill()` refused | `skipped (ui-verify not available)` — log one line and continue; it is a non-load-bearing companion |
 | anything else | `not run (unrecognised outcome: <verbatim>)` — quote what it returned and continue. An unmapped return is never recorded as `green` and never as a skip; the delegate gaining an outcome this table has no row for is exactly how a permanently-false note reached a report once already |
 
 Run it **at most once** per `review-loop` invocation — it is an exit signal, not a
@@ -744,8 +744,8 @@ Merge if and **only if all** of the following hold — any single failure means
 | **CI green** | CI is actually **green**, or the repo genuinely has no CI. Pending is **not** green — the loop never waits for CI, so a converged-but-pending run stops here without merging | a fresh stateless `gh pr checks "$PR_NUMBER" --repo "$RESOLVED_REPO"` read (**run this even under `--no-ci`** — `--no-ci` only skips the in-loop `ci-auto-fix` delegation; a merge still confirms green first) |
 
 A non-`PASS` final verdict (`WARN` or `FAIL`) is **not** an approval: report
-`not merged (verdict <V> — not a clean approval)` and stop. The preview-spec
-verdict from [Step 1.6](#step-16-preview-spec-run-report-only-once-on-exit) is
+`not merged (verdict <V> — not a clean approval)` and stop. The ui-verify
+verdict from [Step 1.6](#step-16-ui-verify-run-report-only-once-on-exit) is
 **report-only and never gates the merge** (matching its treatment everywhere
 else); surface a `red` preview verdict in the report so the human sees it, but do
 not let it block or force the merge.
@@ -800,7 +800,7 @@ Open threads at exit: <count>
 CI at exit: <green | pending | red (<failing check names>) | error (<verbatim query failure>) | not run (--no-ci) | none on this repo>
   ci-auto-fix handoffs: <CI_HANDOFFS> of 2
 
-Preview spec: <green (<N> specs on <url>) | red (<N> failing on <url>) — review before undrafting | inconclusive (preview not deployed at exit) | inconclusive (no deployment lookup on this access path) | inconclusive (<reason> at exit) | not run (no preview-spec block) | not run (empty preview-spec block) | not run (<reason>) | not run (unrecognised outcome: <verbatim>) | skipped (--no-preview-run) | skipped (--no-feedback) | skipped (preview-spec not available)>
+UI verify: <green (<N> specs on <url>) | red (<N> failing on <url>) — review before undrafting | inconclusive (preview not deployed at exit) | inconclusive (no deployment lookup on this access path) | inconclusive (<reason> at exit) | not run (no ui-verify block) | not run (empty ui-verify block) | not run (<reason>) | not run (unrecognised outcome: <verbatim>) | skipped (--no-preview-run) | skipped (--no-feedback) | skipped (ui-verify not available)>
 
 PR description: <refreshed | unchanged (no code applied) | skipped (--no-refresh)>
 Linear note: <posted <ticket> | no ticket linked | Linear MCP unavailable | skipped>
@@ -835,7 +835,7 @@ threads over a red build is not a review-ready PR.
 - **One `implement-suggestion` per iteration, no `--watch`.** The loop drives re-review; `--watch` waits for external bots and would conflict.
 - **Cap is a hard limit.** If threads are still open at the cap, surface them and stop. Do not extend the cap silently.
 - **Convergence requires CI settled, not just threads resolved.** Unless `--no-ci` is set, a red check blocks the clean-convergence exit. Reporting zero open threads over a red build is the CI-shaped version of green-washing.
-- **The preview-spec run is report-only and never part of convergence.** Step 1.6 runs after the loop has already decided convergence (threads-resolved + CI-settled); its verdict is surfaced for the human, never gates the loop, and never undrafts — matching `autonomous-workflow` Phase 7. It runs at most once per invocation, reads only the committed `preview-spec:v1` block (never `.agent/{branch}/specs.md`), and `autonomous-workflow` opts out via `--no-preview-run` because Phase 7 rehearses the same specs. A missing `preview-spec` is a silent skip, not a failure.
+- **The ui-verify run is report-only and never part of convergence.** Step 1.6 runs after the loop has already decided convergence (threads-resolved + CI-settled); its verdict is surfaced for the human, never gates the loop, and never undrafts — matching `autonomous-workflow` Phase 7. It runs at most once per invocation, reads only the committed `ui-verify:v1` block (never `.agent/{branch}/specs.md`), and `autonomous-workflow` opts out via `--no-preview-run` because Phase 7 rehearses the same specs. A missing `ui-verify` is a silent skip, not a failure.
 - **Never fix CI in this context.** Sub-step D classifies and delegates to `ci-auto-fix`; it applies no fix itself, and every `ci-auto-fix` refusal (no `--no-verify`, no `continue-on-error`, no skipped suites, no weakened assertions) holds transitively.
 - **Never carry CI watch state — query it.** Sub-step D reads check state statelessly at the current remote head and writes nothing; it never records a verdict or a spent budget for another phase to inherit, and it never reintroduces a cross-phase watch-state file ([`diagnostic-surface.md`](../../workflow/autonomous-workflow/rules/diagnostic-surface.md) — *watch state is queried, never carried*). `CI_HANDOFFS` is counted inside this run only.
 - **A failed poll is never a quiet reviewer.** Under `--external-review`, `POLL_ERROR` aborts with `poll error`. Converting a broken probe into "the reviewer had nothing to say" reports a never-reviewed PR as converged.
@@ -854,6 +854,6 @@ threads over a red build is not a review-ready PR.
 | `autonomous-workflow` Phase 6/7 | Invokes `review-loop` in place of the retired `reviewer` agent dispatches. |
 | `review-changes` | Routes to `review-loop` as the primary convergence entry point. |
 | `ci-auto-fix` | Sub-step D: dispatched as a subagent on a red check, capped at 2 handoffs per run. Owns the fix; this loop only classifies and delegates. Skipped under `--no-ci`. |
-| `preview-spec run` | Step 1.6: dispatched once at exit on a UI PR to run the committed spec against the preview deployment. Report-only — never gates convergence or undrafts. Skipped under `--no-preview-run` (which `autonomous-workflow` passes, its Phase 7 owning the same rehearsal) or when the skill is absent. Pairs with `create-pr` Step 6.4, which authored the spec. |
+| `ui-verify run` | Step 1.6: dispatched once at exit on a UI PR to run the committed spec against the preview deployment. Report-only — never gates convergence or undrafts. Skipped under `--no-preview-run` (which `autonomous-workflow` passes, its Phase 7 owning the same rehearsal) or when the skill is absent. Pairs with `create-pr` Step 6.4, which authored the spec. |
 | `review-activity-poll` | Shared rule owning the `--external-review` wait — [`agents/shared/rules/review-activity-poll.md`](../../../agents/shared/rules/review-activity-poll.md), co-owned with `implement-suggestion --watch`. |
 | `implement-suggestion --watch` | **Sibling, never nested.** Both wait on an out-of-process reviewer via the shared poll; `--watch` is the thin one (apply + push + stop, and it reads CI only as a stop reason). This loop adds `--resolve-all`, simplify, CI delegation, and the description refresh. The hard rule *one `implement-suggestion` per iteration, no `--watch`* keeps them from stacking. |

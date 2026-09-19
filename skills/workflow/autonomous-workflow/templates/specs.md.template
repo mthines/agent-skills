@@ -47,6 +47,17 @@ Refactor: no                       # "yes" hints regression intent: assert behav
 #   network: METHOD /path returned NNN
 #   Example: network: POST /api/alerts returned 201
 #
+# CAPTURE steps (documentation screenshots):
+#   A flow step of the form:
+#     - CAPTURE "hero after submit"           — screenshot the current viewport
+#     - CAPTURE "full dashboard" fullPage     — full-page screenshot
+#   A CAPTURE is neither an action nor an assertion: it never resolves a
+#   locator and never changes the verdict. Use it to record a rendered state
+#   for the PR, the walkthrough, or a before/after. The runner writes each to
+#   .agent/{branch}/.aw-tester/captures/<spec-id>-<slug>.png and lists it in
+#   the verdict's captures: array. A capture that cannot be written is a note,
+#   never a failure.
+#
 # continues-from:
 #   Reuse the browser state from a prior spec's end — the prior spec's page,
 #   cookies, and local storage are inherited as the starting state for this spec.
@@ -75,6 +86,7 @@ flow:
     THEN {role: "dialog", name: "Add Widget"} is not visible
     AND {text: "Time Series"} is visible on the page
     AND network: POST /api/dashboards/{dashboardId}/widgets returned 201
+  - CAPTURE "dashboard with new time-series widget"
 
 ## Spec 2: <one-line user goal — refactor regression check>
 persist: critical-path

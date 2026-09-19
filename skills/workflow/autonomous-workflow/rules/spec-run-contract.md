@@ -46,7 +46,20 @@ runner, nor any caller, invents syntax it does not define.
 Parse each `## Spec N:` block into: title, `persist` level, `url` (resolve
 `{placeholder}` against `fixtures.references`), `preconditions` (log; do not
 re-check what auth or seed already guarantees), the ordered `flow` steps
-(`WHEN` = action, `THEN`/`AND` = assertion), and `continues-from`.
+(`WHEN` = action, `THEN`/`AND` = assertion, `CAPTURE` = documentation
+screenshot), and `continues-from`.
+
+**`CAPTURE` semantics** are identical for both runners. `CAPTURE "<label>"`
+(optionally `... fullPage`) takes a screenshot of the current page state,
+labelled for later use as documentation — a before/after, a rendered-state
+artifact for the PR or the walkthrough. It is **neither an action nor an
+assertion**: it never resolves a locator, never changes verdict, and a capture
+that cannot be written is a `notes` line, never a `fail`. Write captures under
+`.agent/{branch}/.aw-tester/captures/` named `<spec-id>-<slug-of-label>.png`
+(`fullPage` sets the full-page flag), and list each one in the verdict's
+`captures:` array (§ 4). Because a `CAPTURE` step cannot fail, it is exempt from
+bail: an `--bail-on-first-red` run still records captures that ran before the
+first red step.
 
 **`continues-from` semantics** are identical for both runners: the prior spec's
 page, cookies, and local storage are the starting state for this spec. The prior
@@ -115,12 +128,23 @@ specs:
       attempted healing: getByText('X') — found 0 elements
       last network response: POST /api/foo → 500 {"error":"db timeout"}
       console errors: TypeError: Cannot read property 'id' of undefined (app.js:142)
+captures:                       # omit the key entirely when no CAPTURE steps ran
+  - spec: Spec-1
+    label: hero after submit
+    path: .agent/<branch>/.aw-tester/captures/spec-1-hero-after-submit.png
+    full_page: false
 notes: <optional one-paragraph context; omit if nothing notable>
 ```
 
 A runner may add engine-specific keys **after** the shared keys — `aw-tester`
 appends a `hot_loop:` block for the executor's Playwright re-run; a caller that
 does not use them ignores them. The shared keys above never change shape.
+
+`captures:` is a shared optional key (both runners can screenshot). Omit it when
+no `CAPTURE` step ran; otherwise list one entry per capture with its `spec`,
+`label`, written `path`, and `full_page` flag. A `CAPTURE` that failed to write
+is reported in `notes`, and its absence from `captures:` is the only signal —
+it never appears as a failed spec.
 
 **Hard rules for the verdict block:**
 

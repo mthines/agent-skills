@@ -203,7 +203,7 @@ for the full registry, trigger conditions, and **how to disable any companion**.
 | 6     | `aw-review-quality-gate` | After `create-pr`'s `review-loop` returns findings — false-positive filter (advisory) | —   |
 | 6     | `aw-create-walkthrough` | Full Mode only                                        | —                |
 | 6     | `create-pr`            | Always — push, open draft PR, run review-loop, watch CI | —               |
-| 6 (UI)| `preview-spec`         | Via `create-pr` Step 6.4 on a UI diff — PR-body verification spec, seeded from `specs.md` when present | `author` |
+| 6 (UI)| `ui-verify`         | Via `create-pr` Step 6.4 on a UI diff — PR-body verification spec, seeded from `specs.md` when present | `author` |
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                 | `<run-id\|pr-url>` |
 | 7     | `review-loop` *(skill)* | After CI green — bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence (self-relation; `pr-reviewer` detects authorship automatically) | `<pr-url> --critical` |
 | 7     | `lorekit-memory`       | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `memory.write loop::aw-lessons` |
@@ -410,7 +410,7 @@ per-companion disabling, see the [README](./README.md#installation) and
 - [`aw-create-plan`](../aw-create-plan/SKILL.md) — `plan.md` artifact generator
 - [`aw-create-walkthrough`](../aw-create-walkthrough/SKILL.md) — `walkthrough.md` artifact generator
 - [`aw-setup`](./aw-setup/SKILL.md) — **one-time UI aw-target scaffolding** (prerequisite for `aw-tester`; run `/aw-setup` once per project before the first autonomous UI task)
-- [`aw-tester-chrome`](./aw-tester-chrome/SKILL.md) — in-session Chrome runner; the fast local sibling of the `aw-tester` agent. Same spec grammar and verdict, driven through the claude-in-chrome extension instead of Playwright. Picked by `preview-spec run --driver chrome|auto`; not for sub-agent / CI flows (no extension there)
+- [`aw-tester-chrome`](./aw-tester-chrome/SKILL.md) — in-session Chrome runner; the fast local sibling of the `aw-tester` agent. Same spec grammar and verdict, driven through the claude-in-chrome extension instead of Playwright. Picked by `ui-verify run --driver chrome|auto`; not for sub-agent / CI flows (no extension there)
 - [`code-quality`](../../quality/code-quality/SKILL.md) — readability and complexity review
 - [`tdd`](../../quality/tdd/SKILL.md) — RED-GREEN-REFACTOR enforcement
 - [`ux`](../../design/ux/SKILL.md) — UI / accessibility review

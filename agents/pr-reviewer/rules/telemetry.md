@@ -147,7 +147,7 @@ A lead the verifier cannot attribute to the diff is `unobtainable` and is **drop
 
 ## Preview comparison
 
-The preview emits spans only when something drives it: `preview-spec run` dispatching `aw-tester`, a developer clicking through, or an E2E job pointed at it — and only if the preview app's exporter tags resources with `vcs.ref.head.revision` or `git.pull_request_link`.
+The preview emits spans only when something drives it: `ui-verify run` dispatching `aw-tester`, a developer clicking through, or an E2E job pointed at it — and only if the preview app's exporter tags resources with `vcs.ref.head.revision` or `git.pull_request_link`.
 
 Under `production+preview`, one comparison per touched route or service, preview head vs the production 7-day baseline:
 

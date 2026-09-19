@@ -2,7 +2,7 @@
 title: Runner — extract, resolve, materialize, dispatch aw-tester, report
 impact: HIGH
 tags:
-  - preview-spec
+  - ui-verify
   - aw-tester
   - playwright
   - runner
@@ -17,7 +17,8 @@ The runner is an **on-demand orchestrator** — it resolves and dispatches once,
 
 **From the PR (default).** Read the PR body with the call for your resolved access path ([`SKILL.md` Step 0](../SKILL.md#step-0-resolve-your-github-access-path) holds the mapping): `gh pr view <pr> --json body -q .body` on the `gh` path, `mcp__github__pull_request_read` with `method: "get"` on the `mcp` path.
 Unlike the deployment lookup in Step 2, this read has an mcp equivalent, so an absent `gh` never blocks it.
-Extract the region between `<!-- preview-spec:v1 -->` and `<!-- /preview-spec:v1 -->` (see [`spec-format.md`](./spec-format.md)).
+Extract the region between `<!-- ui-verify:v1 -->` and `<!-- /ui-verify:v1 -->` (see [`spec-format.md`](./spec-format.md)).
+**Legacy fallback:** if that marker is absent, look for the former `<!-- preview-spec:v1 -->` … `<!-- /preview-spec:v1 -->` region — a block authored before this skill was renamed — and run it identically (the body grammar is unchanged). Only when *neither* marker is present is there no spec.
 The committed PR body is the **only** source the PR path reads. It never reads `.agent/{branch}/specs.md` — that file is gitignored and absent on a fresh checkout ([`spec-sources.md § Two artifacts, two lifetimes`](./spec-sources.md#two-artifacts-two-lifetimes)). Verifying against the PR is therefore independent of any local aw run.
 
 - No markers → report `no spec — nothing to run` and stop. The PR has no embedded spec; `author` never ran, or the diff was not UI.
@@ -34,7 +35,7 @@ Any `inconclusive: …` outcome there is terminal for this run — report it and
 
 ## Step 3: Materialize the ephemeral files
 
-Write two files under `.agent/{branch}/.preview-spec/` (the branch is the PR's head ref; the directory is git-ignored scratch):
+Write two files under `.agent/{branch}/.ui-verify/` (the branch is the PR's head ref; the directory is git-ignored scratch):
 
 1. **`specs.md`** — the extracted spec body from Step 1, verbatim.
 2. **`aw-target.yml`** — the browser context, built as follows:
@@ -42,7 +43,7 @@ Write two files under `.agent/{branch}/.preview-spec/` (the branch is the PR's h
    - If it does not exist, first look for an existing repo auth convention the way `aw-setup` does ([aw-setup § Reuse before you scaffold](../../../workflow/autonomous-workflow/aw-setup/SKILL.md#reuse-before-you-scaffold)) — a `.claude/aw-targets/*.yml` with `auth.storage_state`, a captured `.browser/auth-state*.json`, or a `refresh-auth*.mjs` login script — and reuse it: point `storage_state` / `refresh.command` at it, capturing against the resolved `PREVIEW_URL`. Only when no convention exists, scaffold from [`templates/preview-target.yml.template`](../templates/preview-target.yml.template) with `auth.strategy: none` and note in the report that authed specs will be skipped by `aw-tester`.
    - Always override `base_url` with the resolved URL, no trailing slash.
 
-Never write the resolved URL or any credential into the committed `.claude/aw-targets/preview.yml` — only into the ephemeral `.agent/{branch}/.preview-spec/aw-target.yml`.
+Never write the resolved URL or any credential into the committed `.claude/aw-targets/preview.yml` — only into the ephemeral `.agent/{branch}/.ui-verify/aw-target.yml`.
 
 ## Step 4: Select the driver and run
 
@@ -58,9 +59,9 @@ The Chrome runner is in-session and needs the browser extension; the Playwright 
 
 ```text
 Skill("aw-tester-chrome", "
-  Run the specs at .agent/{branch}/.preview-spec/specs.md against aw-target 'preview'.
-  Aw-Target file: .agent/{branch}/.preview-spec/aw-target.yml
-  Specs file: .agent/{branch}/.preview-spec/specs.md
+  Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target 'preview'.
+  Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
+  Specs file: .agent/{branch}/.ui-verify/specs.md
   Mode: --all
 ")
 ```
@@ -72,11 +73,11 @@ If it returns `verdict: inconclusive` with `fallback: playwright` (extension gon
 ```text
 Task(
   subagent_type: "aw-tester",
-  description: "Run preview-spec against PR preview",
+  description: "Run ui-verify against PR preview",
   prompt: |
-    Run the specs at .agent/{branch}/.preview-spec/specs.md against aw-target "preview".
-    Aw-Target file: .agent/{branch}/.preview-spec/aw-target.yml
-    Specs file: .agent/{branch}/.preview-spec/specs.md
+    Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target "preview".
+    Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
+    Specs file: .agent/{branch}/.ui-verify/specs.md
     Mode: --all
 )
 ```
@@ -103,5 +104,5 @@ Optionally, when the caller asked for it, post the verdict as a PR comment. Off 
 
 ## Step 6: Write lessons
 
-Write to `preview-spec-lessons` **only** when a spec failed for a navigation or precondition reason that a better spec would have avoided — see [`memory.md § Write at run time`](./memory.md) for exactly what qualifies and what does not.
+Write to `ui-verify-lessons` **only** when a spec failed for a navigation or precondition reason that a better spec would have avoided — see [`memory.md § Write at run time`](./memory.md) for exactly what qualifies and what does not.
 A locator miss that the runner healed is the runner's lesson (`aw-tester-lessons`), not this skill's; do not duplicate it.

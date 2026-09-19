@@ -351,6 +351,9 @@ function selfTest() {
     sh(dir, "git", ["init", "-q", "-b", "main"]);
     sh(dir, "git", ["config", "user.email", "t@t.t"]);
     sh(dir, "git", ["config", "user.name", "t"]);
+    // The throwaway repo must not inherit a developer's global commit.gpgsign —
+    // signing has no key here and would fail the commit (and thus L1) locally.
+    sh(dir, "git", ["config", "commit.gpgsign", "false"]);
     mkdirSync(join(dir, "src"), { recursive: true });
     writeFileSync(join(dir, "src/keep.ts"), "export const keep = 1;\n");
     writeFileSync(join(dir, "src/gone.ts"), "export const gone = 1;\n");
@@ -456,6 +459,7 @@ function selfTest() {
     g("init", "-q", "-b", "main");
     g("config", "user.email", "t@example.invalid");
     g("config", "user.name", "t");
+    g("config", "commit.gpgsign", "false");
     writeFileSync(join(dir, "old.ts"), "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n");
     g("add", "-A");
     g("commit", "-qm", "base");

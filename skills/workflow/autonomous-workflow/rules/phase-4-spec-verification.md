@@ -64,12 +64,16 @@ in [Step 4](#step-4-cold-pass-escalation).
 Run this sub-rule when ALL of the following are true:
 
 1. `.agent/{branch}/specs.md` exists (the planner emitted it).
-2. `.claude/aw-targets/` contains at least one aw-target file.
-3. The plan's `## File changes` table includes at least one UI file (`*.tsx`,
+2. The plan's `## File changes` table includes at least one UI file (`*.tsx`,
    `*.jsx`, `*.css`, `*.vue`, `*.svelte`, a route/page file, or a layout file).
-4. The aw-target's auth state is valid (see [Prerequisites](#prerequisites)).
 
-If any condition is false, skip this sub-rule entirely — log one line and
+A missing aw-target is **not** a skip condition — the planner authors specs even
+with no committed target (Phase 1 degrades to localhost defaults), so this
+sub-rule degrades the same way in [Step 1](#step-1-detect-the-aw-target) rather
+than skipping. Auth-state freshness is a warning, never a gate (see
+[Prerequisites](#prerequisites)).
+
+If a genuine skip condition holds, skip this sub-rule entirely — log one line and
 proceed to the normal Phase 4 test loop:
 
 ```markdown
@@ -78,30 +82,34 @@ proceed to the normal Phase 4 test loop:
 
 Valid skip reasons:
 - `no specs.md found`
-- `no aw-target defined at .claude/aw-targets/`
 - `no UI files in plan`
-- `auth.strategy: manual — authed specs will be skipped by aw-tester`
 - `aw-tester agent not available`
 
 ---
 
 ## Prerequisites
 
-### Aw-Target file
+### Aw-Target file — use it if present, degrade if not
 
-The aw-target file must exist at `.claude/aw-targets/{aw_target_name}.yml`, where
-`aw_target_name` comes from the `Target:` header in `specs.md`.
+The `Target:` header in `specs.md` names the aw-target
+(`.claude/aw-targets/{aw_target_name}.yml`).
 
-If the aw-target file is missing, **halt and tell the user**:
+**If the file exists, use it.** If it is missing, do **not** halt — a cold-start
+repo has no committed target, and stranding the run on an interactive `/aw-setup`
+is exactly the cliff this flow removes. Synthesize an implicit defaults target in
+[Step 1](#step-1-detect-the-aw-target) instead:
 
+```yaml
+# implicit defaults (not written to disk)
+base_url: http://localhost:3000
+auth: { strategy: none }
+fixtures: { references: {} }
 ```
-Spec verification cannot run: no aw-target defined at .claude/aw-targets/{aw_target_name}.yml.
-Run /aw-setup to scaffold the aw-target (one-time setup, ~2 minutes).
-Spec verification will be skipped until the aw-target is configured.
-```
 
-Do NOT attempt to scaffold the aw-target yourself. `/aw-setup` is the user-run
-setup flow.
+Any spec that needs auth or a fixture the defaults cannot provide is reported
+`skipped` with its reason by `aw-tester`, never failed. Suggest `/aw-setup` once
+to pin a real target; never block on it and never scaffold it yourself (it is the
+user-run setup flow).
 
 ### Auth storage state freshness
 
@@ -124,7 +132,17 @@ If `auth.strategy: storage-state` and the storage state file is missing or its
 # Resolve aw-target name from specs.md header
 AW_TARGET=$(grep "^Target:" .agent/$(git branch --show-current)/specs.md | awk '{print $2}')
 AW_TARGET_FILE=".claude/aw-targets/${AW_TARGET}.yml"
-test -f "$AW_TARGET_FILE" && echo "aw-target found: $AW_TARGET_FILE" || echo "aw-target missing"
+test -f "$AW_TARGET_FILE" && echo "aw-target found: $AW_TARGET_FILE" || echo "aw-target missing — using localhost defaults"
+```
+
+When the file is missing, pass `aw-tester` the implicit defaults from
+[Prerequisites](#prerequisites) (`base_url: http://localhost:3000`,
+`auth.strategy: none`) instead of an `Aw-Target file:` path, and log the
+degradation:
+
+```markdown
+- [TIMESTAMP] Phase 4: spec-verification — no aw-target ({AW_TARGET}); running
+  against localhost defaults. /aw-setup suggested (non-blocking).
 ```
 
 Also detect the `aw-tester` agent:
