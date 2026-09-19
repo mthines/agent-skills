@@ -598,23 +598,36 @@ function checksInSync(plan, checks) {
   // the RULE's own Logging block. The two had drifted: the body and diagnostic-surface.md both
   // listed the incremental and token-economy skips while the enum offered only trivial-diff and
   // --no-holistic, so the two most common skips had no legal token and rendered as the
-  // nearest-fitting wrong one — a policy skip reading as a triviality verdict. The conditions are
-  // read off the body rather than restated here, so adding a sixth skip reds this check.
-  // Anchored on the block's own label: the file carries a second `Status:` line for the 2.4b
-  // escalation, and an unanchored match reads that one and grades the wrong enum.
+  // nearest-fitting wrong one — a policy skip reading as a triviality verdict.
+  //
+  // Both halves are SCOPED, because a file-wide substring is not evidence about Step 2.4.
+  // The first version searched the WHOLE agent body for bare tokens, and `incremental` alone
+  // occurs 49 times in it — so deleting the Step 2.4 skip bullet left the check green, and the
+  // same held for the other three (`--no-holistic` ×4, `TRIVIAL_SKIP` ×7, `token-economy` ×2).
+  // The guard asserted a token it expected to see somewhere rather than the property it is
+  // about, which is the standing failure mode recorded against this file. So slice Step 2.4's
+  // own section first and match each condition's own wording inside it; an empty slice (the
+  // heading renamed or the step removed) fails closed rather than vacuously passing.
+  // The Status line is likewise anchored on its block's own label: the rule file carries a
+  // second `Status:` line for the 2.4b escalation, and an unanchored match grades that one.
+  const step24 = (prReviewer.match(/^### 2\.4 Holistic review[\s\S]*?(?=^### )/m) || [""])[0];
   const statusLine = (holisticReview.match(/^Holistic review:\n\s*Status:.*$/m) || [""])[0];
   const skipTokens = [
-    ["--no-holistic", "skipped (--no-holistic)"],
-    ["TRIVIAL_SKIP", "skipped (trivial diff)"],
-    ["token-economy", "skipped (gates)"],
-    ["incremental", "skipped (incremental)"],
+    ["`--no-holistic` was passed", "skipped (--no-holistic)"],
+    ["The `TRIVIAL_SKIP` cache from Step 1.7b is true", "skipped (trivial diff)"],
+    ["The Step 1.8 token-economy skip triggered", "skipped (gates)"],
+    ["`RUN_MODE` is `incremental` or `incremental-quick`", "skipped (incremental)"],
   ];
-  const bodySkips = skipTokens.filter(([cond]) => prReviewer.includes(cond));
+  const bodySkips = skipTokens.filter(([cond]) => step24.includes(cond));
   const missingTokens = bodySkips.filter(([, tok]) => !statusLine.includes(tok)).map(([, t]) => t);
-  s.check("G8e holistic-review Status enum has a token for every skip the agent body lists",
-    bodySkips.length === skipTokens.length && missingTokens.length === 0 && statusLine.includes("ran"),
-    missingTokens.length ? `no token for: ${missingTokens.join(", ")}`
-      : bodySkips.length !== skipTokens.length ? `body lists ${bodySkips.length}/${skipTokens.length} conditions` : "ok");
+  s.check("G8e holistic-review Status enum has a token for every skip Step 2.4 lists",
+    step24.length > 0 && bodySkips.length === skipTokens.length
+      && missingTokens.length === 0 && statusLine.includes("ran"),
+    step24.length === 0 ? "Step 2.4 section not found in pr-reviewer.md — heading renamed?"
+      : missingTokens.length ? `no token for: ${missingTokens.join(", ")}`
+      : bodySkips.length !== skipTokens.length
+        ? `Step 2.4 lists ${bodySkips.length}/${skipTokens.length} of the conditions this check knows`
+        : "ok");
 
   // G8f: the holistic broad pass emits on a SEVERITY floor and carries no count budget. A
   // generation-time count ceiling is the defect rubric-composition.md removed from Step 2.5 one
