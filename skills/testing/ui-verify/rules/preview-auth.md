@@ -30,6 +30,7 @@ Do not accept a password pasted into a chat/prompt either: it would persist in t
 - [Strategy `bypass-header` (outer wall)](#strategy-bypass-header-outer-wall)
 - [Strategy `storage-state` (inner wall)](#strategy-storage-state-inner-wall)
 - [Both walls](#both-walls)
+- [Confirming a session](#confirming-a-session)
 - [Local (human) vs CI (non-interactive)](#local-human-vs-ci-non-interactive)
 - [The Google-SSO caveat](#the-google-sso-caveat)
 
@@ -60,6 +61,7 @@ The app requires a login. A `storageState` JSON carries the post-login session; 
 auth:
   strategy: storage-state
   storage_state: .browser/auth-state.preview.json    # gitignored
+  authed_check: '{role: "button", name: "Account menu"}'  # present ONLY when signed in
   refresh:
     when: always            # a per-PR/per-push preview session is short-lived; re-capture each run
     env: [PREVIEW_USER, PREVIEW_PASSWORD]
@@ -69,6 +71,8 @@ auth:
         node .claude/aw-targets/refresh-auth.mjs
     timeout_seconds: 180
 ```
+
+`authed_check` is the positive signal a session is valid — see [Confirming a session](#confirming-a-session).
 
 Scaffold `refresh-auth.mjs` from [`templates/refresh-auth.mjs.template`](../templates/refresh-auth.mjs.template) and customize only its selector block. `PREVIEW_URL` is exported by the runner (the resolved branch-alias URL). Reuse an existing repo convention (`.browser/`, an existing `refresh-auth*.mjs`) before scaffolding a parallel one — see [aw-setup § Reuse before you scaffold](../../../workflow/autonomous-workflow/aw-setup/SKILL.md#reuse-before-you-scaffold).
 
@@ -96,6 +100,18 @@ auth:
         node .claude/aw-targets/refresh-auth.mjs
     timeout_seconds: 180
 ```
+
+## Confirming a session
+
+A `storageState` file existing does **not** prove the session is valid — it expires, and a stale one lets the app render its own login page on a `200`, so an HTTP-status check misses it and every authed spec fails looking like an app bug. `auth.authed_check` fixes that: a locator that is present **only when signed in** (an account menu, an avatar, a sign-out control), written in the spec locator grammar (`{role: "button", name: "Account menu"}`) — not a forked syntax.
+
+It is the one positive signal, used at three points:
+
+1. **`/aw-setup`** runs the login once and waits for `authed_check` to confirm the flow actually authenticates before recording the profile (`confirmed_at_setup: true`).
+2. **`refresh-auth.mjs`** waits for it after submitting credentials — a stronger post-login signal than a URL change.
+3. **`aw-tester`** checks it before running authed specs; absent → the session is stale → run `refresh.command` and retry once, rather than trusting the file's mere existence.
+
+Store the confirmed selector in the [auth profile record](./memory.md#the-auth-profile-record) so the next run and the next author both know it without rediscovery. If the app has no such stable element, omit `authed_check` and fall back to the URL-not-login signal — but prefer a real element; it is the difference between "a file is present" and "the app agrees I am signed in".
 
 ## Local (human) vs CI (non-interactive)
 

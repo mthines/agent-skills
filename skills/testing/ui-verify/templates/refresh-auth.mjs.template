@@ -56,9 +56,14 @@ try {
   await page.getByRole("button", { name: /continue|next/i }).click();
   await page.getByRole("textbox", { name: /password/i }).fill(PASSWORD);
   await page.getByRole("button", { name: /continue|sign in|log in/i }).click();
-  // Wait for a POST-LOGIN signal that is TRUE only when authenticated — a URL that
-  // is not the login page, or an app-shell element. Never a fixed sleep.
-  await page.waitForURL((url) => !/\/(sign-in|login)/.test(url.pathname), { timeout: 60_000 });
+  // Wait for a POST-LOGIN signal that is TRUE only when authenticated. Prefer the
+  // element behind your aw-target `auth.authed_check` (the same locator that proves
+  // a session is valid at run time) — it is a stronger, page-shape signal than a
+  // URL. Match the two so "signed in" means the same thing at capture and at run.
+  // Never a fixed sleep. Example — replace with your authed_check element:
+  await page.getByRole("button", { name: /account menu/i }).waitFor({ state: "visible", timeout: 60_000 });
+  // Fallback if the app has no stable authed element: wait for a non-login URL.
+  // await page.waitForURL((url) => !/\/(sign-in|login)/.test(url.pathname), { timeout: 60_000 });
 
   mkdirSync(dirname(STATE_PATH), { recursive: true });
   await context.storageState({ path: STATE_PATH });

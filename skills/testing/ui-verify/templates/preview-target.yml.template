@@ -43,6 +43,11 @@ auth:
   # and writes the gitignored session. This is the CI path: CI sets the secrets as
   # env vars, refresh.command reads them (never chat, never a file), writes state.
   # storage_state: .browser/auth-state.preview.json   # gitignored
+  # authed_check: '{role: "button", name: "Account menu"}'  # present ONLY when
+  #   signed in — the positive signal a session is valid. The runner/aw-tester
+  #   checks it before authed specs; absent → refresh, don't trust the file.
+  #   Written in the spec locator grammar (not a forked syntax). See
+  #   rules/preview-auth.md § Confirming a session.
   # refresh:
   #   when: always
   #   env: [PREVIEW_USER, PREVIEW_PASSWORD, VERCEL_AUTOMATION_BYPASS_SECRET]
