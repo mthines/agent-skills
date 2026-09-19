@@ -594,6 +594,40 @@ function checksInSync(plan, checks) {
   s.check("G8d pr-reviewer wires 2.4b + --no-escalate",
     prReviewer.includes("2.4b") && prReviewer.includes("--no-escalate"));
 
+  // G8e: every Step 2.4 skip condition the AGENT BODY enumerates has a logged Status token in
+  // the RULE's own Logging block. The two had drifted: the body and diagnostic-surface.md both
+  // listed the incremental and token-economy skips while the enum offered only trivial-diff and
+  // --no-holistic, so the two most common skips had no legal token and rendered as the
+  // nearest-fitting wrong one — a policy skip reading as a triviality verdict. The conditions are
+  // read off the body rather than restated here, so adding a sixth skip reds this check.
+  // Anchored on the block's own label: the file carries a second `Status:` line for the 2.4b
+  // escalation, and an unanchored match reads that one and grades the wrong enum.
+  const statusLine = (holisticReview.match(/^Holistic review:\n\s*Status:.*$/m) || [""])[0];
+  const skipTokens = [
+    ["--no-holistic", "skipped (--no-holistic)"],
+    ["TRIVIAL_SKIP", "skipped (trivial diff)"],
+    ["token-economy", "skipped (gates)"],
+    ["incremental", "skipped (incremental)"],
+  ];
+  const bodySkips = skipTokens.filter(([cond]) => prReviewer.includes(cond));
+  const missingTokens = bodySkips.filter(([, tok]) => !statusLine.includes(tok)).map(([, t]) => t);
+  s.check("G8e holistic-review Status enum has a token for every skip the agent body lists",
+    bodySkips.length === skipTokens.length && missingTokens.length === 0 && statusLine.includes("ran"),
+    missingTokens.length ? `no token for: ${missingTokens.join(", ")}`
+      : bodySkips.length !== skipTokens.length ? `body lists ${bodySkips.length}/${skipTokens.length} conditions` : "ok");
+
+  // G8f: the holistic broad pass emits on a SEVERITY floor and carries no count budget. A
+  // generation-time count ceiling is the defect rubric-composition.md removed from Step 2.5 one
+  // step later — it discards a finding before anything scores it, so the loss is invisible. Both
+  // ends of the contract are asserted: the caller's rule and the skill's own review mode.
+  const noBudget = [["holistic-review.md", holisticReview], ["review-mode.md", reviewMode]]
+    .filter(([, txt]) => /max_findings/.test(txt)).map(([f]) => f);
+  s.check("G8f holistic review has no max_findings count budget on either side of the call",
+    noBudget.length === 0, noBudget.join(", ") || "ok");
+  s.check("G8f holistic review states the severity floor instead",
+    /severity floor/i.test(holisticReview) && /severity floor/i.test(reviewMode)
+      && /`blocker`/.test(reviewMode) && /`major`/.test(reviewMode));
+
   // G9: verification-receipt (Step 2.6b) is wired into pr-reviewer's pipeline block
   // in the same position (after 2.6 grounding, before 2.7 confidence).
   // pr-reviewer is the sole review agent since the reviewer agent was retired.

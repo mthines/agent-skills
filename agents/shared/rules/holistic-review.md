@@ -15,7 +15,7 @@ Line-level rubrics (`code-quality`, `ux`, `critical`, lenses) evaluate each hunk
 1. **Intent mismatch** — the diff does not implement what its PR description claims.
 2. **System fit** — the change makes sense in isolation but is wrong in the bigger picture (callers in a loop, missing cache invalidation, neighbouring patterns it diverges from, contract breaks the local view doesn't see).
 
-This rule routes both checks through `Skill("holistic-analysis", "review")`, which returns 0–3 structured findings. Findings flow through the rest of the pipeline (`finding-grounding`, `per-comment-confidence`, `comment-shape`, `conventional-comments`) like any other rubric output.
+This rule routes both checks through `Skill("holistic-analysis", "review")`, which returns structured findings — every one that clears the severity floor in § When to run, with no count budget. Findings flow through the rest of the pipeline (`finding-grounding`, `per-comment-confidence`, `comment-shape`, `conventional-comments`) like any other rubric output.
 
 ## Contents
 
@@ -35,7 +35,19 @@ This rule routes both checks through `Skill("holistic-analysis", "review")`, whi
 
 ## Default-on, opt-out via `--no-holistic`
 
-Holistic review runs on **every** invocation of `pr-reviewer` unless explicitly disabled. The token cost is real (~20–60 s and one extra `Skill()` call per PR), but PR review is async and the value asymmetry is large: catching one system-fit bug is worth dozens of unnecessary holistic runs.
+Holistic review is **default-on** for `pr-reviewer` in `full` mode. The token cost is real (~20–60 s and one extra `Skill()` call per PR), but PR review is async and the value asymmetry is large: catching one system-fit bug is worth dozens of unnecessary holistic runs.
+
+Five conditions decide whether the broad pass runs, and each skip has its own logged token. A skip that cannot name its own reason is indistinguishable from a clean run, which is the whole point of the third column:
+
+| Condition | Behaviour | Logged `Status` |
+| --- | --- | --- |
+| `--no-holistic` passed | Skip | `skipped (--no-holistic)` |
+| `TRIVIAL_SKIP` (Step 1.7b) is true | Skip | `skipped (trivial diff)` |
+| Step 1.8 token-economy skip (≥ 3 failing gates) | Skip | `skipped (gates)` |
+| `RUN_MODE` is `incremental` or `incremental-quick` | Skip | `skipped (incremental)` |
+| None of the above | Run | `ran` |
+
+The last two are **not** interchangeable with the trivial-skip row, and two other rules read the difference. Step 2.4b skips only on the *triviality* branch, so an incremental run still escalates under `ESCALATE_IN_INCREMENTAL` (§ Risky-shape incremental escalation). And the deep-lens refresh in [`depth-routing.md`](../../pr-reviewer/rules/depth-routing.md) exists precisely because the run-mode row would otherwise starve this pass forever on a PR that lands as a long series of small commits.
 
 The flag is `--no-holistic`. Mention it in the run announcement only when set.
 
@@ -87,24 +99,28 @@ Skill("holistic-analysis", "review")
   changed_files: <list of {path, patch} entries from /tmp/pr-files.json or git>
   caller: "pr-reviewer"
   review_relation: "self" | "cross"
-  max_findings: <3 | 6 | 10 — scaled to changed-file count, see table below>
 ```
 
-Pass a `max_findings` budget scaled to the size of the diff — a flat 3 on a 60-file PR is a sampling cap, not a quality bar:
+### No count budget — a severity floor instead
 
-| Changed files in the reviewed diff | `max_findings` |
+The pass returns **every** finding that clears this floor, however many that is:
+
+| Severity | Emit |
 | --- | --- |
-| ≤ 10 | 3 |
-| 11–30 | 6 |
-| > 30 | 10 |
+| `blocker` | always |
+| `major` | always |
+| `minor` | only when it names a specific surface to change — a file, a symbol, a contract. A `minor` that generalises ("consider revisiting the caching strategy") is not a finding. |
 
-The budget bounds the *broad* pass only, and it is a ceiling rather than a target — a large PR with one system-fit problem still returns one finding.
+A size-scaled count ceiling used to sit here (3 / 6 / 10 by changed-file count). It was the same defect [`rubric-composition.md § Consolidation pass`](./rubric-composition.md#consolidation-pass) removed from Step 2.5, one step earlier in the pipeline: it discarded findings **before** anything scored them, so a real blocker could lose its slot to a `minor` the 2.7 confidence gate would have dropped anyway, and the loss left no trace. Quantity is governed at placement (Step 2.9b), where overflow is **deferred** to the review body rather than dropped, and never at generation.
+
+The floor is stated in **severity** because severity is the only bar available here. Review mode does not score — per-comment confidence runs downstream at Step 2.7 (§ What review mode does NOT do in [`review-mode.md`](../../../skills/analysis/holistic-analysis/rules/review-mode.md)) — so a generator pruning against the confidence bar would be prejudging a number it cannot compute. That is the same polarity rule [`finders.md`](../../pr-reviewer/rules/finders.md) holds every finder to: flag, and let the verifier filter.
+
+**Cost, stated plainly.** Every emitted finding costs one Phase E verification at Step 2.6b, so removing the ceiling does raise the worst-case bill. The floor is what bounds it: a pass that emits a dozen `minor` findings on a 60-file PR has mis-set the floor, and the fix is the floor, never a ceiling that hides the mis-set by truncating it. Never pad — a clean 40-file PR returns zero findings.
 Everything the pass returns re-enters the pipeline at 2.5 and is subject to grounding, receipt, confidence, and shape exactly like a rubric finding.
 
 Inputs:
 
 - `intent_summary` — produced by Step 1.3 of the calling agent.
-- `max_findings` — the size-scaled budget from the table above.
 - `diff` — full unified diff (already in scope by Step 1.1).
 - `changed_files` — list of file objects with `path` and `patch`. Source is `/tmp/pr-files.json`, cached by `pr-reviewer` Step 1.2 in both relations.
 - `caller` — always `"pr-reviewer"` (the only reviewer agent). Determines the recommended Conventional-Comments category mapping (see below).
@@ -112,7 +128,7 @@ Inputs:
 
 ## Targeted escalation (Step 2.4b)
 
-The Step 2.4 pass above is **broad and shallow**: one whole-PR scan, capped at its `max_findings` budget (3–10 by diff size), spreading attention across the entire diff. It catches PR-wide intent mismatch and obvious system-fit, but it cannot deep-trace any single changed function's call graph. That deep trace is exactly the class the user cares about — *a function change that is clean in isolation but wrong for how the function is actually used*.
+The Step 2.4 pass above is **broad and shallow**: one whole-PR scan spreading attention across the entire diff. It catches PR-wide intent mismatch and obvious system-fit, but it cannot deep-trace any single changed function's call graph. That deep trace is exactly the class the user cares about — *a function change that is clean in isolation but wrong for how the function is actually used*.
 
 Step 2.4b adds the deep tier. It runs **after** the broad 2.4 pass and the rubric findings are collected, and **before** Step 2.5 (dedupe). It takes the line-level findings that look context-dependent and fans out **parallel, single-target** holistic traces — one per finding — each scoped to that finding's symbol via the `focus` input (see `review-mode.md § Inputs`). This is the pipeline analogue of an agentic reviewer that "decides which areas need deeper investigation and follows code paths across files."
 
@@ -216,7 +232,7 @@ A run with several `clear` verdicts is healthy — escalation earning its cost b
 
 ## Output mapping (caller-aware)
 
-`holistic-analysis` returns at most `max_findings` findings (3–10, scaled to diff size) with `type` ∈ {`intent-mismatch`, `scope-creep`, `system-fit`} and `severity` ∈ {`blocker`, `major`, `minor`}.
+`holistic-analysis` returns every finding clearing the severity floor (§ No count budget), each with `type` ∈ {`intent-mismatch`, `scope-creep`, `system-fit`} and `severity` ∈ {`blocker`, `major`, `minor`}.
 
 Map each finding to the calling agent's Conventional-Comments category:
 
@@ -255,13 +271,15 @@ The Quality Gate summary in the terminal output reports:
 
 ```
 Holistic review:
-  Status:             ran | skipped (trivial diff) | skipped (--no-holistic)
-  Findings produced:  0–3
+  Status:             ran | skipped (trivial diff) | skipped (gates) | skipped (incremental) | skipped (--no-holistic)
+  Findings produced:  <N>
   Drops:              <N> at grounding / <M> at confidence / <K> at shape
   Final:              <F> emitted
 ```
 
-A run that ran holistic and emitted 0 findings is healthy — most PRs have neither intent mismatch nor obvious system-fit gaps. A run that emitted a full `max_findings` budget on a 5-file PR is suspicious — verify the holistic skill's output before posting. On a 40-file PR a full budget is unremarkable.
+Every skip condition in § Default-on has a token here, and no other value is legal — a skip rendered as the nearest-fitting wrong token is how a policy skip comes to read as a triviality verdict.
+
+A run that ran holistic and emitted 0 findings is healthy — most PRs have neither intent mismatch nor obvious system-fit gaps. The shape to spot-check is not the raw count, which no longer has a ceiling to be measured against, but the **survival ratio**: `Findings produced` well above `Final` means the pass made claims it could not ground or could not support at confidence, and that is worth reading whether it produced two or twelve. A high produced count with a high `Final` on a large diff is unremarkable.
 
 ## When holistic is unavailable
 
