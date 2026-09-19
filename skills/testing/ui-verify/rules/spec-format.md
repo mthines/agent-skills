@@ -53,7 +53,7 @@ Rules:
 
 ## The spec grammar is `aw-tester`'s — do not fork it
 
-The body inside the block uses `aw-tester`'s spec grammar **verbatim**: the `Target:` / `Refactor:` header fields, the `## Spec N: <goal>` blocks, `url:`, `preconditions:`, the `WHEN … THEN … AND …` flow steps, the single-braces locator mini-grammar, `continues-from:`, and `network: METHOD /path returned NNN`.
+The body inside the block uses `aw-tester`'s spec grammar **verbatim**: the `Target:` / `Refactor:` header fields, the `## Spec N: <goal>` blocks, `url:`, `preconditions:`, the `WHEN … THEN … AND …` flow steps, the single-braces locator mini-grammar, `continues-from:`, `network: METHOD /path returned NNN`, and the `CAPTURE "<label>" [fullPage]` documentation-screenshot step.
 Its single source of truth is [`specs.md.template`](../../../workflow/autonomous-workflow/templates/specs.md.template).
 
 Do not redefine, extend, or abbreviate that grammar here.

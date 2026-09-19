@@ -39,6 +39,7 @@
 
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 
 // ── Defaults: broad enough that a fresh repo is served, narrow enough that a
 // backend .ts does not read as UI. Framework-view and style extensions always
@@ -103,9 +104,12 @@ const matchesAnyGlob = (path, globs) => globs.some((g) => globToRe(g).test(path)
 function hasDirSegment(path, dirs) {
   const segs = path.split("/").slice(0, -1); // directory parts only
   const wanted = new Set(dirs.map((d) => d.toLowerCase()));
-  // Support multi-segment dir entries (e.g. "src/ui") as a substring of the path.
+  // Support multi-segment dir entries (e.g. "src/ui"), matched at segment
+  // boundaries — never as a bare substring, so "src/ui" does not match
+  // "xsrc/ui/…". Anchoring both ends with "/" enforces the boundary.
+  const anchored = ("/" + path + "/").toLowerCase();
   for (const d of dirs) {
-    if (d.includes("/") && (path + "/").toLowerCase().includes(d.toLowerCase() + "/")) return true;
+    if (d.includes("/") && anchored.includes("/" + d.toLowerCase() + "/")) return true;
   }
   return segs.some((s) => wanted.has(s.toLowerCase()));
 }
@@ -226,6 +230,8 @@ function selfTest() {
   t("segment match, not substring: apps/ != app", !classify(["apps/api/handler.ts"]).isUI);
   t("multi-segment surface dir 'src/ui' matches",
     classify(["src/ui/thing.ts"], { dirs: ["src/ui"] }).isUI);
+  t("multi-segment dir 'src/ui' does NOT match 'xsrc/ui/…' (segment boundary)",
+    !classify(["xsrc/ui/thing.ts"], { mode: "replace", dirExtensions: [".ts"], dirs: ["src/ui"] }).isUI);
   t("surface can promote .ts to always-UI (extend)",
     classify(["server/x.ts"], { extensions: [".ts"] }).isUI);
   t("surface replace mode drops defaults",
@@ -258,4 +264,6 @@ function main() {
 }
 
 // Run main only as a CLI, not when imported for the self-test's `classify`.
-if (import.meta.url === `file://${process.argv[1]}`) main();
+// Compare via pathToFileURL so a script path containing spaces (percent-encoded
+// in import.meta.url) still matches — a raw `file://${argv[1]}` would not.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
