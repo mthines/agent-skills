@@ -1,0 +1,76 @@
+// Commit this at .claude/aw-targets/refresh-auth.mjs (customize the SELECTORS block).
+//
+// Non-interactive preview login for CI: reads credentials from ENV VARS, logs in
+// with Playwright, and writes a Playwright storageState the aw-tester run reuses.
+// This is the CI half of the auth flow — a human never runs it; the login page is
+// driven headless from secrets the CI job holds as env vars. See
+// skills/testing/ui-verify/rules/preview-auth.md for the whole flow and the
+// Google-SSO caveat (scripted Google login is unreliable — use a password-capable
+// test account, or a pre-captured storageState, when the inner wall is Google SSO).
+//
+// SECRETS HYGIENE — non-negotiable:
+//   * Credentials come from process.env ONLY. Never hardcode them, never read them
+//     from a tracked file, never log their values.
+//   * The one artifact written is the storageState JSON at AUTH_STORAGE_STATE, which
+//     MUST be gitignored. It holds session cookies, not the password — but treat it
+//     as a secret anyway (short-lived, gitignored, never committed).
+//
+// Run:  PREVIEW_URL=https://... PREVIEW_USER=... PREVIEW_PASSWORD=... \
+//         [VERCEL_AUTOMATION_BYPASS_SECRET=...] AUTH_STORAGE_STATE=.browser/auth-state.preview.json \
+//         node .claude/aw-targets/refresh-auth.mjs
+
+import { chromium } from "playwright";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+
+// ── Required env (fail loudly and early if unset — a silent skip writes an empty
+//    session and every authed spec then fails at a login wall for no clear reason) ──
+const need = (k) => {
+  const v = process.env[k];
+  if (!v) {
+    console.error(`refresh-auth: missing required env var ${k}`);
+    process.exit(2);
+  }
+  return v;
+};
+const PREVIEW_URL = need("PREVIEW_URL").replace(/\/$/, "");
+const USER = need("PREVIEW_USER");
+const PASSWORD = need("PREVIEW_PASSWORD");
+const STATE_PATH = need("AUTH_STORAGE_STATE");
+// Optional OUTER WALL: host deployment-protection bypass (Vercel/etc.). When set,
+// send it on every request so this script can reach the app's OWN login page
+// through the protection layer. Omitted → no header (public or app-only wall).
+const BYPASS = process.env.VERCEL_AUTOMATION_BYPASS_SECRET || "";
+
+const browser = await chromium.launch();
+const context = await browser.newContext(
+  BYPASS ? { extraHTTPHeaders: { "x-vercel-protection-bypass": BYPASS } } : {},
+);
+const page = await context.newPage();
+
+try {
+  // ── SELECTORS: customize this block for your app's login. The rest is generic. ──
+  // Example shape for a Clerk/email-password form; replace roles/names to match.
+  await page.goto(`${PREVIEW_URL}/`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("textbox", { name: /email/i }).fill(USER);
+  await page.getByRole("button", { name: /continue|next/i }).click();
+  await page.getByRole("textbox", { name: /password/i }).fill(PASSWORD);
+  await page.getByRole("button", { name: /continue|sign in|log in/i }).click();
+  // Wait for a POST-LOGIN signal that is TRUE only when authenticated — a URL that
+  // is not the login page, or an app-shell element. Never a fixed sleep.
+  await page.waitForURL((url) => !/\/(sign-in|login)/.test(url.pathname), { timeout: 60_000 });
+
+  mkdirSync(dirname(STATE_PATH), { recursive: true });
+  await context.storageState({ path: STATE_PATH });
+  console.log(`refresh-auth: wrote storageState to ${STATE_PATH}`);
+} catch (err) {
+  console.error(`refresh-auth: login failed — ${err.message}`);
+  console.error(
+    "If the inner wall is Google SSO, scripting it is unreliable (bot detection, 2FA).",
+    "Use a password-capable test account, or capture a storageState once by hand and",
+    "refresh it periodically. See rules/preview-auth.md.",
+  );
+  process.exit(1);
+} finally {
+  await browser.close();
+}

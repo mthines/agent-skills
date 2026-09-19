@@ -118,6 +118,30 @@ continues-from: Spec N — skipped (reset_between_specs: true makes state reuse 
 
 ## Auth Handling
 
+### Outer wall: `auth.bypass_header` (composes with ANY strategy)
+
+Independent of `auth.strategy`. When the aw-target sets `auth.bypass_header`, the
+preview URL is behind host deployment protection (Vercel/etc.) that gates every
+request *before* the app. Apply the header to the browser **context** so it rides
+every navigation — including the authed-page checks below:
+
+```js
+// name + env come from auth.bypass_header; the VALUE is read from the environment,
+// never from the aw-target file (which carries only the env-var NAME).
+extraHTTPHeaders: { [auth.bypass_header.name]: process.env[auth.bypass_header.env] }
+```
+
+If `auth.bypass_header.env` is unset in the environment, the protection layer will
+serve its own page instead of the app and every spec will look broken. Do not
+guess — mark the run `inconclusive` with reason `bypass-secret-missing (set $<env>)`
+and stop, exactly as a missing storage-state env var is handled. Log:
+```
+auth: bypass-header {name} applied to context (value from $<env>)
+```
+Never log the secret's value. This is the outer half of a two-wall preview
+([`preview-auth.md`](../../../testing/ui-verify/rules/preview-auth.md)); the inner
+login is still handled by the strategy below.
+
 ### Strategy: `storage-state`
 
 Before the first spec, verify the storage state file exists:

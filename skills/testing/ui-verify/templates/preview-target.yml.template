@@ -13,41 +13,51 @@
 
 name: preview
 
-# Overridden at runtime by preview-spec's URL resolution. The literal value here
+# Overridden at runtime by ui-verify's URL resolution. The literal value here
 # is never used; keep it as a marker so a misconfigured run fails loudly.
 base_url: RESOLVED_AT_RUNTIME
 
 auth:
-  # For a preview behind Vercel Deployment Protection or an app login, use
-  # storage-state and a refresh command that authenticates against the RESOLVED
-  # preview URL (read it from the PREVIEW_URL env var the runner exports).
-  # For a fully public preview, set strategy: none and delete the rest.
+  # See rules/preview-auth.md for the full flow (local one-time capture + the
+  # non-interactive CI path). NO SECRET EVER GOES IN THIS FILE — credentials live
+  # in env vars / the OS keychain; this file names WHICH env var, never a value.
+  # Commit this; gitignore whatever storage_state path it points at.
   #
   # REUSE an existing repo auth convention rather than scaffolding a parallel one
-  # (see aw-setup's "Reuse before you scaffold"). Point storage_state / the
-  # refresh script at whatever the repo already uses; a per-host preview session
+  # (see aw-setup's "Reuse before you scaffold"). A per-host preview session
   # differs per PR and per push, so `when: always` re-captures every run.
-  strategy: none            # one of: storage-state | none | manual | env-credentials
-  #
-  # Default scaffold (no existing convention):
-  # storage_state: ./.auth/preview.json   # gitignored; only for storage-state
+  strategy: none            # one of: none | bypass-header | storage-state | manual
+
+  # ── OUTER WALL: host deployment protection (Vercel/Netlify/etc.) ──────────────
+  # Composes with ANY strategy. When the preview URL itself is gated (a Vercel
+  # protection page loads BEFORE the app), send a bypass header on EVERY request —
+  # the login navigation and every spec navigation alike. The value comes from an
+  # env var (a CI secret), never from this file.
+  # bypass_header:
+  #   name: x-vercel-protection-bypass
+  #   env: VERCEL_AUTOMATION_BYPASS_SECRET   # names the env var; no value here
+  #   set_cookie: true                        # also do the one-time set-bypass-cookie GET
+
+  # ── INNER WALL: app login (Clerk / SSO / etc.) ───────────────────────────────
+  # storage_state + a refresh command that logs in NON-INTERACTIVELY from env vars
+  # and writes the gitignored session. This is the CI path: CI sets the secrets as
+  # env vars, refresh.command reads them (never chat, never a file), writes state.
+  # storage_state: .browser/auth-state.preview.json   # gitignored
   # refresh:
   #   when: always
-  #   command: |
-  #     AUTH_LOGIN_URL="${PREVIEW_URL}/login" \
-  #       AUTH_STORAGE_STATE=./.auth/preview.json \
-  #       node scripts/auth-bootstrap-headful.mjs
-  #   timeout_seconds: 600
-  #
-  # dash0 / playwright-cli-authed convention (reuse .browser/ + refresh-auth):
-  # storage_state: .browser/auth-state.preview.json   # gitignored under .browser/
-  # refresh:
-  #   when: always
+  #   env: [PREVIEW_USER, PREVIEW_PASSWORD, VERCEL_AUTOMATION_BYPASS_SECRET]
   #   command: |
   #     PREVIEW_URL="${PREVIEW_URL}" \
   #       AUTH_STORAGE_STATE=.browser/auth-state.preview.json \
-  #       node .browser/refresh-auth-preview.mjs
-  #   timeout_seconds: 120
+  #       node .claude/aw-targets/refresh-auth.mjs   # scaffold: templates/refresh-auth.mjs.template
+  #   timeout_seconds: 180
+  #
+  # ── BOTH WALLS (e.g. dash0: Vercel protection + Clerk/Google login) ───────────
+  # Layer them — bypass_header to reach the app past Vercel protection, THEN the
+  # storage-state login. refresh-auth.mjs applies the bypass header to its own
+  # context so it can reach the login page, and aw-tester applies it to the run
+  # context so every spec navigation gets through too. Uncomment strategy:
+  # storage-state, the bypass_header block, and the refresh block together.
 
 fixtures:
   # A preview usually points at a shared staging database, so seeding is often a
