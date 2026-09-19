@@ -10,6 +10,8 @@ applies-to: always
 
 Always-on. The lens checks whether a fix or refactor addresses the full execution path — not just the visible block. It's most valuable on bug-fix PRs and refactor PRs that touch contract boundaries. On feature PRs that add new code, most checklist items are vacuously satisfied — the lens is cheap to apply either way.
 
+NOTE: `--with holistic-analysis` is **not** a no-op and **not** deduped. The `pr-reviewer` agent already runs this skill by default at Step 2.4 in `review` mode (`agents/shared/rules/holistic-review.md`) — a deeper interface than this checklist — but the agent's name-dedupe covers only its auto-loaded rubrics (`code-quality`, `ux`, `critical`), and this skill is not one of them. Passing it therefore spends one of the three lens slots on criteria the default-on pass already applies. Use the lens from external review tooling, or from a run that passed `--no-holistic`.
+
 ## Checklist
 
 - [ ] The fix targets the block where the contract violation actually occurs — not a downstream symptom or a defensive catch-all that hides the original failure.
