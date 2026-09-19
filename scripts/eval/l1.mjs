@@ -6626,6 +6626,10 @@ const isPollBlock = (block) =>
         git("init", "-q", "-b", "main");
         git("config", "user.email", "l1@example.invalid");
         git("config", "user.name", "l1");
+        // Don't inherit a developer's global commit.gpgsign — the fixture has no
+        // signing key, and a failed commit would leave HEAD unborn so the adapter
+        // exits 2 and this guard reds locally (never in CI, which does not sign).
+        git("config", "commit.gpgsign", "false");
         git("add", "-A");
         git("commit", "-qm", "fixture base");
         // The change under review: a signature break its consumer does not follow.

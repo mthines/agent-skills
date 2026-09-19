@@ -21,8 +21,8 @@ gives `observe-run` a place to accrue that knowledge and read it back on the nex
 run.
 
 It is a standard LoreKit self-improvement loop, and it reuses the canonical
-contract verbatim rather than inventing a second one — see
-[`lorekit-setup/rules/self-improvement-loops.md`](../../lorekit-setup/rules/self-improvement-loops.md).
+contract verbatim rather than inventing a second one — see the external
+`lorekit-setup` skill's `rules/self-improvement-loops.md`.
 Everything below is the `observe-run`-specific instantiation of that contract; the
 schema, the recurrence mechanics, and the promotion path all live there.
 
@@ -157,8 +157,8 @@ service name, a rung, an error shape — never "when it feels relevant", so the
 read step can match it. It replaces the `trigger-context` metadata field: same
 job, in the readable body, not a machine comment.
 
-> **Divergence from the upstream contract, on purpose.** `lorekit-setup`'s
-> [`self-improvement-loops.md`](../../lorekit-setup/rules/self-improvement-loops.md)
+> **Divergence from the upstream contract, on purpose.** The external
+> `lorekit-setup` skill's `self-improvement-loops.md`
 > still prescribes a `<!-- meta: … -->` block in the `value`. This loop does not
 > follow that part: a lesson body is prose a human reads, and the metadata it
 > duplicates already lives in LoreKit's structured fields.
