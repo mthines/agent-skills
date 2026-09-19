@@ -63,6 +63,29 @@ auth:
   # context so every spec navigation gets through too. Uncomment strategy:
   # storage-state, the bypass_header block, and the refresh block together.
 
+# ── PR preview URL resolution (optional) ─────────────────────────────────────
+# ui-verify resolves a PR's preview URL from the GitHub deployments API and the
+# provider's bot comment (see rules/preview-url-resolution.md). That covers a
+# GitHub-integrated host (Vercel/Netlify/…) that registers a deployment or posts
+# a recognizable provider bot comment. If YOUR previews are deployed another way
+# — a CLI `vercel deploy` in your own CI, a github-actions[bot] sticky comment, a
+# stable per-PR alias that isn't `*-git-*` — the generic resolver finds nothing
+# and every run needs a manual --url. Configure it here instead so `ui-verify
+# run` finds the URL on its own. `--url` still overrides everything.
+# preview_url:
+#   # (A) Read the REAL posted URL from a comment the generic scan misses: widen
+#   #     the trusted comment authors and give the host regex for your STABLE
+#   #     per-PR alias. This reads a published URL — never a fabricated one.
+#   comment:
+#     authors: [github-actions]                            # ADDED to vercel/netlify/cloudflare/render
+#     host_pattern: 'myapp-pr-\d+-myscope\.vercel\.app'    # regex; the stable per-PR alias host
+#   # (B) OR a deterministic alias TEMPLATE, when your CI publishes a stable
+#   #     per-PR alias. {pr} = PR number, {branch} = slugified head ref, {sha} =
+#   #     head SHA. Sanctioned ONLY because it is read from THIS committed file
+#   #     (not a slug you inferred) and the resolver reachability-checks it before
+#   #     use, falling through to the generic resolver if it 404s.
+#   template: 'https://myapp-pr-{pr}-myscope.vercel.app'
+
 fixtures:
   # A preview usually points at a shared staging database, so seeding is often a
   # no-op. Reference dynamic ids the same way as any aw-target.
