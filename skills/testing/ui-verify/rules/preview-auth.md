@@ -48,10 +48,9 @@ auth:
   bypass_header:
     name: x-vercel-protection-bypass
     env: VERCEL_AUTOMATION_BYPASS_SECRET   # names the env var; NO value here
-    set_cookie: true                        # also do the one-time set-bypass-cookie GET
 ```
 
-Vercel: mint the secret at Project → Settings → Deployment Protection → *Protection Bypass for Automation*, store it as a CI secret, expose it to the job as `VERCEL_AUTOMATION_BYPASS_SECRET`. `set_cookie: true` makes the runner hit `?x-vercel-set-bypass-cookie=true&x-vercel-protection-bypass=<secret>` once so the bypass persists as a cookie for the session; the header alone also works.
+Vercel: mint the secret at Project → Settings → Deployment Protection → *Protection Bypass for Automation*, store it as a CI secret, expose it to the job as `VERCEL_AUTOMATION_BYPASS_SECRET`. The header is sent on **every** request (the runner applies it via `extraHTTPHeaders`), which is all Vercel needs to bypass the protection page — no set-bypass-cookie round trip.
 
 ## Strategy `storage-state` (inner wall)
 
@@ -90,7 +89,6 @@ auth:
   bypass_header:
     name: x-vercel-protection-bypass
     env: VERCEL_AUTOMATION_BYPASS_SECRET
-    set_cookie: true
   refresh:
     when: always
     env: [PREVIEW_USER, PREVIEW_PASSWORD, VERCEL_AUTOMATION_BYPASS_SECRET]

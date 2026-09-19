@@ -36,7 +36,6 @@ auth:
   # bypass_header:
   #   name: x-vercel-protection-bypass
   #   env: VERCEL_AUTOMATION_BYPASS_SECRET   # names the env var; no value here
-  #   set_cookie: true                        # also do the one-time set-bypass-cookie GET
 
   # ── INNER WALL: app login (Clerk / SSO / etc.) ───────────────────────────────
   # storage_state + a refresh command that logs in NON-INTERACTIVELY from env vars
