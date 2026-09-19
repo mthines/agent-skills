@@ -98,6 +98,40 @@ Every store-backed fact has its own first-class `memory.write` field: the store 
 Schema authority: [`write-pipeline.md#lesson-scope-entries`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
 The **Applies when** line must be a concrete matching signal (a route glob, a component name, the `preview` target), never a subjective condition — a lesson without one cannot be matched mechanically, so do not persist it.
 
+## The UI surface record
+
+This is the "learns what counts as UI, per repo" half of the loop. It is a **config record, not a friction lesson** — it carries a JSON body the `is-ui-diff` gate consumes, so it is the one record under this tag that is not markdown-only.
+
+| Field | Value |
+| --- | --- |
+| Scope | `repo::{owner}/{repo}` — a UI surface is repo-specific by definition. |
+| Key | `preview-spec-lessons::ui-surface` (exactly one per repo). |
+| Tag | `loop::preview-spec-lessons` (so it is discoverable alongside the friction lessons) plus `kind::config`. |
+| Written by | `/aw-setup` at setup time, and refined when the gate misclassifies (below). |
+| Read by | `author` Step 0 — forwarded to the gate as `--surface-json`. |
+
+The body is the surface JSON the gate accepts (every field optional):
+
+```json
+{
+  "mode": "extend",
+  "extensions": [".ts"],
+  "dirExtensions": [],
+  "dirs": ["src/web", "packages/ui/src"],
+  "globs": [],
+  "exclude": ["packages/api/**"]
+}
+```
+
+`mode: "extend"` (default) merges with the gate's broad defaults; `mode: "replace"` pins the surface exactly (use for a repo whose layout the defaults get wrong). See the gate's own header for each field's meaning.
+
+**The refine loop — this is how it learns.** The gate is deterministic, so a wrong answer is always a surface gap, never a coin toss:
+
+- A **UI change classified `no`** (a spec that should have been authored was not) → widen the surface: add the missing `dirs` entry or promote the extension (e.g. a frontend-only repo adds `.ts` to `extensions`). Then re-run `author`.
+- A **non-UI change classified `yes`** (a backend-only PR got a spec) → narrow it: add the path to `exclude`, or switch to `mode: "replace"` with the real UI dirs.
+
+Write the correction back to this record (`memory.write` same scope + key updates it in place). The next PR in the repo — anyone's — decides correctly from the start. Never store a path that reveals a secret; a directory layout is not sensitive, a token embedded in one would be.
+
 ## Entrenchment guards
 
 The same five guards that govern `aw-tester-lessons` apply here: lessons are advisory (they never change the verdict or the grammar); recurrence (the store's own `seen_count >= 3`, or the `status::structural` tag) gates promotion; every lesson expires (`ttl_days: 90` on every write, re-passed on a recurrence); a contradicting lesson is surfaced, not overwritten; the privacy pre-flight is never bypassed — never store credentials, tokens, preview-auth secrets, customer names, or product data.

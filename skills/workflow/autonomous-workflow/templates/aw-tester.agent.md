@@ -97,7 +97,9 @@ Parse each `## Spec N:` block. Extract:
 - persist level (`critical-path` | `verify-only`)
 - url (resolve `{placeholder}` against `fixtures.references`)
 - preconditions (log, do not re-check what auth/seed already handles)
-- flow steps (parse WHEN/THEN/AND into Playwright actions + assertions)
+- flow steps (parse `WHEN`/`THEN`/`AND` into Playwright actions + assertions;
+  `CAPTURE "<label>" [fullPage]` into a `page.screenshot(...)` call — see
+  [Capture steps](#capture-steps-documentation-screenshots))
 - `continues-from` (if present, reuse the prior spec's browser state — see note below)
 
 **`continues-from` semantics:** the prior spec's page, cookies, and local storage
@@ -270,8 +272,34 @@ invocation).
 If `reset_between_specs: true`, use a new `browser.newContext()` per spec
 but still share the same `browser` instance.
 
-**No intermediate snapshots.** The agent has the full script before execution.
-It does not need to "see" between steps to plan the next action.
+**No *automatic* intermediate snapshots.** The agent has the full script before
+execution and does not need to "see" between steps to plan the next action. The
+one exception is an explicit `CAPTURE` step, which the author put in the spec on
+purpose — see [Capture steps](#capture-steps-documentation-screenshots).
+
+### Capture steps (documentation screenshots)
+
+A `CAPTURE "<label>" [fullPage]` flow step emits a `page.screenshot(...)` at that
+point in the generated spec — a deliberate documentation artifact, not a debug
+snapshot. It is neither an action nor an assertion: it resolves no locator and
+can never fail the spec.
+
+```ts
+// CAPTURE "dashboard with new widget"      →
+await page.screenshot({
+  path: '.agent/<branch>/.aw-tester/captures/spec-1-dashboard-with-new-widget.png',
+  fullPage: false,   // true when the step said `fullPage`
+});
+```
+
+- Create `.agent/<branch>/.aw-tester/captures/` before the run.
+- Name each file `<spec-id>-<slug-of-label>.png` (lowercase, non-alphanumerics
+  → `-`), so re-runs overwrite deterministically.
+- Wrap each screenshot so a write failure is swallowed into a run note, never a
+  test failure — a broken capture must not turn a green spec red.
+- List every capture that wrote in the verdict's `captures:` array (see schema).
+- Captures are exempt from bail: emit them in step order, so a capture before
+  the first red step in a `--bail-on-first-red` run is still recorded.
 
 ### Locator resolution
 
@@ -338,6 +366,11 @@ specs:
       attempted healing: getByText('X') — found 0 elements
       last network response: POST /api/foo → 500 {"error":"db timeout"}
       console errors: TypeError: Cannot read property 'id' of undefined (app.js:142)
+captures:                       # omit the key entirely when no CAPTURE steps ran
+  - spec: Spec-1
+    label: dashboard with new widget
+    path: .agent/<branch>/.aw-tester/captures/spec-1-dashboard-with-new-widget.png
+    full_page: false
 hot_loop:
   spec_file: .agent/<branch>/.aw-tester/last-run.spec.ts
   playwright_bin: <absolute path written to .aw-tester/playwright-bin>
@@ -358,6 +391,8 @@ notes: <optional one-paragraph context; omit if nothing notable>
 - `diagnostics` field appears ONLY on `result: fail` specs.
 - `diagnostics` is hard-capped at 30 lines. Truncate with `... (truncated)` if needed.
 - `reason` is a single line. No multi-line reasons.
+- `captures:` is present only when at least one `CAPTURE` step wrote a file; a
+  capture never appears as a spec result and never changes `verdict`.
 
 ---
 
@@ -433,7 +468,8 @@ These are identical to the `aw-lessons` guards — mandatory:
 - **Persist `last-run.spec.ts`.** The generated spec lives in
   `.agent/<branch>/.aw-tester/` so the executor's hot loop can re-run it
   without re-dispatching this sub-agent.
-- **No intermediate snapshots.** Snapshot only on assertion failure.
+- **No *automatic* intermediate snapshots.** Snapshot on assertion failure, and
+  at an explicit `CAPTURE` step — never speculatively between steps.
 - **Token discipline.** Network + console capture only on failed specs.
 - **One browser context per batch** (unless `reset_between_specs: true`).
 - **Compact output.** The verdict block is the deliverable — the executor

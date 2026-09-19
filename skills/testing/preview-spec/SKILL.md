@@ -14,14 +14,16 @@ description: >
   are `aw-tester`'s; this skill owns the PR-embedding, URL resolution, and the
   authoring loop. Triggers on "write a preview spec", "add a UI verification
   spec", "verify this PR's preview", "run the preview spec", "test the
-  preview deployment", "/preview-spec".
+  preview deployment", "verify this PR autonomously", "/preview-spec". `verify`
+  is the one-shot composite (author-if-needed → run → report) for a PR with no
+  spec yet — someone else's, or an agent0 / Vercel-preview automation.
 disable-model-invocation: false
-argument-hint: '[author|run] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright]'
+argument-hint: '[author|run|verify] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright]'
 license: MIT
-allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
+allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Bash(node *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
   author: mthines
-  version: '1.2.0'
+  version: '1.3.0'
   workflow_type: slash-command
   tags:
     - playwright
@@ -68,6 +70,7 @@ Parse `$ARGUMENTS`. The first token selects the operation.
 | --- | --- | --- |
 | `author` | first token `author`, or delegated from `create-pr` | Seed the spec from an existing source (the aw planner's `specs.md`, a `/fix-bug` repro) or generate it from the diff, then inject the marked collapsed block into the PR body. Reads memory first. |
 | `run` | first token `run` | Extract the block from the PR (or read a local `specs.md` path), resolve the preview URL, run the spec via the selected driver, report the verdict, write lessons. |
+| `verify` | first token `verify` | One-shot composite for a PR with no spec: author-if-needed (author only when the block is absent — never overwrite a hand-written one), then `run`, then report a single combined verdict. The autonomous entry point for others' PRs and CI / agent0 automation. |
 
 If no operation token is present, default to `author` when a diff or branch context is in scope, and `run` when only a PR reference is given.
 
@@ -111,6 +114,23 @@ It has to live there because its condition is *`run` invoked without `--url`* �
 
 Inject one collapsed, marked UI verification spec into the PR body.
 
+**Step 0 — decide "is this a UI change?" mechanically. Do not eyeball the diff.**
+Run the shared `is-ui-diff` gate, which classifies the changed files against the repo's learned UI surface (falling back to broad defaults), so every caller — `create-pr`, `aw-planner`, `review-loop`, a standalone run — decides identically:
+
+```bash
+node ${CLAUDE_SKILL_DIR}/scripts/is-ui-diff.mjs --base "$(git merge-base origin/HEAD HEAD)"
+```
+
+Read the final `UI_DIFF:` line. `no` → stop and report `not authored (no UI files in diff)`; never author a spec for a non-UI diff. `yes` → continue.
+
+**Reflect the repo's learned UI surface when one exists.** The gate cannot call LoreKit itself — a script cannot reach an MCP tool — so read the surface record first (`memory.read` scope `repo::{owner}/{repo}`, key `preview-spec-lessons::ui-surface`; see [`rules/memory.md § The UI surface record`](./rules/memory.md#the-ui-surface-record)) and, when present, forward its JSON body so the gate reflects what *this* repo counts as UI:
+
+```bash
+node ${CLAUDE_SKILL_DIR}/scripts/is-ui-diff.mjs --base <merge-base> --surface-json '<the record body>'
+```
+
+With no record the broad defaults apply, so a repo with no learnings yet still gets a correct answer. When a UI change slips through as `no` (or a non-UI diff as `yes`), that is a signal to refine the surface — see [`rules/memory.md § The UI surface record`](./rules/memory.md#the-ui-surface-record).
+
 1. **Read memory first.** Load spec-authoring lessons and locator lessons per [`rules/memory.md § Read at author time`](./rules/memory.md). These tell you the app's navigation quirks and stable locators before you write a single step.
 2. **Reuse an existing spec source when present.** Before writing anything, check for a spec artifact the surrounding flow already produced, in priority order (full contract: [`rules/spec-sources.md`](./rules/spec-sources.md)):
    - `.agent/{branch}/specs.md` — the autonomous-workflow planner's `aw-tester` specs, already run locally at Phase 4. Same grammar: lift its `## Spec N:` blocks verbatim.
@@ -137,6 +157,33 @@ Full procedure: **[`rules/runner.md`](./rules/runner.md)**. In outline:
 4. **Select the driver and run** per `--driver` (see [Drivers](#drivers) and [`rules/runner.md § Step 4`](./rules/runner.md)). `auto` invokes `aw-tester-chrome` in-session when the Chrome extension is connected; when Chrome is unavailable or a Chrome run returns `fallback: playwright`, it asks the user before running the `aw-tester` sub-agent rather than falling back silently. A forced `--driver chrome`/`playwright` never prompts. Mode `--all`.
 5. **Report** the verdict (pass / fail / inconclusive, per spec) — identical shape from either driver.
 6. **Write lessons** per [`rules/memory.md § Write at run time`](./rules/memory.md) when a spec failed for a navigation or precondition reason — not for a locator miss, which is the runner's own lesson to write.
+
+## Operation `verify`
+
+One-shot: make a PR autonomously verifiable and verify it, in a single call.
+This is the entry point for a PR you did not author — a teammate's, or one an
+agent0 / CI automation is checking against a Vercel-style preview — where no
+spec exists yet.
+
+1. **Author if, and only if, the block is absent.** Read the PR body. If it
+   already carries a `<!-- preview-spec:v1 -->` block, keep it verbatim — never
+   overwrite a hand-written or previously-authored spec. If it is absent, run
+   Operation `author` (including its Step 0 `is-ui-diff` gate): a `no` from the
+   gate ends `verify` here with `not verified (no UI files in diff)`, and a
+   `failed (no GitHub access path)` from `author` ends it with that same reason —
+   there is nothing to run.
+2. **Run.** Then run Operation `run` against the resolved preview URL, honouring
+   `--url` and `--driver` exactly as `run` does. On the `mcp` path (or a local
+   `specs-path`), `--url` is required — without it, report
+   `inconclusive: no access path for deployment lookup (pass --url)` and stop,
+   never `preview not deployed`.
+3. **Report one combined verdict.** State whether the spec was authored fresh or
+   reused, then the `run` verdict (pass / fail / inconclusive, per spec). A red
+   verdict is a finding about the PR, not a `verify` failure.
+
+`verify` composes the two existing operations and adds no new browser or
+GitHub behaviour — every hard rule below applies unchanged. It is idempotent:
+a second `verify` on the same PR reuses the block authored by the first.
 
 ## Hard rules
 

@@ -414,48 +414,82 @@ After the technical approach is drafted but **before** the confidence gate,
 emit a `specs.md` file when the task touches a UI surface. This is the
 planning-time deliverable that `aw-tester` consumes in Phase 4.
 
-### Heuristic: does the task touch a UI surface?
+### Gate: does the task touch a UI surface? (mechanical, not eyeballed)
 
-Check the `## File changes` table in the in-conversation plan draft. If ANY
-planned file matches these patterns, emit `specs.md`:
+Do **not** eyeball the plan draft. Run the same deterministic `is-ui-diff` gate
+every other caller (`preview-spec author`, `create-pr`, `review-loop`) runs, so
+the answer is identical no matter which surface asks. At planning time the files
+are *planned*, not yet on disk, so pass the `## File changes` paths explicitly
+with `--files` (the gate's `--base` git-diff mode is for post-implementation
+callers):
 
-- `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`
-- `*.css`, `*.module.css`, `*.scss`
-- Files in `/pages/`, `/app/`, `/routes/`, `/layouts/`, `/components/`
-
-If zero files match, skip spec emission entirely and log:
-
-```markdown
-- [TIMESTAMP] Phase 1: spec-emission — skipped (no UI files in plan)
+```bash
+# The planned paths, comma-separated, from the plan draft's File changes table.
+node ~/.claude/skills/preview-spec/scripts/is-ui-diff.mjs \
+  --files "src/components/Widget.tsx,src/api/widgets.ts"
 ```
 
-### Aw-Target prerequisite check
+**Reflect the repo's learned UI surface** when one exists — the gate cannot call
+LoreKit itself, so read the surface record and forward it:
 
-Before emitting specs, verify an aw-target exists:
+```text
+memory.read { scope: "repo::{owner}/{repo}", key: "preview-spec-lessons::ui-surface" }
+```
+
+```bash
+node ~/.claude/skills/preview-spec/scripts/is-ui-diff.mjs \
+  --files "<planned paths>" --surface-json '<the record body>'
+```
+
+Read the final `UI_DIFF:` line. `yes` → emit `specs.md`. `no` → skip spec
+emission entirely and log the skip below.
+
+If the `preview-spec` skill is not installed (the script path does not resolve),
+fall back to the inline heuristic — ANY planned file matching `*.tsx`, `*.jsx`,
+`*.vue`, `*.svelte`, `*.css`, `*.scss`, or living under `/pages/`, `/app/`,
+`/routes/`, `/layouts/`, `/components/` counts as UI — and log the degradation.
+
+```markdown
+- [TIMESTAMP] Phase 1: spec-emission — skipped (is-ui-diff: no UI files in plan)
+- [TIMESTAMP] Phase 1: spec-emission — is-ui-diff not installed; used inline fallback heuristic
+```
+
+### Aw-Target prerequisite check — degrade, never halt
+
+Check for a committed aw-target:
 
 ```bash
 ls .claude/aw-targets/*.yml 2>/dev/null | head -1
 ```
 
-If no aw-target file exists, **halt and tell the user**:
-
-```
-This task touches UI files. Spec-driven verification requires an aw-target.
-Run /aw-setup to scaffold .claude/aw-targets/local.yml before proceeding.
-This is a one-time setup (~2 minutes). The planner will pause here.
-
-After /aw-setup completes, reply "continue" and the planner will resume.
-```
-
-Wait for the user to confirm `/aw-setup` is done. Do NOT auto-scaffold.
-Do NOT attempt to run `/aw-setup` yourself — it is interactive and requires
-user input. If the aw-target's `auth.storage_state` file is older than 7 days,
-warn but do not halt:
+**If one exists, use it.** If its `auth.storage_state` file is older than 7
+days, warn but continue:
 
 ```markdown
 - [TIMESTAMP] Phase 1: spec-emission — auth state at {path} is {N} days old;
   consider re-running /aw-setup to refresh before execution.
 ```
+
+**If none exists, do NOT halt.** A missing aw-target is a cold-start, not a
+blocker — the planner used to stop here and wait for an interactive `/aw-setup`,
+which stranded every fresh repo. Instead, degrade to an implicit defaults target
+so specs are still authored and can run against a local dev server:
+
+- Assume `base_url: http://localhost:3000`, `auth.strategy: none`, no fixtures.
+- Emit the specs as normal against that assumption.
+- Surface a one-line, non-blocking nudge (not a wait):
+
+```markdown
+- [TIMESTAMP] Phase 1: spec-emission — no aw-target found; assuming
+  http://localhost:3000 (auth: none). Run /aw-setup to pin base_url, auth, and
+  fixtures for reliable runs.
+```
+
+The executor's Phase 4 spec verification resolves this same way: a committed
+target wins; otherwise the localhost defaults apply and any spec that needs auth
+or a fixture is reported `skipped` with its reason, never failed. Suggest
+`/aw-setup` once — never block on it, and never try to run it yourself (it is
+interactive).
 
 ### What to emit
 
@@ -487,8 +521,9 @@ Log:
 ```markdown
 - [TIMESTAMP] Phase 1: spec-emission — {N} specs drafted (aw-target: {name},
   {critical-path-count} critical-path, {verify-only-count} verify-only)
-- [TIMESTAMP] Phase 1: spec-emission — skipped (no UI files in plan)
-- [TIMESTAMP] Phase 1: spec-emission — halted (no aw-target; user told to run /aw-setup)
+- [TIMESTAMP] Phase 1: spec-emission — skipped (is-ui-diff: no UI files in plan)
+- [TIMESTAMP] Phase 1: spec-emission — {N} specs drafted against localhost
+  defaults (no aw-target; /aw-setup suggested, not blocking)
 ```
 
 ---

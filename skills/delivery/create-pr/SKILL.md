@@ -126,10 +126,9 @@ When the diff touches the UI, attach a collapsed, machine-findable verification 
 **Skip this step** when any of the following hold:
 
 - `--no-preview-spec` or `--no-quality` is in `$ARGUMENTS`.
-- The diff does **not** touch the UI. Heuristic: no changed file matches `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `*.css`, `*.scss`, `*.stories.*`, or a component directory. Test-only and config-only changes to those files do not count.
 - `preview-spec` is not installed (`Skill()` raises — catch, log one line, continue).
 
-Otherwise delegate — do not author the block by hand:
+**Do not eyeball the diff to decide whether it is UI.** `preview-spec author` now makes that call mechanically with its shared `is-ui-diff` gate (the repo's learned UI surface, falling back to broad defaults) and returns `not authored (no UI files in diff)` for a non-UI diff. That removes the old under-firing heuristic — a web-JS-only glob an agent had to remember to apply — so **delegate unconditionally** when neither skip condition above holds, and record whatever the delegate returns:
 
 ```
 Skill("preview-spec", "author <pr-url>")
@@ -142,7 +141,7 @@ Skill("preview-spec", "author <pr-url>")
 | What happened here | Record |
 | --- | --- |
 | Delegated, `preview-spec` reported `<N>` specs authored | `authored (<N> specs)` |
-| Skipped: no changed file matched the UI heuristic | `not authored (no UI files in diff)` |
+| Delegated, and `preview-spec`'s `is-ui-diff` gate found no UI files in the diff | `not authored (no UI files in diff)` |
 | Skipped: `--no-preview-spec` in `$ARGUMENTS` | `skipped (--no-preview-spec)` |
 | Skipped: `--no-quality` in `$ARGUMENTS` | `skipped (--no-quality)` |
 | Skipped: `Skill()` raised — `preview-spec` not installed | `skipped (preview-spec not available)` |

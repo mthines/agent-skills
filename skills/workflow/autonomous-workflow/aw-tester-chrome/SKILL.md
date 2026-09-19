@@ -169,6 +169,16 @@ it to heal a locator on the spot instead of failing blind.
   the method, path, and status. Capture the status and first response lines only
   on a mismatch.
 
+**`CAPTURE` (documentation screenshot).** A `CAPTURE "<label>" [fullPage]` step
+is neither an action nor an assertion — it resolves no locator and can never fail
+the spec ([contract § 1](../rules/spec-run-contract.md#1-spec-parsing)). At that
+point in the flow, screenshot the current page through the extension and save it
+to `.agent/{branch}/.aw-tester/captures/<spec-id>-<slug-of-label>.png`
+(`fullPage` requests a full-page shot). List each capture that wrote in the
+verdict's `captures:` array. If the extension cannot persist the file to that
+path, record it in `notes` and omit it from `captures:` — a capture never turns a
+green spec red.
+
 **Healing.** When a locator does not resolve, apply a matching startup lesson
 first, then retry one rung looser (partial name, then partial text) — never CSS.
 Record a healing that worked in the verdict `notes`; do not write it to cross-run
@@ -188,10 +198,11 @@ rest `skipped` with reason `bail`. `--all`: run every spec regardless.
 Emit the exact shared verdict block from
 [contract § 4](../rules/spec-run-contract.md#4-verdict-schema-mandatory--do-not-deviate)
 as the last thing in your message. Same `verdict` / `specs` / `diagnostics` /
-`notes` keys, same hard rules (`green` only when all pass; `red` on any fail;
-`inconclusive` when non-skipped specs pass but some were skipped). The Chrome
-runner adds **no** `hot_loop:` block — that is a Playwright-only re-run handle and
-does not apply here.
+`captures` / `notes` keys, same hard rules (`green` only when all pass; `red` on
+any fail; `inconclusive` when non-skipped specs pass but some were skipped;
+`captures:` present only when a `CAPTURE` step wrote a file). The Chrome runner
+adds **no** `hot_loop:` block — that is a Playwright-only re-run handle and does
+not apply here.
 
 Do not narrate the whole click-through. The verdict block is the deliverable.
 

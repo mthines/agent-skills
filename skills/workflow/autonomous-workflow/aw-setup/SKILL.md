@@ -3,14 +3,16 @@ name: aw-setup
 description: >
   One-time (but safely re-runnable) setup flow that scaffolds a project's
   aw-tester aw-target: detects auth strategy, captures storage state, writes
-  .claude/aw-targets/local.yml, and validates with a smoke spec. Re-runs detect
-  the existing aw-target and only re-prompt for what broke or changed.
-  Triggers on "/aw-setup", "setup aw-tester", "scaffold aw-target".
+  .claude/aw-targets/local.yml, and validates with a smoke spec. Also records the
+  repo's UI surface (what counts as a UI change) so the is-ui-diff gate is
+  accurate per repo. Re-runs detect the existing aw-target and only re-prompt for
+  what broke or changed. Triggers on "/aw-setup", "setup aw-tester",
+  "scaffold aw-target".
 disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.2.0'
   workflow_type: slash-command
   tags:
     - aw-tester
@@ -37,8 +39,11 @@ PR that touches UI. Re-run it when auth drifts, fixtures change, or base URL mov
 - **First time:** before running any autonomous feature that touches UI.
 - **Re-run:** when `aw-tester` reports `auth-refresh-failed`, when the base URL
   changes, or when seed fixtures are restructured.
-- **Never auto-triggered by the planner.** The planner halts and tells the user
-  to run `/aw-setup`. The user runs it explicitly.
+- **Never auto-triggered by the planner.** The planner no longer halts on a
+  missing aw-target — it degrades to localhost defaults and suggests `/aw-setup`
+  in one non-blocking line. Running it is what upgrades those defaults to a
+  pinned `base_url`, real auth, and fixtures, so specs run reliably instead of
+  best-effort. The user runs it explicitly.
 
 ---
 
@@ -243,6 +248,56 @@ aw-tester:
 | `green` | Done. Aw-Target is scaffolded and validated. |
 | `red` | Show the diagnostic blob. Loop back to Phase B with the specific failure. |
 | `inconclusive` | Auth strategy is `manual` — expected. Aw-Target is written, authed specs will be skipped. |
+
+### Phase F — Learn the repo's UI surface (optional, one LoreKit record)
+
+The `is-ui-diff` gate (run by `preview-spec author`, `aw-planner` Phase 1,
+`create-pr`, and `review-loop`) decides mechanically whether a diff touches UI.
+Its broad defaults already serve a fresh repo, so this phase is a **refinement**,
+not a prerequisite — it teaches the gate what *this* repo counts as UI, once, for
+every future PR.
+
+Skip this phase silently and log one line if LoreKit's `memory.*` tools are not
+connected: `aw-setup: memory.* not connected — UI surface not recorded, gate uses defaults`.
+
+Otherwise, propose a surface from what Phase A already detected — the framework,
+the source layout, whether it is a frontend-only app or a monorepo — and confirm
+with the user before writing. Only ask when the defaults would get this repo
+wrong:
+
+- A **frontend-only** repo where plain `.ts`/`.js` are UI → add them to
+  `extensions`.
+- A **monorepo** where only some packages are UI → pin `dirs` to those packages,
+  and `exclude` the backend ones (or use `mode: "replace"`).
+- A repo whose components live under a non-default directory → add it to `dirs`.
+
+Write the record exactly as [`preview-spec/rules/memory.md § The UI surface
+record`](../../../testing/preview-spec/rules/memory.md#the-ui-surface-record)
+defines it — scope `repo::{owner}/{repo}`, key `preview-spec-lessons::ui-surface`,
+tags `loop::preview-spec-lessons` + `kind::config`, body the surface JSON:
+
+```text
+memory.write {
+  scope: "repo::{owner}/{repo}",
+  key:   "preview-spec-lessons::ui-surface",
+  value: "{ \"mode\": \"extend\", \"dirs\": [\"src/web\"], \"exclude\": [\"packages/api/**\"] }",
+  tags:  ["loop::preview-spec-lessons", "kind::config"],
+  source_agent: "aw-setup"
+}
+```
+
+Re-run behaviour: read the existing record first (`memory.read` same scope+key)
+and show a diff before overwriting, exactly like the aw-target write. Never store
+a path that reveals a secret — a directory layout is not sensitive; a token
+embedded in a path would be.
+
+Log:
+
+```markdown
+- [TIMESTAMP] aw-setup: UI surface recorded (repo::{owner}/{repo}) — {summary}
+- [TIMESTAMP] aw-setup: UI surface unchanged — defaults fit this repo
+- [TIMESTAMP] aw-setup: memory.* not connected — UI surface not recorded
+```
 
 ---
 
@@ -456,6 +511,8 @@ rewrite the bootstrap script + the `refresh.command` line in lockstep.
       (e.g. `.browser/`) or the `.auth/` default. If strategy (b), `.env.local`
       (or whichever file holds `E2E_PASSWORD`) is also in `.gitignore`.
 - [ ] Smoke spec returned `green` (or `inconclusive` for `manual` auth strategy).
+- [ ] UI surface recorded to LoreKit (or skipped with a logged line when
+      `memory.*` is not connected, or left unchanged when defaults fit).
 - [ ] User told what to do next:
   - "Run an autonomous task that touches UI — the executor's Phase 4 will
     now run `aw-tester` automatically."
