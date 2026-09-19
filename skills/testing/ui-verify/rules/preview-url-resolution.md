@@ -25,6 +25,31 @@ This resolves it from the **GitHub deployments API**, which every such host writ
 If the invocation passed `--url <preview-url>`, use it directly and skip every step below.
 The caller has told you the URL; do not second-guess it.
 
+## Repo-configured resolution (when previews aren't GitHub-integrated)
+
+The generic steps below assume a GitHub-integrated host that registers a **deployment** or posts a **recognizable provider bot comment**. Some repos deploy previews another way — a CLI `vercel deploy` in the repo's own CI registers NO GitHub deployment and posts a `github-actions[bot]` sticky comment whose stable alias is not `*-git-*`. For these the generic resolver finds nothing and every run needs a manual `--url`. Instead, the committed aw-target (`.claude/aw-targets/preview.yml`, if the repo has one) may carry a `preview_url` block that tells the resolver where to look.
+
+`--url` still overrides this. If `preview_url` is absent, skip to the precondition and generic steps below, unchanged. When it is present, try its sources in order and take the first that yields a **reachable** URL — this is a hint, never a dead end: if none resolves, FALL THROUGH to the generic steps.
+
+1. **`preview_url.comment` — the sanctioned comment read, generalized.** Scan the PR's comments whose author matches the DEFAULT providers (`vercel|netlify|cloudflare|render`) OR any author in `authors`, and take the URL whose host matches `host_pattern`. This still reads a **real, published** URL; the config only says which author and host to trust, not what the URL is — so it is not the free-text grep the "Do not" section forbids.
+
+   ```bash
+   gh pr view <pr> --json comments \
+     --jq '[.comments[] | select(.author.login|test("vercel|netlify|cloudflare|render|<authors>";"i")) | .body] | join("\n")' \
+     | grep -oiE 'https://<host_pattern>' | head -1
+   ```
+
+   Unlike the deployments API, a comment read has an mcp equivalent (`mcp__github__pull_request_read`), so this source is reachable on the `mcp` path too.
+
+2. **`preview_url.template` — a verified constructed URL.** Substitute `{pr}` (PR number), `{branch}` (slugified head ref), `{sha}` (head SHA). This is the ONE sanctioned way to CONSTRUCT a URL, and only because it is **read from the committed aw-target** (a human wrote and committed it) **and reachability-checked here before use** — not a slug rule you inferred. The check must tell a WRONG alias apart from a RIGHT-but-GATED one, or it rejects exactly the protected previews this feature exists for:
+   - Send the aw-target's `auth.bypass_header` (name + the env-var's value) on the check request when one is configured — otherwise a protected preview redirects to its host-protection origin and looks unreachable.
+   - **Accept** a `2xx`, and also a redirect to a KNOWN host-protection origin (e.g. `vercel.com/sso-api`, `*.netlify.app`'s password page): the alias is correct, just gated, and `aw-tester` applies the same bypass at run time.
+   - **Reject** (fall through) only a real miss: `404` / `410`, `NXDOMAIN` / DNS failure, or a redirect to an UNRELATED origin. A miss means the template is wrong for this PR.
+
+   Because it needs only the PR number plus this check, this source resolves even where the deployments API is unavailable (the `mcp` / `none` access path — see the precondition's exception below).
+
+Name the source in the report: `repo-config-comment` or `repo-config-template`.
+
 ## The access-path precondition (check this before step 1)
 
 Every step below reads the GitHub deployments API, and **no `mcp__github__*` tool exposes deployments**.
@@ -34,7 +59,7 @@ So the resolution steps are reachable only on the `gh` access path ([`SKILL.md` 
 | --- | --- | --- |
 | `gh` | either | Run the resolution steps below. |
 | `mcp` or `none` | yes | Use the override above. The steps below never run. |
-| `mcp` or `none` | no | Report `inconclusive: no access path for deployment lookup (pass --url)` and stop. |
+| `mcp` or `none` | no | Report `inconclusive: no access path for deployment lookup (pass --url)` and stop — UNLESS the repo's `preview.yml` configures a `preview_url.template` (see [Repo-configured resolution](#repo-configured-resolution-when-previews-arent-github-integrated) above), which resolves on this path without the deployments API. |
 
 **Never report `inconclusive: preview not deployed` from the last row.**
 That string asserts a fact about the deployment — that a lookup ran and found nothing — and on this path no lookup ran at all.
@@ -108,4 +133,4 @@ Reached only on the `gh` path, per the precondition above.
 - **Do not take a per-commit URL when a stable branch alias is available.** Step 2 exists for this: a re-push invalidates `<project>-<hash>.<domain>`, and the reviewer re-runs against the PR, so a commit-pinned URL is only the last resort — labelled as such.
 - **Do read the provider's OWN comment for the stable alias** (step 2b) when the API carries only a per-commit URL — but only the provider's bot comment (`vercel` / `netlify` / `cloudflare` / …), and only a **branch-alias host pattern** (`*-git-*`, `deploy-preview-*`) within it. This is the one sanctioned comment read. Do **not** grep an arbitrary comment, or match free text, for *some* URL — that is the wording-coupling the deployments API is preferred to avoid.
 - **Do not poll in a tight loop.** One retry against `?ref=` is the only retry. If the preview is still building, report `inconclusive` and let the caller re-run once it is ready — the runner is on-demand, not a watcher.
-- **Do not fabricate a branch alias from a template you did not read** (`https://<repo>-git-<branch>.vercel.app`). Taking the alias from the provider's published comment (2b) is reading a real URL; *constructing* one from a slug rule is a guess that 404s when the project slug, preview domain, or branch sanitization differs. If neither the API nor the comment yields a URL, report `inconclusive` — never a guessed one.
+- **Do not fabricate a branch alias from a template you did not read** (`https://<repo>-git-<branch>.vercel.app`). Taking the alias from the provider's published comment (2b) is reading a real URL; *constructing* one from a slug rule you inferred is a guess that 404s when the project slug, preview domain, or branch sanitization differs. If neither the API nor the comment yields a URL, report `inconclusive` — never a guessed one. **The sole exception is a `preview_url.template` READ from the committed aw-target** (see [Repo-configured resolution](#repo-configured-resolution-when-previews-arent-github-integrated)): that is configuration a human wrote and committed, and the resolver reachability-checks it before use and falls through if it 404s — so it is neither inferred nor unverified.

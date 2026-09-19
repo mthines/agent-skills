@@ -32,6 +32,7 @@ Strip the `<details>` / `<summary>` wrapper and the markers. What remains is the
 
 Resolve the URL per [`preview-url-resolution.md`](./preview-url-resolution.md).
 Any `inconclusive: …` outcome there is terminal for this run — report it and stop. The spec was not run; do not report a pass or a fail.
+That resolution also consults the committed `.claude/aw-targets/preview.yml`'s optional `preview_url` block (after `--url`, before the deployments API) — so a repo whose CI CLI-deploys previews behind a `github-actions[bot]` comment resolves without a manual `--url`.
 
 ## Step 3: Materialize the ephemeral files
 
