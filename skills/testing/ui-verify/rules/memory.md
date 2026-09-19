@@ -132,6 +132,37 @@ The body is the surface JSON the gate accepts (every field optional):
 
 Write the correction back to this record (`memory.write` same scope + key updates it in place). The next PR in the repo — anyone's — decides correctly from the start. Never store a path that reveals a secret; a directory layout is not sensitive, a token embedded in one would be.
 
+## The auth profile record
+
+The second config record under this tag (alongside the UI surface). It captures the **confirmed shape** of the repo's preview auth so the author and runner never rediscover it, and so a run can tell a stale session from a broken app. `/aw-setup` writes it after exercising the login once (see [aw-setup Phase G](../../../workflow/autonomous-workflow/aw-setup/SKILL.md#phase-g--confirm-the-preview-auth-flow-and-record-its-shape-optional-one-lorekit-record)); the runner reads it to know which walls to clear and which selector proves a session.
+
+**Authority: this record is a discovery index, not the source of truth.** The committed `.claude/aw-targets/preview.yml` is what the tools actually execute — `aw-tester` reads it, the runner materializes its ephemeral target from it, `refresh-auth.mjs` runs from it, Playwright loads `storage_state` from its path. None of those can read a LoreKit memory. This record exists so an *agent* — a teammate's first `/ui-verify`, an `aw-setup` re-run — knows the shape (which walls, which `authed_check`, whether it was ever confirmed) without reopening the YAML or rediscovering it, and holds fields the YAML has no concept of (`walls`, `confirmed_at_setup`, `notes`). When the two disagree, `preview.yml` wins and this record is stale — refresh it, never edit `preview.yml` to match it.
+
+| Field | Value |
+| --- | --- |
+| Scope | `repo::{owner}/{repo}` — auth is repo-specific. |
+| Key | `ui-verify-lessons::auth-profile` (exactly one per repo). |
+| Tag | `loop::ui-verify-lessons` plus `kind::config`. |
+| Written by | `/aw-setup` after a confirming login (Phase G), refined when auth drifts. |
+| Read by | `author` (to know auth is needed) and the runner / `aw-tester` (walls, `authed_check`). |
+
+The body is JSON — **names and selectors only, never a secret value** (the privacy pre-flight below forbids it; a credential env-var *name* is not a secret, its value is):
+
+```json
+{
+  "walls": ["bypass-header", "app-login"],
+  "strategy": "storage-state",
+  "authed_check": "{role: \"button\", name: \"Account menu\"}",
+  "storage_state": ".browser/auth-state.preview.json",
+  "refresh_command": "node .claude/aw-targets/refresh-auth.mjs",
+  "env": ["PREVIEW_USER", "PREVIEW_PASSWORD", "VERCEL_AUTOMATION_BYPASS_SECRET"],
+  "confirmed_at_setup": true,
+  "notes": "Clerk email-password test account; Vercel protection bypass on the outer wall"
+}
+```
+
+`authed_check` is a single-braces locator (the spec grammar's, not forked) that is present **only when signed in** — the positive signal that a session is valid, used to confirm the setup login and to detect an expired session before a run (see [`preview-auth.md § Confirming a session`](./preview-auth.md#confirming-a-session)). `confirmed_at_setup` records whether `/aw-setup`'s trial login actually reached that selector; `false` means the shape is scaffolded but never proven, so the first real run must not assume it works. Write the correction back (same scope + key) when auth drifts. Never store a credential value, a token, or a captured `storageState` in this record — only the *path* to the gitignored state and the env-var *names*.
+
 ## Entrenchment guards
 
 The same five guards that govern `aw-tester-lessons` apply here: lessons are advisory (they never change the verdict or the grammar); recurrence (the store's own `seen_count >= 3`, or the `status::structural` tag) gates promotion; every lesson expires (`ttl_days: 90` on every write, re-passed on a recurrence); a contradicting lesson is surfaced, not overwritten; the privacy pre-flight is never bypassed — never store credentials, tokens, preview-auth secrets, customer names, or product data.

@@ -16,9 +16,12 @@ description: >
   spec", "verify this PR's preview", "run the preview spec", "test the
   preview deployment", "verify this PR autonomously", "/ui-verify". `verify`
   is the one-shot composite (author-if-needed → run → report) for a PR with no
-  spec yet — someone else's, or an agent0 / Vercel-preview automation.
+  spec yet — someone else's, or an agent0 / Vercel-preview automation. `setup`
+  scaffolds the committed preview aw-target this skill runs against (auth, the
+  two walls, the repo-scoped LoreKit auth profile) — a thin delegator to
+  `aw-setup --target preview`.
 disable-model-invocation: false
-argument-hint: '[author|run|verify] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright]'
+argument-hint: '[setup|author|run|verify] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright]'
 license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Bash(node *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
@@ -57,6 +60,7 @@ This skill owns three things and reuses the rest.
 | The spec-run contract (locator ladder, auth semantics, verdict schema) | [`spec-run-contract.md`](../../workflow/autonomous-workflow/rules/spec-run-contract.md) — the engine-agnostic contract both runners implement. |
 | The runners + the compact verdict | Two, one contract: [`aw-tester`](../../workflow/autonomous-workflow/templates/aw-tester.agent.md) (Playwright sub-agent) and [`aw-tester-chrome`](../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md) (in-session Chrome). `run --driver` picks one. |
 | The browser context (`base_url`, auth, fixtures) | `aw-target.yml` — [`aw-target.yml.template`](../../workflow/autonomous-workflow/templates/aw-target.yml.template). |
+| Scaffolding the committed preview aw-target (auth detection, the two walls, the confirming login, the repo-scoped records) | `aw-setup` — the `setup` operation is a thin delegator (`aw-setup --target preview`); this skill never reimplements it. |
 | The two-way lessons loop | `aw-tester-lessons` (locator friction, existing) + `ui-verify-lessons` (navigation / spec-quality friction, new). See [`rules/memory.md`](./rules/memory.md). |
 | **Embedding the spec in the PR body** (marker + collapsed block, ceiling exemption) | this skill — [`rules/spec-format.md`](./rules/spec-format.md). |
 | **Resolving the PR's preview URL** (GitHub deployments API) | this skill — [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md). |
@@ -68,11 +72,12 @@ Parse `$ARGUMENTS`. The first token selects the operation.
 
 | Operation | Trigger | What it does |
 | --- | --- | --- |
+| `setup` | first token `setup` | Scaffold the committed **preview** aw-target (`.claude/aw-targets/preview.yml`) this skill runs against — auth strategy, the two walls, the confirming login, the repo-scoped LoreKit auth profile + UI surface. A thin delegator to `aw-setup --target preview`; the discoverable front door so you never need the `aw` namespace. |
 | `author` | first token `author`, or delegated from `create-pr` | Seed the spec from an existing source (the aw planner's `specs.md`, a `/fix-bug` repro) or generate it from the diff, then inject the marked collapsed block into the PR body. Reads memory first. |
 | `run` | first token `run` | Extract the block from the PR (or read a local `specs.md` path), resolve the preview URL, run the spec via the selected driver, report the verdict, write lessons. |
 | `verify` | first token `verify` | One-shot composite for a PR with no spec: author-if-needed (author only when the block is absent — never overwrite a hand-written one), then `run`, then report a single combined verdict. The autonomous entry point for others' PRs and CI / agent0 automation. |
 
-If no operation token is present, default to `author` when a diff or branch context is in scope, and `run` when only a PR reference is given.
+If no operation token is present, default to `author` when a diff or branch context is in scope, and `run` when only a PR reference is given. `setup` is always explicit.
 
 ### Drivers
 
@@ -109,6 +114,36 @@ Without one, report `inconclusive: no access path for deployment lookup (pass --
 
 This paragraph is a summary; the branch is **enforced** in [`rules/preview-url-resolution.md § The access-path precondition`](./rules/preview-url-resolution.md#the-access-path-precondition-check-this-before-step-1), which owns the resolution decision and which [`rules/runner.md § Step 2`](./rules/runner.md) treats as terminal.
 It has to live there because its condition is *`run` invoked without `--url`* — an argument this step cannot see.
+
+## Operation `setup`
+
+Scaffold the committed preview aw-target this skill runs against. This is a
+**thin delegator** — the setup logic (auth detection, storage-state capture,
+the two-wall / env-var flow, the confirming login, and the repo-scoped LoreKit
+records) lives in one place, `aw-setup`, and is not reimplemented here. `setup`
+is the discoverable front door: a `/ui-verify` user who hits a preview-auth wall
+runs `/ui-verify setup` without needing to know the `aw` namespace.
+
+Delegate, forwarding any extra tokens verbatim:
+
+```text
+Skill("aw-setup", "--target preview")
+```
+
+If `aw-setup` is not installed, say so and point the user at
+[`rules/preview-auth.md`](./rules/preview-auth.md) to configure
+`.claude/aw-targets/preview.yml` by hand — never scaffold a parallel setup here.
+
+**What it produces** (all team-shared, by two mechanisms):
+
+- **Committed files** — `.claude/aw-targets/preview.yml` and, for a
+  non-interactive login, `refresh-auth.mjs`. These are the source of truth the
+  tools execute (`aw-tester` reads the YAML, `node` runs the script, Playwright
+  loads the gitignored `storage_state` by path), shared with the team **by git**.
+- **Repo-scoped LoreKit records** — the UI surface and the auth profile, shared
+  **by LoreKit**. These are agent-facing discovery indexes, not authoritative
+  config; when a record and `preview.yml` disagree, the YAML wins. See
+  [`rules/memory.md`](./rules/memory.md).
 
 ## Operation `author`
 
