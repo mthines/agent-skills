@@ -4,7 +4,7 @@
 //   node scripts/eval/l1.mjs
 // Exits non-zero if any check fails.
 import { execFileSync, execSync, spawnSync } from "node:child_process";
-import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync, mkdtempSync, mkdirSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync, mkdtempSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -6072,6 +6072,41 @@ const isPollBlock = (block) =>
     /mandatory on every run, including a non-UI diff/i.test(CP_S10),
     "the tempting omission is exactly the silent case: `not authored (no UI files in diff)`"
       + " is the informative answer, and dropping the line restores the blind spot");
+
+  // 5. The gate must actually FIRE through its documented invocation path. Found by running
+  //    that path in a fresh agent: the skill invokes the script as
+  //    `node ~/.claude/skills/ui-verify/scripts/is-ui-diff.mjs`, a symlink chain to the repo.
+  //    Node's ESM loader realpath-resolves `import.meta.url` to the repo path, while
+  //    `process.argv[1]` stays the symlink path — so a main-guard comparing the two directly
+  //    (`import.meta.url === \`file://${argv[1]}\``, OR the `pathToFileURL(argv[1]).href`
+  //    form) NEVER matches through a symlink and `main()` silently never runs: no `UI_DIFF:`
+  //    line, exit 0. A conforming agent reads nothing and the whole mechanical gate is a
+  //    no-op. Neither the self-test (run at the real path) nor any source substring caught
+  //    it. Prove it hermetically — symlink the self-contained script into a tmpdir and run
+  //    it THERE, so the guard needs no `~/.claude` (absent in CI) and reds on a revert to
+  //    either fragile form.
+  {
+    const realScript = join(REPO_ROOT, "skills/testing/ui-verify/scripts/is-ui-diff.mjs");
+    let firedThroughSymlink = false;
+    let detail = "";
+    try {
+      const dir = mkdtempSync(join(tmpdir(), "uiv-symlink-"));
+      const link = join(dir, "is-ui-diff.mjs");
+      symlinkSync(realScript, link);
+      const r = spawnSync(process.execPath, [link, "--self-test"], { encoding: "utf8" });
+      firedThroughSymlink = r.status === 0 && (r.stdout || "").includes("passed, 0 failed");
+      detail = `status=${r.status} stdout=${JSON.stringify((r.stdout || "").trim().slice(0, 80))}`;
+      rmSync(dir, { recursive: true, force: true });
+    } catch (e) {
+      detail = `spawn error: ${e.message}`;
+    }
+    s.check("G49 is-ui-diff's CLI main-guard fires through a symlink (documented invocation)",
+      firedThroughSymlink,
+      "the skill runs the script via ~/.claude/skills/ui-verify → repo; a main-guard"
+        + " comparing import.meta.url (realpath) to a path derived from process.argv[1]"
+        + " (symlink) never matches, so the gate is a silent no-op through its own"
+        + ` documented path. Resolve BOTH sides through realpath. ${detail}`);
+  }
 }
 
 // ── G49-lint: no assertion in the G49 block may test an UNBOUNDED whole-file string ──

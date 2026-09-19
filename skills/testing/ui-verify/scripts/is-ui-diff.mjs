@@ -37,9 +37,9 @@
 //
 // EXIT: 0 (answer printed), 2 (error).
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 // ── Defaults: broad enough that a fresh repo is served, narrow enough that a
 // backend .ts does not read as UI. Framework-view and style extensions always
@@ -264,6 +264,18 @@ function main() {
 }
 
 // Run main only as a CLI, not when imported for the self-test's `classify`.
-// Compare via pathToFileURL so a script path containing spaces (percent-encoded
-// in import.meta.url) still matches — a raw `file://${argv[1]}` would not.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+// Resolve BOTH sides through realpath before comparing. This script is invoked
+// through a symlink chain (~/.claude/skills/ui-verify → ~/.agents/skills → repo),
+// so process.argv[1] is the SYMLINK path while Node's ESM loader has already
+// realpath-resolved import.meta.url to the repo path — a direct compare never
+// matches and main() silently never runs. realpathSync collapses the symlink,
+// and fileURLToPath decodes percent-encoding, so a path with spaces matches too.
+function isMainModule() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+  } catch {
+    return false;
+  }
+}
+if (isMainModule()) main();
