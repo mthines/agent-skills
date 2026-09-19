@@ -39,11 +39,16 @@ Write two files under `.agent/{branch}/.ui-verify/` (the branch is the PR's head
 
 1. **`specs.md`** — the extracted spec body from Step 1, verbatim.
 2. **`aw-target.yml`** — the browser context, built as follows:
-   - If `.claude/aw-targets/preview.yml` exists in the repo, start from it (auth, fixtures, constraints) and set `base_url` to the resolved URL. This is how a preview behind Vercel deployment protection or an app login gets authenticated — the committed file carries the auth strategy, never the credentials.
+   - If `.claude/aw-targets/preview.yml` exists in the repo, start from it (auth, fixtures, constraints) and set `base_url` to the resolved URL. This is how a preview behind Vercel deployment protection or an app login gets authenticated — the committed file carries the auth **strategy**, never the credentials. The full flow (the two walls, the CI env-var path, the Google-SSO caveat) is [`preview-auth.md`](./preview-auth.md).
    - If it does not exist, first look for an existing repo auth convention the way `aw-setup` does ([aw-setup § Reuse before you scaffold](../../../workflow/autonomous-workflow/aw-setup/SKILL.md#reuse-before-you-scaffold)) — a `.claude/aw-targets/*.yml` with `auth.storage_state`, a captured `.browser/auth-state*.json`, or a `refresh-auth*.mjs` login script — and reuse it: point `storage_state` / `refresh.command` at it, capturing against the resolved `PREVIEW_URL`. Only when no convention exists, scaffold from [`templates/preview-target.yml.template`](../templates/preview-target.yml.template) with `auth.strategy: none` and note in the report that authed specs will be skipped by `aw-tester`.
    - Always override `base_url` with the resolved URL, no trailing slash.
 
-Never write the resolved URL or any credential into the committed `.claude/aw-targets/preview.yml` — only into the ephemeral `.agent/{branch}/.ui-verify/aw-target.yml`.
+   **Auth is env-var-driven and runs here, before the spec run:**
+   - Export `PREVIEW_URL` (the resolved URL) for the auth commands to read.
+   - When `auth.refresh` is configured (and `when: always`, or the `storage_state` file is missing/stale), run `refresh.command` — it reads the credentials named in `refresh.env` from the environment (a CI secret, an OS-keychain export, or a local `.env`), logs in non-interactively, and writes the gitignored `storage_state`. It never receives a credential from this runner or from any file. If a required env var is unset, the command fails loudly and the run reports the authed specs `skipped`, never a false pass.
+   - When `auth.bypass_header` is configured, carry the block **verbatim** (name + env-var reference) into the ephemeral `aw-target.yml`. Do **not** resolve the secret here — `aw-tester` reads the env var and applies the header to its own Playwright context at launch (Step 4), so the value never enters this runner's scope or logs.
+
+Never write the resolved URL or any credential into the committed `.claude/aw-targets/preview.yml` — only into the ephemeral `.agent/{branch}/.ui-verify/aw-target.yml`, and even there a credential is a **reference** (the env-var name), never a value.
 
 ## Step 4: Select the driver and run
 
