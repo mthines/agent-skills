@@ -1,5 +1,5 @@
 ---
-name: preview-spec
+name: ui-verify
 description: >
   Makes a UI pull request autonomously verifiable. `author` generates a
   step-by-step UI verification spec for the PR's visual change and injects it
@@ -14,7 +14,7 @@ description: >
   are `aw-tester`'s; this skill owns the PR-embedding, URL resolution, and the
   authoring loop. Triggers on "write a preview spec", "add a UI verification
   spec", "verify this PR's preview", "run the preview spec", "test the
-  preview deployment", "verify this PR autonomously", "/preview-spec". `verify`
+  preview deployment", "verify this PR autonomously", "/ui-verify". `verify`
   is the one-shot composite (author-if-needed → run → report) for a PR with no
   spec yet — someone else's, or an agent0 / Vercel-preview automation.
 disable-model-invocation: false
@@ -36,12 +36,12 @@ metadata:
     - self-improvement
 ---
 
-# Preview Spec
+# UI Verify
 
 Attach an executable UI verification spec to a pull request, then run it against the live preview deployment.
 
 A reviewer verifies a UI change by clicking through the preview.
-`preview-spec` turns that click-through into an artifact an agent can follow: a short spec in the PR description, run against the deployed preview by `aw-tester`, reporting pass or fail.
+`ui-verify` turns that click-through into an artifact an agent can follow: a short spec in the PR description, run against the deployed preview by `aw-tester`, reporting pass or fail.
 
 > **This `SKILL.md` is a thin index.**
 > Detailed procedures live in [`rules/*.md`](./rules) and [`templates/*.md`](./templates).
@@ -57,7 +57,7 @@ This skill owns three things and reuses the rest.
 | The spec-run contract (locator ladder, auth semantics, verdict schema) | [`spec-run-contract.md`](../../workflow/autonomous-workflow/rules/spec-run-contract.md) — the engine-agnostic contract both runners implement. |
 | The runners + the compact verdict | Two, one contract: [`aw-tester`](../../workflow/autonomous-workflow/templates/aw-tester.agent.md) (Playwright sub-agent) and [`aw-tester-chrome`](../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md) (in-session Chrome). `run --driver` picks one. |
 | The browser context (`base_url`, auth, fixtures) | `aw-target.yml` — [`aw-target.yml.template`](../../workflow/autonomous-workflow/templates/aw-target.yml.template). |
-| The two-way lessons loop | `aw-tester-lessons` (locator friction, existing) + `preview-spec-lessons` (navigation / spec-quality friction, new). See [`rules/memory.md`](./rules/memory.md). |
+| The two-way lessons loop | `aw-tester-lessons` (locator friction, existing) + `ui-verify-lessons` (navigation / spec-quality friction, new). See [`rules/memory.md`](./rules/memory.md). |
 | **Embedding the spec in the PR body** (marker + collapsed block, ceiling exemption) | this skill — [`rules/spec-format.md`](./rules/spec-format.md). |
 | **Resolving the PR's preview URL** (GitHub deployments API) | this skill — [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md). |
 | **The author + run orchestration** | this skill — this file + [`rules/runner.md`](./rules/runner.md). |
@@ -123,7 +123,7 @@ node ${CLAUDE_SKILL_DIR}/scripts/is-ui-diff.mjs --base "$(git merge-base origin/
 
 Read the final `UI_DIFF:` line. `no` → stop and report `not authored (no UI files in diff)`; never author a spec for a non-UI diff. `yes` → continue.
 
-**Reflect the repo's learned UI surface when one exists.** The gate cannot call LoreKit itself — a script cannot reach an MCP tool — so read the surface record first (`memory.read` scope `repo::{owner}/{repo}`, key `preview-spec-lessons::ui-surface`; see [`rules/memory.md § The UI surface record`](./rules/memory.md#the-ui-surface-record)) and, when present, forward its JSON body so the gate reflects what *this* repo counts as UI:
+**Reflect the repo's learned UI surface when one exists.** The gate cannot call LoreKit itself — a script cannot reach an MCP tool — so read the surface record first (`memory.read` scope `repo::{owner}/{repo}`, key `ui-verify-lessons::ui-surface`; see [`rules/memory.md § The UI surface record`](./rules/memory.md#the-ui-surface-record)) and, when present, forward its JSON body so the gate reflects what *this* repo counts as UI:
 
 ```bash
 node ${CLAUDE_SKILL_DIR}/scripts/is-ui-diff.mjs --base <merge-base> --surface-json '<the record body>'
@@ -151,9 +151,9 @@ Run the embedded spec against the live preview.
 
 Full procedure: **[`rules/runner.md`](./rules/runner.md)**. In outline:
 
-1. **Get the spec.** Extract it from the PR body between the `<!-- preview-spec:v1 -->` markers — the committed PR body is the only source that works on any checkout and in any later session. As a shortcut for a local author→run loop, `run <specs-path>` reads a local `specs.md` directly (no PR, no extraction). Absent → report `no spec` and stop.
+1. **Get the spec.** Extract it from the PR body between the `<!-- ui-verify:v1 -->` markers — the committed PR body is the only source that works on any checkout and in any later session. As a shortcut for a local author→run loop, `run <specs-path>` reads a local `specs.md` directly (no PR, no extraction). Absent → report `no spec` and stop.
 2. **Resolve the preview URL** per [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md). A `--url <preview-url>` argument overrides resolution (required with a local `specs-path`, and required on the `mcp` path). Any `inconclusive: …` outcome from that file is terminal — report it and stop, without a pass or a fail. Its two commonest are `inconclusive: no access path for deployment lookup (pass --url)` (no lookup was possible) and `inconclusive: preview not deployed` (the lookup ran and found nothing).
-3. **Materialize** an ephemeral `specs.md` and an `aw-target.yml` overlay (`base_url` = resolved URL) under `.agent/{branch}/.preview-spec/`, reading auth and fixtures from a committed `.claude/aw-targets/preview.yml` when one exists.
+3. **Materialize** an ephemeral `specs.md` and an `aw-target.yml` overlay (`base_url` = resolved URL) under `.agent/{branch}/.ui-verify/`, reading auth and fixtures from a committed `.claude/aw-targets/preview.yml` when one exists.
 4. **Select the driver and run** per `--driver` (see [Drivers](#drivers) and [`rules/runner.md § Step 4`](./rules/runner.md)). `auto` invokes `aw-tester-chrome` in-session when the Chrome extension is connected; when Chrome is unavailable or a Chrome run returns `fallback: playwright`, it asks the user before running the `aw-tester` sub-agent rather than falling back silently. A forced `--driver chrome`/`playwright` never prompts. Mode `--all`.
 5. **Report** the verdict (pass / fail / inconclusive, per spec) — identical shape from either driver.
 6. **Write lessons** per [`rules/memory.md § Write at run time`](./rules/memory.md) when a spec failed for a navigation or precondition reason — not for a locator miss, which is the runner's own lesson to write.
@@ -166,7 +166,7 @@ agent0 / CI automation is checking against a Vercel-style preview — where no
 spec exists yet.
 
 1. **Author if, and only if, the block is absent.** Read the PR body. If it
-   already carries a `<!-- preview-spec:v1 -->` block, keep it verbatim — never
+   already carries a `<!-- ui-verify:v1 -->` block, keep it verbatim — never
    overwrite a hand-written or previously-authored spec. If it is absent, run
    Operation `author` (including its Step 0 `is-ui-diff` gate): a `no` from the
    gate ends `verify` here with `not verified (no UI files in diff)`, and a

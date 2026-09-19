@@ -8,7 +8,7 @@ description: >
   down with --no-review, --no-simplify, --quick (light mechanical pass only),
   or --no-quality (skip the loop). A post-push external-bot feedback loop
   runs by default (--no-feedback to skip). On a UI diff, injects a preview
-  verification spec by default (--no-preview-spec to skip). Before the push,
+  verification spec by default (--no-ui-verify to skip). Before the push,
   converges the branch by default with review-branch, which needs no PR, so
   the draft opens already review-clean (--no-pre-review to skip). With
   --split, breaks the branch diff into 2–4 focused,
@@ -16,7 +16,7 @@ description: >
   judgment-required CI failures via /confidence rather than guessing. Invoke
   with /create-pr or /create-pr --split.
 disable-model-invocation: false
-argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-preview-spec]'
+argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-feedback] [--no-ui-verify]'
 license: MIT
 metadata:
   author: mthines
@@ -44,7 +44,7 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft qual
 | `quick`        | `--quick`                                           | Step 6.5 runs only the light mechanical pass → `Skill("polish", "quick")` (no pr-reviewer, no structural refactors).                                                        |
 | `no-quality`   | `--no-quality` anywhere in arguments               | Skip Step 6.5 entirely **and** the Step 6.7 external-bot feedback loop. Wins over every other quality flag.                                                                  |
 | `no-feedback`  | `--no-feedback` anywhere in arguments              | Skip the **default-on** external-bot feedback loop (Step 6.7). Composes with everything. Does not skip the review-loop step.                                                |
-| `no-preview-spec` | `--no-preview-spec` anywhere in arguments        | Skip the **default-on** UI verification spec authoring (Step 6.4). Composes with everything.                                                                                |
+| `no-ui-verify` | `--no-ui-verify` (or the legacy alias `--no-preview-spec`) anywhere in arguments | Skip the **default-on** UI verification spec authoring (Step 6.4). Composes with everything. `--no-preview-spec` is the pre-rename spelling, still honoured so existing scripts and muscle memory keep working. |
 | `no-pre-review` | `--no-pre-review` anywhere in arguments            | Skip the **default-on** Step 5.5 — `Skill("review-branch", …)` **before** the push, which opens the draft already converged. Split mode then falls back to the review-less `Skill("polish", "simplify")` pre-split pass.        |
 
 > **Legacy positive flags.** `--review` and `--simplify` are still accepted as explicit single-pass scoping: `--review` alone ≡ `--no-simplify` (pr-reviewer only), `--simplify` alone ≡ `--no-review` (simplify only), and `--review --simplify` ≡ the default (full loop). `--pre-review` is likewise still accepted and is now a **no-op affirmation** of the default. Prefer the `--no-*` form — with the full loop now the default, the negative flags read more clearly.
@@ -125,29 +125,29 @@ When the diff touches the UI, attach a collapsed, machine-findable verification 
 
 **Skip this step** when any of the following hold:
 
-- `--no-preview-spec` or `--no-quality` is in `$ARGUMENTS`.
-- `preview-spec` is not installed (`Skill()` raises — catch, log one line, continue).
+- `--no-ui-verify` or `--no-quality` is in `$ARGUMENTS`.
+- `ui-verify` is not installed (`Skill()` raises — catch, log one line, continue).
 
-**Do not eyeball the diff to decide whether it is UI.** `preview-spec author` now makes that call mechanically with its shared `is-ui-diff` gate (the repo's learned UI surface, falling back to broad defaults) and returns `not authored (no UI files in diff)` for a non-UI diff. That removes the old under-firing heuristic — a web-JS-only glob an agent had to remember to apply — so **delegate unconditionally** when neither skip condition above holds, and record whatever the delegate returns:
+**Do not eyeball the diff to decide whether it is UI.** `ui-verify author` now makes that call mechanically with its shared `is-ui-diff` gate (the repo's learned UI surface, falling back to broad defaults) and returns `not authored (no UI files in diff)` for a non-UI diff. That removes the old under-firing heuristic — a web-JS-only glob an agent had to remember to apply — so **delegate unconditionally** when neither skip condition above holds, and record whatever the delegate returns:
 
 ```
-Skill("preview-spec", "author <pr-url>")
+Skill("ui-verify", "author <pr-url>")
 ```
 
-`preview-spec` owns the spec grammar, the marker contract, and its authoring memory loop; it edits the PR body in place, adding one `<!-- preview-spec:v1 -->` block. The block is exempt from the description length budget and is preserved verbatim by the Step 6.5 review-loop's description refresh — both rules live in the [description contract](./rules/description-contract.md#ui-verification-spec-optional). Continue to Step 6.5 regardless of whether a spec was authored.
+`ui-verify` owns the spec grammar, the marker contract, and its authoring memory loop; it edits the PR body in place, adding one `<!-- ui-verify:v1 -->` block. The block is exempt from the description length budget and is preserved verbatim by the Step 6.5 review-loop's description refresh — both rules live in the [description contract](./rules/description-contract.md#ui-verification-spec-optional). Continue to Step 6.5 regardless of whether a spec was authored.
 
-**Record which branch you took, now, before continuing.** The Step 10 report has a mandatory preview-spec slot, and a slot whose value is reconstructed from memory at the end of a long run is the blind spot this step's own history demonstrates. Write down exactly one of the six values as you leave this step:
+**Record which branch you took, now, before continuing.** The Step 10 report has a mandatory ui-verify slot, and a slot whose value is reconstructed from memory at the end of a long run is the blind spot this step's own history demonstrates. Write down exactly one of the six values as you leave this step:
 
 | What happened here | Record |
 | --- | --- |
-| Delegated, `preview-spec` reported `<N>` specs authored | `authored (<N> specs)` |
-| Delegated, and `preview-spec`'s `is-ui-diff` gate found no UI files in the diff | `not authored (no UI files in diff)` |
-| Skipped: `--no-preview-spec` in `$ARGUMENTS` | `skipped (--no-preview-spec)` |
+| Delegated, `ui-verify` reported `<N>` specs authored | `authored (<N> specs)` |
+| Delegated, and `ui-verify`'s `is-ui-diff` gate found no UI files in the diff | `not authored (no UI files in diff)` |
+| Skipped: `--no-ui-verify` in `$ARGUMENTS` | `skipped (--no-ui-verify)` |
 | Skipped: `--no-quality` in `$ARGUMENTS` | `skipped (--no-quality)` |
-| Skipped: `Skill()` raised — `preview-spec` not installed | `skipped (preview-spec not available)` |
-| Delegated, and `preview-spec` reported a failure — including its own `failed (no GitHub access path)`, which means the block never reached the PR body | `failed (<reason>)`, quoting its reason verbatim |
+| Skipped: `Skill()` raised — `ui-verify` not installed | `skipped (ui-verify not available)` |
+| Delegated, and `ui-verify` reported a failure — including its own `failed (no GitHub access path)`, which means the block never reached the PR body | `failed (<reason>)`, quoting its reason verbatim |
 
-The last row is the one that must never be softened into a skip. `preview-spec`'s `author` treats the PR-body write as its only deliverable, so a `failed` return means no later reader — the Step 6.5 review-loop's Step 1.6 included — will find a block to run. Reporting that as `not authored` claims a decline where there was an error.
+The last row is the one that must never be softened into a skip. `ui-verify`'s `author` treats the PR-body write as its only deliverable, so a `failed` return means no later reader — the Step 6.5 review-loop's Step 1.6 included — will find a block to run. Reporting that as `not authored` claims a decline where there was an error.
 
 This step only **authors** the spec. The **run** is the review-loop's job: the default Step 6.5 invocation (`Skill("review-loop", "<pr-url> --no-ci")`) executes the block once against the live preview deployment at exit, report-only (its Step 1.6). `create-pr` deliberately does **not** pass `--no-preview-run` — that opt-out is for `autonomous-workflow`, whose Phase 7 rehearses the same specs itself. So a hand-driven UI PR gets both halves here: authored at 6.4, verified at 6.5.
 
@@ -376,7 +376,7 @@ Title: <imperative title>
 
 Pre-push review (Step 5.5, review-branch): <converged (<N> iterations, <A> applied, <D> declined) | flagged (<G> findings) | cap-reached (<O> open) | checks-red (<checks>) | skipped (<flag>) | skipped (non-code diff) | NOT REVIEWED (sub-agent dispatch unavailable; fallback: <polish simplify | none>)>
 
-Preview spec (Step 6.4): <authored (<N> specs) | not authored (no UI files in diff) | skipped (--no-preview-spec) | skipped (--no-quality) | skipped (preview-spec not available) | failed (<reason>)>
+UI verify (Step 6.4): <authored (<N> specs) | not authored (no UI files in diff) | skipped (--no-ui-verify) | skipped (--no-quality) | skipped (ui-verify not available) | failed (<reason>)>
 
 Review loop (review-loop / pr-reviewer):
   Iterations: <N> of <cap>
@@ -402,8 +402,8 @@ Head commit: <sha — the latest state after both paths pushed>
 
 Because both paths push to the same branch, surface the final head SHA so the user sees the latest state at a glance.
 
-**The `Preview spec` line is mandatory on every run, including a non-UI diff.**
-Step 6.4 has four skip conditions (`--no-preview-spec`, `--no-quality`, a non-UI diff, `preview-spec` not installed) and one failure mode, and every one of them previously reported as a clean, successful PR — the report had no slot for the spec at all, so an absent block was indistinguishable from a diff that needed none.
+**The `UI verify` line is mandatory on every run, including a non-UI diff.**
+Step 6.4 has four skip conditions (`--no-ui-verify`, `--no-quality`, a non-UI diff, `ui-verify` not installed) and one failure mode, and every one of them previously reported as a clean, successful PR — the report had no slot for the spec at all, so an absent block was indistinguishable from a diff that needed none.
 That is the same self-concealing shape as failure modes `F6`/`F7` in [`diagnostic-surface.md`](../../workflow/autonomous-workflow/rules/diagnostic-surface.md): a degraded path that reports as a legitimate outcome is never fixed, because nobody learns it happened.
 State which of the six outcomes applied, and never omit the line on the grounds that the diff was not a UI change — `not authored (no UI files in diff)` is the informative answer there, not silence.
 

@@ -251,7 +251,7 @@ aw-tester:
 
 ### Phase F — Learn the repo's UI surface (optional, one LoreKit record)
 
-The `is-ui-diff` gate (run by `preview-spec author`, `aw-planner` Phase 1,
+The `is-ui-diff` gate (run by `ui-verify author`, `aw-planner` Phase 1,
 `create-pr`, and `review-loop`) decides mechanically whether a diff touches UI.
 Its broad defaults already serve a fresh repo, so this phase is a **refinement**,
 not a prerequisite — it teaches the gate what *this* repo counts as UI, once, for
@@ -271,17 +271,17 @@ wrong:
   and `exclude` the backend ones (or use `mode: "replace"`).
 - A repo whose components live under a non-default directory → add it to `dirs`.
 
-Write the record exactly as [`preview-spec/rules/memory.md § The UI surface
-record`](../../../testing/preview-spec/rules/memory.md#the-ui-surface-record)
-defines it — scope `repo::{owner}/{repo}`, key `preview-spec-lessons::ui-surface`,
-tags `loop::preview-spec-lessons` + `kind::config`, body the surface JSON:
+Write the record exactly as [`ui-verify/rules/memory.md § The UI surface
+record`](../../../testing/ui-verify/rules/memory.md#the-ui-surface-record)
+defines it — scope `repo::{owner}/{repo}`, key `ui-verify-lessons::ui-surface`,
+tags `loop::ui-verify-lessons` + `kind::config`, body the surface JSON:
 
 ```text
 memory.write {
   scope: "repo::{owner}/{repo}",
-  key:   "preview-spec-lessons::ui-surface",
+  key:   "ui-verify-lessons::ui-surface",
   value: "{ \"mode\": \"extend\", \"dirs\": [\"src/web\"], \"exclude\": [\"packages/api/**\"] }",
-  tags:  ["loop::preview-spec-lessons", "kind::config"],
+  tags:  ["loop::ui-verify-lessons", "kind::config"],
   source_agent: "aw-setup"
 }
 ```

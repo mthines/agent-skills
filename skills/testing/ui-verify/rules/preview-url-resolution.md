@@ -2,7 +2,7 @@
 title: Preview URL resolution — GitHub deployments API
 impact: HIGH
 tags:
-  - preview-spec
+  - ui-verify
   - github-deployments
   - preview-deployment
   - vercel

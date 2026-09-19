@@ -517,7 +517,7 @@ the exact defect the CI-watch contract exists to prevent. So this phase keeps th
 budget and does the re-check itself, immediately below.
 
 **`--no-preview-run` is required here for the same reason.** `review-loop` has its own
-report-only preview-spec run at exit (its Step 1.6). This phase's
+report-only ui-verify run at exit (its Step 1.6). This phase's
 [Spec Rehearsal](#spec-rehearsal-optional-ui-tasks-only) already runs the same specs
 against the same preview deployment, so letting the loop also run them would double the
 `aw-tester` dispatch for no new signal. This phase owns the rehearsal; the loop opts out.

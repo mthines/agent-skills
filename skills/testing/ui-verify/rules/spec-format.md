@@ -2,7 +2,7 @@
 title: Embedded spec format — the marker, the collapsed block, the ceiling exemption
 impact: HIGH
 tags:
-  - preview-spec
+  - ui-verify
   - pr-description
   - marker
   - single-source-of-truth
@@ -26,7 +26,7 @@ The block is exactly this shape.
 `author` starts from the literal boilerplate in [`templates/embedded-spec.md.template`](../templates/embedded-spec.md.template) and fills in the `Spec N:` blocks for the diff at hand.
 
 ```markdown
-<!-- preview-spec:v1 -->
+<!-- ui-verify:v1 -->
 <details>
 <summary>🧪 UI verification spec — run against the preview deployment</summary>
 
@@ -40,13 +40,14 @@ flow:
     THEN {role: "dialog", name: "Saved"} is visible
 
 </details>
-<!-- /preview-spec:v1 -->
+<!-- /ui-verify:v1 -->
 ```
 
 Rules:
 
-- **The open marker is `<!-- preview-spec:v1 -->` and the close marker is `<!-- /preview-spec:v1 -->`, verbatim.** The runner extracts the region between them. Match them exactly, including the version token `v1`.
-- **There is at most one block per PR.** `author` on a PR that already has one replaces the region in place — it never appends a second.
+- **The open marker is `<!-- ui-verify:v1 -->` and the close marker is `<!-- /ui-verify:v1 -->`, verbatim.** The runner extracts the region between them. Match them exactly, including the version token `v1`.
+- **Legacy marker (read-only back-compat).** This skill was formerly `preview-spec`, and PRs authored then carry `<!-- preview-spec:v1 -->` … `<!-- /preview-spec:v1 -->`. The **runner reads both**: it looks for `ui-verify:v1` first, then falls back to `preview-spec:v1`, so an already-embedded legacy block still runs. **`author` only ever writes the current `ui-verify:v1` marker** — when it finds a legacy-marked block on a PR it is re-authoring, it replaces the whole legacy region with a `ui-verify:v1` region (a silent in-place migration), never leaving both. The body grammar is byte-identical across the two markers, so the fallback is a marker-string match, nothing more.
+- **There is at most one block per PR.** `author` on a PR that already has one replaces the region in place — it never appends a second. A legacy block counts as "one" for this rule: migrate it, do not add a second.
 - **The `<details>` opens collapsed.** Never `<details open>` — the block is for the runner, not the reader.
 - **The content between the markers is the spec body**, not prose. `author` writes it; the runner reads it; no other step edits it.
 
@@ -63,17 +64,17 @@ The runner resolves that target to the PR's live preview deployment (see [`previ
 
 ## Two host-contract rules
 
-Both are owned jointly with the [description contract](../../../delivery/create-pr/rules/description-contract.md); this file is the authority for the preview-spec side.
+Both are owned jointly with the [description contract](../../../delivery/create-pr/rules/description-contract.md); this file is the authority for the ui-verify side.
 
-1. **The marked region is exempt from the description length ceiling.** `create-pr`'s body target is ≤ 25 rendered lines (hard 40), counting every line. The preview-spec block is collapsed and machine-oriented, so it does **not** count toward that budget. `create-pr`'s Step 5 length self-check skips everything between the markers.
-2. **The marked region is preserved verbatim on refresh.** When `review-loop` refreshes the PR body to match the shipped diff, it carries the whole `<!-- preview-spec:v1 -->` … `<!-- /preview-spec:v1 -->` region forward unchanged. The refresh rewrites narrative sections only. Re-authoring the spec is `preview-spec author`'s job, not the refresh's — the same owned-region principle as the `pr-reviewer` sticky comment.
+1. **The marked region is exempt from the description length ceiling.** `create-pr`'s body target is ≤ 25 rendered lines (hard 40), counting every line. The ui-verify block is collapsed and machine-oriented, so it does **not** count toward that budget. `create-pr`'s Step 5 length self-check skips everything between the markers.
+2. **The marked region is preserved verbatim on refresh.** When `review-loop` refreshes the PR body to match the shipped diff, it carries the whole `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` region forward unchanged. The refresh rewrites narrative sections only. Re-authoring the spec is `ui-verify author`'s job, not the refresh's — the same owned-region principle as the `pr-reviewer` sticky comment.
 
 ## Good and bad
 
 **Good** — one behavior, role-and-name locators, exact markers:
 
 ```markdown
-<!-- preview-spec:v1 -->
+<!-- ui-verify:v1 -->
 <details>
 <summary>🧪 UI verification spec — run against the preview deployment</summary>
 
@@ -91,7 +92,7 @@ flow:
     AND network: PATCH /api/dashboards/{dashboardId} returned 200
 
 </details>
-<!-- /preview-spec:v1 -->
+<!-- /ui-verify:v1 -->
 ```
 
 **Bad** — invented syntax, CSS selector, no markers, expanded:

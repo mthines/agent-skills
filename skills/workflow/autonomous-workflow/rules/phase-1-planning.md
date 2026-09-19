@@ -417,7 +417,7 @@ planning-time deliverable that `aw-tester` consumes in Phase 4.
 ### Gate: does the task touch a UI surface? (mechanical, not eyeballed)
 
 Do **not** eyeball the plan draft. Run the same deterministic `is-ui-diff` gate
-every other caller (`preview-spec author`, `create-pr`, `review-loop`) runs, so
+every other caller (`ui-verify author`, `create-pr`, `review-loop`) runs, so
 the answer is identical no matter which surface asks. At planning time the files
 are *planned*, not yet on disk, so pass the `## File changes` paths explicitly
 with `--files` (the gate's `--base` git-diff mode is for post-implementation
@@ -425,7 +425,7 @@ callers):
 
 ```bash
 # The planned paths, comma-separated, from the plan draft's File changes table.
-node ~/.claude/skills/preview-spec/scripts/is-ui-diff.mjs \
+node ~/.claude/skills/ui-verify/scripts/is-ui-diff.mjs \
   --files "src/components/Widget.tsx,src/api/widgets.ts"
 ```
 
@@ -433,18 +433,18 @@ node ~/.claude/skills/preview-spec/scripts/is-ui-diff.mjs \
 LoreKit itself, so read the surface record and forward it:
 
 ```text
-memory.read { scope: "repo::{owner}/{repo}", key: "preview-spec-lessons::ui-surface" }
+memory.read { scope: "repo::{owner}/{repo}", key: "ui-verify-lessons::ui-surface" }
 ```
 
 ```bash
-node ~/.claude/skills/preview-spec/scripts/is-ui-diff.mjs \
+node ~/.claude/skills/ui-verify/scripts/is-ui-diff.mjs \
   --files "<planned paths>" --surface-json '<the record body>'
 ```
 
 Read the final `UI_DIFF:` line. `yes` → emit `specs.md`. `no` → skip spec
 emission entirely and log the skip below.
 
-If the `preview-spec` skill is not installed (the script path does not resolve),
+If the `ui-verify` skill is not installed (the script path does not resolve),
 fall back to the inline heuristic — ANY planned file matching `*.tsx`, `*.jsx`,
 `*.vue`, `*.svelte`, `*.css`, `*.scss`, or living under `/pages/`, `/app/`,
 `/routes/`, `/layouts/`, `/components/` counts as UI — and log the degradation.

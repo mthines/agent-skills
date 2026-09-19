@@ -365,7 +365,7 @@ function checksInSync(plan, checks) {
 // masquerading as lessons. Keep these directories absent in agent-skills.git.
 {
   // Keep this array in sync with the Lessons table in agents/shared/rules/memory-buckets.md.
-  for (const scope of ["aw-lessons", "aw-tester-lessons", "preview-spec-lessons", "fix-bug-lessons", "batch-lessons", "reviewer-lessons", "implement-suggestion-lessons", "ci-auto-fix-lessons", "e2e-pr-stabilizer-lessons", "test-auto-fix-lessons", "ideate-lessons", "optimize-approach-lessons"]) {
+  for (const scope of ["aw-lessons", "aw-tester-lessons", "ui-verify-lessons", "fix-bug-lessons", "batch-lessons", "reviewer-lessons", "implement-suggestion-lessons", "ci-auto-fix-lessons", "e2e-pr-stabilizer-lessons", "test-auto-fix-lessons", "ideate-lessons", "optimize-approach-lessons"]) {
     const dir = join(REPO_ROOT, "memory", scope);
     s.check(`memory/${scope} not committed in agent-skills.git (this is the skill source, not a consumer)`, !existsSync(dir));
   }
@@ -5730,13 +5730,13 @@ const isPollBlock = (block) =>
       + " how a green report gets written for a PR whose CI was never observed");
 }
 
-// ── G49: the preview-spec author delegation is REACHABLE and its skip is VISIBLE ──
+// ── G49: the ui-verify author delegation is REACHABLE and its skip is VISIBLE ──
 // Measured, not hypothesised: of the 20 most recent lorekit PRs, all 20 merged after
-// preview-spec shipped (2026-09-01) and NONE carried a `preview-spec:v1` block —
+// ui-verify shipped (2026-09-01) and NONE carried a `ui-verify:v1` block —
 // including #651, whose diff matched create-pr Step 6.4's own UI heuristic on nine files.
 // Two independent defects produced that, and each one alone is sufficient:
 //
-//   1. `preview-spec`'s frontmatter granted `Bash(gh *)` and no `mcp__github__*`, so on a
+//   1. `ui-verify`'s frontmatter granted `Bash(gh *)` and no `mcp__github__*`, so on a
 //      cloud session (no `gh`, which is where these runs happen) the operation's only
 //      deliverable — writing the block into the PR body — was unreachable. Its own Step 0
 //      told it to resolve to the mcp path that its grant then forbade.
@@ -5758,7 +5758,7 @@ const isPollBlock = (block) =>
 // explain a silent 0-of-20; defect 1 rests on the allowlist contract.
 {
   const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const PS = read("skills/testing/preview-spec/SKILL.md");
+  const PS = read("skills/testing/ui-verify/SKILL.md");
   const CP = read("skills/delivery/create-pr/SKILL.md");
   // Every `.test()` below reads a BOUNDED surface — a section slice, or a line-anchored
   // pattern over a whole file. `G49-lint` (the block after this one) executes that as a
@@ -5773,8 +5773,8 @@ const isPollBlock = (block) =>
     }
   };
   const PS_STEP0 = section(
-    "skills/testing/preview-spec/SKILL.md", "## Step 0: Resolve your GitHub access path");
-  s.check("G49 the guard reads preview-spec's Step 0 section",
+    "skills/testing/ui-verify/SKILL.md", "## Step 0: Resolve your GitHub access path");
+  s.check("G49 the guard reads ui-verify's Step 0 section",
     PS_STEP0.length > 400,
     "a renamed Step 0 heading yields an empty slice; the two access-path assertions below"
       + " would report as satisfied by a section that no longer exists");
@@ -5802,21 +5802,21 @@ const isPollBlock = (block) =>
   // reading `PS_FM` under a comment stating the rule they broke, so a grant that dropped
   // `update_pull_request` while still mentioning it in `description:` passed green.
   const PS_TOOLS = (/^allowed-tools:.*$/m.exec(PS_FM) || [""])[0];
-  s.check("G49 the guard reads preview-spec's grant line",
+  s.check("G49 the guard reads ui-verify's grant line",
     /\bRead\b/.test(PS_TOOLS) && PS_TOOLS.length > 80,
     "a failed `allowed-tools:` match would make every grant assertion below vacuous");
-  s.check("G49 preview-spec's grant can write a PR body on the mcp path",
+  s.check("G49 ui-verify's grant can write a PR body on the mcp path",
     /mcp__github__update_pull_request/.test(PS_TOOLS),
     "the whole deliverable of `author` is a PR-body write; granting only `Bash(gh *)` makes"
       + " it unreachable in every cloud session, where `gh` is absent");
-  s.check("G49 preview-spec's grant can read a PR on the mcp path",
+  s.check("G49 ui-verify's grant can read a PR on the mcp path",
     /mcp__github__pull_request_read/.test(PS_TOOLS),
     "the block must be merged into the EXISTING body, so the body has to be readable first");
   // `run` dispatches the aw-tester agent, so this IS a dispatching skill: it must name
   // BOTH spellings. Stated as a conjunction over presence rather than the earlier
   // `!Task || Agent`, which went green on a grant naming NEITHER (the left disjunct is
   // satisfied by absence) and on an `Agent`-only grant that breaks the Claude Code CLI.
-  s.check("G49 preview-spec's grant names BOTH dispatch spellings",
+  s.check("G49 ui-verify's grant names BOTH dispatch spellings",
     /\bTask\b/.test(PS_TOOLS) && /\bAgent\b/.test(PS_TOOLS),
     "`run` dispatches the aw-tester agent; a grant naming only `Task` blocks it on the"
       + " harness that spells the tool `Agent` — the F6 defect, one layer below the prose —"
@@ -5825,7 +5825,7 @@ const isPollBlock = (block) =>
   // added-or-dropped entry invisible, which is the exact shape of the defect this guard
   // exists for: a grant that silently disagreed with its own prose.
   for (const tool of PS_TOOLS.match(/mcp__github__\w+/g) ?? []) {
-    s.check(`G49 preview-spec's prose accounts for the granted \`${tool}\``,
+    s.check(`G49 ui-verify's prose accounts for the granted \`${tool}\``,
       PS_BODY.includes(tool),
       "a GitHub tool in the grant that no step names is either dead capability or an"
         + " undocumented call; both are how the grant and the prose drift apart");
@@ -5837,7 +5837,7 @@ const isPollBlock = (block) =>
   // Read over Step 0's slice, so the pair no longer needs a 400-char proximity window to
   // stand in for a scope — and `mcp__github__update_pull_request` cannot be satisfied by
   // its own mention in the `allowed-tools:` frontmatter, which is a grant, not a mapping.
-  s.check("G49 preview-spec states the mcp-path equivalent of the body write",
+  s.check("G49 ui-verify states the mcp-path equivalent of the body write",
     /gh pr edit[\s\S]*mcp__github__update_pull_request/.test(PS_STEP0),
     "citing the access-path rule is not the same as naming the call; the gh form was"
       + " labelled authoritative and no mcp form appeared anywhere in the file");
@@ -5845,11 +5845,11 @@ const isPollBlock = (block) =>
   // 3. `run`'s deployment lookup genuinely has NO mcp equivalent, so the honest degradation
   //    must be stated rather than collapsed into the deployed/not-deployed verdict.
   // Scoped to Step 0, which is where the degradation is stated. Over the whole file the
-  // `pass --url` half was VACUOUS: the literal occurs twice in `preview-spec/SKILL.md`
+  // `pass --url` half was VACUOUS: the literal occurs twice in `ui-verify/SKILL.md`
   // (Step 0's outcome string and Operation `run`'s `--url` prose), so rewording Step 0's
   // outcome left the check satisfied by the other mention — eighth instance of this
   // block's one class, and the instance that motivated the lint below.
-  s.check("G49 preview-spec distinguishes 'no access path' from 'preview not deployed'",
+  s.check("G49 ui-verify distinguishes 'no access path' from 'preview not deployed'",
     /pass --url/.test(PS_STEP0)
       && /never report `inconclusive: preview not deployed`/.test(PS_STEP0),
     "no `mcp__github__*` tool exposes deployments; reporting a lookup that never happened"
@@ -5861,9 +5861,9 @@ const isPollBlock = (block) =>
   //     from THERE terminal, so an agent following the file the skill points at reached the
   //     forbidden string with nothing in its path to stop it — while L1 stayed green. A
   //     guard that green-lights the residue of its own bug is worse than no guard.
-  const PUR = read("skills/testing/preview-spec/rules/preview-url-resolution.md");
+  const PUR = read("skills/testing/ui-verify/rules/preview-url-resolution.md");
   const PUR_PRECOND = section(
-    "skills/testing/preview-spec/rules/preview-url-resolution.md",
+    "skills/testing/ui-verify/rules/preview-url-resolution.md",
     "## The access-path precondition (check this before step 1)");
   s.check("G49 the guard reads the precondition section",
     PUR_PRECOND.length > 300,
@@ -5886,7 +5886,7 @@ const isPollBlock = (block) =>
   // (a) delegates resolution there and (b) declares any `inconclusive` from there terminal.
   // Neither was asserted, so deleting either sentence from `runner.md` left L1 green while
   // the branch became unreachable again — the guard resting on an unguarded premise.
-  const RUN = read("skills/testing/preview-spec/rules/runner.md");
+  const RUN = read("skills/testing/ui-verify/rules/runner.md");
   // Bounded by the NEXT HEADING, never by a character count. A `slice(0, 400)` window was
   // scoped in name only: Step 2 is ~253 chars, so 147 chars of Step 3 sat inside every
   // assertion and deleting Step 2's delegation while naming the file in Step 3's opening
@@ -5916,7 +5916,7 @@ const isPollBlock = (block) =>
   // throw is converted rather than propagated.
   const runSection = (heading) => {
     try {
-      return extractSection("skills/testing/preview-spec/rules/runner.md", `## ${heading}`);
+      return extractSection("skills/testing/ui-verify/rules/runner.md", `## ${heading}`);
     } catch {
       return "";
     }
@@ -5995,19 +5995,19 @@ const isPollBlock = (block) =>
   // decoration carries no meaning and must not be part of the assertion.
   s.check("G49 review-loop's outcome table has a terminal catch-all row",
     /^\|[^\n|]*anything else[^\n|]*\|[^\n]*unrecognised outcome/m.test(RL),
-    "`preview-spec run` gained returns this table had no row for; with no catch-all an"
+    "`ui-verify run` gained returns this table had no row for; with no catch-all an"
       + " unmapped outcome is recorded as whatever the run guesses — a pass or a skip");
   s.check("G49 review-loop's report renders the unrecognised-outcome value",
-    /^Preview spec[^\n]*unrecognised outcome/m.test(RL),
+    /^UI verify[^\n]*unrecognised outcome/m.test(RL),
     "the catch-all row above produces a value the Step 3 report must be able to print;"
       + " asserted on its own surface so neither check can stand in for the other");
   // Anchored to the ROW, and the slot arm asserted separately. A bare
-  // `/empty preview-spec block/` over the whole file was satisfied by the Step 3 report
+  // `/empty ui-verify block/` over the whole file was satisfied by the Step 3 report
   // slot, which enumerates the same string — so deleting the table row left L1 green.
   // Same shape as the `"authored"` ⊂ `"not authored"` bug this block already fixed once:
   // a substring that two different surfaces can satisfy asserts neither of them.
   s.check("G49 review-loop's outcome table maps an EMPTY spec block",
-    /^\|\s*`empty spec`[^\n]*\|[^\n]*empty preview-spec block/m.test(RL),
+    /^\|\s*`empty spec`[^\n]*\|[^\n]*empty ui-verify block/m.test(RL),
     "markers present with an empty body means `author` ran and embedded nothing — a"
       + " spec-authoring bug; with no row for it the runner's return falls through to the"
       + " catch-all and loses the distinction the row exists to draw");
@@ -6016,25 +6016,25 @@ const isPollBlock = (block) =>
   // `<a | b | c>` enumeration — turned L1 red for an edit that changed no rule. The claim
   // is that BOTH values are renderable, so it is asserted as two membership tests over
   // the one line that renders them.
-  const RL_SPEC_SLOT = (/^Preview spec[^\n]*/m.exec(RL) || [""])[0];
+  const RL_SPEC_SLOT = (/^UI verify[^\n]*/m.exec(RL) || [""])[0];
   s.check("G49 review-loop keeps EMPTY and ABSENT as two report values",
-    RL_SPEC_SLOT.includes("not run (no preview-spec block)")
-      && RL_SPEC_SLOT.includes("not run (empty preview-spec block)"),
+    RL_SPEC_SLOT.includes("not run (no ui-verify block)")
+      && RL_SPEC_SLOT.includes("not run (empty ui-verify block)"),
     "the two must be separately renderable in the report; collapsing them there reports a"
       + " spec-authoring bug as the healthy case of a PR that legitimately needed no spec");
 
   // 4. The report slot. Every skip condition Step 6.4 enumerates needs a rendered outcome,
   //    or the degraded path reports as success.
   // Anchored at line start, and paired with the arm count below. Neither is load-bearing
-  // TODAY — `Preview spec (Step 6.4):` occurs exactly once in the file, so anchored and
+  // TODAY — `UI verify (Step 6.4):` occurs exactly once in the file, so anchored and
   // unanchored `exec` capture the same six arms, and reverting either one keeps L1 green.
   // Both are here because an earlier revision of Step 6.4's own prose DID repeat the
   // literal mid-sentence, which made the unanchored `exec` take the paragraph as its first
   // match and assert the enumeration against it; that prose was reworded rather than the
   // guard being left to depend on the wording. Keep both: they cost nothing and they are
   // what stops a re-added prose mention from silently re-breaking the capture.
-  const SLOT = /^Preview spec \(Step 6\.4\):([^\n]*)/m.exec(CP);
-  s.check("G49 create-pr's Step 10 report has a preview-spec slot",
+  const SLOT = /^UI verify \(Step 6\.4\):([^\n]*)/m.exec(CP);
+  s.check("G49 create-pr's Step 10 report has a ui-verify slot",
     SLOT !== null && SLOT[1].split("|").length === 6,
     "with no slot, all four skip conditions and the failure mode render as a clean PR —"
       + " the reason the grant defect went unnoticed across four days of UI PRs. The arm"
@@ -6042,8 +6042,8 @@ const isPollBlock = (block) =>
   // Delimited tokens, not bare substrings: `"authored"` is a substring of
   // `"not authored"`, so the success outcome was previously asserted for free by the
   // decline outcome's text and could have been deleted without turning L1 red.
-  for (const outcome of ["<authored (", "| not authored (", "| skipped (--no-preview-spec)",
-    "| skipped (--no-quality)", "| skipped (preview-spec not available)", "| failed ("]) {
+  for (const outcome of ["<authored (", "| not authored (", "| skipped (--no-ui-verify)",
+    "| skipped (--no-quality)", "| skipped (ui-verify not available)", "| failed ("]) {
     s.check(`G49 the slot can render "${outcome}"`,
       SLOT !== null && SLOT[1].includes(outcome),
       "an outcome with no rendering collapses into a neighbouring one, which is how a"
@@ -6066,7 +6066,7 @@ const isPollBlock = (block) =>
     /Record which branch you took, now, before continuing/i.test(CP_S64)
       && /failed \(no GitHub access path\)/.test(CP_S64),
     "the six values are enumerated in Step 10 but were produced nowhere; in particular"
-      + " `preview-spec`'s `failed (no GitHub access path)` had no mapping, so the one new"
+      + " `ui-verify`'s `failed (no GitHub access path)` had no mapping, so the one new"
       + " failure mode this fix introduced was the one the new slot could not show");
   s.check("G49 create-pr states the slot is mandatory on a non-UI diff too",
     /mandatory on every run, including a non-UI diff/i.test(CP_S10),
@@ -6082,7 +6082,7 @@ const isPollBlock = (block) =>
 // `.test()` against a whole file, passing because the literal also appears somewhere the
 // assertion was not about. Two examples, both bite-confirmed:
 //
-//   * `/pass --url/.test(PS)` — the literal occurs twice in `preview-spec/SKILL.md`
+//   * `/pass --url/.test(PS)` — the literal occurs twice in `ui-verify/SKILL.md`
 //     (Step 0's outcome string, and Operation `run`'s `--url` prose). Deleting it from
 //     Step 0, which is the surface the check names, left L1 GREEN.
 //   * `/\|\s*anything else\s*\|/.test(RL)` — INVERTING the catch-all row so the table

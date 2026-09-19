@@ -9,7 +9,7 @@ description: >
   than the Playwright sub-agent for local runs, but it needs the browser
   extension and does not work in remote / CI envs. Falls back to aw-tester when
   the extension is not connected. Triggers on "run the spec in chrome", "verify
-  with the chrome driver", "aw-tester-chrome", or a "preview-spec run
+  with the chrome driver", "aw-tester-chrome", or a "ui-verify run
   --driver chrome" dispatch.
 disable-model-invocation: false
 argument-hint: '[specs-path] [aw-target] [--all|--bail-on-first-red]'
@@ -71,7 +71,7 @@ specs: []
 notes: claude-in-chrome extension not connected — re-run with --driver playwright (aw-tester).
 ```
 
-`preview-spec run --driver auto` reads `fallback: playwright` and, in auto mode,
+`ui-verify run --driver auto` reads `fallback: playwright` and, in auto mode,
 asks the user before dispatching `aw-tester` — it does not fall back silently. A
 direct caller should do the same. An explicit `--driver chrome` stops here and
 reports this verdict as-is.
