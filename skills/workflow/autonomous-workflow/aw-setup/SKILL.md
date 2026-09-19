@@ -299,6 +299,74 @@ Log:
 - [TIMESTAMP] aw-setup: memory.* not connected — UI surface not recorded
 ```
 
+### Phase G — Confirm the preview auth flow and record its shape (optional, one LoreKit record)
+
+This phase runs **only** when Phase B/D configured a gated preview — an
+`auth.strategy` of `bypass-header` or `storage-state` on the `preview` aw-target.
+It does the one thing a scaffold cannot: **prove the login actually
+authenticates**, then record the confirmed shape so the runner, the author, and
+the next teammate never rediscover it. The full flow (the two walls, the CI
+env-var path, `authed_check`) is [`ui-verify/rules/preview-auth.md`](../../../testing/ui-verify/rules/preview-auth.md).
+
+Skip silently and log one line when it does not apply:
+
+- Preview auth is `none` / `manual` → `aw-setup: preview auth is <strategy> — nothing to confirm`.
+- `memory.*` not connected → `aw-setup: memory.* not connected — auth profile not recorded`.
+- The required credential env vars (`refresh.env`) are **not** set in this shell →
+  do **not** prompt for them and do **not** read them from a file. Scaffold the
+  record with `confirmed_at_setup: false` and log
+  `aw-setup: auth env vars absent — profile scaffolded unconfirmed (set <names> and re-run)`.
+
+**Never accept a password pasted into the session, and never read a credential
+from a tracked file.** Credentials come from the environment only; this phase
+reads their *names*, never their values.
+
+**Step 1 — establish `authed_check`.** Ask the user for a locator that is present
+**only when signed in** (an account menu, an avatar, a sign-out control), in the
+spec locator grammar: `{role: "button", name: "Account menu"}`. If the app has no
+such stable element, record `authed_check: null` and note that the run will fall
+back to the URL-not-login signal.
+
+**Step 2 — exercise the login once.** With the env vars present, run the repo's
+`refresh.command` (the non-interactive `refresh-auth.mjs`), then load the preview
+and confirm `authed_check` is visible:
+
+| Result | `confirmed_at_setup` | Action |
+| --- | --- | --- |
+| `refresh.command` wrote the state **and** `authed_check` is visible | `true` | The flow works end-to-end. Record it. |
+| Login ran but `authed_check` never appeared | `false` | The selector or the login is wrong. Show the diagnostic; offer to loop back to Step 1 or Phase B. |
+| `refresh.command` failed (missing env, Google-SSO block) | `false` | Report the failure verbatim; record the scaffolded shape so a later run can retry. |
+
+**Step 3 — record the auth profile.** Write it exactly as
+[`ui-verify/rules/memory.md § The auth profile record`](../../../testing/ui-verify/rules/memory.md#the-auth-profile-record)
+defines — scope `repo::{owner}/{repo}`, key `ui-verify-lessons::auth-profile`,
+tags `loop::ui-verify-lessons` + `kind::config`, body the auth JSON of **names
+and selectors only, never a secret value**:
+
+```text
+memory.write {
+  scope: "repo::{owner}/{repo}",
+  key:   "ui-verify-lessons::auth-profile",
+  value: "{ \"walls\": [\"bypass-header\", \"app-login\"], \"strategy\": \"storage-state\", \"authed_check\": \"{role: \\\"button\\\", name: \\\"Account menu\\\"}\", \"storage_state\": \".browser/auth-state.preview.json\", \"refresh_command\": \"node .claude/aw-targets/refresh-auth.mjs\", \"env\": [\"PREVIEW_USER\", \"PREVIEW_PASSWORD\", \"VERCEL_AUTOMATION_BYPASS_SECRET\"], \"confirmed_at_setup\": true, \"notes\": \"Clerk email-password test account; Vercel protection bypass on the outer wall\" }",
+  tags:  ["loop::ui-verify-lessons", "kind::config"],
+  source_agent: "aw-setup"
+}
+```
+
+Re-run behaviour: read the existing record first (`memory.read` same scope+key)
+and show a diff before overwriting, exactly like the aw-target and UI-surface
+writes. Never store a credential value, a token, or a captured `storageState` in
+this record — only the *path* to the gitignored state and the env-var *names*.
+
+Log:
+
+```markdown
+- [TIMESTAMP] aw-setup: auth profile recorded, confirmed (repo::{owner}/{repo}) — {walls}
+- [TIMESTAMP] aw-setup: auth profile recorded, UNCONFIRMED (env vars absent / login unverified)
+- [TIMESTAMP] aw-setup: preview auth is none — nothing to confirm
+- [TIMESTAMP] aw-setup: memory.* not connected — auth profile not recorded
+```
+
 ---
 
 ## Dry-run example
