@@ -3,16 +3,19 @@ name: aw-setup
 description: >
   One-time (but safely re-runnable) setup flow that scaffolds a project's
   aw-tester aw-target: detects auth strategy, captures storage state, writes
-  .claude/aw-targets/local.yml, and validates with a smoke spec. Also records the
-  repo's UI surface (what counts as a UI change) so the is-ui-diff gate is
-  accurate per repo. Re-runs detect the existing aw-target and only re-prompt for
-  what broke or changed. Triggers on "/aw-setup", "setup aw-tester",
-  "scaffold aw-target".
+  .claude/aw-targets/<target>.yml, and validates with a smoke spec. `--target
+  local` (default) scaffolds the local dev target; `--target preview` scaffolds
+  the PR-preview target ui-verify runs against (and is what `/ui-verify setup`
+  delegates to). Also records the repo's UI surface (what counts as a UI change)
+  so the is-ui-diff gate is accurate per repo, and the preview auth profile.
+  Re-runs detect the existing aw-target and only re-prompt for what broke or
+  changed. Triggers on "/aw-setup", "setup aw-tester", "scaffold aw-target".
 disable-model-invocation: false
+argument-hint: '[--target local|preview]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.2.0'
+  version: '1.3.0'
   workflow_type: slash-command
   tags:
     - aw-tester
@@ -51,7 +54,8 @@ PR that touches UI. Re-run it when auth drifts, fixtures change, or base URL mov
 
 **First run:** full guided scaffolding (Phases A–E).
 
-**Re-run:** detect `.claude/aw-targets/local.yml` exists, validate each field:
+**Re-run:** detect `.claude/aw-targets/{target}.yml` exists (the file named by
+`--target`, default `local`), validate each field:
 - Auth storage state: does the file exist? Is it fresh (< N days old)?
 - Fixtures: does the seed command resolve? Do references point to env vars that exist?
 - Smoke spec: run it. If green, done — no prompts needed.
@@ -61,6 +65,22 @@ PR that touches UI. Re-run it when auth drifts, fixtures change, or base URL mov
   repo's own convention such as `.browser/auth-state*.json`).
 
 ---
+
+## Target selection
+
+Each run scaffolds **one** aw-target. Which one is the `--target` argument
+(default `local` when absent, preserving the pre-1.3 behaviour):
+
+| `--target` | File written | `base_url` | Consumed by | Phase E smoke |
+| --- | --- | --- | --- | --- |
+| `local` (default) | `.claude/aw-targets/local.yml` | a real localhost URL (Phase A detects it) | autonomous-workflow Phase 4, local author→run loops | runs against localhost |
+| `preview` | `.claude/aw-targets/preview.yml` | `RESOLVED_AT_RUNTIME` — ui-verify resolves the PR's branch-alias URL per run | `ui-verify run` / `verify` against PR previews (and `/ui-verify setup` delegates here) | skipped — no preview URL exists until a PR is open; **Phase G's confirming login validates instead** |
+
+The two coexist — a repo commonly commits both a `local.yml` and a `preview.yml`.
+Everything below is written for `local`; the **`preview`** deltas are called out
+inline under each phase. Both files are committed (they carry no secrets) and are
+the source of truth the tools execute; the LoreKit records (UI surface, auth
+profile) are agent-facing discovery indexes layered on top — see Phases F and G.
 
 ## Phases
 
@@ -81,6 +101,14 @@ Detection confidence level:
 - **High:** base URL found in env, auth strategy clear, seed script named explicitly.
 - **Medium:** base URL guessed from port, auth strategy inferred.
 - **Low:** nothing found — fall through to Ask with all questions.
+
+**`--target preview` delta:** do **not** detect a base URL — a preview has no
+fixed URL; it is resolved per-PR at run time by ui-verify (the branch-alias
+URL), so `base_url` is written as the literal `RESOLVED_AT_RUNTIME` marker. Still
+detect the **auth** signals (that is the whole point of a preview target), and
+detect whether the preview sits behind host deployment protection (a Vercel
+`vercel.json`, a `VERCEL_AUTOMATION_BYPASS_SECRET` in CI config) so Phase B can
+offer the outer-wall bypass header.
 
 #### Reuse before you scaffold
 
@@ -192,6 +220,15 @@ mkdir -p .claude/aw-targets scripts
 # if strategy is (b): copy auth-bootstrap-credentials.template.mjs → scripts/auth-bootstrap-credentials.mjs
 ```
 
+**`--target preview` delta:** write `.claude/aw-targets/preview.yml` from
+[`ui-verify/templates/preview-target.yml.template`](../../../testing/ui-verify/templates/preview-target.yml.template)
+(not the local template), keeping `base_url: RESOLVED_AT_RUNTIME`. For a
+non-interactive preview login, scaffold `refresh-auth.mjs` from
+[`ui-verify/templates/refresh-auth.mjs.template`](../../../testing/ui-verify/templates/refresh-auth.mjs.template)
+rather than an `auth-bootstrap-*.mjs`, and when the preview is behind host
+deployment protection, uncomment and fill the `bypass_header` block (the outer
+wall). The full flow is [`ui-verify/rules/preview-auth.md`](../../../testing/ui-verify/rules/preview-auth.md).
+
 Show the complete aw-target YAML AND the bootstrap script to the user for
 review before writing. For strategy (b), explicitly call out the `CUSTOMIZE`
 block in the script and confirm the user has reviewed the locators.
@@ -248,6 +285,12 @@ aw-tester:
 | `green` | Done. Aw-Target is scaffolded and validated. |
 | `red` | Show the diagnostic blob. Loop back to Phase B with the specific failure. |
 | `inconclusive` | Auth strategy is `manual` — expected. Aw-Target is written, authed specs will be skipped. |
+
+**`--target preview` delta:** skip this phase — there is no preview URL to smoke
+against until a PR is open. The end-to-end validation for a preview target is
+**Phase G's confirming login** (exercise `refresh.command`, confirm
+`authed_check`), which runs next. A `preview` run therefore goes A → B → C → D →
+G, with E omitted and F run when memory is connected.
 
 ### Phase F — Learn the repo's UI surface (optional, one LoreKit record)
 
@@ -337,11 +380,15 @@ and confirm `authed_check` is visible:
 | Login ran but `authed_check` never appeared | `false` | The selector or the login is wrong. Show the diagnostic; offer to loop back to Step 1 or Phase B. |
 | `refresh.command` failed (missing env, Google-SSO block) | `false` | Report the failure verbatim; record the scaffolded shape so a later run can retry. |
 
-**Step 3 — record the auth profile.** Write it exactly as
+**Step 3 — record the auth profile.** The committed `preview.yml` written in
+Phase D stays the source of truth the tools execute; this record is a
+**discovery index** so an agent knows the shape (walls, `authed_check`,
+`confirmed_at_setup`) without reopening the YAML — see
 [`ui-verify/rules/memory.md § The auth profile record`](../../../testing/ui-verify/rules/memory.md#the-auth-profile-record)
-defines — scope `repo::{owner}/{repo}`, key `ui-verify-lessons::auth-profile`,
-tags `loop::ui-verify-lessons` + `kind::config`, body the auth JSON of **names
-and selectors only, never a secret value**:
+for the authority rule. Write it exactly as that section defines — scope
+`repo::{owner}/{repo}`, key `ui-verify-lessons::auth-profile`, tags
+`loop::ui-verify-lessons` + `kind::config`, body the auth JSON of **names and
+selectors only, never a secret value**:
 
 ```text
 memory.write {
