@@ -7974,9 +7974,19 @@ const isPollBlock = (block) =>
     s.check("G55f lens-invocation.md justifies confidence's classification from the verifier rubric",
       /verifier|Reproducible|per-comment-confidence/i.test(li),
       "no justification tying confidence's classification to finding-verifier.md / per-comment-confidence.md");
-    s.check("G55f lens-invocation.md states the standard-tier cap precedent for a spine skip",
-      /standard/i.test(li) && /diff-only/i.test(li) && /workspace/i.test(li),
-      "no standard-tier / diff-only / workspace cap precedent");
+    // The cap precedent was retracted in ce8e908 — a spine skip no longer touches `RUN.tier`
+    // at all, so the correct assertion is "the section states tier is left untouched", scoped to
+    // evsSection like its siblings above. A whole-file `li` grep for these same words would stay
+    // green even on the pre-retraction (wrong) claim, since `standard`/`diff-only`/`workspace` all
+    // still appear in the section's own explanation of why the retracted designs were rejected —
+    // this is the exact vacuous shape branch-reviewer iteration 2 caught (finding
+    // quality:test-gap:g55f-cap-check).
+    s.check("G55f lens-invocation.md states RUN.tier is never touched by a spine skip",
+      /never touches? `RUN\.tier`|RUN\.tier.*untouched|untouched.*RUN\.tier|RUN\.tier.*left exactly|left exactly.*RUN\.tier/i.test(evsSection),
+      "no 'RUN.tier is never touched / left untouched' statement in its own section");
+    s.check("G55f lens-invocation.md names workspace.md's diff-only precedent only as a rejected design",
+      /diff-only/i.test(evsSection) && /workspace/i.test(evsSection) && /rejected/i.test(evsSection),
+      "diff-only/workspace precedent not present, or not framed as rejected");
   }
 
   // (g) REACHABILITY — all six canonical owner files reference the shared rule, and the two

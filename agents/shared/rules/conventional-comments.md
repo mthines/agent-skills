@@ -46,7 +46,7 @@ The tier is one of `critical` / `high` / `medium` / `low`, from `Skill("severity
 
 `severity` is the canonical owner of `Skill("severity", "finding")`'s cross-harness resolution.
 Resolving it follows [`lens-invocation.md`](./lens-invocation.md): try `~/.claude/skills/severity/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
-`severity` is classified **spine** in that rule — a genuine skip means findings carry no tier at all, so it is surfaced loudly via `RUN_ANOMALY` (never rendered as a quiet omission of the label and glyph above), with `RUN.tier` omitted rather than spoofed to a value the renderer would treat as false reassurance — see `lens-invocation.md` § Enhancement vs. spine for why a literal tier override does not survive `render-report.mjs`'s `full`-mode contract.
+`severity` is classified **spine** in that rule — a genuine skip means findings carry no tier at all, so it is surfaced loudly via `RUN_ANOMALY` (never rendered as a quiet omission of the label and glyph above), while `RUN.tier` itself is left exactly as Phase C routed it — see `lens-invocation.md` § Enhancement vs. spine for why neither overriding nor omitting that field survives `render-report.mjs`'s own contract.
 
 ## Examples
 

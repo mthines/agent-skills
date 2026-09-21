@@ -81,15 +81,22 @@ Five of the six lenses fail loudly: the host's `skill` tool returns `Skill "<nam
 The Agent0 sandbox's built-in skill enum contains an unrelated skill also named `measurable`, and the host's resolver returns **that** skill's recipe with no error, no warning, and no signal distinguishable from a correct call.
 A design that tries the deterministic file only inside a `catch` block never reaches this case, because nothing threw.
 
-This is why the resolution algorithm above makes the repo-owned file **primary and authoritative**, not a recovery path: it is read and followed *before* any host resolution is trusted, for every one of the six lenses, regardless of whether that particular lens is known to error or to collide.
-The uniform treatment is what makes the collision harmless — the agent never depends on the host's answer being right, so it does not matter that one of six hosts returns a wrong one instead of no one.
+This is why the resolution algorithm above makes the repo-owned file **primary and authoritative**, not a recovery path.
+It is read and followed *before* any host resolution is trusted, for every one of the six lenses, regardless of whether that particular lens is known to error or to collide.
+The uniform treatment is what makes the collision harmless **whenever the local file exists** — the agent never even asks the host, so it does not matter that Agent0's `measurable` entry returns a wrong recipe instead of no recipe.
+That harmlessness is scoped to the file-present branch, not to the whole algorithm: when the local file is genuinely absent (step 3), the agent has nothing to check the host's answer against, and it does depend on that answer being right with no way to verify it — which is exactly why [No self-concealing degradation](#no-self-concealing-degradation--runanomaly-is-mandatory) treats every use of the host fallback as reportable, not only its failures.
 
 ## No self-concealing degradation — `RUN_ANOMALY` is mandatory
 
 A `RUN_ANOMALY` is required in **two** cases, not only the loud one:
 
-1. **The lens still cannot run at all** — the file is absent and the host also has no usable answer. The obvious case, and the one every dispatch-availability check already covers for `Task`/`Agent`.
-2. **Resolution fell through to host `Skill()` at all**, whether or not it appeared to succeed. A host answer for one of these six names is **unverifiable from this side of the call** — this rule has no local copy to diff it against once the file-presence check has already found no local copy — and the `measurable` collision is exactly a host answer that *looks* successful. Gating the anomaly on "no usable answer" would silently pass the collision straight through, since a wrong recipe with no error is, from the caller's vantage point, indistinguishable from a right one. The anomaly therefore fires on **use of the fallback**, not on its failure.
+1. **The lens still cannot run at all** — the file is absent and the host also has no usable answer.
+   The obvious case, and the one every dispatch-availability check already covers for `Task`/`Agent`.
+2. **Resolution fell through to host `Skill()` at all**, whether or not it appeared to succeed.
+   A host answer for one of these six names is **unverifiable from this side of the call**, because this rule has no local copy to diff it against once the file-presence check has already found no local copy.
+   The `measurable` collision is exactly a host answer that *looks* successful.
+   Gating the anomaly on "no usable answer" would silently pass the collision straight through, since a wrong recipe with no error is, from the caller's vantage point, indistinguishable from a right one.
+   The anomaly therefore fires on **use of the fallback**, not on its failure.
 
 This repo already names the failure shape: a degraded path that reports as a legitimate outcome is self-concealing, and self-concealing degradation is exactly what `F6`/`F7` name in [`autonomous-workflow/rules/diagnostic-surface.md`](../../../skills/workflow/autonomous-workflow/rules/diagnostic-surface.md) — the run in `dash0hq/dash0#19751` is the same doctrine's failure mode, one layer down, in a lens call instead of a dispatch call.
 
@@ -111,22 +118,27 @@ Two are load-bearing enough that a genuine skip changes what the review is capab
 
 | Class | Lenses | A genuine skip means |
 | --- | --- | --- |
-| **Spine** | `severity`, `verify-behavior` | The review's own severity and behavioral-proof machinery cannot run — findings have no tier and behavioral claims have no executed proof. This is the same shape `workspace.md`'s `DEPTH_CAPABILITY: diff-only` already handles: a `deep` tier whose deep lenses cannot run is a label, not a review. |
+| **Spine** | `severity`, `verify-behavior` | The review's own severity and behavioral-proof machinery cannot run — findings have no tier and behavioral claims have no executed proof. |
 | **Enhancement** | `optimize-approach`, `measurable`, `holistic-analysis`, `confidence` | The rest of the pipeline still produces a useful, correctly-scored review; the review is smaller, not less trustworthy. |
 
-**Spine genuine-skip is reported through `RUN_ANOMALY`, not through a `RUN.tier` override.**
-The `workspace.md` `DEPTH_CAPABILITY: diff-only` precedent literally sets `RUN.tier` to `standard`, but that precedent's own worked example is an `incremental`-mode run, where `standard` is already `render-report.mjs`'s `TIER_FOR_MODE["incremental"]` — the cap changes nothing there.
-On a `full`-mode run — the common case this fix targets, since a first review on a fresh PR is `full` — `TIER_FOR_MODE["full"]` is hard-coupled to `"deep"`, and the renderer rejects any other pairing outright (`RUN.tier "standard" contradicts RUN.mode "full"`, verified by running `render-report.mjs` directly against that payload).
-Setting `RUN.tier = "standard"` on a `full`-mode run would not degrade the report gracefully; it would fail to render at all, trading a silently-clean review for no review whatsoever — worse, not better.
+**Neither class ever touches `RUN.tier`.**
+`RUN.tier` is left exactly as normal depth routing set it for this run's mode; the degradation, spine or enhancement, is carried entirely by `RUN_ANOMALY`.
 
-So a spine genuine skip **omits `RUN.tier`** (the field is optional; render-report.mjs runs no tier check when it is absent) and relies entirely on `RUN_ANOMALY` to carry the degradation, naming the missing spine lens and stating plainly that this run's severity or behavioral-proof machinery did not run.
-No renderer change is needed — `RUN_ANOMALY` and an omitted `RUN.tier` are both already-supported shapes — but the tier field is never spoofed to a value the renderer would treat as false reassurance.
+Two earlier designs for the spine case were tried and rejected, both instructive about why the field is never touched at all.
+The first reused `workspace.md`'s `DEPTH_CAPABILITY: diff-only` precedent, which caps `RUN.tier` to `standard` when the workspace cannot support a deeper read.
+That precedent's own worked example is an `incremental`-mode run, where `standard` is already `render-report.mjs`'s `TIER_FOR_MODE["incremental"]` — the cap changes nothing there.
+On a `full`-mode run — the common case this fix targets, since a first review on a fresh PR is always `full` — `TIER_FOR_MODE["full"]` is hard-coupled to `"deep"`, and the renderer rejects any other pairing outright (`RUN.tier "standard" contradicts RUN.mode "full"`, verified by running `render-report.mjs` directly against that payload).
+Overriding `RUN.tier` on a `full`-mode run does not degrade the report gracefully; it fails to render at all, trading a silently-clean review for no review whatsoever.
+The second tried omitting the field instead, which does render, but contradicts [`report-rendering.md`](../../pr-reviewer/rules/report-rendering.md)'s and [`pr-reviewer.md`](../../pr-reviewer.md)'s own rule that every routed run supplies its detection-core slots on the stated ground that an omitted one "makes a shallow run indistinguishable from a deep one" — and a spine skip is still a routed run, so that rule applies to it too.
+
+So `RUN.tier` is supplied on a spine skip exactly as it is on every other run, untouched by the skip.
+The tier field answers *how deep this run was routed*; it was never the right place to answer *did every lens that tier implies actually run* — `RUN_ANOMALY` is, and it is the only slot this rule ever fills.
 
 **Why `confidence` is enhancement, not spine.**
 `confidence` looks load-bearing — it used to gate every posted comment — but [`finding-verifier.md`](./finding-verifier.md) § Step 4 moved the per-comment score's *source* from `Skill("confidence", "code")` to the in-agent verifier rubric (Reproducible 40 % / Attributable 30 % / Actionable 30 %).
 [`per-comment-confidence.md`](./per-comment-confidence.md) § Where the score comes from now states plainly that `confidence(code)` is only the **fallback** path — a `quick`-tier run with no workspace, or a finding from a lens that emits outside the finder pipeline (`ux`, `--with …`).
 Its one other use, the advisory overall-verdict check in `terminal-report.md`, is terminal-only and never posted.
-Neither use sits on the critical inline-scoring path, so a genuine `confidence` skip degrades a fallback the run may not even need, not the spine — enhancement, loud `RUN_ANOMALY`, no tier cap.
+Neither use sits on the critical inline-scoring path, so a genuine `confidence` skip degrades a fallback the run may not even need, not the spine — enhancement, same loud `RUN_ANOMALY` treatment as the other three, `RUN.tier` untouched either way.
 
 ## The six invocation sites
 
@@ -147,6 +159,6 @@ It is a `bug-detection` L2 rubric source (`suites.mjs` `DETECTION.rubrics`), and
 ## What this rule does not do
 
 - It does not change what any lens computes. Resolution decides *whether* a lens runs and *how loudly* a genuine skip is reported — never the lens's own judgment.
-- It does not add a new report section. `RUN_ANOMALY` and `RUN.tier` are both existing payload slots; this rule only says when to fill them.
+- It does not add a new report section. `RUN_ANOMALY` is an existing payload slot; this rule only says when to fill it. `RUN.tier` is a sibling existing slot this rule never fills — it is left to whatever Phase C routed, on every run, spine skip or not.
 - It does not apply to `Task` / `Agent` sub-agent dispatch, ever. See [In-context load vs. sub-agent dispatch](#in-context-load-vs-sub-agent-dispatch--why-this-fallback-is-safe-here).
 - It does not retry a failed host resolution. The file-presence check runs once, before the call; there is no second attempt to make.
