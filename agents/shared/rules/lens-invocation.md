@@ -100,11 +100,20 @@ A `RUN_ANOMALY` is required in **two** cases, not only the loud one:
 
 This repo already names the failure shape: a degraded path that reports as a legitimate outcome is self-concealing, and self-concealing degradation is exactly what `F6`/`F7` name in [`autonomous-workflow/rules/diagnostic-surface.md`](../../../skills/workflow/autonomous-workflow/rules/diagnostic-surface.md) — the run in `dash0hq/dash0#19751` is the same doctrine's failure mode, one layer down, in a lens call instead of a dispatch call.
 
-Emit one `RUN_ANOMALY` line naming the lens and the reason — the same payload slot [`render-report.mjs`](../../pr-reviewer/scripts/render-report.mjs) already renders for a divergence-recovery note (`workspace.md`), so no renderer change is needed to surface it:
+`RUN_ANOMALY` is a **single-line** payload slot — [`render-report.mjs`](../../pr-reviewer/scripts/render-report.mjs) rejects a value containing a newline, the same constraint [`report-rendering.md`](../../pr-reviewer/rules/report-rendering.md) states plainly ("Both are single-line."), and it is the same slot the renderer already renders for a divergence-recovery note (`workspace.md`), so no renderer change is needed to surface it.
+That constraint means **one call cannot emit one line per degraded lens.**
+The motivating incident degraded all six lenses in the same run, which is the central case this rule exists to cover, not an edge case a single-lens example can stand in for.
+
+When more than one lens degrades in the same run, aggregate every affected lens into **one** `RUN_ANOMALY` value, grouped by reason:
+
+```text
+RUN_ANOMALY: severity, verify-behavior unavailable (no local file, no host skill) — findings on this run carry no severity tier and behavioral claims have no executed proof; measurable resolved via host fallback (collision, unverified) — this run's measurability findings are unverified
+```
+
+A single degraded lens still gets its own unaggregated line:
 
 ```text
 RUN_ANOMALY: severity lens unavailable on this host (no local file, no host skill) — findings on this run carry no severity tier
-RUN_ANOMALY: measurable resolved via host fallback (no local file) — a collision returning the wrong skill cannot be distinguished from a correct one, so this run's measurability findings are unverified
 ```
 
 A review whose lenses silently dropped, or whose lens resolution ran on an unverifiable host answer, must not report clean.

@@ -7950,6 +7950,18 @@ const isPollBlock = (block) =>
     s.check("G55e lens-invocation.md forbids a clean report on a dropped lens, citing F6/F7",
       /must not report clean|not report clean|self-conceal/i.test(li) && /F6/.test(li) && /F7/.test(li),
       "no no-clean-report rule or F6/F7 doctrine citation");
+    // break-shape: G55e-j — `RUN_ANOMALY` is a single-line renderer slot (`render-report.mjs`'s
+    // `assertPlainish`), so the rule's own worked examples cannot show one line per degraded
+    // lens without instructing something the payload contract rejects on the incident's central
+    // case (all six lenses degraded at once, dash0hq/dash0#19751). branch-reviewer iteration 3
+    // caught this — it dates to 0be7637 and survived two review passes unflagged.
+    const anomalySection = sectionOf(REL_LI, "## No self-concealing degradation — `RUN_ANOMALY` is mandatory");
+    s.check("G55j lens-invocation.md states RUN_ANOMALY is single-line and cannot carry one line per lens",
+      /single-line/i.test(anomalySection) && /cannot emit one line per degraded lens|one line per degraded lens/i.test(anomalySection),
+      "no single-line constraint, or no statement that one-line-per-lens is unobtainable");
+    s.check("G55j lens-invocation.md shows an aggregated multi-lens RUN_ANOMALY example",
+      /aggregate/i.test(anomalySection) && (anomalySection.match(/RUN_ANOMALY:/g) || []).length >= 2,
+      "no aggregation instruction, or fewer than two worked RUN_ANOMALY examples (aggregated + single)");
 
     // (f) enhancement vs spine, every lens classified, confidence justified — R6 / AC-6.
     // Scoped to the OWNING section and to the SPINE ROW specifically, not to "does this lens name
@@ -7975,15 +7987,17 @@ const isPollBlock = (block) =>
       /verifier|Reproducible|per-comment-confidence/i.test(li),
       "no justification tying confidence's classification to finding-verifier.md / per-comment-confidence.md");
     // The cap precedent was retracted in ce8e908 — a spine skip no longer touches `RUN.tier`
-    // at all, so the correct assertion is "the section states tier is left untouched", scoped to
-    // evsSection like its siblings above. A whole-file `li` grep for these same words would stay
-    // green even on the pre-retraction (wrong) claim, since `standard`/`diff-only`/`workspace` all
-    // still appear in the section's own explanation of why the retracted designs were rejected —
-    // this is the exact vacuous shape branch-reviewer iteration 2 caught (finding
-    // quality:test-gap:g55f-cap-check).
-    s.check("G55f lens-invocation.md states RUN.tier is never touched by a spine skip",
-      /never touches? `RUN\.tier`|RUN\.tier.*untouched|untouched.*RUN\.tier|RUN\.tier.*left exactly|left exactly.*RUN\.tier/i.test(evsSection),
-      "no 'RUN.tier is never touched / left untouched' statement in its own section");
+    // at all. A loose `evsSection`-wide regex for "untouched" / "left exactly" still passed on a
+    // mutation that flipped ONLY the live contract sentence back to the retracted design while
+    // leaving the rejected-designs history paragraph intact (branch-reviewer iteration 3, finding
+    // quality:test-gap:g55f-cap-check#2) — the section carries three matches for that shape, and
+    // the confidence-classification paragraph's unrelated closing clause was the one surviving.
+    // Anchor on the literal bold lead sentence instead, the same anti-vacuous move as reading the
+    // table's own SPINE row above: a bold topic sentence is deliberately singular and load-bearing
+    // prose, not a phrase that recurs incidentally elsewhere in the section.
+    s.check("G55f lens-invocation.md's bold lead sentence states neither class touches RUN.tier",
+      /\*\*Neither class ever touches `RUN\.tier`\.\*\*/.test(evsSection),
+      "the exact bold lead sentence 'Neither class ever touches `RUN.tier`.' is missing from its own section");
     s.check("G55f lens-invocation.md names workspace.md's diff-only precedent only as a rejected design",
       /diff-only/i.test(evsSection) && /workspace/i.test(evsSection) && /rejected/i.test(evsSection),
       "diff-only/workspace precedent not present, or not framed as rejected");
