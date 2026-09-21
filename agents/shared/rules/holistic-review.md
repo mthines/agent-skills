@@ -283,13 +283,18 @@ A run that ran holistic and emitted 0 findings is healthy — most PRs have neit
 
 ## When holistic is unavailable
 
-If `Skill("holistic-analysis", "review")` returns an unknown-mode error (skill version predates the `review` mode), log once and continue without the step:
+Resolution follows [`lens-invocation.md`](./lens-invocation.md): try `$HOME/.claude/skills/holistic-analysis/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
+`holistic-analysis` is classified **enhancement** in that rule — a genuine skip is logged loudly via `RUN_ANOMALY` and the rest of the pipeline still produces useful comments; it never caps the review tier.
+The same `RUN_ANOMALY` also fires on `lens-invocation.md`'s other case: any fall-through to host `Skill()` for `holistic-analysis` at all, not only when the fallback also fails, since this side of the call has no local copy to check the host's answer against.
+
+A local file predating the `review` mode is a distinct case from an absent one: the file-presence check passes, the in-context follow succeeds, and only then does the loaded skill itself return an unknown-mode error — no host `Skill()` call happens at all in this branch, so it matches neither of `lens-invocation.md`'s two enumerated cases by name. The lens still did not run, though, and the review must not report clean on that fact silently — log the skip on the terminal token **and** raise `RUN_ANOMALY` on the posted report:
 
 ```
 Holistic review: skipped (holistic-analysis skill predates `review` mode — update the skill to enable)
+RUN_ANOMALY: holistic-analysis skill predates `review` mode on this host — findings on this run carry no intent-match or system-fit analysis
 ```
 
-Do not block the run. Holistic review is an enhancement; the rest of the pipeline still produces useful comments.
+Do not block the run.
 
 ## What this rule does not do
 

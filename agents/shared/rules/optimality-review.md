@@ -206,13 +206,19 @@ A run that proposes on every unit is suspicious; spot-check the anti-overlap gua
 
 ## When optimize-approach is unavailable
 
-If `Skill("optimize-approach", …)` is not installed, log once and continue without the step:
+Resolution follows [`lens-invocation.md`](./lens-invocation.md): try `$HOME/.claude/skills/optimize-approach/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
+`optimize-approach` is classified **enhancement** in that rule — a genuine skip is logged loudly via `RUN_ANOMALY` and the rest of the pipeline still produces useful comments; it never caps the review tier.
+
+If `Skill("optimize-approach", …)` is also not installed after the file-presence check, that is a genuine skip, so log it loudly via `RUN_ANOMALY`, never the skipped line alone:
 
 ```text
 Optimality review: skipped (optimize-approach skill not installed)
+RUN_ANOMALY: optimize-approach lens unavailable on this host (no local file, no host skill) — findings on this run carry no optimality proposals
 ```
 
-Do not block the run. Optimality review is an enhancement; the rest of the pipeline still produces useful comments.
+The same `RUN_ANOMALY` also fires on `lens-invocation.md`'s other case: any fall-through to host `Skill()` for `optimize-approach` at all, not only when the fallback also fails, since this side of the call has no local copy to check the host's answer against — this block's own trigger is a subset of that fall-through, not a separate, narrower one.
+
+Do not block the run.
 
 ## What this rule does not do
 

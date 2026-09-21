@@ -62,6 +62,11 @@ The `confidence(code)` call and its rubric-composition inputs described in § Th
 from a lens that emits outside the finder pipeline (`ux`, `--with …`). Both paths return a 0–100
 **Final** score against the same threshold, so a mixed run does not need two bars.
 
+This file is the canonical owner of `Skill("confidence", "code")`'s cross-harness resolution.
+Resolving it follows [`lens-invocation.md`](./lens-invocation.md): try `$HOME/.claude/skills/confidence/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
+`confidence` is classified **enhancement**, not spine, precisely because of the fallback relationship stated above — the critical inline-scoring path already moved to `finding-verifier.md`'s own rubric, so a genuine `confidence` skip degrades a path most runs do not even take. A genuine skip is logged loudly via `RUN_ANOMALY`; it never caps the review tier.
+The same `RUN_ANOMALY` also fires on `lens-invocation.md`'s other case: any fall-through to host `Skill()` for `confidence` at all, not only when the fallback also fails, since this side of the call has no local copy to check the host's answer against.
+
 **A finding with no score from either path is dropped, never posted at the threshold's benefit of the
 doubt.** An unscored finding is not a confident one.
 
