@@ -233,6 +233,21 @@ export const SUITES = [
     inputKey: "input", inputLabel: "Claim + assertion",
     choices: ["behavioral", "by-construction"],
   },
+  {
+    name: "jev-assert-provenance",
+    golden: "golden/jev-assert-provenance.jsonl",
+    // 14 cases, 7 `admit` / 7 `refuse` — a 50% majority-class baseline. Three cases are
+    // decoys whose SURFACE points at the wrong label (an `admit` outcome that mentions
+    // "text"; two `refuse` checks phrased to read like user-facing claims while pinning an
+    // exact literal string or a role+name), because a responder keying on the words "text" /
+    // "contains" / "sees" alone would otherwise separate the set without reading the rule.
+    // The decision this measures: is an expectation a user-observable OUTCOME (admit) or a
+    // restatement of the captured state / a structural check (refuse)?
+    rubric: { file: "skills/quality/jev-assert/rules/provenance.md", section: null }, // whole file
+    instruction: "You are jev-assert's provenance guard (Step 0). Using ONLY the rule below, classify the expectation as 'admit' (a user-observable outcome a person could confirm on screen) or 'refuse' (a restatement of the captured state — a literal-string or structural/DOM check — which belongs in a deterministic locator/text assertion, not Jev).",
+    inputKey: "input", inputLabel: "Expectation",
+    choices: ["admit", "refuse"],
+  },
 ];
 
 /** Repo-relative path of a suite's golden file (the `golden` field is relative to scripts/eval/). */

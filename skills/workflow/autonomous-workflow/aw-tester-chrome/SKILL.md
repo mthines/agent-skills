@@ -168,6 +168,18 @@ it to heal a locator on the spot instead of failing blind.
 - `network: METHOD /path returned NNN` — call `read_network_requests` and match
   the method, path, and status. Capture the status and first response lines only
   on a mismatch.
+- `semantic: <outcome>` — a semantic assertion (shared
+  [spec-run contract](../rules/spec-run-contract.md#semantic-assertions)).
+  Capture the page **text** state with `read_page` (accessibility tree), falling
+  back to `get_page_text` — never a screenshot — scoped to the region the outcome
+  concerns when it is one region. Then call
+  [`Skill("jev-assert")`](../../../quality/jev-assert/SKILL.md) with that state
+  and the expectation, read its `[receipt] verdict: <token>` line, and map it per
+  the contract's § 4 table: `confirms` → pass; `contradicts` / `null` → fail (put
+  the Noul and question in `diagnostics`); `ambiguous` → `skipped` reason
+  `semantic-ambiguous`; `unobtainable` (jev-assert missing or `TYPESAFE_API_KEY`
+  unset) → `skipped` reason `semantic-unobtainable`. Never pass an `ambiguous` /
+  `unobtainable` step, and never re-word the expectation to force a pass.
 
 **`CAPTURE` (documentation screenshot).** A `CAPTURE "<label>" [fullPage]` step
 is neither an action nor an assertion — it resolves no locator and can never fail

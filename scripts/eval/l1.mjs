@@ -7887,4 +7887,72 @@ const isPollBlock = (block) =>
   }
 }
 
+// ── G55: jev-assert — receipt vocabulary ≡ verify-behavior, and the semantic: form is wired ──
+//
+// jev-assert only composes if its receipt tokens are EXACTLY the five verify-behavior owns — a
+// sixth reaches no consumer, and a missing one silently drops a verdict a runner maps. And the
+// `semantic:` assertion is only real if it lives in the shared grammar + contract the runners
+// parse, not only in the skill that resolves it. Each check is scoped to the file that OWNS the
+// claim, and both the canonical and the claimed verdict sets are DERIVED from their owners rather
+// than re-encoded here (the G54c lesson).
+{
+  const JEV = join(REPO_ROOT, "skills/quality/jev-assert");
+  const RECEIPT_MAP = join(JEV, "rules/receipt-mapping.md");
+  const VERIF_RECEIPT = join(REPO_ROOT, "agents/shared/rules/verification-receipt.md");
+  const CONTRACT = join(REPO_ROOT, "skills/workflow/autonomous-workflow/rules/spec-run-contract.md");
+  const TEMPLATE = join(REPO_ROOT, "skills/workflow/autonomous-workflow/templates/specs.md.template");
+  const AW_TESTER = join(REPO_ROOT, "skills/workflow/autonomous-workflow/templates/aw-tester.agent.md");
+  const AW_CHROME = join(REPO_ROOT, "skills/workflow/autonomous-workflow/aw-tester-chrome/SKILL.md");
+
+  // Canonical set: derive from verification-receipt.md's own `verdict: <a|b|c|d|e>` pipe list —
+  // the owner of the vocabulary — never a literal re-encoded here.
+  const vrText = existsSync(VERIF_RECEIPT) ? readFileSync(VERIF_RECEIPT, "utf8") : "";
+  const vrMatch = vrText.match(/verdict:\s*<([a-z|]+)>/);
+  const canonical = new Set(vrMatch ? vrMatch[1].split("|") : []);
+  s.check("G55 canonical receipt set derives from verification-receipt.md (5 tokens)",
+    canonical.size === 5,
+    `derived ${canonical.size} token(s) (${[...canonical].join(", ") || "none"}) — the equality check below is vacuous unless the owner defines them`);
+
+  // Claimed set: the verdict column (cell 2) of receipt-mapping.md's "## The mapping" table.
+  const rmText = existsSync(RECEIPT_MAP) ? readFileSync(RECEIPT_MAP, "utf8") : "";
+  const mapSection = rmText.split(/^## /m).find((sec) => sec.startsWith("The mapping")) ?? "";
+  const claimed = new Set();
+  for (const line of mapSection.split("\n")) {
+    if (!/^\|/.test(line)) continue;
+    const cells = line.split("|");
+    if (cells.length < 4) continue;
+    const m = cells[2].match(/`([a-z]+)`/);
+    if (m) claimed.add(m[1]);
+  }
+  const extra = [...claimed].filter((t) => !canonical.has(t));
+  const missing = [...canonical].filter((t) => !claimed.has(t));
+  s.check("G55 jev-assert's mapping verdicts ≡ the verify-behavior vocabulary (no sixth, none missing)",
+    canonical.size === 5 && extra.length === 0 && missing.length === 0,
+    `extra: ${extra.join(", ") || "none"}; missing: ${missing.join(", ") || "none"}`);
+
+  s.check("G55 receipt-mapping.md states the verdict set is closed",
+    /closed/i.test(rmText) && /sixth/i.test(rmText),
+    "the closed-set promise is what stops a bespoke verdict word being added — state it in words, not only by the table");
+
+  // The semantic: form is only real if it lives in the shared grammar + contract the runners
+  // parse AND both runners resolve it — not only in the skill that owns the judgment.
+  const semanticSites = [
+    ["specs.md.template (grammar)", TEMPLATE],
+    ["spec-run-contract.md (contract)", CONTRACT],
+    ["aw-tester.agent.md (Playwright runner)", AW_TESTER],
+    ["aw-tester-chrome/SKILL.md (Chrome runner)", AW_CHROME],
+  ];
+  for (const [label, p] of semanticSites) {
+    const t = existsSync(p) ? readFileSync(p, "utf8") : "";
+    s.check(`G55 the semantic: assertion form is present in ${label}`,
+      /semantic:/.test(t),
+      `${label} never names the \`semantic:\` form — the assertion is unreachable from a conforming run of that surface`);
+  }
+  // The contract must route the semantic form to jev-assert, or the form names no resolver.
+  const contractText = existsSync(CONTRACT) ? readFileSync(CONTRACT, "utf8") : "";
+  s.check("G55 the spec-run contract routes semantic: to jev-assert",
+    /jev-assert/.test(contractText),
+    "spec-run-contract.md defines the semantic form but never names jev-assert as its resolver");
+}
+
 process.exit(s.report() ? 0 : 1);

@@ -47,6 +47,19 @@ Refactor: no                       # "yes" hints regression intent: assert behav
 #   network: METHOD /path returned NNN
 #   Example: network: POST /api/alerts returned 201
 #
+# semantic assertions:
+#   semantic: <user-observable outcome>
+#   Example: semantic: the user sees an order-confirmation number
+#   A semantic assertion delegates to the jev-assert skill: the runner captures
+#   the page TEXT state (accessibility tree / page text — never a screenshot)
+#   and asks TypeSafe's Jev model whether the outcome holds, then folds the
+#   verify-behavior receipt into the verdict (confirms → pass, contradicts/null
+#   → fail, ambiguous/unobtainable → the spec is inconclusive, never a silent
+#   pass). Use it where an exact locator or string match is brittle. The
+#   expectation must be a user-observable OUTCOME, not a restatement of the page
+#   text — a literal-string or structural check belongs in a {text: ...} or
+#   {role: ...} locator assertion, which verifies it deterministically.
+#
 # CAPTURE steps (documentation screenshots):
 #   A flow step of the form:
 #     - CAPTURE "hero after submit"           — screenshot the current viewport
@@ -86,6 +99,7 @@ flow:
     THEN {role: "dialog", name: "Add Widget"} is not visible
     AND {text: "Time Series"} is visible on the page
     AND network: POST /api/dashboards/{dashboardId}/widgets returned 201
+    AND semantic: the dashboard now shows a time-series widget the user just added
   - CAPTURE "dashboard with new time-series widget"
 
 ## Spec 2: <one-line user goal — refactor regression check>
