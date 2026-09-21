@@ -206,13 +206,16 @@ A run that proposes on every unit is suspicious; spot-check the anti-overlap gua
 
 ## When optimize-approach is unavailable
 
-If `Skill("optimize-approach", …)` is not installed, log once and continue without the step:
+Resolution follows [`lens-invocation.md`](./lens-invocation.md): try `~/.claude/skills/optimize-approach/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
+`optimize-approach` is classified **enhancement** in that rule — a genuine skip is logged loudly via `RUN_ANOMALY` and the rest of the pipeline still produces useful comments; it never caps the review tier.
+
+If `Skill("optimize-approach", …)` is also not installed after the file-presence check, log the skip and move on:
 
 ```text
 Optimality review: skipped (optimize-approach skill not installed)
 ```
 
-Do not block the run. Optimality review is an enhancement; the rest of the pipeline still produces useful comments.
+Do not block the run.
 
 ## What this rule does not do
 

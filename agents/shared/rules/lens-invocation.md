@@ -1,0 +1,142 @@
+---
+title: Lens invocation — resolving pr-reviewer's composed skills across harnesses
+impact: HIGH
+tags:
+  - pr-reviewer
+  - lens-invocation
+  - cross-harness
+  - self-concealing-degradation
+---
+
+# Lens invocation
+
+`pr-reviewer` composes six repo-owned quality lenses through `Skill()`: `severity`, `optimize-approach`, `measurable`, `confidence`, `holistic-analysis`, and `verify-behavior`.
+In the Claude Code CLI and the Claude Agent SDK harness behind Claude Code on the web, `Skill()` resolves these names directly, because both harnesses discover skills from the filesystem the agent is installed into.
+A third harness does not: the Agent0 Automation sandbox's `skill` tool only accepts names from a fixed enum of roughly 45 Dash0 built-in skills, and none of these six names is in that enum.
+
+The observed failure (`dash0hq/dash0#19751`, a real "Agent0 | review" run) had two distinct shapes, and this rule exists because neither is safe to handle the same way:
+
+1. Five lenses — `severity`, `optimize-approach`, `confidence`, `holistic-analysis`, `verify-behavior` — return an explicit error, `Skill "<name>" not found`.
+2. The sixth, `measurable`, does **not** error.
+   It silently name-collides with an unrelated Dash0 built-in skill of the same name and returns that skill's recipe instead — wrong content, no error, no signal to catch.
+
+The run's own verdict was `success`.
+Every lens had silently degraded to skipped, and nothing in the pipeline noticed — a self-concealing degradation, the same failure shape this repo's `F6`/`F7` doctrine already names for dispatch-availability checks ([`autonomous-workflow/rules/diagnostic-surface.md`](../../../skills/workflow/autonomous-workflow/rules/diagnostic-surface.md)).
+
+## Contents
+
+- [Resolution algorithm — file-presence, never an error string](#resolution-algorithm--file-presence-never-an-error-string)
+- [In-context load vs. sub-agent dispatch — why this fallback is safe here](#in-context-load-vs-sub-agent-dispatch--why-this-fallback-is-safe-here)
+- [The `measurable` collision — a silent wrong answer, not an error](#the-measurable-collision--a-silent-wrong-answer-not-an-error)
+- [No self-concealing degradation — `RUN_ANOMALY` is mandatory](#no-self-concealing-degradation--runanomaly-is-mandatory)
+- [Enhancement vs. spine — what a genuine skip costs](#enhancement-vs-spine--what-a-genuine-skip-costs)
+- [The six invocation sites](#the-six-invocation-sites)
+- [What this rule does not do](#what-this-rule-does-not-do)
+
+---
+
+## Resolution algorithm — file-presence, never an error string
+
+Every lens site in this agent resolves a lens through the same three steps, in order, before it ever calls `Skill("<lens-name>", …)`:
+
+1. Check whether `~/.claude/skills/<lens-name>/SKILL.md` exists on disk.
+   This is the deterministic, repo-owned installation path every one of the six lenses installs to (`scripts/sync-symlinks.sh`), and its presence or absence does not depend on which harness is running the agent.
+2. If the file is present, read it and follow its instructions in-context, exactly as if `Skill("<lens-name>", …)` had loaded it.
+   This is the authoritative path for all six lenses — not a fallback tried after an error, and not a catch block.
+   See [In-context load vs. sub-agent dispatch](#in-context-load-vs-sub-agent-dispatch--why-this-fallback-is-safe-here) for why this substitution is legitimate here.
+3. Only when the file is **absent** does the lens fall through to whatever the host's own `Skill()` resolution returns — which is the correct behaviour on a harness that has no local file at all, and functionally a no-op on one that does (steps 1–2 already ran the same content the host would have loaded).
+
+The predicate is **file-presence**, never the literal error string `Skill "<name>" not found`.
+Keying recovery on an error string is the `F6` anti-pattern this repo removed from dispatch-availability checks in v3.25 ([`autonomous-workflow/rules/diagnostic-surface.md`](../../../skills/workflow/autonomous-workflow/rules/diagnostic-surface.md)) — a check that greps for one specific failure string is blind to every other way a host can fail to return the right skill, and the `measurable` collision below is exactly such a way: it returns no error at all.
+A predicate that must catch both the loud failure (five lenses) and the silent one (`measurable`) has to be evaluated **before** the call, not derived from how the call failed.
+
+```text
+resolve(lens_name):
+  path = "~/.claude/skills/" + lens_name + "/SKILL.md"
+  if file_exists(path):
+    read(path) and follow it in-context      # authoritative — steps 1-2 above
+  else:
+    Skill(lens_name, ...)                    # host resolution — the only remaining option
+```
+
+## In-context load vs. sub-agent dispatch — why this fallback is safe here
+
+Reading `~/.claude/skills/<name>/SKILL.md` and following it in the current context is **behaviorally identical** to `Skill("<name>", …)` on a harness where `Skill()` works — both load the same markdown and execute the same instructions, in the same context, with the same tool grants.
+The two differ only in *loader*: one goes through the host's skill-invocation mechanism, the other reads the file directly.
+Neither isolates a context and neither delegates execution elsewhere, so substituting one for the other changes nothing about what runs.
+
+This is why the fallback in this rule is safe, and it is also exactly the property that does **not** hold for `Task` / `Agent` sub-agent dispatch.
+[`review-loop`](../../../skills/quality/review-loop/SKILL.md) and [`pr-review`](../../../skills/quality/pr-review/SKILL.md) both dispatch `pr-reviewer` as a **sub-agent**, and both correctly *refuse* to fall back when no available tool (`Task`, `Agent`, or another spelling) can dispatch one — because a review run in the caller's own context is a self-review wearing a reviewer's label, not the same operation through a different loader.
+Context isolation is the whole point of that dispatch, so there is no in-context substitute for it.
+
+Never generalise this rule's fallback to a dispatch site.
+A lens resolves to a **skill definition** — inert markdown this agent already executes in its own context — while `pr-reviewer` itself is a **sub-agent** another caller dispatches for isolation it does not have.
+Those are different operations, and only the first has a safe same-context substitute.
+
+## The `measurable` collision — a silent wrong answer, not an error
+
+Five of the six lenses fail loudly: the host's `skill` tool returns `Skill "<name>" not found`, and a check keyed on file-presence (never on that string) still catches it, because the failure and the fallback triggering condition happen to coincide.
+
+`measurable` does not.
+The Agent0 sandbox's built-in skill enum contains an unrelated skill also named `measurable`, and the host's resolver returns **that** skill's recipe with no error, no warning, and no signal distinguishable from a correct call.
+A design that tries the deterministic file only inside a `catch` block never reaches this case, because nothing threw.
+
+This is why the resolution algorithm above makes the repo-owned file **primary and authoritative**, not a recovery path: it is read and followed *before* any host resolution is trusted, for every one of the six lenses, regardless of whether that particular lens is known to error or to collide.
+The uniform treatment is what makes the collision harmless — the agent never depends on the host's answer being right, so it does not matter that one of six hosts returns a wrong one instead of no one.
+
+## No self-concealing degradation — `RUN_ANOMALY` is mandatory
+
+A lens that the resolution algorithm still cannot run — the file is absent **and** the host has no usable answer either — must never disappear quietly.
+This repo already names the failure shape: a degraded path that reports as a legitimate outcome is self-concealing, and self-concealing degradation is exactly what `F6`/`F7` name in [`autonomous-workflow/rules/diagnostic-surface.md`](../../../skills/workflow/autonomous-workflow/rules/diagnostic-surface.md) — the run in `dash0hq/dash0#19751` is the same doctrine's failure mode, one layer down, in a lens call instead of a dispatch call.
+
+When a lens still cannot run after both resolution steps, emit one `RUN_ANOMALY` line naming it — the same payload slot [`render-report.mjs`](../../pr-reviewer/scripts/render-report.mjs) already renders for a divergence-recovery note (`workspace.md`), so no renderer change is needed to surface it:
+
+```text
+RUN_ANOMALY: severity lens unavailable on this host (no local file, no host skill) — findings on this run carry no severity tier
+```
+
+A review whose lenses silently dropped must not report clean.
+Concretely: the run announcement, the terminal Quality Gate summary, and the posted report all carry the anomaly — never only the terminal output, which the PR author never sees.
+A `success` / `PASS` verdict is never the correct rendering of a run that could not execute the lenses it depends on; see [Enhancement vs. spine](#enhancement-vs-spine--what-a-genuine-skip-costs) for what else that run must do.
+
+## Enhancement vs. spine — what a genuine skip costs
+
+Not every lens costs the same when it cannot run.
+Two are load-bearing enough that a genuine skip changes what the review is capable of claiming; the other four make the review worse, not wrong.
+
+| Class | Lenses | A genuine skip means |
+| --- | --- | --- |
+| **Spine** | `severity`, `verify-behavior` | The review's own severity and behavioral-proof machinery cannot run — findings have no tier and behavioral claims have no executed proof. This is the same shape `workspace.md`'s `DEPTH_CAPABILITY: diff-only` already handles: a `deep` tier whose deep lenses cannot run is a label, not a review. |
+| **Enhancement** | `optimize-approach`, `measurable`, `holistic-analysis`, `confidence` | The rest of the pipeline still produces a useful, correctly-scored review; the review is smaller, not less trustworthy. |
+
+**Spine genuine-skip caps the tier at `standard`**, reusing the `workspace.md` `diff-only` precedent exactly rather than inventing a second cap mechanism: `RUN.tier` is set to `standard` regardless of what Phase C would otherwise have chosen, and `RUN_ANOMALY` names which spine lens is missing.
+No renderer change is needed — the tier cap and the anomaly slot both already exist.
+
+**Why `confidence` is enhancement, not spine.**
+`confidence` looks load-bearing — it used to gate every posted comment — but [`finding-verifier.md`](./finding-verifier.md) § Step 4 moved the per-comment score's *source* from `Skill("confidence", "code")` to the in-agent verifier rubric (Reproducible 40 % / Attributable 30 % / Actionable 30 %).
+[`per-comment-confidence.md`](./per-comment-confidence.md) § Where the score comes from now states plainly that `confidence(code)` is only the **fallback** path — a `quick`-tier run with no workspace, or a finding from a lens that emits outside the finder pipeline (`ux`, `--with …`).
+Its one other use, the advisory overall-verdict check in `terminal-report.md`, is terminal-only and never posted.
+Neither use sits on the critical inline-scoring path, so a genuine `confidence` skip degrades a fallback the run may not even need, not the spine — enhancement, loud `RUN_ANOMALY`, no tier cap.
+
+## The six invocation sites
+
+Each lens has exactly one canonical owner file that references this rule, chosen as the file that owns the consequence of that lens failing:
+
+| Lens | Owner file |
+| --- | --- |
+| `severity` | [`conventional-comments.md`](./conventional-comments.md) |
+| `optimize-approach` | [`optimality-review.md`](./optimality-review.md) |
+| `measurable` | [`measurability-review.md`](./measurability-review.md) |
+| `confidence` | [`per-comment-confidence.md`](./per-comment-confidence.md) |
+| `holistic-analysis` | [`holistic-review.md`](./holistic-review.md) |
+| `verify-behavior` | [`verification-receipt.md`](./verification-receipt.md) |
+
+`finding-verifier.md` is deliberately **not** an owner or a reference site.
+It is a `bug-detection` L2 rubric source (`suites.mjs` `DETECTION.rubrics`), and its existing statements about severity and confidence already agree with this rule without needing to restate it — editing its body for a reference would select the hard-gated `bug-detection` job for a change with nothing behavioral in it.
+
+## What this rule does not do
+
+- It does not change what any lens computes. Resolution decides *whether* a lens runs and *how loudly* a genuine skip is reported — never the lens's own judgment.
+- It does not add a new report section. `RUN_ANOMALY` and `RUN.tier` are both existing payload slots; this rule only says when to fill them.
+- It does not apply to `Task` / `Agent` sub-agent dispatch, ever. See [In-context load vs. sub-agent dispatch](#in-context-load-vs-sub-agent-dispatch--why-this-fallback-is-safe-here).
+- It does not retry a failed host resolution. The file-presence check runs once, before the call; there is no second attempt to make.

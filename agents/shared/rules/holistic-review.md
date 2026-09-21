@@ -283,13 +283,16 @@ A run that ran holistic and emitted 0 findings is healthy — most PRs have neit
 
 ## When holistic is unavailable
 
-If `Skill("holistic-analysis", "review")` returns an unknown-mode error (skill version predates the `review` mode), log once and continue without the step:
+Resolution follows [`lens-invocation.md`](./lens-invocation.md): try `~/.claude/skills/holistic-analysis/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
+`holistic-analysis` is classified **enhancement** in that rule — a genuine skip is logged loudly via `RUN_ANOMALY` and the rest of the pipeline still produces useful comments; it never caps the review tier.
+
+If `Skill("holistic-analysis", "review")` also returns an unknown-mode error after the file-presence check (skill version predates the `review` mode), log the skip and move on:
 
 ```
 Holistic review: skipped (holistic-analysis skill predates `review` mode — update the skill to enable)
 ```
 
-Do not block the run. Holistic review is an enhancement; the rest of the pipeline still produces useful comments.
+Do not block the run.
 
 ## What this rule does not do
 

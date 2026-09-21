@@ -7887,4 +7887,127 @@ const isPollBlock = (block) =>
   }
 }
 
+// ── G55: lens-invocation.md — the shared cross-harness resolution rule for pr-reviewer's six
+// composed lenses (`severity`, `optimize-approach`, `measurable`, `confidence`,
+// `holistic-analysis`, `verify-behavior`) ──
+//
+// Two of the six used to carry duplicated per-lens silent-skip prose and a third carried an
+// inline degrade, instead of one shared contract. That is the exact shape that let
+// `dash0hq/dash0#19751` (a real "Agent0 | review" run) report a clean `success` verdict on a
+// review whose lenses had all silently degraded — five to a host error, one (`measurable`) to a
+// silent name-collision with an unrelated built-in skill. Every sub-check below `read()`s the
+// SHIPPED rule files and greps LITERAL anchors out of them — never re-encoding the expected
+// prose as a second copy inside this guard, the mock-that-reimplements-the-thing-under-test trap.
+{
+  const LI = join(REPO_ROOT, "agents/shared/rules/lens-invocation.md");
+  // break-shape: G55a — delete agents/shared/rules/lens-invocation.md and this flips red, taking
+  // every check gated on `existsSync(LI)` below quiet along with it — the vacuous-pass shape
+  // G53i/G54a already warn about, guarded the same way here.
+  s.check("G55a agents/shared/rules/lens-invocation.md exists", existsSync(LI));
+
+  if (existsSync(LI)) {
+    const li = readFileSync(LI, "utf8");
+
+    s.check("G55b lens-invocation.md opens with a YAML frontmatter block",
+      li.startsWith("---\n"),
+      "no leading frontmatter block");
+
+    const headingCount = (li.match(/^## /gm) || []).length;
+    s.check("G55b lens-invocation.md carries at least 5 `## ` section headings",
+      headingCount >= 5,
+      `only ${headingCount} found`);
+
+    // (c) file-presence predicate, never an error string — R3 / AC-3.
+    s.check("G55c lens-invocation.md names the deterministic repo-owned skill path",
+      /\.claude\/skills\//.test(li),
+      "no ~/.claude/skills/<name>/SKILL.md path named");
+    s.check("G55c lens-invocation.md states the recovery predicate is file-presence",
+      /file-presence|file presence|present at/i.test(li),
+      "no file-presence predicate stated");
+    s.check("G55c lens-invocation.md rejects the error-string predicate, citing F6",
+      /Skill "<name>" not found/.test(li) && /F6/.test(li),
+      "the rejected error string or the F6 citation is missing");
+
+    // (d) the `measurable` collision is named as silent, not as an error — R4 / AC-4.
+    s.check("G55d lens-invocation.md names the `measurable` collision as silent, not an error",
+      /measurable/.test(li) && /collision|collide|silently/i.test(li),
+      "measurable's silent collision is not described");
+    s.check("G55d lens-invocation.md states local resolution is primary/authoritative",
+      /authoritative|primary/i.test(li),
+      "no authoritative/primary resolution statement");
+
+    // (e) no self-concealing degradation — R5 / AC-5.
+    s.check("G55e lens-invocation.md requires a loud RUN_ANOMALY on a genuine skip",
+      /RUN_ANOMALY/.test(li),
+      "RUN_ANOMALY not named");
+    s.check("G55e lens-invocation.md forbids a clean report on a dropped lens, citing F6/F7",
+      /must not report clean|not report clean|self-conceal/i.test(li) && /F6/.test(li) && /F7/.test(li),
+      "no no-clean-report rule or F6/F7 doctrine citation");
+
+    // (f) enhancement vs spine, every lens classified, confidence justified — R6 / AC-6.
+    s.check("G55f lens-invocation.md classifies lenses as spine vs enhancement",
+      /spine/i.test(li) && /enhancement/i.test(li),
+      "spine/enhancement classification missing");
+    for (const lens of ["severity", "optimize-approach", "measurable", "confidence", "holistic-analysis", "verify-behavior"]) {
+      s.check(`G55f lens-invocation.md classifies \`${lens}\``,
+        new RegExp(lens).test(li),
+        `${lens} not named`);
+    }
+    s.check("G55f lens-invocation.md justifies confidence's classification from the verifier rubric",
+      /verifier|Reproducible|per-comment-confidence/i.test(li),
+      "no justification tying confidence's classification to finding-verifier.md / per-comment-confidence.md");
+    s.check("G55f lens-invocation.md states the standard-tier cap precedent for a spine skip",
+      /standard/i.test(li) && /diff-only/i.test(li) && /workspace/i.test(li),
+      "no standard-tier / diff-only / workspace cap precedent");
+  }
+
+  // (g) REACHABILITY — all six canonical owner files reference the shared rule, and the two
+  // formerly-duplicated silent-skip bodies no longer restate the old prose. break-shape: G55g —
+  // remove the reference from one owner file (or reintroduce "log once and continue without the
+  // step" in either collapsed body) and one of the checks below flips red.
+  const OWNERS = [
+    "agents/shared/rules/conventional-comments.md",
+    "agents/shared/rules/optimality-review.md",
+    "agents/shared/rules/measurability-review.md",
+    "agents/shared/rules/per-comment-confidence.md",
+    "agents/shared/rules/holistic-review.md",
+    "agents/shared/rules/verification-receipt.md",
+  ];
+  for (const f of OWNERS) {
+    const abs = join(REPO_ROOT, f);
+    s.check(`G55g ${f} references lens-invocation.md`,
+      existsSync(abs) && /lens-invocation\.md/.test(readFileSync(abs, "utf8")),
+      "no reference to the shared rule found");
+  }
+
+  // Non-throwing wrapper — a section this specific has to be genuinely absent to be a defect,
+  // not a reason to crash the whole suite the way `sliceBetween` does on a missing end anchor.
+  const sectionOrNull = (relPath, heading) => {
+    try { return extractSection(relPath, heading); } catch { return null; }
+  };
+  const hrBody = sectionOrNull("agents/shared/rules/holistic-review.md", "## When holistic is unavailable");
+  s.check("G55g holistic-review.md's collapsed body no longer restates the silent-skip prose",
+    hrBody !== null && !/log once and continue without the step/.test(hrBody),
+    hrBody === null ? "section not found" : "silent-skip prose still present");
+  const orBody = sectionOrNull("agents/shared/rules/optimality-review.md", "## When optimize-approach is unavailable");
+  s.check("G55g optimality-review.md's collapsed body no longer restates the silent-skip prose",
+    orBody !== null && !/log once and continue without the step/.test(orBody),
+    orBody === null ? "section not found" : "silent-skip prose still present");
+
+  // (h) RUN_ANOMALY was already a wired payload slot before this change — D6/D8's whole premise
+  // is that no renderer edit was needed to surface it. break-shape: G55h — strip RUN_ANOMALY out
+  // of render-report.mjs and this flips red, since the rule's instruction would then point at a
+  // slot that does not exist.
+  const RR = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
+  s.check("G55h RUN_ANOMALY is already a wired payload slot in render-report.mjs",
+    existsSync(RR) && /RUN_ANOMALY/.test(readFileSync(RR, "utf8")),
+    "RUN_ANOMALY absent from the renderer — the no-renderer-change premise this rule relies on does not hold");
+
+  // (i) diagnostic-surface.md names the failure mode — R5 / AC-11.
+  const DS = join(REPO_ROOT, "agents/pr-reviewer/rules/diagnostic-surface.md");
+  s.check("G55i diagnostic-surface.md names silent lens degradation as a failure mode",
+    existsSync(DS) && /lens.*degrad|degrad.*lens|F-lens/i.test(readFileSync(DS, "utf8")),
+    "no F-lens-degraded-silently (or equivalent) row found");
+}
+
 process.exit(s.report() ? 0 : 1);

@@ -44,6 +44,10 @@ nitpick (low): <prose> **(non-blocking)**
 
 The tier is one of `critical` / `high` / `medium` / `low`, from `Skill("severity", "finding")`, and it renders **twice**: as this label, which the machines read, and as the matching glyph (`🔴` / `🟠` / `🟡` / `⚪`) before the bold title, which is what a human scans. The glyph comes from the one map in `comment-spine.mjs` that the report's severity tally also uses, so `high` looks the same on both surfaces. The label is orthogonal to and does **not** replace the end-of-line `**(blocking)**` / `**(non-blocking)**` decoration — that token is load-bearing (other rules parse it) and stays exactly as is. `scripts/record-comment-relevance.mjs` reads the tier from this label into the relevance record's `severity` field. Both label and glyph are omitted when no tier was assigned (a flat-override run, or a non-`pr-reviewer` bot).
 
+`severity` is the canonical owner of `Skill("severity", "finding")`'s cross-harness resolution.
+Resolving it follows [`lens-invocation.md`](./lens-invocation.md): try `~/.claude/skills/severity/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
+`severity` is classified **spine** in that rule — a genuine skip means findings carry no tier at all, so it caps the review tier at `standard` (the same `workspace.md` `diff-only` precedent) and is surfaced loudly via `RUN_ANOMALY`, never rendered as a quiet omission of the label and glyph above.
+
 ## Examples
 
 Every code symbol in the prose is backticked. `suggestion:` and `issue:` comments with a concrete patch include a fenced fix block — see `comment-shape.md § Suggestion / issue → include a fix block`.
