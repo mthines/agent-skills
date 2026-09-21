@@ -54,6 +54,35 @@ const POINTER_MARKER = "<!-- PR_REVIEWER_POINTER -->";
 
 /* ----------------------------- small helpers ----------------------------- */
 
+/**
+ * Where a materialized checkout is allowed to live.
+ *
+ * NOT `os.tmpdir()`. The host's file tools are scoped to the agent workspace, and
+ * a path outside it is denied rather than merely awkward — measured on the first
+ * fan-out run against `mthines/lorekit#679`, where the workspace landed in
+ * `/tmp/prr-clone-X9bL2B` and the `standards` finder's sub-agent had `read`,
+ * `glob` AND `cat` all refused against it. It returned zero findings and said so;
+ * a finder that had not disclosed the refusal would have reported a clean
+ * conformance pass over files it never opened.
+ *
+ * So the checkout goes under the workspace, where every agent in the run can read
+ * it. `os.tmpdir()` stays as the last rung for a host with no workspace at all.
+ */
+function scratchRoot() {
+  for (const candidate of [process.env.PR_REVIEWER_SCRATCH, "/tmp/workspace", process.cwd()]) {
+    if (!candidate) continue;
+    try {
+      if (!existsSync(candidate)) continue;
+      const dir = join(candidate, ".pr-reviewer-scratch");
+      mkdirSync(dir, { recursive: true });
+      return dir;
+    } catch {
+      /* try the next rung */
+    }
+  }
+  return tmpdir();
+}
+
 function run(cmd, args, { timeoutMs = 60000, cwd = process.cwd(), maxBuffer = 64 * 1024 * 1024 } = {}) {
   return new Promise((res) => {
     execFile(cmd, args, { timeout: timeoutMs, cwd, maxBuffer, encoding: "utf8" }, (err, stdout, stderr) => {
@@ -271,7 +300,7 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
 
     const fetched = await run("git", ["fetch", "-q", "origin", `pull/${number}/head`], { timeoutMs });
     if (fetched.ok) {
-      const parent = mkdtempSync(join(tmpdir(), "prr-wt-"));
+      const parent = mkdtempSync(join(scratchRoot(), "wt-"));
       const dir = join(parent, "w");
       const added = await run("git", ["worktree", "add", "--detach", dir, headSha], { timeoutMs });
       if (added.ok) {
@@ -290,7 +319,7 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
   }
 
   // Rung 1 — shallow clone of the head ref.
-  const cloneDir = mkdtempSync(join(tmpdir(), "prr-clone-"));
+  const cloneDir = mkdtempSync(join(scratchRoot(), "clone-"));
   const cloned = await run(
     "git",
     ["clone", "-q", "--depth", "50", `https://github.com/${repo}.git`, cloneDir],
@@ -317,7 +346,7 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
   }
 
   // Rung 2 — tarball at the head.
-  const tarDir = mkdtempSync(join(tmpdir(), "prr-tar-"));
+  const tarDir = mkdtempSync(join(scratchRoot(), "tar-"));
   const tarball = join(tarDir, "head.tgz");
   const got = await run("gh", ["api", `repos/${repo}/tarball/${headSha}`], { timeoutMs });
   if (got.ok && got.stdout.length > 0) {
@@ -843,6 +872,20 @@ function selfTest() {
   });
   t("normalizeLogin does not collapse two distinct logins", () => {
     return normalizeLogin("app/dash0-dev") !== normalizeLogin("mthines");
+  });
+  t("scratchRoot prefers the agent workspace over os.tmpdir()", () => {
+    // The whole point is that a sub-agent can read the checkout. `/tmp/workspace`
+    // exists on the host this runs on; `PR_REVIEWER_SCRATCH` overrides it, and the
+    // returned directory must exist by the time it is returned.
+    const forced = join(tmpdir(), `prr-scratch-probe-${process.pid}`);
+    mkdirSync(forced, { recursive: true });
+    process.env.PR_REVIEWER_SCRATCH = forced;
+    const picked = scratchRoot();
+    delete process.env.PR_REVIEWER_SCRATCH;
+    const def = scratchRoot();
+    return picked === join(forced, ".pr-reviewer-scratch")
+      && existsSync(picked)
+      && (!existsSync("/tmp/workspace") || def.startsWith("/tmp/workspace/"));
   });
 
   let failed = 0;
