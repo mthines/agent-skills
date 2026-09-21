@@ -49,6 +49,7 @@ Tier 3 itself now has a third approach alongside "run the covering test" and "sy
 **When `verify-behavior` is unavailable:** resolution follows [`lens-invocation.md`](./lens-invocation.md) — try `$HOME/.claude/skills/verify-behavior/SKILL.md` on disk (file-presence, never an error string) and follow it in-context before trusting any host resolution, since that path recovers the skill on hosts where `Skill()` itself cannot resolve the name.
 `verify-behavior` is classified **spine** in that rule: a claim needing Tier 2/3 to decide is exactly the case the spine treatment exists for.
 Only when the file-presence check also fails does this rule degrade to today's static-only behavior — Tier 1 proof tools decide what they can, and a claim that needs Tier 2/3 to decide survives with only a partial (Tier 1) receipt, exactly as before this rule delegated — and that genuine skip is logged loudly via `RUN_ANOMALY` (never the silent `verify-behavior — not available, continuing` line alone).
+The same `RUN_ANOMALY` also fires on `lens-invocation.md`'s other case: any fall-through to host `Skill()` for `verify-behavior` at all, not only when the fallback also fails, since this side of the call has no local copy to check the host's answer against.
 `RUN.tier` itself is left exactly as Phase C routed it, neither overridden nor omitted — `lens-invocation.md` § Enhancement vs. spine explains why neither move survives `render-report.mjs`'s own contract.
 Do not block the review on a missing skill.
 

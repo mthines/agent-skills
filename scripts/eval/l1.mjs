@@ -7982,9 +7982,16 @@ const isPollBlock = (block) =>
     s.check("G55f the Spine row names exactly `severity` and `verify-behavior`",
       /`severity`/.test(spineRow) && /`verify-behavior`/.test(spineRow),
       spineRow ? `Spine row found but missing one of the two: ${spineRow}` : "no Spine row found in the table");
-    for (const m of spineRow.matchAll(/`([^`]+)`/g)) LENS_CLASS[m[1]] = "spine";
+    // Restricted to the row's LENSES cell (column 2 of `| Class | Lenses | A genuine skip means |`)
+    // rather than the whole row — the Description cell (column 3) is free prose that may itself
+    // contain a backticked term, and a whole-row matchAll let a description-column mention
+    // silently overwrite a lens's own classification (branch-reviewer, PR #198 finding
+    // suggestion:g55g-cell-scoped-derivation, reproduced by appending a backticked `severity`
+    // to the Enhancement row's description and watching it flip LENS_CLASS.severity to enhancement).
+    const lensCell = (row) => row.split("|")[2] ?? "";
+    for (const m of lensCell(spineRow).matchAll(/`([^`]+)`/g)) LENS_CLASS[m[1]] = "spine";
     const enhancementRow = (evsSection.split("\n").find((l) => /^\|\s*\*\*Enhancement\*\*/i.test(l)) ?? "");
-    for (const m of enhancementRow.matchAll(/`([^`]+)`/g)) LENS_CLASS[m[1]] = "enhancement";
+    for (const m of lensCell(enhancementRow).matchAll(/`([^`]+)`/g)) LENS_CLASS[m[1]] = "enhancement";
     for (const lens of ["optimize-approach", "measurable", "confidence", "holistic-analysis"]) {
       s.check(`G55f lens-invocation.md classifies \`${lens}\` as enhancement`,
         new RegExp("\\*\\*Enhancement\\*\\*[^\\n]*`" + lens + "`|`" + lens + "`[^\\n]*\\*\\*Enhancement\\*\\*").test(evsSection)
