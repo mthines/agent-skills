@@ -64,7 +64,7 @@ Mention the flag in the run announcement only when set.
 Skill("measurable", "audit")           # the only admissible call
 ```
 
-Resolving `measurable` follows [`lens-invocation.md`](./lens-invocation.md): try `~/.claude/skills/measurable/SKILL.md` on disk (file-presence, never an error string) and treat it as **authoritative** — not a catch-block fallback — before trusting any host resolution.
+Resolving `measurable` follows [`lens-invocation.md`](./lens-invocation.md): try `$HOME/.claude/skills/measurable/SKILL.md` on disk (file-presence, never an error string) and treat it as **authoritative** — not a catch-block fallback — before trusting any host resolution.
 This matters more for `measurable` than for any other lens: on at least one host its name silently collides with an unrelated built-in skill, returning that skill's recipe with no error at all, so a design that only checks the local file after a caught error never reaches this case.
 `measurable` is classified **enhancement** in `lens-invocation.md` — a genuine skip is logged loudly via `RUN_ANOMALY` and the rest of the pipeline still produces a useful review; it never caps the review tier.
 

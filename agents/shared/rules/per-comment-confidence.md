@@ -63,7 +63,7 @@ from a lens that emits outside the finder pipeline (`ux`, `--with …`). Both pa
 **Final** score against the same threshold, so a mixed run does not need two bars.
 
 This file is the canonical owner of `Skill("confidence", "code")`'s cross-harness resolution.
-Resolving it follows [`lens-invocation.md`](./lens-invocation.md): try `~/.claude/skills/confidence/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
+Resolving it follows [`lens-invocation.md`](./lens-invocation.md): try `$HOME/.claude/skills/confidence/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
 `confidence` is classified **enhancement**, not spine, precisely because of the fallback relationship stated above — the critical inline-scoring path already moved to `finding-verifier.md`'s own rubric, so a genuine `confidence` skip degrades a path most runs do not even take. A genuine skip is logged loudly via `RUN_ANOMALY`; it never caps the review tier.
 
 **A finding with no score from either path is dropped, never posted at the threshold's benefit of the

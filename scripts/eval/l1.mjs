@@ -8008,14 +8008,27 @@ const isPollBlock = (block) =>
   // remove the reference from one owner file (or reintroduce "log once and continue without the
   // step" in either collapsed body) and one of the checks below flips red.
   const OWNERS = [
-    "agents/shared/rules/conventional-comments.md",
-    "agents/shared/rules/optimality-review.md",
-    "agents/shared/rules/measurability-review.md",
-    "agents/shared/rules/per-comment-confidence.md",
-    "agents/shared/rules/holistic-review.md",
-    "agents/shared/rules/verification-receipt.md",
+    ["agents/shared/rules/conventional-comments.md", "severity", "spine"],
+    ["agents/shared/rules/optimality-review.md", "optimize-approach", "enhancement"],
+    ["agents/shared/rules/measurability-review.md", "measurable", "enhancement"],
+    ["agents/shared/rules/per-comment-confidence.md", "confidence", "enhancement"],
+    ["agents/shared/rules/holistic-review.md", "holistic-analysis", "enhancement"],
+    ["agents/shared/rules/verification-receipt.md", "verify-behavior", "spine"],
   ];
-  for (const f of OWNERS) {
+  // break-shape: G55g-class-crosscheck — the OWNERS loop above (pre-existing) only asserted a
+  // reference exists; it never compared the CLASS each owner restates in prose against
+  // lens-invocation.md's own table, so an owner file could drift to the wrong class (spine vs
+  // enhancement) with every existing G55 check still green (branch-reviewer, PR #198 finding
+  // quality:test-gap:g55g-class-crosscheck).
+  for (const [f, lens, expectedClass] of OWNERS) {
+    const abs = join(REPO_ROOT, f);
+    const body = existsSync(abs) ? readFileSync(abs, "utf8") : "";
+    const m = body.match(/`[^`]+`\s+is classified\s+\*\*(spine|enhancement)\*\*/i);
+    s.check(`G55g ${f} restates \`${lens}\`'s class consistently with lens-invocation.md's table (${expectedClass})`,
+      m !== null && m[1].toLowerCase() === expectedClass,
+      m === null ? "no 'classified **spine|enhancement**' statement found" : `owner says ${m[1]}, table says ${expectedClass}`);
+  }
+  for (const [f] of OWNERS) {
     const abs = join(REPO_ROOT, f);
     s.check(`G55g ${f} references lens-invocation.md`,
       existsSync(abs) && /lens-invocation\.md/.test(readFileSync(abs, "utf8")),

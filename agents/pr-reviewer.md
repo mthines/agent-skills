@@ -2306,7 +2306,11 @@ that produced the candidate is the weaker but acceptable form.
 The **rubric** lives in [`finding-verifier.md § The finding rubric`](./shared/rules/finding-verifier.md):
 `Final = 0.4 × Reproducible + 0.3 × Attributable + 0.3 × Actionable`. Severity is a separate axis
 (`Skill("severity", "finding")`) and never folded into the score — how bad it is if real, and
-whether it is real, are independent questions.
+whether it is real, are independent questions. **Resolve `severity` per
+[`lens-invocation.md`](./shared/rules/lens-invocation.md) before this call, not two steps later at
+2.9** — `conventional-comments.md` is `severity`'s canonical owner for the decoration this call's
+output feeds, but this is the actual call site, and a resolution rule read only afterward cannot
+help the call it was meant to protect.
 
 The **threshold** the score is compared against still lives in
 `agents/shared/rules/per-comment-confidence.md`, which owns the per-type bar, the severity fan-out,

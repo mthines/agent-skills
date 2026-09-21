@@ -283,7 +283,7 @@ A run that ran holistic and emitted 0 findings is healthy — most PRs have neit
 
 ## When holistic is unavailable
 
-Resolution follows [`lens-invocation.md`](./lens-invocation.md): try `~/.claude/skills/holistic-analysis/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
+Resolution follows [`lens-invocation.md`](./lens-invocation.md): try `$HOME/.claude/skills/holistic-analysis/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
 `holistic-analysis` is classified **enhancement** in that rule — a genuine skip is logged loudly via `RUN_ANOMALY` and the rest of the pipeline still produces useful comments; it never caps the review tier.
 
 A local file predating the `review` mode is a distinct case from an absent one: the file-presence check passes, the in-context follow succeeds, and only then does the loaded skill itself return an unknown-mode error — no host `Skill()` call happens at all in this branch. When that happens, log the skip and move on:

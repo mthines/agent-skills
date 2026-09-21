@@ -206,7 +206,7 @@ A run that proposes on every unit is suspicious; spot-check the anti-overlap gua
 
 ## When optimize-approach is unavailable
 
-Resolution follows [`lens-invocation.md`](./lens-invocation.md): try `~/.claude/skills/optimize-approach/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
+Resolution follows [`lens-invocation.md`](./lens-invocation.md): try `$HOME/.claude/skills/optimize-approach/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
 `optimize-approach` is classified **enhancement** in that rule — a genuine skip is logged loudly via `RUN_ANOMALY` and the rest of the pipeline still produces useful comments; it never caps the review tier.
 
 If `Skill("optimize-approach", …)` is also not installed after the file-presence check, log the skip and move on:

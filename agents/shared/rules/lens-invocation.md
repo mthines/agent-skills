@@ -39,7 +39,7 @@ Every lens had silently degraded to skipped, and nothing in the pipeline noticed
 
 Every lens site in this agent resolves a lens through the same three steps, in order, before it ever calls `Skill("<lens-name>", …)`:
 
-1. Check whether `~/.claude/skills/<lens-name>/SKILL.md` exists on disk.
+1. Check whether `$HOME/.claude/skills/<lens-name>/SKILL.md` exists on disk.
    This is the deterministic, repo-owned installation path every one of the six lenses installs to (`scripts/sync-symlinks.sh`), and its presence or absence does not depend on which harness is running the agent.
 2. If the file is present, read it and follow its instructions in-context, exactly as if `Skill("<lens-name>", …)` had loaded it.
    This is the authoritative path for all six lenses — not a fallback tried after an error, and not a catch block.
@@ -52,16 +52,18 @@ A predicate that must catch both the loud failure (five lenses) and the silent o
 
 ```text
 resolve(lens_name):
-  path = "~/.claude/skills/" + lens_name + "/SKILL.md"
+  path = "$HOME/.claude/skills/" + lens_name + "/SKILL.md"   # never "~" — the Read tool does not expand it
   if file_exists(path):
     read(path) and follow it in-context      # authoritative — steps 1-2 above
   else:
     Skill(lens_name, ...)                    # host resolution — the only remaining option
 ```
 
+`$HOME`, never `~`, in every step above and in every owner file's restatement below — this agent's own [Step 0 path-resolution convention](../../pr-reviewer.md) exists precisely because the `Read` tool requires an absolute path and does not expand a tilde, so a resolve step written against `~` never finds the file it names, `file_exists` is always false, and every run silently takes the host-fallback branch this rule exists to make loud, not the authoritative one.
+
 ## In-context load vs. sub-agent dispatch — why this fallback is safe here
 
-Reading `~/.claude/skills/<name>/SKILL.md` and following it in the current context is **behaviorally identical** to `Skill("<name>", …)` on a harness where `Skill()` works — both load the same markdown and execute the same instructions, in the same context, with the same tool grants.
+Reading `$HOME/.claude/skills/<name>/SKILL.md` and following it in the current context is **behaviorally identical** to `Skill("<name>", …)` on a harness where `Skill()` works — both load the same markdown and execute the same instructions, in the same context, with the same tool grants.
 The two differ only in *loader*: one goes through the host's skill-invocation mechanism, the other reads the file directly.
 Neither isolates a context and neither delegates execution elsewhere, so substituting one for the other changes nothing about what runs.
 
