@@ -7912,6 +7912,11 @@ const isPollBlock = (block) =>
   // G53i/G54a already warn about, guarded the same way here.
   s.check("G55a agents/shared/rules/lens-invocation.md exists", existsSync(LI));
 
+  // Populated from the table's own Spine/Enhancement rows below (never a hardcoded parallel
+  // copy) so the G55g cross-check further down reads the SAME classification G55f already
+  // extracted, rather than re-encoding it as a third element of a literal array.
+  const LENS_CLASS = {};
+
   if (existsSync(LI)) {
     const li = readFileSync(LI, "utf8");
 
@@ -7977,10 +7982,13 @@ const isPollBlock = (block) =>
     s.check("G55f the Spine row names exactly `severity` and `verify-behavior`",
       /`severity`/.test(spineRow) && /`verify-behavior`/.test(spineRow),
       spineRow ? `Spine row found but missing one of the two: ${spineRow}` : "no Spine row found in the table");
+    for (const m of spineRow.matchAll(/`([^`]+)`/g)) LENS_CLASS[m[1]] = "spine";
+    const enhancementRow = (evsSection.split("\n").find((l) => /^\|\s*\*\*Enhancement\*\*/i.test(l)) ?? "");
+    for (const m of enhancementRow.matchAll(/`([^`]+)`/g)) LENS_CLASS[m[1]] = "enhancement";
     for (const lens of ["optimize-approach", "measurable", "confidence", "holistic-analysis"]) {
       s.check(`G55f lens-invocation.md classifies \`${lens}\` as enhancement`,
         new RegExp("\\*\\*Enhancement\\*\\*[^\\n]*`" + lens + "`|`" + lens + "`[^\\n]*\\*\\*Enhancement\\*\\*").test(evsSection)
-          || (evsSection.split("\n").find((l) => /^\|\s*\*\*Enhancement\*\*/i.test(l)) ?? "").includes("`" + lens + "`"),
+          || enhancementRow.includes("`" + lens + "`"),
         `${lens} not found on the Enhancement row`);
     }
     s.check("G55f lens-invocation.md justifies confidence's classification from the verifier rubric",
@@ -8008,25 +8016,32 @@ const isPollBlock = (block) =>
   // remove the reference from one owner file (or reintroduce "log once and continue without the
   // step" in either collapsed body) and one of the checks below flips red.
   const OWNERS = [
-    ["agents/shared/rules/conventional-comments.md", "severity", "spine"],
-    ["agents/shared/rules/optimality-review.md", "optimize-approach", "enhancement"],
-    ["agents/shared/rules/measurability-review.md", "measurable", "enhancement"],
-    ["agents/shared/rules/per-comment-confidence.md", "confidence", "enhancement"],
-    ["agents/shared/rules/holistic-review.md", "holistic-analysis", "enhancement"],
-    ["agents/shared/rules/verification-receipt.md", "verify-behavior", "spine"],
+    ["agents/shared/rules/conventional-comments.md", "severity"],
+    ["agents/shared/rules/optimality-review.md", "optimize-approach"],
+    ["agents/shared/rules/measurability-review.md", "measurable"],
+    ["agents/shared/rules/per-comment-confidence.md", "confidence"],
+    ["agents/shared/rules/holistic-review.md", "holistic-analysis"],
+    ["agents/shared/rules/verification-receipt.md", "verify-behavior"],
   ];
-  // break-shape: G55g-class-crosscheck — the OWNERS loop above (pre-existing) only asserted a
+  // break-shape: G55g-class-crosscheck — the OWNERS loop below (pre-existing) only asserted a
   // reference exists; it never compared the CLASS each owner restates in prose against
   // lens-invocation.md's own table, so an owner file could drift to the wrong class (spine vs
   // enhancement) with every existing G55 check still green (branch-reviewer, PR #198 finding
-  // quality:test-gap:g55g-class-crosscheck).
-  for (const [f, lens, expectedClass] of OWNERS) {
+  // quality:test-gap:g55g-class-crosscheck). Fixed by reading the expected class out of
+  // `LENS_CLASS` (derived above from the table's own rows, not a third hardcoded array element),
+  // and by capturing the classified SYMBOL out of the owner's sentence too — a bare
+  // `(spine|enhancement)` capture is satisfied by any backticked name in front of the phrase, so
+  // it could pass while classifying the wrong lens entirely.
+  for (const [f, lens] of OWNERS) {
     const abs = join(REPO_ROOT, f);
     const body = existsSync(abs) ? readFileSync(abs, "utf8") : "";
-    const m = body.match(/`[^`]+`\s+is classified\s+\*\*(spine|enhancement)\*\*/i);
-    s.check(`G55g ${f} restates \`${lens}\`'s class consistently with lens-invocation.md's table (${expectedClass})`,
-      m !== null && m[1].toLowerCase() === expectedClass,
-      m === null ? "no 'classified **spine|enhancement**' statement found" : `owner says ${m[1]}, table says ${expectedClass}`);
+    const m = body.match(/`([^`]+)`\s+is classified\s+\*\*(spine|enhancement)\*\*/i);
+    const expectedClass = LENS_CLASS[lens];
+    s.check(`G55g ${f} restates \`${lens}\`'s class consistently with lens-invocation.md's table`,
+      m !== null && m[1] === lens && expectedClass !== undefined && m[2].toLowerCase() === expectedClass,
+      m === null ? "no 'classified **spine|enhancement**' statement found"
+        : m[1] !== lens ? `sentence classifies \`${m[1]}\`, not \`${lens}\``
+        : `owner says ${m[2]}, table says ${expectedClass ?? "(lens missing from table)"}`);
   }
   for (const [f] of OWNERS) {
     const abs = join(REPO_ROOT, f);
