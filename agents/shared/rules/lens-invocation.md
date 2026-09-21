@@ -90,7 +90,7 @@ That harmlessness is scoped to the file-present branch, not to the whole algorit
 
 ## No self-concealing degradation — `RUN_ANOMALY` is mandatory
 
-A `RUN_ANOMALY` is required in **two** cases, not only the loud one:
+A `RUN_ANOMALY` is required in **three** cases, not only the loud one:
 
 1. **The lens still cannot run at all** — the file is absent and the host also has no usable answer.
    The obvious case, and the one every dispatch-availability check already covers for `Task`/`Agent`.
@@ -99,6 +99,11 @@ A `RUN_ANOMALY` is required in **two** cases, not only the loud one:
    The `measurable` collision is exactly a host answer that *looks* successful.
    Gating the anomaly on "no usable answer" would silently pass the collision straight through, since a wrong recipe with no error is, from the caller's vantage point, indistinguishable from a right one.
    The anomaly therefore fires on **use of the fallback**, not on its failure.
+3. **The local file resolves and loads, but the loaded skill itself cannot serve this call.**
+   Step 1 and step 2 above both find the deterministic file present and follow it in-context; step 3 above never runs, because no host call is needed or attempted.
+   The lens is still unavailable for this run — it just failed one step later than case 1, inside the loaded skill's own mode dispatch rather than at file-presence.
+   All six lenses take a mode argument (`severity`/`finding`, `optimize-approach`/`report` or `plan`, `measurable`/`audit`, `confidence`/`code`, `holistic-analysis`/`review`, `verify-behavior`/`claim`), so a skill version mismatch — a local install that predates a mode this rule or its caller expects — is a structural exposure shared by all six, not a `holistic-analysis`-specific one; see [`holistic-review.md`](./holistic-review.md#when-holistic-is-unavailable) for the shipped worked example.
+   Silence here is the same shape case 2 exists to prevent, one layer later: a call that neither errored nor fell through to the host still produced no usable result, and a review reporting clean on that fact is self-concealing exactly as case 1 and case 2 are.
 
 This repo already names the failure shape: a degraded path that reports as a legitimate outcome is self-concealing, and self-concealing degradation is exactly what `F6`/`F7` name in [`autonomous-workflow/rules/diagnostic-surface.md`](../../../skills/workflow/autonomous-workflow/rules/diagnostic-surface.md) — the run in `dash0hq/dash0#19751` is the same doctrine's failure mode, one layer down, in a lens call instead of a dispatch call.
 

@@ -8084,9 +8084,13 @@ const isPollBlock = (block) =>
   // of lens-invocation.md's two enumerated cases by name, which is exactly how it shipped with no
   // RUN_ANOMALY at all (pr-reviewer, PR #198, iteration 4 finding) while optimality-review.md's
   // structurally identical fallthrough already carried one.
+  // Coupled into one regex, not two independent `.test()` conjuncts — pr-reviewer iteration 5
+  // probed the uncoupled form: add a case-1-style example block elsewhere in the section (the
+  // shape optimality-review.md:216 already carries) then delete the guarded RUN_ANOMALY line, and
+  // the two independent tests both still find A match somewhere in the section and stay green.
   s.check("G55g holistic-review.md's predates-review-mode branch raises RUN_ANOMALY",
-    hrBody !== null && /predates `review` mode/.test(hrBody) && /RUN_ANOMALY:/.test(hrBody),
-    hrBody === null ? "section not found" : "predates-mode branch present with no RUN_ANOMALY line");
+    hrBody !== null && /RUN_ANOMALY: [^\n]*predates `review` mode/.test(hrBody),
+    hrBody === null ? "section not found" : "predates-mode branch present with no RUN_ANOMALY line naming it");
   const orBody = sectionOrNull("agents/shared/rules/optimality-review.md", "## When optimize-approach is unavailable");
   s.check("G55g optimality-review.md's collapsed body no longer restates the silent-skip prose",
     orBody !== null && !/log once and continue without the step/.test(orBody),
