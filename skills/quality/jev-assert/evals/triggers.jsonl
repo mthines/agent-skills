@@ -1,0 +1,8 @@
+{"query": "assert semantically that the user sees a success confirmation after checkout", "should_trigger": true}
+{"query": "does the page show that the payment was declined", "should_trigger": true}
+{"query": "verify this outcome with jev over the captured accessibility text", "should_trigger": true}
+{"query": "add a semantic UI assertion for the order-confirmation screen", "should_trigger": true}
+{"query": "check that the page contains the exact text 'Order #12931'", "should_trigger": false}
+{"query": "write a playwright locator for the Place order button", "should_trigger": false}
+{"query": "run the e2e spec against the preview deployment", "should_trigger": false}
+{"query": "verify a behavioral claim about validateAuth returning null", "should_trigger": false}

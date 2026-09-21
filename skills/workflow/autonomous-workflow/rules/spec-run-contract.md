@@ -47,7 +47,37 @@ Parse each `## Spec N:` block into: title, `persist` level, `url` (resolve
 `{placeholder}` against `fixtures.references`), `preconditions` (log; do not
 re-check what auth or seed already guarantees), the ordered `flow` steps
 (`WHEN` = action, `THEN`/`AND` = assertion, `CAPTURE` = documentation
-screenshot), and `continues-from`.
+screenshot), and `continues-from`. A `THEN`/`AND` assertion is one of three
+forms: a `{locator}` assertion (resolved via the locator ladder), a `network:`
+assertion, or a `semantic:` assertion (§ Semantic assertions below).
+
+## Semantic assertions
+
+A `THEN`/`AND` step of the form `semantic: <user-observable outcome>` asserts an
+outcome a person looking at the screen could confirm, where an exact locator or
+string match would be brittle:
+
+```text
+- WHEN {role: "button", name: "Place order"} is clicked
+  THEN semantic: the user sees an order-confirmation number
+```
+
+Both runners resolve it identically, delegating the judgment to the
+[`jev-assert`](../../../quality/jev-assert/SKILL.md) skill:
+
+1. Capture the current page **text** state (accessibility tree preferred, then
+   page text) — never a screenshot; a screenshot-only capture is not usable
+   input.
+2. Call `Skill("jev-assert")` with that state and the expectation.
+3. Read its receipt's final `[receipt] verdict: <token>` line and map it to the
+   step result (table in § 4).
+
+The expectation must be a **user-observable outcome**, not a restatement of the
+captured text — `jev-assert`'s provenance guard refuses a literal-string or
+structural claim, and such a claim belongs in a `{text: …}` locator assertion,
+which verifies it deterministically. When `jev-assert` is not installed or
+`TYPESAFE_API_KEY` is unset, the step is `unobtainable` → the spec is
+`inconclusive` (§ 4), never a silent pass.
 
 **`CAPTURE` semantics** are identical for both runners. `CAPTURE "<label>"`
 (optionally `... fullPage`) takes a screenshot of the current page state,
@@ -145,6 +175,18 @@ no `CAPTURE` step ran; otherwise list one entry per capture with its `spec`,
 `label`, written `path`, and `full_page` flag. A `CAPTURE` that failed to write
 is reported in `notes`, and its absence from `captures:` is the only signal —
 it never appears as a failed spec.
+
+**Semantic assertion results.** A `semantic:` assertion's `jev-assert` receipt
+maps to the step result by its verdict token — the mapping is total, and
+`ambiguous` / `unobtainable` never pass:
+
+| `[receipt] verdict:` | Step result | Effect on the spec |
+| -------------------- | ----------- | ------------------ |
+| `confirms`           | pass        | contributes to `pass` like any assertion |
+| `contradicts`        | fail        | fails the step; capture the Noul in `diagnostics` |
+| `null`               | fail        | the state ran but did not support the outcome |
+| `ambiguous`          | inconclusive | the spec is `skipped` with reason `semantic-ambiguous`, never a pass |
+| `unobtainable`       | inconclusive | the spec is `skipped` with reason `semantic-unobtainable` (e.g. no `TYPESAFE_API_KEY`), never a pass |
 
 **Hard rules for the verdict block:**
 

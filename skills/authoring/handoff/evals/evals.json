@@ -1,0 +1,38 @@
+{
+  "skill_name": "handoff",
+  "evals": [
+    {
+      "id": "eval-1-full",
+      "prompt": "We've been debugging a race condition in the PR poller for the last hour. Write a handoff so I can continue this tomorrow in a fresh session.",
+      "expected_output": "A markdown file at .agent/{branch}/handoff.md with Goal, Current state, Plan/next steps, Key files, and Decisions & gotchas sections, curated from what actually happened — not a transcript. Clipboard copy attempted. One-line pointer returned, not the whole doc.",
+      "files": [],
+      "assertions": [
+        "Writes to .agent/{branch}/handoff.md, resolving the branch via git",
+        "Includes exact file paths and run commands, not vague references",
+        "Excludes raw tool-call transcripts and conversational chit-chat",
+        "Attempts pbcopy and reports success or graceful skip",
+        "Returns a one-line pointer to the file, not the full document"
+      ]
+    },
+    {
+      "id": "eval-2-focused",
+      "prompt": "/handoff the auth refactor",
+      "expected_output": "A handoff scoped to only the auth-refactor thread of work, stating the focus scope in one line before writing.",
+      "files": [],
+      "assertions": [
+        "States the chosen scope (focused on auth refactor) before writing",
+        "Includes only material on the named thread"
+      ]
+    },
+    {
+      "id": "eval-3-brief",
+      "prompt": "/handoff --brief",
+      "expected_output": "A condensed handoff: Goal, next steps, and top-3 files only.",
+      "files": [],
+      "assertions": [
+        "Produces a condensed document, not the full five-section version",
+        "No secrets, tokens, or credentials written to the file"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{"query": "write a handoff so another agent can continue this task", "should_trigger": true}
+{"query": "prep the context and plan so I can paste it into a fresh session", "should_trigger": true}
+{"query": "hand this task off to a teammate's agent", "should_trigger": true}
+{"query": "brief a different model on where we are and what's left", "should_trigger": true}
+{"query": "summarize this file's contents for me", "should_trigger": false}
+{"query": "save this fact to my persistent memory for next time", "should_trigger": false}

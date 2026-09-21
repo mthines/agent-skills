@@ -7887,7 +7887,75 @@ const isPollBlock = (block) =>
   }
 }
 
-// ── G55: lens-invocation.md — the shared cross-harness resolution rule for pr-reviewer's six
+// ── G55: jev-assert — receipt vocabulary ≡ verify-behavior, and the semantic: form is wired ──
+//
+// jev-assert only composes if its receipt tokens are EXACTLY the five verify-behavior owns — a
+// sixth reaches no consumer, and a missing one silently drops a verdict a runner maps. And the
+// `semantic:` assertion is only real if it lives in the shared grammar + contract the runners
+// parse, not only in the skill that resolves it. Each check is scoped to the file that OWNS the
+// claim, and both the canonical and the claimed verdict sets are DERIVED from their owners rather
+// than re-encoded here (the G54c lesson).
+{
+  const JEV = join(REPO_ROOT, "skills/quality/jev-assert");
+  const RECEIPT_MAP = join(JEV, "rules/receipt-mapping.md");
+  const VERIF_RECEIPT = join(REPO_ROOT, "agents/shared/rules/verification-receipt.md");
+  const CONTRACT = join(REPO_ROOT, "skills/workflow/autonomous-workflow/rules/spec-run-contract.md");
+  const TEMPLATE = join(REPO_ROOT, "skills/workflow/autonomous-workflow/templates/specs.md.template");
+  const AW_TESTER = join(REPO_ROOT, "skills/workflow/autonomous-workflow/templates/aw-tester.agent.md");
+  const AW_CHROME = join(REPO_ROOT, "skills/workflow/autonomous-workflow/aw-tester-chrome/SKILL.md");
+
+  // Canonical set: derive from verification-receipt.md's own `verdict: <a|b|c|d|e>` pipe list —
+  // the owner of the vocabulary — never a literal re-encoded here.
+  const vrText = existsSync(VERIF_RECEIPT) ? readFileSync(VERIF_RECEIPT, "utf8") : "";
+  const vrMatch = vrText.match(/verdict:\s*<([a-z|]+)>/);
+  const canonical = new Set(vrMatch ? vrMatch[1].split("|") : []);
+  s.check("G55 canonical receipt set derives from verification-receipt.md (5 tokens)",
+    canonical.size === 5,
+    `derived ${canonical.size} token(s) (${[...canonical].join(", ") || "none"}) — the equality check below is vacuous unless the owner defines them`);
+
+  // Claimed set: the verdict column (cell 2) of receipt-mapping.md's "## The mapping" table.
+  const rmText = existsSync(RECEIPT_MAP) ? readFileSync(RECEIPT_MAP, "utf8") : "";
+  const mapSection = rmText.split(/^## /m).find((sec) => sec.startsWith("The mapping")) ?? "";
+  const claimed = new Set();
+  for (const line of mapSection.split("\n")) {
+    if (!/^\|/.test(line)) continue;
+    const cells = line.split("|");
+    if (cells.length < 4) continue;
+    const m = cells[2].match(/`([a-z]+)`/);
+    if (m) claimed.add(m[1]);
+  }
+  const extra = [...claimed].filter((t) => !canonical.has(t));
+  const missing = [...canonical].filter((t) => !claimed.has(t));
+  s.check("G55 jev-assert's mapping verdicts ≡ the verify-behavior vocabulary (no sixth, none missing)",
+    canonical.size === 5 && extra.length === 0 && missing.length === 0,
+    `extra: ${extra.join(", ") || "none"}; missing: ${missing.join(", ") || "none"}`);
+
+  s.check("G55 receipt-mapping.md states the verdict set is closed",
+    /closed/i.test(rmText) && /sixth/i.test(rmText),
+    "the closed-set promise is what stops a bespoke verdict word being added — state it in words, not only by the table");
+
+  // The semantic: form is only real if it lives in the shared grammar + contract the runners
+  // parse AND both runners resolve it — not only in the skill that owns the judgment.
+  const semanticSites = [
+    ["specs.md.template (grammar)", TEMPLATE],
+    ["spec-run-contract.md (contract)", CONTRACT],
+    ["aw-tester.agent.md (Playwright runner)", AW_TESTER],
+    ["aw-tester-chrome/SKILL.md (Chrome runner)", AW_CHROME],
+  ];
+  for (const [label, p] of semanticSites) {
+    const t = existsSync(p) ? readFileSync(p, "utf8") : "";
+    s.check(`G55 the semantic: assertion form is present in ${label}`,
+      /semantic:/.test(t),
+      `${label} never names the \`semantic:\` form — the assertion is unreachable from a conforming run of that surface`);
+  }
+  // The contract must route the semantic form to jev-assert, or the form names no resolver.
+  const contractText = existsSync(CONTRACT) ? readFileSync(CONTRACT, "utf8") : "";
+  s.check("G55 the spec-run contract routes semantic: to jev-assert",
+    /jev-assert/.test(contractText),
+    "spec-run-contract.md defines the semantic form but never names jev-assert as its resolver");
+}
+
+// ── G56: lens-invocation.md — the shared cross-harness resolution rule for pr-reviewer's six
 // composed lenses (`severity`, `optimize-approach`, `measurable`, `confidence`,
 // `holistic-analysis`, `verify-behavior`) ──
 //
@@ -7907,64 +7975,64 @@ const isPollBlock = (block) =>
   const sectionOf = (relPath, heading) => {
     try { return extractSection(relPath, heading); } catch { return ""; }
   };
-  // break-shape: G55a — delete agents/shared/rules/lens-invocation.md and this flips red, taking
+  // break-shape: G56a — delete agents/shared/rules/lens-invocation.md and this flips red, taking
   // every check gated on `existsSync(LI)` below quiet along with it — the vacuous-pass shape
   // G53i/G54a already warn about, guarded the same way here.
-  s.check("G55a agents/shared/rules/lens-invocation.md exists", existsSync(LI));
+  s.check("G56a agents/shared/rules/lens-invocation.md exists", existsSync(LI));
 
   // Populated from the table's own Spine/Enhancement rows below (never a hardcoded parallel
-  // copy) so the G55g cross-check further down reads the SAME classification G55f already
+  // copy) so the G56g cross-check further down reads the SAME classification G56f already
   // extracted, rather than re-encoding it as a third element of a literal array.
   const LENS_CLASS = {};
 
   if (existsSync(LI)) {
     const li = readFileSync(LI, "utf8");
 
-    s.check("G55b lens-invocation.md opens with a YAML frontmatter block",
+    s.check("G56b lens-invocation.md opens with a YAML frontmatter block",
       li.startsWith("---\n"),
       "no leading frontmatter block");
 
     const headingCount = (li.match(/^## /gm) || []).length;
-    s.check("G55b lens-invocation.md carries at least 5 `## ` section headings",
+    s.check("G56b lens-invocation.md carries at least 5 `## ` section headings",
       headingCount >= 5,
       `only ${headingCount} found`);
 
     // (c) file-presence predicate, never an error string — R3 / AC-3.
-    s.check("G55c lens-invocation.md names the deterministic repo-owned skill path",
+    s.check("G56c lens-invocation.md names the deterministic repo-owned skill path",
       /\.claude\/skills\//.test(li),
       "no ~/.claude/skills/<name>/SKILL.md path named");
-    s.check("G55c lens-invocation.md states the recovery predicate is file-presence",
+    s.check("G56c lens-invocation.md states the recovery predicate is file-presence",
       /file-presence|file presence|present at/i.test(li),
       "no file-presence predicate stated");
-    s.check("G55c lens-invocation.md rejects the error-string predicate, citing F6",
+    s.check("G56c lens-invocation.md rejects the error-string predicate, citing F6",
       /Skill "<name>" not found/.test(li) && /F6/.test(li),
       "the rejected error string or the F6 citation is missing");
 
     // (d) the `measurable` collision is named as silent, not as an error — R4 / AC-4.
-    s.check("G55d lens-invocation.md names the `measurable` collision as silent, not an error",
+    s.check("G56d lens-invocation.md names the `measurable` collision as silent, not an error",
       /measurable/.test(li) && /collision|collide|silently/i.test(li),
       "measurable's silent collision is not described");
-    s.check("G55d lens-invocation.md states local resolution is primary/authoritative",
+    s.check("G56d lens-invocation.md states local resolution is primary/authoritative",
       /authoritative|primary/i.test(li),
       "no authoritative/primary resolution statement");
 
     // (e) no self-concealing degradation — R5 / AC-5.
-    s.check("G55e lens-invocation.md requires a loud RUN_ANOMALY on a genuine skip",
+    s.check("G56e lens-invocation.md requires a loud RUN_ANOMALY on a genuine skip",
       /RUN_ANOMALY/.test(li),
       "RUN_ANOMALY not named");
-    s.check("G55e lens-invocation.md forbids a clean report on a dropped lens, citing F6/F7",
+    s.check("G56e lens-invocation.md forbids a clean report on a dropped lens, citing F6/F7",
       /must not report clean|not report clean|self-conceal/i.test(li) && /F6/.test(li) && /F7/.test(li),
       "no no-clean-report rule or F6/F7 doctrine citation");
-    // break-shape: G55e-j — `RUN_ANOMALY` is a single-line renderer slot (`render-report.mjs`'s
+    // break-shape: G56e-j — `RUN_ANOMALY` is a single-line renderer slot (`render-report.mjs`'s
     // `assertPlainish`), so the rule's own worked examples cannot show one line per degraded
     // lens without instructing something the payload contract rejects on the incident's central
     // case (all six lenses degraded at once, dash0hq/dash0#19751). branch-reviewer iteration 3
     // caught this — it dates to 0be7637 and survived two review passes unflagged.
     const anomalySection = sectionOf(REL_LI, "## No self-concealing degradation — `RUN_ANOMALY` is mandatory");
-    s.check("G55j lens-invocation.md states RUN_ANOMALY is single-line and cannot carry one line per lens",
+    s.check("G56j lens-invocation.md states RUN_ANOMALY is single-line and cannot carry one line per lens",
       /single-line/i.test(anomalySection) && /cannot emit one line per degraded lens|one line per degraded lens/i.test(anomalySection),
       "no single-line constraint, or no statement that one-line-per-lens is unobtainable");
-    s.check("G55j lens-invocation.md shows an aggregated multi-lens RUN_ANOMALY example",
+    s.check("G56j lens-invocation.md shows an aggregated multi-lens RUN_ANOMALY example",
       /aggregate/i.test(anomalySection) && (anomalySection.match(/RUN_ANOMALY:/g) || []).length >= 2,
       "no aggregation instruction, or fewer than two worked RUN_ANOMALY examples (aggregated + single)");
 
@@ -7975,11 +8043,11 @@ const isPollBlock = (block) =>
     // so deleting the whole spine/enhancement table left every one of those checks green in a
     // probe. Reading the table's own SPINE row is what a vacuous read cannot fake.
     const evsSection = sectionOf(REL_LI, "## Enhancement vs. spine — what a genuine skip costs");
-    s.check("G55f lens-invocation.md classifies lenses as spine vs enhancement",
+    s.check("G56f lens-invocation.md classifies lenses as spine vs enhancement",
       /spine/i.test(evsSection) && /enhancement/i.test(evsSection),
       "spine/enhancement classification missing from its own section");
     const spineRow = (evsSection.split("\n").find((l) => /^\|\s*\*\*Spine\*\*/i.test(l)) ?? "");
-    s.check("G55f the Spine row names exactly `severity` and `verify-behavior`",
+    s.check("G56f the Spine row names exactly `severity` and `verify-behavior`",
       /`severity`/.test(spineRow) && /`verify-behavior`/.test(spineRow),
       spineRow ? `Spine row found but missing one of the two: ${spineRow}` : "no Spine row found in the table");
     // Restricted to the row's LENSES cell (column 2 of `| Class | Lenses | A genuine skip means |`)
@@ -7993,12 +8061,12 @@ const isPollBlock = (block) =>
     const enhancementRow = (evsSection.split("\n").find((l) => /^\|\s*\*\*Enhancement\*\*/i.test(l)) ?? "");
     for (const m of lensCell(enhancementRow).matchAll(/`([^`]+)`/g)) LENS_CLASS[m[1]] = "enhancement";
     for (const lens of ["optimize-approach", "measurable", "confidence", "holistic-analysis"]) {
-      s.check(`G55f lens-invocation.md classifies \`${lens}\` as enhancement`,
+      s.check(`G56f lens-invocation.md classifies \`${lens}\` as enhancement`,
         new RegExp("\\*\\*Enhancement\\*\\*[^\\n]*`" + lens + "`|`" + lens + "`[^\\n]*\\*\\*Enhancement\\*\\*").test(evsSection)
           || enhancementRow.includes("`" + lens + "`"),
         `${lens} not found on the Enhancement row`);
     }
-    s.check("G55f lens-invocation.md justifies confidence's classification from the verifier rubric",
+    s.check("G56f lens-invocation.md justifies confidence's classification from the verifier rubric",
       /verifier|Reproducible|per-comment-confidence/i.test(li),
       "no justification tying confidence's classification to finding-verifier.md / per-comment-confidence.md");
     // The cap precedent was retracted in ce8e908 — a spine skip no longer touches `RUN.tier`
@@ -8010,16 +8078,16 @@ const isPollBlock = (block) =>
     // Anchor on the literal bold lead sentence instead, the same anti-vacuous move as reading the
     // table's own SPINE row above: a bold topic sentence is deliberately singular and load-bearing
     // prose, not a phrase that recurs incidentally elsewhere in the section.
-    s.check("G55f lens-invocation.md's bold lead sentence states neither class touches RUN.tier",
+    s.check("G56f lens-invocation.md's bold lead sentence states neither class touches RUN.tier",
       /\*\*Neither class ever touches `RUN\.tier`\.\*\*/.test(evsSection),
       "the exact bold lead sentence 'Neither class ever touches `RUN.tier`.' is missing from its own section");
-    s.check("G55f lens-invocation.md names workspace.md's diff-only precedent only as a rejected design",
+    s.check("G56f lens-invocation.md names workspace.md's diff-only precedent only as a rejected design",
       /diff-only/i.test(evsSection) && /workspace/i.test(evsSection) && /rejected/i.test(evsSection),
       "diff-only/workspace precedent not present, or not framed as rejected");
   }
 
   // (g) REACHABILITY — all six canonical owner files reference the shared rule, and the two
-  // formerly-duplicated silent-skip bodies no longer restate the old prose. break-shape: G55g —
+  // formerly-duplicated silent-skip bodies no longer restate the old prose. break-shape: G56g —
   // remove the reference from one owner file (or reintroduce "log once and continue without the
   // step" in either collapsed body) and one of the checks below flips red.
   const OWNERS = [
@@ -8030,10 +8098,10 @@ const isPollBlock = (block) =>
     ["agents/shared/rules/holistic-review.md", "holistic-analysis"],
     ["agents/shared/rules/verification-receipt.md", "verify-behavior"],
   ];
-  // break-shape: G55g-class-crosscheck — the OWNERS loop below (pre-existing) only asserted a
+  // break-shape: G56g-class-crosscheck — the OWNERS loop below (pre-existing) only asserted a
   // reference exists; it never compared the CLASS each owner restates in prose against
   // lens-invocation.md's own table, so an owner file could drift to the wrong class (spine vs
-  // enhancement) with every existing G55 check still green (branch-reviewer, PR #198 finding
+  // enhancement) with every existing G56 check still green (branch-reviewer, PR #198 finding
   // quality:test-gap:g55g-class-crosscheck). Fixed by reading the expected class out of
   // `LENS_CLASS` (derived above from the table's own rows, not a third hardcoded array element),
   // and by capturing the classified SYMBOL out of the owner's sentence too — a bare
@@ -8044,7 +8112,7 @@ const isPollBlock = (block) =>
     const body = existsSync(abs) ? readFileSync(abs, "utf8") : "";
     const m = body.match(/`([^`]+)`\s+is classified\s+\*\*(spine|enhancement)\*\*/i);
     const expectedClass = LENS_CLASS[lens];
-    s.check(`G55g ${f} restates \`${lens}\`'s class consistently with lens-invocation.md's table`,
+    s.check(`G56g ${f} restates \`${lens}\`'s class consistently with lens-invocation.md's table`,
       m !== null && m[1] === lens && expectedClass !== undefined && m[2].toLowerCase() === expectedClass,
       m === null ? "no 'classified **spine|enhancement**' statement found"
         : m[1] !== lens ? `sentence classifies \`${m[1]}\`, not \`${lens}\``
@@ -8052,11 +8120,11 @@ const isPollBlock = (block) =>
   }
   for (const [f] of OWNERS) {
     const abs = join(REPO_ROOT, f);
-    s.check(`G55g ${f} references lens-invocation.md`,
+    s.check(`G56g ${f} references lens-invocation.md`,
       existsSync(abs) && /lens-invocation\.md/.test(readFileSync(abs, "utf8")),
       "no reference to the shared rule found");
   }
-  // break-shape: G55g-case2-coverage — a case-1-only restatement (pr-reviewer, PR #198, iteration
+  // break-shape: G56g-case2-coverage — a case-1-only restatement (pr-reviewer, PR #198, iteration
   // 3 finding) positively implies case 2 (any fall-through to host at all, success or not) does not
   // apply to that lens, when lens-invocation.md states it generically for all six. `measurable`'s
   // own restatement uses different wording ("both ... cases ... (case 2)") than the shared clause
@@ -8066,7 +8134,7 @@ const isPollBlock = (block) =>
     const body = existsSync(abs) ? readFileSync(abs, "utf8") : "";
     const hasSharedClause = /The same `RUN_ANOMALY` also fires on `lens-invocation\.md`'s other case/.test(body);
     const hasMeasurablePhrasing = /both[^\n]*`RUN_ANOMALY`[^\n]*cases/i.test(body) && /\(case 2\)/.test(body);
-    s.check(`G55g ${f} restates RUN_ANOMALY's case 2 (fall-through-to-host, not only outright failure) for \`${lens}\``,
+    s.check(`G56g ${f} restates RUN_ANOMALY's case 2 (fall-through-to-host, not only outright failure) for \`${lens}\``,
       hasSharedClause || hasMeasurablePhrasing,
       "neither the shared case-2 clause nor measurable's own both-cases phrasing was found");
   }
@@ -8077,10 +8145,10 @@ const isPollBlock = (block) =>
     try { return extractSection(relPath, heading); } catch { return null; }
   };
   const hrBody = sectionOrNull("agents/shared/rules/holistic-review.md", "## When holistic is unavailable");
-  s.check("G55g holistic-review.md's collapsed body no longer restates the silent-skip prose",
+  s.check("G56g holistic-review.md's collapsed body no longer restates the silent-skip prose",
     hrBody !== null && !/log once and continue without the step/.test(hrBody),
     hrBody === null ? "section not found" : "silent-skip prose still present");
-  // break-shape: G55g-predates-mode-anomaly — the "predates `review` mode" branch matches neither
+  // break-shape: G56g-predates-mode-anomaly — the "predates `review` mode" branch matches neither
   // of lens-invocation.md's two enumerated cases by name, which is exactly how it shipped with no
   // RUN_ANOMALY at all (pr-reviewer, PR #198, iteration 4 finding) while optimality-review.md's
   // structurally identical fallthrough already carried one.
@@ -8088,26 +8156,26 @@ const isPollBlock = (block) =>
   // probed the uncoupled form: add a case-1-style example block elsewhere in the section (the
   // shape optimality-review.md:216 already carries) then delete the guarded RUN_ANOMALY line, and
   // the two independent tests both still find A match somewhere in the section and stay green.
-  s.check("G55g holistic-review.md's predates-review-mode branch raises RUN_ANOMALY",
+  s.check("G56g holistic-review.md's predates-review-mode branch raises RUN_ANOMALY",
     hrBody !== null && /RUN_ANOMALY: [^\n]*predates `review` mode/.test(hrBody),
     hrBody === null ? "section not found" : "predates-mode branch present with no RUN_ANOMALY line naming it");
   const orBody = sectionOrNull("agents/shared/rules/optimality-review.md", "## When optimize-approach is unavailable");
-  s.check("G55g optimality-review.md's collapsed body no longer restates the silent-skip prose",
+  s.check("G56g optimality-review.md's collapsed body no longer restates the silent-skip prose",
     orBody !== null && !/log once and continue without the step/.test(orBody),
     orBody === null ? "section not found" : "silent-skip prose still present");
 
   // (h) RUN_ANOMALY was already a wired payload slot before this change — D6/D8's whole premise
-  // is that no renderer edit was needed to surface it. break-shape: G55h — strip RUN_ANOMALY out
+  // is that no renderer edit was needed to surface it. break-shape: G56h — strip RUN_ANOMALY out
   // of render-report.mjs and this flips red, since the rule's instruction would then point at a
   // slot that does not exist.
   const RR = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
-  s.check("G55h RUN_ANOMALY is already a wired payload slot in render-report.mjs",
+  s.check("G56h RUN_ANOMALY is already a wired payload slot in render-report.mjs",
     existsSync(RR) && /RUN_ANOMALY/.test(readFileSync(RR, "utf8")),
     "RUN_ANOMALY absent from the renderer — the no-renderer-change premise this rule relies on does not hold");
 
   // (i) diagnostic-surface.md names the failure mode — R5 / AC-11.
   const DS = join(REPO_ROOT, "agents/pr-reviewer/rules/diagnostic-surface.md");
-  s.check("G55i diagnostic-surface.md names silent lens degradation as a failure mode",
+  s.check("G56i diagnostic-surface.md names silent lens degradation as a failure mode",
     existsSync(DS) && /lens.*degrad|degrad.*lens|F-lens/i.test(readFileSync(DS, "utf8")),
     "no F-lens-degraded-silently (or equivalent) row found");
 }

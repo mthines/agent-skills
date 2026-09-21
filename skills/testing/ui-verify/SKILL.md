@@ -56,7 +56,7 @@ This skill owns three things and reuses the rest.
 
 | Concern | Owner |
 | --- | --- |
-| The spec grammar (`WHEN/THEN/AND`, the locator mini-grammar, `url:`, `network:`) | `aw-tester` — [`specs.md.template`](../../workflow/autonomous-workflow/templates/specs.md.template). This skill references it and never forks it. |
+| The spec grammar (`WHEN/THEN/AND`, the locator mini-grammar, `url:`, `network:`, `semantic:`) | `aw-tester` — [`specs.md.template`](../../workflow/autonomous-workflow/templates/specs.md.template). This skill references it and never forks it. The `semantic:` assertion (delegated to [`jev-assert`](../../quality/jev-assert/SKILL.md)) flows through unchanged because it lives in the shared grammar the runner parses. |
 | The spec-run contract (locator ladder, auth semantics, verdict schema) | [`spec-run-contract.md`](../../workflow/autonomous-workflow/rules/spec-run-contract.md) — the engine-agnostic contract both runners implement. |
 | The runners + the compact verdict | Two, one contract: [`aw-tester`](../../workflow/autonomous-workflow/templates/aw-tester.agent.md) (Playwright sub-agent) and [`aw-tester-chrome`](../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md) (in-session Chrome). `run --driver` picks one. |
 | The browser context (`base_url`, auth, fixtures) | `aw-target.yml` — [`aw-target.yml.template`](../../workflow/autonomous-workflow/templates/aw-target.yml.template). |
