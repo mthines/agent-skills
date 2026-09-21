@@ -1,0 +1,48 @@
+{
+  "skill_name": "jev-assert",
+  "evals": [
+    {
+      "id": "eval-confirms-success-state",
+      "prompt": "Here is the accessibility text captured after the user clicked Place order: 'Heading: Order confirmed. Text: Your order number is 12931. Button: View receipt.' Assert semantically that the user sees an order-confirmation number.",
+      "expected_output": "A verify-behavior receipt whose last line is `[receipt] verdict: confirms`, with the Noul probability and the thresholds shown, because the confirmation state is clearly present.",
+      "files": [],
+      "assertions": [
+        "emits a receipt ending in `[receipt] verdict: confirms`",
+        "phrases the Jev question as 'Does the page state show that ...'",
+        "does not treat a screenshot as input"
+      ]
+    },
+    {
+      "id": "eval-refuse-restatement",
+      "prompt": "Captured page text: 'Order #12931 confirmed'. Verify with jev that the page contains the text 'Order #12931'.",
+      "expected_output": "The expectation is refused at the provenance guard as a literal-string restatement, and the author is redirected to a deterministic text/locator assertion. No confirms verdict is emitted.",
+      "files": [],
+      "assertions": [
+        "refuses the expectation as a restatement / assertion-by-construction",
+        "redirects to a locator or `text:` assertion instead of grading it",
+        "does not emit `[receipt] verdict: confirms`"
+      ]
+    },
+    {
+      "id": "eval-unobtainable-no-key",
+      "prompt": "Assert semantically that the user sees a payment-declined message, but TYPESAFE_API_KEY is not set in this environment.",
+      "expected_output": "Because the Jev call cannot run, the verdict is `unobtainable` — a tooling verdict — never a guessed confirms or contradicts.",
+      "files": [],
+      "assertions": [
+        "emits `[receipt] verdict: unobtainable`",
+        "explains the call could not run (missing key)",
+        "does not guess confirms or contradicts"
+      ]
+    },
+    {
+      "id": "eval-contradicts-wrong-screen",
+      "prompt": "Captured accessibility text: 'Heading: Payment failed. Text: Your card was declined. Button: Try again.' Assert semantically that the user sees an order-confirmation number.",
+      "expected_output": "A receipt ending in `[receipt] verdict: contradicts`, because the captured state shows a failure screen, so the asserted outcome is false with margin.",
+      "files": [],
+      "assertions": [
+        "emits `[receipt] verdict: contradicts`",
+        "reads the low Noul as contradicts, not as a weak confirms"
+      ]
+    }
+  ]
+}

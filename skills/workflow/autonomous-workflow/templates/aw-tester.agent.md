@@ -99,7 +99,9 @@ Parse each `## Spec N:` block. Extract:
 - preconditions (log, do not re-check what auth/seed already handles)
 - flow steps (parse `WHEN`/`THEN`/`AND` into Playwright actions + assertions;
   `CAPTURE "<label>" [fullPage]` into a `page.screenshot(...)` call — see
-  [Capture steps](#capture-steps-documentation-screenshots))
+  [Capture steps](#capture-steps-documentation-screenshots)). A `THEN`/`AND`
+  assertion is a `{locator}` form, a `network:` form, or a `semantic:` form —
+  see [Semantic assertions](#semantic-assertions)
 - `continues-from` (if present, reuse the prior spec's browser state — see note below)
 
 **`continues-from` semantics:** the prior spec's page, cookies, and local storage
@@ -366,6 +368,29 @@ Attach network listeners **only** on specs that have `network:` assertions.
 Do not log all network traffic unconventionally — this is the key token-saving
 decision. On a network assertion mismatch, capture the actual status code and
 the first 10 lines of the response body for the diagnostic blob.
+
+### Semantic assertions
+
+A `THEN`/`AND semantic: <outcome>` step delegates the judgment to the
+[`jev-assert`](../../../quality/jev-assert/SKILL.md) skill — the semantic form in
+the shared [spec-run contract](../rules/spec-run-contract.md#semantic-assertions).
+When the spec reaches such a step:
+
+1. Capture the page **text** state — Playwright's accessibility snapshot
+   (`page.accessibility.snapshot()`), falling back to the page's text content.
+   Never a screenshot; a screenshot is not usable Jev input.
+2. Scope the capture to the region the outcome concerns when it is one region
+   (a dialog, a toast); capture the page otherwise.
+3. `Skill("jev-assert")` with that state text and the expectation.
+4. Read the final `[receipt] verdict: <token>` line and map it to the step
+   result per the contract's § 4 table: `confirms` → pass; `contradicts` /
+   `null` → fail (put the Noul and the question in `diagnostics`); `ambiguous` →
+   `skipped` reason `semantic-ambiguous`; `unobtainable` (jev-assert missing or
+   `TYPESAFE_API_KEY` unset) → `skipped` reason `semantic-unobtainable`.
+
+Never pass a `semantic:` step whose receipt is `ambiguous` or `unobtainable`, and
+never re-word the expectation to force a pass — the provenance guard in
+`jev-assert` owns admissibility.
 
 ### Console capture
 
