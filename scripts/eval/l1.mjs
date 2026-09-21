@@ -7899,7 +7899,14 @@ const isPollBlock = (block) =>
 // SHIPPED rule files and greps LITERAL anchors out of them — never re-encoding the expected
 // prose as a second copy inside this guard, the mock-that-reimplements-the-thing-under-test trap.
 {
-  const LI = join(REPO_ROOT, "agents/shared/rules/lens-invocation.md");
+  const REL_LI = "agents/shared/rules/lens-invocation.md";
+  const LI = join(REPO_ROOT, REL_LI);
+  // Non-throwing wrapper around the SHARED extractSection (see the G54 comment on why a local
+  // regex slice is the wrong tool) — scoped to this block since each guard family's `{ }` is its
+  // own lexical scope in this file.
+  const sectionOf = (relPath, heading) => {
+    try { return extractSection(relPath, heading); } catch { return ""; }
+  };
   // break-shape: G55a — delete agents/shared/rules/lens-invocation.md and this flips red, taking
   // every check gated on `existsSync(LI)` below quiet along with it — the vacuous-pass shape
   // G53i/G54a already warn about, guarded the same way here.
@@ -7945,13 +7952,24 @@ const isPollBlock = (block) =>
       "no no-clean-report rule or F6/F7 doctrine citation");
 
     // (f) enhancement vs spine, every lens classified, confidence justified — R6 / AC-6.
+    // Scoped to the OWNING section and to the SPINE ROW specifically, not to "does this lens name
+    // appear anywhere in the file" — a bare `new RegExp(lens).test(li)` is satisfied by the ToC
+    // entry, the heading, or the six-owner-file table just as well as by an actual classification,
+    // so deleting the whole spine/enhancement table left every one of those checks green in a
+    // probe. Reading the table's own SPINE row is what a vacuous read cannot fake.
+    const evsSection = sectionOf(REL_LI, "## Enhancement vs. spine — what a genuine skip costs");
     s.check("G55f lens-invocation.md classifies lenses as spine vs enhancement",
-      /spine/i.test(li) && /enhancement/i.test(li),
-      "spine/enhancement classification missing");
-    for (const lens of ["severity", "optimize-approach", "measurable", "confidence", "holistic-analysis", "verify-behavior"]) {
-      s.check(`G55f lens-invocation.md classifies \`${lens}\``,
-        new RegExp(lens).test(li),
-        `${lens} not named`);
+      /spine/i.test(evsSection) && /enhancement/i.test(evsSection),
+      "spine/enhancement classification missing from its own section");
+    const spineRow = (evsSection.split("\n").find((l) => /^\|\s*\*\*Spine\*\*/i.test(l)) ?? "");
+    s.check("G55f the Spine row names exactly `severity` and `verify-behavior`",
+      /`severity`/.test(spineRow) && /`verify-behavior`/.test(spineRow),
+      spineRow ? `Spine row found but missing one of the two: ${spineRow}` : "no Spine row found in the table");
+    for (const lens of ["optimize-approach", "measurable", "confidence", "holistic-analysis"]) {
+      s.check(`G55f lens-invocation.md classifies \`${lens}\` as enhancement`,
+        new RegExp("\\*\\*Enhancement\\*\\*[^\\n]*`" + lens + "`|`" + lens + "`[^\\n]*\\*\\*Enhancement\\*\\*").test(evsSection)
+          || (evsSection.split("\n").find((l) => /^\|\s*\*\*Enhancement\*\*/i.test(l)) ?? "").includes("`" + lens + "`"),
+        `${lens} not found on the Enhancement row`);
     }
     s.check("G55f lens-invocation.md justifies confidence's classification from the verifier rubric",
       /verifier|Reproducible|per-comment-confidence/i.test(li),

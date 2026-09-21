@@ -86,18 +86,23 @@ The uniform treatment is what makes the collision harmless — the agent never d
 
 ## No self-concealing degradation — `RUN_ANOMALY` is mandatory
 
-A lens that the resolution algorithm still cannot run — the file is absent **and** the host has no usable answer either — must never disappear quietly.
+A `RUN_ANOMALY` is required in **two** cases, not only the loud one:
+
+1. **The lens still cannot run at all** — the file is absent and the host also has no usable answer. The obvious case, and the one every dispatch-availability check already covers for `Task`/`Agent`.
+2. **Resolution fell through to host `Skill()` at all**, whether or not it appeared to succeed. A host answer for one of these six names is **unverifiable from this side of the call** — this rule has no local copy to diff it against once the file-presence check has already found no local copy — and the `measurable` collision is exactly a host answer that *looks* successful. Gating the anomaly on "no usable answer" would silently pass the collision straight through, since a wrong recipe with no error is, from the caller's vantage point, indistinguishable from a right one. The anomaly therefore fires on **use of the fallback**, not on its failure.
+
 This repo already names the failure shape: a degraded path that reports as a legitimate outcome is self-concealing, and self-concealing degradation is exactly what `F6`/`F7` name in [`autonomous-workflow/rules/diagnostic-surface.md`](../../../skills/workflow/autonomous-workflow/rules/diagnostic-surface.md) — the run in `dash0hq/dash0#19751` is the same doctrine's failure mode, one layer down, in a lens call instead of a dispatch call.
 
-When a lens still cannot run after both resolution steps, emit one `RUN_ANOMALY` line naming it — the same payload slot [`render-report.mjs`](../../pr-reviewer/scripts/render-report.mjs) already renders for a divergence-recovery note (`workspace.md`), so no renderer change is needed to surface it:
+Emit one `RUN_ANOMALY` line naming the lens and the reason — the same payload slot [`render-report.mjs`](../../pr-reviewer/scripts/render-report.mjs) already renders for a divergence-recovery note (`workspace.md`), so no renderer change is needed to surface it:
 
 ```text
 RUN_ANOMALY: severity lens unavailable on this host (no local file, no host skill) — findings on this run carry no severity tier
+RUN_ANOMALY: measurable resolved via host fallback (no local file) — a collision returning the wrong skill cannot be distinguished from a correct one, so this run's measurability findings are unverified
 ```
 
-A review whose lenses silently dropped must not report clean.
+A review whose lenses silently dropped, or whose lens resolution ran on an unverifiable host answer, must not report clean.
 Concretely: the run announcement, the terminal Quality Gate summary, and the posted report all carry the anomaly — never only the terminal output, which the PR author never sees.
-A `success` / `PASS` verdict is never the correct rendering of a run that could not execute the lenses it depends on; see [Enhancement vs. spine](#enhancement-vs-spine--what-a-genuine-skip-costs) for what else that run must do.
+A `success` / `PASS` verdict is never the correct rendering of a run that could not execute the lenses it depends on, or that executed them on an answer it could not verify; see [Enhancement vs. spine](#enhancement-vs-spine--what-a-genuine-skip-costs) for what else that run must do.
 
 ## Enhancement vs. spine — what a genuine skip costs
 
@@ -109,8 +114,13 @@ Two are load-bearing enough that a genuine skip changes what the review is capab
 | **Spine** | `severity`, `verify-behavior` | The review's own severity and behavioral-proof machinery cannot run — findings have no tier and behavioral claims have no executed proof. This is the same shape `workspace.md`'s `DEPTH_CAPABILITY: diff-only` already handles: a `deep` tier whose deep lenses cannot run is a label, not a review. |
 | **Enhancement** | `optimize-approach`, `measurable`, `holistic-analysis`, `confidence` | The rest of the pipeline still produces a useful, correctly-scored review; the review is smaller, not less trustworthy. |
 
-**Spine genuine-skip caps the tier at `standard`**, reusing the `workspace.md` `diff-only` precedent exactly rather than inventing a second cap mechanism: `RUN.tier` is set to `standard` regardless of what Phase C would otherwise have chosen, and `RUN_ANOMALY` names which spine lens is missing.
-No renderer change is needed — the tier cap and the anomaly slot both already exist.
+**Spine genuine-skip is reported through `RUN_ANOMALY`, not through a `RUN.tier` override.**
+The `workspace.md` `DEPTH_CAPABILITY: diff-only` precedent literally sets `RUN.tier` to `standard`, but that precedent's own worked example is an `incremental`-mode run, where `standard` is already `render-report.mjs`'s `TIER_FOR_MODE["incremental"]` — the cap changes nothing there.
+On a `full`-mode run — the common case this fix targets, since a first review on a fresh PR is `full` — `TIER_FOR_MODE["full"]` is hard-coupled to `"deep"`, and the renderer rejects any other pairing outright (`RUN.tier "standard" contradicts RUN.mode "full"`, verified by running `render-report.mjs` directly against that payload).
+Setting `RUN.tier = "standard"` on a `full`-mode run would not degrade the report gracefully; it would fail to render at all, trading a silently-clean review for no review whatsoever — worse, not better.
+
+So a spine genuine skip **omits `RUN.tier`** (the field is optional; render-report.mjs runs no tier check when it is absent) and relies entirely on `RUN_ANOMALY` to carry the degradation, naming the missing spine lens and stating plainly that this run's severity or behavioral-proof machinery did not run.
+No renderer change is needed — `RUN_ANOMALY` and an omitted `RUN.tier` are both already-supported shapes — but the tier field is never spoofed to a value the renderer would treat as false reassurance.
 
 **Why `confidence` is enhancement, not spine.**
 `confidence` looks load-bearing — it used to gate every posted comment — but [`finding-verifier.md`](./finding-verifier.md) § Step 4 moved the per-comment score's *source* from `Skill("confidence", "code")` to the in-agent verifier rubric (Reproducible 40 % / Attributable 30 % / Actionable 30 %).
