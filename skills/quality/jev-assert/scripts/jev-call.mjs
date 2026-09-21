@@ -36,6 +36,16 @@ export function mapVerdict(noul, high = DEFAULT_HIGH, low = DEFAULT_LOW) {
   return "ambiguous";
 }
 
+/** Thresholds are decision bands: each must be a finite number in [0, 1], and low must
+ *  not sit above high (an inverted band would map every probability to `ambiguous`).
+ *  A non-finite threshold — `Number("abc")` is `NaN` — otherwise silently turns every
+ *  `confirms` into `ambiguous` (a high noul fails `>= NaN`) with no error, which is the
+ *  confident-but-wrong failure Core Principle #4 forbids. */
+export function validThresholds(high, low) {
+  return Number.isFinite(high) && Number.isFinite(low)
+    && high >= 0 && high <= 1 && low >= 0 && low <= 1 && low <= high;
+}
+
 /** Build the fixed Noul request body from the expectation and state. */
 export function buildBody(pageText, expectation) {
   return {
@@ -74,7 +84,12 @@ async function callJev(pageText, expectation) {
   }
   let json;
   try { json = await res.json(); } catch (e) { return { verdict: "unobtainable", reason: `bad JSON: ${e.message}` }; }
-  const noul = json?.answers?.assertion?.noul;
+  // A response missing the whole `answers.assertion` object is a schema/contract drift —
+  // the call could not be READ, so it is `unobtainable` (a tooling verdict), not `null`.
+  // A present answer object without a `noul` is genuine "ran, no support" and falls through
+  // to mapVerdict → `null`, exactly as documented.
+  if (!json?.answers?.assertion) return { verdict: "unobtainable", reason: "unexpected response shape (no answers.assertion)" };
+  const noul = json.answers.assertion.noul;
   return { noul, usage: json?.usage };
 }
 
@@ -105,6 +120,10 @@ async function main() {
 
   const args = parseArgs(argv);
   if (!args.expectation) { console.error("usage: jev-call.mjs --expectation \"<outcome>\" [--state-file <path>]"); process.exit(2); }
+  if (!validThresholds(args.high, args.low)) {
+    console.error(`error: --threshold-high/--threshold-low must be numbers in [0,1] with low <= high (got high=${args.high} low=${args.low})`);
+    process.exit(2);
+  }
 
   let pageText = "";
   if (args.stateFile) {
@@ -140,6 +159,15 @@ function selfTest() {
   // Custom thresholds shift the bands.
   t("custom high 0.95: 0.9 → ambiguous", mapVerdict(0.9, 0.95, 0.05) === "ambiguous");
   t("custom low 0.30: 0.25 → contradicts", mapVerdict(0.25, 0.85, 0.3) === "contradicts");
+
+  // Threshold validation (Core Principle #4 — reject a band that would silently misgrade).
+  t("defaults are valid", validThresholds(DEFAULT_HIGH, DEFAULT_LOW));
+  t("0/1 boundaries are valid", validThresholds(1, 0));
+  t("NaN high is rejected", !validThresholds(NaN, 0.15));
+  t("NaN low is rejected", !validThresholds(0.85, NaN));
+  t("out-of-range high is rejected", !validThresholds(1.5, 0.15));
+  t("negative low is rejected", !validThresholds(0.85, -0.1));
+  t("inverted band (low > high) is rejected", !validThresholds(0.2, 0.8));
 
   // Every mapping output is in the closed verdict set.
   for (const p of [0.99, 0.5, 0.01, undefined]) t(`mapVerdict(${p}) ∈ closed set`, VERDICTS.includes(mapVerdict(p)));

@@ -236,7 +236,7 @@ export const SUITES = [
   {
     name: "jev-assert-provenance",
     golden: "golden/jev-assert-provenance.jsonl",
-    // 14 cases, 7 `admit` / 7 `refuse` — a 50% majority-class baseline. Four cases are
+    // 14 cases, 7 `admit` / 7 `refuse` — a 50% majority-class baseline. Three cases are
     // decoys whose SURFACE points at the wrong label (an `admit` outcome that mentions
     // "text"; two `refuse` checks phrased to read like user-facing claims while pinning an
     // exact literal string or a role+name), because a responder keying on the words "text" /
