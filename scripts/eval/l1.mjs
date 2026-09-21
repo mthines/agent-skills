@@ -7999,7 +7999,10 @@ const isPollBlock = (block) =>
   // G57e — ui-verify WIRES it on: --auto-capture in BOTH Step-4 dispatch blocks (chrome +
   // playwright), so a default run always captures. This is the load-bearing wiring — a contract
   // and two runners that support auto-capture do nothing if no caller passes the flag.
-  const autoInRunner = (runner.match(/--auto-capture/g) || []).length;
+  // Count the DISPATCH lines specifically (`Mode: … --auto-capture`), not every mention: the
+  // three prose references to --auto-capture must not let this stay green when both dispatch-block
+  // flags are removed — the exact regression this guard describes.
+  const autoInRunner = (runner.match(/Mode:.*--auto-capture/g) || []).length;
   s.check("G57e ui-verify runner passes --auto-capture in BOTH dispatch blocks",
     autoInRunner >= 2,
     `runner.md carries --auto-capture ${autoInRunner} time(s); both the chrome and playwright dispatch blocks must pass it`);
