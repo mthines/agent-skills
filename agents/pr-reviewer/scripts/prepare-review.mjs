@@ -130,6 +130,25 @@ export function sameCommit(a, b) {
   return String(a).slice(0, 7) === String(b).slice(0, 7);
 }
 
+/**
+ * Normalize a GitHub login for identity comparison.
+ *
+ * One GitHub App answers to three spellings and the API hands back a different
+ * one per endpoint: `gh pr view --json author` reports an App author as
+ * `app/dash0-dev`, the REST comment and review payloads report the same actor as
+ * `dash0-dev[bot]`, and a human configuring the automation types `dash0-dev`.
+ * Comparing them raw makes `REVIEW_RELATION` `cross` on the agent's own PR —
+ * which is not cosmetic: it is the flag that decides whether findings are framed
+ * with context-asymmetry hedging.
+ */
+export function normalizeLogin(login) {
+  return String(login || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^app\//, "")
+    .replace(/\[bot\]$/, "");
+}
+
 /** Total changed lines across the patch list. */
 export function deltaLines(files) {
   return (files || []).reduce((n, f) => n + (f.additions || 0) + (f.deletions || 0), 0);
@@ -513,7 +532,7 @@ async function prepare(opts) {
   // and 401s under an installation token, which is an ordinary hosted setup.
   const me = opts.reviewerLogin || process.env.PR_REVIEWER_LOGIN || "";
   const authorLogin = meta.author?.login || "";
-  const reviewRelation = me ? (me.toLowerCase() === authorLogin.toLowerCase() ? "self" : "cross") : "cross";
+  const reviewRelation = me ? (normalizeLogin(me) === normalizeLogin(authorLogin) ? "self" : "cross") : "cross";
   if (!me) {
     anomalies.push(
       "reviewer identity unknown (no --reviewer-login / PR_REVIEWER_LOGIN; /user 401s here) — relation defaulted to cross",
@@ -790,6 +809,17 @@ function selfTest() {
   });
   t("extraHighStakes returns empty when the key is absent", () => {
     return extraHighStakes("profile: strict\n").length === 0 && extraHighStakes("").length === 0;
+  });
+
+  t("normalizeLogin folds the three spellings of one GitHub App identity", () => {
+    const want = "dash0-dev";
+    return ["app/dash0-dev", "dash0-dev[bot]", "Dash0-Dev", " dash0-dev "].every((v) => normalizeLogin(v) === want);
+  });
+  t("normalizeLogin leaves a human login alone and is empty-safe", () => {
+    return normalizeLogin("mthines") === "mthines" && normalizeLogin(null) === "" && normalizeLogin("") === "";
+  });
+  t("normalizeLogin does not collapse two distinct logins", () => {
+    return normalizeLogin("app/dash0-dev") !== normalizeLogin("mthines");
   });
 
   let failed = 0;
