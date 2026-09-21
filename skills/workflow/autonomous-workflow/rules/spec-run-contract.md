@@ -91,6 +91,33 @@ that cannot be written is a `notes` line, never a `fail`. Write captures under
 bail: an `--bail-on-first-red` run still records captures that ran before the
 first red step.
 
+### Auto-capture (a run option)
+
+**Auto-capture** is a run-level option — the mode flag `--auto-capture`, **off
+by default** at the runner level; a caller such as [`ui-verify run`](../../../testing/ui-verify/rules/runner.md)
+turns it on so a run always yields screenshots for a PR description. When
+enabled, the runner takes a **full-page** screenshot automatically — *in
+addition to* any explicit `CAPTURE` steps — at exactly two points:
+
+1. the **final rendered state of every spec** (after its last flow step, whether
+   the spec passed or failed), named `<spec-id>-auto-final.png`; and
+2. **after each `WHEN` action that navigated** (the URL changed or a full page
+   load occurred), named `<spec-id>-auto-<seq>.png` (`seq` from `1`) —
+   **deduped**: skip when the URL is unchanged since the last auto-capture, so
+   several assertions reading one screen never reshoot it.
+
+Auto-captures obey the same rules as `CAPTURE`: written under the same
+`.agent/{branch}/.aw-tester/captures/` directory, listed in the verdict's
+`captures:` array (each entry carries `auto: true`), never an action or an
+assertion, exempt from bail, and a write failure is a `notes` line, never a
+`fail`. They are **capped at 30 per run** (`AUTO_CAPTURE_CAP = 30`); on reaching
+the cap the runner stops auto-capturing and records
+`notes: auto-capture cap (30) reached — <N> further states not shot`.
+Per-assertion capture is deliberately **not** a mode — consecutive assertions
+read one visual state, so the two triggers above already cover every *distinct*
+state a PR description needs; a spec that wants one specific intermediate frame
+adds an explicit `CAPTURE` step.
+
 **`continues-from` semantics** are identical for both runners: the prior spec's
 page, cookies, and local storage are the starting state for this spec. The prior
 spec must have passed in this same invocation. If it failed or was skipped, skip
@@ -158,11 +185,16 @@ specs:
       attempted healing: getByText('X') — found 0 elements
       last network response: POST /api/foo → 500 {"error":"db timeout"}
       console errors: TypeError: Cannot read property 'id' of undefined (app.js:142)
-captures:                       # omit the key entirely when no CAPTURE steps ran
-  - spec: Spec-1
+captures:                       # omit the key entirely when no capture was written
+  - spec: Spec-1                 # (no CAPTURE step ran AND auto-capture is off)
     label: hero after submit
     path: .agent/<branch>/.aw-tester/captures/spec-1-hero-after-submit.png
     full_page: false
+  - spec: Spec-1                 # an auto-capture entry carries auto: true
+    label: final state
+    path: .agent/<branch>/.aw-tester/captures/spec-1-auto-final.png
+    full_page: true
+    auto: true
 notes: <optional one-paragraph context; omit if nothing notable>
 ```
 
@@ -171,10 +203,11 @@ appends a `hot_loop:` block for the executor's Playwright re-run; a caller that
 does not use them ignores them. The shared keys above never change shape.
 
 `captures:` is a shared optional key (both runners can screenshot). Omit it when
-no `CAPTURE` step ran; otherwise list one entry per capture with its `spec`,
-`label`, written `path`, and `full_page` flag. A `CAPTURE` that failed to write
-is reported in `notes`, and its absence from `captures:` is the only signal —
-it never appears as a failed spec.
+nothing was written — no `CAPTURE` step ran **and** auto-capture is off;
+otherwise list one entry per capture with its `spec`, `label`, written `path`,
+and `full_page` flag, plus `auto: true` on an auto-capture entry (§ Auto-capture).
+A capture that failed to write is reported in `notes`, and its absence from
+`captures:` is the only signal — it never appears as a failed spec.
 
 **Semantic assertion results.** A `semantic:` assertion's `jev-assert` receipt
 maps to the step result by its verdict token — the mapping is total, and

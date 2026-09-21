@@ -7955,6 +7955,65 @@ const isPollBlock = (block) =>
     "spec-run-contract.md defines the semantic form but never names jev-assert as its resolver");
 }
 
+// ── G57: ui-verify auto-capture — always-on screenshots, one contract, both runners, wired on ──
+//
+// `ui-verify run`/`verify` must ALWAYS yield screenshots for a PR description. The mechanism is a
+// run-level `--auto-capture` option owned by the spec-run contract (SSOT) and honored by BOTH
+// runners; ui-verify turns it on by default by passing the flag in EACH Step-4 dispatch block.
+// Every sub-check read()s the SHIPPED files and greps LITERAL anchors — the cap number is derived
+// from the contract and asserted equal in the runners, never re-encoded here (the
+// mock-that-reimplements-the-thing-under-test trap). Break-shapes are noted per check.
+{
+  const readOr = (rel) => { try { return readFileSync(join(REPO_ROOT, rel), "utf8"); } catch { return ""; } };
+  const contract = readOr("skills/workflow/autonomous-workflow/rules/spec-run-contract.md");
+  const awt = readOr("skills/workflow/autonomous-workflow/templates/aw-tester.agent.md");
+  const chrome = readOr("skills/workflow/autonomous-workflow/aw-tester-chrome/SKILL.md");
+  const runner = readOr("skills/testing/ui-verify/rules/runner.md");
+  const uiv = readOr("skills/testing/ui-verify/SKILL.md");
+  const capOf = (t) => { const m = t.match(/AUTO_CAPTURE_CAP\s*=\s*(\d+)/); return m ? m[1] : ""; };
+  const CAP = capOf(contract);
+
+  // G57a — the contract DEFINES auto-capture: the heading, the flag, and the cap constant. Delete
+  // any of the three and this reds (and takes the derived CAP with it).
+  s.check("G57a spec-run-contract defines the Auto-capture option (heading + flag + cap)",
+    /##+\s*Auto-capture/.test(contract) && /--auto-capture/.test(contract) && CAP !== "",
+    "spec-run-contract.md is missing the Auto-capture heading, the --auto-capture flag, or AUTO_CAPTURE_CAP");
+
+  // G57b — the Playwright runner implements it: parse input + the deterministic final-state file
+  // name + the cap. Drop the --auto-capture parse row and this reds.
+  s.check("G57b aw-tester implements --auto-capture (flag, -auto-final.png, cap)",
+    /--auto-capture/.test(awt) && /-auto-final\.png/.test(awt) && capOf(awt) !== "",
+    "aw-tester.agent.md does not implement --auto-capture with a cap and the -auto-final.png name");
+
+  // G57c — the Chrome runner mirrors it (parity: one contract, two runners).
+  s.check("G57c aw-tester-chrome mirrors --auto-capture with a cap",
+    /--auto-capture/.test(chrome) && capOf(chrome) !== "",
+    "aw-tester-chrome/SKILL.md does not mirror --auto-capture with a cap");
+
+  // G57d — the cap is ONE number across the contract and both runners (cross-file equality, not
+  // three independent presence checks). Change 30→40 in one file only and this reds.
+  s.check("G57d the auto-capture cap is identical across contract and both runners",
+    CAP !== "" && capOf(awt) === CAP && capOf(chrome) === CAP,
+    `AUTO_CAPTURE_CAP drift: contract=${CAP || "∅"}, aw-tester=${capOf(awt) || "∅"}, chrome=${capOf(chrome) || "∅"}`);
+
+  // G57e — ui-verify WIRES it on: --auto-capture in BOTH Step-4 dispatch blocks (chrome +
+  // playwright), so a default run always captures. This is the load-bearing wiring — a contract
+  // and two runners that support auto-capture do nothing if no caller passes the flag.
+  // Count the DISPATCH lines specifically (`Mode: … --auto-capture`), not every mention: the
+  // three prose references to --auto-capture must not let this stay green when both dispatch-block
+  // flags are removed — the exact regression this guard describes.
+  const autoInRunner = (runner.match(/Mode:.*--auto-capture/g) || []).length;
+  s.check("G57e ui-verify runner passes --auto-capture in BOTH dispatch blocks",
+    autoInRunner >= 2,
+    `runner.md carries --auto-capture ${autoInRunner} time(s); both the chrome and playwright dispatch blocks must pass it`);
+  s.check("G57e ui-verify documents the --no-screenshots opt-out",
+    /--no-screenshots/.test(runner), "runner.md does not document the --no-screenshots opt-out");
+
+  // G57f — the opt-out reaches the user-facing surface so it is discoverable.
+  s.check("G57f ui-verify SKILL.md argument-hint carries --no-screenshots",
+    /argument-hint:[^\n]*--no-screenshots/.test(uiv), "ui-verify SKILL.md argument-hint is missing --no-screenshots");
+}
+
 // ── G56: lens-invocation.md — the shared cross-harness resolution rule for pr-reviewer's six
 // composed lenses (`severity`, `optimize-approach`, `measurable`, `confidence`,
 // `holistic-analysis`, `verify-behavior`) ──

@@ -81,6 +81,7 @@ Resolve the following from the invocation prompt:
 | `aw_target_path` | An explicit `Aw-Target file:` path in the prompt if given, else `.claude/aw-targets/{aw_target_name}.yml` | Derived |
 | `mode` | `--bail-on-first-red` (default) or `--all` | No |
 | `headed` | `--headed` flag | No |
+| `auto_capture` | `--auto-capture` flag — off unless passed; see [Auto-capture](#auto-capture-always-on-documentation-screenshots) | No |
 
 ### 3. Load the aw-target
 
@@ -307,10 +308,14 @@ invocation).
 If `reset_between_specs: true`, use a new `browser.newContext()` per spec
 but still share the same `browser` instance.
 
-**No *automatic* intermediate snapshots.** The agent has the full script before
-execution and does not need to "see" between steps to plan the next action. The
-one exception is an explicit `CAPTURE` step, which the author put in the spec on
-purpose — see [Capture steps](#capture-steps-documentation-screenshots).
+**No *automatic* intermediate snapshots — unless `--auto-capture` is set.** The
+agent has the full script before execution and does not need to "see" between
+steps to plan the next action, so it never snapshots speculatively for its own
+benefit. Two exceptions write a file on purpose: an explicit `CAPTURE` step (the
+author put it in the spec) and, when the caller passed `--auto-capture`, the
+final-state and post-navigation shots described in
+[Auto-capture](#auto-capture-always-on-documentation-screenshots). Neither is a
+debug snapshot and neither can fail the spec.
 
 ### Capture steps (documentation screenshots)
 
@@ -335,6 +340,40 @@ await page.screenshot({
 - List every capture that wrote in the verdict's `captures:` array (see schema).
 - Captures are exempt from bail: emit them in step order, so a capture before
   the first red step in a `--bail-on-first-red` run is still recorded.
+
+### Auto-capture (always-on documentation screenshots)
+
+When the invocation passed `--auto-capture`, take a **full-page** screenshot
+automatically — *in addition to* any explicit `CAPTURE` steps — at two points,
+per the [spec-run contract § Auto-capture](../rules/spec-run-contract.md#auto-capture-a-run-option).
+`ui-verify run`/`verify` pass this flag by default; the executor's Phase 4 hot
+loop does not, so fast iteration stays screenshot-free.
+
+1. **Final state of every spec** — after the spec's last flow step, whether it
+   passed or failed. Name it `<spec-id>-auto-final.png`.
+2. **After each `WHEN` that navigated** — a URL change or full page load. Name it
+   `<spec-id>-auto-<seq>.png` (`seq` from `1`). **Dedupe**: skip when
+   `page.url()` is unchanged since the last auto-capture, so several assertions
+   on one screen never reshoot it.
+
+```ts
+// end of Spec 1, with --auto-capture           →
+await page.screenshot({
+  path: '.agent/<branch>/.aw-tester/captures/spec-1-auto-final.png',
+  fullPage: true,
+});
+```
+
+- `AUTO_CAPTURE_CAP = 30` per run. On reaching it, stop auto-capturing and add
+  `notes: auto-capture cap (30) reached — <N> further states not shot`. This
+  bounds a large PR — a spec with hundreds of assertions never yields hundreds
+  of files.
+- Same write-failure discipline as `CAPTURE`: wrap each `page.screenshot(...)` so
+  a failed write is a `notes` line, never a red spec.
+- List each auto-capture in the verdict's `captures:` array with `auto: true`.
+- Per-assertion capture is **not** a mode — the two triggers above already cover
+  every distinct visual state; a spec wanting a specific intermediate frame adds
+  an explicit `CAPTURE` step.
 
 ### Locator resolution
 
@@ -424,11 +463,16 @@ specs:
       attempted healing: getByText('X') — found 0 elements
       last network response: POST /api/foo → 500 {"error":"db timeout"}
       console errors: TypeError: Cannot read property 'id' of undefined (app.js:142)
-captures:                       # omit the key entirely when no CAPTURE steps ran
-  - spec: Spec-1
+captures:                       # omit the key when nothing was written
+  - spec: Spec-1                 # (no CAPTURE step ran AND auto-capture is off)
     label: dashboard with new widget
     path: .agent/<branch>/.aw-tester/captures/spec-1-dashboard-with-new-widget.png
     full_page: false
+  - spec: Spec-1                 # an auto-capture (--auto-capture) carries auto: true
+    label: final state
+    path: .agent/<branch>/.aw-tester/captures/spec-1-auto-final.png
+    full_page: true
+    auto: true
 hot_loop:
   spec_file: .agent/<branch>/.aw-tester/last-run.spec.ts
   playwright_bin: <absolute path written to .aw-tester/playwright-bin>
@@ -449,8 +493,10 @@ notes: <optional one-paragraph context; omit if nothing notable>
 - `diagnostics` field appears ONLY on `result: fail` specs.
 - `diagnostics` is hard-capped at 30 lines. Truncate with `... (truncated)` if needed.
 - `reason` is a single line. No multi-line reasons.
-- `captures:` is present only when at least one `CAPTURE` step wrote a file; a
-  capture never appears as a spec result and never changes `verdict`.
+- `captures:` is present when at least one file was written — an explicit
+  `CAPTURE` step or an auto-capture (`--auto-capture`); an auto-capture entry
+  carries `auto: true`. A capture never appears as a spec result and never
+  changes `verdict`.
 
 ---
 
@@ -526,8 +572,11 @@ These are identical to the `aw-lessons` guards — mandatory:
 - **Persist `last-run.spec.ts`.** The generated spec lives in
   `.agent/<branch>/.aw-tester/` so the executor's hot loop can re-run it
   without re-dispatching this sub-agent.
-- **No *automatic* intermediate snapshots.** Snapshot on assertion failure, and
-  at an explicit `CAPTURE` step — never speculatively between steps.
+- **No *automatic* intermediate snapshots, unless `--auto-capture` is set.**
+  Snapshot on assertion failure, at an explicit `CAPTURE` step, and — with
+  `--auto-capture` — at each spec's final state and after a navigating `WHEN`
+  ([Auto-capture](#auto-capture-always-on-documentation-screenshots)); never
+  speculatively between steps otherwise.
 - **Token discipline.** Network + console capture only on failed specs.
 - **One browser context per batch** (unless `reset_between_specs: true`).
 - **Compact output.** The verdict block is the deliverable — the executor
