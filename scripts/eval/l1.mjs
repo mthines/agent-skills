@@ -8056,6 +8056,20 @@ const isPollBlock = (block) =>
       existsSync(abs) && /lens-invocation\.md/.test(readFileSync(abs, "utf8")),
       "no reference to the shared rule found");
   }
+  // break-shape: G55g-case2-coverage — a case-1-only restatement (pr-reviewer, PR #198, iteration
+  // 3 finding) positively implies case 2 (any fall-through to host at all, success or not) does not
+  // apply to that lens, when lens-invocation.md states it generically for all six. `measurable`'s
+  // own restatement uses different wording ("both ... cases ... (case 2)") than the shared clause
+  // the other five carry verbatim, so this check accepts either shape rather than one literal string.
+  for (const [f, lens] of OWNERS) {
+    const abs = join(REPO_ROOT, f);
+    const body = existsSync(abs) ? readFileSync(abs, "utf8") : "";
+    const hasSharedClause = /The same `RUN_ANOMALY` also fires on `lens-invocation\.md`'s other case/.test(body);
+    const hasMeasurablePhrasing = /both[^\n]*`RUN_ANOMALY`[^\n]*cases/i.test(body) && /\(case 2\)/.test(body);
+    s.check(`G55g ${f} restates RUN_ANOMALY's case 2 (fall-through-to-host, not only outright failure) for \`${lens}\``,
+      hasSharedClause || hasMeasurablePhrasing,
+      "neither the shared case-2 clause nor measurable's own both-cases phrasing was found");
+  }
 
   // Non-throwing wrapper — a section this specific has to be genuinely absent to be a defect,
   // not a reason to crash the whole suite the way `sliceBetween` does on a missing end anchor.
@@ -8066,6 +8080,13 @@ const isPollBlock = (block) =>
   s.check("G55g holistic-review.md's collapsed body no longer restates the silent-skip prose",
     hrBody !== null && !/log once and continue without the step/.test(hrBody),
     hrBody === null ? "section not found" : "silent-skip prose still present");
+  // break-shape: G55g-predates-mode-anomaly — the "predates `review` mode" branch matches neither
+  // of lens-invocation.md's two enumerated cases by name, which is exactly how it shipped with no
+  // RUN_ANOMALY at all (pr-reviewer, PR #198, iteration 4 finding) while optimality-review.md's
+  // structurally identical fallthrough already carried one.
+  s.check("G55g holistic-review.md's predates-review-mode branch raises RUN_ANOMALY",
+    hrBody !== null && /predates `review` mode/.test(hrBody) && /RUN_ANOMALY:/.test(hrBody),
+    hrBody === null ? "section not found" : "predates-mode branch present with no RUN_ANOMALY line");
   const orBody = sectionOrNull("agents/shared/rules/optimality-review.md", "## When optimize-approach is unavailable");
   s.check("G55g optimality-review.md's collapsed body no longer restates the silent-skip prose",
     orBody !== null && !/log once and continue without the step/.test(orBody),
