@@ -191,6 +191,16 @@ verdict's `captures:` array. If the extension cannot persist the file to that
 path, record it in `notes` and omit it from `captures:` — a capture never turns a
 green spec red.
 
+**Auto-capture (`--auto-capture`).** When the caller passed `--auto-capture`,
+screenshot the current page (full-page) automatically — in addition to any
+`CAPTURE` steps — at each spec's **final state** (`<spec-id>-auto-final.png`) and
+**after each `WHEN` that navigated** (`<spec-id>-auto-<seq>.png`), deduped by URL,
+per the [contract § Auto-capture](../rules/spec-run-contract.md#auto-capture-a-run-option).
+`ui-verify run`/`verify` pass it by default. Cap at `AUTO_CAPTURE_CAP = 30` per
+run; on reaching it, stop and add `notes: auto-capture cap (30) reached — <N>
+further states not shot`. Same write-failure discipline as `CAPTURE`, and each
+auto-capture is listed with `auto: true`.
+
 **Healing.** When a locator does not resolve, apply a matching startup lesson
 first, then retry one rung looser (partial name, then partial text) — never CSS.
 Record a healing that worked in the verdict `notes`; do not write it to cross-run
@@ -212,7 +222,8 @@ Emit the exact shared verdict block from
 as the last thing in your message. Same `verdict` / `specs` / `diagnostics` /
 `captures` / `notes` keys, same hard rules (`green` only when all pass; `red` on
 any fail; `inconclusive` when non-skipped specs pass but some were skipped;
-`captures:` present only when a `CAPTURE` step wrote a file). The Chrome runner
+`captures:` present when a `CAPTURE` step or an auto-capture wrote a file, an
+auto-capture entry carrying `auto: true`). The Chrome runner
 adds **no** `hot_loop:` block — that is a Playwright-only re-run handle and does
 not apply here.
 

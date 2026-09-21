@@ -7,7 +7,10 @@ description: >
   to by `create-pr` on UI diffs; also runnable standalone). `run` extracts
   that block, resolves the PR's live preview deployment URL via the GitHub
   deployments API, and runs the spec against it with Playwright by
-  dispatching the `aw-tester` agent, then reports a pass/fail verdict. A
+  dispatching the `aw-tester` agent, then reports a pass/fail verdict along
+  with full-page screenshots it always captures (each spec's final state plus
+  each navigating step) into `.agent/{branch}/.aw-tester/captures/` for the PR
+  description; `--no-screenshots` opts out. A
   two-way LoreKit memory loop connects them: the runner records navigation
   quirks it hits, and the author reads those lessons so future specs start
   correct from the outset. Web only — the spec grammar and Playwright runner
@@ -21,12 +24,12 @@ description: >
   two walls, the repo-scoped LoreKit auth profile) — a thin delegator to
   `aw-setup --target preview`.
 disable-model-invocation: false
-argument-hint: '[setup|author|run|verify] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright]'
+argument-hint: '[setup|author|run|verify] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright] [--no-screenshots]'
 license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Bash(node *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
   author: mthines
-  version: '1.3.0'
+  version: '1.4.0'
   workflow_type: slash-command
   tags:
     - playwright
@@ -74,8 +77,8 @@ Parse `$ARGUMENTS`. The first token selects the operation.
 | --- | --- | --- |
 | `setup` | first token `setup` | Scaffold the committed **preview** aw-target (`.claude/aw-targets/preview.yml`) this skill runs against — auth strategy, the two walls, the confirming login, the repo-scoped LoreKit auth profile + UI surface. A thin delegator to `aw-setup --target preview`; the discoverable front door so you never need the `aw` namespace. |
 | `author` | first token `author`, or delegated from `create-pr` | Seed the spec from an existing source (the aw planner's `specs.md`, a `/fix-bug` repro) or generate it from the diff, then inject the marked collapsed block into the PR body. Reads memory first. |
-| `run` | first token `run` | Extract the block from the PR (or read a local `specs.md` path), resolve the preview URL, run the spec via the selected driver, report the verdict, write lessons. |
-| `verify` | first token `verify` | One-shot composite for a PR with no spec: author-if-needed (author only when the block is absent — never overwrite a hand-written one), then `run`, then report a single combined verdict. The autonomous entry point for others' PRs and CI / agent0 automation. |
+| `run` | first token `run` | Extract the block from the PR (or read a local `specs.md` path), resolve the preview URL, run the spec via the selected driver, report the verdict **and the screenshots it captured**, write lessons. Screenshots are on by default (`--auto-capture`): full-page, each spec's final state plus each navigating step, into `.agent/{branch}/.aw-tester/captures/` for the PR description; `--no-screenshots` opts out. |
+| `verify` | first token `verify` | One-shot composite for a PR with no spec: author-if-needed (author only when the block is absent — never overwrite a hand-written one), then `run` (with screenshots on, as above), then report a single combined verdict. The autonomous entry point for others' PRs and CI / agent0 automation. |
 
 If no operation token is present, default to `author` when a diff or branch context is in scope, and `run` when only a PR reference is given. `setup` is always explicit.
 

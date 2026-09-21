@@ -55,6 +55,14 @@ Never write the resolved URL or any credential into the committed `.claude/aw-ta
 
 Resolve `--driver` (default `auto`), then run the spec through the chosen runner. Both read the target from the `Aw-Target file:` path and the spec from the `Specs file:` path — the ephemeral overlay from Step 3, not the committed `preview.yml` placeholder. Both emit the identical verdict block ([spec-run contract § 4](../../../workflow/autonomous-workflow/rules/spec-run-contract.md#4-verdict-schema-mandatory--do-not-deviate)). `--all` runs every spec (not `--bail-on-first-red`) — an on-demand verification wants the full picture.
 
+**Screenshots are on by default.** A `ui-verify run` always passes
+`--auto-capture` to the runner, so every run yields full-page screenshots — each
+spec's final state plus each navigating step — under
+`.agent/{branch}/.aw-tester/captures/`, ready to drop into a PR description
+([spec-run contract § Auto-capture](../../../workflow/autonomous-workflow/rules/spec-run-contract.md#auto-capture-a-run-option)).
+Pass `--no-screenshots` to omit the flag when the images are not wanted. Both
+dispatch blocks below carry `--auto-capture` unless `--no-screenshots` was given.
+
 **`auto` (default): resolve to a concrete driver — Chrome first, and never silently fall to Playwright.**
 The Chrome runner is in-session and needs the browser extension; the Playwright runner is a sub-agent and needs an available tool that dispatches one (`Task`, `Agent`, or another spelling). Pick:
 
@@ -68,7 +76,7 @@ Skill("aw-tester-chrome", "
   Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target 'preview'.
   Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
   Specs file: .agent/{branch}/.ui-verify/specs.md
-  Mode: --all
+  Mode: --all --auto-capture
 ")
 ```
 
@@ -84,7 +92,7 @@ Task(
     Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target "preview".
     Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
     Specs file: .agent/{branch}/.ui-verify/specs.md
-    Mode: --all
+    Mode: --all --auto-capture
 )
 ```
 
@@ -105,6 +113,8 @@ On `Use Playwright`, run the Playwright driver block above; if no available tool
 
 The runner returns a compact YAML verdict (`verdict: green | red | inconclusive`, one entry per spec with `result` and, on failure, `diagnostics` capped at 30 lines) — identical shape from either driver.
 Relay it to the user as-is plus the resolved preview URL and which driver ran it. Do not re-run (beyond the one documented chrome→playwright fallback), and do not paste browser logs beyond the diagnostics the runner already trimmed.
+
+**Surface the screenshots.** When the verdict carries a `captures:` array (it does on every default run, since `--auto-capture` is on — see Step 4), list each `path` in the report under a **Screenshots** heading so the user can attach them to the PR description. State the count and the directory (`.agent/{branch}/.aw-tester/captures/`); if `captures:` is absent, say `no screenshots (--no-screenshots)`. Never inline the image bytes — the paths are the deliverable.
 
 Optionally, when the caller asked for it, post the verdict as a PR comment. Off by default — the runner reports to the terminal.
 
