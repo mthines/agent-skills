@@ -179,7 +179,23 @@ cp "$ROOT/RUN-CONSTRAINTS.md" "$WS/AGENTS.md"
 
 # ---------------------------------------------------------------------------
 # 6. Hand the resolved paths to the agent.
+#
+#    Two channels, and the FILE is the load-bearing one. Everything installed
+#    above sits at a path this script fixes (`/tmp/workspace/pr-reviewer`), so
+#    the run needs no variable to find it — the agent reads `env.sh` and the
+#    variables are a convenience, never a dependency. That inversion is
+#    deliberate: an earlier version appended to `$DASH0_AGENT_ENV` and nothing
+#    else, which is a variable this script does not set and has never been
+#    observed to be set. Under `set -u` an unset one does not degrade — bash
+#    exits on the expansion, at a line sitting BEFORE the verification block, so
+#    a failed install would print a bundle summary and then stop, silently, one
+#    step short of the check that exists to catch exactly that.
+#
+#    So: write the file unconditionally, append to the env channel only when it
+#    is actually present, and SAY which channels were used, because a run that
+#    reads the wrong one is a run that cannot find the pipeline.
 # ---------------------------------------------------------------------------
+ENV_FILE="$ROOT/env.sh"
 {
   echo "export PR_REVIEWER_ROOT=$ROOT"
   echo "export PR_REVIEWER_BUNDLE=$BUNDLE"
@@ -188,7 +204,15 @@ cp "$ROOT/RUN-CONSTRAINTS.md" "$WS/AGENTS.md"
   echo "export AGENT_SUPPORT=$ROOT"
   echo "export PR_REVIEWER_PIN=$PIN"
   echo "export PR_REVIEWER_LOGIN=${PR_REVIEWER_LOGIN:-}"
-} >> "$DASH0_AGENT_ENV"
+} > "$ENV_FILE"
+
+if [ -n "${DASH0_AGENT_ENV:-}" ]; then
+  cat "$ENV_FILE" >> "$DASH0_AGENT_ENV" 2>/dev/null \
+    && echo "env: $ENV_FILE + \$DASH0_AGENT_ENV" \
+    || echo "env: $ENV_FILE (\$DASH0_AGENT_ENV set but not writable)"
+else
+  echo "env: $ENV_FILE (no \$DASH0_AGENT_ENV in this sandbox — the file is the channel)"
+fi
 
 # ---------------------------------------------------------------------------
 # 7. Verify. Assert, never assume — and fail loudly, because a review against a

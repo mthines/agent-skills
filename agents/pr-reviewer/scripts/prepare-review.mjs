@@ -43,7 +43,7 @@
  */
 
 import { execFile } from "node:child_process";
-import { writeFileSync, existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { writeFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve as pathResolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -559,6 +559,14 @@ async function prepare(opts) {
   // `--inline-payloads` restores the single-blob form for a caller that wants it.
   const outPath = pathResolve(opts.out);
   const sidecarDir = dirname(outPath);
+  // Create it. `--out` names a file in a directory the caller has not
+  // necessarily made, and the first write into it is a sidecar rather than the
+  // context itself — so an absent directory surfaced as
+  // `ENOENT … open '<dir>/pr-files.json'`, which reads as a missing INPUT
+  // (the patch list the two downstream scripts consume) rather than as an
+  // absent output directory. Observed on the first run against a repo whose
+  // review directory did not already exist from an earlier invocation.
+  mkdirSync(sidecarDir, { recursive: true });
   const prFilesPath = join(sidecarDir, "pr-files.json");
   const diffPath = join(sidecarDir, "pr-diff.patch");
   const impactPath = join(sidecarDir, "impact.json");
@@ -699,13 +707,28 @@ async function prepare(opts) {
     shape,
     // The graph itself is a sidecar; the context carries the three fields Phase C
     // actually routes on, so a depth decision costs no extra read.
+    // `symbols[]` is the graph's own name for the changed declarations, and the
+    // exported subset is `.filter(s => s.exported)` — there is no
+    // `changed_exports` key. Reading one reported `0 changed exports` on a diff
+    // whose graph held 23 symbols and scored `band: high`, which is worse than
+    // no summary: it is a positive claim that the change touches no export,
+    // made to a Phase C router that would otherwise have gone and looked.
+    // Derive every number from a key the builder actually emits.
     impactSummary: impact
       ? {
           path: impactPath,
-          changedExports: (impact.changed_exports || []).length,
+          changedSymbols: (impact.symbols || []).length,
+          changedExports: (impact.symbols || []).filter((s) => s && s.exported).length,
           dependencies: (impact.dependencies || []).length,
           overlaps: (impact.overlaps || []).length,
           band: impact.blast_radius?.band ?? null,
+          blastScore: impact.blast_radius?.score ?? null,
+          // The builder's own reasons for the band. Phase C routes on the band,
+          // but a `high` earned by one common identifier (`metadata`, `wait`)
+          // resolving against every file that happens to use that name is a
+          // different fact from one earned by a real cross-package export, and
+          // only these lines carry the difference.
+          blastWhy: (impact.blast_radius?.why || []).slice(0, 5),
         }
       : null,
     impact: opts.inlinePayloads ? impact : null,
@@ -901,7 +924,7 @@ async function main(argv) {
           `  depth     ${w.depthCapability} via rung ${w.rung} · tier2 ${w.tier2Checker || "none"} · cleanup ${w.cleanup}`,
           `  prior     ${context.priorRun.priorSha ? `${context.priorRun.priorSha} (${context.priorRun.source})` : "none"}${context.priorRun.zeroDelta ? " · ZERO DELTA" : ""}`,
           `  shape     ${context.shape ? JSON.stringify(context.shape).slice(0, 160) : "unavailable"}`,
-          `  impact    ${context.impactSummary ? `band=${context.impactSummary.band} · ${context.impactSummary.changedExports} changed exports · ${context.impactSummary.dependencies} deps` : "unavailable"}`,
+          `  impact    ${context.impactSummary ? `band=${context.impactSummary.band} · ${context.impactSummary.changedSymbols} symbols (${context.impactSummary.changedExports} exported) · ${context.impactSummary.dependencies} deps` : "unavailable"}`,
           `  context   ${(Buffer.byteLength(JSON.stringify(context)) / 1024).toFixed(0)} KB index + sidecars in ${dirname(outPath)}`,
           `  anomalies ${context.anomalies.length}`,
           ...context.anomalies.map((a) => `    ⚠ ${a}`),
