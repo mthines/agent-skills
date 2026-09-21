@@ -564,17 +564,37 @@ function importersOf(modulePath, root, aliases, opts) {
  * JSONC (comments and trailing commas), and a throw here would silently disable alias
  * resolution for the whole repo.
  */
-function aliasMap(root) {
+function aliasMap(root, extraConfigDirs = []) {
   const out = [];
-  for (const cfg of ["tsconfig.json", "tsconfig.base.json", "jsconfig.json"]) {
-    const body = readIfExists(join(root, cfg));
-    if (!body) continue;
-    const pathsBlock = /"paths"\s*:\s*\{([^{}]*)\}/.exec(body);
-    if (!pathsBlock) continue;
-    for (const m of pathsBlock[1].matchAll(/"([^"]+)"\s*:\s*\[([^\]]*)\]/g)) {
-      const prefix = m[1].replace(/\*$/, "");
-      const targets = [...m[2].matchAll(/"([^"]+)"/g)].map((t) => t[1].replace(/\*$/, "").replace(/^\.\//, ""));
-      if (prefix && targets.length) out.push([prefix, targets]);
+  // Root configs first, then one config per package directory. A monorepo puts
+  // `"@/*": ["./src/*"]` in `packages/<name>/tsconfig.json`, not at the root, and
+  // a `paths` entry is relative to the config that declares it — so reading only
+  // the root resolved `@/components/x` to `components/x`, matched nothing, and
+  // left every aliased import unresolved. That is not a cosmetic miss: with
+  // `gateConsumers` intersecting against these edges, an unresolvable alias reads
+  // as "no file imports this module" and deletes real consumers. Measured on
+  // `mthines/lorekit#679`, where `HowItWorks`, `LandingHeader` and
+  // `LandingBackdrop` are each imported by `app/page.tsx` through `@/` and all
+  // three came back with zero importers.
+  const seen = new Set();
+  for (const dir of ["", ...extraConfigDirs]) {
+    for (const cfg of ["tsconfig.json", "tsconfig.base.json", "jsconfig.json"]) {
+      const rel = dir ? posix.join(dir, cfg) : cfg;
+      if (seen.has(rel)) continue;
+      seen.add(rel);
+      const body = readIfExists(join(root, rel));
+      if (!body) continue;
+      const pathsBlock = /"paths"\s*:\s*\{([^{}]*)\}/.exec(body);
+      if (!pathsBlock) continue;
+      for (const m of pathsBlock[1].matchAll(/"([^"]+)"\s*:\s*\[([^\]]*)\]/g)) {
+        const prefix = m[1].replace(/\*$/, "");
+        const targets = [...m[2].matchAll(/"([^"]+)"/g)].map((t) => {
+          const bare = t[1].replace(/\*$/, "").replace(/^\.\//, "");
+          // Re-root the target on the directory of the config that declared it.
+          return dir ? toPosix(posix.normalize(posix.join(dir, bare))) : bare;
+        });
+        if (prefix && targets.length) out.push([prefix, targets]);
+      }
     }
   }
   const goMod = readIfExists(join(root, "go.mod"));
@@ -1039,7 +1059,16 @@ export function computeOverlaps(otherPrs, changedFiles, changedSymbolNames) {
 // ── Assemble ─────────────────────────────────────────────────────────────────────
 
 export function buildGraph({ files, workdir, readBase, production, otherPrs, opts }) {
-  const aliases = aliasMap(workdir);
+  // Every package directory that owns a changed file, so a monorepo's per-package
+  // `paths` aliases are read alongside the root's.
+  const configDirs = new Set();
+  for (const f of files) {
+    const p = toPosix(f.filename ?? f.path ?? "");
+    if (!p) continue;
+    const pkg = packageRootOf(p, workdir);
+    if (pkg && pkg !== ".") configDirs.add(pkg);
+  }
+  const aliases = aliasMap(workdir, [...configDirs]);
   const symbols = [];
   const modules = [];
 
