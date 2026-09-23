@@ -464,6 +464,62 @@ function consumersOf(name, definingPath, root, opts) {
   return { consumers, count: consumers.length, files: new Set(consumers.map((c) => c.path)).size };
 }
 
+/** Modules whose references are reachable only through an import edge. */
+const ESM_SOURCE_RE = /\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$/i;
+
+/**
+ * Keep only the references that could actually reach this declaration.
+ *
+ * `consumersOf` is a word-boundary grep, so on a common identifier it returns the
+ * whole repository. Measured on `mthines/lorekit#679`: `metadata` (the Next.js
+ * route-segment export of `app/page.tsx`) resolved to 87 "consuming files" across
+ * 8 packages, and `wait` — a non-exported helper nested inside a component, which
+ * the diff does not even change — to 27 more. Fourteen of fourteen sampled hits
+ * were name collisions: an audit record's `metadata:` property, the English word
+ * in a comment, an unrelated `wait` method on another class. Nothing imported
+ * either module. The graph scored the PR `band: high` (260) on that, which routes
+ * Phase C to `deep` — the most expensive tier — on evidence that is entirely noise.
+ *
+ * In an ES module a reference to another file's declaration is unreachable without
+ * an import of that file, and `importersOf` already resolves import edges properly
+ * (specifier resolution, not a basename match). So intersect the two. Two shapes
+ * fall out of the same rule:
+ *   - a declaration the module does not export cannot be referenced at all, and
+ *   - an exported one that nothing imports has no consumers, however many files
+ *     happen to use its name.
+ *
+ * Scoped to ES modules ON PURPOSE. In Go, Python or Ruby a same-package reference
+ * needs no import statement, so the intersection would delete real consumers
+ * there; those languages keep the grep result unchanged.
+ */
+export function gateConsumers({ symbol, definingPath, consumers, importerPaths }) {
+  if (!ESM_SOURCE_RE.test(definingPath || "")) {
+    return { consumers, gate: null };
+  }
+  if (symbol && symbol.exported === false) {
+    return {
+      consumers: [],
+      gate: consumers.length
+        ? { dropped: consumers.length, reason: "module-local declaration — not reachable from another file" }
+        : null,
+    };
+  }
+  const importers = new Set(importerPaths || []);
+  const kept = consumers.filter((c) => importers.has(c.path));
+  const dropped = consumers.length - kept.length;
+  return {
+    consumers: kept,
+    gate: dropped
+      ? {
+          dropped,
+          reason: importers.size
+            ? "name matches in files that do not import this module"
+            : "no file in the repository imports this module",
+        }
+      : null,
+  };
+}
+
 /**
  * Files that import a changed module. Relative specifiers are resolved against the
  * importing file's directory and compared to the module path, so a match is a real
@@ -508,17 +564,37 @@ function importersOf(modulePath, root, aliases, opts) {
  * JSONC (comments and trailing commas), and a throw here would silently disable alias
  * resolution for the whole repo.
  */
-function aliasMap(root) {
+function aliasMap(root, extraConfigDirs = []) {
   const out = [];
-  for (const cfg of ["tsconfig.json", "tsconfig.base.json", "jsconfig.json"]) {
-    const body = readIfExists(join(root, cfg));
-    if (!body) continue;
-    const pathsBlock = /"paths"\s*:\s*\{([^{}]*)\}/.exec(body);
-    if (!pathsBlock) continue;
-    for (const m of pathsBlock[1].matchAll(/"([^"]+)"\s*:\s*\[([^\]]*)\]/g)) {
-      const prefix = m[1].replace(/\*$/, "");
-      const targets = [...m[2].matchAll(/"([^"]+)"/g)].map((t) => t[1].replace(/\*$/, "").replace(/^\.\//, ""));
-      if (prefix && targets.length) out.push([prefix, targets]);
+  // Root configs first, then one config per package directory. A monorepo puts
+  // `"@/*": ["./src/*"]` in `packages/<name>/tsconfig.json`, not at the root, and
+  // a `paths` entry is relative to the config that declares it — so reading only
+  // the root resolved `@/components/x` to `components/x`, matched nothing, and
+  // left every aliased import unresolved. That is not a cosmetic miss: with
+  // `gateConsumers` intersecting against these edges, an unresolvable alias reads
+  // as "no file imports this module" and deletes real consumers. Measured on
+  // `mthines/lorekit#679`, where `HowItWorks`, `LandingHeader` and
+  // `LandingBackdrop` are each imported by `app/page.tsx` through `@/` and all
+  // three came back with zero importers.
+  const seen = new Set();
+  for (const dir of ["", ...extraConfigDirs]) {
+    for (const cfg of ["tsconfig.json", "tsconfig.base.json", "jsconfig.json"]) {
+      const rel = dir ? posix.join(dir, cfg) : cfg;
+      if (seen.has(rel)) continue;
+      seen.add(rel);
+      const body = readIfExists(join(root, rel));
+      if (!body) continue;
+      const pathsBlock = /"paths"\s*:\s*\{([^{}]*)\}/.exec(body);
+      if (!pathsBlock) continue;
+      for (const m of pathsBlock[1].matchAll(/"([^"]+)"\s*:\s*\[([^\]]*)\]/g)) {
+        const prefix = m[1].replace(/\*$/, "");
+        const targets = [...m[2].matchAll(/"([^"]+)"/g)].map((t) => {
+          const bare = t[1].replace(/\*$/, "").replace(/^\.\//, "");
+          // Re-root the target on the directory of the config that declared it.
+          return dir ? toPosix(posix.normalize(posix.join(dir, bare))) : bare;
+        });
+        if (prefix && targets.length) out.push([prefix, targets]);
+      }
     }
   }
   const goMod = readIfExists(join(root, "go.mod"));
@@ -983,7 +1059,16 @@ export function computeOverlaps(otherPrs, changedFiles, changedSymbolNames) {
 // ── Assemble ─────────────────────────────────────────────────────────────────────
 
 export function buildGraph({ files, workdir, readBase, production, otherPrs, opts }) {
-  const aliases = aliasMap(workdir);
+  // Every package directory that owns a changed file, so a monorepo's per-package
+  // `paths` aliases are read alongside the root's.
+  const configDirs = new Set();
+  for (const f of files) {
+    const p = toPosix(f.filename ?? f.path ?? "");
+    if (!p) continue;
+    const pkg = packageRootOf(p, workdir);
+    if (pkg && pkg !== ".") configDirs.add(pkg);
+  }
+  const aliases = aliasMap(workdir, [...configDirs]);
   const symbols = [];
   const modules = [];
 
@@ -996,7 +1081,15 @@ export function buildGraph({ files, workdir, readBase, production, otherPrs, opt
     modules.push({ path, importers: importers.length, importer_paths: importers.slice(0, 25) });
 
     for (const sym of changedSymbolsForFile(f, headBody)) {
-      const { consumers, count, files: consumerFiles } = consumersOf(sym.name, path, workdir, opts);
+      const raw = consumersOf(sym.name, path, workdir, opts);
+      const { consumers, gate } = gateConsumers({
+        symbol: sym,
+        definingPath: path,
+        consumers: raw.consumers,
+        importerPaths: importers,
+      });
+      const count = consumers.length;
+      const consumerFiles = new Set(consumers.map((c) => c.path)).size;
       const roots = new Set([packageRootOf(path, workdir), ...consumers.map((c) => packageRootOf(c.path, workdir))]);
       symbols.push({
         ...sym,
@@ -1008,6 +1101,11 @@ export function buildGraph({ files, workdir, readBase, production, otherPrs, opt
         package_count: roots.size,
         covering_tests: coveringTests(path, consumers, importers, workdir),
         fp_seed: safeFingerprint(sym),
+        // Only when it bit. A reader comparing the graph against a grep needs to
+        // know the difference is deliberate, and a finder must not read an empty
+        // consumer list as "nothing depends on this" when it means "the grep hits
+        // were collisions".
+        ...(gate ? { consumer_gate: gate } : {}),
       });
     }
   }
@@ -1208,6 +1306,52 @@ function selfTest() {
 
   t("an unparseable lockfile yields no rows instead of throwing", () =>
     Object.keys(parseNpmLock("{not json")).length === 0 && Object.keys(parseCargoLock("")).length === 0);
+
+  t("gateConsumers drops name matches from files that do not import the module", () => {
+    const r = gateConsumers({
+      symbol: { name: "metadata", exported: true },
+      definingPath: "packages/web/src/app/page.tsx",
+      consumers: [
+        { path: "supabase/functions/memories/handlers/purge.ts", line: 91, kind: "ref" },
+        { path: "packages/web/src/components/Card.tsx", line: 7, kind: "ref" },
+      ],
+      importerPaths: ["packages/web/src/components/Card.tsx"],
+    });
+    return r.consumers.length === 1
+      && r.consumers[0].path === "packages/web/src/components/Card.tsx"
+      && r.gate.dropped === 1;
+  });
+
+  t("gateConsumers gives a module-local declaration no consumers at all", () => {
+    const r = gateConsumers({
+      symbol: { name: "wait", exported: false },
+      definingPath: "packages/web/src/components/landing/TerminalTheater.tsx",
+      consumers: [{ path: "packages/web/src/lib/pausable-timers.ts", line: 7, kind: "ref" }],
+      importerPaths: ["packages/web/src/app/page.tsx"],
+    });
+    return r.consumers.length === 0 && /module-local/.test(r.gate.reason);
+  });
+
+  t("gateConsumers leaves a non-ES-module language untouched", () => {
+    const consumers = [{ path: "internal/store/read.go", line: 12, kind: "call" }];
+    const r = gateConsumers({
+      symbol: { name: "openDB", exported: false },
+      definingPath: "internal/store/db.go",
+      consumers,
+      importerPaths: [],
+    });
+    return r.consumers === consumers && r.gate === null;
+  });
+
+  t("gateConsumers reports the no-importer case distinctly from a partial drop", () => {
+    const none = gateConsumers({
+      symbol: { name: "metadata", exported: true },
+      definingPath: "app/page.tsx",
+      consumers: [{ path: "a.ts", line: 1, kind: "ref" }],
+      importerPaths: [],
+    });
+    return none.consumers.length === 0 && /no file in the repository imports/.test(none.gate.reason);
+  });
 
   t("blastRadius bands a wide signature change high and a lone body edit none/low", () => {
     const wide = blastRadius([{ name: "f", change: "signature", consumer_count: 14, cross_package: true, package_count: 3 }], []);
