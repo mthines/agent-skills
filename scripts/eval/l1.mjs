@@ -9,6 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, extractSection, Suite } from "./lib.mjs";
+import { validateSkill } from "../../skills/authoring/create-skill/scripts/validate-skill.mjs";
 
 const AW = join(REPO_ROOT, "skills/workflow/autonomous-workflow");
 const s = new Suite("L1 deterministic contract checks");
@@ -380,6 +381,34 @@ function checksInSync(plan, checks) {
       s.check(`${rel(f)} version is semver`, /^\d+\.\d+\.\d+$/.test(fm.version), `got '${fm.version}'`);
     if (fm.name !== undefined)
       s.check(`${rel(f)} name matches dir`, fm.name === dir, `name='${fm.name}' dir='${dir}'`);
+  }
+}
+
+// ── Check F1b: every SKILL.md `description` is within the 1024-char spec cap ──
+// The Agent Skills spec caps `description` at 1024 characters, and a consumer that imports this
+// repo from git REJECTS the skill outright when it is longer — nine skills failed one such import
+// at once (`Bad Request: The SKILL.md frontmatter 'description' must be 1-1024 characters.`),
+// every one of them a description that grew a clause at a time across releases. Nothing here
+// measured it: `create-skill`'s own validator has owned the rule as FM05 since it shipped, but it
+// runs per-skill on demand, so a skill nobody re-validated drifted past the cap unobserved while
+// L1 stayed green.
+//
+// The length is READ FROM `validateSkill` rather than re-derived, for the same reason `G21d`
+// derives suite selection instead of mirroring it: `description` is a folded YAML scalar, so a
+// second extractor here would be a second answer to "how long is it", and the two would disagree
+// the first time one of them learned about `|` blocks or a trailing blank line. One extractor,
+// one cap (`DESC_MAX` in `validate-skill.mjs`), one place to change it.
+//
+// Scoped to FM05 deliberately. The validator's other rows carry judgment (`FM08` wants a
+// third-person verb, `FM03` warns on a reserved word) and several skills fail them today; gating
+// L1 on the whole result would turn one import-blocking defect into a repo-wide rewrite.
+{
+  for (const f of walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith("/SKILL.md"))) {
+    const dir = f.slice(0, -"/SKILL.md".length);
+    const fm05 = validateSkill(dir).findings.filter((x) => x.id === "FM05" && x.level === "FAIL");
+    s.check(`F1b ${rel(f)} description is within the 1024-char cap`,
+      fm05.length === 0,
+      fm05.length ? fm05[0].message : "");
   }
 }
 

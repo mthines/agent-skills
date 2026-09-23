@@ -2,25 +2,19 @@
 name: implement-suggestion
 description: >
   Implements review-comment suggestions across one or more PRs. Multi-PR mode
-  (default when $ARGUMENTS contains PR URLs; empty $ARGUMENTS auto-detects the
-  active PR) per PR: resolves a worktree, fetches every actionable comment
-  from both human teammates AND AI code-review bots (claude[bot],
-  coderabbitai[bot], …), validates each through /critical + /confidence,
-  builds a structured suggestion-pack, and dispatches a worker subagent that
-  applies each approved change as its own commit, pushes to the existing
-  branch, and resolves the addressed review thread — so every handled comment
-  ends up resolved and the PR is left clean. Fast-lane for mechanical edits,
-  standard-lane via aw-planner for architectural changes. Free-text
-  mode applies a single pasted suggestion in the current directory. Triggers
-  on "implement suggestion", "apply review comments", "address PR feedback",
-  "implement reviewer feedback", "fix PR comments", "/implement-suggestion".
-  With --watch, loops the apply on a single PR — waiting for new review-bot
-  comments after each push and re-applying until the reviewers go quiet (max 5
-  iterations); this is the loop /create-pr dispatches post-push. With
-  --resolve-all (used by review-loop), it additionally replies to and resolves
-  every non-fix thread it can honestly close — answering questions, recording a
-  rationale for declined suggestions — so the PR converges to zero open threads,
-  leaving only genuine human-judgment flags (real unfixed blockers) open.
+  (default when $ARGUMENTS holds PR URLs; empty $ARGUMENTS auto-detects the
+  active PR) resolves a worktree per PR, fetches every actionable comment from
+  human teammates AND AI review bots (claude[bot], coderabbitai[bot], …),
+  validates each through /critical + /confidence, builds a structured
+  suggestion-pack, and dispatches a worker subagent that applies each approved
+  change as its own commit, pushes to the existing branch, and resolves the
+  addressed thread — so every handled comment ends resolved and the PR is left
+  clean. Fast lane for mechanical edits, standard lane via aw-planner for
+  architectural ones. Free-text mode applies a single pasted suggestion in
+  place. --watch re-applies on one PR until the reviewers go quiet (max 5
+  iterations); --resolve-all also replies to and resolves every non-fix thread
+  it can honestly close. Triggers on "implement suggestion", "apply review
+  comments", "/implement-suggestion".
 disable-model-invocation: false
 argument-hint: '[<pr-url>|#<n>] [--critical] [--watch] [--resolve-all]'
 license: MIT

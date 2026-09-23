@@ -3,26 +3,18 @@ name: ui-verify
 description: >
   Makes a UI pull request autonomously verifiable. `author` generates a
   step-by-step UI verification spec for the PR's visual change and injects it
-  into the PR description as a collapsed, machine-findable block (delegated
-  to by `create-pr` on UI diffs; also runnable standalone). `run` extracts
-  that block, resolves the PR's live preview deployment URL via the GitHub
-  deployments API, and runs the spec against it with Playwright by
-  dispatching the `aw-tester` agent, then reports a pass/fail verdict along
-  with full-page screenshots it always captures (each spec's final state plus
-  each navigating step) into `.agent/{branch}/.aw-tester/captures/` for the PR
-  description; `--no-screenshots` opts out. A
-  two-way LoreKit memory loop connects them: the runner records navigation
-  quirks it hits, and the author reads those lessons so future specs start
-  correct from the outset. Web only — the spec grammar and Playwright runner
-  are `aw-tester`'s; this skill owns the PR-embedding, URL resolution, and the
-  authoring loop. Triggers on "write a preview spec", "add a UI verification
-  spec", "verify this PR's preview", "run the preview spec", "test the
-  preview deployment", "verify this PR autonomously", "/ui-verify". `verify`
-  is the one-shot composite (author-if-needed → run → report) for a PR with no
-  spec yet — someone else's, or an agent0 / Vercel-preview automation. `setup`
-  scaffolds the committed preview aw-target this skill runs against (auth, the
-  two walls, the repo-scoped LoreKit auth profile) — a thin delegator to
-  `aw-setup --target preview`.
+  into the PR description as a collapsed, machine-findable block (delegated to
+  by `create-pr` on UI diffs; also runnable standalone). `run` extracts that
+  block, resolves the PR's live preview deployment URL via the GitHub
+  deployments API, runs the spec against it with Playwright by dispatching the
+  `aw-tester` agent, and reports a verdict plus the full-page screenshots it
+  always captures (`--no-screenshots` opts out). `verify` is the one-shot
+  composite (author-if-needed, run, report) for a PR with no spec yet. `setup`
+  scaffolds the committed preview aw-target, delegating to `aw-setup --target
+  preview`. A two-way LoreKit loop connects author and runner, so navigation
+  quirks the runner hits make the next spec correct from the outset. Web only.
+  Triggers on "write a preview spec", "verify this PR's preview", "run the
+  preview spec", "/ui-verify".
 disable-model-invocation: false
 argument-hint: '[setup|author|run|verify] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright] [--no-screenshots]'
 license: MIT

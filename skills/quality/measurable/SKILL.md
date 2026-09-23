@@ -1,24 +1,20 @@
 ---
 name: measurable
 description: >
-  Ensures every delivery ships with the telemetry needed to prove its
-  impact and catch its own regressions: RUM/analytics events for
-  user-facing web changes (delegates to rum-tracking), OpenTelemetry
-  traces/metrics/structured logs for new or changed API endpoints, and
-  explicit error/warning signal paths so failures surface instead of
-  going silent. Knows OpenTelemetry Weaver: validating a signal against
-  a semantic-convention registry, and treating a renamed metric or
-  attribute as the breaking change it is. Modes: guide (default),
-  implement, audit, setup.
-  `setup` runs a first-time interview that records the project's
-  telemetry stack, telemetry schema (Weaver registry), per-package
-  instrumentation approach for monorepos, and regression-detection
-  expectations as a committed Observability Profile. Triggers on
-  "is this measurable", "add telemetry",
-  "instrument this endpoint", "check observability coverage",
-  "add RUM and API telemetry", "will we know if this regresses",
-  "does this break the telemetry contract", "check semantic conventions",
-  "set up observability profile", "/measurable".
+  Ensures every delivery ships with the telemetry needed to prove its impact
+  and catch its own regressions: RUM/analytics events for user-facing web
+  changes (delegates to rum-tracking), OpenTelemetry traces, metrics, and
+  structured logs for new or changed API endpoints, and explicit error/warning
+  signal paths so failures surface instead of going silent. Knows
+  OpenTelemetry Weaver — validating a signal against a semantic-convention
+  registry, and treating a renamed metric or attribute as the breaking change
+  it is. Modes: guide (default), implement, audit, setup. `setup` interviews
+  the project once, recording its telemetry stack, schema (Weaver registry),
+  per-package instrumentation approach for monorepos, and regression-detection
+  expectations as a committed Observability Profile. Triggers on "is this
+  measurable", "add telemetry", "instrument this endpoint", "check
+  observability coverage", "will we know if this regresses", "does this break
+  the telemetry contract", "/measurable".
 disable-model-invocation: false
 argument-hint: '[guide|implement|audit|setup] [<target>] [--strict]'
 license: MIT

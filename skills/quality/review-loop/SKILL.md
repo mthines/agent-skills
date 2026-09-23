@@ -1,38 +1,20 @@
 ---
 name: review-loop
 description: >
-  Bounded review-apply-resolve convergence loop for a GitHub PR (draft PRs are
-  fine). Runs up to N=5 iterations of pr-reviewer → implement-suggestion
+  Bounded review-apply-resolve convergence loop for a GitHub PR, drafts
+  included. Runs up to N=5 iterations of pr-reviewer → implement-suggestion
   (--resolve-all) → polish simplify, converging until every review thread is
-  resolved — through a fix OR a reply (answered question, recorded rationale) —
-  so the PR is left with zero open threads (only genuine human-judgment flags
-  stay open). On convergence it also refreshes the PR description to match the
-  shipped diff and, best-effort, notes the linked Linear ticket. Use after
-  opening a draft PR to converge the branch to a clean, review-ready state
-  before undrafting. Also converges CI: after each iteration's push it reads the
-  check state and delegates a red mechanical failure to ci-auto-fix, so
-  convergence means zero open threads AND CI not red (--no-ci opts out; create-pr
-  and autonomous-workflow pass it because they own their own CI phase). On a UI PR
-  it also runs the committed ui-verify block against the live preview deployment
-  once at exit (report-only, never blocks convergence; --no-preview-run opts out —
-  autonomous-workflow passes it because its Phase 7 already rehearses the same
-  specs). With --external-review the reviewer is out-of-process: sub-step A waits on the
-  shared review-activity poll for another agent's review instead of dispatching
-  pr-reviewer, which also makes the loop usable where sub-agent dispatch is
-  unavailable. Caller contract: this is an orchestrator whose first sub-step is a
-  delegation, so it must run at the TOP LEVEL of a session that still holds a
-  sub-agent dispatch tool (spelled Task in some harnesses and Agent in others) —
-  never dispatch it into a sub-agent, which cannot delegate further and can only
-  skip at iteration 0.
-  With --merge the loop merges the PR (squash) on the first agent approval: it
-  runs to clean convergence — every non-blocking comment fixed or answered — and,
-  if the final review verdict is an approval (pr-reviewer PASS, or an APPROVED
-  GitHub review under --external-review) and CI is green, undrafts and merges;
-  it never merges on a non-clean convergence, a non-PASS verdict, or pending/red CI.
-  Callers: autonomous-workflow Phase 6/7, create-pr (post-draft), and standalone
-  via /review-changes. Invoke with /review-loop <PR-URL|#n> [--cap N]
-  [--critical] [--external-review] [--interval S] [--no-ci] [--no-feedback]
-  [--no-refresh] [--no-preview-run] [--merge].
+  resolved through a fix OR a reply, so the PR ends with zero open threads and
+  only genuine human-judgment flags left open. Convergence also means CI is
+  not red: each push is check-read and a red mechanical failure delegated to
+  ci-auto-fix (--no-ci). On convergence it refreshes the PR description
+  (--no-refresh) and, on a UI PR, runs ui-verify against the live preview
+  once, report-only (--no-preview-run). --external-review waits on an
+  out-of-process reviewer instead of dispatching pr-reviewer; --merge
+  squash-merges on a clean convergence, an approving verdict, and green CI.
+  Run it at the TOP LEVEL of a session holding a sub-agent dispatch tool,
+  never nested in a sub-agent. Use after opening a draft PR to converge it
+  before undrafting. Triggers on "/review-loop".
 disable-model-invocation: false
 argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--external-review] [--interval S] [--no-ci] [--no-feedback] [--no-refresh] [--no-preview-run] [--merge]'
 license: MIT

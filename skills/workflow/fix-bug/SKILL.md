@@ -1,23 +1,20 @@
 ---
 name: fix-bug
 description: >
-  Resolves a single bug from any starting evidence — Dash0 telemetry (span / log / web event / RUM
-  error link), raw stack trace, error message, code pointer (file:line), screen recording, Linear
-  ticket URL, or free-text symptom. Classifies the input, **triages complexity** (Phase 0.5) to
-  pick between a fast lane and a full holistic-analysis lane, runs a pre-flight sweep, locks a
-  failing reproduction (delegating to /tdd, /e2e-testing, or /e2e-testing-mobile by layer),
-  delegates root-cause analysis to the isolated rca-investigator agent (holistic-analysis +
-  confidence) on complex bugs (or runs a lightweight in-skill analysis on simple ones), gates on
-  confidence(analysis), and on >= 92 % hands off
-  **without human confirmation**: simple bugs take the fast lane (/fix-bug → aw-create-plan →
-  aw-executor, no aw-planner) and complex bugs take the standard lane (aw-planner → aw-executor),
-  both with a CEGIS refinement contract. Fast-lane round-3 CEGIS failure falls back to
-  standard-lane via aw-planner. An independent bug-fix-verifier agent grades the PR before
-  undrafting; for telemetry-sourced bugs an optional Phase 8 polls the originating signal
-  post-deploy. Pass --analyse-only to stop after the proposal regardless of confidence;
-  --force-holistic to skip the fast lane and always use holistic-analysis. Triggers on
-  "fix this bug", "investigate this error", "this Dash0 span shows a failure", "this stack trace
-  looks wrong", "/fix-bug".
+  Resolves a single bug from any starting evidence — Dash0 telemetry (span,
+  log, web event, RUM error link), a stack trace, an error message, a code
+  pointer (file:line), a screen recording, a Linear ticket URL, or a free-text
+  symptom. Classifies the input, triages complexity (Phase 0.5) to pick a fast
+  lane or a full holistic-analysis lane, runs a pre-flight sweep, locks a
+  failing reproduction (delegating to /tdd, /e2e-testing, or
+  /e2e-testing-mobile by layer), delegates root-cause analysis to the isolated
+  rca-investigator agent on complex bugs, gates on confidence(analysis), and
+  at >= 92 % hands off without human confirmation — fast lane via
+  aw-create-plan + aw-executor, standard lane via aw-planner + aw-executor,
+  both under a CEGIS refinement contract. A bug-fix-verifier agent grades the
+  PR before undrafting; for telemetry-sourced bugs an optional Phase 8 polls
+  the originating signal post-deploy. --analyse-only stops at the proposal;
+  --force-holistic skips the fast lane. Triggers on "/fix-bug".
 argument-hint: '[--analyse-only|--force-holistic] [<bug-description>|<ticket>]'
 license: MIT
 user-invocable: true
