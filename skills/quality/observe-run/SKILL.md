@@ -2,20 +2,19 @@
 name: observe-run
 description: >
   Runs a command and reads the telemetry that run just emitted, returning a
-  `verify-behavior` receipt (confirms/contradicts/ambiguous/null) that grades a
-  behavioral assertion — span count, parent/child structure, duration, error-path
-  status, fan-out, attribute cardinality, ordering — against the observed spans,
-  never against the diff read back. Inputs are a command plus an expectation
-  set. Walks two cheapest-first rungs (an in-memory/file exporter, then
-  `dash0 -X otlp proxy --agent-mode` plus `dash0 spans query`), stamps two-layer
-  run identity, and self-skips genuinely when the repo has no Observability
-  Profile dev target. Vendor-neutral: OTLP is the contract, Dash0 is one
-  implementation of the read. Use when a fan-out count, a retry that fired more
-  than once, an error swallowed into a 200, an N+1, or an unbounded cardinality
-  needs proof from an actual run rather than a plausible reading of the code.
-  Triggers only on an explicit ask — "observe this run's telemetry", "check
-  what this run emitted", "prove this behavior with a trace", "does this
-  actually fan out the way I think", "/observe-run".
+  `verify-behavior` receipt (confirms / contradicts / ambiguous / null) that
+  grades a behavioral assertion — span count, parent/child structure,
+  duration, error-path status, fan-out, attribute cardinality, ordering —
+  against the observed spans, never against the diff read back. Inputs are a
+  command plus an expectation set. Walks two cheapest-first rungs (an
+  in-memory/file exporter, then `dash0 -X otlp proxy --agent-mode` plus `dash0
+  spans query`), stamps two-layer run identity, and self-skips when the repo
+  has no Observability Profile dev target. Vendor-neutral: OTLP is the
+  contract, Dash0 one implementation of the read. Use when a fan-out count, a
+  retry that fired twice, an error swallowed into a 200, an N+1, or an
+  unbounded cardinality needs proof from a real run rather than a reading of
+  the code. Triggers only on an explicit ask — "observe this run's telemetry",
+  "prove this behavior with a trace", "/observe-run".
 disable-model-invocation: false
 argument-hint: '<command> <expectation...> [--rung 1|2] [--run-id <id>] [--caller <name>]'
 license: MIT

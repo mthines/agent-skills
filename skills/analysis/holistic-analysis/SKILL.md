@@ -1,21 +1,19 @@
 ---
 name: holistic-analysis
 description: >
-  Forces a full holistic re-analysis when a fix or refactor isn't working. Instead
-  of continuing to patch in isolation, this skill triggers a structured step-back
-  analysis that traces the entire execution path end-to-end — from entry point to
-  exit — analyzing each block, every contract boundary, and the full data flow.
-  Three modes: "fix" (default) for bugs and broken behavior, "refactor" for
-  restructuring/improvement, and "review" for PR validation (returns structured
-  intent-match + system-fit findings for the `pr-reviewer` agent to
-  consume — never run on its own for routine review work). Trigger ONLY
-  when at least one isolated fix attempt has already failed, or the user
-  explicitly requests a full execution-path analysis — phrases like
-  "step back", "think holistically", "analyze the whole thing", "zoom out",
-  "look at the bigger picture", or "rethink this" qualify only in that
-  context. Never trigger for trivial one-line fixes or first-attempt
-  debugging. Also triggers on "/holistic", "/step-back", "/rethink",
-  "/zoom-out".
+  Forces a full step-back re-analysis when a fix or refactor is not working:
+  traces the whole execution path end-to-end — entry point to exit, every
+  block, every contract boundary, and the full data flow — instead of patching
+  in isolation. Three modes: `fix` (default) for bugs and broken behavior,
+  `refactor` for restructuring, and `review` for PR validation (returns
+  intent-match and system-fit findings for the `pr-reviewer` agent to consume
+  — never run standalone for routine review work). Trigger ONLY once at least
+  one isolated fix attempt has already failed, or on an explicit request for a
+  full execution-path analysis: "step back", "think holistically", "analyze
+  the whole thing", "zoom out", "look at the bigger picture", and "rethink
+  this" qualify in that context only. Never for trivial one-line fixes or
+  first-attempt debugging. Also triggers on "/holistic", "/step-back",
+  "/rethink", "/zoom-out".
 disable-model-invocation: false
 argument-hint: '[fix|refactor|review]'
 license: MIT

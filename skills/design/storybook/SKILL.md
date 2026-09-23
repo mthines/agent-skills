@@ -2,20 +2,19 @@
 name: storybook
 description: >
   Scaffolds, audits, and tests Storybook stories for React (web) and React
-  Native / Expo (native) component libraries. Generates three artefacts in
-  two files per invocation: a visual regression `*.stories.tsx` file
-  containing a `Default` story (variants grouped into a single snapshot)
-  and a `Playground` story (interactive `args` / `argTypes`), plus a
-  sibling `*.test.stories.tsx` interaction test file under a `/Tests`
-  namespace. Supports an opt-in, per-pathname auth flow whose
-  credentials live in the OS keychain (not in the repo). Iteration loop
-  uses the Playwright CLI against the running Storybook URL; visual
-  evidence delegates to the `pr-reviewer` agent and the `screen-recorder`
-  skill. An opt-in `--validate` phase drives Playwright adversarially
-  against the rendered story to find edge cases and break the component,
-  then fixes the defects it finds behind a confidence gate. Triggers on
-  "scaffold stories", "add storybook", "story for this component",
-  "interaction test for this story", "validate this story", "/storybook".
+  Native / Expo (native) component libraries. Generates three artefacts in two
+  files per invocation: a visual regression `*.stories.tsx` file holding a
+  `Default` story (variants grouped into one snapshot) and a `Playground`
+  story (interactive `args` / `argTypes`), plus a sibling `*.test.stories.tsx`
+  interaction test under a `/Tests` namespace. Supports an opt-in,
+  per-pathname auth flow whose credentials live in the OS keychain, never in
+  the repo. The iteration loop drives the Playwright CLI against the running
+  Storybook URL; visual evidence delegates to the `pr-reviewer` agent and the
+  `screen-recorder` skill. An opt-in `--validate` phase drives Playwright
+  adversarially against the rendered story, then fixes what it breaks behind a
+  confidence gate. Triggers on "scaffold stories", "add storybook", "story for
+  this component", "interaction test for this story", "validate this story",
+  "/storybook".
 argument-hint: "[component-path] [--platform web|native] [--no-interactions] [--no-playground] [--validate] [--auth <profile>]"
 license: MIT
 metadata:
