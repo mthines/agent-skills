@@ -25,9 +25,10 @@
  * independently, exactly as in prose — one failing does not block the rest.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { run as defaultRun } from "./prepare-review.mjs";
+import { run as defaultRun, scratchRoot } from "./prepare-review.mjs";
 
 /**
  * The last pre-flight before a review.create POST — a check that survives the renderers being
@@ -251,10 +252,21 @@ export async function executeWritePlan(writePlan, opts = {}) {
     if (!safety.ok) {
       executed.push({ kind: "review.create", ok: false, count: inlineCount, aborted: true, reason: safety.reason });
     } else {
+      // `gh api -f`/`--raw-field` always serialize their value as a JSON STRING — there is no
+      // flag that sends one as a JSON array or object, so `-f comments=<json>` 422s with
+      // `For 'properties/comments', "[...]" is not an array` (agents/pr-reviewer.md § Post with
+      // --input). Write the whole payload to a scratch file and POST it with `--input`, which
+      // sends the file verbatim as the request body and keeps `comments` a real array.
+      const reviewPayloadPath = join(scratchRoot(), `review-payload-${Date.now()}.json`);
+      writeFileSync(reviewPayloadPath, JSON.stringify({
+        commit_id: writePlan.review_create.commit_id,
+        body: writePlan.review_create.body ?? "<!-- PR_REVIEWER_POINTER -->",
+        event: "COMMENT",
+        comments: writePlan.review_create.comments,
+      }));
       const r = await runner("gh", [
         "api", `repos/${repo}/pulls/${writePlan.pr_number}/reviews`, "-X", "POST",
-        "-f", `commit_id=${writePlan.review_create.commit_id}`, "-f", "event=COMMENT",
-        "-f", `comments=${JSON.stringify(writePlan.review_create.comments)}`,
+        "--input", reviewPayloadPath,
       ]);
       executed.push({ kind: "review.create", ok: r.ok, count: inlineCount });
     }
@@ -368,6 +380,35 @@ async function selfTest() {
     const result = await executeWritePlan(writePlan, { runner: spy });
     check("empty inline comments -> no review.create in executed[]", !result.executed.some((/** @type {any} */ e) => e.kind === "review.create"));
     check("empty inline comments -> no review POST call was made", !calls.some((c) => c.args.some((/** @type {string} */ a) => a.includes("/reviews"))));
+  }
+
+  // review.create posts via --input (a real JSON array on disk), never `-f comments=<json>` —
+  // `gh api -f`/`--raw-field` always serialize as a JSON STRING, which 422s the reviews endpoint
+  // (agents/pr-reviewer.md § Post with --input; the bug this case guards against).
+  {
+    const { spy, calls } = mkSpy();
+    const writePlan = {
+      repo: "owner/repo", pr_number: 1,
+      review_create: {
+        commit_id: "abc1234",
+        comments: [{
+          path: "a.ts", line: 1, side: "RIGHT",
+          body: "nitpick: minor. <sup>`pr-reviewer` · commit `abc1234`</sup>",
+        }],
+      },
+    };
+    await executeWritePlan(writePlan, { runner: spy });
+    const reviewCall = calls.find((c) => c.args.some((/** @type {string} */ a) => a.includes("/reviews")));
+    check("review.create call is made", Boolean(reviewCall));
+    check("review.create never uses -f comments=<json-string>",
+      !(reviewCall?.args || []).some((/** @type {string} */ a) => a.startsWith("comments=")));
+    check("review.create uses --input with a file", (reviewCall?.args || []).includes("--input"));
+    const inputPath = reviewCall?.args[reviewCall.args.indexOf("--input") + 1];
+    const posted = JSON.parse(readFileSync(inputPath, "utf8"));
+    check("the posted payload's comments field is a real array, not a string",
+      Array.isArray(posted.comments) && posted.comments.length === 1);
+    check("the posted payload carries event=COMMENT and the commit_id verbatim",
+      posted.event === "COMMENT" && posted.commit_id === "abc1234");
   }
 
   // AC-3 case: ops run threads -> sticky -> review, with a resolve failure

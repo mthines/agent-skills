@@ -391,7 +391,7 @@ Resolve `AGENT0_FIX_LINKS`, `AGENT0_ENVIRONMENT`, and `AGENT0_ORG` per `review-c
 
 **The buttons are on by default; a repo opts out, it does not opt in.** They were off unless a flag was passed, then on only where an `agent0_environment` was named, and both defaults cost the same thing — the affordance that turns a review into an action was absent from every run nobody had remembered to configure. `agent0_environment` now picks the **host only** and no longer gates anything, so a repo that configured nothing renders buttons pointing at `production`. With `FIX_LINKS=off`, emit no buttons and skip this block entirely. Pass `AGENT0_ENVIRONMENT` to the link builder as `--env <env>` (default `production`; `development` → `app.dash0-dev.com`), and a non-empty `AGENT0_ORG` as `--org <slug>` — written `${AGENT0_ORG:+--org "$AGENT0_ORG"}` so an unset org contributes no argument at all rather than an empty one that swallows the next word (`agent0-fix-links.md § Organization`; **absent is the default and a correct link**, not a degraded one). Both are resolved **once per run** and are the same values at both button sites — never re-resolved or defaulted per finding. When on, render the "Fix with Agent0" buttons per `agents/shared/rules/agent0-fix-links.md`:
 
-- **Fix all (report).** If `FIX_LINKS_UNAVAILABLE` is set, skip this bullet entirely — no `FIX_ALL_URL` slot, no abort. Otherwise, at Step 4, build the fix-all deep link — `node "$BUILD_LINK" --env <env> [--org <org>] --source fix-all "<fix-all prompt>"` (`--source` is mandatory — `agent0-fix-links.md § Click attribution` — and is `fix-all` here, always), where `$BUILD_LINK="$AGENT_SUPPORT/pr-reviewer/scripts/build-agent0-link.mjs"` is derived from the **same already-resolved `$AGENT_MD`** Step 4a computes for `RENDER` (same block, same tool call — do not re-derive it, and never invoke the script by the bare path `agents/pr-reviewer/scripts/build-agent0-link.mjs`, which only resolves by accident when the shell's cwd happens to be this repo's own checkout). Pass the URL as the `FIX_ALL_URL` payload slot to `render-report.mjs` (`report-rendering.md`). The renderer turns it into the linked button above the accordion.
+- **Fix all (report).** If `FIX_LINKS_UNAVAILABLE` is set, skip this bullet entirely — no `FIX_ALL_URL` slot, no abort. Otherwise, at Step 4, build the fix-all deep link — `node "$BUILD_LINK" --env <env> [--org <org>] --source fix-all "<fix-all prompt>"` (`--source` is mandatory — `agent0-fix-links.md § Click attribution` — and is `fix-all` here, always), where `$BUILD_LINK="$AGENT_SUPPORT/pr-reviewer/scripts/build-agent0-link.mjs"` is derived from the **same already-resolved `$AGENT_MD`** Step 4a computes for `FINALIZE` (same block, same tool call — do not re-derive it, and never invoke the script by the bare path `agents/pr-reviewer/scripts/build-agent0-link.mjs`, which only resolves by accident when the shell's cwd happens to be this repo's own checkout). Pass the URL as the `FIX_ALL_URL` payload slot to `render-report.mjs` (`report-rendering.md`). The renderer turns it into the linked button above the accordion.
   - `OPEN_FINDING_COUNT` — the count of open findings **authored by `{bot_login}`**: this run's `issue:` / `suggestion:` inline findings (the Step 4b payload — known here, even though the comments post after the report) plus the carried-forward `OPEN_THREADS` entries **whose author is `{bot_login}`**, deduplicated by `path:line`. It is a **routing input only** and is never filled into a prompt — its sole job is to pick between the `/pr-fix` template and the CI-only variant below. Filter that subset explicitly rather than taking `OPEN_THREADS` whole: Gate 3 tracks every open thread, bot **or** human (Step 1.0 — "Both count"), so an unfiltered union would route a PR with only human threads open to the `/pr-fix` template when `/pr-fix` has nothing of this reviewer's to apply. Nothing about the fill reads the report body or the sticky marker.
   - `{bot_login}` is `ME` (Step 0.5), falling back to `PRIOR_REPORT_AUTHOR` (Step 0.7) — the same identity ladder `prior-comment-awareness.md` uses, already resolved earlier in this run; do not re-query it here.
   - **When `{bot_login}` is resolved and `OPEN_FINDING_COUNT` is non-zero**, use the `/pr-fix` prompt from `agent0-fix-links.md § Prompt templates`, filled with the PR URL and `{bot_login}`. Fill the `<author>` argument always — `/pr-fix` excludes bot authors unless one is named, so an omitted login silently skips every finding of a reviewer posting as a bot.
@@ -2618,27 +2618,20 @@ state, and Step 4c writes it as `open_thread_ids` for the next run's `RESOLVED_S
 
 #### Build the payload, then run the renderer
 
-`REPORT_BODY` is **not** written by hand. The layout lives in one template
-([`templates/report-body.md`](./pr-reviewer/templates/report-body.md)) and is filled by one script
-([`scripts/render-report.mjs`](./pr-reviewer/scripts/render-report.mjs)). Your job is the **data**;
-the script owns the markup.
+`REPORT_BODY` is **not** written by hand. Assembling the renderer payload from `context.json`
+(`prepare-review.mjs`'s output, extended with the `context.render.*` passthrough bag below) and
+`judgments.json`, then running [`render-report.mjs`](./pr-reviewer/scripts/render-report.mjs), is
+[`finalize.mjs`](./pr-reviewer/scripts/finalize.mjs)'s job — the same renderer
+`finalize.mjs --replay-fixtures` verifies byte-identical against every `report-body/*.expected.md`
+fixture (AC-11). Your job is the judgment inputs, not the markup.
 
 This split exists because hand-rendering failed repeatedly in production. Five observed runs
 (`mthines/lorekit#482`, `#492` ×3, `#495`) each read a correct spec and posted a report with no
-`<!-- PR_REVIEWER_REPORT -->` marker and no `Review details` accordion, because the layout lived in
-three ~85%-identical templates 280 lines below this step and got averaged into a remembered shape
-rather than copied. Layout is not a judgment call, so it is no longer yours.
+`<!-- PR_REVIEWER_REPORT -->` marker and no `Review details` accordion, because the layout lived
+in three ~85%-identical templates 280 lines below this step and got averaged into a remembered
+shape rather than copied. Layout is not a judgment call, so it is no longer yours.
 
 ```bash
-# The renderer ships beside this agent definition. Resolve it from the definition's real path.
-# `readlink -f` is GNU-only — BSD/macOS lacks it — so fall back to a pwd -P walk, and NEVER let an
-# empty AGENT_MD through: AGENT_SUPPORT is then "", making RENDER the absolute path
-# /pr-reviewer/scripts/render-report.mjs, which fails as "file not found" and reads like a
-# missing renderer rather than a failed resolution.
-# resolve() is ALSO defined in `Locating this agent's own files` (Step 0.1) and at Step 1.2 (the
-# shape-classifier resolution) — shell state does not persist between tool calls, so each call
-# site carries the definition. Edit all three together; L1 G33i asserts the bodies stay
-# byte-identical.
 resolve() {  # portable readlink -f
   [ -e "$1" ] || return 1
   ( cd "$(dirname "$1")" && t=$(basename "$1")
@@ -2657,71 +2650,48 @@ a hand-written report that drifts from the template is a defect every consumer o
 inherits (reviewer-report-ingest.md's parser, the shape-guard workflow, the next run's own re-read).
 Report the error verbatim and stop — see the fallback contract two paragraphs below."
 fi
+FINALIZE="$AGENT_SUPPORT/pr-reviewer/scripts/finalize.mjs"
+[ -f "$FINALIZE" ] || abort "finalize.mjs not found at $FINALIZE (resolved from $AGENT_MD)"
+# Bound here for reuse below (§ The bytes that get posted) — a direct render-report.mjs
+# re-render, the one caller that still needs the bare renderer rather than the whole pipeline.
 RENDER="$AGENT_SUPPORT/pr-reviewer/scripts/render-report.mjs"
-[ -f "$RENDER" ] || abort "renderer not found at $RENDER (resolved from $AGENT_MD)"
 
-# BUILD_LINK: the Fix-all button's script, resolved from the SAME $AGENT_MD as RENDER above —
-# never a bare `agents/pr-reviewer/scripts/build-agent0-link.mjs`, which only happens to resolve
-# when the shell's cwd is this repo's own checkout (§ Fix-with-Agent0 buttons → Fix all). When FIX_LINKS
-# is off this is unused; computing it here regardless costs nothing and keeps one resolution point.
-# Unlike RENDER, a missing script here is non-fatal — the buttons are opt-in decoration, not the
-# report itself — so skip them rather than abort()ing the whole review over a missing file.
-BUILD_LINK="$AGENT_SUPPORT/pr-reviewer/scripts/build-agent0-link.mjs"
-[ -f "$BUILD_LINK" ] || FIX_LINKS_UNAVAILABLE=true   # checked before building any button below
-
-REPORT_BODY=$(node "$RENDER" /tmp/report-payload.json)   # non-zero exit ⇒ nothing on stdout
+node "$FINALIZE" \
+  --context /tmp/review-context.json --judgments /tmp/judgments.json --out-dir /tmp/finalize \
+  || abort "finalize.mjs failed — report the stderr verbatim; never compose the body by hand"
+REPORT_BODY=$(cat /tmp/finalize/report-body.md)
 ```
 
-Each `abort` above is the *resolution* failing, which is a different diagnosis from the renderer
-rejecting a payload — say which one happened. Both take the same path from here: report the error,
-post no report object, and never hand-write the body.
+`--out-dir` receives `finalize-result.json`, `report-body.md`, and `inline/*.md` (one file per
+posted finding). A non-zero exit is `render-report.mjs` rejecting the payload it was handed — an
+unknown key, a missing required slot, an invalid gate glyph, a smuggled `**Verdict**` line, or a
+template that lost its marker or accordion — report the error and post nothing.
 
-Write the payload to `/tmp/report-payload.json` as a flat JSON object of slot → string. The keys are
-listed under *REPORT_BODY payload* below. The script **fails closed**: an unknown key, a missing
-required slot, an invalid gate glyph, a smuggled `**Verdict**` line, or a template that lost its
-marker or accordion all exit non-zero and print nothing, so a malformed report cannot be posted.
+**If `finalize.mjs` cannot be resolved or fails, do not fall back to composing the body by hand**
+— that is the exact failure this replaces. Report the error verbatim in the Step 5 terminal output
+along with the payload it was given, post the inline findings (Step 4b still applies), and leave
+the sticky untouched. A missing report is recoverable; a malformed one that consumers then parse
+is not.
 
-`RUN.at` is required alongside `mode` / `sha` — an ISO-8601 UTC timestamp for **this** run (`date -u
-+%Y-%m-%dT%H:%M:%SZ`), the same format `runs[].at` already uses in the Step 0.7 state record. The
-renderer folds it into the shared footer's `updated <stamp> UTC` clause, rendered **below** the
-`Review details` accordion and therefore visible on the collapsed comment. This exists because editing a GitHub comment sends no notification —
-the sticky's "edited" tag was the only trace that a rewritten report had actually changed, and a
-reader had to open the edit history to see when. A visible timestamp does not create a
-notification either, but it turns "did this change since I last looked?" into a glance at the
-collapsed comment instead of a click into its history, on every run — including the ones that
-touch only the report and post no review (Step 4b).
+**What the model still supplies**, via `judgments.json` (schema:
+[`schemas/judgments.schema.json`](./pr-reviewer/schemas/judgments.schema.json), enforced by
+`validate-judgments.mjs`):
 
-**Supply the four detection-core slots on every routed run.** They are the report's declaration of
-what this review actually did, and omitting them makes a shallow run indistinguishable from a deep
-one — the failure Phases A and C exist to fix:
+| Field | Content |
+| --- | --- |
+| `summary` | The report's top-level `SUMMARY` scalar (≤ 240 chars) — the one line of prose `finalize.mjs` cannot derive from the candidates. |
+| `gates.gate1` | Description-vs-code judgment (Gate 1). |
+| `gates.gate4` | Self-review-signals judgment (Gate 4). |
+| `gates.gate5` | Docs judgment (Gate 5). |
+| `candidates[]`, `threads[]`, `lenses[]`, `memory` | Everything Steps 2/2.4–2.9c produced. `finalize.mjs` computes thresholds, the defer band, suppression, placement, caps, and the gates/verdict from these — it invents none of it. |
 
-| Slot | From | Note |
-|---|---|---|
-| `RUN.tier` | `DEPTH_TIER` (Step 1.2b) | The renderer rejects a `tier` that disagrees with `mode`, and rejects `tier: deep` with `depth: diff-only`. |
-| `RUN.depth` | `DEPTH_CAPABILITY` (Step 1.1b) | The renderer expands the label; pass the bare value. |
-| `IMPACT` | `/tmp/pr-impact.json` (Step 1.2a), plus the per-symbol `verified_unaffected` / `findings` counts the consumer-impact finder actually produced | **Never fill `verified_unaffected` from the graph's consumer count.** It is what the finder *checked and cleared*; the renderer enforces `verified_unaffected + findings <= consumer_files` and states the untraced remainder, so an inflated figure is a claim of coverage that did not happen. Omit the whole slot when the graph is empty. |
-| `WITHHELD` | the `unobtainable` verdicts from Step 2.6b | `reason` is required; `prefix` may only be `suggestion` or `question`. |
-
-Put the routing inputs (`blast_radius=…`, `semver_delta=…`) in `RUN_NOTE`. There is no tier-tally
-slot to fill: supply `FINDINGS[]` — one entry per finding you posted inline, carrying the same
-`title` you gave `render-comment.mjs` — and the renderer derives the headline's count and glyph, the
-visible findings index, and the `Severity — ` tally from that one array.
-
-**A caveat about what the review covered goes in `RUN_ANOMALY`, never in `RUN_NOTE`.** `RUN_NOTE` is
-appended to the run line, which is the densest line in the report; `RUN_ANOMALY` renders on its own
-`⚠️` line directly beneath it. A polluted compare range, an applied capability cap, or a truncated
-fetch changes what the review *is*, so it gets the visible line — the renderer rejects a `RUN_NOTE`
-carrying a `⚠️` for exactly that reason. Do not prefix your own glyph; the renderer adds it.
-
-`MEMORIES_USED[]` entries carry `kind` (`knowledge` / `hotspot` /
-`rule`) and, for a `rule`, a non-empty `evidence` array of the PR numbers it was learned from — the
-renderer rejects a `rule` without one, because a suppression with no evidence trail is exactly the
-unauditable suppression [`memory.md`](./pr-reviewer/rules/memory.md) forbids.
-
-**If the renderer cannot be resolved or fails**, do not fall back to composing the body by hand —
-that is the exact failure this replaces. Report the error verbatim in the Step 5 terminal output
-along with the payload you built, post the inline findings (Step 4b still applies), and leave the
-sticky untouched. A missing report is recoverable; a malformed one that consumers then parse is not.
+There is no second, hand-assembled JSON file: every slot the old manual payload table listed
+(`RUN.tier`, `RUN.depth`, `IMPACT`, `WITHHELD`, `MEMORIES_USED[]`, `FINDINGS[]`, …) — the full list
+lives at `report-rendering.md` § REPORT_BODY payload — is read straight off `context.json` and
+`judgments.json` by `finalize.mjs`. `context.render.*` remains the one passthrough bag for facts
+`finalize.mjs` was never scoped to compute — `FIX_ALL_URL` (§ Fix-with-Agent0 buttons, above),
+`MEMORIES_SUMMARY`, `INTEGRATIONS`, `SKIPPED_FILES`, `RUN_ANOMALY`, `carriedForward`. Set these on
+`context.json` before invoking `finalize.mjs`; never post-patch the rendered body.
 
 **Assert these seven things on `REPORT_BODY` immediately before the write, whatever produced it.**
 The renderer guarantees them, so on the normal path this is redundant — and that is the point: it is
@@ -2823,7 +2793,7 @@ obligations, and the first is now the load-bearing one:
      # second --relay-check on an unchanged body can never reach 3 and this branch would be dead
      # code that reads as coverage. The inline block at Step 2.8 already does it this way.
      if [ -n "$RERENDER_WITH_NO_FIX_LINKS" ]; then
-       jq 'del(.FIX_ALL_URL)' /tmp/report-payload.json > /tmp/report-payload.nofix.json
+       jq '.payload | del(.FIX_ALL_URL)' /tmp/finalize/finalize-result.json > /tmp/report-payload.nofix.json
        node "$RENDER" /tmp/report-payload.nofix.json > /tmp/report-body.md \
          || abort "re-render without the fix link failed — nothing on stdout, nothing to post"
        node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
@@ -2876,37 +2846,16 @@ obligations, and the first is now the load-bearing one:
    one. So the check runs **before** the write there — see Step 2.8 — and a comment that cannot be
    reproduced faithfully is dropped and logged, exactly like a render failure.
 
-Write the rendered body as-is — **nothing is appended to it**. The body a reader sees is the whole
-body; the run history lives in the state record (Step 4c), not in an HTML comment at the bottom of
-the report:
 
-```bash
-# /tmp/report-body.md was written by the assertion block above — the same bytes, unmodified.
-
-# Capture html_url in every branch — Step 4c records it as the state record's sticky_url. The
-# marker-only pointer no longer links to it (the Full-report link lives in the sticky itself).
-if [ -n "$STICKY_COMMENT_ID" ]; then
-  if ! STICKY_URL=$(gh api repos/$RESOLVED_REPO/issues/comments/$STICKY_COMMENT_ID \
-       --method PATCH --field body=@/tmp/report-body.md --jq .html_url); then
-    # A cached id can be stale: a human may have deleted the comment. Re-scan by marker
-    # once (the Step 0.7 fallback fetch), then PATCH the found id or POST a fresh sticky.
-    # Never treat a 404 on a cached id as "no sticky exists" without looking.
-    STICKY_COMMENT_ID=""   # then retry this block once
-  fi
-fi
-if [ -z "$STICKY_COMMENT_ID" ]; then
-  STICKY_URL=$(gh api repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments \
-    --method POST --field body=@/tmp/report-body.md --jq .html_url)
-  STICKY_COMMENT_ID=$(gh api repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments --paginate \
-    --jq '[.[] | select((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->"))] | last.id')
-fi
-```
-
-**The cached `sticky_comment_id` is an optimisation, not an authority.** When it comes from the
-state record (Step 0.7's happy path), no marker scan has run this session, so a `404` on the
-`PATCH` is the first evidence the comment is gone. Re-scan by marker before creating anything:
-posting straight to `/issues/{n}/comments` on a `404` is how a PR that already has a sticky
-(created under a different branch name, say) ends up with two.
+**The write itself is `execute-write-plan.mjs`'s `sticky.upsert` op** (self-tested, AC-3): `PATCH`
+the known `comment_id`, or `POST` a fresh comment when none is known, passing the exact bytes
+verified above (`report-body.md`) — never a re-read, never a re-composition. On any write failure
+— including a stale cached `comment_id` — it degrades to posting the compact pointer body rather
+than losing the write silently. **It does not yet re-scan the PR for an existing marker-bearing
+comment before degrading** (a known gap, not a silent one): the cached id is an optimisation from
+the state record, not an authority, and a `404` on it is the first evidence the comment is gone.
+On the MCP path, the op → tool mapping and the "no update-comment tool" degradation are in
+[`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#write-plan-op--mcp-tool-map).
 
 Exactly **one** sticky per PR. If Step 0.7 somehow found more than one marker-bearing comment, patch
 the newest and leave the others — never delete a comment, and never create a second sticky when one
@@ -3120,7 +3069,7 @@ needed.
 **`POINTER_BODY` is not written by hand either — the same discipline as `REPORT_BODY` applies.**
 Build a small JSON payload and run it through
 [`scripts/render-pointer.mjs`](./pr-reviewer/scripts/render-pointer.mjs), resolved the same way as
-`RENDER` in Step 4a (beside this agent definition):
+`FINALIZE` in Step 4a (beside this agent definition):
 
 ```bash
 POINTER="$AGENT_SUPPORT/pr-reviewer/scripts/render-pointer.mjs"

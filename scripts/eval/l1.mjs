@@ -3985,7 +3985,7 @@ const isPollBlock = (block) =>
 
   // Shell state does not persist between the agent's tool calls, so resolve() is defined at
   // EVERY call site — § Locating this agent's own files / Step 0.1, Step 1.2 (CLASSIFY), and
-  // Step 4a (RENDER) — each with an edit-them-together note. This asserts the bodies have not
+  // Step 4a (FINALIZE) — each with an edit-them-together note. This asserts the bodies have not
   // drifted; the regression that shipped was defining it at only one.
   const RESOLVE_SITES = 3;
   const resolves = [...readRepo("agents/pr-reviewer.md")
@@ -4107,7 +4107,7 @@ const isPollBlock = (block) =>
 }
 
 // ── G37: the Fix-with-Agent0 scripts are never invoked by a bare relative path ──
-// build-agent0-link.mjs must be resolved from $AGENT_MD the same way RENDER/CLASSIFY/POINTER
+// build-agent0-link.mjs must be resolved from $AGENT_MD the same way FINALIZE/CLASSIFY/POINTER
 // already are — a bare `agents/pr-reviewer/scripts/build-agent0-link.mjs` only happens to
 // resolve when the shell's cwd is this repo's own checkout, which silently breaks on a
 // cross-repo dispatch (observed live: mthines/lorekit#318 still linked to app.dash0.com hours
@@ -4126,10 +4126,14 @@ const isPollBlock = (block) =>
   // that re-derives `${AGENT_MD%/pr-reviewer.md}` inline is drift: it works, but it puts the
   // support-tree contract in N places, which is how the rule-file paths came to be bare
   // repo-relative in the first place.
-  s.check("G37b pr-reviewer.md derives BUILD_LINK from $AGENT_SUPPORT, same as RENDER",
+  // FINALIZE is the current call-site sibling of BUILD_LINK — Phase 5 retired the direct
+  // RENDER invocation (render-report.mjs now runs inside finalize.mjs), so the guard's own
+  // "same as ___" anchor moved with it; re-anchoring here is the guard tracking the code
+  // instead of restating a call site that no longer exists.
+  s.check("G37b pr-reviewer.md derives BUILD_LINK from $AGENT_SUPPORT, same as FINALIZE",
     /BUILD_LINK="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/build-agent0-link\.mjs"/.test(
       readRepo("agents/pr-reviewer.md"))
-    && /RENDER="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/render-report\.mjs"/.test(
+    && /FINALIZE="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/finalize\.mjs"/.test(
       readRepo("agents/pr-reviewer.md")));
 
   // G37c: every once-per-run destination argument must be named at BOTH button sites. This is the
