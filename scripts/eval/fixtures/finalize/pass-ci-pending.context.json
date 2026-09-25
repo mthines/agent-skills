@@ -1,0 +1,12 @@
+{
+  "mode": "full",
+  "head_sha": "bde3c2f",
+  "delta_lines": 128,
+  "render": {
+    "at": "2026-08-15T09:12:00Z",
+    "INTEGRATIONS": "not activated",
+    "SKIPPED_FILES": "none",
+    "CI_NOTE": "3 checks pending on `a1b2c3d`."
+  },
+  "threads": []
+}

@@ -174,6 +174,35 @@
           "description": "Required in spirit whenever verdict is unobtainable — enforced as a domain rule in validate-judgments.mjs, not expressible as a schema-level conditional in the supported keyword subset.",
           "type": "string",
           "minLength": 1
+        },
+        "url": {
+          "description": "AC-11/D5: the GitHub discussion permalink for this finding, when already known (e.g. a re-review reading its own prior comment back). finalize.mjs never invents this — it is a fact carried through, never computed — and a first-review candidate omits it (execute-write-plan.mjs's own review.create response is the real source on a first post, out of finalize.mjs's scope).",
+          "type": "string",
+          "minLength": 1
+        },
+        "fix_url": {
+          "description": "AC-11/D5: the pre-built Agent0 `/pr-fix` deep link for this one finding, when already assembled upstream. finalize.mjs relays it verbatim into render-comment.mjs's FIX_URL — the URL-building grammar itself stays out of scope (agents/pr-reviewer's own report-rendering.md owns it).",
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_anchors": {
+          "description": "AC-11/D5: render-comment.mjs's structured EVIDENCE — additional grounding locations beyond this candidate's own path/line (e.g. a consumer site a contract break also touches). Distinct from the pre-verification `evidence` string array above.",
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "line"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "line": { "type": "integer", "minimum": 1 },
+              "note": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "pseudo": {
+          "description": "AC-11/D5: render-comment.mjs's PSEUDO — the FENCE is illustrative pseudo-code, not a literal patch.",
+          "type": "boolean"
         }
       }
     },

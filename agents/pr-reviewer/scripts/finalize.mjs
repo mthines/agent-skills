@@ -11,18 +11,21 @@
  *
  * The finalize/*.mjs modules are a PURE CORE (D18): no I/O, clock, or env.
  * Only this file's CLI `main()` layer does I/O (reading --context/--judgments,
- * spawning renderers, writing the write plan / findings bus). `--now <iso>`
- * injects the clock so `--replay-fixtures` is byte-deterministic.
+ * spawning renderers, writing the write plan / findings bus). Every fixture
+ * used by `--replay-fixtures` carries its own `render.at` timestamp, so no
+ * live-clock injection is needed for byte-determinism.
  *
- * SCOPE NOTE for this commit (documented honestly, not silently dropped):
- * AC-10 (this file's own --self-test, covering the defer band / drop /
- * suppression / caps / retarget / Gate 3 / Gate 2-informational / --skip-gates
- * cases) and AC-19 (the findings-bus writer) are implemented and green.
- * AC-11 (byte-identical replay against the existing report-body / inline-
- * comment fixtures) and AC-13 (the dash0hq/dash0#20230 shadow-report
- * comparison) are NOT done in this commit — see the plan's Progress Log for
- * why, and `finalize/payload.mjs`'s own header for the precise boundary of
- * what has and hasn't been verified against render-report.mjs.
+ * SCOPE NOTE (documented honestly, not silently dropped):
+ * AC-10 (this file's own --self-test) and AC-19 (the findings-bus writer) are
+ * implemented and green. AC-11 (`--replay-fixtures`, byte-identical replay
+ * against the report-body / inline-comment fixtures) is now implemented below
+ * and gets 8/9 fixtures byte-identical + validate-report-shape.mjs-conformant
+ * — the 9th (deep.expected.md) is a documented, evidenced fixture-internal
+ * inconsistency this pipeline cannot honestly reproduce; see
+ * `runReplayFixtures()`'s own `KNOWN_FIXTURE_DEFECTS` comment and
+ * `.agent/{branch}/checks.yaml`'s AC-11 entry (status: unsatisfiable, with
+ * evidence). AC-13 (the dash0hq/dash0#20230 shadow-report comparison) is a
+ * separate deliverable — see the plan's Progress Log.
  */
 
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
@@ -31,13 +34,17 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { dedupe, markAgreementPromoted } from "./finalize/dedupe.mjs";
-import { resolveThreshold, dispose, deferFloor } from "./finalize/thresholds.mjs";
+import { resolveThreshold, dispose, deferFloor, CLAIM_PREFIXES } from "./finalize/thresholds.mjs";
 import { applySuppression } from "./finalize/suppression.mjs";
 import { validateLine } from "./finalize/line-validity.mjs";
 import { place } from "./finalize/placement.mjs";
 import { computeGates } from "./finalize/gates.mjs";
-import { buildReportPayload, buildQualitySummary } from "./finalize/payload.mjs";
+import {
+  buildReportPayload, buildQualitySummary,
+  toFindingBullet, toAdvisoryFinding, toOpenThreadBullet, toInlineCommentPayload,
+} from "./finalize/payload.mjs";
 import { toFindingsBusRecords } from "./finalize/findings-bus.mjs";
+import { scratchRoot } from "./prepare-review.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FINALIZE_SELF_TESTS = [
@@ -103,44 +110,120 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
 
   const { inline, deferred: overCapDeferred } = place(lineValidated, { profile });
 
+  // AC-11/D5: the REPORT's FINDINGS table (and the Code review gate it feeds) is for
+  // claim-prefix findings — the same `issue:`/`suggestion:` split dispose()/thresholds.mjs
+  // already use to decide clear vs. defer. A posted `nitpick:`/`question:` DOES still go out as
+  // its own inline PR review comment (render-comment.mjs has no such split) — it just does not
+  // also earn a FINDINGS[] table row, the same way it earns no claim-threshold defer band. It
+  // renders instead in the "verified, too minor to comment on" ADDITIONAL_FINDINGS appendix,
+  // alongside genuine per-file/total-cap overflow. `inline`/`overCapDeferred` (undivided) still
+  // feed the identity check and the findings-bus writer below — this split is report-rendering
+  // only.
+  //
+  // Ordering: `inline`'s non-blocking slice is sorted by place()'s compareForPlacement
+  // (prefix priority, then materiality, then score, then line) — a ranking meant to decide
+  // which CLAIMS earn a scarce inline slot. A non-claim item never competes for that slot
+  // (its `nitpick:`/`question:` comment posts regardless, cap or no cap), so re-using that
+  // ranking for the ADDITIONAL_FINDINGS appendix would apply a claim-scarcity ordering to
+  // items that were never scarce. Re-derive inlineNonClaims from `lineValidated` (the
+  // pre-place, original-candidate-order array) filtered to the same object identities
+  // place() decided were inline — this restores candidate order without re-running or
+  // second-guessing place()'s own clear/defer decision.
+  const inlineNonClaimsSet = new Set(inline.filter((f) => !CLAIM_PREFIXES.has(f.prefix)));
+  const inlineClaims = inline.filter((f) => CLAIM_PREFIXES.has(f.prefix));
+  const inlineNonClaims = lineValidated.filter((f) => inlineNonClaimsSet.has(f));
+
+  // AC-11/D5: report-rendering.md's PARTIAL_REVIEW banner ({calls, scanned, total},
+  // scanned < total) means the code-review finders never finished a pass — Gate 6 renders
+  // ⏭️ "not evaluated this run" instead of claiming a verdict it can't honestly make.
+  const pr = context?.render?.PARTIAL_REVIEW;
+  const partialReview = !!(pr && typeof pr.scanned === "number" && typeof pr.total === "number" && pr.scanned < pr.total);
+
   const gates = computeGates({
     skipGates,
     judgmentsGates: judgments?.gates,
     contextThreads: context?.threads || [],
     judgmentThreads: judgments?.threads || [],
-    placement: { inline, deferred: overCapDeferred },
+    placement: { inline: inlineClaims, deferred: overCapDeferred },
+    partialReview,
   });
 
   const produced = (judgments?.candidates || []).length;
+  // D5/AC-11: the rendered QUALITY line's "cleared" reads as the posted count, not the
+  // pre-placement dispose-clear pool (`cleared.length`, kept internally for the identity check
+  // below) — every report-body fixture shows `cleared N == posted inline N`, and the pool
+  // concept (what got suppressed/anchorless/over-cap out of the pool) is already visible via
+  // "carried forward"/"deferred"/"below-bar" plus the optional QUALITY_DROPPED breakdown, so
+  // showing the pre-placement number a second time under a different label would be redundant,
+  // never observed, and unexplained by any fixture.
   const quality = buildQualitySummary({
     produced,
-    dedupeDropped: dedupeDropped.length,
-    confidenceDrops: confidenceDropped.length,
     confidenceDeferred: advisoryDeferred.length,
     suppressed: suppressed.length,
-    cleared: cleared.length,
-    deferredOverCap: overCapDeferred.length,
-    posted: inline.length,
+    cleared: inlineClaims.length,
+    deferredOverCap: overCapDeferred.length + inlineNonClaims.length,
+    posted: inlineClaims.length,
+    carriedForward: context?.render?.carriedForward ?? 0,
   });
 
   // The identity finalize must never violate: cleared - deferred(over cap) == posted-worthy.
   const identityHolds = cleared.length - suppressed.length - anchorless.length - overCapDeferred.length === inline.length;
 
+  const runSha = sha || context?.head_sha || judgments?.head_sha || "unknown";
+
+  // D5: the diff-only-cap carve-out (Phase 1, render-report.mjs's TIER_FOR_MODE) — a
+  // capability-capped run auto-names its own anomaly rather than requiring the caller to
+  // remember to. An explicit context.render.RUN_ANOMALY always wins (a real anomaly, e.g. a
+  // base-branch merge pollution, is never masked by the cap-derived one).
+  const capApplied = context?.routing?.capApplied === true;
+  const autoRunAnomaly = capApplied
+    ? `depth capability (${context?.workspace?.depthCapability || context?.depthCapability || "diff-only"})`
+      + " capped this run below the deep tier its mode would otherwise require"
+    : undefined;
+
+  const tier = context?.routing?.tier;
+  const depth = context?.workspace?.depthCapability || context?.depthCapability;
   const run = {
     mode: context?.mode || "unknown",
-    sha: sha || context?.head_sha || judgments?.head_sha || "unknown",
+    sha: runSha,
+    ...(context?.priorSha ? { prior_sha: context.priorSha } : {}),
     delta_lines: context?.delta_lines ?? 0,
-    tier: context?.routing?.tier || "unknown",
-    depth: context?.workspace?.depthCapability || context?.depthCapability || "unknown",
+    ...(context?.render?.at ? { at: context.render.at } : {}),
+    // RUN.tier/RUN.depth are OPTIONAL to render-report.mjs (only validated when present) — a run
+    // with no routed tier (e.g. gates-only / zero-delta) must OMIT them, never fall back to a
+    // literal "unknown", which is not a member of VALID_TIERS/VALID_DEPTHS and would fail render.
+    ...(tier ? { tier } : {}),
+    ...(depth ? { depth } : {}),
     summary: judgments?.summary || "",
+    memoriesSummary: judgments?.memory?.summary || context?.render?.MEMORIES_SUMMARY,
+    integrations: context?.render?.INTEGRATIONS,
+    optimalityLog: judgments?.lenses?.optimality_log,
+    standardsLog: judgments?.lenses?.standards_log,
+    measurabilityLog: judgments?.lenses?.measurability_log,
+    skippedFiles: context?.render?.SKIPPED_FILES,
+  };
+
+  const extras = {
+    ...(context?.render || {}),
+    RUN_ANOMALY: context?.render?.RUN_ANOMALY ?? autoRunAnomaly,
+    ...(judgments?.lenses?.optimality_cards?.length
+      ? { OPTIMALITY_CARDS: judgments.lenses.optimality_cards.map((/** @type {any} */ c) => c.markdown ?? c) }
+      : {}),
   };
 
   const payload = buildReportPayload({
-    gates, run, findings: inline, deferred: overCapDeferred, lowConfidence: advisoryDeferred, quality,
+    gates,
+    run,
+    findings: inlineClaims.map(toFindingBullet),
+    deferred: inlineNonClaims.concat(overCapDeferred).map(toAdvisoryFinding),
+    lowConfidence: advisoryDeferred.map(toAdvisoryFinding),
+    quality,
+    extras,
   });
+  payload.OPEN_THREADS = (gates.g3?.open || []).map(toOpenThreadBullet);
 
   const findingsBusRecords = toFindingsBusRecords(inline.concat(overCapDeferred), {
-    iteration, sha: run.sha,
+    iteration, sha: runSha,
   });
 
   return {
@@ -178,14 +261,133 @@ function usage() {
   console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--dry-run] [--skip-gates] [--self-test] [--replay-fixtures]");
 }
 
+// AC-11: the 5 report-body fixtures this replay drives — each backed by a
+// scripts/eval/fixtures/finalize/{name}.{context,judgments}.json pair, crafted
+// to make finalizeReview()'s real dispose/suppress/place/gate pipeline land on
+// the exact payload scripts/eval/fixtures/report-body/{name}.json already
+// encodes, then diffed byte-for-byte against {name}.expected.md.
+const REPORT_BODY_FIXTURES = ["pass", "pass-ci-pending", "warn", "fail", "deep"];
+// AC-11: the 4 inline-comment fixtures — each pair's judgments.json carries
+// exactly one candidate that clears, and the replay maps finalizeReview()'s
+// sole r.inline[0] through toInlineCommentPayload() before rendering.
+const INLINE_COMMENT_FIXTURES = ["issue-blocking", "nitpick", "question-unverified", "suggestion-pseudo"];
+const INLINE_COMMENT_SHA = "7389036"; // matches every inline-comment/*.expected.md's SHA verbatim
+
+/**
+ * A known, evidenced boundary (not a silent gap): scripts/eval/fixtures/report-body/deep.json's
+ * own QUALITY string claims "below-bar 1" with a matching LOW_CONFIDENCE_FINDINGS array entirely
+ * ABSENT from the same fixture — free text asserting a fact its own structured sibling contradicts.
+ * render-report.mjs never cross-checks QUALITY's prose against LOW_CONFIDENCE_FINDINGS (only the
+ * `posted inline N == FINDINGS.length` regex is enforced), so this shipped unnoticed; a real
+ * finalizeReview() run cannot reproduce it, because THIS pipeline computes both from the SAME
+ * advisoryDeferred array by construction (the real invariant every other fixture already proves:
+ * pass/pass-ci-pending/warn/fail all replay byte-identical, INCLUDING fail.json's own below-bar
+ * case with a populated LOW_CONFIDENCE_FINDINGS section). Reproducing deep.json's exact bytes
+ * would mean deliberately breaking that invariant for one candidate — modeling the bug rather than
+ * the renderer. AC-12 holds scripts/eval/fixtures/report-body/** byte-unchanged vs origin/main, so
+ * this file cannot be corrected here either. Documented per the check-gaming-forbidden /
+ * unsatisfiable-abort-affordance rule, not worked around.
+ */
+/** @type {Record<string, string>} */
+const KNOWN_FIXTURE_DEFECTS = {
+  deep: "scripts/eval/fixtures/report-body/deep.json QUALITY says \"below-bar 1\" with no "
+    + "LOW_CONFIDENCE_FINDINGS entry backing it — a pre-existing fixture-internal inconsistency "
+    + "(not a finalize.mjs defect); see finalize.mjs's runReplayFixtures() comment.",
+};
+
 async function runReplayFixtures() {
-  // AC-11 (byte-identical replay against report-body/inline-comment fixtures)
-  // is deliberately not implemented in this commit — see this file's own
-  // header and the plan's Progress Log. Reporting a real, non-zero failure
-  // here (rather than a silent no-op success) is the honest state: the check
-  // this flag exists to satisfy has not been done.
-  console.error("finalize.mjs --replay-fixtures: not yet implemented (AC-11 deferred — see plan.md Progress Log)");
-  process.exit(1);
+  const repoRoot = join(HERE, "..", "..", "..");
+  const finalizeFixturesDir = join(repoRoot, "scripts", "eval", "fixtures", "finalize");
+  const reportBodyDir = join(repoRoot, "scripts", "eval", "fixtures", "report-body");
+  const inlineCommentDir = join(repoRoot, "scripts", "eval", "fixtures", "inline-comment");
+  const renderReportScript = join(HERE, "render-report.mjs");
+  const renderCommentScript = join(HERE, "render-comment.mjs");
+  const validateShapeScript = join(repoRoot, "scripts", "validate-report-shape.mjs");
+
+  const scratchDir = join(scratchRoot(), "finalize-replay");
+  mkdirSync(scratchDir, { recursive: true });
+
+  let failed = 0;
+  let knownDefects = 0;
+  const results = [];
+
+  const renderVia = (/** @type {string} */ script, /** @type {any} */ payload, /** @type {string} */ tag) => {
+    const payloadPath = join(scratchDir, `${tag}.payload.json`);
+    writeFileSync(payloadPath, JSON.stringify(payload, null, 2));
+    const r = spawnSync(process.execPath, [script, payloadPath], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+    return { ok: r.status === 0, stdout: r.stdout || "", stderr: r.stderr || "" };
+  };
+
+  for (const name of REPORT_BODY_FIXTURES) {
+    const context = JSON.parse(readFileSync(join(finalizeFixturesDir, `${name}.context.json`), "utf8"));
+    const judgments = JSON.parse(readFileSync(join(finalizeFixturesDir, `${name}.judgments.json`), "utf8"));
+    const { payload } = finalizeReview({ context, judgments });
+    const rendered = renderVia(renderReportScript, payload, `report-${name}`);
+    const expected = readFileSync(join(reportBodyDir, `${name}.expected.md`), "utf8");
+    const byteIdentical = rendered.ok && rendered.stdout === expected;
+
+    let shapeOk = true;
+    let shapeNote = "";
+    if (rendered.ok) {
+      const renderedPath = join(scratchDir, `report-${name}.rendered.md`);
+      writeFileSync(renderedPath, rendered.stdout);
+      const shape = spawnSync(process.execPath, [validateShapeScript, renderedPath], { encoding: "utf8" });
+      shapeOk = shape.status === 0;
+      shapeNote = shapeOk ? "" : (shape.stderr || "").trim();
+    }
+
+    const known = KNOWN_FIXTURE_DEFECTS[name];
+    const ok = byteIdentical && shapeOk;
+    if (ok) {
+      console.log(`  ✓ report-body/${name}.expected.md — byte-identical, validate-report-shape.mjs conforms`);
+    } else if (known) {
+      knownDefects++;
+      console.error(`  ⏭️ report-body/${name}.expected.md — KNOWN fixture defect, not a finalize.mjs gap: ${known}`);
+    } else {
+      failed++;
+      console.error(`  ✗ report-body/${name}.expected.md — ${!rendered.ok ? `render-report.mjs failed: ${rendered.stderr}` : !byteIdentical ? "byte diff vs .expected.md" : `validate-report-shape.mjs: ${shapeNote}`}`);
+    }
+    results.push({ name, kind: "report-body", ok, known: Boolean(known) });
+  }
+
+  for (const name of INLINE_COMMENT_FIXTURES) {
+    const context = JSON.parse(readFileSync(join(finalizeFixturesDir, `inline-${name}.context.json`), "utf8"));
+    const judgments = JSON.parse(readFileSync(join(finalizeFixturesDir, `inline-${name}.judgments.json`), "utf8"));
+    const { inline } = finalizeReview({ context, judgments, sha: INLINE_COMMENT_SHA });
+    if (inline.length !== 1) {
+      failed++;
+      console.error(`  ✗ inline-comment/${name}.expected.md — expected exactly 1 inline finding, got ${inline.length}`);
+      results.push({ name, kind: "inline-comment", ok: false, known: false });
+      continue;
+    }
+    const commentPayload = toInlineCommentPayload(inline[0], { sha: INLINE_COMMENT_SHA });
+    const rendered = renderVia(renderCommentScript, commentPayload, `inline-${name}`);
+    const expected = readFileSync(join(inlineCommentDir, `${name}.expected.md`), "utf8");
+    const ok = rendered.ok && rendered.stdout === expected;
+    if (ok) {
+      console.log(`  ✓ inline-comment/${name}.expected.md — byte-identical`);
+    } else {
+      failed++;
+      console.error(`  ✗ inline-comment/${name}.expected.md — ${!rendered.ok ? `render-comment.mjs failed: ${rendered.stderr}` : "byte diff vs .expected.md"}`);
+    }
+    results.push({ name, kind: "inline-comment", ok, known: false });
+  }
+
+  console.log(`\nfinalize.mjs --replay-fixtures: ${results.filter((r) => r.ok).length}/${results.length} byte-identical`
+    + (knownDefects > 0 ? `, ${knownDefects} known fixture defect(s) (not finalize.mjs gaps, see comment above)` : ""));
+
+  if (failed > 0) {
+    console.error(`\n${failed} unexplained mismatch(es) — this is a real finalize.mjs/renderer gap, not a known fixture defect.`);
+    process.exit(1);
+  }
+  if (knownDefects > 0) {
+    // AC-11's own ears text demands byte-identical replay against EVERY fixture with no carve-out —
+    // a known, evidenced, non-finalize.mjs defect still means the check is unsatisfiable exactly as
+    // specified. Exiting non-zero here is that honesty, not a bug: checks.yaml marks this AC
+    // `unsatisfiable` with this same evidence rather than `pass`, per the abort-affordance rule.
+    process.exit(1);
+  }
+  console.log("✓ finalize.mjs --replay-fixtures: all fixtures byte-identical");
 }
 
 async function selfTest() {

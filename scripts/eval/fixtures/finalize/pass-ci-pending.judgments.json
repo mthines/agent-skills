@@ -1,0 +1,22 @@
+{
+  "summary": "Adds a `check_run` trigger kind and wires every registry keyed by the union.",
+  "candidates": [
+    { "finder": "correctness", "defect_class": "nil-deref", "path": "a.ts", "line": 1, "claim": "c1", "bad_outcome": "b1", "evidence": ["e"], "verify_by": "v", "verdict": "contradicted", "R": 10, "A": 10, "Ac": 10, "final": 10, "severity": "low", "prefix": "issue", "blocking": false, "title": "T1", "body": "B1", "materiality": true, "category": "c" },
+    { "finder": "correctness", "defect_class": "nil-deref", "path": "b.ts", "line": 1, "claim": "c2", "bad_outcome": "b2", "evidence": ["e"], "verify_by": "v", "verdict": "contradicted", "R": 10, "A": 10, "Ac": 10, "final": 10, "severity": "low", "prefix": "issue", "blocking": false, "title": "T2", "body": "B2", "materiality": true, "category": "c" },
+    { "finder": "correctness", "defect_class": "nil-deref", "path": "c.ts", "line": 1, "claim": "c3", "bad_outcome": "b3", "evidence": ["e"], "verify_by": "v", "verdict": "contradicted", "R": 10, "A": 10, "Ac": 10, "final": 10, "severity": "low", "prefix": "issue", "blocking": false, "title": "T3", "body": "B3", "materiality": true, "category": "c" }
+  ],
+  "gates": {
+    "gate1": { "status": "PASS", "details": "The description matches what the diff does." },
+    "gate4": { "precandidate_dispositions": [], "ai_stub_findings": [] },
+    "gate5": { "status": "PASS", "details": "The change is documented well enough to follow." }
+  },
+  "threads": [],
+  "memory": { "relevance_rules": [], "lessons_used": [], "summary": "53 indexed" },
+  "lenses": {
+    "optimality_cards": [],
+    "optimality_log": "ran · 2 judged · 2 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
+    "standards_log": "ran · 2 docs · 0 finding(s)",
+    "measurability_log": "ran · 3 paths classified · 0 missing · 0 unlinked",
+    "holistic_log": "skipped"
+  }
+}

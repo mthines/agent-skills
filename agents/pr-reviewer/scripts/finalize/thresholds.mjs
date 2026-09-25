@@ -20,7 +20,7 @@ export const TOTAL_INLINE_CAP = 20;
  * get an effective bar of min(threshold, 70) rather than the profile's own bar. */
 export const AGREEMENT_PROMOTED_CAP = 70;
 
-const CLAIM_PREFIXES = new Set(["issue", "suggestion"]);
+export const CLAIM_PREFIXES = new Set(["issue", "suggestion"]);
 
 /**
  * @param {{ profile?: string, severityTier?: string, flatOverride?: number }} args

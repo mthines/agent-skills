@@ -52,3 +52,8 @@ dist
 
 # test-auto-fix per-project surface files (project-local state, not committed)
 skills/testing/test-auto-fix/surfaces/*.md
+
+# pr-reviewer's scratchRoot() fallback (prepare-review.mjs) — transient scratch
+# for checkouts/clones/tarballs and finalize.mjs --replay-fixtures's scratch dir;
+# never committed content.
+.pr-reviewer-scratch/

@@ -45,7 +45,7 @@ export function gate4(g4) {
     status: fail ? "FAIL" : "PASS",
     details: fail
       ? `${confirmed.length} confirmed pre-candidate(s), ${aiStubs.length} AI-stub finding(s)`
-      : "no self-review signals found",
+      : "No debug logs, leftover TODOs, or unreviewed stubs.",
   };
 }
 
@@ -61,30 +61,77 @@ export function gate3(contextThreads, judgmentThreads) {
     (judgmentThreads || []).filter((t) => RESOLVE_CLASSES.has(t.classification)).map((t) => t.thread_id),
   );
   const open = (contextThreads || []).filter((t) => !resolvedIds.has(t.thread_id));
-  if (open.length === 0) return { status: "PASS", details: "no open prior review threads", open };
+  if (open.length === 0) return { status: "PASS", details: "Earlier review comments are resolved.", open };
   const blockingUnanswered = open.filter((t) => {
     const isBlocking = BLOCKING_DECORATION_RE.test(t.root_body || "");
     const answered = (t.replies || []).some((/** @type {any} */ r) => r.author !== t.author);
     return isBlocking && !answered;
   });
+  // Both FAIL and WARN share one details template (report-body pass/warn/fail fixtures, AC-11) —
+  // the count is every open thread, not just the blocking-unanswered subset, because the reader is
+  // pointed at OPEN_THREADS_LIST right below either way, and that list always shows every open
+  // thread.
+  // `reason` is the SHORT noun phrase FAIL_REASONS/WARN_REASONS carries (render-report.mjs's
+  // "Warnings:"/"FAIL:" summary line, AC-11) — distinct from `details`, which is the longer
+  // sentence the gate TABLE cell shows. Every fixture that exercises either line uses this
+  // shorter phrasing, never a copy of `details`.
   if (blockingUnanswered.length > 0) {
-    return { status: "FAIL", details: `${blockingUnanswered.length} open blocking thread(s) unanswered`, open };
+    const n = blockingUnanswered.length;
+    return {
+      status: "FAIL",
+      details: `${open.length} unresolved review thread(s) — see the thread list below`,
+      reason: `${n} unanswered blocking review thread${n === 1 ? "" : "s"}`,
+      open,
+    };
   }
-  return { status: "WARN", details: `${open.length} open prior review thread(s), none blocking-and-unanswered`, open };
+  const n = open.length;
+  return {
+    status: "WARN",
+    details: `${open.length} unresolved review thread(s) — see the thread list below`,
+    reason: `${n} open review thread${n === 1 ? "" : "s"}`,
+    open,
+  };
 }
 
-/** @param {{ inline?: any[], deferred?: any[] }} [placement] */
-export function gate6(placement) {
+/**
+ * AC-11/D5: a tool-budget-exhausted PARTIAL_REVIEW run (report-rendering.md's
+ * `PARTIAL_REVIEW` banner — `{calls, scanned, total}` with `scanned < total`) means the
+ * code-review finders never completed a pass over the diff. Whatever partial findings DID
+ * surface still post (FINDINGS[] / inline comments are untouched), but the GATE itself — a
+ * claim that "the multi-lens review found no blocking issues" or found N — cannot be made
+ * honestly from an incomplete scan, so it renders ⏭️ "not evaluated this run" instead of
+ * PASS/WARN/FAIL. Distinct from `--skip-gates`'s SKIPPED (which carries "--skip-gates" or a
+ * carried-forward reason and covers Gates 1/3/4/5, never 6) — this is Gate 6's own reason,
+ * on Gate 6 alone, and participates in neither FAIL_REASONS/WARN_REASONS nor the verdict
+ * (computeVerdict only matches literal "FAIL"/"WARN", so "SKIPPED" here is already excluded
+ * with no special-casing needed).
+ * @param {{ inline?: any[], deferred?: any[] }} [placement]
+ * @param {boolean} [partialReview]
+ */
+export function gate6(placement, partialReview = false) {
+  if (partialReview) {
+    return { status: "SKIPPED", details: "not evaluated this run" };
+  }
   const inline = placement?.inline || [];
   const deferred = placement?.deferred || [];
   const blockingInline = inline.filter((f) => f.blocking === true);
   if (blockingInline.length > 0) {
-    return { status: "FAIL", details: `${blockingInline.length} blocking finding(s)` };
+    const n = blockingInline.length;
+    return {
+      status: "FAIL",
+      details: `${n} blocking finding${n === 1 ? "" : "s"} — see inline comments.`,
+      reason: `${n} blocking finding${n === 1 ? "" : "s"} (see inline)`,
+    };
   }
   if (inline.length > 0 || deferred.length > 0) {
-    return { status: "WARN", details: `${inline.length} inline, ${deferred.length} deferred non-blocking finding(s)` };
+    const n = inline.length + deferred.length;
+    return {
+      status: "WARN",
+      details: `${n} non-blocking finding${n === 1 ? "" : "s"} — see inline comments.`,
+      reason: `${n} non-blocking finding${n === 1 ? "" : "s"}`,
+    };
   }
-  return { status: "PASS", details: "no findings" };
+  return { status: "PASS", details: "The multi-lens review found no blocking issues." };
 }
 
 /**
@@ -102,9 +149,9 @@ export function computeVerdict({ g1, g3, g4, g5, g6 }) {
 }
 
 /**
- * @param {{ skipGates?: boolean, judgmentsGates?: any, contextThreads?: any[], judgmentThreads?: any[], placement?: any }} args
+ * @param {{ skipGates?: boolean, judgmentsGates?: any, contextThreads?: any[], judgmentThreads?: any[], placement?: any, partialReview?: boolean }} args
  */
-export function computeGates({ skipGates, judgmentsGates, contextThreads, judgmentThreads, placement }) {
+export function computeGates({ skipGates, judgmentsGates, contextThreads, judgmentThreads, placement, partialReview }) {
   if (skipGates) {
     return { g1: SKIPPED, g3: { ...SKIPPED, open: [] }, g4: SKIPPED, g5: SKIPPED, g6: SKIPPED, verdict: "SKIPPED" };
   }
@@ -112,7 +159,7 @@ export function computeGates({ skipGates, judgmentsGates, contextThreads, judgme
   const g4 = gate4(judgmentsGates?.gate4);
   const g5 = gate5(judgmentsGates?.gate5);
   const g3 = gate3(contextThreads || [], judgmentThreads || []);
-  const g6 = gate6(placement);
+  const g6 = gate6(placement, partialReview);
   const verdict = computeVerdict({ g1, g3, g4, g5, g6 });
   return { g1, g3, g4, g5, g6, verdict };
 }
@@ -192,6 +239,17 @@ async function selfTest() {
   {
     const g = gate6({ inline: [], deferred: [] });
     check("Gate 6 PASSes with no findings at all", g.status === "PASS");
+  }
+  {
+    // AC-11: a tool-budget-exhausted PARTIAL_REVIEW run skips Gate 6, even with blocking
+    // findings already inline (they still post — the GATE just can't claim complete coverage).
+    const g = gate6({ inline: [{ blocking: true }], deferred: [] }, true);
+    check("Gate 6 is SKIPPED (⏭️, \"not evaluated this run\") under a partial review, regardless of inline findings",
+      g.status === "SKIPPED" && g.details === "not evaluated this run");
+    const verdict = computeVerdict({
+      g1: { status: "WARN" }, g3: { status: "FAIL" }, g4: { status: "PASS" }, g5: { status: "PASS" }, g6: g,
+    });
+    check("a SKIPPED Gate 6 never itself selects WARN or FAIL — the verdict here is driven by Gate 3 alone", verdict === "FAIL");
   }
   {
     const verdict = computeVerdict({

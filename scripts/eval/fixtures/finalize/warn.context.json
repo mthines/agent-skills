@@ -1,0 +1,72 @@
+{
+  "mode": "incremental",
+  "head_sha": "2c2bd19",
+  "priorSha": "70cf147",
+  "delta_lines": 256,
+  "render": {
+    "RUN_NOTE": "27 files touched",
+    "RESOLVED_SINCE": {
+      "count": 4,
+      "sha": "70cf147"
+    },
+    "CI_NOTE": "`Integration smoke (local Supabase)` is red on one case \u2014 `POST /memories/list` expected 200, got 500.",
+    "VERIFIED_NOTE": "`node scripts/sync-edge-schemas.mjs --check` in sync (15 files).",
+    "QUALITY_DROPPED": "relevance 0 \u00b7 dedupe 1 \u00b7 grounding 0 \u00b7 confidence 2 \u00b7 shape 0",
+    "INTEGRATIONS": "not activated",
+    "SKIPPED_FILES": "none",
+    "FIX_ALL_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=%2Fpr-fix%20https%3A%2F%2Fgithub.com%2Fowner%2Frepo%2Fpull%2F123%20pr-review-bot&utm_source=pr-reviewer-fix-all",
+    "MEMORIES_SUMMARY": "62 indexed",
+    "MEMORIES_USED": [
+      {
+        "key": "pre-flight-logic:token-membership-tests-mis-ordered",
+        "url": "https://lorekit.io/lore?scope=%22repo%3A%3Ao%2Fr%22",
+        "note": "promoted, seen 2x"
+      }
+    ],
+    "at": "2026-08-20T14:33:00Z"
+  },
+  "threads": [
+    {
+      "thread_id": "t1",
+      "path": "packages/web/src/lib/filters.ts",
+      "line": 23,
+      "url": "https://github.com/o/r/pull/1#discussion_r1",
+      "root_body": "the docblock still names filtersToQueryParams",
+      "author": "umanwizard",
+      "is_bot": false,
+      "replies": []
+    },
+    {
+      "thread_id": "t2",
+      "path": "packages/schemas/src/memory.ts",
+      "line": 735,
+      "url": "https://github.com/o/r/pull/1#discussion_r2",
+      "root_body": "the advertised bound is 5x what the hop survives",
+      "author": "cursor",
+      "is_bot": true,
+      "replies": []
+    }
+  ],
+  "files": [
+    {
+      "filename": "src/api/client.ts",
+      "patch": "@@ -214,1 +214,1 @@\n+x"
+    },
+    {
+      "filename": "src/api/backoff.ts",
+      "patch": "@@ -41,1 +41,1 @@\n+x"
+    },
+    {
+      "filename": "src/jobs/sync.ts",
+      "patch": "@@ -88,1 +88,1 @@\n+x"
+    },
+    {
+      "filename": "packages/web/src/lib/queries/explorer-stats.ts",
+      "patch": "@@ -16,1 +16,1 @@\n+x"
+    },
+    {
+      "filename": "packages/web/src/lib/filters.ts",
+      "patch": "@@ -713,1 +713,1 @@\n+x"
+    }
+  ]
+}

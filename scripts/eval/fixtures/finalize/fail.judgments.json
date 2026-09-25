@@ -1,0 +1,111 @@
+{
+  "summary": "Adds `github.check_run` to the trigger-kind union but leaves four keyed registries unwired.",
+  "candidates": [
+    {
+      "finder": "consumer-impact",
+      "defect_class": "contract-break",
+      "symbol": "triggerKinds",
+      "path": "src/triggers/variables.ts",
+      "line": 12,
+      "title": "Check-run variables rejected at runtime",
+      "body": "B",
+      "prefix": "issue",
+      "severity": "high",
+      "final": 95,
+      "blocking": true,
+      "url": "https://github.com/o/r/pull/1#discussion_r21"
+    },
+    {
+      "finder": "consumer-impact",
+      "defect_class": "missing-update",
+      "symbol": "hoverCard",
+      "path": "src/ui/hover-card.tsx",
+      "line": 40,
+      "title": "Hover card has no label for the new kind",
+      "body": "B",
+      "prefix": "issue",
+      "severity": "medium",
+      "final": 85,
+      "blocking": false,
+      "url": "https://github.com/o/r/pull/1#discussion_r22"
+    },
+    {
+      "finder": "consumer-impact",
+      "defect_class": "test-gap",
+      "symbol": "triggerKinds",
+      "path": "src/triggers/kinds.test.ts",
+      "line": 64,
+      "title": "`triggerKinds` fixture asserts the old arity",
+      "body": "B",
+      "prefix": "issue",
+      "severity": "medium",
+      "final": 85,
+      "blocking": false,
+      "url": "https://github.com/o/r/pull/1#discussion_r23"
+    },
+    {
+      "finder": "correctness",
+      "defect_class": "data-loss",
+      "symbol": "backfill0042",
+      "path": "db/migrations/0042.sql",
+      "line": 7,
+      "title": "Migration backfill skips existing rows",
+      "body": "B",
+      "prefix": "issue",
+      "severity": "low",
+      "final": 90,
+      "blocking": false,
+      "url": "https://github.com/o/r/pull/1#discussion_r24",
+      "materiality": false
+    },
+    {
+      "finder": "correctness",
+      "defect_class": "logic",
+      "symbol": "earlyReturn",
+      "path": "src/api/client.ts",
+      "line": 88,
+      "title": "Early return may skip the audit log write",
+      "body": "this early-return may skip the audit log write",
+      "prefix": "issue",
+      "severity": "medium",
+      "final": 76
+    },
+    {
+      "finder": "quality",
+      "defect_class": "maintainability",
+      "symbol": "z",
+      "path": "z1.ts",
+      "line": 1,
+      "title": "trivial",
+      "body": "b",
+      "prefix": "issue",
+      "severity": "medium",
+      "final": 10
+    }
+  ],
+  "gates": {
+    "gate1": {
+      "status": "WARN",
+      "details": "Claims `nx affected` is green; not true at this SHA."
+    },
+    "gate5": {
+      "status": "PASS",
+      "details": "The change is documented well enough to follow."
+    }
+  },
+  "memory": {
+    "relevance_rules": [],
+    "lessons_used": []
+  },
+  "threads": [],
+  "lenses": {
+    "optimality_cards": [
+      {
+        "markdown": "### Optimality proposal \u2014 src/api/client.ts:180\n\n> **Reuse `withRetry()` instead of hand-rolling a retry loop**\n\n**Why it's better** \u00b7 _codebase-fit_ \u2014 one backoff policy instead of four."
+      }
+    ],
+    "optimality_log": "ran \u00b7 4 judged \u00b7 3 optimal \u00b7 1 proposal(s) \u00b7 0 inline pointer(s) \u00b7 0 withheld",
+    "standards_log": "skipped (--no-standards)",
+    "measurability_log": "skipped (--no-measurable)"
+  }
+}

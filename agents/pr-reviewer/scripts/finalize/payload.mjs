@@ -3,56 +3,142 @@
  * finalize/payload.mjs — assembles the render-report.mjs / render-comment.mjs
  * payload from the finalize pipeline's own outputs. Pure. No I/O (D18).
  *
- * SCOPE NOTE (honest, not a silent gap): this module produces a real,
- * internally-consistent payload from finalize's own computed state — verdict,
- * gates, findings, quality counters — but has NOT been verified byte-identical
- * against the existing `scripts/eval/fixtures/report-body/*.expected.md`
- * fixtures render-report.mjs already ships (that is AC-11's own job, deferred
- * — see the plan's Progress Log). Treat every field below as "confidently
- * sourced from a rule file" (gate scalars, FINDINGS, FAIL_REASONS/WARN_REASONS,
- * the Quality Gate counters — per-comment-confidence.md § Logging's own
- * documented text shape) EXCEPT for MEMORIES_SUMMARY, INTEGRATIONS, and
- * SKIPPED_FILES, whose exact rendered shape this module has not cross-checked
- * against render-report.mjs's validator and should not be trusted as final
- * until AC-11 lands.
+ * AC-11 status: this module now produces the renderers' EXACT field shapes
+ * (see the mapper functions below), verified byte-identical against
+ * `scripts/eval/fixtures/{report-body,inline-comment}/*.expected.md` via
+ * `finalize.mjs --replay-fixtures` and `scripts/eval/fixtures/finalize/*`.
+ * A small set of fields are genuine PASSTHROUGH — facts finalize.mjs was
+ * never scoped to compute (Phase B's impact graph, memory reads, the
+ * optimality lens's own markdown cards, CI's informational note) — and are
+ * relayed verbatim from `context.render.*` (a prepare-review.mjs extension
+ * point, never schema-validated) when present, never invented here.
  */
 
 const GATE_FIELD = { g1: "GATE_DESCRIPTION", g3: "GATE_PRIOR", g4: "GATE_SELFREVIEW", g5: "GATE_DOCS", g6: "GATE_CODEREVIEW" };
+const BLOCKING_DECORATION_RE = /\(blocking\)|(?:^|\n)\s*issue:|severity:\s*(?:critical|high)/i;
+// render-report.mjs's VALID_STATUS is the glyph set, never the PASS/WARN/FAIL/SKIPPED gates.mjs
+// computes internally — the two vocabularies are separate by design (gates.mjs stays plain-text
+// so its own self-test can assert on status without a glyph table of its own).
+/** @type {Record<string, string>} */
+const STATUS_GLYPH = { PASS: "✅", WARN: "⚠️", FAIL: "❌", SKIPPED: "⏭️" };
+// render-report.mjs's RUN[] SHAPES — the only fields the RUN block itself may carry. `run` (this
+// module's own input) is a richer internal bag (summary, memoriesSummary, the lens logs) that also
+// feeds the scalar slots below; embedding it under RUN verbatim would trip render-report.mjs's
+// stray-field check on every one of those extra keys.
+const RUN_FIELDS = ["mode", "sha", "prior_sha", "delta_lines", "at", "tier", "depth"];
 
 /**
- * @param {{ dedupeDropped: number, produced: number, confidenceDrops: number, confidenceDeferred: number, suppressed: number, cleared: number, deferredOverCap: number, posted: number }} counters
+ * The one-line Quality Gate summary render-report.mjs's own cross-check reads
+ * `posted inline (\d+)` out of (its length must equal FINDINGS.length).
+ *
+ * `carried forward` tracks findings still open from a PRIOR iteration of the
+ * same PR (multi-run continuity) — genuinely out of a single `finalizeReview()`
+ * pass's scope, so it defaults to 0 unless the caller supplies one (D5).
+ * @param {{ produced: number, cleared: number, deferredOverCap: number, confidenceDeferred: number, posted: number, suppressed: number, carriedForward?: number }} counters
  */
 export function buildQualitySummary(counters) {
   const {
-    produced, dedupeDropped, confidenceDrops, confidenceDeferred,
-    suppressed, cleared, deferredOverCap, posted,
+    produced, cleared, deferredOverCap, confidenceDeferred, posted, suppressed, carriedForward = 0,
   } = counters;
-  return [
-    "Quality Gate:",
-    `  Findings produced:        ${produced}`,
-    `  Dedupe drops:              ${dedupeDropped}`,
-    `  Confidence drops:          ${confidenceDrops}`,
-    `  Confidence-deferred (advisory): ${confidenceDeferred}`,
-    `  Memory suppressions:       ${suppressed}`,
-    `  Findings cleared:          ${cleared}`,
-    `  Deferred (over inline cap): ${deferredOverCap}`,
-    `  Final findings posted:     ${posted}`,
-  ].join("\n");
+  const line = `produced ${produced} → posted inline ${posted} · cleared ${cleared}`
+    + ` · carried forward ${carriedForward} · deferred ${deferredOverCap} · below-bar ${confidenceDeferred}`;
+  return suppressed > 0 ? `${line} · memory suppressions ${suppressed}` : line;
 }
 
 /**
- * @param {{ gates: any, run: any, findings: any[], deferred: any[], lowConfidence: any[], quality: string, ciNote?: string }} args
- * @returns {any} a render-report.mjs-shaped payload (subject to AC-11's verification)
+ * A candidate → render-report.mjs `FINDINGS[]` row: title/path/line/url/tier/blocking.
+ * @param {any} c
  */
-export function buildReportPayload({ gates, run, findings, deferred, lowConfidence, quality, ciNote }) {
+export function toFindingBullet(c) {
+  /** @type {Record<string, any>} */
+  const out = { title: c.title, path: c.path, line: c.line, tier: c.severity };
+  if (c.url) out.url = c.url;
+  if (c.blocking === true) out.blocking = true;
+  return out;
+}
+
+/**
+ * A disposed candidate → `ADDITIONAL_FINDINGS[]` / `LOW_CONFIDENCE_FINDINGS[]` row.
+ * @param {any} c
+ */
+export function toAdvisoryFinding(c) {
+  /** @type {Record<string, any>} */
+  const out = { path: c.path, line: c.line, prefix: c.prefix, body: c.body, confidence: Math.round(c.final) };
+  if (c.url) out.url = c.url;
+  return out;
+}
+
+/**
+ * A prepare-review.mjs `context.threads[]` item → render-report.mjs `OPEN_THREADS[]` row.
+ * @param {any} t
+ */
+export function toOpenThreadBullet(t) {
+  const rootBody = t.root_body || "";
+  const blocking = BLOCKING_DECORATION_RE.test(rootBody);
+  // AC-11/D5: `root_body` is the raw comment body — gate3()'s own blocking-decoration regex
+  // reads it directly, unmodified, since that detection needs the literal conventional-comments
+  // prefix. `ask` is the human-facing paraphrase the OPEN_THREADS_LIST bullet renders, so the
+  // same claim-prefix and `(blocking)` decoration that just drove `blocking` above is stripped
+  // from it here — a reader does not need "issue: ... (blocking)" repeated verbatim next to a
+  // bullet that already carries the blocking fact structurally (Gate 3's FAIL/WARN split, and
+  // OPEN_THREADS_SUFFIX's own "(<K> blocking)" count on the accordion summary).
+  const ask = rootBody
+    .replace(/^\s*(?:issue|suggestion)\s*:\s*/i, "")
+    .replace(/\s*\(blocking\)\s*$/i, "")
+    .trim();
+  /** @type {Record<string, any>} */
+  const out = { path: t.path, line: t.line, ask, blocking };
+  if (t.url) out.url = t.url;
+  if (typeof t.is_bot === "boolean") { out.author = t.author; out.is_bot = t.is_bot; }
+  return out;
+}
+
+/**
+ * A finalized candidate → render-comment.mjs's inline-comment payload.
+ * @param {any} c @param {{ sha: string }} args
+ */
+export function toInlineCommentPayload(c, { sha }) {
+  /** @type {Record<string, any>} */
+  const payload = { PREFIX: c.prefix, TIER: c.severity, BODY: c.body, SHA: sha };
+  if (c.title) payload.TITLE = c.title;
+  if (c.blocking === true) payload.BLOCKING = true;
+  if (c.pseudo === true) payload.PSEUDO = true;
+  if (c.fp) payload.FP = c.fp;
+  if (c.fix_url) payload.FIX_URL = c.fix_url;
+  if (Array.isArray(c.evidence_anchors) && c.evidence_anchors.length) {
+    payload.EVIDENCE = c.evidence_anchors.map((/** @type {any} */ e) => (
+      e.note ? { path: e.path, line: e.line, note: e.note } : { path: e.path, line: e.line }
+    ));
+  }
+  if (c.fence) payload.FENCE = c.fence;
+  if (c.unverified_reason) payload.UNVERIFIED = c.unverified_reason;
+  return payload;
+}
+
+const RENDER_EXTRAS = [
+  "RUN_NOTE", "RUN_ANOMALY", "CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "FIX_ALL_URL",
+  "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED", "IMPACT", "WITHHELD", "OPTIMALITY_CARDS",
+];
+
+/**
+ * @param {{ gates: any, run: any, findings: any[], deferred: any[], lowConfidence: any[], quality: string, extras?: Record<string, any> }} args
+ * @returns {any} a render-report.mjs-shaped payload
+ */
+export function buildReportPayload({ gates, run, findings, deferred, lowConfidence, quality, extras }) {
+  // AC-11: each phrase is the gate's own short `reason` (the "Warnings:"/"FAIL:" summary line),
+  // never the longer `details` sentence the gate TABLE cell renders — gates.mjs computes both.
   const failReasons = [];
   const warnReasons = [];
-  for (const [key, field] of Object.entries(GATE_FIELD)) {
+  for (const [key] of Object.entries(GATE_FIELD)) {
     const g = gates[key];
     if (!g) continue;
-    if (g.status === "FAIL") failReasons.push(`${field}: ${g.details}`);
-    if (g.status === "WARN") warnReasons.push(`${field}: ${g.details}`);
+    if (g.status === "FAIL") failReasons.push(g.reason || g.details);
+    if (g.status === "WARN") warnReasons.push(g.reason || g.details);
   }
+
+  /** @type {Record<string, any>} */
+  const runBlock = {};
+  for (const k of RUN_FIELDS) if (run[k] !== undefined && run[k] !== null) runBlock[k] = run[k];
 
   /** @type {Record<string, any>} */
   const payload = {
@@ -65,7 +151,7 @@ export function buildReportPayload({ gates, run, findings, deferred, lowConfiden
     STANDARDS_LOG: run.standardsLog || "skipped",
     MEASURABILITY_LOG: run.measurabilityLog || "skipped",
     SKIPPED_FILES: run.skippedFiles || "",
-    RUN: run,
+    RUN: runBlock,
     FINDINGS: findings,
     FAIL_REASONS: failReasons,
     WARN_REASONS: warnReasons,
@@ -75,10 +161,13 @@ export function buildReportPayload({ gates, run, findings, deferred, lowConfiden
   };
   for (const [key, field] of Object.entries(GATE_FIELD)) {
     const g = gates[key];
-    payload[`${field}_STATUS`] = g?.status ?? "SKIPPED";
+    payload[`${field}_STATUS`] = STATUS_GLYPH[g?.status] ?? "⏭️";
     payload[`${field}_DETAILS`] = g?.details ?? "--skip-gates";
   }
-  if (ciNote) payload.CI_NOTE = ciNote;
+  // Passthrough-only fields (D5): relayed verbatim from context.render.*, never computed here.
+  for (const key of RENDER_EXTRAS) {
+    if (extras && extras[key] !== undefined && extras[key] !== null) payload[key] = extras[key];
+  }
   return payload;
 }
 
@@ -99,20 +188,57 @@ async function selfTest() {
   };
   const run = { mode: "full", sha: "abc1234", delta_lines: 10, tier: "deep", depth: "checkout", summary: "one blocking issue" };
   const quality = buildQualitySummary({
-    produced: 5, dedupeDropped: 1, confidenceDrops: 1, confidenceDeferred: 0,
+    produced: 5, confidenceDeferred: 0,
     suppressed: 0, cleared: 3, deferredOverCap: 0, posted: 3,
   });
-  const payload = buildReportPayload({ gates, run, findings: [{ id: 1 }], deferred: [], lowConfidence: [], quality });
+  const payload = buildReportPayload({
+    gates, run, findings: [{ title: "T", path: "a.ts", line: 1, tier: "high" }], deferred: [], lowConfidence: [], quality,
+    extras: { RUN_NOTE: "27 files touched", CI_NOTE: "1 check pending" },
+  });
 
   check("VERDICT passes through from gates.verdict", payload.VERDICT === "FAIL");
-  check("GATE_SELFREVIEW_STATUS maps from gate4", payload.GATE_SELFREVIEW_STATUS === "FAIL");
-  check("GATE_PRIOR_STATUS maps from gate3", payload.GATE_PRIOR_STATUS === "PASS");
-  check("GATE_DOCS_STATUS maps from gate5", payload.GATE_DOCS_STATUS === "PASS");
-  check("GATE_CODEREVIEW_STATUS maps from gate6", payload.GATE_CODEREVIEW_STATUS === "WARN");
-  check("FAIL_REASONS names the failing gate", payload.FAIL_REASONS.some((/** @type {string} */ r) => r.startsWith("GATE_SELFREVIEW")));
-  check("WARN_REASONS names the warning gate", payload.WARN_REASONS.some((/** @type {string} */ r) => r.startsWith("GATE_CODEREVIEW")));
+  check("GATE_SELFREVIEW_STATUS maps from gate4", payload.GATE_SELFREVIEW_STATUS === "❌");
+  check("GATE_PRIOR_STATUS maps from gate3", payload.GATE_PRIOR_STATUS === "✅");
+  check("GATE_DOCS_STATUS maps from gate5", payload.GATE_DOCS_STATUS === "✅");
+  check("GATE_CODEREVIEW_STATUS maps from gate6", payload.GATE_CODEREVIEW_STATUS === "⚠️");
+  check("FAIL_REASONS carries the failing gate's own reason/details phrase", payload.FAIL_REASONS.length === 1 && payload.FAIL_REASONS[0] === "1 confirmed pre-candidate(s), 0 AI-stub finding(s)");
+  check("WARN_REASONS carries the warning gate's own reason/details phrase", payload.WARN_REASONS.length === 1 && payload.WARN_REASONS[0] === "1 inline, 0 deferred non-blocking finding(s)");
   check("FINDINGS passes through", payload.FINDINGS.length === 1);
-  check("QUALITY carries the documented Quality Gate summary shape", /^Quality Gate:\n  Findings produced:/.test(payload.QUALITY));
+  check("QUALITY carries the produced→posted-inline shape render-report.mjs cross-checks",
+    /^produced 5 → posted inline 3 · cleared 3 · carried forward 0 · deferred 0 · below-bar 0$/.test(payload.QUALITY));
+  check("QUALITY omits memory suppressions when zero", !payload.QUALITY.includes("suppressions"));
+  check("extras pass through only when present", payload.RUN_NOTE === "27 files touched" && payload.CI_NOTE === "1 check pending" && payload.IMPACT === undefined);
+
+  {
+    const withSuppressions = buildQualitySummary({ produced: 9, confidenceDeferred: 1, suppressed: 1, cleared: 4, deferredOverCap: 0, posted: 4 });
+    check("QUALITY appends memory suppressions when non-zero", withSuppressions.endsWith("· memory suppressions 1"));
+  }
+
+  {
+    const finding = toFindingBullet({ title: "T", path: "a.ts", line: 1, severity: "high", blocking: true, url: "https://x" });
+    check("toFindingBullet maps severity→tier and keeps blocking/url", finding.tier === "high" && finding.blocking === true && finding.url === "https://x");
+    const noUrl = toFindingBullet({ title: "T", path: "a.ts", line: 1, severity: "low" });
+    check("toFindingBullet omits url/blocking when absent", noUrl.url === undefined && noUrl.blocking === undefined);
+  }
+  {
+    const adv = toAdvisoryFinding({ path: "a.ts", line: 1, prefix: "nitpick", body: "b", final: 61.6 });
+    check("toAdvisoryFinding rounds confidence and drops stray candidate fields", adv.confidence === 62 && Object.keys(adv).length === 5);
+  }
+  {
+    const thread = toOpenThreadBullet({ path: "a.ts", line: 1, root_body: "issue: x (blocking)", author: "cursor", is_bot: true, url: "https://x" });
+    check("toOpenThreadBullet derives blocking from the decoration regex", thread.blocking === true && thread.author === "cursor" && thread.is_bot === true);
+    const untyped = toOpenThreadBullet({ path: "a.ts", line: 1, root_body: "just an observation" });
+    check("toOpenThreadBullet omits author/is_bot when type unknown", untyped.author === undefined && untyped.is_bot === undefined);
+  }
+  {
+    const claim = toInlineCommentPayload({ prefix: "issue", severity: "high", body: "b", title: "T", blocking: true, fp: "x:y:z@a.ts" }, { sha: "abc1234" });
+    check("toInlineCommentPayload maps a claim's scalars", claim.PREFIX === "issue" && claim.TIER === "high" && claim.TITLE === "T" && claim.BLOCKING === true && claim.FP === "x:y:z@a.ts" && claim.SHA === "abc1234");
+    const oneLiner = toInlineCommentPayload({ prefix: "nitpick", severity: "low", body: "b" }, { sha: "abc1234" });
+    check("toInlineCommentPayload omits TITLE/BLOCKING/FP on a one-liner", oneLiner.TITLE === undefined && oneLiner.BLOCKING === undefined && oneLiner.FP === undefined);
+    const withEvidence = toInlineCommentPayload({ prefix: "issue", severity: "high", body: "b", title: "T", evidence_anchors: [{ path: "a.ts", line: 1, note: "x" }, { path: "b.ts", line: 2 }] }, { sha: "abc1234" });
+    check("toInlineCommentPayload reshapes evidence_anchors, dropping note when absent",
+      withEvidence.EVIDENCE.length === 2 && withEvidence.EVIDENCE[0].note === "x" && withEvidence.EVIDENCE[1].note === undefined);
+  }
 
   if (failed > 0) {
     console.error(`\npayload self-test: ${failed} check(s) failed`);
