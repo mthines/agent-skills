@@ -70,5 +70,5 @@ memory.write {
 `holistic-analysis` is a **writer-primary** host: its own Context Gathering already
 traces the touched files deeply, so it does not read `codebase-knowledge` in this
 wiring. The read side is owned by the plan/apply-seam hosts (`aw`,
-`implement-suggestion`, `fix-bug`, `ci-auto-fix`, `optimize-approach`,
-`test-auto-fix`) — this skill feeds them.
+`implement-suggestion`, `fix-bug`, `ci-auto-fix`, and `optimize-approach`) —
+this skill feeds them.

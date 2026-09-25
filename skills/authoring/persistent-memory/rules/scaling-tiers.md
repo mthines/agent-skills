@@ -205,7 +205,7 @@ When personal markdown stops fitting the deployment. Examples:
 ## LoreKit — the self-improvement loop backend
 
 The **self-improvement loops** in this repo (`autonomous-workflow`, `fix-bug`,
-`batch-linear-tickets`, `implement-suggestion`, `ci-auto-fix`, `test-auto-fix`,
+`implement-suggestion`, `ci-auto-fix`,
 `e2e-pr-stabilizer`, `optimize-approach`, `ideate`, and the `pr-reviewer`
 agent) run their fast tier on **LoreKit**, a Tier-4 managed
 memory layer, rather than on this skill's markdown store. This section is the

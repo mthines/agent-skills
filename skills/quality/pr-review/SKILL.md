@@ -47,7 +47,7 @@ Parse the **first token** of `$ARGUMENTS`.
 | anything else (or empty) | [review](#step-2-dispatch-the-agent) | one `pr-reviewer` dispatch, read-only |
 
 There is no third operation, and no mode flag that turns this command into an apply pass.
-A request to fix what the review found is [`/review-changes`](../review-changes/SKILL.md), below.
+A request to fix what the review found is `review-loop` (convergence) or [`/implement-suggestion`](../../workflow/implement-suggestion/SKILL.md), below.
 
 ## Step 0: Parse the argument
 
@@ -149,7 +149,7 @@ Gates: <one line naming any non-passing gate, or "all passing">
 <one line per blocking finding: path:line — the ask>
 
 Report: <URL of the sticky comment>
-Apply these: /review-changes <PR>   (or /implement-suggestion <PR>)
+Apply these: /implement-suggestion <PR>   (or Skill("review-loop", "<PR>") to converge)
 ```
 
 Surface **blocking findings and non-passing gates prominently**.
@@ -270,15 +270,13 @@ Both exemptions are the agent's, not this command's, so this refusal is a restat
 | Command | Reviews | Applies findings | Pushes | Loops |
 | --- | --- | --- | --- | --- |
 | **`/pr-review <PR>`** | yes | **no** | no | no — one dispatch |
-| [`/review-changes <PR>`](../review-changes/SKILL.md) | yes | yes | yes | yes, via `review-loop` |
-| [`/review-changes <PR> --report`](../review-changes/SKILL.md) | yes | no | no | no |
+| [`/implement-suggestion <PR>`](../../workflow/implement-suggestion/SKILL.md) | no — applies existing comments | yes | yes | no (`--watch` repeats) |
 | [`review-loop`](../review-loop/SKILL.md) | yes | yes | yes | yes, cap 5, converges on threads + CI |
 | [`/polish`](../polish/SKILL.md) | yes | mechanical only | no | no — one pass each |
 
-`/pr-review <PR>` and `/review-changes <PR> --report` reach the same place by design.
-This command is the direct name for it, and it is what the agent's own description, `depth-routing.md`,
-and `memory.md` all already tell the user to type; `--report` stays a flag on the convergence
-command for people already there.
+`/pr-review <PR>` is the one read-only entry point, and it is what the agent's own description,
+`depth-routing.md`, and `memory.md` all already tell the user to type. Inside the loop,
+`review-loop --no-feedback` is its report-only counterpart.
 
 ## Hard rules
 

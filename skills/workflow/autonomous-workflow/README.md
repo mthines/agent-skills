@@ -471,7 +471,7 @@ to this skill's source.
 - [`ux`](../../design/ux/) — UI / accessibility review
 - [`holistic-analysis`](../../analysis/holistic-analysis/) — execution-path analysis
 - [`docs`](../../authoring/docs/) — keeps `CLAUDE.md`, `README.md`, and `docs/` in sync
-- [`review-changes`](../../quality/review-changes/) — pre-PR review
+- [`review-loop`](../../quality/review-loop/) — review → apply → simplify convergence
 - [`create-pr`](../../delivery/create-pr/) — narrative PR description + push + watch
 - [`ci-auto-fix`](../../delivery/ci-auto-fix/) — diagnose and fix failed CI checks
 - `lorekit-memory` (LoreKit `memory.*` tools) — backs the `aw-lessons` fast-tier self-improvement loop; see [`persistent-memory`](../../authoring/persistent-memory/) for the LoreKit backend docs

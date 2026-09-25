@@ -198,7 +198,7 @@ INDEX is now 207 lines — `/persistent-memory consolidate parenting` is overdue
 
 ## Lesson-scope entries
 
-A **lesson scope** is the bucket consumed by a host skill's self-improvement loop (for example `aw-lessons`, `aw-tester-lessons`, `fix-bug-lessons`, `batch-lessons`, `reviewer-lessons`, `implement-suggestion-lessons`, `ci-auto-fix-lessons`, `e2e-pr-stabilizer-lessons`, `optimize-approach-lessons`, `ideate-lessons`, and `test-auto-fix-lessons`).
+A **lesson scope** is the bucket consumed by a host skill's self-improvement loop (for example `aw-lessons`, `aw-tester-lessons`, `fix-bug-lessons`, `reviewer-lessons`, `implement-suggestion-lessons`, `ci-auto-fix-lessons`, `e2e-pr-stabilizer-lessons`, `optimize-approach-lessons`, and `ideate-lessons`).
 The loops persist these on **LoreKit** (tag `loop::<skill>-lessons`, key `<skill>-lessons::<slug>`, scopes `global` / `repo::{owner}/{repo}` — see [`scaling-tiers.md`](./scaling-tiers.md#lorekit--the-self-improvement-loop-backend)).
 This section remains the authoritative definition of that shared schema — the persistent-memory markdown template at [`../templates/lesson-entry.md`](../templates/lesson-entry.md) mirrors it for filesystem-backed use.
 

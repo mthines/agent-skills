@@ -353,8 +353,8 @@ This skill is the engine that *confirms the why* — an invariant a symbol uphol
 a SHA (Phase 4 → Phase 6). Those confirmed facts are the scarcest, most reusable
 entries in the shared **`codebase-knowledge`** bucket. When a run has genuinely
 verified such a fact against the code, contribute it back so the next code-changer
-(`aw`, `fix-bug`, `implement-suggestion`, `ci-auto-fix`, `optimize-approach`,
-`test-auto-fix`) plans with it in hand.
+(`aw`, `fix-bug`, `implement-suggestion`, `ci-auto-fix`, and
+`optimize-approach`) plans with it in hand.
 
 This is a **writer-primary, best-effort** step: it never blocks or reshapes the
 analysis above, writes only what THIS run verified, and follows the multi-writer

@@ -19,7 +19,7 @@ tags:
 - [Core Principles](#core-principles)
 - [Procedure (Order of Operations)](#procedure-order-of-operations)
 - [Post-Draft Review](#post-draft-review)
-- [Findings Quality Gate](#findings-quality-gate)
+- [Review Output](#review-output)
 - [Walkthrough](#walkthrough)
 - [PR Creation](#pr-creation)
 - [Delivery Checklist](#delivery-checklist)
@@ -86,36 +86,16 @@ The `review-loop` skill gracefully skips if not installed — log one line and c
 | If missing | Report `skipped (not installed)`, then if `review-loop` and `pr-reviewer` are absent, log and continue with manual diff review |
 | Disable                   | Pass `--no-quality` to `create-pr` (not recommended; you lose the post-draft safety net) |
 
-## Findings Quality Gate
+## Review Output
 
-**Anchor:** `findings-quality-gate`
+**Anchor:** `findings-quality-gate` (kept so older links resolve)
 
-`create-pr`'s `review-loop` handles the review → apply → simplify cycle.
-If needed, run the optional false-positive filter over the final findings list:
+`create-pr`'s `review-loop` handles the review → apply → simplify cycle, and
+`pr-reviewer`'s own Phase E verifier is the false-positive filter — every
+finding it posts has already survived verification. Act on its output directly;
+there is no second filter pass.
 
-```
-Skill("aw-review-quality-gate")     # missing ⇒ companion: <name> — skipped (not installed)
-```
-
-The gate runs its six-question checklist per finding, drops findings that fail two or more checks, downgrades findings that fail exactly one, and emits a `### Quality Gate` summary (reviewed / dropped / downgraded / passed).
-Act on the **filtered** findings list, not the raw one.
-The gate is advisory — it filters review noise; it never blocks the phase.
-
-| Property                  | Value                                                                  |
-| ------------------------- | ---------------------------------------------------------------------- |
-| Runs in Full Mode         | Yes                                                                    |
-| Runs in Lite Mode         | Yes                                                                    |
-| If missing | Report `skipped (not installed)`, then act on the raw findings list, log and continue                   |
-| Disable                   | Remove this section; the raw `pr-reviewer` output is used directly     |
-
-Log to Progress Log:
-
-```markdown
-- [TIMESTAMP] Phase 6: aw-review-quality-gate — N reviewed, X dropped, Y downgraded
-- [TIMESTAMP] Phase 6: aw-review-quality-gate — skipped (not installed)
-```
-
-Handle the (filtered) review output:
+Handle the review output:
 
 | Verdict                | Action                                                                              |
 | ---------------------- | ----------------------------------------------------------------------------------- |
@@ -312,6 +292,5 @@ Then move to Phase 7 to watch CI to green.
 - Related rule: [phase-5-documentation](./phase-5-documentation.md)
 - Related rule: [phase-7-ci-gate](./phase-7-ci-gate.md)
 - Companion registry: [companion-skills.md](./companion-skills.md)
-- Related skill: [review-changes](../../../quality/review-changes/SKILL.md)
 - Related skill: [aw-create-walkthrough](../../aw-create-walkthrough/SKILL.md)
 - Related skill: [create-pr](../../../delivery/create-pr/SKILL.md)
