@@ -63,6 +63,8 @@ spec's final state plus each navigating step — under
 Pass `--no-screenshots` to omit the flag when the images are not wanted. Both
 dispatch blocks below carry `--auto-capture` unless `--no-screenshots` was given.
 
+**On a Dash0 Agent0 Automation sandbox, this step is replaced** by [`agent0-runtime.md`](./agent0-runtime.md#driver-selection-playwright-without-the-prompt): `auto` resolves to Playwright with no prompt, a browser precondition runs first, and `aw-tester` is dispatched as a `general` sub-agent reading its definition file. The input lines of the dispatch are the ones below, unchanged.
+
 **`auto` (default): resolve to a concrete driver — Chrome first, and never silently fall to Playwright.**
 The Chrome runner is in-session and needs the browser extension; the Playwright runner is a sub-agent and needs an available tool that dispatches one (`Task`, `Agent`, or another spelling). Pick:
 

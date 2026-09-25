@@ -150,6 +150,14 @@ per-candidate verifier dispatches and Step 2.4b's targeted holistic traces are
 therefore also **top-level** fan-outs, issued by the orchestrator, never nested
 inside a finder.
 
+**When `review-loop` dispatched you, there is no fan-out at all.** In a loop
+automation the top-level run is the loop, and this review is its one `general`
+sub-agent ([`review-loop/rules/agent0-runtime.md`](../../../skills/quality/review-loop/rules/agent0-runtime.md#sub-step-a--dispatch-a-general-reviewer-pointed-at-the-bundle)).
+Run the finders serially and the verifier in-agent — both shapes the pipeline
+already permits — and return the verdict, the new-finding count, and the sticky
+URL in the final message. Never attempt a dispatch to recover the parallelism:
+the second rung does not exist.
+
 ## The dispatch prompt is short on purpose
 
 Four of 34 runs in one measured week were refused outright: the dispatched

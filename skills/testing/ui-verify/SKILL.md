@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Bash(node *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
   author: mthines
-  version: '1.4.0'
+  version: '1.5.0'
   workflow_type: slash-command
   tags:
     - playwright
@@ -85,6 +85,10 @@ If no operation token is present, default to `author` when a diff or branch cont
 | `playwright` | [`aw-tester`](../../workflow/autonomous-workflow/templates/aw-tester.agent.md) sub-agent | CI, remote envs, or no browser extension. |
 
 `author` never touches a browser and takes no `--driver`.
+
+**In a Dash0 Agent0 Automation sandbox** (`/tmp/workspace/agent-skills/env.sh` exists), read [`rules/agent0-runtime.md`](./rules/agent0-runtime.md) before Step 0.
+It works from a checkout of the PR head, resolves `auto` to Playwright without the prompt (no user is present, and the automation's setup script installing Playwright is that decision), checks the browser the setup installed, and dispatches `aw-tester` as a `general` sub-agent that reads its definition file — the host cannot dispatch the custom type.
+`setup` is interactive and stops there as `blocked (needs a human …)`.
 
 ## Step 0: Resolve your GitHub access path
 
@@ -220,4 +224,5 @@ a second `verify` on the same PR reuses the block authored by the first.
 - **Never fork the spec grammar.** It is `aw-tester`'s single source of truth. If a step cannot be expressed in it, say so — do not invent syntax.
 - **Never weaken a spec to make it pass.** A red verdict is a finding, not a failure of this skill.
 - **Never store a secret in the spec, the target file, or a lesson.** Preview-auth credentials live in the committed `preview.yml`'s refresh command or in the environment, never in the PR body — the spec is public.
+- **On Agent0, `aw-tester` is still a dispatched sub-agent.** Never run the spec in the orchestrating context; dispatch a `general` sub-agent pointed at its definition file ([`rules/agent0-runtime.md`](./rules/agent0-runtime.md)). A missing sandbox browser is `NOT RUN (…)` with the setup script's reason, never `red`.
 - **The runner reports; it does not fix.** Applying a fix for a failing spec is the author's job (a better spec) or the PR author's (a code change).
