@@ -69,6 +69,8 @@ It is `NOT RUN`, never `red`: no driver executed, so there is no verdict to be r
 Then link the installed modules into `aw-tester`'s run directory, so its [Playwright resolution](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md#pinned-playwright-resolution-replaces-npx---yes-playwrightlatest) takes rung 2 (branch-local) and never downloads at run time:
 
 ```bash
+. /tmp/workspace/agent-skills/env.sh
+cd /tmp/workspace/ui-verify/<repo>   # or the checkout you started in; shell state does not persist
 AW_DIR=".agent/$(git branch --show-current)/.aw-tester"
 mkdir -p "$AW_DIR"
 [ -x node_modules/.bin/playwright ] || ln -sfn "$UI_VERIFY_PLAYWRIGHT_NODE_MODULES" "$AW_DIR/node_modules"

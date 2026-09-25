@@ -25,7 +25,7 @@
 #      a headless launch. Non-fatal: a failure is recorded as
 #      UI_VERIFY_BROWSER=missing and ui-verify reports NOT RUN with the reason.
 #      WITH_PLAYWRIGHT=0 skips it; REQUIRE_PLAYWRIGHT=1 makes it fatal.
-#   4. Writes the top-level constraints and overwrites /tmp/workspace/AGENTS.md.
+#   4. Writes the writer-role constraints and overwrites /tmp/workspace/AGENTS.md.
 #      The reviewer's installer copies its read-only constraints ("never push a
 #      commit") there; a host that auto-loads AGENTS.md would then forbid
 #      review-loop from applying anything. Each role gets its own file instead.
@@ -132,15 +132,18 @@ if [ "$WITH_PLAYWRIGHT" = 1 ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 4. Constraints for the top-level role, and an AGENTS.md that routes each role.
+# 4. Constraints for every role that writes (the top-level session and any
+#    sub-agent it dispatches that commits, pushes, or posts), and an AGENTS.md
+#    that routes each role.
 # ---------------------------------------------------------------------------
 rm -rf "$HOST" && mkdir -p "$HOST"
 
 cat > "$HOST/CONSTRAINTS.md" <<'CONSTRAINTS'
-# agent-skills — standing constraints for this automation's top-level session
+# agent-skills — standing constraints for this automation's writing roles
 
-You run one repo-owned skill (review-loop, ui-verify, …) on one pull request,
-at the top level of this session.
+You are either the top-level session running one repo-owned skill
+(review-loop, ui-verify, …) on one pull request, or a sub-agent it dispatched
+to commit, push, or post on that pull request. Both follow this file.
 
 ## How skills resolve on this host
 - Read /tmp/workspace/pr-reviewer/shared/rules/agent0-host.md before starting.
