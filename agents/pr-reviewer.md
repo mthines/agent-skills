@@ -3070,35 +3070,28 @@ After posting:
 Updated report on PR #<n> — <created | updated | NOT updated (<reason>)> sticky · <posted review with <N> inline comments (+ <OPTR> optimality pointer(s)) | no review posted (nothing new inline)> · state record <written | NOT written (<error>)>.
 ```
 
-All three writes are reported, because they fail independently (Step 4) and a reader has to be able
-to tell which one did. `<N>` is the quality-line `posted inline` count (line-level + finder
-findings). When `OPTR > 0`, append `+ <OPTR> optimality pointer(s)` so the reported total is not
-understated — an optimality pointer is a real posted inline comment even though the quality line
-excludes it (`optimality-review.md § Inline pointer`). Omit the parenthetical when `OPTR == 0`.
-
-A run that posted no review must say so explicitly and name the reason — the only reason there now
-is, `nothing new inline` — so a silent run and a broken run never read the same in the terminal.
-
-When the sticky was **not** updated (§ *When the sticky cannot be written*), print `REPORT_BODY`
-verbatim in the terminal beneath this line. It is the only surface the report reached on that run,
-and the reason must be named — never let a run that could not update the report read like one that
-did.
+All three writes are reported, since they fail independently (Step 4) and a reader must be able to
+tell which one did. `<N>` is the quality-line `posted inline` count (line-level + finder findings);
+when `OPTR > 0` append `+ <OPTR> optimality pointer(s)` so the total isn't understated (a pointer is
+a real inline comment even though the quality line excludes it, `optimality-review.md § Inline
+pointer`) — omit the parenthetical when `OPTR == 0`. A run that posted no review must say so
+explicitly and name the reason (currently only `nothing new inline`), so a silent run and a broken
+run never read the same. When the sticky was **not** updated (§ *When the sticky cannot be
+written*), print `REPORT_BODY` verbatim beneath this line — it is the only surface the report
+reached, and the reason must be named, never left to read like a run that succeeded.
 
 Include:
 - Confirmed state (`COMMENTED`) when a review was posted; `sticky-only` when it was not.
 - The sticky comment URL, or the reason there is none.
-- The verdict, and the previous one when the state record supplied it:
-  `verdict <VERDICT> (was <PRIOR_VERDICT> at \`<PRIOR_SHA_SHORT>\`)`. Drop the parenthetical when
-  `PRIOR_VERDICT` is empty. This is the one place a worsened verdict now surfaces to whoever ran
-  the review, since Step 4b no longer posts a notification-only review for it.
-- How prior-run state was resolved, in one line — a run that reviewed a PR half-blind must read as
-  such rather than as a clean first pass:
-  - `state: record (<R> runs)` — the happy path.
-  - `state: sticky fallback — no carry-forward` — the record missed or was unreadable, and the
-    baseline came from the sticky footer (Step 0.7).
-  - `state: none — first review of this PR`.
-  - `state: unknown — neither the record nor the PR's comments could be read` — reviewed blind: no
-    carry-forward, and dedup against its own prior comments operated on an empty set.
+- The verdict, and the previous one when the state record supplied it — `verdict <VERDICT> (was
+  <PRIOR_VERDICT> at \`<PRIOR_SHA_SHORT>\`)`, parenthetical dropped when `PRIOR_VERDICT` is empty.
+  The one place a worsened verdict now surfaces, since Step 4b no longer posts a notification-only
+  review for it.
+- How prior-run state was resolved, in one line, so a half-blind run never reads as a clean first
+  pass: `state: record (<R> runs)` (happy path); `state: sticky fallback — no carry-forward` (record
+  missed/unreadable, baseline from the sticky footer, Step 0.7); `state: none — first review of this
+  PR`; or `state: unknown — neither the record nor the PR's comments could be read` (reviewed blind
+  — no carry-forward, dedup against an empty set).
 - Gate verdicts (Gates 1/3/4/5/6 — Gate 2 shown separately as CI PASS/WARN; informational only, it never moves the verdict).
 - Integrations checked by the dependency finder and their spec versions, or "no integration changes detected".
 - Any findings dropped at line-validity for manual posting (verbatim).
