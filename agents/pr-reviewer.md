@@ -591,10 +591,8 @@ expensive — the delta baseline — so an environment with no LoreKit still get
 reviews instead of paying a full pass on every push:
 
 ```bash
-# The sticky report: the issue comment carrying the report marker. Matched by MARKER ONLY —
-# never by author login. The marker is the identity (`reviewer-report-ingest.md § Identifying
-# a report`), and `ME` is unavailable on some access paths (Step 0.5), where a login-keyed
-# filter silently matches nothing and every run then creates a fresh report.
+# Matched by MARKER ONLY, never by author login — `ME` is unavailable on some access paths (Step
+# 0.5), where a login-keyed filter silently matches nothing and every run creates a fresh report.
 # `last` is defensive — there must only ever be one.
 if STICKY=$(gh api repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments --paginate \
   --jq '[.[] | select((.body // "") | contains("<!-- PR_REVIEWER_REPORT -->")) ] | last // empty'); then
@@ -603,55 +601,48 @@ else
   STICKY_READ_FAILED=true
   STICKY=""
 fi
-# Normalise the empty read to a JSON literal ONCE, with no braces to lose. An earlier version
-# defaulted inline per-read as `"${STICKY:-{\}}"`; the expression is correct, but its escaped
-# brace does not survive being retyped, and a run that dropped the backslash emitted
-# `${STICKY:-{}}` and took four `jq: parse error: Unmatched '}'` failures in a row — on the one
-# rung that exists to recover the delta baseline. `null` needs no escaping and `//` handles it.
+# Normalise the empty read to a JSON literal ONCE — `null` needs no escaping, `//` handles it,
+# and there is no brace for a retype to drop (an inline `"${STICKY:-{\}}"` once did, and cost
+# four `jq: parse error` failures in a row on the one rung that recovers the delta baseline).
 [ -n "$STICKY" ] || STICKY=null
 
 STICKY_COMMENT_ID=$(jq -r '.id // empty' <<< "$STICKY")
 STICKY_URL=$(jq -r '.html_url // empty' <<< "$STICKY")
 PRIOR_REPORT_AUTHOR=$(jq -r '.user.login // empty' <<< "$STICKY")
 
-# The reviewed SHA from the body's footer line. Matches all three run-mode forms —
-# "Reviewed for commit `x`", "Incremental review for commit `x`", and the zero-delta
-# "… gate checks only for commit `x`" — by anchoring on `commit \`<sha>\`` alone.
-# Anchoring on "review for commit" missed two of the three.
+# The reviewed SHA from the body's footer line, anchored on `commit \`<sha>\`` alone so it
+# matches all three run-mode forms (full/incremental/zero-delta) — anchoring on "review for
+# commit" instead once missed two of the three.
 PRIOR_SHA=$(sed -n 's/.*commit `\([0-9a-f]\{7,40\}\)`.*/\1/p' \
   <<< "$(jq -r '.body // ""' <<< "$STICKY")" | tail -1)
 ```
 
-**A failed read is not an empty read.** The two are indistinguishable in the output — `--jq`
-reduces a successful read to a single object or an empty string, never to an array — so the
-**exit status is the only signal**, which is why the call is wrapped in `if` above rather than
-inspected afterwards. Retry once on failure; if it still fails, keep `STICKY_READ_FAILED=true`
-and carry it into Step 4a, which takes the no-duplicate path.
+**A failed read is not an empty read** — the two are indistinguishable in the output (`--jq`
+reduces a successful read to a single object or an empty string, never an array), so the **exit
+status is the only signal**, which is why the call is wrapped in `if` rather than inspected
+afterwards. Retry once on failure; if it still fails, keep `STICKY_READ_FAILED=true` and carry it
+into Step 4a, which takes the no-duplicate path.
 
-What the rung recovers, and what it does not:
+**Recovered:** `PRIOR_SHA` (⇒ `incremental` still available), `STICKY_COMMENT_ID` / `STICKY_URL`
+(⇒ the report updates in place, not duplicated), `PRIOR_REPORT_AUTHOR` (⇒ dedup and Step 2.9c still
+work), and `IS_RE_REVIEW = true`. **Not recovered:** `CARRIED_FINDINGS`, `PRIOR_DIAGNOSTICS`,
+`open_thread_ids`, and the run-mode history — they stay empty/absent, and an empty `LAST_FULL_SHA`
+is precisely what makes Step 1.2b promote the run to `full`, the documented safe direction.
 
-- **Recovered:** `PRIOR_SHA` (⇒ `incremental` is still available), `STICKY_COMMENT_ID` /
-  `STICKY_URL` (⇒ the report is still updated in place, not duplicated), `PRIOR_REPORT_AUTHOR`
-  (⇒ dedup and Step 2.9c still work), and `IS_RE_REVIEW = true`.
-- **Not recovered:** `CARRIED_FINDINGS`, `PRIOR_DIAGNOSTICS`, `open_thread_ids`, and the
-  run-mode history. They stay empty / absent, and an empty `LAST_FULL_SHA` is precisely what
-  makes Step 1.2b promote the run to `full` — the documented safe direction.
+Both halves are announced, since a run that silently dropped carry-forward looks identical to one
+that had nothing to carry: on `miss` with a sticky found, `PR-state record absent — baseline
+\`<PRIOR_SHA_SHORT>\` recovered from the sticky; running full, with no carry-forward.`; on
+`unavailable`, the same with `PR-state record unreadable (<reason>)`; on `miss` with no sticky and
+`STICKY_READ_FAILED == false`, `No prior review found — running full review.`; and on `miss` with
+no sticky and `STICKY_READ_FAILED == true`, `Prior-run state unknown — neither the PR-state record
+nor the PR's comments could be read; running full, with no carry-forward.`
 
-Both halves are announced, because a run that silently dropped carry-forward looks identical to
-one that had nothing to carry:
-
-- on `miss` with a sticky found: `PR-state record absent — baseline \`<PRIOR_SHA_SHORT>\` recovered from the sticky; running full, with no carry-forward.`
-- on `unavailable`: `PR-state record unreadable (<reason>) — baseline \`<PRIOR_SHA_SHORT>\` recovered from the sticky; running full, with no carry-forward.`
-- on `miss` with no sticky and `STICKY_READ_FAILED == false`: `No prior review found — running full review.`
-- on `miss` with no sticky and `STICKY_READ_FAILED == true`: `Prior-run state unknown — neither the PR-state record nor the PR's comments could be read; running full, with no carry-forward.`
-
-This is the **only** GitHub fetch prior-run detection makes, and it runs only when the record
-is unusable. The legacy rungs it replaces — a `pulls/{n}/reviews` scan for a pre-sticky report
-body, and a second scan for a `<!-- PR_REVIEWER_POINTER -->` review carrying a truncated ledger
-— are both gone. Neither can now recover anything the record does not already hold, and the
-degraded path no longer *needs* to carry state, because a run that cannot write the sticky still
-writes its record (Step 4c). A PR whose only report predates the sticky is treated as a first
-run: one full review, after which it has a record and a sticky like any other.
+This is the **only** GitHub fetch prior-run detection makes, and it runs only when the record is
+unusable. The legacy rungs it replaces — a `pulls/{n}/reviews` scan for a pre-sticky report body,
+and a second scan for a `<!-- PR_REVIEWER_POINTER -->` review carrying a truncated ledger — are
+both gone: neither can recover anything the record does not already hold, and the degraded path no
+longer needs to carry state, since a run that cannot write the sticky still writes its record (Step
+4c). A PR whose only report predates the sticky is treated as a first run.
 
 ### Bind the run-mode inputs
 
@@ -676,33 +667,27 @@ INCR_RUNS_SINCE_FULL=$(jq -r '
   | if $i == null then ($all | length) else (($all | length) - 1 - $i) end' <<< "$PR_STATE")
 ```
 
-`PRIOR_SHA` is the delta-triage baseline **and** the provenance of everything carried — one
-variable for both, since it is now bound in every mode (above). `PRIOR_SHA_SHORT`
-(`${PRIOR_SHA:0:7}`) is what the `(carried from …)` suffix renders, in `full` mode as much as in
-an incremental one, so the suffix can no longer degrade to `(carried from )`. When the record
-carries no `runs[]` at all — possible only on a hand-edited record — render
-`(carried from an unknown revision)` rather than an empty parenthetical.
+`PRIOR_SHA` is both the delta-triage baseline and the provenance of everything carried — one
+variable for both, now bound in every mode. `PRIOR_SHA_SHORT` (`${PRIOR_SHA:0:7}`) is what the
+`(carried from …)` suffix renders in every mode, so it can no longer degrade to `(carried from )`;
+on the rare hand-edited record with no `runs[]` at all, render `(carried from an unknown revision)`
+rather than an empty parenthetical.
 
-Then:
-
-- `CARRIED_FINDINGS` = `data.carried_findings`, re-admitted per
-  `agents/shared/rules/prior-comment-awareness.md § Carry-forward of deferred findings`, in
-  **every** mode including `--full`.
-- `PRIOR_DIAGNOSTICS` = `data.diagnostics`, re-admitted per
-  `prior-comment-awareness.md § Carry-forward of anchorless findings` at Step 2.5c, in every
-  mode. It is **input context, never a verdict shortcut**: Step 1.8 still evaluates every gate
-  against the current PR state, and a carried entry survives into this run's body only when Step
-  1.8 / 2.4c / 2.4d confirm it or when the owning step was skipped this run.
-- `RUN_MODE = "incremental"` — subject to upgrade in Step 1.2b — unless `--full` was passed, in
-  which case it stays `full` and Step 1.2b skips on the mode alone.
-- `IS_RE_REVIEW = true`.
+`CARRIED_FINDINGS` = `data.carried_findings`, re-admitted per `prior-comment-awareness.md § Carry-
+forward of deferred findings`, in **every** mode including `--full`. `PRIOR_DIAGNOSTICS` =
+`data.diagnostics`, re-admitted per `prior-comment-awareness.md § Carry-forward of anchorless
+findings` at Step 2.5c, also every mode, as **input context, never a verdict shortcut** — Step 1.8
+still evaluates every gate against the current PR state, and a carried entry survives into this
+run's body only when Step 1.8 / 2.4c / 2.4d confirm it or the owning step was skipped this run.
+`RUN_MODE = "incremental"`, subject to upgrade in Step 1.2b, unless `--full` was passed (stays
+`full`, Step 1.2b skips on the mode alone). `IS_RE_REVIEW = true`.
 
 Announce: `PR-state record read (<R> run(s), baseline \`<PRIOR_SHA_SHORT>\`) — <C> deferred finding(s), <G> open gate finding(s), <O> optimality proposal(s) carried forward.`
 
 ### First run
 
-On `STATE_STATUS == "miss"` with no sticky found, bind the first-run values explicitly. Each
-one has a reader that would otherwise assert something this run could not check:
+On `STATE_STATUS == "miss"` with no sticky found, bind the first-run values explicitly — each one
+has a reader that would otherwise assert something this run could not check:
 
 ```bash
 RUN_MODE="full";        PRIOR_SHA="";          PRIOR_VERDICT=""
@@ -712,30 +697,21 @@ STICKY_COMMENT_ID="";   STICKY_URL="";         PRIOR_REPORT_AUTHOR=""
 IS_RE_REVIEW=false;     RESOLVED_SINCE_PRIOR=0
 ```
 
-`RESOLVED_SINCE_PRIOR` is otherwise assigned only in Step 2.9c, which is skipped on a first
-pass — yet three render sites read it unconditionally, and a first-pass run with Gate 3 ⚠️ or ❌
-(other bots' threads open, which is common) would reach the checklist with nothing bound. `0`
-suppresses the counter everywhere, which is the correct reading: nothing has been resolved since
-a prior report that does not exist.
+`RESOLVED_SINCE_PRIOR` is otherwise assigned only in Step 2.9c, skipped on a first pass — yet three
+render sites read it unconditionally, so `0` suppresses the counter rather than leaving it unbound
+when Gate 3 is already ⚠️/❌ from other bots' open threads. **`IS_RE_REVIEW` is the "has this PR been
+reviewed before" flag** — true whenever a record was read **or** a sticky was found, so the fallback
+rung does not cost the run its thread reconciliation (keying it off `CARRIED_FINDINGS` or
+`PRIOR_DIAGNOSTICS` instead would skip reconciliation on exactly the fallback path, where nothing is
+carried but the PR has certainly been reviewed before).
 
-**`IS_RE_REVIEW` is the "has this PR been reviewed before" flag** — set it here, and gate
-re-review behaviour (Step 2.9c, the `resolved since` counter) on it. It is true whenever a
-record was read **or** a sticky was found, so the fallback rung does not cost the run its thread
-reconciliation. Keying that behaviour off `CARRIED_FINDINGS` or `PRIOR_DIAGNOSTICS` instead
-would skip reconciliation on exactly the fallback path, where there is no carried state but the
-PR has certainly been reviewed before.
-
-`PRIOR_SHA`, `RUN_MODE`, `PRIOR_DIAGNOSTICS`, `LAST_FULL_SHA` and `INCR_RUNS_SINCE_FULL` are
-bound on **every** path above and available to all subsequent steps — including `--full`, where
-Step 1.2b does not read the last two. Bind them anyway: an unset value is not the same as a
-bound empty one, and the two-case argument that made leaving them unset safe is exactly the kind
-of reasoning that breaks when a fourth path is added.
-
-`ME` is **not** read in this step. The sticky is matched on its marker alone, so prior-run
-detection keeps working on an access path where `/user` is unreachable. Do not reintroduce a
-`.user.login` filter here, and do not call `gh api user` again anywhere in the run. Reading
-`.user.login` **off** a found object is a different thing and is required — see
-`PRIOR_REPORT_AUTHOR`, which Step 1.0 consumes.
+`PRIOR_SHA`, `RUN_MODE`, `PRIOR_DIAGNOSTICS`, `LAST_FULL_SHA` and `INCR_RUNS_SINCE_FULL` are bound
+on **every** path above, including `--full` (where Step 1.2b does not read the last two) — an unset
+value is not the same as a bound empty one. `ME` is **not** read in this step: the sticky is matched
+on its marker alone, so prior-run detection keeps working where `/user` is unreachable. Do not
+reintroduce a `.user.login` filter here or call `gh api user` again anywhere in the run — reading
+`.user.login` **off** a found object is different and required (see `PRIOR_REPORT_AUTHOR`, which
+Step 1.0 consumes).
 
 ### What no longer happens here
 
