@@ -2594,28 +2594,13 @@ That copy is a real failure site, not a theoretical one: on `mthines/agent-skill
    reproduced faithfully is dropped and logged, exactly like a render failure.
 
 
-**The write itself is `execute-write-plan.mjs`'s `sticky.upsert` op** (self-tested, AC-3): `PATCH`
-the known `comment_id`, or `POST` a fresh comment when none is known, passing the exact bytes
-verified above (`report-body.md`) — never a re-read, never a re-composition. On any write failure
-— including a stale cached `comment_id` — it degrades to posting the compact pointer body rather
-than losing the write silently. **It does not yet re-scan the PR for an existing marker-bearing
-comment before degrading** (a known gap, not a silent one): the cached id is an optimisation from
-the state record, not an authority, and a `404` on it is the first evidence the comment is gone.
-On the MCP path, the op → tool mapping and the "no update-comment tool" degradation are in
-[`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#write-plan-op--mcp-tool-map).
+**The write itself is `execute-write-plan.mjs`'s `sticky.upsert` op** (self-tested, AC-3): `PATCH` the known `comment_id`, or `POST` a fresh comment when none is known, passing the exact bytes verified above (`report-body.md`) — never a re-read, never a re-composition. On any write failure — including a stale cached `comment_id` — it degrades to posting the compact pointer body rather than losing the write silently. **It does not yet re-scan the PR for an existing marker-bearing comment before degrading** (a known gap, not a silent one): the cached id is an optimisation from the state record, not an authority, and a `404` on it is the first evidence the comment is gone. On the MCP path, the op → tool mapping and the "no update-comment tool" degradation are in [`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#write-plan-op--mcp-tool-map).
 
-Exactly **one** sticky per PR. If Step 0.7 somehow found more than one marker-bearing comment, patch
-the newest and leave the others — never delete a comment, and never create a second sticky when one
-exists.
+Exactly **one** sticky per PR. If Step 0.7 somehow found more than one marker-bearing comment, patch the newest and leave the others — never delete a comment, and never create a second sticky when one exists.
 
 #### The report has exactly one host
 
-`REPORT_BODY` — anything carrying `<!-- PR_REVIEWER_REPORT -->` — goes into the sticky issue comment
-and **nowhere else**. It is never placed in a review body, never in a reply on an inline thread, and
-never posted twice in one run. A review body is append-only, so a report placed there is a permanent
-snapshot: twenty runs leave twenty contradictory full reports, the oldest of which is the one a
-reader meets first, and the "one edited comment" model is gone even though every other rule was
-followed. Step 4b's pre-flight rejects the payload mechanically; this is the rule it enforces.
+`REPORT_BODY` — anything carrying `<!-- PR_REVIEWER_REPORT -->` — goes into the sticky issue comment and **nowhere else**. It is never placed in a review body, never in a reply on an inline thread, and never posted twice in one run. A review body is append-only, so a report placed there is a permanent snapshot: twenty runs leave twenty contradictory full reports, the oldest of which is the one a reader meets first, and the "one edited comment" model is gone even though every other rule was followed. Step 4b's pre-flight rejects the payload mechanically; this is the rule it enforces.
 
 #### Two different reasons the sticky can go unwritten
 
@@ -2627,25 +2612,14 @@ STICKY_WRITE_FORBIDDEN=false
 STICKY_WRITE_FORBIDDEN_REASON=""
 ```
 
-Set `STICKY_WRITE_FORBIDDEN=true` when the invoking context — the system prompt, harness
-guardrails, or explicit instructions from whatever dispatched this run — forbids writing to
-`/issues/{n}/comments`, **for any reason other than the access path being technically unable to
-do it**. The two failure classes are not the same thing and do not get the same diagnosis:
+Set `STICKY_WRITE_FORBIDDEN=true` when the invoking context — the system prompt, harness guardrails, or explicit instructions from whatever dispatched this run — forbids writing to `/issues/{n}/comments`, **for any reason other than the access path being technically unable to do it**. The two failure classes are not the same thing and do not get the same diagnosis:
 
 | Failure class | Example | Row to use |
 | --- | --- | --- |
 | Access-path incapability | no `gh` token, MCP path has no comment-update tool, the read 401s | The capability table below |
 | Caller policy refusal | an orchestrator's own guardrails ban `POST /issues/{n}/comments` on principle, even though the credentials in hand could do it | This one |
 
-**This is the gap that caused ad-hoc report bodies on `mthines/lorekit#514`–`#518`.** An earlier
-version of this agent had no branch for "the write would succeed but I've been told not to attempt
-it", so a run in that situation did not recognise it as an instance of "the sticky cannot be
-written" at all — it fell through to improvising a full report's worth of prose directly into the
-review body, in whatever shape it invented that run. **Never do that.** A caller policy refusal is
-routed identically to an access-path failure: skip the write attempt entirely, set
-`STICKY_WRITE_FORBIDDEN_REASON` to the plain-language restriction (e.g. `"caller guardrails forbid
-POST to /issues/{n}/comments"`), and go straight to `DEGRADED_POINTER_BODY` in Step 4b — a policy
-refusal is never a reason to hand-write anything, any more than a 401 is.
+**This is the gap that caused ad-hoc report bodies on `mthines/lorekit#514`–`#518`.** An earlier version of this agent had no branch for "the write would succeed but I've been told not to attempt it", so a run in that situation did not recognise it as an instance of "the sticky cannot be written" at all — it fell through to improvising a full report's worth of prose directly into the review body, in whatever shape it invented that run. **Never do that.** A caller policy refusal is routed identically to an access-path failure: skip the write attempt entirely, set `STICKY_WRITE_FORBIDDEN_REASON` to the plain-language restriction (e.g. `"caller guardrails forbid POST to /issues/{n}/comments"`), and go straight to `DEGRADED_POINTER_BODY` in Step 4b — a policy refusal is never a reason to hand-write anything, any more than a 401 is.
 
 #### When the sticky cannot be written
 
@@ -2664,9 +2638,7 @@ then apply this table — and note that **no branch permits a second full report
 | No GitHub access path | Nothing is posted. `github-access.md § No path` applies: say so precisely, never claim the report was updated. |
 | `STICKY_WRITE_FORBIDDEN == true` | **Do not attempt the write — this is a policy refusal, never phrase it as an API or access error.** Post the compact `DEGRADED_POINTER_BODY` (Step 4b) instead, with `DEGRADED_REASON` set to `STICKY_WRITE_FORBIDDEN_REASON`, and state in the Step 5 report: `Sticky writes disabled by caller policy — report not persisted in place.` |
 
-**The table above is exhaustive: every row is a mechanical fact about the access path, and nothing
-else defers the write.** The five conditions below have each been improvised by a run as a reason
-to stand down, and none of them is one:
+**The table above is exhaustive: every row is a mechanical fact about the access path, and nothing else defers the write.** The five conditions below have each been improvised by a run as a reason to stand down, and none of them is one:
 
 | Not a reason | Why it is not |
 | --- | --- |
@@ -2676,25 +2648,12 @@ to stand down, and none of them is one:
 | Another bot already reviews this PR | This agent's report is keyed to its own marker and cannot collide with another bot's comment. Another reviewer's presence changes nothing about whether this review's own state gets persisted. |
 | It is the caller's own PR (self relation) | `REVIEW_RELATION` (Step 0.5) changes framing only — the pipeline, the gates, the verdict, and every write are identical in both relations. |
 
-The observed failure this list exists for: a run that could not resolve its support tree concluded
-*"the existing sticky report (by `dash0-dev[bot]`) already reflects this PASS-with-warnings verdict.
-I did not duplicate it or edit the bot's comment"*, hand-wrote its findings into the terminal, and
-left the baseline pinned. Two invented rules — don't edit another author's comment, don't rewrite an
-unchanged verdict — combined into a silent no-op on the one artifact the next run depends on. If a
+The observed failure this list exists for: a run that could not resolve its support tree concluded *"the existing sticky report (by `dash0-dev[bot]`) already reflects this PASS-with-warnings verdict. I did not duplicate it or edit the bot's comment"*, hand-wrote its findings into the terminal, and left the baseline pinned. Two invented rules — don't edit another author's comment, don't rewrite an unchanged verdict — combined into a silent no-op on the one artifact the next run depends on. If a
 situation is not a row in the table above, **write the sticky**.
 
-**The delta logic survives every branch**, because it no longer lives on the object that failed
-to write. Whichever non-writing branch fired, Step 4c still records this run's state, so the next
-run has its baseline, its carry-forward and its run history in full. That is the whole reason the
-state moved: under the old model a run that could not patch the sticky had to smuggle a truncated
-ledger out on an append-only review body, through a three-rung reduction ladder sized against a
-1500-character budget — and even then it lost every deferred and anchorless finding, because a
-pointer has no report body to carry them.
+**The delta logic survives every branch**, because it no longer lives on the object that failed to write. Whichever non-writing branch fired, Step 4c still records this run's state, so the next run has its baseline, its carry-forward and its run history in full. That is the whole reason the state moved: under the old model a run that could not patch the sticky had to smuggle a truncated ledger out on an append-only review body, through a three-rung reduction ladder sized against a 1500-character budget — and even then it lost every deferred and anchorless finding, because a pointer has no report body to carry them.
 
-What a degraded run now costs is exactly one thing: **the report is not on GitHub this run.** The
-review still posts if there are inline findings (Step 4b), `REPORT_BODY` is printed verbatim in
-the Step 5 terminal output, the reason is named, and the next successful run rewrites the sticky
-from state that never went missing.
+What a degraded run now costs is exactly one thing: **the report is not on GitHub this run.** The review still posts if there are inline findings (Step 4b), `REPORT_BODY` is printed verbatim in the Step 5 terminal output, the reason is named, and the next successful run rewrites the sticky from state that never went missing.
 
 ### 4b. Post the review (conditionally)
 
