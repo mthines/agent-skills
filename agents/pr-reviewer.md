@@ -721,29 +721,22 @@ Retired deliberately, not lost: the `<!-- PR_REVIEWER_LEDGER … -->` body block
 
 ## Step 0.8: Fast zero-delta pre-check (before the expensive fetch pipeline)
 
-The pipeline already had a zero-delta short-circuit — Step 1.2b's delta triage — but it fires
-only after Step 1.0's memory fan-out, Step 1.1's diff/file fetch, and Phase A/B's workspace
-checkout and impact graph have all already run and been paid for. On a re-review whose branch
-has not moved since the last pass, that whole cost buys nothing (observed: a multi-minute run
-that ended by discovering there was nothing to review). This step catches that common case
-**before** any of it starts, using only values Step 0.5 and Step 0.7 already bound.
+Step 1.2b's delta triage already has a zero-delta short-circuit, but it fires only after Step 1.0's
+memory fan-out, Step 1.1's diff/file fetch, and Phase A/B's workspace checkout and impact graph have
+already run and been paid for — a multi-minute cost an unmoved-branch re-review (a `/review`
+comment, a scheduled re-check, another bot's comment) pays for nothing. This step catches that case
+**before** any of it starts, using only values Step 0.5 and Step 0.7 already bound:
 
 ```bash
-# EARLY_HEAD_SHA came from Step 0.5's PR_META, at zero extra API cost.
-# PRIOR_SHA came from Step 0.7 (the PR-state record or its GitHub fallback rung).
-# FLAG_FULL came from Step 0's argument parse — `--full` always forces `full` mode
-# (Step 0.7's rule), and a fast path that ignored it would silently override that invariant.
-# Compare on a 7-char prefix, never the raw strings, so the check is robust to whatever length
-# Step 0.7 bound PRIOR_SHA at: the GitHub fallback rung reads it from the sticky footer, which
-# `comment-spine.mjs` enforces to exactly 7 chars, while the PR-state record stores whatever
-# HEAD_SHA Step 4c wrote (the full 40-char headRefOid on the current writer; a 7-char sha on
-# records written by an older one). EARLY_HEAD_SHA is the full 40-char headRefOid, so a raw
-# `==` against the 7-char footer value can never match — leaving the fast path permanently
-# dead — and truncating both operands to 7 chars is what makes it match on every source.
-# STATE_STATUS == "read" gates the fast path to the full-record path only. On the GitHub
-# fallback rung PRIOR_SHA is recovered but PRIOR_DIAGNOSTICS is NOT (Step 0.7), so a
-# fast-path run there would carry Gates 4/6 forward from nothing; the fallback rung must
-# instead fall through to Step 1, where an empty LAST_FULL_SHA promotes it to full.
+# EARLY_HEAD_SHA: Step 0.5's PR_META, zero extra cost. PRIOR_SHA: Step 0.7. FLAG_FULL: Step 0 —
+# `--full` always forces `full` mode, and this fast path must not silently override that.
+# Compare on a 7-char prefix: the GitHub fallback rung's PRIOR_SHA comes from the sticky footer
+# (comment-spine.mjs enforces exactly 7 chars) while the PR-state record's may be the full
+# 40-char headRefOid, and EARLY_HEAD_SHA is always the full 40 chars — a raw `==` would leave the
+# fast path permanently dead against the footer source. STATE_STATUS == "read" restricts the fast
+# path to the full-record path: the fallback rung recovers PRIOR_SHA but not PRIOR_DIAGNOSTICS, so
+# a fast-path run there would carry Gates 4/6 forward from nothing and must fall through to Step
+# 1.2b instead, where an empty LAST_FULL_SHA promotes it to full.
 if [[ "$FLAG_FULL" != true && "$STATE_STATUS" == "read" && -n "$PRIOR_SHA" && "${EARLY_HEAD_SHA:0:7}" == "${PRIOR_SHA:0:7}" ]]; then
   FAST_ZERO_DELTA=true
 else
@@ -751,68 +744,48 @@ else
 fi
 ```
 
-An identical commit has an empty diff against itself by construction — no `compare` call is
-needed to prove it, unlike the rebase/amend case Step 1.2b's blob-diff route still exists for
-(see below). `PRIOR_SHA` empty means no prior run is known (first review, or a `--full` that
-still carries a baseline per Step 0.7) — that path always proceeds to Step 1 unchanged, since
-there is nothing to compare against yet. `FLAG_FULL == true` always proceeds to Step 1 unchanged
-too, regardless of `PRIOR_SHA`/`EARLY_HEAD_SHA` — an unmoved head under `--full` still owes the
-caller a full-mode run, not a silent downgrade to `incremental-quick`. The GitHub fallback rung
-(`STATE_STATUS != read`) proceeds to Step 1 unchanged as well: it recovers `PRIOR_SHA` but not
-`PRIOR_DIAGNOSTICS`, so the fast path's Gate 4/6 carry-forward would read from nothing — the
-`STATE_STATUS == "read"` guard keeps the optimization to the path that actually holds the
-diagnostics it carries, and the fallback rung falls through to Step 1.2b, where an empty
-`LAST_FULL_SHA` promotes it to `full` (the documented safe direction).
+An identical commit has an empty diff against itself by construction, so no `compare` call proves
+it — unlike the rebase/amend case Step 1.2b's blob-diff route still exists for (below). An empty
+`PRIOR_SHA`, `FLAG_FULL == true`, or `STATE_STATUS != read` all proceed to Step 1 unchanged, for the
+reasons in the comment above.
 
-**On `FAST_ZERO_DELTA == true`:**
-- Set `RUN_MODE = "incremental-quick"`, `REVIEW_DIFF = ""`, `HEAD_SHA = "$EARLY_HEAD_SHA"`,
-  `DELTA_SOURCE = "identical HEAD_SHA (Step 0.8 fast path)"`.
-- Announce: `HEAD_SHA unchanged since the last review (\`<HEAD_SHA short>\`) — skipping the
-  memory fan-out, workspace checkout, and impact graph; running gate checks only.`
-- **Skip Step 1.0's memory fan-out (the four `mcp__lorekit__memory_list` calls) and Step
-  1.1's Phase A/B (workspace materialization, impact graph) entirely** — none of them have
-  anything to operate on when the diff is empty. Fetch only what the gates still need, with
-  the narrowest calls that supply it:
-  - Prior comment state for Gate 3 **and** Step 2.9c — run `prior-comment-awareness.md § fetch
-    existing PR comment state` in full, standalone here instead of as part of Step 1.0's larger
-    fan-out. "In full" is load-bearing: that step is both the `pulls/{n}/comments` REST fetch
-    into `/tmp/prior-comments.json` — the source of `OPEN_BOT_COMMENTS[]`'s `url` / `ask` /
-    `is_bot` fields **and** of `BOT_COMMENTS` — and the `reviewThreads { id isResolved }`
-    resolution state, not the thread-state query alone, which supplies neither. Bind
-    `BOT_COMMENTS`, `RESOLVED_THREAD_IDS`, `COMMENT_TO_THREAD`, and `OPEN_BOT_COMMENTS[]` exactly
-    as that rule specifies, so Step 2.9c has its `BOT_COMMENTS` input on this path — the
-    `review-loop` convergence case (threads resolved or declined, re-run on an unmoved head) is
-    precisely a fast-path run where thread reconciliation must still fire.
-  - CI status (`gh pr checks $PR_NUMBER $GH_REPO_FLAG`) for the report's CI line (Gate 2).
-  - PR title/body are already in `PR_META` from Step 0.5 — no extra call. Gates 1 and 5
-    (description-vs-code match, documentation adequacy) both grade this text, so both
-    re-compare it against `PRIOR_DIAGNOSTICS.gate_rows`' carried verdict, since an edited
-    description needs no new commit and this fast path must not blind itself to one on either
-    gate; an unchanged description carries both prior gate rows forward verbatim (`⏭️`, per
-    Step 1.8's carry-forward table).
-  - Gates 4 and 6 (self-review signals, code review) carry forward unconditionally from
-    `PRIOR_DIAGNOSTICS` — the code they graded has not moved, and neither reads the description.
-  - Relevance and lessons memory are **not** fetched on this path. With no diff and no new
-    inline findings possible, there is nothing for a lesson to calibrate against. Report
-    `Memories — skipped (zero-delta fast path)` in the sticky footer, distinct from `not
-    connected`, so a deliberate skip is never misread as an outage.
-  - Bind `DEPTH_TIER` per `depth-routing.md`. Phase C still runs — it is cheap, local, and
-    every downstream template reads it — though on this path its impact-graph inputs
-    (`BLAST_RADIUS`, `semver_delta`, `TRAFFIC_BAND`) are unset, since Phase B is skipped
-    above. That is benign for a zero-delta run: with no diff and no inline review, the tier
-    only selects which report templates render.
-- Proceed directly to Step 1.8 (gate checks), then **Step 2.9c** (thread reconciliation — it
-  runs on this path; see its preamble), then Step 3 (no inline findings). Step 1.0, Step 1.1's
-  Phase A/B, and Step 2 never run.
+**On `FAST_ZERO_DELTA == true`:** set `RUN_MODE = "incremental-quick"`, `REVIEW_DIFF = ""`,
+`HEAD_SHA = "$EARLY_HEAD_SHA"`, `DELTA_SOURCE = "identical HEAD_SHA (Step 0.8 fast path)"`, and
+announce `HEAD_SHA unchanged since the last review (\`<HEAD_SHA short>\`) — skipping the memory
+fan-out, workspace checkout, and impact graph; running gate checks only.` **Skip Step 1.0's memory
+fan-out and Step 1.1's Phase A/B entirely** — nothing to operate on with an empty diff — and fetch
+only what the gates still need:
 
-**On `FAST_ZERO_DELTA == false`,** this step does nothing further — proceed to Step 1 exactly
-as before. Step 1.2b's own zero-delta short-circuit remains in place as a second, later check
-for the one shape this fast path cannot see by construction: a **rebase or amend that
-reintroduces the same tree at a new SHA** (`HEAD_SHA` changes, so `EARLY_HEAD_SHA != PRIOR_SHA`,
-but the authored delta is still zero once the blob-diff route resolves it). That shape needs the
-full `compare`/blob-diff logic in 1.2b to detect — this step is an addition to that logic, not a
-replacement of it, and only removes the cost for the far more common case: an untouched branch
-re-triggered by a `/review` comment, a scheduled re-check, or another bot's comment on the PR.
+- Prior comment state for Gate 3 **and** Step 2.9c: run `prior-comment-awareness.md § fetch
+  existing PR comment state` **in full**, standalone (both the `pulls/{n}/comments` REST fetch —
+  the source of `OPEN_BOT_COMMENTS[]`'s `url`/`ask`/`is_bot` and of `BOT_COMMENTS` — and the
+  `reviewThreads { id isResolved }` state), binding `BOT_COMMENTS`, `RESOLVED_THREAD_IDS`,
+  `COMMENT_TO_THREAD`, `OPEN_BOT_COMMENTS[]` exactly as that rule specifies — the `review-loop`
+  convergence case (threads resolved/declined, re-run on an unmoved head) is precisely a fast-path
+  run where thread reconciliation must still fire.
+- CI status (`gh pr checks $PR_NUMBER $GH_REPO_FLAG`) for Gate 2's report line.
+- PR title/body are already in `PR_META` (Step 0.5). Gates 1 and 5 (description-vs-code,
+  documentation adequacy) both grade this text, so both re-compare it against
+  `PRIOR_DIAGNOSTICS.gate_rows`'s carried verdict — an edited description needs no new commit, and
+  an unchanged one carries both prior gate rows forward verbatim (`⏭️`, Step 1.8's table).
+- Gates 4 and 6 (self-review signals, code review) carry forward unconditionally from
+  `PRIOR_DIAGNOSTICS` — the code they graded has not moved, and neither reads the description.
+- Relevance and lessons memory are **not** fetched: nothing for a lesson to calibrate against with
+  no diff and no new findings possible. Report `Memories — skipped (zero-delta fast path)`,
+  distinct from `not connected`, so a deliberate skip is never misread as an outage.
+- Bind `DEPTH_TIER` per `depth-routing.md` — cheap, local, and every downstream template reads it,
+  even though its impact-graph inputs (`BLAST_RADIUS`, `semver_delta`, `TRAFFIC_BAND`) are unset
+  with Phase B skipped; benign, since with no inline review the tier only picks report templates.
+
+Proceed directly to Step 1.8 (gate checks), then **Step 2.9c** (thread reconciliation runs on this
+path — see its preamble), then Step 3 (no inline findings). Step 1.0, Step 1.1's Phase A/B, and
+Step 2 never run.
+
+**On `FAST_ZERO_DELTA == false`,** proceed to Step 1 exactly as before. Step 1.2b's own zero-delta
+short-circuit remains as a second, later check for the one shape this fast path cannot see: a
+**rebase or amend that reintroduces the same tree at a new SHA** (`HEAD_SHA` changes but the
+authored delta is still zero once the blob-diff route resolves it) — this step only removes the
+cost for the far more common unmoved-branch case, not a replacement for that logic.
 
 ---
 
