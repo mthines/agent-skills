@@ -533,14 +533,14 @@ The value is one JSON object with a version stamp:
 
 | Field | Feeds | Notes |
 | --- | --- | --- |
-| `v` | the unknown-version fallback | Required. A reader that does not recognise it takes the **first-run path and says so** — it never guesses at a shape. |
-| `commit` | provenance | The `HEAD_SHA` the writing run reviewed; the same value as `runs[-1].sha`. |
-| `sticky_comment_id` · `sticky_url` | Step 4a | Saves the marker scan on the happy path. **A cache, never an authority** — Step 4a re-scans by marker when it is absent or the `PATCH` 404s, because a comment can be deleted by a human at any time. |
-| `bot_login` | the identity ladder | This agent's own login, read off its own sticky. Rung 2 of `prior-comment-awareness.md § fetch existing PR comment state`, which keeps dedup and Step 2.9c working when `/user` 401s. |
-| `runs[]` | `PRIOR_SHA`, `LAST_FULL_SHA`, `INCR_RUNS_SINCE_FULL`, Step 5 | Oldest first, **capped at 50** — drop from the front. `verdict` is read by Step 5's report line (`verdict PASS (was WARN at <sha>)`); nothing branches on it, since Step 4b no longer keys on an escalation. |
-| `open_thread_ids` | `RESOLVED_SINCE_PRIOR` | Gate 3's open set as it stood after the writing run's Step 2.9c. **Top-level, not per-run** — it describes current state, not history, so there is no bulky field to strip from older entries. |
+| `v` | the unknown-version fallback | Required. An unrecognised value takes the **first-run path and says so** — it never guesses at a shape. |
+| `commit` | provenance | The `HEAD_SHA` the writing run reviewed; same value as `runs[-1].sha`. |
+| `sticky_comment_id` · `sticky_url` | Step 4a | A **cache, never an authority** — Step 4a re-scans by marker when absent or the `PATCH` 404s (a human can delete a comment any time). |
+| `bot_login` | the identity ladder | This agent's own login, read off its own sticky — rung 2 of `prior-comment-awareness.md § fetch existing PR comment state`, keeping dedup and Step 2.9c working when `/user` 401s. |
+| `runs[]` | `PRIOR_SHA`, `LAST_FULL_SHA`, `INCR_RUNS_SINCE_FULL`, Step 5 | Oldest first, **capped at 50** — drop from the front. `verdict` only feeds Step 5's report line; nothing branches on it. |
+| `open_thread_ids` | `RESOLVED_SINCE_PRIOR` | Gate 3's open set after the writing run's Step 2.9c. **Top-level, not per-run** — current state, not history. |
 | `carried_findings[]` | `CARRIED_FINDINGS` | The deferred findings from Step 2.9b, **structured** — no `(confidence 84)` to re-parse out of a bullet. Capped at 50. |
-| `diagnostics` | `PRIOR_DIAGNOSTICS` | The anchorless outputs, structured. `optimality_cards` holds each card's markdown verbatim (a card is a multi-line block with its own table); capped at 2, the same cap Step 2.4c places on proposals. |
+| `diagnostics` | `PRIOR_DIAGNOSTICS` | The anchorless outputs, structured. `optimality_cards` holds each card's markdown verbatim; capped at 2, same as Step 2.4c's proposal cap. |
 
 **The record is bounded by construction**, which is why there is no truncation ladder here: 50
 runs at ~80 bytes, 50 findings at ~200 bytes, and 2 cards at ~1 KB sit an order of magnitude
@@ -549,52 +549,40 @@ itself.
 
 ### Read the record
 
-If `--full` was passed in Step 0, still read the record — carry-forward runs in **every** mode,
-including `--full`. A prior run's deferred and anchorless findings are not re-derivable from the
-diff, so dropping them here would silently lose them in exactly the mode a human passes when
-they want the most thorough re-review. What `--full` changes is only the run mode: set
-`RUN_MODE = "full"`, which is what makes Step 1.2b's delta triage skip — it keys on the mode, not
-on the baseline.
-
-**Do not blank `PRIOR_SHA` under `--full`.** The ledger era did, purely to guarantee triage
-skipped, and that is what forced a second variable (`PRIOR_REVIEW_SHA`) into existence: the
-`(carried from …)` suffix still needed a provenance sha, so one baseline had to be kept while the
-other was emptied, and every reader then had to know which was which. Since Step 1.2b already
-skips on `RUN_MODE == "full"`, blanking it buys nothing and costs the suffix its value.
+Read the record in **every** mode, including `--full` — a prior run's deferred and anchorless
+findings are not re-derivable from the diff, and `--full` changes only `RUN_MODE = "full"` (which is
+what makes Step 1.2b's delta triage skip, since it keys on the mode, not the baseline). **Do not
+blank `PRIOR_SHA` under `--full`**: triage already skips on the mode alone, so blanking it only costs
+the `(carried from …)` suffix its value — the ledger era needed a second variable
+(`PRIOR_REVIEW_SHA`) to compensate, which this avoids.
 
 ```text
 # Issue as a real mcp__lorekit__memory_read tool call.
 mcp__lorekit__memory_read: scope="<STATE_SCOPE>" key="<STATE_KEY>"
 ```
 
-**A miss is not an error.** The first run on any PR misses, and that is the defined first-run
-path. Distinguish three outcomes:
+**A miss is not an error** — the first run on any PR misses, and that is the defined first-run path.
+Distinguish three outcomes:
 
 | Outcome | `STATE_STATUS` | Then |
 | --- | --- | --- |
 | A record came back and its `v` is `1` | `read` | Bind everything from `data` (below). |
-| No such record | `miss` | First run, or a record that expired / was purged at merge. Take the fallback rung below. |
-| A record came back but is **past its expiry** | `miss` | Treat it exactly as absent — see below. |
+| No such record, or one past its expiry | `miss` | First run, or an expired/purged record. Take the fallback rung below. |
 | The tool threw, or `v` is unrecognised | `unavailable` | Take the fallback rung below, and say which of the two happened. |
 
-Retry a thrown error up to **2 more times** (3 attempts total) with a short backoff before
-settling on `unavailable`, exactly as Step 1.0 does — a single transient throw is a timeout far
-more often than an outage. The one exception is a hard "tool unavailable" error (the tool is not
-in this agent's `tools:` grant, or the LoreKit MCP server did not connect this session, which
-surfaces as `No such tool available: mcp__lorekit__memory_read`): there is nothing to wait for,
-so settle immediately. This read is the same backend as Step 1.0, so record the outcome once and
-let Step 1.0 reuse it rather than re-probing.
+Retry a thrown error up to **2 more times** (3 attempts total) with a short backoff before settling
+on `unavailable` — a single transient throw is a timeout far more often than an outage — except a
+hard "tool unavailable" error (`No such tool available: mcp__lorekit__memory_read`, meaning the tool
+is ungranted or the LoreKit MCP server never connected this session), where there is nothing to wait
+for. This read shares Step 1.0's backend, so record the outcome once and let Step 1.0 reuse it rather
+than re-probing. An unrecognised `v` is never parsed — fall back and log it, since a shape this run
+does not understand is more dangerous read than ignored.
 
-**An unrecognised `v` is never parsed.** Fall back and log it; a shape this run does not
-understand is more dangerous read than ignored.
-
-**An expired record is a miss, not a baseline.** LoreKit expires a record by marking it, not by
-deleting it on a schedule, so a read can return one that is past `expires_at` — and on an install
-with no merge-purge event that is the *normal* end state of every dormant PR. Check the expiry and
-take the fallback rung. The reasoning is the house rule for state records: a stale record is worse
-than a missing one, because the first-run path is a defined, exercised code path and acting on
-seven-day-old carried findings is neither. Log it distinctly — `PR-state record expired at <date> —
-treating as absent.` — so an expired record does not read as a first review.
+**An expired record is a miss, not a baseline.** LoreKit expires a record by marking it, not
+deleting it on a schedule, and with no merge-purge event that is the *normal* end state of every
+dormant PR — so a stale record is worse than a missing one, since the first-run path is a defined,
+exercised code path and acting on seven-day-old carried findings is neither. Take the fallback rung
+and log it distinctly — `PR-state record expired at <date> — treating as absent.`
 
 ### The GitHub fallback rung — baseline only
 
@@ -751,18 +739,7 @@ detection keeps working on an access path where `/user` is unreachable. Do not r
 
 ### What no longer happens here
 
-Named because each was a real mechanism with real guards, and a future reader should know it was
-removed deliberately rather than lost:
-
-| Removed | Why it existed | Why it is gone |
-| --- | --- | --- |
-| `<!-- PR_REVIEWER_LEDGER … -->` in the body, with its 50-entry cap and per-run field stripping | the sticky is rewritten in place, so run history had to ride inside it | the record holds the history; nothing bulky rides in a comment |
-| `DEGRADED_LEDGER` + its three-rung reduction ladder + the 1500-char pointer budget | a run that could not write the sticky still had to hand the next run a baseline, on an append-only object | the record is written whatever the sticky does (Step 4c) |
-| The `pulls/{n}/reviews` legacy-report and pointer-ledger fetches | three hosts could hold the state | one store holds the state |
-| `PRIOR_REVIEW` / `PRIOR_BODY` / `LEDGER_SOURCE` / `POINTER_LEDGER_BODY` | four names for "the text I am about to re-parse" | there is nothing to re-parse |
-| `PRIOR_REVIEW_SHA` as a second baseline | `PRIOR_SHA` was blanked under `--full` | the record supplies the provenance SHA in every mode |
-| `PRIOR_BLOCKING_FINGERPRINTS` | Step 4b's condition 4 | Step 4b has one condition (§ Step 4b) |
-| `PRIOR_RUN_STATE_UNKNOWN` as a distinct flag | a failed comments read had to be told apart from a genuine first pass | `STATE_STATUS` + `STICKY_READ_FAILED` say it directly, and the announcements above name all four combinations |
+Retired deliberately, not lost: the `<!-- PR_REVIEWER_LEDGER … -->` body block and `DEGRADED_LEDGER`'s reduction ladder (the record holds the history now, written whatever the sticky does — Step 4c); the `pulls/{n}/reviews` legacy-report/pointer-ledger fetches and the `PRIOR_REVIEW` / `PRIOR_BODY` / `LEDGER_SOURCE` / `POINTER_LEDGER_BODY` names (one store, nothing left to re-parse); `PRIOR_REVIEW_SHA` (the record supplies the provenance SHA in every mode, so `PRIOR_SHA` no longer needs blanking under `--full`); `PRIOR_BLOCKING_FINGERPRINTS` (Step 4b has one posting condition); and `PRIOR_RUN_STATE_UNKNOWN` (`STATE_STATUS` + `STICKY_READ_FAILED` say it directly).
 
 ---
 
