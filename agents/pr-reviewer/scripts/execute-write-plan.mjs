@@ -30,6 +30,111 @@ import { pathToFileURL } from "node:url";
 import { run as defaultRun } from "./prepare-review.mjs";
 
 /**
+ * The last pre-flight before a review.create POST — a check that survives the renderers being
+ * BYPASSED, which is the one failure surface upstream construction cannot close: on the MCP path
+ * (`add_issue_comment` / `add_comment_to_pending_review`), the rendered body has to be reproduced
+ * into a tool-call ARGUMENT, a copy this pipeline does not perform and nothing else re-verifies —
+ * `mthines/agent-skills#165` shipped all six artifacts of one run (the sticky and five inline
+ * comments) with the button markup HTML-escaped and double-backtick-wrapped, every assertion
+ * upstream having already passed on the pre-copy bytes. This is a straight port of the agent body's
+ * former `payload_is_safe(payload)` (agents/pr-reviewer.md § 4b) — moved here so there is exactly
+ * one executable copy, run on the ACTUAL bytes about to be posted rather than re-derived by the
+ * model from a description of them. Every numeric literal and stripping order below is load-bearing
+ * and asserted by the `payload-safety` L2-adjacent self-test cases (`G46l`'s script-level home).
+ * @param {{event?: string, body?: string, comments?: Array<{side?: string, body?: string, path?: string, line?: number}>}} payload
+ * @returns {{ok: boolean, reason: string}}
+ */
+export function payloadIsSafe(payload) {
+  if (payload.event !== "COMMENT") return { ok: false, reason: "event must be 'COMMENT'" };
+  if (typeof payload.body !== "string" || payload.body.length === 0) {
+    return { ok: false, reason: "body must be a non-empty string (pointer line)" };
+  }
+  if (payload.body.includes("<!-- PR_REVIEWER_REPORT -->")) {
+    return { ok: false, reason: "review body carries the report marker — the report belongs in the sticky" };
+  }
+  // A pointer is prose only. Nothing machine-readable rides on a review body any more — the run
+  // state is a LoreKit record (Step 4c) — so there is no ledger block to exempt from this budget.
+  if (payload.body.includes("<!-- PR_REVIEWER_LEDGER")) {
+    return { ok: false, reason: "review body carries a ledger block — run state lives in the PR-state record" };
+  }
+  // The body MUST be a `render-pointer.mjs` output, not hand-composed. Every pointer form opens
+  // with the pointer marker (render-pointer.mjs's own post-condition), and NO form carries a link —
+  // the report and its links live in the sticky. Without these two checks an improvised "Review
+  // findings posted — see the [report comment](url)" body sailed through (dash0hq/dash0#18451):
+  // no report marker, no ledger, under budget, and the hand-built permalink came out as
+  // `https://github.com//pull/<n>#…` with an empty owner/repo slug.
+  if (!payload.body.startsWith("<!-- PR_REVIEWER_POINTER -->")) {
+    return {
+      ok: false,
+      reason: "review body is not a render-pointer output — it must open with "
+        + "<!-- PR_REVIEWER_POINTER -->; do not hand-compose the body (§ POINTER_BODY)",
+    };
+  }
+  if (/\[[^\]]*\]\([^)]*\)/.test(payload.body)) {
+    return {
+      ok: false,
+      reason: "review body carries a markdown link — a pointer carries no links; the report and "
+        + "its links live in the sticky (use the sticky's html_url, never a hand-built permalink)",
+    };
+  }
+  if (payload.body.trim().length > 600) {
+    return { ok: false, reason: `review body is a pointer, not a report: ${payload.body.length} chars` };
+  }
+  for (const c of payload.comments || []) {
+    if (c.side !== "RIGHT" && c.side !== "LEFT") {
+      return { ok: false, reason: `comment missing side field: ${c.path}:${c.line}` };
+    }
+    const cBody = c.body || "";
+    // Tolerate the optional severity label decoration (e.g. "issue (high):"). A bare
+    // startsWith("issue:") would reject the reviewer's own tiered comments and abort the post.
+    if (!/^(praise|nitpick|suggestion|issue|question)( \((critical|high|medium|low)\))?:/.test(cBody)) {
+      return { ok: false, reason: `comment body missing Conventional-Comments prefix: ${cBody.slice(0, 40)}` };
+    }
+    // The shared attribution footer. Like the marker, only the renderer writes it, so its
+    // absence means this body did not come from `render-comment.mjs`.
+    if (!cBody.includes("<sup>`pr-reviewer` · commit `")) {
+      return { ok: false, reason: `comment body has no attribution footer (not rendered): ${c.path}` };
+    }
+    // Measure the PROSE, exactly as comment-shape.md does — not the whole body. Measuring the raw
+    // body would reject every finding carrying the fix fence that same rule requires for an
+    // `issue:` / `suggestion:`, and because this assertion aborts the WHOLE post rather than
+    // dropping one comment, one well-formed finding with a 10-line patch would take the entire
+    // review down.
+    let prose = cBody.replace(/```[a-zA-Z0-9_+-]*\n[\s\S]*?\n```/g, "");
+    prose = prose.replace(/^Evidence:.*$/gm, "");
+    prose = prose.replace(/^<sup>`pr-reviewer`.*$/gm, "");
+    // The Fix-with-Agent0 button — strip it BEFORE measuring: its <picture> markup is theme-
+    // switching boilerplate that on its own pushes a well-formed finding past any prose ceiling.
+    // It is a rendered affordance, not argument, exactly like the fence.
+    prose = prose.replace(/^<a href="https:\/\/app\.dash0(?:-dev)?\.com\/.*$/gm, "");
+    prose = prose.replace(/^_Pseudo-code — verify before applying\._$/gm, "");
+    // The `(unverified: …)` tag, same class as the fence and the button: a rendered decoration,
+    // not argument. Stripped rather than re-bounded — render-comment.mjs's own UNVERIFIED_MAX
+    // already bounds it, and a second bound here would be the same stale copy again.
+    prose = prose.replace(/\s*\(unverified: [^)]*\)/g, "");
+    prose = prose.replace(/<!--\s*fp:v\d+:[^\s>]+?\s*-->/g, "").trim();
+    // A LOOSE ceiling, deliberately — not a re-implementation of render-comment.mjs's real per-
+    // field caps (title ≤ 60, prose ≤ 200). This pre-flight cannot see the field boundaries, only
+    // the rendered text, so it bounds the sum generously (60 title + ~25 decoration + 200 prose)
+    // and lets the renderer own precision.
+    if (prose.length > 320) {
+      return { ok: false, reason: `comment prose > 320 chars: ${prose.length}` };
+    }
+    // An absolute ceiling on the REST of the body still applies, generously. The button is
+    // stripped first, exactly as for the prose measurement and for the same reason: its length is
+    // the deep link's, not the finding's.
+    const body2000 = cBody.replace(/^<a href="https:\/\/app\.dash0(?:-dev)?\.com\/.*$/gm, "");
+    if (body2000.length > 2000) {
+      return { ok: false, reason: `comment body > 2000 chars, fix button excluded: ${body2000.length}` };
+    }
+    if ((cBody.match(/<!--\s*fp:v\d+:/g) || []).length > 1) {
+      return { ok: false, reason: `comment carries more than one fingerprint marker: ${c.path}` };
+    }
+  }
+  return { ok: true, reason: "" };
+}
+
+/**
  * Probes gh access with one `gh api` call — never a binary-location shell-out,
  * never gh's `auth`+`status` subcommand (F6).
  * @param {string} repo - owner/name
@@ -133,12 +238,26 @@ export async function executeWritePlan(writePlan, opts = {}) {
 
   const inlineCount = writePlan.review_create?.comments?.length || 0;
   if (writePlan.review_create && inlineCount > 0) {
-    const r = await runner("gh", [
-      "api", `repos/${repo}/pulls/${writePlan.pr_number}/reviews`, "-X", "POST",
-      "-f", `commit_id=${writePlan.review_create.commit_id}`, "-f", "event=COMMENT",
-      "-f", `comments=${JSON.stringify(writePlan.review_create.comments)}`,
-    ]);
-    executed.push({ kind: "review.create", ok: r.ok, count: inlineCount });
+    // `review_create.body` is not yet a write-plan.json field (finalize.mjs does not build one
+    // today), so the pointer marker is a stand-in until it is — payloadIsSafe's body checks are
+    // real and exercised by the self-test either way; they just cannot fail on a field this
+    // caller does not supply yet. `event` is passed literally as the same hardcoded "COMMENT"
+    // the POST call below sends, never a plan-supplied value.
+    const safety = payloadIsSafe({
+      event: "COMMENT",
+      body: writePlan.review_create.body ?? "<!-- PR_REVIEWER_POINTER -->",
+      comments: writePlan.review_create.comments,
+    });
+    if (!safety.ok) {
+      executed.push({ kind: "review.create", ok: false, count: inlineCount, aborted: true, reason: safety.reason });
+    } else {
+      const r = await runner("gh", [
+        "api", `repos/${repo}/pulls/${writePlan.pr_number}/reviews`, "-X", "POST",
+        "-f", `commit_id=${writePlan.review_create.commit_id}`, "-f", "event=COMMENT",
+        "-f", `comments=${JSON.stringify(writePlan.review_create.comments)}`,
+      ]);
+      executed.push({ kind: "review.create", ok: r.ok, count: inlineCount });
+    }
   }
 
   return { executed, dryRun: false, ghAccess: true, lorekitOps };
@@ -164,6 +283,49 @@ async function selfTest() {
     if (!cond) { failed++; console.error(`  ✗ ${label}${detail ? ` — ${detail}` : ""}`); }
     else console.log(`  ✓ ${label}`);
   };
+
+  // payloadIsSafe — the Step 4b pre-flight ported from agents/pr-reviewer.md (Phase 5).
+  {
+    const FOOTER = "<sup>`pr-reviewer` · commit `abc1234`</sup>";
+    const okComment = { path: "a.ts", line: 1, side: "RIGHT", body: `nitpick: fine. ${FOOTER}` };
+    const okPayload = { event: "COMMENT", body: "<!-- PR_REVIEWER_POINTER -->", comments: [okComment] };
+    check("a well-formed payload is safe", payloadIsSafe(okPayload).ok === true, payloadIsSafe(okPayload).reason);
+    check("a non-COMMENT event is rejected", payloadIsSafe({ ...okPayload, event: "APPROVE" }).ok === false);
+    check("an empty body is rejected", payloadIsSafe({ ...okPayload, body: "" }).ok === false);
+    check("a body carrying the report marker is rejected",
+      payloadIsSafe({ ...okPayload, body: "<!-- PR_REVIEWER_POINTER -->\n<!-- PR_REVIEWER_REPORT -->" }).ok === false);
+    check("a body carrying a ledger block is rejected",
+      payloadIsSafe({ ...okPayload, body: "<!-- PR_REVIEWER_POINTER -->\n<!-- PR_REVIEWER_LEDGER" }).ok === false);
+    check("a body not opening with the pointer marker is rejected",
+      payloadIsSafe({ ...okPayload, body: "Review findings posted — see the report." }).ok === false);
+    check("a body carrying a markdown link is rejected",
+      payloadIsSafe({ ...okPayload, body: "<!-- PR_REVIEWER_POINTER -->\nsee the [report](https://x)" }).ok === false);
+    check("a body over 600 chars is rejected",
+      payloadIsSafe({ ...okPayload, body: `<!-- PR_REVIEWER_POINTER -->\n${"x".repeat(601)}` }).ok === false);
+    check("a comment with no side is rejected",
+      payloadIsSafe({ ...okPayload, comments: [{ ...okComment, side: undefined }] }).ok === false);
+    check("a comment missing the Conventional-Comments prefix is rejected",
+      payloadIsSafe({ ...okPayload, comments: [{ ...okComment, body: `no prefix. ${FOOTER}` }] }).ok === false);
+    check("a comment with no attribution footer is rejected",
+      payloadIsSafe({ ...okPayload, comments: [{ ...okComment, body: "nitpick: no footer." }] }).ok === false);
+    check("a comment over the 320-char prose ceiling is rejected",
+      payloadIsSafe({ ...okPayload, comments: [{ ...okComment, body: `nitpick: ${"p".repeat(321)} ${FOOTER}` }] }).ok === false);
+    check("a comment over the 2000-char body ceiling (button excluded) is rejected",
+      payloadIsSafe({ ...okPayload, comments: [{ ...okComment, body: `nitpick: x ${FOOTER}${"y".repeat(2000)}` }] }).ok === false);
+    check("a comment carrying more than one fingerprint marker is rejected",
+      payloadIsSafe({ ...okPayload, comments: [{ ...okComment,
+        body: `nitpick: x ${FOOTER}<!-- fp:v1:a@b.ts --><!-- fp:v1:c@d.ts -->` }] }).ok === false);
+    check("the `(unverified: …)` tag is stripped before the prose measurement, not counted against it",
+      payloadIsSafe({ ...okPayload, comments: [{ ...okComment,
+        body: `suggestion: x (unverified: ${"u".repeat(300)}) ${FOOTER}` }] }).ok === true,
+      payloadIsSafe({ ...okPayload, comments: [{ ...okComment,
+        body: `suggestion: x (unverified: ${"u".repeat(300)}) ${FOOTER}` }] }).reason);
+    check("the fix-with-agent0 button is stripped before the body measurement, not counted against it",
+      payloadIsSafe({ ...okPayload, comments: [{ ...okComment,
+        body: `nitpick: x ${FOOTER}\n<a href="https://app.dash0.com/${"z".repeat(1900)}">fix</a>` }] }).ok === true,
+      payloadIsSafe({ ...okPayload, comments: [{ ...okComment,
+        body: `nitpick: x ${FOOTER}\n<a href="https://app.dash0.com/${"z".repeat(1900)}">fix</a>` }] }).reason);
+  }
 
   const mkSpy = () => {
     /** @type {any[]} */
@@ -224,7 +386,15 @@ async function selfTest() {
       repo: "o/r", pr_number: 1,
       thread_resolve: [{ thread_id: "t1" }],
       sticky_upsert: { comment_id: null, body_path: "/tmp/body.md" },
-      review_create: { commit_id: "abc", comments: [{ path: "a.ts", line: 1, body: "x" }] },
+      // A payloadIsSafe-legal comment — this case tests op ORDERING, not payload safety, and a
+      // synthetic "x" body would now (correctly) abort review.create before it ever posts.
+      review_create: {
+        commit_id: "abc",
+        comments: [{
+          path: "a.ts", line: 1, side: "RIGHT",
+          body: "nitpick: minor. <sup>`pr-reviewer` · commit `abc1234`</sup>",
+        }],
+      },
     };
     let handlerCalledBeforeSticky = false;
     await executeWritePlan(writePlan, {

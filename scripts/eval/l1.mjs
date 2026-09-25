@@ -2588,8 +2588,11 @@ function checksInSync(plan, checks) {
 
   // G24f: the report has exactly one host. A review body carrying the report marker is the
   // regression that leaves one full report per run on the PR; the pre-flight must reject it.
-  s.check("G24f pr-reviewer.md rejects a review body carrying the report marker",
-    /"<!-- PR_REVIEWER_REPORT -->" in payload\["body"\]/.test(prReviewer));
+  // Phase 5 moved `payload_is_safe` out of the agent body into `payloadIsSafe()`
+  // (execute-write-plan.mjs) — the executable home the check now reads.
+  s.check("G24f execute-write-plan.mjs's payloadIsSafe rejects a review body carrying the report marker",
+    /payload\.body\.includes\("<!-- PR_REVIEWER_REPORT -->"\)/.test(
+      readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs"), "utf8")));
   s.check("G24f pr-reviewer.md documents the un-writable-sticky path without a second report",
     /When the sticky cannot be written/.test(prReviewer) &&
     /DEGRADED_POINTER_BODY/.test(prReviewer));
@@ -2683,8 +2686,12 @@ function checksInSync(plan, checks) {
     s.check("G24i Step 4a appends no ledger to the report body",
       !/PR_REVIEWER_LEDGER/.test(sliceBetween(prReviewer, "#### Build the payload, then run the renderer",
         "#### The report has exactly one host")));
-    s.check("G24i Step 4b rejects a review body carrying a ledger",
-      /PR_REVIEWER_LEDGER" in payload\["body"\]/.test(step4b));
+    // Phase 5 moved `payload_is_safe` out of Step 4b into `payloadIsSafe()`
+    // (execute-write-plan.mjs) — the executable home the check now reads; Step 4b's own prose
+    // just needs to still POINT at it, asserted a few checks below (G46i/G46l).
+    s.check("G24i execute-write-plan.mjs's payloadIsSafe rejects a review body carrying a ledger",
+      /payload\.body\.includes\("<!-- PR_REVIEWER_LEDGER"\)/.test(
+        readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs"), "utf8")));
     s.check("G24i Step 0.7 does not fetch pulls/reviews for prior state",
       !/pulls\/\$PR_NUMBER\/reviews|pulls\/\{n\}\/reviews`/.test(step07Fetches));
 
@@ -3462,8 +3469,9 @@ const isPollBlock = (block) =>
 }
 
 // G30: the tier-tolerant Conventional-Comments prefix / severity-label regex is hand-mirrored
-// across three sites — the rule (conventional-comments.md PREFIX_RE), the agent's Step 4b
-// payload pre-flight (pr-reviewer.md), and the relevance script (record-comment-relevance.mjs).
+// across three sites — the rule (conventional-comments.md PREFIX_RE), the Step 4b payload
+// pre-flight (Phase 5: `payloadIsSafe()` in execute-write-plan.mjs, no longer the agent body
+// itself), and the relevance script (record-comment-relevance.mjs).
 // A drift (a tier renamed/reordered/removed in one) would let a tiered comment pass one gate and
 // abort another — exactly the hand-mirror the #136 review flagged. Assert the four-tier alternation
 // is spelled identically wherever that regex lives. (render-report.mjs uses the array form, so it
@@ -3472,7 +3480,7 @@ const isPollBlock = (block) =>
   const TIER = "critical|high|medium|low";
   for (const m of [
     "agents/shared/rules/conventional-comments.md",
-    "agents/pr-reviewer.md",
+    "agents/pr-reviewer/scripts/execute-write-plan.mjs",
     "scripts/record-comment-relevance.mjs",
   ]) {
     const body = readFileSync(join(REPO_ROOT, m), "utf8");
@@ -4581,34 +4589,33 @@ const isPollBlock = (block) =>
       /`\$\{TIER_GLYPH\[t\]\} \$\{counts\[t\]\} \$\{t\}`/.test(spine));
 
     // (e2) The Step 4b pre-flight and the renderer must agree about what a well-formed body is.
-    // They are two implementations of one contract in two languages, and the pre-flight aborts the
-    // WHOLE post rather than dropping one comment — so a disagreement does not lose a finding, it
-    // loses the review. Caught exactly that while writing this: the <picture> button markup is
-    // ~430 chars and was being measured as prose, which rejected every rendered claim.
+    // They are two implementations of one contract, and the pre-flight aborts the WHOLE post
+    // rather than dropping one comment — so a disagreement does not lose a finding, it loses the
+    // review. Caught exactly that while writing this: the <picture> button markup is ~430 chars
+    // and was being measured as prose, which rejected every rendered claim.
     //
-    // Executed, not text-matched: extract `payload_is_safe` from the agent body and run the
-    // committed reference renderings through it.
+    // Executed, not text-matched. Phase 5 moved the pre-flight out of the agent body (it was
+    // `payload_is_safe`, a hand-mirrored Python re-implementation model-composed at review time)
+    // into `payloadIsSafe()`, a real, imported, self-tested JS function in
+    // execute-write-plan.mjs — so this now imports and calls the SAME function the write path
+    // runs, rather than extracting a fenced code block and shelling out to python3 to run a copy
+    // of it. A drift between this check and production is no longer possible by construction.
     {
-      const agentBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
-      const m = agentBody.match(/^def payload_is_safe\([\s\S]*?\n    return \(True, ""\)$/m);
-      s.check("G46i the Step 4b pre-flight is extractable from the agent body", !!m,
-        "payload_is_safe not found — the fence shape changed");
-      if (m) {
+      const ewpMod = await import(
+        pathToFileURL(join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs")).href);
+      s.check("G46i execute-write-plan.mjs exports payloadIsSafe",
+        typeof ewpMod.payloadIsSafe === "function",
+        "payloadIsSafe not found — the Phase 5 migration target moved or was renamed");
+      if (typeof ewpMod.payloadIsSafe === "function") {
         const comments = fixtures.map((name) => {
           const body = readFileSync(join(FIX, `${name}.expected.md`), "utf8");
           return { path: "a.ts", line: 1, side: "RIGHT", body };
         });
-        const prog = `${m[0]}\nimport json,sys\n`
-          + `ok, why = payload_is_safe({"event":"COMMENT","body":"<!-- PR_REVIEWER_POINTER -->",`
-          + `"comments": json.loads(sys.argv[1])})\nprint(json.dumps([ok, why]))\n`;
-        const r = spawnSync("python3", ["-c", prog, JSON.stringify(comments)], { encoding: "utf8" });
-        s.check("G46i the pre-flight runs", r.status === 0, (r.stderr || "").slice(0, 300));
-        if (r.status === 0) {
-          let verdict = [null, ""];
-          try { verdict = JSON.parse(r.stdout); } catch { /* reported below */ }
-          s.check("G46i the pre-flight accepts every rendered reference body", verdict[0] === true,
-            `rejected: ${verdict[1]}`);
-        }
+        const verdict = ewpMod.payloadIsSafe({
+          event: "COMMENT", body: "<!-- PR_REVIEWER_POINTER -->", comments,
+        });
+        s.check("G46i the pre-flight accepts every rendered reference body", verdict.ok === true,
+          `rejected: ${verdict.reason}`);
       }
     }
 
@@ -4728,40 +4735,21 @@ const isPollBlock = (block) =>
     // `UNVERIFIED_MAX` was added to the spine and this ceiling did not move, so a finding legal
     // under every per-field cap tripped a predicate that ABORTS THE WHOLE POST — one maximal
     // finding took the entire batch down. The guard renders the maximal legal payload for each
-    // shape and applies the pre-flight's own documented strips, so the next cap added to the spine
-    // fails a check here instead of a review in production.
-    const ceilingM = agentBody.match(/if len\(_prose\) > (\d+):/);
+    // shape and runs it through the REAL `payloadIsSafe()` (execute-write-plan.mjs, Phase 5's
+    // migration target) — calling the function itself rather than re-deriving its ceilings and
+    // strips as a parallel copy, so the next cap added to the spine fails a check here instead of
+    // a review in production, and this guard cannot silently drift from what actually runs.
+    const ewpPath = join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs");
+    const ewpSrc = readFileSync(ewpPath, "utf8");
+    const { payloadIsSafe } = await import(pathToFileURL(ewpPath).href);
+    const ceilingM = ewpSrc.match(/if \(prose\.length > (\d+)\)/);
     s.check("G46l the post pre-flight states its prose ceiling as a number L1 can read",
-      !!ceilingM, "payload_is_safe must keep the `if len(_prose) > N:` form");
+      !!ceilingM, "payloadIsSafe must keep the `if (prose.length > N)` form");
     const ceiling = Number(ceilingM?.[1] ?? 0);
-    // Exactly the strips payload_is_safe performs, in its order.
-    const preflightProse = (body) => body
-      .replace(/```[a-zA-Z0-9_+-]*\n[\s\S]*?\n```/g, "")
-      .replace(/^Evidence:.*$/gm, "")
-      .replace(/^<sup>`pr-reviewer`.*$/gm, "")
-      .replace(/^<a href="https:\/\/app\.dash0(?:-dev)?\.com\/.*$/gm, "")
-      .replace(/^_Pseudo-code — verify before applying\._$/gm, "")
-      .replace(/\s*\(unverified: [^)]*\)/g, "")
-      .replace(/<!--\s*fp:v\d+:[^\s>]+?\s*-->/g, "")
-      .trim();
-    // The SECOND ceiling in the same predicate, on the whole body rather than the prose. It had no
-    // coverage at all while the prose one did, which is how it came to describe the fix button as
-    // "~430 chars" long after the theme split doubled that element into two <source> plus an <img>.
-    // Measured: a legal `issue:` at every cap with a 10-line fence and a 408-char link renders 2208
-    // chars, 933 of it button — over a 2000 ceiling that ABORTS THE WHOLE POST. Both ceilings are
-    // read out of the source and both are measured here, so neither can drift alone again.
-    const bodyCeilingM = agentBody.match(/if len\(_body\) > (\d+):/);
+    const bodyCeilingM = ewpSrc.match(/if \(body2000\.length > (\d+)\)/);
     s.check("G46l the post pre-flight states its whole-body ceiling as a number L1 can read",
-      !!bodyCeilingM, "payload_is_safe must keep the `if len(_body) > N:` form");
+      !!bodyCeilingM, "payloadIsSafe must keep the `if (body2000.length > N)` form");
     const bodyCeiling = Number(bodyCeilingM?.[1] ?? 0);
-    // The one strip the body measurement performs: the button, whose length is the deep link's.
-    // Applied HERE only if the source actually applies it — a hand-copied strip would make this
-    // measurement pass on a predicate that no longer strips anything, which is a guard measuring
-    // its own copy of the rule. Conditioning on the source makes the measurement the real gate.
-    const bodyStripsButton = /_body = _re\.sub\(\s*r'\^<a href="https:\/\/app\\\.dash0/.test(agentBody);
-    const preflightBody = (body) => bodyStripsButton
-      ? body.replace(/^<a href="https:\/\/app\.dash0(?:-dev)?\.com\/.*$/gm, "")
-      : body;
     // A real link through the real builder, at a realistic prompt length — the encoding and the
     // `<picture>` markup around it are what this measures, so neither may be approximated here.
     const { buildLink } = await import(
@@ -4789,21 +4777,23 @@ const isPollBlock = (block) =>
       const r = run([], JSON.stringify(payload));
       s.check(`G46l ${label} renders`, r.ok, (r.err || "").slice(0, 140));
       if (!r.ok) continue;
-      const n = preflightProse(r.out).length;
-      s.check(`G46l ${label} fits the ${ceiling}-char prose pre-flight (${n})`, n <= ceiling,
-        `${n} > ${ceiling} — payload_is_safe aborts the WHOLE post, so this drops every finding`);
-      const b = preflightBody(r.out).length;
-      s.check(`G46l ${label} fits the ${bodyCeiling}-char body pre-flight (${b})`, b <= bodyCeiling,
-        `${b} > ${bodyCeiling} — payload_is_safe aborts the WHOLE post, so this drops every finding`);
+      const verdict = payloadIsSafe({
+        event: "COMMENT", body: "<!-- PR_REVIEWER_POINTER -->",
+        comments: [{ path: "a.ts", line: 1, side: "RIGHT", body: r.out }],
+      });
+      s.check(`G46l ${label} passes payloadIsSafe (prose <= ${ceiling}, body <= ${bodyCeiling})`,
+        verdict.ok === true,
+        `rejected: ${verdict.reason} — payloadIsSafe aborts the WHOLE post, so this drops every finding`);
     }
     s.check("G46l the pre-flight strips the unverified tag it does not bound",
-      /_prose = _re\.sub\(r"\\s\*\\\(unverified: \[\^\)\]\*\\\)"/.test(agentBody),
+      /prose = prose\.replace\(\/\\s\*\\\(unverified: \[\^\)\]\*\\\)\/g, ""\)/.test(ewpSrc),
       "the tag is a rendered decoration like the fence and the button — strip it, do not re-bound it");
     // The body measurement is only survivable because the button is stripped from it too: the
     // element is ~525 chars of boilerplate plus a URL `build-agent0-link.mjs` bounds at 4000, so a
     // maximal button alone can exceed any ceiling this predicate could name.
+    const bodyStripsButton = /const body2000 = cBody\.replace\(\/\^<a href="https:\\\/\\\/app\\\.dash0/.test(ewpSrc);
     s.check("G46l the whole-body ceiling excludes the fix button",
-      bodyStripsButton && /fix button excluded/.test(agentBody),
+      bodyStripsButton && /fix button excluded/.test(ewpSrc),
       "measure the body without the button, exactly as the prose measurement does");
 
     // (m) The finding title is one string on two surfaces, so one cap governs both. The report

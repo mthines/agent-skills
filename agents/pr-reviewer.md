@@ -3007,124 +3007,36 @@ from state that never went missing.
 still run, because a dry-run that skips its own safety checks would rehearse a broken payload as
 if it were a rehearsed-safe one.
 
-Build the payload and run the pre-flight assertions below **before** the API call:
+Build the payload and confirm it is safe **before** the API call.
 
-```python
-def payload_is_safe(payload: dict) -> tuple[bool, str]:
-    if payload.get("event") != "COMMENT":
-        return (False, "event must be 'COMMENT'")
-    if not isinstance(payload.get("body", ""), str) or len(payload["body"]) == 0:
-        return (False, "body must be a non-empty string (pointer line)")
-    if "<!-- PR_REVIEWER_REPORT -->" in payload["body"]:
-        return (False, "review body carries the report marker — the report belongs in the sticky")
-    # A pointer is prose only. Nothing machine-readable rides on a review body any more —
-    # the run state is a LoreKit record (Step 4c), so there is no ledger block to exempt
-    # from this budget and no second, larger budget to keep in step with it.
-    if "<!-- PR_REVIEWER_LEDGER" in payload["body"]:
-        return (False, "review body carries a ledger block — run state lives in the PR-state record")
-    # The body MUST be a `render-pointer.mjs` output, not hand-composed. Every pointer form opens
-    # with the pointer marker (render-pointer.mjs post-condition), the ordinary form is marker-only,
-    # and NO form carries a link — the report and its links live in the sticky (§ POINTER_BODY).
-    # Without these two checks an improvised "Review findings posted — see the [report comment](url)"
-    # body sailed through: it has no report marker, no ledger, and is under budget, so nothing here
-    # caught it — and the hand-built permalink came out as `https://github.com//pull/<n>#…` with an
-    # empty owner/repo slug (dash0hq/dash0#18451). These mirror render-pointer.mjs's own marker
-    # post-condition and `assertPlain` link rejection, so an improvised pointer is rejected here the
-    # same way the renderer would have refused to emit it.
-    if not payload["body"].startswith("<!-- PR_REVIEWER_POINTER -->"):
-        return (False, "review body is not a render-pointer output — it must open with "
-                "<!-- PR_REVIEWER_POINTER -->; do not hand-compose the body (§ POINTER_BODY)")
-    import re as _re_link
-    if _re_link.search(r"\[[^\]]*\]\([^)]*\)", payload["body"]):
-        return (False, "review body carries a markdown link — a pointer carries no links; the "
-                "report and its links live in the sticky (use the sticky's html_url, never a "
-                "hand-built permalink)")
-    if len(payload["body"].strip()) > 600:
-        return (False, f"review body is a pointer, not a report: {len(payload['body'])} chars")
-    for c in payload.get("comments", []):
-        if c.get("side") not in ("RIGHT", "LEFT"):
-            return (False, f"comment missing side field: {c.get('path')}:{c.get('line')}")
-        import re  # mirrors conventional-comments.md § Mechanical check
-        # Tolerate the optional severity label decoration (e.g. "issue (high):"). A bare
-        # startswith("issue:") would reject the reviewer's own tiered comments and abort the post.
-        if not re.match(
-            r"^(praise|nitpick|suggestion|issue|question)( \((critical|high|medium|low)\))?:",
-            c.get("body", ""),
-        ):
-            return (False, f"comment body missing Conventional-Comments prefix: {c['body'][:40]}")
-        # The shared attribution footer. Like the marker, only the renderer writes it,
-        # so its absence means this body did not come from `render-comment.mjs` — which
-        # is the one thing this pre-flight can still detect after the renderer landed.
-        if "<sup>`pr-reviewer` · commit `" not in c.get("body", ""):
-            return (False, f"comment body has no attribution footer (not rendered): {c.get('path')}")
-        # Measure the PROSE, exactly as comment-shape.md does — not the whole body.
-        # `len(body) > 240` on the raw body rejected every finding carrying the fix
-        # fence that same rule requires for an `issue:` / `suggestion:`, and because
-        # this assertion aborts the whole post rather than dropping one comment, one
-        # well-formed finding with a 10-line patch would have taken the entire review
-        # down. The two caps now measure the same thing.
-        import re as _re
-        _prose = _re.sub(r"```[a-zA-Z0-9_+-]*\n.*?\n```", "", c.get("body", ""), flags=_re.DOTALL)
-        _prose = _re.sub(r"^Evidence:.*$", "", _prose, flags=_re.MULTILINE)
-        _prose = _re.sub(r"^<sup>`pr-reviewer`.*$", "", _prose, flags=_re.MULTILINE)
-        # The Fix-with-Agent0 button. Strip it BEFORE measuring: its <picture> markup is
-        # ~430 chars of theme-switching boilerplate, which on its own pushes a
-        # well-formed finding past any prose ceiling. It is a rendered affordance, not
-        # argument, exactly like the fence.
-        _prose = _re.sub(r'^<a href="https://app\.dash0(?:-dev)?\.com/.*$', "", _prose,
-                         flags=_re.MULTILINE)
-        _prose = _re.sub(r"^_Pseudo-code — verify before applying\._$", "", _prose, flags=_re.MULTILINE)
-        # The `(unverified: …)` tag, same class as the fence and the button: a rendered
-        # decoration, not argument. `UNVERIFIED_MAX = 40` was added to the spine without
-        # this ceiling moving, and 40 was the whole overflow — a claim legal under every
-        # per-field cap measured 363 here against a 320 bound, and this predicate aborts
-        # the WHOLE post, so one maximal finding took the entire batch down. Stripping it
-        # is the fix rather than raising the number, because the renderer's own
-        # `UNVERIFIED_MAX` already bounds it and a second bound here would be the same
-        # stale copy again. L1 `G46l` measures a maximal render against this ceiling, so
-        # the next cap added to the spine fails a check instead of a post.
-        _prose = _re.sub(r"\s*\(unverified: [^)]*\)", "", _prose)
-        _prose = _re.sub(r"<!--\s*fp:v\d+:[^\s>]+?\s*-->", "", _prose).strip()
-        # A LOOSE ceiling, deliberately — not a re-implementation of the caps.
-        # `render-comment.mjs` enforces the real ones per field (≤ 60-char title, ≤ 200
-        # chars of prose), and this pre-flight cannot see the field boundaries, only the
-        # rendered text: on a claim `_prose` is the title line plus the body, and on a
-        # one-liner the whole finding is the title line. Re-deriving a per-field cap from
-        # that would false-reject a well-formed one-liner, and this assertion aborts the
-        # WHOLE post rather than dropping one comment. So bound the sum generously
-        # (60 title + ~25 decoration + 200 prose) and let the renderer own precision.
-        if len(_prose) > 320:
-            return (False, f"comment prose > 320 chars: {len(_prose)}")
-        # An absolute ceiling on the REST of the body still applies, generously: a title
-        # line + prose (200) + an evidence line (180) + a 10-line fence + the footer +
-        # the marker. Anything past this is a shape failure the renderer should already
-        # have refused.
-        #
-        # The button is stripped first, exactly as it is for the prose measurement above
-        # and for the same reason: its length is the deep link's, not the finding's.
-        # `fixButton` emits ~525 chars of <picture> boilerplate PLUS the URL, and
-        # `build-agent0-link.mjs` bounds that URL at MAX_URL = 4000 — so a maximal button
-        # on its own can exceed any ceiling this predicate could name. The stale "~430
-        # chars" this comment used to claim was measured before the theme split doubled
-        # the element (two <source> plus an <img>, three URLs). Measured at 65b21a4: a
-        # legal `issue:` at every cap with a 10-line fence and a 408-char link renders
-        # 2208 chars, of which 933 is the button — over a ceiling that aborts the WHOLE
-        # post, so one maximal finding took the entire batch down. Stripping it is the fix
-        # rather than raising the number, for the same reason as the `(unverified: …)` tag
-        # above: the renderer bounds every field it owns, and a second bound here would be
-        # the same stale copy again. L1 `G46l` measures a maximal render against this
-        # ceiling too, so the next thing that grows fails a check instead of a post.
-        _body = _re.sub(r'^<a href="https://app\.dash0(?:-dev)?\.com/.*$', "",
-                        c.get("body", ""), flags=_re.MULTILINE)
-        if len(_body) > 2000:
-            return (False, f"comment body > 2000 chars, fix button excluded: {len(_body)}")
-        if len(_re.findall(r"<!--\s*fp:v\d+:", c.get("body", ""))) > 1:
-            return (False, f"comment carries more than one fingerprint marker: {c.get('path')}")
-    return (True, "")
-```
+**Mechanical home:** `finalize.mjs`'s renderer calls (`render-comment.mjs` per inline finding,
+`render-pointer.mjs` for the review's own top-level body) and `execute-write-plan.mjs`'s
+`review.create` step. Every property the old hand-written `payload_is_safe(payload)` re-verified is
+now enforced **by construction**, upstream of this step, not re-checked after the fact:
 
-If `payload_is_safe` returns `False`, abort and surface the reason in the terminal report.
-Do not attempt to auto-fix the payload.
+| Was hand-checked by `payload_is_safe` | Now enforced by |
+|---|---|
+| `event == "COMMENT"` | `execute-write-plan.mjs` hardcodes `-f event=COMMENT` literally on the POST — never a model-supplied field, so it cannot drift |
+| `side ∈ {RIGHT, LEFT}`, comment shape | `validate-judgments.mjs`'s schema, upstream of `finalize.mjs` |
+| Conventional-Comments prefix, the attribution footer, fingerprint-marker singularity, the 320-char prose cap and 2000-char body cap (fix button and `(unverified: …)` tag stripped first), `UNVERIFIED_MAX` | `render-comment.mjs`'s own fail-closed `bad()` assertions — a comment that fails any of these never reaches the write-plan, since `finalize.mjs`'s `renderVia()` only writes the file when the render exits 0 |
+| Review body: report-marker-free, ledger-free, `PR_REVIEWER_POINTER`-prefixed, link-free, 600-char cap | `render-pointer.mjs`'s own fail-closed assertions (§ POINTER_BODY) |
+
+The retired function re-verified all of this by hand, *after* rendering, as a second copy of rules
+the renderers already enforce — which is exactly what let an improvised, hand-composed body slip
+past it undetected on `dash0hq/dash0#18451` (a hand-built permalink with an empty owner/repo slug,
+under every length budget, carrying neither a report marker nor a ledger, so nothing in the
+duplicate copy caught it). A second copy of a rule cannot catch a payload that never went through
+the first copy at all.
+
+**If you must build a payload without `finalize.mjs`** (the MCP fallback — see
+[`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md)): run `render-comment.mjs` per comment and
+`render-pointer.mjs` for the review body directly, and treat a non-zero exit as unsafe. Do not
+re-derive the checks as a second, driftable copy — a body that did not come from the renderers is
+unsafe by definition, not by re-inspection.
+
+If the payload is unsafe (a renderer exited non-zero, or the review-body/comment-shape contract
+above is otherwise violated), abort and surface the reason in the terminal report. Do not attempt
+to auto-fix the payload.
 
 **When to post.** Exactly one condition:
 
