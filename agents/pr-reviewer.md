@@ -3022,30 +3022,28 @@ from its `tools:` grant, so a reviewer can never delete a memory as a side effec
 The state record is about *this PR*. This step is about *this repository* — the half that outlives
 the branch and reaches the next author who touches the same symbol.
 
-Run the two writes in
-[`memory.md § Write — the two calls this agent makes itself`](./pr-reviewer/rules/memory.md#write--the-two-calls-this-agent-makes-itself):
-**knowledge** for each symbol this run traced (deep tier only, cap 10) and **hotspot** for each file
-that carried a confirmed finding — plus each file where Step 1.0's in-run signals recorded a `missed`
-(a human caught something on a changed line this agent did not flag). Both are
-`mcp__lorekit__memory_write` calls with
-`kind: "signal"`, `host: "reviewer"`, and `ttl_days: 90` — passed explicitly, because a `ci::` tag
-leaves both NULL and Step 1.0's `kind=signal host=reviewer` read then cannot see what was written.
+Run the two writes in [`memory.md § Write — the two calls this agent makes
+itself`](./pr-reviewer/rules/memory.md#write--the-two-calls-this-agent-makes-itself): **knowledge**
+for each symbol this run traced (deep tier only, cap 10) and **hotspot** for each file that carried
+a confirmed finding, plus each file where Step 1.0's in-run signals recorded a `missed` (a human
+caught something on a changed line this agent did not flag). Both are `mcp__lorekit__memory_write`
+calls with `kind: "signal"`, `host: "reviewer"`, `ttl_days: 90` passed explicitly — a `ci::` tag
+leaves both NULL and Step 1.0's read then cannot see what was written.
 
 | Tier | What 4d writes |
 | --- | --- |
 | `deep` | knowledge + hotspot |
-| `standard` · `quick` | **hotspot only.** A knowledge fact needs a traced symbol and a receipt, and neither tier produces one; writing a fact the run did not verify is the failure mode rule 1 of that section exists to prevent. |
+| `standard` · `quick` | **hotspot only** — a knowledge fact needs a traced symbol and a receipt, and neither tier produces one; writing an unverified fact is exactly the failure mode rule 1 of that section prevents. |
 
 **Both writes merge onto the record read at Step 1.2a — never write the rule file's literals.** Same
 scope + key replaces the whole value, so a hotspot written as the template's `confirmed: 1` resets a
-counter four PRs of history built, and the `hot` classification the finders branch on never arms.
-Rule 3 of that section is the arithmetic: increment the counter this run earned, union `classes[]`,
-append to the capped example lists, and carry every untouched counter through unchanged.
+counter four PRs of history built. Rule 3 is the arithmetic: increment the counter this run earned,
+union `classes[]`, append to the capped example lists, carry every untouched counter through.
 
-Non-blocking, like 4c: a failed write is logged and the run continues. Report the counts in Step 5
-(`Memory written: <K> knowledge, <H> hotspot`) — **including the zeroes**. A deep-tier run that wrote
-0 knowledge records means either nothing was traced or the write is broken, and from the store those
-two are identical; the count is the only place they separate.
+Non-blocking, like 4c — a failed write is logged and the run continues. Report the counts in Step 5
+(`Memory written: <K> knowledge, <H> hotspot`), **including the zeroes**: a deep-tier run that wrote
+0 knowledge records means either nothing was traced or the write is broken, and the count is the
+only place those two separate.
 
 ### The shapes: report body, headlines, sections, inline comments
 
@@ -3054,11 +3052,10 @@ slot pair, the gate-table cell rules, and `INLINE_COMMENTS_JSON` live in
 [`agents/pr-reviewer/rules/report-rendering.md`](./pr-reviewer/rules/report-rendering.md). Read it
 here, at Step 4, when there is a payload to build.
 
-It is reference rather than procedure, and it moved out of this step for two reasons: it is ~480
-lines that only matter at posting time, and nearly all of it is already enforced by the template
-and `render-report.mjs`, so a third copy inline could only drift from them. The pre-write
-assertions in 4a stay here, because they are the one check that survives the renderer being
-bypassed.
+It is reference rather than procedure, moved out of this step because it is ~480 lines that only
+matter at posting time and nearly all of it is already enforced by the template and
+`render-report.mjs`, so a third copy inline could only drift from them. The pre-write assertions in
+4a stay here — they are the one check that survives the renderer being bypassed.
 
 ---
 
