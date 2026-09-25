@@ -2577,19 +2577,18 @@ editing it into shape reintroduces exactly the drift the renderer removes.
 
 #### The bytes that get posted are the renderer's bytes
 
-Everything above runs **before** the body leaves the shell. That is a complete guarantee on the
-`gh` path, which posts from the file (`--field body=@/tmp/report-body.md`) and never re-reads the
-text. It is **not** a guarantee on the MCP path: `add_issue_comment` and
-`add_comment_to_pending_review` take the body as a tool-call **argument**, so the text has to be
-reproduced into that argument — a copy no shell performs, no assertion above covers, and nothing
-downstream re-checks.
+Everything above runs **before** the body leaves the shell — a complete guarantee on the `gh` path,
+which posts from the file (`--field body=@/tmp/report-body.md`) and never re-reads the text, but
+**not** on the MCP path: `add_issue_comment` and `add_comment_to_pending_review` take the body as a
+tool-call **argument**, so the text has to be reproduced into that argument — a copy no shell
+performs, no assertion above covers, and nothing downstream re-checks.
 
-That copy is a real failure site, not a theoretical one. On `mthines/agent-skills#165` all six
+That copy is a real failure site, not a theoretical one: on `mthines/agent-skills#165` all six
 artifacts of one run — the sticky and all five inline comments — arrived with the button markup
-HTML-escaped and wrapped in a double-backtick code span (`<a href="``https://…"&gt;&lt;picture&gt;`),
-so every button rendered as a wall of literal text with a dead link. The renderer had emitted them
-correctly; the corruption entered after its last post-condition, and the run's own report parsed
-fine because the markers and footers survived.
+HTML-escaped and wrapped in a double-backtick code span, so every button rendered as a wall of
+literal text with a dead link. The renderer had emitted them correctly; the corruption entered after
+its last post-condition, and the run's own report parsed fine because the markers and footers
+survived.
 
 **The cause is the relay, not the copy — and that took measurement to establish.** The first
 diagnosis here blamed reproducing the body by hand ("reformatting a long HTML line is the hazard")
