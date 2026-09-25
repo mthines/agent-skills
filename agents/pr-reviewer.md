@@ -1653,14 +1653,7 @@ Result: PASS (✅), WARN (⚠️), or FAIL (❌) — the same tri-state `gate3()
 - ⚠️ — otherwise: threads are open, but every one of them is non-blocking, already answered, or
   both.
 
-Grading by severity is what stops this gate failing a PR for work that is already done or was never
-required — a `nitpick:` nobody clicked Resolve on, a suggestion declined on-thread with a rationale,
-a finding fixed in a later commit. None of those give the author anything to fix, and ⚠️ never hides
-them: the checklist still renders in full and the WARN headline names the gate. Severity itself
-comes only from the other bot's own decoration (`(blocking)` / `issue:` / an equivalent marker) —
-never from this reviewer re-reading the code to judge how serious another bot's finding is — so a
-genuinely serious problem the other bot under-decorated is still caught by this run's own pass and
-blocks under Gate 6, on evidence this reviewer owns.
+Rationale for grading by severity, and where the severity itself comes from (the other bot's own decoration, never this reviewer's re-adjudication): see *Gate states* above.
 
 **Gate 4 — Self-review signals**
 This is a coarse safety net for the residue a careful author strips out before pushing — not a style or design review (Gate 6 owns those). It scans **only `+`-prefixed additions** for a fixed set of unambiguous "this was never self-reviewed" tells, which is exactly why it is green on almost every PR: a clean diff simply does not contain these artifacts, so the gate stays quiet and only trips when genuinely unfinished or debug material was committed. Treat a green result as "no smoking guns", not "the code is good".
@@ -1687,13 +1680,7 @@ understand the change's purpose and behavior?
 Finding format: one sentence per gap.
 Result: PASS or FAIL with finding text.
 
-**Token-economy skip heuristic:** if all three of Gates 3 (❌ only), 4, and 5 fail
-(Gate 1 is a soft warning and no longer counts toward this heuristic, and neither does a ⚠️
-Gate 3 — the heuristic's premise is that the PR is clearly not ready, and ⚠️ is a passing
-state; and `--no-holistic`
-was not already set), skip Steps 2.4 and 2.4b (holistic passes)
-— the PR is clearly not ready and holistic tokens would be wasted. Note the skip in the
-Quality Gate summary. Gate 6 (inline review) always runs regardless of gate outcomes.
+**Token-economy skip heuristic:** if all three of Gates 3 (❌ only), 4, and 5 fail (Gate 1 is a soft warning and no longer counts toward this heuristic, and neither does a ⚠️ Gate 3 — the heuristic's premise is that the PR is clearly not ready, and ⚠️ is a passing state) and `--no-holistic` was not already set, skip Steps 2.4 and 2.4b (holistic passes) — the PR is clearly not ready and holistic tokens would be wasted. Note the skip in the Quality Gate summary. Gate 6 (inline review) always runs regardless of gate outcomes.
 
 ---
 
