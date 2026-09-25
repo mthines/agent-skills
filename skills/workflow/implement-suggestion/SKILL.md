@@ -281,7 +281,7 @@ For each PR, dispatch the worker subagent (one message, parallel across PRs):
 ```
 Agent(
   description: "Apply suggestion-pack to PR #<n>",
-  subagent_type: "general-purpose",
+  subagent_type: "general-purpose",   # "general" on OpenCode / Agent0 — rules/handoff.md#generic-sub-agent-type
   prompt: <the "Worker prompt template" from rules/handoff.md, filled in — the template is inline in that file; no external prompt file exists>
 )
 ```

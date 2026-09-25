@@ -15,7 +15,18 @@ The trace evidence used for root cause comes from **local** runs in Phase 2 — 
 
 If the Dash0 MCP is configured but the historical telemetry is empty, **stop and surface that to the user** — never proceed on guesses.
 
-**If the Dash0 MCP is not configured at all** (no `mcp__dash0-*` tools in the session), the response depends on the mode:
+**A telemetry source is a capability, never a tool-name prefix.**
+The session has one when **any** available tool runs a Dash0 span search — `getSpans` under any server prefix (`mcp__dash0-dev__getSpans`, `mcp__dash0-prod__getSpans`, `mcp__dash0__getSpans`, or another name the user gave the server), or `dash0.getSpans` through the `tools` CLI on a Dash0 Agent0 host.
+
+```text
+❌ WRONG — a prefix check; reports "no telemetry" on a host that names the server differently
+if no tool matches "mcp__dash0-*": degraded
+
+✅ RIGHT — the capability, whatever the tool is called
+if no available tool runs a Dash0 span search (getSpans under any prefix, or dash0.getSpans): degraded
+```
+
+**If no tool runs a Dash0 span search**, the response depends on the mode:
 
 - `stabilize`: skip Phase 1 and proceed **local-only in degraded mode**.
   Tell the user explicitly what was lost: no historical baseline, no `failure_rate` entry thresholds (the fix queue is instead built from the PR's failing CI checks plus local reproduction in Phase 2), and no Phase 7 telemetry comparison (CI ratification falls back to the run conclusion alone).
@@ -67,8 +78,8 @@ Both expose the same span schema.
 mcp__dash0-dev__getSpans  filters=<canonical filter set>  timeRange=<since-pr-opened>
 ```
 
-If the MCP tool surface in the current session uses a different prefix (`mcp__dash0-prod__getSpans`), substitute and proceed.
-Schema is identical.
+If the session exposes the span search under a different name — another MCP prefix (`mcp__dash0-prod__getSpans`), or `tools invoke dash0.getSpans` on a Dash0 Agent0 host — substitute it and proceed.
+The filter shape and span schema are identical.
 
 ### What to extract
 

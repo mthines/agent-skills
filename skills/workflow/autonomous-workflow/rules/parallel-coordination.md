@@ -106,7 +106,7 @@ Phase 4 full-suite validation as normal.
 
 ```
 description: Implement <slice-name> in isolation
-subagent_type: general-purpose
+subagent_type: general-purpose   # "general" on OpenCode-based hosts (Dash0 Agent0)
 prompt: |
   Implement the <slice-name> slice of <task-name>. Inputs:
 

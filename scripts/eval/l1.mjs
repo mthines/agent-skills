@@ -6640,6 +6640,44 @@ const isPollBlock = (block) =>
     "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.", false);
 }
 
+// ── G70: host portability — capability checks, never a tool name, prefix, or install path ──
+//
+// Every check below is the F6 shape (`diagnostic-surface.md`): a precondition keyed on how ONE
+// harness spells a capability, which reads as "unavailable" on every other harness and hides
+// itself because a skip is a documented, legitimate outcome. Each is pinned where it lived.
+// (G70 rather than the next free number: PR #205 claims G60–G65 on its own branch.)
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const CP = read("skills/delivery/create-pr/SKILL.md");
+  s.check("G70a create-pr gates the review on the dispatch capability, not the name `Task`",
+    !/Confirm `Task` is available/.test(CP) && /confirm that \*\*some\*\* available tool dispatches a sub-agent/.test(CP),
+    "a literal `Task` check records NOT REVIEWED on every harness that spells the tool `Agent` or `task`");
+
+  const HO = read("skills/workflow/implement-suggestion/rules/handoff.md");
+  s.check("G70b implement-suggestion names the `general` spelling of the generic sub-agent type",
+    /^## Generic sub-agent type$/m.test(HO) && /`general` in OpenCode-based hosts/.test(HO),
+    "a bare `general-purpose` strands the worker on OpenCode-based hosts (Dash0 Agent0)");
+
+  const TDA = read("skills/testing/e2e-pr-stabilizer/rules/telemetry-driven-analysis.md");
+  s.check("G70c e2e-pr-stabilizer detects telemetry by capability, not the `mcp__dash0-*` prefix",
+    !/\(no `mcp__dash0-\*` tools in the session\)/.test(TDA) && /capability, never a tool-name prefix/.test(TDA),
+    "a prefix check reports no-telemetry on any host that names the Dash0 server differently");
+
+  // The verifier: dispatched by the session that holds the dispatch rung, at PR open, and its
+  // verdict is a done-condition. Phase 7 must not also dispatch it by an install-path probe.
+  const P7 = read("skills/workflow/autonomous-workflow/rules/phase-7-ci-gate.md");
+  s.check("G70d phase-7 no longer detects feature-pr-verifier by a file at an install path",
+    !/\[ -f "[^"]*agents\/feature-pr-verifier\.md" \]/.test(P7) && !/subagent_type: feature-pr-verifier/.test(P7),
+    "the post-CI dispatch was reached 0 times in 48 executor runs; aw owns it at PR open");
+  const AW = read("skills/workflow/autonomous-workflow/aw/SKILL.md");
+  const term = (AW.match(/AW RUN COMPLETE\n[\s\S]*?```/) || [""])[0];
+  s.check("G70e aw dispatches feature-pr-verifier at PR open and reports a mandatory Verified: line",
+    /^#### Verify at PR open — you dispatch `feature-pr-verifier`$/m.test(AW)
+    && /Task\(subagent_type="feature-pr-verifier"/.test(AW)
+    && /^- Verified: /m.test(term),
+    "without the dispatch and the terminal slot, a Full run can end unverified and report nothing");
+}
+
 // ── G52: review-branch / branch-reviewer — the PR-less review path ──
 //
 // This path makes exactly two load-bearing claims, and both are the kind that rot silently

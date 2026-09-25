@@ -72,11 +72,11 @@ When invoking, log one line in the conversation and the `plan.md` Progress Log:
 
 ## Agent Companions
 
-A second class of optional companions exists: **agents** (definitions in `agents/<name>.md`) rather than skills. They are dispatched as sub-agents (`subagent_type: <name>`) and detected by file presence in `.claude/agents/`, `~/.agents/agents/`, or `~/.claude/agents/`. The graceful-skip contract is the same — log one line, continue — but the invocation mechanism differs from `Skill()`.
+A second class of optional companions exists: **agents** (definitions in `agents/<name>.md`) rather than skills. They are dispatched as sub-agents (`subagent_type: <name>`) and detected by **capability** — the dispatch tool accepts `<name>` as an agent type — never by a file at an install path, which misses plugin-installed, project-local, and hosted agents alike. An agent that cannot be dispatched is reported by name as `not run (<reason>)`, never skipped silently.
 
 | Agent      | Phase | Trigger condition                                            | Args                                          | Detection paths                                                                                  | Disable by                                                                                       |
 | ---------- | ----- | ------------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| `feature-pr-verifier` | 7 | Full Mode AND CI green AND `plan.md` exists (independent green/red verdict before optional undraft) | — | `.claude/agents/feature-pr-verifier.md`, `~/.agents/agents/feature-pr-verifier.md`, `~/.claude/agents/feature-pr-verifier.md` | Remove invocation in [`phase-7-ci-gate.md`](./phase-7-ci-gate.md#auto-verify) |
+| `feature-pr-verifier` | PR open (dispatched by `aw`, not by a phase) | Full Mode AND `plan.md` exists AND the executor returned a PR URL (independent green/red verdict; a done-condition via `aw`'s `Verified:` line) | — | The dispatch tool accepts `feature-pr-verifier` as an agent type | Remove § *Verify at PR open* in the `aw` dispatcher skill |
 
 The review passes in Phase 6 and Phase 7 are now delegated to `review-loop` (the bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence skill) rather than the retired `reviewer` agent.
 Phase 6 invokes `review-loop` (or `pr-reviewer` directly via `create-pr` Step 6.5) after the draft PR is open.

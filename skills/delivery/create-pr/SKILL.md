@@ -181,7 +181,15 @@ covered by the watch that follows. Suppressing the loop's CI step here is what k
 this invocation's budget accountable to one owner — the counters live in this
 skill's own transcript, never in a state file carried between phases.
 
-**Rows 3 and 4 both need sub-agent dispatch.** `pr-reviewer` is `Task`-only with no in-context substitute. Confirm `Task` is available before taking either row; if it is not, do not attempt the dispatch and do not silently fall through to row 2 — record `NOT REVIEWED` and carry it into Step 10.
+**Rows 3 and 4 both need sub-agent dispatch.** The reviewer runs in a separate context with no in-context substitute. Before taking either row, confirm that **some** available tool dispatches a sub-agent — a capability check, never a tool-name check: the tool is `Task` in the Claude Code CLI, `Agent` in the Claude Agent SDK, and `task` in OpenCode-based hosts such as Dash0 Agent0. If no tool dispatches a sub-agent, do not attempt the dispatch and do not silently fall through to row 2 — record `NOT REVIEWED (sub-agent dispatch unavailable)` and carry it into Step 10.
+
+```text
+❌ WRONG — a name check; skips the review on every harness that does not spell it `Task`
+if "Task" not in available_tools: NOT REVIEWED
+
+✅ RIGHT — a capability check, name-agnostic
+if no available tool dispatches a sub-agent (Task, Agent, task, or another spelling): NOT REVIEWED
+```
 
 After the loop returns:
 
@@ -210,7 +218,7 @@ and **continue to Step 7 in the main thread immediately** — do not block on it
 ```
 Agent(
   description: "Absorb external PR review feedback (watch loop)",
-  subagent_type: "general-purpose",
+  subagent_type: "general-purpose",   # "general" on OpenCode-based hosts (Dash0 Agent0)
   run_in_background: true,
   prompt: |
     Drive the external-reviewer-feedback loop for PR <pr-url> to completion.
@@ -289,7 +297,7 @@ Spawn one subagent per failed check, all in the same turn so they run concurrent
 
 ```
 description: Triage CI failure on <check-name>
-subagent_type: general-purpose
+subagent_type: general-purpose   # "general" on OpenCode-based hosts (Dash0 Agent0)
 prompt: |
   Read the failing GitHub Actions log and classify it. Do not fix anything — just report.
 
@@ -324,7 +332,7 @@ Use the returned `category` to decide the path:
 
 ```
 description: Run /ci-auto-fix for <check-name>
-subagent_type: general-purpose
+subagent_type: general-purpose   # "general" on OpenCode-based hosts (Dash0 Agent0)
 prompt: |
   Drive the /ci-auto-fix workflow end-to-end for this PR.
 
