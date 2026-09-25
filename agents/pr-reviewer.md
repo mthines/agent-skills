@@ -337,17 +337,14 @@ RESOLVED_REPO=${PR_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}
 OWNER="${RESOLVED_REPO%%/*}"
 REPO="${RESOLVED_REPO##*/}"
 
-# --full is the one flag read downstream as an executable variable (Step 0.7's mode rule and
-# Step 0.8's fast-path gate both branch on `$FLAG_FULL`), so bind it here rather than leaving
-# the flag table's "Binds FLAG_FULL=true" as prose only. Without this line `$FLAG_FULL` is
-# empty even when `--full` is passed, `"" != true` is true, and Step 0.8 downgrades a `--full`
-# run on an unmoved head to `incremental-quick` — the exact regression its guard exists to stop.
+# $FLAG_FULL is read downstream as an executable variable (Step 0.7's mode rule, Step 0.8's
+# fast-path gate) rather than left as flag-table prose — an unbound `$FLAG_FULL` would let
+# Step 0.8 downgrade a `--full` run on an unmoved head to `incremental-quick`.
 FLAG_FULL=false
 [[ " $ARG " == *" --full "* ]] && FLAG_FULL=true
 
-# --dry-run and --isolated are read the same way, for the same reason: both are
-# gates other steps branch on by executable variable, not by re-scanning $ARG.
-# rules/pipeline.md owns their full semantics; this only binds the flags.
+# --dry-run and --isolated bind the same way, for the same reason; rules/pipeline.md owns
+# their full semantics, this only binds the flags.
 FLAG_DRY_RUN=false
 [[ " $ARG " == *" --dry-run "* ]] && FLAG_DRY_RUN=true
 FLAG_ISOLATED=false
