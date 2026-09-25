@@ -10,7 +10,7 @@ argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--with a,
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.1.1'
   workflow_type: command
 ---
 

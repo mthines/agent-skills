@@ -20,7 +20,7 @@ argument-hint: '[guide|implement|audit|setup] [<target>] [--strict]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.1.1'
   workflow_type: gate-and-applied
   tags:
     - observability

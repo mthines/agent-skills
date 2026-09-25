@@ -20,7 +20,7 @@ argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simpli
 license: MIT
 metadata:
   author: mthines
-  version: '3.5.0'
+  version: '3.5.1'
   workflow_type: command
 ---
 
