@@ -8839,4 +8839,78 @@ const isPollBlock = (block) =>
   }
 }
 
+// ── G65: pr-reviewer deterministic pipeline, Phase 0b (A/B benchmark harness) ──
+//
+// R11/AC-13/AC-20-23: thread-outcomes.mjs and ab-review.mjs exist, are typed, self-test, and are
+// wired into agents/pr-reviewer/scripts/tsconfig.json; both are read-only per AC-23 (no write
+// verb anywhere in their own source, reproduced here as a standing guard independent of each
+// script's own --self-test, for the same reason G64c holds AC-14's scan from the outside); the
+// reused record-comment-relevance.mjs additions (isMain guard, the three new exports) hold and
+// its own self-test still passes; and the benchmark manifest matches AC-22's allowlist shape.
+{
+  const EVAL_DIR = "scripts/eval";
+  const TO = join(REPO_ROOT, EVAL_DIR, "thread-outcomes.mjs");
+  const AB = join(REPO_ROOT, EVAL_DIR, "ab-review.mjs");
+  const RCR = join(REPO_ROOT, "scripts/record-comment-relevance.mjs");
+  const WRITE_VERB_RE = /-X\s+(?:POST|PATCH|PUT|DELETE)|--method[\s=]+(?:POST|PATCH|PUT|DELETE)|\bmutation\s*[({]/i;
+
+  for (const [id, path, label] of [
+    ["G65a", TO, "thread-outcomes.mjs"],
+    ["G65b", AB, "ab-review.mjs"],
+  ]) {
+    s.check(`${id} ${label} exists`, existsSync(path));
+    if (!existsSync(path)) continue;
+    const src = readFileSync(path, "utf8");
+    s.check(`${id} ${label} is // @ts-check`, /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
+    const r = spawnSync(process.execPath, [path, "--self-test"], { encoding: "utf8" });
+    s.check(`${id} ${label} --self-test passes`,
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 300));
+    s.check(`${id} ${label} contains no GitHub write verb (AC-23: no -X POST/PATCH/PUT/DELETE, no --method, no graphql mutation)`,
+      !WRITE_VERB_RE.test(src));
+  }
+
+  s.check("G65c record-comment-relevance.mjs exists", existsSync(RCR));
+  if (existsSync(RCR)) {
+    const rcrSrc = readFileSync(RCR, "utf8");
+    s.check("G65c record-comment-relevance.mjs has an isMain guard around its CLI entry point",
+      /const isMain\s*=\s*process\.argv\[1\]\s*&&\s*import\.meta\.url\s*===\s*pathToFileURL\(process\.argv\[1\]\)\.href/.test(rcrSrc));
+    s.check("G65c record-comment-relevance.mjs exports ghApi, fetchReviewThreads, and hasFixCommit",
+      ["ghApi", "fetchReviewThreads", "hasFixCommit"].every((fn) => new RegExp(`export function ${fn}\\(`).test(rcrSrc)));
+    s.check("G65c record-comment-relevance.mjs's ghGraphql uses execFileSync (argv array), not execSync with string interpolation",
+      /execFileSync\(\s*["']gh["']/.test(rcrSrc));
+    const r = spawnSync(process.execPath, [RCR, "--self-test"], { encoding: "utf8" });
+    s.check("G65c record-comment-relevance.mjs --self-test still passes (37 cases)",
+      r.status === 0 && /37 cases/.test((r.stdout || "") + (r.stderr || "")),
+      ((r.stdout || "") + (r.stderr || "")).trim().split("\n").slice(-4).join(" | "));
+  }
+
+  const TS = join(REPO_ROOT, "agents/pr-reviewer/scripts/tsconfig.json");
+  if (existsSync(TS)) {
+    const tsText = readFileSync(TS, "utf8");
+    s.check("G65d tsconfig.json's files[] lists thread-outcomes.mjs, ab-review.mjs, and record-comment-relevance.mjs",
+      ["thread-outcomes.mjs", "ab-review.mjs", "record-comment-relevance.mjs"].every((f) => tsText.includes(f)));
+  }
+
+  // AC-22: manifest allowlist, reproduced as a standing guard independent of checks.yaml's own
+  // copy of the same check (same rationale as G64c/G65a-b: the check definition is
+  // executor-immutable, but a standing L1 guard catches drift the moment the file changes,
+  // without waiting for a Phase-4 checks.yaml run).
+  const MANIFEST = join(REPO_ROOT, EVAL_DIR, "benchmarks/reviewer-ab.manifest.json");
+  s.check("G65e reviewer-ab.manifest.json exists", existsSync(MANIFEST));
+  if (existsSync(MANIFEST)) {
+    /** @type {any} */
+    const m = JSON.parse(readFileSync(MANIFEST, "utf8"));
+    const entries = Array.isArray(m) ? m : m.entries;
+    const ALLOW = new Set(["repo", "number", "head_sha", "base_sha", "class", "status"]);
+    s.check("G65e manifest has 8-12 entries", Array.isArray(entries) && entries.length >= 8 && entries.length <= 12,
+      String(entries?.length));
+    s.check("G65e manifest covers >=5 of the 6 shape classes",
+      new Set(entries.map((/** @type {any} */ e) => e.class)).size >= 5);
+    s.check("G65e every manifest entry has only the allowed keys (no titles, excerpts, or paths)",
+      entries.every((/** @type {any} */ e) => Object.keys(e).every((k) => ALLOW.has(k))));
+    s.check("G65e every head_sha/base_sha is a full 40-char lowercase hex SHA",
+      entries.every((/** @type {any} */ e) => /^[0-9a-f]{40}$/.test(e.head_sha) && /^[0-9a-f]{40}$/.test(e.base_sha)));
+  }
+}
+
 process.exit(s.report() ? 0 : 1);

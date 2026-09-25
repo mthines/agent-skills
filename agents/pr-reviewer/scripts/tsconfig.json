@@ -27,6 +27,9 @@
     "finalize/gates.mjs",
     "finalize/payload.mjs",
     "finalize/findings-bus.mjs",
-    "execute-write-plan.mjs"
+    "execute-write-plan.mjs",
+    "../../../scripts/eval/thread-outcomes.mjs",
+    "../../../scripts/eval/ab-review.mjs",
+    "../../../scripts/record-comment-relevance.mjs"
   ]
 }
