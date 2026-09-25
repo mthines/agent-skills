@@ -28,7 +28,7 @@
  * separate deliverable — see the plan's Progress Log.
  */
 
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -45,13 +45,14 @@ import {
   buildOptimalityCard,
 } from "./finalize/payload.mjs";
 import { toFindingsBusRecords } from "./finalize/findings-bus.mjs";
+import { buildWritePlan } from "./finalize/write-plan.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FINALIZE_SELF_TESTS = [
   "finalize/dedupe.mjs", "finalize/thresholds.mjs", "finalize/suppression.mjs",
   "finalize/placement.mjs", "finalize/line-validity.mjs", "finalize/gates.mjs",
-  "finalize/payload.mjs", "finalize/findings-bus.mjs",
+  "finalize/payload.mjs", "finalize/findings-bus.mjs", "finalize/write-plan.mjs",
 ];
 
 // render-report.mjs's SHA7 check requires RUN.sha/RUN.prior_sha to be EXACTLY 7 lowercase hex
@@ -957,6 +958,149 @@ async function selfTest() {
       && JSON.stringify(Object.keys(r.findingsBusRecords[0]).sort()) === JSON.stringify([...FINDINGS_BUS_FIELDS].sort()));
   }
 
+  // End-to-end CLI replay, shaped like ab/B/20230/1's real inputs (multi-line/markdown-link
+  // thread asks, a thread this run resolves, a claim needing a built FP, an optimality card) —
+  // spawns `finalize.mjs --context … --judgments … --out-dir …` as a REAL subprocess (the only
+  // way to exercise main()'s I/O boundary itself: hydrateFilePatches, the report/pointer/inline
+  // renders, and write-plan.json), and asserts it renders and writes write-plan.json with zero
+  // manual patching — the exact gap the live A/B run's `manual_workarounds` list documents.
+  {
+    const e2eDir = join(scratchRoot(), "finalize-e2e-replay");
+    mkdirSync(e2eDir, { recursive: true });
+
+    const e2eContext = withRenderAt({
+      mode: "full",
+      headSha: "906a74781990f75607f0234de963fdbbc3953f2c",
+      deltaLines: 42,
+      routing: { tier: "deep" },
+      workspace: { depthCapability: "checkout" },
+      target: { repo: "o/r", owner: "o", name: "r", number: 205, url: "https://github.com/o/r/pull/205" },
+      priorRun: { stickyCommentId: 555, stickyUrl: "https://github.com/o/r/pull/205#issuecomment-555", stickyKind: "sticky" },
+      files: [{
+        filename: "src/api/client.ts",
+        patch: "@@ -85,3 +85,6 @@\n unchanged\n unchanged\n unchanged\n+added one\n+added two\n+added three",
+      }],
+      threads: [
+        // t1: resolved THIS run (judgments.threads classifies it "fixed") — must NOT appear in
+        // the rendered OPEN_THREADS_LIST, and must produce a thread_reply + thread_resolve op.
+        {
+          thread_id: "t1", path: "supabase/functions/memories/handlers/list.ts", line: 235,
+          url: "https://github.com/o/r/pull/205#discussion_r1",
+          root_body: "issue: applyScalarFilter still puts the whole dimension into a PostgREST URL "
+            + "operand, which means a caller passing an array value for a scalar column produces a "
+            + "malformed query string instead of a 400.\n\nSee [the linked doc](https://example.com/doc) "
+            + "for the full write-up.\n\n(blocking)",
+          author: "cursor", is_bot: true, replies: [],
+        },
+        // t2: left OPEN (no judgment classifies it) — exercises normalizeAsk's multi-line
+        // collapse + markdown-link unwrap + ~12-word truncation on a real report render.
+        {
+          thread_id: "t2", path: "src/api/client.ts", line: 88,
+          url: "https://github.com/o/r/pull/205#discussion_r2",
+          root_body: "This early-return path never flushes pending writes before returning, "
+            + "silently dropping buffered log entries whenever the fast-exit branch fires\n\n"
+            + "See [the retry doc](https://example.com/retry) for more context.",
+          author: "human-reviewer", is_bot: false, replies: [],
+        },
+      ],
+    }, "2026-09-25T12:00:00Z");
+
+    const e2eJudgments = {
+      v: 1,
+      head_sha: "906a747",
+      candidates: [{
+        finder: "correctness", defect_class: "logic", path: "src/api/client.ts", line: 88, symbol: "earlyReturn",
+        claim: "an early return may skip the audit log write",
+        bad_outcome: "the audit log silently drops entries",
+        evidence: ["src/api/client.ts:88"],
+        verify_by: "trace the early-return branch",
+        verdict: "confirmed", R: 92, A: 90, Ac: 91, final: 91,
+        severity: "high", prefix: "issue", blocking: true,
+        title: "Early return may skip the audit log write",
+        body: "This early-return may skip the audit log write.",
+        materiality: true, category: "correctness",
+      }],
+      gates: {
+        gate1: { status: "PASS", details: "The description matches what the diff does." },
+        gate4: { precandidate_dispositions: [], ai_stub_findings: [] },
+        gate5: { status: "PASS", details: "The change is documented well enough to follow." },
+      },
+      threads: [
+        { thread_id: "t1", classification: "fixed", reply: "Fixed in 906a747 — applyScalarFilter now rejects array values with a 400." },
+      ],
+      memory: { relevance_rules: [], lessons_used: [] },
+      lenses: {
+        optimality_cards: [{
+          path: "src/api/client.ts", line: 180, verdict: "suboptimal", analysis_confidence: 88,
+          card_body: "> **Reuse `withRetry()` instead of hand-rolling a retry loop**\n\n"
+            + "**Why it's better** · _codebase-fit_ — one backoff policy instead of four.",
+        }],
+        optimality_log: "ran · 1 judged · 0 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld",
+        standards_log: "ran · 1 docs · 0 finding(s)",
+        measurability_log: "ran · 1 paths classified · 0 missing · 0 unlinked",
+        holistic_log: "skipped",
+      },
+      summary: "Fixes the audit-log early return and hardens applyScalarFilter against array inputs.",
+    };
+
+    const contextPath = join(e2eDir, "context.json");
+    const judgmentsPath = join(e2eDir, "judgments.json");
+    writeFileSync(contextPath, JSON.stringify(e2eContext, null, 2));
+    writeFileSync(judgmentsPath, JSON.stringify(e2eJudgments, null, 2));
+    const outDir = join(e2eDir, "out");
+
+    const r = spawnSync(process.execPath, [
+      join(HERE, "finalize.mjs"),
+      "--context", contextPath, "--judgments", judgmentsPath, "--out-dir", outDir,
+    ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+    check("finalize.mjs --context/--judgments/--out-dir exits 0 against a real (non-fixture) shaped input, with zero manual patching",
+      r.status === 0, (r.stderr || "").trim().slice(0, 500));
+
+    check("report-body.md is written", existsSync(join(outDir, "report-body.md")));
+    check("pointer-body.md is written and is the marker-only pointer form",
+      existsSync(join(outDir, "pointer-body.md"))
+      && readFileSync(join(outDir, "pointer-body.md"), "utf8").trim() === "<!-- PR_REVIEWER_POINTER -->");
+    check("write-plan.json is written (defect 8 — previously emitted by no code path at all)",
+      existsSync(join(outDir, "write-plan.json")));
+
+    if (existsSync(join(outDir, "write-plan.json"))) {
+      const writePlan = JSON.parse(readFileSync(join(outDir, "write-plan.json"), "utf8"));
+      check("write-plan.repo/pr_number come from context.target, never hand-typed",
+        writePlan.repo === "o/r" && writePlan.pr_number === 205);
+      check("t1 (classified 'fixed' this run) produces a thread_reply carrying the judgment's own reply text",
+        writePlan.thread_reply.some((/** @type {any} */ t) => t.thread_id === "t1"
+          && t.body === "Fixed in 906a747 — applyScalarFilter now rejects array values with a 400."));
+      check("t1 also produces a thread_resolve op; t2 (left unclassified/open) produces neither",
+        writePlan.thread_resolve.some((/** @type {any} */ t) => t.thread_id === "t1")
+        && !writePlan.thread_resolve.some((/** @type {any} */ t) => t.thread_id === "t2")
+        && !writePlan.thread_reply.some((/** @type {any} */ t) => t.thread_id === "t2"));
+      check("sticky_upsert.comment_id is the real prior sticky id from context.priorRun, targeting an UPDATE not a create",
+        writePlan.sticky_upsert.comment_id === 555);
+      check("sticky_upsert paths point at the report/pointer bodies this SAME run just wrote to disk",
+        writePlan.sticky_upsert.body_path === join(outDir, "report-body.md")
+        && writePlan.sticky_upsert.pointer_body_path === join(outDir, "pointer-body.md"));
+      check("review_create.commit_id is the FULL 40-char sha, never truncated to RUN.sha's 7 chars",
+        writePlan.review_create.commit_id === "906a74781990f75607f0234de963fdbbc3953f2c");
+      check("review_create carries exactly one comment, forced to side: RIGHT",
+        writePlan.review_create.comments.length === 1 && writePlan.review_create.comments[0].side === "RIGHT");
+      check("the inline comment body carries a BUILT (never hand-typed) v2 fingerprint for the claim",
+        writePlan.review_create.comments[0].body.includes(
+          "<!-- fp:v2:correctness:logic:earlyReturn@src/api/client.ts -->"));
+    }
+
+    if (existsSync(join(outDir, "report-body.md"))) {
+      const reportBody = readFileSync(join(outDir, "report-body.md"), "utf8");
+      check("the optimality card renders with its structural heading, never a raw markdown passthrough",
+        reportBody.includes("### Optimality proposal — src/api/client.ts:180"));
+      check("t1 (resolved this run) is absent from the rendered open-threads list",
+        !reportBody.includes("applyScalarFilter still puts the whole dimension"));
+      check("t2's multi-line, markdown-linked ask renders as ONE normalized line (collapsed + link unwrapped + truncated), never raw",
+        reportBody.includes("This early-return path never flushes pending writes before returning, "
+          + "silently dropping buffered…")
+        && !reportBody.includes("[the retry doc](https://example.com/retry)"));
+    }
+  }
+
   // Run every finalize/*.mjs module's own --self-test too (each is independently
   // self-tested and independently spawned by L1 — this is belt-and-braces so a
   // `finalize.mjs --self-test` alone still proves the whole library is green).
@@ -1014,20 +1158,59 @@ async function main() {
     console.error(`finalize: render-report.mjs failed — ${rendered.stderr.trim()}`);
   }
 
+  const sha = result.payload?.RUN?.sha || "unknown";
+  // Collected alongside the per-finding render below, so the write-plan's review_create.comments
+  // carry the SAME rendered bytes inline/*.md holds on disk — never a second, independently
+  // re-derived copy (the failure class execute-write-plan.mjs's own payloadIsSafe exists to catch
+  // one layer downstream, at the point of posting: mthines/agent-skills#165).
+  /** @type {Array<{path: string, line: number|null, body: string}>} */
+  const renderedInlineComments = [];
   if (result.inline.length > 0) {
     mkdirSync(join(outDir, "inline"), { recursive: true });
-    const sha = result.payload?.RUN?.sha || "unknown";
     result.inline.forEach((/** @type {any} */ finding, /** @type {number} */ i) => {
       const commentPayload = toInlineCommentPayload(finding, { sha });
       const r = renderVia(outDir, RENDER_COMMENT_SCRIPT, commentPayload, `inline-${i}`);
       if (r.ok) {
         writeFileSync(join(outDir, "inline", `${i}.md`), r.stdout);
+        renderedInlineComments.push({ path: finding.path, line: finding.line ?? null, body: r.stdout });
       } else {
         renderFailed = true;
         console.error(`finalize: render-comment.mjs failed for inline[${i}] — ${r.stderr.trim()}`);
       }
     });
   }
+
+  // ab/B/20230/1/meta.json (defect 8): finalize.mjs never emitted write-plan.json, so a live run
+  // had to hand-assemble it to invoke execute-write-plan.mjs at all — rules/pipeline.md's Artifact
+  // flow documents this file as finalize.mjs's own output, not a downstream caller's. The review
+  // body itself is the marker-only "pointer" FORM (render-pointer.mjs) — GitHub accepts an
+  // empty/marker-only COMMENT review with inline comments attached, and the report's content lives
+  // only in the sticky.
+  const pointerBodyPath = join(outDir, "pointer-body.md");
+  const pointerRendered = renderVia(outDir, RENDER_POINTER_SCRIPT, { FORM: "pointer", HEAD_SHA: sha }, "pointer-body");
+  if (pointerRendered.ok) {
+    writeFileSync(pointerBodyPath, pointerRendered.stdout);
+  } else {
+    renderFailed = true;
+    console.error(`finalize: render-pointer.mjs failed — ${pointerRendered.stderr.trim()}`);
+  }
+
+  const writePlan = buildWritePlan({
+    repo: context?.target?.repo,
+    prNumber: context?.target?.number,
+    // The FULL sha, never truncated — review_create.commit_id is what `gh api pulls/{n}/reviews`
+    // posts as the review's commit_id, a real GitHub field with no 7-char convention of its own
+    // (RUN.sha's 7-char truncation is a render-report.mjs display rule, not a GitHub API one).
+    commitSha: context?.headSha || context?.head_sha || judgments?.head_sha,
+    threads: judgments?.threads,
+    stickyCommentId: context?.priorRun?.stickyCommentId ?? null,
+    reportBodyPath: join(outDir, "report-body.md"),
+    pointerBodyPath,
+    inlineComments: renderedInlineComments,
+  });
+  writeFileSync(join(outDir, "write-plan.json"), JSON.stringify(writePlan, null, 2));
+  console.log(`finalize: wrote write-plan.json (${writePlan.thread_reply.length} replies, `
+    + `${writePlan.thread_resolve.length} resolves, ${writePlan.review_create.comments.length} inline comments)`);
 
   if (opts.writer === "findings-bus") {
     const branchDir = dirname(outDir);
