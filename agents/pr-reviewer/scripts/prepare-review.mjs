@@ -224,6 +224,22 @@ export function resolveRunMode({ isolated = false, full = false, statePath = nul
   };
 }
 
+/**
+ * `--isolated`'s "no fallback to the sticky's footer SHA either" rule (pipeline.md §
+ * --isolated item 1), extracted as a pure function so it is self-testable without a
+ * live `gh` call. Under isolated, this run never treats an existing sticky as a prior
+ * run to diff against — `priorSha` is null and `zeroDelta` is false unconditionally,
+ * regardless of whether a sticky (from an earlier, non-comparability review of the
+ * same PR) is physically present.
+ * @param {{ isolated: boolean, stickyBody: string|null, headSha: string }} args
+ * @returns {{ priorSha: string|null, zeroDelta: boolean }}
+ */
+export function resolvePriorRun({ isolated, stickyBody, headSha }) {
+  if (isolated) return { priorSha: null, zeroDelta: false };
+  const priorSha = stickyBody ? priorShaFromBody(stickyBody) : null;
+  return { priorSha, zeroDelta: sameCommit(headSha, priorSha) };
+}
+
 /** Total changed lines across the patch list. */
 export function deltaLines(files) {
   return (files || []).reduce((n, f) => n + (f.additions || 0) + (f.deletions || 0), 0);
@@ -793,8 +809,18 @@ async function prepare(opts) {
     anomalies.push(`${sticky.duplicates + 1} sticky comments found — there must only ever be one`);
   }
 
-  const priorSha = sticky ? priorShaFromBody(sticky.body) : null;
-  const zeroDelta = sameCommit(headSha, priorSha);
+  // `--isolated` (R3, D13, pipeline.md § --isolated item 1): first-run semantics on
+  // EVERY invocation, with NO fallback to the sticky's footer SHA either — that
+  // fallback is itself a form of carried state, and an A/B / shadow run that read
+  // it would silently compute a polluted delta against whatever a PRIOR run in the
+  // series (or, worse, an entirely earlier review of the same PR) left behind. A
+  // sticky can still EXIST on the PR (duplicate-sticky detection above still runs),
+  // but under `--isolated` this run never treats it as a prior run to diff against.
+  const { priorSha, zeroDelta } = resolvePriorRun({
+    isolated: runMode.isolated,
+    stickyBody: sticky ? sticky.body : null,
+    headSha,
+  });
 
   // Step 0.5 — review relation. Never from `gh api /user`: it is not repo-scoped
   // and 401s under an installation token, which is an ordinary hosted setup.
@@ -904,12 +930,21 @@ async function prepare(opts) {
   // RUN_MODE=full's REVIEW_DIFF is the full PR diff.
   timing.start("triage-routing");
 
-  const state = readStateFile(opts.state || null);
-  if (!opts.state) {
+  // `--isolated` (pipeline.md § --isolated item 1) ignores any `--state` path
+  // unconditionally (`resolveRunMode`'s `stateIgnored`) — a caller-supplied state
+  // file is itself carried state from a prior run, exactly the class of input an
+  // isolated comparability run must not depend on.
+  const state = readStateFile(runMode.stateIgnored ? null : (opts.state || null));
+  if (!opts.state && !runMode.isolated) {
     anomalies.push(
       "no --state file supplied — routing computed with lastFullSha=none, incrRunsSinceFull=0 " +
         "(forces the D6 'no prior deep pass on record' trigger every run); pass --state after " +
         "reading the LoreKit state record for an accurate routing decision",
+    );
+  } else if (runMode.stateIgnored) {
+    anomalies.push(
+      "--isolated ignores --state (first-run semantics on every invocation, per pipeline.md § --isolated) " +
+        "— routing computed with lastFullSha=none, incrRunsSinceFull=0",
     );
   }
 
@@ -930,7 +965,10 @@ async function prepare(opts) {
   let deltaCountsResult = { deltaLines: deltaLines(files), newFiles: files.filter((f) => f.status === "added").length };
   let cumDeltaLines = 0;
 
-  const hasPriorRun = !!priorSha && !zeroDelta && !opts.full;
+  // `priorSha` is already null under `--isolated` (above), so this is naturally false
+  // there too — `runMode.full` (not the raw `opts.full`) so a plain `--full` (no
+  // `--isolated`) gets the same treatment.
+  const hasPriorRun = !!priorSha && !zeroDelta && !runMode.full;
   if (hasPriorRun) {
     const cmp = await ghJson(
       ["api", `repos/${repo}/compare/${priorSha}...${headSha}`, "--jq", "{status, ahead_by, behind_by}"],
@@ -1020,8 +1058,12 @@ async function prepare(opts) {
   const threadOverlap = computeThreadOverlap(deltaFiles, threads);
 
   const routing = routeDepth({
-    firstRun: !sticky,
-    full: opts.full,
+    // D1's first-run trigger must fire on EVERY `--isolated` invocation (pipeline.md §
+    // --isolated item 2), regardless of whether a sticky happens to already exist on
+    // the PR from an earlier, non-comparability review — `!sticky` alone missed exactly
+    // that case (a re-review of an already-reviewed PR run under `--isolated`).
+    firstRun: runMode.isolated || !sticky,
+    full: runMode.full,
     effortHigh: opts.effort === "high",
     cumDeltaLines,
     incrRunsSinceFull: state.incrRunsSinceFull,
@@ -1061,10 +1103,13 @@ async function prepare(opts) {
     // What the caller must still do itself. Stated in the artifact, not only in
     // the docs, so a consumer cannot read a partial context as a complete one.
     notCovered: [
-      "LoreKit reads (Steps 0.7, 1.0, 1.2c, 1.2d) — priorSha below is the GitHub FALLBACK rung only, and carries no PRIOR_DIAGNOSTICS",
+      runMode.isolated
+        ? "LoreKit reads — Step 0.7 (the state record) is SKIPPED entirely under --isolated, and priorSha below is null (pipeline.md § --isolated). Steps 1.0/1.2c/1.2d (codebase-knowledge/lesson reads) are NOT skipped by --isolated — those are project memory, not run-comparability state, and persist by design across PRs and across runs; a comparability run (A/B, shadow) that wants a clean memory baseline must arrange that itself, --isolated does not guarantee it."
+        : "LoreKit reads (Steps 0.7, 1.0, 1.2c, 1.2d) — priorSha below is the GitHub FALLBACK rung only, and carries no PRIOR_DIAGNOSTICS",
       "routing{} below is only as accurate as the --state file the caller passed — no --state means lastFullSha/incrRunsSinceFull default to none/0 (see anomalies[] when this fired)",
       "Phases D and E, Steps 2.4*, 2.7, 2.9c — the Gate 4 SCAN below is mechanical pre-candidates only; confirm/exempt disposition and any AI-stub findings are judgment",
       "every write: the sticky, the review, the state record",
+      "files[].patch — stripped from the inline context (see `inline`) to keep the context an index, not an archive; the full per-file patch text lives in the `paths.files` sidecar (pr-files.json, one JSON object per line), which is what a consumer needing to anchor a line (finalize.mjs's line-validity pre-flight) must read, never context.files itself unless --inline-payloads was passed",
     ],
 
     target: { repo, owner, name, number, url: meta.url || `https://github.com/${repo}/pull/${number}` },
@@ -1115,14 +1160,22 @@ async function prepare(opts) {
     issueComments: comments,
 
     priorRun: {
-      source: sticky ? "github-fallback-rung" : "none",
+      // Under `--isolated`, `source` reports "none" even when a sticky physically exists on
+      // the PR (from an earlier, non-comparability review) — `priorSha`/`zeroDelta` above are
+      // already nulled/false for the same reason. `stickyCommentId`/`stickyUrl`/`stickyKind`
+      // stay populated regardless: they identify WHERE a (dry-run-only, per pipeline.md pairing)
+      // write would target, which is a different concern from "is this a prior run to diff
+      // against" and carries no judgment-affecting state.
+      source: runMode.isolated ? "none" : (sticky ? "github-fallback-rung" : "none"),
       stickyCommentId: sticky ? sticky.id : null,
       stickyUrl: sticky ? sticky.html_url : null,
       stickyKind: sticky ? sticky.kind : null,
       priorSha,
       zeroDelta,
       priorDiagnostics: null,
-      note: "PRIOR_DIAGNOSTICS is NOT recoverable from the fallback rung. Read the LoreKit state record before taking Step 0.8's fast path.",
+      note: runMode.isolated
+        ? "--isolated: first-run semantics — no prior-run diagnostics, no delta triage, no fallback-rung priorSha (pipeline.md § --isolated)."
+        : "PRIOR_DIAGNOSTICS is NOT recoverable from the fallback rung. Read the LoreKit state record before taking Step 0.8's fast path.",
     },
 
     workspace: {
@@ -1305,6 +1358,24 @@ function selfTest() {
   t("neither --isolated nor --full leaves mode undecided (Phase C's job, not Phase 0's)", () => {
     const r = resolveRunMode({});
     return r.mode === null && r.full === false;
+  });
+
+  // ── resolvePriorRun (pipeline.md § --isolated item 1: no fallback-rung leak) ──
+  t("resolvePriorRun: isolated is null/false even when a real sticky footer is present", () => {
+    const r = resolvePriorRun({ isolated: true, stickyBody: "commit `abc1234`", headSha: "abc1234def" });
+    return r.priorSha === null && r.zeroDelta === false;
+  });
+  t("resolvePriorRun: isolated is null/false even on a same-commit sticky (would otherwise be zeroDelta)", () => {
+    const r = resolvePriorRun({ isolated: true, stickyBody: "commit `abc1234`", headSha: "abc1234def56789" });
+    return r.priorSha === null && r.zeroDelta === false;
+  });
+  t("resolvePriorRun: non-isolated recovers priorSha from the sticky footer, as before", () => {
+    const r = resolvePriorRun({ isolated: false, stickyBody: "commit `abc1234`", headSha: "abc1234def56789" });
+    return r.priorSha === "abc1234" && r.zeroDelta === true;
+  });
+  t("resolvePriorRun: non-isolated with no sticky is a genuine first run", () => {
+    const r = resolvePriorRun({ isolated: false, stickyBody: null, headSha: "abc1234def56789" });
+    return r.priorSha === null && r.zeroDelta === false;
   });
 
   t("scratchRoot prefers the agent workspace over os.tmpdir()", () => {
