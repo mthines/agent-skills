@@ -236,7 +236,7 @@ fi
 verified, generate the `plan.md` artifact:
 
 ```
-Skill("aw-create-plan")     # skips silently if not installed
+Skill("aw-create-plan")     # missing ⇒ companion: <name> — skipped (not installed)
 ```
 
 The skill writes to `.agent/{branch-name}/plan.md`, capturing the full Phase 0
@@ -251,7 +251,7 @@ Log the invocation in the plan's Progress Log:
 
 ```markdown
 - [TIMESTAMP] Phase 2: aw-create-plan() — invoked (.agent/{branch}/plan.md + checks.yaml written, N checks)
-- [TIMESTAMP] Phase 2: aw-create-plan() — not available, continuing without artifact
+- [TIMESTAMP] Phase 2: aw-create-plan() — skipped (not installed), continuing without artifact
 ```
 
 If `aw-create-plan` isn't installed, the workflow continues — but in Full Mode

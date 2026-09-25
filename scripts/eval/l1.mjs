@@ -6702,6 +6702,24 @@ const isPollBlock = (block) =>
   s.check("G70g ui-verify's auto-mode prompt is excluded under --unattended, and the flag is advertised",
     /\*\*Never under `--unattended`\*\*/.test(RN) && /only in `auto` mode without `--unattended`/.test(RN)
     && /argument-hint:[^\n]*--unattended/.test(UV));
+
+  // The companion report. `interview`, `tdd`, and `test-provenance-guard` had 0 invocations in
+  // 39 planner + 48 executor runs, and "skip silently" made that unexplainable. The contract
+  // must define the line and its closed reason set; the two agent templates — what a dispatched
+  // agent actually reads — must not restate the silent form; and the executor's own table must
+  // carry test-provenance-guard, whose absence there is one of the measured causes.
+  const CS = read("skills/workflow/autonomous-workflow/rules/companion-skills.md");
+  s.check("G70h companion-skills.md defines the mandatory report line and its closed reason set",
+    /^## The companion report$/m.test(CS)
+    && ["trigger not met:", "disabled (", "not installed", "not dispatchable on this host", "tool unavailable:"]
+      .every((r) => CS.includes(`\`${r}`)));
+  for (const t of ["aw-planner", "aw-executor"]) {
+    const body = read(`skills/workflow/autonomous-workflow/templates/${t}.agent.md`);
+    s.check(`G70h ${t} template carries no "companions skip silently" contract`,
+      !/Companions skip silently/i.test(body) && /companion-skills\.md#the-companion-report/.test(body));
+  }
+  s.check("G70h the executor's companion table lists test-provenance-guard",
+    /^\| 4\s+\| `test-provenance-guard`/m.test(read("skills/workflow/autonomous-workflow/templates/aw-executor.agent.md")));
 }
 
 // ── G52: review-branch / branch-reviewer — the PR-less review path ──

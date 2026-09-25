@@ -219,7 +219,7 @@ Skill("ci-auto-fix", "<run-id|pr-url>")
 | ------------------------- | ---------------------------------------------------------------------- |
 | Runs in Full Mode         | Yes                                                                    |
 | Runs in Lite Mode         | Yes                                                                    |
-| Skips silently if missing | Yes — fall back to manual fix-and-push, log and continue               |
+| If missing | Report `skipped (not installed)`, then fall back to manual fix-and-push, log and continue               |
 | Disable                   | Remove this section; the workflow then stops at first failure and reports to user |
 
 Each `ci-auto-fix` invocation has its own internal retry budget. **Do not wrap it in another loop.** When it returns, accept its verdict and move on.
@@ -410,7 +410,7 @@ findings inline, and answers-and-resolves the non-fix threads. On convergence it
 | ------------------------- | ---------------------------------------------------------------------- |
 | Runs in Full Mode         | Yes                                                                    |
 | Runs in Lite Mode         | Yes                                                                    |
-| Skips silently if missing | Yes — log one line and continue to cleanup step                        |
+| If missing | Report `skipped (not installed)`, then log one line and continue to cleanup step                        |
 | Posts comments live?      | Yes — `pr-reviewer` posts one visible `COMMENT` review per iteration   |
 | Args                      | `<pr-url> [--critical]` passed to `review-loop`                       |
 | Disable                   | Remove this section; CI green becomes the terminal gate                |
@@ -432,7 +432,7 @@ Check for the skill in the standard locations:
 If not found, log and skip:
 
 ```markdown
-- [TIMESTAMP] Phase 7: review-loop — not available, continuing (install review-loop skill from agent-skills.git)
+- [TIMESTAMP] Phase 7: review-loop — skipped (not installed) (install review-loop skill from agent-skills.git)
 ```
 
 Then proceed to [Optional Post-Merge Cleanup](#optional-post-merge-cleanup).
@@ -553,8 +553,8 @@ Skill("measurable", "audit --diff --base $(git merge-base HEAD main) --strict")
 | Default behavior (no `--observability-strict`) | Advisory — log the finding, note it in the hand-back message, never block |
 | `--observability-strict` behavior | A `missing` finding that **Phase 4 did not already flag** (i.e. newly introduced by Auto Fix or Auto Review) is a regression: fix it directly (it's a small, localized diff — restore the removed span/log/event) and re-run this recheck **once**. If it still reports `missing` after that one attempt, stop and escalate to the user rather than looping — this is a tail check, not a second stuck-loop instance. A `missing` finding that Phase 4 **already** flagged and the user accepted is not re-litigated here |
 | Read-only until the regression fix | The recheck itself never writes files; only the one-shot regression fix (under `--observability-strict`) does |
-| If skill missing               | Log `measurable() — not available, continuing`                      |
-| Progress Log entry             | `[TIMESTAMP] Phase 7: measurable(audit) — recheck: N missing (K new since Phase 4), M unlinked` (or `— not available, continuing`) |
+| If skill missing               | Log `measurable() — skipped (not installed)`                      |
+| Progress Log entry             | `[TIMESTAMP] Phase 7: measurable(audit) — recheck: N missing (K new since Phase 4), M unlinked` (or `— skipped (not installed)`) |
 
 Disable: remove the `Skill("measurable", "audit", ...)` invocation from this
 section (the Phase 3/4 companions are unaffected — this is the Phase 7

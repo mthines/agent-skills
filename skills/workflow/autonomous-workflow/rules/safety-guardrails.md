@@ -124,7 +124,7 @@ The ONLY non-removable companion is `confidence` at Phase 1.
 When a companion is unavailable, log to conversation and `plan.md` Progress
 Log:
 
-> `companion: <name> — not available, continuing`
+> `companion: <name> — skipped (not installed)`
 
 ---
 

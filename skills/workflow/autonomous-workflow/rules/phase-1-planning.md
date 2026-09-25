@@ -239,14 +239,14 @@ complex / unfamiliar / deep), invoke the `holistic-analysis` companion to trace
 the end-to-end execution path before designing.
 
 ```
-Skill("holistic-analysis")     # skips silently if not installed
+Skill("holistic-analysis")     # missing ⇒ companion: <name> — skipped (not installed)
 ```
 
 Log to the conversation and to `plan.md` Progress Log:
 
 ```markdown
 - [TIMESTAMP] Phase 1: holistic-analysis() — invoked
-- [TIMESTAMP] Phase 1: holistic-analysis() — not available, continuing
+- [TIMESTAMP] Phase 1: holistic-analysis() — skipped (not installed)
 ```
 
 Use the holistic findings to refine the technical approach before drafting
@@ -391,14 +391,14 @@ low-complexity structures **before** writing code (early returns,
 single-responsibility, naming, function size). Cheaper than refactoring later.
 
 ```
-Skill("code-quality", "plan")     # skips silently if not installed
+Skill("code-quality", "plan")     # missing ⇒ companion: <name> — skipped (not installed)
 ```
 
 Apply suggestions to the design. Log:
 
 ```markdown
 - [TIMESTAMP] Phase 1: code-quality(plan) — applied (N suggestions integrated)
-- [TIMESTAMP] Phase 1: code-quality(plan) — not available, continuing
+- [TIMESTAMP] Phase 1: code-quality(plan) — skipped (not installed)
 ```
 
 Disable by removing the invocation here (see
@@ -565,7 +565,7 @@ Log:
 
 ```markdown
 - [TIMESTAMP] Phase 1: critical(plan) — applied (N must-fixes addressed, steelman recorded)
-- [TIMESTAMP] Phase 1: critical(plan) — not available, continuing
+- [TIMESTAMP] Phase 1: critical(plan) — skipped (not installed)
 - [TIMESTAMP] Phase 1: critical(plan) — skipped (no --critical flag)
 ```
 
@@ -588,7 +588,7 @@ code. Skip when the user passed `--no-optimize`.
 Run between the adversarial pre-mortem and `confidence(plan)`:
 
 ```
-Skill("optimize-approach", "plan")     # skips silently if not installed
+Skill("optimize-approach", "plan")     # missing ⇒ companion: <name> — skipped (not installed)
   intent_summary: <task intent / requirements from Phase 0–1>
   approach: <Technical Approach + Decisions + Implementation Order + File Changes from the plan draft>
   survey: <Existing Code Survey verdicts>
@@ -625,7 +625,7 @@ Log:
 - [TIMESTAMP] Phase 1: optimize-approach(plan) — 1 proposal adopted; plan revised (plan.v2.md)
 - [TIMESTAMP] Phase 1: optimize-approach(plan) — 1 proposal below gate, logged as note
 - [TIMESTAMP] Phase 1: optimize-approach(plan) — skipped (--no-optimize)
-- [TIMESTAMP] Phase 1: optimize-approach(plan) — not available, continuing
+- [TIMESTAMP] Phase 1: optimize-approach(plan) — skipped (not installed)
 ```
 
 Disable by removing the invocation here (see

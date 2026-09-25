@@ -1,12 +1,14 @@
 # Companion Skills Registry
 
 Single source of truth for which optional skills the workflow invokes, when, and
-how. **All companions skip silently if not installed.** This file is the place
-to disable, swap, or add companions.
+how. **No companion blocks the workflow, and none disappears from the record** —
+each is reported `ran` or `skipped (<reason>)` ([§ The companion report](#the-companion-report)).
+This file is the place to disable, swap, or add companions.
 
 ## Contents
 
 - [How invocation works](#how-invocation-works)
+- [The companion report](#the-companion-report)
 - [Registry](#registry)
 - [Agent Companions](#agent-companions)
 - [Self-Improvement Loop (LoreKit)](#self-improvement-loop-lorekit)
@@ -27,13 +29,62 @@ Each phase rule contains lines like:
 Skill("ux")     # if companion installed and trigger matches
 ```
 
-If the skill isn't installed, Claude returns an error message; the workflow
+If the skill isn't installed, the skill tool returns an error; the workflow
 catches that and continues without the skill. **Never block the workflow on a
-missing companion.**
+missing companion — and never let it vanish from the record either.**
 
-When invoking, log one line in the conversation and the `plan.md` Progress Log:
+## The companion report
 
-> `companion: <name> — invoked` or `companion: <name> — not available, continuing`
+**Every registry row whose phase ran gets exactly one line** — in the
+conversation, in the `plan.md` Progress Log, and repeated under `Companions:` in
+the agent's final message (the planner's handoff, the executor's hand-back):
+
+```text
+companion: <name> — ran
+companion: <name> — skipped (<reason>)
+```
+
+`<reason>` comes from a closed set, so a reader can tell the cases apart:
+
+| Reason | Meaning |
+| --- | --- |
+| `trigger not met: <the condition that failed>` | The companion is installed; its trigger did not match this task. Name the condition — `trigger not met: no new *.test.* file`, not `not needed` |
+| `disabled (<flag>)` | The user opted out — `disabled (--no-interview)` |
+| `not installed` | The skill tool reported it missing |
+| `not dispatchable on this host` | An agent companion whose type the dispatch tool does not list |
+| `tool unavailable: <tool>` | The companion needs a tool this context lacks — `tool unavailable: AskUserQuestion` |
+
+```text
+❌ WRONG — the three reasons a line can be absent look identical in a transcript
+(no line for test-provenance-guard)
+
+✅ RIGHT
+companion: test-provenance-guard — skipped (trigger not met: no new *.test.* file)
+```
+
+**Why this is mandatory, not courtesy.** Across 39 `aw-planner` and 48
+`aw-executor` runs, `Skill("interview")`, `Skill("tdd")`, and
+`Skill("test-provenance-guard")` were each invoked **zero** times, and the
+transcripts could not say why: the contract's headline read *skip silently*, so
+an uninstalled companion, an untriggered one, and one the agent never reached all
+left the same nothing behind. Reading the definitions turned up three concrete
+contributors, each now fixed or made visible:
+
+1. **`test-provenance-guard` was absent from the executor's own companion
+   table** — the table the executor reads first — and lived only ~630 lines into
+   `phase-4-testing.md`. A run working from the template never met it. The row is
+   now in the template.
+2. **`interview`'s question round runs through `AskUserQuestion`, which
+   `aw-planner`'s tool grant does not include.** A planner that decided the
+   companion could not do its job there fell back to the inline gate and said
+   nothing; that decision now has to be written down as
+   `skipped (tool unavailable: AskUserQuestion)` — or the line says `ran`.
+3. **`tdd`'s trigger — "pure logic / business rules" — is a judgement with no
+   stated negative**, so declining it cost nothing and recorded nothing. A
+   `trigger not met: <condition>` line makes that judgement auditable.
+
+These are inferences from the definitions, not from replayed runs; the report
+line is what lets the next measurement confirm or refute them.
 
 ---
 

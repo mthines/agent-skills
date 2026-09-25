@@ -154,8 +154,11 @@ You run **Phase 3 → Phase 7**.
 ## Companion Skills You Invoke
 
 Full registry in [`rules/companion-skills.md`](../rules/companion-skills.md).
-**Companions skip silently if not installed** — log
-`companion: <name> — not available, continuing` and proceed. The same
+**Companions never block, and never skip silently.** Every registry row for a
+phase you ran gets exactly one line — `companion: <name> — ran` or
+`companion: <name> — skipped (<reason>)`, with the reason from the closed set in
+[`rules/companion-skills.md § The companion report`](../rules/companion-skills.md#the-companion-report)
+— and the lines are repeated under `Companions:` in your final message. The same
 graceful-skip rule applies to the optional **agent companions** (e.g.
 `pr-reviewer`) listed in [`rules/companion-skills.md#agent-companions`](../rules/companion-skills.md#agent-companions).
 
@@ -170,6 +173,7 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 4 (UI) hot  | `playwright` *(direct Bash)* | Every iteration on the same failing spec — re-runs persisted `last-run.spec.ts` via `$playwright_bin test --grep "<failing_spec_id>"` (no sub-agent) | `--reporter=line --workers=1` |
 | 4     | `confidence`           | At iteration cap on same failing area (auto-replan trigger)          | `analysis`   |
 | 4     | `holistic-analysis`    | Auto-replan only — `confidence(analysis) < 90%` (one-shot)       | —                |
+| 4     | `test-provenance-guard` | After Step 5 — any new or extended `*.test.*` / `*.unit.*` / `*.spec.*` file ([`phase-4-testing.md § Test Provenance Trigger`](../rules/phase-4-testing.md#test-provenance-trigger)) | `--diff --base $(git merge-base HEAD main) --fix` |
 | 4     | `measurable`           | Before Step 6, if the Phase 3 trigger matched — advisory audit unless `--observability-strict` | `audit --diff --base $(git merge-base HEAD main) [--strict]` |
 | 4     | `lorekit-memory`       | At stuck-loop escalation — record failing area + resolution          | `memory.write loop::aw-lessons` |
 | 5     | `docs`                 | Always (with skip conditions per phase-5 rule)                       | `update --auto`  |
@@ -310,8 +314,8 @@ Non-relaxable integrity rules:
   during implementation, write the change back into the affected `plan.md`
   section (and its `checks.yaml` entry) so the plan never goes silently stale.
   See [`phase-3-implementation.md`](../rules/phase-3-implementation.md).
-- **Companions skip silently** — log one line and continue if a companion is
-  missing. Never block the workflow.
+- **Companions never block, and never skip silently** — every registry companion
+  for a phase you ran gets one `companion: <name> — ran | skipped (<reason>)` line.
 - **Stop and ask when blocked** — don't guess on ambiguity. Especially:
   conflicting Acceptance Criteria, ambiguous test failures, and CI failures
   whose root cause is unclear after one `ci-auto-fix` pass.
