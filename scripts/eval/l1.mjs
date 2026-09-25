@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, extractSection, Suite } from "./lib.mjs";
 import { validateSkill } from "../../skills/authoring/create-skill/scripts/validate-skill.mjs";
+import { escapingLinks, counts as escapingCounts, readBaseline as escapingBaseline } from "./escaping-links.mjs";
 
 const AW = join(REPO_ROOT, "skills/workflow/autonomous-workflow");
 const s = new Suite("L1 deterministic contract checks");
@@ -6720,6 +6721,38 @@ const isPollBlock = (block) =>
   }
   s.check("G70h the executor's companion table lists test-provenance-guard",
     /^\| 4\s+\| `test-provenance-guard`/m.test(read("skills/workflow/autonomous-workflow/templates/aw-executor.agent.md")));
+}
+
+// ── G71: self-containment ratchet — no skill gains a link that leaves its own folder ──
+//
+// Hosts that import skills folder by folder (Dash0 Agent0: flat /tmp/.opencode/skills/custom/<name>/,
+// no `agents/` tree) break every `../` link that climbs out of a skill. The author's symlinked
+// install hides it. Today's debt is baselined per skill in escaping-links.baseline.json; a count
+// may fall (lower the baseline with `node scripts/eval/escaping-links.mjs --write` in the same
+// commit) and may never rise. Per skill rather than one total, so removing a link in one skill
+// cannot pay for adding one in another.
+{
+  const st = spawnSync(process.execPath, [join(REPO_ROOT, "scripts/eval/escaping-links.mjs"), "--self-test"], { encoding: "utf8" });
+  s.check("G71a escaping-links.mjs self-test passes", st.status === 0,
+    ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 300));
+  const found = escapingLinks();
+  const now = escapingCounts(found);
+  const base = escapingBaseline();
+  s.check("G71b the escaping-link baseline exists and is non-empty", Object.keys(base).length > 0);
+  for (const [skill, n] of Object.entries(now)) {
+    const b = base[skill] ?? 0;
+    if (n > b) {
+      const fresh = found[skill].slice(-3).map((l) => `${l.file} → ${l.target}`).join("; ");
+      s.check(`G71c ${skill} adds no link that escapes its folder`, false,
+        `${n} escaping vs baseline ${b} — ship the file inside the skill, or load the other skill and read ` +
+        `its files relative to the base directory the load reports (e.g. ${fresh})`);
+    }
+  }
+  const total = Object.values(now).reduce((a, c) => a + c, 0);
+  const baseTotal = Object.values(base).reduce((a, c) => a + c, 0);
+  s.check("G71c no skill's escaping-link count is above its baseline",
+    Object.entries(now).every(([k, n]) => n <= (base[k] ?? 0)),
+    total < baseTotal ? `${total} < baseline ${baseTotal}: lower it with --write` : `${total} escaping links`);
 }
 
 // ── G52: review-branch / branch-reviewer — the PR-less review path ──
