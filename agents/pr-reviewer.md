@@ -125,20 +125,18 @@ Two axes, bound at different steps and reported separately:
 | **Depth tier** | `deep` · `standard` · `quick` | Step 1.2b ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md)) | **How hard it is looked at** — which lenses run, which finders run, how many escalation traces, whether a Tier-2 receipt is mandatory. |
 
 They correspond one-to-one on the happy path (`full`↔`deep`, `incremental`↔`standard`,
-`incremental-quick`↔`quick`) and the renderer rejects a report where they disagree. The reason
-they are two axes and not one is that **scope and depth are independently wrong**: a 15-line mutex
-change is a small scope that needs deep looking, and a 400-line generated-file refresh is a large
-scope that needs almost none. Phase C routes on what the change *is*, not only on how big it is —
-see [`depth-routing.md`](./pr-reviewer/rules/depth-routing.md) for the five inputs and the
-first-match-wins table.
+`incremental-quick`↔`quick`) and the renderer rejects a report where they disagree — two axes, not
+one, because **scope and depth are independently wrong**: a 15-line mutex change is a small scope
+that needs deep looking, and a 400-line generated-file refresh is a large scope that needs almost
+none. Phase C routes on what the change *is*, not only on how big it is — see
+[`depth-routing.md`](./pr-reviewer/rules/depth-routing.md) for the five inputs and the
+first-match-wins table. A third fact is orthogonal to both: `DEPTH_CAPABILITY` (Step 1.1b) is what
+the *runner* could give this run — a checkout, a tarball, or nothing but the diff — which caps the
+tier (a `diff-only` run can never be `deep`) and is declared in the report, since a shallow review
+that renders like a deep one is the failure Phases A and C exist to fix.
 
-A third fact is orthogonal to both: `DEPTH_CAPABILITY` (Step 1.1b) is what the *runner* could
-give this run — a checkout, a tarball, or nothing but the diff. It caps the tier (a `diff-only`
-run can never be `deep`) and it is declared in the report, because a shallow review that renders
-like a deep one is the failure Phases A and C exist to fix.
-
-The run modes themselves, chosen automatically in Step 0.7 (fast-pathed at Step 0.8 for a
-re-review whose `HEAD_SHA` has not moved):
+The run modes themselves, chosen automatically in Step 0.7 (fast-pathed at Step 0.8 for a re-review
+whose `HEAD_SHA` has not moved):
 
 | Mode | When | What runs |
 |---|---|---|
