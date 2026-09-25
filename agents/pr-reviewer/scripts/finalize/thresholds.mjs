@@ -22,6 +22,37 @@ export const AGREEMENT_PROMOTED_CAP = 70;
 
 export const CLAIM_PREFIXES = new Set(["issue", "suggestion"]);
 
+// finding-verifier.md § Step 4: Final = 0.4*Reproducible + 0.3*Attributable + 0.3*Actionable.
+// judgments.schema.json's own `final` field description: "finalize.mjs recomputes and
+// cross-checks this rather than trusting it blindly" — a promise the pipeline never kept
+// (found while investigating ab/B/20230/1/meta.json's defect 9, the 3-vs-7 inline-count gap).
+// It was NOT the cause of that gap — every one of the real run's 42 candidates already had a
+// self-reported `final` exactly equal to this formula (0 mismatches, checked empirically) — but
+// the schema's own words describe an integrity check finalize.mjs is supposed to perform and
+// never did: a model that reports Reproducible/Attributable/Actionable honestly but a `final`
+// that does not follow from them (whether by error or by gaming the threshold) was trusted
+// blindly. This closes it at the pipeline's actual entry point rather than leaving the schema's
+// promise unenforced.
+const FINAL_WEIGHTS = Object.freeze({ R: 0.4, A: 0.3, Ac: 0.3 });
+
+/**
+ * Recomputes Final from the three scored axes, never from a model-reported `final` — the
+ * authoritative source for every downstream disposal/placement/display use of a candidate's
+ * score. Falls back to the reported `final` (never NaN, never a thrown error) when any axis is
+ * not a finite 0-100 number — a candidate missing an axis (a lens outside the finder pipeline,
+ * `ux`/`--with`, per per-comment-confidence.md's fallback path) is not silently zeroed out.
+ * @param {{ R?: number, A?: number, Ac?: number, final?: number }} candidate
+ * @returns {number}
+ */
+export function recomputeFinal(candidate) {
+  const { R, A, Ac, final } = candidate || {};
+  const axesValid = [R, A, Ac].every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 100);
+  if (!axesValid) return typeof final === "number" ? final : 0;
+  return FINAL_WEIGHTS.R * /** @type {number} */(R)
+    + FINAL_WEIGHTS.A * /** @type {number} */(A)
+    + FINAL_WEIGHTS.Ac * /** @type {number} */(Ac);
+}
+
 /**
  * @param {{ profile?: string, severityTier?: string, flatOverride?: number }} args
  * @returns {number}
@@ -59,6 +90,29 @@ async function selfTest() {
     if (!cond) { failed++; console.error(`  ✗ ${label}${detail ? ` — ${detail}` : ""}`); }
     else console.log(`  ✓ ${label}`);
   };
+
+  // recomputeFinal — ab/B/20230/1/meta.json defect 9 investigation: the schema's own promise
+  // ("finalize.mjs recomputes and cross-checks this rather than trusting it blindly") was never
+  // implemented anywhere in the pipeline.
+  {
+    check("recomputeFinal reproduces finding-verifier.md's own formula (0.4R + 0.3A + 0.3Ac)",
+      recomputeFinal({ R: 90, A: 80, Ac: 70 }) === 90 * 0.4 + 80 * 0.3 + 70 * 0.3);
+    check("a candidate whose reported `final` agrees with R/A/Ac is unaffected",
+      recomputeFinal({ R: 100, A: 100, Ac: 100, final: 100 }) === 100);
+    check("a candidate whose reported `final` DISAGREES with R/A/Ac is overridden by the recomputed value — never trusted blindly",
+      recomputeFinal({ R: 0, A: 0, Ac: 0, final: 99 }) === 0);
+    check("a candidate missing an axis (e.g. a fallback-path lens with no R/A/Ac) falls back to the reported final, never NaN or zeroed",
+      recomputeFinal({ final: 82 }) === 82);
+    check("a candidate missing an axis AND a reported final falls back to 0, never NaN", recomputeFinal({}) === 0);
+    check("an axis out of the schema's 0-100 range is treated as invalid, falling back to the reported final",
+      recomputeFinal({ R: 150, A: 50, Ac: 50, final: 61 }) === 61);
+    // Empirical proof this is a genuine no-op on well-formed input: every one of the 42 real
+    // candidates in ab/B/20230/1/judgments.json already satisfied final === 0.4R+0.3A+0.3Ac
+    // exactly (0 mismatches) — the 3-vs-7 gap was NOT caused by this gap.
+    const realShaped = { R: 92, A: 90, Ac: 91, final: 0.4 * 92 + 0.3 * 90 + 0.3 * 91 };
+    check("a well-formed, internally-consistent candidate (the real run's actual shape) recomputes to the same value",
+      Math.abs(recomputeFinal(realShaped) - realShaped.final) < 0.01);
+  }
 
   check("PROFILES has exactly chill/balanced/assertive", Object.keys(PROFILES).sort().join(",") === "assertive,balanced,chill");
   check("balanced.thresholds.medium is 80 (today's default)", PROFILES.balanced.thresholds.medium === 80);

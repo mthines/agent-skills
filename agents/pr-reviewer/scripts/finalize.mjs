@@ -34,7 +34,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { dedupe, markAgreementPromoted } from "./finalize/dedupe.mjs";
-import { resolveThreshold, dispose, deferFloor, CLAIM_PREFIXES } from "./finalize/thresholds.mjs";
+import { resolveThreshold, dispose, deferFloor, recomputeFinal, CLAIM_PREFIXES } from "./finalize/thresholds.mjs";
 import { applySuppression } from "./finalize/suppression.mjs";
 import { validateLine } from "./finalize/line-validity.mjs";
 import { place } from "./finalize/placement.mjs";
@@ -229,7 +229,14 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   /** @type {any[]} */
   const confidenceDropped = [];
 
-  for (const c of promoted) {
+  for (const c0 of promoted) {
+    // judgments.schema.json's own `final` field description: "finalize.mjs recomputes and
+    // cross-checks this rather than trusting it blindly" — done here, once, before ANY
+    // consumer (dispose, placement ordering, the displayed confidence score) ever reads
+    // `.final`, so a model-reported score that does not follow from its own R/A/Ac axes can
+    // never survive downstream (thresholds.mjs's own docstring on recomputeFinal has the
+    // full rationale, including the empirical proof this is a no-op on well-formed input).
+    const c = { ...c0, final: recomputeFinal(c0) };
     const threshold = resolveThreshold({ profile, severityTier: c.severity || "medium", flatOverride });
     const decision = dispose({ final: c.final, threshold, prefix: c.prefix, agreementPromoted: c.agreement_promoted });
     if (decision === "clear") cleared.push({ ...c, _threshold: threshold });
@@ -605,14 +612,22 @@ async function selfTest() {
     threads: [],
   };
 
-  const mkCandidate = (over = {}) => ({
-    finder: "correctness", defect_class: "nil-deref", path: "a.ts", line: 12, symbol: "foo",
-    claim: "x", bad_outcome: "y", evidence: ["e"], verify_by: "z",
-    verdict: "confirmed", R: 90, A: 90, Ac: 90, final: 90,
-    severity: "medium", prefix: "issue", blocking: false, title: "T", body: "B",
-    materiality: true, category: "c",
-    ...over,
-  });
+  // R/A/Ac default to the SAME value as `final` (never an independent 90) — finalizeReview() now
+  // recomputes `final` from R/A/Ac (recomputeFinal, thresholds.mjs) rather than trusting a
+  // model-reported `final` blindly, and 0.4x + 0.3x + 0.3x == x for any x, so a test that
+  // overrides only `final` (the overwhelming majority below) still gets the score it asked for
+  // through the recompute, exactly as before that fix.
+  const mkCandidate = (/** @type {any} */ over = {}) => {
+    const final = over.final ?? 90;
+    return {
+      finder: "correctness", defect_class: "nil-deref", path: "a.ts", line: 12, symbol: "foo",
+      claim: "x", bad_outcome: "y", evidence: ["e"], verify_by: "z",
+      verdict: "confirmed", R: final, A: final, Ac: final, final,
+      severity: "medium", prefix: "issue", blocking: false, title: "T", body: "B",
+      materiality: true, category: "c",
+      ...over,
+    };
+  };
 
   // Field-bridging gaps closed at the source. Five were named in ab/DISPATCH-READY.md's manual
   // patches (context.mode, a 7-char sha, render.at, non-empty SKIPPED_FILES, a length-capped
