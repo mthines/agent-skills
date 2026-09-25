@@ -17,6 +17,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # G63d (AC-12) diffs specific paths against `origin/main` directly. The
+          # default shallow, single-ref checkout leaves no local `origin/main` to
+          # diff against (`git diff --quiet origin/main` exits 128, "unknown
+          # revision"), so this fetches full history for every ref.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -40,4 +46,11 @@ jobs:
       - name: Install typescript + @types/node (temp prefix, no lockfile touched)
         run: npm install --no-save --prefix /tmp/ts-prefix typescript@5.9.2 @types/node@20.19.9
       - name: tsc --noEmit (agents/pr-reviewer/scripts)
-        run: /tmp/ts-prefix/node_modules/.bin/tsc -p agents/pr-reviewer/scripts/tsconfig.json
+        # tsc's default typeRoots resolution walks UP from the tsconfig's own
+        # directory looking for node_modules/@types — /tmp/ts-prefix is never an
+        # ancestor of agents/pr-reviewer/scripts, so it is never found that way
+        # (TS2688 "Cannot find type definition file for 'node'"). This job never
+        # runs `pnpm install`, so there is no repo-root node_modules/@types to
+        # fall back on either — --typeRoots makes the temp-prefix install explicit
+        # rather than relying on directory-walk luck.
+        run: /tmp/ts-prefix/node_modules/.bin/tsc -p agents/pr-reviewer/scripts/tsconfig.json --typeRoots /tmp/ts-prefix/node_modules/@types
