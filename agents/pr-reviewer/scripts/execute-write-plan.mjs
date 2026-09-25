@@ -254,8 +254,9 @@ export async function executeWritePlan(writePlan, opts = {}) {
     } else {
       // `gh api -f`/`--raw-field` always serialize their value as a JSON STRING — there is no
       // flag that sends one as a JSON array or object, so `-f comments=<json>` 422s with
-      // `For 'properties/comments', "[...]" is not an array` (agents/pr-reviewer.md § Post with
-      // --input). Write the whole payload to a scratch file and POST it with `--input`, which
+      // `For 'properties/comments', "[...]" is not an array` (5 independent reviewer-lessons
+      // converged on this fix; L1 G36a locks it). Write the whole payload to a scratch file and
+      // POST it with `--input`, which
       // sends the file verbatim as the request body and keeps `comments` a real array.
       const reviewPayloadPath = join(scratchRoot(), `review-payload-${Date.now()}.json`);
       writeFileSync(reviewPayloadPath, JSON.stringify({
@@ -384,7 +385,7 @@ async function selfTest() {
 
   // review.create posts via --input (a real JSON array on disk), never `-f comments=<json>` —
   // `gh api -f`/`--raw-field` always serialize as a JSON STRING, which 422s the reviews endpoint
-  // (agents/pr-reviewer.md § Post with --input; the bug this case guards against).
+  // (the bug this case guards against; L1 G36a locks it statically too).
   {
     const { spy, calls } = mkSpy();
     const writePlan = {
