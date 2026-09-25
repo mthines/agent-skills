@@ -1234,17 +1234,13 @@ node "$IMPACT" /tmp/pr-files.json \
 Bind `IMPACT_SYMBOLS` (changed exports, consumers, `signature`/`body`/`removed`), `IMPACT_DEPS`
 (resolved dependency deltas + usage sites), `IMPACT_OVERLAPS` (same symbol on another open PR),
 `BLAST_RADIUS` (`none`/`low`/`medium`/`high`), and `TRAFFIC_BAND` per symbol
-(`symbols[].production.traffic_band`; `unknown` is the expected default, not a missing-data error).
-These are the Phase C routing inputs and what the consumer-impact finder (Step 2) walks.
-
-On `--workdir` absent (`diff-only`), pass `--no-vcs`. On any failure, set the graph empty, announce
-`Impact graph unavailable — <reason>; consumer and dependency finders degraded to diff-local.`, and
-continue — the graph adds depth, it never gates the run.
-
-Announce: `Impact: <N> changed exports · <C> consumers · <D> dependency deltas · <O> overlaps · blast_radius=<BLAST_RADIUS>.`
-
-**Nothing in the graph is a finding** — it says a caller *exists*, never that the caller is broken.
-Reporting graph edges as defects is
+(`symbols[].production.traffic_band`; `unknown` is the expected default) — the Phase C routing
+inputs, and what the consumer-impact finder (Step 2) walks. On `--workdir` absent (`diff-only`),
+pass `--no-vcs`; on any failure, set the graph empty, announce `Impact graph unavailable —
+<reason>; consumer and dependency finders degraded to diff-local.`, and continue — the graph adds
+depth, it never gates the run. Announce: `Impact: <N> changed exports · <C> consumers · <D>
+dependency deltas · <O> overlaps · blast_radius=<BLAST_RADIUS>.` **Nothing in the graph is a
+finding** — it says a caller *exists*, never that it is broken; reporting graph edges as defects is
 [forbidden](./pr-reviewer/rules/impact-graph.md#the-graph-is-a-lead-never-a-verdict).
 
 **Then read what this repository already knows about the symbols the graph just named** — the whole
@@ -1265,11 +1261,11 @@ mcp__lorekit__memory_search: q="<symbol> <symbol> <symbol>" scopes=["repo::{owne
 
 Match the returned records against the graph per `memory.md`'s match table, and hand the finders the
 recorded contract + `history[]` for a changed symbol, the hotspot checklist line for a file in the
-delta, and a previously caught human comment as a checklist line. This read never fetches relevance
-rules (their own tag-filtered pair runs at Step 1.0) and never applies a suppression (that is
-Step 2.7b, after verification). Skipping it is a Step 5 deviation to declare, not an optimisation —
-without it, Step 4d writes into a bucket nothing reads, and the run reports "0 memories applied"
-indistinguishably from a repository that learned nothing.
+delta, and a previously caught human comment as a checklist line. Never fetches relevance rules
+(their own tag-filtered pair runs at Step 1.0) or applies a suppression (Step 2.7b, after
+verification). Skipping it is a Step 5 deviation to declare, not an optimisation — without it, Step
+4d writes into a bucket nothing reads, and the run reports "0 memories applied" indistinguishably
+from a repository that learned nothing.
 
 ### 1.2b Delta triage and depth routing (Phase C)
 
