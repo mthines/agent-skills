@@ -78,6 +78,25 @@ depending on what a prior run in the series left behind. `--isolated`:
 for a comparability run that is also side-effect-free (the A/B harness and
 the shadow run always pass both together).
 
+**What `--isolated` does NOT skip:** Steps 1.0 / 1.2a / 1.2c / 1.2d — the
+`codebase-knowledge` and `reviewer-lessons` LoreKit reads — are project
+memory, not per-PR run state, and are deliberately outside `--isolated`'s
+scope. They persist by design across PRs and across runs of the *same* PR,
+which is different from the Step 0.7 state record and its GitHub fallback
+rung (both genuinely about "what did the LAST run of THIS PR leave behind").
+A knowledge or lesson record surfaced by an earlier review of the same PR
+(possibly from a different commit, a different arm, or a different session
+entirely) is legitimately read on an `--isolated` run — that is the intended
+behavior, not a leak. Consequence for a comparability run (A/B, shadow): two
+arms reviewing the same PR are NOT guaranteed a clean, memory-free baseline
+just because both pass `--isolated` — if that guarantee matters (e.g.
+isolating the reviewer-DEFINITION change under test from prior-run
+LEARNING), the caller must arrange it explicitly (a scratch LoreKit scope,
+or accepting and noting the shared-memory caveat in the comparison), and
+every dispatch prompt in a multi-arm run must state the SAME LoreKit-read
+instruction — a difference in what each arm's prompt tells it to read is a
+confound `--isolated` cannot detect or prevent.
+
 ## Artifact flow
 
 ```
