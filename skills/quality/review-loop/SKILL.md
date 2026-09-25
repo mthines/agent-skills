@@ -720,7 +720,7 @@ the loop's fixes:
    )"
    ```
 
-Then, **best-effort**, note the linked Linear ticket (skip silently if any part is absent):
+Then, **best-effort**, note the linked Linear ticket (skip with one report line if any part is absent):
 
 - Detect a ticket from the branch name (`.../ABC-123-...`), the PR title/body, or `gh pr view`.
 - If a ticket id is found **and** the Linear MCP tools are connected, post a short comment on the ticket linking the PR and stating that review converged (e.g. `Review loop converged — PR <url> ready for review.`).

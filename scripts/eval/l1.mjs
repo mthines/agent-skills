@@ -7922,7 +7922,7 @@ const isPollBlock = (block) =>
     s.check("G54e weaver-schema.md states it never blocks a mode or a gate",
       /never blocks|never block\b|Advisory, always/i.test(weaver),
       "no advisory/never-blocks statement found — an external CLI that can fail a gate is a dependency, not a companion");
-    const companionPrinciple = (skill.match(/\*\*Companions skip silently\.\*\*[\s\S]*?(?=\n\d+\.\s\*\*|\n\n##)/) ?? [""])[0];
+    const companionPrinciple = (skill.match(/\*\*Companions never block, and never skip silently\.\*\*[\s\S]*?(?=\n\d+\.\s\*\*|\n\n##)/) ?? [""])[0];
     s.check("G54e SKILL.md's companion principle names the `weaver` CLI among the optional ones",
       /`weaver`/.test(companionPrinciple),
       "the principle that makes every companion skippable does not list the one companion that is not even a skill");

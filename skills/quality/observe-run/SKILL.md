@@ -151,14 +151,14 @@ skill returns the same quiet self-skip rather than a vacuous `confirms`.
 ## Integration: `measurable implement`
 
 `measurable`'s implement mode calls this skill as a prove-it step after writing instrumentation,
-turning a static `file:line` claim into an executed one. Skips silently when this skill (or its
+turning a static `file:line` claim into an executed one. Skipped with one report line when this skill (or its
 prerequisite dev run target) is unavailable — advisory, consistent with `measurable`'s own Core
 Principle 6.
 
 ## Integration: `verify-behavior` Tier 3
 
 `verify-behavior/rules/ladder.md`'s Tier 3 table gains a third approach delegating here, alongside
-"run the covering test" and "synthesize a minimal repro." Skips silently when this skill is not
+"run the covering test" and "synthesize a minimal repro." Skipped with one report line when this skill is not
 installed.
 
 ## Integration: `fix-bug`

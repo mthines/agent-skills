@@ -533,7 +533,7 @@ Log:
 **Anchor:** `adversarial-pre-mortem`
 
 **Opt-in only.** Run this step **only** when the user passed `--critical` to
-the workflow. Skip silently otherwise — no auto-engage heuristics at this stage.
+the workflow. Otherwise report `companion: critical — skipped (disabled — opt-in, --critical not passed)` — no auto-engage heuristics at this stage.
 
 Purpose: surface plan defects that pass static rules but would fail under
 adversarial review, and force exploration of at least one alternative design

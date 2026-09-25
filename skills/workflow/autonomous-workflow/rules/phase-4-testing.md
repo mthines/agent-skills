@@ -468,7 +468,7 @@ Exactly three options, plain language:
 
 **Step 4: Capture the lesson.** Before or immediately after escalation, write a
 lesson per [Lessons Write](#lessons-write) so the failing area, the hypotheses
-tried, and the resolution are available to future runs. Skip silently if
+tried, and the resolution are available to future runs. Skip with one report line if
 LoreKit's `memory.*` tools are not connected.
 
 ### Logging

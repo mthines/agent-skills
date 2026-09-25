@@ -256,7 +256,7 @@ Capture what each run teaches so the next one improves:
   `/create-skill diagnose autonomous-workflow` so it can become a permanent
   guard behind the confidence gate.
 - Autonomous writes skip consent, not the privacy pre-flight — never write secrets / PII.
-- Skips silently if LoreKit's `memory.*` tools are not connected. Full contract:
+- Skipped with one report line if LoreKit's `memory.*` tools are not connected. Full contract:
   [`rules/self-improvement-loop.md`](../rules/self-improvement-loop.md).
 
 ## Sub-Agent Resource Discipline

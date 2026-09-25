@@ -59,7 +59,7 @@ memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-tester-lessons"], 
 memory.list { scope: "global",               tags: ["loop::aw-tester-lessons"], limit: 50 }
 ```
 
-If LoreKit's `memory.*` tools are not connected, skip silently and log one line:
+If LoreKit's `memory.*` tools are not connected, skip it and log one line:
 ```
 aw-tester-lessons: memory.* not connected, continuing
 ```

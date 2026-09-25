@@ -99,7 +99,7 @@ At the start of **Complexity Triage (Phase 0.5)**, after `bugClass` is inferred
 (Phase 0c) but before the triage decision commits, load lessons.
 
 The read is **narrow-to-broad** — project-bound lessons from `repo::` first,
-then universal lessons from `global` — merging the results (skips silently if
+then universal lessons from `global` — merging the results (skipped with one report line if
 `memory.*` is not connected):
 
 ```text
@@ -168,7 +168,7 @@ memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit
 The read is **read-only, structural, bounded to the plan, advisory, and raises care
 without suppressing** — the full contract is
 [`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md).
-Skip silently when `memory.*` is not connected, there is no git remote, or nothing
+Skip with one report line when `memory.*` is not connected, there is no git remote, or nothing
 matches. Never wholesale-read another host's `loop::<host>-lessons`.
 
 ---

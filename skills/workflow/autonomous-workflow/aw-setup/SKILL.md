@@ -351,7 +351,7 @@ authenticates**, then record the confirmed shape so the runner, the author, and
 the next teammate never rediscover it. The full flow (the two walls, the CI
 env-var path, `authed_check`) is [`ui-verify/rules/preview-auth.md`](../../../testing/ui-verify/rules/preview-auth.md).
 
-Skip silently and log one line when it does not apply:
+Skip it and log one line when it does not apply:
 
 - Preview auth is `none` / `manual` → `aw-setup: preview auth is <strategy> — nothing to confirm`.
 - `memory.*` not connected → `aw-setup: memory.* not connected — auth profile not recorded`.

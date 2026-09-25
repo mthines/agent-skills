@@ -47,7 +47,7 @@ The workflow reads accumulated `loop::aw-lessons` lessons before planning
 (Phase 1) and writes new ones when it gets stuck (Phase 4) or finishes (Phase 7),
 mapping universal lessons to LoreKit's `global` scope and repo-bound lessons to
 `repo::{owner}/{repo}`. Lessons are **advisory** — they bias the plan, never
-silently change a gate. Skips silently when LoreKit's `memory.*` tools are not
+silently change a gate. Skipped with one report line when LoreKit's `memory.*` tools are not
 connected.
 **When invoked through the `aw` dispatcher, the read/write is hoisted to the
 dispatcher** (intake + exit) so **every tier** — Micro, Lite, and Full — both
