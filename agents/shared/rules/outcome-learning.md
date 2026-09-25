@@ -94,9 +94,9 @@ REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 # an App installation token or a per-call credential proxy (`github-access.md § Identity`).
 # Rung 2 reads the login off this agent's own report comment on this PR.
 # Rung order is identical to prior-comment-awareness.md § fetch existing PR comment state —
-# caller-bound, then /user, then this agent's own prior artifact. Two rules that resolve the
-# identity differently can attribute the same comment to two logins inside one run.
-BOT_LOGIN="${BOT_LOGIN:-$(gh api user --jq .login 2>/dev/null || echo "")}"
+# caller-bound, then GraphQL viewer, then this agent's own prior artifact. Two rules that resolve
+# the identity differently can attribute the same comment to two logins inside one run.
+BOT_LOGIN="${BOT_LOGIN:-$(gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login 2>/dev/null || echo "")}"
 [ -z "$BOT_LOGIN" ] && BOT_LOGIN="${PRIOR_REPORT_AUTHOR:-}"
 if [ -z "$BOT_LOGIN" ]; then
   # Standalone (no caller-bound PRIOR_REPORT_AUTHOR): look in BOTH hosts. The sticky lives on
@@ -116,9 +116,12 @@ fi
 # empty candidate set and would quietly learn nothing. Abort this pass and say so instead.
 [ -z "$BOT_LOGIN" ] && { echo "outcome-learning: bot identity unresolved — skipping this pass"; exit 0; }
 
+# Compare normalized — lowercase, one trailing `[bot]` stripped (`github-access.md § Identity`).
+BOT_NORM=$(printf '%s' "$BOT_LOGIN" | tr '[:upper:]' '[:lower:]' | sed 's/\[bot\]$//')
+
 # All review comments by the current user on this PR
 gh api repos/$REPO/pulls/$PR_NUMBER/comments \
-  --jq ".[] | select(.user.login == \"$BOT_LOGIN\") | {id, path, line, body, created_at}"
+  --jq ".[] | select((.user.login | ascii_downcase | sub(\"\\\\[bot\\\\]$\"; \"\")) == \"$BOT_NORM\") | {id, path, line, body, created_at}"
 ```
 
 ### Step 2 — Signal (a): 👎 reactions
@@ -293,7 +296,7 @@ not as already-recorded.
 ```bash
 # All review comments from reviewers OTHER than the bot on lines the bot did NOT flag
 gh api repos/$REPO/pulls/$PR_NUMBER/comments \
-  --jq ".[] | select(.user.login != \"$BOT_LOGIN\") | {path, line, body}"
+  --jq ".[] | select((.user.login | ascii_downcase | sub(\"\\\\[bot\\\\]$\"; \"\")) != \"$BOT_NORM\") | {path, line, body}"
 ```
 
 Cross-reference against the bot's comment list (Step 1).

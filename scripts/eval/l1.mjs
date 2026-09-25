@@ -6676,6 +6676,20 @@ const isPollBlock = (block) =>
     && /Task\(subagent_type="feature-pr-verifier"/.test(AW)
     && /^- Verified: /m.test(term),
     "without the dispatch and the terminal slot, a Full run can end unverified and report nothing");
+
+  // Identity: `/user` 401s under an App installation token and a per-call proxy, and
+  // `gh auth status` fails under the proxy while every real call succeeds. GraphQL `viewer`
+  // answers for all three. A `$(gh api user …)` rung is the regression; prose naming the
+  // endpoint to explain why it is not used is not.
+  for (const rel of ["agents/shared/rules/prior-comment-awareness.md", "agents/shared/rules/outcome-learning.md",
+                     "agents/shared/rules/github-access.md", "skills/workflow/implement-suggestion/rules/comment-fetching.md"]) {
+    const body = read(rel);
+    s.check(`G70f ${rel} resolves identity via GraphQL viewer, never $(gh api user)`,
+      !/\$\(gh api (\/)?user\b/.test(body) && /viewer \{ login \}/.test(body)
+      && !/authenticated via `gh auth status`/.test(body));
+  }
+  s.check("G70f github-access.md requires normalized login comparison (lowercase, strip [bot])",
+    /Compare logins normalized, never raw/.test(read("agents/shared/rules/github-access.md")));
 }
 
 // ── G52: review-branch / branch-reviewer — the PR-less review path ──
