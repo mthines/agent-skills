@@ -2515,26 +2515,11 @@ editing it into shape reintroduces exactly the drift the renderer removes.
 
 #### The bytes that get posted are the renderer's bytes
 
-Everything above runs **before** the body leaves the shell — a complete guarantee on the `gh` path,
-which posts from the file (`--field body=@/tmp/report-body.md`) and never re-reads the text, but
-**not** on the MCP path: `add_issue_comment` and `add_comment_to_pending_review` take the body as a
-tool-call **argument**, so the text has to be reproduced into that argument — a copy no shell
-performs, no assertion above covers, and nothing downstream re-checks.
+Everything above runs **before** the body leaves the shell — a complete guarantee on the `gh` path, which posts from the file (`--field body=@/tmp/report-body.md`) and never re-reads the text, but **not** on the MCP path: `add_issue_comment` and `add_comment_to_pending_review` take the body as a tool-call **argument**, so the text has to be reproduced into that argument — a copy no shell performs, no assertion above covers, and nothing downstream re-checks.
 
-That copy is a real failure site, not a theoretical one: on `mthines/agent-skills#165` all six
-artifacts of one run — the sticky and all five inline comments — arrived with the button markup
-HTML-escaped and wrapped in a double-backtick code span, so every button rendered as a wall of
-literal text with a dead link. The renderer had emitted them correctly; the corruption entered after
-its last post-condition, and the run's own report parsed fine because the markers and footers
-survived.
+That copy is a real failure site, not a theoretical one: on `mthines/agent-skills#165` all six artifacts of one run — the sticky and all five inline comments — arrived with the button markup HTML-escaped and wrapped in a double-backtick code span, so every button rendered as a wall of literal text with a dead link. The renderer had emitted them correctly; the corruption entered after its last post-condition, and the run's own report parsed fine because the markers and footers survived.
 
-**The cause is the relay, not the copy — and that took measurement to establish.** The first
-diagnosis here blamed reproducing the body by hand ("reformatting a long HTML line is the hazard")
-and was wrong: posting the renderer's exact bytes through this path reproduces the damage
-identically, and posting a *short*-URL button by hand does not. What the relay rewrites is a long
-unbroken run — over ~140 chars it wraps the run in a code span, which closes the `href` and escapes
-the markup after it. `agent0-fix-links.md` § *Relay length limit* has the measured table. Three
-obligations, and the first is now the load-bearing one:
+**The cause is the relay, not the copy — and that took measurement to establish.** The first diagnosis here blamed reproducing the body by hand ("reformatting a long HTML line is the hazard") and was wrong: posting the renderer's exact bytes through this path reproduces the damage identically, and posting a *short*-URL button by hand does not. What the relay rewrites is a long unbroken run — over ~140 chars it wraps the run in a code span, which closes the `href` and escapes the markup after it. `agent0-fix-links.md` § *Relay length limit* has the measured table. Three obligations, and the first is now the load-bearing one:
 
 1. **Check before the write, and withhold the buttons rather than post them broken.** No amount of
    faithful copying saves an over-budget URL:
@@ -2591,29 +2576,11 @@ obligations, and the first is now the load-bearing one:
    esac
    ```
 
-   Exit 0 (`relay-safe`) posts as rendered. Exit 1 means re-render with `--no-fix-links` — both
-   renderers omit the button when the URL slot is absent, so the report is unchanged apart from the
-   affordance. **Exit 3 is not a withhold**: the over-budget URL is not a fix link, so the remedy
-   cannot reach it, and treating 3 as 1 re-renders a body that fails the identical check with
-   nothing left to try. Do **not** shorten the prompt to fit: a `fix-this` link spends 106 chars
-   before the prompt starts (in body chars, `&amp;` included), and a button that opens a session
-   with no idea what to fix is worse than none.
+   Exit 0 (`relay-safe`) posts as rendered. Exit 1 means re-render with `--no-fix-links` — both renderers omit the button when the URL slot is absent, so the report is unchanged apart from the affordance. **Exit 3 is not a withhold**: the over-budget URL is not a fix link, so the remedy cannot reach it, and treating 3 as 1 re-renders a body that fails the identical check with nothing left to try. Do **not** shorten the prompt to fit: a `fix-this` link spends 106 chars before the prompt starts (in body chars, `&amp;` included), and a button that opens a session with no idea what to fix is worse than none.
 
-   **The `if` is the whole feature.** Every fix link is over the 140-char budget by construction
-   (`agent0-fix-links.md § Relay length limit` — the floor is 164), so an *unconditional*
-   `--relay-check` withholds the buttons on **every run of every repo**, including the `gh` runs
-   where nothing would have been mangled — which is how a default-on affordance shipped and then
-   never rendered once. That the outcome is path-specific was stated in this very paragraph as
-   prose (*"on the `gh` path the buttons post intact and stay"*) while the block above it asked
-   unconditionally: a rule the shell does not execute is a rule the run does not follow. Gate the
-   *question*, not just the sentence about it.
-2. **Reproduce the file byte-for-byte.** Read `/tmp/report-body.md` and pass exactly what it
-   contains. Never wrap anything in backticks, never escape `<` or `>`, never re-wrap a long line,
-   never re-indent. The body is already final; there is nothing left to format. This is no longer
-   the diagnosis, but it is still the only way the check above means anything.
-3. **Verify after the write, and repair once.** The backstop for whatever `--relay-check` does not
-   predict. Fetch the comment back and diff it against the file. A sticky is editable, so a mismatch
-   is fixable — `PATCH` it once with the correct bytes and note the repair in the Step 5 output:
+   **The `if` is the whole feature.** Every fix link is over the 140-char budget by construction (`agent0-fix-links.md § Relay length limit` — the floor is 164), so an *unconditional* `--relay-check` withholds the buttons on **every run of every repo**, including the `gh` runs where nothing would have been mangled — which is how a default-on affordance shipped and then never rendered once. That the outcome is path-specific was stated in this very paragraph as prose (*"on the `gh` path the buttons post intact and stay"*) while the block above it asked unconditionally: a rule the shell does not execute is a rule the run does not follow. Gate the *question*, not just the sentence about it.
+2. **Reproduce the file byte-for-byte.** Read `/tmp/report-body.md` and pass exactly what it contains. Never wrap anything in backticks, never escape `<` or `>`, never re-wrap a long line, never re-indent. The body is already final; there is nothing left to format. This is no longer the diagnosis, but it is still the only way the check above means anything.
+3. **Verify after the write, and repair once.** The backstop for whatever `--relay-check` does not predict. Fetch the comment back and diff it against the file. A sticky is editable, so a mismatch is fixable — `PATCH` it once with the correct bytes and note the repair in the Step 5 output:
 
    ```bash
    # after the write, with $STICKY_COMMENT_ID known
