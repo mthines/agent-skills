@@ -15,11 +15,11 @@ This rule owns the substitutions **every** repo-owned skill makes on that host.
 A skill-specific Agent0 rule ([`review-loop`](../../../skills/quality/review-loop/rules/agent0-runtime.md), [`ui-verify`](../../../skills/testing/ui-verify/rules/agent0-runtime.md)) links here and adds only what is specific to it.
 
 The host facts, each measured, are owned by [`pr-reviewer/rules/agent0-runtime.md § The four host facts`](../../pr-reviewer/rules/agent0-runtime.md#the-four-host-facts).
-Three of them decide everything below:
+Two of them, plus one property of every automation, decide everything below:
 
 - The host's skill tool resolves a **fixed enum of built-ins** and never the filesystem (fact 2).
 - **Custom agent types are not dispatchable**; `general` sub-agents are, exactly **one level** deep (fact 3).
-- An automation has **no interactive user** — a question asked with `AskUserQuestion` is never answered.
+- An automation has **no interactive user** — a question asked with `AskUserQuestion` is never answered. This one is not a measured host fact; it is what an automation is.
 
 ## Contents
 
