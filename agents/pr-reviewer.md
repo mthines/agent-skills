@@ -1519,66 +1519,40 @@ announced at Step 1.2e.
 
 ### 1.2d Resolve the bodies that matter
 
-**Skip this entire step when `SUMMARY_VIEW` is `false`** — Step 1.0 already returned full bodies,
-so there is nothing to resolve.
+**Skip entirely when `SUMMARY_VIEW` is `false`** — Step 1.0 already returned full bodies. Otherwise
+Step 1.0 loaded only the memory **index** (`key`, `tags`, `updated_at`, `value_bytes`, a 200-char
+`preview`), and this step fetches the bodies worth having — **here, not at Step 1.0**, because every
+key the shortlist matches on (changed files/symbols, detected integrations, `INTENT_PHRASE`) is
+produced by the steps between them (Step 1.1/1.2/1.2c); fetched at Step 1.0 the shortlist would have
+nothing to match against.
 
-Otherwise Step 1.0 loaded the memory **index**: every entry's `key`, `tags`, `updated_at`,
-`value_bytes` and a 200-character `preview`, but no bodies. This step fetches the bodies worth
-having.
-
-It runs **here, not at Step 1.0**, because every key the shortlist matches on is produced by the
-steps in between: the changed-file list (Step 1.1 command A and Step 1.2), the changed symbol names
-and detected integrations (Step 1.2c groups 1–5), and `INTENT_PHRASE` (bound at Step 1.2c). Fetched
-at Step 1.0 the shortlist would have nothing to match against and would select nothing.
-
-**Shortlist.** Mark an entry a candidate when its `key` slug, its `tags`, or its `preview` mentions
-any of: a changed top-level directory, a changed file basename, a changed symbol name, a detected
-integration, or `INTENT_PHRASE`. Include every hit the Step 1.2c search surfaced, which is already
-relevance-ranked. Be generous — this filter exists to drop the obviously-unrelated, not to make the
-final call; a candidate that turns out not to match once its body is read simply falls out at
-Step 1.2e below.
-
-**Fetch.**
+**Shortlist:** an entry is a candidate when its `key` slug, `tags`, or `preview` mentions a changed
+top-level directory, a changed file basename, a changed symbol name, a detected integration, or
+`INTENT_PHRASE` — plus every hit the Step 1.2c search surfaced (already relevance-ranked). Be
+generous: this filter drops the obviously-unrelated, not the final call — a candidate that doesn't
+match once its body is read falls out at Step 1.2e.
 
 ```text
 # One call per candidate. Issue as a real mcp__lorekit__memory_read tool call.
 mcp__lorekit__memory_read: scope="<the entry's scope>" key="<the entry's key>"
 ```
 
-**Budget.** This step may spend at most **half of `MEMORY_READ_BUDGET`, rounded down** — 2 reads on
-a ≤ 10-file diff, 5 on 11–30, 7 on > 30. The other half is reserved for the relevance bodies at
-Step 2.7b, which decide what actually gets posted; a lesson-heavy shortlist must never starve them.
-Decrement the shared pool by what you spend here, and leave the remainder to Step 2.7b.
+**Budget:** at most **half of `MEMORY_READ_BUDGET`, rounded down** — 2 reads on a ≤ 10-file diff, 5
+on 11–30, 7 on > 30 — decremented from the shared pool, leaving the remainder to Step 2.7b's
+relevance bodies (which decide what actually gets posted, and must never be starved by a
+lesson-heavy shortlist). Over budget, fill it in order — Step 1.2c hits first (in their
+relevance-ranked order), then everything else by most-recently-updated — and bind
+`MEMORY_BODIES_UNREAD` to the leftover count (0 when the budget wasn't binding), rendered in the
+Step 3 Quality Gate block so a truncated shortlist is visible rather than silent. An entry whose
+`preview` is already the whole body (`value_bytes` ≤ 200) needs no fetch and never consumes budget.
 
-When more entries are candidates than that allows, fill the budget in this order and treat the
-remainder as unread:
-
-1. hits returned by the Step 1.2c search, in the order it returned them — that order is
-   relevance-ranked against this diff, and discarding it for recency would throw away the one
-   ranking signal this pipeline has;
-2. everything else, most recently updated first.
-
-Bind `MEMORY_BODIES_UNREAD` to the number of candidates left unfetched (0 when the budget was not
-binding) and render it in the Step 3 Quality Gate block, so a truncated shortlist is visible rather
-than silent.
-
-One entry class never needs a fetch and must not consume the budget: an entry whose `preview` is
-already the whole body (`value_bytes` ≤ 200).
-
-**This step fetches `reviewer-lessons` only.** `reviewer-comment-relevance` bodies are also needed —
-the key carries only the fingerprint (`<category>:<claim-gist>`), while `relevance`, `seen_count`,
-`resolution_method` and `status` all live in the record body — but they cannot be selected here:
-the fingerprint match is against this run's **raw findings**, which do not exist until Step 2. So
-that fetch belongs to Step 2.7b, once there is something verified to match, and `comment-relevance-memory.md
-§ Read` owns it. Fetching relevance bodies here would mean fetching all of them blind and spending
-the budget on records no finding will ever consult.
-
-A failed `memory_read` is a non-blocking miss: drop that one entry, do not flip `LOREKIT_CONNECTED`,
-and carry on.
-
-`mcp__lorekit__memory_read` has exactly **two** defined call sites in this agent: this step, for
-lesson bodies, and the relevance-body fetch at Step 2.7b (`comment-relevance-memory.md § Read`). Do
-not invoke it anywhere else.
+**This step fetches `reviewer-lessons` only.** `reviewer-comment-relevance` bodies (`relevance`,
+`seen_count`, `resolution_method`, `status`) can't be selected here — the fingerprint match is
+against this run's **raw findings**, which don't exist until Step 2 — so that fetch belongs to Step
+2.7b (`comment-relevance-memory.md § Read`), once there is something verified to match; fetching it
+here would mean fetching everything blind. A failed `memory_read` is a non-blocking miss (drop the
+entry, do not flip `LOREKIT_CONNECTED`, carry on). `mcp__lorekit__memory_read` has exactly **two**
+call sites in this agent — this step and Step 2.7b — never invoke it elsewhere.
 
 ### 1.2e Apply `reviewer-lessons`
 
