@@ -56,6 +56,7 @@ When the file is absent, none of this rule applies.
 | `subagent_type: "general-purpose"` | `subagent_type: "general"` — the host's spelling of the same capability |
 | `subagent_type: "<custom agent>"` | A `general` sub-agent that reads the agent's definition file — [below](#a-custom-agent-becomes-a-general-sub-agent-that-reads-its-definition) |
 | a relative link into `agents/<path>` | `$AGENT_SKILLS_ROOT/<path>` — the installer copies `agents/` to that root and each skill to `…/skills/<name>/`, so a link's `../` depth no longer lands on the file |
+| a relative link into another skill, `skills/<category>/<name>/<path>` | `$AGENT_SKILLS_ROOT/skills/<name>/<path>` — the installer drops the `<category>/` level, so the link's `../` depth overshoots by one |
 | `AskUserQuestion(…)` | The skill's documented automation answer — [below](#no-user-to-ask) |
 
 `$AGENT_SKILLS_ROOT` is `/tmp/workspace/pr-reviewer`, exported by `env.sh`.

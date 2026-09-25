@@ -63,7 +63,7 @@ Set `STOP_REASON = "reviewer-refused"`, report the reply's first line verbatim, 
 | --- | --- | --- |
 | B | `Skill("implement-suggestion", "<PR> --resolve-all")` | `$AGENT_SKILLS_ROOT/skills/implement-suggestion/SKILL.md` |
 | C | `Skill("polish", "simplify")` | `$AGENT_SKILLS_ROOT/skills/polish/SKILL.md` (which in turn reads `$AGENT_SKILLS_ROOT/skills/code-quality/SKILL.md`) |
-| D | `ci-auto-fix` sub-agent | `general` sub-agent told to read `$AGENT_SKILLS_ROOT/skills/ci-auto-fix/SKILL.md` |
+| D | `ci-auto-fix` sub-agent | `general` sub-agent told to read `$AGENT_SKILLS_ROOT/skills/ci-auto-fix/SKILL.md`, with `/tmp/workspace/agent-skills/CONSTRAINTS.md` named in its prompt as its standing constraints — it pushes, and `AGENTS.md` may not load into a sub-agent |
 | 1.6 | `ui-verify run` | `$AGENT_SKILLS_ROOT/skills/ui-verify/SKILL.md`, which follows [its own Agent0 rule](../../../testing/ui-verify/rules/agent0-runtime.md) — Playwright via a `general` `aw-tester`, one level deep from this loop |
 
 Every one of these is followed in the loop's own top-level context, so each keeps the single dispatch rung it needs.
