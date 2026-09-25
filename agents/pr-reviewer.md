@@ -3100,17 +3100,14 @@ Confirm the 4b response contains `state: "COMMENTED"` when a review was posted.
 
 ### 4c. Record the run state
 
-The last write of the run, and the **unconditional** one: it runs whatever 4a and 4b did, including
-on a run that posted no review, could not write the sticky, or was refused the write by caller
-policy. Skipping it is the one failure that costs the *next* run its delta.
+The last write of the run, and **unconditional**: it runs whatever 4a and 4b did, including on a
+run that posted no review, could not write the sticky, or was refused the write by caller policy.
+Skipping it costs the *next* run its delta.
 
-**The one stated exception is `--dry-run`.** A dry-run's whole point is a rehearsal with zero
-side effects — the A/B harness and the shadow run (pr-reviewer deterministic pipeline) depend on
-running the same PR repeatedly with nothing accumulating between runs — so under `--dry-run` this
-step, 4a, and 4b all write their artifacts to scratch (`$(scratchRoot())/<run-id>/state.json`,
-mirroring the shape below) and issue **no** `mcp__lorekit__memory_write` call at all. This is the
-only condition anywhere in Step 4 that suppresses the state write; every other failure mode above
-still writes it.
+**The one exception is `--dry-run`**, which writes 4a/4b/4c to scratch
+(`$(scratchRoot())/<run-id>/state.json`, mirroring the shape below) and issues no
+`mcp__lorekit__memory_write` call at all — the A/B harness and the shadow run depend on nothing
+accumulating between repeat runs of the same PR.
 
 Build the record from the values this run already holds and write it to the scope and key bound in
 Step 0.7:
@@ -3154,53 +3151,37 @@ NEW_STATE=$(jq -c \
   }}' <<< "${PR_STATE:-{\}}")
 ```
 
-The three caps — `runs` 50, `carried_findings` 50, `optimality_cards` 2 — are applied **here, on
-every write**, and they are what makes the record bounded by construction (Step 0.7 § *The
-PR-state record*). Apply them even when the input is already short: a cap that only fires when
-someone remembers it is not a cap.
+The three caps (`runs` 50, `carried_findings` 50, `optimality_cards` 2) apply **on every write**,
+even when the input is already short — a cap that only fires when someone remembers it is not a cap.
 
-`CARRIED_FINDINGS_JSON` and `DIAGNOSTICS_JSON` are **this run's** outputs, not the ones read at
-Step 0.7:
+`CARRIED_FINDINGS_JSON` / `DIAGNOSTICS_JSON` are **this run's** outputs, not Step 0.7's:
 
 | Field | Source | Note |
 | --- | --- | --- |
-| `carried_findings` | the findings deferred by Step 2.9b (`Additional findings`), plus any Step 0.7 entry that survived this run's dispositions | The same set the body's `ADDITIONAL_FINDINGS` renders. A finding that got posted inline this run, or was resolved, is **not** carried — it would come back as a duplicate. |
-| `diagnostics.gate_rows` | Step 1.8's ⚠️/❌ rows | `✅` rows are not recorded; there is nothing to carry. |
-| `diagnostics.optimality_cards` | Step 2.4c's cards verbatim, or the entries Step 2.5c dispositioned `CARRY` | Verbatim because a card is a multi-line block with its own table. |
+| `carried_findings` | Step 2.9b's `Additional findings`, plus any surviving Step 0.7 entry | Posted-inline or resolved findings are dropped — they'd come back as duplicates. |
+| `diagnostics.gate_rows` | Step 1.8's ⚠️/❌ rows | `✅` rows are not recorded. |
+| `diagnostics.optimality_cards` | Step 2.4c's cards verbatim, or entries Step 2.5c dispositioned `CARRY` | Verbatim — a card is a multi-line block with its own table. |
 | `diagnostics.standards` | Step 2.4d's run-state | `{ran, docs_scanned, finding_count}`. |
-| `diagnostics.measurability` | Step 2.4e's run-state | `{ran, paths_classified, missing, unlinked}`. Run-state only — a `missing` finding itself carries forward through `carried_findings` like any other, never through here. |
-| `diagnostics.skipped_files` · `diagnostics.partial` | Step 1.4 / the budget stop condition | Context-only for the next run (`prior-comment-awareness.md`), never re-rendered. |
+| `diagnostics.measurability` | Step 2.4e's run-state | `{ran, paths_classified, missing, unlinked}` — a `missing` finding itself carries via `carried_findings`, not here. |
+| `diagnostics.skipped_files` · `diagnostics.partial` | Step 1.4 / the budget stop | Context-only for the next run, never re-rendered. |
 
-Four rules on this write:
+Four rules: (1) **never on the critical path** — a failed write is logged with its error and the run
+continues; Step 5 reports `PR-state record NOT written (<error>) — the next run will re-review in
+full.` (2) **no secrets** — every field is built from an explicit allow-list (PR number, sha, mode,
+verdict, login, comment ids, findings this run already published); never serialise an environment,
+error body, or raw tool response. (3) **`ttl_days` on every write** — see below; omitting it
+inherits whatever default the repo config sets for lessons, a number nobody chose for this record.
+(4) **last write wins, no compare-and-swap** — two concurrent runs clobber each other's record; the
+loser's state is one run stale, which widens the next delta (the safe direction), so this is
+accepted rather than locked.
 
-1. **Never on the critical path.** A failed write is logged with its error and the run continues —
-   the review is what the author is waiting for. Report it in Step 5 as
-   `PR-state record NOT written (<error>) — the next run will re-review in full.` That is the
-   honest consequence: an unwritten record means the next run misses, falls back to the sticky
-   footer for a baseline, and loses this run's carry-forward.
-2. **No secrets, ever.** Every field above is built from an explicit allow-list — a PR number, a
-   sha, a mode word, a verdict word, a login, comment ids, and findings this run already
-   published. Never serialise an environment, an error body, or a raw tool response into it.
-3. **`ttl_days` on every write.** It refreshes the expiry each run, so the record measures how
-   long *this PR* has been quiet rather than how old it is, and a merged or abandoned PR
-   self-cleans in a week. Omitting it inherits whatever default the repo config sets for lessons
-   — a number nobody chose for this record.
-4. **Last write wins; there is no compare-and-swap.** Two concurrent runs on the same PR clobber
-   each other's record. The loser's state is one run stale, which widens the next delta — the safe
-   direction — so this is accepted rather than locked. Do not build a lock here.
-
-**The TTL is the cleanup mechanism, and it needs nothing wired up.** `ttl_days: 7` on every write
-makes the expiry measure *how long this PR has been quiet*, not how old the record is (the write
-recomputes `expires_at = now + 7d` each time). An active PR refreshes it on every review; a PR that
-merges, closes, or is simply abandoned stops being written and the record expires seven days after
-its last review. No integration, no workflow, no webhook, and no cleanup pass is involved — which
-matters, because most repositories will never have any of those.
-
-A LoreKit-side GitHub-integration event on `pull_request: closed (merged)` could purge
-`ci-state::pr-review-<n>` the moment a PR merges, and it would be a genuine improvement: the state
-is dead at merge, so seven days of it is seven days of nothing useful. But it is an **accelerant on
-a mechanism that already works**, not the mechanism — treat it as optional everywhere. That event
-would live in the LoreKit repository, not here, and it is not shipped.
+**The TTL is the cleanup mechanism, and needs nothing wired up.** `ttl_days: 7` on every write
+recomputes `expires_at = now + 7d` each time, so the expiry measures how long this PR has been
+quiet, not how old the record is; a merged, closed, or abandoned PR self-cleans in a week with no
+integration, workflow, webhook, or cleanup pass — which matters, since most repositories have none
+of those. A LoreKit-side GitHub-integration event on `pull_request: closed (merged)` could purge the
+record at merge and would be a genuine improvement, but it is an **accelerant** on a mechanism that
+already works, not the mechanism — it is not shipped, and every surface treats it as optional.
 
 This agent does **not** purge, on either path: `mcp__lorekit__memory_delete` is deliberately absent
 from its `tools:` grant, so a reviewer can never delete a memory as a side effect of reviewing.
