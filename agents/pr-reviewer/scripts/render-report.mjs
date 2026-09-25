@@ -398,10 +398,28 @@ function main() {
     // A report claiming a deep review while rendering an incremental mode is the exact class of
     // internal contradiction this renderer exists to make unrepresentable. zero-delta is exempt:
     // it is a mode with no tier of its own (the gates ran, no finder did).
+    //
+    // ONE carve-out, and it is the capability cap's own mirror image: DEPTH_CAPABILITY ==
+    // diff-only caps an otherwise-`deep` tier at `standard` (route-depth.mjs's `capApplied`,
+    // depth-routing.md § Capability cap) — a `full`-mode first run against a fork PR whose
+    // workspace ladder never materialized a checkout is the ordinary way this fires, not an
+    // edge case. Without the carve-out this check and the `RUN.depth diff-only cannot carry
+    // RUN.tier deep` check below are jointly unsatisfiable: EVERY tier value fails one or the
+    // other, so a legitimately capped run can never be rendered at all (pr-reviewer deterministic
+    // pipeline, R4/D10, Risk "diff-only cap unrenderable in full mode"). The carve-out is narrow
+    // by construction — exactly `expected: deep, actual: standard, depth: diff-only` — so it
+    // cannot be used to smuggle an unrelated tier/mode mismatch through, and it MUST be
+    // accompanied by RUN_ANOMALY naming the cap (checked below): a capped depth is not a silent
+    // one.
     const expected = TIER_FOR_MODE[run.mode];
-    if (expected && String(run.tier) !== expected) {
+    const cappedFromDeep = expected === "deep" && String(run.tier) === "standard" && String(run.depth) === "diff-only";
+    if (expected && String(run.tier) !== expected && !cappedFromDeep) {
       fail(`RUN.tier ${JSON.stringify(run.tier)} contradicts RUN.mode ${JSON.stringify(run.mode)}`
         + ` — mode ${run.mode} is tier ${expected}`);
+    }
+    if (cappedFromDeep && !data.RUN_ANOMALY) {
+      fail("RUN.tier=standard capped from the mode's usual deep under RUN.depth=diff-only requires"
+        + " RUN_ANOMALY naming the capability cap — a capped depth is not a silent one");
     }
     runLine += ` · tier ${run.tier}`;
   }

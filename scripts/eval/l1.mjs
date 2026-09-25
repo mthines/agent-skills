@@ -8470,4 +8470,148 @@ const isPollBlock = (block) =>
     existsSync(l1yml) && readFileSync(l1yml, "utf8").includes("agents/pr-reviewer/scripts/tsconfig.json"));
 }
 
+// ── G61: pr-reviewer deterministic pipeline, Phase 1 (delta triage + depth routing + Gate 4) ──
+//
+// R4/D10/D11: route-depth.mjs, delta-triage.mjs, and gate4-scan.mjs exist, are typed, and their
+// self-tests pass; prepare-review.mjs wires all three (plus the graphql threads fetch) into the
+// context; the shape-depth-routing L2 suite is gone; and depth-routing.md's D-IDs and refresh
+// thresholds equal route-depth.mjs's constants, so the rationale doc cannot drift from the
+// executable home without failing here (AC-7, AC-8, AC-25 in part).
+{
+  const SCRIPTS_DIR = "agents/pr-reviewer/scripts";
+  const NEW_SCRIPTS = ["route-depth.mjs", "delta-triage.mjs", "gate4-scan.mjs"];
+
+  for (const name of NEW_SCRIPTS) {
+    const p = join(REPO_ROOT, SCRIPTS_DIR, name);
+    s.check(`G61a ${name} exists`, existsSync(p));
+    if (!existsSync(p)) continue;
+    const src = readFileSync(p, "utf8");
+    s.check(`G61a ${name} is // @ts-check`, /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
+    const r = spawnSync(process.execPath, [p, "--self-test"], { encoding: "utf8" });
+    s.check(`G61a ${name} --self-test passes`,
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 200));
+  }
+
+  // D-ID and threshold cross-file equality — depth-routing.md's own D1-D13 table against
+  // route-depth.mjs's exported TRIGGERS/FULL_REFRESH_DELTA/FULL_REFRESH_RUNS. Executed via a
+  // real dynamic import, not a second regex over the script's source, so a rename that keeps
+  // the string "150" somewhere else in the file cannot fake this check green.
+  const DR = join(REPO_ROOT, "agents/pr-reviewer/rules/depth-routing.md");
+  const RD = join(REPO_ROOT, SCRIPTS_DIR, "route-depth.mjs");
+  if (existsSync(DR) && existsSync(RD)) {
+    const drText = readFileSync(DR, "utf8");
+    const dIds = [...new Set([...drText.matchAll(/\*\*D(\d+)\*\*/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
+    s.check("G61b depth-routing.md documents exactly D1..D13 (contiguous, no gap, no extra)",
+      dIds.length === 13 && dIds.every((n, i) => n === i + 1), JSON.stringify(dIds));
+    s.check("G61b depth-routing.md states FULL_REFRESH_DELTA = 150 lines",
+      /FULL_REFRESH_DELTA.{0,20}150/.test(drText));
+    s.check("G61b depth-routing.md states FULL_REFRESH_RUNS = 3",
+      /FULL_REFRESH_RUNS.{0,20}3\b/.test(drText));
+
+    const mod = await import(pathToFileURL(RD).href);
+    s.check("G61b route-depth.mjs's TRIGGERS is exactly D1..D13, in order",
+      Array.isArray(mod.TRIGGERS) && mod.TRIGGERS.length === 13
+        && mod.TRIGGERS.every((t, i) => t === `D${i + 1}`),
+      JSON.stringify(mod.TRIGGERS));
+    s.check("G61b route-depth.mjs's FULL_REFRESH_DELTA/FULL_REFRESH_RUNS equal depth-routing.md's stated values",
+      mod.FULL_REFRESH_DELTA === 150 && mod.FULL_REFRESH_RUNS === 3);
+
+    // Cross-check the SAME two constants against delta-triage.mjs, which independently exports
+    // FULL_REFRESH_DELTA for its own churnState() — a single number restated in two files must
+    // never drift, since D10 requires delta-triage's cumulative-churn input to feed the exact
+    // threshold route-depth's D4 trigger tests against.
+    const DT = join(REPO_ROOT, SCRIPTS_DIR, "delta-triage.mjs");
+    if (existsSync(DT)) {
+      const dtMod = await import(pathToFileURL(DT).href);
+      s.check("G61b delta-triage.mjs's FULL_REFRESH_DELTA equals route-depth.mjs's (one threshold, two consumers, never two copies)",
+        dtMod.FULL_REFRESH_DELTA === mod.FULL_REFRESH_DELTA);
+    }
+  }
+
+  // prepare-review.mjs wiring (D10): imports the three new scripts, the graphql threads fetch,
+  // --state/--effort flags, and the routing/threads/gate4_precandidates context fields.
+  const PR = join(REPO_ROOT, SCRIPTS_DIR, "prepare-review.mjs");
+  if (existsSync(PR)) {
+    const pr = readFileSync(PR, "utf8");
+    s.check("G61c prepare-review.mjs imports classifyDivergence/blobDelta/deltaCounts/churnState from delta-triage.mjs",
+      /from\s+"\.\/delta-triage\.mjs"/.test(pr) && /classifyDivergence/.test(pr) && /blobDelta/.test(pr) && /churnState/.test(pr));
+    s.check("G61c prepare-review.mjs imports routeDepth from route-depth.mjs",
+      /from\s+"\.\/route-depth\.mjs"/.test(pr) && /routeDepth/.test(pr));
+    s.check("G61c prepare-review.mjs imports scanGate4 from gate4-scan.mjs",
+      /from\s+"\.\/gate4-scan\.mjs"/.test(pr) && /scanGate4/.test(pr));
+    s.check("G61c prepare-review.mjs runs a reviewThreads graphql fetch",
+      /reviewThreads/.test(pr) && /THREADS_QUERY/.test(pr));
+    s.check("G61c prepare-review.mjs accepts --state and --effort",
+      /["']--state["']/.test(pr) && /["']--effort["']/.test(pr));
+    s.check("G61c prepare-review.mjs's context carries routing, threads, and gate4_precandidates",
+      /\brouting,/.test(pr) && /\bthreads,/.test(pr) && /gate4_precandidates:/.test(pr));
+    const r = spawnSync(process.execPath, [PR, "--self-test"], { encoding: "utf8" });
+    s.check("G61c the prepare-review self-test passes (incl. buildThreads/hunksOf/computeThreadOverlap/readStateFile cases)",
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-6).join(" | ") || r.stderr?.slice(0, 200));
+  }
+
+  // tsconfig.json carries all three new scripts under strict typechecking.
+  const TS = join(REPO_ROOT, SCRIPTS_DIR, "tsconfig.json");
+  if (existsSync(TS)) {
+    const tsText = readFileSync(TS, "utf8");
+    s.check("G61d tsconfig.json's files[] lists route-depth.mjs, delta-triage.mjs, and gate4-scan.mjs",
+      NEW_SCRIPTS.every((n) => tsText.includes(`"${n}"`)));
+  }
+
+  // The retired shape-depth-routing L2 suite is fully gone (D11, AC-7) — no SUITES entry, no
+  // golden file, no dangling reference from suites.mjs itself.
+  const SUITES_FILE = join(REPO_ROOT, "scripts/eval/suites.mjs");
+  const GOLDEN = join(REPO_ROOT, "scripts/eval/golden/shape-depth-routing.jsonl");
+  s.check("G61e golden/shape-depth-routing.jsonl no longer exists", !existsSync(GOLDEN));
+  if (existsSync(SUITES_FILE)) {
+    s.check("G61e suites.mjs carries no shape-depth-routing SUITES entry",
+      !/name:\s*"shape-depth-routing"/.test(readFileSync(SUITES_FILE, "utf8")));
+  }
+  s.check("G61e fixtures/route-depth/cases.json exists with all 22 hand-converted records",
+    (() => {
+      const p = join(REPO_ROOT, "scripts/eval/fixtures/route-depth/cases.json");
+      if (!existsSync(p)) return false;
+      try { return JSON.parse(readFileSync(p, "utf8")).length === 22; } catch { return false; }
+    })());
+
+  // Item 1.7: the diff-only capability cap (route-depth.mjs's capApplied, deep -> standard) must
+  // be RENDERABLE — TIER_FOR_MODE's mode=full-implies-tier=deep rule and the diff-only-cannot-
+  // carry-deep rule below it are jointly unsatisfiable for a capped run unless the first carries
+  // an explicit carve-out (Risk "diff-only cap unrenderable in full mode", R4/D10). Executed
+  // end-to-end against real render-report.mjs invocations, not grepped, because the defect this
+  // guards is exactly a case no fixture happened to cover.
+  const RR = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
+  const DEEP_FIXTURE = join(REPO_ROOT, "scripts/eval/fixtures/report-body/deep.json");
+  if (existsSync(RR) && existsSync(DEEP_FIXTURE)) {
+    const base = JSON.parse(readFileSync(DEEP_FIXTURE, "utf8"));
+
+    const withAnomaly = { ...base, RUN: { ...base.RUN, tier: "standard", depth: "diff-only" },
+      RUN_ANOMALY: "workspace ladder exhausted — DEPTH_CAPABILITY=diff-only, tier capped at standard" };
+    const pCapped = join(tmpdir(), `g61f-capped-${process.pid}.json`);
+    writeFileSync(pCapped, JSON.stringify(withAnomaly));
+    const rCapped = spawnSync(process.execPath, [RR, pCapped], { encoding: "utf8" });
+    s.check("G61f a capped run (mode=full, tier=standard, depth=diff-only, RUN_ANOMALY set) renders",
+      rCapped.status === 0, (rCapped.stderr || "").trim().slice(0, 200));
+    rmSync(pCapped, { force: true });
+
+    const noAnomaly = { ...base, RUN: { ...base.RUN, tier: "standard", depth: "diff-only" } };
+    delete noAnomaly.RUN_ANOMALY;
+    const pNoAnomaly = join(tmpdir(), `g61f-no-anomaly-${process.pid}.json`);
+    writeFileSync(pNoAnomaly, JSON.stringify(noAnomaly));
+    const rNoAnomaly = spawnSync(process.execPath, [RR, pNoAnomaly], { encoding: "utf8" });
+    s.check("G61f the SAME capped run with no RUN_ANOMALY is rejected — a capped depth is never silent",
+      rNoAnomaly.status !== 0 && /RUN_ANOMALY naming the capability cap/.test(rNoAnomaly.stderr || ""));
+    rmSync(pNoAnomaly, { force: true });
+
+    const wrongTier = { ...base, RUN: { ...base.RUN, tier: "quick", depth: "diff-only" },
+      RUN_ANOMALY: "workspace ladder exhausted" };
+    const pWrongTier = join(tmpdir(), `g61f-wrong-tier-${process.pid}.json`);
+    writeFileSync(pWrongTier, JSON.stringify(wrongTier));
+    const rWrongTier = spawnSync(process.execPath, [RR, pWrongTier], { encoding: "utf8" });
+    s.check("G61f the carve-out stays narrow — mode=full + tier=quick is still rejected, never widened by the cap",
+      rWrongTier.status !== 0 && /contradicts RUN\.mode/.test(rWrongTier.stderr || ""));
+    rmSync(pWrongTier, { force: true });
+  }
+}
+
 process.exit(s.report() ? 0 : 1);

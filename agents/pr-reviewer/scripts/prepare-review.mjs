@@ -48,6 +48,9 @@ import { tmpdir } from "node:os";
 import { join, dirname, resolve as pathResolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Timing } from "./review-telemetry.mjs";
+import { classifyDivergence, blobDelta, deltaCounts, churnState, FULL_REFRESH_DELTA } from "./delta-triage.mjs";
+import { routeDepth } from "./route-depth.mjs";
+import { scanGate4 } from "./gate4-scan.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPORT_MARKER = "<!-- PR_REVIEWER_REPORT -->";
@@ -303,6 +306,184 @@ function fetchFiles(repo, number, timeoutMs) {
     ],
     timeoutMs,
   );
+}
+
+/**
+ * The SAME `reviewThreads` query `thread-resolution.md § Resolve the thread`
+ * and `prior-comment-awareness.md § fetch existing PR comment state` walk
+ * (D10) — widened to also carry `path`, `line`, `originalLine`, `url`,
+ * `body`, `createdAt`, and author identity, which this pipeline's
+ * `threads[]` context field needs and those two rule files' minimal
+ * `{id isResolved isOutdated comments{nodes{databaseId}}}` shape does not.
+ * A strict superset: a consumer reading only the narrower fields still
+ * matches. `author{ login __typename }` is the graphql equivalent of the
+ * REST `user.type == "Bot"` field agents/pr-reviewer.md Step 1.0 requires
+ * `is_bot` to be read from — never a login-pattern guess.
+ */
+const THREADS_QUERY = `
+  query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
+    repository(owner:$owner,name:$repo){
+      pullRequest(number:$pr){
+        reviewThreads(first:100, after:$cursor){
+          pageInfo{ hasNextPage endCursor }
+          nodes{
+            id isResolved isOutdated
+            comments(first:100){
+              nodes{ databaseId path line originalLine url body createdAt author{ login __typename } }
+            }
+          }
+        }
+      }
+    }
+  }`;
+
+/**
+ * Pages `THREADS_QUERY` to completion. `complete: false` means the walk
+ * stopped early (an API error, or an unreadable page) — the caller must
+ * treat that as an INCOMPLETE thread map, never as "no more threads"
+ * (`prior-comment-awareness.md § Pagination guard`).
+ */
+async function fetchReviewThreads(owner, repoName, number, timeoutMs) {
+  const nodes = [];
+  let cursor = null;
+  let complete = true;
+  for (;;) {
+    const r = await ghJson(
+      [
+        "api",
+        "graphql",
+        "-f",
+        `query=${THREADS_QUERY}`,
+        "-F",
+        `owner=${owner}`,
+        "-F",
+        `repo=${repoName}`,
+        "-F",
+        `pr=${number}`,
+        "-F",
+        `cursor=${cursor ?? "null"}`,
+      ],
+      { timeoutMs },
+    );
+    if (!r.ok) {
+      complete = false;
+      break;
+    }
+    const conn = r.value?.data?.repository?.pullRequest?.reviewThreads;
+    if (!conn) {
+      complete = false;
+      break;
+    }
+    nodes.push(...(conn.nodes || []));
+    if (conn.pageInfo?.hasNextPage) cursor = conn.pageInfo.endCursor;
+    else break;
+  }
+  return { complete, nodes };
+}
+
+/**
+ * Normalizes the paginated `reviewThreads` response into the pipeline's
+ * `threads[]` context shape (D10). `root_comment_id` is the thread's FIRST
+ * comment — GraphQL returns a thread's comments in creation order, and a
+ * review thread's first comment is its root by GitHub's own model; every
+ * other comment in the thread is a reply.
+ * @param {any[]} rawNodes @returns {any[]}
+ */
+export function buildThreads(rawNodes) {
+  const out = [];
+  for (const node of rawNodes || []) {
+    const comments = (node.comments && node.comments.nodes) || [];
+    if (comments.length === 0) continue;
+    const [root, ...replies] = comments;
+    out.push({
+      thread_id: node.id,
+      root_comment_id: root.databaseId ?? null,
+      path: root.path ?? null,
+      line: root.line ?? null,
+      original_line: root.originalLine ?? null,
+      is_resolved: !!node.isResolved,
+      is_outdated: !!node.isOutdated,
+      url: root.url ?? null,
+      author: root.author ? root.author.login : null,
+      is_bot: !!(root.author && root.author.__typename === "Bot"),
+      root_body: root.body ?? null,
+      replies: replies.map((r) => ({ author: r.author ? r.author.login : null, created_at: r.createdAt ?? null })),
+    });
+  }
+  return out;
+}
+
+/**
+ * Right-side hunk anchors for one file's patch — the `DELTA_HUNKS` the
+ * THREAD_OVERLAP formula walks (agents/pr-reviewer.md § "Bind DEPTH_TIER").
+ * Anchor = the hunk's right-side START line, a single point rather than a
+ * range, matching the ±5-line proximity convention this pipeline already
+ * applies elsewhere.
+ * @param {string|null|undefined} patch @returns {{start: number}[]}
+ */
+export function hunksOf(patch) {
+  if (!patch) return [];
+  const out = [];
+  for (const raw of patch.split("\n")) {
+    const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
+    if (m) out.push({ start: parseInt(m[1], 10) });
+  }
+  return out;
+}
+
+/**
+ * THREAD_OVERLAP (agents/pr-reviewer.md § "Bind DEPTH_TIER") — the fraction
+ * of this delta's hunks that sit on top of existing review conversation,
+ * any author, open or resolved. `t.anchor = t.line ?? t.original_line`
+ * (never `line` alone — GitHub nulls it on an outdated thread, which is
+ * precisely the population a review-answering push produces); a
+ * file-level thread (`anchor == null`) matches every hunk in its file.
+ * @param {{filename: string, patch?: string|null}[]} files
+ * @param {{path: string|null, line: number|null, original_line: number|null}[]} threads
+ * @returns {number}
+ */
+export function computeThreadOverlap(files, threads) {
+  const hunks = [];
+  for (const f of files || []) {
+    for (const h of hunksOf(f.patch)) hunks.push({ path: f.filename, anchor: h.start });
+  }
+  if (hunks.length === 0 || !threads || threads.length === 0) return 0;
+  const byPath = new Map();
+  for (const t of threads) {
+    if (!t.path) continue;
+    const anchor = t.line ?? t.original_line ?? null;
+    if (!byPath.has(t.path)) byPath.set(t.path, []);
+    byPath.get(t.path).push(anchor);
+  }
+  let matched = 0;
+  for (const hunk of hunks) {
+    const anchors = byPath.get(hunk.path);
+    if (!anchors) continue;
+    if (anchors.some((a) => a === null || Math.abs(a - hunk.anchor) <= 5)) matched++;
+  }
+  return matched / hunks.length;
+}
+
+/**
+ * Reads the `--state` file (D10) — the caller's already-fetched LoreKit
+ * state record `data`, read by the AGENT before invoking this script
+ * (Steps 0.7/1.0; this script does no LoreKit I/O itself, per its own
+ * "What it deliberately does NOT do" note above). Absent or unreadable
+ * degrades to "no prior deep pass on record" — the SAFE direction per
+ * depth-routing.md's D6 ("no prior full review is recorded").
+ * @param {string|null} path @returns {{lastFullSha: string|null, incrRunsSinceFull: number}}
+ */
+export function readStateFile(path) {
+  if (!path) return { lastFullSha: null, incrRunsSinceFull: 0 };
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8"));
+    return {
+      lastFullSha: raw.lastFullSha || raw.last_full_sha || null,
+      incrRunsSinceFull: Number(raw.incrRunsSinceFull ?? raw.incr_runs_since_full ?? 0) || 0,
+    };
+  } catch {
+    return { lastFullSha: null, incrRunsSinceFull: 0 };
+  }
 }
 
 /* ---------------------------- workspace ladder ---------------------------- */
@@ -714,6 +895,155 @@ async function prepare(opts) {
   }
   timing.end(); // impact-graph
 
+  // Delta triage + Phase C depth routing + Gate 4 pre-candidates (D10). Depth
+  // routing binds EVERY run's tier (agents/pr-reviewer.md § "Bind DEPTH_TIER
+  // … all modes, including full and zero-delta"); delta TRIAGE itself (the
+  // compare/blob-diff route below) applies only when there is a real prior
+  // run to diff against — a genuine first run or --full has no PRIOR_SHA to
+  // triage against, so "the delta" collapses to the full PR, exactly as
+  // RUN_MODE=full's REVIEW_DIFF is the full PR diff.
+  timing.start("triage-routing");
+
+  const state = readStateFile(opts.state || null);
+  if (!opts.state) {
+    anomalies.push(
+      "no --state file supplied — routing computed with lastFullSha=none, incrRunsSinceFull=0 " +
+        "(forces the D6 'no prior deep pass on record' trigger every run); pass --state after " +
+        "reading the LoreKit state record for an accurate routing decision",
+    );
+  }
+
+  // The graphql reviewThreads read — every mode, always: THREAD_OVERLAP needs
+  // it even on a full run, and the context's threads[] field is a caller
+  // input regardless of tier.
+  let threads = [];
+  if (opts.threads !== false) {
+    const tr = await fetchReviewThreads(owner, name, number, timeoutMs);
+    threads = buildThreads(tr.nodes);
+    if (!tr.complete) {
+      anomalies.push("review threads read incomplete — THREAD_OVERLAP and open-thread data may undercount");
+    }
+  }
+
+  let deltaFiles = diffable.length ? files.filter((f) => diffable.includes(f.filename)) : files;
+  let deltaShape = shape;
+  let deltaCountsResult = { deltaLines: deltaLines(files), newFiles: files.filter((f) => f.status === "added").length };
+  let cumDeltaLines = 0;
+
+  const hasPriorRun = !!priorSha && !zeroDelta && !opts.full;
+  if (hasPriorRun) {
+    const cmp = await ghJson(
+      ["api", `repos/${repo}/compare/${priorSha}...${headSha}`, "--jq", "{status, ahead_by, behind_by}"],
+      { timeoutMs },
+    );
+    if (cmp.ok) {
+      const divergence = classifyDivergence(cmp.value);
+      if (divergence === "intact") {
+        const full = await ghJson(
+          [
+            "api",
+            `repos/${repo}/compare/${priorSha}...${headSha}`,
+            "--jq",
+            "{files: [.files[] | {filename, additions, deletions, status, patch}]}",
+          ],
+          { timeoutMs: Math.max(timeoutMs, 120000) },
+        );
+        if (full.ok) {
+          deltaFiles = full.value.files || [];
+        } else {
+          anomalies.push(`delta compare fetch failed: ${full.error} — falling back to full-PR delta`);
+        }
+      } else {
+        // Diverged history — the blob-SHA authored delta, rebase-immune.
+        if (files.every((f) => f.sha)) {
+          const tree = await ghJson(
+            ["api", `repos/${repo}/git/trees/${priorSha}?recursive=1`, "--jq", '[.tree[] | select(.type == "blob") | {path, sha}]'],
+            { timeoutMs },
+          );
+          if (tree.ok) {
+            deltaFiles = blobDelta(files, tree.value || []);
+          } else {
+            anomalies.push(`diverged-history tree read failed: ${tree.error} — upgrading to full-PR delta, never trusting the diverged compare`);
+          }
+        } else {
+          anomalies.push("pr-files rows missing sha — diverged-history blob diff unavailable, upgrading to full-PR delta");
+        }
+      }
+    } else {
+      anomalies.push(`divergence pre-check failed: ${cmp.error} — falling back to full-PR delta`);
+    }
+
+    deltaCountsResult = deltaCounts(deltaFiles);
+
+    // Re-classify shape over the delta file list specifically — the full-PR
+    // shape can carry risky content the delta itself never touches.
+    if (deltaFiles.length) {
+      const deltaFilesPath = join(sidecarDir, "pr-delta.json");
+      writeFileSync(deltaFilesPath, deltaFiles.map((f) => JSON.stringify(f)).join("\n") + "\n", "utf8");
+      const deltaClassify = await run("node", [join(HERE, "classify-shape.mjs"), deltaFilesPath, ...hsArgs], { timeoutMs });
+      if (deltaClassify.ok) {
+        try {
+          deltaShape = JSON.parse(deltaClassify.stdout);
+        } catch {
+          anomalies.push("delta shape classifier returned unparseable output — depth routing degrades to the full-PR shape");
+        }
+      } else {
+        anomalies.push(`delta shape classifier failed: ${(deltaClassify.stderr || "").trim().slice(0, 200)}`);
+      }
+    } else {
+      deltaShape = { shapes: [], risky: false, risky_shapes: [], high_stakes_files: [], propagation: false };
+    }
+
+    // Cumulative churn since the last full pass (deep-lens refresh, D4/D5/D6).
+    if (state.lastFullSha) {
+      const cum = await ghJson(
+        ["api", `repos/${repo}/compare/${state.lastFullSha}...${headSha}`, "--jq", "{status, behind_by}"],
+        { timeoutMs },
+      );
+      if (cum.ok) {
+        let cumLines = 0;
+        if (classifyDivergence(cum.value) === "intact") {
+          const cumFull = await ghJson(
+            ["api", `repos/${repo}/compare/${state.lastFullSha}...${headSha}`, "--jq", "[(.files // [])[] | .additions + .deletions] | add // 0"],
+            { timeoutMs },
+          );
+          cumLines = cumFull.ok ? Number(cumFull.value) || 0 : FULL_REFRESH_DELTA + 1;
+        }
+        cumDeltaLines = churnState({ hasLastFull: true, meta: cum.value, deltaLinesIfIntact: cumLines });
+      } else {
+        anomalies.push(`cumulative-churn compare failed: ${cum.error} — treated as over the refresh threshold`);
+        cumDeltaLines = FULL_REFRESH_DELTA + 1;
+      }
+    }
+  }
+
+  const threadOverlap = computeThreadOverlap(deltaFiles, threads);
+
+  const routing = routeDepth({
+    firstRun: !sticky,
+    full: opts.full,
+    effortHigh: opts.effort === "high",
+    cumDeltaLines,
+    incrRunsSinceFull: state.incrRunsSinceFull,
+    priorDeepRecorded: !!state.lastFullSha,
+    highStakesFiles: (deltaShape && deltaShape.high_stakes_files) || [],
+    propagation: !!(deltaShape && deltaShape.propagation),
+    band: impact?.blast_radius?.band ?? "none",
+    semverDeltas: (impact?.dependencies || []).map((d) => ({ delta: d.semver_delta, usageSites: (d.usage_sites || []).length })),
+    symbols: (impact?.symbols || []).map((s) => ({ traffic_band: s.production?.traffic_band ?? "unknown", change: s.change })),
+    deltaLines: deltaCountsResult.deltaLines,
+    newFiles: deltaCountsResult.newFiles,
+    deltaShapes: (deltaShape && deltaShape.shapes) || [],
+    deltaRiskyShapes: (deltaShape && deltaShape.risky_shapes) || [],
+    sameSymbolOverlap: (impact?.overlaps || []).some((o) => o.kind === "same-symbol"),
+    threadOverlap,
+    depthCapability: workspace.depthCapability,
+  });
+
+  const gate4Precandidates = scanGate4(deltaFiles);
+
+  timing.end(); // triage-routing
+
   const context = {
     v: 1,
     generatedAt: new Date().toISOString(),
@@ -727,8 +1057,8 @@ async function prepare(opts) {
     // the docs, so a consumer cannot read a partial context as a complete one.
     notCovered: [
       "LoreKit reads (Steps 0.7, 1.0, 1.2c, 1.2d) — priorSha below is the GitHub FALLBACK rung only, and carries no PRIOR_DIAGNOSTICS",
-      "Phase C tier decision (this context supplies its inputs, not its outcome)",
-      "Phases D and E, Steps 2.4*, 2.7, 2.9c",
+      "routing{} below is only as accurate as the --state file the caller passed — no --state means lastFullSha/incrRunsSinceFull default to none/0 (see anomalies[] when this fired)",
+      "Phases D and E, Steps 2.4*, 2.7, 2.9c — the Gate 4 SCAN below is mechanical pre-candidates only; confirm/exempt disposition and any AI-stub findings are judgment",
       "every write: the sticky, the review, the state record",
     ],
 
@@ -828,6 +1158,11 @@ async function prepare(opts) {
         }
       : null,
     impact: opts.inlinePayloads ? impact : null,
+
+    routing,
+    threads,
+    gate4_precandidates: gate4Precandidates,
+
     anomalies,
   };
 
@@ -982,6 +1317,90 @@ function selfTest() {
       && (!existsSync("/tmp/workspace") || def.startsWith("/tmp/workspace/"));
   });
 
+  // ── D10: buildThreads / hunksOf / computeThreadOverlap / readStateFile ──
+  t("buildThreads: the first comment is the root, the rest are replies", () => {
+    const out = buildThreads([
+      {
+        id: "T1",
+        isResolved: false,
+        isOutdated: false,
+        comments: {
+          nodes: [
+            { databaseId: 1, path: "a.ts", line: 10, originalLine: 10, url: "u1", body: "root ask", author: { login: "cursor", __typename: "Bot" }, createdAt: "2026-01-01T00:00:00Z" },
+            { databaseId: 2, path: "a.ts", line: 10, originalLine: 10, url: "u2", body: "reply", author: { login: "mads", __typename: "User" }, createdAt: "2026-01-02T00:00:00Z" },
+          ],
+        },
+      },
+    ]);
+    return out.length === 1
+      && out[0].thread_id === "T1" && out[0].root_comment_id === 1 && out[0].path === "a.ts"
+      && out[0].is_bot === true && out[0].author === "cursor"
+      && out[0].replies.length === 1 && out[0].replies[0].author === "mads";
+  });
+  t("buildThreads: a human author's is_bot reads false from __typename, never from a login guess", () => {
+    const out = buildThreads([
+      { id: "T2", isResolved: true, isOutdated: false, comments: { nodes: [{ databaseId: 3, path: "b.ts", line: 1, author: { login: "not-a-bot-login-pattern", __typename: "User" } }] } },
+    ]);
+    return out[0].is_bot === false && out[0].is_resolved === true;
+  });
+  t("buildThreads: a thread with zero comments is dropped rather than emitted empty", () => {
+    return buildThreads([{ id: "T3", isResolved: false, isOutdated: false, comments: { nodes: [] } }]).length === 0;
+  });
+
+  t("hunksOf: extracts every hunk's right-side start line", () => {
+    const patch = "@@ -1,2 +1,3 @@\n context\n+add\n@@ -10,1 +12,2 @@\n+add2\n";
+    const hs = hunksOf(patch);
+    return hs.length === 2 && hs[0].start === 1 && hs[1].start === 12;
+  });
+  t("hunksOf: a null/empty patch yields no hunks", () => hunksOf(null).length === 0 && hunksOf("").length === 0);
+
+  t("computeThreadOverlap: a hunk within 5 lines of a thread's line counts as matched", () => {
+    const files = [{ filename: "a.ts", patch: "@@ -1,1 +10,1 @@\n+x\n" }];
+    const threads = [{ path: "a.ts", line: 13, original_line: null }];
+    return computeThreadOverlap(files, threads) === 1;
+  });
+  t("computeThreadOverlap: reads line ?? original_line, never line alone, on an outdated (nulled-line) thread", () => {
+    const files = [{ filename: "a.ts", patch: "@@ -1,1 +10,1 @@\n+x\n" }];
+    const threads = [{ path: "a.ts", line: null, original_line: 11 }];
+    return computeThreadOverlap(files, threads) === 1;
+  });
+  t("computeThreadOverlap: a file-level thread (anchor null) matches every hunk in its file", () => {
+    const files = [{ filename: "a.ts", patch: "@@ -1,1 +100,1 @@\n+x\n" }];
+    const threads = [{ path: "a.ts", line: null, original_line: null }];
+    return computeThreadOverlap(files, threads) === 1;
+  });
+  t("computeThreadOverlap: a thread on a different path never matches", () => {
+    const files = [{ filename: "a.ts", patch: "@@ -1,1 +10,1 @@\n+x\n" }];
+    const threads = [{ path: "b.ts", line: 10, original_line: null }];
+    return computeThreadOverlap(files, threads) === 0;
+  });
+  t("computeThreadOverlap: no hunks or no threads is 0, never NaN or a divide-by-zero throw", () => {
+    return computeThreadOverlap([], [{ path: "a.ts", line: 1 }]) === 0
+      && computeThreadOverlap([{ filename: "a.ts", patch: "@@ -1,1 +1,1 @@\n+x\n" }], []) === 0;
+  });
+  t("computeThreadOverlap: is a fraction of matched over total hunks, not a boolean", () => {
+    const files = [{ filename: "a.ts", patch: "@@ -1,1 +1,1 @@\n+x\n@@ -50,1 +50,1 @@\n+y\n" }];
+    const threads = [{ path: "a.ts", line: 1, original_line: null }];
+    return computeThreadOverlap(files, threads) === 0.5;
+  });
+
+  t("readStateFile: absent path defaults to no prior deep pass on record (the safe direction)", () => {
+    const s = readStateFile(null);
+    return s.lastFullSha === null && s.incrRunsSinceFull === 0;
+  });
+  t("readStateFile: reads a real state file's lastFullSha and incrRunsSinceFull", () => {
+    const p = join(tmpdir(), `prr-state-probe-${process.pid}.json`);
+    writeFileSync(p, JSON.stringify({ lastFullSha: "abc1234", incrRunsSinceFull: 2 }), "utf8");
+    const s = readStateFile(p);
+    return s.lastFullSha === "abc1234" && s.incrRunsSinceFull === 2;
+  });
+  t("readStateFile: an unparseable file degrades to the safe default rather than throwing", () => {
+    const p = join(tmpdir(), `prr-state-bad-${process.pid}.json`);
+    writeFileSync(p, "{not json", "utf8");
+    const s = readStateFile(p);
+    return s.lastFullSha === null && s.incrRunsSinceFull === 0;
+  });
+
   let failed = 0;
   for (const [name, fn] of cases) {
     let ok = false;
@@ -1022,6 +1441,8 @@ async function main(argv) {
     isolated: false,
     full: false,
     state: "",
+    effort: "",
+    threads: true,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -1039,7 +1460,9 @@ async function main(argv) {
     else if (a === "--pin-head") opts.pinHead = argv[++i];
     else if (a === "--isolated") opts.isolated = true;
     else if (a === "--full") opts.full = true;
-    else if (a === "--state") opts.state = argv[++i]; // wired in Phase 1 (D10); --isolated ignores it today
+    else if (a === "--state") opts.state = argv[++i]; // D10: the LoreKit state record's lastFullSha/incrRunsSinceFull
+    else if (a === "--effort") opts.effort = argv[++i]; // "high" raises routing.tier to deep (D10/route-depth.mjs D3)
+    else if (a === "--no-threads") opts.threads = false;
     else {
       process.stderr.write(`unknown argument: ${a}\n`);
       process.exit(2);
@@ -1051,7 +1474,7 @@ async function main(argv) {
       "usage: prepare-review.mjs --pr <url|owner/repo#n|n> [--repo owner/repo] [--out file] " +
         "[--workdir dir] [--reviewer-login login] [--no-workspace] [--no-impact] " +
         "[--inline-payloads] [--timeout-ms N] [--quiet] [--pin-head sha] [--isolated] [--full] " +
-        "[--state file] | --self-test\n",
+        "[--state file] [--effort high] [--no-threads] | --self-test\n",
     );
     process.exit(2);
   }
@@ -1071,6 +1494,7 @@ async function main(argv) {
           `  prior     ${context.priorRun.priorSha ? `${context.priorRun.priorSha} (${context.priorRun.source})` : "none"}${context.priorRun.zeroDelta ? " · ZERO DELTA" : ""}`,
           `  shape     ${context.shape ? JSON.stringify(context.shape).slice(0, 160) : "unavailable"}`,
           `  impact    ${context.impactSummary ? `band=${context.impactSummary.band} · ${context.impactSummary.changedSymbols} symbols (${context.impactSummary.changedExports} exported) · ${context.impactSummary.dependencies} deps` : "unavailable"}`,
+          `  routing   tier=${context.routing.tier}${context.routing.capApplied ? " (capped)" : ""} · triggers=[${context.routing.triggers.join(",")}] · threads=${context.threads.length} · gate4=${context.gate4_precandidates.length} pre-candidate(s)`,
           `  context   ${(Buffer.byteLength(JSON.stringify(context)) / 1024).toFixed(0)} KB index + sidecars in ${dirname(outPath)}`,
           `  anomalies ${context.anomalies.length}`,
           ...context.anomalies.map((a) => `    ⚠ ${a}`),

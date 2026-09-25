@@ -13,6 +13,9 @@
   },
   "files": [
     "otlp.mjs",
-    "review-telemetry.mjs"
+    "review-telemetry.mjs",
+    "route-depth.mjs",
+    "delta-triage.mjs",
+    "gate4-scan.mjs"
   ]
 }
