@@ -12,7 +12,7 @@ tags:
 
 `review-loop` assumes a harness that dispatches a named custom agent (`pr-reviewer`) and resolves `Skill()` from the filesystem.
 A **Dash0 Agent0 Automation sandbox** does neither, and without this rule the loop can only skip at iteration 0.
-This rule changes no convergence condition, stop reason, gate, or cap.
+This rule changes no convergence condition, gate, or cap, and adds exactly one stop reason, `reviewer-refused`, for a reviewer reply that is not a review.
 It changes only **how each sub-step is reached** on that one host.
 
 Detection, the generic substitutions (`Skill()` → a file read, a custom agent → a `general` sub-agent reading its definition, `general-purpose` → `general`, link paths, questions), the constraint files, and the setup script are owned by [`agents/shared/rules/agent0-host.md`](../../../../agents/shared/rules/agent0-host.md) and are not restated here.
@@ -79,6 +79,6 @@ Both outcomes are reported by name, because a skip that reads as a pass is the s
 
 ## What this rule does not do
 
-- It does not change any exit condition, stop reason, cap, or the `--merge` gate. The loop is the loop.
+- It does not change any exit condition, cap, or the `--merge` gate, and it adds no stop reason beyond `reviewer-refused`. The loop is the loop.
 - It does not let the loop review in its own context. Sub-step A is always a dispatch.
 - It does not restate the reviewer's Agent0 rule. The reviewer's host facts, bundle, and prepared context are owned by [`agents/pr-reviewer/rules/agent0-runtime.md`](../../../../agents/pr-reviewer/rules/agent0-runtime.md).
