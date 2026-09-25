@@ -53,6 +53,32 @@ const FINALIZE_SELF_TESTS = [
   "finalize/payload.mjs", "finalize/findings-bus.mjs",
 ];
 
+// render-report.mjs's SHA7 check requires RUN.sha/RUN.prior_sha to be EXACTLY 7 lowercase hex
+// chars. prepare-review.mjs's `headSha` (and a judgment's own `head_sha`, and any caller-supplied
+// `--sha`) is real-world length (a full 40-char GitHub SHA, or already-abbreviated) — this is the
+// one normalization point every source funnels through, so a live run never has to hand-truncate
+// before calling finalize.mjs. A value that is not hex-shaped (e.g. the "unknown" placeholder) is
+// left untouched: truncating a non-sha string would silently manufacture a fake-looking sha rather
+// than surfacing that no real sha was ever supplied.
+/** @param {string} raw @returns {string} */
+export function sha7(raw) {
+  if (typeof raw !== "string") return raw;
+  const lower = raw.toLowerCase();
+  return /^[0-9a-f]{7,40}$/.test(lower) ? lower.slice(0, 7) : raw;
+}
+
+// render-report.mjs requires RUN.at unconditionally (an ISO-8601 UTC timestamp). prepare-review.mjs
+// never sets it — `at` names the moment the REPORT rendered, which finalize.mjs, not prepare, is
+// the one to know. The clock read stays at this CLI I/O boundary (`main()` below), never inside
+// `finalizeReview()` itself (D18's pure core) — `now` is injectable so the self-test stays
+// deterministic without a live-clock dependency, exactly as `--replay-fixtures`'s fixtures already
+// avoid it by carrying their own `render.at`.
+/** @param {any} context @param {string} [now] @returns {any} */
+export function withRenderAt(context, now = new Date().toISOString()) {
+  if (context?.render?.at) return context;
+  return { ...context, render: { ...(context?.render || {}), at: now } };
+}
+
 /**
  * The pure orchestration core: everything finalize.mjs does to turn
  * (context, judgments) into a disposition for every candidate. No I/O.
@@ -169,7 +195,13 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   // The identity finalize must never violate: cleared - deferred(over cap) == posted-worthy.
   const identityHolds = cleared.length - suppressed.length - anchorless.length - overCapDeferred.length === inline.length;
 
-  const runSha = sha || context?.head_sha || judgments?.head_sha || "unknown";
+  // A SIXTH field-bridging gap, found only by running this against a real prepare-review.mjs
+  // context (not a hand-crafted fixture): prepare-review.mjs's context carries the head sha as
+  // `headSha` (camelCase — see prepare-review.mjs's own context object and its CLI summary line),
+  // never `head_sha`. `context.head_sha` stays as a fallback for the AC-11 replay fixtures
+  // (scripts/eval/fixtures/finalize/*.context.json), which are hand-crafted in snake_case and
+  // AC-12 forbids editing.
+  const runSha = sha7(sha || context?.headSha || context?.head_sha || judgments?.head_sha || "unknown");
 
   // D5: the diff-only-cap carve-out (Phase 1, render-report.mjs's TIER_FOR_MODE) — a
   // capability-capped run auto-names its own anomaly rather than requiring the caller to
@@ -187,7 +219,11 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     mode: context?.mode || "unknown",
     sha: runSha,
     ...(context?.priorSha ? { prior_sha: context.priorSha } : {}),
-    delta_lines: context?.delta_lines ?? 0,
+    // A SEVENTH field-bridging gap, the same class as headSha above and found the same way (a real
+    // prepare-review.mjs context, not a hand-crafted fixture): prepare-review.mjs's context carries
+    // this as `deltaLines` (camelCase — see prepare-review.mjs's own context object and CLI summary
+    // line), never `delta_lines`. `context.delta_lines` stays as the AC-11 fixtures' fallback.
+    delta_lines: context?.deltaLines ?? context?.delta_lines ?? 0,
     ...(context?.render?.at ? { at: context.render.at } : {}),
     // RUN.tier/RUN.depth are OPTIONAL to render-report.mjs (only validated when present) — a run
     // with no routed tier (e.g. gates-only / zero-delta) must OMIT them, never fall back to a
@@ -295,13 +331,28 @@ const KNOWN_FIXTURE_DEFECTS = {
     + "(not a finalize.mjs defect); see finalize.mjs's runReplayFixtures() comment.",
 };
 
+const RENDER_REPORT_SCRIPT = join(HERE, "render-report.mjs");
+const RENDER_POINTER_SCRIPT = join(HERE, "render-pointer.mjs");
+const RENDER_COMMENT_SCRIPT = join(HERE, "render-comment.mjs");
+
+/**
+ * Spawns a renderer CLI (render-report.mjs / render-pointer.mjs / render-comment.mjs) against a
+ * payload written to `<scratchDir>/<tag>.payload.json`. Shared by `--replay-fixtures` and the live
+ * `main()` render step below — one spawn wrapper, one behavior, never two.
+ * @param {string} scratchDir @param {string} script @param {any} payload @param {string} tag
+ */
+function renderVia(scratchDir, script, payload, tag) {
+  const payloadPath = join(scratchDir, `${tag}.payload.json`);
+  writeFileSync(payloadPath, JSON.stringify(payload, null, 2));
+  const r = spawnSync(process.execPath, [script, payloadPath], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  return { ok: r.status === 0, stdout: r.stdout || "", stderr: r.stderr || "" };
+}
+
 async function runReplayFixtures() {
   const repoRoot = join(HERE, "..", "..", "..");
   const finalizeFixturesDir = join(repoRoot, "scripts", "eval", "fixtures", "finalize");
   const reportBodyDir = join(repoRoot, "scripts", "eval", "fixtures", "report-body");
   const inlineCommentDir = join(repoRoot, "scripts", "eval", "fixtures", "inline-comment");
-  const renderReportScript = join(HERE, "render-report.mjs");
-  const renderCommentScript = join(HERE, "render-comment.mjs");
   const validateShapeScript = join(repoRoot, "scripts", "validate-report-shape.mjs");
 
   const scratchDir = join(scratchRoot(), "finalize-replay");
@@ -311,18 +362,11 @@ async function runReplayFixtures() {
   let knownDefects = 0;
   const results = [];
 
-  const renderVia = (/** @type {string} */ script, /** @type {any} */ payload, /** @type {string} */ tag) => {
-    const payloadPath = join(scratchDir, `${tag}.payload.json`);
-    writeFileSync(payloadPath, JSON.stringify(payload, null, 2));
-    const r = spawnSync(process.execPath, [script, payloadPath], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
-    return { ok: r.status === 0, stdout: r.stdout || "", stderr: r.stderr || "" };
-  };
-
   for (const name of REPORT_BODY_FIXTURES) {
     const context = JSON.parse(readFileSync(join(finalizeFixturesDir, `${name}.context.json`), "utf8"));
     const judgments = JSON.parse(readFileSync(join(finalizeFixturesDir, `${name}.judgments.json`), "utf8"));
     const { payload } = finalizeReview({ context, judgments });
-    const rendered = renderVia(renderReportScript, payload, `report-${name}`);
+    const rendered = renderVia(scratchDir, RENDER_REPORT_SCRIPT, payload, `report-${name}`);
     const expected = readFileSync(join(reportBodyDir, `${name}.expected.md`), "utf8");
     const byteIdentical = rendered.ok && rendered.stdout === expected;
 
@@ -361,7 +405,7 @@ async function runReplayFixtures() {
       continue;
     }
     const commentPayload = toInlineCommentPayload(inline[0], { sha: INLINE_COMMENT_SHA });
-    const rendered = renderVia(renderCommentScript, commentPayload, `inline-${name}`);
+    const rendered = renderVia(scratchDir, RENDER_COMMENT_SCRIPT, commentPayload, `inline-${name}`);
     const expected = readFileSync(join(inlineCommentDir, `${name}.expected.md`), "utf8");
     const ok = rendered.ok && rendered.stdout === expected;
     if (ok) {
@@ -423,6 +467,81 @@ async function selfTest() {
     materiality: true, category: "c",
     ...over,
   });
+
+  // Field-bridging gaps closed at the source. Five were named in ab/DISPATCH-READY.md's manual
+  // patches (context.mode, a 7-char sha, render.at, non-empty SKIPPED_FILES, a length-capped
+  // GATE_DESCRIPTION_DETAILS); two more (headSha, deltaLines) surfaced only when this file was
+  // actually run against a real prepare-review.mjs context, per this task's own "prove it
+  // end-to-end" mandate — every AC-11 fixture happens to already use the field names finalize.mjs
+  // expected, so the fixture replay alone could never have found them. Each is proven here,
+  // independently of the fixture replay above.
+  {
+    check("sha7 truncates a full 40-char hex sha to 7 lowercase chars",
+      sha7("906A74781990f75607f0234de963fdbbc3953f2c") === "906a747");
+    check("sha7 is a no-op on an already-7-char sha", sha7("a1b2c3d") === "a1b2c3d");
+    check("sha7 leaves a non-hex placeholder untouched rather than truncating it into a fake sha",
+      sha7("unknown") === "unknown");
+  }
+  {
+    // context.headSha (prepare-review.mjs's real field) wins over context.head_sha (the
+    // AC-11 fixtures' hand-crafted field) when both are present, and head_sha alone still works —
+    // the fixture replay above depends on this fallback never regressing.
+    const camel = finalizeReview({
+      context: { ...baseContext, headSha: "deadbeef00000000000000000000000000000000", head_sha: undefined },
+      judgments: { candidates: [], gates: { gate1: { status: "PASS", details: "d" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "d" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "s" },
+    });
+    check("headSha (real prepare-review.mjs field name) is read when present", camel.payload.RUN.sha === "deadbee");
+    const snake = finalizeReview({
+      context: baseContext, // baseContext above carries only head_sha, no headSha
+      judgments: { candidates: [], gates: { gate1: { status: "PASS", details: "d" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "d" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "s" },
+    });
+    check("head_sha (AC-11 fixtures' hand-crafted field) still works as the fallback", snake.payload.RUN.sha === "a1b2c3d");
+  }
+  {
+    // Same class of gap, found the same way: context.deltaLines (prepare-review.mjs's real
+    // camelCase field) vs context.delta_lines (the AC-11 fixtures' hand-crafted field).
+    const camel = finalizeReview({
+      context: { ...baseContext, deltaLines: 8810, delta_lines: undefined },
+      judgments: { candidates: [], gates: { gate1: { status: "PASS", details: "d" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "d" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "s" },
+    });
+    check("deltaLines (real prepare-review.mjs field name) is read when present", camel.payload.RUN.delta_lines === 8810);
+    const snake = finalizeReview({
+      context: { ...baseContext, delta_lines: 8 }, // baseContext carries no deltaLines
+      judgments: { candidates: [], gates: { gate1: { status: "PASS", details: "d" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "d" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "s" },
+    });
+    check("delta_lines (AC-11 fixtures' hand-crafted field) still works as the fallback", snake.payload.RUN.delta_lines === 8);
+  }
+  {
+    const noAt = { render: {} };
+    const withAt = withRenderAt(noAt, "2026-09-25T12:00:00Z");
+    check("withRenderAt injects the given `now` when render.at is absent", withAt.render.at === "2026-09-25T12:00:00Z");
+    const already = { render: { at: "2020-01-01T00:00:00Z" } };
+    check("withRenderAt never overwrites an already-set render.at", withRenderAt(already, "2026-09-25T12:00:00Z").render.at === "2020-01-01T00:00:00Z");
+  }
+  {
+    // End-to-end: a context shaped exactly as prepare-review.mjs now emits it — top-level `mode`,
+    // camelCase `headSha`/`deltaLines` (the REAL field names; the sixth and seventh field-bridging
+    // gaps, found only by running this against a real prepare-review.mjs context in the plan's
+    // end-to-end proof, since every hand-crafted AC-11 fixture happens to already use snake_case),
+    // no render.at — renders a payload the renderer accepts with zero hand-bridging, proven at the
+    // finalizeReview() + render-report.mjs boundary rather than asserted.
+    const liveShapedContext = withRenderAt({
+      mode: "full",
+      headSha: "906a74781990f75607f0234de963fdbbc3953f2c",
+      deltaLines: 3, routing: { tier: "deep" }, workspace: { depthCapability: "checkout" },
+      files: [{ filename: "a.ts", patch }], threads: [],
+    }, "2026-09-25T12:00:00Z");
+    const judgments = { candidates: [], gates: { gate1: { status: "PASS", details: "matches the diff" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "docs unaffected" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "clean pass, no findings" };
+    const r = finalizeReview({ context: liveShapedContext, judgments });
+    check("RUN.mode passes through from prepare-review.mjs's top-level context.mode", r.payload.RUN.mode === "full");
+    check("RUN.sha is exactly 7 lowercase hex chars from prepare-review.mjs's real camelCase headSha", r.payload.RUN.sha === "906a747");
+    check("RUN.at is populated even though the live-shaped context never set render.at", r.payload.RUN.at === "2026-09-25T12:00:00Z");
+    check("RUN.delta_lines reads prepare-review.mjs's real camelCase deltaLines", r.payload.RUN.delta_lines === 3);
+    check("SKIPPED_FILES is never empty when the context supplies none", r.payload.SKIPPED_FILES === "none");
+    const renderReportCheck = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, r.payload, "self-test-live-shaped");
+    check("the resulting payload renders through render-report.mjs with zero manual edits",
+      renderReportCheck.ok, renderReportCheck.stderr.trim());
+  }
 
   // AC-10 case: defer band edges (t-15, the 50 floor, t).
   {
@@ -582,7 +701,8 @@ async function main() {
     process.exit(2);
   }
 
-  const context = JSON.parse(readFileSync(/** @type {string} */(opts.context), "utf8"));
+  const contextRaw = JSON.parse(readFileSync(/** @type {string} */(opts.context), "utf8"));
+  const context = withRenderAt(contextRaw);
   const judgments = JSON.parse(readFileSync(/** @type {string} */(opts.judgments), "utf8"));
   const outDir = /** @type {string} */(opts["out-dir"]);
   mkdirSync(outDir, { recursive: true });
@@ -594,6 +714,37 @@ async function main() {
 
   writeFileSync(join(outDir, "finalize-result.json"), JSON.stringify(result, null, 2));
 
+  // Render the sticky report body with the SAME renderer --replay-fixtures spawns — this is where
+  // "finalize.mjs renders with zero manual edits" becomes literally true for a live run: the seven
+  // field-bridging gaps a prior dry-run needed hand patches for (context.mode, headSha, deltaLines,
+  // a 7-char sha, render.at, non-empty SKIPPED_FILES, a capped GATE_DESCRIPTION_DETAILS) are now
+  // all closed at their source, so this call either renders clean or fails with the renderer's own
+  // diagnostic — never with a silently wrong artifact.
+  let renderFailed = false;
+  const rendered = renderVia(outDir, RENDER_REPORT_SCRIPT, result.payload, "report-body");
+  if (rendered.ok) {
+    writeFileSync(join(outDir, "report-body.md"), rendered.stdout);
+    console.log(`finalize: rendered report-body.md (${rendered.stdout.length} bytes)`);
+  } else {
+    renderFailed = true;
+    console.error(`finalize: render-report.mjs failed — ${rendered.stderr.trim()}`);
+  }
+
+  if (result.inline.length > 0) {
+    mkdirSync(join(outDir, "inline"), { recursive: true });
+    const sha = result.payload?.RUN?.sha || "unknown";
+    result.inline.forEach((/** @type {any} */ finding, /** @type {number} */ i) => {
+      const commentPayload = toInlineCommentPayload(finding, { sha });
+      const r = renderVia(outDir, RENDER_COMMENT_SCRIPT, commentPayload, `inline-${i}`);
+      if (r.ok) {
+        writeFileSync(join(outDir, "inline", `${i}.md`), r.stdout);
+      } else {
+        renderFailed = true;
+        console.error(`finalize: render-comment.mjs failed for inline[${i}] — ${r.stderr.trim()}`);
+      }
+    });
+  }
+
   if (opts.writer === "findings-bus") {
     const branchDir = dirname(outDir);
     const busPath = join(branchDir, "findings.jsonl");
@@ -603,6 +754,8 @@ async function main() {
   }
 
   console.log(`finalize: verdict=${result.verdict} inline=${result.inline.length} deferred=${result.deferred.length} suppressed=${result.suppressed.length} anchorless=${result.anchorless.length}`);
+
+  if (renderFailed) process.exit(1);
 }
 
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

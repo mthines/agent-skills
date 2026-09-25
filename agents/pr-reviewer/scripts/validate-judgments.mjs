@@ -376,6 +376,14 @@ async function selfTest() {
       const errs = validateJudgments(schema, data);
       check("thread classification/reply domain rule is enforced", errs.length > 0 && errs.some(e => e.includes("reply")));
     }
+    {
+      // ab/DISPATCH-READY.md's 5th field-bridging gap, fixed at the source: an over-120-char
+      // gate1.details (GATE_DESCRIPTION_DETAILS verbatim) is rejected HERE, with a clear
+      // validator error, rather than crashing deep inside render-report.mjs at render time.
+      const data = loadFixture("invalid-gate-details-overlong.json");
+      const errs = validateJudgments(schema, data);
+      check("an over-120-char gate1.details (GATE_DESCRIPTION_DETAILS) is rejected", errs.length > 0 && errs.some(e => e.includes("maxLength")));
+    }
   }
 
   if (failed > 0) {

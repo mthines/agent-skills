@@ -150,7 +150,10 @@ export function buildReportPayload({ gates, run, findings, deferred, lowConfiden
     OPTIMALITY_LOG: run.optimalityLog || "skipped",
     STANDARDS_LOG: run.standardsLog || "skipped",
     MEASURABILITY_LOG: run.measurabilityLog || "skipped",
-    SKIPPED_FILES: run.skippedFiles || "",
+    // REQUIRED_SCALARS (render-report.mjs) checks this slot for non-emptiness only — an empty
+    // string fails closed with "missing required slot(s)". report-rendering.md's own vocabulary
+    // for "nothing was skipped" is the literal word `none`, never "".
+    SKIPPED_FILES: run.skippedFiles || "none",
     RUN: runBlock,
     FINDINGS: findings,
     FAIL_REASONS: failReasons,
@@ -208,6 +211,13 @@ async function selfTest() {
     /^produced 5 → posted inline 3 · cleared 3 · carried forward 0 · deferred 0 · below-bar 0$/.test(payload.QUALITY));
   check("QUALITY omits memory suppressions when zero", !payload.QUALITY.includes("suppressions"));
   check("extras pass through only when present", payload.RUN_NOTE === "27 files touched" && payload.CI_NOTE === "1 check pending" && payload.IMPACT === undefined);
+  check("SKIPPED_FILES defaults to the literal `none`, never an empty string render-report.mjs's non-emptiness check would reject", payload.SKIPPED_FILES === "none");
+  {
+    const withSkipped = buildReportPayload({
+      gates, run: { ...run, skippedFiles: "a.ts (binary), b.png (binary)" }, findings: [], deferred: [], lowConfidence: [], quality,
+    });
+    check("SKIPPED_FILES passes through verbatim when the run supplies one", withSkipped.SKIPPED_FILES === "a.ts (binary), b.png (binary)");
+  }
 
   {
     const withSuppressions = buildQualitySummary({ produced: 9, confidenceDeferred: 1, suppressed: 1, cleared: 4, deferredOverCap: 0, posted: 4 });

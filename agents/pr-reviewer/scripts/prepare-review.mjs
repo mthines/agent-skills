@@ -1052,6 +1052,11 @@ async function prepare(opts) {
     timing: timing.block(),
     isolated: runMode.isolated,
     runMode,
+    // finalize.mjs reads a top-level `mode` (RUN.mode for the renderer) — this is that field,
+    // mirrored from runMode.mode rather than a second source of truth. Without it, finalize.mjs's
+    // `context?.mode` fallback silently renders "unknown", which is not a member of
+    // render-report.mjs's VALID_MODES and fails closed only at render time, not here.
+    mode: runMode.mode,
 
     // What the caller must still do itself. Stated in the artifact, not only in
     // the docs, so a consumer cannot read a partial context as a complete one.

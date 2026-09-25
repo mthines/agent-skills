@@ -243,23 +243,23 @@
       }
     },
     "gate1": {
-      "description": "Description vs. code — two-state, never FAIL (a soft warning gate).",
+      "description": "Description vs. code — two-state, never FAIL (a soft warning gate). `details` renders verbatim as render-report.mjs's GATE_DESCRIPTION_DETAILS table cell, which fails closed over 120 chars (report-rendering.md: 'Single line, no |, <= 120 chars') — capped here so an over-length judgment is rejected with a clear validator error before it ever reaches the renderer.",
       "type": "object",
       "additionalProperties": false,
       "required": ["status", "details"],
       "properties": {
         "status": { "type": "string", "enum": ["PASS", "WARN"] },
-        "details": { "type": "string" }
+        "details": { "type": "string", "maxLength": 120 }
       }
     },
     "gate5": {
-      "description": "Documentation adequacy — two-state, no WARN.",
+      "description": "Documentation adequacy — two-state, no WARN. `details` renders verbatim as render-report.mjs's GATE_DOCS_DETAILS table cell — same 120-char cap and rationale as gate1.details.",
       "type": "object",
       "additionalProperties": false,
       "required": ["status", "details"],
       "properties": {
         "status": { "type": "string", "enum": ["PASS", "FAIL"] },
-        "details": { "type": "string" }
+        "details": { "type": "string", "maxLength": 120 }
       }
     },
     "gate4": {
