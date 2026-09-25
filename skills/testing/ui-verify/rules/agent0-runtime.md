@@ -52,6 +52,7 @@ A clone that fails is `inconclusive: no checkout of <owner>/<repo> (<error>)` �
 | `chrome` | `NOT RUN (chrome driver unavailable on this host — no browser extension)`. A forced driver is never substituted |
 
 This is the only question `ui-verify` asks, so on this host it asks none.
+It is the Agent0 case of the general `--unattended` flag (`SKILL.md § --unattended`), which Agent0 mode implies whether or not the caller passed it.
 
 ## The browser precondition
 
