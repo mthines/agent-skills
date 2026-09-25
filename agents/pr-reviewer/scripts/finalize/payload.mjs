@@ -123,6 +123,17 @@ export function normalizeAsk(rootBody) {
   let line = firstSentenceOrLine(unlinked);
   line = line
     .replace(/\s*\((?:non-)?blocking\)\s*/gi, " ")
+    // Arm B run 2 (ab/B/20230/2): another bot's OWN claim decoration wraps "(blocking)" in its
+    // own bold span (`**(blocking)**`), immediately adjacent with no space — the blocking-strip
+    // above removes the parenthetical text but never touched the `**` that wrapped it, leaving a
+    // bare "** **" artifact (and, symmetrically, a dangling unmatched "**" from whatever bold span
+    // sat on the OTHER side of it, e.g. a title's own closing marker). `ask` is documented as
+    // "clean single-line text", never markdown-decorated, so every leftover bold marker is
+    // stripped outright here — not just the ones touching "(blocking)" — rather than chasing every
+    // adjacency shape a foreign bot's comment format might produce. `blocking` itself is computed
+    // from `BLOCKING_DECORATION_RE.test(rootBody)` on the RAW body before any of this stripping —
+    // unaffected by this change.
+    .replace(/\*\*/g, "")
     .replace(/\s+/g, " ")
     .trim();
   // A body that is ENTIRELY decoration (e.g. "issue: (blocking)" with no real ask left after
@@ -332,6 +343,18 @@ async function selfTest() {
     check("toOpenThreadBullet derives blocking from the decoration regex", thread.blocking === true && thread.author === "cursor" && thread.is_bot === true);
     const untyped = toOpenThreadBullet({ path: "a.ts", line: 1, root_body: "just an observation" });
     check("toOpenThreadBullet omits author/is_bot when type unknown", untyped.author === undefined && untyped.is_bot === undefined);
+    // ab/B/20230/2: `blocking` must keep reading the RAW root_body's decoration regardless of
+    // normalizeAsk's cleanup of the derived `ask` string — the two are independent computations
+    // over the same input, never the same pipeline.
+    const foreignBotThread = toOpenThreadBullet({
+      path: "a.ts", line: 89,
+      root_body: "issue (high): 🟠 **Optional asLink leaves the resources lookup enabled** **(blocking)**",
+      author: "dash0-app", is_bot: true,
+    });
+    check("toOpenThreadBullet still detects blocking on a foreign bot's decorated body (computed on the raw body, unaffected by normalizeAsk's cleanup)",
+      foreignBotThread.blocking === true);
+    check("toOpenThreadBullet's derived ask carries no leftover bold-marker artifact for the same thread",
+      !foreignBotThread.ask.includes("**"));
   }
   // normalizeAsk — ab/B/20230/1/meta.json's "render-report rejects multi-line/markdown thread
   // asks" defect: a real GitHub thread root can be multi-paragraph, carry markdown links, or run
@@ -354,6 +377,19 @@ async function selfTest() {
     const withBacktick = normalizeAsk("issue: `retryRequest` now throws instead of returning null.");
     check("normalizeAsk preserves a backtick (allowCode: true at the render boundary) rather than stripping it",
       withBacktick.includes("`retryRequest`"));
+    // ab/B/20230/2's real defect: another bot's own claim decoration
+    // (`**Title** **(blocking)**`) collapses to a bare "** **" once the blocking parenthetical is
+    // stripped, because the `**` markers immediately wrapping it survive — and the closing `**`
+    // from the PRECEDING bold span (the title's own) is left dangling too.
+    const foreignBotDecoration = normalizeAsk(
+      "issue (high): 🟠 **Optional asLink leaves the resources lookup enabled** **(blocking)**\n\n"
+      + "Evidence: `components/ui/src/agent0/context/components/context-item/types.ts:47`");
+    check("normalizeAsk never leaves a bare \"** **\" artifact from another bot's blocking decoration",
+      !foreignBotDecoration.includes("** **"));
+    check("normalizeAsk strips every leftover markdown bold marker — the ask is clean single-line text, never markdown-decorated",
+      !foreignBotDecoration.includes("**"));
+    check("normalizeAsk keeps the real ask text after stripping the foreign bot's decoration",
+      foreignBotDecoration.includes("Optional asLink leaves the resources lookup enabled"));
   }
   // buildOptimalityCard — ab/B/20230/1/meta.json: finalize must BUILD the markdown from the
   // schema's structured fields (path/line/verdict/analysis_confidence/card_body), never rely on
