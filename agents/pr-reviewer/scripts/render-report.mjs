@@ -1006,8 +1006,22 @@ function main() {
     headline = "### ✅ No issues found";
   } else {
     const gates = failing + warning;
+    // ab/B/20230/2: "No findings" is correct on its own terms (FINDINGS is the claim-severity
+    // table, and zero `issue:`/`suggestion:` findings cleared) — but rendered alone, next to a
+    // real write-plan comment for a cleared `nitpick:`/`question:` one-liner that earns no table
+    // row, it reads as "nothing happened" when something did. `ADDITIONAL_FINDINGS_SECTION`
+    // already renders right below this headline whenever that array is non-empty (report-
+    // rendering.md's own placeholder-omission rule) — this only makes the headline itself point at
+    // it, rather than leaving a reader to notice the accordion on their own. No fixture exercises
+    // this exact combination (verdict FAIL/WARN, zero FINDINGS, non-empty ADDITIONAL_FINDINGS) —
+    // every existing FAIL/WARN report-body fixture has FINDINGS.length > 0 — so this is additive,
+    // never a change to a pinned byte.
+    const additionalCount = arr("ADDITIONAL_FINDINGS").length;
+    const additionalNote = additionalCount > 0
+      ? ` (${additionalCount} more note${additionalCount === 1 ? "" : "s"} below)`
+      : "";
     headline = `### ${VERDICT_GLYPH[verdict]} No findings — ${gates} gate${gates === 1 ? "" : "s"}`
-      + " need attention";
+      + ` need attention${additionalNote}`;
   }
 
   const summary = String(data.SUMMARY).trim();

@@ -865,6 +865,32 @@ async function selfTest() {
     check("a near-miss praise/question/nitpick is dropped, never deferred or inline", r.confidenceDropped.length === 3 && r.advisoryDeferred.length === 0 && r.inline.length === 0);
   }
 
+  // ab/B/20230/2's real defect: a run where the ONLY cleared candidate is a nitpick (a one-liner,
+  // not a CLAIM_PREFIXES member) — it still clears the threshold and posts inline (write-plan
+  // carries a real comment for it), but earns no FINDINGS[] table row (title is forbidden on a
+  // one-liner by render-comment.mjs's own contract, and FINDINGS[].title is required by render-
+  // report.mjs — the two renderers agree a one-liner cannot be a table row). The headline used to
+  // read a bare "No findings — N gates need attention", which — sitting right next to a write-plan
+  // that DID post a comment — reads as "nothing happened" when something did.
+  {
+    const judgments = {
+      candidates: [
+        mkCandidate({ finder: "quality", defect_class: "maintainability", line: 12, final: 97, severity: "low", prefix: "nitpick", blocking: false, title: undefined }),
+      ],
+      gates: { gate1: { status: "WARN", details: "Omits the new keyboard model from the description." }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "The change is documented well enough to follow." } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "Keyboard model is sound and well tested.",
+    };
+    const r = finalizeReview({ context: withRenderAt(baseContext, "2026-09-25T12:00:00Z"), judgments });
+    check("the sole cleared candidate is a posted one-liner: FINDINGS stays empty (it earns no table row)",
+      r.payload.FINDINGS.length === 0);
+    check("…but it DOES clear and post inline — write-plan carries a real comment for it",
+      r.inline.length === 1 && r.payload.ADDITIONAL_FINDINGS.length === 1);
+    const rendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, r.payload, "self-test-nitpick-only-headline");
+    check("the payload renders through render-report.mjs with zero manual edits", rendered.ok, rendered.stderr.trim());
+    check("the headline now points at the note below instead of reading as if nothing happened",
+      rendered.ok && /No findings — \d+ gates? need attention \(1 more note below\)/.test(rendered.stdout));
+  }
+
   // AC-10 case: suppression >=3/>=2 + never-suppressible.
   {
     const cand = mkCandidate({ final: 95 });
