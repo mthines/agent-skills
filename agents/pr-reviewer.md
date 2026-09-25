@@ -1773,29 +1773,22 @@ review pipeline below operates on `REVIEW_DIFF` only.
 
 **Consistency-surface exemption (incremental modes).** A candidate whose claim spans **two files
 that are both in the PR's changed-file set** is never suppressed, filtered, or left ungenerated for
-being outside `REVIEW_DIFF` — the PR is answerable for both ends of a contradiction it contains.
-This matters on propagation-shaped changes (which Step 1.2b already upgrades to `full`) and on any
-delta that tightens one side of a contract restated elsewhere in the same PR: the delta lands on
-the authority while the induced contradiction sits at a line the delta never touched. The widening
-is bounded to files the PR already touches; it never licenses re-reviewing unchanged files
-generally. A drop that would violate this rule is logged as the miss it is, not as routine
-bookkeeping.
+being outside `REVIEW_DIFF` — the PR is answerable for both ends of a contradiction it contains, on
+a propagation-shaped change (already upgraded to `full` by Step 1.2b) or any delta that tightens one
+side of a contract restated elsewhere: the delta lands on the authority while the induced
+contradiction sits at a line it never touched. Bounded to files the PR already touches — never a
+license to re-review unchanged files generally — and a drop that would violate it is logged as the
+miss it is, not routine bookkeeping.
 
-**Bind `SCANNED_FILES` as the walk proceeds.** Start it empty and append each path the moment the
-pipeline actually reads that file. It is the record of what this run *examined*, which is not the
-same as `REVIEW_DIFF` — the set of what it *could have* examined — and the two diverge on exactly
-the runs where the difference matters:
-
-- **Step 1.4 triage** skips auto-generated, lock, and vendored files on a > 30-file PR. Those stay
-  in `REVIEW_DIFF` and are only "noted", so they must never enter `SCANNED_FILES`.
-- **Budget exhaustion** stops the walk mid-way (*Stop conditions*: `<M> of <T> files scanned`).
-  `SCANNED_FILES` then holds the `M` that were reached, and nothing else. This is the only durable
-  record of that fact — `PARTIAL_BANNER` is a rendered string, not state.
-- **Zero-delta** never enters the pipeline, so `SCANNED_FILES` stays empty.
-
-Step 2.9c's re-scan predicate reads it. Without it that predicate degrades to a `REVIEW_DIFF`
-membership test, which on a partial or triaged run passes for files nobody read — reopening the hole
-the predicate exists to close.
+**Bind `SCANNED_FILES` as the walk proceeds** — start empty, append each path the moment the
+pipeline actually reads it. It is what this run *examined*, not `REVIEW_DIFF` (what it *could have*
+examined), and the two diverge exactly where it matters: **Step 1.4 triage** skips auto-generated,
+lock, and vendored files on a > 30-file PR (they stay in `REVIEW_DIFF` but must never enter
+`SCANNED_FILES`); **budget exhaustion** stops the walk mid-way and `SCANNED_FILES` holds only the
+`M` files reached (the only durable record of that fact — `PARTIAL_BANNER` is a rendered string, not
+state); **zero-delta** never enters the pipeline, so it stays empty. Step 2.9c's re-scan predicate
+reads it — without it that predicate degrades to a `REVIEW_DIFF` membership test, passing on a
+partial/triaged run for files nobody read, reopening the hole the predicate exists to close.
 
 Run the pipeline as defined in `agents/shared/rules/rubric-composition.md`:
 
@@ -1914,15 +1907,9 @@ rubrics + finders produce raw candidates
   → 2.9b rubric-composition § Placement (inline caps 5/file + 20 total; overflow DEFERRED to body, never dropped)
 ```
 
-**Why memory suppression moved from 2.2 to 2.7b.** Suppressing before verification means a
-recurring *real* defect is dropped on the strength of past resolution behaviour alone: three
-authors marked the pattern won't-fix, so the fourth instance — the one that is actually a bug —
-never gets adjudicated. After verification the rule is doing what it should: the finding has been
-confirmed against the code, and the memory decides whether this repo *wants to hear about it*,
-which is a reporting question, not a correctness one. Two classes are never suppressible at all —
-standards findings (the repo asked for them in its own governing docs) and anything decorated
-`(blocking)` — see [`memory.md`](./pr-reviewer/rules/memory.md) and
-[`rubric-composition.md § Memory suppression`](./shared/rules/rubric-composition.md#memory-suppression-pr-reviewer).
+**Why memory suppression moved from 2.2 to 2.7b:** suppressing before verification drops a
+recurring *real* defect on the strength of past resolution behaviour alone (see § 2.7b for the full
+rationale and the two never-suppressible classes — standards findings and anything `(blocking)`).
 
 ### Confidence thresholds for inline findings
 
