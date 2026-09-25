@@ -1203,11 +1203,10 @@ An empty `AGENT_MD` is not fatal here — Step 4a's hard-stop contract still app
 needs the value. On any resolution or exit failure, set
 `PR_SHAPE_JSON='{"shapes":[],"risky":false,"risky_shapes":[],"high_stakes_files":[],"propagation":false}'`,
 announce `Shape classifier unavailable — shape routing degraded to size-only.`, and continue — the
-classifier adds depth, it never gates the run.
-
-Bind `PR_SHAPES` / `PR_RISKY_SHAPES` / `PR_HIGH_STAKES_FILES` / `PR_PROPAGATION` from it — these
-describe the **whole PR** and feed the correctness finder's shape checklists (Step 2). Step 1.2b
-re-runs the same script on the **delta** file list to route incremental depth.
+classifier adds depth, it never gates the run. Bind `PR_SHAPES` / `PR_RISKY_SHAPES` /
+`PR_HIGH_STAKES_FILES` / `PR_PROPAGATION` from it — these describe the **whole PR** and feed the
+correctness finder's shape checklists (Step 2); Step 1.2b re-runs the same script on the **delta**
+file list to route incremental depth.
 
 Announce: `Shapes: <PR_SHAPES joined> (risky: <PR_RISKY_SHAPES joined or "none">).`
 
@@ -1345,18 +1344,14 @@ Bind `DELTA_SHAPES`, `DELTA_RISKY_SHAPES`, `HIGH_STAKES_FILES` (`.high_stakes_fi
 
 #### Cumulative churn since the last full pass
 
-`FULL_REFRESH_DELTA` and `FULL_REFRESH_RUNS` are owned by the scripts, not restated here —
-`delta-triage.mjs` exports `FULL_REFRESH_DELTA` (150) and `route-depth.mjs` exports
-`FULL_REFRESH_RUNS` (3); `route-depth.mjs`'s own self-test asserts both values against
-`depth-routing.md`'s stated numbers, so this file never re-hardcodes them. `prepare-review.mjs`
-computes `CUM_DELTA_LINES` via `delta-triage.mjs`'s `churnState()` automatically, applying the same
-divergence rule as above (a non-`ahead` cumulative compare reads as **over** the threshold, never as
-a guessed authored-line count) and feeds it into `routeDepth()`.
-
-Manual fallback only: read the constants from the scripts rather than hardcoding them
-(`node -e "import('$AGENT_SUPPORT/pr-reviewer/scripts/delta-triage.mjs').then(m=>console.log(m.FULL_REFRESH_DELTA))"`,
-similarly for `route-depth.mjs`'s `FULL_REFRESH_RUNS`), then apply `churnState()`'s own rule to
-`LAST_FULL_SHA`/`HEAD_SHA`'s compare summary to bind `CUM_DELTA_LINES`.
+`FULL_REFRESH_DELTA` (150) and `FULL_REFRESH_RUNS` (3) are owned by the scripts, not restated here —
+`delta-triage.mjs` and `route-depth.mjs` export them, and `route-depth.mjs`'s self-test asserts both
+against `depth-routing.md`'s stated numbers. `prepare-review.mjs` computes `CUM_DELTA_LINES` via
+`churnState()` automatically, applying the same divergence rule as above (a non-`ahead` cumulative
+compare reads as **over** the threshold, never a guessed authored-line count), and feeds it into
+`routeDepth()`. Manual fallback only: read the constants from the scripts rather than hardcoding
+them, then apply `churnState()`'s own rule to `LAST_FULL_SHA`/`HEAD_SHA`'s compare summary to bind
+`CUM_DELTA_LINES`.
 
 **Upgrade rules — any one condition forces `RUN_MODE = "full"`:**
 - `DELTA_LINES > 100`
