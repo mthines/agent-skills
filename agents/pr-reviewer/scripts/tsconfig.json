@@ -16,6 +16,7 @@
     "review-telemetry.mjs",
     "route-depth.mjs",
     "delta-triage.mjs",
-    "gate4-scan.mjs"
+    "gate4-scan.mjs",
+    "validate-judgments.mjs"
   ]
 }

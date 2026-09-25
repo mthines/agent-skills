@@ -8614,4 +8614,98 @@ const isPollBlock = (block) =>
   }
 }
 
+// ── G62: pr-reviewer deterministic pipeline, Phase 2 (judgments contract) ──
+//
+// R5/D4/AC-9: judgments.schema.json is the single SSOT, validate-judgments.mjs interprets only
+// the documented fixed keyword subset and fails closed on anything else, the fixture set proves
+// the three AC-9-named rejection cases plus the domain rules the fixed subset cannot express, and
+// the schema's finder/defect_class enums equal fingerprint.mjs's live FINDERS/DEFECT_CLASSES —
+// checked here via a real dynamic import of BOTH files, not by trusting the self-test alone.
+{
+  const SCHEMAS_DIR = "agents/pr-reviewer/schemas";
+  const SCRIPTS_DIR = "agents/pr-reviewer/scripts";
+  const SCHEMA_PATH = join(REPO_ROOT, SCHEMAS_DIR, "judgments.schema.json");
+  const VALIDATOR_PATH = join(REPO_ROOT, SCRIPTS_DIR, "validate-judgments.mjs");
+  const FIXTURES_DIR = join(REPO_ROOT, "scripts/eval/fixtures/judgments");
+
+  s.check("G62a judgments.schema.json exists and is valid JSON", (() => {
+    if (!existsSync(SCHEMA_PATH)) return false;
+    try { JSON.parse(readFileSync(SCHEMA_PATH, "utf8")); return true; } catch { return false; }
+  })());
+
+  s.check("G62a validate-judgments.mjs exists", existsSync(VALIDATOR_PATH));
+  if (existsSync(VALIDATOR_PATH)) {
+    const src = readFileSync(VALIDATOR_PATH, "utf8");
+    s.check("G62a validate-judgments.mjs is // @ts-check", /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
+    const r = spawnSync(process.execPath, [VALIDATOR_PATH, "--self-test"], { encoding: "utf8" });
+    s.check("G62a validate-judgments.mjs --self-test passes",
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-6).join(" | ") || r.stderr?.slice(0, 200));
+  }
+
+  if (existsSync(SCHEMA_PATH) && existsSync(VALIDATOR_PATH)) {
+    const mod = await import(pathToFileURL(VALIDATOR_PATH).href);
+    const schema = JSON.parse(readFileSync(SCHEMA_PATH, "utf8"));
+
+    // AC-9 case 1: an unsupported schema keyword is rejected — probed directly against the
+    // interpreter's own keyword-checking function, not just against the (currently clean) real
+    // schema, so this guard bites even if judgments.schema.json itself never regresses.
+    const badKeyword = { type: "object", minProperties: 1, properties: { a: { type: "string" } } };
+    const kwErrors = mod.checkSchemaKeywords(badKeyword);
+    s.check("G62b an unsupported schema keyword (minProperties) is rejected",
+      kwErrors.length > 0 && kwErrors.some((e) => e.includes("minProperties")));
+
+    // The real, committed schema uses ONLY the supported subset.
+    const realKwErrors = mod.checkSchemaKeywords(schema);
+    s.check("G62b judgments.schema.json itself uses only the supported keyword subset",
+      realKwErrors.length === 0, realKwErrors.join(" | "));
+
+    // Cross-file enum equality — schema vs. fingerprint.mjs, by real dynamic import of both
+    // rather than a duplicated literal, so a FINDERS/DEFECT_CLASSES rename cannot drift silently.
+    const FP = join(REPO_ROOT, SCRIPTS_DIR, "fingerprint.mjs");
+    if (existsSync(FP)) {
+      const fp = await import(pathToFileURL(FP).href);
+      const sortedEq = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+      s.check("G62c schema $defs.finder.enum equals fingerprint.mjs FINDERS",
+        sortedEq(schema.$defs?.finder?.enum ?? [], fp.FINDERS));
+      s.check("G62c schema $defs.defect_class.enum equals fingerprint.mjs DEFECT_CLASSES",
+        sortedEq(schema.$defs?.defect_class?.enum ?? [], fp.DEFECT_CLASSES));
+    }
+
+    // AC-9 case 2 + 3, and the domain rules the fixed keyword subset cannot express — read
+    // straight off the committed fixtures rather than re-deriving payloads, so a fixture that
+    // regresses to no-longer-actually-invalid is caught here too.
+    const loadFixture = (name) => JSON.parse(readFileSync(join(FIXTURES_DIR, name), "utf8"));
+
+    s.check("G62d fixtures/judgments/valid.json exists and validates with zero errors", (() => {
+      const p = join(FIXTURES_DIR, "valid.json");
+      if (!existsSync(p)) return false;
+      const errs = mod.validateJudgments(schema, loadFixture("valid.json"));
+      return errs.length === 0;
+    })());
+
+    const invalidCases = [
+      ["invalid-unknown-top-level-key.json", "unknown property"],
+      ["invalid-secret-exempt.json", "secret"],
+      ["invalid-title-mismatch.json", "title"],
+      ["invalid-unverified-reason.json", "unverified_reason"],
+      ["invalid-thread-reply.json", "reply"],
+    ];
+    for (const [name, needle] of invalidCases) {
+      const p = join(FIXTURES_DIR, name);
+      s.check(`G62d fixtures/judgments/${name} exists and is rejected (mentions "${needle}")`, (() => {
+        if (!existsSync(p)) return false;
+        const errs = mod.validateJudgments(schema, loadFixture(name));
+        return errs.length > 0 && errs.some((e) => e.includes(needle));
+      })());
+    }
+  }
+
+  // tsconfig.json carries the new validator under strict typechecking.
+  const TS = join(REPO_ROOT, SCRIPTS_DIR, "tsconfig.json");
+  if (existsSync(TS)) {
+    s.check("G62e tsconfig.json's files[] lists validate-judgments.mjs",
+      readFileSync(TS, "utf8").includes('"validate-judgments.mjs"'));
+  }
+}
+
 process.exit(s.report() ? 0 : 1);
