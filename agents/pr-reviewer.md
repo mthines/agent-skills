@@ -2470,13 +2470,11 @@ state, and Step 4c writes it as `open_thread_ids` for the next run's `RESOLVED_S
 `judgments.json`, then running [`render-report.mjs`](./pr-reviewer/scripts/render-report.mjs), is
 [`finalize.mjs`](./pr-reviewer/scripts/finalize.mjs)'s job — the same renderer
 `finalize.mjs --replay-fixtures` verifies byte-identical against every `report-body/*.expected.md`
-fixture (AC-11). Your job is the judgment inputs, not the markup.
-
-This split exists because hand-rendering failed repeatedly in production. Five observed runs
-(`mthines/lorekit#482`, `#492` ×3, `#495`) each read a correct spec and posted a report with no
-`<!-- PR_REVIEWER_REPORT -->` marker and no `Review details` accordion, because the layout lived
-in three ~85%-identical templates 280 lines below this step and got averaged into a remembered
-shape rather than copied. Layout is not a judgment call, so it is no longer yours.
+fixture (AC-11). Your job is the judgment inputs, not the markup — this split exists because
+hand-rendering failed repeatedly in production (five observed runs, `mthines/lorekit#482`, `#492`
+×3, `#495`, each read a correct spec and posted a marker-less, accordion-less report, because the
+layout lived in three ~85%-identical templates and got averaged into a remembered shape rather than
+copied). Layout is not a judgment call, so it is no longer yours.
 
 ```bash
 resolve() {  # portable readlink -f
@@ -2510,15 +2508,13 @@ REPORT_BODY=$(cat /tmp/finalize/report-body.md)
 ```
 
 `--out-dir` receives `finalize-result.json`, `report-body.md`, and `inline/*.md` (one file per
-posted finding). A non-zero exit is `render-report.mjs` rejecting the payload it was handed — an
-unknown key, a missing required slot, an invalid gate glyph, a smuggled `**Verdict**` line, or a
-template that lost its marker or accordion — report the error and post nothing.
-
-**If `finalize.mjs` cannot be resolved or fails, do not fall back to composing the body by hand**
-— that is the exact failure this replaces. Report the error verbatim in the Step 5 terminal output
-along with the payload it was given, post the inline findings (Step 4b still applies), and leave
-the sticky untouched. A missing report is recoverable; a malformed one that consumers then parse
-is not.
+posted finding). A non-zero exit is `render-report.mjs` rejecting the payload — an unknown key, a
+missing required slot, an invalid gate glyph, a smuggled `**Verdict**` line, or a template that lost
+its marker or accordion — report the error and post nothing. **If `finalize.mjs` cannot be resolved
+or fails, do not fall back to composing the body by hand** — that is the exact failure this
+replaces: report the error verbatim in Step 5 alongside the payload it was given, post the inline
+findings (Step 4b still applies), and leave the sticky untouched. A missing report is recoverable; a
+malformed one that consumers then parse is not.
 
 **What the model still supplies**, via `judgments.json` (schema:
 [`schemas/judgments.schema.json`](./pr-reviewer/schemas/judgments.schema.json), enforced by
@@ -2533,12 +2529,12 @@ is not.
 | `candidates[]`, `threads[]`, `lenses[]`, `memory` | Everything Steps 2/2.4–2.9c produced. `finalize.mjs` computes thresholds, the defer band, suppression, placement, caps, and the gates/verdict from these — it invents none of it. |
 
 There is no second, hand-assembled JSON file: every slot the old manual payload table listed
-(`RUN.tier`, `RUN.depth`, `IMPACT`, `WITHHELD`, `MEMORIES_USED[]`, `FINDINGS[]`, …) — the full list
-lives at `report-rendering.md` § REPORT_BODY payload — is read straight off `context.json` and
-`judgments.json` by `finalize.mjs`. `context.render.*` remains the one passthrough bag for facts
-`finalize.mjs` was never scoped to compute — `FIX_ALL_URL` (§ Fix-with-Agent0 buttons, above),
-`MEMORIES_SUMMARY`, `INTEGRATIONS`, `SKIPPED_FILES`, `RUN_ANOMALY`, `carriedForward`. Set these on
-`context.json` before invoking `finalize.mjs`; never post-patch the rendered body.
+(`RUN.tier`, `RUN.depth`, `IMPACT`, `WITHHELD`, `MEMORIES_USED[]`, `FINDINGS[]`, … — full list at
+`report-rendering.md` § REPORT_BODY payload) is read straight off `context.json` and
+`judgments.json` by `finalize.mjs`. `context.render.*` is the one passthrough bag for facts
+`finalize.mjs` was never scoped to compute (`FIX_ALL_URL` — § Fix-with-Agent0 buttons, above —
+`MEMORIES_SUMMARY`, `INTEGRATIONS`, `SKIPPED_FILES`, `RUN_ANOMALY`, `carriedForward`): set these on
+`context.json` before invoking `finalize.mjs`, never post-patch the rendered body.
 
 **Assert these seven things on `REPORT_BODY` immediately before the write, whatever produced it.**
 The renderer guarantees them, so on the normal path this is redundant — and that is the point: it is
