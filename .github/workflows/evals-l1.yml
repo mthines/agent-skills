@@ -23,3 +23,21 @@ jobs:
       # No install step — the harness is zero-dependency (node builtins + bash).
       - name: L1 contract checks
         run: node scripts/eval/l1.mjs
+
+  typecheck:
+    # The pr-reviewer deterministic pipeline's new agents/pr-reviewer/scripts/*.mjs
+    # are `// @ts-check` (per-file, D2) against agents/pr-reviewer/scripts/tsconfig.json
+    # (checkJs: false at the project level, so importing an untyped legacy script
+    # never drags it into strict mode). This is a SEPARATE job from `l1` above,
+    # which stays install-free — this one installs only the two type-checking
+    # packages into a temp prefix, never a full `pnpm install`.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install typescript + @types/node (temp prefix, no lockfile touched)
+        run: npm install --no-save --prefix /tmp/ts-prefix typescript@5.9.2 @types/node@20.19.9
+      - name: tsc --noEmit (agents/pr-reviewer/scripts)
+        run: /tmp/ts-prefix/node_modules/.bin/tsc -p agents/pr-reviewer/scripts/tsconfig.json

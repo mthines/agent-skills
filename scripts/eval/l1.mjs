@@ -1630,20 +1630,39 @@ function checksInSync(plan, checks) {
   {
     const telRel = "scripts/eval/telemetry.mjs";
     const telAbs = join(REPO_ROOT, telRel);
+    // The encoder/exporter mechanics (enabled-gate, no-op span, flush) were
+    // extracted into agents/pr-reviewer/scripts/otlp.mjs (pr-reviewer
+    // deterministic pipeline, D7) so review-telemetry.mjs can share one
+    // encoder. telemetry.mjs keeps its own API and self-test unchanged (still
+    // executed and behaviorally proven below); the three SOURCE-pattern
+    // checks that used to read telemetry.mjs's own text now read otlp.mjs's,
+    // since that is the file that now contains those literal lines.
+    const otlpRel = "agents/pr-reviewer/scripts/otlp.mjs";
+    const otlpAbs = join(REPO_ROOT, otlpRel);
     s.check("G21k the eval telemetry module exists", existsSync(telAbs));
+    s.check("G21k the shared otlp encoder module exists", existsSync(otlpAbs));
     if (existsSync(telAbs)) {
       const tel = read(telRel);
+      s.check("G21k telemetry.mjs imports its exporter from the shared otlp.mjs, not a second copy",
+        /from\s+"\.\.\/\.\.\/agents\/pr-reviewer\/scripts\/otlp\.mjs"/.test(tel));
       const r = spawnSync(process.execPath, [telAbs, "--self-test"], { encoding: "utf8" });
       s.check("G21k the telemetry self-test passes (OTLP encoding, span tree, metric shapes)",
         r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 200));
+    }
+    if (existsSync(otlpAbs)) {
+      const otlp = read(otlpRel);
+      const ro = spawnSync(process.execPath, [otlpAbs, "--self-test"], { encoding: "utf8" });
+      s.check("G21k the shared otlp encoder's own self-test passes",
+        ro.status === 0, (ro.stdout || "").trim().split("\n").slice(-4).join(" | ") || ro.stderr?.slice(0, 200));
 
       s.check("G21k telemetry is off unless an OTLP endpoint is configured",
-        /this\.enabled\s*=\s*this\.endpoint\s*!==\s*""/.test(tel));
+        /this\.enabled\s*=\s*this\.endpoint\s*!==\s*""/.test(otlp));
       s.check("G21k a disabled harness hands back a no-op span so callers need no conditional",
-        /if\s*\(!this\.enabled\)\s*return\s*\{\s*spanId:\s*null/.test(tel));
+        /if\s*\(!this\.enabled\)\s*return\s*\{\s*spanId:\s*null/.test(otlp));
       s.check("G21k flush never throws — it reports the failure and returns",
-        /console\.error\(`⚠ telemetry export failed/.test(tel) && /async flush\(\)/.test(tel));
-
+        /console\.error\(`⚠ telemetry export failed/.test(otlp) && /async flush\(\)/.test(otlp));
+    }
+    if (existsSync(telAbs)) {
       // l2.mjs is the only producer today; assert the wiring rather than trusting it.
       s.check("G21k l2.mjs imports the telemetry harness", /from "\.\/telemetry\.mjs"/.test(l2runner));
       s.check("G21k l2.mjs opens a run span, a suite span and a per-case span",
@@ -8390,6 +8409,65 @@ const isPollBlock = (block) =>
   s.check("G56i diagnostic-surface.md names silent lens degradation as a failure mode",
     existsSync(DS) && /lens.*degrad|degrad.*lens|F-lens/i.test(readFileSync(DS, "utf8")),
     "no F-lens-degraded-silently (or equivalent) row found");
+}
+
+// ── G60: pr-reviewer deterministic pipeline, Phase 0 (measurement + comparability) ──
+//
+// R1/D7: review-telemetry.mjs shares otlp.mjs's encoder rather than a second copy.
+// R2/R3: --dry-run and --isolated exist as real flags with a stated carve-out from
+// Step 4c's "unconditional" state write, and prepare-review.mjs enforces --pin-head
+// comparability. Every sub-check below executes the real script rather than grepping
+// prose for a promise, per this file's own self-test-execution pattern (G21k, G39).
+{
+  const REL_RT = "agents/pr-reviewer/scripts/review-telemetry.mjs";
+  const RT = join(REPO_ROOT, REL_RT);
+  s.check("G60a review-telemetry.mjs exists", existsSync(RT));
+  if (existsSync(RT)) {
+    const rt = readFileSync(RT, "utf8");
+    s.check("G60a review-telemetry.mjs is // @ts-check", /^\/\/ @ts-check/m.test(rt.split("\n").slice(0, 3).join("\n")));
+    s.check("G60a review-telemetry.mjs imports its encoder from otlp.mjs, not a second copy",
+      /from\s+"\.\/otlp\.mjs"/.test(rt));
+    const r = spawnSync(process.execPath, [RT, "--self-test"], { encoding: "utf8" });
+    s.check("G60a the review-telemetry self-test passes (timing block + the four telemetry rules)",
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-6).join(" | ") || r.stderr?.slice(0, 200));
+  }
+
+  const REL_PR = "agents/pr-reviewer/scripts/prepare-review.mjs";
+  const PR = join(REPO_ROOT, REL_PR);
+  if (existsSync(PR)) {
+    const pr = readFileSync(PR, "utf8");
+    s.check("G60b prepare-review.mjs accepts --pin-head, --isolated, and --full",
+      /--pin-head/.test(pr) && /--isolated/.test(pr) && /["']--full["']/.test(pr));
+    const r = spawnSync(process.execPath, [PR, "--self-test"], { encoding: "utf8" });
+    s.check("G60b the prepare-review self-test passes (incl. verifyPinnedHead and resolveRunMode cases)",
+      r.status === 0, (r.stderr || "").trim().split("\n").slice(-6).join(" | ") || r.stdout?.slice(0, 200));
+  }
+
+  const REL_PIPE = "agents/pr-reviewer/rules/pipeline.md";
+  s.check("G60c agents/pr-reviewer/rules/pipeline.md exists and defines both flags",
+    existsSync(join(REPO_ROOT, REL_PIPE))
+      && /--dry-run/.test(readFileSync(join(REPO_ROOT, REL_PIPE), "utf8"))
+      && /--isolated/.test(readFileSync(join(REPO_ROOT, REL_PIPE), "utf8")));
+
+  // Step 0/4 of the agent body carry the carve-out prose — grepped, not re-executed,
+  // since the agent body is prose the model reads rather than a script this file runs.
+  const PRW = join(REPO_ROOT, "agents/pr-reviewer.md");
+  if (existsSync(PRW)) {
+    const step0 = sliceBetween(readFileSync(PRW, "utf8"), "## Step 0: Read raw arguments", "## Step 0.5");
+    s.check("G60d Step 0's flag table documents --dry-run, --isolated, and --pin-head, pointing at rules/pipeline.md",
+      /--dry-run/.test(step0) && /--isolated/.test(step0) && /--pin-head/.test(step0) && /rules\/pipeline\.md/.test(step0));
+    const step4c = sliceBetween(readFileSync(PRW, "utf8"), "### 4c. Record the run state", "### 4d.");
+    s.check("G60d Step 4c states the --dry-run carve-out from its own \"unconditional\" state write",
+      /unconditional/.test(step4c) && /--dry-run/.test(step4c) && /exception/.test(step4c));
+  }
+
+  const REL_TS = "agents/pr-reviewer/scripts/tsconfig.json";
+  const TS = join(REPO_ROOT, REL_TS);
+  s.check("G60e agents/pr-reviewer/scripts/tsconfig.json exists with strict:true and checkJs:false",
+    existsSync(TS) && /"strict":\s*true/.test(readFileSync(TS, "utf8")) && /"checkJs":\s*false/.test(readFileSync(TS, "utf8")));
+  const l1yml = join(REPO_ROOT, ".github/workflows/evals-l1.yml");
+  s.check("G60e evals-l1.yml runs the pr-reviewer scripts tsconfig project in its own typecheck job",
+    existsSync(l1yml) && readFileSync(l1yml, "utf8").includes("agents/pr-reviewer/scripts/tsconfig.json"));
 }
 
 process.exit(s.report() ? 0 : 1);

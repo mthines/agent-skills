@@ -47,6 +47,7 @@ import { writeFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync } from 
 import { tmpdir } from "node:os";
 import { join, dirname, resolve as pathResolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { Timing } from "./review-telemetry.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPORT_MARKER = "<!-- PR_REVIEWER_REPORT -->";
@@ -176,6 +177,48 @@ export function normalizeLogin(login) {
     .toLowerCase()
     .replace(/^app\//, "")
     .replace(/\[bot\]$/, "");
+}
+
+/**
+ * `--pin-head <sha>` comparability check (R3, D13, AC-5). A pinned head that
+ * has moved since the caller chose it is NOT a narrower review — it is a
+ * review of a different commit wearing the pinned one's label, which is
+ * exactly what an A/B or shadow run must never silently do. Compared as a
+ * shared prefix (7+ chars) so a caller may pin either the short or full SHA.
+ */
+export function verifyPinnedHead(pinnedSha, liveHeadSha) {
+  if (!pinnedSha) return { ok: true };
+  if (!liveHeadSha) return { ok: false, message: `head moved: pinned ${pinnedSha} live (unreadable)` };
+  const n = Math.min(pinnedSha.length, liveHeadSha.length, 40);
+  if (pinnedSha.slice(0, n) !== liveHeadSha.slice(0, n)) {
+    return { ok: false, message: `head moved: pinned ${pinnedSha} live ${liveHeadSha}` };
+  }
+  return { ok: true };
+}
+
+/**
+ * `--isolated` run-mode resolution (R3, D10, D13, AC-5). Isolated repeat
+ * runs (the A/B harness, the shadow run) need first-run semantics on every
+ * invocation — no LoreKit state-record read, `--full` forced, so a run's
+ * behaviour depends only on its pinned head, never on what a PRIOR run in
+ * the same series left behind. `--state <file>` itself is wired in Phase 1
+ * (D10); this resolves the flag's SEMANTICS now so `--isolated` already
+ * ignores whatever is passed and callers do not have to wait for Phase 1 to
+ * get comparable runs.
+ */
+export function resolveRunMode({ isolated = false, full = false, statePath = null } = {}) {
+  const effectiveFull = !!(isolated || full);
+  return {
+    isolated: !!isolated,
+    full: effectiveFull,
+    // "full" here only means "the D1/D6 first-run trigger is forced" — the
+    // actual tier (deep/standard/quick) is Phase C's decision (route-depth.mjs,
+    // Phase 1), unavailable yet at Phase 0. `mode` mirrors RUN.mode's two
+    // states this phase can already determine; route-depth.mjs supplies the
+    // rest once it exists.
+    mode: effectiveFull ? "full" : null,
+    stateIgnored: !!(isolated && statePath),
+  };
 }
 
 /** Total changed lines across the patch list. */
@@ -477,6 +520,7 @@ function readReviewConfig(dir) {
 async function prepare(opts) {
   const anomalies = [];
   const t0 = Date.now();
+  const timing = new Timing();
 
   const fallbackRepo = opts.repo || (await currentRepoSlug());
   const ref = parsePrRef(opts.pr, fallbackRepo);
@@ -490,7 +534,10 @@ async function prepare(opts) {
   const [owner, name] = repo.split("/");
   const timeoutMs = opts.timeoutMs;
 
+  const runMode = resolveRunMode({ isolated: opts.isolated, full: opts.full, statePath: opts.state || null });
+
   // Step 1.1 — the five fetches, concurrently. One await, one moment in time.
+  timing.start("fetch");
   const [metaR, diffR, checksR, reviewsR, commentsR, filesR] = await Promise.all([
     ghJson(
       [
@@ -529,6 +576,8 @@ async function prepare(opts) {
     fetchFiles(repo, number, timeoutMs),
   ]);
 
+  timing.end(); // fetch
+
   if (!metaR.ok) {
     throw new Error(`PR metadata unreadable for ${repo}#${number}: ${metaR.error}`);
   }
@@ -540,6 +589,15 @@ async function prepare(opts) {
   const baseSha = meta.baseRefOid || "";
   if (!headSha) anomalies.push("headRefOid empty — every downstream consumer runs blind");
   if (!baseSha) anomalies.push("baseRefOid empty — merge-base and --base-ref both fail quietly; impact graph will be base-blind");
+
+  // `--pin-head` comparability check (R3, D13). A mismatch is NOT an anomaly —
+  // it is a hard stop, because an A/B or shadow run silently reviewing a
+  // commit other than the one it was pinned to would poison every metric it
+  // feeds. No review; no context is written.
+  const pinCheck = verifyPinnedHead(opts.pinHead, headSha);
+  if (!pinCheck.ok) {
+    throw new Error(pinCheck.message);
+  }
 
   if (!filesR.ok) anomalies.push(`patch list unreadable: ${filesR.error}`);
   if (!checksR.ok) anomalies.push("gh pr checks unreadable — CI state is informational only, so this never grades");
@@ -569,6 +627,7 @@ async function prepare(opts) {
   }
 
   // Step 1.1b — the workspace ladder.
+  timing.start("workspace");
   let workspace = { dir: null, worktreeParent: null, depthCapability: "diff-only", rung: "skipped", cleanup: "none" };
   if (opts.workspace && headSha) {
     workspace = opts.workdir
@@ -576,6 +635,7 @@ async function prepare(opts) {
       : await materializeWorkspace({ repo, number, headSha, timeoutMs, anomalies });
   }
   const tier2Checker = detectTier2Checker(workspace.dir);
+  timing.end(); // workspace
 
   // Write the patch list where the two existing scripts expect to read it, and
   // park the other bulk payloads beside it.
@@ -605,6 +665,7 @@ async function prepare(opts) {
   writeFileSync(undiffablePath, JSON.stringify(undiffable, null, 2), "utf8");
 
   // Shape classification — a pure local computation, no API calls.
+  timing.start("classify-shape");
   let shape = null;
   const hsArgs = extraHighStakes(readReviewConfig(workspace.dir)).flatMap((r) => ["--extra-high-stakes", r]);
   const classify = await run("node", [join(HERE, "classify-shape.mjs"), prFilesPath, ...hsArgs], { timeoutMs });
@@ -617,8 +678,10 @@ async function prepare(opts) {
   } else {
     anomalies.push(`shape classifier failed: ${(classify.stderr || "").trim().slice(0, 200)}`);
   }
+  timing.end(); // classify-shape
 
   // Phase B — the impact graph. A script invocation, never a judgment call.
+  timing.start("impact-graph");
   let impact = null;
   if (opts.impact && workspace.dir && baseSha) {
     const graphArgs = [
@@ -649,12 +712,16 @@ async function prepare(opts) {
       `impact graph skipped — ${!workspace.dir ? "no materialized workspace" : "no baseSha"}; Phase B is unavailable, not clean`,
     );
   }
+  timing.end(); // impact-graph
 
   const context = {
     v: 1,
     generatedAt: new Date().toISOString(),
     generatedBy: "prepare-review.mjs",
     elapsedMs: Date.now() - t0,
+    timing: timing.block(),
+    isolated: runMode.isolated,
+    runMode,
 
     // What the caller must still do itself. Stated in the artifact, not only in
     // the docs, so a consumer cannot read a partial context as a complete one.
@@ -873,6 +940,33 @@ function selfTest() {
   t("normalizeLogin does not collapse two distinct logins", () => {
     return normalizeLogin("app/dash0-dev") !== normalizeLogin("mthines");
   });
+  t("verifyPinnedHead is ok with no pin", () => verifyPinnedHead("", "abc123").ok === true);
+  t("verifyPinnedHead is ok when the pin matches the live head (shared prefix)", () => {
+    return verifyPinnedHead("906a747", "906a74781990f75607f0234de963fdbbc3953f2c").ok === true;
+  });
+  t("a mismatched --pin-head is NOT ok and names both SHAs — head moved: pinned <a> live <b>", () => {
+    const r = verifyPinnedHead("906a74781990f75607f0234de963fdbbc3953f2c", "deadbeef00000000000000000000000000000000");
+    return r.ok === false && r.message === "head moved: pinned 906a74781990f75607f0234de963fdbbc3953f2c live deadbeef00000000000000000000000000000000";
+  });
+  t("a pinned head against an unreadable live head is NOT ok", () => verifyPinnedHead("906a747", "").ok === false);
+
+  t("--isolated forces mode:full regardless of --full", () => {
+    const r = resolveRunMode({ isolated: true, full: false });
+    return r.isolated === true && r.full === true && r.mode === "full";
+  });
+  t("--isolated ignores any --state path (first-run semantics on every invocation)", () => {
+    const r = resolveRunMode({ isolated: true, statePath: "/tmp/state.json" });
+    return r.stateIgnored === true;
+  });
+  t("without --isolated, a --state path is not marked ignored", () => {
+    const r = resolveRunMode({ isolated: false, statePath: "/tmp/state.json" });
+    return r.stateIgnored === false;
+  });
+  t("neither --isolated nor --full leaves mode undecided (Phase C's job, not Phase 0's)", () => {
+    const r = resolveRunMode({});
+    return r.mode === null && r.full === false;
+  });
+
   t("scratchRoot prefers the agent workspace over os.tmpdir()", () => {
     // The whole point is that a sub-agent can read the checkout. `/tmp/workspace`
     // exists on the host this runs on; `PR_REVIEWER_SCRATCH` overrides it, and the
@@ -924,6 +1018,10 @@ async function main(argv) {
     timeoutMs: 90000,
     quiet: false,
     inlinePayloads: false,
+    pinHead: "",
+    isolated: false,
+    full: false,
+    state: "",
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -938,6 +1036,10 @@ async function main(argv) {
     else if (a === "--timeout-ms") opts.timeoutMs = Number(argv[++i]);
     else if (a === "--quiet") opts.quiet = true;
     else if (a === "--inline-payloads") opts.inlinePayloads = true;
+    else if (a === "--pin-head") opts.pinHead = argv[++i];
+    else if (a === "--isolated") opts.isolated = true;
+    else if (a === "--full") opts.full = true;
+    else if (a === "--state") opts.state = argv[++i]; // wired in Phase 1 (D10); --isolated ignores it today
     else {
       process.stderr.write(`unknown argument: ${a}\n`);
       process.exit(2);
@@ -948,7 +1050,8 @@ async function main(argv) {
     process.stderr.write(
       "usage: prepare-review.mjs --pr <url|owner/repo#n|n> [--repo owner/repo] [--out file] " +
         "[--workdir dir] [--reviewer-login login] [--no-workspace] [--no-impact] " +
-        "[--inline-payloads] [--timeout-ms N] [--quiet] | --self-test\n",
+        "[--inline-payloads] [--timeout-ms N] [--quiet] [--pin-head sha] [--isolated] [--full] " +
+        "[--state file] | --self-test\n",
     );
     process.exit(2);
   }

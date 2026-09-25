@@ -315,6 +315,9 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `--no-fix-links` | Suppress the "Fix with Agent0" buttons for this run. They render by default everywhere (`agents/shared/rules/agent0-fix-links.md`); this is the per-run opt-out and beats every other signal. |
 | `--fix-links` | Force the buttons on for this run, overriding an `agent0_fix_links: false` in the review config. Rarely needed — they are already on by default. |
 | `--effort high` | Force `DEPTH_TIER = deep`, enable Tier-2/3 receipts where the toolchain allows, and widen diversify-then-vote to N=5 ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#--effort)). Also settable as `effort: high` in the review config. `--full` is the narrower alias — it forces `deep` and nothing else |
+| `--dry-run` | Run the full pipeline through the rendered artifacts, then **stop**: zero GitHub writes (no sticky, no review, no thread resolve/reply) and zero LoreKit writes (no state record, no knowledge/hotspot writes). `REPORT_BODY`, the inline comment bodies, and the pointer body are written to scratch (`$(scratchRoot())/<run-id>/` — see [`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--dry-run)) instead of posted. The **one** stated exception to Step 4c's "unconditional" state write |
+| `--isolated` | Comparable repeat run for the A/B harness and the shadow run (pr-reviewer deterministic pipeline, D13): skip the Step 0.7 LoreKit state-record read entirely (first-run semantics on every invocation — `PRIOR_RUN=none` unconditionally), force `RUN_MODE=full` (the D1/D6 first-run trigger), and require `--pin-head <sha>`. See [`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--isolated) |
+| `--pin-head <sha>` | Required with `--isolated`. `prepare-review.mjs` compares it against the live `headRefOid` and **hard-stops with no review** (`head moved: pinned <a> live <b>`) on a mismatch — a pinned run silently reviewing a moved head would poison every metric an A/B or shadow comparison computes from it |
 
 Parse the PR reference:
 
@@ -341,6 +344,20 @@ REPO="${RESOLVED_REPO##*/}"
 # run on an unmoved head to `incremental-quick` — the exact regression its guard exists to stop.
 FLAG_FULL=false
 [[ " $ARG " == *" --full "* ]] && FLAG_FULL=true
+
+# --dry-run and --isolated are read the same way, for the same reason: both are
+# gates other steps branch on by executable variable, not by re-scanning $ARG.
+# rules/pipeline.md owns their full semantics; this only binds the flags.
+FLAG_DRY_RUN=false
+[[ " $ARG " == *" --dry-run "* ]] && FLAG_DRY_RUN=true
+FLAG_ISOLATED=false
+[[ " $ARG " == *" --isolated "* ]] && FLAG_ISOLATED=true
+PIN_HEAD=""
+[[ "$ARG" =~ --pin-head[[:space:]]+([0-9a-f]+) ]] && PIN_HEAD="${BASH_REMATCH[1]}"
+if [[ "$FLAG_ISOLATED" == true && -z "$PIN_HEAD" ]]; then
+  echo "pr-reviewer: --isolated requires --pin-head <sha> — comparable runs cannot compare against a moving target" >&2
+  exit 2
+fi
 ```
 
 If no PR reference found, abort: `pr-reviewer requires a PR URL, #<n>, or bare PR number — got: <args>`.
@@ -444,6 +461,12 @@ Announce: `Reviewing PR #<n> in <repo> by @<author> (relation: $REVIEW_RELATION)
 ---
 
 ## Step 0.7: Prior run detection
+
+**Under `--isolated`, skip the LoreKit state-record read entirely.** Bind `PRIOR_RUN=none`,
+`IS_RE_REVIEW=false`, and `RUN_MODE=full` unconditionally, and do not fall back to the sticky
+comment's footer SHA either — an isolated run's whole point is first-run semantics on **every**
+invocation, so its baseline never depends on what a previous run in the same series left behind.
+See [`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--isolated).
 
 This step answers two questions that used to be answered by the same object, and separating
 them is most of what this step now is:
@@ -2518,6 +2541,11 @@ The docs-only cosmetic drop happens earlier, at the 2.3 filtering stage (pre-cle
 
 ## Step 2.9c: Reconcile prior threads (re-review only)
 
+**Under `--dry-run`, classify every thread exactly as below and write the classification to
+`$(scratchRoot())/<run-id>/thread-plan.json`, but issue no `resolve_review_thread` mutation and no
+reply.** The Gate 3 re-evaluation still runs against the *would-be* resolutions — a dry-run report
+must show what the run WOULD do, not a report computed as if nothing had changed.
+
 See `agents/shared/rules/thread-resolution.md`. Skip entirely on a first-pass review — that is
 `IS_RE_REVIEW == false` in Step 0.7, **not** an empty `CARRIED_FINDINGS` or `PRIOR_DIAGNOSTICS`.
 The two differ on the fallback rung, where the state record was unusable so nothing is carried but
@@ -2680,6 +2708,10 @@ footer (Step 0.7). Order them sticky → review → state, and report each outco
 Step 5.
 
 ### 4a. Update the sticky report
+
+**Under `--dry-run`, render but do not post.** Build `REPORT_BODY` exactly as below, write it to
+`$(scratchRoot())/<run-id>/report-body.md`, and skip the `POST`/`PATCH` call. See
+[`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--dry-run) for the full artifact layout.
 
 Bind the two values Step 4 introduces before rendering:
 
@@ -3078,6 +3110,11 @@ from state that never went missing.
 
 ### 4b. Post the review (conditionally)
 
+**Under `--dry-run`, build the payload, run every assertion below, write the result to
+`$(scratchRoot())/<run-id>/inline-comments.json`, and skip the `POST` call** — the assertions
+still run, because a dry-run that skips its own safety checks would rehearse a broken payload as
+if it were a rehearsed-safe one.
+
 Build the payload and run the pre-flight assertions below **before** the API call:
 
 ```python
@@ -3393,6 +3430,14 @@ Confirm the 4b response contains `state: "COMMENTED"` when a review was posted.
 The last write of the run, and the **unconditional** one: it runs whatever 4a and 4b did, including
 on a run that posted no review, could not write the sticky, or was refused the write by caller
 policy. Skipping it is the one failure that costs the *next* run its delta.
+
+**The one stated exception is `--dry-run`.** A dry-run's whole point is a rehearsal with zero
+side effects — the A/B harness and the shadow run (pr-reviewer deterministic pipeline) depend on
+running the same PR repeatedly with nothing accumulating between runs — so under `--dry-run` this
+step, 4a, and 4b all write their artifacts to scratch (`$(scratchRoot())/<run-id>/state.json`,
+mirroring the shape below) and issue **no** `mcp__lorekit__memory_write` call at all. This is the
+only condition anywhere in Step 4 that suppresses the state write; every other failure mode above
+still writes it.
 
 Build the record from the values this run already holds and write it to the scope and key bound in
 Step 0.7:
