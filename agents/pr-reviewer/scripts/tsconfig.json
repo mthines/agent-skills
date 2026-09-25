@@ -26,6 +26,7 @@
     "finalize/line-validity.mjs",
     "finalize/gates.mjs",
     "finalize/payload.mjs",
-    "finalize/findings-bus.mjs"
+    "finalize/findings-bus.mjs",
+    "execute-write-plan.mjs"
   ]
 }

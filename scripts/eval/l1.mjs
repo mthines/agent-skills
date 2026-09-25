@@ -8793,4 +8793,50 @@ const isPollBlock = (block) =>
   }
 }
 
+// ── G64: pr-reviewer deterministic pipeline, Phase 4 (execute-write-plan) ──
+//
+// R2/R7/D9/AC-3/AC-14: execute-write-plan.mjs exists, is typed and self-tests (including the
+// four named AC-3 cases); rules/pipeline.md's write-plan op -> MCP tool map names every op and
+// both tool families; AC-14's "no which/auth-status" static scan is reproduced here as a
+// standing guard, independent of checks.yaml's own copy of the same command, so a later phase
+// cannot silently reintroduce either forbidden invocation.
+{
+  const SCRIPTS_DIR = "agents/pr-reviewer/scripts";
+  const EWP = join(REPO_ROOT, SCRIPTS_DIR, "execute-write-plan.mjs");
+
+  s.check("G64a execute-write-plan.mjs exists", existsSync(EWP));
+  if (existsSync(EWP)) {
+    const src = readFileSync(EWP, "utf8");
+    s.check("G64a execute-write-plan.mjs is // @ts-check", /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
+    const r = spawnSync(process.execPath, [EWP, "--self-test"], { encoding: "utf8" });
+    s.check("G64a execute-write-plan.mjs --self-test passes",
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 300));
+
+    // AC-14's exact static scan, reproduced as a standing guard independent of checks.yaml's own
+    // copy — a same-file self-test check cannot assert this (its own check labels would have to
+    // name the forbidden phrases in prose and would then trip on themselves), so this is the
+    // guard that actually holds the invariant, read from the OUTSIDE.
+    s.check("G64c execute-write-plan.mjs contains no literal `which gh` or `gh auth status`",
+      !/which gh|gh auth status/.test(src));
+  }
+
+  const TS = join(REPO_ROOT, SCRIPTS_DIR, "tsconfig.json");
+  if (existsSync(TS)) {
+    const tsText = readFileSync(TS, "utf8");
+    s.check("G64b tsconfig.json's files[] lists execute-write-plan.mjs", tsText.includes('"execute-write-plan.mjs"'));
+  }
+
+  // AC-14: rules/pipeline.md maps every write-plan op to an MCP tool (or an explicitly named
+  // gap), and names both tool families.
+  const PIPELINE = join(REPO_ROOT, "agents/pr-reviewer/rules/pipeline.md");
+  if (existsSync(PIPELINE)) {
+    const pText = readFileSync(PIPELINE, "utf8");
+    const OPS = ["sticky.upsert", "review.create", "thread.reply", "thread.resolve", "lorekit.write"];
+    s.check("G64d pipeline.md's op map names every write-plan op", OPS.every((op) => pText.includes(op)),
+      OPS.filter((op) => !pText.includes(op)).join(", "));
+    s.check("G64d pipeline.md's op map names an mcp__github__ tool", pText.includes("mcp__github__"));
+    s.check("G64d pipeline.md's op map names mcp__lorekit__memory_write for lorekit.write", pText.includes("mcp__lorekit__memory_write"));
+  }
+}
+
 process.exit(s.report() ? 0 : 1);

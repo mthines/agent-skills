@@ -72,7 +72,7 @@ const POINTER_MARKER = "<!-- PR_REVIEWER_POINTER -->";
  * So the checkout goes under the workspace, where every agent in the run can read
  * it. `os.tmpdir()` stays as the last rung for a host with no workspace at all.
  */
-function scratchRoot() {
+export function scratchRoot() {
   for (const candidate of [process.env.PR_REVIEWER_SCRATCH, "/tmp/workspace", process.cwd()]) {
     if (!candidate) continue;
     try {
@@ -87,7 +87,7 @@ function scratchRoot() {
   return tmpdir();
 }
 
-function run(cmd, args, { timeoutMs = 60000, cwd = process.cwd(), maxBuffer = 64 * 1024 * 1024 } = {}) {
+export function run(cmd, args, { timeoutMs = 60000, cwd = process.cwd(), maxBuffer = 64 * 1024 * 1024 } = {}) {
   return new Promise((res) => {
     execFile(cmd, args, { timeout: timeoutMs, cwd, maxBuffer, encoding: "utf8" }, (err, stdout, stderr) => {
       res({ ok: !err, code: err ? (err.code ?? 1) : 0, stdout: stdout ?? "", stderr: stderr ?? "" });
@@ -249,7 +249,7 @@ export function partitionUndiffable(files) {
 
 /* ------------------------------ gh fetches ------------------------------ */
 
-async function ghJson(args, opts) {
+export async function ghJson(args, opts) {
   const r = await run("gh", args, opts);
   if (!r.ok) return { ok: false, error: (r.stderr || r.stdout).trim().slice(0, 500), value: null };
   try {

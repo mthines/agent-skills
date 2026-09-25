@@ -100,13 +100,26 @@ each phase lands (Phase 2 onward); this section is the index they attach to.
 
 ## Write-plan op → MCP tool map
 
-Filled in at Phase 4 (`execute-write-plan.mjs`). Placeholder table so a reader
-mid-pipeline can see the shape that is coming, rather than finding a gap:
+`execute-write-plan.mjs` is the `gh` path. When `probeGhAccess` (`gh api
+repos/{repo} --jq .full_name`) fails, the script exits 3 — `"no gh access
+path — execute over MCP per rules/pipeline.md"` — and the agent itself
+executes the write-plan's ops over the `mcp__github__*` / `mcp__lorekit__*`
+tools granted to `aw-executor` / `pr-reviewer`, per this table:
 
 | `write-plan.json` op | `gh` path | `mcp__*` tool |
 | --- | --- | --- |
-| `sticky.upsert` | *(Phase 4)* | *(Phase 4)* |
-| `review.create` | *(Phase 4)* | *(Phase 4)* |
-| `thread.reply` | *(Phase 4)* | *(Phase 4)* |
-| `thread.resolve` | *(Phase 4)* | *(Phase 4)* |
-| `lorekit.write` | *(Phase 4)* | *(Phase 4)* |
+| `sticky.upsert` (create — `comment_id: null`) | `gh api repos/{repo}/issues/{pr}/comments -f body=@<body_path>` | `mcp__github__add_issue_comment` |
+| `sticky.upsert` (update — `comment_id` set) | `gh api repos/{repo}/issues/comments/{id} -X PATCH -f body=@<body_path>` | **No update-comment tool is granted.** Falls back to the documented degraded path: `mcp__github__add_issue_comment` posting `pointer_body_path` as a new comment, never a second copy of the full report (matches the `gh`-path degraded case above — an access path that cannot patch the sticky posts the pointer, it never fabricates a PATCH). |
+| `review.create` | `gh api repos/{repo}/pulls/{pr}/reviews -X POST -f commit_id=<sha> -f event=COMMENT -f comments=<json>` | `mcp__github__add_comment_to_pending_review` once per inline comment, then `mcp__github__pull_request_review_write` to submit with `event: COMMENT` — the MCP pending-review flow is two calls where `gh api` is one. |
+| `thread.reply` | `gh api graphql -f query=mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}` | **No reply-to-thread tool is granted.** There is no MCP primitive that threads a reply under an existing review comment; the closest available action is a new top-level comment via `mcp__github__add_issue_comment`, which is NOT a true threaded reply and must be reported as such, never silently substituted. |
+| `thread.resolve` | `gh api graphql -f query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{id}}}` | `mcp__github__resolve_review_thread` |
+| `lorekit.write` | *(never `gh` — GitHub has no LoreKit surface)* | `mcp__lorekit__memory_write`, one call per queued op; `execute-write-plan.mjs` never executes these itself (D9) — they are always returned for the caller to run. |
+
+The three writes (threads, sticky, review) fail independently on both paths —
+one failing does not block the others, per D9. The two starred gaps
+(`sticky.upsert` update, `thread.reply`) are real MCP-grant limitations, not
+oversights: an MCP-only session (no `gh`) can create a sticky and resolve
+threads, but cannot update an existing sticky in place or post a true
+threaded reply — it must degrade to the pointer comment and a top-level
+comment respectively, and both degradations must be named in the run's
+report, never presented as the real op.
