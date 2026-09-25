@@ -47,6 +47,7 @@ import {
 import { toFindingsBusRecords } from "./finalize/findings-bus.mjs";
 import { buildWritePlan } from "./finalize/write-plan.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
+import { MARKER_RE } from "./fingerprint.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FINALIZE_SELF_TESTS = [
@@ -154,6 +155,46 @@ export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomal
     parts.push(`${n} prepare-time anomal${n === 1 ? "y" : "ies"} (${lead}${n > 1 ? `, +${n - 1} more` : ""})`);
   }
   return parts.length ? parts.join(" — ") : undefined;
+}
+
+/**
+ * ab/B/20230/2's explicit ask: a finalize-level cross-check that FAILS CLOSED — the write-plan
+ * (the artifact a caller actually posts to GitHub from) must never carry a claim-comment count
+ * that disagrees with what the SAME payload's FINDINGS table (and QUALITY's `posted inline N`,
+ * render-report.mjs's own invariant) already claimed was posted. Exact total equality against
+ * write-plan's FULL inline-comment count is deliberately NOT the check: a cleared
+ * nitpick:/question:/praise: one-liner legitimately posts its own inline comment without a
+ * FINDINGS row (render-comment.mjs forbids a TITLE on a one-liner; render-report.mjs requires one
+ * on every FINDINGS row — the two renderers already agree a one-liner cannot be a table row), so
+ * `renderedInlineComments.length` can exceed `findingsCount` BY DESIGN (this is the exact shape
+ * ab/B/20230/2's `pipeline_observations` flagged, and the shape this run's own headline fix
+ * addresses). What must never diverge is the CLAIM subset: every rendered inline comment carrying
+ * a v2 fingerprint marker (`<!-- fp:v2:… -->`, only ever added by toInlineCommentPayload for a
+ * CLAIM_PREFIXES candidate) is counted directly off the REAL rendered bytes write-plan.json is
+ * about to ship — not re-derived from the same in-memory array FINDINGS came from, which would
+ * only prove the two computations agree with themselves, never that the renderer actually
+ * produced what finalize.mjs believes it produced. Matched via fingerprint.mjs's own `MARKER_RE`
+ * (never `extractFingerprint`, which falls back to a legacy v1 derivation off the comment's
+ * conventional-comment prefix — a plain `nitpick:`/`question:` one-liner derives a legacy
+ * fingerprint too, so that fallback is not a claim/non-claim discriminator; only the literal v2
+ * marker tells us toInlineCommentPayload actually gated FP on CLAIM_PREFIXES for this comment).
+ * Pure (D18) — the I/O boundary (stderr + process.exit) stays in main().
+ * @param {{ renderedInlineComments: Array<{ body: string }>, findingsCount: number }} args
+ * @returns {{ ok: boolean, detail: string }}
+ */
+export function checkPostedInlineMatchesClaims({ renderedInlineComments, findingsCount }) {
+  const claimCommentsRendered = (renderedInlineComments || []).filter(
+    (c) => MARKER_RE.test(c.body),
+  ).length;
+  const ok = claimCommentsRendered === findingsCount;
+  return {
+    ok,
+    detail: ok
+      ? `${findingsCount} claim comment(s) rendered, FINDINGS carries ${findingsCount} row(s)`
+      : `posted-inline mismatch — FINDINGS carries ${findingsCount} row(s) but `
+        + `${claimCommentsRendered} of the ${(renderedInlineComments || []).length} rendered `
+        + "inline comment(s) carry a claim fingerprint",
+  };
 }
 
 /**
@@ -721,6 +762,42 @@ async function selfTest() {
       typeof both === "string" && both.includes("diff-only") && both.includes("3 prepare-time anomalies"));
   }
 
+  // checkPostedInlineMatchesClaims — ab/B/20230/2's explicit ask for a cross-check proving this
+  // class can never recur silently. Proven here to actually BITE: a synthetic mismatch (the shape
+  // a future regression would produce) is asserted red, not just the happy path green.
+  {
+    const claimComment = { body: "issue (high): **T**\n\n<!-- fp:v2:correctness:logic:foo@a.ts -->" };
+    const oneLinerComment = { body: "nitpick: minor note, no fingerprint" };
+
+    const matched = checkPostedInlineMatchesClaims({
+      renderedInlineComments: [claimComment, oneLinerComment], findingsCount: 1,
+    });
+    check("ok when the fingerprinted comment count matches FINDINGS.length exactly (1 claim + 1 one-liner posted, FINDINGS carries 1 row)",
+      matched.ok === true);
+
+    const oneLinerOnly = checkPostedInlineMatchesClaims({
+      renderedInlineComments: [oneLinerComment], findingsCount: 0,
+    });
+    check("ok on a nitpick-only run (ab/B/20230/2's own shape) — zero claims posted, FINDINGS empty, never a false positive",
+      oneLinerOnly.ok === true);
+
+    // The regression this guard exists to catch: FINDINGS claims 1 row, but the ACTUAL rendered
+    // write-plan comment carries no fingerprint (e.g. a future refactor that builds FINDINGS from
+    // a different candidate set than toInlineCommentPayload's FP gating reads).
+    const mismatch = checkPostedInlineMatchesClaims({
+      renderedInlineComments: [oneLinerComment], findingsCount: 1,
+    });
+    check("FAILS CLOSED (ok: false) when FINDINGS claims a row the rendered write-plan comments don't back",
+      mismatch.ok === false && mismatch.detail.includes("posted-inline mismatch"));
+
+    // The inverse regression: a fingerprinted comment rendered that FINDINGS never counted.
+    const overCounted = checkPostedInlineMatchesClaims({
+      renderedInlineComments: [claimComment], findingsCount: 0,
+    });
+    check("also FAILS CLOSED when a claim comment rendered with no matching FINDINGS row",
+      overCounted.ok === false);
+  }
+
   // buildMemoriesUsed / memoriesSummaryFor — ab/B/20230/1/meta.json: MEMORIES_SUMMARY must be
   // the literal `<N> indexed` shape (never a hand-typed "used" string), computed from the SAME
   // array MEMORIES_USED renders so the two can never disagree.
@@ -1219,6 +1296,14 @@ async function main() {
         console.error(`finalize: render-comment.mjs failed for inline[${i}] — ${r.stderr.trim()}`);
       }
     });
+  }
+
+  const postedInlineCheck = checkPostedInlineMatchesClaims({
+    renderedInlineComments, findingsCount: result.payload?.FINDINGS?.length ?? 0,
+  });
+  if (!postedInlineCheck.ok) {
+    console.error(`finalize: ${postedInlineCheck.detail} — write-plan.json was NOT written.`);
+    process.exit(1);
   }
 
   // ab/B/20230/1/meta.json (defect 8): finalize.mjs never emitted write-plan.json, so a live run
