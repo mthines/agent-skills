@@ -10,7 +10,7 @@ tags:
 
 # Agent0 runtime
 
-On a Dash0 Agent0 Automation sandbox, `ui-verify` hits three host facts at once: there is no Chrome extension, there is no user to answer the Playwright prompt, and `aw-tester` is a custom agent type the host cannot dispatch.
+On a Dash0 Agent0 Automation sandbox, `ui-verify` hits three obstacles at once: `aw-tester` is a custom agent type the host cannot dispatch (a measured host fact), and an automation has no Chrome extension and no user to answer the Playwright prompt (properties of any automation).
 This rule makes `author`, `run`, and `verify` work there anyway.
 It changes no spec grammar, no verdict mapping, and no resolution rule.
 
