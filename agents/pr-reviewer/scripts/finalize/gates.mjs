@@ -60,7 +60,15 @@ export function gate3(contextThreads, judgmentThreads) {
   const resolvedIds = new Set(
     (judgmentThreads || []).filter((t) => RESOLVE_CLASSES.has(t.classification)).map((t) => t.thread_id),
   );
-  const open = (contextThreads || []).filter((t) => !resolvedIds.has(t.thread_id));
+  // A thread GitHub itself already marked resolved (buildThreads()'s `is_resolved`, straight off
+  // the GraphQL `isResolved` field) is not "open" regardless of what THIS run's judgments say —
+  // arm B's first live run (ab/B/20230/1/meta.json) counted 17 threads instead of 10 because this
+  // filter only ever excluded threads the CURRENT run resolved, never ones already resolved on
+  // GitHub (e.g. by a human clicking Resolve, or a prior run's thread.resolve op landing). Checked
+  // both spellings — buildThreads() emits `is_resolved` (snake_case), but a hand-crafted or
+  // GraphQL-shaped payload may carry `isResolved` (camelCase) instead.
+  const isAlreadyResolved = (/** @type {any} */ t) => t.is_resolved === true || t.isResolved === true;
+  const open = (contextThreads || []).filter((t) => !isAlreadyResolved(t) && !resolvedIds.has(t.thread_id));
   if (open.length === 0) return { status: "PASS", details: "Earlier review comments are resolved.", open };
   const blockingUnanswered = open.filter((t) => {
     const isBlocking = BLOCKING_DECORATION_RE.test(t.root_body || "");
@@ -196,6 +204,29 @@ async function selfTest() {
     const judgmentThreads = [{ thread_id: "t1", classification: "declined", reply: "not a real issue" }];
     const g = gate3(contextThreads, judgmentThreads);
     check("a thread this run resolves is removed from the open set before Gate 3 grades", g.status === "PASS");
+  }
+  {
+    // ab/B/20230/1/meta.json: Gate 3 counted 17 threads instead of 10 because a thread GitHub
+    // already marked resolved (e.g. by a human, or a prior run's thread.resolve landing) was
+    // still counted as open — this run's judgments never classified it, so the old filter (keyed
+    // only on judgmentThreads) never excluded it.
+    const contextThreads = [
+      { thread_id: "t1", root_body: "issue: already resolved on GitHub (blocking)", author: "bot", replies: [], is_resolved: true },
+      { thread_id: "t2", root_body: "just an observation", author: "human", replies: [] },
+    ];
+    const g = gate3(contextThreads, []);
+    check("a thread already resolved on GitHub (is_resolved) is excluded from the open set, even with no judgment for it",
+      g.open.length === 1 && g.open[0].thread_id === "t2" && g.status === "WARN");
+  }
+  {
+    const contextThreads = [{ thread_id: "t1", root_body: "issue: x (blocking)", author: "bot", replies: [], isResolved: true }];
+    const g = gate3(contextThreads, []);
+    check("the camelCase isResolved spelling is honored too, not only is_resolved", g.status === "PASS" && g.open.length === 0);
+  }
+  {
+    const contextThreads = [{ thread_id: "t1", root_body: "issue: x (blocking)", author: "bot", replies: [], is_resolved: false }];
+    const g = gate3(contextThreads, []);
+    check("is_resolved: false does not suppress an otherwise-open blocking thread", g.status === "FAIL" && g.open.length === 1);
   }
 
   // AC-10: Gate 2 red CI -> PASS (i.e. CI never participates in gates/verdict at all).
