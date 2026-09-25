@@ -20,7 +20,7 @@ argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--external-review] [--interv
 license: MIT
 metadata:
   author: mthines
-  version: '1.8.0'
+  version: '1.9.0'
   workflow_type: command
   tags:
     - review
@@ -71,6 +71,18 @@ they consume threads from GitHub and do not care who wrote them.
 sub-agent dispatch tool (`Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical]")`).
 **Do not** call `Skill("pr-reviewer", …)` — there is no skill by that name and it
 errors with `Unknown skill: pr-reviewer`.
+
+#### Dash0 Agent0 Automation sandboxes
+
+When `/tmp/workspace/agent-skills/env.sh` exists, the loop is running in an Agent0
+Automation sandbox, where `pr-reviewer` cannot be dispatched and `Skill()` cannot
+see a repo-owned skill. **Read [`rules/agent0-runtime.md`](./rules/agent0-runtime.md)
+before Step 0.** It keeps every exit condition and substitutes how each sub-step is
+reached: sub-step A dispatches a `general` sub-agent pointed at the compiled
+`pr-reviewer` bundle, still in a separate context and never in this one, and every
+`Skill("<name>")` becomes a read of the installed `SKILL.md`. The sandbox is prepared
+by [`scripts/agent0-setup.sh`](../../../scripts/agent0-setup.sh), pasted as the
+automation's `sandbox.setupScript`.
 
 #### The dispatch tool is a capability, not a fixed name
 
@@ -416,6 +428,10 @@ while ITERATION < CAP:
         # <dispatch> is the harness's sub-agent dispatch tool — Task, Agent, or
         # another spelling; Step 0 resolved which one. pr-reviewer is an AGENT,
         # so never Skill("pr-reviewer").
+        # AGENT0 == 1 (rules/agent0-runtime.md): subagent_type="general" with the
+        # short bundle-pointing prompt from that rule — never pr-reviewer, and
+        # never a review in this context. A refusal or BLOCKED reply is not a
+        # review: STOP_REASON = "reviewer-refused"; break.
         # On a re-review it resolves its own addressed threads (thread-resolution.md).
         NEW_FINDINGS  = (pr-reviewer reported new actionable findings)
         FINAL_VERDICT = review.verdict   # PASS | WARN | FAIL — the --merge approval gate reads this
@@ -758,7 +774,7 @@ After the loop exits (converged, no-progress, or at cap), emit a compact summary
 review-loop on PR #<n> (<RESOLVED_REPO>)
 
 Iterations: <N> of <CAP>
-Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | ci-red (cap on ci-auto-fix handoffs) | ci-error (check query failed) | poll error | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable) | skipped (nested dispatch — must run at top level)>
+Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | ci-red (cap on ci-auto-fix handoffs) | ci-error (check query failed) | poll error | reviewer-refused (Agent0) | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable) | skipped (nested dispatch — must run at top level)>
 # Report the STOP_REASON the loop actually set — never re-derive it from the
 # iteration count. `Iterations: 1 of 1` is what report-only, a first-iteration
 # convergence, and a CAP=1 run all look like from the outside.
@@ -807,6 +823,7 @@ threads over a red build is not a review-ready PR.
 
 - **The only permitted `polish` invocation is `Skill("polish", "simplify")`.** Non-simplify modes trigger an internal agent pass and create a dispatch cycle.
 - **This loop runs at the top level, never inside a sub-agent.** Its first sub-step is a delegation, so a caller that dispatches the loop instead of running it spends the delegation budget one level too high and the loop can only skip at iteration 0 ([Caller contract](#caller-contract--run-this-loop-at-the-top-level-never-inside-a-sub-agent)). A caller limited to one dispatch passes `--external-review` **deliberately** — the loop never adds that flag to itself.
+- **In an Agent0 sandbox the review is a `general` dispatch, never an in-context review.** Detect the host by the presence of `/tmp/workspace/agent-skills/env.sh`, never from a failed call, and follow [`rules/agent0-runtime.md`](./rules/agent0-runtime.md). A reviewer reply that refuses is `reviewer-refused`, never a clean pass.
 - **The dispatch precondition tests a capability, never a tool name.** `Task` and `Agent` are two spellings of the same capability; concluding "no dispatch available" because the name `Task` is absent skips the review on every harness that spells it otherwise ([The dispatch tool is a capability, not a fixed name](#the-dispatch-tool-is-a-capability-not-a-fixed-name)).
 - **One absent-dispatch skip is terminal.** Never retry the dispatch and never work around it: the capability's absence is fixed by the dispatch topology before any code is read, so a retry costs a round trip and returns the same answer.
 - **A skip is never reported as convergence, and never as report-only.** Zero open threads plus green CI is not convergence when no review pass produced a verdict; say plainly that the loop did not run and the PR was not reviewed.

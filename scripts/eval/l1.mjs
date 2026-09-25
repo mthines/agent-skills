@@ -8043,6 +8043,130 @@ const isPollBlock = (block) =>
     /argument-hint:[^\n]*--no-screenshots/.test(uiv), "ui-verify SKILL.md argument-hint is missing --no-screenshots");
 }
 
+// ── G58: repo-owned skills on an Agent0 Automation sandbox (shared host rule + review-loop) ──
+//
+// On that host custom agent types (`pr-reviewer`, `aw-tester`) are not dispatchable and the skill
+// tool never reads the filesystem, so review-loop could only skip at iteration 0. The fix is one
+// shared host rule, a per-skill rule, one setup script, and a one-line branch per skill. Each
+// check reads the SHIPPED files; the file list the setup script verifies is DERIVED from the
+// rules' own `$AGENT_SKILLS_ROOT/skills/…` mentions, never re-encoded here.
+{
+  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
+  const host = readOr("agents/shared/rules/agent0-host.md");
+  const loop = readOr("skills/quality/review-loop/SKILL.md");
+  const rule = readOr("skills/quality/review-loop/rules/agent0-runtime.md");
+  const uvSkill = readOr("skills/testing/ui-verify/SKILL.md");
+  const uvRule = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
+  const SETUP_REL = "scripts/agent0-setup.sh";
+  const setup = readOr(SETUP_REL);
+  const DETECT = "/tmp/workspace/agent-skills/env.sh";
+
+  // G58a — the loop routes to its rule, and sub-step A's pseudocode carries the Agent0 branch.
+  s.check("G58a review-loop routes to rules/agent0-runtime.md and branches sub-step A on AGENT0",
+    loop.includes("(./rules/agent0-runtime.md)") && /AGENT0 == 1[^\n]*subagent_type="general"/.test(loop),
+    "review-loop SKILL.md is missing the agent0-runtime.md pointer or the sub-step A AGENT0 branch");
+
+  // G58b — ONE detection file, named identically everywhere, and it is the file the installer
+  // writes. Rename it in any one place and this reds before a sandbox run finds out.
+  const namers = { host, loop, rule, uvSkill, uvRule };
+  const missing = Object.entries(namers).filter(([, t]) => !t.includes(DETECT)).map(([k]) => k);
+  s.check("G58b the Agent0 detection file is named identically across rules, skills, and the installer",
+    missing.length === 0 && setup.includes('HOST="$WS/agent-skills"') && setup.includes('} > "$HOST/env.sh"'),
+    `${DETECT} missing from: ${missing.join(",") || "none"}; or the installer does not write "$HOST/env.sh"`);
+
+  // G58c — the review stays a separate context: a `general` dispatch naming the bundle and the
+  // reviewer's own constraints file.
+  const block = (rule.match(/<dispatch>\(\n[\s\S]*?\n\)/) || [""])[0];
+  s.check("G58c the Agent0 reviewer is a general dispatch pointed at the bundle and RUN-CONSTRAINTS",
+    /subagent_type: "general"/.test(block) && block.includes("pr-reviewer.agent0.md") && block.includes("RUN-CONSTRAINTS.md"),
+    "review-loop agent0-runtime.md's dispatch block is not a general dispatch naming the bundle and RUN-CONSTRAINTS.md");
+
+  // G58d — one install procedure: the installer DELEGATES to the reviewer's with SRC_DIR, and
+  // overwrites AGENTS.md AFTER that call (the reviewer's copy says "never push").
+  const iDelegate = setup.indexOf('bash "$SRC/agents/pr-reviewer/scripts/agent0-setup.sh"');
+  const iAgents = setup.indexOf('cat > "$WS/AGENTS.md"');
+  s.check("G58d the installer delegates to the reviewer installer, then overwrites AGENTS.md",
+    iDelegate > 0 && /SRC_DIR="\$SRC"/.test(setup) && iAgents > iDelegate,
+    `delegation at ${iDelegate}, AGENTS.md overwrite at ${iAgents} — must delegate with SRC_DIR, then overwrite`);
+
+  // G58e — every installed file a rule names is VERIFIED by the installer. Derived from the
+  // rules' `$AGENT_SKILLS_ROOT/skills/<path>` and `/tmp/workspace/pr-reviewer/skills/<path>` mentions.
+  const named = new Set();
+  for (const t of [host, rule, uvRule]) {
+    for (const m of t.matchAll(/(?:\$AGENT_SKILLS_ROOT|\/tmp\/workspace\/pr-reviewer)\/skills\/([a-z0-9-]+\/[A-Za-z0-9._/-]+\.(?:md|mjs))/g)) named.add(m[1]);
+  }
+  const unverified = [...named].filter((n) => !setup.includes(`"$S/${n}"`));
+  s.check("G58e the installer verifies every installed file the Agent0 rules name",
+    named.size >= 6 && unverified.length === 0,
+    `named=${[...named].join(",") || "∅"}; unverified by ${SETUP_REL}: ${unverified.join(",") || "none"}`);
+
+  // G58f — the top-level constraints do not forbid what the loop does, and a refusal has a token.
+  const cons = (setup.match(/<<'CONSTRAINTS'\n([\s\S]*?)\nCONSTRAINTS/) || ["", ""])[1];
+  s.check("G58f top-level CONSTRAINTS permit pushing the PR head, and reviewer-refused is a stop reason",
+    /commit\s+to and push the PR's own head branch/.test(cons) && !/Never[^\n]*push a commit/.test(cons)
+      && /Stop reason: <[^>]*reviewer-refused/.test(loop),
+    "the CONSTRAINTS heredoc forbids pushing, or reviewer-refused is missing from the Step 3 stop-reason list");
+
+  // G58g — the installer parses; PIN is optional and defaults to latest main; and because the host
+  // caches the result while the TEXT is unchanged, the cache-key line that refreshes it exists.
+  const syn = spawnSync("bash", ["-n", join(REPO_ROOT, SETUP_REL)], { encoding: "utf8" });
+  s.check("G58g the installer parses, defaults PIN to main, and carries a cache-key line",
+    syn.status === 0 && setup.includes('PIN="${PIN:-main}"') && /^# cache-key: \S+/m.test(setup),
+    `bash -n=${syn.status}; PIN default or cache-key line missing`);
+}
+
+// ── G59: ui-verify on an Agent0 Automation sandbox ──
+//
+// No Chrome extension, no user to answer the Playwright prompt, and `aw-tester` is not
+// dispatchable. The rule answers each; these checks hold the answers to the files that consume them.
+{
+  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
+  const uvSkill = readOr("skills/testing/ui-verify/SKILL.md");
+  const runner = readOr("skills/testing/ui-verify/rules/runner.md");
+  const uvRule = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
+  const setup = readOr("scripts/agent0-setup.sh");
+  const awt = readOr("skills/workflow/autonomous-workflow/templates/aw-tester.agent.md");
+
+  // G59a — both entry points route to the rule: SKILL.md, and runner.md Step 4 (which owns the
+  // driver decision the rule replaces).
+  const step4 = (runner.match(/## Step 4[\s\S]*?(?=\n## Step 5)/) || [""])[0];
+  s.check("G59a ui-verify SKILL.md and runner.md Step 4 route to rules/agent0-runtime.md",
+    uvSkill.includes("(./rules/agent0-runtime.md)") && step4.includes("(./agent0-runtime.md"),
+    "ui-verify's SKILL.md or runner.md Step 4 does not route to agent0-runtime.md");
+
+  // G59b — the aw-tester dispatch is `general`, reads the definition file, and carries runner.md's
+  // input lines UNCHANGED (derived from runner.md's own Task block, so the verdict shape cannot fork).
+  const runnerBlock = (runner.match(/subagent_type: "aw-tester"[\s\S]*?\n\)/) || [""])[0];
+  const inputs = ["Aw-Target file:", "Specs file:", "Mode:"].map((k) => (runnerBlock.match(new RegExp(`${k}[^\\n]*`)) || [""])[0].trim());
+  const ruleBlock = (uvRule.match(/<dispatch>\(\n[\s\S]*?\n\)/) || [""])[0];
+  const drift = inputs.filter((l) => !l || !ruleBlock.includes(l));
+  s.check("G59b the Agent0 aw-tester dispatch is general, reads its definition, and keeps runner.md's inputs",
+    /subagent_type: "general"/.test(ruleBlock) && ruleBlock.includes("templates/aw-tester.agent.md") && drift.length === 0,
+    `input lines missing from the Agent0 block: ${drift.join(" | ") || "none"}`);
+
+  // G59c — no question is asked on a host with no user, and a forced chrome is NOT RUN, never
+  // silently substituted.
+  const drivers = (uvRule.match(/## Driver selection[\s\S]*?(?=\n## )/) || [""])[0];
+  s.check("G59c auto resolves to playwright with no AskUserQuestion; forced chrome is NOT RUN",
+    /`auto`[^\n]*\*\*`playwright`, with no `AskUserQuestion`\.\*\*/.test(drivers) && /`chrome` \| `NOT RUN \(/.test(drivers),
+    "agent0-runtime.md's driver table no longer states the auto→playwright no-prompt answer or the chrome NOT RUN");
+
+  // G59d — the browser precondition reads the status the installer writes, and a missing browser
+  // is NOT RUN, never red.
+  s.check("G59d the browser precondition reads UI_VERIFY_BROWSER, which the installer exports",
+    /\[ "\$UI_VERIFY_BROWSER" = ok \]/.test(uvRule) && /NOT RUN \(playwright browser unavailable/.test(uvRule)
+      && setup.includes("export UI_VERIFY_BROWSER=") && setup.includes("export UI_VERIFY_BROWSER_REASON="),
+    "the UI_VERIFY_BROWSER precondition and the installer's export have drifted apart");
+
+  // G59e — no run-time download: the link target and browser path the rule uses are the ones the
+  // installer exports, and the installer installs the package aw-tester's spec imports.
+  const imports = /from '@playwright\/test'/.test(awt);
+  s.check("G59e the installer provides the module link, browser path, and @playwright/test aw-tester imports",
+    uvRule.includes('"$UI_VERIFY_PLAYWRIGHT_NODE_MODULES"') && setup.includes("export UI_VERIFY_PLAYWRIGHT_NODE_MODULES=")
+      && setup.includes("export PLAYWRIGHT_BROWSERS_PATH=") && imports && /npm install[^\n]*@playwright\/test/.test(setup),
+    `link var / browser path / @playwright/test install drifted (aw-tester imports @playwright/test: ${imports})`);
+}
+
 // ── G56: lens-invocation.md — the shared cross-harness resolution rule for pr-reviewer's six
 // composed lenses (`severity`, `optimize-approach`, `measurable`, `confidence`,
 // `holistic-analysis`, `verify-behavior`) ──
