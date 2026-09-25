@@ -6812,6 +6812,26 @@ const isPollBlock = (block) =>
     s.check("G52e branch-reviewer.md does not restate the candidate-record schema",
       !/severity_hint\s*:/.test(body) && !/verify_by\s*:/.test(body),
       "found finders.md's own field names — the detection core was copied, not referenced");
+
+    // (g) The support tree is resolved, never assumed to be the cwd. A bare
+    // `node agents/branch-reviewer/scripts/…` resolves against the REVIEWED repository, so it
+    // exits MODULE_NOT_FOUND in every repo but this one and the impact graph comes back empty —
+    // a review that finds nothing and reads exactly like a clean branch (create-pr Step 5.5).
+    // Same contract pr-reviewer holds under G41a/G41d, one derivation point per agent.
+    s.check("G52g branch-reviewer.md has a support-tree section that derives AGENT_SUPPORT",
+      /^## Locating this agent's own files$/m.test(body)
+      && [...body.matchAll(/AGENT_SUPPORT="\$\{AGENT_MD%\/branch-reviewer\.md\}"/g)].length === 1);
+  }
+  // (g) …and no file on the PR-less path invokes a support-tree script by a bare path. The
+  // pattern names the two script dirs so the cautionary prose (`node agents/…`) is not a hit.
+  const BARE_SCRIPT = /node\s+"?agents\/(?:branch-reviewer|pr-reviewer)\/scripts\//;
+  for (const rel of ["agents/branch-reviewer.md", "skills/quality/review-branch/rules/findings-bus.md",
+                     "skills/quality/pr-review/SKILL.md"]) {
+    const p = join(REPO_ROOT, rel);
+    if (!existsSync(p)) continue;
+    const hit = readFileSync(p, "utf8").split("\n").find((l) => BARE_SCRIPT.test(l));
+    s.check(`G52g ${rel} never runs a support-tree script by a bare agents/ path`, !hit,
+      (hit || "").trim().slice(0, 120));
   }
 
   // (f) The skill passes the repo's own skill validator, same bar as G51b.

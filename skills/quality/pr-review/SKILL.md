@@ -181,10 +181,26 @@ Classify the direction from the wording:
 The reviewer matches rules **by fingerprint** at read time, so a rule stored under any other key is
 never read again.
 
+The script lives in the `pr-reviewer` agent's support tree, not in the repository you are standing
+in, so a bare `node agents/…` exits `MODULE_NOT_FOUND` everywhere but this skill's own repository.
+Resolve the tree the way the agent does (its § Locating this agent's own files), in the same Bash
+call:
+
 ```bash
-node agents/pr-reviewer/scripts/fingerprint.mjs build \
+resolve() {  # portable readlink -f
+  [ -e "$1" ] || return 1
+  ( cd "$(dirname "$1")" && t=$(basename "$1")
+    while [ -L "$t" ]; do d=$(readlink "$t"); cd "$(dirname "$d")" || return 1; t=$(basename "$d"); done
+    printf '%s/%s\n' "$(pwd -P)" "$t" )
+}
+AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
+[ -n "$AGENT_MD" ] || { echo "pr-review remember: pr-reviewer support tree unresolved" >&2; exit 1; }
+node "${AGENT_MD%/pr-reviewer.md}/pr-reviewer/scripts/fingerprint.mjs" build \
   --finder <finder> --defect-class <class> --symbol <symbol|-> --path <repo-relative path>
 ```
+
+An unresolved tree stops the write: without the script there is no `fp`, and a hand-built key is the
+failure the next paragraph forbids.
 
 That needs three things the prose may not carry: a `finder`, a `defect-class`, and a `path`
 (`--symbol -` covers a whole-file rule).
