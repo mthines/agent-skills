@@ -149,6 +149,9 @@ at the top level of this session.
   /tmp/workspace/pr-reviewer/skills/<name>/SKILL.md and follow it here.
 - A review, or a Playwright run, is always a dispatched `general` sub-agent.
   Never do a dispatched agent's work in this context.
+- When you dispatch a sub-agent that commits, pushes, or posts to GitHub
+  (implement-suggestion's worker, ci-auto-fix), name this file in its prompt
+  as its standing constraints. AGENTS.md may not be loaded into a sub-agent.
 
 ## You may
 - Do exactly what the procedure you were given writes: for review-loop, commit
@@ -178,6 +181,9 @@ Each role reads the file for its role.
 - The top-level session: /tmp/workspace/agent-skills/CONSTRAINTS.md
 - A dispatched reviewer sub-agent (one read-only pass):
   /tmp/workspace/pr-reviewer/RUN-CONSTRAINTS.md
+- Any other dispatched sub-agent that commits, pushes, or posts to GitHub
+  (implement-suggestion's worker, ci-auto-fix):
+  /tmp/workspace/agent-skills/CONSTRAINTS.md
 - A dispatched aw-tester sub-agent follows its definition file and the
   constraints above.
 AGENTS

@@ -108,7 +108,7 @@ Each role reads its own constraints, named in its prompt or in `AGENTS.md`:
 | File | Reader | Says |
 | --- | --- | --- |
 | `/tmp/workspace/pr-reviewer/RUN-CONSTRAINTS.md` | a dispatched reviewer | read-only: never push, approve, or merge |
-| `/tmp/workspace/agent-skills/CONSTRAINTS.md` | the automation's top-level session | write only what the procedure it was given writes |
+| `/tmp/workspace/agent-skills/CONSTRAINTS.md` | the automation's top-level session, and any sub-agent it dispatches that commits, pushes, or posts (named in that sub-agent's prompt) | write only what the procedure it was given writes |
 | `/tmp/workspace/AGENTS.md` | whatever the host auto-loads | points each role at its own file |
 
 The reviewer's installer writes its read-only constraints into `AGENTS.md` too, which is correct for a review-only automation and wrong for any other.
