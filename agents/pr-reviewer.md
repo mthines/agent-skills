@@ -2438,28 +2438,21 @@ reconciliation, from the Gate 3 refresh, and from the `reviewer-comment-relevanc
 Findings are final as of 2.9b, which is the precondition this step needs to tell `persisting` from
 `fixed`.
 
-**Two corrections to that precondition, both mandatory** (`thread-resolution.md`, the two sections
-after the status table):
+**Two corrections to that precondition, both mandatory** (`thread-resolution.md § fixed requires
+that this run re-scanned the region` and `§ persisting must be read before prior-comment dedup`):
+`fixed`'s clause 2 — *the current run does not re-produce the finding* — is evidence only where this
+run looked, so it requires **both** `(path, line ± 5)` inside `REVIEW_DIFF` **and** `path ∈
+SCANNED_FILES` (never "no findings ⇒ `fixed`"); otherwise classify `unaddressed`. And a 2.5b dedup
+drop matching a candidate thread is `persisting`, read against the **pre-dedup** set or the dedup log
+line, because 2.5b drops the re-produced finding *before* the 2.9b set exists — reading `persisting`
+off the final set can never fire, and the candidate falls through to `fixed` while the issue is still
+live.
 
-1. **`fixed` requires that this run re-scanned the region.** Clause 2 of `fixed` — *the current run
-   does not re-produce the finding* — is evidence only where this run looked. Require **both**
-   `(path, line ± 5)` inside `REVIEW_DIFF` **and** `path ∈ SCANNED_FILES`; otherwise classify
-   `unaddressed` and leave the thread open. Both conjuncts are load-bearing: `REVIEW_DIFF` excludes
-   what was out of scope, `SCANNED_FILES` excludes what was in scope but never read — a Step 1.4
-   triage skip or a budget-exhausted walk. Together they cover the zero-delta path, an incremental
-   run whose delta does not reach the region, a triaged large PR, and a partial run, without
-   special-casing any of them. It is **not** "no findings ⇒ no `fixed`": a clean `full` scan
-   produces an empty finding set and is exactly when `fixed` should fire.
-2. **A 2.5b dedup drop matching a candidate thread is `persisting`.** Step 2.5b drops a re-produced
-   finding at the same `(path, line ± 2)` and prefix *before* the 2.9b set exists, so `persisting`
-   read off the final set can never fire — and the candidate then falls through to `fixed` while the
-   issue is still live. Read `persisting` against the pre-dedup set, or off the dedup log line,
-   which already records the match.
-
-`declined` and `acknowledged` are unaffected by (1): their evidence is the author's own words.
-Note that `acknowledged` additionally requires a delta-touched line, and `obsolete` carries the same
-re-scan predicate as `fixed`, so on a zero-delta run `declined` is in practice the only status that
-resolves. It runs **here — before the verdict (Step 3) and before posting (Step 4)** — rather than
+`declined` and `acknowledged` are unaffected by the first correction: their evidence is the author's
+own words. Note that `acknowledged` additionally requires a delta-touched line, and `obsolete`
+carries the same re-scan predicate as `fixed`, so on a zero-delta run `declined` is in practice the
+only status that resolves. It runs **here — before the verdict (Step 3) and before posting (Step 4)**
+— rather than
 after posting, because Gate 3 and the unblock checklist are rendered from `OPEN_BOT_COMMENTS[]`,
 and resolving threads after that rendering publishes a checklist naming threads this very run
 closed seconds later. The author then reads a stale worklist and only sees the truth on the next
@@ -2483,33 +2476,26 @@ then fails on a set no author action can shrink. Report the count.
 
 Then update Gate 3's input:
 
-- Remove from `OPEN_BOT_COMMENTS[]` every entry whose resolve call **actually succeeded**. A call
-  that errored leaves the thread open on GitHub, so its entry stays in the set — the checklist must
-  describe GitHub's state, not this agent's intent.
-- **Except under `RESOLUTION_UNAVAILABLE`**, where no call was possible: remove every entry this run
-  classified `fixed` / `declined` / `acknowledged` / `obsolete` anyway. Those threads stay open on
-  GitHub and the report says so, but they must not block — the run has certified them done, and a
-  gate that cannot be cleared by any author action is worse than a gate that does not run.
-- Re-evaluate Gate 3 from the updated set, exactly as Step 1.8 does — including the ⚠️ / ❌
-  grading, since removing the last *blocking unanswered* entry can downgrade ❌ to ⚠️ without
-  emptying the set. This is not a second, laxer
-  gate: Gate 3's own rule is that *a resolved thread never fails this gate*, and these threads are
-  now resolved. If the set is emptied, Gate 3 flips to ✅ and the verdict follows normally.
-  A thread this step classified `declined` or `acknowledged` whose resolve mutation **failed**
-  stays in the set, but Step 1.0's `answered` field is set true for it — GitHub still shows it
-  open, so the checklist must still list it, yet the ask has demonstrably been engaged with and
-  a failed mutation is this agent's problem, not the author's.
-  **Except under `--skip-gates`**, where Step 1.8 never ran and Gate 3 is `⏭️`: update
-  `OPEN_BOT_COMMENTS[]` and `RESOLVED_SINCE_PRIOR` as usual, but leave the gate `⏭️`. Re-evaluating
-  it here would resurrect a gate the invocation explicitly turned off.
-- Recompute `RESOLVED_SINCE_PRIOR` = the number of `PRIOR_OPEN_THREAD_IDS` that are **actually
-  closed on GitHub** — a successful resolve call this run, or observed `isResolved` at Step 1.0.
-  **Threads removed by the `RESOLUTION_UNAVAILABLE` carve-out are excluded**: they are still open,
-  and counting them turns "we could not close these" into "we closed these". Do not compute it as a
-  set difference against `OPEN_BOT_COMMENTS`, which cannot tell a resolution from a removal. It is
-  for the
-  checklist's `resolved since` counter. It counts every thread closed since the prior report —
-  by this step, by the author, or by another fixer — not only the ones this step resolved.
+- Remove from `OPEN_BOT_COMMENTS[]` every entry whose resolve call **actually succeeded** — an
+  errored call leaves the thread open on GitHub, so the checklist must describe GitHub's state, not
+  this agent's intent. **Except under `RESOLUTION_UNAVAILABLE`** (no call was possible): remove every
+  entry classified `fixed` / `declined` / `acknowledged` / `obsolete` anyway — those threads stay
+  open on GitHub and the report says so, but a gate no author action can clear is worse than a gate
+  that does not run.
+- Re-evaluate Gate 3 from the updated set, exactly as Step 1.8 does, including the ⚠️ / ❌ grading —
+  removing the last *blocking unanswered* entry can downgrade ❌ to ⚠️ without emptying the set. This
+  is not a laxer gate: Gate 3's own rule is that a resolved thread never fails it. A thread classified
+  `declined` / `acknowledged` whose resolve mutation **failed** stays in the set (GitHub still shows
+  it open) but Step 1.0's `answered` field is set true for it — the ask was engaged with, and a
+  failed mutation is this agent's problem, not the author's. **Except under `--skip-gates`**, where
+  Gate 3 is `⏭️`: update the set and `RESOLVED_SINCE_PRIOR` as usual, but leave the gate `⏭️` —
+  re-evaluating it here would resurrect a gate the invocation explicitly turned off.
+- Recompute `RESOLVED_SINCE_PRIOR` = the count of `PRIOR_OPEN_THREAD_IDS` **actually closed on
+  GitHub** (a successful resolve this run, or an `isResolved` observed at Step 1.0) — every thread
+  closed since the prior report, by this step, the author, or another fixer, not only the ones this
+  step resolved. **Threads removed by the `RESOLUTION_UNAVAILABLE` carve-out are excluded**: they are
+  still open, and counting them turns "could not close" into "closed". Never compute it as a set
+  difference against `OPEN_BOT_COMMENTS`, which cannot tell a resolution from a removal.
 
 **Never blocking.** Any failure in this step — a GraphQL error, an incomplete thread map, LoreKit
 unavailable — is logged and the run continues with the **pre-reconciliation** `OPEN_BOT_COMMENTS[]`
