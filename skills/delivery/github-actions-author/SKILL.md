@@ -55,7 +55,7 @@ practices for speed, cost, reusability, and security.
 This applies to **both modes** and outranks every other preference in this skill.
 
 Every command in every scaffolded or reviewed workflow must write its stdout **and** stderr to the job log.
-Output that lands only in a file, only in an artifact, only in `$GITHUB_STEP_SUMMARY`, or in `/dev/null` is invisible to `gh run view <run-id> --log-failed` — the only surface `/ci-auto-fix`, `/test-auto-fix`, `/implement-suggestion`, and an on-call human read a failure from.
+Output that lands only in a file, only in an artifact, only in `$GITHUB_STEP_SUMMARY`, or in `/dev/null` is invisible to `gh run view <run-id> --log-failed` — the only surface `/ci-auto-fix`, `/implement-suggestion`, and an on-call human read a failure from.
 A failing step that printed nothing cannot be diagnosed or fixed by an agent; it can only be escalated.
 
 Minimum bar for every `run:` block:

@@ -177,7 +177,6 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 4     | `measurable`           | Before Step 6, if the Phase 3 trigger matched — advisory audit unless `--observability-strict` | `audit --diff --base $(git merge-base HEAD main) [--strict]` |
 | 4     | `lorekit-memory`       | At stuck-loop escalation — record failing area + resolution          | `memory.write loop::aw-lessons` |
 | 5     | `docs`                 | Always (with skip conditions per phase-5 rule)                       | `update --auto`  |
-| 6     | `aw-review-quality-gate` | After `create-pr`'s review-loop returns findings (false-positive filter; advisory) | —     |
 | 6     | `aw-create-walkthrough` | Full Mode only                                                      | —                |
 | 6     | `create-pr`            | Always — push, open draft PR, run review-loop, watch CI             | —                |
 | 6 (UI)| `ui-verify`         | Via `create-pr` Step 6.4 on a UI diff — injects the PR-body verification spec, seeded from `.agent/{branch}/specs.md` when present | `author` |

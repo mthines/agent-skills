@@ -101,7 +101,7 @@ for full details.
 | 3     | Implementation             | Autonomous    | Code changes in isolated worktree            |
 | 4     | Testing                    | Autonomous    | Iterate until tests pass (mode-aware cap: 3 Lite / 5 Full) |
 | 5     | Documentation              | Autonomous    | `docs update` for `CLAUDE.md`, `README.md`, `docs/` |
-| 6     | PR Creation                | Autonomous    | `review-changes`, walkthrough, draft PR      |
+| 6     | PR Creation                | Autonomous    | `review-loop` (via `create-pr`), walkthrough, draft PR |
 | 7     | CI Gate + Optional Cleanup | Autonomous    | Watch CI, `ci-auto-fix` per failure, prune   |
 
 **Phase 0 and Phase 2 are MANDATORY.** All others gate progression.

@@ -149,7 +149,7 @@ consistently:
 - `advisory` — read-only review skill (`code-quality`, `dx`, `ux`).
 - `applied` — writes code (`tdd`, `implement-suggestion`).
 - `orchestrator` — calls other skills (`autonomous-workflow`,
-  `batch-linear-tickets`).
+  `fix-bug`).
 - `scaffolder` — generates new artefacts (`docs`, `create-skill`).
 - `slash-command` — slash-only single-purpose tool (`create-pr`,
   `ci-auto-fix`).

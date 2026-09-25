@@ -1,6 +1,6 @@
 ---
 name: linear-ticket-investigator
-description: Extract evidence from a single Linear ticket — read the ticket, locate affected code, and return an Evidence Record matching the /fix-bug Phase 2 schema. Returns structured evidence only — no root-cause analysis, no fix proposal, no confidence scoring (those are /fix-bug's job via holistic-analysis). Used by /fix-bug's Linear input route and fan-out by /batch-linear-tickets.
+description: Extract evidence from a single Linear ticket — read the ticket, locate affected code, and return an Evidence Record matching the /fix-bug Phase 2 schema. Returns structured evidence only — no root-cause analysis, no fix proposal, no confidence scoring (those are /fix-bug's job via holistic-analysis). Used by /fix-bug's Linear input route.
 tools: Read, Glob, Grep, Skill, mcp__Linear__get_issue, mcp__Linear__list_comments, mcp__claude_ai_Linear__get_issue, mcp__claude_ai_Linear__list_comments
 model: sonnet
 ---
@@ -16,8 +16,7 @@ This agent uses the Linear MCP tools.
 Tool names vary by server alias (`mcp__Linear__get_issue`, `mcp__claude_ai_Linear__get_issue`, …) —
 resolve the issue-read and comment-read tools at runtime from your available-tools list; do not
 hard-code the namespace.
-If no Linear MCP tool is available in the host project, the calling skill (`/fix-bug` or
-`/batch-linear-tickets`) handles the fallback.
+If no Linear MCP tool is available in the host project, the calling skill (`/fix-bug`) handles the fallback.
 
 ---
 
@@ -133,7 +132,7 @@ and flag** it so the calling skill runs the `video-analyser` skill on it.
    one or more are found, or `None` when there are none.
 
 Do NOT attempt to download, transcode, or describe the video. Flagging it is the whole job here —
-the orchestrator (`/fix-bug` or `/batch-linear-tickets`) owns the `video-analyser` run.
+the orchestrator (`/fix-bug`) owns the `video-analyser` run.
 
 ### Step 6: Information Gaps
 
@@ -194,5 +193,5 @@ URL: {Linear URL}
 - Needs Info: information gaps prevent confident evidence extraction.
 ```
 
-The calling skill (`/fix-bug` or `/batch-linear-tickets`) consumes this Evidence Record and runs
+The calling skill (`/fix-bug`) consumes this Evidence Record and runs
 analysis / confidence / handoff itself.

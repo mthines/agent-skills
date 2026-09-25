@@ -13,7 +13,7 @@ tags:
 
 How to give an orchestrator skill a **two-tier self-improvement loop** so it
 gets better across runs. This is the reusable recipe behind the loops in
-`autonomous-workflow`, `fix-bug`, and `batch-linear-tickets` — follow it instead
+`autonomous-workflow`, `fix-bug`, and `implement-suggestion` — follow it instead
 of hand-copying one of those.
 
 ## Contents

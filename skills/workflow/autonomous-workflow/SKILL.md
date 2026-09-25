@@ -69,7 +69,7 @@ explicit user confirmation.
 The fast tier captures lessons cheaply and reversibly; recurrence promotes a
 proven lesson into a permanent guard through the gated slow tier. The diagnose
 engine is owned by `create-skill` so the same procedure works across every
-skill in the repo (`fix-bug`, `batch-linear-tickets`, future ones) — they each
+skill in the repo (`fix-bug`, future ones) — they each
 declare their own diagnostic surface.
 
 ---
@@ -200,7 +200,6 @@ for the full registry, trigger conditions, and **how to disable any companion**.
 | 4     | `holistic-analysis`    | After confidence at Phase 4 if user asks for retry     | —                |
 | 4     | `lorekit-memory`       | At stuck-loop escalation — record failing area + resolution as a lesson | `memory.write loop::aw-lessons` |
 | 5     | `docs`                 | Always (self-improving doc loop — updates `CLAUDE.md`, `README.md`, `docs/`) | `update --auto`  |
-| 6     | `aw-review-quality-gate` | After `create-pr`'s `review-loop` returns findings — false-positive filter (advisory) | —   |
 | 6     | `aw-create-walkthrough` | Full Mode only                                        | —                |
 | 6     | `create-pr`            | Always — push, open draft PR, run review-loop, watch CI | —               |
 | 6 (UI)| `ui-verify`         | Via `create-pr` Step 6.4 on a UI diff — PR-body verification spec, seeded from `specs.md` when present | `author` |
@@ -416,7 +415,8 @@ per-companion disabling, see the [README](./README.md#installation) and
 - [`ux`](../../design/ux/SKILL.md) — UI / accessibility review
 - [`holistic-analysis`](../../analysis/holistic-analysis/SKILL.md) — execution-path analysis for complex tasks
 - [`docs`](../../authoring/docs/SKILL.md) — keeps `CLAUDE.md`, `.claude/rules/`, `README.md`, and `docs/` in sync with code changes
-- [`review-changes`](../../quality/review-changes/SKILL.md) — routes to `review-loop` (convergence) or `pr-reviewer` (one-shot)
+- [`review-loop`](../../quality/review-loop/SKILL.md) — bounded review → apply → simplify convergence (Phases 6–7)
+- [`pr-review`](../../quality/pr-review/SKILL.md) — one-shot read-only review
 - [`review-loop`](../../quality/review-loop/SKILL.md) — bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence loop; Phase 6/7 review passes
 - [`create-pr`](../../delivery/create-pr/SKILL.md) — narrative PR description + push + open draft PR + review-loop + watch
 - [`ci-auto-fix`](../../delivery/ci-auto-fix/SKILL.md) — diagnose and fix failed CI checks

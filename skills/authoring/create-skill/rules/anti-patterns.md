@@ -78,7 +78,7 @@ description: Reviews PRs.
 # Good
 description: >
   Reviews PRs for quality, correctness, and tests. Triggers on
-  "review PR", "audit changes", "/review-changes".
+  "review PR", "audit changes", "/pr-review".
 ```
 
 **Why bad:** Without explicit triggers, Claude has to infer when to load
@@ -95,7 +95,7 @@ refactoring and testing".
 **Why bad:** Lower accuracy, harder to compose, larger context cost. One
 skill, one job.
 
-**Fix:** Split into focused skills (`code-quality`, `review-changes`,
+**Fix:** Split into focused skills (`code-quality`, `pr-review`,
 `tdd`) and compose with `Skill()` calls.
 
 ### S2 — Deeply nested references

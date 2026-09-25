@@ -119,7 +119,7 @@ hypotheses. See [`rules/bug-notes-ledger.md`](./rules/bug-notes-ledger.md).
 | Flag | Default | Behaviour |
 |------|---------|-----------|
 | (none) | **yes** | Full pipeline (Phases 0–8). Phase 0.5 triages complexity; Phase 5 dispatches via the fast-lane (simple) or standard-lane (complex) when confidence >= 92 % — no human confirmation required. |
-| `--analyse-only` | | Read-only analysis. Phases 0–4 (including Phase 0.5 triage) run as normal; Phase 5 **always** returns the proposal regardless of confidence; Phases 6–8 are skipped. The read-only analysis primitive for any caller that wants a proposal without a PR. (`/batch-linear-tickets` does **not** call this — its Phase 1 dispatches `linear-ticket-investigator` + `holistic-analysis` directly.) |
+| `--analyse-only` | | Read-only analysis. Phases 0–4 (including Phase 0.5 triage) run as normal; Phase 5 **always** returns the proposal regardless of confidence; Phases 6–8 are skipped. The read-only analysis primitive for any caller that wants a proposal without a PR. |
 | `--force-holistic` | | Skip Phase 0.5's `simple` classification — always treat the bug as `complex`. Forces the complex-lane analysis (Phase 3 `Task(rca-investigator)`, which runs holistic-analysis inside) and the standard-lane in Phase 6, regardless of triage signals. Use when triage's conservative-by-default behaviour is not conservative enough for the user's taste. Mutually exclusive with `--analyse-only` and `--verify-deploy`. |
 | `--verify-deploy <PR>` | | Re-entry path for deferred Phase 8 verification. Skips Phases 1–7 entirely; recovers the Evidence Record from `.agent/<branch>/bug-notes.md` for the PR's head branch and runs Phase 8 against the already-shipped fix. See [Verify-deploy short-circuit](#verify-deploy-short-circuit) below. |
 
@@ -867,8 +867,7 @@ shape stays stable; only the tail varies.
     originating query stops firing. Phase 8 enforces this. Same for both lanes.
 11. **Linear is one input adapter among several.** A Linear URL routes through
     `linear-ticket-investigator` to produce an Evidence Record, then continues at Phase 2 like
-    any other input. `/batch-linear-tickets` does not wrap `/fix-bug` — its Phase 1 dispatches
-    `linear-ticket-investigator` (and `holistic-analysis` for bug tickets) per ticket directly.
+    any other input.
 12. **Learn across bugs, but only advisory.** `fix-bug-lessons` (read Phase 0.5,
     write Phase 5/7/8) biases triage / repro / analysis from prior misfires;
     it never relaxes a gate. A lesson recurring `seen_count >= 3` is promoted

@@ -65,7 +65,7 @@ Check the arguments: `$ARGUMENTS`
 | Argument  | Default | Rates the severity of        | Typical caller                                |
 | --------- | ------- | ---------------------------- | --------------------------------------------- |
 | `finding` | **yes** | A single code-review finding | A reviewer, to route and gate one finding      |
-| `bug`     |         | A bug, defect, or incident   | `fix-bug` / `ci-auto-fix` / `batch-linear-tickets` triage |
+| `bug`     |         | A bug, defect, or incident   | `fix-bug` / `ci-auto-fix` triage |
 
 If no argument is provided, default to `finding`. The rubric is shared; the mode
 only changes what "impact" refers to (a finding's failure vs. a bug's user harm).
@@ -245,7 +245,7 @@ consumer uses live in the consumer, not here.
   (surface a probable serious bug even at moderate confidence), `low` a higher bar
   (advisory or suppressed). The numbers live in `review-config.md`, not in this skill —
   it emits only the tier.
-- **`fix-bug` / `batch-linear-tickets`** order triage by tier.
+- **`fix-bug`** orders triage by tier.
 - **`ci-auto-fix`** escalates a `critical` / `high` regression and defers a `low` one.
 
 **Cost.** Assess severity in the **same pass** as the finding's confidence rating, or
