@@ -17,6 +17,15 @@
     "route-depth.mjs",
     "delta-triage.mjs",
     "gate4-scan.mjs",
-    "validate-judgments.mjs"
+    "validate-judgments.mjs",
+    "finalize.mjs",
+    "finalize/dedupe.mjs",
+    "finalize/thresholds.mjs",
+    "finalize/suppression.mjs",
+    "finalize/placement.mjs",
+    "finalize/line-validity.mjs",
+    "finalize/gates.mjs",
+    "finalize/payload.mjs",
+    "finalize/findings-bus.mjs"
   ]
 }

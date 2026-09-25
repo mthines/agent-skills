@@ -8708,4 +8708,89 @@ const isPollBlock = (block) =>
   }
 }
 
+// ── G63: pr-reviewer deterministic pipeline, Phase 3 (finalize) ──
+//
+// R6/D5/D18/AC-10/AC-12/AC-19: finalize.mjs and its finalize/*.mjs pure-core library exist, are
+// typed, and self-test; the findings-bus writer's field set is re-derived against
+// findings-bus.md's own worked example (not just trusted from the self-test); the AC-12
+// byte-unchanged file set really is unchanged versus origin/main, reproduced here as a standing
+// guard so a later phase cannot silently touch it; and Gate 2 (CI) structurally has no input to
+// the orchestration at all, matching agents/pr-reviewer.md's "informational-in-Run" invariant.
+{
+  const SCRIPTS_DIR = "agents/pr-reviewer/scripts";
+  const FINALIZE_SCRIPTS = [
+    "finalize.mjs",
+    "finalize/dedupe.mjs", "finalize/thresholds.mjs", "finalize/suppression.mjs",
+    "finalize/placement.mjs", "finalize/line-validity.mjs", "finalize/gates.mjs",
+    "finalize/payload.mjs", "finalize/findings-bus.mjs",
+  ];
+
+  for (const name of FINALIZE_SCRIPTS) {
+    const p = join(REPO_ROOT, SCRIPTS_DIR, name);
+    s.check(`G63a ${name} exists`, existsSync(p));
+    if (!existsSync(p)) continue;
+    const src = readFileSync(p, "utf8");
+    s.check(`G63a ${name} is // @ts-check`, /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
+    const r = spawnSync(process.execPath, [p, "--self-test"], { encoding: "utf8" });
+    s.check(`G63a ${name} --self-test passes`,
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 300));
+  }
+
+  const TS = join(REPO_ROOT, SCRIPTS_DIR, "tsconfig.json");
+  if (existsSync(TS)) {
+    const tsText = readFileSync(TS, "utf8");
+    s.check("G63b tsconfig.json's files[] lists finalize.mjs and all 8 finalize/*.mjs modules",
+      FINALIZE_SCRIPTS.every((n) => tsText.includes(`"${n}"`)));
+  }
+
+  // AC-19: the findings-bus record's field set, re-derived against findings-bus.md's own worked
+  // example JSON — a second witness independent of findings-bus.mjs's own self-test.
+  const FB_RULE = join(REPO_ROOT, "skills/quality/review-branch/rules/findings-bus.md");
+  const FB_MOD = join(REPO_ROOT, SCRIPTS_DIR, "finalize/findings-bus.mjs");
+  if (existsSync(FB_RULE) && existsSync(FB_MOD)) {
+    const ruleText = readFileSync(FB_RULE, "utf8");
+    const jsonMatch = /```json\n(\{[\s\S]*?\n\})\n```/.exec(ruleText);
+    if (jsonMatch) {
+      const worked = JSON.parse(jsonMatch[1]);
+      const mod = await import(pathToFileURL(FB_MOD).href);
+      const sortedEq = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+      s.check("G63c findings-bus.mjs's FINDINGS_BUS_FIELDS equals findings-bus.md's own worked-example key set",
+        sortedEq(mod.FINDINGS_BUS_FIELDS, Object.keys(worked)),
+        `mjs=${JSON.stringify([...mod.FINDINGS_BUS_FIELDS].sort())} md=${JSON.stringify(Object.keys(worked).sort())}`);
+    } else {
+      s.check("G63c findings-bus.md carries a parseable worked-example JSON block", false);
+    }
+  }
+
+  // AC-12: the byte-unchanged file set really is unchanged versus origin/main — reproduces
+  // checks.yaml's own AC-12 command as a standing L1 guard, so Phase 5's prose-slimming (which
+  // touches many agents/pr-reviewer/rules/*.md files) cannot silently drift one of these too.
+  {
+    const AC12_PATHS = [
+      "agents/pr-reviewer/scripts/fingerprint.mjs",
+      "agents/pr-reviewer/scripts/comment-spine.mjs",
+      "agents/pr-reviewer/templates",
+      "scripts/eval/fixtures/report-body",
+      "scripts/eval/fixtures/inline-comment",
+      "scripts/eval/fixtures/report-pointer",
+      "scripts/eval/fixtures/posted-bodies",
+      "agents/shared/rules/reviewer-report-ingest.md",
+    ];
+    const r = spawnSync("git", ["diff", "--quiet", "origin/main", "--", ...AC12_PATHS], { cwd: REPO_ROOT, encoding: "utf8" });
+    s.check("G63d AC-12's byte-unchanged file set (fingerprint/comment-spine/templates/report fixtures/reviewer-report-ingest.md) is unchanged vs. origin/main",
+      r.status === 0, r.status === null ? "git not found" : `git diff exit ${r.status}`);
+  }
+
+  // Gate 2 (CI) structurally never participates: finalizeReview's own signature carries no ci
+  // parameter, so a red/pending CI status has no path into the verdict at all — not merely a
+  // behavioral property the self-test happens to exercise.
+  const FIN = join(REPO_ROOT, SCRIPTS_DIR, "finalize.mjs");
+  if (existsSync(FIN)) {
+    const finSrc = readFileSync(FIN, "utf8");
+    const sigMatch = /export function finalizeReview\(\{([^}]*)\}/.exec(finSrc);
+    s.check("G63e finalizeReview()'s own parameter list carries no ci/CI field",
+      Boolean(sigMatch) && !/\bci\b/i.test(sigMatch[1]), sigMatch ? sigMatch[1] : "signature not found");
+  }
+}
+
 process.exit(s.report() ? 0 : 1);
